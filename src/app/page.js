@@ -10,6 +10,7 @@ import {
   EyeOff,
   Loader2,
   Lock,
+  LogOut,
   Pencil,
   Play,
   Plus,
@@ -119,14 +120,13 @@ function buildDisplayColumns(resultColumns, layout) {
 
 export default function GamedbPage() {
   const [me, setMe] = useState(null);
-  const [meError, setMeError] = useState(null);
   const [checkingMe, setCheckingMe] = useState(true);
 
   useEffect(() => {
      
     apiJson("/api/me", { fallbackError: "ตรวจสอบสิทธิ์ไม่สำเร็จ" })
       .then((data) => setMe(data.user))
-      .catch((err) => setMeError(err))
+      .catch(() => setMe(null))
       .finally(() => setCheckingMe(false));
   }, []);
 
@@ -141,36 +141,100 @@ export default function GamedbPage() {
   }
 
   if (!me) {
-    const loginUrl =
-      meError?.data?.loginUrl ||
-      process.env.NEXT_PUBLIC_INBLACKM_ADMIN_URL ||
-      "http://localhost:4182/admin/login";
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center p-6 text-center">
-        <div className="mb-6 rounded-full border border-red-200 bg-red-600/10 p-5 text-red-600">
-          <Lock size={44} />
-        </div>
-        <h1 className="text-2xl font-black tracking-tight">GameDB — เฉพาะทีมงาน INBLACKM</h1>
-        <p className="mt-2 max-w-md text-xs font-semibold leading-relaxed text-zinc-500">
-          {meError?.status === 403
-            ? meError.message
-            : "ยังไม่ได้เข้าสู่ระบบ — GameDB ใช้บัญชี Admin ชุดเดียวกับหลังบ้าน INBLACKM กรุณาเข้าสู่ระบบที่หน้า Admin ก่อน แล้วกลับมาหน้านี้อีกครั้ง"}
-        </p>
-        <a
-          href={loginUrl}
-          className="mt-8 rounded-xl bg-red-600 px-6 py-3.5 text-xs font-black text-white transition hover:bg-red-700"
-        >
-          ไปหน้า Admin Login ของ INBLACKM
-        </a>
-      </div>
-    );
+    return <LoginScreen onLoggedIn={setMe} />;
   }
 
-  return <GamedbWorkspace me={me} />;
+  return <GamedbWorkspace me={me} onLoggedOut={() => setMe(null)} />;
 }
 
-function GamedbWorkspace({ me }) {
+function LoginScreen({ onLoggedIn }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError("");
+    try {
+      const data = await apiJson("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+        fallbackError: "เข้าสู่ระบบไม่สำเร็จ",
+      });
+      onLoggedIn(data.user);
+    } catch (err) {
+      setError(err.message);
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center p-6">
+      <form
+        onSubmit={submit}
+        className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm"
+      >
+        <div className="mb-5 text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-red-200 bg-red-600/10 text-red-600">
+            <Lock size={26} />
+          </div>
+          <h1 className="text-lg font-black tracking-tight">GameDB</h1>
+          <p className="mt-1 text-[11px] font-semibold text-zinc-500">
+            เข้าสู่ระบบด้วยบัญชี GameDB
+          </p>
+        </div>
+
+        <label className="mb-1 block text-[10px] font-black text-zinc-500">Username</label>
+        <input
+          type="text"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          autoComplete="username"
+          autoFocus
+          className="mb-3 h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+        />
+        <label className="mb-1 block text-[10px] font-black text-zinc-500">รหัสผ่าน</label>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoComplete="current-password"
+          className="mb-4 h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+        />
+
+        {error && (
+          <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
+            {error}
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={submitting || !username.trim() || !password}
+          className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-red-600 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
+        >
+          {submitting ? <Loader2 size={14} className="animate-spin" /> : <Lock size={13} />}
+          เข้าสู่ระบบ
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function GamedbWorkspace({ me, onLoggedOut }) {
   const isSuperAdmin = me.role === "admin";
+
+  const logout = async () => {
+    try {
+      await apiJson("/api/auth/logout", { method: "POST" });
+    } catch {
+      // ignore — cookie clear is best-effort, drop local state either way
+    }
+    onLoggedOut();
+  };
 
   const [queries, setQueries] = useState([]);
   const [loadingList, setLoadingList] = useState(true);
@@ -433,10 +497,18 @@ function GamedbWorkspace({ me }) {
           <div className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2">
             <User size={13} className="text-zinc-500" />
             <div className="text-[10px] font-semibold leading-tight">
-              <p className="font-black text-zinc-800">{me.email}</p>
-              <p className="text-zinc-500">{isSuperAdmin ? "Super Admin" : "Staff"}</p>
+              <p className="font-black text-zinc-800">{me.displayName || me.username}</p>
+              <p className="text-zinc-500">{isSuperAdmin ? "Admin" : "Staff"}</p>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={logout}
+            title="ออกจากระบบ"
+            className="rounded-xl border border-zinc-200 bg-white p-2.5 text-zinc-500 transition hover:bg-red-50 hover:text-red-600"
+          >
+            <LogOut size={14} />
+          </button>
           {isSuperAdmin && (
             <>
               <button

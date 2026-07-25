@@ -1,11 +1,13 @@
 import crypto from "crypto";
 
-// gamedb ไม่มีหน้า login ของตัวเอง — ตรวจ cookie "inblackm_session" ที่ inblackm
-// เซ็นด้วย HMAC ใบเดียวกัน (secret ต้องตรงกับฝั่ง inblackm)
-export const SESSION_COOKIE = "inblackm_session";
+// gamedb signs its own session cookie now — no dependency on inblackm.
+export const SESSION_COOKIE = "gamedb_session";
+
+const IDLE_TIMEOUT_SECONDS = 60 * 60 * 24;
+const MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
 function getSecret() {
-  return process.env.SESSION_SECRET || process.env.OTP_SECRET || "inblackm-dev-secret";
+  return process.env.SESSION_SECRET || process.env.OTP_SECRET || "gamedb-dev-secret";
 }
 
 function safeEqual(a, b) {
@@ -17,6 +19,18 @@ function safeEqual(a, b) {
   } catch {
     return false;
   }
+}
+
+function computeExpiry(iat) {
+  return Math.min(Date.now() + IDLE_TIMEOUT_SECONDS * 1000, iat + MAX_AGE_SECONDS * 1000);
+}
+
+export function signSessionToken(payload) {
+  const iat = payload.iat ?? Date.now();
+  const data = { ...payload, iat, exp: computeExpiry(iat) };
+  const body = Buffer.from(JSON.stringify(data)).toString("base64url");
+  const sig = crypto.createHmac("sha256", getSecret()).update(body).digest("base64url");
+  return `${body}.${sig}`;
 }
 
 export function verifySessionToken(token) {
@@ -35,4 +49,14 @@ export function verifySessionToken(token) {
   } catch {
     return null;
   }
+}
+
+export function getSessionCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: IDLE_TIMEOUT_SECONDS,
+  };
 }
