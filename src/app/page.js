@@ -21,6 +21,7 @@ import {
   Server,
   Trash2,
   User,
+  Users,
   X,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
@@ -255,6 +256,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   const [computedModal, setComputedModal] = useState(false);
   const [connections, setConnections] = useState([]);
   const [connectionsModal, setConnectionsModal] = useState(false);
+  const [usersModal, setUsersModal] = useState(false);
 
   const loadConnections = useCallback(async () => {
     try {
@@ -511,6 +513,13 @@ function GamedbWorkspace({ me, onLoggedOut }) {
           </button>
           {isSuperAdmin && (
             <>
+              <button
+                type="button"
+                onClick={() => setUsersModal(true)}
+                className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
+              >
+                <Users size={14} /> ผู้ใช้
+              </button>
               <button
                 type="button"
                 onClick={() => setConnectionsModal(true)}
@@ -872,6 +881,8 @@ function GamedbWorkspace({ me, onLoggedOut }) {
         />
       )}
 
+      {usersModal && <UsersModal me={me} onClose={() => setUsersModal(false)} />}
+
       {computedModal && result && (
         <ComputedColumnModal
           availableNames={[...new Set(result.columns.map((col) => col.name))]}
@@ -1172,6 +1183,253 @@ function ComputedColumnModal({ availableNames, onClose, onAdd }) {
           >
             <Plus size={13} /> เพิ่มคอลัมน์
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const EMPTY_USER_FORM = { username: "", displayName: "", password: "", role: "staff" };
+
+function UsersModal({ me, onClose }) {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState(EMPTY_USER_FORM);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadUsers = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await apiJson("/api/users", {
+        fallbackError: "โหลดรายชื่อผู้ใช้ไม่สำเร็จ",
+      });
+      setUsers(data.users || []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- setState runs after the fetch resolves
+    loadUsers();
+  }, [loadUsers]);
+
+  const setField = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
+
+  const startCreate = () => {
+    setEditingId(null);
+    setForm(EMPTY_USER_FORM);
+    setError("");
+  };
+
+  const startEdit = (user) => {
+    setEditingId(user.id);
+    setForm({
+      username: user.username,
+      displayName: user.displayName,
+      password: "",
+      role: user.role,
+    });
+    setError("");
+  };
+
+  const save = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      if (editingId) {
+        await apiJson(`/api/users/${editingId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            displayName: form.displayName,
+            role: form.role,
+            password: form.password || undefined,
+          }),
+          fallbackError: "บันทึกผู้ใช้ไม่สำเร็จ",
+        });
+      } else {
+        await apiJson("/api/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(form),
+          fallbackError: "เพิ่มผู้ใช้ไม่สำเร็จ",
+        });
+      }
+      await loadUsers();
+      startCreate();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (user) => {
+    if (!window.confirm(`ลบผู้ใช้ "${user.username}" ?`)) return;
+    setError("");
+    try {
+      await apiJson(`/api/users/${user.id}`, {
+        method: "DELETE",
+        fallbackError: "ลบผู้ใช้ไม่สำเร็จ",
+      });
+      await loadUsers();
+      if (editingId === user.id) startCreate();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const inputClass =
+    "h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
+      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl bg-white p-5 shadow-xl">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-sm font-black">
+            <Users size={15} className="text-red-600" /> จัดการผู้ใช้
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
+            aria-label="ปิด"
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto md:grid-cols-[1fr_1.2fr]">
+          <div className="space-y-1.5">
+            {loading ? (
+              <p className="flex items-center gap-2 px-2 py-4 text-xs font-semibold text-zinc-400">
+                <Loader2 size={14} className="animate-spin" /> กำลังโหลด...
+              </p>
+            ) : (
+              users.map((user) => (
+                <div
+                  key={user.id}
+                  className={`group flex items-center gap-2 rounded-xl border px-3 py-2.5 transition ${
+                    editingId === user.id
+                      ? "border-red-600 bg-red-50"
+                      : "border-zinc-200 hover:bg-zinc-50"
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => startEdit(user)}
+                    className="min-w-0 flex-1 text-left"
+                  >
+                    <p className="truncate text-xs font-black text-zinc-700">
+                      {user.username}
+                      {user.id === me.id ? (
+                        <span className="ml-1.5 rounded bg-zinc-100 px-1.5 py-0.5 text-[9px] font-black text-zinc-500">
+                          คุณ
+                        </span>
+                      ) : null}
+                    </p>
+                    <p className="truncate text-[10px] font-semibold text-zinc-400">
+                      {user.displayName} · {user.role === "admin" ? "Admin" : "Staff"}
+                    </p>
+                  </button>
+                  {user.id !== me.id && (
+                    <button
+                      type="button"
+                      onClick={() => remove(user)}
+                      className="shrink-0 rounded-md p-1 text-zinc-400 opacity-0 transition hover:bg-zinc-200 hover:text-red-600 group-hover:opacity-100"
+                      title="ลบผู้ใช้"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
+            <button
+              type="button"
+              onClick={startCreate}
+              className={`flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed px-3 py-2.5 text-[11px] font-black transition ${
+                editingId === null
+                  ? "border-red-600 text-red-600"
+                  : "border-zinc-300 text-zinc-400 hover:border-zinc-400 hover:text-zinc-600"
+              }`}
+            >
+              <Plus size={12} /> เพิ่มผู้ใช้ใหม่
+            </button>
+          </div>
+
+          <div className="space-y-2.5">
+            <p className="text-[10px] font-black text-zinc-500">
+              {editingId ? `แก้ไขผู้ใช้: ${form.username}` : "เพิ่มผู้ใช้ใหม่"}
+            </p>
+            {!editingId && (
+              <input
+                type="text"
+                value={form.username}
+                onChange={(e) => setField("username", e.target.value)}
+                placeholder="username (a-z, 0-9, _ . - ยาว 3-32 ตัว)"
+                autoComplete="off"
+                className={inputClass}
+              />
+            )}
+            <input
+              type="text"
+              value={form.displayName}
+              onChange={(e) => setField("displayName", e.target.value)}
+              placeholder="ชื่อที่แสดง (ไม่บังคับ)"
+              className={inputClass}
+            />
+            <input
+              type="password"
+              value={form.password}
+              onChange={(e) => setField("password", e.target.value)}
+              placeholder={
+                editingId
+                  ? "รหัสผ่านใหม่ (เว้นว่าง = ไม่เปลี่ยน)"
+                  : "รหัสผ่าน (อย่างน้อย 6 ตัวอักษร)"
+              }
+              autoComplete="new-password"
+              className={inputClass}
+            />
+            <select
+              value={form.role}
+              onChange={(e) => setField("role", e.target.value)}
+              className={inputClass}
+            >
+              <option value="staff">Staff — ดู/รัน query, จัด layout</option>
+              <option value="admin">Admin — จัดการทุกอย่างรวมถึง SQL และผู้ใช้</option>
+            </select>
+
+            {error && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
+                {error}
+              </div>
+            )}
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={save}
+                disabled={
+                  saving ||
+                  (!editingId && (!form.username.trim() || form.password.length < 6))
+                }
+                className="flex items-center gap-1.5 rounded-xl bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
+              >
+                {saving ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <Save size={13} />
+                )}
+                {editingId ? "บันทึกการแก้ไข" : "เพิ่มผู้ใช้"}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
