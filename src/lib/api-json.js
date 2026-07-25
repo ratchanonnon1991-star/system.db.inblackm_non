@@ -7,6 +7,7 @@ export async function apiJson(url, options = {}) {
   if (!res.ok) {
     const err = new Error(data.error || fallbackError);
     err.status = res.status;
+    err.data = data;
     throw err;
   }
   return data;

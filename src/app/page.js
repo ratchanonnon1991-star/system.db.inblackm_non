@@ -142,6 +142,7 @@ export default function GamedbPage() {
 
   if (!me) {
     const loginUrl =
+      meError?.data?.loginUrl ||
       process.env.NEXT_PUBLIC_INBLACKM_ADMIN_URL ||
       "http://localhost:4182/admin/login";
     return (
