@@ -1,5 +1,6 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireAdmin, requireSuperAdmin } from "@/server/auth";
+import { findConnectionById } from "@/server/connections-repository";
 import { insertQuery, listQueries } from "@/server/gamedb-repository";
 import { validateReadOnlySql } from "@/server/gamedb-query-runner";
 
@@ -21,11 +22,19 @@ export async function POST(request) {
     if (!name) return jsonError("กรุณาตั้งชื่อ Query", 400);
     const sqlText = validateReadOnlySql(body.sqlText);
 
+    let connectionId = null;
+    if (body.connectionId) {
+      const connection = await findConnectionById(body.connectionId);
+      if (!connection) return jsonError("ไม่พบฐานข้อมูลที่เลือก", 404);
+      connectionId = connection.id;
+    }
+
     const query = await insertQuery({
       name,
       description: String(body.description || "").trim(),
       sqlText,
       createdBy: admin.email,
+      connectionId,
     });
     return jsonOk({ query }, 201);
   } catch (err) {

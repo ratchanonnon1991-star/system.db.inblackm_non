@@ -1,4 +1,4 @@
-import { getPool } from "@/lib/db";
+import { getPoolForConnection } from "@/lib/db";
 
 export const GAMEDB_MAX_ROWS = 1000;
 const STATEMENT_TIMEOUT_MS = 8000;
@@ -58,9 +58,19 @@ function mapColumnType(dataTypeID) {
   }
 }
 
-export async function runReadOnlyQuery(sqlText) {
+// connection = saved connection with decrypted password, or null for the
+// primary database from .env
+export async function runReadOnlyQuery(sqlText, connection = null) {
   const sql = validateReadOnlySql(sqlText);
-  const client = await getPool().connect();
+  let client;
+  try {
+    client = await getPoolForConnection(connection).connect();
+  } catch (err) {
+    throw createHttpError(
+      `เชื่อมต่อฐานข้อมูล${connection ? ` "${connection.name}"` : "หลัก"}ไม่ได้: ${err.message}`,
+      502
+    );
+  }
   const startedAt = Date.now();
   try {
     await client.query("BEGIN TRANSACTION READ ONLY");

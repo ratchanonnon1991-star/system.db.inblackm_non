@@ -17,6 +17,7 @@ import {
   RotateCcw,
   Save,
   Search,
+  Server,
   Trash2,
   User,
   X,
@@ -187,6 +188,24 @@ function GamedbWorkspace({ me }) {
   const [rowFilter, setRowFilter] = useState("");
   const [editorModal, setEditorModal] = useState(null);
   const [computedModal, setComputedModal] = useState(false);
+  const [connections, setConnections] = useState([]);
+  const [connectionsModal, setConnectionsModal] = useState(false);
+
+  const loadConnections = useCallback(async () => {
+    try {
+      const data = await apiJson("/api/connections", {
+        fallbackError: "โหลดรายการฐานข้อมูลไม่สำเร็จ",
+      });
+      setConnections(data.connections || []);
+    } catch {
+      setConnections([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- setState runs after the fetch resolves
+    loadConnections();
+  }, [loadConnections]);
 
   const selectedQuery = useMemo(
     () => queries.find((query) => query.id === selectedId) || null,
@@ -418,13 +437,22 @@ function GamedbWorkspace({ me }) {
             </div>
           </div>
           {isSuperAdmin && (
-            <button
-              type="button"
-              onClick={() => setEditorModal({ mode: "create" })}
-              className="flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-xs font-black text-white transition hover:bg-red-700"
-            >
-              <Plus size={14} /> เพิ่ม Query
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setConnectionsModal(true)}
+                className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
+              >
+                <Server size={14} /> ฐานข้อมูล ({connections.length + 1})
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditorModal({ mode: "create" })}
+                className="flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-xs font-black text-white transition hover:bg-red-700"
+              >
+                <Plus size={14} /> เพิ่ม Query
+              </button>
+            </>
           )}
         </div>
       </header>
@@ -477,6 +505,15 @@ function GamedbWorkspace({ me }) {
                           }`}
                         >
                           {query.description}
+                        </p>
+                      ) : null}
+                      {query.connectionName ? (
+                        <p
+                          className={`flex items-center gap-1 truncate text-[9px] font-bold ${
+                            isActive ? "text-white/60" : "text-sky-600"
+                          }`}
+                        >
+                          <Server size={9} /> {query.connectionName}
                         </p>
                       ) : null}
                     </button>
@@ -534,6 +571,8 @@ function GamedbWorkspace({ me }) {
                       {displayRows.length.toLocaleString("th-TH")} แถว
                       {rowFilter.trim() ? ` (กรองจาก ${result.rowCount.toLocaleString("th-TH")})` : ""}
                       {" · "}ใช้เวลา {result.durationMs} ms
+                      {" · DB: "}
+                      {selectedQuery.connectionName || "หลัก (inblackm)"}
                       {result.truncated ? " · แสดงสูงสุด 1,000 แถวแรก" : ""}
                     </p>
                   ) : null}
@@ -738,12 +777,24 @@ function GamedbWorkspace({ me }) {
       {editorModal && (
         <QueryEditorModal
           modal={editorModal}
+          connections={connections}
           onClose={() => setEditorModal(null)}
           onSaved={async (savedQuery) => {
             setEditorModal(null);
             await loadQueries();
             setSelectedId(savedQuery.id);
             runQuery(savedQuery.id);
+          }}
+        />
+      )}
+
+      {connectionsModal && (
+        <ConnectionsModal
+          connections={connections}
+          onClose={() => setConnectionsModal(false)}
+          onChanged={async () => {
+            await loadConnections();
+            await loadQueries();
           }}
         />
       )}
@@ -766,13 +817,16 @@ function GamedbWorkspace({ me }) {
   );
 }
 
-function QueryEditorModal({ modal, onClose, onSaved }) {
+function QueryEditorModal({ modal, connections, onClose, onSaved }) {
   const isEdit = modal.mode === "edit";
   const [name, setName] = useState(isEdit ? modal.query.name : "");
   const [description, setDescription] = useState(
     isEdit ? modal.query.description : ""
   );
   const [sqlText, setSqlText] = useState(isEdit ? modal.query.sqlText : "SELECT ");
+  const [connectionId, setConnectionId] = useState(
+    isEdit && modal.query.connectionId ? String(modal.query.connectionId) : ""
+  );
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -786,7 +840,10 @@ function QueryEditorModal({ modal, onClose, onSaved }) {
       const data = await apiJson("/api/queries/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sqlText }),
+        body: JSON.stringify({
+          sqlText,
+          connectionId: connectionId ? Number(connectionId) : null,
+        }),
         fallbackError: "รัน SQL ไม่สำเร็จ",
       });
       setTestResult(data);
@@ -801,7 +858,12 @@ function QueryEditorModal({ modal, onClose, onSaved }) {
     setSaving(true);
     setError("");
     try {
-      const payload = { name, description, sqlText };
+      const payload = {
+        name,
+        description,
+        sqlText,
+        connectionId: connectionId ? Number(connectionId) : null,
+      };
       const data = isEdit
         ? await apiJson(`/api/queries/${modal.query.id}`, {
             method: "PATCH",
@@ -863,6 +925,23 @@ function QueryEditorModal({ modal, onClose, onSaved }) {
               placeholder="สั้น ๆ ว่า Query นี้ดึงอะไร"
               className="h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
             />
+          </div>
+          <div>
+            <label className="mb-1 block text-[10px] font-black text-zinc-500">
+              ฐานข้อมูล
+            </label>
+            <select
+              value={connectionId}
+              onChange={(e) => setConnectionId(e.target.value)}
+              className="h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+            >
+              <option value="">หลัก (inblackm)</option>
+              {connections.map((conn) => (
+                <option key={conn.id} value={conn.id}>
+                  {conn.name} — {conn.host}/{conn.database}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="mb-1 block text-[10px] font-black text-zinc-500">
@@ -1020,6 +1099,298 @@ function ComputedColumnModal({ availableNames, onClose, onAdd }) {
           >
             <Plus size={13} /> เพิ่มคอลัมน์
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const EMPTY_CONNECTION_FORM = {
+  name: "",
+  host: "",
+  port: "5432",
+  database: "",
+  username: "",
+  password: "",
+  ssl: false,
+};
+
+function ConnectionsModal({ connections, onClose, onChanged }) {
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState(EMPTY_CONNECTION_FORM);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState("");
+  const [error, setError] = useState("");
+
+  const setField = (key, value) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    setTestResult("");
+  };
+
+  const startCreate = () => {
+    setEditingId(null);
+    setForm(EMPTY_CONNECTION_FORM);
+    setError("");
+    setTestResult("");
+  };
+
+  const startEdit = (conn) => {
+    setEditingId(conn.id);
+    setForm({
+      name: conn.name,
+      host: conn.host,
+      port: String(conn.port),
+      database: conn.database,
+      username: conn.username,
+      password: "",
+      ssl: conn.ssl,
+    });
+    setError("");
+    setTestResult("");
+  };
+
+  const testConnection = async () => {
+    setTesting(true);
+    setError("");
+    setTestResult("");
+    try {
+      const data = await apiJson("/api/connections/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          connectionId: editingId,
+          ...form,
+          port: Number(form.port || 5432),
+        }),
+        fallbackError: "ทดสอบการเชื่อมต่อไม่สำเร็จ",
+      });
+      setTestResult(`เชื่อมต่อได้: ${data.database} (user ${data.user}) · ${data.version}`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const save = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      const payload = { ...form, port: Number(form.port || 5432) };
+      if (editingId) {
+        await apiJson(`/api/connections/${editingId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          fallbackError: "บันทึกฐานข้อมูลไม่สำเร็จ",
+        });
+      } else {
+        await apiJson("/api/connections", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          fallbackError: "เพิ่มฐานข้อมูลไม่สำเร็จ",
+        });
+      }
+      await onChanged();
+      startCreate();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (conn) => {
+    if (
+      !window.confirm(
+        `ลบฐานข้อมูล "${conn.name}" ? Query ที่ใช้อยู่จะกลับไปใช้ DB หลักแทน`
+      )
+    )
+      return;
+    try {
+      await apiJson(`/api/connections/${conn.id}`, {
+        method: "DELETE",
+        fallbackError: "ลบฐานข้อมูลไม่สำเร็จ",
+      });
+      await onChanged();
+      if (editingId === conn.id) startCreate();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const inputClass =
+    "h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
+      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl bg-white p-5 shadow-xl">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-sm font-black">
+            <Server size={15} className="text-red-600" /> จัดการฐานข้อมูล (PostgreSQL)
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
+            aria-label="ปิด"
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto md:grid-cols-[1fr_1.2fr]">
+          <div className="space-y-1.5">
+            <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5">
+              <p className="text-xs font-black text-zinc-700">หลัก (inblackm)</p>
+              <p className="text-[10px] font-semibold text-zinc-400">
+                จาก .env ของ service — แก้ไข/ลบไม่ได้
+              </p>
+            </div>
+            {connections.map((conn) => (
+              <div
+                key={conn.id}
+                className={`group flex items-center gap-2 rounded-xl border px-3 py-2.5 transition ${
+                  editingId === conn.id
+                    ? "border-red-600 bg-red-50"
+                    : "border-zinc-200 hover:bg-zinc-50"
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => startEdit(conn)}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <p className="truncate text-xs font-black text-zinc-700">{conn.name}</p>
+                  <p className="truncate text-[10px] font-semibold text-zinc-400">
+                    {conn.host}:{conn.port}/{conn.database}
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => remove(conn)}
+                  className="shrink-0 rounded-md p-1 text-zinc-400 opacity-0 transition hover:bg-zinc-200 hover:text-red-600 group-hover:opacity-100"
+                  title="ลบฐานข้อมูล"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={startCreate}
+              className={`flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed px-3 py-2.5 text-[11px] font-black transition ${
+                editingId === null
+                  ? "border-red-600 text-red-600"
+                  : "border-zinc-300 text-zinc-400 hover:border-zinc-400 hover:text-zinc-600"
+              }`}
+            >
+              <Plus size={12} /> เพิ่มฐานข้อมูลใหม่
+            </button>
+          </div>
+
+          <div className="space-y-2.5">
+            <p className="text-[10px] font-black text-zinc-500">
+              {editingId ? "แก้ไขฐานข้อมูล" : "เพิ่มฐานข้อมูลใหม่"}
+            </p>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => setField("name", e.target.value)}
+              placeholder="ชื่อเรียก เช่น PG2 (บอท) หรือ ERP"
+              className={inputClass}
+            />
+            <div className="grid grid-cols-[1fr_90px] gap-2">
+              <input
+                type="text"
+                value={form.host}
+                onChange={(e) => setField("host", e.target.value)}
+                placeholder="host เช่น 127.0.0.1"
+                className={inputClass}
+              />
+              <input
+                type="text"
+                value={form.port}
+                onChange={(e) => setField("port", e.target.value)}
+                placeholder="5432"
+                className={inputClass}
+              />
+            </div>
+            <input
+              type="text"
+              value={form.database}
+              onChange={(e) => setField("database", e.target.value)}
+              placeholder="ชื่อ database"
+              className={inputClass}
+            />
+            <input
+              type="text"
+              value={form.username}
+              onChange={(e) => setField("username", e.target.value)}
+              placeholder="username"
+              className={inputClass}
+            />
+            <input
+              type="password"
+              value={form.password}
+              onChange={(e) => setField("password", e.target.value)}
+              placeholder={
+                editingId ? "รหัสผ่าน (เว้นว่าง = ใช้ตัวเดิม)" : "รหัสผ่าน"
+              }
+              autoComplete="new-password"
+              className={inputClass}
+            />
+            <label className="flex items-center gap-2 text-[11px] font-bold text-zinc-600">
+              <input
+                type="checkbox"
+                checked={form.ssl}
+                onChange={(e) => setField("ssl", e.target.checked)}
+              />
+              ใช้ SSL
+            </label>
+
+            {error && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
+                {error}
+              </div>
+            )}
+            {testResult && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-700">
+                {testResult}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={testConnection}
+                disabled={testing || !form.host.trim() || !form.database.trim() || !form.username.trim()}
+                className="flex items-center gap-1.5 rounded-xl border border-zinc-200 px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-50"
+              >
+                {testing ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <Play size={13} />
+                )}
+                ทดสอบเชื่อมต่อ
+              </button>
+              <button
+                type="button"
+                onClick={save}
+                disabled={saving || !form.name.trim() || !form.host.trim() || !form.database.trim() || !form.username.trim()}
+                className="flex items-center gap-1.5 rounded-xl bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
+              >
+                {saving ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <Save size={13} />
+                )}
+                {editingId ? "บันทึกการแก้ไข" : "เพิ่มฐานข้อมูล"}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

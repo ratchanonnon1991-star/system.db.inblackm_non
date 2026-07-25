@@ -59,6 +59,8 @@ function mapRow(row) {
     layout: row.layout || {},
     sortOrder: row.sort_order,
     createdBy: row.created_by || "",
+    connectionId: row.connection_id ?? null,
+    connectionName: row.connection_name || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -82,6 +84,27 @@ async function ensureSchema() {
           created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
+      `);
+
+      // Same DDL as connections-repository so either module can run first;
+      // the FK below needs this table to exist.
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS gamedb_connections (
+          id           SERIAL PRIMARY KEY,
+          name         VARCHAR(255) NOT NULL,
+          host         VARCHAR(255) NOT NULL,
+          port         INT NOT NULL DEFAULT 5432,
+          database     VARCHAR(255) NOT NULL,
+          username     VARCHAR(255) NOT NULL,
+          password_enc TEXT,
+          ssl          BOOLEAN NOT NULL DEFAULT FALSE,
+          created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await client.query(`
+        ALTER TABLE gamedb_queries
+        ADD COLUMN IF NOT EXISTS connection_id INT REFERENCES gamedb_connections(id) ON DELETE SET NULL
       `);
 
       const existing = await client.query(
@@ -108,39 +131,41 @@ async function ensureSchema() {
   return schemaReady;
 }
 
+const SELECT_QUERY = `
+  SELECT q.id, q.name, q.description, q.sql_text, q.layout, q.sort_order,
+         q.created_by, q.connection_id, c.name AS connection_name,
+         q.created_at, q.updated_at
+  FROM gamedb_queries q
+  LEFT JOIN gamedb_connections c ON c.id = q.connection_id
+`;
+
 export async function listQueries() {
   await ensureSchema();
   const result = await getPool().query(
-    `SELECT id, name, description, sql_text, layout, sort_order, created_by, created_at, updated_at
-     FROM gamedb_queries
-     ORDER BY sort_order ASC, id ASC`
+    `${SELECT_QUERY} ORDER BY q.sort_order ASC, q.id ASC`
   );
   return result.rows.map(mapRow);
 }
 
 export async function findQueryById(id) {
   await ensureSchema();
-  const result = await getPool().query(
-    `SELECT id, name, description, sql_text, layout, sort_order, created_by, created_at, updated_at
-     FROM gamedb_queries WHERE id = $1`,
-    [id]
-  );
+  const result = await getPool().query(`${SELECT_QUERY} WHERE q.id = $1`, [id]);
   return mapRow(result.rows[0]);
 }
 
-export async function insertQuery({ name, description, sqlText, createdBy }) {
+export async function insertQuery({ name, description, sqlText, createdBy, connectionId }) {
   await ensureSchema();
   const result = await getPool().query(
-    `INSERT INTO gamedb_queries (name, description, sql_text, sort_order, created_by)
+    `INSERT INTO gamedb_queries (name, description, sql_text, sort_order, created_by, connection_id)
      VALUES (
        $1, $2, $3,
        COALESCE((SELECT MAX(sort_order) + 1 FROM gamedb_queries), 0),
-       $4
+       $4, $5
      )
-     RETURNING id, name, description, sql_text, layout, sort_order, created_by, created_at, updated_at`,
-    [name, description || "", sqlText, createdBy || ""]
+     RETURNING id`,
+    [name, description || "", sqlText, createdBy || "", connectionId ?? null]
   );
-  return mapRow(result.rows[0]);
+  return findQueryById(result.rows[0].id);
 }
 
 export async function updateQuery(id, fields) {
@@ -169,19 +194,21 @@ export async function updateQuery(id, fields) {
     sets.push(`sort_order = $${i++}`);
     values.push(fields.sortOrder);
   }
+  if (fields.connectionId !== undefined) {
+    sets.push(`connection_id = $${i++}`);
+    values.push(fields.connectionId ?? null);
+  }
 
   if (!sets.length) return findQueryById(id);
 
   sets.push(`updated_at = NOW()`);
   values.push(id);
 
-  const result = await getPool().query(
-    `UPDATE gamedb_queries SET ${sets.join(", ")}
-     WHERE id = $${i}
-     RETURNING id, name, description, sql_text, layout, sort_order, created_by, created_at, updated_at`,
+  await getPool().query(
+    `UPDATE gamedb_queries SET ${sets.join(", ")} WHERE id = $${i}`,
     values
   );
-  return mapRow(result.rows[0]);
+  return findQueryById(id);
 }
 
 export async function deleteQuery(id) {

@@ -3,7 +3,8 @@
 Service ตาราง Query สำหรับทีมงาน INBLACKM — เลือก query ที่บันทึกไว้เพื่อดึงข้อมูลจากฐานข้อมูลกลาง แสดงผลเป็นตารางที่จัดคอลัมน์เองได้ (เรียงลำดับ, ซ่อน, เปลี่ยนชื่อ, เพิ่มคอลัมน์สูตร `+ - * /`) เตรียมไว้สำหรับโดเมน `gamedb.inblackm.com`
 
 - Next.js 16 + Tailwind 4, พอร์ต **4183**
-- ใช้ PostgreSQL กลางตัวเดียวกับ storefront `inblackm` (ตารางของ service นี้มีแค่ `gamedb_queries`)
+- ใช้ PostgreSQL กลางตัวเดียวกับ storefront `inblackm` เป็น DB หลัก (ตารางของ service นี้: `gamedb_queries`, `gamedb_connections`)
+- **ต่อหลายฐานข้อมูลได้** — Super Admin เพิ่ม connection PostgreSQL อื่นผ่านปุ่ม "ฐานข้อมูล" แล้วเลือกได้ต่อ query (รหัสผ่านถูกเข้ารหัส AES-256-GCM ด้วย `GAMEDB_ENC_KEY` ก่อนเก็บ)
 - ไม่มีหน้า login ของตัวเอง — ตรวจ cookie `inblackm_session` ที่เซ็นโดย inblackm
 
 ## เริ่มใช้งาน (dev)
@@ -20,6 +21,7 @@ npm run dev            # http://localhost:4183
 |---|---|
 | `PG_HOST` / `PG_PORT` / `PG_DATABASE` / `PG_USER` / `PG_PASSWORD` | ชี้ DB เดียวกับ `inblackm/.env` |
 | `SESSION_SECRET` | **ต้องตรงกับ secret ที่ inblackm ใช้เซ็น session** (ปัจจุบัน inblackm ไม่ตั้ง `SESSION_SECRET` จึง fallback ไปใช้ `OTP_SECRET` — ให้ copy ค่า `OTP_SECRET` ของ inblackm มาใส่) |
+| `GAMEDB_ENC_KEY` | คีย์เข้ารหัสรหัสผ่าน connection (string อะไรก็ได้ ตั้งแล้วห้ามเปลี่ยน ไม่งั้น connection เดิมถอดรหัสไม่ได้) |
 | `NEXT_PUBLIC_INBLACKM_ADMIN_URL` | ลิงก์หน้า admin login ของ inblackm (dev: `http://localhost:4182/admin/login`) |
 
 การ login บน dev: เข้าสู่ระบบ admin ที่ `localhost:4182/admin/login` ก่อน แล้วเปิด `localhost:4183` — cookie ของ `localhost` แชร์ข้ามพอร์ตอัตโนมัติ

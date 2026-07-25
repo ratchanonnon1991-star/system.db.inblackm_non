@@ -1,5 +1,6 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireSuperAdmin } from "@/server/auth";
+import { findConnectionById } from "@/server/connections-repository";
 import {
   deleteQuery,
   findQueryById,
@@ -26,6 +27,15 @@ export async function PATCH(request, { params }) {
     }
     if (body.sqlText !== undefined) {
       fields.sqlText = validateReadOnlySql(body.sqlText);
+    }
+    if (body.connectionId !== undefined) {
+      if (body.connectionId === null || body.connectionId === "") {
+        fields.connectionId = null;
+      } else {
+        const connection = await findConnectionById(body.connectionId);
+        if (!connection) return jsonError("ไม่พบฐานข้อมูลที่เลือก", 404);
+        fields.connectionId = connection.id;
+      }
     }
 
     const query = await updateQuery(id, fields);
