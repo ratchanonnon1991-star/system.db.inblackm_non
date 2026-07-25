@@ -55,10 +55,6 @@ jobs:
             elif [ -s "$HOME/.nvm/nvm.sh" ]; then
               . "$HOME/.nvm/nvm.sh"
             fi
-            nvm install 22
-            nvm use 22
-            npm ci
             npm run build
-            command -v pm2 >/dev/null 2>&1 || npm install -g pm2
             pm2 startOrRestart ecosystem.config.cjs --only system.db.inblackm --update-env
             pm2 save
