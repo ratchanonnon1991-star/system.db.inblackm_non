@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: deploy-system.db.inblackm
+  group: deploy-system-db-inblackm
   cancel-in-progress: false
 
 jobs:
@@ -15,17 +15,25 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
       - name: Setup Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22"
           cache: npm
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run build
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
 
   deploy:
     name: Deploy system.db.inblackm
@@ -33,6 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+
     steps:
       - name: Run deploy script on server
         uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
@@ -43,18 +52,37 @@ jobs:
           password: ${{ secrets.STAGING_SSH_PASSWORD }}
           script: |
             set -e
-            cd /www/wwwroot/system.db.inblackm
-            git config --global --add safe.directory /www/wwwroot/system.db.inblackm
-            git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/InblackM/system.db.inblackm.git
-            git fetch -a
-            git checkout main
-            git pull origin main
+
+            APP_DIR="/www/wwwroot/system.db.inblackm"
+            cd "$APP_DIR"
+
+            git config --global --add safe.directory "$APP_DIR"
+
+            AUTH_REMOTE="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/InblackM/system.db.inblackm.git"
+
+            git fetch --prune "$AUTH_REMOTE" main
+            git checkout -f main
+            git reset --hard FETCH_HEAD
+
             export NVM_DIR="${NVM_DIR:-/www/server/nvm}"
+
             if [ -s "$NVM_DIR/nvm.sh" ]; then
               . "$NVM_DIR/nvm.sh"
             elif [ -s "$HOME/.nvm/nvm.sh" ]; then
               . "$HOME/.nvm/nvm.sh"
             fi
+
+            nvm install 22
+            nvm use 22
+
+            node --version
+            npm --version
+
+            npm ci
             npm run build
-            pm2 startOrRestart ecosystem.config.cjs --only system.db.inblackm --update-env
+
+            pm2 startOrRestart ecosystem.config.cjs \
+              --only system.db.inblackm \
+              --update-env
+
             pm2 save
