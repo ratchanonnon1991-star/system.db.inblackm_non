@@ -1,7 +1,7 @@
 module.exports = {
   apps: [
     {
-      name: "gamedb",
+      name: "system.db.inblackm",
       script: "node_modules/next/dist/bin/next",
       args: "start --port 5589",
       cwd: __dirname,

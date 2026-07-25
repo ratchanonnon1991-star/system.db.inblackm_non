@@ -6,12 +6,12 @@
   "scripts": {
     "dev": "next dev --port 4183",
     "build": "next build",
-    "start": "next start --port 4183",
+    "start": "next start --port 5589",
     "lint": "eslint",
     "pm2:start": "pm2 start ecosystem.config.cjs",
-    "pm2:stop": "pm2 stop gamedb",
-    "pm2:restart": "pm2 restart gamedb",
-    "pm2:logs": "pm2 logs gamedb"
+    "pm2:stop": "pm2 stop system.db.inblackm",
+    "pm2:restart": "pm2 restart system.db.inblackm",
+    "pm2:logs": "pm2 logs system.db.inblackm"
   },
   "dependencies": {
     "lucide-react": "^1.18.0",
