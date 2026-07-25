@@ -54,15 +54,25 @@ jobs:
             set -e
 
             APP_DIR="/www/wwwroot/system.db.inblackm"
+            mkdir -p "$APP_DIR"
             cd "$APP_DIR"
 
             git config --global --add safe.directory "$APP_DIR"
 
             AUTH_REMOTE="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/InblackM/system.db.inblackm.git"
 
+            # First deploy: the folder exists but was never cloned.
+            if [ ! -d .git ]; then
+              git init -b main
+            fi
+
             git fetch --prune "$AUTH_REMOTE" main
-            git checkout -f main
-            git reset --hard FETCH_HEAD
+            git checkout -f -B main FETCH_HEAD
+
+            if [ ! -f .env ]; then
+              echo "ERROR: $APP_DIR/.env not found — วางไฟล์ .env บนเซิร์ฟเวอร์ก่อน (ดู .env.example)"
+              exit 1
+            fi
 
             export NVM_DIR="${NVM_DIR:-/www/server/nvm}"
 
