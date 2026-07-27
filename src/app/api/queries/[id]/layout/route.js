@@ -9,10 +9,20 @@ function sanitizeStringArray(value) {
 }
 
 // Layout shape: { order: [name], hidden: [name], labels: {name: label},
-// computed: [{ key, label, formula }] }. Cosmetic only, so any admin can save.
+// widths: {name: px}, computed: [{ key, label, formula }] }. Cosmetic only, so
+// any admin can save.
 function sanitizeLayout(raw) {
   const layout = raw && typeof raw === "object" ? raw : {};
   const labels = {};
+  const widths = {};
+  if (layout.widths && typeof layout.widths === "object") {
+    for (const [key, value] of Object.entries(layout.widths).slice(0, 200)) {
+      const num = Number(value);
+      if (typeof key === "string" && Number.isFinite(num) && num > 0) {
+        widths[key.slice(0, 200)] = Math.round(Math.min(900, Math.max(40, num)));
+      }
+    }
+  }
   if (layout.labels && typeof layout.labels === "object") {
     for (const [key, label] of Object.entries(layout.labels)) {
       if (typeof label === "string" && label.trim()) {
@@ -40,6 +50,7 @@ function sanitizeLayout(raw) {
     order: sanitizeStringArray(layout.order),
     hidden: sanitizeStringArray(layout.hidden),
     labels,
+    widths,
     computed,
   };
 }
