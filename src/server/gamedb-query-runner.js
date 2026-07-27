@@ -1,4 +1,5 @@
 import { getPoolForConnection } from "@/lib/db";
+import { bindSqlParams } from "@/lib/gamedb-sql-params";
 
 export const GAMEDB_MAX_ROWS = 1000;
 const STATEMENT_TIMEOUT_MS = 8000;
@@ -59,9 +60,16 @@ function mapColumnType(dataTypeID) {
 }
 
 // connection = saved connection with decrypted password, or null for the
-// primary database from .env
-export async function runReadOnlyQuery(sqlText, connection = null) {
+// primary database from .env; params fills the query's :placeholders
+export async function runReadOnlyQuery(sqlText, connection = null, params = {}) {
   const sql = validateReadOnlySql(sqlText);
+  const bound = bindSqlParams(sql, params);
+  if (bound.missing.length > 0) {
+    throw createHttpError(
+      `กรุณาใส่ค่าพารามิเตอร์: ${bound.missing.join(", ")}`,
+      400
+    );
+  }
   let client;
   try {
     client = await getPoolForConnection(connection).connect();
@@ -78,7 +86,8 @@ export async function runReadOnlyQuery(sqlText, connection = null) {
     const result = await client.query({
       // rowMode array keeps duplicate column names intact and aligns rows
       // with the fields list by position.
-      text: `SELECT * FROM (${sql}) AS gamedb_result LIMIT ${GAMEDB_MAX_ROWS + 1}`,
+      text: `SELECT * FROM (${bound.text}) AS gamedb_result LIMIT ${GAMEDB_MAX_ROWS + 1}`,
+      values: bound.values,
       rowMode: "array",
     });
     await client.query("ROLLBACK");

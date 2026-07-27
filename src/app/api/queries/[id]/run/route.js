@@ -18,7 +18,16 @@ export async function POST(request, { params }) {
       return jsonError("ฐานข้อมูลของ Query นี้ถูกลบไปแล้ว กรุณาแก้ไข Query", 409);
     }
 
-    const result = await runReadOnlyQuery(query.sqlText, connection);
+    // Body is optional: a query without :placeholders is run with no values.
+    let values = {};
+    try {
+      const body = await request.json();
+      if (body?.params && typeof body.params === "object") values = body.params;
+    } catch {
+      // no body — nothing to bind
+    }
+
+    const result = await runReadOnlyQuery(query.sqlText, connection, values);
     return jsonOk({ ...result, queryId: query.id, layout: query.layout });
   } catch (err) {
     return handleApiError(err, "ไม่สามารถรัน Query ได้");
