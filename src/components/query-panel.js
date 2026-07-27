@@ -16,6 +16,7 @@ import {
   ChevronUp,
   Eye,
   EyeOff,
+  GripVertical,
   Loader2,
   Maximize2,
   Minimize2,
@@ -45,18 +46,46 @@ import { ComputedColumnModal } from "@/components/gamedb-modals";
 const iconButtonClass =
   "flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700 disabled:opacity-40";
 
+const RESIZE_HINT = "ลากเพื่อปรับขนาด · ดับเบิลคลิกเพื่อรีเซ็ต";
+
+// Edges first, corners last: same z-index, so the corners win the hit test
+// where they overlap. The bottom edge is the visible grip bar in the panel
+// body, so it is not repeated here.
+const FRAME_HANDLES = [
+  { key: "w", dirX: -1, dirY: 0, className: "left-0 top-0 h-full w-1.5 hover:bg-red-500/20", title: RESIZE_HINT },
+  { key: "e", dirX: 1, dirY: 0, className: "right-0 top-0 h-full w-1.5 hover:bg-red-500/20", title: RESIZE_HINT },
+  { key: "n", dirX: 0, dirY: -1, className: "left-0 top-0 h-1.5 w-full hover:bg-red-500/20", title: RESIZE_HINT },
+  { key: "nw", dirX: -1, dirY: -1, className: "left-0 top-0 h-4 w-4", title: RESIZE_HINT },
+  { key: "ne", dirX: 1, dirY: -1, className: "right-0 top-0 h-4 w-4", title: RESIZE_HINT },
+  { key: "sw", dirX: -1, dirY: 1, className: "bottom-0 left-0 h-4 w-4", title: RESIZE_HINT },
+  { key: "se", dirX: 1, dirY: 1, className: "bottom-0 right-0 h-4 w-4", title: RESIZE_HINT },
+];
+
+function frameCursor(dirX, dirY) {
+  if (!dirY) return "col-resize";
+  if (!dirX) return "row-resize";
+  return dirX === dirY ? "nwse-resize" : "nesw-resize";
+}
+
 export default function QueryPanel({
   query,
   panel,
   canManage,
   canMoveUp,
   canMoveDown,
+  isFullWidth,
+  draggingQueryId,
   onMove,
   onClose,
-  onToggleSpan,
+  onToggleFullWidth,
   onToggleCollapse,
   onHeightChange,
   onResetHeight,
+  onWidthChange,
+  onResetWidth,
+  onDragStart,
+  onDragEnd,
+  onDropPanel,
   onEditQuery,
 }) {
   const [result, setResult] = useState(null);
@@ -232,21 +261,46 @@ export default function QueryPanel({
     };
   }, [resizing, setColumnWidth]);
 
-  // Panel height drag — the height itself lives in the parent so it can be
-  // persisted with the rest of the workspace.
-  const [heightDrag, setHeightDrag] = useState(null);
+  // Panel frame drag — any edge or corner. dirX/dirY say which way the pointer
+  // has to travel to make the panel bigger, so the left edge is dirX -1 and the
+  // right edge dirX 1. Size lives in the parent so it can be persisted.
+  const sectionRef = useRef(null);
+  const [frameDrag, setFrameDrag] = useState(null);
+
+  const startFrameResize = (event, dirX, dirY) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setFrameDrag({
+      dirX,
+      dirY,
+      startX: event.clientX,
+      startY: event.clientY,
+      startWidth: sectionRef.current?.getBoundingClientRect().width || 0,
+      startHeight: panel.height,
+      cursor: frameCursor(dirX, dirY),
+    });
+  };
 
   useEffect(() => {
-    if (!heightDrag) return undefined;
+    if (!frameDrag) return undefined;
     const move = (event) => {
-      onHeightChange(heightDrag.startHeight + (event.clientY - heightDrag.startY));
+      if (frameDrag.dirX) {
+        onWidthChange(
+          frameDrag.startWidth + frameDrag.dirX * (event.clientX - frameDrag.startX)
+        );
+      }
+      if (frameDrag.dirY) {
+        onHeightChange(
+          frameDrag.startHeight + frameDrag.dirY * (event.clientY - frameDrag.startY)
+        );
+      }
     };
-    const stop = () => setHeightDrag(null);
+    const stop = () => setFrameDrag(null);
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", stop);
     window.addEventListener("pointercancel", stop);
     document.body.style.userSelect = "none";
-    document.body.style.cursor = "row-resize";
+    document.body.style.cursor = frameDrag.cursor;
     return () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", stop);
@@ -254,7 +308,16 @@ export default function QueryPanel({
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
     };
-  }, [heightDrag, onHeightChange]);
+  }, [frameDrag, onWidthChange, onHeightChange]);
+
+  const resetFrame = (dirX, dirY) => {
+    if (dirX) onResetWidth();
+    if (dirY) onResetHeight();
+  };
+
+  const [dropTarget, setDropTarget] = useState(false);
+  const isDragSource = draggingQueryId === query.id;
+  const canDrop = draggingQueryId != null && !isDragSource;
 
   const moveColumn = (colId, direction) => {
     const ids = displayColumns.map((col) => col.id);
@@ -327,11 +390,47 @@ export default function QueryPanel({
 
   return (
     <section
-      className={`flex min-w-0 flex-col rounded-2xl border border-zinc-200 bg-white ${
-        panel.span === 2 ? "xl:col-span-2" : ""
-      }`}
+      ref={sectionRef}
+      style={
+        panel.width
+          ? { width: panel.width, flex: "0 0 auto" }
+          : { flex: "1 1 480px" }
+      }
+      onDragOver={(event) => {
+        if (!canDrop) return;
+        event.preventDefault();
+        setDropTarget(true);
+      }}
+      onDragLeave={() => setDropTarget(false)}
+      onDrop={(event) => {
+        if (!canDrop) return;
+        event.preventDefault();
+        setDropTarget(false);
+        onDropPanel();
+      }}
+      className={`relative flex min-w-0 flex-col rounded-2xl border bg-white transition ${
+        dropTarget && canDrop
+          ? "border-red-600 ring-2 ring-red-500/40"
+          : "border-zinc-200"
+      } ${isDragSource ? "opacity-50" : ""}`}
     >
       <div className="flex flex-wrap items-center gap-2 border-b border-zinc-100 p-3">
+        <span
+          draggable
+          onDragStart={(event) => {
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData("text/plain", String(query.id));
+            onDragStart();
+          }}
+          onDragEnd={() => {
+            setDropTarget(false);
+            onDragEnd();
+          }}
+          className="cursor-grab rounded-lg p-1 text-zinc-300 transition hover:bg-zinc-100 hover:text-zinc-600 active:cursor-grabbing"
+          title="ลากเพื่อสลับตำแหน่งกับตารางอื่น"
+        >
+          <GripVertical size={14} />
+        </span>
         <button
           type="button"
           onClick={onToggleCollapse}
@@ -418,11 +517,11 @@ export default function QueryPanel({
         </button>
         <button
           type="button"
-          onClick={onToggleSpan}
+          onClick={onToggleFullWidth}
           className={iconButtonClass}
-          title={panel.span === 2 ? "ย่อเหลือครึ่งจอ" : "ขยายเต็มความกว้าง"}
+          title={isFullWidth ? "คืนความกว้างอัตโนมัติ" : "ขยายเต็มความกว้าง"}
         >
-          {panel.span === 2 ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+          {isFullWidth ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
         </button>
         <button
           type="button"
@@ -650,9 +749,7 @@ export default function QueryPanel({
               </div>
 
               <div
-                onPointerDown={(event) =>
-                  setHeightDrag({ startY: event.clientY, startHeight: panel.height })
-                }
+                onPointerDown={(event) => startFrameResize(event, 0, 1)}
                 onDoubleClick={onResetHeight}
                 className="group flex h-3.5 shrink-0 cursor-row-resize touch-none items-center justify-center rounded-b-2xl border-t border-zinc-100 bg-zinc-50 transition hover:bg-zinc-100"
                 title="ลากเพื่อปรับความสูงตาราง · ดับเบิลคลิกเพื่อรีเซ็ต"
@@ -663,6 +760,19 @@ export default function QueryPanel({
           ) : null}
         </>
       )}
+
+      {FRAME_HANDLES.filter(
+        (handle) => !panel.collapsed || handle.dirY === 0
+      ).map((handle) => (
+        <span
+          key={handle.key}
+          onPointerDown={(event) => startFrameResize(event, handle.dirX, handle.dirY)}
+          onDoubleClick={() => resetFrame(handle.dirX, handle.dirY)}
+          className={`absolute z-20 touch-none ${handle.className}`}
+          style={{ cursor: frameCursor(handle.dirX, handle.dirY) }}
+          title={handle.title}
+        />
+      ))}
 
       {computedModal && result && (
         <ComputedColumnModal

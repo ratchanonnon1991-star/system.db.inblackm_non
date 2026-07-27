@@ -135,6 +135,7 @@ const WORKSPACE_STORAGE_KEY = "gamedb.workspace.v1";
 const DEFAULT_PANEL_HEIGHT = 420;
 const MIN_PANEL_HEIGHT = 140;
 const MAX_PANEL_HEIGHT = 1600;
+const MIN_PANEL_WIDTH = 280;
 
 function clampPanelHeight(value) {
   const num = Number(value);
@@ -142,10 +143,19 @@ function clampPanelHeight(value) {
   return Math.round(Math.min(MAX_PANEL_HEIGHT, Math.max(MIN_PANEL_HEIGHT, num)));
 }
 
+// width null = let the panel flex to fill its row, which is the default and
+// what "รีเซ็ต" goes back to.
+function clampPanelWidth(value, containerWidth) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  const max = containerWidth || MAX_PANEL_HEIGHT * 2;
+  return Math.round(Math.min(max, Math.max(MIN_PANEL_WIDTH, num)));
+}
+
 function makePanel(queryId) {
   return {
     queryId,
-    span: 1,
+    width: null,
     height: DEFAULT_PANEL_HEIGHT,
     collapsed: false,
   };
@@ -160,7 +170,7 @@ function readStoredPanels() {
       .filter((item) => item && Number.isFinite(Number(item.queryId)))
       .map((item) => ({
         queryId: Number(item.queryId),
-        span: item.span === 2 ? 2 : 1,
+        width: clampPanelWidth(item.width, 0),
         height: clampPanelHeight(item.height),
         collapsed: Boolean(item.collapsed),
       }));
@@ -188,6 +198,9 @@ function GamedbWorkspace({ me, onLoggedOut }) {
 
   const [panels, setPanels] = useState([]);
   const hydrated = useRef(false);
+  const panelsRef = useRef(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const [draggingQueryId, setDraggingQueryId] = useState(null);
 
   const [editorModal, setEditorModal] = useState(null);
   const [connections, setConnections] = useState([]);
@@ -251,6 +264,42 @@ function GamedbWorkspace({ me, onLoggedOut }) {
     }
   }, [panels]);
 
+  const measureContainer = useCallback(() => {
+    return Math.round(panelsRef.current?.getBoundingClientRect().width || 0);
+  }, []);
+
+  // Panels sized by hand are px-wide, so keep them inside the row when the
+  // window (or the sidebar) changes width. ResizeObserver catches sidebar and
+  // zoom changes, but it only delivers while the page is being rendered, so
+  // measure directly as well instead of leaving the width unknown.
+  useEffect(() => {
+    const measure = () => {
+      const width = measureContainer();
+      if (!width) return;
+      setContainerWidth(width);
+      setPanels((prev) =>
+        prev.some((panel) => panel.width && panel.width > width)
+          ? prev.map((panel) =>
+              panel.width && panel.width > width ? { ...panel, width } : panel
+            )
+          : prev
+      );
+    };
+    measure();
+    // The first pass can land before the layout settles, so take another look
+    // on the next frame and whenever the set of open panels changes.
+    const raf = requestAnimationFrame(measure);
+    window.addEventListener("resize", measure);
+    const observer =
+      typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    if (observer && panelsRef.current) observer.observe(panelsRef.current);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", measure);
+      observer?.disconnect();
+    };
+  }, [measureContainer, panels.length]);
+
   const openIds = useMemo(
     () => new Set(panels.map((panel) => panel.queryId)),
     [panels]
@@ -281,6 +330,17 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       if (from === -1 || to < 0 || to >= prev.length) return prev;
       const next = [...prev];
       [next[from], next[to]] = [next[to], next[from]];
+      return next;
+    });
+  };
+
+  const swapPanels = (queryIdA, queryIdB) => {
+    setPanels((prev) => {
+      const a = prev.findIndex((panel) => panel.queryId === queryIdA);
+      const b = prev.findIndex((panel) => panel.queryId === queryIdB);
+      if (a === -1 || b === -1 || a === b) return prev;
+      const next = [...prev];
+      [next[a], next[b]] = [next[b], next[a]];
       return next;
     });
   };
@@ -339,7 +399,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             </span>
           </h1>
           <p className="mt-1 text-xs font-semibold text-zinc-500">
-            เลือกได้หลาย Query พร้อมกัน — แต่ละตารางย่อ/ขยาย ปรับความกว้างคอลัมน์ และเพิ่มคอลัมน์สูตรได้เอง
+            เลือกได้หลาย Query พร้อมกัน — ลากขอบตารางเพื่อขยายทุกด้าน ลากที่จุดจับเพื่อสลับตำแหน่ง และเพิ่มคอลัมน์สูตรได้เอง
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -509,7 +569,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
           )}
         </aside>
 
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1" ref={panelsRef}>
           {openPanels.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-zinc-300 bg-white py-24 text-center">
               <LayoutGrid size={22} className="text-zinc-300" />
@@ -519,9 +579,13 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <div className="flex flex-wrap items-start gap-4">
               {openPanels.map((panel, index) => {
                 const query = queryById.get(panel.queryId);
+                const isFullWidth =
+                  panel.width != null &&
+                  containerWidth > 0 &&
+                  panel.width >= containerWidth - 8;
                 return (
                   <QueryPanel
                     key={`${panel.queryId}:${query.updatedAt}`}
@@ -530,11 +594,13 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                     canManage={isSuperAdmin}
                     canMoveUp={index > 0}
                     canMoveDown={index < openPanels.length - 1}
+                    isFullWidth={isFullWidth}
+                    draggingQueryId={draggingQueryId}
                     onMove={(direction) => movePanel(panel.queryId, direction)}
                     onClose={() => closePanel(panel.queryId)}
-                    onToggleSpan={() =>
-                      updatePanel(panel.queryId, (prev) => ({
-                        span: prev.span === 2 ? 1 : 2,
+                    onToggleFullWidth={() =>
+                      updatePanel(panel.queryId, () => ({
+                        width: isFullWidth ? null : measureContainer() || null,
                       }))
                     }
                     onToggleCollapse={() =>
@@ -552,6 +618,20 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                         height: DEFAULT_PANEL_HEIGHT,
                       }))
                     }
+                    onWidthChange={(width) =>
+                      updatePanel(panel.queryId, () => ({
+                        width: clampPanelWidth(width, containerWidth),
+                      }))
+                    }
+                    onResetWidth={() =>
+                      updatePanel(panel.queryId, () => ({ width: null }))
+                    }
+                    onDragStart={() => setDraggingQueryId(panel.queryId)}
+                    onDragEnd={() => setDraggingQueryId(null)}
+                    onDropPanel={() => {
+                      swapPanels(draggingQueryId, panel.queryId);
+                      setDraggingQueryId(null);
+                    }}
                     onEditQuery={() => setEditorModal({ mode: "edit", query })}
                   />
                 );
