@@ -102,10 +102,33 @@ async function ensureSchema() {
           updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
-      await client.query(`
-        ALTER TABLE gamedb_queries
-        ADD COLUMN IF NOT EXISTS connection_id INT REFERENCES gamedb_connections(id) ON DELETE SET NULL
+      // Postgres checks table ownership before it evaluates IF NOT EXISTS, so
+      // an ALTER on every boot fails with 42501 whenever the app connects as a
+      // role that only holds DML grants. Look the column up first and touch the
+      // table only when the migration really has to run.
+      const hasConnectionId = await client.query(`
+        SELECT 1
+        FROM pg_attribute
+        WHERE attrelid = to_regclass('gamedb_queries')
+          AND attname = 'connection_id'
+          AND NOT attisdropped
       `);
+      if (hasConnectionId.rowCount === 0) {
+        try {
+          await client.query(`
+            ALTER TABLE gamedb_queries
+            ADD COLUMN IF NOT EXISTS connection_id INT REFERENCES gamedb_connections(id) ON DELETE SET NULL
+          `);
+        } catch (err) {
+          if (err?.code === "42501") {
+            throw new Error(
+              "ตาราง gamedb_queries ยังไม่มีคอลัมน์ connection_id และ user ที่ service ใช้อยู่ไม่ได้เป็นเจ้าของตาราง " +
+                "ให้เจ้าของตารางรัน: ALTER TABLE gamedb_queries ADD COLUMN connection_id INT REFERENCES gamedb_connections(id) ON DELETE SET NULL;"
+            );
+          }
+          throw err;
+        }
+      }
 
       const existing = await client.query(
         `SELECT COUNT(*)::int AS count FROM gamedb_queries`
