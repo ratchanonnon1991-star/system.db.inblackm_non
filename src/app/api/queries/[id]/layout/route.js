@@ -2,6 +2,7 @@ import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireAdmin } from "@/server/auth";
 import { findQueryById, updateQuery } from "@/server/gamedb-repository";
 import {
+  normalizeMerge,
   PARAM_TYPES,
   REFRESH_CHOICES,
   RULE_OPS,
@@ -121,6 +122,9 @@ function sanitizeLayout(raw) {
           dir: layout.sort.dir === "desc" ? "desc" : "asc",
         }
       : null;
+  // Merge only names another saved query and its columns; the join itself runs
+  // in the browser, so nothing here reaches SQL.
+  const merge = normalizeMerge(layout.merge);
 
   return {
     order: sanitizeStringArray(layout.order),
@@ -134,6 +138,7 @@ function sanitizeLayout(raw) {
     summary,
     chart,
     sort,
+    merge,
     refreshSeconds: REFRESH_CHOICES.includes(Number(layout.refreshSeconds))
       ? Number(layout.refreshSeconds)
       : 0,

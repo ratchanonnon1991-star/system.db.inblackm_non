@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ChartColumn,
+  Combine,
+  Loader2,
   Palette,
   Plus,
   Save,
@@ -11,6 +13,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { apiJson } from "@/lib/api-json";
 import { extractSqlParams } from "@/lib/gamedb-sql-params";
 import {
   PARAM_TYPES,
@@ -341,6 +344,199 @@ export function RulesModal({ columns, rules, onSave, onClose }) {
           </button>
         </div>
       </div>
+    </ModalShell>
+  );
+}
+
+/**
+ * Joins another saved query onto this one. The other query is run once here so
+ * its column list can be offered, which also surfaces straight away if it needs
+ * parameters or is broken.
+ */
+export function MergeModal({ query, queries, columnNames, merge, onSave, onClose }) {
+  const [queryId, setQueryId] = useState(merge?.queryId ? String(merge.queryId) : "");
+  const [on, setOn] = useState(merge?.on || []);
+  const [columns, setColumns] = useState(merge?.columns || []);
+  const [compare, setCompare] = useState(merge?.compare || []);
+  const [otherColumns, setOtherColumns] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const candidates = useMemo(
+    () => queries.filter((item) => item.id !== query.id),
+    [queries, query.id]
+  );
+
+  const loadColumns = useCallback(async (id) => {
+    if (!id) {
+      setOtherColumns([]);
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const data = await apiJson(`/api/queries/${id}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ params: {} }),
+        fallbackError: "ดึงคอลัมน์ของ Query ที่เลือกไม่สำเร็จ",
+      });
+      setOtherColumns(data.columns.map((col) => col.name));
+    } catch (err) {
+      setOtherColumns([]);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- setState runs after the fetch resolves
+    loadColumns(queryId);
+  }, [queryId, loadColumns]);
+
+  const pairRow = (pair, index, list, setList) => (
+    <div key={index} className="flex items-center gap-2">
+      <select
+        value={pair.left}
+        onChange={(e) =>
+          setList(list.map((item, i) => (i === index ? { ...item, left: e.target.value } : item)))
+        }
+        className={inputClass}
+      >
+        {columnNames.map((name) => (
+          <option key={name} value={name}>
+            {name}
+          </option>
+        ))}
+      </select>
+      <span className="shrink-0 text-[11px] font-black text-zinc-400">=</span>
+      <select
+        value={pair.right}
+        onChange={(e) =>
+          setList(list.map((item, i) => (i === index ? { ...item, right: e.target.value } : item)))
+        }
+        className={inputClass}
+      >
+        {otherColumns.map((name) => (
+          <option key={name} value={name}>
+            {name}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={() => setList(list.filter((_, i) => i !== index))}
+        className="shrink-0 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600"
+        title="ลบ"
+      >
+        <Trash2 size={12} />
+      </button>
+    </div>
+  );
+
+  const addPair = (list, setList) =>
+    setList([...list, { left: columnNames[0] || "", right: otherColumns[0] || "" }]);
+
+  return (
+    <ModalShell
+      title="รวมตารางกับอีก Query"
+      icon={<Combine size={15} className="text-red-600" />}
+      onClose={onClose}
+      onSave={() =>
+        onSave(
+          queryId && on.length > 0
+            ? { queryId: Number(queryId), on, columns, compare }
+            : null
+        )
+      }
+    >
+      <div>
+        <label className={labelClass}>Query ที่จะดึงข้อมูลมารวม</label>
+        <select
+          value={queryId}
+          onChange={(e) => {
+            setQueryId(e.target.value);
+            setOn([]);
+            setColumns([]);
+            setCompare([]);
+          }}
+          className={inputClass}
+        >
+          <option value="">— ไม่รวม —</option>
+          {candidates.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
+            </option>
+          ))}
+        </select>
+        {loading && (
+          <p className="mt-1 flex items-center gap-1 text-[10px] font-bold text-zinc-400">
+            <Loader2 size={10} className="animate-spin" /> กำลังดึงคอลัมน์...
+          </p>
+        )}
+        {error && <p className="mt-1 text-[10px] font-bold text-red-600">{error}</p>}
+      </div>
+
+      {otherColumns.length > 0 && (
+        <>
+          <div>
+            <label className={labelClass}>
+              จับคู่แถวโดยเทียบคอลัมน์ (ใส่ได้มากกว่า 1 — ต้องตรงกันทุกข้อ)
+            </label>
+            <div className="space-y-2">
+              {on.map((pair, index) => pairRow(pair, index, on, setOn))}
+              <button
+                type="button"
+                onClick={() => addPair(on, setOn)}
+                className="flex h-9 w-full items-center justify-center gap-1 rounded-lg border border-dashed border-zinc-300 text-[11px] font-black text-zinc-500 transition hover:bg-zinc-50"
+              >
+                <Plus size={12} /> เพิ่มคู่คอลัมน์
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className={labelClass}>คอลัมน์ที่จะดึงมาแสดงเพิ่ม</label>
+            <div className="flex flex-wrap gap-1">
+              {otherColumns.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() =>
+                    setColumns((prev) =>
+                      prev.includes(name) ? prev.filter((item) => item !== name) : [...prev, name]
+                    )
+                  }
+                  className={`rounded-full border px-2.5 py-1 text-[10px] font-bold transition ${
+                    columns.includes(name)
+                      ? "border-red-600 bg-red-600 text-white"
+                      : "border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100"
+                  }`}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className={labelClass}>
+              เช็คว่าค่าตรงกันไหม (เพิ่มคอลัมน์ ✓ / ✗ ให้ทีละคู่)
+            </label>
+            <div className="space-y-2">
+              {compare.map((pair, index) => pairRow(pair, index, compare, setCompare))}
+              <button
+                type="button"
+                onClick={() => addPair(compare, setCompare)}
+                className="flex h-9 w-full items-center justify-center gap-1 rounded-lg border border-dashed border-zinc-300 text-[11px] font-black text-zinc-500 transition hover:bg-zinc-50"
+              >
+                <Plus size={12} /> เพิ่มคู่ที่จะเทียบค่า
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </ModalShell>
   );
 }

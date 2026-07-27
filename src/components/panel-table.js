@@ -28,6 +28,24 @@ import {
 const headerButton =
   "rounded p-0.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700";
 
+// Only base columns carry `column`; computed, merged and compare columns each
+// describe themselves differently.
+function columnTooltip(col) {
+  if (col.kind === "computed") return `สูตร: ${col.formula} — กดเพื่อเรียงลำดับ`;
+  if (col.kind === "merged") return `ดึงมาจากคอลัมน์ ${col.source} ของอีก Query — กดเพื่อเรียงลำดับ`;
+  if (col.kind === "compare") {
+    return `เทียบค่า ${col.pair.left} กับ ${col.pair.right} ของอีก Query — กดเพื่อเรียงลำดับ`;
+  }
+  return `${col.column.name} — กดเพื่อเรียงลำดับ`;
+}
+
+const HEADER_TONE = {
+  computed: "text-red-600",
+  merged: "text-sky-700",
+  compare: "text-sky-700",
+  base: "text-zinc-700",
+};
+
 export default function PanelTable({
   columns,
   allColumns,
@@ -242,13 +260,9 @@ export default function PanelTable({
                       type="button"
                       onClick={() => toggleSort(col.id)}
                       className={`flex min-w-0 flex-1 items-center gap-1 truncate text-left font-black ${
-                        col.kind === "computed" ? "text-red-600" : "text-zinc-700"
+                        HEADER_TONE[col.kind] || "text-zinc-700"
                       }`}
-                      title={
-                        col.kind === "computed"
-                          ? `สูตร: ${col.formula} — กดเพื่อเรียงลำดับ`
-                          : `${col.column.name} — กดเพื่อเรียงลำดับ`
-                      }
+                      title={columnTooltip(col)}
                     >
                       <span className="min-w-0 truncate">{col.label}</span>
                       {sorted === "asc" && <ArrowUp size={10} className="shrink-0" />}

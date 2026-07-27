@@ -7,6 +7,7 @@ import {
   Calculator,
   ChartColumn,
   ChevronDown,
+  Combine,
   ChevronUp,
   Download,
   Eye,
@@ -31,9 +32,11 @@ import { evaluateFormula } from "@/lib/gamedb-formula";
 import { extractSqlParams } from "@/lib/gamedb-sql-params";
 import {
   buildDisplayColumns,
+  cellsEqual,
   compareCells,
   EMPTY_LAYOUT,
   formatCell,
+  mergeKeyOf,
   normalizeLayout,
   REFRESH_CHOICES,
   rowsToCsv,
@@ -43,6 +46,7 @@ import { ComputedColumnModal } from "@/components/gamedb-modals";
 import {
   ChartModal,
   EditableSettingsModal,
+  MergeModal,
   ParamsSettingsModal,
   RulesModal,
 } from "@/components/panel-config-modals";
@@ -98,6 +102,7 @@ function resolveParams(layout, sqlText) {
 
 export default function QueryPanel({
   query,
+  queries,
   panel,
   canManage,
   canMoveUp,
@@ -248,9 +253,90 @@ export default function QueryPanel({
     setLayoutDirty(true);
   }, []);
 
+  // --- merge with another query -------------------------------------------
+  const [mergeResult, setMergeResult] = useState(null);
+  const [mergeError, setMergeError] = useState("");
+
+  const mergeQueryId = layout.merge?.queryId ?? null;
+  const mergedQueryName = useMemo(
+    () => queries.find((item) => item.id === mergeQueryId)?.name || "",
+    [queries, mergeQueryId]
+  );
+
+  useEffect(() => {
+    if (!mergeQueryId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing state this effect owns when the merge is switched off
+      setMergeResult(null);
+      setMergeError("");
+      return undefined;
+    }
+    let cancelled = false;
+    apiJson(`/api/queries/${mergeQueryId}/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ params: {} }),
+      fallbackError: "ดึงข้อมูลของ Query ที่รวมไว้ไม่สำเร็จ",
+    })
+      .then((data) => {
+        if (cancelled) return;
+        setMergeResult(data);
+        setMergeError("");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setMergeResult(null);
+        setMergeError(err.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Re-run alongside this panel so a refresh pulls both sides.
+  }, [mergeQueryId, lastRunAt]);
+
+  // One lookup for the whole render: join key -> matching row of the other query.
+  const mergeIndex = useMemo(() => {
+    if (!layout.merge || !mergeResult) return null;
+    const nameToIndex = new Map(mergeResult.columns.map((col, index) => [col.name, index]));
+    const rightKeyIndexes = layout.merge.on.map((pair) => nameToIndex.get(pair.right));
+    if (rightKeyIndexes.some((index) => index === undefined)) return null;
+
+    const byKey = new Map();
+    let duplicates = 0;
+    for (const row of mergeResult.rows) {
+      const key = mergeKeyOf(rightKeyIndexes.map((index) => row[index]));
+      if (byKey.has(key)) duplicates += 1;
+      else byKey.set(key, row);
+    }
+    return { byKey, nameToIndex, duplicates };
+  }, [layout.merge, mergeResult]);
+
+  const mergedColumns = useMemo(() => {
+    if (!layout.merge || !mergeIndex) return [];
+    const suffix = mergedQueryName ? ` · ${mergedQueryName}` : "";
+    const brought = layout.merge.columns
+      .filter((name) => mergeIndex.nameToIndex.has(name))
+      .map((name) => ({
+        id: `~${name}`,
+        label: `${name}${suffix}`,
+        type: mergeResult.columns[mergeIndex.nameToIndex.get(name)].type,
+        kind: "merged",
+        source: name,
+      }));
+    const checks = layout.merge.compare
+      .filter((pair) => mergeIndex.nameToIndex.has(pair.right))
+      .map((pair) => ({
+        id: `?${pair.left}|${pair.right}`,
+        label: `${pair.left} = ${pair.right}?`,
+        type: "text",
+        kind: "compare",
+        pair,
+      }));
+    return [...brought, ...checks];
+  }, [layout.merge, mergeIndex, mergeResult, mergedQueryName]);
+
   const displayColumns = useMemo(
-    () => (result ? buildDisplayColumns(result.columns, layout) : []),
-    [result, layout]
+    () => (result ? buildDisplayColumns(result.columns, layout, mergedColumns) : []),
+    [result, layout, mergedColumns]
   );
   const visibleColumns = useMemo(
     () => displayColumns.filter((col) => !layout.hidden.includes(col.id)),
@@ -271,18 +357,40 @@ export default function QueryPanel({
 
   const displayRows = useMemo(() => {
     if (!result) return [];
+    const leftKeyIndexes = layout.merge
+      ? layout.merge.on.map((pair) => baseNameToIndex.get(pair.left))
+      : null;
+    const canMerge =
+      mergeIndex && leftKeyIndexes && leftKeyIndexes.every((index) => index !== undefined);
+
     let rows = result.rows.map((row, sourceIndex) => {
       const resolveRef = (name) => {
         const index = baseNameToIndex.get(name);
         return index === undefined ? null : toNumber(row[index]);
       };
+      const partner = canMerge
+        ? mergeIndex.byKey.get(mergeKeyOf(leftKeyIndexes.map((index) => row[index])))
+        : null;
+
       return {
         sourceIndex,
+        matched: canMerge ? Boolean(partner) : null,
         cells: visibleColumns.map((col) => {
           if (col.kind === "base") {
             const index = baseNameToIndex.get(col.column.name);
             const raw = index === undefined ? null : row[index];
             return { raw, text: formatCell(raw, col.type) };
+          }
+          if (col.kind === "merged") {
+            const raw = partner ? partner[mergeIndex.nameToIndex.get(col.source)] : null;
+            return { raw, text: partner ? formatCell(raw, col.type) : "ไม่พบคู่" };
+          }
+          if (col.kind === "compare") {
+            if (!partner) return { raw: null, text: "ไม่พบคู่" };
+            const left = row[baseNameToIndex.get(col.pair.left)];
+            const right = partner[mergeIndex.nameToIndex.get(col.pair.right)];
+            const same = cellsEqual(left, right);
+            return { raw: same ? 1 : 0, text: same ? "✓ ตรงกัน" : "✗ ต่างกัน" };
           }
           if (!col.ast) return { raw: null, text: "สูตรผิด" };
           const value = evaluateFormula(col.ast, resolveRef);
@@ -308,7 +416,15 @@ export default function QueryPanel({
       }
     }
     return rows;
-  }, [result, visibleColumns, baseNameToIndex, rowFilter, layout.sort]);
+  }, [result, visibleColumns, baseNameToIndex, rowFilter, layout.sort, layout.merge, mergeIndex]);
+
+  const matchCount = useMemo(
+    () =>
+      displayRows.length && displayRows[0].matched !== null
+        ? displayRows.filter((row) => row.matched).length
+        : null,
+    [displayRows]
+  );
 
   // Keys arrive as `rowIndex:columnName`; the table addresses cells by
   // display-column id, which is the same string for base columns.
@@ -513,6 +629,9 @@ export default function QueryPanel({
                 {lastRunAt
                   ? ` · อัปเดต ${lastRunAt.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
                   : ""}
+                {matchCount !== null
+                  ? ` · จับคู่กับ ${mergedQueryName} ได้ ${matchCount.toLocaleString("th-TH")}/${displayRows.length.toLocaleString("th-TH")} แถว`
+                  : ""}
               </>
             ) : (
               query.description || "—"
@@ -582,6 +701,15 @@ export default function QueryPanel({
         </button>
         <button type="button" onClick={() => setModal("computed")} disabled={!result} className={iconButtonClass} title="เพิ่มคอลัมน์สูตร">
           <Calculator size={13} />
+        </button>
+        <button
+          type="button"
+          onClick={() => setModal("merge")}
+          disabled={!result}
+          className={iconButtonClass}
+          title="รวมตารางกับอีก Query"
+        >
+          <Combine size={13} className={layout.merge ? "text-red-600" : ""} />
         </button>
         <button type="button" onClick={() => setModal("rules")} disabled={!result} className={iconButtonClass} title="ระบายสีตามเงื่อนไข">
           <Palette size={13} />
@@ -703,9 +831,9 @@ export default function QueryPanel({
             </div>
           )}
 
-          {(saveError || editError) && (
+          {(saveError || editError || mergeError) && (
             <div className="mx-3 mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
-              {saveError || editError}
+              {saveError || editError || `รวมตารางไม่สำเร็จ: ${mergeError}`}
             </div>
           )}
 
@@ -816,6 +944,19 @@ export default function QueryPanel({
           onClose={() => setModal(null)}
           onSave={(editable) => {
             mutateLayout((prev) => ({ ...prev, editable }));
+            setModal(null);
+          }}
+        />
+      )}
+      {modal === "merge" && result && (
+        <MergeModal
+          query={query}
+          queries={queries}
+          columnNames={result.columns.map((col) => col.name)}
+          merge={layout.merge}
+          onClose={() => setModal(null)}
+          onSave={(merge) => {
+            mutateLayout((prev) => ({ ...prev, merge }));
             setModal(null);
           }}
         />

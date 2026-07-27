@@ -590,6 +590,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                   <QueryPanel
                     key={`${panel.queryId}:${query.updatedAt}`}
                     query={query}
+                    queries={queries}
                     panel={panel}
                     canManage={isSuperAdmin}
                     canMoveUp={index > 0}

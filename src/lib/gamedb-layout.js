@@ -17,6 +17,7 @@ export const EMPTY_LAYOUT = {
   summary: {},
   chart: null,
   sort: null,
+  merge: null,
   refreshSeconds: 0,
 };
 
@@ -74,6 +75,7 @@ export function normalizeLayout(raw) {
     layout.sort && typeof layout.sort === "object" && layout.sort.colId
       ? { colId: String(layout.sort.colId), dir: layout.sort.dir === "desc" ? "desc" : "asc" }
       : null;
+  const merge = normalizeMerge(layout.merge);
 
   return {
     order: Array.isArray(layout.order) ? layout.order : [],
@@ -113,10 +115,58 @@ export function normalizeLayout(raw) {
     summary,
     chart,
     sort,
+    merge,
     refreshSeconds: REFRESH_CHOICES.includes(Number(layout.refreshSeconds))
       ? Number(layout.refreshSeconds)
       : 0,
   };
+}
+
+// merge = { queryId, on: [{left, right}], columns: [name], compare: [{left, right}] }
+// "on" are the columns whose values must match; "columns" are pulled in from the
+// other query; "compare" pairs are rendered as an equal/not-equal check.
+export function normalizeMerge(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const queryId = Number(raw.queryId);
+  const pairs = (value) =>
+    Array.isArray(value)
+      ? value
+          .filter((pair) => pair && pair.left && pair.right)
+          .slice(0, 10)
+          .map((pair) => ({ left: String(pair.left), right: String(pair.right) }))
+      : [];
+  const on = pairs(raw.on);
+  if (!Number.isFinite(queryId) || on.length === 0) return null;
+  return {
+    queryId,
+    on,
+    columns: Array.isArray(raw.columns) ? raw.columns.map(String).slice(0, 40) : [],
+    compare: pairs(raw.compare),
+  };
+}
+
+/** Loose equality for joining: numbers by value, text trimmed and case-folded. */
+export function cellsEqual(a, b) {
+  const left = toNumber(a);
+  const right = toNumber(b);
+  if (left !== null && right !== null) return left === right;
+  return (
+    String(a ?? "").trim().toLowerCase() === String(b ?? "").trim().toLowerCase()
+  );
+}
+
+// A control character no real data contains, so the key for ["a", "b"]
+// cannot collide with the key for ["ab"].
+const MERGE_KEY_SEPARATOR = "\u0001";
+
+/** Join key built the same way on both sides, so "10" matches 10. */
+export function mergeKeyOf(values) {
+  return values
+    .map((value) => {
+      const num = toNumber(value);
+      return num !== null ? `n:${num}` : `s:${String(value ?? "").trim().toLowerCase()}`;
+    })
+    .join(MERGE_KEY_SEPARATOR);
 }
 
 export function toNumber(value) {
@@ -236,9 +286,11 @@ export function rowsToCsv(headers, rows) {
   return `﻿${lines.join("\r\n")}`;
 }
 
-// Display columns mix base result columns (id = name) and computed columns
-// (id = "#key") so layout order/hidden/labels/widths can address both kinds.
-export function buildDisplayColumns(resultColumns, layout) {
+// Display columns mix base result columns (id = name), computed columns
+// (id = "#key") and anything merged in from another query (id = "~name" or
+// "?left|right"), so layout order/hidden/labels/widths address them all the
+// same way.
+export function buildDisplayColumns(resultColumns, layout, mergedColumns = []) {
   const base = resultColumns.map((col) => ({
     id: col.name,
     label: layout.labels[col.name] || col.name,
@@ -265,7 +317,14 @@ export function buildDisplayColumns(resultColumns, layout) {
     };
   });
 
-  const all = [...base, ...computed];
+  const all = [
+    ...base,
+    ...computed,
+    ...mergedColumns.map((col) => ({
+      ...col,
+      label: layout.labels[col.id] || col.label,
+    })),
+  ];
   if (!layout.order.length) return all;
 
   const byId = new Map(all.map((col) => [col.id, col]));
