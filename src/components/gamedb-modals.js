@@ -567,6 +567,54 @@ export function ConnectionsModal({ connections, onClose, onChanged }) {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState("");
   const [error, setError] = useState("");
+  // Write permission and per-connection limits live in a side table, not on
+  // the connection row (which this service does not own), so they load and
+  // save separately. Key 0 is the primary connection from .env.
+  const [flags, setFlags] = useState({});
+  const [flagsTarget, setFlagsTarget] = useState(0);
+
+  const loadFlags = useCallback(async () => {
+    try {
+      const data = await apiJson("/api/connection-flags", {
+        fallbackError: "โหลดการตั้งค่าฐานข้อมูลไม่สำเร็จ",
+      });
+      setFlags(data.flags || {});
+    } catch {
+      setFlags({});
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- setState runs after the fetch resolves
+    loadFlags();
+  }, [loadFlags]);
+
+  const currentFlags = flags[flagsTarget] || {
+    allowWrite: false,
+    statementTimeoutMs: null,
+    maxRows: null,
+  };
+
+  const saveFlags = async (patch) => {
+    const next = { ...currentFlags, ...patch };
+    setError("");
+    try {
+      const data = await apiJson("/api/connection-flags", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          connectionId: flagsTarget,
+          allowWrite: next.allowWrite,
+          statementTimeoutMs: next.statementTimeoutMs,
+          maxRows: next.maxRows,
+        }),
+        fallbackError: "บันทึกการตั้งค่าฐานข้อมูลไม่สำเร็จ",
+      });
+      setFlags((prev) => ({ ...prev, [flagsTarget]: data.flags }));
+    } catch (err) {
+      setError(err.message);
+    }
+  };
 
   const setField = (key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -688,12 +736,25 @@ export function ConnectionsModal({ connections, onClose, onChanged }) {
 
         <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto md:grid-cols-[1fr_1.2fr]">
           <div className="space-y-1.5">
-            <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5">
-              <p className="text-xs font-black text-zinc-700">หลัก (inblackm)</p>
+            <button
+              type="button"
+              onClick={() => setFlagsTarget(0)}
+              className={`w-full rounded-xl border px-3 py-2.5 text-left transition ${
+                flagsTarget === 0 ? "border-red-600 bg-red-50" : "border-zinc-200 bg-zinc-50"
+              }`}
+            >
+              <p className="text-xs font-black text-zinc-700">
+                หลัก (inblackm)
+                {flags[0]?.allowWrite && (
+                  <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-black text-amber-700">
+                    เขียนได้
+                  </span>
+                )}
+              </p>
               <p className="text-[10px] font-semibold text-zinc-400">
                 จาก .env ของ service — แก้ไข/ลบไม่ได้
               </p>
-            </div>
+            </button>
             {connections.map((conn) => (
               <div
                 key={conn.id}
@@ -705,10 +766,20 @@ export function ConnectionsModal({ connections, onClose, onChanged }) {
               >
                 <button
                   type="button"
-                  onClick={() => startEdit(conn)}
+                  onClick={() => {
+                    startEdit(conn);
+                    setFlagsTarget(conn.id);
+                  }}
                   className="min-w-0 flex-1 text-left"
                 >
-                  <p className="truncate text-xs font-black text-zinc-700">{conn.name}</p>
+                  <p className="truncate text-xs font-black text-zinc-700">
+                    {conn.name}
+                    {flags[conn.id]?.allowWrite && (
+                      <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-black text-amber-700">
+                        เขียนได้
+                      </span>
+                    )}
+                  </p>
                   <p className="truncate text-[10px] font-semibold text-zinc-400">
                     {conn.host}:{conn.port}/{conn.database}
                   </p>
@@ -795,6 +866,52 @@ export function ConnectionsModal({ connections, onClose, onChanged }) {
               />
               ใช้ SSL
             </label>
+
+            <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+              <p className="text-[10px] font-black text-amber-700">
+                การตั้งค่าของ{" "}
+                {flagsTarget === 0
+                  ? "หลัก (inblackm)"
+                  : connections.find((conn) => conn.id === flagsTarget)?.name || "ฐานข้อมูลนี้"}
+              </p>
+              <label className="flex items-center gap-2 text-[11px] font-bold text-zinc-700">
+                <input
+                  type="checkbox"
+                  checked={currentFlags.allowWrite}
+                  onChange={(e) => saveFlags({ allowWrite: e.target.checked })}
+                />
+                อนุญาตให้แก้ไขข้อมูล (เขียนกลับ)
+              </label>
+              <p className="text-[10px] font-semibold text-amber-700">
+                ปิดไว้ = อ่านอย่างเดียว ต่อให้ Query ตั้ง &quot;แก้ไขข้อมูล&quot; ไว้ก็เขียนไม่ได้
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="mb-1 block text-[10px] font-black text-zinc-500">
+                    timeout (ms)
+                  </label>
+                  <input
+                    type="number"
+                    defaultValue={currentFlags.statementTimeoutMs || ""}
+                    placeholder="8000"
+                    onBlur={(e) => saveFlags({ statementTimeoutMs: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-black text-zinc-500">
+                    แถวสูงสุดต่อหน้า
+                  </label>
+                  <input
+                    type="number"
+                    defaultValue={currentFlags.maxRows || ""}
+                    placeholder="1000"
+                    onBlur={(e) => saveFlags({ maxRows: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+            </div>
 
             {error && (
               <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">

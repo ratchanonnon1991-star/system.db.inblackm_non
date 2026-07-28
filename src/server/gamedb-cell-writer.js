@@ -1,5 +1,6 @@
 import { getPoolForConnection } from "@/lib/db";
 import { quoteIdentifier } from "@/lib/gamedb-identifier";
+import { getConnectionFlags } from "@/server/gamedb-side-tables";
 
 const STATEMENT_TIMEOUT_MS = 8000;
 
@@ -25,6 +26,17 @@ export function assertEditAllowed(editable, column) {
  */
 export async function updateCell({ editable, connection, pkValue, column, value }) {
   assertEditAllowed(editable, column);
+
+  // Second gate, independent of the query's config: a database has to be
+  // opted in to writes explicitly, and every connection starts read-only.
+  const flags = await getConnectionFlags(connection?.id ?? null);
+  if (!flags.allowWrite) {
+    throw createHttpError(
+      `ฐานข้อมูล "${connection ? connection.name : "หลัก (inblackm)"}" ยังไม่ได้เปิดให้เขียน — ` +
+        "ไปติ๊ก \"อนุญาตให้แก้ไขข้อมูล\" ที่หน้าจัดการฐานข้อมูลก่อน",
+      403
+    );
+  }
 
   const table = quoteIdentifier(editable.table);
   const pk = quoteIdentifier(editable.pk);

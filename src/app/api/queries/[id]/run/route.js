@@ -20,14 +20,17 @@ export async function POST(request, { params }) {
 
     // Body is optional: a query without :placeholders is run with no values.
     let values = {};
+    let page = {};
     try {
       const body = await request.json();
       if (body?.params && typeof body.params === "object") values = body.params;
+      if (body?.offset !== undefined) page.offset = body.offset;
+      if (body?.limit !== undefined) page.limit = body.limit;
     } catch {
       // no body — nothing to bind
     }
 
-    const result = await runReadOnlyQuery(query.sqlText, connection, values);
+    const result = await runReadOnlyQuery(query.sqlText, connection, values, page);
     return jsonOk({ ...result, queryId: query.id, layout: query.layout });
   } catch (err) {
     return handleApiError(err, "ไม่สามารถรัน Query ได้");

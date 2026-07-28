@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Activity,
   Database,
+  History,
   Layers,
   LayoutGrid,
   Loader2,
@@ -25,6 +27,7 @@ import {
   UsersModal,
 } from "@/components/gamedb-modals";
 import ViewsModal from "@/components/views-modal";
+import { EditLogModal, HealthModal } from "@/components/admin-modals";
 
 export default function GamedbPage() {
   const [me, setMe] = useState(null);
@@ -209,6 +212,8 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   const [connections, setConnections] = useState([]);
   const [connectionsModal, setConnectionsModal] = useState(false);
   const [usersModal, setUsersModal] = useState(false);
+  const [healthModal, setHealthModal] = useState(false);
+  const [editLogModal, setEditLogModal] = useState(false);
 
   // Screen templates: a saved set of panels an admin can hand to other users.
   const [views, setViews] = useState([]);
@@ -220,6 +225,34 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   const liveLayouts = useRef({});
   const captureLayout = useCallback((queryId, layout) => {
     liveLayouts.current[queryId] = layout;
+  }, []);
+
+  // Layouts this user saved for themselves, which win over the shared ones.
+  const [myLayouts, setMyLayouts] = useState({});
+
+  const loadMyLayouts = useCallback(async () => {
+    try {
+      const data = await apiJson("/api/my-layouts", {
+        fallbackError: "โหลด layout ส่วนตัวไม่สำเร็จ",
+      });
+      setMyLayouts(data.layouts || {});
+    } catch {
+      setMyLayouts({});
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- setState runs after the fetch resolves
+    loadMyLayouts();
+  }, [loadMyLayouts]);
+
+  const rememberPersonalLayout = useCallback((queryId, layout) => {
+    setMyLayouts((prev) => {
+      const next = { ...prev };
+      if (layout) next[queryId] = layout;
+      else delete next[queryId];
+      return next;
+    });
   }, []);
 
   const loadViews = useCallback(async () => {
@@ -528,6 +561,22 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               </button>
               <button
                 type="button"
+                onClick={() => setEditLogModal(true)}
+                className="rounded-xl border border-zinc-200 bg-white p-2.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
+                title="ประวัติการแก้ไขข้อมูล"
+              >
+                <History size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setHealthModal(true)}
+                className="rounded-xl border border-zinc-200 bg-white p-2.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
+                title="ตรวจสุขภาพระบบ / สิทธิ์ฐานข้อมูล"
+              >
+                <Activity size={14} />
+              </button>
+              <button
+                type="button"
                 onClick={() => setUsersModal(true)}
                 className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
               >
@@ -699,6 +748,10 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                     queries={queries}
                     panel={panel}
                     layoutOverride={panelLayouts[panel.queryId] || null}
+                    personalLayout={
+                      activeView ? null : myLayouts[panel.queryId] || null
+                    }
+                    onPersonalLayoutSaved={rememberPersonalLayout}
                     onLayoutChange={captureLayout}
                     canManage={isSuperAdmin}
                     canMoveUp={index > 0}
@@ -779,6 +832,8 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       )}
 
       {usersModal && <UsersModal me={me} onClose={() => setUsersModal(false)} />}
+      {healthModal && <HealthModal onClose={() => setHealthModal(false)} />}
+      {editLogModal && <EditLogModal onClose={() => setEditLogModal(false)} />}
 
       {viewsModal && (
         <ViewsModal

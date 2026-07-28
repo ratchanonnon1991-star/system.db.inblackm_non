@@ -25,6 +25,8 @@ import {
   SlidersHorizontal,
   Table2,
   Timer,
+  User,
+  Users,
   X,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
@@ -105,6 +107,8 @@ export default function QueryPanel({
   queries,
   panel,
   layoutOverride,
+  personalLayout,
+  onPersonalLayoutSaved,
   onLayoutChange,
   canManage,
   canMoveUp,
@@ -124,13 +128,13 @@ export default function QueryPanel({
   onDropPanel,
   onEditQuery,
 }) {
-  // A screen template can carry its own layout for this panel; it wins over the
-  // query's saved layout without overwriting it for everyone else.
+  // Layout precedence: what this user saved for themselves, then what a screen
+  // template dictates, then the shared layout stored on the query.
   const savedLayout = useMemo(
-    () => normalizeLayout(layoutOverride || query.layout),
-    [layoutOverride, query.layout]
+    () => normalizeLayout(personalLayout || layoutOverride || query.layout),
+    [personalLayout, layoutOverride, query.layout]
   );
-  const hasOverride = Boolean(layoutOverride);
+  const hasOverride = Boolean(personalLayout || layoutOverride);
   const savedParams = useMemo(
     () => resolveParams(savedLayout, query.sqlText),
     [savedLayout, query.sqlText]
@@ -139,6 +143,8 @@ export default function QueryPanel({
   const [result, setResult] = useState(null);
   const [running, setRunning] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const rowsLoadedRef = useRef(0);
   const [runError, setRunError] = useState("");
   const [lastRunAt, setLastRunAt] = useState(null);
 
@@ -191,7 +197,7 @@ export default function QueryPanel({
   }, [paramValues, missingParams]);
 
   const runQuery = useCallback(
-    async ({ silent = false } = {}) => {
+    async ({ silent = false, append = false } = {}) => {
       // Nothing to send yet — show the inputs instead of a failed request.
       if (missingRef.current.length > 0) {
         setRunning(false);
@@ -199,17 +205,38 @@ export default function QueryPanel({
         setRunError("");
         return;
       }
-      if (silent) setRefreshing(true);
+      if (append) setLoadingMore(true);
+      else if (silent) setRefreshing(true);
       else setRunning(true);
       setRunError("");
-      if (!silent) setResult(null);
+      if (!silent && !append) setResult(null);
       try {
         const data = await apiJson(`/api/queries/${query.id}/run`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ params: paramsRef.current }),
+          body: JSON.stringify({
+            params: paramsRef.current,
+            offset: append ? rowsLoadedRef.current : 0,
+          }),
           fallbackError: "รัน Query ไม่สำเร็จ",
         });
+
+        // "โหลดเพิ่ม" keeps what is on screen and adds the next page under it.
+        if (append) {
+          setResult((prev) =>
+            prev
+              ? {
+                  ...data,
+                  rows: [...prev.rows, ...data.rows],
+                  rowCount: prev.rows.length + data.rows.length,
+                }
+              : data
+          );
+          rowsLoadedRef.current += data.rows.length;
+          previousRowsRef.current = null;
+          setLastRunAt(new Date());
+          return;
+        }
         // Diff against the previous rows before storing the new ones. This has
         // to happen outside setResult: a state updater runs during render, so a
         // setChangedKeys call in there is dropped.
@@ -230,6 +257,7 @@ export default function QueryPanel({
           if (keys.size) setChangedKeys(keys);
         }
         previousRowsRef.current = { columns: data.columns, rows: data.rows };
+        rowsLoadedRef.current = data.rows.length;
         setResult(data);
         if (!layoutDirtyRef.current && !overrideRef.current) {
           setLayout(normalizeLayout(data.layout));
@@ -240,6 +268,7 @@ export default function QueryPanel({
       } finally {
         setRunning(false);
         setRefreshing(false);
+        setLoadingMore(false);
       }
     },
     [query.id]
@@ -506,17 +535,43 @@ export default function QueryPanel({
     URL.revokeObjectURL(url);
   };
 
-  const saveLayout = async () => {
+  // scope "mine" keeps the arrangement to this user; "shared" changes what
+  // everyone sees and is admin-only on the server too.
+  const saveLayout = async (scope) => {
     setSavingLayout(true);
     setSaveError("");
     try {
-      const data = await apiJson(`/api/queries/${query.id}/layout`, {
+      const url =
+        scope === "shared"
+          ? `/api/queries/${query.id}/layout`
+          : `/api/queries/${query.id}/my-layout`;
+      const data = await apiJson(url, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ layout }),
         fallbackError: "บันทึก Layout ไม่สำเร็จ",
       });
       setLayout(normalizeLayout(data.layout));
+      layoutDirtyRef.current = false;
+      setLayoutDirty(false);
+      if (scope === "mine") onPersonalLayoutSaved?.(query.id, data.layout);
+    } catch (err) {
+      setSaveError(err.message);
+    } finally {
+      setSavingLayout(false);
+    }
+  };
+
+  const dropPersonalLayout = async () => {
+    setSavingLayout(true);
+    setSaveError("");
+    try {
+      await apiJson(`/api/queries/${query.id}/my-layout`, {
+        method: "DELETE",
+        fallbackError: "ล้าง layout ส่วนตัวไม่สำเร็จ",
+      });
+      onPersonalLayoutSaved?.(query.id, null);
+      setLayout(normalizeLayout(query.layout));
       layoutDirtyRef.current = false;
       setLayoutDirty(false);
     } catch (err) {
@@ -674,17 +729,40 @@ export default function QueryPanel({
           <>
             <button
               type="button"
-              onClick={saveLayout}
+              onClick={() => saveLayout("mine")}
               disabled={savingLayout}
               className="flex h-8 items-center gap-1.5 rounded-lg bg-red-600 px-3 text-[11px] font-black text-white transition hover:bg-red-700 disabled:opacity-50"
+              title="บันทึกไว้ใช้เอง คนอื่นไม่เห็นการเปลี่ยนแปลงนี้"
             >
               {savingLayout ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-              บันทึก Layout
+              บันทึกของฉัน
             </button>
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => saveLayout("shared")}
+                disabled={savingLayout}
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-zinc-300 px-3 text-[11px] font-black text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-50"
+                title="ตั้งเป็นค่าเริ่มต้นที่ทุกคนเห็น"
+              >
+                <Users size={12} /> บันทึกให้ทุกคน
+              </button>
+            )}
             <button type="button" onClick={resetLayout} className={iconButtonClass} title="ล้าง layout กลับเป็นค่าเริ่มต้น">
               <RotateCcw size={13} />
             </button>
           </>
+        )}
+        {personalLayout && !layoutDirty && (
+          <button
+            type="button"
+            onClick={dropPersonalLayout}
+            disabled={savingLayout}
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2.5 text-[10px] font-black text-sky-700 transition hover:bg-sky-100 disabled:opacity-50"
+            title="ตอนนี้ใช้ layout ส่วนตัวอยู่ — กดเพื่อกลับไปใช้ค่ากลาง"
+          >
+            <User size={11} /> ของฉัน
+          </button>
         )}
 
         <button type="button" onClick={() => runQuery()} disabled={running} className={iconButtonClass} title="รันใหม่">
@@ -899,6 +977,22 @@ export default function QueryPanel({
                   onEditCell={editCell}
                   changedKeys={changedCellKeys}
                 />
+              )}
+
+              {result.hasMore && view === "table" && (
+                <button
+                  type="button"
+                  onClick={() => runQuery({ append: true })}
+                  disabled={loadingMore}
+                  className="flex items-center justify-center gap-1.5 border-t border-zinc-100 bg-zinc-50 py-2 text-[11px] font-black text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-50"
+                >
+                  {loadingMore ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <ChevronDown size={12} />
+                  )}
+                  โหลดเพิ่ม (แสดงอยู่ {result.rows.length.toLocaleString("th-TH")} แถว)
+                </button>
               )}
 
               <div

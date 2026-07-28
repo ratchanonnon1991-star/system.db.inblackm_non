@@ -1,5 +1,6 @@
 import { getPoolForConnection } from "@/lib/db";
 import { bindSqlParams } from "@/lib/gamedb-sql-params";
+import { getConnectionFlags } from "@/server/gamedb-side-tables";
 
 export const GAMEDB_MAX_ROWS = 1000;
 const STATEMENT_TIMEOUT_MS = 8000;
@@ -60,8 +61,9 @@ function mapColumnType(dataTypeID) {
 }
 
 // connection = saved connection with decrypted password, or null for the
-// primary database from .env; params fills the query's :placeholders
-export async function runReadOnlyQuery(sqlText, connection = null, params = {}) {
+// primary database from .env; params fills the query's :placeholders;
+// offset/limit page through a result larger than one screenful
+export async function runReadOnlyQuery(sqlText, connection = null, params = {}, page = {}) {
   const sql = validateReadOnlySql(sqlText);
   const bound = bindSqlParams(sql, params);
   if (bound.missing.length > 0) {
@@ -70,6 +72,22 @@ export async function runReadOnlyQuery(sqlText, connection = null, params = {}) 
       400
     );
   }
+
+  // A slow or huge database can be given more room than the defaults.
+  const flags = await getConnectionFlags(connection?.id ?? null);
+  const timeoutMs = flags.statementTimeoutMs || STATEMENT_TIMEOUT_MS;
+  const configuredMax = flags.maxRows || GAMEDB_MAX_ROWS;
+  const limit = Math.min(
+    configuredMax,
+    Number.isFinite(Number(page.limit)) && Number(page.limit) > 0
+      ? Math.round(Number(page.limit))
+      : configuredMax
+  );
+  const offset =
+    Number.isFinite(Number(page.offset)) && Number(page.offset) > 0
+      ? Math.round(Number(page.offset))
+      : 0;
+
   let client;
   try {
     client = await getPoolForConnection(connection).connect();
@@ -82,18 +100,19 @@ export async function runReadOnlyQuery(sqlText, connection = null, params = {}) 
   const startedAt = Date.now();
   try {
     await client.query("BEGIN TRANSACTION READ ONLY");
-    await client.query(`SET LOCAL statement_timeout = ${STATEMENT_TIMEOUT_MS}`);
+    await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
     const result = await client.query({
       // rowMode array keeps duplicate column names intact and aligns rows
-      // with the fields list by position.
-      text: `SELECT * FROM (${bound.text}) AS gamedb_result LIMIT ${GAMEDB_MAX_ROWS + 1}`,
+      // with the fields list by position. One row past the limit is fetched so
+      // the caller can tell "exactly full" from "there is more".
+      text: `SELECT * FROM (${bound.text}) AS gamedb_result LIMIT ${limit + 1} OFFSET ${offset}`,
       values: bound.values,
       rowMode: "array",
     });
     await client.query("ROLLBACK");
 
-    const truncated = result.rows.length > GAMEDB_MAX_ROWS;
-    const rows = truncated ? result.rows.slice(0, GAMEDB_MAX_ROWS) : result.rows;
+    const hasMore = result.rows.length > limit;
+    const rows = hasMore ? result.rows.slice(0, limit) : result.rows;
     return {
       columns: result.fields.map((field, index) => ({
         key: `c${index}`,
@@ -102,7 +121,10 @@ export async function runReadOnlyQuery(sqlText, connection = null, params = {}) 
       })),
       rows,
       rowCount: rows.length,
-      truncated,
+      truncated: hasMore,
+      hasMore,
+      offset,
+      limit,
       durationMs: Date.now() - startedAt,
     };
   } catch (err) {
