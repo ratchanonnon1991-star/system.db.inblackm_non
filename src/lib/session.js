@@ -6,8 +6,25 @@ export const SESSION_COOKIE = "gamedb_session";
 const IDLE_TIMEOUT_SECONDS = 60 * 60 * 24;
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
-function getSecret() {
-  return process.env.SESSION_SECRET || process.env.OTP_SECRET || "gamedb-dev-secret";
+export const DEV_SECRET = "gamedb-dev-secret";
+
+/**
+ * The key the session cookie is signed with.
+ *
+ * Falling back to a constant that ships in the repository is only acceptable
+ * while developing: with it, anyone who knows the string can mint a cookie for
+ * any user id, including an admin. In production that has to be a hard stop —
+ * a missing variable would otherwise look like a perfectly healthy service.
+ */
+export function getSecret() {
+  const secret = process.env.SESSION_SECRET || process.env.OTP_SECRET;
+  if (secret) return secret;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "ยังไม่ได้ตั้ง SESSION_SECRET ใน .env — ถ้าไม่ตั้ง cookie จะถูกเซ็นด้วยคีย์ที่อยู่ในโค้ด ใครก็ปลอมเป็น admin ได้"
+    );
+  }
+  return DEV_SECRET;
 }
 
 function safeEqual(a, b) {

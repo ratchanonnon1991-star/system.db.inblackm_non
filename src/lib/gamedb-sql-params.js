@@ -9,10 +9,20 @@
 const NAME_START = /[A-Za-z_]/;
 const NAME_CHAR = /[A-Za-z0-9_]/;
 
-function scan(sql, onParam) {
+// A dollar-quoted body may carry a tag: $$...$$ but also $body$...$body$.
+// A digit cannot start a tag, which is what keeps $1 a placeholder.
+const DOLLAR_TAG = /^\$\$|^\$[\p{L}_][\p{L}\p{N}_]*\$/u;
+
+function scan(sql, onParam, maskLiterals = false) {
   const src = String(sql || "");
   let out = "";
   let i = 0;
+
+  // Literals and comments are either copied through or blanked out, keeping the
+  // length so positions still line up with the original statement.
+  const emit = (chunk) => {
+    out += maskLiterals ? " ".repeat(chunk.length) : chunk;
+  };
 
   while (i < src.length) {
     const ch = src[i];
@@ -21,14 +31,14 @@ function scan(sql, onParam) {
     if (ch === "-" && next === "-") {
       const end = src.indexOf("\n", i);
       const stop = end === -1 ? src.length : end;
-      out += src.slice(i, stop);
+      emit(src.slice(i, stop));
       i = stop;
       continue;
     }
     if (ch === "/" && next === "*") {
       const end = src.indexOf("*/", i + 2);
       const stop = end === -1 ? src.length : end + 2;
-      out += src.slice(i, stop);
+      emit(src.slice(i, stop));
       i = stop;
       continue;
     }
@@ -46,16 +56,19 @@ function scan(sql, onParam) {
         }
         j += 1;
       }
-      out += src.slice(i, j);
+      emit(src.slice(i, j));
       i = j;
       continue;
     }
-    if (ch === "$" && next === "$") {
-      const end = src.indexOf("$$", i + 2);
-      const stop = end === -1 ? src.length : end + 2;
-      out += src.slice(i, stop);
-      i = stop;
-      continue;
+    if (ch === "$") {
+      const tag = DOLLAR_TAG.exec(src.slice(i))?.[0];
+      if (tag) {
+        const end = src.indexOf(tag, i + tag.length);
+        const stop = end === -1 ? src.length : end + tag.length;
+        emit(src.slice(i, stop));
+        i = stop;
+        continue;
+      }
     }
     if (ch === ":" && next === ":") {
       out += "::";
@@ -75,6 +88,18 @@ function scan(sql, onParam) {
   }
 
   return out;
+}
+
+/**
+ * The statement with the contents of strings, quoted identifiers and comments
+ * blanked out, same length as the original.
+ *
+ * Checks that look for keywords or statement separators have to run over this
+ * rather than the raw text: `WHERE status = 'update'` is an ordinary read, and
+ * a `;` inside a LIKE pattern is not a second statement.
+ */
+export function stripSqlLiterals(sql) {
+  return scan(sql, (name) => `:${name}`, true);
 }
 
 /** Placeholder names in the order they first appear. */

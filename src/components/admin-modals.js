@@ -156,6 +156,19 @@ export function HealthModal({ onClose }) {
             </div>
           )}
 
+          {data.env && !data.env.sessionSecret && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-700">
+              <AlertTriangle size={13} className="mr-1 inline" />
+              ยังไม่ได้ตั้ง <span className="font-mono">SESSION_SECRET</span> ใน .env — cookie
+              ถูกเซ็นด้วยคีย์ที่อยู่ในโค้ด ใครก็ปลอมเป็น admin ได้ ให้ตั้งค่าแล้ว restart
+            </div>
+          )}
+          {data.env && !data.env.encryptionKey && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
+              ยังไม่ได้ตั้ง <span className="font-mono">GAMEDB_ENC_KEY</span> — เพิ่มฐานข้อมูลใหม่ผ่านหน้าเว็บไม่ได้
+            </div>
+          )}
+
           <div className="overflow-x-auto rounded-xl border border-zinc-200">
             <table className="w-full border-collapse text-[11px]">
               <thead>

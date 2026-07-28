@@ -191,10 +191,28 @@ export function normalizeMerge(raw) {
   };
 }
 
+// Plain decimal digits only, and short enough to survive the trip through a
+// double. `Number()` is far too generous to decide whether two cells are the
+// same row: it reads " " as 0, "0x10" as 16 and "1e3" as 1000, and it rounds
+// 9007199254740993 — a perfectly ordinary bigint id — down to its neighbour.
+// Anything it cannot represent exactly is compared as text instead.
+const DECIMAL = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/;
+
+function joinNumber(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  if (!DECIMAL.test(text)) return null;
+  const num = Number(text);
+  if (!Number.isFinite(num)) return null;
+  if (Number.isInteger(num) && !Number.isSafeInteger(num)) return null;
+  return num;
+}
+
 /** Loose equality for joining: numbers by value, text trimmed and case-folded. */
 export function cellsEqual(a, b) {
-  const left = toNumber(a);
-  const right = toNumber(b);
+  const left = joinNumber(a);
+  const right = joinNumber(b);
   if (left !== null && right !== null) return left === right;
   return (
     String(a ?? "").trim().toLowerCase() === String(b ?? "").trim().toLowerCase()
@@ -209,7 +227,7 @@ const MERGE_KEY_SEPARATOR = "\u0001";
 export function mergeKeyOf(values) {
   return values
     .map((value) => {
-      const num = toNumber(value);
+      const num = joinNumber(value);
       return num !== null ? `n:${num}` : `s:${String(value ?? "").trim().toLowerCase()}`;
     })
     .join(MERGE_KEY_SEPARATOR);
@@ -263,8 +281,10 @@ export function summarize(kind, values) {
   if (!numbers.length) return null;
   if (kind === "sum") return numbers.reduce((sum, num) => sum + num, 0);
   if (kind === "avg") return numbers.reduce((sum, num) => sum + num, 0) / numbers.length;
-  if (kind === "min") return Math.min(...numbers);
-  if (kind === "max") return Math.max(...numbers);
+  // reduce, not Math.min(...numbers): spreading a long column is a call with
+  // one argument per row, and enough rows overflow the stack.
+  if (kind === "min") return numbers.reduce((low, num) => (num < low ? num : low));
+  if (kind === "max") return numbers.reduce((high, num) => (num > high ? num : high));
   return null;
 }
 
@@ -325,7 +345,9 @@ export function ruleMatches(rule, raw, text) {
 export function rowsToCsv(headers, rows) {
   const escape = (value) => {
     const text = value === null || value === undefined ? "" : String(value);
-    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    // \r counts: the file itself is CRLF-separated, so a bare carriage return
+    // inside a value splits the row unless it is quoted.
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   };
   const lines = [headers.map(escape).join(",")];
   for (const row of rows) lines.push(row.map(escape).join(","));
@@ -336,10 +358,31 @@ export function rowsToCsv(headers, rows) {
 // (id = "#key") and anything merged in from another query (id = "~name" or
 // "?left|right"), so layout order/hidden/labels/widths address them all the
 // same way.
+/**
+ * The display id of each result column, in order.
+ *
+ * Two result columns can carry the same name — `SELECT o.id, c.id`, or a join
+ * of two tables that both have "created_at", is ordinary SQL. Addressing them
+ * by name alone made the second one resolve to the first one's value, so the
+ * repeat gets a suffix. The first keeps the plain name, which is what lets a
+ * layout saved before this keep matching.
+ */
+export function baseColumnIds(resultColumns) {
+  const seen = new Map();
+  return resultColumns.map((col) => {
+    const occurrence = (seen.get(col.name) || 0) + 1;
+    seen.set(col.name, occurrence);
+    return occurrence === 1 ? col.name : `${col.name}#${occurrence}`;
+  });
+}
+
 export function buildDisplayColumns(resultColumns, layout, mergedColumns = []) {
-  const base = resultColumns.map((col) => ({
-    id: col.name,
-    label: layout.labels[col.name] || col.name,
+  const ids = baseColumnIds(resultColumns);
+  // `index` is what the row lookup uses — never the name.
+  const base = resultColumns.map((col, index) => ({
+    id: ids[index],
+    index,
+    label: layout.labels[ids[index]] || (ids[index] === col.name ? col.name : `${col.name} (${ids[index].split("#").pop()})`),
     type: col.type,
     kind: "base",
     column: col,

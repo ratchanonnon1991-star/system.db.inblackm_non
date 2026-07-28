@@ -38,6 +38,7 @@ import { apiJson } from "@/lib/api-json";
 import { evaluateFormula } from "@/lib/gamedb-formula";
 import { extractSqlParams } from "@/lib/gamedb-sql-params";
 import {
+  baseColumnIds,
   buildDisplayColumns,
   cellsEqual,
   compareCells,
@@ -266,11 +267,13 @@ export default function QueryPanel({
           previous.columns.length === data.columns.length &&
           previous.rows.length === data.rows.length
         ) {
+          // Keyed by display-column id, which is how the table addresses a cell.
+          const columnIds = baseColumnIds(data.columns);
           const keys = new Set();
           data.rows.forEach((row, rowIndex) => {
             row.forEach((value, colIndex) => {
               if (String(previous.rows[rowIndex][colIndex]) !== String(value)) {
-                keys.add(`${rowIndex}:${data.columns[colIndex].name}`);
+                keys.add(`${rowIndex}:${columnIds[colIndex]}`);
               }
             });
           });
@@ -454,8 +457,9 @@ export default function QueryPanel({
         matched: canMerge ? Boolean(partner) : null,
         cells: visibleColumns.map((col) => {
           if (col.kind === "base") {
-            const index = baseNameToIndex.get(col.column.name);
-            const raw = index === undefined ? null : row[index];
+            // By position: two columns can share a name, and then a lookup by
+            // name hands both of them the same value.
+            const raw = row[col.index];
             return { raw, text: formatCell(raw, col.type) };
           }
           if (col.kind === "merged") {
@@ -500,6 +504,9 @@ export default function QueryPanel({
     onDataChange?.(query.id, {
       name: query.name,
       headers: visibleColumns.map((col) => col.label),
+      // Excel decides how to store a cell from the column type, not from what
+      // the text looks like, so a phone number keeps its leading zero.
+      types: visibleColumns.map((col) => col.type),
       rows: displayRows.map((row) => row.cells.map((cell) => cell.raw ?? cell.text)),
     });
   }, [onDataChange, query.id, query.name, visibleColumns, displayRows]);
@@ -524,7 +531,7 @@ export default function QueryPanel({
   const editCell = async ({ sourceIndex, colId, colIndex, value }) => {
     const col = visibleColumns[colIndex];
     if (!col || col.kind !== "base") return;
-    const current = result.rows[sourceIndex][baseNameToIndex.get(col.column.name)];
+    const current = result.rows[sourceIndex][col.index];
     if (String(current ?? "") === String(value ?? "")) return;
 
     setEditPending({ sourceIndex, colId });
@@ -543,9 +550,7 @@ export default function QueryPanel({
       setResult((prev) => {
         const rows = prev.rows.map((row, index) =>
           index === sourceIndex
-            ? row.map((cell, cellIndex) =>
-                cellIndex === baseNameToIndex.get(col.column.name) ? data.newValue : cell
-              )
+            ? row.map((cell, cellIndex) => (cellIndex === col.index ? data.newValue : cell))
             : row
         );
         // Keep the refresh baseline in step, or the next auto-refresh reports

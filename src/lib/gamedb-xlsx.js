@@ -65,6 +65,23 @@ function safeSheetName(name, index, used) {
   return candidate;
 }
 
+/**
+ * Whether a cell should be stored as a number.
+ *
+ * Looking at the text alone is not enough: "0812345678" and "007" are perfectly
+ * good numbers to Javascript and arrive in Excel as 812345678 and 7. The column
+ * type from Postgres decides it when the caller passes one; without a type, a
+ * string only counts as numeric if it survives the round trip unchanged.
+ */
+function isNumericCell(value, type) {
+  if (value === null || value === undefined || typeof value === "boolean") return false;
+  if (typeof value === "number") return Number.isFinite(value);
+  const text = String(value);
+  if (text === "" || !Number.isFinite(Number(text))) return false;
+  if (type) return type === "number";
+  return String(Number(text)) === text;
+}
+
 function sheetXml(sheet) {
   const rows = [sheet.headers, ...sheet.rows]
     .map((cells, rowIndex) => {
@@ -72,14 +89,7 @@ function sheetXml(sheet) {
         .map((value, colIndex) => {
           const reference = `${columnName(colIndex)}${rowIndex + 1}`;
           const isHeader = rowIndex === 0;
-          const numeric =
-            !isHeader &&
-            value !== null &&
-            value !== undefined &&
-            value !== "" &&
-            typeof value !== "boolean" &&
-            Number.isFinite(Number(value)) &&
-            String(value).trim() !== "";
+          const numeric = !isHeader && isNumericCell(value, sheet.types?.[colIndex]);
           if (numeric) {
             return `<c r="${reference}"><v>${Number(value)}</v></c>`;
           }
@@ -152,7 +162,7 @@ function buildParts(sheets) {
   return parts;
 }
 
-/** sheets: [{ name, headers: [string], rows: [[value]] }] → Blob (.xlsx) */
+/** sheets: [{ name, headers: [string], types?: [string], rows: [[value]] }] → Blob (.xlsx) */
 export function buildXlsxBlob(sheets) {
   const encoder = new TextEncoder();
   const parts = buildParts(sheets).map((part) => ({

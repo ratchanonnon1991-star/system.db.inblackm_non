@@ -73,10 +73,19 @@ export async function GET(request) {
     const present = new Set(objects.map((object) => object.name));
     const missingTables = expected.filter((name) => !present.has(name));
 
+    // Settings that look fine from the outside but are not: without these the
+    // service still answers every request, it just does so unsafely.
+    const env = {
+      sessionSecret: Boolean(process.env.SESSION_SECRET || process.env.OTP_SECRET),
+      encryptionKey: Boolean(process.env.GAMEDB_ENC_KEY),
+      actionHosts: (process.env.GAMEDB_ACTION_HOSTS || "").split(",").filter(Boolean).length,
+    };
+
     return jsonOk({
       identity: identity.rows[0],
       objects,
       missingTables,
+      env,
       fixes: buildFixes(objects, identity.rows[0].user),
       pool: {
         total: pool.totalCount,

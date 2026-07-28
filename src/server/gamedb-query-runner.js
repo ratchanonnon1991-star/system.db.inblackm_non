@@ -1,5 +1,5 @@
 import { getPoolForConnection } from "@/lib/db";
-import { bindSqlParams } from "@/lib/gamedb-sql-params";
+import { bindSqlParams, stripSqlLiterals } from "@/lib/gamedb-sql-params";
 import { getConnectionFlags } from "@/server/gamedb-side-tables";
 
 export const GAMEDB_MAX_ROWS = 1000;
@@ -23,13 +23,18 @@ export function validateReadOnlySql(sqlText) {
   if (!sql) {
     throw createHttpError("กรุณาใส่คำสั่ง SQL", 400);
   }
-  if (sql.includes(";")) {
+  // Both checks read the statement with string literals and comments blanked
+  // out. Over the raw text they fire on ordinary data — an order whose status
+  // is 'update', a LIKE pattern containing a semicolon — and refuse to run a
+  // query that only ever reads.
+  const bare = stripSqlLiterals(sql);
+  if (bare.includes(";")) {
     throw createHttpError("อนุญาตครั้งละ 1 statement เท่านั้น", 400);
   }
   if (!/^(select|with)\b/i.test(sql)) {
     throw createHttpError("อนุญาตเฉพาะคำสั่ง SELECT / WITH เท่านั้น", 400);
   }
-  if (FORBIDDEN_KEYWORDS.test(sql)) {
+  if (FORBIDDEN_KEYWORDS.test(bare)) {
     throw createHttpError(
       "SQL มีคำสั่งที่ไม่อนุญาต (อ่านข้อมูลได้อย่างเดียว)",
       400
