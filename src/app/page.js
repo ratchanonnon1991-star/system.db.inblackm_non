@@ -12,6 +12,8 @@ import {
   Lock,
   LogOut,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pencil,
   Plus,
   Search,
@@ -192,14 +194,18 @@ function readStoredPanels() {
 
 const THEME_KEY = "gamedb.theme";
 const PINNED_KEY = "gamedb.pinned";
+const SIDEBAR_KEY = "gamedb.sidebar";
 
 function GamedbWorkspace({ me, onLoggedOut }) {
   const isSuperAdmin = me.role === "admin";
 
   const [dark, setDark] = useState(false);
   const [pinned, setPinned] = useState([]);
+  // The query list eats 16rem of the row, which is a lot when a table is wide.
+  // Collapsing it leaves a rail that can still reopen the list.
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  // Theme and pins are per-browser preferences; read them once on mount.
+  // Theme, pins and the sidebar are per-browser preferences; read them once on mount.
   useEffect(() => {
     try {
       const storedTheme = window.localStorage.getItem(THEME_KEY);
@@ -209,9 +215,22 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- reading a browser preference is exactly what an effect is for
       setDark(prefersDark);
       setPinned(JSON.parse(window.localStorage.getItem(PINNED_KEY) || "[]"));
+      setSidebarOpen(window.localStorage.getItem(SIDEBAR_KEY) !== "closed");
     } catch {
       setDark(false);
     }
+  }, []);
+
+  const toggleSidebar = useCallback((next) => {
+    setSidebarOpen((prev) => {
+      const value = typeof next === "boolean" ? next : !prev;
+      try {
+        window.localStorage.setItem(SIDEBAR_KEY, value ? "open" : "closed");
+      } catch {
+        // preference is cosmetic; ignore a blocked storage
+      }
+      return value;
+    });
   }, []);
 
   useEffect(() => {
@@ -443,7 +462,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       window.removeEventListener("resize", measure);
       observer?.disconnect();
     };
-  }, [measureContainer, panels.length]);
+  }, [measureContainer, panels.length, sidebarOpen]);
 
   const openIds = useMemo(
     () => new Set(panels.map((panel) => panel.queryId)),
@@ -574,6 +593,24 @@ function GamedbWorkspace({ me, onLoggedOut }) {
 
   // Keyboard shortcuts, ignored while typing in a field.
   const searchRef = useRef(null);
+  // Focusing the search box may have to wait for the sidebar to open again, and
+  // that render is scheduled by React rather than happening on the spot.
+  const wantSearchFocus = useRef(false);
+
+  const focusSearch = useCallback(() => {
+    if (!sidebarOpen) {
+      wantSearchFocus.current = true;
+      toggleSidebar(true);
+      return;
+    }
+    searchRef.current?.focus();
+  }, [sidebarOpen, toggleSidebar]);
+
+  useEffect(() => {
+    if (!sidebarOpen || !wantSearchFocus.current) return;
+    wantSearchFocus.current = false;
+    searchRef.current?.focus();
+  }, [sidebarOpen]);
   useEffect(() => {
     const onKeyDown = (event) => {
       const tag = event.target?.tagName;
@@ -590,7 +627,10 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       }
       if (event.key === "/") {
         event.preventDefault();
-        searchRef.current?.focus();
+        focusSearch();
+      } else if (event.key === "b") {
+        event.preventDefault();
+        toggleSidebar();
       } else if (event.key === "r") {
         event.preventDefault();
         window.dispatchEvent(new CustomEvent("gamedb:refresh-all"));
@@ -757,17 +797,60 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       </header>
 
       <div className="flex flex-col gap-4 lg:flex-row">
-        <aside className="w-full shrink-0 rounded-2xl border border-zinc-200 bg-white p-3 lg:w-64">
-          <div className="relative mb-2">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-            <input
-              ref={searchRef}
-              type="text"
-              value={sidebarSearch}
-              onChange={(e) => setSidebarSearch(e.target.value)}
-              placeholder="ค้นหาชื่อ / SQL... (กด /)"
-              className="h-9 w-full rounded-lg border border-zinc-200 bg-zinc-50 pl-8 pr-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
-            />
+        {!sidebarOpen && (
+          <aside className="flex w-full shrink-0 items-center gap-2 rounded-2xl border border-zinc-200 bg-white p-2 lg:w-11 lg:flex-col lg:py-3">
+            <button
+              type="button"
+              onClick={() => toggleSidebar(true)}
+              className="rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700"
+              title="เปิดแถบรายการ Query (คีย์ลัด: b)"
+            >
+              <PanelLeftOpen size={15} />
+            </button>
+            <button
+              type="button"
+              onClick={focusSearch}
+              className="rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700"
+              title="ค้นหา Query (คีย์ลัด: /)"
+            >
+              <Search size={15} />
+            </button>
+            <span
+              className="rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10px] font-black text-zinc-500"
+              title={`เปิดอยู่ ${openPanels.length} ตาราง`}
+            >
+              {openPanels.length}
+            </span>
+          </aside>
+        )}
+        <aside
+          className={`w-full shrink-0 rounded-2xl border border-zinc-200 bg-white p-3 lg:w-64 ${
+            sidebarOpen ? "" : "hidden"
+          }`}
+        >
+          <div className="mb-2 flex items-center gap-1.5">
+            <div className="relative min-w-0 flex-1">
+              <Search
+                size={13}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400"
+              />
+              <input
+                ref={searchRef}
+                type="text"
+                value={sidebarSearch}
+                onChange={(e) => setSidebarSearch(e.target.value)}
+                placeholder="ค้นหาชื่อ / SQL... (กด /)"
+                className="h-9 w-full rounded-lg border border-zinc-200 bg-zinc-50 pl-8 pr-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => toggleSidebar(false)}
+              className="shrink-0 rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700"
+              title="ย่อแถบรายการเพื่อให้ตารางกว้างขึ้น (คีย์ลัด: b)"
+            >
+              <PanelLeftClose size={15} />
+            </button>
           </div>
           <div className="mb-2 flex items-center justify-between gap-2 px-1">
             <span className="text-[10px] font-black text-zinc-400">

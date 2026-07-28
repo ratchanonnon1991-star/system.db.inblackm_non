@@ -1,9 +1,13 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireAdmin } from "@/server/auth";
+import { requireAdmin, requireSuperAdmin } from "@/server/auth";
 import { findConnectionWithSecret } from "@/server/connections-repository";
 import { findQueryById } from "@/server/gamedb-repository";
 import { runReadOnlyQuery } from "@/server/gamedb-query-runner";
-import { insertSnapshot, listSnapshots } from "@/server/gamedb-snapshots-repository";
+import {
+  deleteSnapshotsForQuery,
+  insertSnapshot,
+  listSnapshots,
+} from "@/server/gamedb-snapshots-repository";
 
 export async function GET(request, { params }) {
   try {
@@ -48,5 +52,17 @@ export async function POST(request, { params }) {
     return jsonOk({ snapshot }, 201);
   } catch (err) {
     return handleApiError(err, "บันทึก snapshot ไม่สำเร็จ");
+  }
+}
+
+// Clears every snapshot of this query at once.
+export async function DELETE(request, { params }) {
+  try {
+    await requireSuperAdmin(request);
+    const { id } = await params;
+    const deleted = await deleteSnapshotsForQuery(Number(id));
+    return jsonOk({ deleted });
+  } catch (err) {
+    return handleApiError(err, "ลบ snapshot ไม่สำเร็จ");
   }
 }

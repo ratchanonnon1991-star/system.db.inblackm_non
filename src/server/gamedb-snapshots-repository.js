@@ -80,3 +80,13 @@ export async function deleteSnapshot(id) {
   await ensureSchema();
   await getPool().query(`DELETE FROM gamedb_snapshots WHERE id = $1`, [id]);
 }
+
+// Clears the whole history of one query. Snapshots are raw rows of a report, so
+// they pile up quickly and there has to be a way to throw them away.
+export async function deleteSnapshotsForQuery(queryId) {
+  await ensureSchema();
+  const result = await getPool().query(`DELETE FROM gamedb_snapshots WHERE query_id = $1`, [
+    queryId,
+  ]);
+  return result.rowCount;
+}

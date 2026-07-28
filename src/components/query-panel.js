@@ -28,6 +28,7 @@ import {
   SlidersHorizontal,
   Table2,
   Timer,
+  Trash2,
   User,
   Users,
   X,
@@ -649,6 +650,32 @@ export default function QueryPanel({
     }
   };
 
+  // Deletes the snapshot on screen, or the whole history when none is open.
+  const clearSnapshots = async () => {
+    const target = viewingSnapshot
+      ? snapshots.find((snapshot) => snapshot.id === viewingSnapshot.id)
+      : null;
+    const message = target
+      ? `ลบ snapshot "${target.name}" ?`
+      : `ลบ snapshot ของ "${query.name}" ทั้งหมด ${snapshots.length} รายการ ?`;
+    if (!window.confirm(message)) return;
+    setSaveError("");
+    try {
+      await apiJson(
+        target ? `/api/snapshots/${target.id}` : `/api/queries/${query.id}/snapshots`,
+        { method: "DELETE", fallbackError: "ลบ snapshot ไม่สำเร็จ" }
+      );
+      // Whatever was on screen is gone now, so go back to live data.
+      if (viewingSnapshot) {
+        setViewingSnapshot(null);
+        runQuery();
+      }
+      await loadSnapshots();
+    } catch (err) {
+      setSaveError(err.message);
+    }
+  };
+
   const runRowAction = async (row, actionIndex) => {
     const action = layout.actions[actionIndex];
     if (!action) return;
@@ -1007,6 +1034,20 @@ export default function QueryPanel({
               </option>
             ))}
           </select>
+        )}
+        {canManage && snapshots.length > 0 && (
+          <button
+            type="button"
+            onClick={clearSnapshots}
+            className={iconButtonClass}
+            title={
+              viewingSnapshot
+                ? "ลบ snapshot ที่กำลังดูอยู่"
+                : `ลบ snapshot ของ Query นี้ทั้งหมด (${snapshots.length})`
+            }
+          >
+            <Trash2 size={13} />
+          </button>
         )}
         {canManage && (
           <>

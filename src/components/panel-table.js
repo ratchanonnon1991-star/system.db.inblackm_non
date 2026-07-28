@@ -435,7 +435,7 @@ export default function PanelTable({
               #
             </th>
             {columns.map((col) => {
-              const sorted = layout.sort?.colId === col.id ? layout.sort.dir : null;
+              const sorted = layout.sort && layout.sort.colId === col.id ? layout.sort.dir : null;
               const summaryKind = layout.summary[col.id];
               return (
                 <th
