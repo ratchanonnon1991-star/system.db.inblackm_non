@@ -18,6 +18,7 @@ import {
   Loader2,
   Maximize2,
   Minimize2,
+  MoreHorizontal,
   Palette,
   Pencil,
   Play,
@@ -67,6 +68,12 @@ import PanelChart from "@/components/panel-chart";
 const iconButtonClass =
   "flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700 disabled:opacity-40";
 
+const menuItemClass =
+  "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[11px] font-bold text-zinc-600 transition hover:bg-zinc-50 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40";
+
+const paramPresetButtonClass =
+  "rounded-md border border-zinc-200 bg-white px-2 py-1 text-[9px] font-black text-zinc-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700";
+
 const RESIZE_HINT = "ลากเพื่อปรับขนาด · ดับเบิลคลิกเพื่อรีเซ็ต";
 
 // Edges first, corners last: same z-index, so the corners win the hit test
@@ -108,6 +115,190 @@ function resolveParams(layout, sqlText) {
         defaultValue: "",
         options: [],
       }
+  );
+}
+
+function paramInputGuide(param) {
+  if (param.type === "number") {
+    return {
+      inputType: "number",
+      placeholder: "เช่น 100 หรือ 99.50",
+      hint: "กรอกเป็นตัวเลข เช่น 100 หรือ 99.50",
+      widthClass: "w-36",
+      kind: "number",
+    };
+  }
+  if (param.type === "date") {
+    return {
+      inputType: "date",
+      placeholder: "เช่น 2026-07-28",
+      hint: "รูปแบบ YYYY-MM-DD เช่น 2026-07-28",
+      widthClass: "w-40",
+      kind: "date",
+    };
+  }
+  if (param.type === "datetime") {
+    return {
+      inputType: "datetime-local",
+      placeholder: "เช่น 2026-07-28T14:30:00",
+      hint: "รูปแบบ YYYY-MM-DDTHH:mm:ss เช่น 2026-07-28T14:30:00",
+      widthClass: "w-52",
+      kind: "datetime",
+    };
+  }
+
+  const identity = `${param.name} ${param.label || ""}`.toLowerCase();
+  if (/(datetime|timestamp|date[_ -]?time|created_at|updated_at|\w+_at\b)/.test(identity)) {
+    return {
+      inputType: "text",
+      placeholder: "เช่น 2026-07-28 14:30:00",
+      hint: "วันที่และเวลา: YYYY-MM-DD HH:mm:ss เช่น 2026-07-28 14:30:00",
+      widthClass: "w-52",
+      kind: "datetime",
+    };
+  }
+  if (/(^|[_ -])date($|[_ -])/.test(identity)) {
+    return {
+      inputType: "text",
+      placeholder: "เช่น 2026-07-28",
+      hint: "วันที่: YYYY-MM-DD เช่น 2026-07-28",
+      widthClass: "w-40",
+      kind: "date",
+    };
+  }
+  if (/(^|[_ -])time($|[_ -])/.test(identity)) {
+    return {
+      inputType: "text",
+      placeholder: "เช่น 14:30:00",
+      hint: "เวลา: HH:mm:ss เช่น 14:30:00",
+      widthClass: "w-36",
+      kind: "time",
+    };
+  }
+  return {
+    inputType: "text",
+    placeholder: "เช่น ABC123",
+    hint: "กรอกข้อความหรือรหัสที่ต้องการค้นหา เช่น ABC123",
+    widthClass: "w-40",
+    kind: "text",
+  };
+}
+
+function isValidDatePart(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const [, year, month, day] = match.map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+function isValidTimePart(value) {
+  const match = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value);
+  if (!match) return false;
+  const [, hour, minute, second = "0"] = match;
+  return Number(hour) <= 23 && Number(minute) <= 59 && Number(second) <= 59;
+}
+
+function validateParamValues(params, values) {
+  const errors = {};
+  for (const param of params) {
+    const value = String(values[param.name] ?? "").trim();
+    if (!value) {
+      errors[param.name] = `กรุณากรอก ${param.label || param.name}`;
+      continue;
+    }
+
+    const guide = paramInputGuide(param);
+    if (guide.kind === "number" && !Number.isFinite(Number(value))) {
+      errors[param.name] = "กรุณากรอกเป็นตัวเลข เช่น 100 หรือ 99.50";
+    } else if (guide.kind === "date" && !isValidDatePart(value)) {
+      errors[param.name] = "รูปแบบวันที่ต้องเป็น YYYY-MM-DD เช่น 2026-07-28";
+    } else if (guide.kind === "datetime") {
+      const [datePart, timePart] = value.split(/[T ]/);
+      if (!isValidDatePart(datePart || "") || !isValidTimePart(timePart || "")) {
+        errors[param.name] =
+          param.type === "datetime"
+            ? "รูปแบบต้องเป็น YYYY-MM-DDTHH:mm:ss"
+            : "รูปแบบต้องเป็น YYYY-MM-DD HH:mm:ss";
+      }
+    } else if (guide.kind === "time" && !isValidTimePart(value)) {
+      errors[param.name] = "รูปแบบเวลาต้องเป็น HH:mm:ss เช่น 14:30:00";
+    } else if (
+      param.type === "select" &&
+      param.options.length > 0 &&
+      !param.options.includes(value)
+    ) {
+      errors[param.name] = "กรุณาเลือกค่าจากรายการ";
+    }
+  }
+
+  const range = findDateRangeParams(params);
+  if (range && !errors[range.start.name] && !errors[range.end.name]) {
+    const startRaw = String(values[range.start.name] ?? "").replace(" ", "T");
+    const endRaw = String(values[range.end.name] ?? "").replace(" ", "T");
+    const startValue =
+      paramInputGuide(range.start).kind === "date" ? `${startRaw}T00:00:00` : startRaw;
+    const endValue =
+      paramInputGuide(range.end).kind === "date" ? `${endRaw}T23:59:59` : endRaw;
+    if (startValue > endValue) {
+      errors[range.end.name] = "วันที่สิ้นสุดต้องไม่น้อยกว่าวันที่เริ่มต้น";
+    }
+  }
+  return errors;
+}
+
+function findDateRangeParams(params) {
+  const dateParams = params.filter((param) =>
+    ["date", "datetime"].includes(paramInputGuide(param).kind)
+  );
+  const identity = (param) => `${param.name} ${param.label || ""}`.toLowerCase();
+  const start = dateParams.find((param) =>
+    /(^|[_ -])(from|start|since|begin)(?=$|[_ -])|(from|start)(date|time)|เริ่ม/.test(identity(param))
+  );
+  const end = dateParams.find((param) =>
+    /(^|[_ -])(to|end|until|before)(?=$|[_ -])|(to|end)(date|time)|สิ้นสุด|ถึง/.test(identity(param))
+  );
+  return start && end && start.name !== end.name ? { start, end } : null;
+}
+
+function formatDateParam(date, param, endOfDay = false) {
+  const pad = (value) => String(value).padStart(2, "0");
+  const datePart = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  const kind = paramInputGuide(param).kind;
+  if (kind === "date") return datePart;
+  const timePart = endOfDay ? "23:59:59" : "00:00:00";
+  return param.type === "datetime"
+    ? `${datePart}T${timePart}`
+    : `${datePart} ${timePart}`;
+}
+
+function datePresetRange(preset) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const start = new Date(today);
+  const end = new Date(today);
+
+  if (preset === "yesterday") {
+    start.setDate(start.getDate() - 1);
+    end.setDate(end.getDate() - 1);
+  } else if (preset === "last7") {
+    start.setDate(start.getDate() - 6);
+  } else if (preset === "thisMonth") {
+    start.setDate(1);
+  } else if (preset === "previousMonth") {
+    start.setMonth(start.getMonth() - 1, 1);
+    end.setDate(0);
+  }
+  return { start, end };
+}
+
+function isSensitiveParam(param) {
+  return /(password|passwd|passcode|token|secret|api[_ -]?key|cookie|credential)/i.test(
+    `${param.name} ${param.label || ""}`
   );
 }
 
@@ -168,13 +359,22 @@ export default function QueryPanel({
 
   // initialParams arrives when this panel was opened by drilling from another,
   // and takes precedence over the configured defaults.
-  const [paramValues, setParamValues] = useState(() => ({
-    ...initialParamValues(savedParams),
-    ...(initialParams || {}),
-  }));
+  const startingParamValues = useMemo(
+    () => ({
+      ...initialParamValues(savedParams),
+      ...(initialParams || {}),
+    }),
+    [initialParams, savedParams]
+  );
+  const [paramValues, setParamValues] = useState(startingParamValues);
+  const [paramStorageReady, setParamStorageReady] = useState(false);
+  const [showParamErrors, setShowParamErrors] = useState(false);
+  const paramStorageLoadedRef = useRef(null);
   const [rowFilter, setRowFilter] = useState("");
   const [view, setView] = useState("table");
   const [modal, setModal] = useState(null);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const moreMenuRef = useRef(null);
   const [changedKeys, setChangedKeys] = useState(new Set());
   const [editPending, setEditPending] = useState(null);
   const [editError, setEditError] = useState("");
@@ -183,18 +383,19 @@ export default function QueryPanel({
     () => resolveParams(layout, query.sqlText),
     [layout, query.sqlText]
   );
-  const missingParams = useMemo(
-    () =>
-      effectiveParams
-        .filter((param) => !String(paramValues[param.name] ?? "").trim())
-        .map((param) => param.label || param.name),
+  const paramErrors = useMemo(
+    () => validateParamValues(effectiveParams, paramValues),
     [effectiveParams, paramValues]
+  );
+  const dateRangeParams = useMemo(
+    () => findDateRangeParams(effectiveParams),
+    [effectiveParams]
   );
 
   // runQuery must not be rebuilt whenever a parameter input changes, or the
   // effect below would re-run the query on every keystroke.
   const paramsRef = useRef(paramValues);
-  const missingRef = useRef(missingParams);
+  const paramErrorsRef = useRef(paramErrors);
   // Snapshot of the rows the panel is currently showing, used to highlight what
   // an auto-refresh changed.
   const previousRowsRef = useRef(null);
@@ -211,18 +412,90 @@ export default function QueryPanel({
 
   useEffect(() => {
     paramsRef.current = paramValues;
-    missingRef.current = missingParams;
-  }, [paramValues, missingParams]);
+    paramErrorsRef.current = paramErrors;
+  }, [paramValues, paramErrors]);
+
+  useEffect(() => {
+    if (paramStorageLoadedRef.current === query.id) return;
+    paramStorageLoadedRef.current = query.id;
+    const remembered = {};
+    try {
+      const stored = JSON.parse(localStorage.getItem(`gamedb.query-params.${query.id}`) || "{}");
+      for (const param of effectiveParams) {
+        if (
+          !isSensitiveParam(param) &&
+          stored &&
+          typeof stored[param.name] === "string"
+        ) {
+          remembered[param.name] = stored[param.name];
+        }
+      }
+    } catch {
+      // A corrupt or blocked browser store should never stop a query panel.
+    }
+    setParamValues({
+      ...startingParamValues,
+      ...remembered,
+      ...(initialParams || {}),
+    });
+    setParamStorageReady(true);
+  }, [effectiveParams, initialParams, query.id, startingParamValues]);
+
+  useEffect(() => {
+    if (!paramStorageReady) return;
+    const remembered = {};
+    for (const param of effectiveParams) {
+      if (!isSensitiveParam(param)) {
+        remembered[param.name] = String(paramValues[param.name] ?? "");
+      }
+    }
+    try {
+      localStorage.setItem(`gamedb.query-params.${query.id}`, JSON.stringify(remembered));
+    } catch {
+      // Private browsing and storage policies may block localStorage.
+    }
+  }, [effectiveParams, paramStorageReady, paramValues, query.id]);
+
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+
+    const closeOnOutsideClick = (event) => {
+      if (!moreMenuRef.current?.contains(event.target)) setMoreMenuOpen(false);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setMoreMenuOpen(false);
+    };
+
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [moreMenuOpen]);
+
+  const runMoreAction = (action) => {
+    setMoreMenuOpen(false);
+    action();
+  };
 
   const runQuery = useCallback(
-    async ({ silent = false, append = false } = {}) => {
+    async ({ silent = false, append = false, validate = false } = {}) => {
       // Nothing to send yet — show the inputs instead of a failed request.
-      if (missingRef.current.length > 0) {
+      const firstInvalidParam = Object.keys(paramErrorsRef.current)[0];
+      if (firstInvalidParam) {
+        if (validate) {
+          setShowParamErrors(true);
+          requestAnimationFrame(() => {
+            document.getElementById(`query-${query.id}-param-${firstInvalidParam}`)?.focus();
+          });
+        }
         setRunning(false);
         setRefreshing(false);
         setRunError("");
         return;
       }
+      if (validate) setShowParamErrors(false);
       if (append) setLoadingMore(true);
       else if (silent) setRefreshing(true);
       else setRunning(true);
@@ -298,9 +571,10 @@ export default function QueryPanel({
   );
 
   useEffect(() => {
+    if (!paramStorageReady) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- setState happens after the run request resolves
     runQuery();
-  }, [runQuery]);
+  }, [paramStorageReady, runQuery]);
 
   // The "r" shortcut refreshes every open panel at once.
   useEffect(() => {
@@ -332,6 +606,46 @@ export default function QueryPanel({
     layoutDirtyRef.current = true;
     setLayoutDirty(true);
   }, []);
+
+  const resetParamValues = () => {
+    setParamValues(initialParamValues(effectiveParams));
+    setShowParamErrors(false);
+  };
+
+  const clearParamValues = () => {
+    setParamValues(
+      Object.fromEntries(effectiveParams.map((param) => [param.name, ""]))
+    );
+    setShowParamErrors(false);
+  };
+
+  const applyDateRangePreset = (preset) => {
+    if (!dateRangeParams) return;
+    const range = datePresetRange(preset);
+    setParamValues((prev) => ({
+      ...prev,
+      [dateRangeParams.start.name]: formatDateParam(
+        range.start,
+        dateRangeParams.start,
+        false
+      ),
+      [dateRangeParams.end.name]: formatDateParam(
+        range.end,
+        dateRangeParams.end,
+        true
+      ),
+    }));
+    setShowParamErrors(false);
+  };
+
+  const applySingleDatePreset = (param, preset) => {
+    const range = datePresetRange(preset);
+    setParamValues((prev) => ({
+      ...prev,
+      [param.name]: formatDateParam(range.start, param, false),
+    }));
+    setShowParamErrors(false);
+  };
 
   // --- merge with another query -------------------------------------------
   const [mergeResult, setMergeResult] = useState(null);
@@ -883,8 +1197,8 @@ export default function QueryPanel({
           {panel.collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
         </button>
 
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-black">
+        <div className="min-w-48 flex-[1_1_16rem]">
+          <p className="truncate text-sm font-black" title={query.name}>
             {query.name}
             {refreshing && (
               <Loader2 size={11} className="ml-1.5 inline animate-spin text-zinc-400" />
@@ -963,7 +1277,7 @@ export default function QueryPanel({
           </button>
         )}
 
-        <button type="button" onClick={() => runQuery()} disabled={running} className={iconButtonClass} title="รันใหม่">
+        <button type="button" onClick={() => runQuery({ validate: true })} disabled={running} className={iconButtonClass} title="รันใหม่">
           <RefreshCw size={13} className={running ? "animate-spin" : ""} />
         </button>
         <div className="flex h-8 items-center gap-1 rounded-lg border border-zinc-200 px-2" title="รันซ้ำอัตโนมัติ">
@@ -995,105 +1309,219 @@ export default function QueryPanel({
         >
           <ChartColumn size={13} />
         </button>
-        <button type="button" onClick={() => setModal("computed")} disabled={!result} className={iconButtonClass} title="เพิ่มคอลัมน์สูตร">
-          <Calculator size={13} />
-        </button>
-        <button
-          type="button"
-          onClick={() => setModal("merge")}
-          disabled={!result}
-          className={iconButtonClass}
-          title="รวมตารางกับอีก Query"
-        >
-          <Combine size={13} className={layout.merge ? "text-red-600" : ""} />
-        </button>
-        <button type="button" onClick={() => setModal("rules")} disabled={!result} className={iconButtonClass} title="ระบายสีตามเงื่อนไข">
-          <Palette size={13} />
-        </button>
-        <button type="button" onClick={() => setModal("chart")} disabled={!result} className={iconButtonClass} title="ตั้งค่ากราฟ">
-          <Play size={13} className="rotate-90" />
-        </button>
         <button type="button" onClick={exportCsv} disabled={!result} className={iconButtonClass} title="ดาวน์โหลด CSV">
           <Download size={13} />
         </button>
-        <button
-          type="button"
-          onClick={saveSnapshot}
-          disabled={!result || Boolean(viewingSnapshot)}
-          className={iconButtonClass}
-          title="บันทึกผลลัพธ์ตอนนี้ไว้ดูย้อนหลัง (snapshot)"
-        >
-          <Camera size={13} />
-        </button>
-        {snapshots.length > 0 && (
-          <select
-            value={viewingSnapshot?.id ?? ""}
-            onChange={(e) => openSnapshot(e.target.value ? Number(e.target.value) : null)}
-            className="h-8 max-w-[9rem] rounded-lg border border-zinc-200 bg-white px-2 text-[10px] font-black text-zinc-600 outline-none"
-            title="ดูผลลัพธ์ที่เคยบันทึกไว้"
-          >
-            <option value="">ข้อมูลล่าสุด</option>
-            {snapshots.map((snapshot) => (
-              <option key={snapshot.id} value={snapshot.id}>
-                {snapshot.name}
-              </option>
-            ))}
-          </select>
-        )}
-        {canManage && snapshots.length > 0 && (
+
+        <div ref={moreMenuRef} className="relative">
           <button
             type="button"
-            onClick={clearSnapshots}
-            className={iconButtonClass}
-            title={
-              viewingSnapshot
-                ? "ลบ snapshot ที่กำลังดูอยู่"
-                : `ลบ snapshot ของ Query นี้ทั้งหมด (${snapshots.length})`
-            }
+            onClick={() => setMoreMenuOpen((open) => !open)}
+            className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[10px] font-black transition ${
+              moreMenuOpen
+                ? "border-red-200 bg-red-50 text-red-700"
+                : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+            }`}
+            aria-haspopup="menu"
+            aria-expanded={moreMenuOpen}
+            aria-controls={`query-more-menu-${query.id}`}
           >
-            <Trash2 size={13} />
+            <MoreHorizontal size={14} />
+            เพิ่มเติม
           </button>
-        )}
-        {canManage && (
-          <>
-            <button type="button" onClick={() => setModal("params")} className={iconButtonClass} title="พารามิเตอร์ของ Query">
-              <SlidersHorizontal size={13} />
-            </button>
-            <button type="button" onClick={() => setModal("drill")} disabled={!result} className={iconButtonClass} title="คลิกแถวเพื่อเปิด Query อื่น">
-              <CornerDownRight size={13} className={layout.drill ? "text-red-600" : ""} />
-            </button>
-            <button type="button" onClick={() => setModal("actions")} disabled={!result} className={iconButtonClass} title="ปุ่ม action ต่อแถว">
-              <Zap size={13} className={layout.actions.length ? "text-red-600" : ""} />
-            </button>
-            <button type="button" onClick={() => setModal("editable")} disabled={!result} className={iconButtonClass} title="ตั้งค่าการแก้ไขข้อมูล">
-              <Table2 size={13} className={layout.editable ? "text-red-600" : ""} />
-            </button>
-            {canEditCells && (
+
+          {moreMenuOpen && (
+            <div
+              id={`query-more-menu-${query.id}`}
+              role="menu"
+              className="absolute right-0 top-full z-50 mt-2 max-h-[min(32rem,70vh)] w-64 overflow-y-auto rounded-xl border border-zinc-200 bg-white p-2 shadow-xl shadow-zinc-900/10"
+            >
+              <p className="px-2.5 pb-1 pt-1 text-[9px] font-black uppercase tracking-wider text-zinc-400">
+                การแสดงผล
+              </p>
               <button
                 type="button"
-                onClick={() => setModal("bulk")}
-                className={iconButtonClass}
-                title="แก้หลายแถวจาก Excel"
+                role="menuitem"
+                onClick={() => runMoreAction(() => setModal("computed"))}
+                disabled={!result}
+                className={menuItemClass}
               >
-                <ClipboardPaste size={13} />
+                <Calculator size={14} /> เพิ่มคอลัมน์สูตร
               </button>
-            )}
-          </>
-        )}
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => runMoreAction(() => setModal("rules"))}
+                disabled={!result}
+                className={menuItemClass}
+              >
+                <Palette size={14} /> สีตามเงื่อนไข
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => runMoreAction(() => setModal("chart"))}
+                disabled={!result}
+                className={menuItemClass}
+              >
+                <Play size={14} className="rotate-90" /> ตั้งค่ากราฟ
+              </button>
+
+              <div className="my-1 border-t border-zinc-100" />
+              <p className="px-2.5 pb-1 pt-1 text-[9px] font-black uppercase tracking-wider text-zinc-400">
+                ข้อมูล
+              </p>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => runMoreAction(() => setModal("merge"))}
+                disabled={!result}
+                className={menuItemClass}
+              >
+                <Combine size={14} className={layout.merge ? "text-red-600" : ""} />
+                รวมกับ Query อื่น
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => runMoreAction(saveSnapshot)}
+                disabled={!result || Boolean(viewingSnapshot)}
+                className={menuItemClass}
+              >
+                <Camera size={14} /> บันทึกผลลัพธ์ย้อนหลัง
+              </button>
+              {snapshots.length > 0 && (
+                <div className="px-2.5 py-1.5">
+                  <label
+                    htmlFor={`query-snapshot-${query.id}`}
+                    className="mb-1 block text-[9px] font-black text-zinc-400"
+                  >
+                    ดูข้อมูลที่บันทึกไว้
+                  </label>
+                  <select
+                    id={`query-snapshot-${query.id}`}
+                    value={viewingSnapshot?.id ?? ""}
+                    onChange={(event) => {
+                      openSnapshot(event.target.value ? Number(event.target.value) : null);
+                      setMoreMenuOpen(false);
+                    }}
+                    className="h-8 w-full rounded-lg border border-zinc-200 bg-white px-2 text-[10px] font-bold text-zinc-600 outline-none focus:border-red-500"
+                  >
+                    <option value="">ข้อมูลล่าสุด</option>
+                    {snapshots.map((snapshot) => (
+                      <option key={snapshot.id} value={snapshot.id}>
+                        {snapshot.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {canManage && snapshots.length > 0 && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => runMoreAction(clearSnapshots)}
+                  className={`${menuItemClass} text-red-600 hover:bg-red-50 hover:text-red-700`}
+                >
+                  <Trash2 size={14} />
+                  {viewingSnapshot ? "ลบ snapshot ที่กำลังดู" : `ลบ snapshot ทั้งหมด (${snapshots.length})`}
+                </button>
+              )}
+
+              {canManage && (
+                <>
+                  <div className="my-1 border-t border-zinc-100" />
+                  <p className="px-2.5 pb-1 pt-1 text-[9px] font-black uppercase tracking-wider text-zinc-400">
+                    จัดการ Query
+                  </p>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => runMoreAction(() => setModal("params"))}
+                    className={menuItemClass}
+                  >
+                    <SlidersHorizontal size={14} /> พารามิเตอร์
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => runMoreAction(() => setModal("drill"))}
+                    disabled={!result}
+                    className={menuItemClass}
+                  >
+                    <CornerDownRight size={14} className={layout.drill ? "text-red-600" : ""} />
+                    เปิด Query อื่นจากแถว
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => runMoreAction(() => setModal("actions"))}
+                    disabled={!result}
+                    className={menuItemClass}
+                  >
+                    <Zap size={14} className={layout.actions.length ? "text-red-600" : ""} />
+                    Action ต่อแถว
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => runMoreAction(() => setModal("editable"))}
+                    disabled={!result}
+                    className={menuItemClass}
+                  >
+                    <Table2 size={14} className={layout.editable ? "text-red-600" : ""} />
+                    ตั้งค่าการแก้ไขข้อมูล
+                  </button>
+                  {canEditCells && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => runMoreAction(() => setModal("bulk"))}
+                      className={menuItemClass}
+                    >
+                      <ClipboardPaste size={14} /> แก้หลายแถวจาก Excel
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => runMoreAction(onEditQuery)}
+                    className={menuItemClass}
+                  >
+                    <Pencil size={14} /> แก้ไข Query
+                  </button>
+                </>
+              )}
+
+              <div className="my-1 border-t border-zinc-100" />
+              <p className="px-2.5 pb-1 pt-1 text-[9px] font-black uppercase tracking-wider text-zinc-400">
+                ตำแหน่ง
+              </p>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => runMoreAction(() => onMove(-1))}
+                disabled={!canMoveUp}
+                className={menuItemClass}
+              >
+                <ArrowLeft size={14} /> ย้ายไปก่อนหน้า
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => runMoreAction(() => onMove(1))}
+                disabled={!canMoveDown}
+                className={menuItemClass}
+              >
+                <ArrowRight size={14} /> ย้ายไปถัดไป
+              </button>
+            </div>
+          )}
+        </div>
+
         <button type="button" onClick={onToggleFullWidth} className={iconButtonClass} title={isFullWidth ? "คืนความกว้างอัตโนมัติ" : "ขยายเต็มความกว้าง"}>
           {isFullWidth ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
         </button>
-        <button type="button" onClick={() => onMove(-1)} disabled={!canMoveUp} className={iconButtonClass} title="ย้ายไปก่อนหน้า">
-          <ArrowLeft size={13} />
-        </button>
-        <button type="button" onClick={() => onMove(1)} disabled={!canMoveDown} className={iconButtonClass} title="ย้ายไปถัดไป">
-          <ArrowRight size={13} />
-        </button>
-        {canManage && (
-          <button type="button" onClick={onEditQuery} className={iconButtonClass} title="แก้ไข Query">
-            <Pencil size={13} />
-          </button>
-        )}
         <button
           type="button"
           onClick={onClose}
@@ -1108,54 +1536,129 @@ export default function QueryPanel({
         <>
           {effectiveParams.length > 0 && (
             <div className="flex flex-wrap items-end gap-2 border-b border-zinc-100 bg-zinc-50/60 px-3 py-2">
-              {effectiveParams.map((param) => (
-                <div key={param.name}>
-                  <label className="mb-0.5 block text-[9px] font-black text-zinc-500">
-                    {param.label}
-                  </label>
-                  {param.type === "select" ? (
-                    <select
-                      value={paramValues[param.name] ?? ""}
-                      onChange={(e) =>
-                        setParamValues((prev) => ({ ...prev, [param.name]: e.target.value }))
-                      }
-                      className="h-8 rounded-lg border border-zinc-200 bg-white px-2 text-[11px] font-semibold outline-none focus:border-red-600"
-                    >
-                      <option value="">—</option>
-                      {param.options.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      type={param.type === "date" ? "date" : param.type === "number" ? "number" : "text"}
-                      value={paramValues[param.name] ?? ""}
-                      onChange={(e) =>
-                        setParamValues((prev) => ({ ...prev, [param.name]: e.target.value }))
-                      }
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") runQuery();
-                      }}
-                      className="h-8 w-32 rounded-lg border border-zinc-200 bg-white px-2 text-[11px] font-semibold outline-none focus:border-red-600"
-                    />
+              <div className="flex w-full flex-wrap items-center justify-between gap-2 pb-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="mr-1 text-[10px] font-black text-zinc-500">ตัวกรอง Query</span>
+                  {dateRangeParams && (
+                    <>
+                      <button type="button" onClick={() => applyDateRangePreset("today")} className={paramPresetButtonClass}>
+                        วันนี้
+                      </button>
+                      <button type="button" onClick={() => applyDateRangePreset("yesterday")} className={paramPresetButtonClass}>
+                        เมื่อวาน
+                      </button>
+                      <button type="button" onClick={() => applyDateRangePreset("last7")} className={paramPresetButtonClass}>
+                        7 วันล่าสุด
+                      </button>
+                      <button type="button" onClick={() => applyDateRangePreset("thisMonth")} className={paramPresetButtonClass}>
+                        เดือนนี้
+                      </button>
+                      <button type="button" onClick={() => applyDateRangePreset("previousMonth")} className={paramPresetButtonClass}>
+                        เดือนก่อน
+                      </button>
+                    </>
                   )}
                 </div>
-              ))}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[9px] font-semibold text-zinc-400">
+                    จำค่าล่าสุดใน browser นี้
+                  </span>
+                  <button type="button" onClick={resetParamValues} className={paramPresetButtonClass}>
+                    คืนค่าเริ่มต้น
+                  </button>
+                  <button type="button" onClick={clearParamValues} className={paramPresetButtonClass}>
+                    ล้างทั้งหมด
+                  </button>
+                </div>
+              </div>
+              {effectiveParams.map((param) => {
+                const guide = paramInputGuide(param);
+                const inputId = `query-${query.id}-param-${param.name}`;
+                const hintId = `${inputId}-hint`;
+                const errorId = `${inputId}-error`;
+                const error = showParamErrors ? paramErrors[param.name] : "";
+                return (
+                  <div key={param.name}>
+                    <label
+                      htmlFor={inputId}
+                      className="mb-0.5 block text-[9px] font-black text-zinc-500"
+                    >
+                      {param.label} <span className="text-red-500">*</span>
+                    </label>
+                    {param.type === "select" ? (
+                      <select
+                        id={inputId}
+                        value={paramValues[param.name] ?? ""}
+                        onChange={(e) =>
+                          setParamValues((prev) => ({ ...prev, [param.name]: e.target.value }))
+                        }
+                        aria-invalid={Boolean(error)}
+                        aria-describedby={error ? errorId : hintId}
+                        className={`h-8 min-w-40 rounded-lg border bg-white px-2 text-[11px] font-semibold outline-none ${
+                          error
+                            ? "border-red-400 bg-red-50/50 focus:border-red-600"
+                            : "border-zinc-200 focus:border-red-600"
+                        }`}
+                      >
+                        <option value="">— เลือกค่า —</option>
+                        {param.options.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        id={inputId}
+                        type={guide.inputType}
+                        step={param.type === "datetime" ? 1 : undefined}
+                        value={paramValues[param.name] ?? ""}
+                        onChange={(e) =>
+                          setParamValues((prev) => ({ ...prev, [param.name]: e.target.value }))
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") runQuery({ validate: true });
+                        }}
+                        placeholder={guide.placeholder}
+                        aria-invalid={Boolean(error)}
+                        aria-describedby={error ? errorId : hintId}
+                        className={`h-8 ${guide.widthClass} rounded-lg border bg-white px-2 text-[11px] font-semibold outline-none placeholder:text-zinc-300 ${
+                          error
+                            ? "border-red-400 bg-red-50/50 focus:border-red-600"
+                            : "border-zinc-200 focus:border-red-600"
+                        }`}
+                      />
+                    )}
+                    {!dateRangeParams && ["date", "datetime"].includes(guide.kind) && (
+                      <div className="mt-1 flex gap-1">
+                        <button type="button" onClick={() => applySingleDatePreset(param, "today")} className={paramPresetButtonClass}>
+                          วันนี้
+                        </button>
+                        <button type="button" onClick={() => applySingleDatePreset(param, "yesterday")} className={paramPresetButtonClass}>
+                          เมื่อวาน
+                        </button>
+                      </div>
+                    )}
+                    {error ? (
+                      <p id={errorId} className="mt-1 max-w-52 text-[9px] font-bold text-red-600">
+                        {error}
+                      </p>
+                    ) : (
+                      <p id={hintId} className="mt-1 max-w-52 text-[9px] font-semibold text-zinc-400">
+                        {param.type === "select" ? "เลือก 1 ค่าจากรายการ" : guide.hint}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
               <button
                 type="button"
-                onClick={() => runQuery()}
-                disabled={running || missingParams.length > 0}
+                onClick={() => runQuery({ validate: true })}
+                disabled={running}
                 className="flex h-8 items-center gap-1.5 rounded-lg bg-zinc-800 px-3 text-[11px] font-black text-white transition hover:bg-zinc-900 disabled:opacity-50"
               >
                 <Play size={11} /> ใช้ค่านี้
               </button>
-              {missingParams.length > 0 && (
-                <p className="self-center text-[10px] font-bold text-amber-600">
-                  กรอก {missingParams.join(", ")} ก่อนจึงจะรันได้
-                </p>
-              )}
             </div>
           )}
 
@@ -1211,7 +1714,7 @@ export default function QueryPanel({
             <div className="m-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold text-red-600">
               {runError}
             </div>
-          ) : missingParams.length > 0 && !result ? (
+          ) : Object.keys(paramErrors).length > 0 && !result ? (
             <p className="px-4 py-12 text-center text-xs font-semibold text-zinc-400">
               กรอกค่าด้านบนแล้วกด &quot;ใช้ค่านี้&quot; เพื่อดึงข้อมูล
             </p>

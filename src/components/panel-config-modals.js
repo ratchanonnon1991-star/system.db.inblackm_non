@@ -122,6 +122,8 @@ export function ParamsSettingsModal({ sqlText, params, onSave, onClose }) {
                           ? "ตัวเลข"
                           : type === "date"
                             ? "วันที่"
+                            : type === "datetime"
+                              ? "วันที่และเวลา"
                             : "ตัวเลือก (dropdown)"}
                     </option>
                   ))}
@@ -130,11 +132,40 @@ export function ParamsSettingsModal({ sqlText, params, onSave, onClose }) {
               <div>
                 <label className={labelClass}>ค่าเริ่มต้น</label>
                 <input
-                  type="text"
+                  type={
+                    param.type === "number"
+                      ? "number"
+                      : param.type === "date"
+                        ? "date"
+                        : param.type === "datetime"
+                          ? "datetime-local"
+                          : "text"
+                  }
+                  step={param.type === "datetime" ? 1 : undefined}
                   value={param.defaultValue}
                   onChange={(e) => setField(param.name, "defaultValue", e.target.value)}
+                  placeholder={
+                    param.type === "number"
+                      ? "เช่น 100"
+                      : param.type === "date"
+                        ? "เช่น 2026-07-28"
+                        : param.type === "datetime"
+                          ? "เช่น 2026-07-28T14:30:00"
+                          : "เช่น ABC123"
+                  }
                   className={inputClass}
                 />
+                {param.type !== "select" && (
+                  <p className="mt-1 text-[9px] font-semibold text-zinc-400">
+                    {param.type === "number"
+                      ? "ตัวอย่าง: 100 หรือ 99.50"
+                      : param.type === "date"
+                        ? "รูปแบบ: YYYY-MM-DD"
+                        : param.type === "datetime"
+                          ? "รูปแบบ: YYYY-MM-DDTHH:mm:ss"
+                          : "ตัวอย่าง: ข้อความหรือรหัสที่ Query ต้องการ"}
+                  </p>
+                )}
               </div>
               {param.type === "select" && (
                 <div>

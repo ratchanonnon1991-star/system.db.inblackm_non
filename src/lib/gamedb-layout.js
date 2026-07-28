@@ -27,7 +27,7 @@ export const EMPTY_LAYOUT = {
 
 export const ACTION_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
-export const PARAM_TYPES = ["text", "number", "date", "select"];
+export const PARAM_TYPES = ["text", "number", "date", "datetime", "select"];
 export const RULE_OPS = [">", ">=", "<", "<=", "=", "!=", "contains"];
 export const RULE_TONES = ["red", "amber", "green", "blue", "bar"];
 export const SUMMARY_KINDS = ["sum", "avg", "min", "max", "count"];
