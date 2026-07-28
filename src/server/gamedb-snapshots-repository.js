@@ -51,8 +51,12 @@ export async function listSnapshots(queryId) {
 }
 
 export async function findSnapshot(id) {
+  // Straight from the URL — anything that is not an id is simply not found,
+  // rather than a type error from Postgres surfacing as a 500.
+  const numeric = Number(id);
+  if (!Number.isInteger(numeric) || numeric <= 0) return null;
   await ensureSchema();
-  const result = await getPool().query(`SELECT * FROM gamedb_snapshots WHERE id = $1`, [id]);
+  const result = await getPool().query(`SELECT * FROM gamedb_snapshots WHERE id = $1`, [numeric]);
   return result.rows[0] ? mapRow(result.rows[0], true) : null;
 }
 

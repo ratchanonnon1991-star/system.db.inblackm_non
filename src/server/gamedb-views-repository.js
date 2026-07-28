@@ -96,8 +96,10 @@ export async function listViewsFor(user) {
 }
 
 export async function findViewById(id) {
+  const numeric = Number(id);
+  if (!Number.isInteger(numeric) || numeric <= 0) return null;
   await ensureSchema();
-  const result = await getPool().query(`SELECT * FROM gamedb_views WHERE id = $1`, [id]);
+  const result = await getPool().query(`SELECT * FROM gamedb_views WHERE id = $1`, [numeric]);
   return mapRow(result.rows[0]);
 }
 

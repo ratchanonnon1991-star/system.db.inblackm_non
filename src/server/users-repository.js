@@ -72,11 +72,13 @@ export async function findUserByUsername(username) {
 }
 
 export async function findUserById(id) {
+  const numeric = Number(id);
+  if (!Number.isInteger(numeric) || numeric <= 0) return null;
   await ensureSchema();
   const result = await getPool().query(
     `SELECT id, username, display_name, role, created_at
      FROM gamedb_users WHERE id = $1`,
-    [id]
+    [numeric]
   );
   return mapRow(result.rows[0]);
 }

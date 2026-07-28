@@ -171,8 +171,13 @@ export async function listQueries() {
 }
 
 export async function findQueryById(id) {
+  // The id comes straight out of the URL. Postgres refuses "1 OR 1=1" for an
+  // int column — safely, but as a 500 with a stack in the log. It is simply
+  // not a query that exists.
+  const numeric = Number(id);
+  if (!Number.isInteger(numeric) || numeric <= 0) return null;
   await ensureSchema();
-  const result = await getPool().query(`${SELECT_QUERY} WHERE q.id = $1`, [id]);
+  const result = await getPool().query(`${SELECT_QUERY} WHERE q.id = $1`, [numeric]);
   return mapRow(result.rows[0]);
 }
 

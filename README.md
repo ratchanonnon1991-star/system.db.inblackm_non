@@ -84,7 +84,7 @@ npm run dev            # http://localhost:4183
 | ตัวแปร | ค่า |
 |---|---|
 | `PG_HOST` / `PG_PORT` / `PG_DATABASE` / `PG_USER` / `PG_PASSWORD` | PostgreSQL ที่เก็บตาราง `gamedb_*` |
-| `SESSION_SECRET` | คีย์เซ็น session cookie ของ gamedb เอง (string ยาว ๆ อะไรก็ได้) |
+| `SESSION_SECRET` | คีย์เซ็น session cookie ของ gamedb เอง (string ยาว ๆ อะไรก็ได้) — **บน production ไม่ตั้งแล้วแอปจะไม่ยอมทำงาน** เพราะถ้า fallback ไปใช้คีย์ในโค้ด ใครก็ปลอม cookie เป็น admin ได้ |
 | `GAMEDB_ENC_KEY` | คีย์เข้ารหัสรหัสผ่าน connection (ตั้งแล้วห้ามเปลี่ยน ไม่งั้น connection เดิมถอดรหัสไม่ได้) |
 | `GAMEDB_ADMIN_USERNAME` / `GAMEDB_ADMIN_PASSWORD` | บัญชี admin คนแรก — ถูกสร้างอัตโนมัติครั้งเดียวตอนตาราง `gamedb_users` ยังว่าง |
 
@@ -94,7 +94,10 @@ npm run dev            # http://localhost:4183
 - role `admin`: จัดการ Query, จัดการฐานข้อมูล, ทดสอบรัน SQL ได้ทั้งหมด
 - role `staff`: ดู, รัน query, จัด layout ได้
 - เพิ่มคนหรือเปลี่ยนรหัสผ่าน: ตอนนี้ทำผ่าน SQL ตรง ๆ เช่น ล้างแล้ว seed ใหม่ — `DELETE FROM gamedb_users;` แล้วแก้ `GAMEDB_ADMIN_*` ใน `.env` + restart (จะ seed ใหม่ตอนตารางว่าง)
-- SQL ทุกคำสั่งถูกบังคับ: `SELECT`/`WITH` statement เดียว + คัดกรองคีย์เวิร์ด + รันใน transaction `READ ONLY` + timeout 8 วินาที + จำกัด 1,000 แถว
+- SQL ทุกคำสั่งถูกบังคับ: `SELECT`/`WITH` statement เดียว + คัดกรองคีย์เวิร์ด (อ่านเฉพาะนอก string literal/comment) + รันใน transaction `READ ONLY` + timeout 8 วินาที + จำกัด 1,000 แถว
+- ค่าที่ผู้ใช้กรอก (`:param`) ถูก bind เป็น `$n` เสมอ ไม่ต่อสตริงเข้า SQL · ชื่อตาราง/คอลัมน์ที่ประกอบเข้า SQL ตอนเขียนข้อมูลมาจาก config ที่ Admin บันทึกไว้ และถูก validate + quote
+- ทุก API มี guard: ไม่มี cookie = 401 ทุกเส้น, staff แตะเส้นของ Admin = 403 · role อ่านจากฐานข้อมูลทุก request ไม่ใช่จาก cookie ดังนั้นถอดสิทธิ์แล้วมีผลทันที
+- response header: `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` และ CSP (`frame-ancestors 'none'`, `connect-src 'self'`)
 
 ## Deploy production
 

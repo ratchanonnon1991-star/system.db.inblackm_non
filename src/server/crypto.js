@@ -5,10 +5,18 @@ import crypto from "crypto";
 // fallback derivation from the session secret so dev setups still work.
 function getKey() {
   const source =
-    process.env.GAMEDB_ENC_KEY ||
-    process.env.SESSION_SECRET ||
-    process.env.OTP_SECRET ||
-    "gamedb-dev-secret";
+    process.env.GAMEDB_ENC_KEY || process.env.SESSION_SECRET || process.env.OTP_SECRET;
+  if (!source) {
+    // The old fallback was a constant in this file, which would have encrypted
+    // every saved database password under a key anyone reading the repository
+    // already has. Refusing is the only sane answer in production.
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "ยังไม่ได้ตั้ง GAMEDB_ENC_KEY (หรือ SESSION_SECRET) ใน .env — เข้ารหัสรหัสผ่านของ connection ไม่ได้"
+      );
+    }
+    return crypto.createHash("sha256").update("gamedb-dev-secret").digest();
+  }
   return crypto.createHash("sha256").update(source).digest();
 }
 
