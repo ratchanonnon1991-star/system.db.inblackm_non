@@ -4,6 +4,7 @@ import { findConnectionWithSecret } from "@/server/connections-repository";
 import { findQueryById } from "@/server/gamedb-repository";
 import { updateCell } from "@/server/gamedb-cell-writer";
 import { recordEdit } from "@/server/gamedb-edit-log";
+import { invalidateQuery } from "@/server/gamedb-result-cache";
 import { normalizeLayout } from "@/lib/gamedb-layout";
 
 // Writing data is the one thing staff cannot do — admins only.
@@ -41,6 +42,9 @@ export async function PATCH(request, { params }) {
       column,
       value: body.value,
     });
+
+    // A cached page must not be able to serve the value we just replaced.
+    invalidateQuery(query.id);
 
     await recordEdit({
       queryId: query.id,

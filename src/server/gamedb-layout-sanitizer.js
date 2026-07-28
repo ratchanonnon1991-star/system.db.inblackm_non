@@ -1,6 +1,8 @@
 // Server-side validation for a query's layout JSON. Shared by the layout
 // endpoint and by saved screen templates, which embed layouts of their own.
 import {
+  normalizeActions,
+  normalizeDrill,
   normalizeMerge,
   PARAM_TYPES,
   REFRESH_CHOICES,
@@ -121,9 +123,16 @@ export function sanitizeLayout(raw) {
           dir: layout.sort.dir === "desc" ? "desc" : "asc",
         }
       : null;
-  // Merge only names another saved query and its columns; the join itself runs
-  // in the browser, so nothing here reaches SQL.
+  // Merge and drill only name another saved query and its columns; the join
+  // and the navigation happen in the browser, so nothing here reaches SQL.
   const merge = normalizeMerge(layout.merge);
+  const drill = normalizeDrill(layout.drill);
+  const group =
+    layout.group && typeof layout.group === "object" && layout.group.colId
+      ? { colId: String(layout.group.colId).slice(0, 200) }
+      : null;
+  const folder =
+    typeof layout.folder === "string" ? layout.folder.trim().slice(0, 100) : "";
 
   return {
     order: sanitizeStringArray(layout.order),
@@ -138,6 +147,10 @@ export function sanitizeLayout(raw) {
     chart,
     sort,
     merge,
+    drill,
+    group,
+    folder,
+    actions: normalizeActions(layout.actions),
     refreshSeconds: REFRESH_CHOICES.includes(Number(layout.refreshSeconds))
       ? Number(layout.refreshSeconds)
       : 0,

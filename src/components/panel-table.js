@@ -1,15 +1,28 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowDown,
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  ChevronDown,
+  ChevronRight,
+  CornerDownRight,
   EyeOff,
+  Layers,
   Pencil,
   Sigma,
   Trash2,
+  Zap,
 } from "lucide-react";
 import {
   clampColumnWidth,
@@ -46,6 +59,13 @@ const HEADER_TONE = {
   base: "text-zinc-700",
 };
 
+// Below this many rows the browser handles it fine and windowing only adds
+// jitter; above it, only the visible slice is rendered with spacer rows top and
+// bottom so the scrollbar still represents the whole result.
+const VIRTUAL_THRESHOLD = 150;
+const ROW_HEIGHT = 26;
+const OVERSCAN = 12;
+
 export default function PanelTable({
   columns,
   allColumns,
@@ -58,11 +78,73 @@ export default function PanelTable({
   editPending,
   onEditCell,
   changedKeys,
+  onDrill,
+  drillLabel,
+  actions = [],
+  onRunAction,
 }) {
   const [naturalWidths, setNaturalWidths] = useState({});
   const [resizing, setResizing] = useState(null);
   const [editingCell, setEditingCell] = useState(null);
   const headRefs = useRef({});
+  const scrollRef = useRef(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const frameRef = useRef({ raf: 0, timer: 0 });
+
+  // Grouping and windowing are mutually exclusive: a grouped table is a
+  // browsing aid, and its rows move around as groups collapse.
+  const groupColIndex = layout.group
+    ? columns.findIndex((col) => col.id === layout.group.colId)
+    : -1;
+  const grouped = groupColIndex !== -1;
+  const [collapsedGroups, setCollapsedGroups] = useState(() => new Set());
+
+  const groups = useMemo(() => {
+    if (!grouped) return null;
+    const map = new Map();
+    for (const row of rows) {
+      const key = row.cells[groupColIndex]?.text ?? "—";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(row);
+    }
+    return [...map.entries()].map(([key, groupRows]) => ({ key, rows: groupRows }));
+  }, [grouped, groupColIndex, rows]);
+
+  const virtual = !grouped && rows.length > VIRTUAL_THRESHOLD;
+  const firstVisible = virtual
+    ? Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
+    : 0;
+  const lastVisible = virtual
+    ? Math.min(rows.length, firstVisible + Math.ceil(height / ROW_HEIGHT) + OVERSCAN * 2)
+    : rows.length;
+  const visibleRows = virtual ? rows.slice(firstVisible, lastVisible) : rows;
+  const padTop = firstVisible * ROW_HEIGHT;
+  const padBottom = Math.max(0, (rows.length - lastVisible) * ROW_HEIGHT);
+
+  const onScroll = (event) => {
+    if (!virtual) return;
+    const { scrollTop: next } = event.currentTarget;
+    // One state update per frame while the tab is on screen. A background tab
+    // gets no animation frames at all, so a timer runs alongside and whichever
+    // arrives first wins — otherwise the window would freeze where it was.
+    cancelAnimationFrame(frameRef.current.raf);
+    clearTimeout(frameRef.current.timer);
+    const apply = () => {
+      cancelAnimationFrame(frameRef.current.raf);
+      clearTimeout(frameRef.current.timer);
+      setScrollTop(next);
+    };
+    frameRef.current.raf = requestAnimationFrame(apply);
+    frameRef.current.timer = setTimeout(apply, 32);
+  };
+
+  useEffect(() => {
+    const handles = frameRef.current;
+    return () => {
+      cancelAnimationFrame(handles.raf);
+      clearTimeout(handles.timer);
+    };
+  }, []);
 
   const widthOf = useCallback(
     (colId) => layout.widths[colId] || naturalWidths[colId] || null,
@@ -214,8 +296,116 @@ export default function PanelTable({
     await onEditCell(pending);
   };
 
+  // Shared by the windowed and the grouped rendering paths below.
+  const renderRow = (row, rowIndex) => (
+    <tr key={row.sourceIndex} className="group/row odd:bg-white even:bg-zinc-50/60 hover:bg-amber-50/60">
+      <td className="border border-zinc-200 px-1 py-1.5 text-center font-bold text-zinc-400">
+        {onDrill || actions.length > 0 ? (
+          <>
+            <span className="group-hover/row:hidden">{rowIndex + 1}</span>
+            <span className="hidden items-center justify-center gap-0.5 group-hover/row:flex">
+              {onDrill && (
+                <button
+                  type="button"
+                  onClick={() => onDrill(row)}
+                  className="text-red-600"
+                  title={drillLabel}
+                >
+                  <CornerDownRight size={12} />
+                </button>
+              )}
+              {actions.map((action, index) => (
+                <button
+                  key={action.label}
+                  type="button"
+                  onClick={() => onRunAction(row, index)}
+                  className="text-amber-600 hover:text-amber-700"
+                  title={`${action.label} (${action.method})`}
+                >
+                  <Zap size={12} />
+                </button>
+              ))}
+            </span>
+          </>
+        ) : (
+          rowIndex + 1
+        )}
+      </td>
+      {row.cells.map((cell, cellIndex) => {
+        const col = columns[cellIndex];
+        const numeric = col.type === "number" || col.kind === "computed";
+        const styling = columnStyling[cellIndex];
+        const tone = styling.rules.find(
+          (rule) => rule.tone !== "bar" && ruleMatches(rule, cell.raw, cell.text)
+        );
+        const barRule = styling.rules.find(
+          (rule) => rule.tone === "bar" && ruleMatches(rule, cell.raw, cell.text)
+        );
+        const barPercent =
+          barRule && styling.barMax
+            ? Math.min(100, (Math.abs(toNumber(cell.raw) ?? 0) / styling.barMax) * 100)
+            : 0;
+        const editing =
+          editingCell &&
+          editingCell.sourceIndex === row.sourceIndex &&
+          editingCell.colId === col.id;
+        const editable =
+          canEdit && col.kind === "base" && editableColumns.includes(col.column.name);
+        const changed = changedKeys.has(`${row.sourceIndex}:${col.id}`);
+        const saving =
+          editPending &&
+          editPending.sourceIndex === row.sourceIndex &&
+          editPending.colId === col.id;
+
+        return (
+          <td
+            key={col.id}
+            title={editable ? `${cell.text} — ดับเบิลคลิกเพื่อแก้ไข` : cell.text}
+            onDoubleClick={() => startEdit(row, col, cellIndex)}
+            className={`relative truncate border border-zinc-200 px-2 py-1.5 font-semibold ${
+              numeric ? "text-right font-mono tabular-nums" : ""
+            } ${tone ? TONE_CELL_CLASS[tone.tone] : "text-zinc-700"} ${
+              changed ? "bg-yellow-100" : ""
+            } ${editable ? "cursor-cell" : ""} ${saving ? "opacity-50" : ""}`}
+            style={
+              barPercent
+                ? {
+                    backgroundImage: `linear-gradient(to right, rgba(220,38,38,0.18) ${barPercent}%, transparent ${barPercent}%)`,
+                  }
+                : undefined
+            }
+          >
+            {editing ? (
+              <input
+                autoFocus
+                value={editingCell.value ?? ""}
+                onChange={(e) =>
+                  setEditingCell((prev) => ({ ...prev, value: e.target.value }))
+                }
+                onBlur={commitEdit}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitEdit();
+                  if (e.key === "Escape") setEditingCell(null);
+                }}
+                className="w-full rounded border border-red-500 bg-white px-1 py-0.5 text-[11px] font-semibold outline-none"
+              />
+            ) : (
+              cell.text
+            )}
+          </td>
+        );
+      })}
+      {measured && <td className="border border-zinc-200" />}
+    </tr>
+  );
+
   return (
-    <div className="overflow-auto border-t border-zinc-100" style={{ height }}>
+    <div
+      ref={scrollRef}
+      onScroll={onScroll}
+      className="overflow-auto border-t border-zinc-100"
+      style={{ height }}
+    >
       <table
         className="border-collapse text-[11px]"
         style={
@@ -282,6 +472,21 @@ export default function PanelTable({
                       </button>
                       <button type="button" onClick={() => cycleSummary(col.id)} className={headerButton} title="สรุปท้ายตาราง (รวม → เฉลี่ย → ต่ำสุด → สูงสุด → นับ → ปิด)">
                         <Sigma size={11} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          mutateLayout((prev) => ({
+                            ...prev,
+                            group: prev.group?.colId === col.id ? null : { colId: col.id },
+                          }))
+                        }
+                        className={`${headerButton} ${
+                          layout.group?.colId === col.id ? "bg-zinc-300 text-zinc-700" : ""
+                        }`}
+                        title="จัดกลุ่มตามคอลัมน์นี้"
+                      >
+                        <Layers size={11} />
                       </button>
                       <button type="button" onClick={() => renameColumn(col)} className={headerButton} title="เปลี่ยนชื่อ">
                         <Pencil size={11} />
@@ -353,78 +558,53 @@ export default function PanelTable({
               </td>
             </tr>
           ) : (
-            rows.map((row, rowIndex) => (
-              <tr key={row.sourceIndex} className="odd:bg-white even:bg-zinc-50/60 hover:bg-amber-50/60">
-                <td className="border border-zinc-200 px-2 py-1.5 text-center font-bold text-zinc-400">
-                  {rowIndex + 1}
-                </td>
-                {row.cells.map((cell, cellIndex) => {
-                  const col = columns[cellIndex];
-                  const numeric = col.type === "number" || col.kind === "computed";
-                  const styling = columnStyling[cellIndex];
-                  const tone = styling.rules.find(
-                    (rule) => rule.tone !== "bar" && ruleMatches(rule, cell.raw, cell.text)
-                  );
-                  const barRule = styling.rules.find(
-                    (rule) => rule.tone === "bar" && ruleMatches(rule, cell.raw, cell.text)
-                  );
-                  const barPercent =
-                    barRule && styling.barMax
-                      ? Math.min(100, (Math.abs(toNumber(cell.raw) ?? 0) / styling.barMax) * 100)
-                      : 0;
-                  const editing =
-                    editingCell &&
-                    editingCell.sourceIndex === row.sourceIndex &&
-                    editingCell.colId === col.id;
-                  const editable =
-                    canEdit && col.kind === "base" && editableColumns.includes(col.column.name);
-                  const changed = changedKeys.has(`${row.sourceIndex}:${col.id}`);
-                  const saving =
-                    editPending &&
-                    editPending.sourceIndex === row.sourceIndex &&
-                    editPending.colId === col.id;
-
-                  return (
-                    <td
-                      key={col.id}
-                      title={editable ? `${cell.text} — ดับเบิลคลิกเพื่อแก้ไข` : cell.text}
-                      onDoubleClick={() => startEdit(row, col, cellIndex)}
-                      className={`relative truncate border border-zinc-200 px-2 py-1.5 font-semibold ${
-                        numeric ? "text-right font-mono tabular-nums" : ""
-                      } ${tone ? TONE_CELL_CLASS[tone.tone] : "text-zinc-700"} ${
-                        changed ? "bg-yellow-100" : ""
-                      } ${editable ? "cursor-cell" : ""} ${saving ? "opacity-50" : ""}`}
-                      style={
-                        barPercent
-                          ? {
-                              backgroundImage: `linear-gradient(to right, rgba(220,38,38,0.18) ${barPercent}%, transparent ${barPercent}%)`,
-                            }
-                          : undefined
-                      }
-                    >
-                      {editing ? (
-                        <input
-                          autoFocus
-                          value={editingCell.value ?? ""}
-                          onChange={(e) =>
-                            setEditingCell((prev) => ({ ...prev, value: e.target.value }))
-                          }
-                          onBlur={commitEdit}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") commitEdit();
-                            if (e.key === "Escape") setEditingCell(null);
-                          }}
-                          className="w-full rounded border border-red-500 bg-white px-1 py-0.5 text-[11px] font-semibold outline-none"
-                        />
-                      ) : (
-                        cell.text
-                      )}
-                    </td>
-                  );
-                })}
-                {measured && <td className="border border-zinc-200" />}
+            <>
+            {padTop > 0 && (
+              <tr aria-hidden="true">
+                <td colSpan={columns.length + (measured ? 2 : 1)} style={{ height: padTop, padding: 0 }} />
               </tr>
-            ))
+            )}
+            {grouped
+              ? groups.map((group) => {
+                  const collapsed = collapsedGroups.has(group.key);
+                  return (
+                    <Fragment key={group.key}>
+                      <tr className="bg-zinc-100/80">
+                        <td
+                          colSpan={columns.length + (measured ? 2 : 1)}
+                          className="border border-zinc-200 px-2 py-1"
+                        >
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setCollapsedGroups((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(group.key)) next.delete(group.key);
+                                else next.add(group.key);
+                                return next;
+                              })
+                            }
+                            className="flex w-full items-center gap-1.5 text-left text-[11px] font-black text-zinc-700"
+                          >
+                            {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                            {group.key}
+                            <span className="rounded bg-zinc-200 px-1.5 py-0.5 text-[9px] font-black text-zinc-500">
+                              {group.rows.length.toLocaleString("th-TH")} แถว
+                            </span>
+                          </button>
+                        </td>
+                      </tr>
+                      {!collapsed && group.rows.map((row, i) => renderRow(row, i))}
+                    </Fragment>
+                  );
+                })
+              : visibleRows.map((row, i) => renderRow(row, firstVisible + i))}
+            {padBottom > 0 && (
+              <tr aria-hidden="true">
+                <td colSpan={columns.length + (measured ? 2 : 1)} style={{ height: padBottom, padding: 0 }} />
+              </tr>
+            )}
+            </>
           )}
         </tbody>
         {summaryValues && (

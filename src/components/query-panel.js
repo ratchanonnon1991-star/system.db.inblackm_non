@@ -5,9 +5,12 @@ import {
   ArrowLeft,
   ArrowRight,
   Calculator,
+  Camera,
   ChartColumn,
   ChevronDown,
+  ClipboardPaste,
   Combine,
+  CornerDownRight,
   ChevronUp,
   Download,
   Eye,
@@ -28,6 +31,7 @@ import {
   User,
   Users,
   X,
+  Zap,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { evaluateFormula } from "@/lib/gamedb-formula";
@@ -46,7 +50,10 @@ import {
 } from "@/lib/gamedb-layout";
 import { ComputedColumnModal } from "@/components/gamedb-modals";
 import {
+  ActionsModal,
+  BulkEditModal,
   ChartModal,
+  DrillModal,
   EditableSettingsModal,
   MergeModal,
   ParamsSettingsModal,
@@ -110,6 +117,7 @@ export default function QueryPanel({
   personalLayout,
   onPersonalLayoutSaved,
   onLayoutChange,
+  onDataChange,
   canManage,
   canMoveUp,
   canMoveDown,
@@ -127,6 +135,8 @@ export default function QueryPanel({
   onDragEnd,
   onDropPanel,
   onEditQuery,
+  onDrill,
+  initialParams,
 }) {
   // Layout precedence: what this user saved for themselves, then what a screen
   // template dictates, then the shared layout stored on the query.
@@ -154,7 +164,12 @@ export default function QueryPanel({
   const [saveError, setSaveError] = useState("");
   const layoutDirtyRef = useRef(false);
 
-  const [paramValues, setParamValues] = useState(() => initialParamValues(savedParams));
+  // initialParams arrives when this panel was opened by drilling from another,
+  // and takes precedence over the configured defaults.
+  const [paramValues, setParamValues] = useState(() => ({
+    ...initialParamValues(savedParams),
+    ...(initialParams || {}),
+  }));
   const [rowFilter, setRowFilter] = useState("");
   const [view, setView] = useState("table");
   const [modal, setModal] = useState(null);
@@ -191,6 +206,7 @@ export default function QueryPanel({
   useEffect(() => {
     onLayoutChange?.(query.id, layout);
   }, [onLayoutChange, query.id, layout]);
+
   useEffect(() => {
     paramsRef.current = paramValues;
     missingRef.current = missingParams;
@@ -217,6 +233,9 @@ export default function QueryPanel({
           body: JSON.stringify({
             params: paramsRef.current,
             offset: append ? rowsLoadedRef.current : 0,
+            // Pressing refresh means "go and look", so skip the shared cache;
+            // the auto-refresh timer is happy to reuse it.
+            fresh: !silent && !append,
           }),
           fallbackError: "รัน Query ไม่สำเร็จ",
         });
@@ -278,6 +297,14 @@ export default function QueryPanel({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- setState happens after the run request resolves
     runQuery();
   }, [runQuery]);
+
+  // The "r" shortcut refreshes every open panel at once.
+  useEffect(() => {
+    const refreshAll = () => runQuery();
+    window.addEventListener("gamedb:refresh-all", refreshAll);
+    return () => window.removeEventListener("gamedb:refresh-all", refreshAll);
+  }, [runQuery]);
+
 
   // Auto-refresh. Paused while the tab is hidden so a wall of panels does not
   // keep hammering the database in the background.
@@ -467,6 +494,15 @@ export default function QueryPanel({
     return rows;
   }, [result, visibleColumns, baseNameToIndex, rowFilter, layout.sort, layout.merge, mergeIndex]);
 
+  // Report what is on screen so the workbook export can pick it up.
+  useEffect(() => {
+    onDataChange?.(query.id, {
+      name: query.name,
+      headers: visibleColumns.map((col) => col.label),
+      rows: displayRows.map((row) => row.cells.map((cell) => cell.raw ?? cell.text)),
+    });
+  }, [onDataChange, query.id, query.name, visibleColumns, displayRows]);
+
   const matchCount = useMemo(
     () =>
       displayRows.length && displayRows[0].matched !== null
@@ -522,6 +558,136 @@ export default function QueryPanel({
     } finally {
       setEditPending(null);
     }
+  };
+
+  // Runs the pasted edits one at a time: the endpoint writes a single cell in
+  // its own transaction, and a partial failure should report which lines failed
+  // rather than roll the good ones back.
+  const applyBulkEdits = async (edits) => {
+    let ok = 0;
+    const failed = [];
+    for (const edit of edits) {
+      try {
+        await apiJson(`/api/queries/${query.id}/cell`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(edit),
+          fallbackError: "แก้ไขไม่สำเร็จ",
+        });
+        ok += 1;
+      } catch (err) {
+        failed.push({ ...edit, message: err.message });
+      }
+    }
+    if (ok > 0) await runQuery({ silent: true });
+    return { ok, failed };
+  };
+
+  // --- snapshots -----------------------------------------------------------
+  const [snapshots, setSnapshots] = useState([]);
+  const [viewingSnapshot, setViewingSnapshot] = useState(null);
+
+  const loadSnapshots = useCallback(async () => {
+    try {
+      const data = await apiJson(`/api/queries/${query.id}/snapshots`, {
+        fallbackError: "โหลดรายการ snapshot ไม่สำเร็จ",
+      });
+      setSnapshots(data.snapshots || []);
+    } catch {
+      setSnapshots([]);
+    }
+  }, [query.id]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- setState runs after the fetch resolves
+    loadSnapshots();
+  }, [loadSnapshots]);
+
+  const saveSnapshot = async () => {
+    const name = window.prompt(
+      "ตั้งชื่อ snapshot นี้",
+      `${query.name} — ${new Date().toLocaleString("th-TH")}`
+    );
+    if (name === null) return;
+    setSaveError("");
+    try {
+      await apiJson(`/api/queries/${query.id}/snapshots`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, params: paramValues }),
+        fallbackError: "บันทึก snapshot ไม่สำเร็จ",
+      });
+      await loadSnapshots();
+    } catch (err) {
+      setSaveError(err.message);
+    }
+  };
+
+  const openSnapshot = async (snapshotId) => {
+    if (!snapshotId) {
+      setViewingSnapshot(null);
+      runQuery();
+      return;
+    }
+    setSaveError("");
+    try {
+      const data = await apiJson(`/api/snapshots/${snapshotId}`, {
+        fallbackError: "เปิด snapshot ไม่สำเร็จ",
+      });
+      previousRowsRef.current = null;
+      setViewingSnapshot(data.snapshot);
+      setResult({
+        columns: data.snapshot.columns,
+        rows: data.snapshot.rows,
+        rowCount: data.snapshot.rowCount,
+        durationMs: 0,
+        truncated: false,
+        hasMore: false,
+      });
+    } catch (err) {
+      setSaveError(err.message);
+    }
+  };
+
+  const runRowAction = async (row, actionIndex) => {
+    const action = layout.actions[actionIndex];
+    if (!action) return;
+    const values = {};
+    result.columns.forEach((col, index) => {
+      values[col.name] = result.rows[row.sourceIndex][index];
+    });
+    if (
+      action.confirm &&
+      !window.confirm(`ยิง "${action.label}" สำหรับแถวนี้?\n${action.method} ${action.url}`)
+    ) {
+      return;
+    }
+    setSaveError("");
+    try {
+      const data = await apiJson(`/api/queries/${query.id}/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ actionIndex, values }),
+        fallbackError: "เรียก action ไม่สำเร็จ",
+      });
+      const { status, ok, body } = data.result;
+      window.alert(
+        `${action.label}: ${ok ? "สำเร็จ" : "ไม่สำเร็จ"} (HTTP ${status})\n${body.slice(0, 500)}`
+      );
+      if (ok) runQuery({ silent: true });
+    } catch (err) {
+      setSaveError(err.message);
+    }
+  };
+
+  const drillRow = (row) => {
+    if (!layout.drill || !onDrill) return;
+    const values = {};
+    for (const item of layout.drill.map) {
+      const index = baseNameToIndex.get(item.column);
+      if (index !== undefined) values[item.param] = result.rows[row.sourceIndex][index];
+    }
+    onDrill(layout.drill.queryId, values);
   };
 
   const exportCsv = () => {
@@ -818,14 +984,54 @@ export default function QueryPanel({
         <button type="button" onClick={exportCsv} disabled={!result} className={iconButtonClass} title="ดาวน์โหลด CSV">
           <Download size={13} />
         </button>
+        <button
+          type="button"
+          onClick={saveSnapshot}
+          disabled={!result || Boolean(viewingSnapshot)}
+          className={iconButtonClass}
+          title="บันทึกผลลัพธ์ตอนนี้ไว้ดูย้อนหลัง (snapshot)"
+        >
+          <Camera size={13} />
+        </button>
+        {snapshots.length > 0 && (
+          <select
+            value={viewingSnapshot?.id ?? ""}
+            onChange={(e) => openSnapshot(e.target.value ? Number(e.target.value) : null)}
+            className="h-8 max-w-[9rem] rounded-lg border border-zinc-200 bg-white px-2 text-[10px] font-black text-zinc-600 outline-none"
+            title="ดูผลลัพธ์ที่เคยบันทึกไว้"
+          >
+            <option value="">ข้อมูลล่าสุด</option>
+            {snapshots.map((snapshot) => (
+              <option key={snapshot.id} value={snapshot.id}>
+                {snapshot.name}
+              </option>
+            ))}
+          </select>
+        )}
         {canManage && (
           <>
             <button type="button" onClick={() => setModal("params")} className={iconButtonClass} title="พารามิเตอร์ของ Query">
               <SlidersHorizontal size={13} />
             </button>
+            <button type="button" onClick={() => setModal("drill")} disabled={!result} className={iconButtonClass} title="คลิกแถวเพื่อเปิด Query อื่น">
+              <CornerDownRight size={13} className={layout.drill ? "text-red-600" : ""} />
+            </button>
+            <button type="button" onClick={() => setModal("actions")} disabled={!result} className={iconButtonClass} title="ปุ่ม action ต่อแถว">
+              <Zap size={13} className={layout.actions.length ? "text-red-600" : ""} />
+            </button>
             <button type="button" onClick={() => setModal("editable")} disabled={!result} className={iconButtonClass} title="ตั้งค่าการแก้ไขข้อมูล">
               <Table2 size={13} className={layout.editable ? "text-red-600" : ""} />
             </button>
+            {canEditCells && (
+              <button
+                type="button"
+                onClick={() => setModal("bulk")}
+                className={iconButtonClass}
+                title="แก้หลายแถวจาก Excel"
+              >
+                <ClipboardPaste size={13} />
+              </button>
+            )}
           </>
         )}
         <button type="button" onClick={onToggleFullWidth} className={iconButtonClass} title={isFullWidth ? "คืนความกว้างอัตโนมัติ" : "ขยายเต็มความกว้าง"}>
@@ -929,6 +1135,22 @@ export default function QueryPanel({
             </div>
           )}
 
+          {viewingSnapshot && (
+            <div className="flex items-center justify-between gap-2 border-b border-amber-200 bg-amber-50 px-3 py-2">
+              <p className="truncate text-[11px] font-bold text-amber-800">
+                กำลังดู snapshot &quot;{viewingSnapshot.name}&quot; ·{" "}
+                {new Date(viewingSnapshot.createdAt).toLocaleString("th-TH")} · ข้อมูลนี้ไม่อัปเดต
+              </p>
+              <button
+                type="button"
+                onClick={() => openSnapshot(null)}
+                className="shrink-0 rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-[10px] font-black text-amber-800 transition hover:bg-amber-100"
+              >
+                กลับไปข้อมูลล่าสุด
+              </button>
+            </div>
+          )}
+
           {(saveError || editError || mergeError) && (
             <div className="mx-3 mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
               {saveError || editError || `รวมตารางไม่สำเร็จ: ${mergeError}`}
@@ -976,6 +1198,12 @@ export default function QueryPanel({
                   editPending={editPending}
                   onEditCell={editCell}
                   changedKeys={changedCellKeys}
+                  actions={canManage ? layout.actions : []}
+                  onRunAction={runRowAction}
+                  onDrill={layout.drill && onDrill ? drillRow : null}
+                  drillLabel={`เปิด ${
+                    queries.find((item) => item.id === layout.drill?.queryId)?.name || "Query"
+                  } ด้วยค่าจากแถวนี้`}
                 />
               )}
 
@@ -1073,6 +1301,38 @@ export default function QueryPanel({
             mutateLayout((prev) => ({ ...prev, merge }));
             setModal(null);
           }}
+        />
+      )}
+      {modal === "drill" && result && (
+        <DrillModal
+          query={query}
+          queries={queries}
+          columnNames={result.columns.map((col) => col.name)}
+          drill={layout.drill}
+          onClose={() => setModal(null)}
+          onSave={(drill) => {
+            mutateLayout((prev) => ({ ...prev, drill }));
+            setModal(null);
+          }}
+        />
+      )}
+      {modal === "actions" && result && (
+        <ActionsModal
+          columnNames={result.columns.map((col) => col.name)}
+          actions={layout.actions}
+          onClose={() => setModal(null)}
+          onSave={(actions) => {
+            mutateLayout((prev) => ({ ...prev, actions }));
+            setModal(null);
+          }}
+        />
+      )}
+      {modal === "bulk" && result && layout.editable && (
+        <BulkEditModal
+          editable={layout.editable}
+          columnNames={result.columns.map((col) => col.name)}
+          onApply={applyBulkEdits}
+          onClose={() => setModal(null)}
         />
       )}
       {modal === "rules" && result && (

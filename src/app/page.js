@@ -4,22 +4,27 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   Database,
+  FileSpreadsheet,
   History,
   Layers,
   LayoutGrid,
   Loader2,
   Lock,
   LogOut,
+  Moon,
   Pencil,
   Plus,
   Search,
   Server,
+  Star,
+  Sun,
   Trash2,
   User,
   Users,
   X,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import { buildXlsxBlob } from "@/lib/gamedb-xlsx";
 import QueryPanel from "@/components/query-panel";
 import {
   ConnectionsModal,
@@ -185,8 +190,59 @@ function readStoredPanels() {
   }
 }
 
+const THEME_KEY = "gamedb.theme";
+const PINNED_KEY = "gamedb.pinned";
+
 function GamedbWorkspace({ me, onLoggedOut }) {
   const isSuperAdmin = me.role === "admin";
+
+  const [dark, setDark] = useState(false);
+  const [pinned, setPinned] = useState([]);
+
+  // Theme and pins are per-browser preferences; read them once on mount.
+  useEffect(() => {
+    try {
+      const storedTheme = window.localStorage.getItem(THEME_KEY);
+      const prefersDark =
+        storedTheme === "dark" ||
+        (!storedTheme && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reading a browser preference is exactly what an effect is for
+      setDark(prefersDark);
+      setPinned(JSON.parse(window.localStorage.getItem(PINNED_KEY) || "[]"));
+    } catch {
+      setDark(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", dark);
+  }, [dark]);
+
+  const toggleTheme = () => {
+    setDark((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(THEME_KEY, next ? "dark" : "light");
+      } catch {
+        // preference is cosmetic; ignore a blocked storage
+      }
+      return next;
+    });
+  };
+
+  const togglePin = (queryId) => {
+    setPinned((prev) => {
+      const next = prev.includes(queryId)
+        ? prev.filter((id) => id !== queryId)
+        : [...prev, queryId];
+      try {
+        window.localStorage.setItem(PINNED_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
 
   const logout = async () => {
     try {
@@ -394,6 +450,18 @@ function GamedbWorkspace({ me, onLoggedOut }) {
     [panels]
   );
 
+  // Params handed to a panel that was opened by drilling from another one.
+  const [drillParams, setDrillParams] = useState({});
+
+  const openDrill = useCallback((queryId, params) => {
+    setDrillParams((prev) => ({ ...prev, [queryId]: params }));
+    setPanels((prev) =>
+      prev.some((panel) => panel.queryId === queryId)
+        ? prev
+        : [...prev, makePanel(queryId)]
+    );
+  }, []);
+
   const togglePanel = (queryId) => {
     setPanels((prev) =>
       prev.some((panel) => panel.queryId === queryId)
@@ -437,12 +505,30 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   const filteredQueries = useMemo(() => {
     const filter = sidebarSearch.trim().toLowerCase();
     if (!filter) return queries;
+    // Searching the SQL too: "orders" should find the query that reads that
+    // table even when its name says nothing about it.
     return queries.filter(
       (query) =>
         query.name.toLowerCase().includes(filter) ||
-        (query.description || "").toLowerCase().includes(filter)
+        (query.description || "").toLowerCase().includes(filter) ||
+        (query.sqlText || "").toLowerCase().includes(filter)
     );
   }, [queries, sidebarSearch]);
+
+  // Folders come from each query's layout, so no column had to be added to a
+  // table this service cannot alter. Pinned queries get their own group on top.
+  const groupedQueries = useMemo(() => {
+    const folders = new Map();
+    const pins = filteredQueries.filter((query) => pinned.includes(query.id));
+    for (const query of filteredQueries) {
+      if (pinned.includes(query.id)) continue;
+      const folder = (query.layout?.folder || "").trim() || "ทั่วไป";
+      if (!folders.has(folder)) folders.set(folder, []);
+      folders.get(folder).push(query);
+    }
+    const sorted = [...folders.entries()].sort((a, b) => a[0].localeCompare(b[0], "th"));
+    return pins.length > 0 ? [["ปักหมุด", pins], ...sorted] : sorted;
+  }, [filteredQueries, pinned]);
 
   const openAll = () => {
     setPanels((prev) => {
@@ -466,6 +552,59 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       window.alert(err.message);
     }
   };
+
+  // What each open panel is currently showing, for the workbook export.
+  const liveData = useRef({});
+  const captureData = useCallback((queryId, data) => {
+    liveData.current[queryId] = data;
+  }, []);
+
+  const exportWorkbook = () => {
+    const sheets = panels
+      .map((panel) => liveData.current[panel.queryId])
+      .filter((sheet) => sheet && sheet.headers.length > 0);
+    if (sheets.length === 0) return;
+    const url = URL.createObjectURL(buildXlsxBlob(sheets));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `gamedb-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Keyboard shortcuts, ignored while typing in a field.
+  const searchRef = useRef(null);
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      const tag = event.target?.tagName;
+      if (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        event.target?.isContentEditable ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey
+      ) {
+        return;
+      }
+      if (event.key === "/") {
+        event.preventDefault();
+        searchRef.current?.focus();
+      } else if (event.key === "r") {
+        event.preventDefault();
+        window.dispatchEvent(new CustomEvent("gamedb:refresh-all"));
+      } else if (event.key === "e") {
+        event.preventDefault();
+        exportWorkbook();
+      } else if (event.key === "d") {
+        event.preventDefault();
+        toggleTheme();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
 
   const buildViewConfig = useCallback(
     () => ({
@@ -543,6 +682,22 @@ function GamedbWorkspace({ me, onLoggedOut }) {
           </div>
           <button
             type="button"
+            onClick={exportWorkbook}
+            title="ดาวน์โหลดทุกตารางที่เปิดอยู่เป็น Excel หลายชีต (คีย์ลัด: e)"
+            className="rounded-xl border border-zinc-200 bg-white p-2.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
+          >
+            <FileSpreadsheet size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={toggleTheme}
+            title="สลับโหมดสว่าง/มืด (คีย์ลัด: d)"
+            className="rounded-xl border border-zinc-200 bg-white p-2.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
+          >
+            {dark ? <Sun size={14} /> : <Moon size={14} />}
+          </button>
+          <button
+            type="button"
             onClick={logout}
             title="ออกจากระบบ"
             className="rounded-xl border border-zinc-200 bg-white p-2.5 text-zinc-500 transition hover:bg-red-50 hover:text-red-600"
@@ -606,10 +761,11 @@ function GamedbWorkspace({ me, onLoggedOut }) {
           <div className="relative mb-2">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
             <input
+              ref={searchRef}
               type="text"
               value={sidebarSearch}
               onChange={(e) => setSidebarSearch(e.target.value)}
-              placeholder="ค้นหา Query..."
+              placeholder="ค้นหาชื่อ / SQL... (กด /)"
               className="h-9 w-full rounded-lg border border-zinc-200 bg-zinc-50 pl-8 pr-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
             />
           </div>
@@ -648,7 +804,14 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             </p>
           ) : (
             <div className="space-y-1">
-              {filteredQueries.map((query) => {
+              {groupedQueries.map(([folder, folderQueries]) => (
+                <div key={folder} className="pb-1">
+                  {groupedQueries.length > 1 && (
+                    <p className="px-2 pb-1 pt-2 text-[9px] font-black uppercase tracking-wider text-zinc-400">
+                      {folder}
+                    </p>
+                  )}
+                  {folderQueries.map((query) => {
                 const isOpen = openIds.has(query.id);
                 return (
                   <div
@@ -685,6 +848,20 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                         </p>
                       ) : null}
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => togglePin(query.id)}
+                      className={`shrink-0 rounded-md p-1 transition ${
+                        pinned.includes(query.id)
+                          ? isOpen
+                            ? "text-white"
+                            : "text-amber-500"
+                          : `${isOpen ? "text-white/70" : "text-zinc-300"} opacity-0 group-hover:opacity-100`
+                      }`}
+                      title={pinned.includes(query.id) ? "เอาหมุดออก" : "ปักหมุดไว้บนสุด"}
+                    >
+                      <Star size={11} />
+                    </button>
                     {isSuperAdmin && (
                       <div
                         className={`flex shrink-0 items-center gap-0.5 ${
@@ -719,7 +896,9 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                     )}
                   </div>
                 );
-              })}
+                  })}
+                </div>
+              ))}
             </div>
           )}
         </aside>
@@ -753,6 +932,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                     }
                     onPersonalLayoutSaved={rememberPersonalLayout}
                     onLayoutChange={captureLayout}
+                    onDataChange={captureData}
                     canManage={isSuperAdmin}
                     canMoveUp={index > 0}
                     canMoveDown={index < openPanels.length - 1}
@@ -795,6 +975,8 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                       setDraggingQueryId(null);
                     }}
                     onEditQuery={() => setEditorModal({ mode: "edit", query })}
+                    onDrill={openDrill}
+                    initialParams={drillParams[panel.queryId] || null}
                   />
                 );
               })}

@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ChartColumn,
+  ClipboardPaste,
   Combine,
+  CornerDownRight,
   Loader2,
   Palette,
   Plus,
@@ -12,10 +14,12 @@ import {
   Table2,
   Trash2,
   X,
+  Zap,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { extractSqlParams } from "@/lib/gamedb-sql-params";
 import {
+  ACTION_METHODS,
   PARAM_TYPES,
   RULE_OPS,
   RULE_TONES,
@@ -537,6 +541,321 @@ export function MergeModal({ query, queries, columnNames, merge, onSave, onClose
           </div>
         </>
       )}
+    </ModalShell>
+  );
+}
+
+/**
+ * Click a row here, open another query with values from that row. The target's
+ * :parameters are read straight out of its SQL, so the mapping can only point
+ * at placeholders that really exist.
+ */
+export function DrillModal({ query, queries, columnNames, drill, onSave, onClose }) {
+  const [queryId, setQueryId] = useState(drill?.queryId ? String(drill.queryId) : "");
+  const [map, setMap] = useState(drill?.map || []);
+
+  const candidates = useMemo(
+    () => queries.filter((item) => item.id !== query.id),
+    [queries, query.id]
+  );
+  const targetParams = useMemo(() => {
+    const target = queries.find((item) => String(item.id) === queryId);
+    return target ? extractSqlParams(target.sqlText) : [];
+  }, [queries, queryId]);
+
+  return (
+    <ModalShell
+      title="คลิกแถวเพื่อเปิด Query อื่น (drill-down)"
+      icon={<CornerDownRight size={15} className="text-red-600" />}
+      onClose={onClose}
+      onSave={() =>
+        onSave(queryId && map.length > 0 ? { queryId: Number(queryId), map } : null)
+      }
+    >
+      <div>
+        <label className={labelClass}>Query ปลายทาง</label>
+        <select
+          value={queryId}
+          onChange={(e) => {
+            setQueryId(e.target.value);
+            setMap([]);
+          }}
+          className={inputClass}
+        >
+          <option value="">— ปิด drill-down —</option>
+          {candidates.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {queryId && targetParams.length === 0 && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
+          Query ปลายทางยังไม่มีพารามิเตอร์ (`:ชื่อ`) ใน SQL — เพิ่มก่อนถึงจะส่งค่าจากแถวไปได้
+        </p>
+      )}
+
+      {targetParams.length > 0 && (
+        <div>
+          <label className={labelClass}>ส่งค่าจากคอลัมน์ไหน ไปเป็นพารามิเตอร์อะไร</label>
+          <div className="space-y-2">
+            {map.map((item, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <select
+                  value={item.column}
+                  onChange={(e) =>
+                    setMap(map.map((m, i) => (i === index ? { ...m, column: e.target.value } : m)))
+                  }
+                  className={inputClass}
+                >
+                  {columnNames.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+                <span className="shrink-0 text-[11px] font-black text-zinc-400">→</span>
+                <select
+                  value={item.param}
+                  onChange={(e) =>
+                    setMap(map.map((m, i) => (i === index ? { ...m, param: e.target.value } : m)))
+                  }
+                  className={inputClass}
+                >
+                  {targetParams.map((name) => (
+                    <option key={name} value={name}>
+                      :{name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setMap(map.filter((_, i) => i !== index))}
+                  className="shrink-0 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600"
+                  title="ลบ"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() =>
+                setMap([...map, { column: columnNames[0] || "", param: targetParams[0] }])
+              }
+              className="flex h-9 w-full items-center justify-center gap-1 rounded-lg border border-dashed border-zinc-300 text-[11px] font-black text-zinc-500 transition hover:bg-zinc-50"
+            >
+              <Plus size={12} /> เพิ่มการส่งค่า
+            </button>
+          </div>
+        </div>
+      )}
+    </ModalShell>
+  );
+}
+
+/**
+ * Paste a block copied out of Excel and write it back row by row. The header
+ * line names the columns; one of them has to be the key column so each line
+ * can be matched to a row.
+ */
+export function BulkEditModal({ editable, columnNames, onApply, onClose }) {
+  const [text, setText] = useState("");
+  const [applying, setApplying] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const parsed = useMemo(() => {
+    const lines = text.trim().split(/\r?\n/).filter((line) => line.trim());
+    if (lines.length < 2) return null;
+    const headers = lines[0].split("\t").map((cell) => cell.trim());
+    const rows = lines.slice(1).map((line) => line.split("\t").map((cell) => cell.trim()));
+    const keyIndex = headers.indexOf(editable.pk);
+    const targets = headers
+      .map((name, index) => ({ name, index }))
+      .filter((item) => item.index !== keyIndex && editable.columns.includes(item.name));
+    return { headers, rows, keyIndex, targets };
+  }, [text, editable]);
+
+  const problems = [];
+  if (parsed) {
+    if (parsed.keyIndex === -1) problems.push(`ไม่พบคอลัมน์ key "${editable.pk}" ในบรรทัดหัวตาราง`);
+    if (parsed.targets.length === 0) {
+      problems.push(
+        `ไม่มีคอลัมน์ที่แก้ได้เลย — อนุญาตไว้: ${editable.columns.join(", ") || "(ยังไม่ได้ตั้ง)"}`
+      );
+    }
+  }
+
+  const apply = async () => {
+    setApplying(true);
+    setResult(null);
+    const edits = [];
+    for (const row of parsed.rows) {
+      const pkValue = row[parsed.keyIndex];
+      if (!pkValue) continue;
+      for (const target of parsed.targets) {
+        edits.push({ pkValue, column: target.name, value: row[target.index] ?? "" });
+      }
+    }
+    const outcome = await onApply(edits);
+    setResult(outcome);
+    setApplying(false);
+  };
+
+  return (
+    <ModalShell
+      title="แก้หลายแถวจาก Excel"
+      icon={<ClipboardPaste size={15} className="text-red-600" />}
+      onClose={onClose}
+      onSave={apply}
+      saveLabel={applying ? "กำลังบันทึก..." : "เขียนกลับฐานข้อมูล"}
+    >
+      <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
+        คัดลอกจาก Excel/Sheets มาวางได้เลย บรรทัดแรกต้องเป็นชื่อคอลัมน์ และต้องมีคอลัมน์{" "}
+        <code className="font-mono">{editable.pk}</code> เพื่อบอกว่าจะแก้แถวไหน
+      </p>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={8}
+        spellCheck={false}
+        placeholder={`${editable.pk}\t${editable.columns[0] || "คอลัมน์"}\n1\t100\n2\t250`}
+        className="w-full rounded-lg border border-zinc-200 bg-zinc-900 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-emerald-300 outline-none focus:border-red-600"
+      />
+      <p className="text-[10px] font-semibold text-zinc-400">
+        คอลัมน์ที่มีอยู่ในผลลัพธ์: {columnNames.join(", ")}
+      </p>
+
+      {problems.map((problem) => (
+        <div
+          key={problem}
+          className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600"
+        >
+          {problem}
+        </div>
+      ))}
+
+      {parsed && problems.length === 0 && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-700">
+          จะแก้ {parsed.rows.length} แถว × {parsed.targets.length} คอลัมน์ (
+          {parsed.targets.map((target) => target.name).join(", ")}) = {" "}
+          {parsed.rows.length * parsed.targets.length} เซลล์
+        </div>
+      )}
+
+      {result && (
+        <div className="space-y-1 rounded-lg border border-zinc-200 px-3 py-2 text-[11px] font-bold">
+          <p className="text-emerald-700">สำเร็จ {result.ok} เซลล์</p>
+          {result.failed.length > 0 && (
+            <div className="text-red-600">
+              <p>ไม่สำเร็จ {result.failed.length} เซลล์:</p>
+              <ul className="mt-1 max-h-32 list-disc overflow-y-auto pl-4 font-semibold">
+                {result.failed.slice(0, 20).map((failure, index) => (
+                  <li key={index}>
+                    {failure.pkValue} · {failure.column}: {failure.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </ModalShell>
+  );
+}
+
+/** Buttons on each row that call another service with values from that row. */
+export function ActionsModal({ columnNames, actions, onSave, onClose }) {
+  const [draft, setDraft] = useState(actions);
+
+  const update = (index, key, value) =>
+    setDraft(draft.map((action, i) => (i === index ? { ...action, [key]: value } : action)));
+
+  return (
+    <ModalShell
+      title="ปุ่ม action ต่อแถว"
+      icon={<Zap size={15} className="text-red-600" />}
+      onClose={onClose}
+      onSave={() => onSave(draft)}
+    >
+      <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
+        ใช้ <code className="font-mono">{"{ชื่อคอลัมน์}"}</code> ใน URL หรือ body เพื่อแทนค่าจากแถวนั้น
+        · host ปลายทางต้องถูกอนุญาตใน <code className="font-mono">GAMEDB_ACTION_HOSTS</code> ของ .env
+        ก่อน ไม่งั้นระบบจะปฏิเสธ · เรียกได้เฉพาะ Admin และทุกครั้งถูกบันทึกลง log
+      </p>
+      <p className="text-[10px] font-semibold text-zinc-400">
+        คอลัมน์ที่ใช้ได้: {columnNames.join(", ")}
+      </p>
+
+      {draft.map((action, index) => (
+        <div key={index} className="space-y-2 rounded-xl border border-zinc-200 p-3">
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={action.label}
+              onChange={(e) => update(index, "label", e.target.value)}
+              placeholder="ชื่อปุ่ม เช่น ยิงซ้ำ"
+              className={inputClass}
+            />
+            <select
+              value={action.method}
+              onChange={(e) => update(index, "method", e.target.value)}
+              className={`${inputClass} max-w-[6rem]`}
+            >
+              {ACTION_METHODS.map((method) => (
+                <option key={method} value={method}>
+                  {method}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setDraft(draft.filter((_, i) => i !== index))}
+              className="shrink-0 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600"
+              title="ลบ action"
+            >
+              <Trash2 size={12} />
+            </button>
+          </div>
+          <input
+            type="text"
+            value={action.url}
+            onChange={(e) => update(index, "url", e.target.value)}
+            placeholder="http://127.0.0.1:3000/api/orders/{id}/retry"
+            className={`${inputClass} font-mono`}
+          />
+          <textarea
+            value={action.bodyTemplate}
+            onChange={(e) => update(index, "bodyTemplate", e.target.value)}
+            rows={2}
+            placeholder={'{"orderId": "{id}", "note": "จาก GameDB"}'}
+            className="w-full rounded-lg border border-zinc-200 bg-zinc-900 px-3 py-2 font-mono text-[11px] text-emerald-300 outline-none focus:border-red-600"
+          />
+          <label className="flex items-center gap-2 text-[11px] font-bold text-zinc-600">
+            <input
+              type="checkbox"
+              checked={action.confirm}
+              onChange={(e) => update(index, "confirm", e.target.checked)}
+            />
+            ถามยืนยันก่อนยิง
+          </label>
+        </div>
+      ))}
+
+      <button
+        type="button"
+        onClick={() =>
+          setDraft([
+            ...draft,
+            { label: "", method: "POST", url: "", bodyTemplate: "", confirm: true },
+          ])
+        }
+        className="flex h-9 w-full items-center justify-center gap-1 rounded-lg border border-dashed border-zinc-300 text-[11px] font-black text-zinc-500 transition hover:bg-zinc-50"
+      >
+        <Plus size={12} /> เพิ่ม action
+      </button>
     </ModalShell>
   );
 }

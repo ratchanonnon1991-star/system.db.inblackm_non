@@ -21,6 +21,9 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
   const [description, setDescription] = useState(
     isEdit ? modal.query.description : ""
   );
+  // The sidebar groups by this; it is kept in the query's layout because the
+  // service cannot add a column to gamedb_queries.
+  const [folder, setFolder] = useState(isEdit ? modal.query.layout?.folder || "" : "");
   const [sqlText, setSqlText] = useState(isEdit ? modal.query.sqlText : "SELECT ");
   const [connectionId, setConnectionId] = useState(
     isEdit && modal.query.connectionId ? String(modal.query.connectionId) : ""
@@ -75,6 +78,21 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
             body: JSON.stringify(payload),
             fallbackError: "สร้าง Query ไม่สำเร็จ",
           });
+
+      // Folder lives in the layout, so it takes a second call. Merge rather
+      // than replace: the layout also holds columns, rules, params and more.
+      const savedFolder = (data.query.layout?.folder || "").trim();
+      if (folder.trim() !== savedFolder) {
+        await apiJson(`/api/queries/${data.query.id}/layout`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            layout: { ...(data.query.layout || {}), folder: folder.trim() },
+          }),
+          fallbackError: "บันทึกโฟลเดอร์ไม่สำเร็จ",
+        });
+      }
+
       onSaved(data.query);
     } catch (err) {
       setError(err.message);
@@ -121,6 +139,19 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="สั้น ๆ ว่า Query นี้ดึงอะไร"
+              className="h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[10px] font-black text-zinc-500">
+              โฟลเดอร์ (ไม่บังคับ — ใช้จัดกลุ่มในรายการด้านซ้าย)
+            </label>
+            <input
+              type="text"
+              value={folder}
+              onChange={(e) => setFolder(e.target.value)}
+              placeholder="เช่น สต็อก, ออเดอร์, การเงิน"
+              list="gamedb-folder-suggestions"
               className="h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
             />
           </div>

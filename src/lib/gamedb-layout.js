@@ -18,8 +18,14 @@ export const EMPTY_LAYOUT = {
   chart: null,
   sort: null,
   merge: null,
+  drill: null,
+  group: null,
+  folder: "",
+  actions: [],
   refreshSeconds: 0,
 };
+
+export const ACTION_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
 export const PARAM_TYPES = ["text", "number", "date", "select"];
 export const RULE_OPS = [">", ">=", "<", "<=", "=", "!=", "contains"];
@@ -76,6 +82,7 @@ export function normalizeLayout(raw) {
       ? { colId: String(layout.sort.colId), dir: layout.sort.dir === "desc" ? "desc" : "asc" }
       : null;
   const merge = normalizeMerge(layout.merge);
+  const drill = normalizeDrill(layout.drill);
 
   return {
     order: Array.isArray(layout.order) ? layout.order : [],
@@ -116,10 +123,49 @@ export function normalizeLayout(raw) {
     chart,
     sort,
     merge,
+    drill,
+    group:
+      layout.group && typeof layout.group === "object" && layout.group.colId
+        ? { colId: String(layout.group.colId) }
+        : null,
+    folder: typeof layout.folder === "string" ? layout.folder.trim().slice(0, 100) : "",
+    actions: normalizeActions(layout.actions),
     refreshSeconds: REFRESH_CHOICES.includes(Number(layout.refreshSeconds))
       ? Number(layout.refreshSeconds)
       : 0,
   };
+}
+
+// actions = [{ label, method, url, bodyTemplate, confirm }] — a button per row
+// that calls another service with {column} placeholders filled from that row.
+// The host still has to be allow-listed server side.
+export function normalizeActions(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((action) => action && action.label && action.url)
+    .slice(0, 6)
+    .map((action) => ({
+      label: String(action.label).slice(0, 60),
+      method: ACTION_METHODS.includes(action.method) ? action.method : "POST",
+      url: String(action.url).slice(0, 500),
+      bodyTemplate: String(action.bodyTemplate || "").slice(0, 2000),
+      confirm: action.confirm === false ? false : true,
+    }));
+}
+
+// drill = { queryId, map: [{ column, param }] } — clicking a row opens another
+// query with values from that row filled into its :parameters.
+export function normalizeDrill(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const queryId = Number(raw.queryId);
+  const map = Array.isArray(raw.map)
+    ? raw.map
+        .filter((item) => item && item.column && item.param)
+        .slice(0, 10)
+        .map((item) => ({ column: String(item.column), param: String(item.param) }))
+    : [];
+  if (!Number.isFinite(queryId) || map.length === 0) return null;
+  return { queryId, map };
 }
 
 // merge = { queryId, on: [{left, right}], columns: [name], compare: [{left, right}] }
