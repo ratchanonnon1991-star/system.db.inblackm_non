@@ -104,6 +104,8 @@ export default function QueryPanel({
   query,
   queries,
   panel,
+  layoutOverride,
+  onLayoutChange,
   canManage,
   canMoveUp,
   canMoveDown,
@@ -122,7 +124,13 @@ export default function QueryPanel({
   onDropPanel,
   onEditQuery,
 }) {
-  const savedLayout = useMemo(() => normalizeLayout(query.layout), [query.layout]);
+  // A screen template can carry its own layout for this panel; it wins over the
+  // query's saved layout without overwriting it for everyone else.
+  const savedLayout = useMemo(
+    () => normalizeLayout(layoutOverride || query.layout),
+    [layoutOverride, query.layout]
+  );
+  const hasOverride = Boolean(layoutOverride);
   const savedParams = useMemo(
     () => resolveParams(savedLayout, query.sqlText),
     [savedLayout, query.sqlText]
@@ -167,6 +175,16 @@ export default function QueryPanel({
   // Snapshot of the rows the panel is currently showing, used to highlight what
   // an auto-refresh changed.
   const previousRowsRef = useRef(null);
+  const overrideRef = useRef(hasOverride);
+  useEffect(() => {
+    overrideRef.current = hasOverride;
+  }, [hasOverride]);
+
+  // Hand the live layout up so "save this screen as a template" can capture
+  // what each panel actually looks like right now.
+  useEffect(() => {
+    onLayoutChange?.(query.id, layout);
+  }, [onLayoutChange, query.id, layout]);
   useEffect(() => {
     paramsRef.current = paramValues;
     missingRef.current = missingParams;
@@ -213,7 +231,9 @@ export default function QueryPanel({
         }
         previousRowsRef.current = { columns: data.columns, rows: data.rows };
         setResult(data);
-        if (!layoutDirtyRef.current) setLayout(normalizeLayout(data.layout));
+        if (!layoutDirtyRef.current && !overrideRef.current) {
+          setLayout(normalizeLayout(data.layout));
+        }
         setLastRunAt(new Date());
       } catch (err) {
         setRunError(err.message);

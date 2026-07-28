@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Database,
+  Layers,
   LayoutGrid,
   Loader2,
   Lock,
@@ -14,6 +15,7 @@ import {
   Trash2,
   User,
   Users,
+  X,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import QueryPanel from "@/components/query-panel";
@@ -22,6 +24,7 @@ import {
   QueryEditorModal,
   UsersModal,
 } from "@/components/gamedb-modals";
+import ViewsModal from "@/components/views-modal";
 
 export default function GamedbPage() {
   const [me, setMe] = useState(null);
@@ -207,6 +210,31 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   const [connectionsModal, setConnectionsModal] = useState(false);
   const [usersModal, setUsersModal] = useState(false);
 
+  // Screen templates: a saved set of panels an admin can hand to other users.
+  const [views, setViews] = useState([]);
+  const [viewsModal, setViewsModal] = useState(false);
+  const [activeView, setActiveView] = useState(null);
+  const [panelLayouts, setPanelLayouts] = useState({});
+  // Live layout of every open panel, kept in a ref because it changes on every
+  // column drag and only matters when a template is saved.
+  const liveLayouts = useRef({});
+  const captureLayout = useCallback((queryId, layout) => {
+    liveLayouts.current[queryId] = layout;
+  }, []);
+
+  const loadViews = useCallback(async () => {
+    try {
+      const data = await apiJson("/api/views", {
+        fallbackError: "โหลดเทมเพลตหน้าจอไม่สำเร็จ",
+      });
+      setViews(data.views || []);
+      return data.views || [];
+    } catch {
+      setViews([]);
+      return [];
+    }
+  }, []);
+
   const loadConnections = useCallback(async () => {
     try {
       const data = await apiJson("/api/connections", {
@@ -240,20 +268,48 @@ function GamedbWorkspace({ me, onLoggedOut }) {
     }
   }, []);
 
+  const applyView = useCallback((view) => {
+    const panelsFromView = (view.config?.panels || []).map((panel) => ({
+      queryId: panel.queryId,
+      width: panel.width ?? null,
+      height: clampPanelHeight(panel.height),
+      collapsed: Boolean(panel.collapsed),
+    }));
+    const layouts = {};
+    for (const panel of view.config?.panels || []) {
+      if (panel.layout) layouts[panel.queryId] = panel.layout;
+    }
+    setPanelLayouts(layouts);
+    setPanels(panelsFromView);
+    setActiveView(view);
+  }, []);
+
+  const leaveView = () => {
+    setActiveView(null);
+    setPanelLayouts({});
+  };
+
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- setState runs after the fetch resolves
-    loadQueries().then((list) => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- setState runs after the fetches resolve
+    Promise.all([loadQueries(), loadViews()]).then(([list, viewList]) => {
       if (hydrated.current) return;
       hydrated.current = true;
       const ids = new Set(list.map((query) => query.id));
       const stored = readStoredPanels().filter((panel) => ids.has(panel.queryId));
       if (stored.length > 0) {
         setPanels(stored);
+        return;
+      }
+      // Nothing of their own yet: hand them the default template if an admin
+      // set one up, otherwise just open the first query.
+      const fallback = viewList.find((view) => view.isDefault && view.config?.panels?.length);
+      if (fallback) {
+        applyView(fallback);
       } else if (list.length > 0) {
         setPanels([makePanel(list[0].id)]);
       }
     });
-  }, [loadQueries]);
+  }, [loadQueries, loadViews, applyView]);
 
   useEffect(() => {
     if (!hydrated.current) return;
@@ -378,6 +434,16 @@ function GamedbWorkspace({ me, onLoggedOut }) {
     }
   };
 
+  const buildViewConfig = useCallback(
+    () => ({
+      panels: panels.map((panel) => ({
+        ...panel,
+        layout: liveLayouts.current[panel.queryId] || null,
+      })),
+    }),
+    [panels]
+  );
+
   const queryById = useMemo(
     () => new Map(queries.map((query) => [query.id, query])),
     [queries]
@@ -403,6 +469,38 @@ function GamedbWorkspace({ me, onLoggedOut }) {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {views.length > 0 && (
+            <div className="flex items-center gap-1 rounded-xl border border-zinc-200 bg-white px-2.5 py-2">
+              <Layers size={13} className="text-red-600" />
+              <select
+                value={activeView?.id ?? ""}
+                onChange={(e) => {
+                  const view = views.find((item) => String(item.id) === e.target.value);
+                  if (view) applyView(view);
+                  else leaveView();
+                }}
+                className="bg-transparent text-[11px] font-black text-zinc-600 outline-none"
+                title="เลือกเทมเพลตหน้าจอที่ได้รับ"
+              >
+                <option value="">หน้าจอของฉัน</option>
+                {views.map((view) => (
+                  <option key={view.id} value={view.id}>
+                    {view.name}
+                  </option>
+                ))}
+              </select>
+              {activeView && (
+                <button
+                  type="button"
+                  onClick={leaveView}
+                  className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600"
+                  title="ออกจากเทมเพลต กลับไปหน้าจอของฉัน"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          )}
           <div className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2">
             <User size={13} className="text-zinc-500" />
             <div className="text-[10px] font-semibold leading-tight">
@@ -420,6 +518,14 @@ function GamedbWorkspace({ me, onLoggedOut }) {
           </button>
           {isSuperAdmin && (
             <>
+              <button
+                type="button"
+                onClick={() => setViewsModal(true)}
+                className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
+                title="บันทึกหน้าจอนี้เป็นเทมเพลต / ส่งให้คนอื่น"
+              >
+                <Layers size={14} /> เทมเพลต ({views.length})
+              </button>
               <button
                 type="button"
                 onClick={() => setUsersModal(true)}
@@ -588,10 +694,12 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                   panel.width >= containerWidth - 8;
                 return (
                   <QueryPanel
-                    key={`${panel.queryId}:${query.updatedAt}`}
+                    key={`${panel.queryId}:${query.updatedAt}:${activeView?.id ?? "own"}`}
                     query={query}
                     queries={queries}
                     panel={panel}
+                    layoutOverride={panelLayouts[panel.queryId] || null}
+                    onLayoutChange={captureLayout}
                     canManage={isSuperAdmin}
                     canMoveUp={index > 0}
                     canMoveDown={index < openPanels.length - 1}
@@ -671,6 +779,20 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       )}
 
       {usersModal && <UsersModal me={me} onClose={() => setUsersModal(false)} />}
+
+      {viewsModal && (
+        <ViewsModal
+          views={views}
+          buildConfig={buildViewConfig}
+          panelCount={openPanels.length}
+          onClose={() => setViewsModal(false)}
+          onChanged={loadViews}
+          onApply={(view) => {
+            applyView(view);
+            setViewsModal(false);
+          }}
+        />
+      )}
     </div>
   );
 }

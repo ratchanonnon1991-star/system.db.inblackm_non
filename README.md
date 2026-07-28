@@ -3,7 +3,7 @@
 Service ตาราง Query สำหรับทีมงาน INBLACKM — เลือก query ที่บันทึกไว้เพื่อดึงข้อมูลจากฐานข้อมูล แสดงผลเป็นตารางที่จัดคอลัมน์เองได้ (เรียงลำดับ, ซ่อน, เปลี่ยนชื่อ, เพิ่มคอลัมน์สูตร `+ - * /`)
 
 - Next.js 16 + Tailwind 4 — dev พอร์ต **4183**, production พอร์ต **5589** (PM2 app: `system.db.inblackm`)
-- ตารางของ service นี้: `gamedb_users`, `gamedb_queries`, `gamedb_connections`, `gamedb_edit_log`
+- ตารางของ service นี้: `gamedb_users`, `gamedb_queries`, `gamedb_connections`, `gamedb_views`, `gamedb_edit_log`
 
 ## หน้าทำงาน
 
@@ -20,6 +20,20 @@ Service ตาราง Query สำหรับทีมงาน INBLACKM — 
 - **รวมตารางข้าม Query** — จับคู่แถวกับอีก Query โดยเทียบคอลัมน์ตั้งแต่ 1 คู่ขึ้นไป (เช่น `sku = รหัส` และ `เกม = game` ต้องตรงทั้งคู่) แล้วดึงคอลัมน์ของอีกฝั่งมาแสดงต่อท้าย พร้อมคอลัมน์เช็ค `✓ ตรงกัน / ✗ ต่างกัน` เทียบค่าทีละคู่ · แถวที่ไม่มีคู่ขึ้น "ไม่พบคู่" และหัวตารางสรุปว่าจับคู่ได้กี่แถว · เทียบตัวเลขกับข้อความตัวเลขได้ (`10` = `"10"`) และข้อความไม่สนตัวพิมพ์/ช่องว่างหัวท้าย · การรวมทำในเบราว์เซอร์ ไม่ได้ JOIN ที่ฐานข้อมูล จึงข้าม DB คนละเครื่องกันได้
 
 การตั้งค่าทั้งหมดของ Query (คอลัมน์, สูตร, พารามิเตอร์, กฎสี, กราฟ, รอบรีเฟรช, การแก้ไขข้อมูล) เก็บรวมอยู่ในคอลัมน์ `layout` (JSONB) ของ `gamedb_queries` — ตั้งใจให้ไม่ต้อง `ALTER TABLE` เพิ่มคอลัมน์ เพราะ user ที่ service ใช้ไม่ได้เป็นเจ้าของตาราง
+
+## เทมเพลตหน้าจอ — จัดหน้าให้คนอื่นใช้
+
+Admin จัดหน้าจอไว้ (เปิดตารางไหน วางยังไง ซ่อน/เรียงคอลัมน์อะไร) แล้วกดปุ่ม **"เทมเพลต"** เพื่อบันทึกทั้งหน้าเป็นชุดเดียว จากนั้นเลือกว่าจะให้ใครใช้
+
+- เก็บทั้ง **panel ที่เปิด + ขนาด/ลำดับ** และ **layout ของแต่ละตาราง ณ ตอนนั้น** (คอลัมน์ที่ซ่อน, การเรียง, คอลัมน์สูตร, กฎสี, กราฟ, รอบรีเฟรช)
+- แชร์ได้ 2 แบบ: **ทุกคนในระบบ** หรือ **เลือกรายคน**
+- ติ๊ก **"หน้าเริ่มต้น"** = คนที่ได้รับ เปิดเว็บมาครั้งแรกจะเจอหน้านี้เลย ไม่ต้องกดอะไร
+- ผู้ใช้สลับได้เองที่ dropdown บนหัวเว็บ ระหว่าง **"หน้าจอของฉัน"** กับเทมเพลตที่ได้รับ — ออกจากเทมเพลตเมื่อไหร่ ก็กลับไปหน้าจอเดิมของตัวเอง
+- layout ในเทมเพลต **ไม่ทับ** layout ที่บันทึกไว้กับ Query ดังนั้นส่งหน้าคนละแบบให้คนละทีมจาก Query เดียวกันได้
+- แก้ชื่อ/การแชร์ ไม่ไปยุ่งกับหน้าจอที่บันทึกไว้ ถ้าอยากเปลี่ยนหน้าจอต้องกด **"อัปเดตด้วยหน้าจอปัจจุบัน"**
+- staff เปิดใช้ได้อย่างเดียว สร้าง/แก้/ลบ/แชร์ เป็นสิทธิ์ Admin
+
+เก็บในตาราง `gamedb_views` ซึ่ง service สร้างเอง จึงเป็นเจ้าของเองและไม่ต้องขอ GRANT เหมือนตารางชุดแรก
 
 ## แก้ไขข้อมูลจากตาราง (Admin เท่านั้น)
 
@@ -63,3 +77,11 @@ npm run dev            # http://localhost:4183
 1. วาง `.env` บนเซิร์ฟเวอร์ (รวม `GAMEDB_ADMIN_USERNAME`/`GAMEDB_ADMIN_PASSWORD` สำหรับ seed รอบแรก)
 2. `npm run build` แล้ว `npm run pm2:start` (PM2 app ชื่อ `system.db.inblackm`, พอร์ต 5589) — หรือปล่อยให้ GitHub Actions (`.github/workflows/deploy.yml`) ทำให้เมื่อ push `main`
 3. เพิ่ม site ใน aaPanel/nginx: subdomain ชั้นเดียว เช่น `systemdb.inblackm.com` → reverse proxy `http://127.0.0.1:5589` (subdomain ซ้อน 2 ชั้นจะติดปัญหา cert ของ Cloudflare)
+
+## ให้สิทธิ์
+```bash
+GRANT USAGE, SELECT ON SEQUENCE gamedb_queries_id_seq TO system_database;
+GRANT USAGE, SELECT ON SEQUENCE gamedb_connections_id_seq TO system_database;
+GRANT USAGE, SELECT ON SEQUENCE gamedb_users_id_seq TO system_database;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO system_database;
+```
