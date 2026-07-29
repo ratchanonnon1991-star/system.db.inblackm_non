@@ -438,9 +438,6 @@ function CanvasToolbar({
 }
 
 function GamedbWorkspace({ me, onLoggedOut }) {
-
-  const [containerHeight, setContainerHeight] = useState(0);
-
   const isSuperAdmin = me.role === "admin";
   const isTemplateUser = me.role === "user";
 
@@ -535,6 +532,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   });
   const hydrated = useRef(false);
   const panelsRef = useRef(null);
+  const canvasOriginRef = useRef(null);
   const viewportRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [renderedPanelHeights, setRenderedPanelHeights] = useState({});
@@ -810,16 +808,9 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   // x/y into a tidy starting grid sized to what is currently on screen.
   useEffect(() => {
     const measure = () => {
-    const { width, height } = measureContainer();
-    if (!width || !height) return;
-
-    setContainerWidth((current) =>
-      current === width ? current : width
-    );
-
-    setContainerHeight((current) =>
-      current === height ? current : height
-    );
+      const { width, height } = measureContainer();
+      if (!width || !height) return;
+      setContainerWidth(width);
       setPanels((prev) => {
         const arranged = arrangeUnpositionedPanels(prev, width);
         return arranged.some(
@@ -1278,14 +1269,14 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   const originX = canvasBounds.left < 0 ? canvasBounds.left - PANEL_GAP : 0;
   const originY = canvasBounds.top < 0 ? canvasBounds.top - PANEL_GAP : 0;
 
-  // In canvas units, so the sizer below can scale them. Floor the viewport so a
-  // canvas that just fits does not oscillate a scrollbar in and out.
-  const canvasWidth = Math.max(
-    Math.floor((containerWidth || DEFAULT_PANEL_WIDTH) / zoom),
-    canvasBounds.right + PANEL_GAP - originX
-  );
+  // Content only, in canvas units. Sizing the canvas to the viewport as well
+  // would be circular -- the viewport's client size is what the scrollbars this
+  // canvas asks for take away -- and it is what put a scrollbar on a canvas with
+  // nothing overflowing it. Panels are never held inside these bounds anyway: one
+  // dragged past the edge grows them.
+  const canvasWidth = canvasBounds.right + PANEL_GAP - originX;
   const canvasHeight = Math.max(
-    Math.floor((containerHeight || CANVAS_MIN_HEIGHT) / zoom),
+    CANVAS_MIN_HEIGHT,
     canvasBounds.bottom + PANEL_GAP - originY
   );
 
@@ -1384,7 +1375,8 @@ function GamedbWorkspace({ me, onLoggedOut }) {
     if (
       event.target !== viewport &&
       event.target !== canvas &&
-      event.target !== canvas?.parentElement
+      event.target !== canvas?.parentElement &&
+      event.target !== canvasOriginRef.current
     ) {
       return;
     }
@@ -1837,10 +1829,23 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               style={{
                 width: canvasWidth,
                 minHeight: canvasHeight,
-                // scale first, then shift by the origin in canvas units, so a
-                // panel at a negative x lands inside the scrollable area.
-                transform: `scale(${zoom}) translate(${-originX}px, ${-originY}px)`,
+                transform: `scale(${zoom})`,
                 transformOrigin: "0 0",
+              }}
+            >
+            {/* The origin is a position, not a transform. A translate would carry
+                this layer's own box with it and leave that much empty space
+                scrollable off the far side -- measured at 247px of nothing after
+                one panel went 240 to the left. Offsetting a wrapper puts the
+                panels in the same place with the box left where it belongs. */}
+            <div
+              ref={canvasOriginRef}
+              className="absolute"
+              style={{
+                left: -originX,
+                top: -originY,
+                width: canvasWidth + originX,
+                height: canvasHeight + originY,
               }}
             >
               {snapGuides.x !== null && (
@@ -1956,6 +1961,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                 })}
               </>
             )}
+            </div>
             </div>
           </div>
         </div>
