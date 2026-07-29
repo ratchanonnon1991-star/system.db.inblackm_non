@@ -345,6 +345,10 @@ export default function PanelTable({
   onDrill,
   drillLabel,
   onDeleteRow,
+  // The table lives on a canvas that can be zoomed. Anything read off the DOM or
+  // off a pointer arrives in screen pixels; column widths are kept in canvas
+  // units, so the two only agree at 100%.
+  canvasScale = 1,
 }) {
   const [naturalWidths, setNaturalWidths] = useState({});
   const [resizing, setResizing] = useState(null);
@@ -437,13 +441,15 @@ export default function PanelTable({
       if (widthOf(col.id)) continue;
       const el = headRefs.current[col.id];
       if (!el) continue;
-      const width = Math.ceil(el.getBoundingClientRect().width) + 8;
+      // getBoundingClientRect reports the column as it appears on screen, so a
+      // zoomed-out canvas would snapshot every column narrower than its content.
+      const width = Math.ceil(el.getBoundingClientRect().width / canvasScale) + 8;
       next[col.id] = Math.min(MAX_NATURAL_WIDTH, clampColumnWidth(width));
     }
     if (Object.keys(next).length === 0) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- measuring the DOM after paint is the point here
     setNaturalWidths((prev) => ({ ...prev, ...next }));
-  }, [measured, columns, widthOf]);
+  }, [measured, columns, widthOf, canvasScale]);
 
   const setColumnWidth = useCallback(
     (colId, width) => {
@@ -458,7 +464,11 @@ export default function PanelTable({
   useEffect(() => {
     if (!resizing) return undefined;
     const move = (event) =>
-      setColumnWidth(resizing.colId, resizing.startWidth + (event.clientX - resizing.startX));
+      setColumnWidth(
+        resizing.colId,
+        // The pointer moves in screen pixels; the width it is setting does not.
+        resizing.startWidth + (event.clientX - resizing.startX) / canvasScale
+      );
     const stop = () => setResizing(null);
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", stop);
@@ -472,7 +482,7 @@ export default function PanelTable({
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
     };
-  }, [resizing, setColumnWidth]);
+  }, [resizing, setColumnWidth, canvasScale]);
 
   const resetColumnWidth = (colId) => {
     mutateLayout((prev) => {

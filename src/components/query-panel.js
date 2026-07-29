@@ -2039,6 +2039,7 @@ export default function QueryPanel({
                   drillLabel={`เปิด ${
                     queries.find((item) => item.id === layout.drill?.queryId)?.name || "Query"
                   } ด้วยค่าจากแถวนี้`}
+                  canvasScale={canvasScale}
                 />
               )}
 
