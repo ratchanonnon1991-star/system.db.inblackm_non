@@ -44,10 +44,30 @@ const inputClass =
   "h-9 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white";
 const labelClass = "mb-1 block text-[10px] font-black text-zinc-500";
 
-function ModalShell({ title, icon, onClose, children, onSave, saveLabel = "บันทึก" }) {
+function ModalShell({
+  title,
+  icon,
+  onClose,
+  children,
+  onSave,
+  saveLabel = "บันทึก",
+  inline = false,
+}) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-xl flex-col rounded-2xl bg-white p-5 shadow-xl">
+    <div
+      className={
+        inline
+          ? "flex h-full min-h-0 w-full bg-white"
+          : "fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm"
+      }
+    >
+      <div
+        className={
+          inline
+            ? "flex min-h-0 w-full flex-1 flex-col bg-white p-5"
+            : "flex max-h-[90vh] w-full max-w-xl flex-col rounded-2xl bg-white p-5 shadow-xl"
+        }
+      >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-sm font-black">
             {icon} {title}
@@ -77,7 +97,7 @@ function ModalShell({ title, icon, onClose, children, onSave, saveLabel = "บ�
 }
 
 /** Turns the :placeholders found in the SQL into labelled, typed inputs. */
-export function ParamsSettingsModal({ sqlText, params, onSave, onClose }) {
+export function ParamsSettingsModal({ sqlText, params, onSave, onClose, inline = false }) {
   const names = useMemo(() => extractSqlParams(sqlText), [sqlText]);
   const [draft, setDraft] = useState(() =>
     names.map((name) => {
@@ -102,6 +122,7 @@ export function ParamsSettingsModal({ sqlText, params, onSave, onClose }) {
 
   return (
     <ModalShell
+      inline={inline}
       title="พารามิเตอร์ของ Query"
       icon={<SlidersHorizontal size={15} className="text-red-600" />}
       onClose={onClose}
@@ -250,7 +271,13 @@ const WIDGET_LABELS = {
 };
 
 /** Which table/rows this query is allowed to write back to. */
-export function EditableSettingsModal({ columnNames, editable, onSave, onClose }) {
+export function EditableSettingsModal({
+  columnNames,
+  editable,
+  onSave,
+  onClose,
+  inline = false,
+}) {
   const [table, setTable] = useState(editable?.table || "");
   const [pk, setPk] = useState(editable?.pk || "");
   const [pkColumn, setPkColumn] = useState(editable?.pkColumn || "");
@@ -299,6 +326,7 @@ export function EditableSettingsModal({ columnNames, editable, onSave, onClose }
 
   return (
     <ModalShell
+      inline={inline}
       title="ตั้งค่าการแก้ไขข้อมูล"
       icon={<Table2 size={15} className="text-red-600" />}
       onClose={onClose}
@@ -555,6 +583,7 @@ export function NewRowModal({
   resultColumns = [],
   onSubmit,
   onClose,
+  inline = false,
 }) {
   const fields = useMemo(() => {
     const configured = new Map(editable.inputs.map((input) => [input.column, input]));
@@ -618,6 +647,7 @@ export function NewRowModal({
 
   return (
     <ModalShell
+      inline={inline}
       title={`เพิ่มแถวใน ${editable.table}`}
       icon={<Plus size={15} className="text-red-600" />}
       onClose={onClose}
@@ -719,7 +749,7 @@ export function NewRowModal({
   );
 }
 
-export function RulesModal({ columns, rules, onSave, onClose }) {
+export function RulesModal({ columns, rules, onSave, onClose, inline = false }) {
   const [draft, setDraft] = useState(rules);
   const [form, setForm] = useState({
     colId: columns[0]?.id || "",
@@ -733,6 +763,7 @@ export function RulesModal({ columns, rules, onSave, onClose }) {
 
   return (
     <ModalShell
+      inline={inline}
       title="ระบายสีตามเงื่อนไข"
       icon={<Palette size={15} className="text-red-600" />}
       onClose={onClose}
@@ -898,7 +929,14 @@ function ToneSelect({ value, onChange, label, part }) {
  * plus how many columns stay pinned while the rest scroll. Unlike RulesModal
  * nothing here depends on the value in the cell.
  */
-export function FormatsModal({ columns, formats, freeze, onSave, onClose }) {
+export function FormatsModal({
+  columns,
+  formats,
+  freeze,
+  onSave,
+  onClose,
+  inline = false,
+}) {
   const [draft, setDraft] = useState(() => {
     const initial = {};
     for (const col of columns) initial[col.id] = normalizeFormat(formats?.[col.id]);
@@ -913,6 +951,7 @@ export function FormatsModal({ columns, formats, freeze, onSave, onClose }) {
 
   return (
     <ModalShell
+      inline={inline}
       title="รูปแบบคอลัมน์"
       icon={<Paintbrush size={15} className="text-red-600" />}
       onClose={onClose}
@@ -1063,7 +1102,15 @@ export function FormatsModal({ columns, formats, freeze, onSave, onClose }) {
  * its column list can be offered, which also surfaces straight away if it needs
  * parameters or is broken.
  */
-export function MergeModal({ query, queries, columnNames, merge, onSave, onClose }) {
+export function MergeModal({
+  query,
+  queries,
+  columnNames,
+  merge,
+  onSave,
+  onClose,
+  inline = false,
+}) {
   const [queryId, setQueryId] = useState(merge?.queryId ? String(merge.queryId) : "");
   const [on, setOn] = useState(merge?.on || []);
   const [columns, setColumns] = useState(merge?.columns || []);
@@ -1150,6 +1197,7 @@ export function MergeModal({ query, queries, columnNames, merge, onSave, onClose
 
   return (
     <ModalShell
+      inline={inline}
       title="รวมตารางกับอีก Query"
       icon={<Combine size={15} className="text-red-600" />}
       onClose={onClose}
@@ -1256,7 +1304,15 @@ export function MergeModal({ query, queries, columnNames, merge, onSave, onClose
  * :parameters are read straight out of its SQL, so the mapping can only point
  * at placeholders that really exist.
  */
-export function DrillModal({ query, queries, columnNames, drill, onSave, onClose }) {
+export function DrillModal({
+  query,
+  queries,
+  columnNames,
+  drill,
+  onSave,
+  onClose,
+  inline = false,
+}) {
   const [queryId, setQueryId] = useState(drill?.queryId ? String(drill.queryId) : "");
   const [map, setMap] = useState(drill?.map || []);
 
@@ -1271,6 +1327,7 @@ export function DrillModal({ query, queries, columnNames, drill, onSave, onClose
 
   return (
     <ModalShell
+      inline={inline}
       title="คลิกแถวเพื่อเปิด Query อื่น (drill-down)"
       icon={<CornerDownRight size={15} className="text-red-600" />}
       onClose={onClose}
@@ -1367,7 +1424,13 @@ export function DrillModal({ query, queries, columnNames, drill, onSave, onClose
  * line names the columns; one of them has to be the key column so each line
  * can be matched to a row.
  */
-export function BulkEditModal({ editable, columnNames, onApply, onClose }) {
+export function BulkEditModal({
+  editable,
+  columnNames,
+  onApply,
+  onClose,
+  inline = false,
+}) {
   const [text, setText] = useState("");
   const [applying, setApplying] = useState(false);
   const [result, setResult] = useState(null);
@@ -1412,6 +1475,7 @@ export function BulkEditModal({ editable, columnNames, onApply, onClose }) {
 
   return (
     <ModalShell
+      inline={inline}
       title="แก้หลายแถวจาก Excel"
       icon={<ClipboardPaste size={15} className="text-red-600" />}
       onClose={onClose}
@@ -1472,7 +1536,7 @@ export function BulkEditModal({ editable, columnNames, onApply, onClose }) {
   );
 }
 
-export function ChartModal({ columns, chart, onSave, onClose }) {
+export function ChartModal({ columns, chart, onSave, onClose, inline = false }) {
   const [type, setType] = useState(chart?.type || "bar");
   const [x, setX] = useState(chart?.x || columns[0]?.id || "");
   const [y, setY] = useState(chart?.y || []);
@@ -1483,6 +1547,7 @@ export function ChartModal({ columns, chart, onSave, onClose }) {
 
   return (
     <ModalShell
+      inline={inline}
       title="ตั้งค่ากราฟ"
       icon={<ChartColumn size={15} className="text-red-600" />}
       onClose={onClose}

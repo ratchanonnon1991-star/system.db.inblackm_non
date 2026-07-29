@@ -354,6 +354,7 @@ export default function QueryPanel({
   isFullWidth,
   isSelected,
   toolbarHost,
+  configHost,
   onSelect,
   onPositionChange,
   onFrameChange,
@@ -2062,8 +2063,13 @@ export default function QueryPanel({
         </span>
       ))}
 
+      {configHost &&
+        modal &&
+        createPortal(
+          <>
       {modal === "computed" && result && (
         <ComputedColumnModal
+          inline
           availableNames={[...new Set(result.columns.map((col) => col.name))]}
           // The first row, so the editor can show what the formula produces
           // before the column exists.
@@ -2090,6 +2096,7 @@ export default function QueryPanel({
       )}
       {modal === "params" && (
         <ParamsSettingsModal
+          inline
           sqlText={query.sqlText}
           params={layout.params}
           onClose={() => setModal(null)}
@@ -2108,6 +2115,7 @@ export default function QueryPanel({
       )}
       {modal === "editable" && result && (
         <EditableSettingsModal
+          inline
           columnNames={result.columns.map((col) => col.name)}
           editable={layout.editable}
           onClose={() => setModal(null)}
@@ -2119,6 +2127,7 @@ export default function QueryPanel({
       )}
       {modal === "merge" && result && (
         <MergeModal
+          inline
           query={query}
           queries={queries}
           columnNames={result.columns.map((col) => col.name)}
@@ -2132,6 +2141,7 @@ export default function QueryPanel({
       )}
       {modal === "drill" && result && (
         <DrillModal
+          inline
           query={query}
           queries={queries}
           columnNames={result.columns.map((col) => col.name)}
@@ -2145,6 +2155,7 @@ export default function QueryPanel({
       )}
       {modal === "newRow" && result && layout.editable && (
         <NewRowModal
+          inline
           editable={layout.editable}
           lookupOptions={lookupOptions}
           resultColumns={result.columns}
@@ -2154,6 +2165,7 @@ export default function QueryPanel({
       )}
       {modal === "bulk" && result && layout.editable && (
         <BulkEditModal
+          inline
           editable={layout.editable}
           columnNames={result.columns.map((col) => col.name)}
           onApply={applyBulkEdits}
@@ -2162,6 +2174,7 @@ export default function QueryPanel({
       )}
       {modal === "formats" && result && (
         <FormatsModal
+          inline
           columns={visibleColumns}
           formats={layout.formats}
           freeze={layout.freeze}
@@ -2174,6 +2187,7 @@ export default function QueryPanel({
       )}
       {modal === "rules" && result && (
         <RulesModal
+          inline
           columns={visibleColumns}
           rules={layout.rules}
           onClose={() => setModal(null)}
@@ -2185,6 +2199,7 @@ export default function QueryPanel({
       )}
       {modal === "chart" && result && (
         <ChartModal
+          inline
           columns={visibleColumns}
           chart={layout.chart}
           onClose={() => setModal(null)}
@@ -2195,6 +2210,9 @@ export default function QueryPanel({
           }}
         />
       )}
+          </>,
+          configHost
+        )}
     </section>
   );
 }
