@@ -2,7 +2,6 @@
 // endpoint and by saved screen templates, which embed layouts of their own.
 import {
   COMPUTED_TYPES,
-  normalizeActions,
   normalizeDrill,
   normalizeFormats,
   normalizeFreeze,
@@ -168,7 +167,6 @@ export function sanitizeLayout(raw) {
     drill,
     group,
     folder,
-    actions: normalizeActions(layout.actions),
     refreshSeconds: REFRESH_CHOICES.includes(Number(layout.refreshSeconds))
       ? Number(layout.refreshSeconds)
       : 0,

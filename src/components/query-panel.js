@@ -34,7 +34,6 @@ import {
   User,
   Users,
   X,
-  Zap,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { evaluateFormula } from "@/lib/gamedb-formula";
@@ -55,7 +54,6 @@ import {
 } from "@/lib/gamedb-layout";
 import { ComputedColumnModal } from "@/components/gamedb-modals";
 import {
-  ActionsModal,
   BulkEditModal,
   ChartModal,
   DrillModal,
@@ -1075,37 +1073,6 @@ export default function QueryPanel({
     }
   };
 
-  const runRowAction = async (row, actionIndex) => {
-    const action = layout.actions[actionIndex];
-    if (!action) return;
-    const values = {};
-    result.columns.forEach((col, index) => {
-      values[col.name] = result.rows[row.sourceIndex][index];
-    });
-    if (
-      action.confirm &&
-      !window.confirm(`ยิง "${action.label}" สำหรับแถวนี้?\n${action.method} ${action.url}`)
-    ) {
-      return;
-    }
-    setSaveError("");
-    try {
-      const data = await apiJson(`/api/queries/${query.id}/action`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ actionIndex, values }),
-        fallbackError: "เรียก action ไม่สำเร็จ",
-      });
-      const { status, ok, body } = data.result;
-      window.alert(
-        `${action.label}: ${ok ? "สำเร็จ" : "ไม่สำเร็จ"} (HTTP ${status})\n${body.slice(0, 500)}`
-      );
-      if (ok) runQuery({ silent: true });
-    } catch (err) {
-      setSaveError(err.message);
-    }
-  };
-
   const drillRow = (row) => {
     if (!layout.drill || !onDrill) return;
     const values = {};
@@ -1679,16 +1646,6 @@ export default function QueryPanel({
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={() => runMoreAction(() => setModal("actions"))}
-                    disabled={!result}
-                    className={menuItemClass}
-                  >
-                    <Zap size={14} className={layout.actions.length ? "text-red-600" : ""} />
-                    Action ต่อแถว
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
                     onClick={() => runMoreAction(() => setModal("editable"))}
                     disabled={!result}
                     className={menuItemClass}
@@ -2002,8 +1959,6 @@ export default function QueryPanel({
                   editPending={editPending}
                   onEditCell={editCell}
                   changedKeys={changedCellKeys}
-                  actions={canManage ? layout.actions : []}
-                  onRunAction={runRowAction}
                   onDeleteRow={
                     canEditCells && layout.editable.allowDelete && !viewingSnapshot
                       ? deleteRow
@@ -2133,17 +2088,6 @@ export default function QueryPanel({
           onClose={() => setModal(null)}
           onSave={(drill) => {
             mutateLayout((prev) => ({ ...prev, drill }));
-            setModal(null);
-          }}
-        />
-      )}
-      {modal === "actions" && result && (
-        <ActionsModal
-          columnNames={result.columns.map((col) => col.name)}
-          actions={layout.actions}
-          onClose={() => setModal(null)}
-          onSave={(actions) => {
-            mutateLayout((prev) => ({ ...prev, actions }));
             setModal(null);
           }}
         />

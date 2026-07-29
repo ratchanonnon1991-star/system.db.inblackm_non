@@ -25,13 +25,10 @@ export const EMPTY_LAYOUT = {
   drill: null,
   group: null,
   folder: "",
-  actions: [],
   refreshSeconds: 0,
   formats: {},
   freeze: 0,
 };
-
-export const ACTION_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
 export const PARAM_TYPES = [
   "text",
@@ -235,7 +232,6 @@ export function normalizeLayout(raw) {
         ? { colId: String(layout.group.colId) }
         : null,
     folder: typeof layout.folder === "string" ? layout.folder.trim().slice(0, 100) : "",
-    actions: normalizeActions(layout.actions),
     refreshSeconds: REFRESH_CHOICES.includes(Number(layout.refreshSeconds))
       ? Number(layout.refreshSeconds)
       : 0,
@@ -423,23 +419,6 @@ export function normalizeFreeze(raw) {
 
 export function formatOf(layout, colId) {
   return layout.formats?.[colId] || EMPTY_FORMAT;
-}
-
-// actions = [{ label, method, url, bodyTemplate, confirm }] — a button per row
-// that calls another service with {column} placeholders filled from that row.
-// The host still has to be allow-listed server side.
-export function normalizeActions(raw) {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .filter((action) => action && action.label && action.url)
-    .slice(0, 6)
-    .map((action) => ({
-      label: String(action.label).slice(0, 60),
-      method: ACTION_METHODS.includes(action.method) ? action.method : "POST",
-      url: String(action.url).slice(0, 500),
-      bodyTemplate: String(action.bodyTemplate || "").slice(0, 2000),
-      confirm: action.confirm === false ? false : true,
-    }));
 }
 
 // drill = { queryId, map: [{ column, param }] } — clicking a row opens another

@@ -3,8 +3,7 @@ const nextConfig = {
   // Response headers for every route. The session cookie is SameSite=Lax, so a
   // page in someone else's frame would not carry it anyway — but a tool that
   // shows customer data has no reason to be framable at all, and the rest costs
-  // nothing. connect-src stays 'self' because a row action is sent by the
-  // server, never by the browser.
+  // nothing. Browser connections remain restricted to this service.
   async headers() {
     return [
       {

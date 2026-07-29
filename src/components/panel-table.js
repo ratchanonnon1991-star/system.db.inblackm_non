@@ -25,7 +25,6 @@ import {
   Pencil,
   Sigma,
   Trash2,
-  Zap,
 } from "lucide-react";
 import {
   buildHeaderGroups,
@@ -175,8 +174,6 @@ export default function PanelTable({
   changedKeys,
   onDrill,
   drillLabel,
-  actions = [],
-  onRunAction,
   onDeleteRow,
 }) {
   const [naturalWidths, setNaturalWidths] = useState({});
@@ -485,7 +482,7 @@ export default function PanelTable({
         className="border border-zinc-200 bg-inherit px-1 py-1.5 text-center font-bold text-zinc-400"
         style={freezeCount ? { position: "sticky", left: 0, zIndex: 2 } : undefined}
       >
-        {onDrill || onDeleteRow || actions.length > 0 ? (
+        {onDrill || onDeleteRow ? (
           <>
             <span className="group-hover/row:hidden">{rowIndex + 1}</span>
             <span className="hidden items-center justify-center gap-0.5 group-hover/row:flex">
@@ -499,17 +496,6 @@ export default function PanelTable({
                   <CornerDownRight size={12} />
                 </button>
               )}
-              {actions.map((action, index) => (
-                <button
-                  key={action.label}
-                  type="button"
-                  onClick={() => onRunAction(row, index)}
-                  className="text-amber-600 hover:text-amber-700"
-                  title={`${action.label} (${action.method})`}
-                >
-                  <Zap size={12} />
-                </button>
-              ))}
               {onDeleteRow && (
                 <button
                   type="button"

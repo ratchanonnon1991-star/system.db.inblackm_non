@@ -15,12 +15,10 @@ import {
   Table2,
   Trash2,
   X,
-  Zap,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { extractSqlParams } from "@/lib/gamedb-sql-params";
 import {
-  ACTION_METHODS,
   CELL_ALIGNS,
   CELL_RENDERS,
   EMPTY_FORMAT,
@@ -1354,100 +1352,6 @@ export function BulkEditModal({ editable, columnNames, onApply, onClose }) {
           )}
         </div>
       )}
-    </ModalShell>
-  );
-}
-
-/** Buttons on each row that call another service with values from that row. */
-export function ActionsModal({ columnNames, actions, onSave, onClose }) {
-  const [draft, setDraft] = useState(actions);
-
-  const update = (index, key, value) =>
-    setDraft(draft.map((action, i) => (i === index ? { ...action, [key]: value } : action)));
-
-  return (
-    <ModalShell
-      title="ปุ่ม action ต่อแถว"
-      icon={<Zap size={15} className="text-red-600" />}
-      onClose={onClose}
-      onSave={() => onSave(draft)}
-    >
-      <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
-        ใช้ <code className="font-mono">{"{ชื่อคอลัมน์}"}</code> ใน URL หรือ body เพื่อแทนค่าจากแถวนั้น
-        · host ปลายทางต้องถูกอนุญาตใน <code className="font-mono">GAMEDB_ACTION_HOSTS</code> ของ .env
-        ก่อน ไม่งั้นระบบจะปฏิเสธ · เรียกได้เฉพาะ Admin และทุกครั้งถูกบันทึกลง log
-      </p>
-      <p className="text-[10px] font-semibold text-zinc-400">
-        คอลัมน์ที่ใช้ได้: {columnNames.join(", ")}
-      </p>
-
-      {draft.map((action, index) => (
-        <div key={index} className="space-y-2 rounded-xl border border-zinc-200 p-3">
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={action.label}
-              onChange={(e) => update(index, "label", e.target.value)}
-              placeholder="ชื่อปุ่ม เช่น ยิงซ้ำ"
-              className={inputClass}
-            />
-            <select
-              value={action.method}
-              onChange={(e) => update(index, "method", e.target.value)}
-              className={`${inputClass} max-w-[6rem]`}
-            >
-              {ACTION_METHODS.map((method) => (
-                <option key={method} value={method}>
-                  {method}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => setDraft(draft.filter((_, i) => i !== index))}
-              className="shrink-0 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600"
-              title="ลบ action"
-            >
-              <Trash2 size={12} />
-            </button>
-          </div>
-          <input
-            type="text"
-            value={action.url}
-            onChange={(e) => update(index, "url", e.target.value)}
-            placeholder="http://127.0.0.1:3000/api/orders/{id}/retry"
-            className={`${inputClass} font-mono`}
-          />
-          <textarea
-            value={action.bodyTemplate}
-            onChange={(e) => update(index, "bodyTemplate", e.target.value)}
-            rows={2}
-            placeholder={'{"orderId": "{id}", "note": "จาก GameDB"}'}
-            className="w-full rounded-lg border border-zinc-200 bg-zinc-900 px-3 py-2 font-mono text-[11px] text-emerald-300 outline-none focus:border-red-600"
-          />
-          <label className="flex items-center gap-2 text-[11px] font-bold text-zinc-600">
-            <input
-              type="checkbox"
-              checked={action.confirm}
-              onChange={(e) => update(index, "confirm", e.target.checked)}
-            />
-            ถามยืนยันก่อนยิง
-          </label>
-        </div>
-      ))}
-
-      <button
-        type="button"
-        onClick={() =>
-          setDraft([
-            ...draft,
-            { label: "", method: "POST", url: "", bodyTemplate: "", confirm: true },
-          ])
-        }
-        className="flex h-9 w-full items-center justify-center gap-1 rounded-lg border border-dashed border-zinc-300 text-[11px] font-black text-zinc-500 transition hover:bg-zinc-50"
-      >
-        <Plus size={12} /> เพิ่ม action
-      </button>
     </ModalShell>
   );
 }

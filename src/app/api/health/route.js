@@ -78,7 +78,6 @@ export async function GET(request) {
     const env = {
       sessionSecret: Boolean(process.env.SESSION_SECRET || process.env.OTP_SECRET),
       encryptionKey: Boolean(process.env.GAMEDB_ENC_KEY),
-      actionHosts: (process.env.GAMEDB_ACTION_HOSTS || "").split(",").filter(Boolean).length,
     };
 
     return jsonOk({
