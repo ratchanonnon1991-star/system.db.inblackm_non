@@ -6,6 +6,7 @@ import {
   normalizeDrill,
   normalizeFormats,
   normalizeFreeze,
+  normalizeInputs,
   normalizeMerge,
   PARAM_TYPES,
   REFRESH_CHOICES,
@@ -101,6 +102,10 @@ export function sanitizeLayout(raw) {
           scope: rule.scope === "row" && rule.tone !== "bar" ? "row" : "cell",
         }))
     : [];
+  const editableColumns =
+    layout.editable && typeof layout.editable === "object"
+      ? sanitizeStringArray(layout.editable.columns).filter(isSafeIdentifierPart).slice(0, 50)
+      : [];
   const editable =
     layout.editable &&
     typeof layout.editable === "object" &&
@@ -109,9 +114,15 @@ export function sanitizeLayout(raw) {
       ? {
           table: String(layout.editable.table),
           pk: String(layout.editable.pk),
-          columns: sanitizeStringArray(layout.editable.columns)
-            .filter(isSafeIdentifierPart)
-            .slice(0, 50),
+          columns: editableColumns,
+          allowInsert: layout.editable.allowInsert === true,
+          allowDelete: layout.editable.allowDelete === true,
+          // A form field for a column that is not writable would be a box that
+          // silently does nothing, so those are dropped here rather than
+          // ignored later.
+          inputs: normalizeInputs(layout.editable.inputs).filter((input) =>
+            editableColumns.includes(input.column)
+          ),
         }
       : null;
   const chart =

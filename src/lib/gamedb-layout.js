@@ -107,6 +107,17 @@ export const RULE_TONES = [...TONE_NAMES, "bar"];
 export const CELL_RENDERS = ["text", "link", "email", "chip", "copy"];
 // What a computed column's result is shown and exported as.
 export const COMPUTED_TYPES = ["number", "text", "date", "boolean"];
+// The box the "add a row" form shows for a column.
+export const INPUT_WIDGETS = [
+  "text",
+  "number",
+  "date",
+  "time",
+  "datetime",
+  "select",
+  "textarea",
+  "checkbox",
+];
 export const CELL_ALIGNS = ["", "left", "center", "right"];
 export const MAX_FREEZE = 5;
 export const SUMMARY_KINDS = ["sum", "avg", "min", "max", "count"];
@@ -146,6 +157,11 @@ export function normalizeLayout(raw) {
           columns: Array.isArray(layout.editable.columns)
             ? layout.editable.columns.map(String)
             : [],
+          // Editing a cell was the only thing this config could do, so a query
+          // saved before now can do only that.
+          allowInsert: layout.editable.allowInsert === true,
+          allowDelete: layout.editable.allowDelete === true,
+          inputs: normalizeInputs(layout.editable.inputs),
         }
       : null;
   const chart =
@@ -262,6 +278,43 @@ export function normalizeFormats(raw) {
     if (!isEmptyFormat(format)) formats[String(key)] = format;
   }
   return formats;
+}
+
+// inputs = [{ column, widget, options, defaultValue, required }] — what the
+// "add a row" form puts on screen for each writable column. An array, not a map
+// keyed by column, so the order the form asks in is the order chosen here.
+export function normalizeInputs(raw) {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  return raw
+    .filter((input) => input && typeof input.column === "string" && input.column)
+    .filter((input) => {
+      if (seen.has(input.column)) return false;
+      seen.add(input.column);
+      return true;
+    })
+    .slice(0, 60)
+    .map((input) => ({
+      column: input.column,
+      widget: INPUT_WIDGETS.includes(input.widget) ? input.widget : "text",
+      options: Array.isArray(input.options)
+        ? input.options.map(String).slice(0, 200)
+        : [],
+      defaultValue: input.defaultValue == null ? "" : String(input.defaultValue).slice(0, 200),
+      required: input.required === true,
+    }));
+}
+
+/** Turns "@today"/"@now" into what they mean at the moment the form opens. */
+export function resolveInputDefault(defaultValue) {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, "0");
+  const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const time = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  if (defaultValue === "@today") return date;
+  if (defaultValue === "@now") return `${date}T${time}`;
+  if (defaultValue === "@time") return time;
+  return defaultValue;
 }
 
 export function normalizeFreeze(raw) {

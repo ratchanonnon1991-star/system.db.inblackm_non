@@ -24,10 +24,12 @@ import {
   CELL_ALIGNS,
   CELL_RENDERS,
   EMPTY_FORMAT,
+  INPUT_WIDGETS,
   isEmptyFormat,
   MAX_FREEZE,
   normalizeFormat,
   PARAM_TYPES,
+  resolveInputDefault,
   RULE_OP_LABELS,
   RULE_OPS,
   RULE_TONES,
@@ -205,16 +207,50 @@ export function ParamsSettingsModal({ sqlText, params, onSave, onClose }) {
   );
 }
 
+const WIDGET_LABELS = {
+  text: "ข้อความ",
+  number: "ตัวเลข",
+  date: "วันที่",
+  time: "เวลา",
+  datetime: "วันที่ + เวลา",
+  select: "เลือกจากรายการ",
+  textarea: "ข้อความหลายบรรทัด",
+  checkbox: "ใช่ / ไม่ใช่",
+};
+
 /** Which table/rows this query is allowed to write back to. */
 export function EditableSettingsModal({ columnNames, editable, onSave, onClose }) {
   const [table, setTable] = useState(editable?.table || "");
   const [pk, setPk] = useState(editable?.pk || "");
   const [columns, setColumns] = useState(editable?.columns || []);
+  const [allowInsert, setAllowInsert] = useState(editable?.allowInsert || false);
+  const [allowDelete, setAllowDelete] = useState(editable?.allowDelete || false);
+  const [inputs, setInputs] = useState(() => editable?.inputs || []);
 
   const toggle = (name) =>
     setColumns((prev) =>
       prev.includes(name) ? prev.filter((item) => item !== name) : [...prev, name]
     );
+
+  const inputFor = (name) =>
+    inputs.find((input) => input.column === name) || {
+      column: name,
+      widget: "text",
+      options: [],
+      defaultValue: "",
+      required: false,
+    };
+
+  const updateInput = (name, patch) =>
+    setInputs((prev) => {
+      const next = prev.filter((input) => input.column !== name);
+      // Keep the order the columns were picked in, so the form reads the same
+      // way the allow-list does.
+      const merged = { ...inputFor(name), ...patch };
+      return [...next, merged].sort(
+        (a, b) => columns.indexOf(a.column) - columns.indexOf(b.column)
+      );
+    });
 
   const pkInResult = !pk || columnNames.includes(pk);
 
@@ -226,7 +262,14 @@ export function EditableSettingsModal({ columnNames, editable, onSave, onClose }
       onSave={() =>
         onSave(
           table.trim() && pk.trim()
-            ? { table: table.trim(), pk: pk.trim(), columns }
+            ? {
+                table: table.trim(),
+                pk: pk.trim(),
+                columns,
+                allowInsert,
+                allowDelete,
+                inputs: inputs.filter((input) => columns.includes(input.column)),
+              }
             : null
         )
       }
@@ -279,6 +322,255 @@ export function EditableSettingsModal({ columnNames, editable, onSave, onClose }
           ))}
         </div>
       </div>
+
+      <div className="rounded-xl border border-zinc-200 p-3">
+        <p className="mb-2 text-[10px] font-black text-zinc-500">เพิ่ม / ลบทั้งแถว</p>
+        <label className="flex items-center gap-2 text-[11px] font-bold text-zinc-600">
+          <input
+            type="checkbox"
+            checked={allowInsert}
+            onChange={(e) => setAllowInsert(e.target.checked)}
+            className="h-3.5 w-3.5 accent-red-600"
+          />
+          ให้เพิ่มแถวใหม่ได้ (ปุ่ม &quot;เพิ่มแถว&quot; เหนือตาราง)
+        </label>
+        <label className="mt-1.5 flex items-center gap-2 text-[11px] font-bold text-zinc-600">
+          <input
+            type="checkbox"
+            checked={allowDelete}
+            onChange={(e) => setAllowDelete(e.target.checked)}
+            className="h-3.5 w-3.5 accent-red-600"
+          />
+          ให้ลบแถวได้ (ปุ่ม 🗑 ท้ายเลขแถว — ถามยืนยันก่อนเสมอ)
+        </label>
+        {allowDelete && (
+          <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[10px] font-bold text-red-600">
+            การลบไม่มีปุ่มย้อนกลับ ระบบจะเก็บค่าของแถวที่ลบไว้ใน log เท่านั้น
+          </p>
+        )}
+      </div>
+
+      {allowInsert && (
+        <div className="rounded-xl border border-zinc-200 p-3">
+          <p className="mb-2 text-[10px] font-black text-zinc-500">
+            ช่องกรอกของฟอร์มเพิ่มแถว — คอลัมน์ที่ไม่ได้ตั้งจะเป็นช่องข้อความธรรมดา
+          </p>
+          {columns.length === 0 ? (
+            <p className="text-[11px] font-semibold text-zinc-400">
+              เลือกคอลัมน์ที่อนุญาตให้แก้ด้านบนก่อน
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {columns.map((name) => {
+                const input = inputFor(name);
+                return (
+                  <div key={name} className="rounded-lg border border-zinc-200 px-2.5 py-2">
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <span className="min-w-0 truncate text-[11px] font-black text-zinc-700">
+                        {name}
+                      </span>
+                      <label className="flex shrink-0 items-center gap-1 text-[10px] font-bold text-zinc-500">
+                        <input
+                          type="checkbox"
+                          checked={input.required}
+                          onChange={(e) => updateInput(name, { required: e.target.checked })}
+                          className="h-3 w-3 accent-red-600"
+                        />
+                        ต้องกรอก
+                      </label>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <select
+                        value={input.widget}
+                        onChange={(e) => updateInput(name, { widget: e.target.value })}
+                        className="h-8 w-full rounded-md border border-zinc-200 px-1.5 text-[10px] font-bold outline-none focus:border-red-600"
+                      >
+                        {INPUT_WIDGETS.map((widget) => (
+                          <option key={widget} value={widget}>
+                            {WIDGET_LABELS[widget]}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        value={input.defaultValue}
+                        onChange={(e) => updateInput(name, { defaultValue: e.target.value })}
+                        placeholder="ค่าเริ่มต้น (@today, @now, @time ได้)"
+                        className="h-8 w-full rounded-md border border-zinc-200 px-1.5 text-[10px] font-semibold outline-none focus:border-red-600"
+                      />
+                      {input.widget === "select" && (
+                        <input
+                          type="text"
+                          value={input.options.join(", ")}
+                          onChange={(e) =>
+                            updateInput(name, {
+                              options: e.target.value
+                                .split(",")
+                                .map((option) => option.trim())
+                                .filter(Boolean),
+                            })
+                          }
+                          placeholder="ตัวเลือก คั่นด้วย , เช่น YAYA, Panghou, T002"
+                          className="h-8 w-full rounded-md border border-zinc-200 px-1.5 text-[10px] font-semibold outline-none focus:border-red-600 sm:col-span-2"
+                        />
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </ModalShell>
+  );
+}
+
+/** The "add a row" form, built from the inputs configured above. */
+export function NewRowModal({ editable, onSubmit, onClose }) {
+  const fields = useMemo(() => {
+    const configured = new Map(editable.inputs.map((input) => [input.column, input]));
+    return editable.columns.map(
+      (column) =>
+        configured.get(column) || {
+          column,
+          widget: "text",
+          options: [],
+          defaultValue: "",
+          required: false,
+        }
+    );
+  }, [editable]);
+
+  const [values, setValues] = useState(() =>
+    Object.fromEntries(
+      fields.map((field) => [
+        field.column,
+        field.widget === "checkbox"
+          ? field.defaultValue === "true"
+          : resolveInputDefault(field.defaultValue),
+      ])
+    )
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const missing = fields
+    .filter((field) => field.required)
+    .filter((field) => {
+      const value = values[field.column];
+      return value === "" || value === null || value === undefined;
+    })
+    .map((field) => field.column);
+
+  const submit = async () => {
+    if (missing.length > 0) {
+      setError(`ยังไม่ได้กรอก: ${missing.join(", ")}`);
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await onSubmit(values);
+      onClose();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const setValue = (column, value) =>
+    setValues((prev) => ({ ...prev, [column]: value }));
+
+  return (
+    <ModalShell
+      title={`เพิ่มแถวใน ${editable.table}`}
+      icon={<Plus size={15} className="text-red-600" />}
+      onClose={onClose}
+      onSave={submit}
+      saveLabel={saving ? "กำลังบันทึก..." : "เพิ่มแถว"}
+    >
+      {error && (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
+          {error}
+        </p>
+      )}
+      {fields.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-5 text-center text-[11px] font-semibold text-zinc-400">
+          ยังไม่ได้เลือกคอลัมน์ที่อนุญาตให้แก้ — ตั้งที่ &quot;ตั้งค่าการแก้ไขข้อมูล&quot; ก่อน
+        </p>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {fields.map((field) => {
+            const id = `new-row-${field.column}`;
+            const value = values[field.column];
+            const common = {
+              id,
+              value: value ?? "",
+              onChange: (event) => setValue(field.column, event.target.value),
+              className: inputClass,
+            };
+            return (
+              <div
+                key={field.column}
+                className={field.widget === "textarea" ? "sm:col-span-2" : ""}
+              >
+                <label htmlFor={id} className={labelClass}>
+                  {field.column}
+                  {field.required && <span className="ml-1 text-red-600">*</span>}
+                </label>
+                {field.widget === "select" ? (
+                  <select {...common}>
+                    <option value="">— ไม่ระบุ —</option>
+                    {field.options.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                ) : field.widget === "textarea" ? (
+                  <textarea
+                    {...common}
+                    rows={3}
+                    className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+                  />
+                ) : field.widget === "checkbox" ? (
+                  <label className="flex h-9 items-center gap-2 text-[11px] font-bold text-zinc-600">
+                    <input
+                      id={id}
+                      type="checkbox"
+                      checked={value === true || value === "true"}
+                      onChange={(event) => setValue(field.column, event.target.checked)}
+                      className="h-4 w-4 accent-red-600"
+                    />
+                    {value === true || value === "true" ? "ใช่" : "ไม่ใช่"}
+                  </label>
+                ) : (
+                  <input
+                    {...common}
+                    type={
+                      field.widget === "number"
+                        ? "number"
+                        : field.widget === "date"
+                          ? "date"
+                          : field.widget === "time"
+                            ? "time"
+                            : field.widget === "datetime"
+                              ? "datetime-local"
+                              : "text"
+                    }
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <p className="text-[10px] font-semibold leading-relaxed text-zinc-500">
+        ช่องที่เว้นว่างจะไม่ถูกเขียน — คอลัมน์นั้นจะได้ค่า default ของตารางเอง ·
+        เขียนได้เฉพาะคอลัมน์ที่อนุญาตให้แก้ไข ({editable.columns.length} คอลัมน์)
+      </p>
     </ModalShell>
   );
 }

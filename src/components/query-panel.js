@@ -23,6 +23,7 @@ import {
   Palette,
   Pencil,
   Play,
+  Plus,
   RefreshCw,
   RotateCcw,
   Save,
@@ -60,6 +61,7 @@ import {
   EditableSettingsModal,
   FormatsModal,
   MergeModal,
+  NewRowModal,
   ParamsSettingsModal,
   RulesModal,
 } from "@/components/panel-config-modals";
@@ -884,6 +886,39 @@ export default function QueryPanel({
     }
   };
 
+  const insertRow = async (values) => {
+    await apiJson(`/api/queries/${query.id}/row`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ values }),
+      fallbackError: "เพิ่มแถวไม่สำเร็จ",
+    });
+    // Re-run rather than splice the row in: the table can have defaults,
+    // triggers and an ordering of its own, and only the query knows the result.
+    await runQuery({ silent: true });
+  };
+
+  const deleteRow = async (row) => {
+    const pkValue = result.rows[row.sourceIndex][baseNameToIndex.get(layout.editable.pk)];
+    const confirmed = window.confirm(
+      `ลบแถวที่ ${layout.editable.pk} = ${pkValue} ออกจากตาราง ${layout.editable.table}?\n` +
+        "ลบแล้วเอากลับไม่ได้"
+    );
+    if (!confirmed) return;
+    setEditError("");
+    try {
+      await apiJson(`/api/queries/${query.id}/row`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pkValue }),
+        fallbackError: "ลบแถวไม่สำเร็จ",
+      });
+      await runQuery({ silent: true });
+    } catch (err) {
+      setEditError(err.message);
+    }
+  };
+
   // Runs the pasted edits one at a time: the endpoint writes a single cell in
   // its own transaction, and a partial failure should report which lines failed
   // rather than roll the good ones back.
@@ -1492,6 +1527,17 @@ export default function QueryPanel({
                     <Table2 size={14} className={layout.editable ? "text-red-600" : ""} />
                     ตั้งค่าการแก้ไขข้อมูล
                   </button>
+                  {canEditCells && layout.editable.allowInsert && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => runMoreAction(() => setModal("newRow"))}
+                      disabled={Boolean(viewingSnapshot)}
+                      className={menuItemClass}
+                    >
+                      <Plus size={14} /> เพิ่มแถวใหม่
+                    </button>
+                  )}
                   {canEditCells && (
                     <button
                       type="button"
@@ -1769,6 +1815,11 @@ export default function QueryPanel({
                   changedKeys={changedCellKeys}
                   actions={canManage ? layout.actions : []}
                   onRunAction={runRowAction}
+                  onDeleteRow={
+                    canEditCells && layout.editable.allowDelete && !viewingSnapshot
+                      ? deleteRow
+                      : null
+                  }
                   onDrill={layout.drill && onDrill ? drillRow : null}
                   drillLabel={`เปิด ${
                     queries.find((item) => item.id === layout.drill?.queryId)?.name || "Query"
@@ -1906,6 +1957,13 @@ export default function QueryPanel({
             mutateLayout((prev) => ({ ...prev, actions }));
             setModal(null);
           }}
+        />
+      )}
+      {modal === "newRow" && result && layout.editable && (
+        <NewRowModal
+          editable={layout.editable}
+          onSubmit={insertRow}
+          onClose={() => setModal(null)}
         />
       )}
       {modal === "bulk" && result && layout.editable && (

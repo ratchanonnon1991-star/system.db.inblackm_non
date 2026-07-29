@@ -171,6 +171,7 @@ export default function PanelTable({
   drillLabel,
   actions = [],
   onRunAction,
+  onDeleteRow,
 }) {
   const [naturalWidths, setNaturalWidths] = useState({});
   const [resizing, setResizing] = useState(null);
@@ -465,7 +466,7 @@ export default function PanelTable({
         className="border border-zinc-200 bg-inherit px-1 py-1.5 text-center font-bold text-zinc-400"
         style={freezeCount ? { position: "sticky", left: 0, zIndex: 2 } : undefined}
       >
-        {onDrill || actions.length > 0 ? (
+        {onDrill || onDeleteRow || actions.length > 0 ? (
           <>
             <span className="group-hover/row:hidden">{rowIndex + 1}</span>
             <span className="hidden items-center justify-center gap-0.5 group-hover/row:flex">
@@ -490,6 +491,16 @@ export default function PanelTable({
                   <Zap size={12} />
                 </button>
               ))}
+              {onDeleteRow && (
+                <button
+                  type="button"
+                  onClick={() => onDeleteRow(row)}
+                  className="text-zinc-400 hover:text-red-600"
+                  title="ลบแถวนี้"
+                >
+                  <Trash2 size={12} />
+                </button>
+              )}
             </span>
           </>
         ) : (
