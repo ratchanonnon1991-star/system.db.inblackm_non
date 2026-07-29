@@ -44,30 +44,10 @@ const inputClass =
   "h-9 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white";
 const labelClass = "mb-1 block text-[10px] font-black text-zinc-500";
 
-function ModalShell({
-  title,
-  icon,
-  onClose,
-  children,
-  onSave,
-  saveLabel = "บันทึก",
-  inline = false,
-}) {
+function ModalShell({ title, icon, onClose, children, onSave, saveLabel = "บันทึก" }) {
   return (
-    <div
-      className={
-        inline
-          ? "flex h-full min-h-0 w-full bg-white"
-          : "fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm"
-      }
-    >
-      <div
-        className={
-          inline
-            ? "flex min-h-0 w-full flex-1 flex-col bg-white p-5"
-            : "flex max-h-[90vh] w-full max-w-xl flex-col rounded-2xl bg-white p-5 shadow-xl"
-        }
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
+      <div className="flex max-h-[90vh] w-full max-w-xl flex-col rounded-2xl bg-white p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-sm font-black">
             {icon} {title}

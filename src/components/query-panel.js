@@ -354,7 +354,6 @@ export default function QueryPanel({
   isFullWidth,
   isSelected,
   toolbarHost,
-  configHost,
   onSelect,
   onPositionChange,
   onFrameChange,

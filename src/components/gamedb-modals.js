@@ -253,13 +253,7 @@ const FUNCTION_HELP = [
   ["ตัวเลข", "ROUND · ABS · MIN · MAX · SUM"],
 ];
 
-export function ComputedColumnModal({
-  availableNames,
-  sampleRow,
-  onClose,
-  onAdd,
-  inline = false,
-}) {
+export function ComputedColumnModal({ availableNames, sampleRow, onClose, onAdd }) {
   const [label, setLabel] = useState("");
   const [formula, setFormula] = useState("");
   // Empty until touched, so the type follows the formula while the user is

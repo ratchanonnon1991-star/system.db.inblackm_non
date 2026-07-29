@@ -510,7 +510,6 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   const [sidebarSearch, setSidebarSearch] = useState("");
   const [selectedPanelId, setSelectedPanelId] = useState(null);
   const [panelToolbarHost, setPanelToolbarHost] = useState(null);
-  const [panelConfigHost, setPanelConfigHost] = useState(null);
 
   const [panels, setPanels] = useState([]);
   const panelsStateRef = useRef([]);
@@ -1721,17 +1720,16 @@ function GamedbWorkspace({ me, onLoggedOut }) {
           </div>
         )}
 
-        <div className="flex min-h-0 flex-1 flex-col gap-3 xl:flex-row">
-          <div
-            ref={viewportRef}
-            className="relative h-[max(520px,calc(100vh-320px))] min-w-0 flex-1 overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50"
-            onWheel={(event) => {
-              if (event.ctrlKey || event.metaKey) {
-                event.preventDefault();
-                setZoomAroundCenter(zoom - event.deltaY * 0.001);
-              }
-            }}
-          >
+        <div
+          ref={viewportRef}
+          className="relative h-[max(520px,calc(100vh-320px))] min-w-0 flex-1 overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50"
+          onWheel={(event) => {
+            if (event.ctrlKey || event.metaKey) {
+              event.preventDefault();
+              setZoomAroundCenter(zoom - event.deltaY * 0.001);
+            }
+          }}
+        >
           <div
             className="relative min-w-0"
             ref={panelsRef}
@@ -1862,15 +1860,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               })}
             </>
           )}
-          </div>
-          </div>
-          {selectedPanelQuery && (
-            <aside
-              ref={setPanelConfigHost}
-              aria-label={`ตั้งค่าตาราง ${selectedPanelQuery.name}`}
-              className="order-first h-[max(520px,calc(100vh-320px))] min-h-0 w-full shrink-0 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm empty:hidden xl:order-last xl:w-[min(42rem,42vw)]"
-            />
-          )}
+        </div>
         </div>
       </div>
 
