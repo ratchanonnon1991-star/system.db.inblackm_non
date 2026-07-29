@@ -245,7 +245,11 @@ export const EMPTY_FORMAT = {
   render: "text",
   wrap: false,
   align: "",
+  group: "",
+  groupBg: "",
 };
+
+export const MAX_GROUP_LABEL = 60;
 
 export function normalizeFormat(raw) {
   const format = raw && typeof raw === "object" ? raw : {};
@@ -256,6 +260,10 @@ export function normalizeFormat(raw) {
     render: CELL_RENDERS.includes(format.render) ? format.render : "text",
     wrap: format.wrap === true,
     align: CELL_ALIGNS.includes(format.align) ? format.align : "",
+    // The band above the header. Columns sharing a label and sitting next to
+    // each other are drawn as one cell spanning them.
+    group: typeof format.group === "string" ? format.group.trim().slice(0, MAX_GROUP_LABEL) : "",
+    groupBg: TONE_NAMES.includes(format.groupBg) ? format.groupBg : "",
   };
 }
 
@@ -266,8 +274,86 @@ export function isEmptyFormat(format) {
     !format.headerBg &&
     format.render === "text" &&
     !format.wrap &&
-    !format.align
+    !format.align &&
+    !format.group &&
+    !format.groupBg
   );
+}
+
+/**
+ * The header band as runs of neighbouring columns that share a label.
+ *
+ * A group whose columns are not next to each other — after a reorder, say —
+ * becomes two bands with the same label rather than one band swallowing the
+ * columns in between, which would be a lie about what is underneath it.
+ */
+export function buildHeaderGroups(columns, layout) {
+  const runs = [];
+  for (const col of columns) {
+    const format = formatOf(layout, col.id);
+    const last = runs[runs.length - 1];
+    if (last && last.label === format.group && last.tone === format.groupBg) {
+      last.span += 1;
+    } else {
+      runs.push({ label: format.group, tone: format.groupBg, span: 1 });
+    }
+  }
+  return runs;
+}
+
+export function hasHeaderGroups(columns, layout) {
+  return columns.some((col) => formatOf(layout, col.id).group);
+}
+
+/**
+ * The colour a cell ends up with: a matching rule first, then the column's own
+ * tint. Shared so the table on screen and the exported workbook cannot drift.
+ */
+export function pickCellTone(rules, format, raw, text, resolve) {
+  const rule = rules.find(
+    (item) => item.tone !== "bar" && ruleMatches(item, raw, text, resolve)
+  );
+  return rule?.tone || format.bg || "";
+}
+
+/**
+ * The tone of every cell in the table, for the workbook export.
+ *
+ * The table on screen only ever styles the rows it is showing; a download has
+ * to answer for all of them, so this walks the lot in one pass.
+ */
+export function buildToneGrid(columns, rows, layout) {
+  const perColumn = columns.map((col) => ({
+    rules: layout.rules.filter((rule) => rule.colId === col.id && rule.scope !== "row"),
+    format: formatOf(layout, col.id),
+  }));
+  const rowRules = layout.rules
+    .filter((rule) => rule.scope === "row" && rule.tone !== "bar")
+    .map((rule) => ({ rule, index: columns.findIndex((col) => col.id === rule.colId) }))
+    .filter((entry) => entry.index !== -1);
+
+  const indexByName = new Map();
+  columns.forEach((col, index) => {
+    indexByName.set(col.id, index);
+    if (!indexByName.has(col.label)) indexByName.set(col.label, index);
+  });
+
+  return rows.map((row) => {
+    const resolve = (name) => {
+      const index = indexByName.get(name);
+      return index === undefined ? undefined : row.cells[index]?.raw;
+    };
+    const rowRule = rowRules.find((entry) =>
+      ruleMatches(entry.rule, row.cells[entry.index]?.raw, row.cells[entry.index]?.text, resolve)
+    );
+    return columns.map((col, index) => {
+      const { rules, format } = perColumn[index];
+      const cell = row.cells[index];
+      // On screen a row tone is the background the cell sits on, so a cell with
+      // nothing of its own shows it; here that has to be spelled out.
+      return pickCellTone(rules, format, cell?.raw, cell?.text, resolve) || rowRule?.rule.tone || "";
+    });
+  });
 }
 
 export function normalizeFormats(raw) {

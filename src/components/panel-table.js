@@ -28,9 +28,11 @@ import {
   Zap,
 } from "lucide-react";
 import {
+  buildHeaderGroups,
   clampColumnWidth,
   formatCell,
   formatOf,
+  hasHeaderGroups,
   MAX_NATURAL_WIDTH,
   MIN_COLUMN_WIDTH,
   ROW_NUMBER_WIDTH,
@@ -69,6 +71,9 @@ const HEADER_TONE = {
 const VIRTUAL_THRESHOLD = 150;
 const ROW_HEIGHT = 26;
 const OVERSCAN = 12;
+// Fixed, because the header row below it sticks at exactly this offset and a
+// measured height would have to be known before the first paint.
+const GROUP_ROW_HEIGHT = 22;
 
 // Only these two schemes become a real link. Anything else — javascript:,
 // data:, a bare "www.x.com" that the browser would resolve against this app —
@@ -398,6 +403,19 @@ export default function PanelTable({
     [layout.rules, columns]
   );
 
+  // The band above the header, with each run's first column index so a pinned
+  // band knows where to stick. Null when no column names a group.
+  const headerGroups = useMemo(() => {
+    if (!hasHeaderGroups(columns, layout)) return null;
+    let start = 0;
+    return buildHeaderGroups(columns, layout).map((group) => {
+      const withStart = { ...group, start };
+      start += group.span;
+      return withStart;
+    });
+  }, [columns, layout]);
+  const headerTop = headerGroups ? GROUP_ROW_HEIGHT : 0;
+
   // Columns pinned to the left need their own offsets, and those only exist
   // once every width is known.
   const freezeCount = measured ? Math.min(layout.freeze || 0, columns.length) : 0;
@@ -630,10 +648,43 @@ export default function PanelTable({
           </colgroup>
         )}
         <thead>
+          {headerGroups && (
+            <tr className="bg-zinc-100">
+              <th
+                className="sticky top-0 border border-zinc-200 bg-zinc-100"
+                style={{ height: GROUP_ROW_HEIGHT, ...(freezeCount ? { left: 0, zIndex: 21 } : { zIndex: 11 }) }}
+              />
+              {headerGroups.map((group, index) => {
+                const tone = toneStyle(group.tone, "head");
+                // Only the columns to the left of the freeze line can be
+                // pinned; a band that straddles it scrolls with the rest.
+                const frozen = group.start + group.span <= freezeCount;
+                return (
+                  <th
+                    key={`${group.label}-${index}`}
+                    colSpan={group.span}
+                    className={`sticky top-0 truncate border border-zinc-200 px-2 text-center text-[10px] font-black ${
+                      tone ? "" : "bg-zinc-100 text-zinc-500"
+                    }`}
+                    style={{
+                      height: GROUP_ROW_HEIGHT,
+                      zIndex: frozen ? 21 : 11,
+                      ...(tone || {}),
+                      ...(frozen ? { left: freezeOffsets[group.start] } : {}),
+                    }}
+                    title={group.label}
+                  >
+                    {group.label}
+                  </th>
+                );
+              })}
+              {measured && <th className="sticky top-0 border border-zinc-200 bg-zinc-100" style={{ zIndex: 11 }} />}
+            </tr>
+          )}
           <tr className="bg-zinc-100">
             <th
-              className="sticky top-0 border border-zinc-200 bg-zinc-100 px-2 py-2 text-center font-black text-zinc-400"
-              style={freezeCount ? { left: 0, zIndex: 20 } : { zIndex: 10 }}
+              className="sticky border border-zinc-200 bg-zinc-100 px-2 py-2 text-center font-black text-zinc-400"
+              style={{ top: headerTop, ...(freezeCount ? { left: 0, zIndex: 20 } : { zIndex: 10 }) }}
             >
               #
             </th>
@@ -648,10 +699,11 @@ export default function PanelTable({
                   ref={(el) => {
                     headRefs.current[col.id] = el;
                   }}
-                  className={`group sticky top-0 border border-zinc-200 px-2 py-1.5 text-left ${
+                  className={`group sticky border border-zinc-200 px-2 py-1.5 text-left ${
                     headTone ? "" : "bg-zinc-100"
                   }`}
                   style={{
+                    top: headerTop,
                     zIndex: frozen ? 20 : 10,
                     ...(headTone || {}),
                     ...(frozen ? { left: freezeOffsets[index] } : {}),
@@ -756,7 +808,12 @@ export default function PanelTable({
                 </th>
               );
             })}
-            {measured && <th className="sticky top-0 z-10 border border-zinc-200 bg-zinc-100" />}
+            {measured && (
+              <th
+                className="sticky border border-zinc-200 bg-zinc-100"
+                style={{ top: headerTop, zIndex: 10 }}
+              />
+            )}
           </tr>
         </thead>
         <tbody>

@@ -1,9 +1,13 @@
 // Minimal XLSX writer: one sheet per panel, no dependency.
 //
+// Cells carry the same tones the table shows on screen, and a column's header
+// group becomes a merged band across the columns it covers.
+//
 // An .xlsx file is a ZIP of XML parts. Everything here is written with the ZIP
 // "store" method (no compression), which keeps the format to a CRC and a couple
 // of fixed-size headers — far less code than pulling in a spreadsheet library
 // for what is a table of strings and numbers.
+import { CELL_TONES } from "@/lib/gamedb-layout";
 
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);
@@ -82,27 +86,150 @@ function isNumericCell(value, type) {
   return String(Number(text)) === text;
 }
 
-function sheetXml(sheet) {
-  const rows = [sheet.headers, ...sheet.rows]
-    .map((cells, rowIndex) => {
-      const cellsXml = cells
-        .map((value, colIndex) => {
-          const reference = `${columnName(colIndex)}${rowIndex + 1}`;
-          const isHeader = rowIndex === 0;
-          const numeric = !isHeader && isNumericCell(value, sheet.types?.[colIndex]);
-          if (numeric) {
-            return `<c r="${reference}"><v>${Number(value)}</v></c>`;
-          }
-          const text = value === null || value === undefined ? "" : String(value);
-          return `<c r="${reference}" t="inlineStr"${isHeader ? ' s="1"' : ""}><is><t xml:space="preserve">${escapeXml(text)}</t></is></c>`;
-        })
-        .join("");
-      return `<row r="${rowIndex + 1}">${cellsXml}</row>`;
-    })
+/**
+ * Collects the styles a workbook actually uses and writes styles.xml for them.
+ *
+ * Excel addresses a cell's look by an index into cellXfs, so every distinct
+ * combination of fill and font has to be registered up front. Only tones that
+ * appear anywhere in the workbook get an entry, which keeps the part small for
+ * the common case of no colour at all.
+ */
+function createStyleTable() {
+  // Index 0 is "no fill" and index 1 must be gray125; Excel reserves both, and
+  // a colour landing on either is silently ignored.
+  const fills = ['<fill><patternFill patternType="none"/></fill>', '<fill><patternFill patternType="gray125"/></fill>'];
+  const fillIndex = new Map();
+  const fonts = [
+    '<font><sz val="11"/><name val="Calibri"/></font>',
+    '<font><b/><sz val="11"/><name val="Calibri"/></font>',
+  ];
+  const fontIndex = new Map([
+    ["0:", 0],
+    ["1:", 1],
+  ]);
+  // 0 = plain, 1 = bold: the two the writer has always had.
+  const xfs = [
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>',
+    '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>',
+  ];
+  const xfIndex = new Map([
+    ["cell:", 0],
+    ["head:", 1],
+  ]);
+
+  const argb = (hex) => `FF${hex.replace("#", "").toUpperCase()}`;
+
+  const fillFor = (hex) => {
+    if (!fillIndex.has(hex)) {
+      fills.push(
+        `<fill><patternFill patternType="solid"><fgColor rgb="${argb(hex)}"/><bgColor indexed="64"/></patternFill></fill>`
+      );
+      fillIndex.set(hex, fills.length - 1);
+    }
+    return fillIndex.get(hex);
+  };
+
+  const fontFor = (hex, bold) => {
+    const key = `${bold ? 1 : 0}:${hex}`;
+    if (!fontIndex.has(key)) {
+      fonts.push(
+        `<font>${bold ? "<b/>" : ""}<color rgb="${argb(hex)}"/><sz val="11"/><name val="Calibri"/></font>`
+      );
+      fontIndex.set(key, fonts.length - 1);
+    }
+    return fontIndex.get(key);
+  };
+
+  return {
+    /** kind: "cell" (plain) or "head" (bold, and the tone's header shade). */
+    idFor(kind, tone) {
+      const key = `${kind}:${tone || ""}`;
+      if (xfIndex.has(key)) return xfIndex.get(key);
+      const entry = CELL_TONES[tone];
+      if (!entry) return kind === "head" ? 1 : 0;
+      const bold = kind === "head";
+      const background = bold ? entry.head : entry.bg;
+      const colour = bold ? entry.headFg || "#27272a" : entry.fg;
+      xfs.push(
+        `<xf numFmtId="0" fontId="${fontFor(colour, bold)}" fillId="${fillFor(background)}" borderId="0" xfId="0" applyFont="1" applyFill="1"/>`
+      );
+      xfIndex.set(key, xfs.length - 1);
+      return xfs.length - 1;
+    },
+    xml() {
+      return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="${fonts.length}">${fonts.join("")}</fonts><fills count="${fills.length}">${fills.join("")}</fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${xfs.length}">${xfs.join("")}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+    },
+  };
+}
+
+function cellXml(reference, value, styleId, numeric) {
+  const style = styleId ? ` s="${styleId}"` : "";
+  if (numeric) return `<c r="${reference}"${style}><v>${Number(value)}</v></c>`;
+  const text = value === null || value === undefined ? "" : String(value);
+  return `<c r="${reference}" t="inlineStr"${style}><is><t xml:space="preserve">${escapeXml(text)}</t></is></c>`;
+}
+
+function sheetXml(sheet, styles) {
+  const groups = (sheet.groups || []).filter((group) => group && group.span > 0);
+  const hasGroupRow = groups.some((group) => group.label);
+  const rowsXml = [];
+  const merges = [];
+
+  if (hasGroupRow) {
+    let column = 0;
+    const cells = groups.map((group) => {
+      const start = column;
+      column += group.span;
+      if (group.span > 1) {
+        merges.push(`${columnName(start)}1:${columnName(column - 1)}1`);
+      }
+      // Only the first cell of a merge carries the value; the rest have to
+      // exist and be empty, or Excel treats the sheet as damaged.
+      return (
+        cellXml(`${columnName(start)}1`, group.label, styles.idFor("head", group.tone), false) +
+        Array.from({ length: group.span - 1 }, (_, offset) =>
+          cellXml(`${columnName(start + offset + 1)}1`, "", styles.idFor("head", group.tone), false)
+        ).join("")
+      );
+    });
+    rowsXml.push(`<row r="1">${cells.join("")}</row>`);
+  }
+
+  const firstRow = hasGroupRow ? 2 : 1;
+  const headerCells = sheet.headers
+    .map((value, colIndex) =>
+      cellXml(
+        `${columnName(colIndex)}${firstRow}`,
+        value,
+        styles.idFor("head", sheet.headerTones?.[colIndex]),
+        false
+      )
+    )
     .join("");
+  rowsXml.push(`<row r="${firstRow}">${headerCells}</row>`);
+
+  sheet.rows.forEach((cells, rowIndex) => {
+    const rowNumber = firstRow + 1 + rowIndex;
+    const cellsXml = cells
+      .map((value, colIndex) =>
+        cellXml(
+          `${columnName(colIndex)}${rowNumber}`,
+          value,
+          styles.idFor("cell", sheet.cellTones?.[rowIndex]?.[colIndex]),
+          isNumericCell(value, sheet.types?.[colIndex])
+        )
+      )
+      .join("");
+    rowsXml.push(`<row r="${rowNumber}">${cellsXml}</row>`);
+  });
+
+  const mergeXml = merges.length
+    ? `<mergeCells count="${merges.length}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells>`
+    : "";
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rows}</sheetData></worksheet>`;
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rowsXml.join("")}</sheetData>${mergeXml}</worksheet>`;
 }
 
 function buildParts(sheets) {
@@ -148,21 +275,25 @@ function buildParts(sheets) {
         )
         .join("")}<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
     },
-    {
-      path: "xl/styles.xml",
-      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs></styleSheet>`,
-    },
   ];
 
-  named.forEach((sheet, index) => {
-    parts.push({ path: `xl/worksheets/sheet${index + 1}.xml`, data: sheetXml(sheet) });
-  });
+  // The sheets are written first so styles.xml knows every tone it has to
+  // define by the time it is generated.
+  const styles = createStyleTable();
+  const sheetParts = named.map((sheet, index) => ({
+    path: `xl/worksheets/sheet${index + 1}.xml`,
+    data: sheetXml(sheet, styles),
+  }));
 
+  parts.push({ path: "xl/styles.xml", data: styles.xml() }, ...sheetParts);
   return parts;
 }
 
-/** sheets: [{ name, headers: [string], types?: [string], rows: [[value]] }] → Blob (.xlsx) */
+/**
+ * sheets: [{ name, headers, types?, rows, headerTones?, cellTones?, groups? }]
+ * → Blob (.xlsx). Tones are names from CELL_TONES; groups are
+ * [{ label, tone, span }] left to right, spanning every column.
+ */
 export function buildXlsxBlob(sheets) {
   const encoder = new TextEncoder();
   const parts = buildParts(sheets).map((part) => ({

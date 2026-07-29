@@ -43,6 +43,8 @@ import { extractSqlParams } from "@/lib/gamedb-sql-params";
 import {
   baseColumnIds,
   buildDisplayColumns,
+  buildHeaderGroups,
+  buildToneGrid,
   cellsEqual,
   compareCells,
   EMPTY_LAYOUT,
@@ -819,7 +821,8 @@ export default function QueryPanel({
     return rows;
   }, [result, visibleColumns, baseNameToIndex, rowFilter, layout.sort, layout.merge, mergeIndex]);
 
-  // Report what is on screen so the workbook export can pick it up.
+  // Report what is on screen so the workbook export can pick it up — including
+  // how it looks, so the download is the table rather than its values.
   useEffect(() => {
     onDataChange?.(query.id, {
       name: query.name,
@@ -828,8 +831,11 @@ export default function QueryPanel({
       // the text looks like, so a phone number keeps its leading zero.
       types: visibleColumns.map((col) => col.type),
       rows: displayRows.map((row) => row.cells.map((cell) => cell.raw ?? cell.text)),
+      headerTones: visibleColumns.map((col) => layout.formats[col.id]?.headerBg || ""),
+      cellTones: buildToneGrid(visibleColumns, displayRows, layout),
+      groups: buildHeaderGroups(visibleColumns, layout),
     });
-  }, [onDataChange, query.id, query.name, visibleColumns, displayRows]);
+  }, [onDataChange, query.id, query.name, visibleColumns, displayRows, layout]);
 
   const matchCount = useMemo(
     () =>

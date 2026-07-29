@@ -27,6 +27,7 @@ import {
   INPUT_WIDGETS,
   isEmptyFormat,
   MAX_FREEZE,
+  MAX_GROUP_LABEL,
   normalizeFormat,
   PARAM_TYPES,
   resolveInputDefault,
@@ -882,13 +883,33 @@ export function FormatsModal({ columns, formats, freeze, onSave, onClose }) {
                 />
                 ตัดบรรทัดข้อความยาว
               </label>
+              <label className="block">
+                <span className="mb-0.5 block text-[9px] font-black text-zinc-400">
+                  หัวกลุ่ม (ชั้นบน)
+                </span>
+                <input
+                  type="text"
+                  value={format.group}
+                  maxLength={MAX_GROUP_LABEL}
+                  onChange={(event) => update(col.id, { group: event.target.value })}
+                  placeholder="เช่น ยอด"
+                  className="h-7 w-full rounded-md border border-zinc-200 px-1.5 text-[10px] font-semibold outline-none focus:border-red-600"
+                />
+              </label>
+              <ToneSelect
+                label="สีหัวกลุ่ม"
+                part="head"
+                value={format.groupBg}
+                onChange={(groupBg) => update(col.id, { groupBg })}
+              />
             </div>
           </div>
         );
       })}
       <p className="text-[10px] font-semibold leading-relaxed text-zinc-500">
         สีตามเงื่อนไขจะทับสีพื้นตรงนี้เมื่อเงื่อนไขเป็นจริง · &quot;ตัดบรรทัด&quot;
-        ปิดการโหลดแบบหน้าต่างเลื่อน ตารางที่แถวเยอะมากจะช้าลง
+        ปิดการโหลดแบบหน้าต่างเลื่อน ตารางที่แถวเยอะมากจะช้าลง ·
+        คอลัมน์ที่ติดกันและใส่ &quot;หัวกลุ่ม&quot; เหมือนกัน (สีเดียวกันด้วย) จะรวมเป็นหัวเดียวคร่อมกัน
       </p>
     </ModalShell>
   );
