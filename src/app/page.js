@@ -155,6 +155,8 @@ const DEFAULT_PANEL_WIDTH = 720;
 const MIN_PANEL_HEIGHT = 140;
 const MAX_PANEL_HEIGHT = 1600;
 const MIN_PANEL_WIDTH = 280;
+// The canvas scrolls, so a panel may be wider than the viewport it is seen through.
+const MAX_PANEL_WIDTH = 3200;
 const PANEL_GAP = 16;
 const PANEL_CHROME_ESTIMATE = 300;
 const CANVAS_MIN_HEIGHT = 520;
@@ -170,10 +172,12 @@ function clampPanelWidth(value, containerWidth) {
   if (!Number.isFinite(num)) {
     return Math.min(DEFAULT_PANEL_WIDTH, containerWidth || DEFAULT_PANEL_WIDTH);
   }
-  const max = containerWidth || MAX_PANEL_HEIGHT * 2;
-  return Math.round(Math.min(max, Math.max(MIN_PANEL_WIDTH, num)));
+  return Math.round(Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, num)));
 }
 
+// The canvas has no right or bottom edge, but it does have a top-left one: a
+// scroll container cannot reach negative coordinates, so a panel dragged past
+// the origin would be clipped with no way to scroll back to it.
 function clampPanelPosition(value) {
   const num = Number(value);
   return Number.isFinite(num) ? Math.max(0, Math.round(num)) : null;
@@ -213,10 +217,7 @@ function arrangeUnpositionedPanels(panels, containerWidth) {
 
   return panels.map((panel) => {
     const panelWidth = clampPanelWidth(panel.width || columnWidth, width);
-    if (panel.x !== null && panel.y !== null) {
-      const x = Math.min(panel.x, Math.max(0, width - panelWidth));
-      return { ...panel, x, y: panel.y, width: panelWidth };
-    }
+    if (panel.x !== null && panel.y !== null) return { ...panel, width: panelWidth };
     const column = columnBottoms.indexOf(Math.min(...columnBottoms));
     const placed = {
       ...panel,
@@ -529,7 +530,9 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   const renderedPanelHeightsRef = useRef({});
   const arrangeFrameRef = useRef(null);
   const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  // The canvas is panned by scrolling its viewport, not by a transform: the
+  // scrollbars, shift+wheel and drag-to-pan then all move the same thing, and
+  // nothing can be pushed into negative space where scrolling cannot reach it.
   const panDragRef = useRef(null);
   const [snapGuides, setSnapGuides] = useState({ x: null, y: null });
   const [previewAsUser, setPreviewAsUser] = useState(false);
@@ -784,11 +787,11 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   }, [panels, isTemplateUser]);
 
   const measureContainer = useCallback(() => {
-    return Math.round(panelsRef.current?.offsetWidth || 0);
+    return Math.round(viewportRef.current?.clientWidth || 0);
   }, []);
 
-  // Panels live on an absolute-positioned canvas. Keep them within its current
-  // width and place legacy panels without x/y into a tidy starting grid.
+  // Panels live on an absolute-positioned canvas. Place legacy panels without
+  // x/y into a tidy starting grid sized to what is currently on screen.
   useEffect(() => {
     const measure = () => {
       const width = measureContainer();
@@ -813,7 +816,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
     window.addEventListener("resize", measure);
     const observer =
       typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
-    if (observer && panelsRef.current) observer.observe(panelsRef.current);
+    if (observer && viewportRef.current) observer.observe(viewportRef.current);
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", measure);
@@ -872,15 +875,12 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       const width = clampPanelWidth(moving.width, containerWidth);
       const height =
         renderedPanelHeights[queryId] || panelEstimatedHeight(moving);
-      let nextX = Math.min(
-        Math.max(0, Math.round(x)),
-        Math.max(0, containerWidth - width)
-      );
+      let nextX = Math.max(0, Math.round(x));
       let nextY = Math.max(0, Math.round(y));
       let guideX = null;
       let guideY = null;
-      let bestX = 9;
-      let bestY = 9;
+      let bestX = 4;
+      let bestY = 4;
 
       for (const other of current) {
         if (other.queryId === queryId) continue;
@@ -922,8 +922,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
           });
         });
       }
-
-      nextX = Math.min(Math.max(0, Math.round(nextX)), Math.max(0, containerWidth - width));
+      nextX = Math.max(0, Math.round(nextX));
       nextY = Math.max(0, Math.round(nextY));
       setSnapGuides({ x: guideX, y: guideY });
       replacePanels(
@@ -1239,6 +1238,19 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       prev[queryId] === height ? prev : { ...prev, [queryId]: height }
     );
   }, []);
+  const canvasWidth = useMemo(
+    () =>
+      Math.max(
+        containerWidth || DEFAULT_PANEL_WIDTH,
+        ...openPanels.map(
+          (panel) =>
+            (panel.x || 0) +
+            (panel.width || DEFAULT_PANEL_WIDTH) +
+            PANEL_GAP
+        )
+      ),
+    [containerWidth, openPanels]
+  );
   const canvasHeight = useMemo(
     () =>
       Math.max(
@@ -1262,11 +1274,17 @@ function GamedbWorkspace({ me, onLoggedOut }) {
     }
     const centerX = viewport.clientWidth / 2;
     const centerY = viewport.clientHeight / 2;
-    setPan((current) => ({
-      x: centerX - ((centerX - current.x) / zoom) * clamped,
-      y: centerY - ((centerY - current.y) / zoom) * clamped,
-    }));
+    const anchorX = (viewport.scrollLeft + centerX) / zoom;
+    const anchorY = (viewport.scrollTop + centerY) / zoom;
     setZoom(clamped);
+    // The canvas only takes up its new size once React has re-rendered it, and
+    // scrollLeft cannot be set past an extent that does not exist yet.
+    requestAnimationFrame(() => {
+      const el = viewportRef.current;
+      if (!el) return;
+      el.scrollLeft = anchorX * clamped - centerX;
+      el.scrollTop = anchorY * clamped - centerY;
+    });
   }, [zoom]);
 
   const autoArrangePanels = useCallback(
@@ -1284,7 +1302,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       );
       replacePanels(next);
       setZoom(1);
-      setPan({ x: 16, y: 16 });
+      viewportRef.current?.scrollTo({ left: 0, top: 0 });
 
       // Changing the panel width can wrap its header and alter its real height.
       // Reflow after the browser has rendered the new widths so row gaps stay exact.
@@ -1313,23 +1331,48 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   );
 
   const startCanvasPan = (event) => {
-    if (event.target !== event.currentTarget || event.button !== 0) return;
+    if (event.button !== 0) return;
+
+    const viewport = viewportRef.current;
+    const canvas = panelsRef.current;
+    if (!viewport) return;
+
+    // อนุญาตให้ลากเฉพาะพื้นหลัง ไม่ให้แย่ง event ตอนลาก panel
+    // (พื้นหลัง = viewport, ตัวกำหนดขนาด, หรือ canvas เอง)
+    if (
+      event.target !== viewport &&
+      event.target !== canvas &&
+      event.target !== canvas?.parentElement
+    ) {
+      return;
+    }
+
+    // A press on the scrollbar also lands on the viewport itself. Leave it to the
+    // browser, or the canvas would jump while the scrollbar is being dragged.
+    const rect = viewport.getBoundingClientRect();
+    if (
+      event.clientX - rect.left > viewport.clientWidth ||
+      event.clientY - rect.top > viewport.clientHeight
+    ) {
+      return;
+    }
+
     panDragRef.current = {
       startX: event.clientX,
       startY: event.clientY,
-      panX: pan.x,
-      panY: pan.y,
+      scrollX: viewport.scrollLeft,
+      scrollY: viewport.scrollTop,
     };
+
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };
 
   const moveCanvasPan = (event) => {
     const drag = panDragRef.current;
-    if (!drag) return;
-    setPan({
-      x: drag.panX + event.clientX - drag.startX,
-      y: drag.panY + event.clientY - drag.startY,
-    });
+    const viewport = viewportRef.current;
+    if (!drag || !viewport) return;
+    viewport.scrollLeft = drag.scrollX - (event.clientX - drag.startX);
+    viewport.scrollTop = drag.scrollY - (event.clientY - drag.startY);
   };
 
   const stopCanvasPan = () => {
@@ -1722,145 +1765,151 @@ function GamedbWorkspace({ me, onLoggedOut }) {
 
         <div
           ref={viewportRef}
-          className="relative h-[max(520px,calc(100vh-320px))] min-w-0 flex-1 overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50"
+          className="relative h-[max(520px,calc(100vh-320px))] min-w-0 flex-1 overflow-auto overscroll-contain rounded-2xl border border-zinc-200 bg-zinc-50"
+          onPointerDown={startCanvasPan}
+          onPointerMove={moveCanvasPan}
+          onPointerUp={stopCanvasPan}
+          onPointerCancel={stopCanvasPan}
           onWheel={(event) => {
             if (event.ctrlKey || event.metaKey) {
               event.preventDefault();
               setZoomAroundCenter(zoom - event.deltaY * 0.001);
             }
           }}
+          style={{
+            backgroundImage:
+              "radial-gradient(circle, rgba(113,113,122,.22) 1px, transparent 1px)",
+            backgroundSize: `${16 * zoom}px ${16 * zoom}px`,
+            // Pin the dots to the canvas rather than to the viewport, so they
+            // travel with the panels instead of sliding underneath them.
+            backgroundAttachment: "local",
+          }}
         >
-          <div
-            className="relative min-w-0"
-            ref={panelsRef}
-            onPointerDown={startCanvasPan}
-            onPointerMove={moveCanvasPan}
-            onPointerUp={stopCanvasPan}
-            onPointerCancel={stopCanvasPan}
-            style={{
-              minHeight: canvasHeight,
-              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-              transformOrigin: "0 0",
-              backgroundImage:
-                "radial-gradient(circle, rgba(113,113,122,.22) 1px, transparent 1px)",
-              backgroundSize: "16px 16px",
-            }}
-          >
-            {snapGuides.x !== null && (
-              <div
-                className="pointer-events-none absolute bottom-0 top-0 z-40 w-px bg-red-500"
-                style={{ left: snapGuides.x }}
-              />
-            )}
-            {snapGuides.y !== null && (
-              <div
-                className="pointer-events-none absolute left-0 right-0 z-40 h-px bg-red-500"
-                style={{ top: snapGuides.y }}
-              />
-            )}
-          {openPanels.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-zinc-300 bg-white py-24 text-center">
-              {layoutLocked ? (
-                <>
-                  <Lock size={22} className="text-zinc-300" />
-                  <p className="text-xs font-black text-zinc-500">ยังไม่มี Template สำหรับบัญชีนี้</p>
-                  <p className="text-[11px] font-semibold text-zinc-400">
-                    กรุณาให้ Admin แชร์ Template หรือกำหนด Template เริ่มต้น
-                  </p>
-                </>
-              ) : (
-                <>
-                  <LayoutGrid size={22} className="text-zinc-300" />
-                  <p className="text-xs font-black text-zinc-500">ยังไม่ได้เปิดตาราง</p>
-                  <p className="text-[11px] font-semibold text-zinc-400">
-                    กด Query ด้านบนเพื่อเปิด — จากนั้นลากกล่องไปวางตำแหน่งที่ต้องการได้
-                  </p>
-                </>
+          {/* `scale` does not change the box the canvas occupies in layout, so the
+              scroll extent comes from this sizer instead: without it, zooming out
+              leaves the viewport scrollable over empty space. */}
+          <div style={{ width: canvasWidth * zoom, height: canvasHeight * zoom }}>
+            <div
+              ref={panelsRef}
+              className="relative"
+              style={{
+                width: canvasWidth,
+                minHeight: canvasHeight,
+                transform: `scale(${zoom})`,
+                transformOrigin: "0 0",
+              }}
+            >
+              {snapGuides.x !== null && (
+                <div
+                  className="pointer-events-none absolute bottom-0 top-0 z-40 w-px bg-red-500"
+                  style={{ left: snapGuides.x }}
+                />
               )}
+              {snapGuides.y !== null && (
+                <div
+                  className="pointer-events-none absolute left-0 right-0 z-40 h-px bg-red-500"
+                  style={{ top: snapGuides.y }}
+                />
+              )}
+            {openPanels.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-zinc-300 bg-white py-24 text-center">
+                {layoutLocked ? (
+                  <>
+                    <Lock size={22} className="text-zinc-300" />
+                    <p className="text-xs font-black text-zinc-500">ยังไม่มี Template สำหรับบัญชีนี้</p>
+                    <p className="text-[11px] font-semibold text-zinc-400">
+                      กรุณาให้ Admin แชร์ Template หรือกำหนด Template เริ่มต้น
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <LayoutGrid size={22} className="text-zinc-300" />
+                    <p className="text-xs font-black text-zinc-500">ยังไม่ได้เปิดตาราง</p>
+                    <p className="text-[11px] font-semibold text-zinc-400">
+                      กด Query ด้านบนเพื่อเปิด — จากนั้นลากกล่องไปวางตำแหน่งที่ต้องการได้
+                    </p>
+                  </>
+                )}
+              </div>
+            ) : (
+              <>
+                {openPanels.map((panel) => {
+                  const query = queryById.get(panel.queryId);
+                  const isFullWidth =
+                    panel.width != null &&
+                    containerWidth > 0 &&
+                    panel.width >= containerWidth - 8;
+                  return (
+                    <QueryPanel
+                      key={`${panel.queryId}:${query.updatedAt}:${activeView?.id ?? "own"}`}
+                      query={query}
+                      queries={queries}
+                      panel={panel}
+                      layoutOverride={panelLayouts[panel.queryId] || null}
+                      personalLayout={
+                        activeView ? null : myLayouts[panel.queryId] || null
+                      }
+                      onPersonalLayoutSaved={rememberPersonalLayout}
+                      onLayoutChange={captureLayout}
+                      onDataChange={captureData}
+                      canManage={isSuperAdmin && !previewAsUser}
+                      canCustomizeLayout={!layoutLocked}
+                      isFullWidth={isFullWidth}
+                      isSelected={selectedPanelId === panel.queryId}
+                      toolbarHost={
+                        selectedPanelId === panel.queryId
+                          ? panelToolbarHost
+                          : null
+                      }
+                      onSelect={() => setSelectedPanelId(panel.queryId)}
+                      onPositionChange={movePanelTo}
+                      onFrameChange={resizePanel}
+                      onBringToFront={bringPanelToFront}
+                      onInteractionStart={beginPanelInteraction}
+                      onInteractionEnd={endPanelInteraction}
+                      canvasScale={zoom}
+                      onRenderedHeight={captureRenderedPanelHeight}
+                      onClose={() => closePanel(panel.queryId)}
+                      onToggleFullWidth={() =>
+                        updatePanel(panel.queryId, (prev) => ({
+                          x: isFullWidth ? prev.x : 0,
+                          width: isFullWidth
+                            ? Math.min(DEFAULT_PANEL_WIDTH, measureContainer())
+                            : measureContainer(),
+                        }))
+                      }
+                      onToggleCollapse={() =>
+                        updatePanel(panel.queryId, (prev) => ({
+                          collapsed: !prev.collapsed,
+                        }))
+                      }
+                      onResetHeight={() =>
+                        updatePanel(panel.queryId, () => ({
+                          height: DEFAULT_PANEL_HEIGHT,
+                        }))
+                      }
+                      onResetWidth={() =>
+                        updatePanel(panel.queryId, (prev) => {
+                          const width = Math.min(DEFAULT_PANEL_WIDTH, containerWidth);
+                          return {
+                            x: Math.min(
+                              prev.x || 0,
+                              Math.max(0, containerWidth - width)
+                            ),
+                            width,
+                          };
+                        })
+                      }
+                      onEditQuery={() => setEditorModal({ mode: "edit", query })}
+                      onDrill={layoutLocked ? null : openDrill}
+                      initialParams={drillParams[panel.queryId] || null}
+                    />
+                  );
+                })}
+              </>
+            )}
             </div>
-          ) : (
-            <>
-              {openPanels.map((panel) => {
-                const query = queryById.get(panel.queryId);
-                const isFullWidth =
-                  panel.width != null &&
-                  containerWidth > 0 &&
-                  panel.width >= containerWidth - 8;
-                return (
-                  <QueryPanel
-                    key={`${panel.queryId}:${query.updatedAt}:${activeView?.id ?? "own"}`}
-                    query={query}
-                    queries={queries}
-                    panel={panel}
-                    layoutOverride={panelLayouts[panel.queryId] || null}
-                    personalLayout={
-                      activeView ? null : myLayouts[panel.queryId] || null
-                    }
-                    onPersonalLayoutSaved={rememberPersonalLayout}
-                    onLayoutChange={captureLayout}
-                    onDataChange={captureData}
-                    canManage={isSuperAdmin && !previewAsUser}
-                    canCustomizeLayout={!layoutLocked}
-                    isFullWidth={isFullWidth}
-                    isSelected={selectedPanelId === panel.queryId}
-                    toolbarHost={
-                      selectedPanelId === panel.queryId
-                        ? panelToolbarHost
-                        : null
-                    }
-                    configHost={
-                      selectedPanelId === panel.queryId
-                        ? panelConfigHost
-                        : null
-                    }
-                    onSelect={() => setSelectedPanelId(panel.queryId)}
-                    onPositionChange={movePanelTo}
-                    onFrameChange={resizePanel}
-                    onBringToFront={bringPanelToFront}
-                    onInteractionStart={beginPanelInteraction}
-                    onInteractionEnd={endPanelInteraction}
-                    canvasScale={zoom}
-                    onRenderedHeight={captureRenderedPanelHeight}
-                    onClose={() => closePanel(panel.queryId)}
-                    onToggleFullWidth={() =>
-                      updatePanel(panel.queryId, (prev) => ({
-                        x: isFullWidth ? prev.x : 0,
-                        width: isFullWidth
-                          ? Math.min(DEFAULT_PANEL_WIDTH, measureContainer())
-                          : measureContainer(),
-                      }))
-                    }
-                    onToggleCollapse={() =>
-                      updatePanel(panel.queryId, (prev) => ({
-                        collapsed: !prev.collapsed,
-                      }))
-                    }
-                    onResetHeight={() =>
-                      updatePanel(panel.queryId, () => ({
-                        height: DEFAULT_PANEL_HEIGHT,
-                      }))
-                    }
-                    onResetWidth={() =>
-                      updatePanel(panel.queryId, (prev) => {
-                        const width = Math.min(DEFAULT_PANEL_WIDTH, containerWidth);
-                        return {
-                          x: Math.min(
-                            prev.x || 0,
-                            Math.max(0, containerWidth - width)
-                          ),
-                          width,
-                        };
-                      })
-                    }
-                    onEditQuery={() => setEditorModal({ mode: "edit", query })}
-                    onDrill={layoutLocked ? null : openDrill}
-                    initialParams={drillParams[panel.queryId] || null}
-                  />
-                );
-              })}
-            </>
-          )}
-        </div>
+          </div>
         </div>
       </div>
 

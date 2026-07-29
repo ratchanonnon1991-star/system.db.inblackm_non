@@ -898,6 +898,13 @@ export default function QueryPanel({
   // Dropdowns that read another table are fetched once for the panel rather
   // than per cell, and only when a field actually asks for one.
   const [loadedLookups, setLoadedLookups] = useState(NO_LOOKUPS);
+  const lookupColumns = useMemo(
+    () =>
+      (layout.editable?.inputs || [])
+        .filter((input) => input.widget === "lookup" && input.lookup)
+        .map((input) => input.column),
+    [layout.editable]
+  );
   const lookupSignature = useMemo(
     () =>
       JSON.stringify(
@@ -912,19 +919,28 @@ export default function QueryPanel({
   useEffect(() => {
     if (!canEditCells || !hasLookups) return undefined;
     let cancelled = false;
+    // A field with no list yet is still loading, so every configured field has
+    // to end up with one either way -- otherwise a failed request leaves its
+    // cells stuck on "กำลังโหลดรายการ..." with no way back to a plain box.
+    const blanks = Object.fromEntries(lookupColumns.map((column) => [column, []]));
     apiJson(`/api/queries/${query.id}/lookup`, {
       fallbackError: "โหลดรายการตัวเลือกไม่สำเร็จ",
     })
       .then((data) => {
-        if (!cancelled) setLoadedLookups(data.options || NO_LOOKUPS);
+        if (cancelled) return;
+        setLoadedLookups({ ...blanks, ...(data.options || {}) });
+        const failed = Object.values(data.failed || {})[0];
+        if (failed) setEditError(`โหลดรายการตัวเลือกไม่ครบ: ${failed}`);
       })
-      .catch(() => {
-        if (!cancelled) setLoadedLookups(NO_LOOKUPS);
+      .catch((err) => {
+        if (cancelled) return;
+        setLoadedLookups(blanks);
+        setEditError(err.message);
       });
     return () => {
       cancelled = true;
     };
-  }, [query.id, canEditCells, hasLookups, lookupSignature]);
+  }, [query.id, canEditCells, hasLookups, lookupSignature, lookupColumns]);
 
   // Derived rather than cleared in the effect: turning the last lookup field
   // off should drop the lists without another render pass.
@@ -961,6 +977,10 @@ export default function QueryPanel({
         return { ...prev, rows };
       });
       setChangedKeys(new Set([`${sourceIndex}:${colId}`]));
+      // A lookup column stores an id but shows whatever the JOIN made of it, so
+      // writing the id back into the cell would leave a bare number on screen.
+      // Only the query knows the name that goes with it.
+      if (lookupColumns.includes(col.column.name)) await runQuery({ silent: true });
     } catch (err) {
       setEditError(err.message);
     } finally {
@@ -2062,8 +2082,10 @@ export default function QueryPanel({
         </span>
       ))}
 
-      {configHost &&
-        modal &&
+      {/* Every settings modal is a `fixed inset-0` overlay, and the panel sits on a
+          transformed, zoomable canvas -- which would make `fixed` resolve against the
+          canvas and scale with it. Portal to the body so they stay viewport-sized. */}
+      {modal &&
         createPortal(
           <>
       {modal === "computed" && result && (
@@ -2210,7 +2232,7 @@ export default function QueryPanel({
         />
       )}
           </>,
-          configHost
+          document.body
         )}
     </section>
   );

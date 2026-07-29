@@ -152,14 +152,21 @@ function CellEditor({ config, column, options, value, onChange, onCommit, onCanc
     if (event.key === "Escape") onCancel();
   };
 
-  if (widget === "select" || widget === "lookup") {
+  // A list read from another table arrives after the panel does. Undefined means
+  // it is still on its way; an empty one means it arrived with nothing in it, and
+  // a dropdown of nothing would be a dead end -- fall through to a plain box.
+  const pendingLookup = widget === "lookup" && !options;
+  const emptyLookup = widget === "lookup" && options?.length === 0;
+
+  if (pendingLookup) {
+    return <span className="text-[10px] font-bold text-zinc-400">กำลังโหลดรายการ...</span>;
+  }
+
+  if ((widget === "select" || widget === "lookup") && !emptyLookup) {
     // A typed-in list and a list read from another table end up the same shape.
     const choices =
       widget === "lookup" ? options || [] : (config.options || []).map(parseOption);
     const current = matchChoice(choices, value);
-    if (widget === "lookup" && !options) {
-      return <span className="text-[10px] font-bold text-zinc-400">กำลังโหลดรายการ...</span>;
-    }
     return (
       <select
         autoFocus
