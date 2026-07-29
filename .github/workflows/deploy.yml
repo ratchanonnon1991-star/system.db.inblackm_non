@@ -54,6 +54,7 @@ jobs:
             set -e
 
             APP_DIR="/www/wwwroot/system.db.inblackm"
+
             mkdir -p "$APP_DIR"
             cd "$APP_DIR"
 
@@ -82,11 +83,25 @@ jobs:
               . "$HOME/.nvm/nvm.sh"
             fi
 
+            if ! command -v nvm >/dev/null 2>&1; then
+              echo "ERROR: ไม่พบ NVM บนเซิร์ฟเวอร์"
+              exit 1
+            fi
+
             nvm install 22
             nvm use 22
 
             node --version
             npm --version
+
+            # Global packages ของ NVM แยกกันในแต่ละ Node.js version
+            if ! command -v pm2 >/dev/null 2>&1; then
+              echo "PM2 not found — installing PM2..."
+              npm install --global pm2@latest
+              hash -r
+            fi
+
+            pm2 --version
 
             npm ci
             npm run build
