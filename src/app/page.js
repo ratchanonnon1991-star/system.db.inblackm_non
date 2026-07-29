@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Activity,
   Database,
@@ -176,12 +183,12 @@ function clampPanelWidth(value, containerWidth) {
   return Math.round(Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, num)));
 }
 
-// The canvas has no right or bottom edge, but it does have a top-left one: a
-// scroll container cannot reach negative coordinates, so a panel dragged past
-// the origin would be clipped with no way to scroll back to it.
+// The canvas has no edges in any direction. A negative x or y is a real place --
+// the canvas origin travels with the leftmost and topmost panel, so scrolling
+// still reaches it.
 function clampPanelPosition(value) {
   const num = Number(value);
-  return Number.isFinite(num) ? Math.max(0, Math.round(num)) : null;
+  return Number.isFinite(num) ? Math.round(num) : null;
 }
 
 function panelEstimatedHeight(panel) {
@@ -891,8 +898,8 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       const width = clampPanelWidth(moving.width, containerWidth);
       const height =
         renderedPanelHeights[queryId] || panelEstimatedHeight(moving);
-      let nextX = Math.max(0, Math.round(x));
-      let nextY = Math.max(0, Math.round(y));
+      let nextX = Math.round(x);
+      let nextY = Math.round(y);
       let guideX = null;
       let guideY = null;
       let bestX = 4;
@@ -938,8 +945,8 @@ function GamedbWorkspace({ me, onLoggedOut }) {
           });
         });
       }
-      nextX = Math.max(0, Math.round(nextX));
-      nextY = Math.max(0, Math.round(nextY));
+      nextX = Math.round(nextX);
+      nextY = Math.round(nextY);
       setSnapGuides({ x: guideX, y: guideY });
       replacePanels(
         current.map((panel) =>
@@ -995,8 +1002,8 @@ function GamedbWorkspace({ me, onLoggedOut }) {
 
             return {
               ...panel,
-              x: Math.max(0, Math.round(x / 8) * 8),
-              y: Math.max(0, Math.round(y / 8) * 8),
+              x: Math.round(x / 8) * 8,
+              y: Math.round(y / 8) * 8,
               width,
               height,
             };
@@ -1244,33 +1251,57 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   }, []);
 
   const canvasBounds = useMemo(() => {
-  let right = 0;
-  let bottom = 0;
+    let left = 0;
+    let top = 0;
+    let right = 0;
+    let bottom = 0;
 
-  for (const panel of openPanels) {
-    const x = panel.x ?? 0;
-    const y = panel.y ?? 0;
-    const width = panel.width ?? DEFAULT_PANEL_WIDTH;
-    const height =
-      renderedPanelHeights[panel.queryId] ||
-      panelEstimatedHeight(panel);
+    for (const panel of openPanels) {
+      const x = panel.x ?? 0;
+      const y = panel.y ?? 0;
+      const width = panel.width ?? DEFAULT_PANEL_WIDTH;
+      const height =
+        renderedPanelHeights[panel.queryId] || panelEstimatedHeight(panel);
 
-    right = Math.max(right, x + width);
-    bottom = Math.max(bottom, y + height);
-  }
+      left = Math.min(left, x);
+      top = Math.min(top, y);
+      right = Math.max(right, x + width);
+      bottom = Math.max(bottom, y + height);
+    }
 
-  return { right, bottom };
-}, [openPanels, renderedPanelHeights]);
+    return { left, top, right, bottom };
+  }, [openPanels, renderedPanelHeights]);
 
-const canvasWidth =
-  canvasBounds.right > containerWidth + 1
-    ? canvasBounds.right + PANEL_GAP
-    : containerWidth;
+  // A scroll container has no negative side, but a panel is allowed one. So the
+  // canvas carries an origin: whatever the leftmost/topmost panel reaches becomes
+  // scroll position 0, and the panel keeps its own negative x and y.
+  const originX = canvasBounds.left < 0 ? canvasBounds.left - PANEL_GAP : 0;
+  const originY = canvasBounds.top < 0 ? canvasBounds.top - PANEL_GAP : 0;
 
-const canvasHeight =
-  canvasBounds.bottom > containerHeight + 1
-    ? canvasBounds.bottom + PANEL_GAP
-    : containerHeight;
+  // In canvas units, so the sizer below can scale them. Floor the viewport so a
+  // canvas that just fits does not oscillate a scrollbar in and out.
+  const canvasWidth = Math.max(
+    Math.floor((containerWidth || DEFAULT_PANEL_WIDTH) / zoom),
+    canvasBounds.right + PANEL_GAP - originX
+  );
+  const canvasHeight = Math.max(
+    Math.floor((containerHeight || CANVAS_MIN_HEIGHT) / zoom),
+    canvasBounds.bottom + PANEL_GAP - originY
+  );
+
+  // Growing the canvas to the left or upwards moves every panel on screen. Undo
+  // that with the scroll position, or dragging one panel past the origin would
+  // slide all the others out from under the pointer.
+  const originRef = useRef({ x: 0, y: 0, zoom: 1 });
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    const previous = originRef.current;
+    originRef.current = { x: originX, y: originY, zoom };
+    if (!viewport || previous.zoom !== zoom) return;
+    if (previous.x === originX && previous.y === originY) return;
+    viewport.scrollLeft += (previous.x - originX) * zoom;
+    viewport.scrollTop += (previous.y - originY) * zoom;
+  }, [originX, originY, zoom]);
 
   const setZoomAroundCenter = useCallback((nextZoom) => {
     const clamped = Math.min(2, Math.max(0.4, nextZoom));
@@ -1310,6 +1341,10 @@ const canvasHeight =
       replacePanels(next);
       setZoom(1);
       viewportRef.current?.scrollTo({ left: 0, top: 0 });
+      // Arranging puts every panel back at a non-negative x and y, so the origin
+      // returns to zero. Record that here or the compensation below would read it
+      // as a shift and scroll away from the home position we just went to.
+      originRef.current = { x: 0, y: 0, zoom: 1 };
 
       // Changing the panel width can wrap its header and alter its real height.
       // Reflow after the browser has rendered the new widths so row gaps stay exact.
@@ -1802,7 +1837,9 @@ const canvasHeight =
               style={{
                 width: canvasWidth,
                 minHeight: canvasHeight,
-                transform: `scale(${zoom})`,
+                // scale first, then shift by the origin in canvas units, so a
+                // panel at a negative x lands inside the scrollable area.
+                transform: `scale(${zoom}) translate(${-originX}px, ${-originY}px)`,
                 transformOrigin: "0 0",
               }}
             >
@@ -1877,14 +1914,18 @@ const canvasHeight =
                       canvasScale={zoom}
                       onRenderedHeight={captureRenderedPanelHeight}
                       onClose={() => closePanel(panel.queryId)}
-                      onToggleFullWidth={() =>
+                      onToggleFullWidth={() => {
+                        // measureContainer reports both axes; only the width is a
+                        // panel width. Passing the whole reading made this an
+                        // object, and every comparison against it went false.
+                        const { width: available } = measureContainer();
                         updatePanel(panel.queryId, (prev) => ({
                           x: isFullWidth ? prev.x : 0,
                           width: isFullWidth
-                            ? Math.min(DEFAULT_PANEL_WIDTH, measureContainer())
-                            : measureContainer(),
-                        }))
-                      }
+                            ? Math.min(DEFAULT_PANEL_WIDTH, available)
+                            : available,
+                        }));
+                      }}
                       onToggleCollapse={() =>
                         updatePanel(panel.queryId, (prev) => ({
                           collapsed: !prev.collapsed,
