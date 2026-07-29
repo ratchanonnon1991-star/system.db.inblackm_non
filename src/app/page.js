@@ -156,7 +156,7 @@ const MIN_PANEL_HEIGHT = 140;
 const MAX_PANEL_HEIGHT = 1600;
 const MIN_PANEL_WIDTH = 280;
 // The canvas scrolls, so a panel may be wider than the viewport it is seen through.
-const MAX_PANEL_WIDTH = 3200;
+const MAX_PANEL_WIDTH = 6000;
 const PANEL_GAP = 16;
 const PANEL_CHROME_ESTIMATE = 300;
 const CANVAS_MIN_HEIGHT = 520;
@@ -942,61 +942,49 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       replacePanels(
         (prev) =>
           prev.map((panel) => {
-          if (panel.queryId !== queryId) return panel;
-          const canvasWidth = containerWidth || DEFAULT_PANEL_WIDTH;
-          const minWidth = Math.min(MIN_PANEL_WIDTH, canvasWidth);
-          let width = clampPanelWidth(frame.width ?? panel.width, canvasWidth);
-          const height = clampPanelHeight(
-            Math.round((frame.height ?? panel.height) / 8) * 8
-          );
-          let x = Math.min(
-            Math.max(0, Math.round(frame.x ?? panel.x ?? 0)),
-            Math.max(0, canvasWidth - minWidth)
-          );
-          let y = Math.max(0, Math.round(frame.y ?? panel.y ?? 0));
+            if (panel.queryId !== queryId) return panel;
 
-          // Keep the opposite edge anchored, including when the pointer reaches
-          // the canvas boundary. Without this, resizing past an edge can make
-          // the entire frame jump sideways.
-          if (frame.dirX === 1) {
-            width = Math.min(width, Math.max(minWidth, canvasWidth - x));
-          } else if (frame.dirX === -1) {
-            const fixedRight = Math.min(
-              canvasWidth,
-              Math.max(
-                minWidth,
-                Math.round(
-                  Number(frame.x ?? panel.x ?? 0) +
-                    Number(frame.width ?? panel.width ?? DEFAULT_PANEL_WIDTH)
-                )
-              )
+            const rawX = Math.round(frame.x ?? panel.x ?? 0);
+            const rawY = Math.round(frame.y ?? panel.y ?? 0);
+            const rawWidth = Number(
+              frame.width ?? panel.width ?? DEFAULT_PANEL_WIDTH
             );
-            width = Math.min(width, fixedRight);
-            x = fixedRight - width;
-          } else {
-            x = Math.min(x, Math.max(0, canvasWidth - width));
-          }
+            const rawHeight = Number(
+              frame.height ?? panel.height ?? DEFAULT_PANEL_HEIGHT
+            );
 
-          if (frame.dirY === -1) {
-            const fixedBottom = Math.max(
-              MIN_PANEL_HEIGHT,
+            const width =
               Math.round(
-                Number(frame.y ?? panel.y ?? 0) +
-                  Number(frame.height ?? panel.height ?? DEFAULT_PANEL_HEIGHT)
-              )
-            );
-            const anchoredHeight = Math.min(height, fixedBottom);
-            y = fixedBottom - anchoredHeight;
-          }
+                clampPanelWidth(rawWidth, containerWidth) / 8
+              ) * 8;
 
-          return {
-            ...panel,
-            x: Math.round(x / 8) * 8,
-            y: Math.round(y / 8) * 8,
-            width: Math.round(width / 8) * 8,
-            height,
-          };
-        }),
+            const height = clampPanelHeight(
+              Math.round(rawHeight / 8) * 8
+            );
+
+            let x = rawX;
+            let y = rawY;
+
+            // ลากขอบซ้าย ให้ขอบขวาอยู่ตำแหน่งเดิม
+            if (frame.dirX === -1) {
+              const fixedRight = rawX + rawWidth;
+              x = fixedRight - width;
+            }
+
+            // ลากขอบบน ให้ขอบล่างอยู่ตำแหน่งเดิม
+            if (frame.dirY === -1) {
+              const fixedBottom = rawY + rawHeight;
+              y = fixedBottom - height;
+            }
+
+            return {
+              ...panel,
+              x: Math.max(0, Math.round(x / 8) * 8),
+              y: Math.max(0, Math.round(y / 8) * 8),
+              width,
+              height,
+            };
+          }),
         { record: false }
       );
     },
