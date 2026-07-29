@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Calculator,
   Camera,
@@ -351,6 +352,9 @@ export default function QueryPanel({
   canManage,
   canCustomizeLayout,
   isFullWidth,
+  isSelected,
+  toolbarHost,
+  onSelect,
   onPositionChange,
   onFrameChange,
   onBringToFront,
@@ -1354,6 +1358,7 @@ export default function QueryPanel({
     <section
       ref={sectionRef}
       onPointerDown={() => {
+        onSelect?.();
         if (canCustomizeLayout) {
           setFrameSelected(true);
           onBringToFront?.(query.id);
@@ -1368,7 +1373,7 @@ export default function QueryPanel({
       className={`flex min-w-0 flex-col rounded-2xl border border-zinc-200 bg-white shadow-sm transition-shadow ${
         panelDrag || frameDrag
           ? "z-30 shadow-xl ring-1 ring-red-500"
-          : frameSelected
+          : frameSelected || isSelected
             ? "z-10 ring-1 ring-red-500"
             : "z-10"
       }`}
@@ -1439,6 +1444,9 @@ export default function QueryPanel({
           </p>
         </div>
 
+        {toolbarHost &&
+          createPortal(
+            <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
         <div className="relative">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
           <input
@@ -1739,6 +1747,9 @@ export default function QueryPanel({
         >
           <X size={13} />
         </button>}
+            </div>,
+            toolbarHost
+          )}
       </div>
 
       {!panel.collapsed && (

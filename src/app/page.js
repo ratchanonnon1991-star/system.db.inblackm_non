@@ -332,7 +332,6 @@ function CanvasToolbar({
   onTogglePreview,
   zoom,
   onZoom,
-  onFit,
 }) {
   return (
     <div className="flex shrink-0 items-center gap-1 overflow-x-auto">
@@ -425,14 +424,6 @@ function CanvasToolbar({
       >
         <ZoomIn size={14} />
       </button>
-      <button
-        type="button"
-        onClick={onFit}
-        className="rounded-lg border border-zinc-200 px-2 py-1.5 text-[10px] font-black text-zinc-600 hover:bg-zinc-50"
-        title="จัดทุกกล่องให้พอดีหน้าจอ"
-      >
-        Fit
-      </button>
     </div>
   );
 }
@@ -517,6 +508,8 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   const [loadingList, setLoadingList] = useState(true);
   const [listError, setListError] = useState("");
   const [sidebarSearch, setSidebarSearch] = useState("");
+  const [selectedPanelId, setSelectedPanelId] = useState(null);
+  const [panelToolbarHost, setPanelToolbarHost] = useState(null);
 
   const [panels, setPanels] = useState([]);
   const panelsStateRef = useRef([]);
@@ -838,6 +831,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
 
   const openDrill = useCallback((queryId, params) => {
     setDrillParams((prev) => ({ ...prev, [queryId]: params }));
+    setSelectedPanelId(queryId);
     replacePanels((prev) =>
       prev.some((panel) => panel.queryId === queryId)
         ? prev
@@ -846,6 +840,12 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   }, [containerWidth, replacePanels]);
 
   const togglePanel = (queryId) => {
+    const isOpen = panelsStateRef.current.some(
+      (panel) => panel.queryId === queryId
+    );
+    setSelectedPanelId((current) =>
+      isOpen ? (current === queryId ? null : current) : queryId
+    );
     replacePanels((prev) =>
       prev.some((panel) => panel.queryId === queryId)
         ? prev.filter((panel) => panel.queryId !== queryId)
@@ -854,6 +854,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   };
 
   const closePanel = (queryId) => {
+    setSelectedPanelId((current) => (current === queryId ? null : current));
     replacePanels((prev) => prev.filter((panel) => panel.queryId !== queryId));
   };
 
@@ -1223,6 +1224,12 @@ function GamedbWorkspace({ me, onLoggedOut }) {
     () => panels.filter((panel) => queryById.has(panel.queryId)),
     [panels, queryById]
   );
+  const selectedPanel = openPanels.find(
+    (panel) => panel.queryId === selectedPanelId
+  );
+  const selectedPanelQuery = selectedPanel
+    ? queryById.get(selectedPanel.queryId)
+    : null;
   const captureRenderedPanelHeight = useCallback((queryId, height) => {
     renderedPanelHeightsRef.current = {
       ...renderedPanelHeightsRef.current,
@@ -1261,43 +1268,6 @@ function GamedbWorkspace({ me, onLoggedOut }) {
     }));
     setZoom(clamped);
   }, [zoom]);
-
-  const fitCanvas = useCallback(() => {
-    const viewport = viewportRef.current;
-    if (!viewport || openPanels.length === 0) {
-      setZoom(1);
-      setPan({ x: 0, y: 0 });
-      return;
-    }
-    const right = Math.max(
-      ...openPanels.map(
-        (panel) =>
-          (panel.x || 0) + clampPanelWidth(panel.width, containerWidth)
-      )
-    );
-    const bottom = Math.max(
-      ...openPanels.map(
-        (panel) =>
-          (panel.y || 0) +
-          (renderedPanelHeights[panel.queryId] || panelEstimatedHeight(panel))
-      )
-    );
-    const nextZoom = Math.min(
-      1.25,
-      Math.max(
-        0.4,
-        Math.min(
-          (viewport.clientWidth - 48) / Math.max(1, right),
-          (viewport.clientHeight - 48) / Math.max(1, bottom)
-        )
-      )
-    );
-    setZoom(nextZoom);
-    setPan({
-      x: Math.max(24, (viewport.clientWidth - right * nextZoom) / 2),
-      y: Math.max(24, (viewport.clientHeight - bottom * nextZoom) / 2),
-    });
-  }, [containerWidth, openPanels, renderedPanelHeights]);
 
   const autoArrangePanels = useCallback(
     (mode) => {
@@ -1380,7 +1350,6 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       onTogglePreview={() => setPreviewAsUser((value) => !value)}
       zoom={zoom}
       onZoom={setZoomAroundCenter}
-      onFit={fitCanvas}
     />
   );
 
@@ -1585,7 +1554,10 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               </button>
               <button
                 type="button"
-                onClick={() => replacePanels([])}
+                onClick={() => {
+                  setSelectedPanelId(null);
+                  replacePanels([]);
+                }}
                 disabled={panels.length === 0}
                 className="rounded-md px-1.5 py-0.5 text-[10px] font-black text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-40"
               >
@@ -1728,6 +1700,26 @@ function GamedbWorkspace({ me, onLoggedOut }) {
           </div>
         )}
 
+        {selectedPanelQuery && (
+          <div className="flex min-w-0 flex-wrap items-center gap-3 rounded-2xl border border-zinc-200 bg-white px-3 py-2 shadow-sm">
+            <div className="min-w-32 shrink-0 border-r border-zinc-200 pr-3">
+              <p className="text-[9px] font-black uppercase tracking-wide text-zinc-400">
+                เครื่องมือตาราง
+              </p>
+              <p
+                className="max-w-48 truncate text-xs font-black text-zinc-700"
+                title={selectedPanelQuery.name}
+              >
+                {selectedPanelQuery.name}
+              </p>
+            </div>
+            <div
+              ref={setPanelToolbarHost}
+              className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2"
+            />
+          </div>
+        )}
+
         <div
           ref={viewportRef}
           className="relative h-[max(520px,calc(100vh-320px))] min-w-0 flex-1 overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50"
@@ -1810,6 +1802,13 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                     canManage={isSuperAdmin && !previewAsUser}
                     canCustomizeLayout={!layoutLocked}
                     isFullWidth={isFullWidth}
+                    isSelected={selectedPanelId === panel.queryId}
+                    toolbarHost={
+                      selectedPanelId === panel.queryId
+                        ? panelToolbarHost
+                        : null
+                    }
+                    onSelect={() => setSelectedPanelId(panel.queryId)}
                     onPositionChange={movePanelTo}
                     onFrameChange={resizePanel}
                     onBringToFront={bringPanelToFront}
