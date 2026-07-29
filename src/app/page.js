@@ -26,7 +26,6 @@ import {
   Undo2,
   User,
   Users,
-  WandSparkles,
   X,
   ZoomIn,
   ZoomOut,
@@ -230,6 +229,72 @@ function arrangeUnpositionedPanels(panels, containerWidth) {
   });
 }
 
+function arrangePanelsByMode(panels, mode, containerWidth, renderedHeights) {
+  const canvasWidth = containerWidth || DEFAULT_PANEL_WIDTH;
+  const panelHeight = (panel) =>
+    renderedHeights[panel.queryId] || panelEstimatedHeight(panel);
+
+  if (mode === "vertical") {
+    let y = 0;
+    return panels.map((panel) => {
+      const placed = {
+        ...panel,
+        x: 0,
+        y,
+        width: Math.min(canvasWidth, panel.width || DEFAULT_PANEL_WIDTH),
+      };
+      y += panelHeight(panel) + PANEL_GAP;
+      return placed;
+    });
+  }
+
+  if (mode === "horizontal") {
+    let x = 0;
+    let y = 0;
+    let rowHeight = 0;
+    return panels.map((panel) => {
+      const width = Math.min(panel.width || DEFAULT_PANEL_WIDTH, canvasWidth);
+      const height = panelHeight(panel);
+      if (x > 0 && x + width > canvasWidth) {
+        x = 0;
+        y += rowHeight + PANEL_GAP;
+        rowHeight = 0;
+      }
+      const placed = { ...panel, x, y, width };
+      x += width + PANEL_GAP;
+      rowHeight = Math.max(rowHeight, height);
+      return placed;
+    });
+  }
+
+  const columns = canvasWidth >= 1100 && panels.length > 1 ? 2 : 1;
+  const columnWidth =
+    columns === 2
+      ? Math.floor((canvasWidth - PANEL_GAP) / 2)
+      : Math.min(canvasWidth, DEFAULT_PANEL_WIDTH);
+  const rowHeights = [];
+  panels.forEach((panel, index) => {
+    const row = Math.floor(index / columns);
+    rowHeights[row] = Math.max(rowHeights[row] || 0, panelHeight(panel));
+  });
+  const rowTops = rowHeights.map((_, row) =>
+    rowHeights
+      .slice(0, row)
+      .reduce((top, height) => top + height + PANEL_GAP, 0)
+  );
+
+  return panels.map((panel, index) => {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    return {
+      ...panel,
+      x: column * (columnWidth + PANEL_GAP),
+      y: rowTops[row],
+      width: columnWidth,
+    };
+  });
+}
+
 function readStoredPanels() {
   try {
     const raw = window.localStorage.getItem(WORKSPACE_STORAGE_KEY);
@@ -253,6 +318,124 @@ function readStoredPanels() {
 const THEME_KEY = "gamedb.theme";
 const PINNED_KEY = "gamedb.pinned";
 const SIDEBAR_KEY = "gamedb.sidebar";
+
+function CanvasToolbar({
+  layoutLocked,
+  historyAvailability,
+  historyRevision,
+  onUndo,
+  onRedo,
+  onArrange,
+  isSuperAdmin,
+  activeView,
+  templateSaveState,
+  onTogglePreview,
+  zoom,
+  onZoom,
+  onFit,
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-1 overflow-x-auto">
+      <button
+        type="button"
+        onClick={onUndo}
+        disabled={layoutLocked || !historyAvailability.past}
+        title="ย้อนการจัดวาง (Ctrl+Z)"
+        className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30"
+      >
+        <Undo2 size={14} />
+      </button>
+      <button
+        type="button"
+        onClick={onRedo}
+        disabled={layoutLocked || !historyAvailability.future}
+        title="ทำซ้ำ (Ctrl+Shift+Z)"
+        className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30"
+      >
+        <Redo2 size={14} />
+      </button>
+      {!layoutLocked && (
+        <select
+          key={historyRevision}
+          defaultValue=""
+          onChange={(event) => {
+            if (event.target.value) onArrange(event.target.value);
+            event.target.value = "";
+          }}
+          className="h-8 rounded-lg border border-zinc-200 bg-white px-2 text-[10px] font-black text-zinc-600"
+          title="จัดกล่องอัตโนมัติ"
+        >
+          <option value="">จัดอัตโนมัติ...</option>
+          <option value="grid">แบบ Grid</option>
+          <option value="vertical">เรียงแนวตั้ง</option>
+          <option value="horizontal">เรียงต่อกัน</option>
+        </select>
+      )}
+      {isSuperAdmin && activeView && (
+        <>
+          <span
+            className={`rounded-full px-2 py-1 text-[9px] font-black ${
+              templateSaveState === "error"
+                ? "bg-red-50 text-red-600"
+                : ["saving", "pending"].includes(templateSaveState)
+                  ? "bg-amber-50 text-amber-700"
+                  : "bg-emerald-50 text-emerald-700"
+            }`}
+          >
+            {templateSaveState === "error"
+              ? "บันทึกไม่สำเร็จ"
+              : templateSaveState === "saving"
+                ? "กำลังบันทึก..."
+                : templateSaveState === "pending"
+                  ? "รอบันทึก..."
+                  : "บันทึกแล้ว"}
+          </span>
+          <button
+            type="button"
+            onClick={onTogglePreview}
+            className="flex h-8 items-center gap-1 rounded-lg border border-zinc-200 px-2 text-[10px] font-black text-zinc-600 hover:bg-zinc-50"
+            title="ดูหน้าจอแบบ User"
+          >
+            <Eye size={12} /> User
+          </button>
+        </>
+      )}
+      <span className="mx-0.5 h-5 w-px bg-zinc-200" />
+      <button
+        type="button"
+        onClick={() => onZoom(zoom - 0.1)}
+        className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
+        title="ซูมออก"
+      >
+        <ZoomOut size={14} />
+      </button>
+      <button
+        type="button"
+        onClick={() => onZoom(1)}
+        className="min-w-11 rounded-lg px-1.5 py-1.5 text-[10px] font-black text-zinc-600 hover:bg-zinc-100"
+        title="คืน Zoom เป็น 100%"
+      >
+        {Math.round(zoom * 100)}%
+      </button>
+      <button
+        type="button"
+        onClick={() => onZoom(zoom + 0.1)}
+        className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
+        title="ซูมเข้า"
+      >
+        <ZoomIn size={14} />
+      </button>
+      <button
+        type="button"
+        onClick={onFit}
+        className="rounded-lg border border-zinc-200 px-2 py-1.5 text-[10px] font-black text-zinc-600 hover:bg-zinc-50"
+        title="จัดทุกกล่องให้พอดีหน้าจอ"
+      >
+        Fit
+      </button>
+    </div>
+  );
+}
 
 function GamedbWorkspace({ me, onLoggedOut }) {
   const isSuperAdmin = me.role === "admin";
@@ -350,6 +533,8 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   const viewportRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [renderedPanelHeights, setRenderedPanelHeights] = useState({});
+  const renderedPanelHeightsRef = useRef({});
+  const arrangeFrameRef = useRef(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const panDragRef = useRef(null);
@@ -1039,6 +1224,10 @@ function GamedbWorkspace({ me, onLoggedOut }) {
     [panels, queryById]
   );
   const captureRenderedPanelHeight = useCallback((queryId, height) => {
+    renderedPanelHeightsRef.current = {
+      ...renderedPanelHeightsRef.current,
+      [queryId]: height,
+    };
     setRenderedPanelHeights((prev) =>
       prev[queryId] === height ? prev : { ...prev, [queryId]: height }
     );
@@ -1113,61 +1302,44 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   const autoArrangePanels = useCallback(
     (mode) => {
       if (layoutLocked || panelsStateRef.current.length === 0) return;
-      const current = panelsStateRef.current;
-      const gap = PANEL_GAP;
-      const canvasWidth = containerWidth || DEFAULT_PANEL_WIDTH;
-      let next;
-      if (mode === "vertical") {
-        let y = 0;
-        next = current.map((panel) => {
-          const placed = {
-            ...panel,
-            x: 0,
-            y,
-            width: Math.min(canvasWidth, panel.width || DEFAULT_PANEL_WIDTH),
-          };
-          y +=
-            (renderedPanelHeights[panel.queryId] || panelEstimatedHeight(panel)) +
-            gap;
-          return placed;
-        });
-      } else if (mode === "horizontal") {
-        let x = 0;
-        let y = 0;
-        let rowHeight = 0;
-        next = current.map((panel) => {
-          const width = Math.min(
-            panel.width || DEFAULT_PANEL_WIDTH,
-            canvasWidth
-          );
-          const height =
-            renderedPanelHeights[panel.queryId] || panelEstimatedHeight(panel);
-          if (x > 0 && x + width > canvasWidth) {
-            x = 0;
-            y += rowHeight + gap;
-            rowHeight = 0;
-          }
-          const placed = { ...panel, x, y, width };
-          x += width + gap;
-          rowHeight = Math.max(rowHeight, height);
-          return placed;
-        });
-      } else {
-        next = arrangeUnpositionedPanels(
-          current.map((panel) => ({ ...panel, x: null, y: null })),
-          canvasWidth
-        );
-      }
+      const canvasWidth = Math.max(
+        MIN_PANEL_WIDTH,
+        (containerWidth || DEFAULT_PANEL_WIDTH) - PANEL_GAP * 2
+      );
+      const next = arrangePanelsByMode(
+        panelsStateRef.current,
+        mode,
+        canvasWidth,
+        renderedPanelHeightsRef.current
+      );
       replacePanels(next);
-      requestAnimationFrame(fitCanvas);
+      setZoom(1);
+      setPan({ x: 16, y: 16 });
+
+      // Changing the panel width can wrap its header and alter its real height.
+      // Reflow after the browser has rendered the new widths so row gaps stay exact.
+      if (arrangeFrameRef.current) cancelAnimationFrame(arrangeFrameRef.current);
+      arrangeFrameRef.current = requestAnimationFrame(() => {
+        arrangeFrameRef.current = requestAnimationFrame(() => {
+          const settled = arrangePanelsByMode(
+            panelsStateRef.current,
+            mode,
+            canvasWidth,
+            renderedPanelHeightsRef.current
+          );
+          replacePanels(settled, { record: false });
+          arrangeFrameRef.current = null;
+        });
+      });
     },
-    [
-      containerWidth,
-      fitCanvas,
-      layoutLocked,
-      renderedPanelHeights,
-      replacePanels,
-    ]
+    [containerWidth, layoutLocked, replacePanels]
+  );
+
+  useEffect(
+    () => () => {
+      if (arrangeFrameRef.current) cancelAnimationFrame(arrangeFrameRef.current);
+    },
+    []
   );
 
   const startCanvasPan = (event) => {
@@ -1193,6 +1365,24 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   const stopCanvasPan = () => {
     panDragRef.current = null;
   };
+
+  const canvasToolbar = (
+    <CanvasToolbar
+      layoutLocked={layoutLocked}
+      historyAvailability={historyAvailability}
+      historyRevision={historyRevision}
+      onUndo={undoPanels}
+      onRedo={redoPanels}
+      onArrange={autoArrangePanels}
+      isSuperAdmin={isSuperAdmin}
+      activeView={activeView}
+      templateSaveState={templateSaveState}
+      onTogglePreview={() => setPreviewAsUser((value) => !value)}
+      zoom={zoom}
+      onZoom={setZoomAroundCenter}
+      onFit={fitCanvas}
+    />
+  );
 
   return (
     <div className="mx-auto max-w-[1900px] p-4 lg:p-6">
@@ -1354,14 +1544,13 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             >
               {openPanels.length}
             </span>
+            <div className="ml-auto">{canvasToolbar}</div>
           </aside>
         )}
-        {!layoutLocked && <aside
-          className={`w-full shrink-0 rounded-2xl border border-zinc-200 bg-white p-3 ${
-            sidebarOpen ? "" : "hidden"
-          }`}
+        {!layoutLocked && sidebarOpen && <aside
+          className="w-full shrink-0 rounded-2xl border border-zinc-200 bg-white p-3"
         >
-          <div className="mb-2 flex items-center gap-1.5">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
             <div className="relative min-w-0 flex-1">
               <Search
                 size={13}
@@ -1376,6 +1565,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                 className="h-9 w-full rounded-lg border border-zinc-200 bg-zinc-50 pl-8 pr-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
               />
             </div>
+            {canvasToolbar}
             <button
               type="button"
               onClick={() => toggleSidebar(false)}
@@ -1519,24 +1709,14 @@ function GamedbWorkspace({ me, onLoggedOut }) {
           )}
         </aside>}
 
-        <div
-          className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-[10px] font-semibold ${
-            layoutLocked
-              ? "border-zinc-200 bg-zinc-50 text-zinc-500"
-              : "border-red-100 bg-red-50/70 text-zinc-600"
-          }`}
-        >
-          {layoutLocked ? (
-            <Lock size={13} className="mt-0.5 shrink-0 text-zinc-400" />
-          ) : (
-            <LayoutGrid size={13} className="mt-0.5 shrink-0 text-red-500" />
-          )}
-          <p>
-            {layoutLocked
-              ? "หน้าจอนี้จัดวางโดย Admin — คุณสามารถกรอกพารามิเตอร์ รัน Query ค้นหา และดาวน์โหลดข้อมูลได้ตามปกติ"
-              : "จัดหน้าจอ: ลากจุดจับ ⋮⋮ เพื่อย้ายกล่อง · คลิกกล่องแล้วลากจุดรอบกรอบเพื่อปรับขนาด · ดับเบิลคลิกจุดจับเพื่อคืนขนาดเดิม"}
-          </p>
-        </div>
+        {layoutLocked && (
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-zinc-200 bg-white px-3 py-2">
+            <span className="flex items-center gap-1.5 text-[10px] font-bold text-zinc-500">
+              <Lock size={12} /> Layout ถูกกำหนดโดย Admin
+            </span>
+            <div className="ml-auto">{canvasToolbar}</div>
+          </div>
+        )}
 
         {previewAsUser && (
           <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-800">
@@ -1552,111 +1732,6 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             </button>
           </div>
         )}
-
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white px-2.5 py-2">
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={undoPanels}
-              disabled={layoutLocked || !historyAvailability.past}
-              title="ย้อนการจัดวาง (Ctrl+Z)"
-              className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30"
-            >
-              <Undo2 size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={redoPanels}
-              disabled={layoutLocked || !historyAvailability.future}
-              title="ทำซ้ำ (Ctrl+Shift+Z)"
-              className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30"
-            >
-              <Redo2 size={14} />
-            </button>
-            {!layoutLocked && (
-              <select
-                key={historyRevision}
-                defaultValue=""
-                onChange={(event) => {
-                  if (event.target.value) autoArrangePanels(event.target.value);
-                  event.target.value = "";
-                }}
-                className="h-8 rounded-lg border border-zinc-200 bg-white px-2 text-[10px] font-black text-zinc-600"
-                title="จัดกล่องอัตโนมัติ"
-              >
-                <option value="">จัดอัตโนมัติ...</option>
-                <option value="grid">แบบ Grid</option>
-                <option value="vertical">เรียงแนวตั้ง</option>
-                <option value="horizontal">เรียงต่อกัน</option>
-              </select>
-            )}
-            {!layoutLocked && <WandSparkles size={13} className="text-red-500" />}
-          </div>
-
-          <div className="flex items-center gap-1">
-            {isSuperAdmin && activeView && (
-              <>
-                <span
-                  className={`mr-1 rounded-full px-2 py-1 text-[9px] font-black ${
-                    templateSaveState === "error"
-                      ? "bg-red-50 text-red-600"
-                      : ["saving", "pending"].includes(templateSaveState)
-                        ? "bg-amber-50 text-amber-700"
-                        : "bg-emerald-50 text-emerald-700"
-                  }`}
-                >
-                  {templateSaveState === "error"
-                    ? "บันทึกไม่สำเร็จ"
-                    : templateSaveState === "saving"
-                      ? "กำลังบันทึก..."
-                      : templateSaveState === "pending"
-                        ? "รอบันทึก..."
-                        : "บันทึกแล้ว"}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setPreviewAsUser((value) => !value)}
-                  className="flex h-8 items-center gap-1 rounded-lg border border-zinc-200 px-2 text-[10px] font-black text-zinc-600 hover:bg-zinc-50"
-                  title="ดูหน้าจอแบบ User"
-                >
-                  <Eye size={12} /> Preview User
-                </button>
-              </>
-            )}
-            <button
-              type="button"
-              onClick={() => setZoomAroundCenter(zoom - 0.1)}
-              className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
-              title="ซูมออก"
-            >
-              <ZoomOut size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setZoomAroundCenter(zoom + 0.1)}
-              className="min-w-12 rounded-lg px-2 py-1.5 text-[10px] font-black text-zinc-600 hover:bg-zinc-100"
-              title="ระดับ Zoom"
-            >
-              {Math.round(zoom * 100)}%
-            </button>
-            <button
-              type="button"
-              onClick={() => setZoomAroundCenter(zoom + 0.1)}
-              className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
-              title="ซูมเข้า"
-            >
-              <ZoomIn size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={fitCanvas}
-              className="rounded-lg border border-zinc-200 px-2 py-1.5 text-[10px] font-black text-zinc-600 hover:bg-zinc-50"
-              title="จัดทุกกล่องให้พอดีหน้าจอ"
-            >
-              Fit
-            </button>
-          </div>
-        </div>
 
         <div
           ref={viewportRef}
