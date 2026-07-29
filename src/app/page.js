@@ -1735,16 +1735,11 @@ function GamedbWorkspace({ me, onLoggedOut }) {
 
         <div
           ref={viewportRef}
-          className="relative h-[max(520px,calc(100vh-320px))] min-w-0 flex-1 overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50"
+          className="relative h-[max(520px,calc(100vh-320px))] min-w-0 flex-1 overflow-auto overscroll-contain rounded-2xl border border-zinc-200 bg-zinc-50"
           onWheel={(event) => {
-            event.preventDefault();
             if (event.ctrlKey || event.metaKey) {
+              event.preventDefault();
               setZoomAroundCenter(zoom - event.deltaY * 0.001);
-            } else {
-              setPan((current) => ({
-                x: current.x - event.deltaX,
-                y: current.y - event.deltaY,
-              }));
             }
           }}
         >
