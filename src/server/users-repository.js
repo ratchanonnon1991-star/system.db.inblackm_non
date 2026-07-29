@@ -27,11 +27,32 @@ async function ensureSchema() {
           display_name  VARCHAR(255),
           password_hash TEXT NOT NULL,
           role          VARCHAR(16) NOT NULL DEFAULT 'staff'
-                        CHECK (role IN ('admin', 'staff')),
+                        CHECK (role IN ('admin', 'staff', 'user')),
           created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
+
+      // Older installations only allow admin/staff in this constraint.
+      // Upgrade it in place so adding the new read-only-layout role works
+      // without requiring a separate manual migration.
+      const roleConstraint = await client.query(`
+        SELECT pg_get_constraintdef(oid) AS definition
+        FROM pg_constraint
+        WHERE conrelid = 'gamedb_users'::regclass
+          AND conname = 'gamedb_users_role_check'
+      `);
+      if (
+        roleConstraint.rows[0] &&
+        !roleConstraint.rows[0].definition.includes("'user'")
+      ) {
+        await client.query(`
+          ALTER TABLE gamedb_users
+          DROP CONSTRAINT gamedb_users_role_check,
+          ADD CONSTRAINT gamedb_users_role_check
+            CHECK (role IN ('admin', 'staff', 'user'))
+        `);
+      }
 
       // First-run seed: create the initial admin from env so no password
       // ever lives in the codebase. Only runs when the table is empty.

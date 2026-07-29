@@ -28,7 +28,8 @@ const EMPTY_FORM = {
 
 /**
  * Admin side of screen templates: save the current arrangement of panels under
- * a name and decide who gets it. Staff only ever see the picker in the header.
+ * a name and decide who gets it. Staff see the picker in the header; User
+ * accounts also use these templates, but cannot customize their arrangement.
  */
 export default function ViewsModal({
   views,

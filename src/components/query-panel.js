@@ -2,8 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowLeft,
-  ArrowRight,
   Calculator,
   Camera,
   ChartColumn,
@@ -15,6 +13,7 @@ import {
   Download,
   Eye,
   GripVertical,
+  Lock,
   Loader2,
   Maximize2,
   Minimize2,
@@ -80,18 +79,21 @@ const paramPresetButtonClass =
   "rounded-md border border-zinc-200 bg-white px-2 py-1 text-[9px] font-black text-zinc-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700";
 
 const RESIZE_HINT = "ลากเพื่อปรับขนาด · ดับเบิลคลิกเพื่อรีเซ็ต";
+const MIN_FRAME_WIDTH = 280;
+const MIN_FRAME_HEIGHT = 140;
+const MAX_FRAME_HEIGHT = 1600;
 
-// Edges first, corners last: same z-index, so the corners win the hit test
-// where they overlap. The bottom edge is the visible grip bar in the panel
-// body, so it is not repeated here.
+// Eight Figma-like hit areas. The inner marker is shown when the frame is
+// selected, while the larger transparent area remains easy to grab.
 const FRAME_HANDLES = [
-  { key: "w", dirX: -1, dirY: 0, className: "left-0 top-0 h-full w-1.5 hover:bg-red-500/20", title: RESIZE_HINT },
-  { key: "e", dirX: 1, dirY: 0, className: "right-0 top-0 h-full w-1.5 hover:bg-red-500/20", title: RESIZE_HINT },
-  { key: "n", dirX: 0, dirY: -1, className: "left-0 top-0 h-1.5 w-full hover:bg-red-500/20", title: RESIZE_HINT },
-  { key: "nw", dirX: -1, dirY: -1, className: "left-0 top-0 h-4 w-4", title: RESIZE_HINT },
-  { key: "ne", dirX: 1, dirY: -1, className: "right-0 top-0 h-4 w-4", title: RESIZE_HINT },
-  { key: "sw", dirX: -1, dirY: 1, className: "bottom-0 left-0 h-4 w-4", title: RESIZE_HINT },
-  { key: "se", dirX: 1, dirY: 1, className: "bottom-0 right-0 h-4 w-4", title: RESIZE_HINT },
+  { key: "w", dirX: -1, dirY: 0, className: "-left-1.5 top-4 bottom-4 w-3", markerClass: "left-1/2 top-0 h-full w-px -translate-x-1/2 bg-red-500" },
+  { key: "e", dirX: 1, dirY: 0, className: "-right-1.5 top-4 bottom-4 w-3", markerClass: "left-1/2 top-0 h-full w-px -translate-x-1/2 bg-red-500" },
+  { key: "n", dirX: 0, dirY: -1, className: "-top-1.5 left-4 right-4 h-3", markerClass: "left-0 top-1/2 h-px w-full -translate-y-1/2 bg-red-500" },
+  { key: "s", dirX: 0, dirY: 1, className: "-bottom-1.5 left-4 right-4 h-3", markerClass: "left-0 top-1/2 h-px w-full -translate-y-1/2 bg-red-500" },
+  { key: "nw", dirX: -1, dirY: -1, className: "-left-2.5 -top-2.5 h-5 w-5", markerClass: "inset-1 rounded-sm border border-red-500 bg-white shadow-sm" },
+  { key: "ne", dirX: 1, dirY: -1, className: "-right-2.5 -top-2.5 h-5 w-5", markerClass: "inset-1 rounded-sm border border-red-500 bg-white shadow-sm" },
+  { key: "sw", dirX: -1, dirY: 1, className: "-bottom-2.5 -left-2.5 h-5 w-5", markerClass: "inset-1 rounded-sm border border-red-500 bg-white shadow-sm" },
+  { key: "se", dirX: 1, dirY: 1, className: "-bottom-2.5 -right-2.5 h-5 w-5", markerClass: "inset-1 rounded-sm border border-red-500 bg-white shadow-sm" },
 ];
 
 function frameCursor(dirX, dirY) {
@@ -317,21 +319,17 @@ export default function QueryPanel({
   onLayoutChange,
   onDataChange,
   canManage,
-  canMoveUp,
-  canMoveDown,
+  canCustomizeLayout,
   isFullWidth,
-  draggingQueryId,
-  onMove,
+  onPositionChange,
+  onFrameChange,
+  onBringToFront,
+  onRenderedHeight,
   onClose,
   onToggleFullWidth,
   onToggleCollapse,
-  onHeightChange,
   onResetHeight,
-  onWidthChange,
   onResetWidth,
-  onDragStart,
-  onDragEnd,
-  onDropPanel,
   onEditQuery,
   onDrill,
   initialParams,
@@ -607,10 +605,11 @@ export default function QueryPanel({
   }, [changedKeys]);
 
   const mutateLayout = useCallback((updater) => {
+    if (!canCustomizeLayout) return;
     setLayout((prev) => updater(prev));
     layoutDirtyRef.current = true;
     setLayoutDirty(true);
-  }, []);
+  }, [canCustomizeLayout]);
 
   const resetParamValues = () => {
     setParamValues(initialParamValues(effectiveParams));
@@ -1147,17 +1146,81 @@ export default function QueryPanel({
   // right edge dirX 1. Size lives in the parent so it can be persisted.
   const sectionRef = useRef(null);
   const [frameDrag, setFrameDrag] = useState(null);
+  const [panelDrag, setPanelDrag] = useState(null);
+  const [frameSelected, setFrameSelected] = useState(false);
+
+  useEffect(() => {
+    if (!canCustomizeLayout) return undefined;
+    const clearSelection = (event) => {
+      if (!sectionRef.current?.contains(event.target)) setFrameSelected(false);
+    };
+    document.addEventListener("pointerdown", clearSelection);
+    return () => document.removeEventListener("pointerdown", clearSelection);
+  }, [canCustomizeLayout]);
+
+  useEffect(() => {
+    const element = sectionRef.current;
+    if (!element || !onRenderedHeight) return undefined;
+    const report = () =>
+      onRenderedHeight(query.id, Math.ceil(element.getBoundingClientRect().height));
+    report();
+    const observer =
+      typeof ResizeObserver !== "undefined" ? new ResizeObserver(report) : null;
+    observer?.observe(element);
+    return () => observer?.disconnect();
+  }, [onRenderedHeight, query.id]);
+
+  const startPanelMove = (event) => {
+    if (!canCustomizeLayout) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onBringToFront?.(query.id);
+    setPanelDrag({
+      startX: event.clientX,
+      startY: event.clientY,
+      panelX: panel.x || 0,
+      panelY: panel.y || 0,
+    });
+  };
+
+  useEffect(() => {
+    if (!panelDrag) return undefined;
+    const move = (event) => {
+      onPositionChange(
+        query.id,
+        panelDrag.panelX + event.clientX - panelDrag.startX,
+        panelDrag.panelY + event.clientY - panelDrag.startY
+      );
+    };
+    const stop = () => setPanelDrag(null);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "grabbing";
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+  }, [panelDrag, onPositionChange, query.id]);
 
   const startFrameResize = (event, dirX, dirY) => {
     event.preventDefault();
     event.stopPropagation();
+    setFrameSelected(true);
+    onBringToFront?.(query.id);
     setFrameDrag({
       dirX,
       dirY,
       startX: event.clientX,
       startY: event.clientY,
       startWidth: sectionRef.current?.getBoundingClientRect().width || 0,
-      startHeight: panel.height,
+      startHeight: panel.height || 420,
+      startPanelX: panel.x || 0,
+      startPanelY: panel.y || 0,
       cursor: frameCursor(dirX, dirY),
     });
   };
@@ -1165,12 +1228,41 @@ export default function QueryPanel({
   useEffect(() => {
     if (!frameDrag) return undefined;
     const move = (event) => {
-      if (frameDrag.dirX) {
-        onWidthChange(frameDrag.startWidth + frameDrag.dirX * (event.clientX - frameDrag.startX));
+      const deltaX = event.clientX - frameDrag.startX;
+      const deltaY = event.clientY - frameDrag.startY;
+      let width = frameDrag.startWidth;
+      let height = frameDrag.startHeight;
+      let x = frameDrag.startPanelX;
+      let y = frameDrag.startPanelY;
+
+      if (frameDrag.dirX === 1) {
+        width = Math.max(MIN_FRAME_WIDTH, frameDrag.startWidth + deltaX);
+      } else if (frameDrag.dirX === -1) {
+        width = Math.max(MIN_FRAME_WIDTH, frameDrag.startWidth - deltaX);
+        x = frameDrag.startPanelX + frameDrag.startWidth - width;
       }
-      if (frameDrag.dirY) {
-        onHeightChange(frameDrag.startHeight + frameDrag.dirY * (event.clientY - frameDrag.startY));
+
+      if (frameDrag.dirY === 1) {
+        height = Math.min(
+          MAX_FRAME_HEIGHT,
+          Math.max(MIN_FRAME_HEIGHT, frameDrag.startHeight + deltaY)
+        );
+      } else if (frameDrag.dirY === -1) {
+        height = Math.min(
+          MAX_FRAME_HEIGHT,
+          Math.max(MIN_FRAME_HEIGHT, frameDrag.startHeight - deltaY)
+        );
+        y = frameDrag.startPanelY + frameDrag.startHeight - height;
       }
+
+      onFrameChange(query.id, {
+        x,
+        y,
+        width,
+        height,
+        dirX: frameDrag.dirX,
+        dirY: frameDrag.dirY,
+      });
     };
     const stop = () => setFrameDrag(null);
     window.addEventListener("pointermove", move);
@@ -1185,62 +1277,72 @@ export default function QueryPanel({
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
     };
-  }, [frameDrag, onWidthChange, onHeightChange]);
+  }, [frameDrag, onFrameChange, query.id]);
 
   const resetFrame = (dirX, dirY) => {
     if (dirX) onResetWidth();
     if (dirY) onResetHeight();
   };
 
-  const [dropTarget, setDropTarget] = useState(false);
-  const isDragSource = draggingQueryId === query.id;
-  const canDrop = draggingQueryId != null && !isDragSource;
-
   return (
     <section
       ref={sectionRef}
-      style={panel.width ? { width: panel.width, flex: "0 0 auto" } : { flex: "1 1 480px" }}
-      onDragOver={(event) => {
-        if (!canDrop) return;
-        event.preventDefault();
-        setDropTarget(true);
+      onPointerDown={() => {
+        if (canCustomizeLayout) {
+          setFrameSelected(true);
+          onBringToFront?.(query.id);
+        }
       }}
-      onDragLeave={() => setDropTarget(false)}
-      onDrop={(event) => {
-        if (!canDrop) return;
-        event.preventDefault();
-        setDropTarget(false);
-        onDropPanel();
+      style={{
+        position: "absolute",
+        left: panel.x || 0,
+        top: panel.y || 0,
+        width: panel.width,
       }}
-      className={`relative flex min-w-0 flex-col rounded-2xl border bg-white transition ${
-        dropTarget && canDrop ? "border-red-600 ring-2 ring-red-500/40" : "border-zinc-200"
-      } ${isDragSource ? "opacity-50" : ""}`}
+      className={`flex min-w-0 flex-col rounded-2xl border border-zinc-200 bg-white shadow-sm transition-shadow ${
+        panelDrag || frameDrag
+          ? "z-30 shadow-xl ring-1 ring-red-500"
+          : frameSelected
+            ? "z-10 ring-1 ring-red-500"
+            : "z-10"
+      }`}
     >
+      {canCustomizeLayout && (panelDrag || frameDrag) && (
+        <div
+          className="pointer-events-none absolute right-2 top-2 z-50 rounded-md bg-zinc-900/90 px-2 py-1 font-mono text-[9px] font-bold text-white shadow-lg"
+          aria-live="polite"
+        >
+          {panelDrag
+            ? `X ${Math.round(panel.x || 0)} · Y ${Math.round(panel.y || 0)}`
+            : `${Math.round(panel.width || 0)} × ${Math.round(panel.height || 0)} px`}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-2 border-b border-zinc-100 p-3">
-        <span
-          draggable
-          onDragStart={(event) => {
-            event.dataTransfer.effectAllowed = "move";
-            event.dataTransfer.setData("text/plain", String(query.id));
-            onDragStart();
-          }}
-          onDragEnd={() => {
-            setDropTarget(false);
-            onDragEnd();
-          }}
-          className="cursor-grab rounded-lg p-1 text-zinc-300 transition hover:bg-zinc-100 hover:text-zinc-600 active:cursor-grabbing"
-          title="ลากเพื่อสลับตำแหน่งกับตารางอื่น"
+        {canCustomizeLayout ? <button
+          type="button"
+          onPointerDown={startPanelMove}
+          className="flex h-8 w-8 shrink-0 cursor-grab items-center justify-center rounded-lg border border-transparent text-zinc-300 transition hover:border-zinc-200 hover:bg-zinc-100 hover:text-zinc-600 active:cursor-grabbing"
+          title="ลากเพื่อย้ายกล่องไปวางตำแหน่งที่ต้องการ"
+          aria-label={`ย้ายกล่อง ${query.name}`}
         >
           <GripVertical size={14} />
-        </span>
-        <button
+        </button> : (
+          <span
+            className="rounded-lg p-1 text-zinc-300"
+            title="บัญชีนี้ใช้ layout จาก template"
+          >
+            <Lock size={14} />
+          </span>
+        )}
+        {canCustomizeLayout && <button
           type="button"
           onClick={onToggleCollapse}
           className="rounded-lg p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700"
           title={panel.collapsed ? "ขยายตาราง" : "ย่อตาราง"}
         >
           {panel.collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-        </button>
+        </button>}
 
         <div className="min-w-48 flex-[1_1_16rem]">
           <p className="truncate text-sm font-black" title={query.name}>
@@ -1282,7 +1384,7 @@ export default function QueryPanel({
           />
         </div>
 
-        {layoutDirty && (
+        {canCustomizeLayout && layoutDirty && (
           <>
             <button
               type="button"
@@ -1310,7 +1412,7 @@ export default function QueryPanel({
             </button>
           </>
         )}
-        {personalLayout && !layoutDirty && (
+        {canCustomizeLayout && personalLayout && !layoutDirty && (
           <button
             type="button"
             onClick={dropPersonalLayout}
@@ -1329,10 +1431,11 @@ export default function QueryPanel({
           <Timer size={12} className={layout.refreshSeconds ? "text-red-600" : "text-zinc-400"} />
           <select
             value={layout.refreshSeconds}
+            disabled={!canCustomizeLayout}
             onChange={(e) =>
               mutateLayout((prev) => ({ ...prev, refreshSeconds: Number(e.target.value) }))
             }
-            className="bg-transparent text-[10px] font-black text-zinc-600 outline-none"
+            className="bg-transparent text-[10px] font-black text-zinc-600 outline-none disabled:cursor-default"
           >
             {REFRESH_CHOICES.map((seconds) => (
               <option key={seconds} value={seconds}>
@@ -1358,7 +1461,7 @@ export default function QueryPanel({
           <Download size={13} />
         </button>
 
-        <div ref={moreMenuRef} className="relative">
+        {canCustomizeLayout && <div ref={moreMenuRef} className="relative">
           <button
             type="button"
             onClick={() => setMoreMenuOpen((open) => !open)}
@@ -1565,43 +1668,21 @@ export default function QueryPanel({
                 </>
               )}
 
-              <div className="my-1 border-t border-zinc-100" />
-              <p className="px-2.5 pb-1 pt-1 text-[9px] font-black uppercase tracking-wider text-zinc-400">
-                ตำแหน่ง
-              </p>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => runMoreAction(() => onMove(-1))}
-                disabled={!canMoveUp}
-                className={menuItemClass}
-              >
-                <ArrowLeft size={14} /> ย้ายไปก่อนหน้า
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => runMoreAction(() => onMove(1))}
-                disabled={!canMoveDown}
-                className={menuItemClass}
-              >
-                <ArrowRight size={14} /> ย้ายไปถัดไป
-              </button>
             </div>
           )}
-        </div>
+        </div>}
 
-        <button type="button" onClick={onToggleFullWidth} className={iconButtonClass} title={isFullWidth ? "คืนความกว้างอัตโนมัติ" : "ขยายเต็มความกว้าง"}>
+        {canCustomizeLayout && <button type="button" onClick={onToggleFullWidth} className={iconButtonClass} title={isFullWidth ? "คืนความกว้างอัตโนมัติ" : "ขยายเต็มความกว้าง"}>
           {isFullWidth ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-        </button>
-        <button
+        </button>}
+        {canCustomizeLayout && <button
           type="button"
           onClick={onClose}
           className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:bg-red-50 hover:text-red-600"
           title="ปิดตารางนี้"
         >
           <X size={13} />
-        </button>
+        </button>}
       </div>
 
       {!panel.collapsed && (
@@ -1734,7 +1815,7 @@ export default function QueryPanel({
             </div>
           )}
 
-          {hiddenColumns.length > 0 && (
+          {canCustomizeLayout && hiddenColumns.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 border-b border-zinc-100 px-3 py-2">
               <span className="text-[10px] font-black text-zinc-400">คอลัมน์ที่ซ่อน:</span>
               {hiddenColumns.map((col) => (
@@ -1813,6 +1894,7 @@ export default function QueryPanel({
                   rows={displayRows}
                   layout={layout}
                   mutateLayout={mutateLayout}
+                  canCustomizeLayout={canCustomizeLayout}
                   height={panel.height}
                   canEdit={canEditCells}
                   editableColumns={editableColumns}
@@ -1849,28 +1931,28 @@ export default function QueryPanel({
                 </button>
               )}
 
-              <div
-                onPointerDown={(event) => startFrameResize(event, 0, 1)}
-                onDoubleClick={onResetHeight}
-                className="group flex h-3.5 shrink-0 cursor-row-resize touch-none items-center justify-center rounded-b-2xl border-t border-zinc-100 bg-zinc-50 transition hover:bg-zinc-100"
-                title="ลากเพื่อปรับความสูงตาราง · ดับเบิลคลิกเพื่อรีเซ็ต"
-              >
-                <span className="h-0.5 w-10 rounded-full bg-zinc-300 transition group-hover:bg-red-400" />
-              </div>
             </>
           ) : null}
         </>
       )}
 
-      {FRAME_HANDLES.filter((handle) => !panel.collapsed || handle.dirY === 0).map((handle) => (
+      {canCustomizeLayout && FRAME_HANDLES.filter((handle) => !panel.collapsed || handle.dirY === 0).map((handle) => (
         <span
           key={handle.key}
           onPointerDown={(event) => startFrameResize(event, handle.dirX, handle.dirY)}
           onDoubleClick={() => resetFrame(handle.dirX, handle.dirY)}
-          className={`absolute z-20 touch-none ${handle.className}`}
+          className={`group absolute z-40 touch-none ${handle.className}`}
           style={{ cursor: frameCursor(handle.dirX, handle.dirY) }}
-          title={handle.title}
-        />
+          title={RESIZE_HINT}
+        >
+          <span
+            className={`pointer-events-none absolute transition-opacity ${
+              frameSelected || frameDrag || panelDrag
+                ? "opacity-100"
+                : "opacity-0 group-hover:opacity-100"
+            } ${handle.markerClass}`}
+          />
+        </span>
       ))}
 
       {modal === "computed" && result && (

@@ -1,14 +1,14 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireAdmin } from "@/server/auth";
+import { requireLayoutEditor } from "@/server/auth";
 import { findQueryById } from "@/server/gamedb-repository";
 import { sanitizeLayout } from "@/server/gamedb-layout-sanitizer";
 import { deleteUserLayout, saveUserLayout } from "@/server/gamedb-side-tables";
 
-// A layout only this user sees. Anyone signed in may keep one; changing the
-// layout everybody shares is the admin-only endpoint next door.
+// Admins and staff may keep a personal layout. The User role is deliberately
+// locked to the template an admin assigned.
 export async function PUT(request, { params }) {
   try {
-    const user = await requireAdmin(request);
+    const user = await requireLayoutEditor(request);
     const { id } = await params;
     const query = await findQueryById(id);
     if (!query) return jsonError("ไม่พบ Query นี้", 404);
@@ -23,7 +23,7 @@ export async function PUT(request, { params }) {
 
 export async function DELETE(request, { params }) {
   try {
-    const user = await requireAdmin(request);
+    const user = await requireLayoutEditor(request);
     const { id } = await params;
     await deleteUserLayout(user.id, Number(id));
     return jsonOk({ ok: true });

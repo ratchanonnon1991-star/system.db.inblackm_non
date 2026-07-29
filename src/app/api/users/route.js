@@ -8,6 +8,7 @@ import {
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9_.-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 6;
+const USER_ROLES = new Set(["admin", "staff", "user"]);
 
 export async function GET(request) {
   try {
@@ -25,13 +26,16 @@ export async function POST(request) {
     const body = await request.json();
     const username = String(body.username || "").trim();
     const password = String(body.password || "");
-    const role = body.role === "admin" ? "admin" : "staff";
+    const role = String(body.role || "staff");
 
     if (!USERNAME_PATTERN.test(username)) {
       return jsonError("username ต้องเป็น a-z, 0-9, _ . - ยาว 3-32 ตัว", 400);
     }
     if (password.length < MIN_PASSWORD_LENGTH) {
       return jsonError(`รหัสผ่านต้องยาวอย่างน้อย ${MIN_PASSWORD_LENGTH} ตัวอักษร`, 400);
+    }
+    if (!USER_ROLES.has(role)) {
+      return jsonError("ประเภทผู้ใช้ไม่ถูกต้อง", 400);
     }
     if (await findUserByUsername(username)) {
       return jsonError("มี username นี้อยู่แล้ว", 409);

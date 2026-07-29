@@ -28,3 +28,11 @@ export async function requireSuperAdmin(request) {
   }
   return user;
 }
+
+export async function requireLayoutEditor(request) {
+  const user = await requireAdmin(request);
+  if (user.role === "user") {
+    throw createHttpError("บัญชี User ใช้ layout จาก template เท่านั้น", 403);
+  }
+  return user;
+}

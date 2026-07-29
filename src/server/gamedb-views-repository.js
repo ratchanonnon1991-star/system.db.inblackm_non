@@ -53,21 +53,42 @@ async function ensureSchema() {
 export function sanitizeViewConfig(raw) {
   const config = raw && typeof raw === "object" ? raw : {};
   const panels = Array.isArray(config.panels) ? config.panels : [];
+  const seenQueryIds = new Set();
+  const sanitizedPanels = [];
+
+  for (const panel of panels) {
+    const queryId = Number(panel?.queryId);
+    if (
+      !panel ||
+      !Number.isInteger(queryId) ||
+      queryId <= 0 ||
+      seenQueryIds.has(queryId)
+    ) {
+      continue;
+    }
+    seenQueryIds.add(queryId);
+    sanitizedPanels.push({
+      queryId,
+      x: panel.x !== null && panel.x !== undefined && Number.isFinite(Number(panel.x))
+        ? Math.round(Math.min(8000, Math.max(0, Number(panel.x))))
+        : null,
+      y: panel.y !== null && panel.y !== undefined && Number.isFinite(Number(panel.y))
+        ? Math.round(Math.min(20000, Math.max(0, Number(panel.y))))
+        : null,
+      width: Number.isFinite(Number(panel.width))
+        ? Math.round(Math.min(4000, Math.max(280, Number(panel.width))))
+        : null,
+      height: Number.isFinite(Number(panel.height))
+        ? Math.round(Math.min(1600, Math.max(140, Number(panel.height))))
+        : 420,
+      collapsed: Boolean(panel.collapsed),
+      layout: panel.layout ? sanitizeLayout(panel.layout) : null,
+    });
+    if (sanitizedPanels.length >= MAX_PANELS) break;
+  }
+
   return {
-    panels: panels
-      .filter((panel) => panel && Number.isFinite(Number(panel.queryId)))
-      .slice(0, MAX_PANELS)
-      .map((panel) => ({
-        queryId: Number(panel.queryId),
-        width: Number.isFinite(Number(panel.width))
-          ? Math.round(Math.min(4000, Math.max(280, Number(panel.width))))
-          : null,
-        height: Number.isFinite(Number(panel.height))
-          ? Math.round(Math.min(1600, Math.max(140, Number(panel.height))))
-          : 420,
-        collapsed: Boolean(panel.collapsed),
-        layout: panel.layout ? sanitizeLayout(panel.layout) : null,
-      })),
+    panels: sanitizedPanels,
   };
 }
 
@@ -75,7 +96,7 @@ export function sanitizeSharedWith(raw) {
   if (!Array.isArray(raw)) return [];
   return [
     ...new Set(
-      raw.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+      raw.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
     ),
   ].slice(0, 500);
 }
@@ -106,7 +127,7 @@ export async function findViewById(id) {
 export function canUseView(view, user) {
   if (!view) return false;
   if (user.role === "admin") return true;
-  return view.isPublic || view.sharedWith.includes(user.id);
+  return view.isPublic || view.sharedWith.some((id) => Number(id) === Number(user.id));
 }
 
 export async function insertView(fields) {

@@ -142,13 +142,17 @@ function LoginScreen({ onLoggedIn }) {
   );
 }
 
-// Open panels (which query, how wide, how tall, collapsed) are per-browser
-// preferences, so they live in localStorage instead of the shared layout.
+// Open panels and their free-form canvas position are per-browser preferences,
+// so they live in localStorage instead of the shared query layout.
 const WORKSPACE_STORAGE_KEY = "gamedb.workspace.v1";
 const DEFAULT_PANEL_HEIGHT = 420;
+const DEFAULT_PANEL_WIDTH = 720;
 const MIN_PANEL_HEIGHT = 140;
 const MAX_PANEL_HEIGHT = 1600;
 const MIN_PANEL_WIDTH = 280;
+const PANEL_GAP = 16;
+const PANEL_CHROME_ESTIMATE = 300;
+const CANVAS_MIN_HEIGHT = 520;
 
 function clampPanelHeight(value) {
   const num = Number(value);
@@ -156,22 +160,68 @@ function clampPanelHeight(value) {
   return Math.round(Math.min(MAX_PANEL_HEIGHT, Math.max(MIN_PANEL_HEIGHT, num)));
 }
 
-// width null = let the panel flex to fill its row, which is the default and
-// what "รีเซ็ต" goes back to.
 function clampPanelWidth(value, containerWidth) {
   const num = Number(value);
-  if (!Number.isFinite(num)) return null;
+  if (!Number.isFinite(num)) {
+    return Math.min(DEFAULT_PANEL_WIDTH, containerWidth || DEFAULT_PANEL_WIDTH);
+  }
   const max = containerWidth || MAX_PANEL_HEIGHT * 2;
   return Math.round(Math.min(max, Math.max(MIN_PANEL_WIDTH, num)));
 }
 
-function makePanel(queryId) {
+function clampPanelPosition(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? Math.max(0, Math.round(num)) : null;
+}
+
+function panelEstimatedHeight(panel) {
+  return panel.collapsed ? 72 : clampPanelHeight(panel.height) + PANEL_CHROME_ESTIMATE;
+}
+
+function makePanel(queryId, position = {}) {
   return {
     queryId,
-    width: null,
+    x: clampPanelPosition(position.x),
+    y: clampPanelPosition(position.y),
+    width: clampPanelWidth(position.width, 0),
     height: DEFAULT_PANEL_HEIGHT,
     collapsed: false,
   };
+}
+
+function arrangeUnpositionedPanels(panels, containerWidth) {
+  const width = Math.max(MIN_PANEL_WIDTH, containerWidth || DEFAULT_PANEL_WIDTH);
+  const columns = width >= 1100 ? 2 : 1;
+  const columnWidth =
+    columns === 2
+      ? Math.max(MIN_PANEL_WIDTH, Math.floor((width - PANEL_GAP) / 2))
+      : width;
+  const columnBottoms = Array(columns).fill(0);
+  const occupiedBottom = panels.reduce(
+    (bottom, panel) =>
+      panel.x !== null && panel.y !== null
+        ? Math.max(bottom, panel.y + panelEstimatedHeight(panel) + PANEL_GAP)
+        : bottom,
+    0
+  );
+  if (occupiedBottom > 0) columnBottoms.fill(occupiedBottom);
+
+  return panels.map((panel) => {
+    const panelWidth = clampPanelWidth(panel.width || columnWidth, width);
+    if (panel.x !== null && panel.y !== null) {
+      const x = Math.min(panel.x, Math.max(0, width - panelWidth));
+      return { ...panel, x, y: panel.y, width: panelWidth };
+    }
+    const column = columnBottoms.indexOf(Math.min(...columnBottoms));
+    const placed = {
+      ...panel,
+      x: column * (columnWidth + PANEL_GAP),
+      y: columnBottoms[column],
+      width: Math.min(panelWidth, columnWidth),
+    };
+    columnBottoms[column] += panelEstimatedHeight(placed) + PANEL_GAP;
+    return placed;
+  });
 }
 
 function readStoredPanels() {
@@ -183,6 +233,8 @@ function readStoredPanels() {
       .filter((item) => item && Number.isFinite(Number(item.queryId)))
       .map((item) => ({
         queryId: Number(item.queryId),
+        x: clampPanelPosition(item.x),
+        y: clampPanelPosition(item.y),
         width: clampPanelWidth(item.width, 0),
         height: clampPanelHeight(item.height),
         collapsed: Boolean(item.collapsed),
@@ -198,11 +250,11 @@ const SIDEBAR_KEY = "gamedb.sidebar";
 
 function GamedbWorkspace({ me, onLoggedOut }) {
   const isSuperAdmin = me.role === "admin";
+  const isTemplateUser = me.role === "user";
 
   const [dark, setDark] = useState(false);
   const [pinned, setPinned] = useState([]);
-  // The query list eats 16rem of the row, which is a lot when a table is wide.
-  // Collapsing it leaves a rail that can still reopen the list.
+  // The query picker sits above the canvas and can collapse to a compact bar.
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Theme, pins and the sidebar are per-browser preferences; read them once on mount.
@@ -281,7 +333,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   const hydrated = useRef(false);
   const panelsRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(0);
-  const [draggingQueryId, setDraggingQueryId] = useState(null);
+  const [renderedPanelHeights, setRenderedPanelHeights] = useState({});
 
   const [editorModal, setEditorModal] = useState(null);
   const [connections, setConnections] = useState([]);
@@ -306,6 +358,10 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   const [myLayouts, setMyLayouts] = useState({});
 
   const loadMyLayouts = useCallback(async () => {
+    if (isTemplateUser) {
+      setMyLayouts({});
+      return;
+    }
     try {
       const data = await apiJson("/api/my-layouts", {
         fallbackError: "โหลด layout ส่วนตัวไม่สำเร็จ",
@@ -314,7 +370,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
     } catch {
       setMyLayouts({});
     }
-  }, []);
+  }, [isTemplateUser]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- setState runs after the fetch resolves
@@ -379,6 +435,8 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   const applyView = useCallback((view) => {
     const panelsFromView = (view.config?.panels || []).map((panel) => ({
       queryId: panel.queryId,
+      x: clampPanelPosition(panel.x),
+      y: clampPanelPosition(panel.y),
       width: panel.width ?? null,
       height: clampPanelHeight(panel.height),
       collapsed: Boolean(panel.collapsed),
@@ -403,6 +461,20 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       if (hydrated.current) return;
       hydrated.current = true;
       const ids = new Set(list.map((query) => query.id));
+      const fallback = viewList.find(
+        (view) => view.isDefault && view.config?.panels?.length
+      );
+
+      // User accounts never restore a browser-specific workspace. They always
+      // start from an admin-owned template, falling back to the first template
+      // explicitly available to them when none is marked as default.
+      if (isTemplateUser) {
+        const assigned =
+          fallback || viewList.find((view) => view.config?.panels?.length);
+        if (assigned) applyView(assigned);
+        return;
+      }
+
       const stored = readStoredPanels().filter((panel) => ids.has(panel.queryId));
       if (stored.length > 0) {
         setPanels(stored);
@@ -410,44 +482,45 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       }
       // Nothing of their own yet: hand them the default template if an admin
       // set one up, otherwise just open the first query.
-      const fallback = viewList.find((view) => view.isDefault && view.config?.panels?.length);
       if (fallback) {
         applyView(fallback);
       } else if (list.length > 0) {
         setPanels([makePanel(list[0].id)]);
       }
     });
-  }, [loadQueries, loadViews, applyView]);
+  }, [loadQueries, loadViews, applyView, isTemplateUser]);
 
   useEffect(() => {
-    if (!hydrated.current) return;
+    if (!hydrated.current || isTemplateUser) return;
     try {
       window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(panels));
     } catch {
       // storage can be full or blocked — the workspace still works in-memory
     }
-  }, [panels]);
+  }, [panels, isTemplateUser]);
 
   const measureContainer = useCallback(() => {
     return Math.round(panelsRef.current?.getBoundingClientRect().width || 0);
   }, []);
 
-  // Panels sized by hand are px-wide, so keep them inside the row when the
-  // window (or the sidebar) changes width. ResizeObserver catches sidebar and
-  // zoom changes, but it only delivers while the page is being rendered, so
-  // measure directly as well instead of leaving the width unknown.
+  // Panels live on an absolute-positioned canvas. Keep them within its current
+  // width and place legacy panels without x/y into a tidy starting grid.
   useEffect(() => {
     const measure = () => {
       const width = measureContainer();
       if (!width) return;
       setContainerWidth(width);
-      setPanels((prev) =>
-        prev.some((panel) => panel.width && panel.width > width)
-          ? prev.map((panel) =>
-              panel.width && panel.width > width ? { ...panel, width } : panel
-            )
-          : prev
-      );
+      setPanels((prev) => {
+        const arranged = arrangeUnpositionedPanels(prev, width);
+        return arranged.some(
+          (panel, index) =>
+            panel.x !== prev[index]?.x ||
+            panel.y !== prev[index]?.y ||
+            panel.width !== prev[index]?.width
+        )
+          ? arranged
+          : prev;
+      });
     };
     measure();
     // The first pass can land before the layout settles, so take another look
@@ -462,7 +535,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       window.removeEventListener("resize", measure);
       observer?.disconnect();
     };
-  }, [measureContainer, panels.length, sidebarOpen]);
+  }, [measureContainer, panels.length]);
 
   const openIds = useMemo(
     () => new Set(panels.map((panel) => panel.queryId)),
@@ -477,15 +550,15 @@ function GamedbWorkspace({ me, onLoggedOut }) {
     setPanels((prev) =>
       prev.some((panel) => panel.queryId === queryId)
         ? prev
-        : [...prev, makePanel(queryId)]
+        : arrangeUnpositionedPanels([...prev, makePanel(queryId)], containerWidth)
     );
-  }, []);
+  }, [containerWidth]);
 
   const togglePanel = (queryId) => {
     setPanels((prev) =>
       prev.some((panel) => panel.queryId === queryId)
         ? prev.filter((panel) => panel.queryId !== queryId)
-        : [...prev, makePanel(queryId)]
+        : arrangeUnpositionedPanels([...prev, makePanel(queryId)], containerWidth)
     );
   };
 
@@ -499,27 +572,96 @@ function GamedbWorkspace({ me, onLoggedOut }) {
     );
   };
 
-  const movePanel = (queryId, direction) => {
-    setPanels((prev) => {
-      const from = prev.findIndex((panel) => panel.queryId === queryId);
-      const to = from + direction;
-      if (from === -1 || to < 0 || to >= prev.length) return prev;
-      const next = [...prev];
-      [next[from], next[to]] = [next[to], next[from]];
-      return next;
-    });
-  };
+  const movePanelTo = useCallback(
+    (queryId, x, y) => {
+      setPanels((prev) =>
+        prev.map((panel) => {
+          if (panel.queryId !== queryId) return panel;
+          const width = clampPanelWidth(panel.width, containerWidth);
+          return {
+            ...panel,
+            x: Math.min(Math.max(0, Math.round(x)), Math.max(0, containerWidth - width)),
+            y: Math.max(0, Math.round(y)),
+            width,
+          };
+        })
+      );
+    },
+    [containerWidth]
+  );
 
-  const swapPanels = (queryIdA, queryIdB) => {
+  const resizePanel = useCallback(
+    (queryId, frame) => {
+      setPanels((prev) =>
+        prev.map((panel) => {
+          if (panel.queryId !== queryId) return panel;
+          const canvasWidth = containerWidth || DEFAULT_PANEL_WIDTH;
+          const minWidth = Math.min(MIN_PANEL_WIDTH, canvasWidth);
+          let width = clampPanelWidth(frame.width ?? panel.width, canvasWidth);
+          const height = clampPanelHeight(frame.height ?? panel.height);
+          let x = Math.min(
+            Math.max(0, Math.round(frame.x ?? panel.x ?? 0)),
+            Math.max(0, canvasWidth - minWidth)
+          );
+          let y = Math.max(0, Math.round(frame.y ?? panel.y ?? 0));
+
+          // Keep the opposite edge anchored, including when the pointer reaches
+          // the canvas boundary. Without this, resizing past an edge can make
+          // the entire frame jump sideways.
+          if (frame.dirX === 1) {
+            width = Math.min(width, Math.max(minWidth, canvasWidth - x));
+          } else if (frame.dirX === -1) {
+            const fixedRight = Math.min(
+              canvasWidth,
+              Math.max(
+                minWidth,
+                Math.round(
+                  Number(frame.x ?? panel.x ?? 0) +
+                    Number(frame.width ?? panel.width ?? DEFAULT_PANEL_WIDTH)
+                )
+              )
+            );
+            width = Math.min(width, fixedRight);
+            x = fixedRight - width;
+          } else {
+            x = Math.min(x, Math.max(0, canvasWidth - width));
+          }
+
+          if (frame.dirY === -1) {
+            const fixedBottom = Math.max(
+              MIN_PANEL_HEIGHT,
+              Math.round(
+                Number(frame.y ?? panel.y ?? 0) +
+                  Number(frame.height ?? panel.height ?? DEFAULT_PANEL_HEIGHT)
+              )
+            );
+            const anchoredHeight = Math.min(height, fixedBottom);
+            y = fixedBottom - anchoredHeight;
+          }
+
+          return {
+            ...panel,
+            x,
+            y,
+            width,
+            height,
+          };
+        })
+      );
+    },
+    [containerWidth]
+  );
+
+  const bringPanelToFront = useCallback((queryId) => {
     setPanels((prev) => {
-      const a = prev.findIndex((panel) => panel.queryId === queryIdA);
-      const b = prev.findIndex((panel) => panel.queryId === queryIdB);
-      if (a === -1 || b === -1 || a === b) return prev;
+      const index = prev.findIndex((panel) => panel.queryId === queryId);
+      if (index === -1 || index === prev.length - 1) return prev;
       const next = [...prev];
-      [next[a], next[b]] = [next[b], next[a]];
+      const [panel] = next.splice(index, 1);
+      next.push(panel);
       return next;
     });
-  };
+  }, []);
 
   const filteredQueries = useMemo(() => {
     const filter = sidebarSearch.trim().toLowerCase();
@@ -552,8 +694,11 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   const openAll = () => {
     setPanels((prev) => {
       const existing = new Map(prev.map((panel) => [panel.queryId, panel]));
-      return filteredQueries.map(
-        (query) => existing.get(query.id) || makePanel(query.id)
+      return arrangeUnpositionedPanels(
+        filteredQueries.map(
+          (query) => existing.get(query.id) || makePanel(query.id)
+        ),
+        containerWidth
       );
     });
   };
@@ -664,6 +809,24 @@ function GamedbWorkspace({ me, onLoggedOut }) {
     () => panels.filter((panel) => queryById.has(panel.queryId)),
     [panels, queryById]
   );
+  const captureRenderedPanelHeight = useCallback((queryId, height) => {
+    setRenderedPanelHeights((prev) =>
+      prev[queryId] === height ? prev : { ...prev, [queryId]: height }
+    );
+  }, []);
+  const canvasHeight = useMemo(
+    () =>
+      Math.max(
+        CANVAS_MIN_HEIGHT,
+        ...openPanels.map(
+          (panel) =>
+            (panel.y || 0) +
+            (renderedPanelHeights[panel.queryId] || panelEstimatedHeight(panel)) +
+            PANEL_GAP
+        )
+      ),
+    [openPanels, renderedPanelHeights]
+  );
 
   return (
     <div className="mx-auto max-w-[1900px] p-4 lg:p-6">
@@ -677,7 +840,9 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             </span>
           </h1>
           <p className="mt-1 text-xs font-semibold text-zinc-500">
-            เลือกได้หลาย Query พร้อมกัน — ลากขอบตารางเพื่อขยายทุกด้าน ลากที่จุดจับเพื่อสลับตำแหน่ง และเพิ่มคอลัมน์สูตรได้เอง
+            {isTemplateUser
+              ? "รัน Query และใช้งานข้อมูลตาม Template ที่ผู้ดูแลกำหนด"
+              : "เลือกได้หลาย Query พร้อมกัน — ลากขอบตารางเพื่อขยายทุกด้าน ลากที่จุดจับเพื่อสลับตำแหน่ง และเพิ่มคอลัมน์สูตรได้เอง"}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -694,14 +859,14 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                 className="bg-transparent text-[11px] font-black text-zinc-600 outline-none"
                 title="เลือกเทมเพลตหน้าจอที่ได้รับ"
               >
-                <option value="">หน้าจอของฉัน</option>
+                {!isTemplateUser && <option value="">หน้าจอของฉัน</option>}
                 {views.map((view) => (
                   <option key={view.id} value={view.id}>
                     {view.name}
                   </option>
                 ))}
               </select>
-              {activeView && (
+              {activeView && !isTemplateUser && (
                 <button
                   type="button"
                   onClick={leaveView}
@@ -717,7 +882,9 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             <User size={13} className="text-zinc-500" />
             <div className="text-[10px] font-semibold leading-tight">
               <p className="font-black text-zinc-800">{me.displayName || me.username}</p>
-              <p className="text-zinc-500">{isSuperAdmin ? "Admin" : "Staff"}</p>
+              <p className="text-zinc-500">
+                {isSuperAdmin ? "Admin" : isTemplateUser ? "User · Template" : "Staff"}
+              </p>
             </div>
           </div>
           <button
@@ -796,9 +963,9 @@ function GamedbWorkspace({ me, onLoggedOut }) {
         </div>
       </header>
 
-      <div className="flex flex-col gap-4 lg:flex-row">
-        {!sidebarOpen && (
-          <aside className="flex w-full shrink-0 items-center gap-2 rounded-2xl border border-zinc-200 bg-white p-2 lg:w-11 lg:flex-col lg:py-3">
+      <div className="flex flex-col gap-4">
+        {!isTemplateUser && !sidebarOpen && (
+          <aside className="flex w-full shrink-0 items-center gap-2 rounded-2xl border border-zinc-200 bg-white px-3 py-2">
             <button
               type="button"
               onClick={() => toggleSidebar(true)}
@@ -823,8 +990,8 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             </span>
           </aside>
         )}
-        <aside
-          className={`w-full shrink-0 rounded-2xl border border-zinc-200 bg-white p-3 lg:w-64 ${
+        {!isTemplateUser && <aside
+          className={`w-full shrink-0 rounded-2xl border border-zinc-200 bg-white p-3 ${
             sidebarOpen ? "" : "hidden"
           }`}
         >
@@ -886,9 +1053,9 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               ไม่พบ Query
             </p>
           ) : (
-            <div className="space-y-1">
+            <div className="flex gap-3 overflow-x-auto pb-1">
               {groupedQueries.map(([folder, folderQueries]) => (
-                <div key={folder} className="pb-1">
+                <div key={folder} className="min-w-56 flex-1 space-y-1 pb-1">
                   {groupedQueries.length > 1 && (
                     <p className="px-2 pb-1 pt-2 text-[9px] font-black uppercase tracking-wider text-zinc-400">
                       {folder}
@@ -984,20 +1151,55 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               ))}
             </div>
           )}
-        </aside>
+        </aside>}
 
-        <div className="min-w-0 flex-1" ref={panelsRef}>
+        <div
+          className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-[10px] font-semibold ${
+            isTemplateUser
+              ? "border-zinc-200 bg-zinc-50 text-zinc-500"
+              : "border-red-100 bg-red-50/70 text-zinc-600"
+          }`}
+        >
+          {isTemplateUser ? (
+            <Lock size={13} className="mt-0.5 shrink-0 text-zinc-400" />
+          ) : (
+            <LayoutGrid size={13} className="mt-0.5 shrink-0 text-red-500" />
+          )}
+          <p>
+            {isTemplateUser
+              ? "หน้าจอนี้จัดวางโดย Admin — คุณสามารถกรอกพารามิเตอร์ รัน Query ค้นหา และดาวน์โหลดข้อมูลได้ตามปกติ"
+              : "จัดหน้าจอ: ลากจุดจับ ⋮⋮ เพื่อย้ายกล่อง · คลิกกล่องแล้วลากจุดรอบกรอบเพื่อปรับขนาด · ดับเบิลคลิกจุดจับเพื่อคืนขนาดเดิม"}
+          </p>
+        </div>
+
+        <div
+          className="relative min-w-0 flex-1"
+          ref={panelsRef}
+          style={{ minHeight: canvasHeight }}
+        >
           {openPanels.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-zinc-300 bg-white py-24 text-center">
-              <LayoutGrid size={22} className="text-zinc-300" />
-              <p className="text-xs font-black text-zinc-500">ยังไม่ได้เปิดตาราง</p>
-              <p className="text-[11px] font-semibold text-zinc-400">
-                กด Query ทางซ้ายเพื่อเปิด — เปิดพร้อมกันหลายตารางได้
-              </p>
+              {isTemplateUser ? (
+                <>
+                  <Lock size={22} className="text-zinc-300" />
+                  <p className="text-xs font-black text-zinc-500">ยังไม่มี Template สำหรับบัญชีนี้</p>
+                  <p className="text-[11px] font-semibold text-zinc-400">
+                    กรุณาให้ Admin แชร์ Template หรือกำหนด Template เริ่มต้น
+                  </p>
+                </>
+              ) : (
+                <>
+                  <LayoutGrid size={22} className="text-zinc-300" />
+                  <p className="text-xs font-black text-zinc-500">ยังไม่ได้เปิดตาราง</p>
+                  <p className="text-[11px] font-semibold text-zinc-400">
+                    กด Query ด้านบนเพื่อเปิด — จากนั้นลากกล่องไปวางตำแหน่งที่ต้องการได้
+                  </p>
+                </>
+              )}
             </div>
           ) : (
-            <div className="flex flex-wrap items-start gap-4">
-              {openPanels.map((panel, index) => {
+            <>
+              {openPanels.map((panel) => {
                 const query = queryById.get(panel.queryId);
                 const isFullWidth =
                   panel.width != null &&
@@ -1017,15 +1219,19 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                     onLayoutChange={captureLayout}
                     onDataChange={captureData}
                     canManage={isSuperAdmin}
-                    canMoveUp={index > 0}
-                    canMoveDown={index < openPanels.length - 1}
+                    canCustomizeLayout={!isTemplateUser}
                     isFullWidth={isFullWidth}
-                    draggingQueryId={draggingQueryId}
-                    onMove={(direction) => movePanel(panel.queryId, direction)}
+                    onPositionChange={movePanelTo}
+                    onFrameChange={resizePanel}
+                    onBringToFront={bringPanelToFront}
+                    onRenderedHeight={captureRenderedPanelHeight}
                     onClose={() => closePanel(panel.queryId)}
                     onToggleFullWidth={() =>
-                      updatePanel(panel.queryId, () => ({
-                        width: isFullWidth ? null : measureContainer() || null,
+                      updatePanel(panel.queryId, (prev) => ({
+                        x: isFullWidth ? prev.x : 0,
+                        width: isFullWidth
+                          ? Math.min(DEFAULT_PANEL_WIDTH, measureContainer())
+                          : measureContainer(),
                       }))
                     }
                     onToggleCollapse={() =>
@@ -1033,37 +1239,30 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                         collapsed: !prev.collapsed,
                       }))
                     }
-                    onHeightChange={(height) =>
-                      updatePanel(panel.queryId, () => ({
-                        height: clampPanelHeight(height),
-                      }))
-                    }
                     onResetHeight={() =>
                       updatePanel(panel.queryId, () => ({
                         height: DEFAULT_PANEL_HEIGHT,
                       }))
                     }
-                    onWidthChange={(width) =>
-                      updatePanel(panel.queryId, () => ({
-                        width: clampPanelWidth(width, containerWidth),
-                      }))
-                    }
                     onResetWidth={() =>
-                      updatePanel(panel.queryId, () => ({ width: null }))
+                      updatePanel(panel.queryId, (prev) => {
+                        const width = Math.min(DEFAULT_PANEL_WIDTH, containerWidth);
+                        return {
+                          x: Math.min(
+                            prev.x || 0,
+                            Math.max(0, containerWidth - width)
+                          ),
+                          width,
+                        };
+                      })
                     }
-                    onDragStart={() => setDraggingQueryId(panel.queryId)}
-                    onDragEnd={() => setDraggingQueryId(null)}
-                    onDropPanel={() => {
-                      swapPanels(draggingQueryId, panel.queryId);
-                      setDraggingQueryId(null);
-                    }}
                     onEditQuery={() => setEditorModal({ mode: "edit", query })}
-                    onDrill={openDrill}
+                    onDrill={isTemplateUser ? null : openDrill}
                     initialParams={drillParams[panel.queryId] || null}
                   />
                 );
               })}
-            </div>
+            </>
           )}
         </div>
       </div>

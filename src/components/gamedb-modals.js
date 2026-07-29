@@ -400,6 +400,12 @@ export function ComputedColumnModal({ availableNames, sampleRow, onClose, onAdd 
 
 const EMPTY_USER_FORM = { username: "", displayName: "", password: "", role: "staff" };
 
+function roleLabel(role) {
+  if (role === "admin") return "Admin";
+  if (role === "user") return "User";
+  return "Staff";
+}
+
 export function UsersModal({ me, onClose }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -543,7 +549,7 @@ export function UsersModal({ me, onClose }) {
                       ) : null}
                     </p>
                     <p className="truncate text-[10px] font-semibold text-zinc-400">
-                      {user.displayName} · {user.role === "admin" ? "Admin" : "Staff"}
+                      {user.displayName} · {roleLabel(user.role)}
                     </p>
                   </button>
                   {user.id !== me.id && (
@@ -610,6 +616,7 @@ export function UsersModal({ me, onClose }) {
               onChange={(e) => setField("role", e.target.value)}
               className={inputClass}
             >
+              <option value="user">User — ดู/รัน query, ใช้ layout จาก template เท่านั้น</option>
               <option value="staff">Staff — ดู/รัน query, จัด layout</option>
               <option value="admin">Admin — จัดการทุกอย่างรวมถึง SQL และผู้ใช้</option>
             </select>

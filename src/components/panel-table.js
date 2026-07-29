@@ -166,6 +166,7 @@ export default function PanelTable({
   rows,
   layout,
   mutateLayout,
+  canCustomizeLayout,
   height,
   canEdit,
   editableColumns,
@@ -713,10 +714,15 @@ export default function PanelTable({
                     <button
                       type="button"
                       onClick={() => toggleSort(col.id)}
+                      disabled={!canCustomizeLayout}
                       className={`flex min-w-0 flex-1 items-center gap-1 truncate text-left font-black ${
                         headTone ? "" : HEADER_TONE[col.kind] || "text-zinc-700"
                       }`}
-                      title={columnTooltip(col)}
+                      title={
+                        canCustomizeLayout
+                          ? columnTooltip(col)
+                          : `${columnTooltip(col)} · layout ถูกล็อกโดย template`
+                      }
                     >
                       <span className="min-w-0 truncate">{col.label}</span>
                       {sorted === "asc" && <ArrowUp size={10} className="shrink-0" />}
@@ -727,7 +733,7 @@ export default function PanelTable({
                         </span>
                       )}
                     </button>
-                    <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+                    {canCustomizeLayout && <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
                       <button type="button" onClick={() => moveColumn(col.id, -1)} className={headerButton} title="เลื่อนซ้าย">
                         <ArrowLeft size={11} />
                       </button>
@@ -785,9 +791,9 @@ export default function PanelTable({
                           <Trash2 size={11} />
                         </button>
                       )}
-                    </span>
+                    </span>}
                   </div>
-                  <span
+                  {canCustomizeLayout && <span
                     onPointerDown={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
@@ -804,7 +810,7 @@ export default function PanelTable({
                     title="ลากเพื่อปรับความกว้าง · ดับเบิลคลิกเพื่อรีเซ็ต"
                   >
                     <span className="h-1/2 w-px bg-zinc-300" />
-                  </span>
+                  </span>}
                 </th>
               );
             })}

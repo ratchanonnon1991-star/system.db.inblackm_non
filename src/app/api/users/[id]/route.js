@@ -8,6 +8,7 @@ import {
 } from "@/server/users-repository";
 
 const MIN_PASSWORD_LENGTH = 6;
+const USER_ROLES = new Set(["admin", "staff", "user"]);
 
 export async function PATCH(request, { params }) {
   try {
@@ -29,7 +30,10 @@ export async function PATCH(request, { params }) {
       fields.password = password;
     }
     if (body.role !== undefined) {
-      const role = body.role === "admin" ? "admin" : "staff";
+      const role = String(body.role);
+      if (!USER_ROLES.has(role)) {
+        return jsonError("ประเภทผู้ใช้ไม่ถูกต้อง", 400);
+      }
       if (target.role === "admin" && role !== "admin") {
         if (target.id === actor.id) {
           return jsonError("ลดสิทธิ์ตัวเองไม่ได้", 400);
