@@ -147,8 +147,6 @@ function LoginScreen({ onLoggedIn }) {
   );
 }
 
-const [containerWidth, setContainerWidth] = useState(0);
-const [containerHeight, setContainerHeight] = useState(0);
 
 // Open panels and their free-form canvas position are per-browser preferences,
 // so they live in localStorage instead of the shared query layout.
@@ -433,6 +431,9 @@ function CanvasToolbar({
 }
 
 function GamedbWorkspace({ me, onLoggedOut }) {
+
+  const [containerHeight, setContainerHeight] = useState(0);
+
   const isSuperAdmin = me.role === "admin";
   const isTemplateUser = me.role === "user";
 
