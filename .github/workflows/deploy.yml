@@ -75,13 +75,19 @@ jobs:
               exit 1
             fi
 
+            echo "--- loading nvm ---"
             export NVM_DIR="${NVM_DIR:-/www/server/nvm}"
 
+            # nvm.sh is not `set -e` safe: it can finish its setup and still hand
+            # back a non-zero status, which ends the deploy with no output at all.
+            # Whether it actually worked is what the check below is for.
+            set +e
             if [ -s "$NVM_DIR/nvm.sh" ]; then
               . "$NVM_DIR/nvm.sh"
             elif [ -s "$HOME/.nvm/nvm.sh" ]; then
               . "$HOME/.nvm/nvm.sh"
             fi
+            set -e
 
             if ! command -v nvm >/dev/null 2>&1; then
               echo "ERROR: ไม่พบ NVM บนเซิร์ฟเวอร์"
@@ -103,9 +109,13 @@ jobs:
 
             pm2 --version
 
+            echo "--- npm ci ---"
             npm ci
+
+            echo "--- build ---"
             npm run build
 
+            echo "--- restart ---"
             pm2 startOrRestart ecosystem.config.cjs \
               --only system.db.inblackm \
               --update-env
