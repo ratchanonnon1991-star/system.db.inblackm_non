@@ -1390,16 +1390,11 @@ function GamedbWorkspace({ me, onLoggedOut }) {
         <div>
           <h1 className="flex items-center gap-2 text-xl font-black tracking-tight">
             <Database size={20} className="text-red-600" />
-            GameDB
+            Topup Panel
             <span className="rounded bg-red-600/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-red-600">
               INBLACKM
             </span>
           </h1>
-          <p className="mt-1 text-xs font-semibold text-zinc-500">
-            {layoutLocked
-              ? "รัน Query และใช้งานข้อมูลตาม Template ที่ผู้ดูแลกำหนด"
-              : "เลือกได้หลาย Query พร้อมกัน — ลากขอบตารางเพื่อขยายทุกด้าน ลากที่จุดจับเพื่อสลับตำแหน่ง และเพิ่มคอลัมน์สูตรได้เอง"}
-          </p>
         </div>
         <div className="flex items-center gap-2">
           {views.length > 0 && (
