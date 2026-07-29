@@ -19,6 +19,7 @@ import {
   Maximize2,
   Minimize2,
   MoreHorizontal,
+  Paintbrush,
   Palette,
   Pencil,
   Play,
@@ -58,6 +59,7 @@ import {
   ChartModal,
   DrillModal,
   EditableSettingsModal,
+  FormatsModal,
   MergeModal,
   ParamsSettingsModal,
   RulesModal,
@@ -1351,11 +1353,27 @@ export default function QueryPanel({
               <button
                 type="button"
                 role="menuitem"
+                onClick={() => runMoreAction(() => setModal("formats"))}
+                disabled={!result}
+                className={menuItemClass}
+              >
+                <Paintbrush
+                  size={14}
+                  className={
+                    Object.keys(layout.formats).length || layout.freeze ? "text-red-600" : ""
+                  }
+                />
+                รูปแบบคอลัมน์
+              </button>
+              <button
+                type="button"
+                role="menuitem"
                 onClick={() => runMoreAction(() => setModal("rules"))}
                 disabled={!result}
                 className={menuItemClass}
               >
-                <Palette size={14} /> สีตามเงื่อนไข
+                <Palette size={14} className={layout.rules.length ? "text-red-600" : ""} />
+                สีตามเงื่อนไข
               </button>
               <button
                 type="button"
@@ -1882,6 +1900,18 @@ export default function QueryPanel({
           columnNames={result.columns.map((col) => col.name)}
           onApply={applyBulkEdits}
           onClose={() => setModal(null)}
+        />
+      )}
+      {modal === "formats" && result && (
+        <FormatsModal
+          columns={visibleColumns}
+          formats={layout.formats}
+          freeze={layout.freeze}
+          onClose={() => setModal(null)}
+          onSave={({ formats, freeze }) => {
+            mutateLayout((prev) => ({ ...prev, formats, freeze }));
+            setModal(null);
+          }}
         />
       )}
       {modal === "rules" && result && (

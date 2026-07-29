@@ -3,6 +3,8 @@
 import {
   normalizeActions,
   normalizeDrill,
+  normalizeFormats,
+  normalizeFreeze,
   normalizeMerge,
   PARAM_TYPES,
   REFRESH_CHOICES,
@@ -93,6 +95,7 @@ export function sanitizeLayout(raw) {
           op: rule.op,
           value: String(rule.value ?? "").slice(0, 120),
           tone: rule.tone,
+          scope: rule.scope === "row" && rule.tone !== "bar" ? "row" : "cell",
         }))
     : [];
   const editable =
@@ -154,5 +157,17 @@ export function sanitizeLayout(raw) {
     refreshSeconds: REFRESH_CHOICES.includes(Number(layout.refreshSeconds))
       ? Number(layout.refreshSeconds)
       : 0,
+    // Formats and freeze are display-only: every value is checked against a
+    // fixed list of tone/render names, so nothing here reaches the DOM as CSS
+    // or SQL text.
+    formats: capEntries(normalizeFormats(layout.formats), 200),
+    freeze: normalizeFreeze(layout.freeze),
   };
+}
+
+function capEntries(object, limit) {
+  const entries = Object.entries(object).slice(0, limit);
+  const capped = {};
+  for (const [key, value] of entries) capped[key.slice(0, 200)] = value;
+  return capped;
 }

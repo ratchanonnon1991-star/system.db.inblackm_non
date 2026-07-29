@@ -14,9 +14,12 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  Check,
   ChevronDown,
   ChevronRight,
+  Copy,
   CornerDownRight,
+  ExternalLink,
   EyeOff,
   Layers,
   Pencil,
@@ -27,6 +30,7 @@ import {
 import {
   clampColumnWidth,
   formatCell,
+  formatOf,
   MAX_NATURAL_WIDTH,
   MIN_COLUMN_WIDTH,
   ROW_NUMBER_WIDTH,
@@ -34,7 +38,7 @@ import {
   SUMMARY_KINDS,
   SUMMARY_LABELS,
   summarize,
-  TONE_CELL_CLASS,
+  toneStyle,
   toNumber,
 } from "@/lib/gamedb-layout";
 
@@ -65,6 +69,91 @@ const HEADER_TONE = {
 const VIRTUAL_THRESHOLD = 150;
 const ROW_HEIGHT = 26;
 const OVERSCAN = 12;
+
+// Only these two schemes become a real link. Anything else — javascript:,
+// data:, a bare "www.x.com" that the browser would resolve against this app —
+// stays plain text.
+const SAFE_URL = /^https?:\/\/\S+$/i;
+const PLAIN_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function hostnameOf(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+/** Value plus a copy button that reports back for a moment. */
+function CopyCell({ text }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return undefined;
+    const timer = setTimeout(() => setCopied(false), 1200);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  return (
+    <span className="flex items-center gap-1">
+      <span className="min-w-0 flex-1 truncate">{text}</span>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          navigator.clipboard?.writeText(text).then(
+            () => setCopied(true),
+            () => {}
+          );
+        }}
+        className="shrink-0 rounded p-0.5 text-zinc-400 opacity-0 transition hover:bg-zinc-200 hover:text-zinc-700 group-hover/row:opacity-100"
+        title="คัดลอก"
+      >
+        {copied ? <Check size={10} className="text-emerald-600" /> : <Copy size={10} />}
+      </button>
+    </span>
+  );
+}
+
+/** What goes inside a cell once its column has a render mode set. */
+function CellContent({ text, render, tone }) {
+  if (!text || text === "—") return text;
+  if (render === "link" && SAFE_URL.test(text)) {
+    return (
+      <a
+        href={text}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(event) => event.stopPropagation()}
+        className="inline-flex max-w-full items-center gap-1 truncate text-sky-700 underline underline-offset-2"
+      >
+        <span className="truncate">{hostnameOf(text)}</span>
+        <ExternalLink size={9} className="shrink-0" />
+      </a>
+    );
+  }
+  if (render === "email" && PLAIN_EMAIL.test(text.trim())) {
+    return (
+      <a
+        href={`mailto:${text.trim()}`}
+        onClick={(event) => event.stopPropagation()}
+        className="truncate text-sky-700 underline underline-offset-2"
+      >
+        {text}
+      </a>
+    );
+  }
+  if (render === "chip") {
+    return (
+      <span
+        className="inline-block max-w-full truncate rounded-full px-2 py-0.5 text-[10px] font-black"
+        style={toneStyle(tone) || { backgroundColor: "#f4f4f5", color: "#3f3f46" }}
+      >
+        {text}
+      </span>
+    );
+  }
+  if (render === "copy") return <CopyCell text={text} />;
+  return text;
+}
 
 export default function PanelTable({
   columns,
@@ -110,7 +199,14 @@ export default function PanelTable({
     return [...map.entries()].map(([key, groupRows]) => ({ key, rows: groupRows }));
   }, [grouped, groupColIndex, rows]);
 
-  const virtual = !grouped && rows.length > VIRTUAL_THRESHOLD;
+  // Windowing assumes every row is ROW_HEIGHT tall; a wrapped column breaks
+  // that assumption, so the two features take turns.
+  const hasWrap = useMemo(
+    () => columns.some((col) => formatOf(layout, col.id).wrap),
+    [columns, layout]
+  );
+
+  const virtual = !grouped && !hasWrap && rows.length > VIRTUAL_THRESHOLD;
   const firstVisible = virtual
     ? Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
     : 0;
@@ -252,11 +348,13 @@ export default function PanelTable({
     });
   };
 
-  // Rules and bar maxima are per column, so resolve them once per render
-  // instead of inside the cell loop.
+  // Rules, formats and bar maxima are per column, so resolve them once per
+  // render instead of inside the cell loop.
   const columnStyling = useMemo(() => {
     return columns.map((col, index) => {
-      const rules = layout.rules.filter((rule) => rule.colId === col.id);
+      const rules = layout.rules.filter(
+        (rule) => rule.colId === col.id && rule.scope !== "row"
+      );
       const barRule = rules.find((rule) => rule.tone === "bar");
       let barMax = 0;
       if (barRule) {
@@ -265,9 +363,53 @@ export default function PanelTable({
           if (value !== null) barMax = Math.max(barMax, Math.abs(value));
         }
       }
-      return { rules, barMax };
+      return { rules, barMax, format: formatOf(layout, col.id) };
     });
-  }, [columns, layout.rules, rows]);
+  }, [columns, layout, rows]);
+
+  // A rule may compare against "[Another column]", so give it a way to read the
+  // rest of the row by either display id or visible label.
+  const columnIndexByName = useMemo(() => {
+    const map = new Map();
+    columns.forEach((col, index) => {
+      map.set(col.id, index);
+      if (!map.has(col.label)) map.set(col.label, index);
+    });
+    return map;
+  }, [columns]);
+
+  const resolverFor = useCallback(
+    (row) => (name) => {
+      const index = columnIndexByName.get(name);
+      return index === undefined ? undefined : row.cells[index]?.raw;
+    },
+    [columnIndexByName]
+  );
+
+  // Row-scoped rules read one column and paint the whole row, which is how a
+  // status column ends up colouring everything beside it.
+  const rowRules = useMemo(
+    () =>
+      layout.rules
+        .filter((rule) => rule.scope === "row" && rule.tone !== "bar")
+        .map((rule) => ({ rule, index: columns.findIndex((col) => col.id === rule.colId) }))
+        .filter((entry) => entry.index !== -1),
+    [layout.rules, columns]
+  );
+
+  // Columns pinned to the left need their own offsets, and those only exist
+  // once every width is known.
+  const freezeCount = measured ? Math.min(layout.freeze || 0, columns.length) : 0;
+  const freezeOffsets = useMemo(() => {
+    if (!freezeCount) return [];
+    const offsets = [];
+    let left = ROW_NUMBER_WIDTH;
+    for (let index = 0; index < freezeCount; index += 1) {
+      offsets.push(left);
+      left += widthOf(columns[index].id) || MIN_COLUMN_WIDTH;
+    }
+    return offsets;
+  }, [freezeCount, columns, widthOf]);
 
   const summaryValues = useMemo(() => {
     if (!Object.keys(layout.summary).length) return null;
@@ -297,9 +439,32 @@ export default function PanelTable({
   };
 
   // Shared by the windowed and the grouped rendering paths below.
-  const renderRow = (row, rowIndex) => (
-    <tr key={row.sourceIndex} className="group/row odd:bg-white even:bg-zinc-50/60 hover:bg-amber-50/60">
-      <td className="border border-zinc-200 px-1 py-1.5 text-center font-bold text-zinc-400">
+  const renderRow = (row, rowIndex) => {
+    const resolve = resolverFor(row);
+    const rowRule = rowRules.find((entry) =>
+      ruleMatches(entry.rule, row.cells[entry.index]?.raw, row.cells[entry.index]?.text, resolve)
+    );
+    const rowTone = rowRule ? toneStyle(rowRule.rule.tone) : null;
+
+    return (
+    <tr
+      key={row.sourceIndex}
+      // Pinned cells inherit the row's background, and a translucent one would
+      // let the columns scrolling underneath show through, so striping goes
+      // solid as soon as anything is frozen.
+      className={`group/row ${
+        rowTone
+          ? ""
+          : freezeCount
+            ? "odd:bg-white even:bg-zinc-50 hover:bg-amber-50"
+            : "odd:bg-white even:bg-zinc-50/60 hover:bg-amber-50/60"
+      }`}
+      style={rowTone || undefined}
+    >
+      <td
+        className="border border-zinc-200 bg-inherit px-1 py-1.5 text-center font-bold text-zinc-400"
+        style={freezeCount ? { position: "sticky", left: 0, zIndex: 2 } : undefined}
+      >
         {onDrill || actions.length > 0 ? (
           <>
             <span className="group-hover/row:hidden">{rowIndex + 1}</span>
@@ -333,13 +498,14 @@ export default function PanelTable({
       </td>
       {row.cells.map((cell, cellIndex) => {
         const col = columns[cellIndex];
+        const { format } = columnStyling[cellIndex];
         const numeric = col.type === "number" || col.kind === "computed";
         const styling = columnStyling[cellIndex];
         const tone = styling.rules.find(
-          (rule) => rule.tone !== "bar" && ruleMatches(rule, cell.raw, cell.text)
+          (rule) => rule.tone !== "bar" && ruleMatches(rule, cell.raw, cell.text, resolve)
         );
         const barRule = styling.rules.find(
-          (rule) => rule.tone === "bar" && ruleMatches(rule, cell.raw, cell.text)
+          (rule) => rule.tone === "bar" && ruleMatches(rule, cell.raw, cell.text, resolve)
         );
         const barPercent =
           barRule && styling.barMax
@@ -356,24 +522,40 @@ export default function PanelTable({
           editPending &&
           editPending.sourceIndex === row.sourceIndex &&
           editPending.colId === col.id;
+        const frozen = cellIndex < freezeCount;
+
+        // A chip carries the colour itself, so the cell behind it stays plain.
+        const chip = format.render === "chip";
+        const cellTone = chip ? null : toneStyle(tone?.tone) || toneStyle(format.bg);
+        const textTone = chip || cellTone ? null : toneStyle(format.fg);
+        const align =
+          format.align || (numeric ? "right" : "left");
 
         return (
           <td
             key={col.id}
             title={editable ? `${cell.text} — ดับเบิลคลิกเพื่อแก้ไข` : cell.text}
             onDoubleClick={() => startEdit(row, col, cellIndex)}
-            className={`relative truncate border border-zinc-200 px-2 py-1.5 font-semibold ${
-              numeric ? "text-right font-mono tabular-nums" : ""
-            } ${tone ? TONE_CELL_CLASS[tone.tone] : "text-zinc-700"} ${
-              changed ? "bg-yellow-100" : ""
+            className={`relative border border-zinc-200 px-2 py-1.5 font-semibold ${
+              format.wrap ? "whitespace-pre-wrap break-words align-top" : "truncate"
+            } ${numeric && !format.align ? "font-mono tabular-nums" : ""} ${
+              cellTone || changed ? "" : "bg-inherit"
+            } ${changed ? "bg-yellow-100" : ""} ${
+              cellTone || textTone || rowTone ? "" : "text-zinc-700"
             } ${editable ? "cursor-cell" : ""} ${saving ? "opacity-50" : ""}`}
-            style={
-              barPercent
+            style={{
+              textAlign: align,
+              ...(cellTone || {}),
+              ...(textTone ? { color: textTone.color } : {}),
+              ...(barPercent
                 ? {
                     backgroundImage: `linear-gradient(to right, rgba(220,38,38,0.18) ${barPercent}%, transparent ${barPercent}%)`,
                   }
-                : undefined
-            }
+                : {}),
+              ...(frozen
+                ? { position: "sticky", left: freezeOffsets[cellIndex], zIndex: 2 }
+                : {}),
+            }}
           >
             {editing ? (
               <input
@@ -390,14 +572,19 @@ export default function PanelTable({
                 className="w-full rounded border border-red-500 bg-white px-1 py-0.5 text-[11px] font-semibold outline-none"
               />
             ) : (
-              cell.text
+              <CellContent
+                text={cell.text}
+                render={format.render}
+                tone={tone?.tone || format.bg}
+              />
             )}
           </td>
         );
       })}
-      {measured && <td className="border border-zinc-200" />}
+      {measured && <td className="border border-zinc-200 bg-inherit" />}
     </tr>
-  );
+    );
+  };
 
   return (
     <div
@@ -431,26 +618,38 @@ export default function PanelTable({
         )}
         <thead>
           <tr className="bg-zinc-100">
-            <th className="sticky top-0 z-10 border border-zinc-200 bg-zinc-100 px-2 py-2 text-center font-black text-zinc-400">
+            <th
+              className="sticky top-0 border border-zinc-200 bg-zinc-100 px-2 py-2 text-center font-black text-zinc-400"
+              style={freezeCount ? { left: 0, zIndex: 20 } : { zIndex: 10 }}
+            >
               #
             </th>
-            {columns.map((col) => {
+            {columns.map((col, index) => {
               const sorted = layout.sort && layout.sort.colId === col.id ? layout.sort.dir : null;
               const summaryKind = layout.summary[col.id];
+              const headTone = toneStyle(columnStyling[index].format.headerBg, "head");
+              const frozen = index < freezeCount;
               return (
                 <th
                   key={col.id}
                   ref={(el) => {
                     headRefs.current[col.id] = el;
                   }}
-                  className="group sticky top-0 z-10 border border-zinc-200 bg-zinc-100 px-2 py-1.5 text-left"
+                  className={`group sticky top-0 border border-zinc-200 px-2 py-1.5 text-left ${
+                    headTone ? "" : "bg-zinc-100"
+                  }`}
+                  style={{
+                    zIndex: frozen ? 20 : 10,
+                    ...(headTone || {}),
+                    ...(frozen ? { left: freezeOffsets[index] } : {}),
+                  }}
                 >
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
                       onClick={() => toggleSort(col.id)}
                       className={`flex min-w-0 flex-1 items-center gap-1 truncate text-left font-black ${
-                        HEADER_TONE[col.kind] || "text-zinc-700"
+                        headTone ? "" : HEADER_TONE[col.kind] || "text-zinc-700"
                       }`}
                       title={columnTooltip(col)}
                     >
@@ -610,15 +809,25 @@ export default function PanelTable({
         {summaryValues && (
           <tfoot>
             <tr className="bg-zinc-100 font-black">
-              <td className="border border-zinc-200 px-2 py-1.5 text-center text-zinc-400">Σ</td>
+              <td
+                className="border border-zinc-200 bg-inherit px-2 py-1.5 text-center text-zinc-400"
+                style={freezeCount ? { position: "sticky", left: 0, zIndex: 2 } : undefined}
+              >
+                Σ
+              </td>
               {summaryValues.map((entry, index) => (
                 <td
                   key={columns[index].id}
-                  className={`border border-zinc-200 px-2 py-1.5 text-zinc-700 ${
+                  className={`border border-zinc-200 bg-inherit px-2 py-1.5 text-zinc-700 ${
                     columns[index].type === "number" || columns[index].kind === "computed"
                       ? "text-right font-mono tabular-nums"
                       : ""
                   }`}
+                  style={
+                    index < freezeCount
+                      ? { position: "sticky", left: freezeOffsets[index], zIndex: 2 }
+                      : undefined
+                  }
                 >
                   {entry ? (
                     <span title={`${SUMMARY_LABELS[entry.kind]} ของ ${columns[index].label}`}>

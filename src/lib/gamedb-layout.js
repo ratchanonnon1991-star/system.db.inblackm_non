@@ -23,13 +23,86 @@ export const EMPTY_LAYOUT = {
   folder: "",
   actions: [],
   refreshSeconds: 0,
+  formats: {},
+  freeze: 0,
 };
 
 export const ACTION_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
 export const PARAM_TYPES = ["text", "number", "date", "datetime", "select"];
-export const RULE_OPS = [">", ">=", "<", "<=", "=", "!=", "contains"];
-export const RULE_TONES = ["red", "amber", "green", "blue", "bar"];
+
+// Ops are grouped by what they read: numbers, text, or a date compared with
+// today. `value` may also be "[Another column]", which is resolved per row.
+export const RULE_OPS = [
+  ">",
+  ">=",
+  "<",
+  "<=",
+  "=",
+  "!=",
+  "contains",
+  "notContains",
+  "startsWith",
+  "endsWith",
+  "in",
+  "empty",
+  "notEmpty",
+  "overdue",
+  "dueIn",
+  "isToday",
+];
+
+export const RULE_OP_LABELS = {
+  ">": "มากกว่า",
+  ">=": "มากกว่าหรือเท่ากับ",
+  "<": "น้อยกว่า",
+  "<=": "น้อยกว่าหรือเท่ากับ",
+  "=": "เท่ากับ",
+  "!=": "ไม่เท่ากับ",
+  contains: "มีคำว่า",
+  notContains: "ไม่มีคำว่า",
+  startsWith: "ขึ้นต้นด้วย",
+  endsWith: "ลงท้ายด้วย",
+  in: "อยู่ในรายการ (คั่นด้วย ,)",
+  empty: "ว่าง",
+  notEmpty: "ไม่ว่าง",
+  overdue: "เลยกำหนดแล้ว (วันที่)",
+  dueIn: "ครบกำหนดภายใน N วัน",
+  isToday: "เป็นวันนี้",
+};
+
+/** Ops that ignore `value` entirely, so the UI can hide the input. */
+export const VALUELESS_OPS = ["empty", "notEmpty", "overdue", "isToday"];
+
+// One palette for everything coloured: conditional rules, fixed column tints
+// and header bands. Hex rather than Tailwind classes because the same tone has
+// to work in an inline style on a sticky cell, and because a class name built
+// at runtime is not in the stylesheet Tailwind generates.
+export const CELL_TONES = {
+  red: { bg: "#fee2e2", fg: "#b91c1c", head: "#fca5a5" },
+  orange: { bg: "#ffedd5", fg: "#c2410c", head: "#fdba74" },
+  amber: { bg: "#fef3c7", fg: "#b45309", head: "#fcd34d" },
+  yellow: { bg: "#fef9c3", fg: "#854d0e", head: "#fde047" },
+  lime: { bg: "#ecfccb", fg: "#4d7c0f", head: "#bef264" },
+  green: { bg: "#dcfce7", fg: "#15803d", head: "#86efac" },
+  teal: { bg: "#ccfbf1", fg: "#0f766e", head: "#5eead4" },
+  sky: { bg: "#e0f2fe", fg: "#0369a1", head: "#7dd3fc" },
+  blue: { bg: "#dbeafe", fg: "#1d4ed8", head: "#93c5fd" },
+  violet: { bg: "#ede9fe", fg: "#6d28d9", head: "#c4b5fd" },
+  pink: { bg: "#fce7f3", fg: "#be185d", head: "#f9a8d4" },
+  zinc: { bg: "#f4f4f5", fg: "#3f3f46", head: "#d4d4d8" },
+  redSolid: { bg: "#dc2626", fg: "#ffffff", head: "#b91c1c", headFg: "#ffffff" },
+  greenSolid: { bg: "#16a34a", fg: "#ffffff", head: "#15803d", headFg: "#ffffff" },
+  yellowSolid: { bg: "#facc15", fg: "#422006", head: "#eab308", headFg: "#422006" },
+  darkSolid: { bg: "#27272a", fg: "#ffffff", head: "#18181b", headFg: "#ffffff" },
+};
+
+export const TONE_NAMES = Object.keys(CELL_TONES);
+// "bar" is not a colour — it draws a proportional fill behind the number.
+export const RULE_TONES = [...TONE_NAMES, "bar"];
+export const CELL_RENDERS = ["text", "link", "email", "chip", "copy"];
+export const CELL_ALIGNS = ["", "left", "center", "right"];
+export const MAX_FREEZE = 5;
 export const SUMMARY_KINDS = ["sum", "avg", "min", "max", "count"];
 export const REFRESH_CHOICES = [0, 15, 30, 60, 300, 900];
 
@@ -117,6 +190,8 @@ export function normalizeLayout(raw) {
             op: rule.op,
             value: String(rule.value ?? ""),
             tone: rule.tone,
+            // A rule saved before row scope existed only ever painted its cell.
+            scope: rule.scope === "row" && rule.tone !== "bar" ? "row" : "cell",
           }))
       : [],
     summary,
@@ -133,7 +208,67 @@ export function normalizeLayout(raw) {
     refreshSeconds: REFRESH_CHOICES.includes(Number(layout.refreshSeconds))
       ? Number(layout.refreshSeconds)
       : 0,
+    formats: normalizeFormats(layout.formats),
+    freeze: normalizeFreeze(layout.freeze),
   };
+}
+
+// formats = { [colId]: { bg, fg, headerBg, render, wrap, align } } — how a
+// column looks regardless of its value, as opposed to `rules`, which react to
+// one. An entry with nothing set is dropped so the JSON stays small.
+export const EMPTY_FORMAT = {
+  bg: "",
+  fg: "",
+  headerBg: "",
+  render: "text",
+  wrap: false,
+  align: "",
+};
+
+export function normalizeFormat(raw) {
+  const format = raw && typeof raw === "object" ? raw : {};
+  return {
+    bg: TONE_NAMES.includes(format.bg) ? format.bg : "",
+    fg: TONE_NAMES.includes(format.fg) ? format.fg : "",
+    headerBg: TONE_NAMES.includes(format.headerBg) ? format.headerBg : "",
+    render: CELL_RENDERS.includes(format.render) ? format.render : "text",
+    wrap: format.wrap === true,
+    align: CELL_ALIGNS.includes(format.align) ? format.align : "",
+  };
+}
+
+export function isEmptyFormat(format) {
+  return (
+    !format.bg &&
+    !format.fg &&
+    !format.headerBg &&
+    format.render === "text" &&
+    !format.wrap &&
+    !format.align
+  );
+}
+
+export function normalizeFormats(raw) {
+  if (!raw || typeof raw !== "object") return {};
+  const formats = {};
+  for (const [key, value] of Object.entries(raw)) {
+    const format = normalizeFormat(value);
+    if (!isEmptyFormat(format)) formats[String(key)] = format;
+  }
+  return formats;
+}
+
+export function normalizeFreeze(raw) {
+  // Number([4]) is 4 and Number({}) is NaN; neither is a count of columns, so
+  // only an actual number or a numeric string counts.
+  if (typeof raw !== "number" && typeof raw !== "string") return 0;
+  const num = Number(raw);
+  if (!Number.isFinite(num)) return 0;
+  return Math.min(MAX_FREEZE, Math.max(0, Math.trunc(num)));
+}
+
+export function formatOf(layout, colId) {
+  return layout.formats?.[colId] || EMPTY_FORMAT;
 }
 
 // actions = [{ label, method, url, bodyTemplate, confirm }] — a button per row
@@ -296,34 +431,143 @@ export const SUMMARY_LABELS = {
   count: "นับ",
 };
 
-export const TONE_CELL_CLASS = {
-  red: "bg-red-50 text-red-700",
-  amber: "bg-amber-50 text-amber-700",
-  green: "bg-emerald-50 text-emerald-700",
-  blue: "bg-sky-50 text-sky-700",
-  bar: "",
-};
-
 export const TONE_LABELS = {
-  red: "แดง",
-  amber: "ส้ม",
+  red: "แดงอ่อน",
+  orange: "ส้ม",
+  amber: "เหลืองส้ม",
+  yellow: "เหลือง",
+  lime: "เขียวอ่อน",
   green: "เขียว",
-  blue: "ฟ้า",
+  teal: "เขียวน้ำทะเล",
+  sky: "ฟ้า",
+  blue: "น้ำเงิน",
+  violet: "ม่วง",
+  pink: "ชมพู",
+  zinc: "เทา",
+  redSolid: "แดงเข้ม (ทึบ)",
+  greenSolid: "เขียวเข้ม (ทึบ)",
+  yellowSolid: "เหลืองเข้ม (ทึบ)",
+  darkSolid: "ดำ (ทึบ)",
   bar: "แถบวัดระดับ",
 };
 
-export function ruleMatches(rule, raw, text) {
-  if (rule.op === "contains") {
-    return String(text ?? "").toLowerCase().includes(String(rule.value).toLowerCase());
+/** Inline style for a tone, or null for "no tone"/the bar pseudo-tone. */
+export function toneStyle(tone, part = "cell") {
+  const entry = CELL_TONES[tone];
+  if (!entry) return null;
+  if (part === "head") return { backgroundColor: entry.head, color: entry.headFg || "#27272a" };
+  return { backgroundColor: entry.bg, color: entry.fg };
+}
+
+// dd/mm/yyyy is what the sheets this replaces are full of, and `new Date` reads
+// it as month/day. Anything else is left to the platform parser.
+const SLASHED_DATE = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/;
+
+export function toDate(value) {
+  if (value === null || value === undefined || value === "") return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  const text = String(value).trim();
+  if (!text) return null;
+  const slashed = SLASHED_DATE.exec(text);
+  if (slashed) {
+    const [, day, month, year] = slashed;
+    // A "year" past 2400 is the Buddhist era, which is how Thai spreadsheets
+    // and a few of the older tables write it.
+    const ce = Number(year) > 2400 ? Number(year) - 543 : Number(year);
+    const date = new Date(ce, Number(month) - 1, Number(day));
+    return Number.isNaN(date.getTime()) ? null : date;
   }
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+const DAY_MS = 86400000;
+
+/** Whole days from today to `value`; negative once the date has passed. */
+export function daysUntil(value) {
+  const date = toDate(value);
+  if (!date) return null;
+  const today = new Date();
+  const from = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const to = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  return Math.round((to - from) / DAY_MS);
+}
+
+const COLUMN_REF = /^\[(.+)\]$/;
+
+/**
+ * @param resolve optional (name) => raw value of another column in the same
+ *   row, which is what lets a rule read "[ยอดออก]" instead of a fixed number.
+ */
+export function ruleMatches(rule, raw, text, resolve) {
+  const cellText = String(text ?? "");
+  const trimmed = cellText.trim();
+
+  if (rule.op === "empty") return trimmed === "" || trimmed === "—";
+  if (rule.op === "notEmpty") return trimmed !== "" && trimmed !== "—";
+
+  if (rule.op === "overdue") {
+    const days = daysUntil(raw);
+    return days !== null && days < 0;
+  }
+  if (rule.op === "isToday") return daysUntil(raw) === 0;
+  if (rule.op === "dueIn") {
+    const days = daysUntil(raw);
+    const limit = toNumber(rule.value);
+    if (days === null || limit === null) return false;
+    return days >= 0 && days <= limit;
+  }
+
+  // Resolve "[Other column]" once, so every op below compares against whatever
+  // it produced instead of the literal text.
+  let compare = String(rule.value ?? "");
+  const ref = COLUMN_REF.exec(compare.trim());
+  if (ref) {
+    if (!resolve) return false;
+    const other = resolve(ref[1].trim());
+    if (other === undefined) return false;
+    compare = other === null ? "" : String(other);
+  }
+  const lowerCompare = compare.toLowerCase();
+  const lowerText = cellText.toLowerCase();
+
+  switch (rule.op) {
+    case "contains":
+      return lowerText.includes(lowerCompare);
+    case "notContains":
+      return !lowerText.includes(lowerCompare);
+    case "startsWith":
+      return lowerText.trimStart().startsWith(lowerCompare);
+    case "endsWith":
+      return lowerText.trimEnd().endsWith(lowerCompare);
+    case "in":
+      return compare
+        .split(",")
+        .map((item) => item.trim().toLowerCase())
+        .filter(Boolean)
+        .includes(trimmed.toLowerCase());
+    default:
+      break;
+  }
+
   const left = toNumber(raw);
-  const right = toNumber(rule.value);
+  const right = toNumber(compare);
   if (left === null || right === null) {
-    if (rule.op === "=") return String(text ?? "") === String(rule.value);
-    if (rule.op === "!=") return String(text ?? "") !== String(rule.value);
+    // Dates compare in order even though neither side is a number.
+    const leftDate = toDate(raw);
+    const rightDate = toDate(compare);
+    if (leftDate && rightDate) {
+      return compareNumbers(rule.op, leftDate.getTime(), rightDate.getTime());
+    }
+    if (rule.op === "=") return trimmed === compare.trim();
+    if (rule.op === "!=") return trimmed !== compare.trim();
     return false;
   }
-  switch (rule.op) {
+  return compareNumbers(rule.op, left, right);
+}
+
+function compareNumbers(op, left, right) {
+  switch (op) {
     case ">":
       return left > right;
     case ">=":

@@ -7,6 +7,7 @@ import {
   Combine,
   CornerDownRight,
   Loader2,
+  Paintbrush,
   Palette,
   Plus,
   Save,
@@ -20,11 +21,20 @@ import { apiJson } from "@/lib/api-json";
 import { extractSqlParams } from "@/lib/gamedb-sql-params";
 import {
   ACTION_METHODS,
+  CELL_ALIGNS,
+  CELL_RENDERS,
+  EMPTY_FORMAT,
+  isEmptyFormat,
+  MAX_FREEZE,
+  normalizeFormat,
   PARAM_TYPES,
+  RULE_OP_LABELS,
   RULE_OPS,
   RULE_TONES,
-  TONE_CELL_CLASS,
   TONE_LABELS,
+  TONE_NAMES,
+  toneStyle,
+  VALUELESS_OPS,
 } from "@/lib/gamedb-layout";
 
 const inputClass =
@@ -280,7 +290,10 @@ export function RulesModal({ columns, rules, onSave, onClose }) {
     op: ">",
     value: "",
     tone: "red",
+    scope: "cell",
   });
+
+  const needsValue = !VALUELESS_OPS.includes(form.op);
 
   return (
     <ModalShell
@@ -291,7 +304,7 @@ export function RulesModal({ columns, rules, onSave, onClose }) {
     >
       {draft.length === 0 ? (
         <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-5 text-center text-[11px] font-semibold text-zinc-400">
-          ยังไม่มีกฎ — เพิ่มด้านล่าง เช่น &quot;คงเหลือ &lt; 10 = แดง&quot;
+          ยังไม่มีกฎ — เพิ่มด้านล่าง เช่น &quot;คงเหลือ น้อยกว่า 10 = แดง&quot; หรือ &quot;วันหมดอายุ เลยกำหนดแล้ว = แดงทั้งแถว&quot;
         </p>
       ) : (
         draft.map((rule, index) => {
@@ -302,14 +315,19 @@ export function RulesModal({ columns, rules, onSave, onClose }) {
               className="flex items-center gap-2 rounded-xl border border-zinc-200 px-3 py-2"
             >
               <span
-                className={`rounded px-2 py-1 text-[10px] font-black ${
-                  TONE_CELL_CLASS[rule.tone] || "bg-zinc-100 text-zinc-600"
-                }`}
+                className="rounded px-2 py-1 text-[10px] font-black"
+                style={toneStyle(rule.tone) || { backgroundColor: "#f4f4f5", color: "#3f3f46" }}
               >
                 {TONE_LABELS[rule.tone]}
               </span>
               <span className="min-w-0 flex-1 truncate text-[11px] font-bold text-zinc-700">
-                {column?.label || rule.colId} {rule.op} {rule.value}
+                {column?.label || rule.colId} {RULE_OP_LABELS[rule.op] || rule.op}{" "}
+                {VALUELESS_OPS.includes(rule.op) ? "" : rule.value}
+                {rule.scope === "row" && (
+                  <span className="ml-1 rounded bg-zinc-100 px-1 text-[9px] text-zinc-500">
+                    ทั้งแถว
+                  </span>
+                )}
               </span>
               <button
                 type="button"
@@ -340,25 +358,29 @@ export function RulesModal({ columns, rules, onSave, onClose }) {
           <select
             value={form.op}
             onChange={(e) => setForm((prev) => ({ ...prev, op: e.target.value }))}
-            className={inputClass}
+            className={`${inputClass} sm:col-span-2`}
           >
             {RULE_OPS.map((op) => (
               <option key={op} value={op}>
-                {op === "contains" ? "มีคำว่า" : op}
+                {RULE_OP_LABELS[op] || op}
               </option>
             ))}
           </select>
           <input
             type="text"
             value={form.value}
+            disabled={!needsValue}
             onChange={(e) => setForm((prev) => ({ ...prev, value: e.target.value }))}
-            placeholder="ค่า"
-            className={inputClass}
+            placeholder={
+              form.op === "dueIn" ? "จำนวนวัน" : needsValue ? "ค่า หรือ [ชื่อคอลัมน์]" : "ไม่ต้องใส่ค่า"
+            }
+            className={`${inputClass} sm:col-span-2 disabled:bg-zinc-100 disabled:text-zinc-400`}
           />
           <select
             value={form.tone}
             onChange={(e) => setForm((prev) => ({ ...prev, tone: e.target.value }))}
-            className={`${inputClass} sm:col-span-2`}
+            className={inputClass}
+            style={toneStyle(form.tone) || undefined}
           >
             {RULE_TONES.map((tone) => (
               <option key={tone} value={tone}>
@@ -366,19 +388,216 @@ export function RulesModal({ columns, rules, onSave, onClose }) {
               </option>
             ))}
           </select>
+          <select
+            value={form.scope}
+            onChange={(e) => setForm((prev) => ({ ...prev, scope: e.target.value }))}
+            disabled={form.tone === "bar"}
+            className={`${inputClass} disabled:bg-zinc-100 disabled:text-zinc-400`}
+          >
+            <option value="cell">ระบายเฉพาะช่องนี้</option>
+            <option value="row">ระบายทั้งแถว</option>
+          </select>
           <button
             type="button"
             onClick={() => {
               if (!form.colId) return;
-              setDraft((prev) => [...prev, { ...form }]);
+              setDraft((prev) => [
+                ...prev,
+                {
+                  ...form,
+                  value: needsValue ? form.value : "",
+                  scope: form.tone === "bar" ? "cell" : form.scope,
+                },
+              ]);
               setForm((prev) => ({ ...prev, value: "" }));
             }}
-            className="flex h-9 items-center justify-center gap-1 rounded-lg border border-zinc-300 text-[11px] font-black text-zinc-600 transition hover:bg-white sm:col-span-2"
+            className="flex h-9 items-center justify-center gap-1 rounded-lg border border-zinc-300 text-[11px] font-black text-zinc-600 transition hover:bg-white sm:col-span-4"
           >
             <Plus size={12} /> เพิ่มกฎ
           </button>
         </div>
+        <p className="mt-2 text-[10px] font-semibold leading-relaxed text-zinc-500">
+          ใส่ <code className="rounded bg-white px-1">[ชื่อคอลัมน์]</code> แทนค่าคงที่ได้ เช่น
+          &quot;ยอดเข้า น้อยกว่า [ยอดออก]&quot; · เงื่อนไขวันที่อ่าน dd/mm/yyyy และ พ.ศ. ได้ ·
+          กฎที่อ้างคอลัมน์ที่ถูกซ่อนไว้จะไม่ทำงาน
+        </p>
       </div>
+    </ModalShell>
+  );
+}
+
+const RENDER_LABELS = {
+  text: "ข้อความ",
+  link: "ลิงก์ (กดเปิดได้)",
+  email: "อีเมล (กดส่งเมล)",
+  chip: "ป้ายสี",
+  copy: "มีปุ่มคัดลอก",
+};
+
+const ALIGN_LABELS = { "": "อัตโนมัติ", left: "ซ้าย", center: "กลาง", right: "ขวา" };
+
+function ToneSelect({ value, onChange, label, part }) {
+  return (
+    <label className="block">
+      <span className="mb-0.5 block text-[9px] font-black text-zinc-400">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-7 w-full rounded-md border border-zinc-200 px-1 text-[10px] font-bold outline-none focus:border-red-600"
+        style={toneStyle(value, part) || undefined}
+      >
+        <option value="">ไม่กำหนด</option>
+        {TONE_NAMES.map((tone) => (
+          <option key={tone} value={tone}>
+            {TONE_LABELS[tone]}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/**
+ * Fixed per-column appearance — colour, header band, how the value is drawn —
+ * plus how many columns stay pinned while the rest scroll. Unlike RulesModal
+ * nothing here depends on the value in the cell.
+ */
+export function FormatsModal({ columns, formats, freeze, onSave, onClose }) {
+  const [draft, setDraft] = useState(() => {
+    const initial = {};
+    for (const col of columns) initial[col.id] = normalizeFormat(formats?.[col.id]);
+    return initial;
+  });
+  const [pinned, setPinned] = useState(freeze || 0);
+
+  const update = (colId, patch) =>
+    setDraft((prev) => ({ ...prev, [colId]: { ...prev[colId], ...patch } }));
+
+  const touched = columns.filter((col) => !isEmptyFormat(draft[col.id])).length;
+
+  return (
+    <ModalShell
+      title="รูปแบบคอลัมน์"
+      icon={<Paintbrush size={15} className="text-red-600" />}
+      onClose={onClose}
+      onSave={() => {
+        // Only the visible columns are listed here, so start from what was
+        // saved before — a hidden column keeps the format it already had.
+        const formatsOut = { ...(formats || {}) };
+        for (const col of columns) {
+          if (isEmptyFormat(draft[col.id])) delete formatsOut[col.id];
+          else formatsOut[col.id] = draft[col.id];
+        }
+        onSave({ formats: formatsOut, freeze: pinned });
+      }}
+    >
+      <div className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2">
+        <label htmlFor="freeze-count" className="text-[11px] font-black text-zinc-600">
+          ตรึงคอลัมน์ซ้ายไว้
+        </label>
+        <select
+          id="freeze-count"
+          value={pinned}
+          onChange={(event) => setPinned(Number(event.target.value))}
+          className="h-8 rounded-lg border border-zinc-200 bg-white px-2 text-[11px] font-bold outline-none focus:border-red-600"
+        >
+          {Array.from({ length: MAX_FREEZE + 1 }, (_, n) => (
+            <option key={n} value={n}>
+              {n === 0 ? "ไม่ตรึง" : `${n} คอลัมน์แรก`}
+            </option>
+          ))}
+        </select>
+        <span className="text-[10px] font-semibold text-zinc-400">
+          {touched > 0 ? `ตั้งรูปแบบไว้ ${touched} คอลัมน์` : "ยังไม่ได้ตั้งรูปแบบคอลัมน์ไหน"}
+        </span>
+      </div>
+
+      {columns.map((col) => {
+        const format = draft[col.id];
+        return (
+          <div
+            key={col.id}
+            className={`rounded-xl border px-3 py-2 ${
+              isEmptyFormat(format) ? "border-zinc-200" : "border-red-200 bg-red-50/30"
+            }`}
+          >
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="min-w-0 truncate text-[11px] font-black text-zinc-700">
+                {col.label}
+              </span>
+              {!isEmptyFormat(format) && (
+                <button
+                  type="button"
+                  onClick={() => update(col.id, EMPTY_FORMAT)}
+                  className="shrink-0 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600"
+                  title="ล้างรูปแบบคอลัมน์นี้"
+                >
+                  <Trash2 size={12} />
+                </button>
+              )}
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <ToneSelect
+                label="สีพื้นทุกแถว"
+                value={format.bg}
+                onChange={(bg) => update(col.id, { bg })}
+              />
+              <ToneSelect
+                label="สีตัวอักษร"
+                value={format.fg}
+                onChange={(fg) => update(col.id, { fg })}
+              />
+              <ToneSelect
+                label="สีหัวคอลัมน์"
+                part="head"
+                value={format.headerBg}
+                onChange={(headerBg) => update(col.id, { headerBg })}
+              />
+              <label className="block">
+                <span className="mb-0.5 block text-[9px] font-black text-zinc-400">แสดงเป็น</span>
+                <select
+                  value={format.render}
+                  onChange={(event) => update(col.id, { render: event.target.value })}
+                  className="h-7 w-full rounded-md border border-zinc-200 px-1 text-[10px] font-bold outline-none focus:border-red-600"
+                >
+                  {CELL_RENDERS.map((render) => (
+                    <option key={render} value={render}>
+                      {RENDER_LABELS[render]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-0.5 block text-[9px] font-black text-zinc-400">จัดชิด</span>
+                <select
+                  value={format.align}
+                  onChange={(event) => update(col.id, { align: event.target.value })}
+                  className="h-7 w-full rounded-md border border-zinc-200 px-1 text-[10px] font-bold outline-none focus:border-red-600"
+                >
+                  {CELL_ALIGNS.map((align) => (
+                    <option key={align || "auto"} value={align}>
+                      {ALIGN_LABELS[align]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-end gap-1.5 pb-1 text-[10px] font-bold text-zinc-600">
+                <input
+                  type="checkbox"
+                  checked={format.wrap}
+                  onChange={(event) => update(col.id, { wrap: event.target.checked })}
+                  className="h-3.5 w-3.5 accent-red-600"
+                />
+                ตัดบรรทัดข้อความยาว
+              </label>
+            </div>
+          </div>
+        );
+      })}
+      <p className="text-[10px] font-semibold leading-relaxed text-zinc-500">
+        สีตามเงื่อนไขจะทับสีพื้นตรงนี้เมื่อเงื่อนไขเป็นจริง · &quot;ตัดบรรทัด&quot;
+        ปิดการโหลดแบบหน้าต่างเลื่อน ตารางที่แถวเยอะมากจะช้าลง
+      </p>
     </ModalShell>
   );
 }
