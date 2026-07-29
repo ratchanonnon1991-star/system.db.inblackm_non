@@ -5,6 +5,7 @@ import {
   Activity,
   Database,
   FileSpreadsheet,
+  Eye,
   History,
   Layers,
   LayoutGrid,
@@ -16,14 +17,19 @@ import {
   PanelLeftOpen,
   Pencil,
   Plus,
+  Redo2,
   Search,
   Server,
   Star,
   Sun,
   Trash2,
+  Undo2,
   User,
   Users,
+  WandSparkles,
   X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { buildXlsxBlob } from "@/lib/gamedb-xlsx";
@@ -330,10 +336,90 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   const [sidebarSearch, setSidebarSearch] = useState("");
 
   const [panels, setPanels] = useState([]);
+  const panelsStateRef = useRef([]);
+  const historyPastRef = useRef([]);
+  const historyFutureRef = useRef([]);
+  const interactionStartRef = useRef(null);
+  const [historyRevision, setHistoryRevision] = useState(0);
+  const [historyAvailability, setHistoryAvailability] = useState({
+    past: false,
+    future: false,
+  });
   const hydrated = useRef(false);
   const panelsRef = useRef(null);
+  const viewportRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [renderedPanelHeights, setRenderedPanelHeights] = useState({});
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const panDragRef = useRef(null);
+  const [snapGuides, setSnapGuides] = useState({ x: null, y: null });
+  const [previewAsUser, setPreviewAsUser] = useState(false);
+  const layoutLocked = isTemplateUser || previewAsUser;
+
+  useEffect(() => {
+    panelsStateRef.current = panels;
+  }, [panels]);
+
+  const replacePanels = useCallback((nextOrUpdater, { record = true } = {}) => {
+    const current = panelsStateRef.current;
+    const next =
+      typeof nextOrUpdater === "function" ? nextOrUpdater(current) : nextOrUpdater;
+    if (next === current || JSON.stringify(next) === JSON.stringify(current)) return;
+    if (record) {
+      historyPastRef.current = [...historyPastRef.current.slice(-49), current];
+      historyFutureRef.current = [];
+      setHistoryRevision((value) => value + 1);
+      setHistoryAvailability({ past: true, future: false });
+    }
+    panelsStateRef.current = next;
+    setPanels(next);
+  }, []);
+
+  const beginPanelInteraction = useCallback(() => {
+    if (!interactionStartRef.current) {
+      interactionStartRef.current = panelsStateRef.current;
+    }
+  }, []);
+
+  const endPanelInteraction = useCallback(() => {
+    const start = interactionStartRef.current;
+    interactionStartRef.current = null;
+    setSnapGuides({ x: null, y: null });
+    if (!start || JSON.stringify(start) === JSON.stringify(panelsStateRef.current)) return;
+    historyPastRef.current = [...historyPastRef.current.slice(-49), start];
+    historyFutureRef.current = [];
+    setHistoryRevision((value) => value + 1);
+    setHistoryAvailability({ past: true, future: false });
+  }, []);
+
+  const undoPanels = useCallback(() => {
+    const previous = historyPastRef.current.at(-1);
+    if (!previous) return;
+    historyPastRef.current = historyPastRef.current.slice(0, -1);
+    historyFutureRef.current = [panelsStateRef.current, ...historyFutureRef.current.slice(0, 49)];
+    panelsStateRef.current = previous;
+    setPanels(previous);
+    setHistoryRevision((value) => value + 1);
+    setHistoryAvailability({
+      past: historyPastRef.current.length > 0,
+      future: true,
+    });
+  }, []);
+
+  const redoPanels = useCallback(() => {
+    const next = historyFutureRef.current[0];
+    if (!next) return;
+    historyFutureRef.current = historyFutureRef.current.slice(1);
+    historyPastRef.current = [...historyPastRef.current.slice(-49), panelsStateRef.current];
+    panelsStateRef.current = next;
+    setPanels(next);
+    setHistoryRevision((value) => value + 1);
+    setHistoryAvailability({
+      past: true,
+      future: historyFutureRef.current.length > 0,
+    });
+  }, []);
 
   const [editorModal, setEditorModal] = useState(null);
   const [connections, setConnections] = useState([]);
@@ -347,11 +433,15 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   const [viewsModal, setViewsModal] = useState(false);
   const [activeView, setActiveView] = useState(null);
   const [panelLayouts, setPanelLayouts] = useState({});
+  const [layoutRevision, setLayoutRevision] = useState(0);
+  const [templateSaveState, setTemplateSaveState] = useState("idle");
+  const lastSavedConfigRef = useRef("");
   // Live layout of every open panel, kept in a ref because it changes on every
   // column drag and only matters when a template is saved.
   const liveLayouts = useRef({});
   const captureLayout = useCallback((queryId, layout) => {
     liveLayouts.current[queryId] = layout;
+    setLayoutRevision((value) => value + 1);
   }, []);
 
   // Layouts this user saved for themselves, which win over the shared ones.
@@ -446,8 +536,15 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       if (panel.layout) layouts[panel.queryId] = panel.layout;
     }
     setPanelLayouts(layouts);
+    panelsStateRef.current = panelsFromView;
     setPanels(panelsFromView);
     setActiveView(view);
+    lastSavedConfigRef.current = JSON.stringify(view.config || { panels: [] });
+    historyPastRef.current = [];
+    historyFutureRef.current = [];
+    setHistoryRevision((value) => value + 1);
+    setHistoryAvailability({ past: false, future: false });
+    setTemplateSaveState("saved");
   }, []);
 
   const leaveView = () => {
@@ -470,13 +567,20 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       // explicitly available to them when none is marked as default.
       if (isTemplateUser) {
         const assigned =
-          fallback || viewList.find((view) => view.config?.panels?.length);
+          viewList.find(
+            (view) =>
+              Number(view.id) === Number(me.defaultViewId) &&
+              view.config?.panels?.length
+          ) ||
+          fallback ||
+          viewList.find((view) => view.config?.panels?.length);
         if (assigned) applyView(assigned);
         return;
       }
 
       const stored = readStoredPanels().filter((panel) => ids.has(panel.queryId));
       if (stored.length > 0) {
+        panelsStateRef.current = stored;
         setPanels(stored);
         return;
       }
@@ -485,10 +589,12 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       if (fallback) {
         applyView(fallback);
       } else if (list.length > 0) {
-        setPanels([makePanel(list[0].id)]);
+        const initialPanels = [makePanel(list[0].id)];
+        panelsStateRef.current = initialPanels;
+        setPanels(initialPanels);
       }
     });
-  }, [loadQueries, loadViews, applyView, isTemplateUser]);
+  }, [loadQueries, loadViews, applyView, isTemplateUser, me.defaultViewId]);
 
   useEffect(() => {
     if (!hydrated.current || isTemplateUser) return;
@@ -500,7 +606,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   }, [panels, isTemplateUser]);
 
   const measureContainer = useCallback(() => {
-    return Math.round(panelsRef.current?.getBoundingClientRect().width || 0);
+    return Math.round(panelsRef.current?.offsetWidth || 0);
   }, []);
 
   // Panels live on an absolute-positioned canvas. Keep them within its current
@@ -547,15 +653,15 @@ function GamedbWorkspace({ me, onLoggedOut }) {
 
   const openDrill = useCallback((queryId, params) => {
     setDrillParams((prev) => ({ ...prev, [queryId]: params }));
-    setPanels((prev) =>
+    replacePanels((prev) =>
       prev.some((panel) => panel.queryId === queryId)
         ? prev
         : arrangeUnpositionedPanels([...prev, makePanel(queryId)], containerWidth)
     );
-  }, [containerWidth]);
+  }, [containerWidth, replacePanels]);
 
   const togglePanel = (queryId) => {
-    setPanels((prev) =>
+    replacePanels((prev) =>
       prev.some((panel) => panel.queryId === queryId)
         ? prev.filter((panel) => panel.queryId !== queryId)
         : arrangeUnpositionedPanels([...prev, makePanel(queryId)], containerWidth)
@@ -563,42 +669,101 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   };
 
   const closePanel = (queryId) => {
-    setPanels((prev) => prev.filter((panel) => panel.queryId !== queryId));
+    replacePanels((prev) => prev.filter((panel) => panel.queryId !== queryId));
   };
 
   const updatePanel = (queryId, updater) => {
-    setPanels((prev) =>
+    replacePanels((prev) =>
       prev.map((panel) => (panel.queryId === queryId ? { ...panel, ...updater(panel) } : panel))
     );
   };
 
   const movePanelTo = useCallback(
     (queryId, x, y) => {
-      setPanels((prev) =>
-        prev.map((panel) => {
-          if (panel.queryId !== queryId) return panel;
-          const width = clampPanelWidth(panel.width, containerWidth);
-          return {
-            ...panel,
-            x: Math.min(Math.max(0, Math.round(x)), Math.max(0, containerWidth - width)),
-            y: Math.max(0, Math.round(y)),
-            width,
-          };
-        })
+      const current = panelsStateRef.current;
+      const moving = current.find((panel) => panel.queryId === queryId);
+      if (!moving) return;
+      const width = clampPanelWidth(moving.width, containerWidth);
+      const height =
+        renderedPanelHeights[queryId] || panelEstimatedHeight(moving);
+      let nextX = Math.min(
+        Math.max(0, Math.round(x)),
+        Math.max(0, containerWidth - width)
+      );
+      let nextY = Math.max(0, Math.round(y));
+      let guideX = null;
+      let guideY = null;
+      let bestX = 9;
+      let bestY = 9;
+
+      for (const other of current) {
+        if (other.queryId === queryId) continue;
+        const otherWidth = clampPanelWidth(other.width, containerWidth);
+        const otherHeight =
+          renderedPanelHeights[other.queryId] || panelEstimatedHeight(other);
+        const movingXs = [nextX, nextX + width / 2, nextX + width];
+        const otherXs = [
+          other.x || 0,
+          (other.x || 0) + otherWidth / 2,
+          (other.x || 0) + otherWidth,
+        ];
+        const movingYs = [nextY, nextY + height / 2, nextY + height];
+        const otherYs = [
+          other.y || 0,
+          (other.y || 0) + otherHeight / 2,
+          (other.y || 0) + otherHeight,
+        ];
+        movingXs.forEach((edge, edgeIndex) => {
+          otherXs.forEach((target) => {
+            const delta = target - edge;
+            if (Math.abs(delta) < bestX) {
+              bestX = Math.abs(delta);
+              nextX += delta;
+              guideX = target;
+              movingXs[edgeIndex] += delta;
+            }
+          });
+        });
+        movingYs.forEach((edge, edgeIndex) => {
+          otherYs.forEach((target) => {
+            const delta = target - edge;
+            if (Math.abs(delta) < bestY) {
+              bestY = Math.abs(delta);
+              nextY += delta;
+              guideY = target;
+              movingYs[edgeIndex] += delta;
+            }
+          });
+        });
+      }
+
+      nextX = Math.min(Math.max(0, Math.round(nextX)), Math.max(0, containerWidth - width));
+      nextY = Math.max(0, Math.round(nextY));
+      setSnapGuides({ x: guideX, y: guideY });
+      replacePanels(
+        current.map((panel) =>
+          panel.queryId === queryId
+            ? { ...panel, x: nextX, y: nextY, width }
+            : panel
+        ),
+        { record: false }
       );
     },
-    [containerWidth]
+    [containerWidth, renderedPanelHeights, replacePanels]
   );
 
   const resizePanel = useCallback(
     (queryId, frame) => {
-      setPanels((prev) =>
-        prev.map((panel) => {
+      replacePanels(
+        (prev) =>
+          prev.map((panel) => {
           if (panel.queryId !== queryId) return panel;
           const canvasWidth = containerWidth || DEFAULT_PANEL_WIDTH;
           const minWidth = Math.min(MIN_PANEL_WIDTH, canvasWidth);
           let width = clampPanelWidth(frame.width ?? panel.width, canvasWidth);
-          const height = clampPanelHeight(frame.height ?? panel.height);
+          const height = clampPanelHeight(
+            Math.round((frame.height ?? panel.height) / 8) * 8
+          );
           let x = Math.min(
             Math.max(0, Math.round(frame.x ?? panel.x ?? 0)),
             Math.max(0, canvasWidth - minWidth)
@@ -641,27 +806,28 @@ function GamedbWorkspace({ me, onLoggedOut }) {
 
           return {
             ...panel,
-            x,
-            y,
-            width,
+            x: Math.round(x / 8) * 8,
+            y: Math.round(y / 8) * 8,
+            width: Math.round(width / 8) * 8,
             height,
           };
-        })
+        }),
+        { record: false }
       );
     },
-    [containerWidth]
+    [containerWidth, replacePanels]
   );
 
   const bringPanelToFront = useCallback((queryId) => {
-    setPanels((prev) => {
+    replacePanels((prev) => {
       const index = prev.findIndex((panel) => panel.queryId === queryId);
       if (index === -1 || index === prev.length - 1) return prev;
       const next = [...prev];
       const [panel] = next.splice(index, 1);
       next.push(panel);
       return next;
-    });
-  }, []);
+    }, { record: false });
+  }, [replacePanels]);
 
   const filteredQueries = useMemo(() => {
     const filter = sidebarSearch.trim().toLowerCase();
@@ -692,7 +858,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   }, [filteredQueries, pinned]);
 
   const openAll = () => {
-    setPanels((prev) => {
+    replacePanels((prev) => {
       const existing = new Map(prev.map((panel) => [panel.queryId, panel]));
       return arrangeUnpositionedPanels(
         filteredQueries.map(
@@ -759,11 +925,24 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   useEffect(() => {
     const onKeyDown = (event) => {
       const tag = event.target?.tagName;
-      if (
+      const isTyping =
         tag === "INPUT" ||
         tag === "TEXTAREA" ||
         tag === "SELECT" ||
-        event.target?.isContentEditable ||
+        event.target?.isContentEditable;
+      if (
+        !isTyping &&
+        !layoutLocked &&
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === "z"
+      ) {
+        event.preventDefault();
+        if (event.shiftKey) redoPanels();
+        else undoPanels();
+        return;
+      }
+      if (
+        isTyping ||
         event.metaKey ||
         event.ctrlKey ||
         event.altKey
@@ -801,6 +980,56 @@ function GamedbWorkspace({ me, onLoggedOut }) {
     [panels]
   );
 
+  useEffect(() => {
+    if (!isSuperAdmin || !activeView || previewAsUser) return undefined;
+    const config = buildViewConfig();
+    const serialized = JSON.stringify(config);
+    if (serialized === lastSavedConfigRef.current) {
+      setTemplateSaveState("saved");
+      return undefined;
+    }
+    setTemplateSaveState("pending");
+    const timer = setTimeout(async () => {
+      setTemplateSaveState("saving");
+      try {
+        const data = await apiJson(`/api/views/${activeView.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ config }),
+          fallbackError: "บันทึก Template อัตโนมัติไม่สำเร็จ",
+        });
+        lastSavedConfigRef.current = JSON.stringify(data.view?.config || config);
+        if (data.view) {
+          setActiveView(data.view);
+          setViews((current) =>
+            current.map((view) => (view.id === data.view.id ? data.view : view))
+          );
+        }
+        setTemplateSaveState("saved");
+      } catch {
+        setTemplateSaveState("error");
+      }
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [
+    activeView,
+    buildViewConfig,
+    isSuperAdmin,
+    layoutRevision,
+    panels,
+    previewAsUser,
+  ]);
+
+  useEffect(() => {
+    const warnBeforeLeave = (event) => {
+      if (!["pending", "saving"].includes(templateSaveState)) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeLeave);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeave);
+  }, [templateSaveState]);
+
   const queryById = useMemo(
     () => new Map(queries.map((query) => [query.id, query])),
     [queries]
@@ -828,6 +1057,143 @@ function GamedbWorkspace({ me, onLoggedOut }) {
     [openPanels, renderedPanelHeights]
   );
 
+  const setZoomAroundCenter = useCallback((nextZoom) => {
+    const clamped = Math.min(2, Math.max(0.4, nextZoom));
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      setZoom(clamped);
+      return;
+    }
+    const centerX = viewport.clientWidth / 2;
+    const centerY = viewport.clientHeight / 2;
+    setPan((current) => ({
+      x: centerX - ((centerX - current.x) / zoom) * clamped,
+      y: centerY - ((centerY - current.y) / zoom) * clamped,
+    }));
+    setZoom(clamped);
+  }, [zoom]);
+
+  const fitCanvas = useCallback(() => {
+    const viewport = viewportRef.current;
+    if (!viewport || openPanels.length === 0) {
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+      return;
+    }
+    const right = Math.max(
+      ...openPanels.map(
+        (panel) =>
+          (panel.x || 0) + clampPanelWidth(panel.width, containerWidth)
+      )
+    );
+    const bottom = Math.max(
+      ...openPanels.map(
+        (panel) =>
+          (panel.y || 0) +
+          (renderedPanelHeights[panel.queryId] || panelEstimatedHeight(panel))
+      )
+    );
+    const nextZoom = Math.min(
+      1.25,
+      Math.max(
+        0.4,
+        Math.min(
+          (viewport.clientWidth - 48) / Math.max(1, right),
+          (viewport.clientHeight - 48) / Math.max(1, bottom)
+        )
+      )
+    );
+    setZoom(nextZoom);
+    setPan({
+      x: Math.max(24, (viewport.clientWidth - right * nextZoom) / 2),
+      y: Math.max(24, (viewport.clientHeight - bottom * nextZoom) / 2),
+    });
+  }, [containerWidth, openPanels, renderedPanelHeights]);
+
+  const autoArrangePanels = useCallback(
+    (mode) => {
+      if (layoutLocked || panelsStateRef.current.length === 0) return;
+      const current = panelsStateRef.current;
+      const gap = PANEL_GAP;
+      const canvasWidth = containerWidth || DEFAULT_PANEL_WIDTH;
+      let next;
+      if (mode === "vertical") {
+        let y = 0;
+        next = current.map((panel) => {
+          const placed = {
+            ...panel,
+            x: 0,
+            y,
+            width: Math.min(canvasWidth, panel.width || DEFAULT_PANEL_WIDTH),
+          };
+          y +=
+            (renderedPanelHeights[panel.queryId] || panelEstimatedHeight(panel)) +
+            gap;
+          return placed;
+        });
+      } else if (mode === "horizontal") {
+        let x = 0;
+        let y = 0;
+        let rowHeight = 0;
+        next = current.map((panel) => {
+          const width = Math.min(
+            panel.width || DEFAULT_PANEL_WIDTH,
+            canvasWidth
+          );
+          const height =
+            renderedPanelHeights[panel.queryId] || panelEstimatedHeight(panel);
+          if (x > 0 && x + width > canvasWidth) {
+            x = 0;
+            y += rowHeight + gap;
+            rowHeight = 0;
+          }
+          const placed = { ...panel, x, y, width };
+          x += width + gap;
+          rowHeight = Math.max(rowHeight, height);
+          return placed;
+        });
+      } else {
+        next = arrangeUnpositionedPanels(
+          current.map((panel) => ({ ...panel, x: null, y: null })),
+          canvasWidth
+        );
+      }
+      replacePanels(next);
+      requestAnimationFrame(fitCanvas);
+    },
+    [
+      containerWidth,
+      fitCanvas,
+      layoutLocked,
+      renderedPanelHeights,
+      replacePanels,
+    ]
+  );
+
+  const startCanvasPan = (event) => {
+    if (event.target !== event.currentTarget || event.button !== 0) return;
+    panDragRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      panX: pan.x,
+      panY: pan.y,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const moveCanvasPan = (event) => {
+    const drag = panDragRef.current;
+    if (!drag) return;
+    setPan({
+      x: drag.panX + event.clientX - drag.startX,
+      y: drag.panY + event.clientY - drag.startY,
+    });
+  };
+
+  const stopCanvasPan = () => {
+    panDragRef.current = null;
+  };
+
   return (
     <div className="mx-auto max-w-[1900px] p-4 lg:p-6">
       <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -840,7 +1206,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             </span>
           </h1>
           <p className="mt-1 text-xs font-semibold text-zinc-500">
-            {isTemplateUser
+            {layoutLocked
               ? "รัน Query และใช้งานข้อมูลตาม Template ที่ผู้ดูแลกำหนด"
               : "เลือกได้หลาย Query พร้อมกัน — ลากขอบตารางเพื่อขยายทุกด้าน ลากที่จุดจับเพื่อสลับตำแหน่ง และเพิ่มคอลัมน์สูตรได้เอง"}
           </p>
@@ -859,14 +1225,14 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                 className="bg-transparent text-[11px] font-black text-zinc-600 outline-none"
                 title="เลือกเทมเพลตหน้าจอที่ได้รับ"
               >
-                {!isTemplateUser && <option value="">หน้าจอของฉัน</option>}
+                {!layoutLocked && <option value="">หน้าจอของฉัน</option>}
                 {views.map((view) => (
                   <option key={view.id} value={view.id}>
                     {view.name}
                   </option>
                 ))}
               </select>
-              {activeView && !isTemplateUser && (
+              {activeView && !layoutLocked && (
                 <button
                   type="button"
                   onClick={leaveView}
@@ -964,7 +1330,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       </header>
 
       <div className="flex flex-col gap-4">
-        {!isTemplateUser && !sidebarOpen && (
+        {!layoutLocked && !sidebarOpen && (
           <aside className="flex w-full shrink-0 items-center gap-2 rounded-2xl border border-zinc-200 bg-white px-3 py-2">
             <button
               type="button"
@@ -990,7 +1356,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             </span>
           </aside>
         )}
-        {!isTemplateUser && <aside
+        {!layoutLocked && <aside
           className={`w-full shrink-0 rounded-2xl border border-zinc-200 bg-white p-3 ${
             sidebarOpen ? "" : "hidden"
           }`}
@@ -1034,7 +1400,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               </button>
               <button
                 type="button"
-                onClick={() => setPanels([])}
+                onClick={() => replacePanels([])}
                 disabled={panels.length === 0}
                 className="rounded-md px-1.5 py-0.5 text-[10px] font-black text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-40"
               >
@@ -1155,31 +1521,189 @@ function GamedbWorkspace({ me, onLoggedOut }) {
 
         <div
           className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-[10px] font-semibold ${
-            isTemplateUser
+            layoutLocked
               ? "border-zinc-200 bg-zinc-50 text-zinc-500"
               : "border-red-100 bg-red-50/70 text-zinc-600"
           }`}
         >
-          {isTemplateUser ? (
+          {layoutLocked ? (
             <Lock size={13} className="mt-0.5 shrink-0 text-zinc-400" />
           ) : (
             <LayoutGrid size={13} className="mt-0.5 shrink-0 text-red-500" />
           )}
           <p>
-            {isTemplateUser
+            {layoutLocked
               ? "หน้าจอนี้จัดวางโดย Admin — คุณสามารถกรอกพารามิเตอร์ รัน Query ค้นหา และดาวน์โหลดข้อมูลได้ตามปกติ"
               : "จัดหน้าจอ: ลากจุดจับ ⋮⋮ เพื่อย้ายกล่อง · คลิกกล่องแล้วลากจุดรอบกรอบเพื่อปรับขนาด · ดับเบิลคลิกจุดจับเพื่อคืนขนาดเดิม"}
           </p>
         </div>
 
+        {previewAsUser && (
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-800">
+            <span className="flex items-center gap-2">
+              <Eye size={13} /> กำลังดูหน้าจอแบบ User
+            </span>
+            <button
+              type="button"
+              onClick={() => setPreviewAsUser(false)}
+              className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-[10px] font-black"
+            >
+              ออกจาก Preview
+            </button>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white px-2.5 py-2">
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={undoPanels}
+              disabled={layoutLocked || !historyAvailability.past}
+              title="ย้อนการจัดวาง (Ctrl+Z)"
+              className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30"
+            >
+              <Undo2 size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={redoPanels}
+              disabled={layoutLocked || !historyAvailability.future}
+              title="ทำซ้ำ (Ctrl+Shift+Z)"
+              className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30"
+            >
+              <Redo2 size={14} />
+            </button>
+            {!layoutLocked && (
+              <select
+                key={historyRevision}
+                defaultValue=""
+                onChange={(event) => {
+                  if (event.target.value) autoArrangePanels(event.target.value);
+                  event.target.value = "";
+                }}
+                className="h-8 rounded-lg border border-zinc-200 bg-white px-2 text-[10px] font-black text-zinc-600"
+                title="จัดกล่องอัตโนมัติ"
+              >
+                <option value="">จัดอัตโนมัติ...</option>
+                <option value="grid">แบบ Grid</option>
+                <option value="vertical">เรียงแนวตั้ง</option>
+                <option value="horizontal">เรียงต่อกัน</option>
+              </select>
+            )}
+            {!layoutLocked && <WandSparkles size={13} className="text-red-500" />}
+          </div>
+
+          <div className="flex items-center gap-1">
+            {isSuperAdmin && activeView && (
+              <>
+                <span
+                  className={`mr-1 rounded-full px-2 py-1 text-[9px] font-black ${
+                    templateSaveState === "error"
+                      ? "bg-red-50 text-red-600"
+                      : ["saving", "pending"].includes(templateSaveState)
+                        ? "bg-amber-50 text-amber-700"
+                        : "bg-emerald-50 text-emerald-700"
+                  }`}
+                >
+                  {templateSaveState === "error"
+                    ? "บันทึกไม่สำเร็จ"
+                    : templateSaveState === "saving"
+                      ? "กำลังบันทึก..."
+                      : templateSaveState === "pending"
+                        ? "รอบันทึก..."
+                        : "บันทึกแล้ว"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPreviewAsUser((value) => !value)}
+                  className="flex h-8 items-center gap-1 rounded-lg border border-zinc-200 px-2 text-[10px] font-black text-zinc-600 hover:bg-zinc-50"
+                  title="ดูหน้าจอแบบ User"
+                >
+                  <Eye size={12} /> Preview User
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => setZoomAroundCenter(zoom - 0.1)}
+              className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
+              title="ซูมออก"
+            >
+              <ZoomOut size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoomAroundCenter(zoom + 0.1)}
+              className="min-w-12 rounded-lg px-2 py-1.5 text-[10px] font-black text-zinc-600 hover:bg-zinc-100"
+              title="ระดับ Zoom"
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoomAroundCenter(zoom + 0.1)}
+              className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
+              title="ซูมเข้า"
+            >
+              <ZoomIn size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={fitCanvas}
+              className="rounded-lg border border-zinc-200 px-2 py-1.5 text-[10px] font-black text-zinc-600 hover:bg-zinc-50"
+              title="จัดทุกกล่องให้พอดีหน้าจอ"
+            >
+              Fit
+            </button>
+          </div>
+        </div>
+
         <div
-          className="relative min-w-0 flex-1"
-          ref={panelsRef}
-          style={{ minHeight: canvasHeight }}
+          ref={viewportRef}
+          className="relative h-[max(520px,calc(100vh-320px))] min-w-0 flex-1 overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50"
+          onWheel={(event) => {
+            event.preventDefault();
+            if (event.ctrlKey || event.metaKey) {
+              setZoomAroundCenter(zoom - event.deltaY * 0.001);
+            } else {
+              setPan((current) => ({
+                x: current.x - event.deltaX,
+                y: current.y - event.deltaY,
+              }));
+            }
+          }}
         >
+          <div
+            className="relative min-w-0"
+            ref={panelsRef}
+            onPointerDown={startCanvasPan}
+            onPointerMove={moveCanvasPan}
+            onPointerUp={stopCanvasPan}
+            onPointerCancel={stopCanvasPan}
+            style={{
+              minHeight: canvasHeight,
+              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              transformOrigin: "0 0",
+              backgroundImage:
+                "radial-gradient(circle, rgba(113,113,122,.22) 1px, transparent 1px)",
+              backgroundSize: "16px 16px",
+            }}
+          >
+            {snapGuides.x !== null && (
+              <div
+                className="pointer-events-none absolute bottom-0 top-0 z-40 w-px bg-red-500"
+                style={{ left: snapGuides.x }}
+              />
+            )}
+            {snapGuides.y !== null && (
+              <div
+                className="pointer-events-none absolute left-0 right-0 z-40 h-px bg-red-500"
+                style={{ top: snapGuides.y }}
+              />
+            )}
           {openPanels.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-zinc-300 bg-white py-24 text-center">
-              {isTemplateUser ? (
+              {layoutLocked ? (
                 <>
                   <Lock size={22} className="text-zinc-300" />
                   <p className="text-xs font-black text-zinc-500">ยังไม่มี Template สำหรับบัญชีนี้</p>
@@ -1218,12 +1742,15 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                     onPersonalLayoutSaved={rememberPersonalLayout}
                     onLayoutChange={captureLayout}
                     onDataChange={captureData}
-                    canManage={isSuperAdmin}
-                    canCustomizeLayout={!isTemplateUser}
+                    canManage={isSuperAdmin && !previewAsUser}
+                    canCustomizeLayout={!layoutLocked}
                     isFullWidth={isFullWidth}
                     onPositionChange={movePanelTo}
                     onFrameChange={resizePanel}
                     onBringToFront={bringPanelToFront}
+                    onInteractionStart={beginPanelInteraction}
+                    onInteractionEnd={endPanelInteraction}
+                    canvasScale={zoom}
                     onRenderedHeight={captureRenderedPanelHeight}
                     onClose={() => closePanel(panel.queryId)}
                     onToggleFullWidth={() =>
@@ -1257,13 +1784,14 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                       })
                     }
                     onEditQuery={() => setEditorModal({ mode: "edit", query })}
-                    onDrill={isTemplateUser ? null : openDrill}
+                    onDrill={layoutLocked ? null : openDrill}
                     initialParams={drillParams[panel.queryId] || null}
                   />
                 );
               })}
             </>
           )}
+        </div>
         </div>
       </div>
 
@@ -1275,7 +1803,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
           onSaved={async (savedQuery) => {
             setEditorModal(null);
             await loadQueries();
-            setPanels((prev) =>
+            replacePanels((prev) =>
               prev.some((panel) => panel.queryId === savedQuery.id)
                 ? prev
                 : [...prev, makePanel(savedQuery.id)]
@@ -1308,6 +1836,11 @@ function GamedbWorkspace({ me, onLoggedOut }) {
           onChanged={loadViews}
           onApply={(view) => {
             applyView(view);
+            setViewsModal(false);
+          }}
+          onPreview={(view) => {
+            applyView(view);
+            setPreviewAsUser(true);
             setViewsModal(false);
           }}
         />

@@ -109,9 +109,9 @@ export async function listViewsFor(user) {
       ? await getPool().query(`SELECT * FROM gamedb_views ORDER BY name ASC`)
       : await getPool().query(
           `SELECT * FROM gamedb_views
-           WHERE is_public = TRUE OR shared_with @> $1::jsonb
+           WHERE id = $2 OR is_public = TRUE OR shared_with @> $1::jsonb
            ORDER BY name ASC`,
-          [JSON.stringify([user.id])]
+          [JSON.stringify([user.id]), user.defaultViewId || 0]
         );
   return result.rows.map(mapRow);
 }
@@ -127,7 +127,11 @@ export async function findViewById(id) {
 export function canUseView(view, user) {
   if (!view) return false;
   if (user.role === "admin") return true;
-  return view.isPublic || view.sharedWith.some((id) => Number(id) === Number(user.id));
+  return (
+    Number(view.id) === Number(user.defaultViewId) ||
+    view.isPublic ||
+    view.sharedWith.some((id) => Number(id) === Number(user.id))
+  );
 }
 
 export async function insertView(fields) {
@@ -193,5 +197,19 @@ export async function updateView(id, fields) {
 
 export async function deleteView(id) {
   await ensureSchema();
-  await getPool().query(`DELETE FROM gamedb_views WHERE id = $1`, [id]);
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `UPDATE gamedb_users SET default_view_id = NULL WHERE default_view_id = $1`,
+      [id]
+    );
+    await client.query(`DELETE FROM gamedb_views WHERE id = $1`, [id]);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }

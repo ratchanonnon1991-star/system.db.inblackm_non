@@ -33,7 +33,15 @@ export const EMPTY_LAYOUT = {
 
 export const ACTION_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
-export const PARAM_TYPES = ["text", "number", "date", "datetime", "select"];
+export const PARAM_TYPES = [
+  "text",
+  "number",
+  "date",
+  "datetime",
+  "time",
+  "boolean",
+  "select",
+];
 
 // Ops are grouped by what they read: numbers, text, or a date compared with
 // today. `value` may also be "[Another column]", which is resolved per row.
@@ -195,6 +203,7 @@ export function normalizeLayout(raw) {
             type: PARAM_TYPES.includes(param.type) ? param.type : "text",
             defaultValue: param.defaultValue == null ? "" : String(param.defaultValue),
             options: Array.isArray(param.options) ? param.options.map(String) : [],
+            required: param.required !== false,
           }))
       : [],
     editable,

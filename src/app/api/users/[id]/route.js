@@ -6,9 +6,16 @@ import {
   findUserById,
   updateUser,
 } from "@/server/users-repository";
+import { findViewById } from "@/server/gamedb-views-repository";
 
 const MIN_PASSWORD_LENGTH = 6;
 const USER_ROLES = new Set(["admin", "staff", "user"]);
+
+function parseDefaultViewId(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric > 0 ? numeric : undefined;
+}
 
 export async function PATCH(request, { params }) {
   try {
@@ -43,6 +50,19 @@ export async function PATCH(request, { params }) {
         }
       }
       fields.role = role;
+    }
+    if (body.defaultViewId !== undefined) {
+      const defaultViewId = parseDefaultViewId(body.defaultViewId);
+      if (defaultViewId === undefined) {
+        return jsonError("Template หลักไม่ถูกต้อง", 400);
+      }
+      if (defaultViewId && !(await findViewById(defaultViewId))) {
+        return jsonError("ไม่พบ Template หลักที่เลือก", 400);
+      }
+      fields.defaultViewId =
+        (fields.role || target.role) === "user" ? defaultViewId : null;
+    } else if (fields.role && fields.role !== "user") {
+      fields.defaultViewId = null;
     }
 
     const user = await updateUser(id, fields);

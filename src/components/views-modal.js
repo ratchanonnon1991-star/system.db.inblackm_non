@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Check,
+  Eye,
   Layers,
   Loader2,
   Play,
@@ -38,6 +39,7 @@ export default function ViewsModal({
   onClose,
   onChanged,
   onApply,
+  onPreview,
 }) {
   const [users, setUsers] = useState([]);
   const [editingId, setEditingId] = useState(null);
@@ -196,6 +198,14 @@ export default function ViewsModal({
                   title="เปิดเทมเพลตนี้"
                 >
                   <Play size={12} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onPreview?.(view)}
+                  className="shrink-0 rounded-md p-1 text-zinc-400 transition hover:bg-amber-100 hover:text-amber-700"
+                  title="Preview แบบ User"
+                >
+                  <Eye size={12} />
                 </button>
                 <button
                   type="button"

@@ -83,7 +83,14 @@ export function ParamsSettingsModal({ sqlText, params, onSave, onClose }) {
     names.map((name) => {
       const existing = params.find((param) => param.name === name);
       return (
-        existing || { name, label: name, type: "text", defaultValue: "", options: [] }
+        existing || {
+          name,
+          label: name,
+          type: "text",
+          defaultValue: "",
+          options: [],
+          required: true,
+        }
       );
     })
   );
@@ -137,7 +144,11 @@ export function ParamsSettingsModal({ sqlText, params, onSave, onClose }) {
                             ? "วันที่"
                             : type === "datetime"
                               ? "วันที่และเวลา"
-                            : "ตัวเลือก (dropdown)"}
+                              : type === "time"
+                                ? "เวลา"
+                                : type === "boolean"
+                                  ? "ใช่ / ไม่ใช่ (switch)"
+                                  : "ตัวเลือก (dropdown)"}
                     </option>
                   ))}
                 </select>
@@ -152,9 +163,11 @@ export function ParamsSettingsModal({ sqlText, params, onSave, onClose }) {
                         ? "date"
                         : param.type === "datetime"
                           ? "datetime-local"
+                          : param.type === "time"
+                            ? "time"
                           : "text"
                   }
-                  step={param.type === "datetime" ? 1 : undefined}
+                  step={["datetime", "time"].includes(param.type) ? 1 : undefined}
                   value={param.defaultValue}
                   onChange={(e) => setField(param.name, "defaultValue", e.target.value)}
                   placeholder={
@@ -164,6 +177,10 @@ export function ParamsSettingsModal({ sqlText, params, onSave, onClose }) {
                         ? "เช่น 2026-07-28"
                         : param.type === "datetime"
                           ? "เช่น 2026-07-28T14:30:00"
+                          : param.type === "time"
+                            ? "เช่น 14:30:00"
+                            : param.type === "boolean"
+                              ? "true หรือ false"
                           : "เช่น ABC123"
                   }
                   className={inputClass}
@@ -176,10 +193,22 @@ export function ParamsSettingsModal({ sqlText, params, onSave, onClose }) {
                         ? "รูปแบบ: YYYY-MM-DD"
                         : param.type === "datetime"
                           ? "รูปแบบ: YYYY-MM-DDTHH:mm:ss"
+                          : param.type === "time"
+                            ? "รูปแบบ: HH:mm:ss"
+                            : param.type === "boolean"
+                              ? "ค่า true = ใช่, false = ไม่ใช่"
                           : "ตัวอย่าง: ข้อความหรือรหัสที่ Query ต้องการ"}
                   </p>
                 )}
               </div>
+              <label className="flex items-center gap-2 self-end pb-2 text-[10px] font-bold text-zinc-600">
+                <input
+                  type="checkbox"
+                  checked={param.required !== false}
+                  onChange={(e) => setField(param.name, "required", e.target.checked)}
+                />
+                ต้องกรอกก่อนรัน
+              </label>
               {param.type === "select" && (
                 <div>
                   <label className={labelClass}>ตัวเลือก (คั่นด้วย ,)</label>

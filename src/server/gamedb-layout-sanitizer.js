@@ -82,6 +82,7 @@ export function sanitizeLayout(raw) {
           options: sanitizeStringArray(param.options)
             .slice(0, 100)
             .map((option) => option.slice(0, 200)),
+          required: param.required !== false,
         }))
     : [];
   const rules = Array.isArray(layout.rules)

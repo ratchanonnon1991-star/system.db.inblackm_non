@@ -398,7 +398,13 @@ export function ComputedColumnModal({ availableNames, sampleRow, onClose, onAdd 
   );
 }
 
-const EMPTY_USER_FORM = { username: "", displayName: "", password: "", role: "staff" };
+const EMPTY_USER_FORM = {
+  username: "",
+  displayName: "",
+  password: "",
+  role: "staff",
+  defaultViewId: "",
+};
 
 function roleLabel(role) {
   if (role === "admin") return "Admin";
@@ -408,6 +414,7 @@ function roleLabel(role) {
 
 export function UsersModal({ me, onClose }) {
   const [users, setUsers] = useState([]);
+  const [views, setViews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(EMPTY_USER_FORM);
@@ -433,6 +440,12 @@ export function UsersModal({ me, onClose }) {
     loadUsers();
   }, [loadUsers]);
 
+  useEffect(() => {
+    apiJson("/api/views", { fallbackError: "โหลด Template ไม่สำเร็จ" })
+      .then((data) => setViews(data.views || []))
+      .catch(() => setViews([]));
+  }, []);
+
   const setField = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
 
   const startCreate = () => {
@@ -448,6 +461,7 @@ export function UsersModal({ me, onClose }) {
       displayName: user.displayName,
       password: "",
       role: user.role,
+      defaultViewId: user.defaultViewId ? String(user.defaultViewId) : "",
     });
     setError("");
   };
@@ -463,6 +477,7 @@ export function UsersModal({ me, onClose }) {
           body: JSON.stringify({
             displayName: form.displayName,
             role: form.role,
+            defaultViewId: form.role === "user" ? form.defaultViewId || null : null,
             password: form.password || undefined,
           }),
           fallbackError: "บันทึกผู้ใช้ไม่สำเร็จ",
@@ -620,6 +635,28 @@ export function UsersModal({ me, onClose }) {
               <option value="staff">Staff — ดู/รัน query, จัด layout</option>
               <option value="admin">Admin — จัดการทุกอย่างรวมถึง SQL และผู้ใช้</option>
             </select>
+            {form.role === "user" && (
+              <div>
+                <label className="mb-1 block text-[10px] font-black text-zinc-500">
+                  Template หลักเมื่อเข้าสู่ระบบ
+                </label>
+                <select
+                  value={form.defaultViewId}
+                  onChange={(e) => setField("defaultViewId", e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="">ใช้ Template เริ่มต้นของระบบ</option>
+                  {views.map((view) => (
+                    <option key={view.id} value={view.id}>
+                      {view.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[9px] font-semibold text-zinc-400">
+                  User จะเปิดหน้านี้อัตโนมัติและไม่สามารถย้ายหรือย่อขยายกล่องได้
+                </p>
+              </div>
+            )}
 
             {error && (
               <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">

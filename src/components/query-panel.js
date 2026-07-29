@@ -104,7 +104,12 @@ function frameCursor(dirX, dirY) {
 
 function initialParamValues(params) {
   const values = {};
-  for (const param of params) values[param.name] = param.defaultValue ?? "";
+  for (const param of params) {
+    values[param.name] =
+      param.type === "boolean" && !param.defaultValue
+        ? "false"
+        : param.defaultValue ?? "";
+  }
   return values;
 }
 
@@ -121,6 +126,7 @@ function resolveParams(layout, sqlText) {
         type: "text",
         defaultValue: "",
         options: [],
+        required: true,
       }
   );
 }
@@ -151,6 +157,24 @@ function paramInputGuide(param) {
       hint: "รูปแบบ YYYY-MM-DDTHH:mm:ss เช่น 2026-07-28T14:30:00",
       widthClass: "w-52",
       kind: "datetime",
+    };
+  }
+  if (param.type === "time") {
+    return {
+      inputType: "time",
+      placeholder: "เช่น 14:30:00",
+      hint: "รูปแบบ HH:mm:ss เช่น 14:30:00",
+      widthClass: "w-36",
+      kind: "time",
+    };
+  }
+  if (param.type === "boolean") {
+    return {
+      inputType: "checkbox",
+      placeholder: "",
+      hint: "เปิด = true, ปิด = false",
+      widthClass: "w-28",
+      kind: "boolean",
     };
   }
 
@@ -215,7 +239,9 @@ function validateParamValues(params, values) {
   for (const param of params) {
     const value = String(values[param.name] ?? "").trim();
     if (!value) {
-      errors[param.name] = `กรุณากรอก ${param.label || param.name}`;
+      if (param.required !== false) {
+        errors[param.name] = `กรุณากรอก ${param.label || param.name}`;
+      }
       continue;
     }
 
@@ -240,6 +266,8 @@ function validateParamValues(params, values) {
       !param.options.includes(value)
     ) {
       errors[param.name] = "กรุณาเลือกค่าจากรายการ";
+    } else if (param.type === "boolean" && !["true", "false"].includes(value)) {
+      errors[param.name] = "ค่าต้องเป็น true หรือ false";
     }
   }
 
@@ -324,6 +352,9 @@ export default function QueryPanel({
   onPositionChange,
   onFrameChange,
   onBringToFront,
+  onInteractionStart,
+  onInteractionEnd,
+  canvasScale = 1,
   onRenderedHeight,
   onClose,
   onToggleFullWidth,
@@ -618,7 +649,12 @@ export default function QueryPanel({
 
   const clearParamValues = () => {
     setParamValues(
-      Object.fromEntries(effectiveParams.map((param) => [param.name, ""]))
+      Object.fromEntries(
+        effectiveParams.map((param) => [
+          param.name,
+          param.type === "boolean" ? "false" : "",
+        ])
+      )
     );
     setShowParamErrors(false);
   };
@@ -1162,18 +1198,22 @@ export default function QueryPanel({
     const element = sectionRef.current;
     if (!element || !onRenderedHeight) return undefined;
     const report = () =>
-      onRenderedHeight(query.id, Math.ceil(element.getBoundingClientRect().height));
+      onRenderedHeight(
+        query.id,
+        Math.ceil(element.getBoundingClientRect().height / canvasScale)
+      );
     report();
     const observer =
       typeof ResizeObserver !== "undefined" ? new ResizeObserver(report) : null;
     observer?.observe(element);
     return () => observer?.disconnect();
-  }, [onRenderedHeight, query.id]);
+  }, [canvasScale, onRenderedHeight, query.id]);
 
   const startPanelMove = (event) => {
     if (!canCustomizeLayout) return;
     event.preventDefault();
     event.stopPropagation();
+    onInteractionStart?.();
     onBringToFront?.(query.id);
     setPanelDrag({
       startX: event.clientX,
@@ -1188,11 +1228,14 @@ export default function QueryPanel({
     const move = (event) => {
       onPositionChange(
         query.id,
-        panelDrag.panelX + event.clientX - panelDrag.startX,
-        panelDrag.panelY + event.clientY - panelDrag.startY
+        panelDrag.panelX + (event.clientX - panelDrag.startX) / canvasScale,
+        panelDrag.panelY + (event.clientY - panelDrag.startY) / canvasScale
       );
     };
-    const stop = () => setPanelDrag(null);
+    const stop = () => {
+      setPanelDrag(null);
+      onInteractionEnd?.();
+    };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", stop);
     window.addEventListener("pointercancel", stop);
@@ -1205,19 +1248,27 @@ export default function QueryPanel({
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
     };
-  }, [panelDrag, onPositionChange, query.id]);
+  }, [
+    canvasScale,
+    onInteractionEnd,
+    onPositionChange,
+    panelDrag,
+    query.id,
+  ]);
 
   const startFrameResize = (event, dirX, dirY) => {
     event.preventDefault();
     event.stopPropagation();
     setFrameSelected(true);
+    onInteractionStart?.();
     onBringToFront?.(query.id);
     setFrameDrag({
       dirX,
       dirY,
       startX: event.clientX,
       startY: event.clientY,
-      startWidth: sectionRef.current?.getBoundingClientRect().width || 0,
+      startWidth:
+        (sectionRef.current?.getBoundingClientRect().width || 0) / canvasScale,
       startHeight: panel.height || 420,
       startPanelX: panel.x || 0,
       startPanelY: panel.y || 0,
@@ -1228,8 +1279,8 @@ export default function QueryPanel({
   useEffect(() => {
     if (!frameDrag) return undefined;
     const move = (event) => {
-      const deltaX = event.clientX - frameDrag.startX;
-      const deltaY = event.clientY - frameDrag.startY;
+      const deltaX = (event.clientX - frameDrag.startX) / canvasScale;
+      const deltaY = (event.clientY - frameDrag.startY) / canvasScale;
       let width = frameDrag.startWidth;
       let height = frameDrag.startHeight;
       let x = frameDrag.startPanelX;
@@ -1264,7 +1315,10 @@ export default function QueryPanel({
         dirY: frameDrag.dirY,
       });
     };
-    const stop = () => setFrameDrag(null);
+    const stop = () => {
+      setFrameDrag(null);
+      onInteractionEnd?.();
+    };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", stop);
     window.addEventListener("pointercancel", stop);
@@ -1277,7 +1331,13 @@ export default function QueryPanel({
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
     };
-  }, [frameDrag, onFrameChange, query.id]);
+  }, [
+    canvasScale,
+    frameDrag,
+    onFrameChange,
+    onInteractionEnd,
+    query.id,
+  ]);
 
   const resetFrame = (dirX, dirY) => {
     if (dirX) onResetWidth();
@@ -1736,9 +1796,50 @@ export default function QueryPanel({
                       htmlFor={inputId}
                       className="mb-0.5 block text-[9px] font-black text-zinc-500"
                     >
-                      {param.label} <span className="text-red-500">*</span>
+                      {param.label}{" "}
+                      {param.required !== false ? (
+                        <span className="text-red-500">*</span>
+                      ) : (
+                        <span className="font-semibold text-zinc-400">(ไม่บังคับ)</span>
+                      )}
                     </label>
-                    {param.type === "select" ? (
+                    {param.type === "boolean" ? (
+                      <button
+                        id={inputId}
+                        type="button"
+                        role="switch"
+                        aria-checked={(paramValues[param.name] ?? "false") === "true"}
+                        onClick={() =>
+                          setParamValues((prev) => ({
+                            ...prev,
+                            [param.name]:
+                              (prev[param.name] ?? "false") === "true" ? "false" : "true",
+                          }))
+                        }
+                        className={`flex h-8 min-w-28 items-center gap-2 rounded-lg border px-2 text-[11px] font-black transition ${
+                          (paramValues[param.name] ?? "false") === "true"
+                            ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                            : "border-zinc-200 bg-white text-zinc-500"
+                        }`}
+                      >
+                        <span
+                          className={`relative h-4 w-7 rounded-full transition ${
+                            (paramValues[param.name] ?? "false") === "true"
+                              ? "bg-emerald-500"
+                              : "bg-zinc-300"
+                          }`}
+                        >
+                          <span
+                            className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition ${
+                              (paramValues[param.name] ?? "false") === "true"
+                                ? "left-3.5"
+                                : "left-0.5"
+                            }`}
+                          />
+                        </span>
+                        {(paramValues[param.name] ?? "false") === "true" ? "ใช่" : "ไม่ใช่"}
+                      </button>
+                    ) : param.type === "select" ? (
                       <select
                         id={inputId}
                         value={paramValues[param.name] ?? ""}
@@ -1764,7 +1865,7 @@ export default function QueryPanel({
                       <input
                         id={inputId}
                         type={guide.inputType}
-                        step={param.type === "datetime" ? 1 : undefined}
+                        step={["datetime", "time"].includes(param.type) ? 1 : undefined}
                         value={paramValues[param.name] ?? ""}
                         onChange={(e) =>
                           setParamValues((prev) => ({ ...prev, [param.name]: e.target.value }))

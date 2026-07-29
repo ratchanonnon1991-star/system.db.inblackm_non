@@ -10,6 +10,7 @@ function mapRow(row) {
     username: row.username,
     displayName: row.display_name || row.username,
     role: row.role,
+    defaultViewId: row.default_view_id || null,
     createdAt: row.created_at,
   };
 }
@@ -28,9 +29,14 @@ async function ensureSchema() {
           password_hash TEXT NOT NULL,
           role          VARCHAR(16) NOT NULL DEFAULT 'staff'
                         CHECK (role IN ('admin', 'staff', 'user')),
+          default_view_id INTEGER,
           created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
+      `);
+      await client.query(`
+        ALTER TABLE gamedb_users
+        ADD COLUMN IF NOT EXISTS default_view_id INTEGER
       `);
 
       // Older installations only allow admin/staff in this constraint.
@@ -83,7 +89,7 @@ async function ensureSchema() {
 export async function findUserByUsername(username) {
   await ensureSchema();
   const result = await getPool().query(
-    `SELECT id, username, display_name, password_hash, role, created_at
+    `SELECT id, username, display_name, password_hash, role, default_view_id, created_at
      FROM gamedb_users WHERE LOWER(username) = LOWER($1)`,
     [username]
   );
@@ -97,7 +103,7 @@ export async function findUserById(id) {
   if (!Number.isInteger(numeric) || numeric <= 0) return null;
   await ensureSchema();
   const result = await getPool().query(
-    `SELECT id, username, display_name, role, created_at
+    `SELECT id, username, display_name, role, default_view_id, created_at
      FROM gamedb_users WHERE id = $1`,
     [numeric]
   );
@@ -107,7 +113,7 @@ export async function findUserById(id) {
 export async function listUsers() {
   await ensureSchema();
   const result = await getPool().query(
-    `SELECT id, username, display_name, role, created_at
+    `SELECT id, username, display_name, role, default_view_id, created_at
      FROM gamedb_users ORDER BY id ASC`
   );
   return result.rows.map(mapRow);
@@ -121,13 +127,26 @@ export async function countAdmins() {
   return result.rows[0]?.count || 0;
 }
 
-export async function insertUser({ username, displayName, password, role }) {
+export async function insertUser({
+  username,
+  displayName,
+  password,
+  role,
+  defaultViewId = null,
+}) {
   await ensureSchema();
   const result = await getPool().query(
-    `INSERT INTO gamedb_users (username, display_name, password_hash, role)
-     VALUES ($1, $2, $3, $4)
-     RETURNING id, username, display_name, role, created_at`,
-    [username, displayName || username, hashPassword(password), role]
+    `INSERT INTO gamedb_users
+       (username, display_name, password_hash, role, default_view_id)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, username, display_name, role, default_view_id, created_at`,
+    [
+      username,
+      displayName || username,
+      hashPassword(password),
+      role,
+      defaultViewId,
+    ]
   );
   return mapRow(result.rows[0]);
 }
@@ -146,6 +165,10 @@ export async function updateUser(id, fields) {
     sets.push(`role = $${i++}`);
     values.push(fields.role);
   }
+  if (fields.defaultViewId !== undefined) {
+    sets.push(`default_view_id = $${i++}`);
+    values.push(fields.defaultViewId);
+  }
   if (fields.password) {
     sets.push(`password_hash = $${i++}`);
     values.push(hashPassword(fields.password));
@@ -159,7 +182,7 @@ export async function updateUser(id, fields) {
   const result = await getPool().query(
     `UPDATE gamedb_users SET ${sets.join(", ")}
      WHERE id = $${i}
-     RETURNING id, username, display_name, role, created_at`,
+     RETURNING id, username, display_name, role, default_view_id, created_at`,
     values
   );
   return mapRow(result.rows[0]);

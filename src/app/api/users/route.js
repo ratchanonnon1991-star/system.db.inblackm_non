@@ -5,10 +5,17 @@ import {
   insertUser,
   listUsers,
 } from "@/server/users-repository";
+import { findViewById } from "@/server/gamedb-views-repository";
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9_.-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 6;
 const USER_ROLES = new Set(["admin", "staff", "user"]);
+
+function parseDefaultViewId(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric > 0 ? numeric : undefined;
+}
 
 export async function GET(request) {
   try {
@@ -37,6 +44,13 @@ export async function POST(request) {
     if (!USER_ROLES.has(role)) {
       return jsonError("ประเภทผู้ใช้ไม่ถูกต้อง", 400);
     }
+    const defaultViewId = parseDefaultViewId(body.defaultViewId);
+    if (defaultViewId === undefined) {
+      return jsonError("Template หลักไม่ถูกต้อง", 400);
+    }
+    if (defaultViewId && !(await findViewById(defaultViewId))) {
+      return jsonError("ไม่พบ Template หลักที่เลือก", 400);
+    }
     if (await findUserByUsername(username)) {
       return jsonError("มี username นี้อยู่แล้ว", 409);
     }
@@ -46,6 +60,7 @@ export async function POST(request) {
       displayName: String(body.displayName || "").trim() || username,
       password,
       role,
+      defaultViewId: role === "user" ? defaultViewId : null,
     });
     return jsonOk({ user }, 201);
   } catch (err) {
