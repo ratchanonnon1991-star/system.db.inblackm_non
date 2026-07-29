@@ -120,9 +120,13 @@ export const INPUT_WIDGETS = [
   "time",
   "datetime",
   "select",
+  "lookup",
   "textarea",
   "checkbox",
 ];
+// How many rows a lookup dropdown will read. Past this it stops being a
+// dropdown and wants a search box, which is a different feature.
+export const LOOKUP_LIMIT = 500;
 export const CELL_ALIGNS = ["", "left", "center", "right"];
 export const MAX_FREEZE = 5;
 export const SUMMARY_KINDS = ["sum", "avg", "min", "max", "count"];
@@ -399,9 +403,46 @@ export function normalizeInputs(raw) {
       options: Array.isArray(input.options)
         ? input.options.map(String).slice(0, 200)
         : [],
+      lookup: normalizeLookup(input.lookup),
       defaultValue: input.defaultValue == null ? "" : String(input.defaultValue).slice(0, 200),
       required: input.required === true,
     }));
+}
+
+/**
+ * The box a column gets when nobody configured one: whatever its own type says.
+ * A boolean offers true and false rather than a text field you can type "yes"
+ * into, and a number column takes numbers.
+ */
+export function widgetForColumn(column) {
+  switch (column?.type) {
+    case "boolean":
+      return "boolean";
+    case "number":
+      return "number";
+    case "date":
+      return "date";
+    case "datetime":
+      return "datetime";
+    default:
+      return "text";
+  }
+}
+
+// lookup = { table, valueColumn, labelColumn } — the dropdown is the rows of
+// another table. A joined column shows a name and stores an id, and this is how
+// the form offers the names while writing the ids.
+export function normalizeLookup(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const table = String(raw.table || "").trim();
+  const valueColumn = String(raw.valueColumn || "").trim();
+  const labelColumn = String(raw.labelColumn || "").trim();
+  if (!table || !valueColumn || !labelColumn) return null;
+  return {
+    table: table.slice(0, 200),
+    valueColumn: valueColumn.slice(0, 200),
+    labelColumn: labelColumn.slice(0, 200),
+  };
 }
 
 // columnMap = { [result column]: real table column }. Only the ones that differ
@@ -424,6 +465,45 @@ export function realColumnOf(editable, resultName) {
 /** The table column the key lives in, which the result may have aliased. */
 export function realPkOf(editable) {
   return editable?.pkColumn || editable?.pk || "";
+}
+
+/**
+ * One entry of a dropdown, written "label = stored value".
+ *
+ * What a column shows and what it stores are often different — a CASE that
+ * turns BOT_AUTO into "Bot Auto" is the whole reason these tables are readable
+ * — and a dropdown that wrote its own label back would undo that. With no "="
+ * the two are the same, which is the ordinary case.
+ */
+export function parseOption(text) {
+  const raw = String(text ?? "");
+  const split = raw.indexOf("=");
+  if (split === -1) {
+    const trimmed = raw.trim();
+    return { label: trimmed, value: trimmed };
+  }
+  return { label: raw.slice(0, split).trim(), value: raw.slice(split + 1).trim() };
+}
+
+/**
+ * The choice a cell is currently on.
+ *
+ * The cell holds whatever the SELECT produced, which for a joined column is the
+ * label and for a plain one is the stored value, so both are worth matching.
+ */
+export function matchChoice(choices, value) {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  return (
+    choices.find((choice) => String(choice.value) === text) ||
+    choices.find((choice) => String(choice.label).trim() === text) ||
+    null
+  );
+}
+
+/** The option whose label or stored value matches what the cell holds. */
+export function matchOption(options, value) {
+  return matchChoice(options.map(parseOption), value);
 }
 
 /** Turns "@today"/"@now" into what they mean at the moment the form opens. */

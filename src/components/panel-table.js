@@ -39,8 +39,12 @@ import {
   SUMMARY_KINDS,
   SUMMARY_LABELS,
   summarize,
+  matchChoice,
+  parseOption,
+  toDate,
   toneStyle,
   toNumber,
+  widgetForColumn,
 } from "@/lib/gamedb-layout";
 
 const headerButton =
@@ -117,6 +121,162 @@ function CopyCell({ text }) {
   );
 }
 
+const editorClass =
+  "w-full rounded border border-red-500 bg-white px-1 py-0.5 text-[11px] font-semibold outline-none";
+
+/** yyyy-mm-dd for a date box, whatever the column happened to hold. */
+function toDateInput(value) {
+  const date = toDate(value);
+  if (!date) return "";
+  const pad = (part) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function toTimeInput(value) {
+  const text = String(value ?? "").trim();
+  const match = /(\d{1,2}):(\d{2})/.exec(text);
+  return match ? `${match[1].padStart(2, "0")}:${match[2]}` : "";
+}
+
+/**
+ * The box a cell turns into while it is being edited.
+ *
+ * A dropdown and a tickbox commit the moment they change — there is nothing
+ * more to type — while anything typed waits for Enter or for the focus to
+ * leave, and Escape always abandons.
+ */
+function CellEditor({ config, column, options, value, onChange, onCommit, onCancel }) {
+  const widget = config?.widget || widgetForColumn(column);
+  const keys = (event) => {
+    if (event.key === "Enter" && widget !== "textarea") onCommit();
+    if (event.key === "Escape") onCancel();
+  };
+
+  if (widget === "select" || widget === "lookup") {
+    // A typed-in list and a list read from another table end up the same shape.
+    const choices =
+      widget === "lookup" ? options || [] : (config.options || []).map(parseOption);
+    const current = matchChoice(choices, value);
+    if (widget === "lookup" && !options) {
+      return <span className="text-[10px] font-bold text-zinc-400">กำลังโหลดรายการ...</span>;
+    }
+    return (
+      <select
+        autoFocus
+        value={current ? String(current.value) : ""}
+        onChange={(event) => onCommit(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") onCancel();
+        }}
+        onBlur={onCancel}
+        className={editorClass}
+      >
+        <option value="">— ไม่ระบุ —</option>
+        {/* A value already in the cell but missing from the list would silently
+            reset itself on save, so it is offered back instead. */}
+        {!current && String(value ?? "").trim() !== "" && (
+          <option value={String(value)}>{String(value)} (ไม่มีในรายการ)</option>
+        )}
+        {choices.map((option) => (
+          <option key={String(option.value)} value={String(option.value)}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  if (widget === "checkbox") {
+    const checked = value === true || value === "true" || value === "t" || value === 1;
+    return (
+      <button
+        type="button"
+        autoFocus
+        onClick={() => onCommit(!checked)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") onCancel();
+        }}
+        onBlur={onCancel}
+        className={`${editorClass} text-left`}
+      >
+        {checked ? "✓ ใช่ — กดเพื่อเปลี่ยน" : "✗ ไม่ใช่ — กดเพื่อเปลี่ยน"}
+      </button>
+    );
+  }
+
+  // A boolean column can also be null, which a tickbox has no way to say.
+  if (widget === "boolean") {
+    const current =
+      value === true || value === "true" || value === "t"
+        ? "true"
+        : value === false || value === "false" || value === "f"
+          ? "false"
+          : "";
+    return (
+      <select
+        autoFocus
+        value={current}
+        onChange={(event) => onCommit(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") onCancel();
+        }}
+        onBlur={onCancel}
+        className={editorClass}
+      >
+        <option value="">— ไม่ระบุ —</option>
+        <option value="true">true (ใช่)</option>
+        <option value="false">false (ไม่ใช่)</option>
+      </select>
+    );
+  }
+
+  if (widget === "textarea") {
+    return (
+      <textarea
+        autoFocus
+        rows={3}
+        value={value ?? ""}
+        onChange={(event) => onChange(event.target.value)}
+        onBlur={() => onCommit()}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") onCancel();
+          if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) onCommit();
+        }}
+        className={`${editorClass} resize-y`}
+      />
+    );
+  }
+
+  const typed = {
+    number: "number",
+    date: "date",
+    time: "time",
+    datetime: "datetime-local",
+  }[widget];
+
+  // The picker needs its own format; a plain box shows the value as stored.
+  const shown =
+    widget === "date"
+      ? toDateInput(value)
+      : widget === "time"
+        ? toTimeInput(value)
+        : (value ?? "");
+
+  return (
+    <input
+      autoFocus
+      type={typed || "text"}
+      // A whole-number column will not take 1.5, so the box will not offer it.
+      step={widget === "number" && column?.integer ? "1" : undefined}
+      value={shown}
+      onChange={(event) => onChange(event.target.value)}
+      onBlur={() => onCommit()}
+      onKeyDown={keys}
+      className={editorClass}
+    />
+  );
+}
+
 /** What goes inside a cell once its column has a render mode set. */
 function CellContent({ text, render, tone }) {
   if (!text || text === "—") return text;
@@ -169,6 +329,7 @@ export default function PanelTable({
   height,
   canEdit,
   editableColumns,
+  lookupOptions = {},
   editPending,
   onEditCell,
   changedKeys,
@@ -448,12 +609,17 @@ export default function PanelTable({
     });
   };
 
-  const commitEdit = async () => {
+  const commitEdit = async (override) => {
     if (!editingCell) return;
-    const pending = editingCell;
+    const pending = override === undefined ? editingCell : { ...editingCell, value: override };
     setEditingCell(null);
     await onEditCell(pending);
   };
+
+  // The same per-column setup the "add a row" form uses, so a column that is a
+  // dropdown there is a dropdown here rather than a free text box.
+  const inputConfigOf = (columnName) =>
+    layout.editable?.inputs?.find((input) => input.column === columnName) || null;
 
   // Shared by the windowed and the grouped rendering paths below.
   const renderRow = (row, rowIndex) => {
@@ -576,18 +742,14 @@ export default function PanelTable({
             }}
           >
             {editing ? (
-              <input
-                autoFocus
-                value={editingCell.value ?? ""}
-                onChange={(e) =>
-                  setEditingCell((prev) => ({ ...prev, value: e.target.value }))
-                }
-                onBlur={commitEdit}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") commitEdit();
-                  if (e.key === "Escape") setEditingCell(null);
-                }}
-                className="w-full rounded border border-red-500 bg-white px-1 py-0.5 text-[11px] font-semibold outline-none"
+              <CellEditor
+                config={col.kind === "base" ? inputConfigOf(col.column.name) : null}
+                column={col.column}
+                options={col.kind === "base" ? lookupOptions[col.column.name] : null}
+                value={editingCell.value}
+                onChange={(next) => setEditingCell((prev) => ({ ...prev, value: next }))}
+                onCommit={commitEdit}
+                onCancel={() => setEditingCell(null)}
               />
             ) : (
               <CellContent

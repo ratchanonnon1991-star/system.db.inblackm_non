@@ -67,6 +67,10 @@ import {
 import PanelTable from "@/components/panel-table";
 import PanelChart from "@/components/panel-chart";
 
+// One shared empty object, so a panel with no lookup fields does not hand its
+// children a new identity on every render.
+const NO_LOOKUPS = {};
+
 const iconButtonClass =
   "flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700 disabled:opacity-40";
 
@@ -886,6 +890,41 @@ export default function QueryPanel({
   const canEditCells = Boolean(
     canManage && layout.editable && baseNameToIndex.has(layout.editable.pk)
   );
+
+  // Dropdowns that read another table are fetched once for the panel rather
+  // than per cell, and only when a field actually asks for one.
+  const [loadedLookups, setLoadedLookups] = useState(NO_LOOKUPS);
+  const lookupSignature = useMemo(
+    () =>
+      JSON.stringify(
+        (layout.editable?.inputs || [])
+          .filter((input) => input.widget === "lookup" && input.lookup)
+          .map((input) => [input.column, input.lookup])
+      ),
+    [layout.editable]
+  );
+  const hasLookups = lookupSignature !== "[]";
+
+  useEffect(() => {
+    if (!canEditCells || !hasLookups) return undefined;
+    let cancelled = false;
+    apiJson(`/api/queries/${query.id}/lookup`, {
+      fallbackError: "โหลดรายการตัวเลือกไม่สำเร็จ",
+    })
+      .then((data) => {
+        if (!cancelled) setLoadedLookups(data.options || NO_LOOKUPS);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadedLookups(NO_LOOKUPS);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [query.id, canEditCells, hasLookups, lookupSignature]);
+
+  // Derived rather than cleared in the effect: turning the last lookup field
+  // off should drop the lists without another render pass.
+  const lookupOptions = hasLookups ? loadedLookups : NO_LOOKUPS;
 
   const editCell = async ({ sourceIndex, colId, colIndex, value }) => {
     const col = visibleColumns[colIndex];
@@ -1956,6 +1995,7 @@ export default function QueryPanel({
                   height={panel.height}
                   canEdit={canEditCells}
                   editableColumns={editableColumns}
+                  lookupOptions={lookupOptions}
                   editPending={editPending}
                   onEditCell={editCell}
                   changedKeys={changedCellKeys}
@@ -2095,6 +2135,8 @@ export default function QueryPanel({
       {modal === "newRow" && result && layout.editable && (
         <NewRowModal
           editable={layout.editable}
+          lookupOptions={lookupOptions}
+          resultColumns={result.columns}
           onSubmit={insertRow}
           onClose={() => setModal(null)}
         />

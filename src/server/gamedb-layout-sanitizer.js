@@ -135,9 +135,19 @@ export function sanitizeLayout(raw) {
           // A form field for a column that is not writable would be a box that
           // silently does nothing, so those are dropped here rather than
           // ignored later.
-          inputs: normalizeInputs(rawEditable.inputs).filter((input) =>
-            editableColumns.includes(input.column)
-          ),
+          inputs: normalizeInputs(rawEditable.inputs)
+            .filter((input) => editableColumns.includes(input.column))
+            // A lookup names a table and two of its columns, and those are
+            // quoted into a SELECT later, so an unusable one is dropped here
+            // and the field falls back to a plain box.
+            .map((input) =>
+              input.lookup &&
+              isSafeIdentifier(input.lookup.table) &&
+              isSafeIdentifierPart(input.lookup.valueColumn) &&
+              isSafeIdentifierPart(input.lookup.labelColumn)
+                ? input
+                : { ...input, lookup: null, widget: input.widget === "lookup" ? "text" : input.widget }
+            ),
         }
       : null;
   const chart =

@@ -27,8 +27,10 @@ import {
   MAX_FREEZE,
   MAX_GROUP_LABEL,
   normalizeFormat,
+  parseOption,
   PARAM_TYPES,
   resolveInputDefault,
+  widgetForColumn,
   RULE_OP_LABELS,
   RULE_OPS,
   RULE_TONES,
@@ -241,7 +243,8 @@ const WIDGET_LABELS = {
   date: "วันที่",
   time: "เวลา",
   datetime: "วันที่ + เวลา",
-  select: "เลือกจากรายการ",
+  select: "เลือกจากรายการที่พิมพ์เอง",
+  lookup: "เลือกจากอีกตาราง (FK)",
   textarea: "ข้อความหลายบรรทัด",
   checkbox: "ใช่ / ไม่ใช่",
 };
@@ -271,6 +274,7 @@ export function EditableSettingsModal({ columnNames, editable, onSave, onClose }
       column: name,
       widget: "text",
       options: [],
+      lookup: null,
       defaultValue: "",
       required: false,
     };
@@ -390,30 +394,126 @@ export function EditableSettingsModal({ columnNames, editable, onSave, onClose }
 
       {columns.length > 0 && (
         <div className="rounded-xl border border-zinc-200 p-3">
-          <p className="mb-2 text-[10px] font-black text-zinc-500">
-            ชื่อจริงในตารางของแต่ละคอลัมน์
-          </p>
+          <p className="mb-1 text-[10px] font-black text-zinc-500">คอลัมน์ที่เขียนได้</p>
           <p className="mb-2 text-[10px] font-semibold leading-relaxed text-zinc-500">
-            ชื่อทางซ้ายคือหัวคอลัมน์ที่ Query ตั้ง (`AS`) ทางขวาคือชื่อคอลัมน์จริงที่จะถูกเขียน —
-            ตรงกันอยู่แล้วก็ปล่อยไว้ · คอลัมน์ที่มาจากการคำนวณหรือ JOIN
-            (เช่น `g.name`, `CASE ...`) เขียนกลับไม่ได้ ให้เอาออกจากรายการด้านบน
+            ชื่อทางซ้ายคือหัวคอลัมน์ที่ Query ตั้งด้วย <code>AS</code> — กรอกชื่อคอลัมน์จริงในตาราง
+            ถ้าไม่ตรงกัน · ช่องกรอกที่เลือกใช้ทั้งตอนดับเบิลคลิกแก้ในตารางและตอนเพิ่มแถว ·
+            คอลัมน์ที่มาจากการคำนวณหรือ JOIN (<code>g.name</code>, <code>CASE ...</code>)
+            เขียนกลับไม่ได้ ให้เอาออกจากรายการด้านบน
           </p>
-          <div className="space-y-1.5">
-            {columns.map((name) => (
-              <div key={name} className="grid grid-cols-2 items-center gap-2">
-                <span className="min-w-0 truncate text-[11px] font-black text-zinc-700" title={name}>
-                  {name}
-                </span>
-                <input
-                  type="text"
-                  value={realColumn(name)}
-                  onChange={(e) => setRealColumn(name, e.target.value)}
-                  placeholder={name}
-                  className="h-8 w-full rounded-md border border-zinc-200 px-2 font-mono text-[10px] font-semibold outline-none focus:border-red-600"
-                />
-              </div>
-            ))}
+          <div className="space-y-2">
+            {columns.map((name) => {
+              const input = inputFor(name);
+              return (
+                <div key={name} className="rounded-lg border border-zinc-200 px-2.5 py-2">
+                  <div className="mb-1.5 grid grid-cols-2 items-center gap-2">
+                    <span
+                      className="min-w-0 truncate text-[11px] font-black text-zinc-700"
+                      title={name}
+                    >
+                      {name}
+                    </span>
+                    <input
+                      type="text"
+                      value={realColumn(name)}
+                      onChange={(e) => setRealColumn(name, e.target.value)}
+                      placeholder={`ชื่อจริง (${name})`}
+                      className="h-8 w-full rounded-md border border-zinc-200 px-2 font-mono text-[10px] font-semibold outline-none focus:border-red-600"
+                    />
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <select
+                      value={input.widget}
+                      onChange={(e) => updateInput(name, { widget: e.target.value })}
+                      className="h-8 w-full rounded-md border border-zinc-200 px-1.5 text-[10px] font-bold outline-none focus:border-red-600"
+                    >
+                      {INPUT_WIDGETS.map((widget) => (
+                        <option key={widget} value={widget}>
+                          {WIDGET_LABELS[widget]}
+                        </option>
+                      ))}
+                    </select>
+                    <label className="flex h-8 items-center gap-1.5 text-[10px] font-bold text-zinc-500">
+                      <input
+                        type="checkbox"
+                        checked={input.required}
+                        onChange={(e) => updateInput(name, { required: e.target.checked })}
+                        className="h-3 w-3 accent-red-600"
+                      />
+                      ต้องกรอก (ตอนเพิ่มแถว)
+                    </label>
+                    {input.widget === "select" && (
+                      <input
+                        type="text"
+                        value={input.options.join(", ")}
+                        onChange={(e) =>
+                          updateInput(name, {
+                            options: e.target.value
+                              .split(",")
+                              .map((option) => option.trim())
+                              .filter(Boolean),
+                          })
+                        }
+                        placeholder="ตัวเลือก คั่นด้วย , — ใส่ ป้าย = ค่าที่เก็บ ได้"
+                        className="h-8 w-full rounded-md border border-zinc-200 px-1.5 text-[10px] font-semibold outline-none focus:border-red-600 sm:col-span-2"
+                      />
+                    )}
+                    {input.widget === "lookup" && (
+                      <div className="grid gap-2 sm:col-span-2 sm:grid-cols-3">
+                        <input
+                          type="text"
+                          value={input.lookup?.table || ""}
+                          onChange={(e) =>
+                            updateInput(name, {
+                              lookup: { ...(input.lookup || {}), table: e.target.value },
+                            })
+                          }
+                          placeholder="ตารางต้นทาง เช่น topup.game"
+                          className="h-8 w-full rounded-md border border-zinc-200 px-1.5 font-mono text-[10px] font-semibold outline-none focus:border-red-600"
+                        />
+                        <input
+                          type="text"
+                          value={input.lookup?.labelColumn || ""}
+                          onChange={(e) =>
+                            updateInput(name, {
+                              lookup: { ...(input.lookup || {}), labelColumn: e.target.value },
+                            })
+                          }
+                          placeholder="คอลัมน์ที่โชว์ เช่น name"
+                          className="h-8 w-full rounded-md border border-zinc-200 px-1.5 font-mono text-[10px] font-semibold outline-none focus:border-red-600"
+                        />
+                        <input
+                          type="text"
+                          value={input.lookup?.valueColumn || ""}
+                          onChange={(e) =>
+                            updateInput(name, {
+                              lookup: { ...(input.lookup || {}), valueColumn: e.target.value },
+                            })
+                          }
+                          placeholder="คอลัมน์ที่เก็บ เช่น id"
+                          className="h-8 w-full rounded-md border border-zinc-200 px-1.5 font-mono text-[10px] font-semibold outline-none focus:border-red-600"
+                        />
+                      </div>
+                    )}
+                    {allowInsert && (
+                      <input
+                        type="text"
+                        value={input.defaultValue}
+                        onChange={(e) => updateInput(name, { defaultValue: e.target.value })}
+                        placeholder="ค่าเริ่มต้นตอนเพิ่มแถว (@today, @now, @time ได้)"
+                        className="h-8 w-full rounded-md border border-zinc-200 px-1.5 text-[10px] font-semibold outline-none focus:border-red-600 sm:col-span-2"
+                      />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
+          <p className="mt-2 text-[10px] font-semibold leading-relaxed text-zinc-500">
+            ตัวเลือกที่แสดงกับค่าที่เก็บลงฐานข้อมูลต่างกันได้ — เขียน{" "}
+            <code>Bot Auto = BOT_AUTO, Manual = MANUAL</code> จะโชว์ &quot;Bot Auto&quot; แต่เขียน{" "}
+            <code>BOT_AUTO</code> ลงตาราง
+          </p>
         </div>
       )}
 
@@ -444,97 +544,36 @@ export function EditableSettingsModal({ columnNames, editable, onSave, onClose }
         )}
       </div>
 
-      {allowInsert && (
-        <div className="rounded-xl border border-zinc-200 p-3">
-          <p className="mb-2 text-[10px] font-black text-zinc-500">
-            ช่องกรอกของฟอร์มเพิ่มแถว — คอลัมน์ที่ไม่ได้ตั้งจะเป็นช่องข้อความธรรมดา
-          </p>
-          {columns.length === 0 ? (
-            <p className="text-[11px] font-semibold text-zinc-400">
-              เลือกคอลัมน์ที่อนุญาตให้แก้ด้านบนก่อน
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {columns.map((name) => {
-                const input = inputFor(name);
-                return (
-                  <div key={name} className="rounded-lg border border-zinc-200 px-2.5 py-2">
-                    <div className="mb-1.5 flex items-center justify-between gap-2">
-                      <span className="min-w-0 truncate text-[11px] font-black text-zinc-700">
-                        {name}
-                      </span>
-                      <label className="flex shrink-0 items-center gap-1 text-[10px] font-bold text-zinc-500">
-                        <input
-                          type="checkbox"
-                          checked={input.required}
-                          onChange={(e) => updateInput(name, { required: e.target.checked })}
-                          className="h-3 w-3 accent-red-600"
-                        />
-                        ต้องกรอก
-                      </label>
-                    </div>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <select
-                        value={input.widget}
-                        onChange={(e) => updateInput(name, { widget: e.target.value })}
-                        className="h-8 w-full rounded-md border border-zinc-200 px-1.5 text-[10px] font-bold outline-none focus:border-red-600"
-                      >
-                        {INPUT_WIDGETS.map((widget) => (
-                          <option key={widget} value={widget}>
-                            {WIDGET_LABELS[widget]}
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        type="text"
-                        value={input.defaultValue}
-                        onChange={(e) => updateInput(name, { defaultValue: e.target.value })}
-                        placeholder="ค่าเริ่มต้น (@today, @now, @time ได้)"
-                        className="h-8 w-full rounded-md border border-zinc-200 px-1.5 text-[10px] font-semibold outline-none focus:border-red-600"
-                      />
-                      {input.widget === "select" && (
-                        <input
-                          type="text"
-                          value={input.options.join(", ")}
-                          onChange={(e) =>
-                            updateInput(name, {
-                              options: e.target.value
-                                .split(",")
-                                .map((option) => option.trim())
-                                .filter(Boolean),
-                            })
-                          }
-                          placeholder="ตัวเลือก คั่นด้วย , เช่น YAYA, Panghou, T002"
-                          className="h-8 w-full rounded-md border border-zinc-200 px-1.5 text-[10px] font-semibold outline-none focus:border-red-600 sm:col-span-2"
-                        />
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
     </ModalShell>
   );
 }
 
 /** The "add a row" form, built from the inputs configured above. */
-export function NewRowModal({ editable, onSubmit, onClose }) {
+export function NewRowModal({
+  editable,
+  lookupOptions = {},
+  resultColumns = [],
+  onSubmit,
+  onClose,
+}) {
   const fields = useMemo(() => {
     const configured = new Map(editable.inputs.map((input) => [input.column, input]));
+    const byName = new Map(resultColumns.map((column) => [column.name, column]));
     return editable.columns.map(
       (column) =>
         configured.get(column) || {
           column,
-          widget: "text",
+          // Same fallback the table's own editor uses, so a boolean column is
+          // a true/false box in both places.
+          widget: widgetForColumn(byName.get(column)),
           options: [],
+          lookup: null,
           defaultValue: "",
           required: false,
+          integer: byName.get(column)?.integer === true,
         }
     );
-  }, [editable]);
+  }, [editable, resultColumns]);
 
   const [values, setValues] = useState(() =>
     Object.fromEntries(
@@ -614,12 +653,15 @@ export function NewRowModal({ editable, onSubmit, onClose }) {
                   {field.column}
                   {field.required && <span className="ml-1 text-red-600">*</span>}
                 </label>
-                {field.widget === "select" ? (
+                {field.widget === "select" || field.widget === "lookup" ? (
                   <select {...common}>
                     <option value="">— ไม่ระบุ —</option>
-                    {field.options.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
+                    {(field.widget === "lookup"
+                      ? lookupOptions[field.column] || []
+                      : field.options.map(parseOption)
+                    ).map((option) => (
+                      <option key={String(option.value)} value={String(option.value)}>
+                        {option.label}
                       </option>
                     ))}
                   </select>
@@ -640,9 +682,17 @@ export function NewRowModal({ editable, onSubmit, onClose }) {
                     />
                     {value === true || value === "true" ? "ใช่" : "ไม่ใช่"}
                   </label>
+                ) : field.widget === "boolean" ? (
+                  // A boolean column may also be null, so it gets three states.
+                  <select {...common}>
+                    <option value="">— ไม่ระบุ —</option>
+                    <option value="true">true (ใช่)</option>
+                    <option value="false">false (ไม่ใช่)</option>
+                  </select>
                 ) : (
                   <input
                     {...common}
+                    step={field.widget === "number" && field.integer ? "1" : undefined}
                     type={
                       field.widget === "number"
                         ? "number"

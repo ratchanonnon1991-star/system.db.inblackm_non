@@ -43,6 +43,9 @@ export function validateReadOnlySql(sqlText) {
   return sql;
 }
 
+// int8, int2, int4, oid — the ones that will not take a fraction.
+const INTEGER_TYPES = new Set([20, 21, 23, 26]);
+
 function mapColumnType(dataTypeID) {
   switch (dataTypeID) {
     case 20:
@@ -123,6 +126,9 @@ export async function runReadOnlyQuery(sqlText, connection = null, params = {}, 
         key: `c${index}`,
         name: field.name,
         type: mapColumnType(field.dataTypeID),
+        // int2/int4/int8 and numeric all display as "number"; the edit box
+        // still wants to know which, so a whole-number column refuses 1.5.
+        integer: INTEGER_TYPES.has(field.dataTypeID),
       })),
       rows,
       rowCount: rows.length,
