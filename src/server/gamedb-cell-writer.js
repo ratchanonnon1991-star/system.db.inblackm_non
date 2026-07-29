@@ -1,5 +1,6 @@
 import { getPoolForConnection } from "@/lib/db";
 import { quoteIdentifier } from "@/lib/gamedb-identifier";
+import { realColumnOf, realPkOf } from "@/lib/gamedb-layout";
 import { getConnectionFlags } from "@/server/gamedb-side-tables";
 
 const STATEMENT_TIMEOUT_MS = 8000;
@@ -39,8 +40,10 @@ export async function updateCell({ editable, connection, pkValue, column, value 
   }
 
   const table = quoteIdentifier(editable.table);
-  const pk = quoteIdentifier(editable.pk);
-  const target = quoteIdentifier(column);
+  // `column` and `editable.pk` name columns in the query's result; the table
+  // knows them by whatever the SELECT aliased away from.
+  const pk = quoteIdentifier(realPkOf(editable));
+  const target = quoteIdentifier(realColumnOf(editable, column));
   const nextValue = value === "" || value === undefined ? null : value;
 
   let client;

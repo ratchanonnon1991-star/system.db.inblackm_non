@@ -1,5 +1,6 @@
 import { getPoolForConnection } from "@/lib/db";
 import { quoteIdentifier } from "@/lib/gamedb-identifier";
+import { realColumnOf, realPkOf } from "@/lib/gamedb-layout";
 import { getConnectionFlags } from "@/server/gamedb-side-tables";
 
 const STATEMENT_TIMEOUT_MS = 8000;
@@ -84,8 +85,9 @@ export async function insertRow({ editable, connection, values }) {
   }
 
   const table = quoteIdentifier(editable.table);
-  const pk = quoteIdentifier(editable.pk);
-  const columns = entries.map(([column]) => quoteIdentifier(column));
+  // The form is keyed by result column; the table is not.
+  const pk = quoteIdentifier(realPkOf(editable));
+  const columns = entries.map(([column]) => quoteIdentifier(realColumnOf(editable, column)));
   const params = entries.map(([, value]) => value);
   const placeholders = params.map((_, index) => `$${index + 1}`);
 
@@ -122,7 +124,7 @@ export async function deleteRow({ editable, connection, pkValue }) {
   await assertWritable(editable, connection, "allowDelete", "ลบแถว");
 
   const table = quoteIdentifier(editable.table);
-  const pk = quoteIdentifier(editable.pk);
+  const pk = quoteIdentifier(realPkOf(editable));
 
   const client = await connect(connection);
   try {

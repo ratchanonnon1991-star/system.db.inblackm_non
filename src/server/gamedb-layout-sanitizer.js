@@ -2,6 +2,7 @@
 // endpoint and by saved screen templates, which embed layouts of their own.
 import {
   COMPUTED_TYPES,
+  normalizeColumnMap,
   normalizeDrill,
   normalizeFormats,
   normalizeFreeze,
@@ -102,25 +103,39 @@ export function sanitizeLayout(raw) {
           scope: rule.scope === "row" && rule.tone !== "bar" ? "row" : "cell",
         }))
     : [];
-  const editableColumns =
-    layout.editable && typeof layout.editable === "object"
-      ? sanitizeStringArray(layout.editable.columns).filter(isSafeIdentifierPart).slice(0, 50)
-      : [];
+  // A result column is a label — "VPN / NO VPN" is a perfectly good one — and
+  // never reaches SQL. What has to survive quoting is the table column it maps
+  // to, which is the alias itself only when no mapping was given.
+  const rawEditable =
+    layout.editable && typeof layout.editable === "object" ? layout.editable : null;
+  const columnMap = normalizeColumnMap(rawEditable?.columnMap);
+  const editableColumns = rawEditable
+    ? sanitizeStringArray(rawEditable.columns)
+        .slice(0, 50)
+        .filter((name) => isSafeIdentifierPart(columnMap[name] || name))
+    : [];
+  const pkResult = String(rawEditable?.pk || "");
+  const pkColumn = String(rawEditable?.pkColumn || "").trim();
   const editable =
-    layout.editable &&
-    typeof layout.editable === "object" &&
-    isSafeIdentifier(String(layout.editable.table || "")) &&
-    isSafeIdentifierPart(String(layout.editable.pk || ""))
+    rawEditable &&
+    isSafeIdentifier(String(rawEditable.table || "")) &&
+    pkResult &&
+    isSafeIdentifierPart(pkColumn || pkResult)
       ? {
-          table: String(layout.editable.table),
-          pk: String(layout.editable.pk),
+          table: String(rawEditable.table),
+          pk: pkResult,
+          pkColumn,
           columns: editableColumns,
-          allowInsert: layout.editable.allowInsert === true,
-          allowDelete: layout.editable.allowDelete === true,
+          // A mapping for a column that is not writable is dead weight.
+          columnMap: Object.fromEntries(
+            Object.entries(columnMap).filter(([name]) => editableColumns.includes(name))
+          ),
+          allowInsert: rawEditable.allowInsert === true,
+          allowDelete: rawEditable.allowDelete === true,
           // A form field for a column that is not writable would be a box that
           // silently does nothing, so those are dropped here rather than
           // ignored later.
-          inputs: normalizeInputs(layout.editable.inputs).filter((input) =>
+          inputs: normalizeInputs(rawEditable.inputs).filter((input) =>
             editableColumns.includes(input.column)
           ),
         }

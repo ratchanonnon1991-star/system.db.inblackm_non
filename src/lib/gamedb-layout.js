@@ -162,6 +162,14 @@ export function normalizeLayout(raw) {
           columns: Array.isArray(layout.editable.columns)
             ? layout.editable.columns.map(String)
             : [],
+          // `pk` and `columns` name columns in the *result*, which is what the
+          // panel reads values out of. A SELECT that aliases them — and any
+          // readable query does — needs the real names too, or the WHERE and
+          // the SET would be written against labels the table has never heard
+          // of. Blank means the alias is the column name, which is how every
+          // config saved before this behaved.
+          pkColumn: String(layout.editable.pkColumn || "").trim(),
+          columnMap: normalizeColumnMap(layout.editable.columnMap),
           // Editing a cell was the only thing this config could do, so a query
           // saved before now can do only that.
           allowInsert: layout.editable.allowInsert === true,
@@ -394,6 +402,28 @@ export function normalizeInputs(raw) {
       defaultValue: input.defaultValue == null ? "" : String(input.defaultValue).slice(0, 200),
       required: input.required === true,
     }));
+}
+
+// columnMap = { [result column]: real table column }. Only the ones that differ
+// are worth storing, so an identity entry is dropped.
+export function normalizeColumnMap(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const map = {};
+  for (const [result, column] of Object.entries(raw).slice(0, 60)) {
+    const real = typeof column === "string" ? column.trim() : "";
+    if (real && real !== result) map[String(result).slice(0, 200)] = real.slice(0, 200);
+  }
+  return map;
+}
+
+/** The table column a result column is written back to. */
+export function realColumnOf(editable, resultName) {
+  return editable?.columnMap?.[resultName] || resultName;
+}
+
+/** The table column the key lives in, which the result may have aliased. */
+export function realPkOf(editable) {
+  return editable?.pkColumn || editable?.pk || "";
 }
 
 /** Turns "@today"/"@now" into what they mean at the moment the form opens. */

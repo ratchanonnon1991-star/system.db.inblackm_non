@@ -250,10 +250,16 @@ const WIDGET_LABELS = {
 export function EditableSettingsModal({ columnNames, editable, onSave, onClose }) {
   const [table, setTable] = useState(editable?.table || "");
   const [pk, setPk] = useState(editable?.pk || "");
+  const [pkColumn, setPkColumn] = useState(editable?.pkColumn || "");
   const [columns, setColumns] = useState(editable?.columns || []);
+  const [columnMap, setColumnMap] = useState(() => editable?.columnMap || {});
   const [allowInsert, setAllowInsert] = useState(editable?.allowInsert || false);
   const [allowDelete, setAllowDelete] = useState(editable?.allowDelete || false);
   const [inputs, setInputs] = useState(() => editable?.inputs || []);
+
+  const realColumn = (name) => columnMap[name] ?? name;
+  const setRealColumn = (name, value) =>
+    setColumnMap((prev) => ({ ...prev, [name]: value }));
 
   const toggle = (name) =>
     setColumns((prev) =>
@@ -281,6 +287,11 @@ export function EditableSettingsModal({ columnNames, editable, onSave, onClose }
     });
 
   const pkInResult = !pk || columnNames.includes(pk);
+  // The commonest way to get this wrong is the capitalisation of an alias, so
+  // say which one was meant rather than only that this one is missing.
+  const pkNearMiss = pkInResult
+    ? ""
+    : columnNames.find((name) => name.toLowerCase() === pk.trim().toLowerCase()) || "";
 
   return (
     <ModalShell
@@ -293,7 +304,13 @@ export function EditableSettingsModal({ columnNames, editable, onSave, onClose }
             ? {
                 table: table.trim(),
                 pk: pk.trim(),
+                pkColumn: pkColumn.trim(),
                 columns,
+                columnMap: Object.fromEntries(
+                  columns
+                    .map((name) => [name, (columnMap[name] ?? "").trim()])
+                    .filter(([name, real]) => real && real !== name)
+                ),
                 allowInsert,
                 allowDelete,
                 inputs: inputs.filter((input) => columns.includes(input.column)),
@@ -316,21 +333,41 @@ export function EditableSettingsModal({ columnNames, editable, onSave, onClose }
           className={inputClass}
         />
       </div>
-      <div>
-        <label className={labelClass}>คอลัมน์ที่เป็น key (ต้องมีอยู่ในผลลัพธ์ของ Query)</label>
-        <input
-          type="text"
-          value={pk}
-          onChange={(e) => setPk(e.target.value)}
-          placeholder="เช่น id"
-          className={inputClass}
-        />
-        {!pkInResult && (
-          <p className="mt-1 text-[10px] font-bold text-red-600">
-            ผลลัพธ์ยังไม่มีคอลัมน์ &quot;{pk}&quot; — เพิ่มเข้าไปใน SELECT ก่อน ไม่งั้นแก้ไม่ได้
-          </p>
-        )}
+      <div className="grid gap-2 sm:grid-cols-2">
+        <div>
+          <label className={labelClass}>คอลัมน์ที่เป็น key — ชื่อในผลลัพธ์ของ Query</label>
+          <select value={pk} onChange={(e) => setPk(e.target.value)} className={inputClass}>
+            <option value="">— เลือกคอลัมน์ —</option>
+            {columnNames.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+            {pk && !pkInResult && <option value={pk}>{pk} (ไม่มีในผลลัพธ์)</option>}
+          </select>
+          {!pkInResult && (
+            <p className="mt-1 text-[10px] font-bold text-red-600">
+              ผลลัพธ์ไม่มี &quot;{pk}&quot;
+              {pkNearMiss ? ` — มี "${pkNearMiss}" ตัวพิมพ์ไม่ตรงกัน` : " — เพิ่มเข้าไปใน SELECT ก่อน"}
+            </p>
+          )}
+        </div>
+        <div>
+          <label className={labelClass}>ชื่อจริงในตาราง (เว้นว่าง = ใช้ชื่อเดียวกัน)</label>
+          <input
+            type="text"
+            value={pkColumn}
+            onChange={(e) => setPkColumn(e.target.value)}
+            placeholder={pk ? `เช่น ${pk.toLowerCase()}` : "เช่น id"}
+            className={inputClass}
+          />
+        </div>
       </div>
+      {pk && (pkColumn.trim() || pk) && (
+        <p className="rounded-lg bg-zinc-50 px-3 py-2 font-mono text-[10px] font-semibold text-zinc-500">
+          WHERE &quot;{pkColumn.trim() || pk}&quot; = ค่าจากคอลัมน์ &quot;{pk}&quot; ของแถวนั้น
+        </p>
+      )}
       <div>
         <label className={labelClass}>คอลัมน์ที่อนุญาตให้แก้</label>
         <div className="flex flex-wrap gap-1">
@@ -350,6 +387,35 @@ export function EditableSettingsModal({ columnNames, editable, onSave, onClose }
           ))}
         </div>
       </div>
+
+      {columns.length > 0 && (
+        <div className="rounded-xl border border-zinc-200 p-3">
+          <p className="mb-2 text-[10px] font-black text-zinc-500">
+            ชื่อจริงในตารางของแต่ละคอลัมน์
+          </p>
+          <p className="mb-2 text-[10px] font-semibold leading-relaxed text-zinc-500">
+            ชื่อทางซ้ายคือหัวคอลัมน์ที่ Query ตั้ง (`AS`) ทางขวาคือชื่อคอลัมน์จริงที่จะถูกเขียน —
+            ตรงกันอยู่แล้วก็ปล่อยไว้ · คอลัมน์ที่มาจากการคำนวณหรือ JOIN
+            (เช่น `g.name`, `CASE ...`) เขียนกลับไม่ได้ ให้เอาออกจากรายการด้านบน
+          </p>
+          <div className="space-y-1.5">
+            {columns.map((name) => (
+              <div key={name} className="grid grid-cols-2 items-center gap-2">
+                <span className="min-w-0 truncate text-[11px] font-black text-zinc-700" title={name}>
+                  {name}
+                </span>
+                <input
+                  type="text"
+                  value={realColumn(name)}
+                  onChange={(e) => setRealColumn(name, e.target.value)}
+                  placeholder={name}
+                  className="h-8 w-full rounded-md border border-zinc-200 px-2 font-mono text-[10px] font-semibold outline-none focus:border-red-600"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="rounded-xl border border-zinc-200 p-3">
         <p className="mb-2 text-[10px] font-black text-zinc-500">เพิ่ม / ลบทั้งแถว</p>
