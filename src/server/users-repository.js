@@ -29,36 +29,29 @@ async function ensureSchema() {
           password_hash TEXT NOT NULL,
           role          VARCHAR(16) NOT NULL DEFAULT 'staff'
                         CHECK (role IN ('admin', 'staff', 'user')),
-          default_view_id INTEGER,
           created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
-      await client.query(`
-        ALTER TABLE gamedb_users
-        ADD COLUMN IF NOT EXISTS default_view_id INTEGER
-      `);
 
-      // Older installations only allow admin/staff in this constraint.
-      // Upgrade it in place so adding the new read-only-layout role works
-      // without requiring a separate manual migration.
-      const roleConstraint = await client.query(`
-        SELECT pg_get_constraintdef(oid) AS definition
-        FROM pg_constraint
-        WHERE conrelid = 'gamedb_users'::regclass
-          AND conname = 'gamedb_users_role_check'
+      // gamedb_users may be owned by a DBA role, so the runtime account must
+      // never ALTER it just to store a UI preference. Keep preferences in a
+      // service-owned side table instead.
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS gamedb_user_preferences (
+          user_id         INTEGER PRIMARY KEY,
+          default_view_id INTEGER,
+          role_override   VARCHAR(16)
+                          CHECK (role_override IS NULL OR role_override = 'user'),
+          updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
       `);
-      if (
-        roleConstraint.rows[0] &&
-        !roleConstraint.rows[0].definition.includes("'user'")
-      ) {
-        await client.query(`
-          ALTER TABLE gamedb_users
-          DROP CONSTRAINT gamedb_users_role_check,
-          ADD CONSTRAINT gamedb_users_role_check
-            CHECK (role IN ('admin', 'staff', 'user'))
-        `);
-      }
+      // The previous failed startup may already have created this table before
+      // it reached the owner-only ALTER on gamedb_users.
+      await client.query(`
+        ALTER TABLE gamedb_user_preferences
+        ADD COLUMN IF NOT EXISTS role_override VARCHAR(16)
+      `);
 
       // First-run seed: create the initial admin from env so no password
       // ever lives in the codebase. Only runs when the table is empty.
@@ -89,8 +82,12 @@ async function ensureSchema() {
 export async function findUserByUsername(username) {
   await ensureSchema();
   const result = await getPool().query(
-    `SELECT id, username, display_name, password_hash, role, default_view_id, created_at
-     FROM gamedb_users WHERE LOWER(username) = LOWER($1)`,
+    `SELECT u.id, u.username, u.display_name, u.password_hash,
+            COALESCE(p.role_override, u.role) AS role,
+            p.default_view_id, u.created_at
+     FROM gamedb_users u
+     LEFT JOIN gamedb_user_preferences p ON p.user_id = u.id
+     WHERE LOWER(u.username) = LOWER($1)`,
     [username]
   );
   const row = result.rows[0];
@@ -103,8 +100,12 @@ export async function findUserById(id) {
   if (!Number.isInteger(numeric) || numeric <= 0) return null;
   await ensureSchema();
   const result = await getPool().query(
-    `SELECT id, username, display_name, role, default_view_id, created_at
-     FROM gamedb_users WHERE id = $1`,
+    `SELECT u.id, u.username, u.display_name,
+            COALESCE(p.role_override, u.role) AS role,
+            p.default_view_id, u.created_at
+     FROM gamedb_users u
+     LEFT JOIN gamedb_user_preferences p ON p.user_id = u.id
+     WHERE u.id = $1`,
     [numeric]
   );
   return mapRow(result.rows[0]);
@@ -113,8 +114,12 @@ export async function findUserById(id) {
 export async function listUsers() {
   await ensureSchema();
   const result = await getPool().query(
-    `SELECT id, username, display_name, role, default_view_id, created_at
-     FROM gamedb_users ORDER BY id ASC`
+    `SELECT u.id, u.username, u.display_name,
+            COALESCE(p.role_override, u.role) AS role,
+            p.default_view_id, u.created_at
+     FROM gamedb_users u
+     LEFT JOIN gamedb_user_preferences p ON p.user_id = u.id
+     ORDER BY u.id ASC`
   );
   return result.rows.map(mapRow);
 }
@@ -135,20 +140,42 @@ export async function insertUser({
   defaultViewId = null,
 }) {
   await ensureSchema();
-  const result = await getPool().query(
-    `INSERT INTO gamedb_users
-       (username, display_name, password_hash, role, default_view_id)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING id, username, display_name, role, default_view_id, created_at`,
-    [
-      username,
-      displayName || username,
-      hashPassword(password),
-      role,
-      defaultViewId,
-    ]
-  );
-  return mapRow(result.rows[0]);
+  const client = await getPool().connect();
+  let userId;
+  try {
+    await client.query("BEGIN");
+    const result = await client.query(
+      `INSERT INTO gamedb_users (username, display_name, password_hash, role)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id`,
+      [
+        username,
+        displayName || username,
+        hashPassword(password),
+        role === "user" ? "staff" : role,
+      ]
+    );
+    userId = result.rows[0].id;
+    if (defaultViewId || role === "user") {
+      await client.query(
+        `INSERT INTO gamedb_user_preferences
+           (user_id, default_view_id, role_override)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (user_id) DO UPDATE
+         SET default_view_id = EXCLUDED.default_view_id,
+             role_override = EXCLUDED.role_override,
+             updated_at = NOW()`,
+        [userId, defaultViewId, role === "user" ? "user" : null]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+  return findUserById(userId);
 }
 
 export async function updateUser(id, fields) {
@@ -163,32 +190,89 @@ export async function updateUser(id, fields) {
   }
   if (fields.role !== undefined) {
     sets.push(`role = $${i++}`);
-    values.push(fields.role);
-  }
-  if (fields.defaultViewId !== undefined) {
-    sets.push(`default_view_id = $${i++}`);
-    values.push(fields.defaultViewId);
+    values.push(fields.role === "user" ? "staff" : fields.role);
   }
   if (fields.password) {
     sets.push(`password_hash = $${i++}`);
     values.push(hashPassword(fields.password));
   }
 
-  if (!sets.length) return findUserById(id);
+  if (!sets.length && fields.defaultViewId === undefined) {
+    return findUserById(id);
+  }
 
-  sets.push(`updated_at = NOW()`);
-  values.push(id);
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    if (sets.length) {
+      sets.push(`updated_at = NOW()`);
+      values.push(id);
+      await client.query(
+        `UPDATE gamedb_users SET ${sets.join(", ")} WHERE id = $${i}`,
+        values
+      );
+    }
+    if (fields.defaultViewId !== undefined || fields.role !== undefined) {
+      const currentPreference = await client.query(
+        `SELECT default_view_id, role_override
+         FROM gamedb_user_preferences WHERE user_id = $1`,
+        [id]
+      );
+      const current = currentPreference.rows[0] || {};
+      const nextDefaultViewId =
+        fields.defaultViewId !== undefined
+          ? fields.defaultViewId
+          : current.default_view_id || null;
+      const nextRoleOverride =
+        fields.role !== undefined
+          ? fields.role === "user"
+            ? "user"
+            : null
+          : current.role_override || null;
 
-  const result = await getPool().query(
-    `UPDATE gamedb_users SET ${sets.join(", ")}
-     WHERE id = $${i}
-     RETURNING id, username, display_name, role, default_view_id, created_at`,
-    values
-  );
-  return mapRow(result.rows[0]);
+      if (nextDefaultViewId || nextRoleOverride) {
+        await client.query(
+          `INSERT INTO gamedb_user_preferences
+             (user_id, default_view_id, role_override)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (user_id) DO UPDATE
+           SET default_view_id = EXCLUDED.default_view_id,
+               role_override = EXCLUDED.role_override,
+               updated_at = NOW()`,
+          [id, nextDefaultViewId, nextRoleOverride]
+        );
+      } else {
+        await client.query(
+          `DELETE FROM gamedb_user_preferences WHERE user_id = $1`,
+          [id]
+        );
+      }
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+  return findUserById(id);
 }
 
 export async function deleteUser(id) {
   await ensureSchema();
-  await getPool().query(`DELETE FROM gamedb_users WHERE id = $1`, [id]);
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `DELETE FROM gamedb_user_preferences WHERE user_id = $1`,
+      [id]
+    );
+    await client.query(`DELETE FROM gamedb_users WHERE id = $1`, [id]);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }

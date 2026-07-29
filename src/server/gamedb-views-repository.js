@@ -201,7 +201,9 @@ export async function deleteView(id) {
   try {
     await client.query("BEGIN");
     await client.query(
-      `UPDATE gamedb_users SET default_view_id = NULL WHERE default_view_id = $1`,
+      `UPDATE gamedb_user_preferences
+       SET default_view_id = NULL, updated_at = NOW()
+       WHERE default_view_id = $1`,
       [id]
     );
     await client.query(`DELETE FROM gamedb_views WHERE id = $1`, [id]);
