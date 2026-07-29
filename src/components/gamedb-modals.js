@@ -13,7 +13,13 @@ import {
   X,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
-import { extractFormulaRefs, parseFormula } from "@/lib/gamedb-formula";
+import {
+  evaluateFormula,
+  extractFormulaRefs,
+  inferFormulaType,
+  parseFormula,
+} from "@/lib/gamedb-formula";
+import { formatCell } from "@/lib/gamedb-layout";
 
 export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
   const isEdit = modal.mode === "edit";
@@ -232,24 +238,50 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
   );
 }
 
-export function ComputedColumnModal({ availableNames, onClose, onAdd }) {
+const COMPUTED_TYPE_LABELS = {
+  number: "ตัวเลข",
+  text: "ข้อความ",
+  date: "วันที่",
+  boolean: "ใช่ / ไม่ใช่",
+};
+
+// Grouped the way someone reaches for them, not alphabetically.
+const FUNCTION_HELP = [
+  ["เงื่อนไข", "IF(เงื่อนไข, ค่าเมื่อจริง, ค่าเมื่อเท็จ) · AND · OR · NOT · ISBLANK · COALESCE"],
+  ["วันที่", "TODAY() · DAYSUNTIL(วันที่) เหลืออีกกี่วัน · DAYS(ปลายทาง, ต้นทาง) · ADDDAYS · YEAR · MONTH · DAY"],
+  ["ข้อความ", "CONCAT · LEFT · RIGHT · MID · LEN · UPPER · LOWER · TRIM · TEXT · CONTAINS · ต่อข้อความด้วย &"],
+  ["ตัวเลข", "ROUND · ABS · MIN · MAX · SUM"],
+];
+
+export function ComputedColumnModal({ availableNames, sampleRow, onClose, onAdd }) {
   const [label, setLabel] = useState("");
   const [formula, setFormula] = useState("");
+  // Empty until touched, so the type follows the formula while the user is
+  // still writing it and stops the moment they choose one themselves.
+  const [typeChoice, setTypeChoice] = useState("");
 
   const validation = useMemo(() => {
-    if (!formula.trim()) return { ok: false, message: "" };
+    if (!formula.trim()) return { ok: false, message: "", type: "number" };
     try {
       const ast = parseFormula(formula);
       const refs = [...extractFormulaRefs(ast)];
       const unknown = refs.filter((name) => !availableNames.includes(name));
       if (unknown.length > 0) {
-        return { ok: false, message: `ไม่รู้จักคอลัมน์: ${unknown.join(", ")}` };
+        return { ok: false, message: `ไม่รู้จักคอลัมน์: ${unknown.join(", ")}`, type: "number" };
       }
-      return { ok: true, message: "สูตรถูกต้อง" };
+      const type = inferFormulaType(ast);
+      let preview = "";
+      if (sampleRow) {
+        const value = evaluateFormula(ast, (name) => sampleRow[name]);
+        preview = ` · แถวแรกได้ ${formatCell(value, typeChoice || type)}`;
+      }
+      return { ok: true, message: `สูตรถูกต้อง${preview}`, type };
     } catch (err) {
-      return { ok: false, message: err.message };
+      return { ok: false, message: err.message, type: "number" };
     }
-  }, [formula, availableNames]);
+  }, [formula, availableNames, sampleRow, typeChoice]);
+
+  const type = typeChoice || validation.type;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
@@ -283,13 +315,14 @@ export function ComputedColumnModal({ availableNames, onClose, onAdd }) {
           </div>
           <div>
             <label className="mb-1 block text-[10px] font-black text-zinc-500">
-              สูตร — ใช้ + - * / ( ) และอ้างคอลัมน์ด้วย [ชื่อคอลัมน์]
+              สูตร — ใช้ + - * / ( ) &amp; เทียบด้วย = &lt;&gt; &lt; &gt; ใส่ข้อความในเครื่องหมายคำพูด
+              และอ้างคอลัมน์ด้วย [ชื่อคอลัมน์]
             </label>
             <input
               type="text"
               value={formula}
               onChange={(e) => setFormula(e.target.value)}
-              placeholder="เช่น ([ราคาขาย] - [ต้นทุน]) / [ต้นทุน] * 100"
+              placeholder={'เช่น IF(DAYSUNTIL([วันหมดอายุ SMS]) < 3, "ใกล้หมดอายุ", "ปกติ")'}
               className="h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 font-mono text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
             />
             {formula.trim() && (
@@ -301,6 +334,37 @@ export function ComputedColumnModal({ availableNames, onClose, onAdd }) {
                 {validation.message}
               </p>
             )}
+          </div>
+          <div>
+            <label
+              htmlFor="computed-type"
+              className="mb-1 block text-[10px] font-black text-zinc-500"
+            >
+              ผลลัพธ์เป็น {typeChoice ? "(เลือกเอง)" : "(เดาจากสูตร)"}
+            </label>
+            <select
+              id="computed-type"
+              value={type}
+              onChange={(e) => setTypeChoice(e.target.value)}
+              className="h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+            >
+              {Object.entries(COMPUTED_TYPE_LABELS).map(([value, text]) => (
+                <option key={value} value={value}>
+                  {text}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-2.5">
+            <p className="mb-1 text-[10px] font-black text-zinc-500">ฟังก์ชันที่ใช้ได้</p>
+            <dl className="space-y-0.5">
+              {FUNCTION_HELP.map(([group, list]) => (
+                <div key={group} className="flex gap-2 text-[10px] leading-relaxed">
+                  <dt className="w-12 shrink-0 font-black text-zinc-500">{group}</dt>
+                  <dd className="min-w-0 font-mono font-semibold text-zinc-600">{list}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
           <div>
             <p className="mb-1 text-[10px] font-black text-zinc-500">คอลัมน์ที่ใช้ได้ (กดเพื่อแทรก):</p>
@@ -322,7 +386,7 @@ export function ComputedColumnModal({ availableNames, onClose, onAdd }) {
         <div className="mt-5 flex justify-end">
           <button
             type="button"
-            onClick={() => onAdd({ label: label.trim(), formula: formula.trim() })}
+            onClick={() => onAdd({ label: label.trim(), formula: formula.trim(), type })}
             disabled={!label.trim() || !validation.ok}
             className="flex items-center gap-1.5 rounded-xl bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
           >

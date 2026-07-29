@@ -50,7 +50,6 @@ import {
   normalizeLayout,
   REFRESH_CHOICES,
   rowsToCsv,
-  toNumber,
 } from "@/lib/gamedb-layout";
 import { ComputedColumnModal } from "@/components/gamedb-modals";
 import {
@@ -760,9 +759,12 @@ export default function QueryPanel({
       mergeIndex && leftKeyIndexes && leftKeyIndexes.every((index) => index !== undefined);
 
     let rows = result.rows.map((row, sourceIndex) => {
+      // Raw, not coerced: the formula engine decides whether it wanted a
+      // number, a date or text, and a column of dates is none of the three
+      // until it is asked for.
       const resolveRef = (name) => {
         const index = baseNameToIndex.get(name);
-        return index === undefined ? null : toNumber(row[index]);
+        return index === undefined ? null : row[index];
       };
       const partner = canMerge
         ? mergeIndex.byKey.get(mergeKeyOf(leftKeyIndexes.map((index) => row[index])))
@@ -791,7 +793,7 @@ export default function QueryPanel({
           }
           if (!col.ast) return { raw: null, text: "สูตรผิด" };
           const value = evaluateFormula(col.ast, resolveRef);
-          return { raw: value, text: value === null ? "—" : formatCell(value, "number") };
+          return { raw: value, text: formatCell(value, col.type) };
         }),
       };
     });
@@ -1817,12 +1819,24 @@ export default function QueryPanel({
       {modal === "computed" && result && (
         <ComputedColumnModal
           availableNames={[...new Set(result.columns.map((col) => col.name))]}
+          // The first row, so the editor can show what the formula produces
+          // before the column exists.
+          sampleRow={
+            result.rows.length
+              ? Object.fromEntries(
+                  [...baseNameToIndex.entries()].map(([name, index]) => [
+                    name,
+                    result.rows[0][index],
+                  ])
+                )
+              : null
+          }
           onClose={() => setModal(null)}
-          onAdd={({ label, formula }) => {
+          onAdd={({ label, formula, type }) => {
             const key = `calc_${Date.now()}`;
             mutateLayout((prev) => ({
               ...prev,
-              computed: [...prev.computed, { key, label, formula }],
+              computed: [...prev.computed, { key, label, formula, type }],
             }));
             setModal(null);
           }}

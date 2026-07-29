@@ -1,6 +1,10 @@
 // Helpers shared by the table panels: layout shape, cell formatting and the
 // display-column list that mixes SQL result columns with computed columns.
 import { parseFormula } from "@/lib/gamedb-formula";
+import { daysUntil, toDate, toNumber } from "@/lib/gamedb-values";
+
+// Re-exported because half the app already imports them from here.
+export { daysUntil, toDate, toNumber };
 
 // Everything configurable about a saved query lives in this one JSONB column:
 // the app connects as a role that does not own gamedb_queries, so adding real
@@ -101,6 +105,8 @@ export const TONE_NAMES = Object.keys(CELL_TONES);
 // "bar" is not a colour — it draws a proportional fill behind the number.
 export const RULE_TONES = [...TONE_NAMES, "bar"];
 export const CELL_RENDERS = ["text", "link", "email", "chip", "copy"];
+// What a computed column's result is shown and exported as.
+export const COMPUTED_TYPES = ["number", "text", "date", "boolean"];
 export const CELL_ALIGNS = ["", "left", "center", "right"];
 export const MAX_FREEZE = 5;
 export const SUMMARY_KINDS = ["sum", "avg", "min", "max", "count"];
@@ -368,12 +374,6 @@ export function mergeKeyOf(values) {
     .join(MERGE_KEY_SEPARATOR);
 }
 
-export function toNumber(value) {
-  if (value === null || value === undefined || value === "") return null;
-  const num = Number(value);
-  return Number.isFinite(num) ? num : null;
-}
-
 export function formatCell(value, type) {
   if (value === null || value === undefined) return "—";
   if (type === "number") {
@@ -457,40 +457,6 @@ export function toneStyle(tone, part = "cell") {
   if (!entry) return null;
   if (part === "head") return { backgroundColor: entry.head, color: entry.headFg || "#27272a" };
   return { backgroundColor: entry.bg, color: entry.fg };
-}
-
-// dd/mm/yyyy is what the sheets this replaces are full of, and `new Date` reads
-// it as month/day. Anything else is left to the platform parser.
-const SLASHED_DATE = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/;
-
-export function toDate(value) {
-  if (value === null || value === undefined || value === "") return null;
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
-  const text = String(value).trim();
-  if (!text) return null;
-  const slashed = SLASHED_DATE.exec(text);
-  if (slashed) {
-    const [, day, month, year] = slashed;
-    // A "year" past 2400 is the Buddhist era, which is how Thai spreadsheets
-    // and a few of the older tables write it.
-    const ce = Number(year) > 2400 ? Number(year) - 543 : Number(year);
-    const date = new Date(ce, Number(month) - 1, Number(day));
-    return Number.isNaN(date.getTime()) ? null : date;
-  }
-  const date = new Date(text);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-const DAY_MS = 86400000;
-
-/** Whole days from today to `value`; negative once the date has passed. */
-export function daysUntil(value) {
-  const date = toDate(value);
-  if (!date) return null;
-  const today = new Date();
-  const from = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
-  const to = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
-  return Math.round((to - from) / DAY_MS);
 }
 
 const COLUMN_REF = /^\[(.+)\]$/;
@@ -642,7 +608,8 @@ export function buildDisplayColumns(resultColumns, layout, mergedColumns = []) {
     return {
       id: `#${col.key}`,
       label: layout.labels[`#${col.key}`] || col.label,
-      type: "number",
+      // Formulas could only produce numbers before there was a type to store.
+      type: COMPUTED_TYPES.includes(col.type) ? col.type : "number",
       kind: "computed",
       formula: col.formula,
       ast,

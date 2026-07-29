@@ -1,6 +1,7 @@
 // Server-side validation for a query's layout JSON. Shared by the layout
 // endpoint and by saved screen templates, which embed layouts of their own.
 import {
+  COMPUTED_TYPES,
   normalizeActions,
   normalizeDrill,
   normalizeFormats,
@@ -64,6 +65,8 @@ export function sanitizeLayout(raw) {
           key: col.key.slice(0, 64),
           label: col.label.slice(0, 120),
           formula: col.formula.slice(0, 500),
+          // Absent on every column saved before formulas could return text.
+          type: COMPUTED_TYPES.includes(col.type) ? col.type : "number",
         }))
     : [];
   const params = Array.isArray(layout.params)

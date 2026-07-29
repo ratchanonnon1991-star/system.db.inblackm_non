@@ -499,7 +499,9 @@ export default function PanelTable({
       {row.cells.map((cell, cellIndex) => {
         const col = columns[cellIndex];
         const { format } = columnStyling[cellIndex];
-        const numeric = col.type === "number" || col.kind === "computed";
+        // Computed columns carry a real type now, so a formula returning text
+        // is no longer right-aligned in a monospace font.
+        const numeric = col.type === "number";
         const styling = columnStyling[cellIndex];
         const tone = styling.rules.find(
           (rule) => rule.tone !== "bar" && ruleMatches(rule, cell.raw, cell.text, resolve)
@@ -819,9 +821,7 @@ export default function PanelTable({
                 <td
                   key={columns[index].id}
                   className={`border border-zinc-200 bg-inherit px-2 py-1.5 text-zinc-700 ${
-                    columns[index].type === "number" || columns[index].kind === "computed"
-                      ? "text-right font-mono tabular-nums"
-                      : ""
+                    columns[index].type === "number" ? "text-right font-mono tabular-nums" : ""
                   }`}
                   style={
                     index < freezeCount
