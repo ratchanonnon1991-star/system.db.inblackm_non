@@ -147,6 +147,9 @@ function LoginScreen({ onLoggedIn }) {
   );
 }
 
+const [containerWidth, setContainerWidth] = useState(0);
+const [containerHeight, setContainerHeight] = useState(0);
+
 // Open panels and their free-form canvas position are per-browser preferences,
 // so they live in localStorage instead of the shared query layout.
 const WORKSPACE_STORAGE_KEY = "gamedb.workspace.v1";
@@ -787,16 +790,28 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   }, [panels, isTemplateUser]);
 
   const measureContainer = useCallback(() => {
-    return Math.round(viewportRef.current?.clientWidth || 0);
+    const element = viewportRef.current;
+
+    return {
+      width: Math.round(element?.clientWidth || 0),
+      height: Math.round(element?.clientHeight || 0),
+    };
   }, []);
 
   // Panels live on an absolute-positioned canvas. Place legacy panels without
   // x/y into a tidy starting grid sized to what is currently on screen.
   useEffect(() => {
     const measure = () => {
-      const width = measureContainer();
-      if (!width) return;
-      setContainerWidth(width);
+    const { width, height } = measureContainer();
+    if (!width || !height) return;
+
+    setContainerWidth((current) =>
+      current === width ? current : width
+    );
+
+    setContainerHeight((current) =>
+      current === height ? current : height
+    );
       setPanels((prev) => {
         const arranged = arrangeUnpositionedPanels(prev, width);
         return arranged.some(
@@ -1226,32 +1241,35 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       prev[queryId] === height ? prev : { ...prev, [queryId]: height }
     );
   }, []);
-  const canvasWidth = useMemo(
-    () =>
-      Math.max(
-        containerWidth || DEFAULT_PANEL_WIDTH,
-        ...openPanels.map(
-          (panel) =>
-            (panel.x || 0) +
-            (panel.width || DEFAULT_PANEL_WIDTH) +
-            PANEL_GAP
-        )
-      ),
-    [containerWidth, openPanels]
-  );
-  const canvasHeight = useMemo(
-    () =>
-      Math.max(
-        CANVAS_MIN_HEIGHT,
-        ...openPanels.map(
-          (panel) =>
-            (panel.y || 0) +
-            (renderedPanelHeights[panel.queryId] || panelEstimatedHeight(panel)) +
-            PANEL_GAP
-        )
-      ),
-    [openPanels, renderedPanelHeights]
-  );
+
+  const canvasBounds = useMemo(() => {
+  let right = 0;
+  let bottom = 0;
+
+  for (const panel of openPanels) {
+    const x = panel.x ?? 0;
+    const y = panel.y ?? 0;
+    const width = panel.width ?? DEFAULT_PANEL_WIDTH;
+    const height =
+      renderedPanelHeights[panel.queryId] ||
+      panelEstimatedHeight(panel);
+
+    right = Math.max(right, x + width);
+    bottom = Math.max(bottom, y + height);
+  }
+
+  return { right, bottom };
+}, [openPanels, renderedPanelHeights]);
+
+const canvasWidth =
+  canvasBounds.right > containerWidth + 1
+    ? canvasBounds.right + PANEL_GAP
+    : containerWidth;
+
+const canvasHeight =
+  canvasBounds.bottom > containerHeight + 1
+    ? canvasBounds.bottom + PANEL_GAP
+    : containerHeight;
 
   const setZoomAroundCenter = useCallback((nextZoom) => {
     const clamped = Math.min(2, Math.max(0.4, nextZoom));
