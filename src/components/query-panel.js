@@ -85,6 +85,10 @@ const RESIZE_HINT = "ลากเพื่อปรับขนาด · ดั�
 const MIN_FRAME_WIDTH = 280;
 const MIN_FRAME_HEIGHT = 140;
 const MAX_FRAME_HEIGHT = 1600;
+// In sheet mode the panel is not the thing being laid out — the sheet is. Each
+// query carries its own canvas height, so honouring it here would make the body
+// jump to a different size every time the user switches tab.
+const DOCKED_BODY_HEIGHT = 420;
 
 // Eight Figma-like hit areas. The inner marker is shown when the frame is
 // selected, while the larger transparent area remains easy to grab.
@@ -1448,6 +1452,8 @@ export default function QueryPanel({
     if (dirY) onResetHeight();
   };
 
+  const bodyHeight = docked ? DOCKED_BODY_HEIGHT : panel.height;
+
   return (
     <section
       ref={sectionRef}
@@ -2099,6 +2105,13 @@ export default function QueryPanel({
             </div>
           )}
 
+          {/* Loading and empty states are shorter than a table, so in sheet mode
+              they are held to the same height rather than letting the panel
+              shrink and snap back on every tab switch. */}
+          <div
+            className="flex min-w-0 flex-col"
+            style={docked ? { minHeight: DOCKED_BODY_HEIGHT } : undefined}
+          >
           {running ? (
             <p className="flex items-center justify-center gap-2 py-16 text-xs font-semibold text-zinc-400">
               <Loader2 size={16} className="animate-spin" /> กำลังรัน Query...
@@ -2118,12 +2131,12 @@ export default function QueryPanel({
                   chart={layout.chart}
                   columns={visibleColumns}
                   rows={displayRows}
-                  height={panel.height}
+                  height={bodyHeight}
                 />
               ) : view === "chart" ? (
                 <div
                   className="flex items-center justify-center px-4 text-[11px] font-semibold text-zinc-400"
-                  style={{ height: panel.height }}
+                  style={{ height: bodyHeight }}
                 >
                   ยังไม่ได้ตั้งค่ากราฟ — กดปุ่มตั้งค่ากราฟเพื่อเลือกแกน X/Y
                 </div>
@@ -2135,7 +2148,7 @@ export default function QueryPanel({
                   layout={layout}
                   mutateLayout={mutateLayout}
                   canCustomizeLayout={canCustomizeLayout}
-                  height={panel.height}
+                  height={bodyHeight}
                   canEdit={canEditCells}
                   editableColumns={editableColumns}
                   editableInputs={sharedEditable?.inputs || []}
@@ -2174,6 +2187,7 @@ export default function QueryPanel({
 
             </>
           ) : null}
+          </div>
         </>
       )}
 
