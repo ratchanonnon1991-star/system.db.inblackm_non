@@ -370,6 +370,9 @@ export default function QueryPanel({
   onEditQuery,
   onDrill,
   initialParams,
+  // In the sheet view the panel is the page: it sits in the flow at full width
+  // and has no position or frame of its own to drag.
+  docked = false,
 }) {
   // Layout precedence: what this user saved for themselves, then what a screen
   // template dictates, then the shared layout stored on the query.
@@ -1454,12 +1457,16 @@ export default function QueryPanel({
           onBringToFront?.(query.id);
         }
       }}
-      style={{
-        position: "absolute",
-        left: panel.x || 0,
-        top: panel.y || 0,
-        width: panel.width,
-      }}
+      style={
+        docked
+          ? { position: "relative", width: "100%" }
+          : {
+              position: "absolute",
+              left: panel.x || 0,
+              top: panel.y || 0,
+              width: panel.width,
+            }
+      }
       className={`flex min-w-0 flex-col rounded-2xl border border-zinc-200 bg-white shadow-sm transition-shadow ${
         panelDrag || frameDrag
           ? "z-30 shadow-xl ring-1 ring-red-500"
@@ -1480,7 +1487,7 @@ export default function QueryPanel({
       )}
 
       <div className="flex flex-wrap items-center gap-2 border-b border-zinc-100 p-3">
-        {canCustomizeLayout ? <button
+        {canCustomizeLayout && !docked ? <button
           type="button"
           onPointerDown={startPanelMove}
           className="flex h-8 w-8 shrink-0 cursor-grab items-center justify-center rounded-lg border border-transparent text-zinc-300 transition hover:border-zinc-200 hover:bg-zinc-100 hover:text-zinc-600 active:cursor-grabbing"
@@ -1488,7 +1495,7 @@ export default function QueryPanel({
           aria-label={`ย้ายกล่อง ${query.name}`}
         >
           <GripVertical size={14} />
-        </button> : (
+        </button> : docked ? null : (
           <span
             className="rounded-lg p-1 text-zinc-300"
             title="บัญชีนี้ใช้ layout จาก template"
@@ -2148,7 +2155,7 @@ export default function QueryPanel({
         </>
       )}
 
-      {canCustomizeLayout && FRAME_HANDLES.filter((handle) => !panel.collapsed || handle.dirY === 0).map((handle) => (
+      {canCustomizeLayout && !docked && FRAME_HANDLES.filter((handle) => !panel.collapsed || handle.dirY === 0).map((handle) => (
         <span
           key={handle.key}
           onPointerDown={(event) => startFrameResize(event, handle.dirX, handle.dirY)}

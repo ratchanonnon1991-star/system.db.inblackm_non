@@ -30,6 +30,7 @@ import {
   Server,
   Star,
   Sun,
+  Table,
   Trash2,
   Undo2,
   User,
@@ -334,6 +335,7 @@ function readStoredPanels() {
 const THEME_KEY = "gamedb.theme";
 const PINNED_KEY = "gamedb.pinned";
 const SIDEBAR_KEY = "gamedb.sidebar";
+const SHEET_MODE_KEY = "gamedb.sheet-mode";
 
 function CanvasToolbar({
   layoutLocked,
@@ -348,6 +350,8 @@ function CanvasToolbar({
   onTogglePreview,
   zoom,
   onZoom,
+  sheetMode,
+  onToggleSheetMode,
 }) {
   return (
     <div className="flex shrink-0 items-center gap-1 overflow-x-auto">
@@ -418,6 +422,26 @@ function CanvasToolbar({
       <span className="mx-0.5 h-5 w-px bg-zinc-200" />
       <button
         type="button"
+        onClick={onToggleSheetMode}
+        className={`flex h-8 items-center gap-1 rounded-lg border px-2 text-[10px] font-black transition ${
+          sheetMode
+            ? "border-red-600 bg-red-600 text-white"
+            : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+        }`}
+        title={
+          sheetMode
+            ? "กลับไปแบบ canvas (วางกล่องเองได้)"
+            : "สลับเป็นแบบชีต — ทีละตาราง มีแท็บด้านล่าง"
+        }
+      >
+        {sheetMode ? <LayoutGrid size={12} /> : <Table size={12} />}
+        {sheetMode ? "Canvas" : "ชีต"}
+      </button>
+      {!sheetMode && (
+        <>
+      <span className="mx-0.5 h-5 w-px bg-zinc-200" />
+      <button
+        type="button"
         onClick={() => onZoom(zoom - 0.1)}
         className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
         title="ซูมออก"
@@ -440,6 +464,8 @@ function CanvasToolbar({
       >
         <ZoomIn size={14} />
       </button>
+        </>
+      )}
     </div>
   );
 }
@@ -452,6 +478,9 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   const [pinned, setPinned] = useState([]);
   // The query picker sits above the canvas and can collapse to a compact bar.
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Sheet view: one table at a time with a tab per open table along the bottom,
+  // for people who would rather flip between them than arrange them on a canvas.
+  const [sheetMode, setSheetMode] = useState(false);
 
   // Theme, pins and the sidebar are per-browser preferences; read them once on mount.
   useEffect(() => {
@@ -464,6 +493,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       setDark(prefersDark);
       setPinned(JSON.parse(window.localStorage.getItem(PINNED_KEY) || "[]"));
       setSidebarOpen(window.localStorage.getItem(SIDEBAR_KEY) !== "closed");
+      setSheetMode(window.localStorage.getItem(SHEET_MODE_KEY) === "on");
     } catch {
       setDark(false);
     }
@@ -478,6 +508,17 @@ function GamedbWorkspace({ me, onLoggedOut }) {
         // preference is cosmetic; ignore a blocked storage
       }
       return value;
+    });
+  }, []);
+
+  const toggleSheetMode = useCallback(() => {
+    setSheetMode((prev) => {
+      try {
+        window.localStorage.setItem(SHEET_MODE_KEY, prev ? "off" : "on");
+      } catch {
+        // preference is cosmetic; ignore a blocked storage
+      }
+      return !prev;
     });
   }, []);
 
@@ -1256,6 +1297,13 @@ function GamedbWorkspace({ me, onLoggedOut }) {
     () => panels.filter((panel) => queryById.has(panel.queryId)),
     [panels, queryById]
   );
+  // Sheet view shows one panel; the selection carries over from the canvas, and
+  // falls back to the first tab when nothing is selected or the selection closed.
+  const activeSheetPanel =
+    openPanels.find((panel) => panel.queryId === selectedPanelId) ||
+    openPanels[0] ||
+    null;
+
   const selectedPanel = openPanels.find(
     (panel) => panel.queryId === selectedPanelId
   );
@@ -1458,8 +1506,118 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       onTogglePreview={() => setPreviewAsUser((value) => !value)}
       zoom={zoom}
       onZoom={setZoomAroundCenter}
+      sheetMode={sheetMode}
+      onToggleSheetMode={toggleSheetMode}
     />
   );
+
+  // Shown by both layouts when nothing is open, so it lives outside either.
+  const emptyWorkspace = (
+    <div className="flex h-full min-h-72 items-center justify-center p-4">
+      <div className="flex w-full max-w-md flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-16 text-center">
+        {layoutLocked ? (
+          <>
+            <Lock size={22} className="text-zinc-300" />
+            <p className="text-xs font-black text-zinc-500">
+              ยังไม่มี Template สำหรับบัญชีนี้
+            </p>
+            <p className="text-[11px] font-semibold text-zinc-400">
+              กรุณาให้ Admin แชร์ Template หรือกำหนด Template เริ่มต้น
+            </p>
+          </>
+        ) : (
+          <>
+            <LayoutGrid size={22} className="text-zinc-300" />
+            <p className="text-xs font-black text-zinc-500">ยังไม่ได้เปิดตาราง</p>
+            <p className="text-[11px] font-semibold text-zinc-400">
+              กด Query ด้านบนเพื่อเปิด — จากนั้นลากกล่องไปวางตำแหน่งที่ต้องการได้
+            </p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
+  // Both layouts render the same panel; the sheet view just hands it a flag
+  // that makes it sit in the flow at full width instead of on the canvas.
+  const renderPanel = (panel, docked = false) => {
+    const query = queryById.get(panel.queryId);
+    const isFullWidth =
+      panel.width != null &&
+      containerWidth > 0 &&
+      panel.width >= containerWidth - 8;
+    return (
+      <QueryPanel
+        key={`${panel.queryId}:${query.updatedAt}:${activeView?.id ?? "own"}`}
+        query={query}
+        queries={queries}
+        panel={panel}
+        layoutOverride={panelLayouts[panel.queryId] || null}
+        personalLayout={
+          activeView ? null : myLayouts[panel.queryId] || null
+        }
+        onPersonalLayoutSaved={rememberPersonalLayout}
+        onLayoutChange={captureLayout}
+        onDataChange={captureData}
+        canManage={isSuperAdmin && !previewAsUser}
+        canCustomizeLayout={!layoutLocked}
+        isFullWidth={isFullWidth}
+        isSelected={selectedPanelId === panel.queryId}
+        toolbarHost={
+          selectedPanelId === panel.queryId
+            ? panelToolbarHost
+            : null
+        }
+        onSelect={() => setSelectedPanelId(panel.queryId)}
+        onPositionChange={movePanelTo}
+        onFrameChange={resizePanel}
+        onBringToFront={bringPanelToFront}
+        onInteractionStart={beginPanelInteraction}
+        onInteractionEnd={endPanelInteraction}
+        canvasScale={docked ? 1 : zoom}
+        docked={docked}
+        onRenderedHeight={captureRenderedPanelHeight}
+        onClose={() => closePanel(panel.queryId)}
+        onToggleFullWidth={() => {
+          // measureContainer reports both axes; only the width is a
+          // panel width. Passing the whole reading made this an
+          // object, and every comparison against it went false.
+          const { width: available } = measureContainer();
+          updatePanel(panel.queryId, (prev) => ({
+            x: isFullWidth ? prev.x : 0,
+            width: isFullWidth
+              ? Math.min(DEFAULT_PANEL_WIDTH, available)
+              : available,
+          }));
+        }}
+        onToggleCollapse={() =>
+          updatePanel(panel.queryId, (prev) => ({
+            collapsed: !prev.collapsed,
+          }))
+        }
+        onResetHeight={() =>
+          updatePanel(panel.queryId, () => ({
+            height: DEFAULT_PANEL_HEIGHT,
+          }))
+        }
+        onResetWidth={() =>
+          updatePanel(panel.queryId, (prev) => {
+            const width = Math.min(DEFAULT_PANEL_WIDTH, containerWidth);
+            return {
+              x: Math.min(
+                prev.x || 0,
+                Math.max(0, containerWidth - width)
+              ),
+              width,
+            };
+          })
+        }
+        onEditQuery={() => setEditorModal({ mode: "edit", query })}
+        onDrill={layoutLocked ? null : openDrill}
+        initialParams={drillParams[panel.queryId] || null}
+      />
+    );
+  };
 
   return (
     <div className="mx-auto max-w-[1900px] p-4 lg:p-6">
@@ -1861,6 +2019,50 @@ function GamedbWorkspace({ me, onLoggedOut }) {
           </div>
         )}
 
+        {sheetMode ? (
+          <div className="flex h-[max(520px,calc(100vh-320px))] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50">
+            <div className="min-h-0 flex-1 overflow-auto p-3">
+              {activeSheetPanel ? renderPanel(activeSheetPanel, true) : emptyWorkspace}
+            </div>
+            {openPanels.length > 0 && (
+              <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-t border-zinc-200 bg-white px-2 py-1.5">
+                {openPanels.map((panel) => {
+                  const query = queryById.get(panel.queryId);
+                  const isActive = activeSheetPanel?.queryId === panel.queryId;
+                  return (
+                    <div
+                      key={panel.queryId}
+                      className={`group flex shrink-0 items-center gap-1 rounded-t-lg border-b-2 px-2.5 py-1 transition ${
+                        isActive
+                          ? "border-red-600 bg-red-50 text-red-700"
+                          : "border-transparent text-zinc-500 hover:bg-zinc-100"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPanelId(panel.queryId)}
+                        className="max-w-48 truncate text-[11px] font-black"
+                        title={query?.name}
+                      >
+                        {query?.name}
+                      </button>
+                      {!layoutLocked && (
+                        <button
+                          type="button"
+                          onClick={() => closePanel(panel.queryId)}
+                          className="rounded p-0.5 text-zinc-400 opacity-0 transition group-hover:opacity-100 hover:bg-zinc-200 hover:text-red-600"
+                          title="ปิดตารางนี้"
+                        >
+                          <X size={11} />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : (
         <div
           ref={viewportRef}
           className="relative h-[max(520px,calc(100vh-320px))] min-w-0 flex-1 overflow-auto overscroll-contain rounded-2xl border border-zinc-200 bg-zinc-50"
@@ -1887,29 +2089,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               canvas is sized to the panels, so with none open it is a gap wide
               enough for nothing, and the message wrapped one letter per line. */}
           {openPanels.length === 0 ? (
-            <div className="flex h-full min-h-72 items-center justify-center p-4">
-              <div className="flex w-full max-w-md flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-16 text-center">
-                {layoutLocked ? (
-                  <>
-                    <Lock size={22} className="text-zinc-300" />
-                    <p className="text-xs font-black text-zinc-500">
-                      ยังไม่มี Template สำหรับบัญชีนี้
-                    </p>
-                    <p className="text-[11px] font-semibold text-zinc-400">
-                      กรุณาให้ Admin แชร์ Template หรือกำหนด Template เริ่มต้น
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <LayoutGrid size={22} className="text-zinc-300" />
-                    <p className="text-xs font-black text-zinc-500">ยังไม่ได้เปิดตาราง</p>
-                    <p className="text-[11px] font-semibold text-zinc-400">
-                      กด Query ด้านบนเพื่อเปิด — จากนั้นลากกล่องไปวางตำแหน่งที่ต้องการได้
-                    </p>
-                  </>
-                )}
-              </div>
-            </div>
+            emptyWorkspace
           ) : (
           /* `scale` does not change the box the canvas occupies in layout, so the
              scroll extent comes from this sizer instead: without it, zooming out
@@ -1952,88 +2132,13 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                   style={{ top: snapGuides.y }}
                 />
               )}
-              {openPanels.map((panel) => {
-                  const query = queryById.get(panel.queryId);
-                  const isFullWidth =
-                    panel.width != null &&
-                    containerWidth > 0 &&
-                    panel.width >= containerWidth - 8;
-                  return (
-                    <QueryPanel
-                      key={`${panel.queryId}:${query.updatedAt}:${activeView?.id ?? "own"}`}
-                      query={query}
-                      queries={queries}
-                      panel={panel}
-                      layoutOverride={panelLayouts[panel.queryId] || null}
-                      personalLayout={
-                        activeView ? null : myLayouts[panel.queryId] || null
-                      }
-                      onPersonalLayoutSaved={rememberPersonalLayout}
-                      onLayoutChange={captureLayout}
-                      onDataChange={captureData}
-                      canManage={isSuperAdmin && !previewAsUser}
-                      canCustomizeLayout={!layoutLocked}
-                      isFullWidth={isFullWidth}
-                      isSelected={selectedPanelId === panel.queryId}
-                      toolbarHost={
-                        selectedPanelId === panel.queryId
-                          ? panelToolbarHost
-                          : null
-                      }
-                      onSelect={() => setSelectedPanelId(panel.queryId)}
-                      onPositionChange={movePanelTo}
-                      onFrameChange={resizePanel}
-                      onBringToFront={bringPanelToFront}
-                      onInteractionStart={beginPanelInteraction}
-                      onInteractionEnd={endPanelInteraction}
-                      canvasScale={zoom}
-                      onRenderedHeight={captureRenderedPanelHeight}
-                      onClose={() => closePanel(panel.queryId)}
-                      onToggleFullWidth={() => {
-                        // measureContainer reports both axes; only the width is a
-                        // panel width. Passing the whole reading made this an
-                        // object, and every comparison against it went false.
-                        const { width: available } = measureContainer();
-                        updatePanel(panel.queryId, (prev) => ({
-                          x: isFullWidth ? prev.x : 0,
-                          width: isFullWidth
-                            ? Math.min(DEFAULT_PANEL_WIDTH, available)
-                            : available,
-                        }));
-                      }}
-                      onToggleCollapse={() =>
-                        updatePanel(panel.queryId, (prev) => ({
-                          collapsed: !prev.collapsed,
-                        }))
-                      }
-                      onResetHeight={() =>
-                        updatePanel(panel.queryId, () => ({
-                          height: DEFAULT_PANEL_HEIGHT,
-                        }))
-                      }
-                      onResetWidth={() =>
-                        updatePanel(panel.queryId, (prev) => {
-                          const width = Math.min(DEFAULT_PANEL_WIDTH, containerWidth);
-                          return {
-                            x: Math.min(
-                              prev.x || 0,
-                              Math.max(0, containerWidth - width)
-                            ),
-                            width,
-                          };
-                        })
-                      }
-                      onEditQuery={() => setEditorModal({ mode: "edit", query })}
-                      onDrill={layoutLocked ? null : openDrill}
-                      initialParams={drillParams[panel.queryId] || null}
-                    />
-                  );
-                })}
+              {openPanels.map((panel) => renderPanel(panel))}
             </div>
             </div>
           </div>
           )}
         </div>
+        )}
       </div>
 
       {editorModal && (
