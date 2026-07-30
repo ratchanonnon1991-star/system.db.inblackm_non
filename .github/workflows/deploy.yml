@@ -76,16 +76,25 @@ jobs:
             fi
 
             echo "--- loading nvm ---"
-            export NVM_DIR="${NVM_DIR:-/www/server/nvm}"
 
-            # nvm.sh is not `set -e` safe: it can finish its setup and still hand
-            # back a non-zero status, which ends the deploy with no output at all.
-            # Whether it actually worked is what the check below is for.
+            NODE_VERSION="22"
+            export NVM_DIR="/www/server/nvm"
+            export PM2_HOME="/root/.pm2"
+
+            # ป้องกัน environment จาก aaPanel/npm มาชนกับ NVM
+            unset PREFIX
+            unset NPM_CONFIG_PREFIX
+            unset npm_config_prefix
+            unset NPM_CONFIG_GLOBALCONFIG
+            unset npm_config_globalconfig
+
+            # NVM มีปัญหาเมื่อทำงานร่วมกับ set -e
             set +e
             if [ -s "$NVM_DIR/nvm.sh" ]; then
               . "$NVM_DIR/nvm.sh"
             elif [ -s "$HOME/.nvm/nvm.sh" ]; then
-              . "$HOME/.nvm/nvm.sh"
+              export NVM_DIR="$HOME/.nvm"
+              . "$NVM_DIR/nvm.sh"
             fi
             set -e
 
@@ -94,20 +103,39 @@ jobs:
               exit 1
             fi
 
-            nvm install 22
-            nvm use 22
+            # ไม่แก้ .npmrc อัตโนมัติ แต่หยุดพร้อมบอกสาเหตุ
+            if [ -f "$HOME/.npmrc" ] &&
+               grep -Eq '^[[:space:]]*(prefix|globalconfig)[[:space:]]*=' "$HOME/.npmrc"; then
+              echo "ERROR: $HOME/.npmrc มี prefix/globalconfig ซึ่งใช้ร่วมกับ NVM ไม่ได้"
+              grep -nE '^[[:space:]]*(prefix|globalconfig)[[:space:]]*=' "$HOME/.npmrc"
+              exit 1
+            fi
 
-            node --version
-            npm --version
+            nvm install "$NODE_VERSION"
+            nvm use "$NODE_VERSION"
 
-            # Global packages ของ NVM แยกกันในแต่ละ Node.js version
-            if ! command -v pm2 >/dev/null 2>&1; then
-              echo "PM2 not found — installing PM2..."
+            echo "Node version: $(node --version)"
+            echo "Node path:    $(command -v node)"
+            echo "NPM version:  $(npm --version)"
+            echo "NPM prefix:   $(npm prefix -g)"
+
+            PM2_BIN="$(npm prefix -g)/bin/pm2"
+
+            if [ ! -x "$PM2_BIN" ]; then
+              echo "PM2 not found in Node $NODE_VERSION — installing..."
               npm install --global pm2@latest
               hash -r
             fi
 
-            pm2 --version
+            PM2_BIN="$(npm prefix -g)/bin/pm2"
+
+            if [ ! -x "$PM2_BIN" ]; then
+              echo "ERROR: ติดตั้ง PM2 ไม่สำเร็จ"
+              exit 1
+            fi
+
+            echo "PM2 path: $PM2_BIN"
+            "$PM2_BIN" --version
 
             echo "--- npm ci ---"
             npm ci
@@ -116,8 +144,8 @@ jobs:
             npm run build
 
             echo "--- restart ---"
-            pm2 startOrRestart ecosystem.config.cjs \
+            "$PM2_BIN" startOrRestart ecosystem.config.cjs \
               --only system.db.inblackm \
               --update-env
 
-            pm2 save
+            "$PM2_BIN" save
