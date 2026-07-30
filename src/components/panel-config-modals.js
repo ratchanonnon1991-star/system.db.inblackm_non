@@ -9,6 +9,7 @@ import {
   Loader2,
   Paintbrush,
   Palette,
+  Play,
   Plus,
   Save,
   SlidersHorizontal,
@@ -252,6 +253,7 @@ const WIDGET_LABELS = {
 
 /** Which table/rows this query is allowed to write back to. */
 export function EditableSettingsModal({
+  queryId,
   columnNames,
   editable,
   onSave,
@@ -304,37 +306,147 @@ export function EditableSettingsModal({
     ? ""
     : columnNames.find((name) => name.toLowerCase() === pk.trim().toLowerCase()) || "";
 
+  const draft =
+    table.trim() && pk.trim()
+      ? {
+          table: table.trim(),
+          pk: pk.trim(),
+          pkColumn: pkColumn.trim(),
+          columns,
+          columnMap: Object.fromEntries(
+            columns
+              .map((name) => [name, (columnMap[name] ?? "").trim()])
+              .filter(([name, real]) => real && real !== name)
+          ),
+          allowInsert,
+          allowDelete,
+          inputs: inputs.filter((input) => columns.includes(input.column)),
+        }
+      : null;
+
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+  const [testError, setTestError] = useState("");
+
+  const runTest = async () => {
+    setTesting(true);
+    setTestError("");
+    setTestResult(null);
+    try {
+      const data = await apiJson(`/api/queries/${queryId}/editable-test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ editable: draft }),
+        fallbackError: "ทดสอบการตั้งค่าไม่สำเร็จ",
+      });
+      setTestResult(data);
+    } catch (err) {
+      setTestError(err.message);
+    } finally {
+      setTesting(false);
+    }
+  };
+
   return (
     <ModalShell
       inline={inline}
       title="ตั้งค่าการแก้ไขข้อมูล"
       icon={<Table2 size={15} className="text-red-600" />}
       onClose={onClose}
-      onSave={() =>
-        onSave(
-          table.trim() && pk.trim()
-            ? {
-                table: table.trim(),
-                pk: pk.trim(),
-                pkColumn: pkColumn.trim(),
-                columns,
-                columnMap: Object.fromEntries(
-                  columns
-                    .map((name) => [name, (columnMap[name] ?? "").trim()])
-                    .filter(([name, real]) => real && real !== name)
-                ),
-                allowInsert,
-                allowDelete,
-                inputs: inputs.filter((input) => columns.includes(input.column)),
-              }
-            : null
-        )
-      }
+      onSave={() => onSave(draft)}
     >
       <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
         เปิดแล้ว Admin จะดับเบิลคลิกแก้ค่าในตารางได้ ระบบจะเขียน UPDATE กลับไปที่ตารางนี้
         ทีละ 1 แถว และบันทึกลง log ทุกครั้ง (staff แก้ไม่ได้)
       </p>
+
+      <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[10px] font-black text-zinc-500">
+            ทดสอบกับฐานข้อมูลจริง — อ่านเท่านั้น ไม่เขียนอะไร
+          </span>
+          <button
+            type="button"
+            onClick={runTest}
+            disabled={testing || !draft || !queryId}
+            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-[10px] font-black text-zinc-700 transition hover:bg-zinc-100 disabled:opacity-40"
+          >
+            {testing ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+            ทดสอบการตั้งค่า
+          </button>
+        </div>
+
+        {!draft && (
+          <p className="mt-2 text-[10px] font-bold text-zinc-400">
+            กรอกชื่อตารางกับคอลัมน์ key ก่อน แล้วจะกดทดสอบได้
+          </p>
+        )}
+
+        {testError && (
+          <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-[10px] font-bold text-red-600">
+            {testError}
+          </p>
+        )}
+
+        {testResult && (
+          <div className="mt-2 space-y-2">
+            <p
+              className={`text-[11px] font-black ${
+                testResult.ok ? "text-emerald-700" : "text-red-600"
+              }`}
+            >
+              {testResult.ok
+                ? "ผ่านทุกข้อ — แก้ข้อมูลได้"
+                : "มีข้อที่ยังไม่ผ่าน — ดูรายการด้านล่าง"}
+            </p>
+
+            <ul className="space-y-1">
+              {testResult.checks.map((check, index) => (
+                <li
+                  key={`${check.label}:${index}`}
+                  className="flex gap-1.5 text-[10px] font-semibold leading-relaxed"
+                >
+                  <span className={check.ok ? "text-emerald-600" : "text-red-600"}>
+                    {check.ok ? "✓" : "✗"}
+                  </span>
+                  <span className="min-w-0">
+                    <span className={check.ok ? "text-zinc-700" : "font-black text-red-600"}>
+                      {check.label}
+                    </span>
+                    {check.detail ? (
+                      <span className="block break-words text-zinc-500">{check.detail}</span>
+                    ) : null}
+                  </span>
+                </li>
+              ))}
+            </ul>
+
+            {testResult.sql.length > 0 && (
+              <div>
+                <p className={labelClass}>คำสั่งที่ระบบจะยิงตอนแก้แต่ละคอลัมน์</p>
+                <div className="space-y-2">
+                  {testResult.sql.map((entry) => (
+                    <div key={entry.column}>
+                      <p className="text-[10px] font-black text-zinc-500">
+                        {entry.column}
+                        {entry.realColumn === entry.column ? "" : ` → ${entry.realColumn}`}
+                      </p>
+                      <pre className="mt-0.5 overflow-x-auto rounded-lg border border-zinc-200 bg-white px-2 py-1.5 font-mono text-[10px] leading-relaxed text-zinc-700">
+{`${entry.lock}
+${entry.update}`}
+                      </pre>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-1 text-[10px] font-semibold text-zinc-400">
+                  $1 คือค่าใหม่ · $2 คือค่า key ของแถวนั้น — ส่งเป็นพารามิเตอร์ ไม่ต่อเป็นสตริง
+                  ทั้งคู่รันใน transaction เดียว และถ้าไม่ได้ 1 แถวพอดีจะ rollback
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
       <div>
         <label className={labelClass}>ตารางที่จะเขียนกลับ (เช่น packages หรือ public.packages)</label>
         <input
