@@ -2155,7 +2155,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
         )}
 
         {sheetMode ? (
-          <div className="flex min-h-72 flex-1 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50">
+          <div className="flex min-h-72 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50">
             <div className="min-h-0 flex-1 overflow-auto p-3">
               {activeSheetPanel ? renderPanel(activeSheetPanel, true) : emptyWorkspace}
             </div>
@@ -2262,7 +2262,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
         ) : (
         <div
           ref={viewportRef}
-          className="relative min-h-72 flex-1 min-w-0 flex-1 overflow-auto overscroll-contain rounded-2xl border border-zinc-200 bg-zinc-50"
+          className="relative min-h-72 min-w-0 flex-1 overflow-auto overscroll-contain rounded-lg border border-zinc-200 bg-zinc-50"
           onPointerDown={startCanvasPan}
           onPointerMove={moveCanvasPan}
           onPointerUp={stopCanvasPan}

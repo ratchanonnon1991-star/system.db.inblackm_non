@@ -1508,7 +1508,7 @@ export default function QueryPanel({
               width: panel.width,
             }
       }
-      className={`flex min-w-0 flex-col rounded-2xl border border-zinc-200 bg-white shadow-sm transition-shadow ${
+      className={`flex min-w-0 flex-col border border-zinc-200 bg-white shadow-sm transition-shadow ${
         panelDrag || frameDrag
           ? "z-30 shadow-xl ring-1 ring-red-500"
           : frameSelected || isSelected
