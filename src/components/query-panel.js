@@ -712,6 +712,13 @@ export default function QueryPanel({
       )
     );
     setShowParamErrors(false);
+    // The rows on screen were fetched with the values that were just thrown
+    // away, so keeping them would show a table that no filter accounts for.
+    setResult(null);
+    setRunError("");
+    setChangedKeys(new Set());
+    previousRowsRef.current = null;
+    rowsLoadedRef.current = 0;
   };
 
   const applyDateRangePreset = (preset) => {
@@ -1844,7 +1851,7 @@ export default function QueryPanel({
       {!panel.collapsed && (
         <>
           {effectiveParams.length > 0 && (
-            <div className="flex flex-wrap items-end gap-2 border-b border-zinc-100 bg-zinc-50/60 px-3 py-2">
+            <div className="flex flex-wrap items-start gap-x-2 gap-y-1 border-b border-zinc-100 bg-zinc-50/60 px-3 py-2">
               <div className="flex w-full flex-wrap items-center justify-between gap-2 pb-1">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="mr-1 text-[10px] font-black text-zinc-500">ตัวกรอง Query</span>
@@ -2001,14 +2008,21 @@ export default function QueryPanel({
                   </div>
                 );
               })}
-              <button
-                type="button"
-                onClick={() => runQuery({ validate: true })}
-                disabled={running}
-                className="flex h-8 items-center gap-1.5 rounded-lg bg-zinc-800 px-3 text-[11px] font-black text-white transition hover:bg-zinc-900 disabled:opacity-50"
-              >
-                <Play size={11} /> ใช้ค่านี้
-              </button>
+              {/* The spacer stands in for a label so the button lines up with the
+                  inputs rather than with the hint text underneath them. */}
+              <div>
+                <span aria-hidden="true" className="mb-0.5 block text-[9px] font-black">
+                  &nbsp;
+                </span>
+                <button
+                  type="button"
+                  onClick={() => runQuery({ validate: true })}
+                  disabled={running}
+                  className="flex h-8 items-center gap-1.5 rounded-lg bg-zinc-800 px-3 text-[11px] font-black text-white transition hover:bg-zinc-900 disabled:opacity-50"
+                >
+                  <Play size={11} /> ใช้ค่านี้
+                </button>
+              </div>
             </div>
           )}
 
