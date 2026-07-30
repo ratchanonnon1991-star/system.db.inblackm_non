@@ -1639,6 +1639,26 @@ function GamedbWorkspace({ me, onLoggedOut }) {
     />
   );
 
+  // The table's own tools used to sit in a second bar of their own, which cost a
+  // full row of height to show a handful of buttons. They now ride along in
+  // whichever top bar is on screen — there is exactly one at any time, so the
+  // host element this renders into is never duplicated.
+  const panelToolbarStrip = selectedPanelQuery ? (
+    <>
+      <span className="mx-0.5 h-5 w-px shrink-0 bg-zinc-200" />
+      <span
+        className="hidden max-w-32 shrink-0 truncate text-[11px] font-black text-zinc-700 lg:block"
+        title={selectedPanelQuery.name}
+      >
+        {selectedPanelQuery.name}
+      </span>
+      <div
+        ref={setPanelToolbarHost}
+        className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1.5"
+      />
+    </>
+  ) : null;
+
   // Shown by both layouts when nothing is open, so it lives outside either.
   const emptyWorkspace = (
     <div className="flex h-full min-h-72 items-center justify-center p-4">
@@ -1904,6 +1924,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             >
               {openPanels.length}
             </span>
+            {panelToolbarStrip}
             <div className="ml-auto">{canvasToolbar}</div>
           </aside>
         )}
@@ -1912,7 +1933,9 @@ function GamedbWorkspace({ me, onLoggedOut }) {
           className="relative z-30 w-full shrink-0 rounded-2xl border border-zinc-200 bg-white p-2"
         >
           <div className="flex flex-wrap items-center gap-1.5">
-            <div className="relative min-w-0 flex-1">
+            {/* The box is a picker, not a place to read long text — past a few
+                hundred pixels it is only taking room from the table tools. */}
+            <div className="relative w-full min-w-40 max-w-64 flex-1 sm:w-auto">
               <Search
                 size={13}
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400"
@@ -1948,6 +1971,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             >
               {openPanels.length} ตาราง
             </span>
+            {panelToolbarStrip}
             {canvasToolbar}
             <button
               type="button"
@@ -2110,6 +2134,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             <span className="flex items-center gap-1.5 text-[10px] font-bold text-zinc-500">
               <Lock size={12} /> Layout ถูกกำหนดโดย Admin
             </span>
+            {panelToolbarStrip}
             <div className="ml-auto">{canvasToolbar}</div>
           </div>
         )}
@@ -2129,28 +2154,8 @@ function GamedbWorkspace({ me, onLoggedOut }) {
           </div>
         )}
 
-        {selectedPanelQuery && (
-          <div className="flex min-w-0 flex-wrap items-center gap-3 rounded-2xl border border-zinc-200 bg-white px-3 py-2 shadow-sm">
-            <div className="min-w-32 shrink-0 border-r border-zinc-200 pr-3">
-              <p className="text-[9px] font-black uppercase tracking-wide text-zinc-400">
-                เครื่องมือตาราง
-              </p>
-              <p
-                className="max-w-48 truncate text-xs font-black text-zinc-700"
-                title={selectedPanelQuery.name}
-              >
-                {selectedPanelQuery.name}
-              </p>
-            </div>
-            <div
-              ref={setPanelToolbarHost}
-              className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2"
-            />
-          </div>
-        )}
-
         {sheetMode ? (
-          <div className="flex h-[max(520px,calc(100vh-230px))] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50">
+          <div className="flex h-[max(520px,calc(100vh-175px))] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50">
             <div className="min-h-0 flex-1 overflow-auto p-3">
               {activeSheetPanel ? renderPanel(activeSheetPanel, true) : emptyWorkspace}
             </div>
@@ -2257,7 +2262,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
         ) : (
         <div
           ref={viewportRef}
-          className="relative h-[max(520px,calc(100vh-230px))] min-w-0 flex-1 overflow-auto overscroll-contain rounded-2xl border border-zinc-200 bg-zinc-50"
+          className="relative h-[max(520px,calc(100vh-175px))] min-w-0 flex-1 overflow-auto overscroll-contain rounded-2xl border border-zinc-200 bg-zinc-50"
           onPointerDown={startCanvasPan}
           onPointerMove={moveCanvasPan}
           onPointerUp={stopCanvasPan}
