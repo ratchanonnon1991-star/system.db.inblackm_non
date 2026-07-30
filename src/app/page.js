@@ -10,6 +10,7 @@ import {
 } from "react";
 import {
   Activity,
+  ChevronDown,
   Database,
   FileSpreadsheet,
   Eye,
@@ -1101,7 +1102,13 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   // that render is scheduled by React rather than happening on the spot.
   const wantSearchFocus = useRef(false);
 
+  // The list of queries is a picker, not something to keep on screen: it drops
+  // out of the search box and folds away again once it has been used.
+  const [listOpen, setListOpen] = useState(false);
+  const listBoxRef = useRef(null);
+
   const focusSearch = useCallback(() => {
+    setListOpen(true);
     if (!sidebarOpen) {
       wantSearchFocus.current = true;
       toggleSidebar(true);
@@ -1109,6 +1116,24 @@ function GamedbWorkspace({ me, onLoggedOut }) {
     }
     searchRef.current?.focus();
   }, [sidebarOpen, toggleSidebar]);
+
+  useEffect(() => {
+    if (!listOpen) return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (!listBoxRef.current?.contains(event.target)) setListOpen(false);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key !== "Escape") return;
+      setListOpen(false);
+      searchRef.current?.blur();
+    };
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [listOpen]);
 
   useEffect(() => {
     if (!sidebarOpen || !wantSearchFocus.current) return;
@@ -1595,9 +1620,10 @@ function GamedbWorkspace({ me, onLoggedOut }) {
           </aside>
         )}
         {!layoutLocked && sidebarOpen && <aside
-          className="w-full shrink-0 rounded-2xl border border-zinc-200 bg-white p-3"
+          ref={listBoxRef}
+          className="relative z-30 w-full shrink-0 rounded-2xl border border-zinc-200 bg-white p-3"
         >
-          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             <div className="relative min-w-0 flex-1">
               <Search
                 size={13}
@@ -1607,11 +1633,33 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                 ref={searchRef}
                 type="text"
                 value={sidebarSearch}
-                onChange={(e) => setSidebarSearch(e.target.value)}
+                onChange={(e) => {
+                  setSidebarSearch(e.target.value);
+                  setListOpen(true);
+                }}
+                onFocus={() => setListOpen(true)}
                 placeholder="ค้นหาชื่อ / SQL... (กด /)"
-                className="h-9 w-full rounded-lg border border-zinc-200 bg-zinc-50 pl-8 pr-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+                className="h-9 w-full rounded-lg border border-zinc-200 bg-zinc-50 pl-8 pr-8 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
               />
+              <button
+                type="button"
+                onClick={() => setListOpen((open) => !open)}
+                className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-200 hover:text-zinc-700"
+                title={listOpen ? "ปิดรายการ Query" : "เปิดรายการ Query"}
+                aria-expanded={listOpen}
+              >
+                <ChevronDown
+                  size={14}
+                  className={`transition ${listOpen ? "rotate-180" : ""}`}
+                />
+              </button>
             </div>
+            <span
+              className="shrink-0 rounded-md bg-zinc-100 px-2 py-1 text-[10px] font-black text-zinc-500"
+              title={`เปิดอยู่ ${openPanels.length} ตาราง`}
+            >
+              {openPanels.length} ตาราง
+            </span>
             {canvasToolbar}
             <button
               type="button"
@@ -1622,6 +1670,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               <PanelLeftClose size={15} />
             </button>
           </div>
+          {listOpen && <div className="absolute left-3 right-3 top-full z-40 mt-1 max-h-[65vh] overflow-y-auto rounded-xl border border-zinc-200 bg-white p-2 shadow-xl">
           <div className="mb-2 flex items-center justify-between gap-2 px-1">
             <span className="text-[10px] font-black text-zinc-400">
               เปิดอยู่ {openPanels.length} ตาราง
@@ -1765,6 +1814,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               ))}
             </div>
           )}
+          </div>}
         </aside>}
 
         {layoutLocked && (
