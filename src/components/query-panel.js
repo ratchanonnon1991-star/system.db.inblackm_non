@@ -890,29 +890,40 @@ export default function QueryPanel({
   // display-column id, which is the same string for base columns.
   const changedCellKeys = useMemo(() => changedKeys, [changedKeys]);
 
-  const editableColumns = useMemo(() => layout.editable?.columns || [], [layout.editable]);
-  const canEditCells = Boolean(
-    canManage && layout.editable && baseNameToIndex.has(layout.editable.pk)
+  // Every write endpoint reads the query's own shared layout -- not this user's
+  // personal one, and not what is only in the editor. So a table is editable here
+  // exactly when it is editable there, and by the config that will be enforced;
+  // anything else offers a box whose save is refused with
+  // "ยังไม่ได้เปิดให้แก้ไขข้อมูล", or a column the writer will not accept.
+  const sharedEditable = useMemo(
+    () => normalizeLayout(query.layout).editable,
+    [query.layout]
   );
+  const editableColumns = useMemo(() => sharedEditable?.columns || [], [sharedEditable]);
+  const canEditCells = Boolean(
+    canManage && sharedEditable && baseNameToIndex.has(sharedEditable.pk)
+  );
+  // Configured, but only in the editor or only for this user.
+  const editableNotShared = Boolean(canManage && layout.editable && !sharedEditable);
 
   // Dropdowns that read another table are fetched once for the panel rather
   // than per cell, and only when a field actually asks for one.
   const [loadedLookups, setLoadedLookups] = useState(NO_LOOKUPS);
   const lookupColumns = useMemo(
     () =>
-      (layout.editable?.inputs || [])
+      (sharedEditable?.inputs || [])
         .filter((input) => input.widget === "lookup" && input.lookup)
         .map((input) => input.column),
-    [layout.editable]
+    [sharedEditable]
   );
   const lookupSignature = useMemo(
     () =>
       JSON.stringify(
-        (layout.editable?.inputs || [])
+        (sharedEditable?.inputs || [])
           .filter((input) => input.widget === "lookup" && input.lookup)
           .map((input) => [input.column, input.lookup])
       ),
-    [layout.editable]
+    [sharedEditable]
   );
   const hasLookups = lookupSignature !== "[]";
 
@@ -959,7 +970,7 @@ export default function QueryPanel({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          pkValue: result.rows[sourceIndex][baseNameToIndex.get(layout.editable.pk)],
+          pkValue: result.rows[sourceIndex][baseNameToIndex.get(sharedEditable.pk)],
           column: col.column.name,
           value,
         }),
@@ -1001,9 +1012,9 @@ export default function QueryPanel({
   };
 
   const deleteRow = async (row) => {
-    const pkValue = result.rows[row.sourceIndex][baseNameToIndex.get(layout.editable.pk)];
+    const pkValue = result.rows[row.sourceIndex][baseNameToIndex.get(sharedEditable.pk)];
     const confirmed = window.confirm(
-      `ลบแถวที่ ${layout.editable.pk} = ${pkValue} ออกจากตาราง ${layout.editable.table}?\n` +
+      `ลบแถวที่ ${sharedEditable.pk} = ${pkValue} ออกจากตาราง ${sharedEditable.table}?\n` +
         "ลบแล้วเอากลับไม่ได้"
     );
     if (!confirmed) return;
@@ -1720,7 +1731,13 @@ export default function QueryPanel({
                     <Table2 size={14} className={layout.editable ? "text-red-600" : ""} />
                     ตั้งค่าการแก้ไขข้อมูล
                   </button>
-                  {canEditCells && layout.editable.allowInsert && (
+                  {editableNotShared && (
+                    <p className="px-3 py-1.5 text-[10px] font-bold leading-relaxed text-amber-700">
+                      ตั้งค่าแก้ไขข้อมูลไว้แล้ว แต่ยังไม่ได้บันทึกให้ทุกคน —
+                      กด &quot;บันทึกให้ทุกคน&quot; ก่อน ถึงจะแก้ข้อมูลได้
+                    </p>
+                  )}
+                  {canEditCells && sharedEditable.allowInsert && (
                     <button
                       type="button"
                       role="menuitem"
@@ -2026,12 +2043,13 @@ export default function QueryPanel({
                   height={panel.height}
                   canEdit={canEditCells}
                   editableColumns={editableColumns}
+                  editableInputs={sharedEditable?.inputs || []}
                   lookupOptions={lookupOptions}
                   editPending={editPending}
                   onEditCell={editCell}
                   changedKeys={changedCellKeys}
                   onDeleteRow={
-                    canEditCells && layout.editable.allowDelete && !viewingSnapshot
+                    canEditCells && sharedEditable.allowDelete && !viewingSnapshot
                       ? deleteRow
                       : null
                   }
@@ -2138,6 +2156,7 @@ export default function QueryPanel({
       {modal === "editable" && result && (
         <EditableSettingsModal
           inline
+          queryId={query.id}
           columnNames={result.columns.map((col) => col.name)}
           editable={layout.editable}
           onClose={() => setModal(null)}
@@ -2175,20 +2194,20 @@ export default function QueryPanel({
           }}
         />
       )}
-      {modal === "newRow" && result && layout.editable && (
+      {modal === "newRow" && result && sharedEditable && (
         <NewRowModal
           inline
-          editable={layout.editable}
+          editable={sharedEditable}
           lookupOptions={lookupOptions}
           resultColumns={result.columns}
           onSubmit={insertRow}
           onClose={() => setModal(null)}
         />
       )}
-      {modal === "bulk" && result && layout.editable && (
+      {modal === "bulk" && result && sharedEditable && (
         <BulkEditModal
           inline
-          editable={layout.editable}
+          editable={sharedEditable}
           columnNames={result.columns.map((col) => col.name)}
           onApply={applyBulkEdits}
           onClose={() => setModal(null)}

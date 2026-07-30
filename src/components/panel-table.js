@@ -338,6 +338,7 @@ export default function PanelTable({
   height,
   canEdit,
   editableColumns,
+  editableInputs = [],
   lookupOptions = {},
   editPending,
   onEditCell,
@@ -640,9 +641,11 @@ export default function PanelTable({
   };
 
   // The same per-column setup the "add a row" form uses, so a column that is a
-  // dropdown there is a dropdown here rather than a free text box.
+  // dropdown there is a dropdown here rather than a free text box. It comes from
+  // the caller because only the saved shared config is the one writes are checked
+  // against, and this table's layout may be a personal one.
   const inputConfigOf = (columnName) =>
-    layout.editable?.inputs?.find((input) => input.column === columnName) || null;
+    editableInputs.find((input) => input.column === columnName) || null;
 
   // Shared by the windowed and the grouped rendering paths below.
   const renderRow = (row, rowIndex) => {
