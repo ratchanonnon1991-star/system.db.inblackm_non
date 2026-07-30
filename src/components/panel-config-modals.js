@@ -8,6 +8,7 @@ import {
   Code2,
   Combine,
   CornerDownRight,
+  Link2,
   Loader2,
   Paintbrush,
   Palette,
@@ -74,6 +75,139 @@ function ModalShell({ title, icon, onClose, children, onSave, saveLabel = "บ�
             <Save size={13} /> {saveLabel}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Turning a table into a link that needs no account is the one action here that
+ * changes who can see the data, so the modal says plainly what the link does and
+ * keeps revoking one click away.
+ */
+export function ShareLinkModal({ queryId, onClose }) {
+  const [share, setShare] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiJson(`/api/queries/${queryId}/share`, { fallbackError: "อ่านสถานะการแชร์ไม่สำเร็จ" })
+      .then((data) => {
+        if (!cancelled) setShare(data.share);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [queryId]);
+
+  const url = share ? `${window.location.origin}/s/${share.token}` : "";
+
+  const call = async (method) => {
+    setBusy(true);
+    setError("");
+    try {
+      const data = await apiJson(`/api/queries/${queryId}/share`, {
+        method,
+        fallbackError: "ทำรายการไม่สำเร็จ",
+      });
+      setShare(data.share);
+      setCopied(false);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-sm font-black">
+            <Link2 size={15} /> แชร์เป็นลิงก์ (ดูอย่างเดียว)
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
+            aria-label="ปิด"
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        {error && (
+          <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
+            {error}
+          </p>
+        )}
+
+        {loading ? (
+          <p className="flex items-center gap-2 py-6 text-xs font-semibold text-zinc-400">
+            <Loader2 size={14} className="animate-spin" /> กำลังตรวจสถานะ...
+          </p>
+        ) : share ? (
+          <>
+            <div className="flex items-center gap-2">
+              <input
+                readOnly
+                value={url}
+                onFocus={(event) => event.target.select()}
+                className={`${inputClass} font-mono`}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard?.writeText(url);
+                  setCopied(true);
+                }}
+                className="shrink-0 rounded-lg bg-red-600 px-4 py-2 text-[11px] font-black text-white transition hover:bg-red-700"
+              >
+                {copied ? "คัดลอกแล้ว" : "คัดลอก"}
+              </button>
+            </div>
+            <p className="mt-3 text-[11px] font-semibold leading-relaxed text-zinc-500">
+              ใครที่มีลิงก์นี้เปิดดูตารางได้โดยไม่ต้องล็อกอิน และเห็นข้อมูลล่าสุดทุกครั้งที่เปิด
+              แก้ไขข้อมูล บันทึก layout หรือเปิด Query อื่นไม่ได้ และ SQL ไม่ถูกส่งออกไปกับลิงก์
+            </p>
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => call("DELETE")}
+                className="rounded-xl border border-red-200 px-4 py-2 text-[11px] font-black text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+              >
+                ยกเลิกลิงก์นี้
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-[11px] font-semibold leading-relaxed text-zinc-500">
+              สร้างลิงก์เพื่อให้คนที่ไม่มีบัญชีเปิดดูตารางนี้ได้ เห็นข้อมูลอย่างเดียว
+              แก้ไขไม่ได้ และยกเลิกลิงก์เมื่อไหร่ก็ได้
+            </p>
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => call("POST")}
+                className="flex items-center gap-1.5 rounded-xl bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
+              >
+                <Link2 size={13} /> สร้างลิงก์
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

@@ -14,6 +14,7 @@ import {
   Download,
   Eye,
   GripVertical,
+  Link2,
   Lock,
   Loader2,
   Maximize2,
@@ -64,6 +65,7 @@ import {
   NewRowModal,
   ParamsSettingsModal,
   RulesModal,
+  ShareLinkModal,
 } from "@/components/panel-config-modals";
 import PanelTable from "@/components/panel-table";
 import PanelChart from "@/components/panel-chart";
@@ -87,8 +89,15 @@ const MIN_FRAME_HEIGHT = 140;
 const MAX_FRAME_HEIGHT = 1600;
 // In sheet mode the panel is not the thing being laid out — the sheet is. Each
 // query carries its own canvas height, so honouring it here would make the body
-// jump to a different size every time the user switches tab.
-const DOCKED_BODY_HEIGHT = 420;
+// jump to a different size every time the user switches tab. The window is the
+// same for every tab, so sizing to it keeps the table still while still using a
+// tall screen. The subtraction covers the app chrome, the panel header and the
+// tab strip.
+const DOCKED_CHROME = 260;
+const MIN_DOCKED_BODY = 320;
+function dockedBodyHeight(viewportHeight) {
+  return Math.max(MIN_DOCKED_BODY, Math.round(viewportHeight - DOCKED_CHROME));
+}
 
 // Eight Figma-like hit areas. The inner marker is shown when the frame is
 // selected, while the larger transparent area remains easy to grab.
@@ -122,10 +131,9 @@ function initialParamValues(params) {
 
 // A :placeholder that nobody has configured yet still gets an input, so a query
 // with parameters is usable the moment it is written.
-function resolveParams(layout, sqlText) {
-  const detected = extractSqlParams(sqlText);
+function resolveParams(layout, paramNames) {
   const configured = new Map(layout.params.map((param) => [param.name, param]));
-  return detected.map(
+  return paramNames.map(
     (name) =>
       configured.get(name) || {
         name,
@@ -378,7 +386,20 @@ export default function QueryPanel({
   // and has no position or frame of its own to drag.
   docked = false,
   canClose = true,
+  // A public link renders this same panel, so it reads through the share route
+  // instead of the signed-in one. Everything the token does not cover is off
+  // through canManage/canCustomizeLayout, not through this flag.
+  shareToken = null,
 }) {
+  const runUrl = shareToken
+    ? `/api/share/${shareToken}/run`
+    : `/api/queries/${query.id}/run`;
+  // A shared query carries its placeholder names with it; the SQL they came
+  // from stays on the server.
+  const paramNames = useMemo(
+    () => query.paramNames || extractSqlParams(query.sqlText || ""),
+    [query.paramNames, query.sqlText]
+  );
   // Layout precedence: what this user saved for themselves, then what a screen
   // template dictates, then the shared layout stored on the query.
   const savedLayout = useMemo(
@@ -387,8 +408,8 @@ export default function QueryPanel({
   );
   const hasOverride = Boolean(personalLayout || layoutOverride);
   const savedParams = useMemo(
-    () => resolveParams(savedLayout, query.sqlText),
-    [savedLayout, query.sqlText]
+    () => resolveParams(savedLayout, paramNames),
+    [savedLayout, paramNames]
   );
 
   const [result, setResult] = useState(null);
@@ -428,8 +449,8 @@ export default function QueryPanel({
   const [editError, setEditError] = useState("");
 
   const effectiveParams = useMemo(
-    () => resolveParams(layout, query.sqlText),
-    [layout, query.sqlText]
+    () => resolveParams(layout, paramNames),
+    [layout, paramNames]
   );
   const paramErrors = useMemo(
     () => validateParamValues(effectiveParams, paramValues),
@@ -466,6 +487,17 @@ export default function QueryPanel({
     paramsRef.current = paramValues;
     paramErrorsRef.current = paramErrors;
   }, [paramValues, paramErrors]);
+
+  // Sized from the window rather than from the panel, and only on resize, so
+  // every tab is the same height.
+  const [dockedHeight, setDockedHeight] = useState(MIN_DOCKED_BODY);
+  useEffect(() => {
+    if (!docked) return undefined;
+    const measure = () => setDockedHeight(dockedBodyHeight(window.innerHeight));
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [docked]);
 
   const appliedDrillRef = useRef(null);
 
@@ -559,7 +591,7 @@ export default function QueryPanel({
       setRunError("");
       if (!silent && !append) setResult(null);
       try {
-        const data = await apiJson(`/api/queries/${query.id}/run`, {
+        const data = await apiJson(runUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -645,7 +677,7 @@ export default function QueryPanel({
         setLoadingMore(false);
       }
     },
-    [query.id]
+    [query.id, runUrl]
   );
 
   useEffect(() => {
@@ -775,10 +807,12 @@ export default function QueryPanel({
       return undefined;
     }
     let cancelled = false;
-    apiJson(`/api/queries/${mergeQueryId}/run`, {
+    // Through a share link the merged table is resolved from the shared
+    // query's own layout on the server, so the id never travels.
+    apiJson(shareToken ? `/api/share/${shareToken}/run` : `/api/queries/${mergeQueryId}/run`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ params: {} }),
+      body: JSON.stringify(shareToken ? { merge: true } : { params: {} }),
       fallbackError: "ดึงข้อมูลของ Query ที่รวมไว้ไม่สำเร็จ",
     })
       .then((data) => {
@@ -795,7 +829,7 @@ export default function QueryPanel({
       cancelled = true;
     };
     // Re-run alongside this panel so a refresh pulls both sides.
-  }, [mergeQueryId, lastRunAt]);
+  }, [mergeQueryId, lastRunAt, shareToken]);
 
   // One lookup for the whole render: join key -> matching row of the other query.
   const mergeIndex = useMemo(() => {
@@ -1452,7 +1486,7 @@ export default function QueryPanel({
     if (dirY) onResetHeight();
   };
 
-  const bodyHeight = docked ? DOCKED_BODY_HEIGHT : panel.height;
+  const bodyHeight = docked ? dockedHeight : panel.height;
 
   return (
     <section
@@ -1493,7 +1527,7 @@ export default function QueryPanel({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2 border-b border-zinc-100 p-3">
+      <div className="flex flex-wrap items-center gap-2 border-b border-zinc-100 px-3 py-1.5">
         {canCustomizeLayout && !docked ? <button
           type="button"
           onPointerDown={startPanelMove}
@@ -1519,14 +1553,16 @@ export default function QueryPanel({
           {panel.collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
         </button>}
 
-        <div className="min-w-48 flex-[1_1_16rem]">
-          <p className="truncate text-sm font-black" title={query.name}>
+        {/* Name and counters share a line when there is room for one: two
+            stacked lines of chrome cost more height than the numbers are worth. */}
+        <div className="flex min-w-48 flex-[1_1_16rem] flex-wrap items-baseline gap-x-2">
+          <p className="truncate text-xs font-black" title={query.name}>
             {query.name}
             {refreshing && (
               <Loader2 size={11} className="ml-1.5 inline animate-spin text-zinc-400" />
             )}
           </p>
-          <p className="truncate text-[10px] font-semibold text-zinc-400">
+          <p className="min-w-0 flex-1 truncate text-[10px] font-semibold text-zinc-400">
             {result ? (
               <>
                 {displayRows.length.toLocaleString("th-TH")} แถว
@@ -1800,6 +1836,14 @@ export default function QueryPanel({
                     className={menuItemClass}
                   >
                     <SlidersHorizontal size={14} /> พารามิเตอร์
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => runMoreAction(() => setModal("share"))}
+                    className={menuItemClass}
+                  >
+                    <Link2 size={14} /> แชร์เป็นลิงก์ (ดูอย่างเดียว)
                   </button>
                   <button
                     type="button"
@@ -2110,7 +2154,7 @@ export default function QueryPanel({
               shrink and snap back on every tab switch. */}
           <div
             className="flex min-w-0 flex-col"
-            style={docked ? { minHeight: DOCKED_BODY_HEIGHT } : undefined}
+            style={docked ? { minHeight: dockedHeight } : undefined}
           >
           {running ? (
             <p className="flex items-center justify-center gap-2 py-16 text-xs font-semibold text-zinc-400">
@@ -2242,6 +2286,9 @@ export default function QueryPanel({
             setModal(null);
           }}
         />
+      )}
+      {modal === "share" && (
+        <ShareLinkModal queryId={query.id} onClose={() => setModal(null)} />
       )}
       {modal === "params" && (
         <ParamsSettingsModal
