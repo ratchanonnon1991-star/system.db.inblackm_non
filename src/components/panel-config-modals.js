@@ -98,10 +98,29 @@ export function ParamsSettingsModal({ sqlText, params, onSave, onClose, inline =
     })
   );
 
+  // The dropdown options are edited as one comma-separated line. Parsing every
+  // keystroke would eat the comma the moment it is typed, so the raw text is
+  // kept as typed and only the parsed list goes into the draft.
+  const [optionsText, setOptionsText] = useState(() =>
+    Object.fromEntries(draft.map((param) => [param.name, (param.options || []).join(", ")]))
+  );
+
   const setField = (name, key, value) =>
     setDraft((prev) =>
       prev.map((param) => (param.name === name ? { ...param, [key]: value } : param))
     );
+
+  const setOptions = (name, text) => {
+    setOptionsText((prev) => ({ ...prev, [name]: text }));
+    setField(
+      name,
+      "options",
+      text
+        .split(",")
+        .map((option) => option.trim())
+        .filter(Boolean)
+    );
+  };
 
   return (
     <ModalShell
@@ -218,19 +237,16 @@ export function ParamsSettingsModal({ sqlText, params, onSave, onClose, inline =
                   <label className={labelClass}>ตัวเลือก (คั่นด้วย ,)</label>
                   <input
                     type="text"
-                    value={param.options.join(",")}
-                    onChange={(e) =>
-                      setField(
-                        param.name,
-                        "options",
-                        e.target.value
-                          .split(",")
-                          .map((option) => option.trim())
-                          .filter(Boolean)
-                      )
-                    }
+                    value={optionsText[param.name] ?? ""}
+                    onChange={(e) => setOptions(param.name, e.target.value)}
+                    placeholder="เช่น TRUEMONEY, BANK, CREDIT"
                     className={inputClass}
                   />
+                  <p className="mt-1 text-[9px] font-semibold text-zinc-400">
+                    {(param.options || []).length > 0
+                      ? `${param.options.length} ตัวเลือก: ${param.options.join(" / ")}`
+                      : "ยังไม่มีตัวเลือก — พิมพ์แล้วคั่นด้วย ,"}
+                  </p>
                 </div>
               )}
             </div>
