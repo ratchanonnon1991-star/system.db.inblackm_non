@@ -1555,17 +1555,34 @@ export default function QueryPanel({
           />
         </div>
 
-        {canCustomizeLayout && layoutDirty && (
+        {/* Available whether or not anything has changed: waiting for the panel
+            to decide something counts as an edit made saving feel like a trap.
+            The dot is what says there is something unsaved. */}
+        {canCustomizeLayout && (
           <>
             <button
               type="button"
               onClick={() => saveLayout("mine")}
               disabled={savingLayout}
-              className="flex h-8 items-center gap-1.5 rounded-lg bg-red-600 px-3 text-[11px] font-black text-white transition hover:bg-red-700 disabled:opacity-50"
-              title="บันทึกไว้ใช้เอง คนอื่นไม่เห็นการเปลี่ยนแปลงนี้"
+              className={`flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-black transition disabled:opacity-50 ${
+                layoutDirty
+                  ? "bg-red-600 text-white hover:bg-red-700"
+                  : "border border-zinc-300 text-zinc-600 hover:bg-zinc-50"
+              }`}
+              title={
+                layoutDirty
+                  ? "มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก — บันทึกไว้ใช้เอง คนอื่นไม่เห็น"
+                  : "บันทึก layout ปัจจุบันไว้ใช้เอง คนอื่นไม่เห็นการเปลี่ยนแปลงนี้"
+              }
             >
               {savingLayout ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
               บันทึกของฉัน
+              {layoutDirty && (
+                <span
+                  className="h-1.5 w-1.5 rounded-full bg-white"
+                  aria-label="ยังไม่ได้บันทึก"
+                />
+              )}
             </button>
             {canManage && (
               <button
@@ -1578,12 +1595,12 @@ export default function QueryPanel({
                 <Users size={12} /> บันทึกให้ทุกคน
               </button>
             )}
-            <button type="button" onClick={resetLayout} className={iconButtonClass} title="ล้าง layout กลับเป็นค่าเริ่มต้น">
+            <button type="button" onClick={resetLayout} disabled={savingLayout} className={iconButtonClass} title="ล้าง layout กลับเป็นค่าเริ่มต้น">
               <RotateCcw size={13} />
             </button>
           </>
         )}
-        {canCustomizeLayout && personalLayout && !layoutDirty && (
+        {canCustomizeLayout && personalLayout && (
           <button
             type="button"
             onClick={dropPersonalLayout}

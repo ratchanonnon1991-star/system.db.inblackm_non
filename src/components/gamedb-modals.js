@@ -20,6 +20,7 @@ import {
   parseFormula,
 } from "@/lib/gamedb-formula";
 import { formatCell } from "@/lib/gamedb-layout";
+import { extractSqlParams } from "@/lib/gamedb-sql-params";
 
 export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
   const isEdit = modal.mode === "edit";
@@ -38,6 +39,10 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [error, setError] = useState("");
+  // A test run needs values for whatever :placeholders the SQL currently has,
+  // or it can only report that they are missing.
+  const [testParams, setTestParams] = useState({});
+  const testParamNames = useMemo(() => extractSqlParams(sqlText), [sqlText]);
 
   const testRun = async () => {
     setTesting(true);
@@ -50,6 +55,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
         body: JSON.stringify({
           sqlText,
           connectionId: connectionId ? Number(connectionId) : null,
+          params: testParams,
         }),
         fallbackError: "รัน SQL ไม่สำเร็จ",
       });
@@ -194,6 +200,33 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
           {error && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
               {error}
+            </div>
+          )}
+          {testParamNames.length > 0 && (
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-2.5">
+              <p className="mb-1.5 text-[10px] font-black text-zinc-500">
+                ค่าพารามิเตอร์สำหรับทดสอบ (ไม่ถูกบันทึกไปกับ Query)
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {testParamNames.map((paramName) => (
+                  <label key={paramName} className="flex items-center gap-1.5">
+                    <span className="font-mono text-[10px] font-black text-red-600">
+                      :{paramName}
+                    </span>
+                    <input
+                      type="text"
+                      value={testParams[paramName] ?? ""}
+                      onChange={(e) =>
+                        setTestParams((prev) => ({
+                          ...prev,
+                          [paramName]: e.target.value,
+                        }))
+                      }
+                      className="h-7 w-36 rounded-lg border border-zinc-200 bg-white px-2 text-[11px] font-semibold outline-none focus:border-red-600"
+                    />
+                  </label>
+                ))}
+              </div>
             </div>
           )}
           {testResult && (

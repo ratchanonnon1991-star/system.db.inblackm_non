@@ -15,7 +15,11 @@ export async function POST(request) {
     if (body.connectionId && !connection) {
       return jsonError("ไม่พบฐานข้อมูลที่เลือก", 404);
     }
-    const result = await runReadOnlyQuery(body.sqlText, connection);
+    // SQL under test may already carry :placeholders, and without values for
+    // them the run could only ever fail. Same shape as the saved-query route.
+    const params =
+      body?.params && typeof body.params === "object" ? body.params : {};
+    const result = await runReadOnlyQuery(body.sqlText, connection, params);
     return jsonOk(result);
   } catch (err) {
     return handleApiError(err, "ไม่สามารถรัน SQL ได้");
