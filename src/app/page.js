@@ -332,10 +332,32 @@ function readStoredPanels() {
   }
 }
 
+// Folders are free text with no colour of their own, so the dot on a sheet tab
+// is derived from the name: the same folder always lands on the same hue, which
+// is all the grouping cue the strip needs.
+const TAB_DOT_COLORS = [
+  "#dc2626",
+  "#ea580c",
+  "#ca8a04",
+  "#16a34a",
+  "#0891b2",
+  "#2563eb",
+  "#7c3aed",
+  "#db2777",
+];
+function folderColor(folder) {
+  const name = (folder || "").trim();
+  if (!name) return "#a1a1aa";
+  let hash = 0;
+  for (const char of name) hash = (hash * 31 + char.codePointAt(0)) % 100000;
+  return TAB_DOT_COLORS[hash % TAB_DOT_COLORS.length];
+}
+
 const THEME_KEY = "gamedb.theme";
 const PINNED_KEY = "gamedb.pinned";
 const SIDEBAR_KEY = "gamedb.sidebar";
 const SHEET_MODE_KEY = "gamedb.sheet-mode";
+const SELECTED_PANEL_KEY = "gamedb.selected-panel";
 
 function CanvasToolbar({
   layoutLocked,
@@ -566,6 +588,40 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   const [listError, setListError] = useState("");
   const [sidebarSearch, setSidebarSearch] = useState("");
   const [selectedPanelId, setSelectedPanelId] = useState(null);
+  // Which tab was open is part of where the user left off, the same as the
+  // theme or the sheet toggle. The stored value must not be written back before
+  // it has been read, or the first render's null would erase it.
+  const selectionRestoredRef = useRef(false);
+  const selectionWrittenRef = useRef(false);
+  useEffect(() => {
+    try {
+      // Stored as JSON so a numeric query id comes back a number and still
+      // matches the panels.
+      const stored = window.localStorage.getItem(SELECTED_PANEL_KEY);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reading a browser preference is exactly what an effect is for
+      if (stored) setSelectedPanelId(JSON.parse(stored));
+    } catch {
+      // ignore
+    }
+    selectionRestoredRef.current = true;
+  }, []);
+  useEffect(() => {
+    // The mount pass still holds the initial null — the restored value only
+    // arrives on the render after it, so the first pass writes nothing.
+    if (!selectionRestoredRef.current || !selectionWrittenRef.current) {
+      selectionWrittenRef.current = true;
+      return;
+    }
+    try {
+      if (selectedPanelId === null || selectedPanelId === undefined) {
+        window.localStorage.removeItem(SELECTED_PANEL_KEY);
+      } else {
+        window.localStorage.setItem(SELECTED_PANEL_KEY, JSON.stringify(selectedPanelId));
+      }
+    } catch {
+      // ignore
+    }
+  }, [selectedPanelId]);
   const [panelToolbarHost, setPanelToolbarHost] = useState(null);
 
   const [panels, setPanels] = useState([]);
@@ -1304,6 +1360,78 @@ function GamedbWorkspace({ me, onLoggedOut }) {
     openPanels[0] ||
     null;
 
+  // Tabs are keyboard-reachable the way a spreadsheet's are: Ctrl+PageUp/Down
+  // steps through them and Alt+1..9 jumps straight to one.
+  useEffect(() => {
+    if (!sheetMode || openPanels.length === 0) return undefined;
+    const onKeyDown = (event) => {
+      const index = openPanels.findIndex(
+        (panel) => panel.queryId === activeSheetPanel?.queryId
+      );
+      if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+        if (event.key !== "PageDown" && event.key !== "PageUp") return;
+        event.preventDefault();
+        const step = event.key === "PageDown" ? 1 : -1;
+        const next =
+          (index + step + openPanels.length) % openPanels.length;
+        setSelectedPanelId(openPanels[next].queryId);
+        return;
+      }
+      if (event.altKey && !event.ctrlKey && !event.metaKey && /^[1-9]$/.test(event.key)) {
+        const target = openPanels[Number(event.key) - 1];
+        if (!target) return;
+        event.preventDefault();
+        setSelectedPanelId(target.queryId);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activeSheetPanel, openPanels, sheetMode]);
+
+  // With more tabs than fit, the selected one can sit outside the strip — and a
+  // tab picked from the search box would otherwise never come into view.
+  const activeTabRef = useRef(null);
+  useEffect(() => {
+    if (!sheetMode) return;
+    activeTabRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [activeSheetPanel, sheetMode]);
+
+  const [dragTabId, setDragTabId] = useState(null);
+  const [tabMenu, setTabMenu] = useState(null);
+  useEffect(() => {
+    if (!tabMenu) return undefined;
+    const close = () => setTabMenu(null);
+    document.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", close);
+    };
+  }, [tabMenu]);
+
+  const reorderTabs = useCallback(
+    (fromId, toId) => {
+      if (fromId === toId) return;
+      replacePanels((prev) => {
+        const from = prev.findIndex((panel) => panel.queryId === fromId);
+        const to = prev.findIndex((panel) => panel.queryId === toId);
+        if (from < 0 || to < 0) return prev;
+        const next = [...prev];
+        next.splice(to, 0, next.splice(from, 1)[0]);
+        return next;
+      });
+    },
+    [replacePanels]
+  );
+
+  const closeOtherTabs = useCallback(
+    (queryId) => {
+      setSelectedPanelId(queryId);
+      replacePanels((prev) => prev.filter((panel) => panel.queryId === queryId));
+    },
+    [replacePanels]
+  );
+
   const selectedPanel = openPanels.find(
     (panel) => panel.queryId === selectedPanelId
   );
@@ -2028,23 +2156,53 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             </div>
             {openPanels.length > 0 && (
               <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-t border-zinc-200 bg-white px-2 py-1.5">
-                {openPanels.map((panel) => {
+                {openPanels.map((panel, index) => {
                   const query = queryById.get(panel.queryId);
                   const isActive = activeSheetPanel?.queryId === panel.queryId;
                   return (
                     <div
                       key={panel.queryId}
-                      className={`group flex shrink-0 items-center gap-1 rounded-t-lg border-b-2 px-2.5 py-1 transition ${
+                      ref={isActive ? activeTabRef : null}
+                      draggable
+                      onDragStart={() => setDragTabId(panel.queryId)}
+                      onDragEnd={() => setDragTabId(null)}
+                      onDragOver={(event) => {
+                        if (dragTabId === null) return;
+                        event.preventDefault();
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        if (dragTabId !== null) reorderTabs(dragTabId, panel.queryId);
+                        setDragTabId(null);
+                      }}
+                      // Middle-click closes a tab, the way it does in a browser.
+                      onAuxClick={(event) => {
+                        if (event.button !== 1) return;
+                        event.preventDefault();
+                        closePanel(panel.queryId);
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        setTabMenu({ queryId: panel.queryId, x: event.clientX, y: event.clientY });
+                      }}
+                      className={`group flex shrink-0 cursor-grab items-center gap-1 rounded-t-lg border-b-2 px-2.5 py-1 transition active:cursor-grabbing ${
+                        dragTabId === panel.queryId ? "opacity-40" : ""
+                      } ${
                         isActive
                           ? "border-red-600 bg-red-50 text-red-700"
                           : "border-transparent text-zinc-500 hover:bg-zinc-100"
                       }`}
                     >
+                      <span
+                        aria-hidden="true"
+                        className="size-1.5 shrink-0 rounded-full"
+                        style={{ background: folderColor(query?.layout?.folder) }}
+                      />
                       <button
                         type="button"
                         onClick={() => setSelectedPanelId(panel.queryId)}
                         className="max-w-48 truncate text-[11px] font-black"
-                        title={query?.name}
+                        title={`${query?.name || ""}${index < 9 ? ` · Alt+${index + 1}` : ""}`}
                       >
                         {query?.name}
                       </button>
@@ -2059,6 +2217,40 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                     </div>
                   );
                 })}
+                {/* Opening another table shouldn't mean going back up to the
+                    search box when the eye is already down here. */}
+                <button
+                  type="button"
+                  onClick={focusSearch}
+                  className="shrink-0 rounded-lg p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600"
+                  title="เปิดตารางเพิ่ม"
+                >
+                  <Plus size={13} />
+                </button>
+              </div>
+            )}
+            {tabMenu && (
+              // Closing happens on pointerdown, which removes this before a
+              // click can land, so the items act on pointerdown too.
+              <div
+                className="fixed z-50 min-w-40 rounded-xl border border-zinc-200 bg-white p-1 shadow-xl"
+                style={{ left: tabMenu.x, top: tabMenu.y }}
+              >
+                <button
+                  type="button"
+                  onPointerDown={() => closePanel(tabMenu.queryId)}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] font-bold text-zinc-600 hover:bg-zinc-100"
+                >
+                  <X size={11} /> ปิดแท็บนี้
+                </button>
+                <button
+                  type="button"
+                  disabled={openPanels.length < 2}
+                  onPointerDown={() => closeOtherTabs(tabMenu.queryId)}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-40"
+                >
+                  <X size={11} /> ปิดแท็บอื่นทั้งหมด
+                </button>
               </div>
             )}
           </div>
