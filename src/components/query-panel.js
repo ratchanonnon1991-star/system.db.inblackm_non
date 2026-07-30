@@ -439,6 +439,10 @@ export default function QueryPanel({
   // Snapshot of the rows the panel is currently showing, used to highlight what
   // an auto-refresh changed.
   const previousRowsRef = useRef(null);
+  // The result column that identifies a row, so that refresh diff can match rows
+  // by identity rather than by position. A ref because the query runner is set up
+  // long before the edit config is read.
+  const pkNameRef = useRef("");
   const overrideRef = useRef(hasOverride);
   useEffect(() => {
     overrideRef.current = hasOverride;
@@ -575,21 +579,42 @@ export default function QueryPanel({
         // to happen outside setResult: a state updater runs during render, so a
         // setChangedKeys call in there is dropped.
         const previous = previousRowsRef.current;
-        if (
-          previous &&
-          previous.columns.length === data.columns.length &&
-          previous.rows.length === data.rows.length
-        ) {
+        if (previous && previous.columns.length === data.columns.length) {
           // Keyed by display-column id, which is how the table addresses a cell.
           const columnIds = baseColumnIds(data.columns);
+          // Match rows by their key, not by where they sit. A query with no total
+          // ordering -- or one ordered by the very column that was just edited --
+          // hands back the same rows in another order, and comparing position to
+          // position then paints most of the table as changed.
+          const keyIndex = pkNameRef.current
+            ? data.columns.findIndex((col) => col.name === pkNameRef.current)
+            : -1;
+          const before =
+            keyIndex >= 0
+              ? new Map(previous.rows.map((row) => [String(row[keyIndex]), row]))
+              : null;
           const keys = new Set();
-          data.rows.forEach((row, rowIndex) => {
-            row.forEach((value, colIndex) => {
-              if (String(previous.rows[rowIndex][colIndex]) !== String(value)) {
-                keys.add(`${rowIndex}:${columnIds[colIndex]}`);
-              }
+          if (before) {
+            data.rows.forEach((row, rowIndex) => {
+              const was = before.get(String(row[keyIndex]));
+              // A row that was not there before is new, not changed.
+              if (!was) return;
+              row.forEach((value, colIndex) => {
+                if (String(was[colIndex]) !== String(value)) {
+                  keys.add(`${rowIndex}:${columnIds[colIndex]}`);
+                }
+              });
             });
-          });
+          } else if (previous.rows.length === data.rows.length) {
+            // No key to match on, so position is all there is.
+            data.rows.forEach((row, rowIndex) => {
+              row.forEach((value, colIndex) => {
+                if (String(previous.rows[rowIndex][colIndex]) !== String(value)) {
+                  keys.add(`${rowIndex}:${columnIds[colIndex]}`);
+                }
+              });
+            });
+          }
           if (keys.size) setChangedKeys(keys);
         }
         previousRowsRef.current = { columns: data.columns, rows: data.rows };
@@ -900,6 +925,9 @@ export default function QueryPanel({
     [query.layout]
   );
   const editableColumns = useMemo(() => sharedEditable?.columns || [], [sharedEditable]);
+  useEffect(() => {
+    pkNameRef.current = sharedEditable?.pk || "";
+  }, [sharedEditable]);
   const canEditCells = Boolean(
     canManage && sharedEditable && baseNameToIndex.has(sharedEditable.pk)
   );

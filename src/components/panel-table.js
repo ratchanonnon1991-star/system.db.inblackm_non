@@ -143,15 +143,20 @@ function toTimeInput(value) {
 /**
  * The box a cell turns into while it is being edited.
  *
- * A dropdown and a tickbox commit the moment they change — there is nothing
- * more to type — while anything typed waits for Enter or for the focus to
- * leave, and Escape always abandons.
+ * Nothing here writes on its own. Every widget only holds a pending value, and
+ * it takes the tick — or Enter, for something typed — to send it. Losing focus
+ * used to save, which meant clicking anywhere after touching a cell wrote to the
+ * database; now it leaves the box open and waiting.
  */
-function CellEditor({ config, column, options, value, onChange, onCommit, onCancel }) {
+function CellEditor({ config, column, options, value, onChange, onCommit, onCancel, dirty }) {
   const widget = config?.widget || widgetForColumn(column);
   const keys = (event) => {
     if (event.key === "Enter" && widget !== "textarea") onCommit();
     if (event.key === "Escape") onCancel();
+  };
+  const escapeOnly = (event) => {
+    if (event.key === "Escape") onCancel();
+    if (event.key === "Enter") onCommit();
   };
 
   // A list read from another table arrives after the panel does. Undefined means
@@ -164,20 +169,41 @@ function CellEditor({ config, column, options, value, onChange, onCommit, onCanc
     return <span className="text-[10px] font-bold text-zinc-400">กำลังโหลดรายการ...</span>;
   }
 
+  // The tick and the cross, alongside whatever the column's own box is.
+  const withActions = (control) => (
+    <span className="flex items-center gap-0.5">
+      <span className="min-w-0 flex-1">{control}</span>
+      <button
+        type="button"
+        onClick={() => onCommit()}
+        disabled={!dirty}
+        className="shrink-0 rounded border border-emerald-300 bg-emerald-50 p-0.5 text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-40"
+        title={dirty ? "บันทึกค่านี้ (Enter)" : "ยังไม่ได้เปลี่ยนค่า"}
+      >
+        <Check size={11} />
+      </button>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="shrink-0 rounded border border-zinc-300 bg-white p-0.5 text-zinc-500 transition hover:bg-zinc-100"
+        title="ยกเลิก (Esc)"
+      >
+        <X size={11} />
+      </button>
+    </span>
+  );
+
   if ((widget === "select" || widget === "lookup") && !emptyLookup) {
     // A typed-in list and a list read from another table end up the same shape.
     const choices =
       widget === "lookup" ? options || [] : (config.options || []).map(parseOption);
     const current = matchChoice(choices, value);
-    return (
+    return withActions(
       <select
         autoFocus
         value={current ? String(current.value) : ""}
-        onChange={(event) => onCommit(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") onCancel();
-        }}
-        onBlur={onCancel}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={escapeOnly}
         className={editorClass}
       >
         <option value="">— ไม่ระบุ —</option>
@@ -197,15 +223,12 @@ function CellEditor({ config, column, options, value, onChange, onCommit, onCanc
 
   if (widget === "checkbox") {
     const checked = value === true || value === "true" || value === "t" || value === 1;
-    return (
+    return withActions(
       <button
         type="button"
         autoFocus
-        onClick={() => onCommit(!checked)}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") onCancel();
-        }}
-        onBlur={onCancel}
+        onClick={() => onChange(!checked)}
+        onKeyDown={escapeOnly}
         className={`${editorClass} text-left`}
       >
         {checked ? "✓ ใช่ — กดเพื่อเปลี่ยน" : "✗ ไม่ใช่ — กดเพื่อเปลี่ยน"}
@@ -221,15 +244,12 @@ function CellEditor({ config, column, options, value, onChange, onCommit, onCanc
         : value === false || value === "false" || value === "f"
           ? "false"
           : "";
-    return (
+    return withActions(
       <select
         autoFocus
         value={current}
-        onChange={(event) => onCommit(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") onCancel();
-        }}
-        onBlur={onCancel}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={escapeOnly}
         className={editorClass}
       >
         <option value="">— ไม่ระบุ —</option>
@@ -240,13 +260,12 @@ function CellEditor({ config, column, options, value, onChange, onCommit, onCanc
   }
 
   if (widget === "textarea") {
-    return (
+    return withActions(
       <textarea
         autoFocus
         rows={3}
         value={value ?? ""}
         onChange={(event) => onChange(event.target.value)}
-        onBlur={() => onCommit()}
         onKeyDown={(event) => {
           if (event.key === "Escape") onCancel();
           if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) onCommit();
@@ -271,7 +290,7 @@ function CellEditor({ config, column, options, value, onChange, onCommit, onCanc
         ? toTimeInput(value)
         : (value ?? "");
 
-  return (
+  return withActions(
     <input
       autoFocus
       type={typed || "text"}
@@ -279,7 +298,6 @@ function CellEditor({ config, column, options, value, onChange, onCommit, onCanc
       step={widget === "number" && column?.integer ? "1" : undefined}
       value={shown}
       onChange={(event) => onChange(event.target.value)}
-      onBlur={() => onCommit()}
       onKeyDown={keys}
       className={editorClass}
     />
@@ -630,12 +648,20 @@ export default function PanelTable({
       colId: col.id,
       colIndex,
       value: row.cells[colIndex]?.raw ?? "",
+      // Kept so the tick can stay dark until something actually changed, and so
+      // saving an untouched cell is not offered at all.
+      original: row.cells[colIndex]?.raw ?? "",
     });
   };
 
   const commitEdit = async (override) => {
     if (!editingCell) return;
     const pending = override === undefined ? editingCell : { ...editingCell, value: override };
+    // Enter on an untouched cell should close the box, not write the same value.
+    if (String(pending.value ?? "") === String(pending.original ?? "")) {
+      setEditingCell(null);
+      return;
+    }
     setEditingCell(null);
     await onEditCell(pending);
   };
@@ -773,6 +799,7 @@ export default function PanelTable({
                 column={col.column}
                 options={col.kind === "base" ? lookupOptions[col.column.name] : null}
                 value={editingCell.value}
+                dirty={String(editingCell.value ?? "") !== String(editingCell.original ?? "")}
                 onChange={(next) => setEditingCell((prev) => ({ ...prev, value: next }))}
                 onCommit={commitEdit}
                 onCancel={() => setEditingCell(null)}

@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ChartColumn,
+  ChevronDown,
   ClipboardPaste,
+  Code2,
   Combine,
   CornerDownRight,
   Loader2,
@@ -327,6 +329,7 @@ export function EditableSettingsModal({
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [testError, setTestError] = useState("");
+  const [showAllSql, setShowAllSql] = useState(false);
 
   const runTest = async () => {
     setTesting(true);
@@ -421,27 +424,60 @@ export function EditableSettingsModal({
               ))}
             </ul>
 
-            {testResult.sql.length > 0 && (
+            {(testResult.groups || []).length > 0 && (
               <div>
-                <p className={labelClass}>คำสั่งที่ระบบจะยิงตอนแก้แต่ละคอลัมน์</p>
-                <div className="space-y-2">
-                  {testResult.sql.map((entry) => (
-                    <div key={entry.column}>
-                      <p className="text-[10px] font-black text-zinc-500">
-                        {entry.column}
-                        {entry.realColumn === entry.column ? "" : ` → ${entry.realColumn}`}
-                      </p>
-                      <pre className="mt-0.5 overflow-x-auto rounded-lg border border-zinc-200 bg-white px-2 py-1.5 font-mono text-[10px] leading-relaxed text-zinc-700">
-{`${entry.lock}
-${entry.update}`}
-                      </pre>
-                    </div>
-                  ))}
-                </div>
-                <p className="mt-1 text-[10px] font-semibold text-zinc-400">
-                  $1 คือค่าใหม่ · $2 คือค่า key ของแถวนั้น — ส่งเป็นพารามิเตอร์ ไม่ต่อเป็นสตริง
-                  ทั้งคู่รันใน transaction เดียว และถ้าไม่ได้ 1 แถวพอดีจะ rollback
-                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowAllSql((value) => !value)}
+                  className="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-[10px] font-black text-zinc-700 transition hover:bg-zinc-100"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Code2 size={12} />
+                    {showAllSql ? "ซ่อนคำสั่งทั้งหมด" : "แสดงคำสั่งทั้งหมดที่ระบบจะยิง"}
+                  </span>
+                  <ChevronDown
+                    size={12}
+                    className={showAllSql ? "rotate-180 transition" : "transition"}
+                  />
+                </button>
+
+                {showAllSql && (
+                  <div className="mt-2 space-y-3">
+                    {testResult.groups.map((group) => (
+                      <div key={group.action}>
+                        <p className="flex flex-wrap items-center gap-1.5 text-[10px] font-black text-zinc-600">
+                          {group.action}
+                          {!group.always && (
+                            <span className="rounded bg-zinc-200 px-1 py-0.5 text-[9px] font-black text-zinc-500">
+                              ยังไม่ได้เปิด
+                            </span>
+                          )}
+                        </p>
+                        <div className="mt-1 space-y-1.5">
+                          {group.statements.map((statement) => (
+                            <div key={statement.label}>
+                              <p className="text-[10px] font-bold text-zinc-400">
+                                {statement.label}
+                              </p>
+                              <pre className="mt-0.5 overflow-x-auto rounded-lg border border-zinc-200 bg-white px-2 py-1.5 font-mono text-[10px] leading-relaxed text-zinc-700">
+{statement.sql}
+                              </pre>
+                            </div>
+                          ))}
+                        </div>
+                        {group.note && (
+                          <p className="mt-1 text-[10px] font-semibold leading-relaxed text-zinc-400">
+                            {group.note}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                    <p className="text-[10px] font-semibold leading-relaxed text-zinc-400">
+                      ค่าทุกตัวส่งเป็นพารามิเตอร์ ($1, $2 …) ไม่ต่อเป็นสตริง และทุกคำสั่งที่เขียน
+                      รันใน transaction เดียว ถ้าผลไม่ตรงจะ rollback ทั้งชุด
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>

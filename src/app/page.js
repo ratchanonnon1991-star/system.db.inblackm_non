@@ -169,6 +169,12 @@ const PANEL_GAP = 16;
 const PANEL_CHROME_ESTIMATE = 300;
 const CANVAS_MIN_HEIGHT = 520;
 
+// A description that only restates the name earns no room in the list.
+function subtitleOf(query) {
+  const description = String(query.description || "").trim();
+  return description && description !== String(query.name || "").trim() ? description : "";
+}
+
 function clampPanelHeight(value) {
   const num = Number(value);
   if (!Number.isFinite(num)) return DEFAULT_PANEL_HEIGHT;
@@ -1666,7 +1672,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                 return (
                   <div
                     key={query.id}
-                    className={`group flex items-center gap-1 rounded-xl border px-3 py-2.5 transition ${
+                    className={`group flex items-center gap-1 rounded-lg border px-2.5 py-1.5 transition ${
                       isOpen
                         ? "border-red-600 bg-red-600 text-white"
                         : "border-transparent text-zinc-600 hover:bg-zinc-50"
@@ -1676,32 +1682,40 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                       type="button"
                       onClick={() => togglePanel(query.id)}
                       className="min-w-0 flex-1 text-left"
-                      title={isOpen ? "กดเพื่อปิดตารางนี้" : "กดเพื่อเปิดตารางนี้"}
+                      // The card is a list entry, not a summary. Everything under
+                      // the name shares one line, and the full text is here.
+                      title={`${query.name}${
+                        query.description ? ` — ${query.description}` : ""
+                      }\n${isOpen ? "กดเพื่อปิดตารางนี้" : "กดเพื่อเปิดตารางนี้"}`}
                     >
-                      <p className="truncate text-xs font-black">{query.name}</p>
-                      {query.description ? (
+                      <p className="truncate text-xs font-black leading-tight">{query.name}</p>
+                      {/* A description that only repeats the name is noise, and
+                          these two together fit on one line. */}
+                      {query.connectionName || subtitleOf(query) ? (
                         <p
-                          className={`truncate text-[10px] font-semibold ${
+                          className={`flex items-center gap-1 truncate text-[9px] font-bold leading-tight ${
                             isOpen ? "text-white/70" : "text-zinc-400"
                           }`}
                         >
-                          {query.description}
-                        </p>
-                      ) : null}
-                      {query.connectionName ? (
-                        <p
-                          className={`flex items-center gap-1 truncate text-[9px] font-bold ${
-                            isOpen ? "text-white/60" : "text-sky-600"
-                          }`}
-                        >
-                          <Server size={9} /> {query.connectionName}
+                          {query.connectionName ? (
+                            <>
+                              <Server size={9} className="shrink-0" />
+                              <span className={isOpen ? "" : "text-sky-600"}>
+                                {query.connectionName}
+                              </span>
+                            </>
+                          ) : null}
+                          {query.connectionName && subtitleOf(query) ? <span>·</span> : null}
+                          {subtitleOf(query) ? (
+                            <span className="truncate">{subtitleOf(query)}</span>
+                          ) : null}
                         </p>
                       ) : null}
                     </button>
                     <button
                       type="button"
                       onClick={() => togglePin(query.id)}
-                      className={`shrink-0 rounded-md p-1 transition ${
+                      className={`shrink-0 rounded-md p-0.5 transition ${
                         pinned.includes(query.id)
                           ? isOpen
                             ? "text-white"
@@ -1721,7 +1735,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                         <button
                           type="button"
                           onClick={() => setEditorModal({ mode: "edit", query })}
-                          className={`rounded-md p-1 transition ${
+                          className={`rounded-md p-0.5 transition ${
                             isOpen
                               ? "text-white/80 hover:bg-white/20"
                               : "text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700"
@@ -1733,7 +1747,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                         <button
                           type="button"
                           onClick={() => deleteQueryById(query)}
-                          className={`rounded-md p-1 transition ${
+                          className={`rounded-md p-0.5 transition ${
                             isOpen
                               ? "text-white/80 hover:bg-white/20"
                               : "text-zinc-400 hover:bg-zinc-200 hover:text-red-600"

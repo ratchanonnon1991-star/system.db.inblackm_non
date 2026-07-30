@@ -1,6 +1,6 @@
 import { getPoolForConnection } from "@/lib/db";
 import { quoteIdentifier } from "@/lib/gamedb-identifier";
-import { realColumnOf, realPkOf } from "@/lib/gamedb-layout";
+import { LOOKUP_LIMIT, realColumnOf, realPkOf } from "@/lib/gamedb-layout";
 import { getConnectionFlags } from "@/server/gamedb-side-tables";
 
 const STATEMENT_TIMEOUT_MS = 8000;
@@ -20,6 +20,90 @@ export function buildUpdateSql(editable, column) {
     lock: `SELECT ${target} AS value FROM ${table} WHERE ${pk} = $1 FOR UPDATE`,
     update: `UPDATE ${table} SET ${target} = $1 WHERE ${pk} = $2 RETURNING ${target} AS value`,
   };
+}
+
+/**
+ * Every statement this config can lead to, grouped by the action that issues it,
+ * each built by the same code path the writer uses.
+ *
+ * INSERT is shown with all allowed columns present. The real statement leaves out
+ * whatever was left blank, so column DEFAULTs still apply -- which is said here
+ * rather than implied, because the shape changes per row.
+ */
+export function buildAllSql(editable) {
+  const table = quoteIdentifier(editable.table);
+  const pk = quoteIdentifier(realPkOf(editable));
+  const columns = editable.columns || [];
+
+  const groups = [
+    {
+      action: "แก้ค่าในช่อง (UPDATE)",
+      always: true,
+      statements: columns.map((column) => ({
+        label: `${column}${realColumnOf(editable, column) === column ? "" : ` → ${realColumnOf(editable, column)}`}`,
+        sql: [buildUpdateSql(editable, column).lock, buildUpdateSql(editable, column).update].join(
+          "\n"
+        ),
+      })),
+      note: "$1 คือค่าใหม่ · $2 คือค่า key ของแถวนั้น",
+    },
+  ];
+
+  if (columns.length > 0) {
+    const real = columns.map((column) => quoteIdentifier(realColumnOf(editable, column)));
+    groups.push({
+      action: "เพิ่มแถวใหม่ (INSERT)",
+      always: Boolean(editable.allowInsert),
+      statements: [
+        {
+          label: "ทุกคอลัมน์ที่อนุญาต",
+          sql:
+            `INSERT INTO ${table} (${real.join(", ")})\n` +
+            `VALUES (${real.map((_, index) => `$${index + 1}`).join(", ")})\n` +
+            `RETURNING ${pk} AS pk`,
+        },
+      ],
+      note: "ช่องที่เว้นว่างจะถูกตัดออกจากคำสั่งไปเลย ไม่ได้ส่งเป็น NULL — คอลัมน์นั้นจึงใช้ DEFAULT ของตารางตามปกติ",
+    });
+  }
+
+  groups.push({
+    action: "ลบแถว (DELETE)",
+    always: Boolean(editable.allowDelete),
+    statements: [
+      {
+        label: "อ่านไว้ลง log ก่อน แล้วจึงลบ",
+        sql: [
+          `SELECT * FROM ${table} WHERE ${pk} = $1 FOR UPDATE`,
+          `DELETE FROM ${table} WHERE ${pk} = $1`,
+        ].join("\n"),
+      },
+    ],
+    note: "ถ้า key ตรงกับ 0 แถวหรือมากกว่า 1 แถว จะไม่ลบและ rollback",
+  });
+
+  const lookups = (editable.inputs || []).filter(
+    (input) => input.widget === "lookup" && input.lookup
+  );
+  if (lookups.length > 0) {
+    groups.push({
+      action: "อ่านรายการ dropdown (SELECT)",
+      always: true,
+      statements: lookups.map((input) => ({
+        label: input.column,
+        sql:
+          `SELECT ${quoteIdentifier(input.lookup.valueColumn)} AS value, ` +
+          `${quoteIdentifier(input.lookup.labelColumn)} AS label\n` +
+          `FROM ${quoteIdentifier(input.lookup.table)}\n` +
+          `WHERE ${quoteIdentifier(input.lookup.valueColumn)} IS NOT NULL\n` +
+          `ORDER BY ${quoteIdentifier(input.lookup.labelColumn)}\n` +
+          `LIMIT ${LOOKUP_LIMIT}`,
+      })),
+      note: "อ่านครั้งเดียวต่อการเปิดตาราง ไม่ผูกค่าอะไรเข้าไป",
+    });
+  }
+
+  return groups.filter((group) => group.statements.length > 0);
 }
 
 function splitTable(name) {

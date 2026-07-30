@@ -2,7 +2,7 @@ import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireSuperAdmin } from "@/server/auth";
 import { findConnectionWithSecret } from "@/server/connections-repository";
 import { findQueryById } from "@/server/gamedb-repository";
-import { checkEditable } from "@/server/gamedb-editable-check";
+import { buildAllSql, checkEditable } from "@/server/gamedb-editable-check";
 import { sanitizeLayout } from "@/server/gamedb-layout-sanitizer";
 
 /**
@@ -27,6 +27,10 @@ export async function POST(request, { params }) {
       return jsonError("ยังกรอกตารางหรือคอลัมน์ key ไม่ครบ", 400);
     }
 
+    // Listing the statements needs no database at all, so it answers even when
+    // the connection is gone or the checks cannot run.
+    const groups = buildAllSql(editable);
+
     const connection = query.connectionId
       ? await findConnectionWithSecret(query.connectionId)
       : null;
@@ -35,7 +39,7 @@ export async function POST(request, { params }) {
     }
 
     const { checks, sql } = await checkEditable({ editable, connection });
-    return jsonOk({ checks, sql, ok: checks.every((check) => check.ok) });
+    return jsonOk({ checks, sql, groups, ok: checks.every((check) => check.ok) });
   } catch (err) {
     return handleApiError(err, "ทดสอบการตั้งค่าไม่สำเร็จ");
   }
