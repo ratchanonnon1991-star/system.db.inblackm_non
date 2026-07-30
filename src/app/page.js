@@ -1833,9 +1833,37 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             backgroundAttachment: "local",
           }}
         >
-          {/* `scale` does not change the box the canvas occupies in layout, so the
-              scroll extent comes from this sizer instead: without it, zooming out
-              leaves the viewport scrollable over empty space. */}
+          {/* The empty state is not a panel and does not belong on the canvas: the
+              canvas is sized to the panels, so with none open it is a gap wide
+              enough for nothing, and the message wrapped one letter per line. */}
+          {openPanels.length === 0 ? (
+            <div className="flex h-full min-h-72 items-center justify-center p-4">
+              <div className="flex w-full max-w-md flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-16 text-center">
+                {layoutLocked ? (
+                  <>
+                    <Lock size={22} className="text-zinc-300" />
+                    <p className="text-xs font-black text-zinc-500">
+                      ยังไม่มี Template สำหรับบัญชีนี้
+                    </p>
+                    <p className="text-[11px] font-semibold text-zinc-400">
+                      กรุณาให้ Admin แชร์ Template หรือกำหนด Template เริ่มต้น
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <LayoutGrid size={22} className="text-zinc-300" />
+                    <p className="text-xs font-black text-zinc-500">ยังไม่ได้เปิดตาราง</p>
+                    <p className="text-[11px] font-semibold text-zinc-400">
+                      กด Query ด้านบนเพื่อเปิด — จากนั้นลากกล่องไปวางตำแหน่งที่ต้องการได้
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+          ) : (
+          /* `scale` does not change the box the canvas occupies in layout, so the
+             scroll extent comes from this sizer instead: without it, zooming out
+             leaves the viewport scrollable over empty space. */
           <div style={{ width: canvasWidth * zoom, height: canvasHeight * zoom }}>
             <div
               ref={panelsRef}
@@ -1874,29 +1902,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                   style={{ top: snapGuides.y }}
                 />
               )}
-            {openPanels.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-zinc-300 bg-white py-24 text-center">
-                {layoutLocked ? (
-                  <>
-                    <Lock size={22} className="text-zinc-300" />
-                    <p className="text-xs font-black text-zinc-500">ยังไม่มี Template สำหรับบัญชีนี้</p>
-                    <p className="text-[11px] font-semibold text-zinc-400">
-                      กรุณาให้ Admin แชร์ Template หรือกำหนด Template เริ่มต้น
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <LayoutGrid size={22} className="text-zinc-300" />
-                    <p className="text-xs font-black text-zinc-500">ยังไม่ได้เปิดตาราง</p>
-                    <p className="text-[11px] font-semibold text-zinc-400">
-                      กด Query ด้านบนเพื่อเปิด — จากนั้นลากกล่องไปวางตำแหน่งที่ต้องการได้
-                    </p>
-                  </>
-                )}
-              </div>
-            ) : (
-              <>
-                {openPanels.map((panel) => {
+              {openPanels.map((panel) => {
                   const query = queryById.get(panel.queryId);
                   const isFullWidth =
                     panel.width != null &&
@@ -1973,11 +1979,10 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                     />
                   );
                 })}
-              </>
-            )}
             </div>
             </div>
           </div>
+          )}
         </div>
       </div>
 
