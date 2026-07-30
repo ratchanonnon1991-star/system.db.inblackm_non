@@ -1622,8 +1622,8 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   };
 
   return (
-    <div className="mx-auto max-w-[1900px] p-4 lg:p-6">
-      <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <div className="mx-auto max-w-[1900px] p-3 lg:p-4">
+      <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-black tracking-tight">
             <Database size={20} className="text-red-600" />
@@ -1751,9 +1751,9 @@ function GamedbWorkspace({ me, onLoggedOut }) {
         </div>
       </header>
 
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2">
         {!layoutLocked && !sidebarOpen && (
-          <aside className="flex w-full shrink-0 items-center gap-2 rounded-2xl border border-zinc-200 bg-white px-3 py-2">
+          <aside className="flex w-full shrink-0 items-center gap-2 rounded-2xl border border-zinc-200 bg-white px-2 py-1.5">
             <button
               type="button"
               onClick={() => toggleSidebar(true)}
@@ -1781,7 +1781,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
         )}
         {!layoutLocked && sidebarOpen && <aside
           ref={listBoxRef}
-          className="relative z-30 w-full shrink-0 rounded-2xl border border-zinc-200 bg-white p-3"
+          className="relative z-30 w-full shrink-0 rounded-2xl border border-zinc-200 bg-white p-2"
         >
           <div className="flex flex-wrap items-center gap-1.5">
             <div className="relative min-w-0 flex-1">
@@ -1830,8 +1830,8 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               <PanelLeftClose size={15} />
             </button>
           </div>
-          {listOpen && <div className="absolute left-3 right-3 top-full z-40 mt-1 max-h-[65vh] overflow-y-auto rounded-xl border border-zinc-200 bg-white p-2 shadow-xl">
-          <div className="mb-2 flex items-center justify-between gap-2 px-1">
+          {listOpen && <div className="absolute left-2 top-full z-40 mt-1 flex max-h-[70vh] w-full max-w-sm flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-100 px-2 py-1.5">
             <span className="text-[10px] font-black text-zinc-400">
               เปิดอยู่ {openPanels.length} ตาราง
             </span>
@@ -1868,11 +1868,11 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               ไม่พบ Query
             </p>
           ) : (
-            <div className="flex gap-3 overflow-x-auto pb-1">
+            <div className="min-h-0 flex-1 overflow-y-auto p-1">
               {groupedQueries.map(([folder, folderQueries]) => (
-                <div key={folder} className="min-w-56 flex-1 space-y-1 pb-1">
+                <div key={folder}>
                   {groupedQueries.length > 1 && (
-                    <p className="px-2 pb-1 pt-2 text-[9px] font-black uppercase tracking-wider text-zinc-400">
+                    <p className="px-2 pb-0.5 pt-1.5 text-[9px] font-black uppercase tracking-wider text-zinc-400">
                       {folder}
                     </p>
                   )}
@@ -1881,7 +1881,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                 return (
                   <div
                     key={query.id}
-                    className={`group flex items-center gap-1 rounded-lg border px-2.5 py-1.5 transition ${
+                    className={`group flex items-center gap-1 rounded-lg border px-2 py-1 transition ${
                       isOpen
                         ? "border-red-600 bg-red-600 text-white"
                         : "border-transparent text-zinc-600 hover:bg-zinc-50"
@@ -2022,7 +2022,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
         )}
 
         {sheetMode ? (
-          <div className="flex h-[max(520px,calc(100vh-320px))] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50">
+          <div className="flex h-[max(520px,calc(100vh-230px))] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50">
             <div className="min-h-0 flex-1 overflow-auto p-3">
               {activeSheetPanel ? renderPanel(activeSheetPanel, true) : emptyWorkspace}
             </div>
@@ -2065,7 +2065,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
         ) : (
         <div
           ref={viewportRef}
-          className="relative h-[max(520px,calc(100vh-320px))] min-w-0 flex-1 overflow-auto overscroll-contain rounded-2xl border border-zinc-200 bg-zinc-50"
+          className="relative h-[max(520px,calc(100vh-230px))] min-w-0 flex-1 overflow-auto overscroll-contain rounded-2xl border border-zinc-200 bg-zinc-50"
           onPointerDown={startCanvasPan}
           onPointerMove={moveCanvasPan}
           onPointerUp={stopCanvasPan}
