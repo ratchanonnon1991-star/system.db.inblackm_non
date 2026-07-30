@@ -459,6 +459,8 @@ export default function QueryPanel({
     paramErrorsRef.current = paramErrors;
   }, [paramValues, paramErrors]);
 
+  const appliedDrillRef = useRef(null);
+
   useEffect(() => {
     if (paramStorageLoadedRef.current === query.id) return;
     paramStorageLoadedRef.current = query.id;
@@ -482,6 +484,9 @@ export default function QueryPanel({
       ...remembered,
       ...(initialParams || {}),
     });
+    // Applied on the way in, so the drill effect below has nothing left to do
+    // and the first run is not issued twice.
+    appliedDrillRef.current = initialParams || null;
     setParamStorageReady(true);
   }, [effectiveParams, initialParams, query.id, startingParamValues]);
 
@@ -640,6 +645,25 @@ export default function QueryPanel({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- setState happens after the run request resolves
     runQuery();
   }, [paramStorageReady, runQuery]);
+
+  // Drilling into a panel that is already open cannot rely on the mount-time
+  // defaults, because the panel never unmounts. Every drill hands over a fresh
+  // object, so its identity is what marks a set of values as not yet applied.
+  useEffect(() => {
+    if (!initialParams || appliedDrillRef.current === initialParams) return;
+    appliedDrillRef.current = initialParams;
+    const incoming = {};
+    for (const [name, value] of Object.entries(initialParams)) {
+      incoming[name] = value === null || value === undefined ? "" : String(value);
+    }
+    const next = { ...paramsRef.current, ...incoming };
+    // runQuery reads the values through these refs, and the effect that syncs
+    // them has not run yet at this point, so they are updated here too.
+    paramsRef.current = next;
+    paramErrorsRef.current = validateParamValues(effectiveParams, next);
+    setParamValues(next);
+    if (paramStorageReady) runQuery();
+  }, [effectiveParams, initialParams, paramStorageReady, runQuery]);
 
   // The "r" shortcut refreshes every open panel at once.
   useEffect(() => {

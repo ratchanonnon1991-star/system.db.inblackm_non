@@ -1500,7 +1500,9 @@ export function DrillModal({
 
       {queryId && targetParams.length === 0 && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
-          Query ปลายทางยังไม่มีพารามิเตอร์ (`:ชื่อ`) ใน SQL — เพิ่มก่อนถึงจะส่งค่าจากแถวไปได้
+          Query ปลายทางยังไม่มีพารามิเตอร์ใน SQL — ไปแก้ SQL ของมันให้มี{" "}
+          <code className="font-mono">:ชื่อ</code> เช่น{" "}
+          <code className="font-mono">WHERE user_id = :user_id</code> ก่อน แล้วกลับมาผูกค่าที่นี่
         </p>
       )}
 
