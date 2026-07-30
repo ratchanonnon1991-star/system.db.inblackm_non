@@ -1613,7 +1613,9 @@ function GamedbWorkspace({ me, onLoggedOut }) {
           })
         }
         onEditQuery={() => setEditorModal({ mode: "edit", query })}
-        onDrill={layoutLocked ? null : openDrill}
+        // Following a row into another query is reading, not arranging, so a
+        // template account gets it too.
+        onDrill={openDrill}
         initialParams={drillParams[panel.queryId] || null}
       />
     );
@@ -2046,16 +2048,14 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                       >
                         {query?.name}
                       </button>
-                      {!layoutLocked && (
-                        <button
-                          type="button"
-                          onClick={() => closePanel(panel.queryId)}
-                          className="rounded p-0.5 text-zinc-400 opacity-0 transition group-hover:opacity-100 hover:bg-zinc-200 hover:text-red-600"
-                          title="ปิดตารางนี้"
-                        >
-                          <X size={11} />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => closePanel(panel.queryId)}
+                        className="rounded p-0.5 text-zinc-400 opacity-0 transition group-hover:opacity-100 hover:bg-zinc-200 hover:text-red-600"
+                        title="ปิดตารางนี้"
+                      >
+                        <X size={11} />
+                      </button>
                     </div>
                   );
                 })}

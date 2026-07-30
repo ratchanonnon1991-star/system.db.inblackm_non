@@ -373,6 +373,7 @@ export default function QueryPanel({
   // In the sheet view the panel is the page: it sits in the flow at full width
   // and has no position or frame of its own to drag.
   docked = false,
+  canClose = true,
 }) {
   // Layout precedence: what this user saved for themselves, then what a screen
   // template dictates, then the shared layout stored on the query.
@@ -1859,7 +1860,11 @@ export default function QueryPanel({
         {canCustomizeLayout && <button type="button" onClick={onToggleFullWidth} className={iconButtonClass} title={isFullWidth ? "คืนความกว้างอัตโนมัติ" : "ขยายเต็มความกว้าง"}>
           {isFullWidth ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
         </button>}
-        {canCustomizeLayout && <button
+        {/* Closing is not editing the layout. A template account can open a
+            table by drilling into it, so it must be able to put it away again;
+            nothing it does here is saved, and a reload brings the template
+            back exactly as it was. */}
+        {canClose && <button
           type="button"
           onClick={onClose}
           className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:bg-red-50 hover:text-red-600"
