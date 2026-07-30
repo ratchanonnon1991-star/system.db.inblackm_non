@@ -62,8 +62,9 @@ import {
   EditableSettingsModal,
   FormatsModal,
   MergeModal,
-  NewRowModal,
   ParamsSettingsModal,
+  InsertFormModal,
+  InsertRunModal,
   RulesModal,
   ShareLinkModal,
 } from "@/components/panel-config-modals";
@@ -998,6 +999,16 @@ export default function QueryPanel({
     [query.layout]
   );
   const editableColumns = useMemo(() => sharedEditable?.columns || [], [sharedEditable]);
+  // Same rule as sharedEditable: the write endpoint reads the query's own saved
+  // layout, so a form that only exists in this user's copy would offer a button
+  // whose submit is refused.
+  const sharedInsertForm = useMemo(
+    () => normalizeLayout(query.layout).insertForm,
+    [query.layout]
+  );
+  // Writing the script is an admin's job; filling it in is open to anyone who
+  // is allowed to edit at all — which is what canCustomizeLayout already means.
+  const canUseInsertForm = Boolean(sharedInsertForm && canCustomizeLayout);
   useEffect(() => {
     pkNameRef.current = sharedEditable?.pk || "";
   }, [sharedEditable]);
@@ -1098,18 +1109,6 @@ export default function QueryPanel({
     } finally {
       setEditPending(null);
     }
-  };
-
-  const insertRow = async (values) => {
-    await apiJson(`/api/queries/${query.id}/row`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ values }),
-      fallbackError: "เพิ่มแถวไม่สำเร็จ",
-    });
-    // Re-run rather than splice the row in: the table can have defaults,
-    // triggers and an ordering of its own, and only the query knows the result.
-    await runQuery({ silent: true });
   };
 
   const deleteRow = async (row) => {
@@ -1655,6 +1654,17 @@ export default function QueryPanel({
           </button>
         )}
 
+        {canUseInsertForm && (
+          <button
+            type="button"
+            onClick={() => setModal("insertRun")}
+            disabled={Boolean(viewingSnapshot)}
+            className="flex h-8 items-center gap-1.5 rounded-lg bg-red-600 px-2.5 text-[10px] font-black text-white transition hover:bg-red-700 disabled:opacity-50"
+            title={viewingSnapshot ? "ออกจาก snapshot ก่อนถึงจะเพิ่มข้อมูลได้" : "เพิ่มข้อมูลด้วยฟอร์มที่ Admin ตั้งไว้"}
+          >
+            <Plus size={12} /> {sharedInsertForm.label || "เพิ่มข้อมูล"}
+          </button>
+        )}
         <button type="button" onClick={() => runQuery({ validate: true })} disabled={running} className={iconButtonClass} title="รันใหม่">
           <RefreshCw size={13} className={running ? "animate-spin" : ""} />
         </button>
@@ -1848,6 +1858,15 @@ export default function QueryPanel({
                   <button
                     type="button"
                     role="menuitem"
+                    onClick={() => runMoreAction(() => setModal("insertForm"))}
+                    className={menuItemClass}
+                  >
+                    <Plus size={14} className={layout.insertForm ? "text-red-600" : ""} />
+                    ตั้งค่าฟอร์มเพิ่มข้อมูล
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
                     onClick={() => runMoreAction(() => setModal("drill"))}
                     disabled={!result}
                     className={menuItemClass}
@@ -1870,17 +1889,6 @@ export default function QueryPanel({
                       ตั้งค่าแก้ไขข้อมูลไว้แล้ว แต่ยังไม่ได้บันทึกให้ทุกคน —
                       กด &quot;บันทึกให้ทุกคน&quot; ก่อน ถึงจะแก้ข้อมูลได้
                     </p>
-                  )}
-                  {canEditCells && sharedEditable.allowInsert && (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => runMoreAction(() => setModal("newRow"))}
-                      disabled={Boolean(viewingSnapshot)}
-                      className={menuItemClass}
-                    >
-                      <Plus size={14} /> เพิ่มแถวใหม่
-                    </button>
                   )}
                   {canEditCells && (
                     <button
@@ -2350,13 +2358,20 @@ export default function QueryPanel({
           }}
         />
       )}
-      {modal === "newRow" && result && sharedEditable && (
-        <NewRowModal
-          inline
-          editable={sharedEditable}
-          lookupOptions={lookupOptions}
-          resultColumns={result.columns}
-          onSubmit={insertRow}
+      {modal === "insertForm" && (
+        <InsertFormModal
+          insertForm={layout.insertForm}
+          onSave={(insertForm) => mutateLayout((prev) => ({ ...prev, insertForm }))}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal === "insertRun" && sharedInsertForm && (
+        <InsertRunModal
+          queryId={query.id}
+          insertForm={sharedInsertForm}
+          // The table can have defaults, triggers and an ordering of its own,
+          // so the row is fetched back rather than guessed at.
+          onDone={() => runQuery({ silent: true })}
           onClose={() => setModal(null)}
         />
       )}

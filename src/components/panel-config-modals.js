@@ -1899,3 +1899,279 @@ export function ChartModal({ columns, chart, onSave, onClose, inline = false }) 
     </ModalShell>
   );
 }
+
+const INSERT_TYPE_LABELS = {
+  text: "ข้อความ",
+  number: "ตัวเลข",
+  date: "วันที่",
+  datetime: "วันที่และเวลา",
+  time: "เวลา",
+  boolean: "ใช่ / ไม่ใช่",
+  select: "ตัวเลือก (dropdown)",
+};
+
+function fieldInputType(type) {
+  if (type === "number") return "number";
+  if (type === "date") return "date";
+  if (type === "datetime") return "datetime-local";
+  if (type === "time") return "time";
+  return "text";
+}
+
+/**
+ * Where an admin writes the INSERT that the add-data form will run.
+ *
+ * The boxes on the form are not designed here — they are read out of the SQL.
+ * Every :placeholder in the statement becomes one field, so a script and its
+ * form cannot drift apart: adding a column to the INSERT adds the box for it.
+ */
+export function InsertFormModal({ insertForm, onSave, onClose }) {
+  const [sql, setSql] = useState(insertForm?.sql || "");
+  const [label, setLabel] = useState(insertForm?.label || "");
+  const [fields, setFields] = useState(() => insertForm?.fields || []);
+  const names = useMemo(() => extractSqlParams(sql), [sql]);
+
+  const draft = names.map((name) => {
+    const existing = fields.find((field) => field.name === name);
+    return (
+      existing || {
+        name,
+        label: name,
+        type: "text",
+        defaultValue: "",
+        options: [],
+        required: true,
+      }
+    );
+  });
+
+  // Same trap as the parameter modal: parsing on every keystroke would eat the
+  // comma the moment it is typed.
+  const [optionsText, setOptionsText] = useState(() =>
+    Object.fromEntries(
+      (insertForm?.fields || []).map((field) => [field.name, (field.options || []).join(", ")])
+    )
+  );
+
+  const setField = (name, key, value) =>
+    setFields(draft.map((field) => (field.name === name ? { ...field, [key]: value } : field)));
+
+  const looksLikeInsert = /^\s*insert\s+into\b/i.test(sql);
+
+  return (
+    <ModalShell
+      title="ตั้งค่าฟอร์มเพิ่มข้อมูล"
+      icon={<Plus size={15} />}
+      onClose={onClose}
+      saveLabel="บันทึกฟอร์ม"
+      onSave={() => {
+        onSave(sql.trim() ? { sql: sql.trim(), label: label.trim(), fields: draft } : null);
+        onClose();
+      }}
+    >
+      <div>
+        <label className={labelClass}>ชื่อปุ่ม / ฟอร์ม (ไม่ใส่ก็ได้)</label>
+        <input
+          type="text"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder="เช่น เพิ่มเกมใหม่"
+          className={inputClass}
+        />
+      </div>
+
+      <div>
+        <label className={labelClass}>คำสั่ง INSERT (ใช้ :ชื่อ แทนค่าที่จะให้กรอก)</label>
+        <textarea
+          value={sql}
+          onChange={(e) => setSql(e.target.value)}
+          rows={6}
+          spellCheck={false}
+          placeholder={"INSERT INTO games (name, region)\nVALUES (:ชื่อเกม, :region)"}
+          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 p-3 font-mono text-[11px] font-semibold outline-none focus:border-red-600 focus:bg-white"
+        />
+        {sql.trim() && !looksLikeInsert && (
+          <p className="mt-1 text-[10px] font-bold text-amber-700">
+            สคริปต์ต้องขึ้นต้นด้วย INSERT INTO — เซิร์ฟเวอร์ปฏิเสธคำสั่งอื่นทุกครั้งที่รัน
+          </p>
+        )}
+      </div>
+
+      {draft.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-6 text-center text-[11px] font-semibold text-zinc-400">
+          ยังไม่มี <code className="font-mono">:ชื่อ</code> ใน SQL — ใส่ก่อน ถึงจะมีช่องให้กรอก
+        </p>
+      ) : (
+        draft.map((field) => (
+          <div key={field.name} className="rounded-xl border border-zinc-200 p-3">
+            <p className="mb-2 font-mono text-[11px] font-black text-red-600">:{field.name}</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div>
+                <label className={labelClass}>ป้ายกำกับ</label>
+                <input
+                  type="text"
+                  value={field.label}
+                  onChange={(e) => setField(field.name, "label", e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>ชนิด</label>
+                <select
+                  value={field.type}
+                  onChange={(e) => setField(field.name, "type", e.target.value)}
+                  className={inputClass}
+                >
+                  {PARAM_TYPES.map((type) => (
+                    <option key={type} value={type}>
+                      {INSERT_TYPE_LABELS[type]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>ค่าเริ่มต้น</label>
+                <input
+                  type={fieldInputType(field.type)}
+                  step={["datetime", "time"].includes(field.type) ? 1 : undefined}
+                  value={field.defaultValue}
+                  onChange={(e) => setField(field.name, "defaultValue", e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+              {field.type === "select" && (
+                <div>
+                  <label className={labelClass}>ตัวเลือก (คั่นด้วย ,)</label>
+                  <input
+                    type="text"
+                    value={optionsText[field.name] ?? (field.options || []).join(", ")}
+                    onChange={(e) => {
+                      setOptionsText((prev) => ({ ...prev, [field.name]: e.target.value }));
+                      setField(
+                        field.name,
+                        "options",
+                        e.target.value
+                          .split(",")
+                          .map((option) => option.trim())
+                          .filter(Boolean)
+                      );
+                    }}
+                    placeholder="เช่น GL, SEA, TH"
+                    className={inputClass}
+                  />
+                </div>
+              )}
+            </div>
+            <label className="mt-2 flex items-center gap-2 text-[11px] font-bold text-zinc-600">
+              <input
+                type="checkbox"
+                checked={field.required !== false}
+                onChange={(e) => setField(field.name, "required", e.target.checked)}
+                className="h-3.5 w-3.5 accent-red-600"
+              />
+              ต้องกรอก (ถ้าไม่ติ๊ก เว้นว่างได้ และจะบันทึกเป็น NULL)
+            </label>
+          </div>
+        ))
+      )}
+
+      <p className="text-[10px] font-semibold leading-relaxed text-zinc-400">
+        ค่าที่กรอกในฟอร์มถูกส่งเป็นพารามิเตอร์ ไม่ได้ต่อเป็นข้อความ SQL
+        และเซิร์ฟเวอร์ตรวจสคริปต์ทุกครั้งที่รัน — ต้องเป็น INSERT คำสั่งเดียวเท่านั้น ·
+        อย่าลืมกด &quot;บันทึกให้ทุกคน&quot; หลังปิดหน้านี้ ไม่งั้นคนอื่นยังไม่เห็นฟอร์ม
+      </p>
+    </ModalShell>
+  );
+}
+
+/** The form itself: one box per :placeholder, and a button that runs the script. */
+export function InsertRunModal({ queryId, insertForm, onDone, onClose }) {
+  const [values, setValues] = useState(() =>
+    Object.fromEntries(
+      (insertForm.fields || []).map((field) => [field.name, field.defaultValue || ""])
+    )
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await apiJson(`/api/queries/${queryId}/insert`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ values }),
+        fallbackError: "เพิ่มข้อมูลไม่สำเร็จ",
+      });
+      onDone?.();
+      onClose();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  const setValue = (name, value) => setValues((prev) => ({ ...prev, [name]: value }));
+
+  return (
+    <ModalShell
+      title={insertForm.label || "เพิ่มข้อมูล"}
+      icon={<Plus size={15} />}
+      onClose={onClose}
+      saveLabel={busy ? "กำลังบันทึก..." : "เพิ่มข้อมูล"}
+      onSave={busy ? () => {} : submit}
+    >
+      {error && (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
+          {error}
+        </p>
+      )}
+      {(insertForm.fields || []).length === 0 && (
+        <p className="text-[11px] font-semibold text-zinc-500">
+          ฟอร์มนี้ไม่มีช่องให้กรอก กด &quot;เพิ่มข้อมูล&quot; เพื่อรันสคริปต์ได้เลย
+        </p>
+      )}
+      {(insertForm.fields || []).map((field) => (
+        <div key={field.name}>
+          <label className={labelClass}>
+            {field.label}
+            {field.required !== false && <span className="text-red-600"> *</span>}
+          </label>
+          {field.type === "select" ? (
+            <select
+              value={values[field.name] ?? ""}
+              onChange={(e) => setValue(field.name, e.target.value)}
+              className={inputClass}
+            >
+              <option value="">— เลือกค่า —</option>
+              {(field.options || []).map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          ) : field.type === "boolean" ? (
+            <select
+              value={values[field.name] ?? ""}
+              onChange={(e) => setValue(field.name, e.target.value)}
+              className={inputClass}
+            >
+              <option value="">— เลือก —</option>
+              <option value="true">ใช่</option>
+              <option value="false">ไม่ใช่</option>
+            </select>
+          ) : (
+            <input
+              type={fieldInputType(field.type)}
+              step={["datetime", "time"].includes(field.type) ? 1 : undefined}
+              value={values[field.name] ?? ""}
+              onChange={(e) => setValue(field.name, e.target.value)}
+              className={inputClass}
+            />
+          )}
+        </div>
+      ))}
+    </ModalShell>
+  );
+}

@@ -6,8 +6,12 @@
 // like a placeholder inside a string literal, a quoted identifier (Thai column
 // aliases are full of those) or a comment.
 
-const NAME_START = /[A-Za-z_]/;
-const NAME_CHAR = /[A-Za-z0-9_]/;
+// Letters from any script, for the same reason quoteIdentifier takes them: the
+// people writing these queries name things in Thai, and :ชื่อเกม is the name
+// they will reach for. A placeholder never reaches Postgres — it is replaced by
+// $n first — so nothing here depends on what Postgres accepts as an identifier.
+const NAME_START = /[\p{L}\p{M}_]/u;
+const NAME_CHAR = /[\p{L}\p{M}\p{N}_]/u;
 
 // A dollar-quoted body may carry a tag: $$...$$ but also $body$...$body$.
 // A digit cannot start a tag, which is what keeps $1 a placeholder.

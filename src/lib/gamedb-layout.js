@@ -17,6 +17,7 @@ export const EMPTY_LAYOUT = {
   widths: {},
   params: [],
   editable: null,
+  insertForm: null,
   rules: [],
   summary: {},
   chart: null,
@@ -39,6 +40,42 @@ export const PARAM_TYPES = [
   "boolean",
   "select",
 ];
+
+export const MAX_INSERT_SQL = 5000;
+export const MAX_INSERT_FIELDS = 50;
+
+/**
+ * The saved "add data" form: one INSERT written by an admin, plus a label and a
+ * type for each :placeholder in it.
+ *
+ * The SQL is stored as written. It is never assembled from what a filler types —
+ * their values are bound as parameters — and it is checked against the INSERT
+ * rules on the server every time it runs rather than once when it is saved, so
+ * a script edited into the JSONB by hand is no better off than one typed here.
+ */
+export function normalizeInsertForm(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const sql = String(raw.sql || "").trim();
+  if (!sql) return null;
+  return {
+    sql: sql.slice(0, MAX_INSERT_SQL),
+    label: String(raw.label || "").trim().slice(0, 60),
+    fields: Array.isArray(raw.fields)
+      ? raw.fields
+          .filter((field) => field && typeof field.name === "string" && field.name)
+          .slice(0, MAX_INSERT_FIELDS)
+          .map((field) => ({
+            name: field.name.slice(0, 64),
+            label: String(field.label || field.name).slice(0, 120),
+            type: PARAM_TYPES.includes(field.type) ? field.type : "text",
+            defaultValue:
+              field.defaultValue == null ? "" : String(field.defaultValue).slice(0, 500),
+            options: Array.isArray(field.options) ? field.options.map(String).slice(0, 100) : [],
+            required: field.required !== false,
+          }))
+      : [],
+  };
+}
 
 // Ops are grouped by what they read: numbers, text, or a date compared with
 // today. `value` may also be "[Another column]", which is resolved per row.
@@ -216,6 +253,7 @@ export function normalizeLayout(raw) {
           }))
       : [],
     editable,
+    insertForm: normalizeInsertForm(layout.insertForm),
     rules: Array.isArray(layout.rules)
       ? layout.rules
           .filter(

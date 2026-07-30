@@ -7,6 +7,7 @@ import {
   normalizeFormats,
   normalizeFreeze,
   normalizeInputs,
+  normalizeInsertForm,
   normalizeMerge,
   PARAM_TYPES,
   REFRESH_CHOICES,
@@ -184,6 +185,9 @@ export function sanitizeLayout(raw) {
     computed,
     params,
     editable,
+    // Stored as written: what makes it safe is the check at run time, not a
+    // rewrite here, and rewriting SQL would only make it wrong quietly.
+    insertForm: normalizeInsertForm(layout.insertForm),
     rules,
     summary,
     chart,
