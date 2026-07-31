@@ -16,7 +16,7 @@ import {
 import { apiJson } from "@/lib/api-json";
 
 const inputClass =
-  "h-9 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white";
+  "h-9 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white";
 const labelClass = "mb-1 block text-[10px] font-black text-zinc-500";
 
 const EMPTY_FORM = {
@@ -306,12 +306,12 @@ export default function ViewsModal({
             </div>
 
             {error && (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
+              <div className="rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
                 {error}
               </div>
             )}
             {notice && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-700">
+              <div className="rounded-sm border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-700">
                 {notice}
               </div>
             )}

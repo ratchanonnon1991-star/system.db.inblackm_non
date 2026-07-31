@@ -128,7 +128,7 @@ function LoginScreen({ onLoggedIn }) {
           onChange={(e) => setUsername(e.target.value)}
           autoComplete="username"
           autoFocus
-          className="mb-3 h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+          className="mb-3 h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
         />
         <label className="mb-1 block text-[10px] font-black text-zinc-500">รหัสผ่าน</label>
         <input
@@ -136,11 +136,11 @@ function LoginScreen({ onLoggedIn }) {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="current-password"
-          className="mb-4 h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+          className="mb-4 h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
         />
 
         {error && (
-          <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
+          <div className="mb-3 rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
             {error}
           </div>
         )}
@@ -384,7 +384,7 @@ function CanvasToolbar({
         onClick={onUndo}
         disabled={layoutLocked || !historyAvailability.past}
         title="ย้อนการจัดวาง (Ctrl+Z)"
-        className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30"
+        className="rounded-sm p-1 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30"
       >
         <Undo2 size={14} />
       </button>
@@ -393,7 +393,7 @@ function CanvasToolbar({
         onClick={onRedo}
         disabled={layoutLocked || !historyAvailability.future}
         title="ทำซ้ำ (Ctrl+Shift+Z)"
-        className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30"
+        className="rounded-sm p-1 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30"
       >
         <Redo2 size={14} />
       </button>
@@ -405,10 +405,10 @@ function CanvasToolbar({
             if (event.target.value) onArrange(event.target.value);
             event.target.value = "";
           }}
-          className="h-8 rounded-lg border border-zinc-200 bg-white px-2 text-[10px] font-black text-zinc-600"
+          className="h-8 rounded-sm border border-zinc-200 bg-white px-2 text-[10px] font-black text-zinc-600"
           title="จัดกล่องอัตโนมัติ"
         >
-          <option value="">จัดอัตโนมัติ...</option>
+          <option value="">จัดอัตโนมัติ</option>
           <option value="grid">แบบ Grid</option>
           <option value="vertical">เรียงแนวตั้ง</option>
           <option value="horizontal">เรียงต่อกัน</option>
@@ -436,7 +436,7 @@ function CanvasToolbar({
           <button
             type="button"
             onClick={onTogglePreview}
-            className="flex h-8 items-center gap-1 rounded-lg border border-zinc-200 px-2 text-[10px] font-black text-zinc-600 hover:bg-zinc-50"
+            className="flex h-8 items-center gap-1 rounded-sm border border-zinc-200 px-2 text-[10px] font-black text-zinc-600 hover:bg-zinc-50"
             title="ดูหน้าจอแบบ User"
           >
             <Eye size={12} /> User
@@ -447,7 +447,7 @@ function CanvasToolbar({
       <button
         type="button"
         onClick={onToggleSheetMode}
-        className={`flex h-8 items-center gap-1 rounded-lg border px-2 text-[10px] font-black transition ${
+        className={`flex h-8 items-center gap-1 rounded-sm border px-2 text-[10px] font-black transition ${
           sheetMode
             ? "border-red-600 bg-red-600 text-white"
             : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"
@@ -467,7 +467,7 @@ function CanvasToolbar({
       <button
         type="button"
         onClick={() => onZoom(zoom - 0.1)}
-        className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
+        className="rounded-sm p-1 text-zinc-500 hover:bg-zinc-100"
         title="ซูมออก"
       >
         <ZoomOut size={14} />
@@ -475,7 +475,7 @@ function CanvasToolbar({
       <button
         type="button"
         onClick={() => onZoom(1)}
-        className="min-w-11 rounded-lg px-1.5 py-1.5 text-[10px] font-black text-zinc-600 hover:bg-zinc-100"
+        className="min-w-11 rounded-sm px-1.5 py-1.5 text-[10px] font-black text-zinc-600 hover:bg-zinc-100"
         title="คืน Zoom เป็น 100%"
       >
         {Math.round(zoom * 100)}%
@@ -483,7 +483,7 @@ function CanvasToolbar({
       <button
         type="button"
         onClick={() => onZoom(zoom + 0.1)}
-        className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
+        className="rounded-sm p-1 text-zinc-500 hover:bg-zinc-100"
         title="ซูมเข้า"
       >
         <ZoomIn size={14} />
@@ -1672,10 +1672,10 @@ function GamedbWorkspace({ me, onLoggedOut }) {
         <button
           type="button"
           onClick={() => setShareQueryId(selectedPanelQuery.id)}
-          className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 text-[10px] font-black text-zinc-600 transition hover:bg-zinc-50"
+          className="flex h-8 shrink-0 items-center gap-1.5 rounded-sm border border-zinc-200 px-2.5 text-[10px] font-black text-zinc-600 transition hover:bg-zinc-50"
           title={`แชร์ "${selectedPanelQuery.name}" เป็นลิงก์ให้คนที่ไม่ได้ล็อกอินเปิดดู`}
         >
-          <Link2 size={12} /> แชร์ลิงก์
+          <Link2 size={12} />
         </button>
       )}
       <div
@@ -1854,7 +1854,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             type="button"
             onClick={exportWorkbook}
             title="ดาวน์โหลดทุกตารางที่เปิดอยู่เป็น Excel หลายชีต (คีย์ลัด: e)"
-            className="rounded-xl border border-zinc-200 bg-white p-2.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
+            className="rounded-xl border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
           >
             <FileSpreadsheet size={14} />
           </button>
@@ -1862,7 +1862,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             type="button"
             onClick={toggleTheme}
             title="สลับโหมดสว่าง/มืด (คีย์ลัด: d)"
-            className="rounded-xl border border-zinc-200 bg-white p-2.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
+            className="rounded-xl border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
           >
             {dark ? <Sun size={14} /> : <Moon size={14} />}
           </button>
@@ -1870,7 +1870,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             type="button"
             onClick={logout}
             title="ออกจากระบบ"
-            className="rounded-xl border border-zinc-200 bg-white p-2.5 text-zinc-500 transition hover:bg-red-50 hover:text-red-600"
+            className="rounded-xl border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-red-50 hover:text-red-600"
           >
             <LogOut size={14} />
           </button>
@@ -1887,7 +1887,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               <button
                 type="button"
                 onClick={() => setEditLogModal(true)}
-                className="rounded-xl border border-zinc-200 bg-white p-2.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
+                className="rounded-xl border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
                 title="ประวัติการแก้ไขข้อมูล"
               >
                 <History size={14} />
@@ -1895,7 +1895,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               <button
                 type="button"
                 onClick={() => setHealthModal(true)}
-                className="rounded-xl border border-zinc-200 bg-white p-2.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
+                className="rounded-xl border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
                 title="ตรวจสุขภาพระบบ / สิทธิ์ฐานข้อมูล"
               >
                 <Activity size={14} />
@@ -1932,7 +1932,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             <button
               type="button"
               onClick={() => toggleSidebar(true)}
-              className="rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700"
+              className="rounded-sm p-1.5 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700"
               title="เปิดแถบรายการ Query (คีย์ลัด: b)"
             >
               <PanelLeftOpen size={15} />
@@ -1940,7 +1940,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             <button
               type="button"
               onClick={focusSearch}
-              className="rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700"
+              className="rounded-sm p-1.5 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700"
               title="ค้นหา Query (คีย์ลัด: /)"
             >
               <Search size={15} />
@@ -1957,7 +1957,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
         )}
         {!layoutLocked && sidebarOpen && <aside
           ref={listBoxRef}
-          className="relative z-30 w-full shrink-0 rounded-2xl border border-zinc-200 bg-white p-2"
+          className="relative z-30 w-full shrink-0 rounded-2xl border border-zinc-200 bg-white p-1"
         >
           <div className="flex flex-wrap items-center gap-1.5">
             {/* The box is a picker, not a place to read long text — past a few
@@ -1977,7 +1977,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                 }}
                 onFocus={() => setListOpen(true)}
                 placeholder="ค้นหาชื่อ / SQL... (กด /)"
-                className="h-9 w-full rounded-lg border border-zinc-200 bg-zinc-50 pl-8 pr-8 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+                className="h-9 w-full rounded-sm border border-zinc-200 bg-zinc-50 pl-8 pr-8 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
               />
               <button
                 type="button"
@@ -2003,7 +2003,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             <button
               type="button"
               onClick={() => toggleSidebar(false)}
-              className="shrink-0 rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700"
+              className="shrink-0 rounded-sm p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700"
               title="ย่อแถบรายการเพื่อให้ตารางกว้างขึ้น (คีย์ลัด: b)"
             >
               <PanelLeftClose size={15} />
@@ -2060,7 +2060,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                 return (
                   <div
                     key={query.id}
-                    className={`group flex items-center gap-1 rounded-lg border px-2 py-1 transition ${
+                    className={`group flex items-center gap-1 rounded-sm border px-2 py-1 transition ${
                       isOpen
                         ? "border-red-600 bg-red-600 text-white"
                         : "border-transparent text-zinc-600 hover:bg-zinc-50"
@@ -2174,7 +2174,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             <button
               type="button"
               onClick={() => setPreviewAsUser(false)}
-              className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-[10px] font-black"
+              className="rounded-sm border border-amber-300 bg-white px-3 py-1.5 text-[10px] font-black"
             >
               ออกจาก Preview
             </button>
@@ -2182,7 +2182,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
         )}
 
         {sheetMode ? (
-          <div className="flex min-h-72 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50">
+          <div className="flex min-h-72 min-w-0 flex-1 flex-col overflow-hidden rounded-sm border border-zinc-200 bg-zinc-50">
             <div className="min-h-0 flex-1 overflow-auto p-3">
               {activeSheetPanel ? renderPanel(activeSheetPanel, true) : emptyWorkspace}
             </div>
@@ -2254,7 +2254,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                 <button
                   type="button"
                   onClick={focusSearch}
-                  className="shrink-0 rounded-lg p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600"
+                  className="shrink-0 rounded-sm p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600"
                   title="เปิดตารางเพิ่ม"
                 >
                   <Plus size={13} />
@@ -2271,7 +2271,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                 <button
                   type="button"
                   onPointerDown={() => closePanel(tabMenu.queryId)}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] font-bold text-zinc-600 hover:bg-zinc-100"
+                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[11px] font-bold text-zinc-600 hover:bg-zinc-100"
                 >
                   <X size={11} /> ปิดแท็บนี้
                 </button>
@@ -2279,7 +2279,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                   type="button"
                   disabled={openPanels.length < 2}
                   onPointerDown={() => closeOtherTabs(tabMenu.queryId)}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-40"
+                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[11px] font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-40"
                 >
                   <X size={11} /> ปิดแท็บอื่นทั้งหมด
                 </button>
@@ -2289,7 +2289,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
         ) : (
         <div
           ref={viewportRef}
-          className="relative min-h-72 min-w-0 flex-1 overflow-auto overscroll-contain rounded-lg border border-zinc-200 bg-zinc-50"
+          className="relative min-h-72 min-w-0 flex-1 overflow-auto overscroll-contain rounded-sm border border-zinc-200 bg-zinc-50"
           onPointerDown={startCanvasPan}
           onPointerMove={moveCanvasPan}
           onPointerUp={stopCanvasPan}

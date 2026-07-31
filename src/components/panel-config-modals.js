@@ -46,7 +46,7 @@ import {
 } from "@/lib/gamedb-layout";
 
 const inputClass =
-  "h-9 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white";
+  "h-9 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white";
 const labelClass = "mb-1 block text-[10px] font-black text-zinc-500";
 
 function ModalShell({
@@ -160,7 +160,7 @@ export function ShareLinkModal({ queryId, onClose }) {
         </div>
 
         {error && (
-          <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
+          <p className="mb-3 rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
             {error}
           </p>
         )}
@@ -184,7 +184,7 @@ export function ShareLinkModal({ queryId, onClose }) {
                   navigator.clipboard?.writeText(url);
                   setCopied(true);
                 }}
-                className="shrink-0 rounded-lg bg-red-600 px-4 py-2 text-[11px] font-black text-white transition hover:bg-red-700"
+                className="shrink-0 rounded-sm bg-red-600 px-4 py-2 text-[11px] font-black text-white transition hover:bg-red-700"
               >
                 {copied ? "คัดลอกแล้ว" : "คัดลอก"}
               </button>
@@ -554,7 +554,7 @@ export function EditableSettingsModal({
       }}
     >
       {blocked && (
-        <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-[11px] font-bold leading-relaxed text-red-700">
+        <div className="rounded-sm border border-red-300 bg-red-50 px-3 py-2 text-[11px] font-bold leading-relaxed text-red-700">
           บันทึกไม่ได้จนกว่าจะแก้ตรงนี้ — ชื่อคอลัมน์จริงในตารางห้ามมีอักขระอย่าง{" "}
           <code className="font-mono">/</code> <code className="font-mono">.</code>{" "}
           <code className="font-mono">(</code> หรือ <code className="font-mono">&quot;</code>
@@ -570,12 +570,12 @@ export function EditableSettingsModal({
           )}
         </div>
       )}
-      <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
+      <p className="rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
         เปิดแล้ว Admin จะดับเบิลคลิกแก้ค่าในตารางได้ ระบบจะเขียน UPDATE กลับไปที่ตารางนี้
         ทีละ 1 แถว และบันทึกลง log ทุกครั้ง (staff แก้ไม่ได้)
       </p>
 
-      <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+      <div className="rounded-sm border border-zinc-200 bg-zinc-50 p-3">
         <div className="flex items-center justify-between gap-2">
           <span className="text-[10px] font-black text-zinc-500">
             ทดสอบกับฐานข้อมูลจริง — อ่านเท่านั้น ไม่เขียนอะไร
@@ -584,7 +584,7 @@ export function EditableSettingsModal({
             type="button"
             onClick={runTest}
             disabled={testing || !draft || !queryId}
-            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-[10px] font-black text-zinc-700 transition hover:bg-zinc-100 disabled:opacity-40"
+            className="flex shrink-0 items-center gap-1.5 rounded-sm border border-zinc-300 bg-white px-3 py-1.5 text-[10px] font-black text-zinc-700 transition hover:bg-zinc-100 disabled:opacity-40"
           >
             {testing ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
             ทดสอบการตั้งค่า
@@ -598,7 +598,7 @@ export function EditableSettingsModal({
         )}
 
         {testError && (
-          <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-[10px] font-bold text-red-600">
+          <p className="mt-2 rounded-sm border border-red-200 bg-red-50 px-2 py-1.5 text-[10px] font-bold text-red-600">
             {testError}
           </p>
         )}
@@ -641,7 +641,7 @@ export function EditableSettingsModal({
                 <button
                   type="button"
                   onClick={() => setShowAllSql((value) => !value)}
-                  className="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-[10px] font-black text-zinc-700 transition hover:bg-zinc-100"
+                  className="flex w-full items-center justify-between gap-2 rounded-sm border border-zinc-300 bg-white px-2 py-1.5 text-[10px] font-black text-zinc-700 transition hover:bg-zinc-100"
                 >
                   <span className="flex items-center gap-1.5">
                     <Code2 size={12} />
@@ -671,7 +671,7 @@ export function EditableSettingsModal({
                               <p className="text-[10px] font-bold text-zinc-400">
                                 {statement.label}
                               </p>
-                              <pre className="mt-0.5 overflow-x-auto rounded-lg border border-zinc-200 bg-white px-2 py-1.5 font-mono text-[10px] leading-relaxed text-zinc-700">
+                              <pre className="mt-0.5 overflow-x-auto rounded-sm border border-zinc-200 bg-white px-2 py-1.5 font-mono text-[10px] leading-relaxed text-zinc-700">
 {statement.sql}
                               </pre>
                             </div>
@@ -736,7 +736,7 @@ export function EditableSettingsModal({
         </div>
       </div>
       {pk && (pkColumn.trim() || pk) && (
-        <p className="rounded-lg bg-zinc-50 px-3 py-2 font-mono text-[10px] font-semibold text-zinc-500">
+        <p className="rounded-sm bg-zinc-50 px-3 py-2 font-mono text-[10px] font-semibold text-zinc-500">
           WHERE &quot;{pkColumn.trim() || pk}&quot; = ค่าจากคอลัมน์ &quot;{pk}&quot; ของแถวนั้น
         </p>
       )}
@@ -773,7 +773,7 @@ export function EditableSettingsModal({
             {columns.map((name) => {
               const input = inputFor(name);
               return (
-                <div key={name} className="rounded-lg border border-zinc-200 px-2.5 py-2">
+                <div key={name} className="rounded-sm border border-zinc-200 px-2.5 py-2">
                   <div className="mb-1.5 grid grid-cols-2 items-center gap-2">
                     <span
                       className="min-w-0 truncate text-[11px] font-black text-zinc-700"
@@ -889,7 +889,7 @@ export function EditableSettingsModal({
           ให้ลบแถวได้ (ปุ่ม 🗑 ท้ายเลขแถว — ถามยืนยันก่อนเสมอ)
         </label>
         {allowDelete && (
-          <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[10px] font-bold text-red-600">
+          <p className="mt-2 rounded-sm border border-red-200 bg-red-50 px-2.5 py-1.5 text-[10px] font-bold text-red-600">
             การลบไม่มีปุ่มย้อนกลับ ระบบจะเก็บค่าของแถวที่ลบไว้ใน log เท่านั้น
           </p>
         )}
@@ -978,7 +978,7 @@ export function NewRowModal({
       saveLabel={saving ? "กำลังบันทึก..." : "เพิ่มแถว"}
     >
       {error && (
-        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
+        <p className="rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
           {error}
         </p>
       )}
@@ -1022,7 +1022,7 @@ export function NewRowModal({
                   <textarea
                     {...common}
                     rows={3}
-                    className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+                    className="w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
                   />
                 ) : field.widget === "checkbox" ? (
                   <label className="flex h-9 items-center gap-2 text-[11px] font-bold text-zinc-600">
@@ -1201,7 +1201,7 @@ export function RulesModal({ columns, rules, onSave, onClose, inline = false }) 
               ]);
               setForm((prev) => ({ ...prev, value: "" }));
             }}
-            className="flex h-9 items-center justify-center gap-1 rounded-lg border border-zinc-300 text-[11px] font-black text-zinc-600 transition hover:bg-white sm:col-span-4"
+            className="flex h-9 items-center justify-center gap-1 rounded-sm border border-zinc-300 text-[11px] font-black text-zinc-600 transition hover:bg-white sm:col-span-4"
           >
             <Plus size={12} /> เพิ่มกฎ
           </button>
@@ -1297,7 +1297,7 @@ export function FormatsModal({
           id="freeze-count"
           value={pinned}
           onChange={(event) => setPinned(Number(event.target.value))}
-          className="h-8 rounded-lg border border-zinc-200 bg-white px-2 text-[11px] font-bold outline-none focus:border-red-600"
+          className="h-8 rounded-sm border border-zinc-200 bg-white px-2 text-[11px] font-bold outline-none focus:border-red-600"
         >
           {Array.from({ length: MAX_FREEZE + 1 }, (_, n) => (
             <option key={n} value={n}>
@@ -1570,7 +1570,7 @@ export function MergeModal({
               <button
                 type="button"
                 onClick={() => addPair(on, setOn)}
-                className="flex h-9 w-full items-center justify-center gap-1 rounded-lg border border-dashed border-zinc-300 text-[11px] font-black text-zinc-500 transition hover:bg-zinc-50"
+                className="flex h-9 w-full items-center justify-center gap-1 rounded-sm border border-dashed border-zinc-300 text-[11px] font-black text-zinc-500 transition hover:bg-zinc-50"
               >
                 <Plus size={12} /> เพิ่มคู่คอลัมน์
               </button>
@@ -1610,7 +1610,7 @@ export function MergeModal({
               <button
                 type="button"
                 onClick={() => addPair(compare, setCompare)}
-                className="flex h-9 w-full items-center justify-center gap-1 rounded-lg border border-dashed border-zinc-300 text-[11px] font-black text-zinc-500 transition hover:bg-zinc-50"
+                className="flex h-9 w-full items-center justify-center gap-1 rounded-sm border border-dashed border-zinc-300 text-[11px] font-black text-zinc-500 transition hover:bg-zinc-50"
               >
                 <Plus size={12} /> เพิ่มคู่ที่จะเทียบค่า
               </button>
@@ -1678,7 +1678,7 @@ export function DrillModal({
       </div>
 
       {queryId && targetParams.length === 0 && (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
+        <p className="rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
           Query ปลายทางยังไม่มีพารามิเตอร์ใน SQL — ไปแก้ SQL ของมันให้มี{" "}
           <code className="font-mono">:ชื่อ</code> เช่น{" "}
           <code className="font-mono">WHERE user_id = :user_id</code> ก่อน แล้วกลับมาผูกค่าที่นี่
@@ -1733,7 +1733,7 @@ export function DrillModal({
               onClick={() =>
                 setMap([...map, { column: columnNames[0] || "", param: targetParams[0] }])
               }
-              className="flex h-9 w-full items-center justify-center gap-1 rounded-lg border border-dashed border-zinc-300 text-[11px] font-black text-zinc-500 transition hover:bg-zinc-50"
+              className="flex h-9 w-full items-center justify-center gap-1 rounded-sm border border-dashed border-zinc-300 text-[11px] font-black text-zinc-500 transition hover:bg-zinc-50"
             >
               <Plus size={12} /> เพิ่มการส่งค่า
             </button>
@@ -1807,7 +1807,7 @@ export function BulkEditModal({
       onSave={apply}
       saveLabel={applying ? "กำลังบันทึก..." : "เขียนกลับฐานข้อมูล"}
     >
-      <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
+      <p className="rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
         คัดลอกจาก Excel/Sheets มาวางได้เลย บรรทัดแรกต้องเป็นชื่อคอลัมน์ และต้องมีคอลัมน์{" "}
         <code className="font-mono">{editable.pk}</code> เพื่อบอกว่าจะแก้แถวไหน
       </p>
@@ -1817,7 +1817,7 @@ export function BulkEditModal({
         rows={8}
         spellCheck={false}
         placeholder={`${editable.pk}\t${editable.columns[0] || "คอลัมน์"}\n1\t100\n2\t250`}
-        className="w-full rounded-lg border border-zinc-200 bg-zinc-900 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-emerald-300 outline-none focus:border-red-600"
+        className="w-full rounded-sm border border-zinc-200 bg-zinc-900 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-emerald-300 outline-none focus:border-red-600"
       />
       <p className="text-[10px] font-semibold text-zinc-400">
         คอลัมน์ที่มีอยู่ในผลลัพธ์: {columnNames.join(", ")}
@@ -1826,14 +1826,14 @@ export function BulkEditModal({
       {problems.map((problem) => (
         <div
           key={problem}
-          className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600"
+          className="rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600"
         >
           {problem}
         </div>
       ))}
 
       {parsed && problems.length === 0 && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-700">
+        <div className="rounded-sm border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-700">
           จะแก้ {parsed.rows.length} แถว × {parsed.targets.length} คอลัมน์ (
           {parsed.targets.map((target) => target.name).join(", ")}) = {" "}
           {parsed.rows.length * parsed.targets.length} เซลล์
@@ -1841,7 +1841,7 @@ export function BulkEditModal({
       )}
 
       {result && (
-        <div className="space-y-1 rounded-lg border border-zinc-200 px-3 py-2 text-[11px] font-bold">
+        <div className="space-y-1 rounded-sm border border-zinc-200 px-3 py-2 text-[11px] font-bold">
           <p className="text-emerald-700">สำเร็จ {result.ok} เซลล์</p>
           {result.failed.length > 0 && (
             <div className="text-red-600">
@@ -1889,7 +1889,7 @@ export function ChartModal({ columns, chart, onSave, onClose, inline = false }) 
               key={value}
               type="button"
               onClick={() => setType(value)}
-              className={`flex-1 rounded-lg border px-3 py-2 text-[11px] font-black transition ${
+              className={`flex-1 rounded-sm border px-3 py-2 text-[11px] font-black transition ${
                 type === value
                   ? "border-red-600 bg-red-600 text-white"
                   : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"
@@ -2033,7 +2033,7 @@ export function InsertFormModal({ insertForm, onSave, onClose }) {
           rows={6}
           spellCheck={false}
           placeholder={"INSERT INTO games (name, region)\nVALUES (:ชื่อเกม, :region)"}
-          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 p-3 font-mono text-[11px] font-semibold outline-none focus:border-red-600 focus:bg-white"
+          className="w-full rounded-sm border border-zinc-200 bg-zinc-50 p-3 font-mono text-[11px] font-semibold outline-none focus:border-red-600 focus:bg-white"
         />
         {sql.trim() && !looksLikeInsert && (
           <p className="mt-1 text-[10px] font-bold text-amber-700">
@@ -2168,7 +2168,7 @@ export function InsertRunModal({ queryId, insertForm, onDone, onClose }) {
       onSave={busy ? () => {} : submit}
     >
       {error && (
-        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
+        <p className="rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
           {error}
         </p>
       )}

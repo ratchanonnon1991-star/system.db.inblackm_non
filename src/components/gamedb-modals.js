@@ -139,7 +139,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="เช่น ออเดอร์รายวัน"
-              className="h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+              className="h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
             />
           </div>
           <div>
@@ -151,7 +151,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="สั้น ๆ ว่า Query นี้ดึงอะไร"
-              className="h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+              className="h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
             />
           </div>
           <div>
@@ -164,7 +164,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
               onChange={(e) => setFolder(e.target.value)}
               placeholder="เช่น สต็อก, ออเดอร์, การเงิน"
               list="gamedb-folder-suggestions"
-              className="h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+              className="h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
             />
           </div>
           <div>
@@ -174,7 +174,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
             <select
               value={connectionId}
               onChange={(e) => setConnectionId(e.target.value)}
-              className="h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+              className="h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
             >
               <option value="">หลัก (inblackm)</option>
               {connections.map((conn) => (
@@ -193,17 +193,17 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
               onChange={(e) => setSqlText(e.target.value)}
               rows={10}
               spellCheck={false}
-              className="w-full rounded-lg border border-zinc-200 bg-zinc-900 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-emerald-300 outline-none focus:border-red-600"
+              className="w-full rounded-sm border border-zinc-200 bg-zinc-900 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-emerald-300 outline-none focus:border-red-600"
             />
           </div>
 
           {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
+            <div className="rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
               {error}
             </div>
           )}
           {testParamNames.length > 0 && (
-            <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-2.5">
+            <div className="rounded-sm border border-zinc-200 bg-zinc-50 p-2.5">
               <p className="mb-1.5 text-[10px] font-black text-zinc-500">
                 ค่าพารามิเตอร์สำหรับทดสอบ (ไม่ถูกบันทึกไปกับ Query)
               </p>
@@ -222,7 +222,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                           [paramName]: e.target.value,
                         }))
                       }
-                      className="h-7 w-36 rounded-lg border border-zinc-200 bg-white px-2 text-[11px] font-semibold outline-none focus:border-red-600"
+                      className="h-7 w-36 rounded-sm border border-zinc-200 bg-white px-2 text-[11px] font-semibold outline-none focus:border-red-600"
                     />
                   </label>
                 ))}
@@ -230,7 +230,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
             </div>
           )}
           {testResult && (
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-700">
+            <div className="rounded-sm border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-700">
               รันสำเร็จ: {testResult.rowCount.toLocaleString("th-TH")} แถว ·{" "}
               {testResult.columns.length} คอลัมน์ ({testResult.columns.map((col) => col.name).join(", ")}) ·{" "}
               {testResult.durationMs} ms
@@ -339,7 +339,7 @@ export function ComputedColumnModal({
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-sm font-black">
-            <Calculator size={15} className="text-red-600" /> เพิ่มคอลัมน์สูตร
+            <Calculator size={15} className="text-red-600" /> เพิ่มคอลัมน์/สูตร
           </h2>
           <button
             type="button"
@@ -361,7 +361,7 @@ export function ComputedColumnModal({
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               placeholder="เช่น กำไร"
-              className="h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+              className="h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
             />
           </div>
           <div>
@@ -374,7 +374,7 @@ export function ComputedColumnModal({
               value={formula}
               onChange={(e) => setFormula(e.target.value)}
               placeholder={'เช่น IF(DAYSUNTIL([วันหมดอายุ SMS]) < 3, "ใกล้หมดอายุ", "ปกติ")'}
-              className="h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 font-mono text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+              className="h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 font-mono text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
             />
             {formula.trim() && (
               <p
@@ -397,7 +397,7 @@ export function ComputedColumnModal({
               id="computed-type"
               value={type}
               onChange={(e) => setTypeChoice(e.target.value)}
-              className="h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+              className="h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
             >
               {Object.entries(COMPUTED_TYPE_LABELS).map(([value, text]) => (
                 <option key={value} value={value}>
@@ -566,7 +566,7 @@ export function UsersModal({ me, onClose }) {
   };
 
   const inputClass =
-    "h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white";
+    "h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
@@ -710,7 +710,7 @@ export function UsersModal({ me, onClose }) {
             )}
 
             {error && (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
+              <div className="rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
                 {error}
               </div>
             )}
@@ -905,7 +905,7 @@ export function ConnectionsModal({ connections, onClose, onChanged }) {
   };
 
   const inputClass =
-    "h-10 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white";
+    "h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
@@ -1104,12 +1104,12 @@ export function ConnectionsModal({ connections, onClose, onChanged }) {
             </div>
 
             {error && (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
+              <div className="rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
                 {error}
               </div>
             )}
             {testResult && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-700">
+              <div className="rounded-sm border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-700">
                 {testResult}
               </div>
             )}

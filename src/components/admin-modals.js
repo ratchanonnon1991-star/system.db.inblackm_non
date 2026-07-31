@@ -104,7 +104,7 @@ export function HealthModal({ onClose }) {
       }
     >
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
+        <div className="rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
           {error}
         </div>
       )}
@@ -132,13 +132,13 @@ export function HealthModal({ onClose }) {
               <p className="mb-1 flex items-center gap-1.5 text-[11px] font-black text-red-700">
                 <AlertTriangle size={13} /> สิทธิ์ไม่ครบ — ให้เจ้าของฐานข้อมูลรัน SQL นี้
               </p>
-              <pre className="overflow-x-auto rounded-lg bg-zinc-900 px-3 py-2 font-mono text-[10px] leading-relaxed text-emerald-300">
+              <pre className="overflow-x-auto rounded-sm bg-zinc-900 px-3 py-2 font-mono text-[10px] leading-relaxed text-emerald-300">
                 {data.fixes.join("\n")}
               </pre>
               <button
                 type="button"
                 onClick={copyFixes}
-                className="mt-2 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-[10px] font-black text-red-700 transition hover:bg-red-100"
+                className="mt-2 rounded-sm border border-red-300 bg-white px-3 py-1.5 text-[10px] font-black text-red-700 transition hover:bg-red-100"
               >
                 {copied ? "คัดลอกแล้ว" : "คัดลอก SQL"}
               </button>
@@ -339,7 +339,7 @@ export function EditLogModal({ onClose }) {
       onClose={onClose}
     >
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
+        <div className="rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
           {error}
         </div>
       )}

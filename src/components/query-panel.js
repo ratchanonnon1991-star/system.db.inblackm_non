@@ -33,7 +33,7 @@ import {
   Timer,
   Trash2,
   User,
-  Users,
+  Save,
   X,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
@@ -75,10 +75,10 @@ import PanelChart from "@/components/panel-chart";
 const NO_LOOKUPS = {};
 
 const iconButtonClass =
-  "flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700 disabled:opacity-40";
+  "flex h-8 w-8 items-center justify-center rounded-sm border border-zinc-200 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700 disabled:opacity-40";
 
 const menuItemClass =
-  "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[11px] font-bold text-zinc-600 transition hover:bg-zinc-50 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40";
+  "flex w-full items-center gap-2 rounded-sm px-2.5 py-2 text-left text-[11px] font-bold text-zinc-600 transition hover:bg-zinc-50 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40";
 
 const paramPresetButtonClass =
   "rounded-md border border-zinc-200 bg-white px-2 py-1 text-[9px] font-black text-zinc-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700";
@@ -1534,14 +1534,14 @@ export default function QueryPanel({
         {canCustomizeLayout && !docked ? <button
           type="button"
           onPointerDown={startPanelMove}
-          className="flex h-8 w-8 shrink-0 cursor-grab items-center justify-center rounded-lg border border-transparent text-zinc-300 transition hover:border-zinc-200 hover:bg-zinc-100 hover:text-zinc-600 active:cursor-grabbing"
+          className="flex h-8 w-8 shrink-0 cursor-grab items-center justify-center rounded-sm border border-transparent text-zinc-300 transition hover:border-zinc-200 hover:bg-zinc-100 hover:text-zinc-600 active:cursor-grabbing"
           title="ลากเพื่อย้ายกล่องไปวางตำแหน่งที่ต้องการ"
           aria-label={`ย้ายกล่อง ${query.name}`}
         >
           <GripVertical size={14} />
         </button> : docked ? null : (
           <span
-            className="rounded-lg p-1 text-zinc-300"
+            className="rounded-sm p-1 text-zinc-300"
             title="บัญชีนี้ใช้ layout จาก template"
           >
             <Lock size={14} />
@@ -1550,7 +1550,7 @@ export default function QueryPanel({
         {canCustomizeLayout && <button
           type="button"
           onClick={onToggleCollapse}
-          className="rounded-lg p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700"
+          className="rounded-sm p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700"
           title={panel.collapsed ? "ขยายตาราง" : "ย่อตาราง"}
         >
           {panel.collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
@@ -1597,7 +1597,7 @@ export default function QueryPanel({
             value={rowFilter}
             onChange={(e) => setRowFilter(e.target.value)}
             placeholder="ค้นหาในผลลัพธ์..."
-            className="h-8 w-36 rounded-lg border border-zinc-200 bg-zinc-50 pl-8 pr-2 text-[11px] font-semibold outline-none focus:border-red-600 focus:bg-white"
+            className="h-8 w-36 rounded-sm border border-zinc-200 bg-zinc-50 pl-8 pr-2 text-[11px] font-semibold outline-none focus:border-red-600 focus:bg-white"
           />
         </div>
 
@@ -1614,7 +1614,7 @@ export default function QueryPanel({
                 type="button"
                 onClick={() => saveLayout("shared")}
                 disabled={savingLayout}
-                className={`flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-black transition disabled:opacity-50 ${
+                className={`flex h-8 items-center gap-1.5 rounded-sm px-3 text-[11px] font-black transition disabled:opacity-50 ${
                   layoutDirty
                     ? "bg-red-600 text-white hover:bg-red-700"
                     : "border border-zinc-300 text-zinc-600 hover:bg-zinc-50"
@@ -1625,8 +1625,8 @@ export default function QueryPanel({
                     : "ตั้งเป็นค่าเริ่มต้นที่ทุกคนเห็น"
                 }
               >
-                {savingLayout ? <Loader2 size={12} className="animate-spin" /> : <Users size={12} />}
-                บันทึกให้ทุกคน
+                {savingLayout ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                บันทึก
                 {layoutDirty && (
                   <span
                     className="h-1.5 w-1.5 rounded-full bg-white"
@@ -1645,7 +1645,7 @@ export default function QueryPanel({
             type="button"
             onClick={dropPersonalLayout}
             disabled={savingLayout}
-            className="flex h-8 items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2.5 text-[10px] font-black text-sky-700 transition hover:bg-sky-100 disabled:opacity-50"
+            className="flex h-8 items-center gap-1.5 rounded-sm border border-sky-200 bg-sky-50 px-2.5 text-[10px] font-black text-sky-700 transition hover:bg-sky-100 disabled:opacity-50"
             title="ตอนนี้ใช้ layout ส่วนตัวอยู่ — กดเพื่อกลับไปใช้ค่ากลาง"
           >
             <User size={11} /> ของฉัน
@@ -1657,7 +1657,7 @@ export default function QueryPanel({
             type="button"
             onClick={() => setModal("insertRun")}
             disabled={Boolean(viewingSnapshot)}
-            className="flex h-8 items-center gap-1.5 rounded-lg bg-red-600 px-2.5 text-[10px] font-black text-white transition hover:bg-red-700 disabled:opacity-50"
+            className="flex h-8 items-center gap-1.5 rounded-sm bg-red-600 px-2.5 text-[10px] font-black text-white transition hover:bg-red-700 disabled:opacity-50"
             title={viewingSnapshot ? "ออกจาก snapshot ก่อนถึงจะเพิ่มข้อมูลได้" : "เพิ่มข้อมูลด้วยฟอร์มที่ Admin ตั้งไว้"}
           >
             <Plus size={12} /> {sharedInsertForm.label || "เพิ่มข้อมูล"}
@@ -1666,7 +1666,7 @@ export default function QueryPanel({
         <button type="button" onClick={() => runQuery({ validate: true })} disabled={running} className={iconButtonClass} title="รันใหม่">
           <RefreshCw size={13} className={running ? "animate-spin" : ""} />
         </button>
-        <div className="flex h-8 items-center gap-1 rounded-lg border border-zinc-200 px-2" title="รันซ้ำอัตโนมัติ">
+        <div className="flex h-8 items-center gap-1 rounded-sm border border-zinc-200 px-2" title="รันซ้ำอัตโนมัติ">
           <Timer size={12} className={layout.refreshSeconds ? "text-red-600" : "text-zinc-400"} />
           <select
             value={layout.refreshSeconds}
@@ -1704,7 +1704,7 @@ export default function QueryPanel({
           <button
             type="button"
             onClick={() => setMoreMenuOpen((open) => !open)}
-            className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[10px] font-black transition ${
+            className={`flex h-8 items-center gap-1.5 rounded-sm border px-2.5 text-[10px] font-black transition ${
               moreMenuOpen
                 ? "border-red-200 bg-red-50 text-red-700"
                 : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"
@@ -1808,7 +1808,7 @@ export default function QueryPanel({
                       openSnapshot(event.target.value ? Number(event.target.value) : null);
                       setMoreMenuOpen(false);
                     }}
-                    className="h-8 w-full rounded-lg border border-zinc-200 bg-white px-2 text-[10px] font-bold text-zinc-600 outline-none focus:border-red-500"
+                    className="h-8 w-full rounded-sm border border-zinc-200 bg-white px-2 text-[10px] font-bold text-zinc-600 outline-none focus:border-red-500"
                   >
                     <option value="">ข้อมูลล่าสุด</option>
                     {snapshots.map((snapshot) => (
@@ -1923,7 +1923,7 @@ export default function QueryPanel({
         {canClose && <button
           type="button"
           onClick={onClose}
-          className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:bg-red-50 hover:text-red-600"
+          className="flex h-8 w-8 items-center justify-center rounded-sm border border-zinc-200 text-zinc-500 transition hover:bg-red-50 hover:text-red-600"
           title="ปิดตารางนี้"
         >
           <X size={13} />
@@ -2004,7 +2004,7 @@ export default function QueryPanel({
                               (prev[param.name] ?? "false") === "true" ? "false" : "true",
                           }))
                         }
-                        className={`flex h-8 min-w-28 items-center gap-2 rounded-lg border px-2 text-[11px] font-black transition ${
+                        className={`flex h-8 min-w-28 items-center gap-2 rounded-sm border px-2 text-[11px] font-black transition ${
                           (paramValues[param.name] ?? "false") === "true"
                             ? "border-emerald-500 bg-emerald-50 text-emerald-700"
                             : "border-zinc-200 bg-white text-zinc-500"
@@ -2036,7 +2036,7 @@ export default function QueryPanel({
                         }
                         aria-invalid={Boolean(error)}
                         aria-describedby={error ? errorId : hintId}
-                        className={`h-8 min-w-40 rounded-lg border bg-white px-2 text-[11px] font-semibold outline-none ${
+                        className={`h-8 min-w-40 rounded-sm border bg-white px-2 text-[11px] font-semibold outline-none ${
                           error
                             ? "border-red-400 bg-red-50/50 focus:border-red-600"
                             : "border-zinc-200 focus:border-red-600"
@@ -2064,7 +2064,7 @@ export default function QueryPanel({
                         placeholder={guide.placeholder}
                         aria-invalid={Boolean(error)}
                         aria-describedby={error ? errorId : hintId}
-                        className={`h-8 ${guide.widthClass} rounded-lg border bg-white px-2 text-[11px] font-semibold outline-none placeholder:text-zinc-300 ${
+                        className={`h-8 ${guide.widthClass} rounded-sm border bg-white px-2 text-[11px] font-semibold outline-none placeholder:text-zinc-300 ${
                           error
                             ? "border-red-400 bg-red-50/50 focus:border-red-600"
                             : "border-zinc-200 focus:border-red-600"
@@ -2103,7 +2103,7 @@ export default function QueryPanel({
                   type="button"
                   onClick={() => runQuery({ validate: true })}
                   disabled={running}
-                  className="flex h-8 items-center gap-1.5 rounded-lg bg-zinc-800 px-3 text-[11px] font-black text-white transition hover:bg-zinc-900 disabled:opacity-50"
+                  className="flex h-8 items-center gap-1.5 rounded-sm bg-zinc-800 px-3 text-[11px] font-black text-white transition hover:bg-zinc-900 disabled:opacity-50"
                 >
                   <Play size={11} /> ใช้ค่านี้
                 </button>
@@ -2142,7 +2142,7 @@ export default function QueryPanel({
               <button
                 type="button"
                 onClick={() => openSnapshot(null)}
-                className="shrink-0 rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-[10px] font-black text-amber-800 transition hover:bg-amber-100"
+                className="shrink-0 rounded-sm border border-amber-300 bg-white px-2.5 py-1 text-[10px] font-black text-amber-800 transition hover:bg-amber-100"
               >
                 กลับไปข้อมูลล่าสุด
               </button>
@@ -2150,7 +2150,7 @@ export default function QueryPanel({
           )}
 
           {(saveError || editError || mergeError) && (
-            <div className="mx-3 mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
+            <div className="mx-3 mt-3 rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
               {saveError || editError || `รวมตารางไม่สำเร็จ: ${mergeError}`}
             </div>
           )}
