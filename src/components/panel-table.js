@@ -45,7 +45,7 @@ import {
   parseOption,
   toDate,
   toneStyle,
-  toneTextColor,
+  cellVisual,
   toNumber,
   widgetForColumn,
 } from "@/lib/gamedb-layout";
@@ -333,7 +333,7 @@ function CellEditor({ config, column, options, value, onChange, onCommit, onCanc
 }
 
 /** What goes inside a cell once its column has a render mode set. */
-function CellContent({ text, render, tone, ink }) {
+function CellContent({ text, render, chip }) {
   if (!text || text === "—") return text;
   if (render === "link" && SAFE_URL.test(text)) {
     return (
@@ -364,12 +364,7 @@ function CellContent({ text, render, tone, ink }) {
     return (
       <span
         className="inline-block max-w-full truncate rounded-sm px-2 py-0.5 text-[10px] font-black"
-        style={{
-          // A chip with no background tone is grey — but if a text colour was
-          // chosen, that is the colour the user asked to see.
-          ...(toneStyle(tone) || { backgroundColor: "#f4f4f5", color: "#3f3f46" }),
-          ...(ink ? { color: ink } : {}),
-        }}
+        style={chip || undefined}
       >
         {text}
       </span>
@@ -793,17 +788,11 @@ export default function PanelTable({
           editPending.colId === col.id;
         const frozen = cellIndex < freezeCount;
 
-        // A chip carries the colour itself, so the cell behind it stays plain.
-        const chip = format.render === "chip";
-        const toneName = tone?.tone || format.bg;
-        const cellTone = chip ? null : toneStyle(toneName);
-        // The text colour used to be dropped whenever a background was set or
-        // the cell was drawn as a chip, which made two settings that read as
-        // independent cancel each other out. It now paints on top of both — but
-        // not over a rule that has fired: the fixed colours are one person's
-        // choice in one dialog, while a rule firing is the cell saying
-        // something about its own value, and that has to be the louder of the two.
-        const inkColor = tone?.tone ? "" : toneTextColor(format.fg);
+        // Which colours win, and where they land, is decided in one tested
+        // place rather than in four expressions that have to agree.
+        const visual = cellVisual(format, tone?.tone || "");
+        const cellTone = visual.cell;
+        const inkColor = visual.ink;
         const align =
           format.align || (numeric ? "right" : "left");
 
@@ -845,12 +834,7 @@ export default function PanelTable({
                 onCancel={() => setEditingCell(null)}
               />
             ) : (
-              <CellContent
-                text={cell.text}
-                render={format.render}
-                tone={toneName}
-                ink={inkColor}
-              />
+              <CellContent text={cell.text} render={format.render} chip={visual.chip} />
             )}
           </td>
         );

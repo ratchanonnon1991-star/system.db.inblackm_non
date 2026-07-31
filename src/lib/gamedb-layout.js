@@ -145,7 +145,7 @@ export const CELL_TONES = {
   redSolid: { bg: "#dc2626", fg: "#ffffff", head: "#b91c1c", headFg: "#ffffff", ink: "#dc2626" },
   greenSolid: { bg: "#16a34a", fg: "#ffffff", head: "#15803d", headFg: "#ffffff", ink: "#15803d" },
   yellowSolid: { bg: "#facc15", fg: "#422006", head: "#eab308", headFg: "#422006", ink: "#a16207" },
-  darkSolid: { bg: "#27272a", fg: "#ffffff", head: "#18181b", headFg: "#ffffff", ink: "#27272a" },
+  darkSolid: { bg: "#27272a", fg: "#ffffff", head: "#18181b", headFg: "#ffffff", ink: "#000000" },
 };
 
 export const TONE_NAMES = Object.keys(CELL_TONES);
@@ -730,6 +730,38 @@ export const TONE_LABELS = {
   darkSolid: "ดำ (ทึบ)",
   bar: "แถบวัดระดับ",
 };
+
+/**
+ * What one cell ends up looking like, given its column's fixed format and the
+ * conditional rule that fired on it (if any).
+ *
+ * This used to be four intertwined expressions inside the table component,
+ * which is how a text colour came to be silently dropped whenever a background
+ * was set and how a chip came to ignore it entirely. Out here the combinations
+ * can be stated once and tested.
+ *
+ * - `cell` is the style for the <td>: null when a chip carries the colour.
+ * - `chip` is the style for the pill drawn inside the cell, or null.
+ * - A rule that has fired wins over the column's fixed colours: those are one
+ *   person's choice in one dialog, a rule is the cell reacting to its own value.
+ */
+export function cellVisual(format, ruleTone = "") {
+  const isChip = format.render === "chip";
+  const background = ruleTone || format.bg;
+  const ink = ruleTone ? "" : toneTextColor(format.fg);
+
+  if (isChip) {
+    const base = toneStyle(background) || { backgroundColor: "#f4f4f5", color: "#3f3f46" };
+    return { cell: null, chip: ink ? { ...base, color: ink } : base, ink };
+  }
+  const fill = toneStyle(background);
+  if (!fill && !ink) return { cell: null, chip: null, ink: "" };
+  return {
+    cell: { ...(fill || {}), ...(ink ? { color: ink } : {}) },
+    chip: null,
+    ink,
+  };
+}
 
 /** A tone used as a text colour: what it looks like as ink, not as a fill. */
 export function toneTextColor(tone) {
