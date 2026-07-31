@@ -360,6 +360,7 @@ export default function QueryPanel({
   layoutOverride,
   personalLayout,
   onPersonalLayoutSaved,
+  onSharedLayoutSaved,
   onLayoutChange,
   onDataChange,
   canManage,
@@ -1288,6 +1289,10 @@ export default function QueryPanel({
       layoutDirtyRef.current = false;
       setLayoutDirty(false);
       if (scope === "mine") onPersonalLayoutSaved?.(query.id, data.layout);
+      // Whether a cell can be edited is read from the query's shared layout,
+      // not from this component's copy, so the list has to learn about the save
+      // or the panel goes on using the layout it was mounted with.
+      else onSharedLayoutSaved?.(query.id, data.layout);
     } catch (err) {
       setSaveError(err.message);
     } finally {

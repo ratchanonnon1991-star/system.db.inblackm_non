@@ -761,6 +761,17 @@ function GamedbWorkspace({ me, onLoggedOut }) {
     loadMyLayouts();
   }, [loadMyLayouts]);
 
+  // The shared layout is the one every write endpoint reads, and the panel
+  // decides whether a cell is editable from the copy it was handed here. Saving
+  // it on the server without putting it back into this list left the panel
+  // holding the layout from page load: the config was stored, and editing
+  // stayed off until a reload.
+  const rememberSharedLayout = useCallback((queryId, layout) => {
+    setQueries((prev) =>
+      prev.map((query) => (query.id === queryId ? { ...query, layout } : query))
+    );
+  }, []);
+
   const rememberPersonalLayout = useCallback((queryId, layout) => {
     setMyLayouts((prev) => {
       const next = { ...prev };
@@ -1705,6 +1716,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
           activeView ? null : myLayouts[panel.queryId] || null
         }
         onPersonalLayoutSaved={rememberPersonalLayout}
+        onSharedLayoutSaved={rememberSharedLayout}
         onLayoutChange={captureLayout}
         onDataChange={captureData}
         canManage={isSuperAdmin && !previewAsUser}
