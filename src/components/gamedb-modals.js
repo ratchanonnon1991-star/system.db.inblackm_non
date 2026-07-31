@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import MissingNotice from "@/components/missing-notice";
 import {
   evaluateFormula,
   extractFormulaRefs,
@@ -238,6 +239,10 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
           )}
         </div>
 
+        <MissingNotice
+          items={[!name.trim() && "ชื่อ Query", !sqlText.trim() && "คำสั่ง SQL"].filter(Boolean)}
+        />
+
         <div className="mt-4 flex items-center justify-end gap-2">
           <button
             type="button"
@@ -433,6 +438,14 @@ export function ComputedColumnModal({
             </div>
           </div>
         </div>
+
+        <MissingNotice
+          items={[
+            !label.trim() && "ชื่อคอลัมน์",
+            !formula.trim() && "สูตร",
+            formula.trim() && !validation.ok && "สูตรที่ถูกต้อง (ดูข้อความใต้ช่องสูตร)",
+          ].filter(Boolean)}
+        />
 
         <div className="mt-5 flex justify-end">
           <button
@@ -714,6 +727,17 @@ export function UsersModal({ me, onClose }) {
                 {error}
               </div>
             )}
+
+            <MissingNotice
+              items={
+                editingId
+                  ? []
+                  : [
+                      !form.username.trim() && "ชื่อผู้ใช้",
+                      form.password.length < 6 && "รหัสผ่านอย่างน้อย 6 ตัว",
+                    ].filter(Boolean)
+              }
+            />
 
             <div className="flex justify-end pt-1">
               <button
@@ -1114,6 +1138,14 @@ export function ConnectionsModal({ connections, onClose, onChanged }) {
               </div>
             )}
 
+            <MissingNotice
+              items={[
+                !form.name.trim() && "ชื่อที่จะแสดง",
+                !form.host.trim() && "host",
+                !form.database.trim() && "ชื่อฐานข้อมูล",
+                !form.username.trim() && "username",
+              ].filter(Boolean)}
+            />
             <div className="flex items-center justify-end gap-2 pt-1">
               <button
                 type="button"

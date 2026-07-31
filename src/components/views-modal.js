@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import MissingNotice from "@/components/missing-notice";
 
 const inputClass =
   "h-9 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white";
@@ -316,6 +317,7 @@ export default function ViewsModal({
               </div>
             )}
 
+            <MissingNotice items={[!form.name.trim() && "ชื่อหน้าจอ"].filter(Boolean)} />
             <div className="flex flex-wrap justify-end gap-2 pt-1">
               {editingId && (
                 <button

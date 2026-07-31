@@ -21,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import MissingNotice from "@/components/missing-notice";
 import { isSafeIdentifier, isSafeIdentifierPart } from "@/lib/gamedb-identifier";
 import { extractSqlParams } from "@/lib/gamedb-sql-params";
 import {
@@ -60,6 +61,11 @@ function ModalShell({
   // the reason lives in the body, and the button says it is not available.
   saveDisabled = false,
   saveDisabledReason = "",
+  // Clearing a setting used to happen by saving an unfinished form, which
+  // meant every half-filled form silently deleted whatever was there before.
+  // Removing is now something you ask for.
+  onRemove = null,
+  removeLabel = "ลบการตั้งค่านี้",
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
@@ -78,7 +84,16 @@ function ModalShell({
           </button>
         </div>
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">{children}</div>
-        <div className="mt-4 flex justify-end">
+        <div className="mt-4 flex items-center justify-end gap-2">
+          {onRemove && (
+            <button
+              type="button"
+              onClick={onRemove}
+              className="mr-auto rounded-xl border border-red-200 px-4 py-2.5 text-[11px] font-black text-red-600 transition hover:bg-red-50"
+            >
+              {removeLabel}
+            </button>
+          )}
           <button
             type="button"
             onClick={onSave}
@@ -515,6 +530,11 @@ export function EditableSettingsModal({
   );
   const tableUnquotable = Boolean(draft && !isSafeIdentifier(table.trim()));
   const blocked = unquotableColumns.length > 0 || pkUnquotable || tableUnquotable;
+  const missing = [
+    !table.trim() && "ชื่อตารางที่จะเขียนกลับ",
+    !pk.trim() && "คอลัมน์ที่เป็น key",
+    pk.trim() && columns.length === 0 && "คอลัมน์ที่อนุญาตให้แก้ อย่างน้อย 1 คอลัมน์",
+  ].filter(Boolean);
 
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -546,13 +566,27 @@ export function EditableSettingsModal({
       title="ตั้งค่าการแก้ไขข้อมูล"
       icon={<Table2 size={15} className="text-red-600" />}
       onClose={onClose}
-      saveDisabled={blocked}
-      saveDisabledReason="ยังมีชื่อคอลัมน์/ตารางที่ใช้กับ SQL ไม่ได้ — ดูข้อความสีแดงด้านบน"
+      saveDisabled={blocked || missing.length > 0}
+      saveDisabledReason={
+        missing.length > 0
+          ? `ยังไม่ได้กรอก: ${missing.join(", ")}`
+          : "ยังมีชื่อคอลัมน์/ตารางที่ใช้กับ SQL ไม่ได้ — ดูข้อความสีแดงด้านบน"
+      }
+      onRemove={
+        editable
+          ? () => {
+              onSave(null);
+              onClose();
+            }
+          : null
+      }
+      removeLabel="ปิดการแก้ไขข้อมูลของ Query นี้"
       onSave={() => {
-        if (blocked) return;
+        if (blocked || missing.length > 0) return;
         onSave(draft);
       }}
     >
+      <MissingNotice items={missing} />
       {blocked && (
         <div className="rounded-sm border border-red-300 bg-red-50 px-3 py-2 text-[11px] font-bold leading-relaxed text-red-700">
           บันทึกไม่ได้จนกว่าจะแก้ตรงนี้ — ชื่อคอลัมน์จริงในตารางห้ามมีอักขระอย่าง{" "}
@@ -1518,20 +1552,34 @@ export function MergeModal({
   const addPair = (list, setList) =>
     setList([...list, { left: columnNames[0] || "", right: otherColumns[0] || "" }]);
 
+  const mergeMissing = [
+    !queryId && "Query ที่จะรวมเข้ามา",
+    queryId && on.length === 0 && "คู่คอลัมน์ที่ใช้จับคู่แถว อย่างน้อย 1 คู่",
+  ].filter(Boolean);
+
   return (
     <ModalShell
       inline={inline}
       title="รวมตารางกับอีก Query"
       icon={<Combine size={15} className="text-red-600" />}
       onClose={onClose}
-      onSave={() =>
-        onSave(
-          queryId && on.length > 0
-            ? { queryId: Number(queryId), on, columns, compare }
-            : null
-        )
+      saveDisabled={mergeMissing.length > 0}
+      saveDisabledReason={`ยังไม่ได้เลือก: ${mergeMissing.join(", ")}`}
+      onRemove={
+        merge
+          ? () => {
+              onSave(null);
+              onClose();
+            }
+          : null
       }
+      removeLabel="เลิกรวมตาราง"
+      onSave={() => {
+        if (mergeMissing.length > 0) return;
+        onSave({ queryId: Number(queryId), on, columns, compare });
+      }}
     >
+      <MissingNotice items={mergeMissing} />
       <div>
         <label className={labelClass}>Query ที่จะดึงข้อมูลมารวม</label>
         <select
@@ -1648,16 +1696,34 @@ export function DrillModal({
     return target ? extractSqlParams(target.sqlText) : [];
   }, [queries, queryId]);
 
+  const drillMissing = [
+    !queryId && "Query ปลายทาง",
+    queryId && map.length === 0 && "คู่ค่าที่จะส่งไป อย่างน้อย 1 คู่",
+  ].filter(Boolean);
+
   return (
     <ModalShell
       inline={inline}
       title="คลิกแถวเพื่อเปิด Query อื่น (drill-down)"
       icon={<CornerDownRight size={15} className="text-red-600" />}
       onClose={onClose}
-      onSave={() =>
-        onSave(queryId && map.length > 0 ? { queryId: Number(queryId), map } : null)
+      saveDisabled={drillMissing.length > 0}
+      saveDisabledReason={`ยังไม่ได้เลือก: ${drillMissing.join(", ")}`}
+      onRemove={
+        drill
+          ? () => {
+              onSave(null);
+              onClose();
+            }
+          : null
       }
+      removeLabel="เลิกเปิด Query อื่นจากแถว"
+      onSave={() => {
+        if (drillMissing.length > 0) return;
+        onSave({ queryId: Number(queryId), map });
+      }}
     >
+      <MissingNotice items={drillMissing} />
       <div>
         <label className={labelClass}>Query ปลายทาง</label>
         <select
@@ -1870,14 +1936,33 @@ export function ChartModal({ columns, chart, onSave, onClose, inline = false }) 
     (col) => col.type === "number" || col.kind === "computed"
   );
 
+  const chartMissing = [!x && "แกน X", y.length === 0 && "แกน Y อย่างน้อย 1 คอลัมน์"].filter(
+    Boolean
+  );
+
   return (
     <ModalShell
       inline={inline}
       title="ตั้งค่ากราฟ"
       icon={<ChartColumn size={15} className="text-red-600" />}
       onClose={onClose}
-      onSave={() => onSave(x && y.length ? { type, x, y } : null)}
+      saveDisabled={chartMissing.length > 0}
+      saveDisabledReason={`ยังไม่ได้เลือก: ${chartMissing.join(", ")}`}
+      onRemove={
+        chart
+          ? () => {
+              onSave(null);
+              onClose();
+            }
+          : null
+      }
+      removeLabel="ลบกราฟ"
+      onSave={() => {
+        if (chartMissing.length > 0) return;
+        onSave({ type, x, y });
+      }}
     >
+      <MissingNotice items={chartMissing} />
       <div>
         <label className={labelClass}>ชนิดกราฟ</label>
         <div className="flex gap-2">
@@ -2002,6 +2087,10 @@ export function InsertFormModal({ insertForm, onSave, onClose }) {
     setFields(draft.map((field) => (field.name === name ? { ...field, [key]: value } : field)));
 
   const looksLikeInsert = /^\s*insert\s+into\b/i.test(sql);
+  const insertMissing = [
+    !sql.trim() && "คำสั่ง INSERT",
+    sql.trim() && !looksLikeInsert && "สคริปต์ต้องขึ้นต้นด้วย INSERT INTO",
+  ].filter(Boolean);
 
   return (
     <ModalShell
@@ -2009,11 +2098,24 @@ export function InsertFormModal({ insertForm, onSave, onClose }) {
       icon={<Plus size={15} />}
       onClose={onClose}
       saveLabel="บันทึกฟอร์ม"
+      saveDisabled={insertMissing.length > 0}
+      saveDisabledReason={`ยังไม่พร้อมบันทึก: ${insertMissing.join(", ")}`}
+      onRemove={
+        insertForm
+          ? () => {
+              onSave(null);
+              onClose();
+            }
+          : null
+      }
+      removeLabel="ลบฟอร์มนี้"
       onSave={() => {
-        onSave(sql.trim() ? { sql: sql.trim(), label: label.trim(), fields: draft } : null);
+        if (insertMissing.length > 0) return;
+        onSave({ sql: sql.trim(), label: label.trim(), fields: draft });
         onClose();
       }}
     >
+      <MissingNotice items={insertMissing} />
       <div>
         <label className={labelClass}>ชื่อปุ่ม / ฟอร์ม (ไม่ใส่ก็ได้)</label>
         <input
