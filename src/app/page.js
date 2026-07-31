@@ -24,6 +24,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
+  Link2,
   Plus,
   Redo2,
   Search,
@@ -48,6 +49,7 @@ import {
   UsersModal,
 } from "@/components/gamedb-modals";
 import ViewsModal from "@/components/views-modal";
+import { ShareLinkModal } from "@/components/panel-config-modals";
 import { EditLogModal, HealthModal } from "@/components/admin-modals";
 
 export default function GamedbPage() {
@@ -623,6 +625,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
     }
   }, [selectedPanelId]);
   const [panelToolbarHost, setPanelToolbarHost] = useState(null);
+  const [shareQueryId, setShareQueryId] = useState(null);
 
   const [panels, setPanels] = useState([]);
   const panelsStateRef = useRef([]);
@@ -1663,6 +1666,18 @@ function GamedbWorkspace({ me, onLoggedOut }) {
       >
         {selectedPanelQuery.name}
       </span>
+      {/* Sharing belongs to the table, not to the view it happens to be in:
+          the same button is here whether the workspace is a canvas or a sheet. */}
+      {isSuperAdmin && !previewAsUser && (
+        <button
+          type="button"
+          onClick={() => setShareQueryId(selectedPanelQuery.id)}
+          className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 text-[10px] font-black text-zinc-600 transition hover:bg-zinc-50"
+          title={`แชร์ "${selectedPanelQuery.name}" เป็นลิงก์ให้คนที่ไม่ได้ล็อกอินเปิดดู`}
+        >
+          <Link2 size={12} /> แชร์ลิงก์
+        </button>
+      )}
       <div
         ref={setPanelToolbarHost}
         className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1.5"
@@ -2380,6 +2395,9 @@ function GamedbWorkspace({ me, onLoggedOut }) {
 
       {usersModal && <UsersModal me={me} onClose={() => setUsersModal(false)} />}
       {healthModal && <HealthModal onClose={() => setHealthModal(false)} />}
+      {shareQueryId !== null && (
+        <ShareLinkModal queryId={shareQueryId} onClose={() => setShareQueryId(null)} />
+      )}
       {editLogModal && <EditLogModal onClose={() => setEditLogModal(false)} />}
 
       {viewsModal && (

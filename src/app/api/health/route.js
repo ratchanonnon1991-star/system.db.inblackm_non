@@ -1,6 +1,8 @@
-import { getPool } from "@/lib/db";
+import { getPool, getPoolForConnection } from "@/lib/db";
 import { handleApiError, jsonOk } from "@/lib/http";
 import { requireSuperAdmin } from "@/server/auth";
+import { listConnections, findConnectionWithSecret } from "@/server/connections-repository";
+import { getConnectionFlags } from "@/server/gamedb-side-tables";
 
 // The checks a human otherwise has to run by hand in psql after hitting a
 // permission error. Everything here is metadata — no table contents are read.
@@ -37,6 +39,47 @@ function buildFixes(objects, currentUser) {
     }
   }
   return fixes;
+}
+
+/**
+ * The saved connections, checked the way a query would use them.
+ *
+ * A connection that cannot be reached is not visible anywhere else until
+ * someone opens a table built on it and gets an error, so each one is dialled
+ * here and its own failure is reported rather than taking the whole check down
+ * with it. Nothing but metadata is read, and the password never leaves this
+ * function.
+ */
+async function checkConnections() {
+  const saved = await listConnections();
+  return Promise.all(
+    saved.map(async (summary) => {
+      const startedAt = Date.now();
+      const base = { id: summary.id, name: summary.name, database: summary.database };
+      try {
+        const [connection, flags] = await Promise.all([
+          findConnectionWithSecret(summary.id),
+          getConnectionFlags(summary.id),
+        ]);
+        if (!connection) return { ...base, ok: false, error: "อ่านค่าเชื่อมต่อไม่ได้" };
+        const result = await getPoolForConnection(connection).query(
+          `SELECT current_user AS "user", current_database() AS database,
+                  current_schema() AS schema`
+        );
+        return {
+          ...base,
+          ok: true,
+          user: result.rows[0].user,
+          database: result.rows[0].database,
+          schema: result.rows[0].schema,
+          allowWrite: flags.allowWrite,
+          durationMs: Date.now() - startedAt,
+        };
+      } catch (err) {
+        return { ...base, ok: false, error: err.message, durationMs: Date.now() - startedAt };
+      }
+    })
+  );
 }
 
 export async function GET(request) {
@@ -82,6 +125,7 @@ export async function GET(request) {
 
     return jsonOk({
       identity: identity.rows[0],
+      connections: await checkConnections(),
       objects,
       missingTables,
       env,

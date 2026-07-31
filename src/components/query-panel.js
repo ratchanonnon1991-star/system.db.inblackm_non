@@ -27,7 +27,6 @@ import {
   Plus,
   RefreshCw,
   RotateCcw,
-  Save,
   Search,
   SlidersHorizontal,
   Table2,
@@ -1604,42 +1603,36 @@ export default function QueryPanel({
 
         {/* Available whether or not anything has changed: waiting for the panel
             to decide something counts as an edit made saving feel like a trap.
-            The dot is what says there is something unsaved. */}
+            The dot is what says there is something unsaved. There is one save
+            now — a layout is either how the table looks or it is nothing, and a
+            private copy of it only ever meant two people describing the same
+            table differently. */}
         {canCustomizeLayout && (
           <>
-            <button
-              type="button"
-              onClick={() => saveLayout("mine")}
-              disabled={savingLayout}
-              className={`flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-black transition disabled:opacity-50 ${
-                layoutDirty
-                  ? "bg-red-600 text-white hover:bg-red-700"
-                  : "border border-zinc-300 text-zinc-600 hover:bg-zinc-50"
-              }`}
-              title={
-                layoutDirty
-                  ? "มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก — บันทึกไว้ใช้เอง คนอื่นไม่เห็น"
-                  : "บันทึก layout ปัจจุบันไว้ใช้เอง คนอื่นไม่เห็นการเปลี่ยนแปลงนี้"
-              }
-            >
-              {savingLayout ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-              บันทึกของฉัน
-              {layoutDirty && (
-                <span
-                  className="h-1.5 w-1.5 rounded-full bg-white"
-                  aria-label="ยังไม่ได้บันทึก"
-                />
-              )}
-            </button>
             {canManage && (
               <button
                 type="button"
                 onClick={() => saveLayout("shared")}
                 disabled={savingLayout}
-                className="flex h-8 items-center gap-1.5 rounded-lg border border-zinc-300 px-3 text-[11px] font-black text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-50"
-                title="ตั้งเป็นค่าเริ่มต้นที่ทุกคนเห็น"
+                className={`flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-black transition disabled:opacity-50 ${
+                  layoutDirty
+                    ? "bg-red-600 text-white hover:bg-red-700"
+                    : "border border-zinc-300 text-zinc-600 hover:bg-zinc-50"
+                }`}
+                title={
+                  layoutDirty
+                    ? "มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก — บันทึกแล้วทุกคนเห็น"
+                    : "ตั้งเป็นค่าเริ่มต้นที่ทุกคนเห็น"
+                }
               >
-                <Users size={12} /> บันทึกให้ทุกคน
+                {savingLayout ? <Loader2 size={12} className="animate-spin" /> : <Users size={12} />}
+                บันทึกให้ทุกคน
+                {layoutDirty && (
+                  <span
+                    className="h-1.5 w-1.5 rounded-full bg-white"
+                    aria-label="ยังไม่ได้บันทึก"
+                  />
+                )}
               </button>
             )}
             <button type="button" onClick={resetLayout} disabled={savingLayout} className={iconButtonClass} title="ล้าง layout กลับเป็นค่าเริ่มต้น">

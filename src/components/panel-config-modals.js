@@ -417,7 +417,10 @@ export function EditableSettingsModal({
   const [pkColumn, setPkColumn] = useState(editable?.pkColumn || "");
   const [columns, setColumns] = useState(editable?.columns || []);
   const [columnMap, setColumnMap] = useState(() => editable?.columnMap || {});
-  const [allowInsert, setAllowInsert] = useState(editable?.allowInsert || false);
+  // No longer settable: adding data goes through the saved INSERT form. Kept so
+  // a config saved before that change round-trips unchanged instead of being
+  // silently rewritten by opening this modal.
+  const allowInsert = editable?.allowInsert || false;
   const [allowDelete, setAllowDelete] = useState(editable?.allowDelete || false);
   const [inputs, setInputs] = useState(() => editable?.inputs || []);
 
@@ -801,15 +804,6 @@ export function EditableSettingsModal({
                         />
                       </div>
                     )}
-                    {allowInsert && (
-                      <input
-                        type="text"
-                        value={input.defaultValue}
-                        onChange={(e) => updateInput(name, { defaultValue: e.target.value })}
-                        placeholder="ค่าเริ่มต้นตอนเพิ่มแถว (@today, @now, @time ได้)"
-                        className="h-8 w-full rounded-md border border-zinc-200 px-1.5 text-[10px] font-semibold outline-none focus:border-red-600 sm:col-span-2"
-                      />
-                    )}
                   </div>
                 </div>
               );
@@ -824,17 +818,8 @@ export function EditableSettingsModal({
       )}
 
       <div className="rounded-xl border border-zinc-200 p-3">
-        <p className="mb-2 text-[10px] font-black text-zinc-500">เพิ่ม / ลบทั้งแถว</p>
+        <p className="mb-2 text-[10px] font-black text-zinc-500">ลบทั้งแถว</p>
         <label className="flex items-center gap-2 text-[11px] font-bold text-zinc-600">
-          <input
-            type="checkbox"
-            checked={allowInsert}
-            onChange={(e) => setAllowInsert(e.target.checked)}
-            className="h-3.5 w-3.5 accent-red-600"
-          />
-          ให้เพิ่มแถวใหม่ได้ (ปุ่ม &quot;เพิ่มแถว&quot; เหนือตาราง)
-        </label>
-        <label className="mt-1.5 flex items-center gap-2 text-[11px] font-bold text-zinc-600">
           <input
             type="checkbox"
             checked={allowDelete}

@@ -169,6 +169,61 @@ export function HealthModal({ onClose }) {
             </div>
           )}
 
+          {/* The primary database is only half the picture: a query built on a
+              saved connection fails at the connection, not here. */}
+          {data.connections && data.connections.length > 0 && (
+            <div>
+              <p className="mb-1 text-[10px] font-black text-zinc-400">
+                ฐานข้อมูลอื่นที่ต่อไว้ ({data.connections.length})
+              </p>
+              <div className="space-y-1">
+                {data.connections.map((connection) => (
+                  <div
+                    key={connection.id}
+                    className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-xl border px-3 py-2 text-[11px] ${
+                      connection.ok
+                        ? "border-zinc-200 bg-white"
+                        : "border-red-200 bg-red-50"
+                    }`}
+                  >
+                    {connection.ok ? (
+                      <Check size={12} className="text-emerald-600" />
+                    ) : (
+                      <X size={12} className="text-red-600" />
+                    )}
+                    <span className="font-black text-zinc-700">{connection.name}</span>
+                    {connection.ok ? (
+                      <>
+                        <span className="font-semibold text-zinc-500">
+                          {connection.user}@{connection.database}
+                          {connection.schema ? ` · schema ${connection.schema}` : ""}
+                          {" · "}
+                          {connection.durationMs} ms
+                        </span>
+                        <span
+                          className={`ml-auto rounded-md px-1.5 py-0.5 text-[9px] font-black ${
+                            connection.allowWrite
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-zinc-100 text-zinc-500"
+                          }`}
+                          title={
+                            connection.allowWrite
+                              ? "เปิดให้แก้ไขข้อมูลได้"
+                              : "อ่านอย่างเดียว"
+                          }
+                        >
+                          {connection.allowWrite ? "เขียนได้" : "อ่านอย่างเดียว"}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="font-bold text-red-600">{connection.error}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="overflow-x-auto rounded-xl border border-zinc-200">
             <table className="w-full border-collapse text-[11px]">
               <thead>
