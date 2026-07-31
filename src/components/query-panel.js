@@ -26,7 +26,7 @@ import {
   Play,
   Plus,
   RefreshCw,
-  RotateCcw,
+  Eraser,
   Search,
   SlidersHorizontal,
   Table2,
@@ -1636,7 +1636,7 @@ export default function QueryPanel({
               </button>
             )}
             <button type="button" onClick={resetLayout} disabled={savingLayout} className={iconButtonClass} title="ล้าง layout กลับเป็นค่าเริ่มต้น">
-              <RotateCcw size={13} />
+              <Eraser size={13} />
             </button>
           </>
         )}
