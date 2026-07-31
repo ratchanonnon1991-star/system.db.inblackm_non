@@ -81,7 +81,7 @@ const menuItemClass =
   "flex w-full items-center gap-2 rounded-sm px-2.5 py-2 text-left text-[11px] font-bold text-zinc-600 transition hover:bg-zinc-50 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40";
 
 const paramPresetButtonClass =
-  "rounded-md border border-zinc-200 bg-white px-2 py-1 text-[9px] font-black text-zinc-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700";
+  "rounded-sm border border-zinc-200 bg-white px-2 py-1 text-[9px] font-black text-zinc-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700";
 
 const RESIZE_HINT = "ลากเพื่อปรับขนาด · ดับเบิลคลิกเพื่อรีเซ็ต";
 const MIN_FRAME_WIDTH = 280;
@@ -1521,7 +1521,7 @@ export default function QueryPanel({
     >
       {canCustomizeLayout && (panelDrag || frameDrag) && (
         <div
-          className="pointer-events-none absolute right-2 top-2 z-50 rounded-md bg-zinc-900/90 px-2 py-1 font-mono text-[9px] font-bold text-white shadow-lg"
+          className="pointer-events-none absolute right-2 top-2 z-50 rounded-sm bg-zinc-900/90 px-2 py-1 font-mono text-[9px] font-bold text-white shadow-lg"
           aria-live="polite"
         >
           {panelDrag
@@ -1629,7 +1629,7 @@ export default function QueryPanel({
                 บันทึก
                 {layoutDirty && (
                   <span
-                    className="h-1.5 w-1.5 rounded-full bg-white"
+                    className="h-1.5 w-1.5 rounded-sm bg-white"
                     aria-label="ยังไม่ได้บันทึก"
                   />
                 )}
@@ -1721,7 +1721,7 @@ export default function QueryPanel({
             <div
               id={`query-more-menu-${query.id}`}
               role="menu"
-              className="absolute right-0 top-full z-50 mt-2 max-h-[min(32rem,70vh)] w-64 overflow-y-auto rounded-xl border border-zinc-200 bg-white p-2 shadow-xl shadow-zinc-900/10"
+              className="absolute right-0 top-full z-50 mt-2 max-h-[min(32rem,70vh)] w-64 overflow-y-auto rounded-sm border border-zinc-200 bg-white p-2 shadow-xl shadow-zinc-900/10"
             >
               <p className="px-2.5 pb-1 pt-1 text-[9px] font-black uppercase tracking-wider text-zinc-400">
                 การแสดงผล
@@ -2011,14 +2011,14 @@ export default function QueryPanel({
                         }`}
                       >
                         <span
-                          className={`relative h-4 w-7 rounded-full transition ${
+                          className={`relative h-4 w-7 rounded-sm transition ${
                             (paramValues[param.name] ?? "false") === "true"
                               ? "bg-emerald-500"
                               : "bg-zinc-300"
                           }`}
                         >
                           <span
-                            className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition ${
+                            className={`absolute top-0.5 h-3 w-3 rounded-sm bg-white shadow transition ${
                               (paramValues[param.name] ?? "false") === "true"
                                 ? "left-3.5"
                                 : "left-0.5"
@@ -2124,7 +2124,7 @@ export default function QueryPanel({
                       hidden: prev.hidden.filter((id) => id !== col.id),
                     }))
                   }
-                  className="flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[10px] font-bold text-zinc-500 transition hover:bg-zinc-100"
+                  className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[10px] font-bold text-zinc-500 transition hover:bg-zinc-100"
                   title="กดเพื่อแสดงคอลัมน์นี้"
                 >
                   <Eye size={10} /> {col.label}
@@ -2167,7 +2167,7 @@ export default function QueryPanel({
               <Loader2 size={16} className="animate-spin" /> กำลังรัน Query...
             </p>
           ) : runError ? (
-            <div className="m-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold text-red-600">
+            <div className="m-3 rounded-sm border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold text-red-600">
               {runError}
             </div>
           ) : Object.keys(paramErrors).length > 0 && !result ? (

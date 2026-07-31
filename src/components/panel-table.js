@@ -362,7 +362,7 @@ function CellContent({ text, render, tone }) {
   if (render === "chip") {
     return (
       <span
-        className="inline-block max-w-full truncate rounded-full px-2 py-0.5 text-[10px] font-black"
+        className="inline-block max-w-full truncate rounded-sm px-2 py-0.5 text-[10px] font-black"
         style={toneStyle(tone) || { backgroundColor: "#f4f4f5", color: "#3f3f46" }}
       >
         {text}

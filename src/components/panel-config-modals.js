@@ -63,7 +63,7 @@ function ModalShell({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-xl flex-col rounded-2xl bg-white p-5 shadow-xl">
+      <div className="flex max-h-[90vh] w-full max-w-xl flex-col rounded-sm bg-white p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-sm font-black">
             {icon} {title}
@@ -71,7 +71,7 @@ function ModalShell({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
+            className="rounded-sm border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
             aria-label="ปิด"
           >
             <X size={14} />
@@ -84,7 +84,7 @@ function ModalShell({
             onClick={onSave}
             disabled={saveDisabled}
             title={saveDisabled ? saveDisabledReason : undefined}
-            className="flex items-center gap-1.5 rounded-xl bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-sm bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Save size={13} /> {saveLabel}
           </button>
@@ -144,7 +144,7 @@ export function ShareLinkModal({ queryId, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl">
+      <div className="w-full max-w-lg rounded-sm bg-white p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-sm font-black">
             <Link2 size={15} /> แชร์เป็นลิงก์ (ดูอย่างเดียว)
@@ -152,7 +152,7 @@ export function ShareLinkModal({ queryId, onClose }) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
+            className="rounded-sm border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
             aria-label="ปิด"
           >
             <X size={14} />
@@ -198,7 +198,7 @@ export function ShareLinkModal({ queryId, onClose }) {
                 type="button"
                 disabled={busy}
                 onClick={() => call("DELETE")}
-                className="rounded-xl border border-red-200 px-4 py-2 text-[11px] font-black text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                className="rounded-sm border border-red-200 px-4 py-2 text-[11px] font-black text-red-600 transition hover:bg-red-50 disabled:opacity-50"
               >
                 ยกเลิกลิงก์นี้
               </button>
@@ -215,7 +215,7 @@ export function ShareLinkModal({ queryId, onClose }) {
                 type="button"
                 disabled={busy}
                 onClick={() => call("POST")}
-                className="flex items-center gap-1.5 rounded-xl bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded-sm bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
               >
                 <Link2 size={13} /> สร้างลิงก์
               </button>
@@ -279,14 +279,14 @@ export function ParamsSettingsModal({ sqlText, params, onSave, onClose, inline =
       onSave={() => onSave(draft)}
     >
       {names.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-6 text-center text-[11px] font-semibold text-zinc-400">
+        <p className="rounded-sm border border-dashed border-zinc-300 px-4 py-6 text-center text-[11px] font-semibold text-zinc-400">
           ยังไม่พบพารามิเตอร์ใน SQL — เขียน <code className="font-mono">:ชื่อ</code> ใน
           SQL เช่น <code className="font-mono">WHERE created_at &gt;= :from</code>{" "}
           แล้วกลับมาตั้งค่าที่นี่
         </p>
       ) : (
         draft.map((param) => (
-          <div key={param.name} className="rounded-xl border border-zinc-200 p-3">
+          <div key={param.name} className="rounded-sm border border-zinc-200 p-3">
             <p className="mb-2 font-mono text-[11px] font-black text-red-600">:{param.name}</p>
             <div className="grid gap-2 sm:grid-cols-2">
               <div>
@@ -748,7 +748,7 @@ export function EditableSettingsModal({
               key={name}
               type="button"
               onClick={() => toggle(name)}
-              className={`rounded-full border px-2.5 py-1 text-[10px] font-bold transition ${
+              className={`rounded-sm border px-2.5 py-1 text-[10px] font-bold transition ${
                 columns.includes(name)
                   ? "border-red-600 bg-red-600 text-white"
                   : "border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100"
@@ -761,7 +761,7 @@ export function EditableSettingsModal({
       </div>
 
       {columns.length > 0 && (
-        <div className="rounded-xl border border-zinc-200 p-3">
+        <div className="rounded-sm border border-zinc-200 p-3">
           <p className="mb-1 text-[10px] font-black text-zinc-500">คอลัมน์ที่เขียนได้</p>
           <p className="mb-2 text-[10px] font-semibold leading-relaxed text-zinc-500">
             ชื่อทางซ้ายคือหัวคอลัมน์ที่ Query ตั้งด้วย <code>AS</code> — กรอกชื่อคอลัมน์จริงในตาราง
@@ -786,14 +786,14 @@ export function EditableSettingsModal({
                       value={realColumn(name)}
                       onChange={(e) => setRealColumn(name, e.target.value)}
                       placeholder={`ชื่อจริง (${name})`}
-                      className="h-8 w-full rounded-md border border-zinc-200 px-2 font-mono text-[10px] font-semibold outline-none focus:border-red-600"
+                      className="h-8 w-full rounded-sm border border-zinc-200 px-2 font-mono text-[10px] font-semibold outline-none focus:border-red-600"
                     />
                   </div>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <select
                       value={input.widget}
                       onChange={(e) => updateInput(name, { widget: e.target.value })}
-                      className="h-8 w-full rounded-md border border-zinc-200 px-1.5 text-[10px] font-bold outline-none focus:border-red-600"
+                      className="h-8 w-full rounded-sm border border-zinc-200 px-1.5 text-[10px] font-bold outline-none focus:border-red-600"
                     >
                       {INPUT_WIDGETS.map((widget) => (
                         <option key={widget} value={widget}>
@@ -824,7 +824,7 @@ export function EditableSettingsModal({
                           });
                         }}
                         placeholder="ตัวเลือก คั่นด้วย , — ใส่ ป้าย = ค่าที่เก็บ ได้"
-                        className="h-8 w-full rounded-md border border-zinc-200 px-1.5 text-[10px] font-semibold outline-none focus:border-red-600 sm:col-span-2"
+                        className="h-8 w-full rounded-sm border border-zinc-200 px-1.5 text-[10px] font-semibold outline-none focus:border-red-600 sm:col-span-2"
                       />
                     )}
                     {input.widget === "lookup" && (
@@ -838,7 +838,7 @@ export function EditableSettingsModal({
                             })
                           }
                           placeholder="ตารางต้นทาง เช่น topup.game"
-                          className="h-8 w-full rounded-md border border-zinc-200 px-1.5 font-mono text-[10px] font-semibold outline-none focus:border-red-600"
+                          className="h-8 w-full rounded-sm border border-zinc-200 px-1.5 font-mono text-[10px] font-semibold outline-none focus:border-red-600"
                         />
                         <input
                           type="text"
@@ -849,7 +849,7 @@ export function EditableSettingsModal({
                             })
                           }
                           placeholder="คอลัมน์ที่โชว์ เช่น name"
-                          className="h-8 w-full rounded-md border border-zinc-200 px-1.5 font-mono text-[10px] font-semibold outline-none focus:border-red-600"
+                          className="h-8 w-full rounded-sm border border-zinc-200 px-1.5 font-mono text-[10px] font-semibold outline-none focus:border-red-600"
                         />
                         <input
                           type="text"
@@ -860,7 +860,7 @@ export function EditableSettingsModal({
                             })
                           }
                           placeholder="คอลัมน์ที่เก็บ เช่น id"
-                          className="h-8 w-full rounded-md border border-zinc-200 px-1.5 font-mono text-[10px] font-semibold outline-none focus:border-red-600"
+                          className="h-8 w-full rounded-sm border border-zinc-200 px-1.5 font-mono text-[10px] font-semibold outline-none focus:border-red-600"
                         />
                       </div>
                     )}
@@ -877,7 +877,7 @@ export function EditableSettingsModal({
         </div>
       )}
 
-      <div className="rounded-xl border border-zinc-200 p-3">
+      <div className="rounded-sm border border-zinc-200 p-3">
         <p className="mb-2 text-[10px] font-black text-zinc-500">ลบทั้งแถว</p>
         <label className="flex items-center gap-2 text-[11px] font-bold text-zinc-600">
           <input
@@ -983,7 +983,7 @@ export function NewRowModal({
         </p>
       )}
       {fields.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-5 text-center text-[11px] font-semibold text-zinc-400">
+        <p className="rounded-sm border border-dashed border-zinc-300 px-4 py-5 text-center text-[11px] font-semibold text-zinc-400">
           ยังไม่ได้เลือกคอลัมน์ที่อนุญาตให้แก้ — ตั้งที่ &quot;ตั้งค่าการแก้ไขข้อมูล&quot; ก่อน
         </p>
       ) : (
@@ -1093,7 +1093,7 @@ export function RulesModal({ columns, rules, onSave, onClose, inline = false }) 
       onSave={() => onSave(draft)}
     >
       {draft.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-5 text-center text-[11px] font-semibold text-zinc-400">
+        <p className="rounded-sm border border-dashed border-zinc-300 px-4 py-5 text-center text-[11px] font-semibold text-zinc-400">
           ยังไม่มีกฎ — เพิ่มด้านล่าง เช่น &quot;คงเหลือ น้อยกว่า 10 = แดง&quot; หรือ &quot;วันหมดอายุ เลยกำหนดแล้ว = แดงทั้งแถว&quot;
         </p>
       ) : (
@@ -1102,7 +1102,7 @@ export function RulesModal({ columns, rules, onSave, onClose, inline = false }) 
           return (
             <div
               key={`${rule.colId}-${index}`}
-              className="flex items-center gap-2 rounded-xl border border-zinc-200 px-3 py-2"
+              className="flex items-center gap-2 rounded-sm border border-zinc-200 px-3 py-2"
             >
               <span
                 className="rounded px-2 py-1 text-[10px] font-black"
@@ -1122,7 +1122,7 @@ export function RulesModal({ columns, rules, onSave, onClose, inline = false }) 
               <button
                 type="button"
                 onClick={() => setDraft((prev) => prev.filter((_, i) => i !== index))}
-                className="rounded-md p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600"
+                className="rounded-sm p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600"
                 title="ลบกฎนี้"
               >
                 <Trash2 size={12} />
@@ -1132,7 +1132,7 @@ export function RulesModal({ columns, rules, onSave, onClose, inline = false }) 
         })
       )}
 
-      <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+      <div className="rounded-sm border border-zinc-200 bg-zinc-50 p-3">
         <div className="grid gap-2 sm:grid-cols-4">
           <select
             value={form.colId}
@@ -1233,7 +1233,7 @@ function ToneSelect({ value, onChange, label, part }) {
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-7 w-full rounded-md border border-zinc-200 px-1 text-[10px] font-bold outline-none focus:border-red-600"
+        className="h-7 w-full rounded-sm border border-zinc-200 px-1 text-[10px] font-bold outline-none focus:border-red-600"
         style={toneStyle(value, part) || undefined}
       >
         <option value="">ไม่กำหนด</option>
@@ -1289,7 +1289,7 @@ export function FormatsModal({
         onSave({ formats: formatsOut, freeze: pinned });
       }}
     >
-      <div className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2">
+      <div className="flex items-center gap-3 rounded-sm border border-zinc-200 bg-zinc-50 px-3 py-2">
         <label htmlFor="freeze-count" className="text-[11px] font-black text-zinc-600">
           ตรึงคอลัมน์ซ้ายไว้
         </label>
@@ -1315,7 +1315,7 @@ export function FormatsModal({
         return (
           <div
             key={col.id}
-            className={`rounded-xl border px-3 py-2 ${
+            className={`rounded-sm border px-3 py-2 ${
               isEmptyFormat(format) ? "border-zinc-200" : "border-red-200 bg-red-50/30"
             }`}
           >
@@ -1327,7 +1327,7 @@ export function FormatsModal({
                 <button
                   type="button"
                   onClick={() => update(col.id, EMPTY_FORMAT)}
-                  className="shrink-0 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600"
+                  className="shrink-0 rounded-sm p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600"
                   title="ล้างรูปแบบคอลัมน์นี้"
                 >
                   <Trash2 size={12} />
@@ -1356,7 +1356,7 @@ export function FormatsModal({
                 <select
                   value={format.render}
                   onChange={(event) => update(col.id, { render: event.target.value })}
-                  className="h-7 w-full rounded-md border border-zinc-200 px-1 text-[10px] font-bold outline-none focus:border-red-600"
+                  className="h-7 w-full rounded-sm border border-zinc-200 px-1 text-[10px] font-bold outline-none focus:border-red-600"
                 >
                   {CELL_RENDERS.map((render) => (
                     <option key={render} value={render}>
@@ -1370,7 +1370,7 @@ export function FormatsModal({
                 <select
                   value={format.align}
                   onChange={(event) => update(col.id, { align: event.target.value })}
-                  className="h-7 w-full rounded-md border border-zinc-200 px-1 text-[10px] font-bold outline-none focus:border-red-600"
+                  className="h-7 w-full rounded-sm border border-zinc-200 px-1 text-[10px] font-bold outline-none focus:border-red-600"
                 >
                   {CELL_ALIGNS.map((align) => (
                     <option key={align || "auto"} value={align}>
@@ -1398,7 +1398,7 @@ export function FormatsModal({
                   maxLength={MAX_GROUP_LABEL}
                   onChange={(event) => update(col.id, { group: event.target.value })}
                   placeholder="เช่น ยอด"
-                  className="h-7 w-full rounded-md border border-zinc-200 px-1.5 text-[10px] font-semibold outline-none focus:border-red-600"
+                  className="h-7 w-full rounded-sm border border-zinc-200 px-1.5 text-[10px] font-semibold outline-none focus:border-red-600"
                 />
               </label>
               <ToneSelect
@@ -1507,7 +1507,7 @@ export function MergeModal({
       <button
         type="button"
         onClick={() => setList(list.filter((_, i) => i !== index))}
-        className="shrink-0 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600"
+        className="shrink-0 rounded-sm p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600"
         title="ลบ"
       >
         <Trash2 size={12} />
@@ -1589,7 +1589,7 @@ export function MergeModal({
                       prev.includes(name) ? prev.filter((item) => item !== name) : [...prev, name]
                     )
                   }
-                  className={`rounded-full border px-2.5 py-1 text-[10px] font-bold transition ${
+                  className={`rounded-sm border px-2.5 py-1 text-[10px] font-bold transition ${
                     columns.includes(name)
                       ? "border-red-600 bg-red-600 text-white"
                       : "border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100"
@@ -1721,7 +1721,7 @@ export function DrillModal({
                 <button
                   type="button"
                   onClick={() => setMap(map.filter((_, i) => i !== index))}
-                  className="shrink-0 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600"
+                  className="shrink-0 rounded-sm p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600"
                   title="ลบ"
                 >
                   <Trash2 size={12} />
@@ -1929,7 +1929,7 @@ export function ChartModal({ columns, chart, onSave, onClose, inline = false }) 
                       : [...prev, col.id]
                   )
                 }
-                className={`rounded-full border px-2.5 py-1 text-[10px] font-bold transition ${
+                className={`rounded-sm border px-2.5 py-1 text-[10px] font-bold transition ${
                   y.includes(col.id)
                     ? "border-red-600 bg-red-600 text-white"
                     : "border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100"
@@ -2043,12 +2043,12 @@ export function InsertFormModal({ insertForm, onSave, onClose }) {
       </div>
 
       {draft.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-6 text-center text-[11px] font-semibold text-zinc-400">
+        <p className="rounded-sm border border-dashed border-zinc-300 px-4 py-6 text-center text-[11px] font-semibold text-zinc-400">
           ยังไม่มี <code className="font-mono">:ชื่อ</code> ใน SQL — ใส่ก่อน ถึงจะมีช่องให้กรอก
         </p>
       ) : (
         draft.map((field) => (
-          <div key={field.name} className="rounded-xl border border-zinc-200 p-3">
+          <div key={field.name} className="rounded-sm border border-zinc-200 p-3">
             <p className="mb-2 font-mono text-[11px] font-black text-red-600">:{field.name}</p>
             <div className="grid gap-2 sm:grid-cols-2">
               <div>

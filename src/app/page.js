@@ -109,10 +109,10 @@ function LoginScreen({ onLoggedIn }) {
     <div className="flex min-h-screen flex-col items-center justify-center p-6">
       <form
         onSubmit={submit}
-        className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm"
+        className="w-full max-w-sm rounded-sm border border-zinc-200 bg-white p-6 shadow-sm"
       >
         <div className="mb-5 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-red-200 bg-red-600/10 text-red-600">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-sm border border-red-200 bg-red-600/10 text-red-600">
             <Lock size={26} />
           </div>
           <h1 className="text-lg font-black tracking-tight">GameDB</h1>
@@ -148,7 +148,7 @@ function LoginScreen({ onLoggedIn }) {
         <button
           type="submit"
           disabled={submitting || !username.trim() || !password}
-          className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-red-600 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
+          className="flex h-10 w-full items-center justify-center gap-2 rounded-sm bg-red-600 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
         >
           {submitting ? <Loader2 size={14} className="animate-spin" /> : <Lock size={13} />}
           เข้าสู่ระบบ
@@ -417,7 +417,7 @@ function CanvasToolbar({
       {isSuperAdmin && activeView && (
         <>
           <span
-            className={`rounded-full px-2 py-1 text-[9px] font-black ${
+            className={`rounded-sm px-2 py-1 text-[9px] font-black ${
               templateSaveState === "error"
                 ? "bg-red-50 text-red-600"
                 : ["saving", "pending"].includes(templateSaveState)
@@ -1688,7 +1688,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
   // Shown by both layouts when nothing is open, so it lives outside either.
   const emptyWorkspace = (
     <div className="flex h-full min-h-72 items-center justify-center p-4">
-      <div className="flex w-full max-w-md flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-16 text-center">
+      <div className="flex w-full max-w-md flex-col items-center justify-center gap-2 rounded-sm border border-dashed border-zinc-300 bg-white px-6 py-16 text-center">
         {layoutLocked ? (
           <>
             <Lock size={22} className="text-zinc-300" />
@@ -1810,7 +1810,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
         </div>
         <div className="flex items-center gap-2">
           {views.length > 0 && (
-            <div className="flex items-center gap-1 rounded-xl border border-zinc-200 bg-white px-2.5 py-2">
+            <div className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-2.5 py-2">
               <Layers size={13} className="text-red-600" />
               <select
                 value={activeView?.id ?? ""}
@@ -1833,7 +1833,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                 <button
                   type="button"
                   onClick={leaveView}
-                  className="rounded-md p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600"
+                  className="rounded-sm p-0.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600"
                   title="ออกจากเทมเพลต กลับไปหน้าจอของฉัน"
                 >
                   <X size={12} />
@@ -1841,7 +1841,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               )}
             </div>
           )}
-          <div className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2">
+          <div className="flex items-center gap-2 rounded-sm border border-zinc-200 bg-white px-3 py-2">
             <User size={13} className="text-zinc-500" />
             <div className="text-[10px] font-semibold leading-tight">
               <p className="font-black text-zinc-800">{me.displayName || me.username}</p>
@@ -1854,7 +1854,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             type="button"
             onClick={exportWorkbook}
             title="ดาวน์โหลดทุกตารางที่เปิดอยู่เป็น Excel หลายชีต (คีย์ลัด: e)"
-            className="rounded-xl border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
+            className="rounded-sm border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
           >
             <FileSpreadsheet size={14} />
           </button>
@@ -1862,7 +1862,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             type="button"
             onClick={toggleTheme}
             title="สลับโหมดสว่าง/มืด (คีย์ลัด: d)"
-            className="rounded-xl border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
+            className="rounded-sm border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
           >
             {dark ? <Sun size={14} /> : <Moon size={14} />}
           </button>
@@ -1870,7 +1870,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
             type="button"
             onClick={logout}
             title="ออกจากระบบ"
-            className="rounded-xl border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-red-50 hover:text-red-600"
+            className="rounded-sm border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-red-50 hover:text-red-600"
           >
             <LogOut size={14} />
           </button>
@@ -1879,7 +1879,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               <button
                 type="button"
                 onClick={() => setViewsModal(true)}
-                className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
+                className="flex items-center gap-2 rounded-sm border border-zinc-200 bg-white px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
                 title="บันทึกหน้าจอนี้เป็นเทมเพลต / ส่งให้คนอื่น"
               >
                 <Layers size={14} /> เทมเพลต ({views.length})
@@ -1887,7 +1887,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               <button
                 type="button"
                 onClick={() => setEditLogModal(true)}
-                className="rounded-xl border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
+                className="rounded-sm border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
                 title="ประวัติการแก้ไขข้อมูล"
               >
                 <History size={14} />
@@ -1895,7 +1895,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               <button
                 type="button"
                 onClick={() => setHealthModal(true)}
-                className="rounded-xl border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
+                className="rounded-sm border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
                 title="ตรวจสุขภาพระบบ / สิทธิ์ฐานข้อมูล"
               >
                 <Activity size={14} />
@@ -1903,21 +1903,21 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               <button
                 type="button"
                 onClick={() => setUsersModal(true)}
-                className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
+                className="flex items-center gap-2 rounded-sm border border-zinc-200 bg-white px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
               >
                 <Users size={14} /> ผู้ใช้
               </button>
               <button
                 type="button"
                 onClick={() => setConnectionsModal(true)}
-                className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
+                className="flex items-center gap-2 rounded-sm border border-zinc-200 bg-white px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
               >
                 <Server size={14} /> ฐานข้อมูล ({connections.length + 1})
               </button>
               <button
                 type="button"
                 onClick={() => setEditorModal({ mode: "create" })}
-                className="flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-xs font-black text-white transition hover:bg-red-700"
+                className="flex items-center gap-2 rounded-sm bg-red-600 px-4 py-2.5 text-xs font-black text-white transition hover:bg-red-700"
               >
                 <Plus size={14} /> เพิ่ม Query
               </button>
@@ -1928,7 +1928,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
 
       <div className="flex min-h-0 flex-1 flex-col gap-2">
         {!layoutLocked && !sidebarOpen && (
-          <aside className="flex w-full shrink-0 items-center gap-2 rounded-2xl border border-zinc-200 bg-white px-2 py-1.5">
+          <aside className="flex w-full shrink-0 items-center gap-2 rounded-sm border border-zinc-200 bg-white px-2 py-1.5">
             <button
               type="button"
               onClick={() => toggleSidebar(true)}
@@ -1946,7 +1946,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               <Search size={15} />
             </button>
             <span
-              className="rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10px] font-black text-zinc-500"
+              className="rounded-sm bg-zinc-100 px-1.5 py-0.5 text-[10px] font-black text-zinc-500"
               title={`เปิดอยู่ ${openPanels.length} ตาราง`}
             >
               {openPanels.length}
@@ -1957,7 +1957,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
         )}
         {!layoutLocked && sidebarOpen && <aside
           ref={listBoxRef}
-          className="relative z-30 w-full shrink-0 rounded-2xl border border-zinc-200 bg-white p-1"
+          className="relative z-30 w-full shrink-0 rounded-sm border border-zinc-200 bg-white p-1"
         >
           <div className="flex flex-wrap items-center gap-1.5">
             {/* The box is a picker, not a place to read long text — past a few
@@ -1982,7 +1982,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               <button
                 type="button"
                 onClick={() => setListOpen((open) => !open)}
-                className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-200 hover:text-zinc-700"
+                className="absolute right-1 top-1/2 -translate-y-1/2 rounded-sm p-1 text-zinc-400 transition hover:bg-zinc-200 hover:text-zinc-700"
                 title={listOpen ? "ปิดรายการ Query" : "เปิดรายการ Query"}
                 aria-expanded={listOpen}
               >
@@ -1993,7 +1993,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               </button>
             </div>
             <span
-              className="shrink-0 rounded-md bg-zinc-100 px-2 py-1 text-[10px] font-black text-zinc-500"
+              className="shrink-0 rounded-sm bg-zinc-100 px-2 py-1 text-[10px] font-black text-zinc-500"
               title={`เปิดอยู่ ${openPanels.length} ตาราง`}
             >
               {openPanels.length} ตาราง
@@ -2009,7 +2009,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               <PanelLeftClose size={15} />
             </button>
           </div>
-          {listOpen && <div className="absolute left-2 top-full z-40 mt-1 flex max-h-[70vh] w-full max-w-sm flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
+          {listOpen && <div className="absolute left-2 top-full z-40 mt-1 flex max-h-[70vh] w-full max-w-sm flex-col overflow-hidden rounded-sm border border-zinc-200 bg-white shadow-xl">
           <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-100 px-2 py-1.5">
             <span className="text-[10px] font-black text-zinc-400">
               เปิดอยู่ {openPanels.length} ตาราง
@@ -2019,7 +2019,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                 type="button"
                 onClick={openAll}
                 disabled={filteredQueries.length === 0}
-                className="rounded-md px-1.5 py-0.5 text-[10px] font-black text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-40"
+                className="rounded-sm px-1.5 py-0.5 text-[10px] font-black text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-40"
               >
                 เปิดทั้งหมด
               </button>
@@ -2030,7 +2030,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                   replacePanels([]);
                 }}
                 disabled={panels.length === 0}
-                className="rounded-md px-1.5 py-0.5 text-[10px] font-black text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-40"
+                className="rounded-sm px-1.5 py-0.5 text-[10px] font-black text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-40"
               >
                 ปิดทั้งหมด
               </button>
@@ -2103,7 +2103,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                     <button
                       type="button"
                       onClick={() => togglePin(query.id)}
-                      className={`shrink-0 rounded-md p-0.5 transition ${
+                      className={`shrink-0 rounded-sm p-0.5 transition ${
                         pinned.includes(query.id)
                           ? isOpen
                             ? "text-white"
@@ -2123,7 +2123,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                         <button
                           type="button"
                           onClick={() => setEditorModal({ mode: "edit", query })}
-                          className={`rounded-md p-0.5 transition ${
+                          className={`rounded-sm p-0.5 transition ${
                             isOpen
                               ? "text-white/80 hover:bg-white/20"
                               : "text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700"
@@ -2135,7 +2135,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                         <button
                           type="button"
                           onClick={() => deleteQueryById(query)}
-                          className={`rounded-md p-0.5 transition ${
+                          className={`rounded-sm p-0.5 transition ${
                             isOpen
                               ? "text-white/80 hover:bg-white/20"
                               : "text-zinc-400 hover:bg-zinc-200 hover:text-red-600"
@@ -2157,7 +2157,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
         </aside>}
 
         {layoutLocked && (
-          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-zinc-200 bg-white px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2 rounded-sm border border-zinc-200 bg-white px-3 py-2">
             <span className="flex items-center gap-1.5 text-[10px] font-bold text-zinc-500">
               <Lock size={12} /> Layout ถูกกำหนดโดย Admin
             </span>
@@ -2167,7 +2167,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
         )}
 
         {previewAsUser && (
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-800">
+          <div className="flex items-center justify-between gap-3 rounded-sm border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-800">
             <span className="flex items-center gap-2">
               <Eye size={13} /> กำลังดูหน้าจอแบบ User
             </span>
@@ -2227,7 +2227,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
                     >
                       <span
                         aria-hidden="true"
-                        className="size-1.5 shrink-0 rounded-full"
+                        className="size-1.5 shrink-0 rounded-sm"
                         style={{ background: folderColor(query?.layout?.folder) }}
                       />
                       <button
@@ -2265,7 +2265,7 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               // Closing happens on pointerdown, which removes this before a
               // click can land, so the items act on pointerdown too.
               <div
-                className="fixed z-50 min-w-40 rounded-xl border border-zinc-200 bg-white p-1 shadow-xl"
+                className="fixed z-50 min-w-40 rounded-sm border border-zinc-200 bg-white p-1 shadow-xl"
                 style={{ left: tabMenu.x, top: tabMenu.y }}
               >
                 <button

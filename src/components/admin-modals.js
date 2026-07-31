@@ -15,7 +15,7 @@ import { apiJson } from "@/lib/api-json";
 function Shell({ title, icon, onClose, children, footer }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-2xl bg-white p-5 shadow-xl">
+      <div className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-sm bg-white p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-sm font-black">
             {icon} {title}
@@ -23,7 +23,7 @@ function Shell({ title, icon, onClose, children, footer }) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
+            className="rounded-sm border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
             aria-label="ปิด"
           >
             <X size={14} />
@@ -95,7 +95,7 @@ export function HealthModal({ onClose }) {
             type="button"
             onClick={load}
             disabled={loading}
-            className="flex items-center gap-1.5 rounded-xl border border-zinc-200 px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-sm border border-zinc-200 px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-50"
           >
             {loading ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
             ตรวจใหม่
@@ -120,7 +120,7 @@ export function HealthModal({ onClose }) {
               ["ฐานข้อมูล", data.identity.database],
               ["schema", data.identity.schema],
             ].map(([label, value]) => (
-              <div key={label} className="rounded-xl border border-zinc-200 px-3 py-2">
+              <div key={label} className="rounded-sm border border-zinc-200 px-3 py-2">
                 <p className="text-[9px] font-black text-zinc-400">{label}</p>
                 <p className="truncate text-xs font-black text-zinc-700">{value}</p>
               </div>
@@ -128,7 +128,7 @@ export function HealthModal({ onClose }) {
           </div>
 
           {data.fixes.length > 0 ? (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-3">
+            <div className="rounded-sm border border-red-200 bg-red-50 p-3">
               <p className="mb-1 flex items-center gap-1.5 text-[11px] font-black text-red-700">
                 <AlertTriangle size={13} /> สิทธิ์ไม่ครบ — ให้เจ้าของฐานข้อมูลรัน SQL นี้
               </p>
@@ -144,27 +144,27 @@ export function HealthModal({ onClose }) {
               </button>
             </div>
           ) : (
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-700">
+            <div className="rounded-sm border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-700">
               สิทธิ์ครบทุกตารางและ sequence
             </div>
           )}
 
           {data.missingTables.length > 0 && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
+            <div className="rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
               ตารางที่ยังไม่ถูกสร้าง (จะถูกสร้างเองเมื่อเริ่มใช้ฟีเจอร์นั้น):{" "}
               {data.missingTables.join(", ")}
             </div>
           )}
 
           {data.env && !data.env.sessionSecret && (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-700">
+            <div className="rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-700">
               <AlertTriangle size={13} className="mr-1 inline" />
               ยังไม่ได้ตั้ง <span className="font-mono">SESSION_SECRET</span> ใน .env — cookie
               ถูกเซ็นด้วยคีย์ที่อยู่ในโค้ด ใครก็ปลอมเป็น admin ได้ ให้ตั้งค่าแล้ว restart
             </div>
           )}
           {data.env && !data.env.encryptionKey && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
+            <div className="rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
               ยังไม่ได้ตั้ง <span className="font-mono">GAMEDB_ENC_KEY</span> — เพิ่มฐานข้อมูลใหม่ผ่านหน้าเว็บไม่ได้
             </div>
           )}
@@ -180,7 +180,7 @@ export function HealthModal({ onClose }) {
                 {data.connections.map((connection) => (
                   <div
                     key={connection.id}
-                    className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-xl border px-3 py-2 text-[11px] ${
+                    className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-sm border px-3 py-2 text-[11px] ${
                       connection.ok
                         ? "border-zinc-200 bg-white"
                         : "border-red-200 bg-red-50"
@@ -201,7 +201,7 @@ export function HealthModal({ onClose }) {
                           {connection.durationMs} ms
                         </span>
                         <span
-                          className={`ml-auto rounded-md px-1.5 py-0.5 text-[9px] font-black ${
+                          className={`ml-auto rounded-sm px-1.5 py-0.5 text-[9px] font-black ${
                             connection.allowWrite
                               ? "bg-amber-100 text-amber-700"
                               : "bg-zinc-100 text-zinc-500"
@@ -224,7 +224,7 @@ export function HealthModal({ onClose }) {
             </div>
           )}
 
-          <div className="overflow-x-auto rounded-xl border border-zinc-200">
+          <div className="overflow-x-auto rounded-sm border border-zinc-200">
             <table className="w-full border-collapse text-[11px]">
               <thead>
                 <tr className="bg-zinc-100 text-left font-black text-zinc-500">
@@ -352,7 +352,7 @@ export function EditLogModal({ onClose }) {
           ยังไม่มีการแก้ไขข้อมูล
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-zinc-200">
+        <div className="overflow-x-auto rounded-sm border border-zinc-200">
           <table className="w-full border-collapse text-[11px]">
             <thead>
               <tr className="bg-zinc-100 text-left font-black text-zinc-500">
@@ -390,7 +390,7 @@ export function EditLogModal({ onClose }) {
                       type="button"
                       onClick={() => revert(entry)}
                       disabled={reverting === entry.id || !entry.queryId}
-                      className="rounded-md border border-zinc-200 px-2 py-1 text-[10px] font-black text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-40"
+                      className="rounded-sm border border-zinc-200 px-2 py-1 text-[10px] font-black text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-40"
                       title="เขียนค่าเดิมกลับเข้าไป"
                     >
                       {reverting === entry.id ? "..." : "ย้อนกลับ"}

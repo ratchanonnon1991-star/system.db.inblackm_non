@@ -39,7 +39,7 @@ export default function ShareView({ token }) {
   if (error) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-zinc-50 p-6">
-        <div className="max-w-sm rounded-2xl border border-zinc-200 bg-white px-6 py-8 text-center">
+        <div className="max-w-sm rounded-sm border border-zinc-200 bg-white px-6 py-8 text-center">
           <p className="text-sm font-black text-zinc-700">{error}</p>
           <p className="mt-2 text-xs font-semibold text-zinc-400">
             ลิงก์อาจถูกยกเลิกไปแล้ว ลองขอลิงก์ใหม่จากผู้ดูแล
@@ -71,7 +71,7 @@ export default function ShareView({ token }) {
               </p>
             )}
           </div>
-          <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[10px] font-black text-zinc-500">
+          <span className="flex shrink-0 items-center gap-1.5 rounded-sm border border-zinc-200 bg-white px-3 py-1.5 text-[10px] font-black text-zinc-500">
             <Lock size={11} /> ดูอย่างเดียว
           </span>
         </header>

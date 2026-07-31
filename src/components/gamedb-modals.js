@@ -114,7 +114,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl bg-white p-5 shadow-xl">
+      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-sm bg-white p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-black">
             {isEdit ? "แก้ไข Query" : "เพิ่ม Query ใหม่"}
@@ -122,7 +122,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
+            className="rounded-sm border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
             aria-label="ปิด"
           >
             <X size={14} />
@@ -243,7 +243,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
             type="button"
             onClick={testRun}
             disabled={testing || !sqlText.trim()}
-            className="flex items-center gap-1.5 rounded-xl border border-zinc-200 px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-sm border border-zinc-200 px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-50"
           >
             {testing ? (
               <Loader2 size={13} className="animate-spin" />
@@ -256,7 +256,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
             type="button"
             onClick={save}
             disabled={saving || !name.trim() || !sqlText.trim()}
-            className="flex items-center gap-1.5 rounded-xl bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-sm bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
           >
             {saving ? (
               <Loader2 size={13} className="animate-spin" />
@@ -334,7 +334,7 @@ export function ComputedColumnModal({
         className={
           inline
             ? "min-h-0 w-full overflow-y-auto bg-white p-5"
-            : "w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl"
+            : "w-full max-w-lg rounded-sm bg-white p-5 shadow-xl"
         }
       >
         <div className="mb-4 flex items-center justify-between">
@@ -344,7 +344,7 @@ export function ComputedColumnModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
+            className="rounded-sm border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
             aria-label="ปิด"
           >
             <X size={14} />
@@ -406,7 +406,7 @@ export function ComputedColumnModal({
               ))}
             </select>
           </div>
-          <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-2.5">
+          <div className="rounded-sm border border-zinc-200 bg-zinc-50 p-2.5">
             <p className="mb-1 text-[10px] font-black text-zinc-500">ฟังก์ชันที่ใช้ได้</p>
             <dl className="space-y-0.5">
               {FUNCTION_HELP.map(([group, list]) => (
@@ -425,7 +425,7 @@ export function ComputedColumnModal({
                   key={name}
                   type="button"
                   onClick={() => setFormula((prev) => `${prev}[${name}]`)}
-                  className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[10px] font-bold text-zinc-600 transition hover:bg-zinc-100"
+                  className="rounded-sm border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[10px] font-bold text-zinc-600 transition hover:bg-zinc-100"
                 >
                   {name}
                 </button>
@@ -439,7 +439,7 @@ export function ComputedColumnModal({
             type="button"
             onClick={() => onAdd({ label: label.trim(), formula: formula.trim(), type })}
             disabled={!label.trim() || !validation.ok}
-            className="flex items-center gap-1.5 rounded-xl bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-sm bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
           >
             <Plus size={13} /> เพิ่มคอลัมน์
           </button>
@@ -570,7 +570,7 @@ export function UsersModal({ me, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl bg-white p-5 shadow-xl">
+      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-sm bg-white p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-sm font-black">
             <Users size={15} className="text-red-600" /> จัดการผู้ใช้
@@ -578,7 +578,7 @@ export function UsersModal({ me, onClose }) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
+            className="rounded-sm border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
             aria-label="ปิด"
           >
             <X size={14} />
@@ -595,7 +595,7 @@ export function UsersModal({ me, onClose }) {
               users.map((user) => (
                 <div
                   key={user.id}
-                  className={`group flex items-center gap-2 rounded-xl border px-3 py-2.5 transition ${
+                  className={`group flex items-center gap-2 rounded-sm border px-3 py-2.5 transition ${
                     editingId === user.id
                       ? "border-red-600 bg-red-50"
                       : "border-zinc-200 hover:bg-zinc-50"
@@ -622,7 +622,7 @@ export function UsersModal({ me, onClose }) {
                     <button
                       type="button"
                       onClick={() => remove(user)}
-                      className="shrink-0 rounded-md p-1 text-zinc-400 opacity-0 transition hover:bg-zinc-200 hover:text-red-600 group-hover:opacity-100"
+                      className="shrink-0 rounded-sm p-1 text-zinc-400 opacity-0 transition hover:bg-zinc-200 hover:text-red-600 group-hover:opacity-100"
                       title="ลบผู้ใช้"
                     >
                       <Trash2 size={12} />
@@ -634,7 +634,7 @@ export function UsersModal({ me, onClose }) {
             <button
               type="button"
               onClick={startCreate}
-              className={`flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed px-3 py-2.5 text-[11px] font-black transition ${
+              className={`flex w-full items-center justify-center gap-1.5 rounded-sm border border-dashed px-3 py-2.5 text-[11px] font-black transition ${
                 editingId === null
                   ? "border-red-600 text-red-600"
                   : "border-zinc-300 text-zinc-400 hover:border-zinc-400 hover:text-zinc-600"
@@ -723,7 +723,7 @@ export function UsersModal({ me, onClose }) {
                   saving ||
                   (!editingId && (!form.username.trim() || form.password.length < 6))
                 }
-                className="flex items-center gap-1.5 rounded-xl bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded-sm bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
               >
                 {saving ? (
                   <Loader2 size={13} className="animate-spin" />
@@ -909,7 +909,7 @@ export function ConnectionsModal({ connections, onClose, onChanged }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl bg-white p-5 shadow-xl">
+      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-sm bg-white p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-sm font-black">
             <Server size={15} className="text-red-600" /> จัดการฐานข้อมูล (PostgreSQL)
@@ -917,7 +917,7 @@ export function ConnectionsModal({ connections, onClose, onChanged }) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
+            className="rounded-sm border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
             aria-label="ปิด"
           >
             <X size={14} />
@@ -929,7 +929,7 @@ export function ConnectionsModal({ connections, onClose, onChanged }) {
             <button
               type="button"
               onClick={() => setFlagsTarget(0)}
-              className={`w-full rounded-xl border px-3 py-2.5 text-left transition ${
+              className={`w-full rounded-sm border px-3 py-2.5 text-left transition ${
                 flagsTarget === 0 ? "border-red-600 bg-red-50" : "border-zinc-200 bg-zinc-50"
               }`}
             >
@@ -948,7 +948,7 @@ export function ConnectionsModal({ connections, onClose, onChanged }) {
             {connections.map((conn) => (
               <div
                 key={conn.id}
-                className={`group flex items-center gap-2 rounded-xl border px-3 py-2.5 transition ${
+                className={`group flex items-center gap-2 rounded-sm border px-3 py-2.5 transition ${
                   editingId === conn.id
                     ? "border-red-600 bg-red-50"
                     : "border-zinc-200 hover:bg-zinc-50"
@@ -977,7 +977,7 @@ export function ConnectionsModal({ connections, onClose, onChanged }) {
                 <button
                   type="button"
                   onClick={() => remove(conn)}
-                  className="shrink-0 rounded-md p-1 text-zinc-400 opacity-0 transition hover:bg-zinc-200 hover:text-red-600 group-hover:opacity-100"
+                  className="shrink-0 rounded-sm p-1 text-zinc-400 opacity-0 transition hover:bg-zinc-200 hover:text-red-600 group-hover:opacity-100"
                   title="ลบฐานข้อมูล"
                 >
                   <Trash2 size={12} />
@@ -987,7 +987,7 @@ export function ConnectionsModal({ connections, onClose, onChanged }) {
             <button
               type="button"
               onClick={startCreate}
-              className={`flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed px-3 py-2.5 text-[11px] font-black transition ${
+              className={`flex w-full items-center justify-center gap-1.5 rounded-sm border border-dashed px-3 py-2.5 text-[11px] font-black transition ${
                 editingId === null
                   ? "border-red-600 text-red-600"
                   : "border-zinc-300 text-zinc-400 hover:border-zinc-400 hover:text-zinc-600"
@@ -1057,7 +1057,7 @@ export function ConnectionsModal({ connections, onClose, onChanged }) {
               ใช้ SSL
             </label>
 
-            <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+            <div className="space-y-2 rounded-sm border border-amber-200 bg-amber-50/60 p-3">
               <p className="text-[10px] font-black text-amber-700">
                 การตั้งค่าของ{" "}
                 {flagsTarget === 0
@@ -1119,7 +1119,7 @@ export function ConnectionsModal({ connections, onClose, onChanged }) {
                 type="button"
                 onClick={testConnection}
                 disabled={testing || !form.host.trim() || !form.database.trim() || !form.username.trim()}
-                className="flex items-center gap-1.5 rounded-xl border border-zinc-200 px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded-sm border border-zinc-200 px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-50"
               >
                 {testing ? (
                   <Loader2 size={13} className="animate-spin" />
@@ -1132,7 +1132,7 @@ export function ConnectionsModal({ connections, onClose, onChanged }) {
                 type="button"
                 onClick={save}
                 disabled={saving || !form.name.trim() || !form.host.trim() || !form.database.trim() || !form.username.trim()}
-                className="flex items-center gap-1.5 rounded-xl bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded-sm bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
               >
                 {saving ? (
                   <Loader2 size={13} className="animate-spin" />

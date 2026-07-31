@@ -145,7 +145,7 @@ export default function ViewsModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl bg-white p-5 shadow-xl">
+      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-sm bg-white p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-sm font-black">
             <Layers size={15} className="text-red-600" /> เทมเพลตหน้าจอ
@@ -153,7 +153,7 @@ export default function ViewsModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
+            className="rounded-sm border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
             aria-label="ปิด"
           >
             <X size={14} />
@@ -165,7 +165,7 @@ export default function ViewsModal({
             {views.map((view) => (
               <div
                 key={view.id}
-                className={`group flex items-center gap-2 rounded-xl border px-3 py-2.5 transition ${
+                className={`group flex items-center gap-2 rounded-sm border px-3 py-2.5 transition ${
                   editingId === view.id
                     ? "border-red-600 bg-red-50"
                     : "border-zinc-200 hover:bg-zinc-50"
@@ -194,7 +194,7 @@ export default function ViewsModal({
                 <button
                   type="button"
                   onClick={() => onApply(view)}
-                  className="shrink-0 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-200 hover:text-zinc-700"
+                  className="shrink-0 rounded-sm p-1 text-zinc-400 transition hover:bg-zinc-200 hover:text-zinc-700"
                   title="เปิดเทมเพลตนี้"
                 >
                   <Play size={12} />
@@ -202,7 +202,7 @@ export default function ViewsModal({
                 <button
                   type="button"
                   onClick={() => onPreview?.(view)}
-                  className="shrink-0 rounded-md p-1 text-zinc-400 transition hover:bg-amber-100 hover:text-amber-700"
+                  className="shrink-0 rounded-sm p-1 text-zinc-400 transition hover:bg-amber-100 hover:text-amber-700"
                   title="Preview แบบ User"
                 >
                   <Eye size={12} />
@@ -210,7 +210,7 @@ export default function ViewsModal({
                 <button
                   type="button"
                   onClick={() => remove(view)}
-                  className="shrink-0 rounded-md p-1 text-zinc-400 opacity-0 transition hover:bg-zinc-200 hover:text-red-600 group-hover:opacity-100"
+                  className="shrink-0 rounded-sm p-1 text-zinc-400 opacity-0 transition hover:bg-zinc-200 hover:text-red-600 group-hover:opacity-100"
                   title="ลบเทมเพลต"
                 >
                   <Trash2 size={12} />
@@ -220,7 +220,7 @@ export default function ViewsModal({
             <button
               type="button"
               onClick={startCreate}
-              className={`flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed px-3 py-2.5 text-[11px] font-black transition ${
+              className={`flex w-full items-center justify-center gap-1.5 rounded-sm border border-dashed px-3 py-2.5 text-[11px] font-black transition ${
                 editingId === null
                   ? "border-red-600 text-red-600"
                   : "border-zinc-300 text-zinc-400 hover:border-zinc-400 hover:text-zinc-600"
@@ -256,7 +256,7 @@ export default function ViewsModal({
               />
             </div>
 
-            <div className="space-y-2 rounded-xl border border-zinc-200 p-3">
+            <div className="space-y-2 rounded-sm border border-zinc-200 p-3">
               <label className="flex items-center gap-2 text-[11px] font-bold text-zinc-600">
                 <input
                   type="checkbox"
@@ -285,7 +285,7 @@ export default function ViewsModal({
                         key={user.id}
                         type="button"
                         onClick={() => toggleUser(user.id)}
-                        className={`flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-bold transition ${
+                        className={`flex items-center gap-1 rounded-sm border px-2.5 py-1 text-[10px] font-bold transition ${
                           form.sharedWith.includes(user.id)
                             ? "border-red-600 bg-red-600 text-white"
                             : "border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100"
@@ -322,7 +322,7 @@ export default function ViewsModal({
                   type="button"
                   onClick={() => save(true)}
                   disabled={saving}
-                  className="flex items-center gap-1.5 rounded-xl border border-zinc-200 px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-50"
+                  className="flex items-center gap-1.5 rounded-sm border border-zinc-200 px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-50"
                   title="เอาหน้าจอที่เปิดอยู่ตอนนี้ไปทับของเดิมในเทมเพลต"
                 >
                   <Layers size={13} /> อัปเดตด้วยหน้าจอปัจจุบัน
@@ -332,7 +332,7 @@ export default function ViewsModal({
                 type="button"
                 onClick={() => save(!editingId)}
                 disabled={saving || !form.name.trim()}
-                className="flex items-center gap-1.5 rounded-xl bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded-sm bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
               >
                 {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
                 {editingId ? "บันทึกการตั้งค่า" : "สร้างเทมเพลต"}
