@@ -136,8 +136,26 @@ function toDateInput(value) {
 
 function toTimeInput(value) {
   const text = String(value ?? "").trim();
-  const match = /(\d{1,2}):(\d{2})/.exec(text);
-  return match ? `${match[1].padStart(2, "0")}:${match[2]}` : "";
+  // Seconds are optional in the column but must survive the round trip: a box
+  // that shows 09:05 for 09:05:30 writes the truncated value straight back.
+  const match = /(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(text);
+  if (!match) return "";
+  const base = `${match[1].padStart(2, "0")}:${match[2]}`;
+  return match[3] ? `${base}:${match[3]}` : base;
+}
+
+// datetime-local reads exactly one shape. A timestamp column arrives from the
+// driver as a Date, which renders as "Fri Jul 31 2026 ..." and leaves the
+// picker blank — the value was on screen a moment ago in the cell, so a blank
+// editor reads as "this row has nothing in it".
+function toDateTimeInput(value) {
+  const date = toDate(value);
+  if (!date) return "";
+  const pad = (part) => String(part).padStart(2, "0");
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  );
 }
 
 /**
@@ -288,14 +306,23 @@ function CellEditor({ config, column, options, value, onChange, onCommit, onCanc
       ? toDateInput(value)
       : widget === "time"
         ? toTimeInput(value)
-        : (value ?? "");
+        : widget === "datetime"
+          ? toDateTimeInput(value)
+          : (value ?? "");
 
   return withActions(
     <input
       autoFocus
       type={typed || "text"}
-      // A whole-number column will not take 1.5, so the box will not offer it.
-      step={widget === "number" && column?.integer ? "1" : undefined}
+      // Whole-number column: the box will not offer 1.5. Time pickers hide the
+      // seconds field unless the step asks for it, which would quietly drop them.
+      step={
+        widget === "number" && column?.integer
+          ? "1"
+          : widget === "time" || widget === "datetime"
+            ? 1
+            : undefined
+      }
       value={shown}
       onChange={(event) => onChange(event.target.value)}
       onKeyDown={keys}

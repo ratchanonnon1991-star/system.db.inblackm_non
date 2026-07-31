@@ -21,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import { isSafeIdentifier, isSafeIdentifierPart } from "@/lib/gamedb-identifier";
 import { extractSqlParams } from "@/lib/gamedb-sql-params";
 import {
   CELL_ALIGNS,
@@ -48,7 +49,18 @@ const inputClass =
   "h-9 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white";
 const labelClass = "mb-1 block text-[10px] font-black text-zinc-500";
 
-function ModalShell({ title, icon, onClose, children, onSave, saveLabel = "บันทึก" }) {
+function ModalShell({
+  title,
+  icon,
+  onClose,
+  children,
+  onSave,
+  saveLabel = "บันทึก",
+  // A save that refuses to do anything must not look like a save that works:
+  // the reason lives in the body, and the button says it is not available.
+  saveDisabled = false,
+  saveDisabledReason = "",
+}) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
       <div className="flex max-h-[90vh] w-full max-w-xl flex-col rounded-2xl bg-white p-5 shadow-xl">
@@ -70,7 +82,9 @@ function ModalShell({ title, icon, onClose, children, onSave, saveLabel = "บ�
           <button
             type="button"
             onClick={onSave}
-            className="flex items-center gap-1.5 rounded-xl bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700"
+            disabled={saveDisabled}
+            title={saveDisabled ? saveDisabledReason : undefined}
+            className="flex items-center gap-1.5 rounded-xl bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Save size={13} /> {saveLabel}
           </button>
@@ -489,6 +503,19 @@ export function EditableSettingsModal({
         }
       : null;
 
+  // A result column is a label — "VPN / NO VPN" is a perfectly good one — but
+  // the column it maps to is quoted into SQL, so the server drops anything it
+  // cannot quote. It used to do that silently: the column looked selected here,
+  // and after saving it was simply not editable. Say so before the save instead.
+  const unquotableColumns = columns.filter(
+    (name) => !isSafeIdentifierPart((columnMap[name] ?? "").trim() || name)
+  );
+  const pkUnquotable = Boolean(
+    draft && !isSafeIdentifierPart(pkColumn.trim() || pk.trim())
+  );
+  const tableUnquotable = Boolean(draft && !isSafeIdentifier(table.trim()));
+  const blocked = unquotableColumns.length > 0 || pkUnquotable || tableUnquotable;
+
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [testError, setTestError] = useState("");
@@ -519,8 +546,30 @@ export function EditableSettingsModal({
       title="ตั้งค่าการแก้ไขข้อมูล"
       icon={<Table2 size={15} className="text-red-600" />}
       onClose={onClose}
-      onSave={() => onSave(draft)}
+      saveDisabled={blocked}
+      saveDisabledReason="ยังมีชื่อคอลัมน์/ตารางที่ใช้กับ SQL ไม่ได้ — ดูข้อความสีแดงด้านบน"
+      onSave={() => {
+        if (blocked) return;
+        onSave(draft);
+      }}
     >
+      {blocked && (
+        <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-[11px] font-bold leading-relaxed text-red-700">
+          บันทึกไม่ได้จนกว่าจะแก้ตรงนี้ — ชื่อคอลัมน์จริงในตารางห้ามมีอักขระอย่าง{" "}
+          <code className="font-mono">/</code> <code className="font-mono">.</code>{" "}
+          <code className="font-mono">(</code> หรือ <code className="font-mono">&quot;</code>
+          {tableUnquotable && <> · ชื่อตาราง &quot;{table.trim()}&quot; ใช้ไม่ได้</>}
+          {pkUnquotable && (
+            <> · คอลัมน์ key — กรอกช่อง &quot;ชื่อจริงในตาราง&quot; ให้ตรงกับชื่อใน DB</>
+          )}
+          {unquotableColumns.length > 0 && (
+            <>
+              {" "}
+              · กรอกชื่อจริงให้คอลัมน์: {unquotableColumns.join(", ")}
+            </>
+          )}
+        </div>
+      )}
       <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
         เปิดแล้ว Admin จะดับเบิลคลิกแก้ค่าในตารางได้ ระบบจะเขียน UPDATE กลับไปที่ตารางนี้
         ทีละ 1 แถว และบันทึกลง log ทุกครั้ง (staff แก้ไม่ได้)
