@@ -43,6 +43,7 @@ import {
   TONE_LABELS,
   TONE_NAMES,
   toneStyle,
+  toneTextColor,
   VALUELESS_OPS,
 } from "@/lib/gamedb-layout";
 
@@ -1261,6 +1262,14 @@ const RENDER_LABELS = {
 const ALIGN_LABELS = { "": "อัตโนมัติ", left: "ซ้าย", center: "กลาง", right: "ขวา" };
 
 function ToneSelect({ value, onChange, label, part }) {
+  // The text picker has to preview what it does — ink on the page — or a solid
+  // tone shows as a red block and reads as a background.
+  const preview =
+    part === "text"
+      ? toneTextColor(value)
+        ? { color: toneTextColor(value) }
+        : undefined
+      : toneStyle(value, part) || undefined;
   return (
     <label className="block">
       <span className="mb-0.5 block text-[9px] font-black text-zinc-400">{label}</span>
@@ -1268,7 +1277,7 @@ function ToneSelect({ value, onChange, label, part }) {
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="h-7 w-full rounded-sm border border-zinc-200 px-1 text-[10px] font-bold outline-none focus:border-red-600"
-        style={toneStyle(value, part) || undefined}
+        style={preview}
       >
         <option value="">ไม่กำหนด</option>
         {TONE_NAMES.map((tone) => (
@@ -1376,6 +1385,7 @@ export function FormatsModal({
               />
               <ToneSelect
                 label="สีตัวอักษร"
+                part="text"
                 value={format.fg}
                 onChange={(fg) => update(col.id, { fg })}
               />

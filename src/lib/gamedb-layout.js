@@ -124,23 +124,28 @@ export const VALUELESS_OPS = ["empty", "notEmpty", "overdue", "isToday"];
 // and header bands. Hex rather than Tailwind classes because the same tone has
 // to work in an inline style on a sticky cell, and because a class name built
 // at runtime is not in the stylesheet Tailwind generates.
+// `fg` is the ink that sits ON `bg`, which is not the same thing as the colour
+// the tone is named for. A solid tone's ink is white, so using `fg` when the
+// tone is picked as a text colour paints white text on a white cell — the
+// setting appearing to do nothing at all. `ink` is what the tone looks like as
+// text on the page's own background.
 export const CELL_TONES = {
-  red: { bg: "#fee2e2", fg: "#b91c1c", head: "#fca5a5" },
-  orange: { bg: "#ffedd5", fg: "#c2410c", head: "#fdba74" },
-  amber: { bg: "#fef3c7", fg: "#b45309", head: "#fcd34d" },
-  yellow: { bg: "#fef9c3", fg: "#854d0e", head: "#fde047" },
-  lime: { bg: "#ecfccb", fg: "#4d7c0f", head: "#bef264" },
-  green: { bg: "#dcfce7", fg: "#15803d", head: "#86efac" },
-  teal: { bg: "#ccfbf1", fg: "#0f766e", head: "#5eead4" },
-  sky: { bg: "#e0f2fe", fg: "#0369a1", head: "#7dd3fc" },
-  blue: { bg: "#dbeafe", fg: "#1d4ed8", head: "#93c5fd" },
-  violet: { bg: "#ede9fe", fg: "#6d28d9", head: "#c4b5fd" },
-  pink: { bg: "#fce7f3", fg: "#be185d", head: "#f9a8d4" },
-  zinc: { bg: "#f4f4f5", fg: "#3f3f46", head: "#d4d4d8" },
-  redSolid: { bg: "#dc2626", fg: "#ffffff", head: "#b91c1c", headFg: "#ffffff" },
-  greenSolid: { bg: "#16a34a", fg: "#ffffff", head: "#15803d", headFg: "#ffffff" },
-  yellowSolid: { bg: "#facc15", fg: "#422006", head: "#eab308", headFg: "#422006" },
-  darkSolid: { bg: "#27272a", fg: "#ffffff", head: "#18181b", headFg: "#ffffff" },
+  red: { bg: "#fee2e2", fg: "#b91c1c", head: "#fca5a5", ink: "#b91c1c" },
+  orange: { bg: "#ffedd5", fg: "#c2410c", head: "#fdba74", ink: "#c2410c" },
+  amber: { bg: "#fef3c7", fg: "#b45309", head: "#fcd34d", ink: "#b45309" },
+  yellow: { bg: "#fef9c3", fg: "#854d0e", head: "#fde047", ink: "#854d0e" },
+  lime: { bg: "#ecfccb", fg: "#4d7c0f", head: "#bef264", ink: "#4d7c0f" },
+  green: { bg: "#dcfce7", fg: "#15803d", head: "#86efac", ink: "#15803d" },
+  teal: { bg: "#ccfbf1", fg: "#0f766e", head: "#5eead4", ink: "#0f766e" },
+  sky: { bg: "#e0f2fe", fg: "#0369a1", head: "#7dd3fc", ink: "#0369a1" },
+  blue: { bg: "#dbeafe", fg: "#1d4ed8", head: "#93c5fd", ink: "#1d4ed8" },
+  violet: { bg: "#ede9fe", fg: "#6d28d9", head: "#c4b5fd", ink: "#6d28d9" },
+  pink: { bg: "#fce7f3", fg: "#be185d", head: "#f9a8d4", ink: "#be185d" },
+  zinc: { bg: "#f4f4f5", fg: "#3f3f46", head: "#d4d4d8", ink: "#3f3f46" },
+  redSolid: { bg: "#dc2626", fg: "#ffffff", head: "#b91c1c", headFg: "#ffffff", ink: "#dc2626" },
+  greenSolid: { bg: "#16a34a", fg: "#ffffff", head: "#15803d", headFg: "#ffffff", ink: "#15803d" },
+  yellowSolid: { bg: "#facc15", fg: "#422006", head: "#eab308", headFg: "#422006", ink: "#a16207" },
+  darkSolid: { bg: "#27272a", fg: "#ffffff", head: "#18181b", headFg: "#ffffff", ink: "#27272a" },
 };
 
 export const TONE_NAMES = Object.keys(CELL_TONES);
@@ -725,6 +730,11 @@ export const TONE_LABELS = {
   darkSolid: "ดำ (ทึบ)",
   bar: "แถบวัดระดับ",
 };
+
+/** A tone used as a text colour: what it looks like as ink, not as a fill. */
+export function toneTextColor(tone) {
+  return CELL_TONES[tone]?.ink || "";
+}
 
 /** Inline style for a tone, or null for "no tone"/the bar pseudo-tone. */
 export function toneStyle(tone, part = "cell") {

@@ -45,6 +45,7 @@ import {
   parseOption,
   toDate,
   toneStyle,
+  toneTextColor,
   toNumber,
   widgetForColumn,
 } from "@/lib/gamedb-layout";
@@ -332,7 +333,7 @@ function CellEditor({ config, column, options, value, onChange, onCommit, onCanc
 }
 
 /** What goes inside a cell once its column has a render mode set. */
-function CellContent({ text, render, tone }) {
+function CellContent({ text, render, tone, ink }) {
   if (!text || text === "—") return text;
   if (render === "link" && SAFE_URL.test(text)) {
     return (
@@ -363,7 +364,12 @@ function CellContent({ text, render, tone }) {
     return (
       <span
         className="inline-block max-w-full truncate rounded-sm px-2 py-0.5 text-[10px] font-black"
-        style={toneStyle(tone) || { backgroundColor: "#f4f4f5", color: "#3f3f46" }}
+        style={{
+          // A chip with no background tone is grey — but if a text colour was
+          // chosen, that is the colour the user asked to see.
+          ...(toneStyle(tone) || { backgroundColor: "#f4f4f5", color: "#3f3f46" }),
+          ...(ink ? { color: ink } : {}),
+        }}
       >
         {text}
       </span>
@@ -789,8 +795,15 @@ export default function PanelTable({
 
         // A chip carries the colour itself, so the cell behind it stays plain.
         const chip = format.render === "chip";
-        const cellTone = chip ? null : toneStyle(tone?.tone) || toneStyle(format.bg);
-        const textTone = chip || cellTone ? null : toneStyle(format.fg);
+        const toneName = tone?.tone || format.bg;
+        const cellTone = chip ? null : toneStyle(toneName);
+        // The text colour used to be dropped whenever a background was set or
+        // the cell was drawn as a chip, which made two settings that read as
+        // independent cancel each other out. It now paints on top of both — but
+        // not over a rule that has fired: the fixed colours are one person's
+        // choice in one dialog, while a rule firing is the cell saying
+        // something about its own value, and that has to be the louder of the two.
+        const inkColor = tone?.tone ? "" : toneTextColor(format.fg);
         const align =
           format.align || (numeric ? "right" : "left");
 
@@ -804,12 +817,12 @@ export default function PanelTable({
             } ${numeric && !format.align ? "font-mono tabular-nums" : ""} ${
               cellTone || changed ? "" : "bg-inherit"
             } ${changed ? "bg-yellow-100" : ""} ${
-              cellTone || textTone || rowTone ? "" : "text-zinc-700"
+              cellTone || inkColor || rowTone ? "" : "text-zinc-700"
             } ${editable ? "cursor-cell" : ""} ${saving ? "opacity-50" : ""}`}
             style={{
               textAlign: align,
               ...(cellTone || {}),
-              ...(textTone ? { color: textTone.color } : {}),
+              ...(inkColor ? { color: inkColor } : {}),
               ...(barPercent
                 ? {
                     backgroundImage: `linear-gradient(to right, rgba(220,38,38,0.18) ${barPercent}%, transparent ${barPercent}%)`,
@@ -835,7 +848,8 @@ export default function PanelTable({
               <CellContent
                 text={cell.text}
                 render={format.render}
-                tone={tone?.tone || format.bg}
+                tone={toneName}
+                ink={inkColor}
               />
             )}
           </td>
