@@ -443,6 +443,16 @@ export function EditableSettingsModal({
       required: false,
     };
 
+  // The options are one comma-separated line, and the parsed list cannot be the
+  // value of the box that produces it: parsing on every keystroke drops the
+  // comma the moment it is typed, and eats a trailing space before the next
+  // option can be started. Same trap as the parameter modal.
+  const [optionsText, setOptionsText] = useState(() =>
+    Object.fromEntries(
+      (editable?.inputs || []).map((input) => [input.column, (input.options || []).join(", ")])
+    )
+  );
+
   const updateInput = (name, patch) =>
     setInputs((prev) => {
       const next = prev.filter((input) => input.column !== name);
@@ -754,15 +764,16 @@ export function EditableSettingsModal({
                     {input.widget === "select" && (
                       <input
                         type="text"
-                        value={input.options.join(", ")}
-                        onChange={(e) =>
+                        value={optionsText[name] ?? input.options.join(", ")}
+                        onChange={(e) => {
+                          setOptionsText((prev) => ({ ...prev, [name]: e.target.value }));
                           updateInput(name, {
                             options: e.target.value
                               .split(",")
                               .map((option) => option.trim())
                               .filter(Boolean),
-                          })
-                        }
+                          });
+                        }}
                         placeholder="ตัวเลือก คั่นด้วย , — ใส่ ป้าย = ค่าที่เก็บ ได้"
                         className="h-8 w-full rounded-md border border-zinc-200 px-1.5 text-[10px] font-semibold outline-none focus:border-red-600 sm:col-span-2"
                       />
