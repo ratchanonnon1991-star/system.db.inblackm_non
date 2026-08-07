@@ -14,6 +14,7 @@ import {
   Database,
   FileSpreadsheet,
   Eye,
+  Gamepad2,
   History,
   Layers,
   LayoutGrid,
@@ -40,6 +41,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
+import NextLink from "next/link";
 import { apiJson } from "@/lib/api-json";
 import { buildXlsxBlob } from "@/lib/gamedb-xlsx";
 import QueryPanel from "@/components/query-panel";
@@ -1850,6 +1852,13 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               </p>
             </div>
           </div>
+          <NextLink
+            href="/gameinfo/th"
+            title="ข้อมูลเกม (GameInfo)"
+            className="rounded-sm border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
+          >
+            <Gamepad2 size={14} />
+          </NextLink>
           <button
             type="button"
             onClick={exportWorkbook}

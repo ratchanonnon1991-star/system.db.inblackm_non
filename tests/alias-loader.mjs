@@ -13,6 +13,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const STUBS = {
   "@/lib/db": "tests/stubs/db.js",
   "@/server/gamedb-side-tables": "tests/stubs/gamedb-side-tables.js",
+  "@/server/connections-repository": "tests/stubs/connections-repository.js",
 };
 
 export function resolve(specifier, context, next) {

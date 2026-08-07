@@ -23,6 +23,29 @@ function sanitizeStringArray(value) {
     : [];
 }
 
+// Shared with the gameinfo module: a game's computed_column JSONB column
+// holds the same shape, so both surfaces can edit it with this one sanitizer.
+export function sanitizeComputedColumns(raw) {
+  return Array.isArray(raw)
+    ? raw
+        .filter(
+          (col) =>
+            col &&
+            typeof col.key === "string" &&
+            typeof col.label === "string" &&
+            typeof col.formula === "string"
+        )
+        .slice(0, 30)
+        .map((col) => ({
+          key: col.key.slice(0, 64),
+          label: col.label.slice(0, 120),
+          formula: col.formula.slice(0, 500),
+          // Absent on every column saved before formulas could return text.
+          type: COMPUTED_TYPES.includes(col.type) ? col.type : "number",
+        }))
+    : [];
+}
+
 // Layout shape: { order, hidden, labels, widths, computed, params, editable,
 // rules, summary, chart, sort, refreshSeconds }. Everything here is display
 // configuration a signed-in user may change, except `editable`, which decides
@@ -53,24 +76,7 @@ export function sanitizeLayout(raw) {
       if (SUMMARY_KINDS.includes(kind)) summary[String(key).slice(0, 200)] = kind;
     }
   }
-  const computed = Array.isArray(layout.computed)
-    ? layout.computed
-        .filter(
-          (col) =>
-            col &&
-            typeof col.key === "string" &&
-            typeof col.label === "string" &&
-            typeof col.formula === "string"
-        )
-        .slice(0, 30)
-        .map((col) => ({
-          key: col.key.slice(0, 64),
-          label: col.label.slice(0, 120),
-          formula: col.formula.slice(0, 500),
-          // Absent on every column saved before formulas could return text.
-          type: COMPUTED_TYPES.includes(col.type) ? col.type : "number",
-        }))
-    : [];
+  const computed = sanitizeComputedColumns(layout.computed);
   const params = Array.isArray(layout.params)
     ? layout.params
         .filter((param) => param && /^[A-Za-z_][A-Za-z0-9_]*$/.test(param.name || ""))
