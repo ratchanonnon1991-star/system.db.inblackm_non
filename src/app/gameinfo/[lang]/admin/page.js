@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { getSessionUser } from "@/server/session-user";
 import { listGameinfoGames } from "@/server/gameinfo-games";
 import GameinfoGamesTable from "@/components/gameinfo-games-table";
@@ -52,7 +53,15 @@ export default async function GameinfoAdminPage({ params }) {
 
   return (
     <div className="px-4 py-8">
-      <h1 className="mb-6 text-2xl font-bold text-slate-800">จัดการ GameInfo</h1>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold text-slate-800">จัดการ GameInfo</h1>
+        <Link
+          href={`/gameinfo/${lang}/admin/import`}
+          className="rounded-md border border-indigo-300 px-3 py-1.5 text-sm text-indigo-600 hover:bg-indigo-50"
+        >
+          ⬆ นำเข้า CSV หลายเกม
+        </Link>
+      </div>
       {loadError ? (
         <GameinfoErrorNotice message={loadError} />
       ) : (

@@ -20,6 +20,7 @@ function parseComputedColumns(columns) {
 export default function GameinfoGameView({ game }) {
   const showCountryCol = game.vpn === "YES";
   const computedColumns = parseComputedColumns(game.computedColumns);
+  const grid = packViewGridTemplate(showCountryCol, computedColumns.length);
 
   return (
     <div>
@@ -101,13 +102,16 @@ export default function GameinfoGameView({ game }) {
                         {cat.name}
                       </h3>
                     )}
-                    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-                      <div className="min-w-[900px]">
+                    {/* overflow-hidden clips the header row's flat
+                        bg-slate-50 background to these rounded corners —
+                        without it, that square background pokes out past
+                        the curve at the top. */}
+                    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                    <div className="overflow-x-auto">
+                      <div style={{ minWidth: grid.minWidth }}>
                         <div
-                          className={`grid ${packViewGridCols(
-                            showCountryCol,
-                            computedColumns.length
-                          )} gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs text-slate-500`}
+                          style={{ gridTemplateColumns: grid.template }}
+                          className="grid gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs text-slate-500"
                         >
                           <span>Pack</span>
                           <span>ราคา</span>
@@ -117,7 +121,7 @@ export default function GameinfoGameView({ game }) {
                           <span>ช่องทางรอง</span>
                           {showCountryCol && <span>ประเทศ</span>}
                           {computedColumns.map((col) => (
-                            <span key={col.key} className="truncate text-indigo-500">
+                            <span key={col.key} className="truncate text-indigo-600">
                               {col.label}
                             </span>
                           ))}
@@ -125,10 +129,8 @@ export default function GameinfoGameView({ game }) {
                         {cat.packs.map((pack, pIdx) => (
                           <div
                             key={pack.id}
-                            className={`grid ${packViewGridCols(
-                              showCountryCol,
-                              computedColumns.length
-                            )} items-center gap-2 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0`}
+                            style={{ gridTemplateColumns: grid.template }}
+                            className="grid items-center gap-2 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0"
                           >
                             <div className="flex min-w-0 items-center gap-2">
                               <span className="shrink-0 text-xs text-slate-400">
@@ -184,6 +186,7 @@ export default function GameinfoGameView({ game }) {
                         ))}
                       </div>
                     </div>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -195,12 +198,24 @@ export default function GameinfoGameView({ game }) {
   );
 }
 
-// Fixed grid columns so every pack table (every category/currency) lines up.
-// One extra 120px track per computed column, appended after the fixed ones.
-function packViewGridCols(showCountryCol, computedCount = 0) {
-  const base = showCountryCol
-    ? "minmax(200px,1fr)_90px_110px_110px_160px_160px_140px"
-    : "minmax(200px,1fr)_90px_110px_110px_160px_160px";
-  const extra = Array.from({ length: computedCount }, () => "120px").join("_");
-  return `grid-cols-[${extra ? `${base}_${extra}` : base}]`;
+// Fixed grid columns so every pack table (every category/currency) lines up
+// — one extra 120px track per computed column, appended after the fixed
+// ones. minWidth is computed the same way as the reference app's
+// packViewGridTemplate so the table is only as wide as it needs to be
+// (never narrower than 900px), rather than a flat guess.
+function packViewGridTemplate(showCountryCol, computedCount = 0) {
+  const cols = ["minmax(200px,1fr)", "90px", "110px", "110px", "160px", "160px"];
+  const widths = [200, 90, 110, 110, 160, 160];
+  if (showCountryCol) {
+    cols.push("140px");
+    widths.push(140);
+  }
+  for (let i = 0; i < computedCount; i++) {
+    cols.push("120px");
+    widths.push(120);
+  }
+  const gap = 8;
+  const pad = 24; // px-3 on both sides
+  const minWidth = widths.reduce((a, b) => a + b, 0) + gap * (widths.length - 1) + pad;
+  return { template: cols.join(" "), minWidth: Math.max(minWidth, 900) };
 }

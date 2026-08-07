@@ -45,7 +45,10 @@ export default async function GameinfoLangLayout({ children, params }) {
           </nav>
         </div>
       </header>
-      <main className="flex-1">{children}</main>
+      {/* min-w-0 overrides the flex item's default min-width:auto — without
+          it, a wide pack table nested inside forces this whole column wider
+          than the viewport instead of scrolling inside its own box. */}
+      <main className="min-w-0 flex-1">{children}</main>
       <footer className="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-400">
         GameInfo · ฐานข้อมูลการเติมเกม
       </footer>

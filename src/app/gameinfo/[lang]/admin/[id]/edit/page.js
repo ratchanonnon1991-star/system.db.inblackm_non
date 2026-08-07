@@ -22,7 +22,7 @@ export default async function GameinfoAdminEditPage({ params }) {
     games = await listGameinfoGames();
   } catch (err) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-8">
+      <div className="px-4 py-8">
         <GameinfoErrorNotice message={err.message || "โหลดข้อมูลไม่สำเร็จ"} />
       </div>
     );
@@ -30,7 +30,7 @@ export default async function GameinfoAdminEditPage({ params }) {
   if (!game) notFound();
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
+    <div className="px-4 py-8">
       <h1 className="mb-6 text-2xl font-bold text-slate-800">แก้ไขเกม — {game.gameName}</h1>
       <GameinfoGameForm lang={lang} initial={game} suggestions={buildGameSuggestions(games)} />
     </div>

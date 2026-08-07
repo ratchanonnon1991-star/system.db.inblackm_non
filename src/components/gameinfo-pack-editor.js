@@ -2,6 +2,20 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  horizontalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import GameinfoMemoryInput from "./gameinfo-memory-input";
 import GameinfoTagsInput from "./gameinfo-tags-input";
 import GameinfoImagePreview from "./gameinfo-image-preview";
@@ -10,6 +24,7 @@ import { apiJson } from "@/lib/api-json";
 import { evaluateFormula, parseFormula } from "@/lib/gamedb-formula";
 import { formatCell } from "@/lib/gamedb-layout";
 import { GAMEINFO_FIELD_NAMES, resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
+import { mergeCurrencies } from "@/lib/gameinfo-import";
 
 const REQUIRED_PACK_FIELDS = ["name", "price", "amountChargedFee", "channelsMain"];
 
@@ -31,10 +46,11 @@ function firstPack(currencies) {
 }
 
 // Pack/currency/category editor + game-level computed columns. Ported from
-// gameinfo's PackEditor.tsx with CSV import and per-cell formula overrides
-// dropped (out of scope, see plan) and computePackCell/FORMULA_TOKENS
+// gameinfo's PackEditor.tsx with per-cell formula overrides dropped (data
+// model has no per-pack override) and computePackCell/FORMULA_TOKENS
 // (gameinfo's own engine) replaced by systemdb's gamedb-formula.js so
-// formulas stay editable from both surfaces.
+// formulas stay editable from both surfaces. CSV import uses gameinfo-import.js
+// (ported separately) via the /api/gameinfo/import/* routes.
 export default function GameinfoPackEditor({ game, lang, suggestions }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -45,6 +61,11 @@ export default function GameinfoPackEditor({ game, lang, suggestions }) {
   const [currencies, setCurrencies] = useState(game.currencies);
   const [computedColumns, setComputedColumns] = useState(game.computedColumns ?? []);
   const [invalidFields, setInvalidFields] = useState(new Set());
+
+  const [importing, setImporting] = useState(false);
+  const [importErrors, setImportErrors] = useState([]);
+  const [importMsg, setImportMsg] = useState("");
+  const [pendingImport, setPendingImport] = useState(null); // { currencies, packCount }
 
   const vpnOn = game.vpn === "YES";
 
@@ -155,14 +176,15 @@ export default function GameinfoPackEditor({ game, lang, suggestions }) {
   function removeComputedColumn(key) {
     setComputedColumns((prev) => prev.filter((c) => c.key !== key));
   }
-  function moveComputedColumn(key, dir) {
+  // Drag-and-drop reorder (press-and-hold a column header, drag it) —
+  // computed columns are game-level state shared by every category's table,
+  // so reordering here updates the header AND every pack row's values at once.
+  function reorderComputedColumns(activeKey, overKey) {
     setComputedColumns((prev) => {
-      const i = prev.findIndex((c) => c.key === key);
-      const j = i + dir;
-      if (i < 0 || j < 0 || j >= prev.length) return prev;
-      const next = [...prev];
-      [next[i], next[j]] = [next[j], next[i]];
-      return next;
+      const from = prev.findIndex((c) => c.key === activeKey);
+      const to = prev.findIndex((c) => c.key === overKey);
+      if (from === -1 || to === -1 || from === to) return prev;
+      return arrayMove(prev, from, to);
     });
   }
 
@@ -216,80 +238,158 @@ export default function GameinfoPackEditor({ game, lang, suggestions }) {
     setSavedAt(null);
   }
 
+  // CSV import for this one game — file's game_id column is ignored server
+  // side (every row is treated as this game). Only mutates local state; the
+  // usual "บันทึกตารางแพ็ก" button still has to be pressed to persist.
+  async function handleImportFile(file) {
+    setImporting(true);
+    setImportErrors([]);
+    setImportMsg("");
+    setPendingImport(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const data = await apiJson(`/api/gameinfo/import/preview?gameId=${game.id}`, {
+        method: "POST",
+        body: fd,
+        fallbackError: "อ่านไฟล์ไม่สำเร็จ",
+      });
+      const errors = data.errors ?? [];
+      if (currencies.length === 0) {
+        setCurrencies(data.game.currencies);
+        setImportErrors(errors);
+        setImportMsg(
+          `นำเข้าแล้ว ${data.game.packCount} แพ็ก — ตรวจสอบด้านล่างแล้วกด "บันทึกตารางแพ็ก"`
+        );
+      } else {
+        setPendingImport({ currencies: data.game.currencies, packCount: data.game.packCount });
+        setImportErrors(errors);
+      }
+    } catch (e) {
+      setImportErrors([e instanceof Error ? e.message : "นำเข้าไม่สำเร็จ"]);
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  function applyPendingImport(mode) {
+    if (!pendingImport) return;
+    if (mode === "replace") {
+      setCurrencies(pendingImport.currencies);
+    } else {
+      setCurrencies((prev) => mergeCurrencies(prev, pendingImport.currencies));
+    }
+    setImportMsg(
+      `นำเข้าแล้ว ${pendingImport.packCount} แพ็ก (${
+        mode === "replace" ? "แทนที่ทั้งชุด" : "เพิ่มเข้าไป"
+      }) — ตรวจสอบด้านล่างแล้วกด "บันทึกตารางแพ็ก"`
+    );
+    setPendingImport(null);
+  }
+
   return (
     <div className="space-y-6">
       <section className="rounded-lg border border-slate-200 bg-white p-4">
-        <div className="mb-2 flex items-center justify-between">
-          <div>
-            <h2 className="font-semibold text-slate-700">คอลัมน์สูตร ({computedColumns.length})</h2>
-            <p className="text-xs text-slate-500">
-              คำนวณจากฟิลด์จริงของแต่ละแพ็ก (ราคา, ยอดที่กด, ยอดที่กด + fee ฯลฯ) — สูตรเดียวกับที่ใช้ในระบบ
-              systemdb แก้ไขได้จากทั้งสองฝั่ง
-            </p>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-semibold text-slate-700">นำเข้าแพ็กจาก CSV (เกมนี้)</h2>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <a
+              href="/api/gameinfo/import/template"
+              className="rounded-md border border-indigo-300 px-2 py-1 text-indigo-600 hover:bg-indigo-50"
+            >
+              ⬇ template
+            </a>
+            <a
+              href={`/api/gameinfo/import/export?gameId=${game.id}`}
+              className="rounded-md border border-slate-300 px-2 py-1 text-slate-600 hover:bg-slate-50"
+            >
+              ⬇ export เกมนี้
+            </a>
           </div>
-          <button
-            type="button"
-            onClick={() => setModalOpen(true)}
-            className="shrink-0 rounded-md border border-indigo-300 px-3 py-1 text-xs text-indigo-600 hover:bg-indigo-50"
-          >
-            + เพิ่มคอลัมน์/สูตร
-          </button>
         </div>
-
-        {computedColumns.length === 0 ? (
-          <p className="text-xs text-slate-400">ยังไม่มีคอลัมน์สูตร — กด &quot;+ เพิ่มคอลัมน์/สูตร&quot;</p>
-        ) : (
-          <div className="space-y-1.5">
-            {computedColumns.map((fc, i) => (
-              <div key={fc.key} className="flex flex-wrap items-center gap-2 rounded-md bg-slate-50 px-2 py-1.5">
-                <span className="w-8 shrink-0 text-xs text-slate-400">#{i + 1}</span>
-                <span className="w-40 shrink-0 truncate text-sm font-medium text-slate-700">
-                  {fc.label}
-                </span>
-                <code className="min-w-0 flex-1 truncate text-xs text-indigo-700">{fc.formula}</code>
-                <div className="flex shrink-0 gap-1">
-                  <button
-                    type="button"
-                    onClick={() => moveComputedColumn(fc.key, -1)}
-                    disabled={i === 0}
-                    className="flex h-7 w-7 items-center justify-center rounded border border-slate-300 text-slate-500 hover:bg-white disabled:opacity-30"
-                    title="เลื่อนซ้าย"
-                  >
-                    ◀
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => moveComputedColumn(fc.key, 1)}
-                    disabled={i === computedColumns.length - 1}
-                    className="flex h-7 w-7 items-center justify-center rounded border border-slate-300 text-slate-500 hover:bg-white disabled:opacity-30"
-                    title="เลื่อนขวา"
-                  >
-                    ▶
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => removeComputedColumn(fc.key)}
-                    className="flex h-7 items-center rounded bg-red-50 px-2 text-xs text-red-600 hover:bg-red-100"
-                  >
-                    ลบ
-                  </button>
-                </div>
-              </div>
-            ))}
+        <p className="mb-2 text-xs text-slate-500">
+          อัปโหลดไฟล์ .csv ตามรูปแบบ pack template (ไม่ต้องมีคอลัมน์ game_id ก็ได้ ทุกแถวถือเป็นของเกมนี้)
+          — ยังไม่บันทึกจนกว่าจะกด &quot;บันทึกตารางแพ็ก&quot;
+        </p>
+        <input
+          type="file"
+          accept=".csv"
+          disabled={importing}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleImportFile(f);
+            e.target.value = "";
+          }}
+          className="text-sm"
+        />
+        {importing && <p className="mt-2 text-sm text-slate-500">กำลังอ่านไฟล์...</p>}
+        {importMsg && <p className="mt-2 text-sm text-emerald-600">{importMsg}</p>}
+        {importErrors.length > 0 && (
+          <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            <ul className="ml-4 list-disc">
+              {importErrors.map((e, i) => (
+                <li key={i}>{e}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {pendingImport && (
+          <div className="mt-3 rounded-md border border-indigo-200 bg-indigo-50 p-3">
+            <p className="mb-2 text-sm text-indigo-800">
+              พบ {pendingImport.packCount} แพ็กในไฟล์ — เลือกวิธีนำเข้า (มีข้อมูลแพ็กอยู่แล้ว)
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => applyPendingImport("replace")}
+                className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
+              >
+                แทนที่ทั้งชุด
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPendingImport("add")}
+                className="rounded-md border border-indigo-300 bg-white px-3 py-1.5 text-sm text-indigo-700 hover:bg-indigo-100"
+              >
+                เพิ่มเข้าไป
+              </button>
+              <button
+                type="button"
+                onClick={() => setPendingImport(null)}
+                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+              >
+                ยกเลิก
+              </button>
+            </div>
           </div>
         )}
       </section>
 
+      <p className="text-xs text-slate-500">
+        คอลัมน์สูตร ({computedColumns.length}) คำนวณจากฟิลด์จริงของแต่ละแพ็ก — สูตรเดียวกับที่ใช้ในระบบ
+        systemdb แก้ไขได้จากทั้งสองฝั่ง กดปุ่ม + ท้ายคอลัมน์ในตารางแพ็กด้านล่างเพื่อเพิ่ม
+        กดค้างที่หัวคอลัมน์แล้วลากเพื่อเปลี่ยนลำดับ
+      </p>
+
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="font-semibold text-slate-700">สกุลเงิน ({currencies.length})</h2>
-          <button
-            type="button"
-            onClick={addCurrency}
-            className="rounded-md border border-indigo-300 px-3 py-1 text-xs text-indigo-600 hover:bg-indigo-50"
-          >
-            + เพิ่มสกุลเงิน
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setModalOpen(true)}
+              className="rounded-md border border-indigo-300 px-3 py-1 text-xs text-indigo-600 hover:bg-indigo-50"
+            >
+              + เพิ่มสูตร
+            </button>
+            <button
+              type="button"
+              onClick={addCurrency}
+              className="rounded-md border border-indigo-300 px-3 py-1 text-xs text-indigo-600 hover:bg-indigo-50"
+            >
+              + เพิ่มสกุลเงิน
+            </button>
+          </div>
         </div>
 
         {currencies.length === 0 && (
@@ -301,8 +401,8 @@ export default function GameinfoPackEditor({ game, lang, suggestions }) {
         <div className="space-y-4">
           {currencies.map((currency, cIdx) => (
             <div key={currency.id} className="rounded-lg border border-slate-200 bg-white p-4">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div className="flex flex-1 items-center gap-3">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
                   <span className="shrink-0 rounded-full bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-600">
                     สกุลที่ {cIdx + 1}
                   </span>
@@ -357,6 +457,8 @@ export default function GameinfoPackEditor({ game, lang, suggestions }) {
                     game={game}
                     computedColumns={parsedColumns}
                     invalidFields={invalidFields}
+                    onRemoveColumn={removeComputedColumn}
+                    onReorderColumns={reorderComputedColumns}
                     onRenameCategory={(name) =>
                       updateCurrencies((d) => {
                         d[cIdx].categories[catIdx].name = name;
@@ -414,6 +516,8 @@ function CategoryBlock({
   game,
   computedColumns,
   invalidFields,
+  onRemoveColumn,
+  onReorderColumns,
   onRenameCategory,
   onRemoveCategory,
   onAddPack,
@@ -422,6 +526,15 @@ function CategoryBlock({
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const grid = packGridTemplate(vpnOn, computedColumns.length);
+  const columnSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  );
+
+  function handleColumnDragEnd(e) {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    onReorderColumns(active.id, over.id);
+  }
 
   return (
     <div className="rounded-md border border-slate-100 bg-slate-50 p-3">
@@ -470,8 +583,16 @@ function CategoryBlock({
       {collapsed ? null : category.packs.length === 0 ? (
         <p className="px-1 py-2 text-xs text-slate-400">ยังไม่มี pack</p>
       ) : (
-        <div className="scroll-x rounded-md border border-slate-200 bg-white">
-          <div style={{ minWidth: grid.minWidth }}>
+        <div className="mt-2 overflow-hidden rounded-md border border-slate-200 bg-white">
+          {/* mt-2 keeps this box's rounded corner clear of the category
+              card's own border right above it — without that gap the two
+              curves sit close enough to visually clash (looks like a broken
+              edge). overflow-hidden clips the header row's flat bg-slate-50
+              background to these rounded corners — without it, that square
+              background pokes out past the curve at the top corners. No
+              scrollbar here — the grid columns are minmax(min, fr) so the row
+              shrinks to fit instead of overflowing. */}
+          <div>
             <div
               style={{ gridTemplateColumns: grid.template }}
               className="grid gap-2 border-b border-slate-200 bg-slate-50 px-2 py-1.5 text-[10px] text-slate-400"
@@ -485,11 +606,25 @@ function CategoryBlock({
               <span className="px-2">ช่องทางหลัก</span>
               <span className="px-2">ช่องทางรอง</span>
               {vpnOn && <span className="px-2">ประเทศ (VPN)</span>}
-              {computedColumns.map((fc, i) => (
-                <span key={fc.key} className="truncate px-2 text-indigo-500">
-                  {fc.label || `สูตร ${i + 1}`}
-                </span>
-              ))}
+              <DndContext
+                sensors={columnSensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleColumnDragEnd}
+              >
+                <SortableContext
+                  items={computedColumns.map((c) => c.key)}
+                  strategy={horizontalListSortingStrategy}
+                >
+                  {computedColumns.map((fc, i) => (
+                    <SortableColumnHeader
+                      key={fc.key}
+                      column={fc}
+                      index={i}
+                      onRemove={() => onRemoveColumn(fc.key)}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
               <span></span>
             </div>
             {category.packs.map((pack, pkIdx) => (
@@ -669,6 +804,45 @@ function PackRow({
   );
 }
 
+// Computed-column header cell: press-and-hold anywhere on it and drag to
+// reorder (the whole cell is the drag handle, not a separate grip icon). The
+// remove button stops propagation so it doesn't also start a drag.
+function SortableColumnHeader({ column, index, onRemove }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: column.key,
+  });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <span
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className="flex min-w-0 cursor-grab items-center gap-1 truncate px-2 text-indigo-500 active:cursor-grabbing"
+      title="กดค้างแล้วลากเพื่อเปลี่ยนลำดับ"
+    >
+      <span className="truncate">{column.label || `สูตร ${index + 1}`}</span>
+      <button
+        type="button"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove();
+        }}
+        className="shrink-0 text-slate-400 hover:text-red-600"
+        title="ลบคอลัมน์นี้"
+      >
+        ×
+      </button>
+    </span>
+  );
+}
+
 function PackCell({ editing, value, placeholder, invalid, onStartEdit, onCommit, children }) {
   if (editing) return <PackCellEditBox onCommit={onCommit}>{children}</PackCellEditBox>;
   return (
@@ -757,7 +931,7 @@ function ImageUrlField({ value, onChange, compact }) {
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="ลิงก์รูป"
-          className="h-9 w-24 rounded border border-indigo-300 px-1 text-[10px] outline-none"
+          className="h-9 w-full rounded border border-indigo-300 px-1.5 text-[10px] outline-none"
         />
       </PackCellEditBox>
     );
@@ -774,15 +948,23 @@ function ImageUrlField({ value, onChange, compact }) {
   );
 }
 
-// Fixed-px grid so every pack row lines up under its header — dynamic
-// trailing tracks for however many computed columns exist right now.
+// Responsive grid so every pack row lines up under its header without ever
+// needing horizontal scroll — the index/image/delete columns stay a fixed
+// small width, everything else is minmax(min, fr) so it shrinks to fit the
+// available width instead of forcing the row wider than its container.
 function packGridTemplate(vpnOn, computedCount) {
-  const widths = [24, 36, 192, 90, 100, 110, 200, 200]; // idx,image,name,price,charged,fee,main,secondary
-  if (vpnOn) widths.push(160); // country
-  for (let i = 0; i < computedCount; i++) widths.push(120); // computed columns
-  widths.push(80); // delete
-  const gap = 8;
-  const pad = 16;
-  const minWidth = widths.reduce((a, b) => a + b, 0) + gap * (widths.length - 1) + pad;
-  return { template: widths.map((w) => `${w}px`).join(" "), minWidth };
+  const tracks = [
+    "24px", // idx
+    "40px", // image
+    "minmax(110px, 1.6fr)", // name
+    "minmax(60px, 0.7fr)", // price
+    "minmax(70px, 0.8fr)", // amount charged
+    "minmax(70px, 0.8fr)", // amount charged + fee
+    "minmax(90px, 1fr)", // channels main
+    "minmax(90px, 1fr)", // channels secondary
+  ];
+  if (vpnOn) tracks.push("minmax(80px, 0.8fr)"); // country
+  for (let i = 0; i < computedCount; i++) tracks.push("minmax(70px, 0.8fr)"); // computed columns
+  tracks.push("64px"); // delete
+  return { template: tracks.join(" ") };
 }

@@ -79,7 +79,11 @@ export default function GameinfoGameList({ games, lang, canEdit }) {
       {filtered.length === 0 ? (
         <p className="px-4 py-10 text-center text-slate-400">ไม่พบเกมที่ตรงกับเงื่อนไข</p>
       ) : (
-        <div className="scroll-x rounded-lg border border-slate-200 bg-white">
+        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+          {/* overflow-hidden clips the header row's flat bg-slate-50
+              background to these rounded corners — without it, that square
+              background pokes out past the curve at the top. */}
+        <div className="scroll-x">
           <div className="min-w-[1300px]">
             <div
               className={`grid ${GRID_COLS} gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500`}
@@ -151,6 +155,7 @@ export default function GameinfoGameList({ games, lang, canEdit }) {
               );
             })}
           </div>
+        </div>
         </div>
       )}
     </div>

@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/* Used throughout the gameinfo module's fixed-column-width tables (pack
+   grids, games table, game list) — without this the wide grid just overflows
+   its card with the browser's default overflow:visible instead of scrolling
+   inside its own box. */
+.scroll-x {
+  overflow-x: auto;
+}
+
 body {
   font-family:
     ui-sans-serif,

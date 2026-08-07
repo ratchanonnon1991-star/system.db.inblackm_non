@@ -19,7 +19,7 @@ export default async function GameinfoGameDetailPage({ params }) {
     game = await getGameinfoGame(Number(id));
   } catch (err) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-8">
+      <div className="px-4 py-8">
         <GameinfoErrorNotice message={err.message || "โหลดข้อมูลไม่สำเร็จ"} />
       </div>
     );
@@ -27,7 +27,7 @@ export default async function GameinfoGameDetailPage({ params }) {
   if (!game) notFound();
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
+    <div className="px-4 py-8">
       <Link
         href={`/gameinfo/${lang}`}
         className="mb-4 inline-block text-sm text-indigo-600 hover:underline"

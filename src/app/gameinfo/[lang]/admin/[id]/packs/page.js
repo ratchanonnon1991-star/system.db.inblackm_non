@@ -20,7 +20,7 @@ export default async function GameinfoAdminPacksPage({ params }) {
     game = await getGameinfoGame(Number(id));
   } catch (err) {
     return (
-      <div className="mx-auto max-w-7xl px-4 py-8">
+      <div className="px-4 py-8">
         <GameinfoErrorNotice message={err.message || "โหลดข้อมูลไม่สำเร็จ"} />
       </div>
     );
@@ -28,7 +28,7 @@ export default async function GameinfoAdminPacksPage({ params }) {
   if (!game) notFound();
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8">
+    <div className="px-4 py-8">
       <h1 className="mb-6 text-2xl font-bold text-slate-800">แพ็ก — {game.gameName}</h1>
       <GameinfoPackEditor game={game} lang={lang} suggestions={buildPackSuggestions(game)} />
     </div>

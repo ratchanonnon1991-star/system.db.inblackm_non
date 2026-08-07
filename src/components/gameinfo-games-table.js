@@ -20,7 +20,7 @@ import { apiJson } from "@/lib/api-json";
 import GameinfoMemoryInput from "./gameinfo-memory-input";
 
 const GRID_COLS =
-  "grid-cols-[28px_46px_60px_minmax(200px,1fr)_120px_130px_120px_170px_170px_60px_120px_190px]";
+  "grid-cols-[28px_46px_60px_56px_minmax(200px,1fr)_120px_130px_120px_170px_170px_60px_120px_140px]";
 
 function uniq(arr) {
   return Array.from(new Set(arr.filter(Boolean))).sort((a, b) => a.localeCompare(b, "th"));
@@ -119,7 +119,13 @@ export default function GameinfoGamesTable({ initial, lang }) {
 
   return (
     <>
-      <div className="scroll-x rounded-lg border border-slate-200 bg-white">
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        {/* Border/rounding stay on this static box; only this inner div
+            scrolls, so the scrollbar never overlaps the border.
+            overflow-hidden also clips the header row's flat bg-slate-50
+            background to the rounded corners — without it, that square
+            background pokes out past the curve at the top. */}
+        <div className="scroll-x">
         <div className="min-w-[1500px]">
           <div
             className={`grid ${GRID_COLS} gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500`}
@@ -127,6 +133,7 @@ export default function GameinfoGamesTable({ initial, lang }) {
             <span></span>
             <span>ID</span>
             <span>ลำดับ</span>
+            <span>รูป</span>
             <span className="px-2">ชื่อเกม</span>
             <span className="px-2">Region</span>
             <span className="px-2">Platform</span>
@@ -176,6 +183,7 @@ export default function GameinfoGamesTable({ initial, lang }) {
             เพิ่มเกม
           </button>
         </div>
+        </div>
       </div>
 
       <button
@@ -221,6 +229,11 @@ function SortableRow({ row, order, lang, suggestions, editing, setEditing, updat
       </button>
       <span className="text-slate-400">{row.id}</span>
       <span className="text-slate-400">#{order}</span>
+
+      {/* Mock image column — no real image data/upload yet, placeholder only. */}
+      <span className="flex h-9 w-9 items-center justify-center rounded bg-slate-100 text-xs text-slate-300">
+        🖼
+      </span>
 
       <div className="flex min-w-0 items-center gap-2">
         {isEditing("gameName") ? (
@@ -335,12 +348,6 @@ function SortableRow({ row, order, lang, suggestions, editing, setEditing, updat
       )}
 
       <span className="flex justify-end gap-2 text-xs">
-        <Link
-          href={`/gameinfo/${lang}/admin/${row.id}/edit`}
-          className="rounded bg-slate-50 px-2 py-1 text-slate-700 hover:bg-slate-100"
-        >
-          แก้ไข
-        </Link>
         <Link
           href={`/gameinfo/${lang}/admin/${row.id}/packs`}
           className="rounded bg-indigo-50 px-2 py-1 text-indigo-700 hover:bg-indigo-100"
