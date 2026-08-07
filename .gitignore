@@ -6,3 +6,7 @@ build/
 *.log
 .DS_Store
 data/
+
+
+#Mui
+open-claude-here.ps1
