@@ -296,7 +296,6 @@ export function ComputedColumnModal({
   sampleRow,
   onClose,
   onAdd,
-  inline = false,
 }) {
   const [label, setLabel] = useState("");
   const [formula, setFormula] = useState("");
@@ -328,20 +327,11 @@ export function ComputedColumnModal({
   const type = typeChoice || validation.type;
 
   return (
-    <div
-      className={
-        inline
-          ? "flex h-full min-h-0 w-full bg-white"
-          : "fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm"
-      }
-    >
-      <div
-        className={
-          inline
-            ? "min-h-0 w-full overflow-y-auto bg-white p-5"
-            : "w-full max-w-lg rounded-sm bg-white p-5 shadow-xl"
-        }
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
+      {/* The help text and the column chips make this the tallest of the
+          settings forms, so it scrolls inside the frame rather than running off
+          the bottom of a short window. */}
+      <div className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-y-auto rounded-sm bg-white p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-sm font-black">
             <Calculator size={15} className="text-red-600" /> เพิ่มคอลัมน์/สูตร

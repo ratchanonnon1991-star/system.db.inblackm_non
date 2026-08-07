@@ -244,7 +244,7 @@ export function ShareLinkModal({ queryId, onClose }) {
 }
 
 /** Turns the :placeholders found in the SQL into labelled, typed inputs. */
-export function ParamsSettingsModal({ sqlText, params, onSave, onClose, inline = false }) {
+export function ParamsSettingsModal({ sqlText, params, onSave, onClose }) {
   const names = useMemo(() => extractSqlParams(sqlText), [sqlText]);
   const [draft, setDraft] = useState(() =>
     names.map((name) => {
@@ -288,7 +288,6 @@ export function ParamsSettingsModal({ sqlText, params, onSave, onClose, inline =
 
   return (
     <ModalShell
-      inline={inline}
       title="พารามิเตอร์ของ Query"
       icon={<SlidersHorizontal size={15} className="text-red-600" />}
       onClose={onClose}
@@ -440,7 +439,6 @@ export function EditableSettingsModal({
   editable,
   onSave,
   onClose,
-  inline = false,
 }) {
   const [table, setTable] = useState(editable?.table || "");
   const [pk, setPk] = useState(editable?.pk || "");
@@ -563,7 +561,6 @@ export function EditableSettingsModal({
 
   return (
     <ModalShell
-      inline={inline}
       title="ตั้งค่าการแก้ไขข้อมูล"
       icon={<Table2 size={15} className="text-red-600" />}
       onClose={onClose}
@@ -941,7 +938,6 @@ export function NewRowModal({
   resultColumns = [],
   onSubmit,
   onClose,
-  inline = false,
 }) {
   const fields = useMemo(() => {
     const configured = new Map(editable.inputs.map((input) => [input.column, input]));
@@ -1005,7 +1001,6 @@ export function NewRowModal({
 
   return (
     <ModalShell
-      inline={inline}
       title={`เพิ่มแถวใน ${editable.table}`}
       icon={<Plus size={15} className="text-red-600" />}
       onClose={onClose}
@@ -1107,7 +1102,7 @@ export function NewRowModal({
   );
 }
 
-export function RulesModal({ columns, rules, onSave, onClose, inline = false }) {
+export function RulesModal({ columns, rules, onSave, onClose }) {
   const [draft, setDraft] = useState(rules);
   const [form, setForm] = useState({
     colId: columns[0]?.id || "",
@@ -1121,7 +1116,6 @@ export function RulesModal({ columns, rules, onSave, onClose, inline = false }) 
 
   return (
     <ModalShell
-      inline={inline}
       title="ระบายสีตามเงื่อนไข"
       icon={<Palette size={15} className="text-red-600" />}
       onClose={onClose}
@@ -1301,7 +1295,6 @@ export function FormatsModal({
   freeze,
   onSave,
   onClose,
-  inline = false,
 }) {
   const [draft, setDraft] = useState(() => {
     const initial = {};
@@ -1317,7 +1310,6 @@ export function FormatsModal({
 
   return (
     <ModalShell
-      inline={inline}
       title="รูปแบบคอลัมน์"
       icon={<Paintbrush size={15} className="text-red-600" />}
       onClose={onClose}
@@ -1476,7 +1468,6 @@ export function MergeModal({
   merge,
   onSave,
   onClose,
-  inline = false,
 }) {
   const [queryId, setQueryId] = useState(merge?.queryId ? String(merge.queryId) : "");
   const [on, setOn] = useState(merge?.on || []);
@@ -1569,7 +1560,6 @@ export function MergeModal({
 
   return (
     <ModalShell
-      inline={inline}
       title="รวมตารางกับอีก Query"
       icon={<Combine size={15} className="text-red-600" />}
       onClose={onClose}
@@ -1692,7 +1682,6 @@ export function DrillModal({
   drill,
   onSave,
   onClose,
-  inline = false,
 }) {
   const [queryId, setQueryId] = useState(drill?.queryId ? String(drill.queryId) : "");
   const [map, setMap] = useState(drill?.map || []);
@@ -1713,7 +1702,6 @@ export function DrillModal({
 
   return (
     <ModalShell
-      inline={inline}
       title="คลิกแถวเพื่อเปิด Query อื่น (drill-down)"
       icon={<CornerDownRight size={15} className="text-red-600" />}
       onClose={onClose}
@@ -1830,7 +1818,6 @@ export function BulkEditModal({
   columnNames,
   onApply,
   onClose,
-  inline = false,
 }) {
   const [text, setText] = useState("");
   const [applying, setApplying] = useState(false);
@@ -1876,7 +1863,6 @@ export function BulkEditModal({
 
   return (
     <ModalShell
-      inline={inline}
       title="แก้หลายแถวจาก Excel"
       icon={<ClipboardPaste size={15} className="text-red-600" />}
       onClose={onClose}
@@ -1937,7 +1923,7 @@ export function BulkEditModal({
   );
 }
 
-export function ChartModal({ columns, chart, onSave, onClose, inline = false }) {
+export function ChartModal({ columns, chart, onSave, onClose }) {
   const [type, setType] = useState(chart?.type || "bar");
   const [x, setX] = useState(chart?.x || columns[0]?.id || "");
   const [y, setY] = useState(chart?.y || []);
@@ -1952,7 +1938,6 @@ export function ChartModal({ columns, chart, onSave, onClose, inline = false }) 
 
   return (
     <ModalShell
-      inline={inline}
       title="ตั้งค่ากราฟ"
       icon={<ChartColumn size={15} className="text-red-600" />}
       onClose={onClose}
