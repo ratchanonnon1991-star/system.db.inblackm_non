@@ -1,11 +1,69 @@
 @import "tailwindcss";
 
+/* Linear-inspired palette (see ~/.claude/skills/linear-design) — used only by
+   the /gameinfo module. Additive tokens only; nothing here touches the
+   zinc/indigo classes the rest of the app already uses. */
+@theme {
+  --color-linear-canvas: #010102;
+  --color-linear-surface-1: #0f1011;
+  --color-linear-surface-2: #141516;
+  --color-linear-surface-3: #18191a;
+  --color-linear-surface-4: #191a1b;
+  --color-linear-hairline: #23252a;
+  --color-linear-hairline-strong: #34343a;
+  --color-linear-hairline-tertiary: #3e3e44;
+  --color-linear-primary: #5e6ad2;
+  --color-linear-primary-hover: #828fff;
+  --color-linear-primary-focus: #5e69d1;
+  --color-linear-ink: #f7f8f8;
+  --color-linear-ink-muted: #d0d6e0;
+  --color-linear-ink-subtle: #8a8f98;
+  --color-linear-ink-tertiary: #62666d;
+}
+
 /* Used throughout the gameinfo module's fixed-column-width tables (pack
    grids, games table, game list) — without this the wide grid just overflows
    its card with the browser's default overflow:visible instead of scrolling
    inside its own box. */
 .scroll-x {
   overflow-x: auto;
+}
+
+/* Clean scrollbar — thumb only, no track background */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #a1a1aa;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #71717a;
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: #52525b;
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: #6b6b75;
+}
+
+/* Firefox */
+* {
+  scrollbar-color: #a1a1aa transparent;
+  scrollbar-width: thin;
+}
+
+html.dark * {
+  scrollbar-color: #52525b transparent;
 }
 
 body {

@@ -1,18 +1,19 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireLayoutEditor } from "@/server/auth";
 import { parseCsv } from "@/lib/gameinfo-csv";
-import { parsePacks, parsePacksForGame } from "@/lib/gameinfo-import";
-import { getGameinfoGame, listGameinfoGames } from "@/server/gameinfo-games";
+import { parsePacksForGame } from "@/lib/gameinfo-import";
+import { getGameListRow } from "@/server/gameinfo-gamelist";
 
-// Parse an uploaded CSV and return a preview — no DB writes. With ?gameId=N it
-// parses every row onto that one game (single-game path, used by the pack
-// editor). Without it, rows are grouped by their game_id column and each group
-// is checked against the database so the UI can flag games that don't exist.
+// Parse an uploaded CSV and return a preview — no DB writes. The file's own
+// game_id column is ignored; every row is treated as ?gameId='s game_list
+// row (used by the per-game pack editor — the only consumer left since the
+// old multi-game games/game_packs admin import was removed).
 export async function POST(request) {
   try {
     await requireLayoutEditor(request);
     const { searchParams } = new URL(request.url);
     const gameIdRaw = searchParams.get("gameId");
+    if (!gameIdRaw) return jsonError("ไม่พบ gameId", 400);
 
     const form = await request.formData();
     const file = form.get("file");
@@ -29,27 +30,10 @@ export async function POST(request) {
       return jsonError("ไฟล์ว่างเปล่า หรือไม่มีข้อมูลใต้หัวคอลัมน์", 400);
     }
 
-    // Single game: the file's game_id column is ignored, everything is this game.
-    if (gameIdRaw) {
-      const game = await getGameinfoGame(Number(gameIdRaw));
-      if (!game) return jsonError("ไม่พบเกมนี้", 404);
-      const { game: parsed, errors } = parsePacksForGame(rows, game.id, game.gameName);
-      return jsonOk({ kind: "packs-single", game: parsed, errors });
-    }
-
-    // Multi game: group by game_id, then annotate each group with whether that
-    // game actually exists so the client can skip-and-warn on commit.
-    const { perGame, errors } = parsePacks(rows);
-    const existing = await listGameinfoGames();
-    const byId = new Map(existing.map((g) => [g.id, g]));
-    const annotated = perGame.map((pg) => {
-      const found = byId.get(pg.gameId);
-      return { ...pg, exists: Boolean(found), gameName: found ? found.gameName : pg.gameName };
-    });
-    for (const pg of annotated) {
-      if (!pg.exists) errors.push(`ไม่พบเกม game_id=${pg.gameId} ในระบบ — จะถูกข้าม`);
-    }
-    return jsonOk({ kind: "packs", perGame: annotated, errors });
+    const row = await getGameListRow(Number(gameIdRaw));
+    if (!row) return jsonError("ไม่พบเกมนี้", 404);
+    const { game: parsed, errors } = parsePacksForGame(rows, row.id, row.game);
+    return jsonOk({ kind: "packs-single", game: parsed, errors });
   } catch (err) {
     return handleApiError(err, "อ่านไฟล์ไม่สำเร็จ");
   }

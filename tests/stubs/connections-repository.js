@@ -1,6 +1,7 @@
-// Stub for @/server/connections-repository — hands gameinfo-games.js a fixed
-// fake "gameinfo" connection so its SQL can be exercised against the @/lib/db
-// stub's recording client without a real gamedb_connections table.
+// Stub for @/server/connections-repository — hands any gameinfo server
+// module (e.g. gameinfo-gamelist-packs.js) a fixed fake "gameinfo" connection
+// so its SQL can be exercised against the @/lib/db stub's recording client
+// without a real gamedb_connections table.
 const FAKE_CONNECTION = {
   id: 1,
   name: "gameinfo",

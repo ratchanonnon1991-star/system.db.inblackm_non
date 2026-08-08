@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ChevronDown, Download, Image as ImageIcon, Plus, Trash2, X } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -25,6 +27,7 @@ import { evaluateFormula, parseFormula } from "@/lib/gamedb-formula";
 import { formatCell } from "@/lib/gamedb-layout";
 import { GAMEINFO_FIELD_NAMES, resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
 import { mergeCurrencies } from "@/lib/gameinfo-import";
+import { normalizeSpaces } from "@/lib/text-normalize";
 
 const REQUIRED_PACK_FIELDS = ["name", "price", "amountChargedFee", "channelsMain"];
 
@@ -45,13 +48,24 @@ function firstPack(currencies) {
   return null;
 }
 
+function uniq(arr) {
+  return Array.from(new Set(arr.filter(Boolean)));
+}
+
 // Pack/currency/category editor + game-level computed columns. Ported from
 // gameinfo's PackEditor.tsx with per-cell formula overrides dropped (data
 // model has no per-pack override) and computePackCell/FORMULA_TOKENS
 // (gameinfo's own engine) replaced by systemdb's gamedb-formula.js so
 // formulas stay editable from both surfaces. CSV import uses gameinfo-import.js
 // (ported separately) via the /api/gameinfo/import/* routes.
-export default function GameinfoPackEditor({ game, lang, suggestions }) {
+export default function GameinfoPackEditor({
+  game,
+  lang,
+  suggestions,
+  savePacksUrl = `/api/gameinfo/gamelist/${game.id}/packs`,
+  importPreviewUrl = `/api/gameinfo/import/preview?gameId=${game.id}`,
+  exportUrl = `/api/gameinfo/import/export?gameId=${game.id}`,
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [savedAt, setSavedAt] = useState(null);
@@ -66,8 +80,6 @@ export default function GameinfoPackEditor({ game, lang, suggestions }) {
   const [importErrors, setImportErrors] = useState([]);
   const [importMsg, setImportMsg] = useState("");
   const [pendingImport, setPendingImport] = useState(null); // { currencies, packCount }
-
-  const vpnOn = game.vpn === "YES";
 
   const parsedColumns = useMemo(
     () =>
@@ -88,6 +100,22 @@ export default function GameinfoPackEditor({ game, lang, suggestions }) {
     for (const label of GAMEINFO_FIELD_NAMES) row[label] = resolveGameinfoField(pack, game, label);
     return row;
   }, [currencies, game]);
+
+  // Channel "memory" — grows the moment a tag is added (Enter) to any pack's
+  // channelsMain/channelsSecondary in this session, not just from what was
+  // already saved when the page loaded (`suggestions.channels`), so a
+  // channel typed for one pack is immediately offered for the next one.
+  const liveSuggestions = useMemo(() => {
+    const seen = [];
+    for (const c of currencies) {
+      for (const cat of c.categories) {
+        for (const p of cat.packs) {
+          seen.push(...(p.channelsMain || []), ...(p.channelsSecondary || []));
+        }
+      }
+    }
+    return { ...suggestions, channels: uniq([...(suggestions?.channels || []), ...seen]) };
+  }, [currencies, suggestions]);
 
   function updateCurrencies(fn) {
     setCurrencies((prev) => {
@@ -216,7 +244,7 @@ export default function GameinfoPackEditor({ game, lang, suggestions }) {
     setInvalidFields(new Set());
     startTransition(async () => {
       try {
-        await apiJson(`/api/gameinfo/games/${game.id}/packs`, {
+        await apiJson(savePacksUrl, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ currencies, computedColumns }),
@@ -249,7 +277,7 @@ export default function GameinfoPackEditor({ game, lang, suggestions }) {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const data = await apiJson(`/api/gameinfo/import/preview?gameId=${game.id}`, {
+      const data = await apiJson(importPreviewUrl, {
         method: "POST",
         body: fd,
         fallbackError: "อ่านไฟล์ไม่สำเร็จ",
@@ -289,25 +317,25 @@ export default function GameinfoPackEditor({ game, lang, suggestions }) {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-lg border border-slate-200 bg-white p-4">
+      <section className="rounded-lg border border-linear-hairline bg-linear-surface-1 p-4">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-semibold text-slate-700">นำเข้าแพ็กจาก CSV (เกมนี้)</h2>
+          <h2 className="font-semibold text-linear-ink">นำเข้าแพ็กจาก CSV (เกมนี้)</h2>
           <div className="flex flex-wrap gap-2 text-xs">
             <a
               href="/api/gameinfo/import/template"
-              className="rounded-md border border-indigo-300 px-2 py-1 text-indigo-600 hover:bg-indigo-50"
+              className="flex items-center gap-1 rounded-md border border-linear-primary/40 px-2 py-1 text-linear-primary hover:bg-linear-primary/10"
             >
-              ⬇ template
+              <Download size={13} /> template
             </a>
             <a
-              href={`/api/gameinfo/import/export?gameId=${game.id}`}
-              className="rounded-md border border-slate-300 px-2 py-1 text-slate-600 hover:bg-slate-50"
+              href={exportUrl}
+              className="flex items-center gap-1 rounded-md border border-linear-hairline-strong px-2 py-1 text-linear-ink-muted hover:bg-linear-surface-2"
             >
-              ⬇ export เกมนี้
+              <Download size={13} /> export เกมนี้
             </a>
           </div>
         </div>
-        <p className="mb-2 text-xs text-slate-500">
+        <p className="mb-2 text-xs text-linear-ink-subtle">
           อัปโหลดไฟล์ .csv ตามรูปแบบ pack template (ไม่ต้องมีคอลัมน์ game_id ก็ได้ ทุกแถวถือเป็นของเกมนี้)
           — ยังไม่บันทึกจนกว่าจะกด &quot;บันทึกตารางแพ็ก&quot;
         </p>
@@ -322,10 +350,10 @@ export default function GameinfoPackEditor({ game, lang, suggestions }) {
           }}
           className="text-sm"
         />
-        {importing && <p className="mt-2 text-sm text-slate-500">กำลังอ่านไฟล์...</p>}
-        {importMsg && <p className="mt-2 text-sm text-emerald-600">{importMsg}</p>}
+        {importing && <p className="mt-2 text-sm text-linear-ink-subtle">กำลังอ่านไฟล์...</p>}
+        {importMsg && <p className="mt-2 text-sm text-emerald-400">{importMsg}</p>}
         {importErrors.length > 0 && (
-          <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          <div className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300">
             <ul className="ml-4 list-disc">
               {importErrors.map((e, i) => (
                 <li key={i}>{e}</li>
@@ -334,29 +362,29 @@ export default function GameinfoPackEditor({ game, lang, suggestions }) {
           </div>
         )}
         {pendingImport && (
-          <div className="mt-3 rounded-md border border-indigo-200 bg-indigo-50 p-3">
-            <p className="mb-2 text-sm text-indigo-800">
+          <div className="mt-3 rounded-md border border-linear-primary/30 bg-linear-primary/10 p-3">
+            <p className="mb-2 text-sm text-linear-primary">
               พบ {pendingImport.packCount} แพ็กในไฟล์ — เลือกวิธีนำเข้า (มีข้อมูลแพ็กอยู่แล้ว)
             </p>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={() => applyPendingImport("replace")}
-                className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
+                className="rounded-md border border-red-500/40 bg-linear-surface-1 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10"
               >
                 แทนที่ทั้งชุด
               </button>
               <button
                 type="button"
                 onClick={() => applyPendingImport("add")}
-                className="rounded-md border border-indigo-300 bg-white px-3 py-1.5 text-sm text-indigo-700 hover:bg-indigo-100"
+                className="rounded-md border border-linear-primary/40 bg-linear-surface-1 px-3 py-1.5 text-sm text-linear-primary hover:bg-linear-primary/15"
               >
                 เพิ่มเข้าไป
               </button>
               <button
                 type="button"
                 onClick={() => setPendingImport(null)}
-                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+                className="rounded-md border border-linear-hairline-strong bg-linear-surface-1 px-3 py-1.5 text-sm text-linear-ink-muted hover:bg-linear-surface-2"
               >
                 ยกเลิก
               </button>
@@ -365,7 +393,7 @@ export default function GameinfoPackEditor({ game, lang, suggestions }) {
         )}
       </section>
 
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-linear-ink-subtle">
         คอลัมน์สูตร ({computedColumns.length}) คำนวณจากฟิลด์จริงของแต่ละแพ็ก — สูตรเดียวกับที่ใช้ในระบบ
         systemdb แก้ไขได้จากทั้งสองฝั่ง กดปุ่ม + ท้ายคอลัมน์ในตารางแพ็กด้านล่างเพื่อเพิ่ม
         กดค้างที่หัวคอลัมน์แล้วลากเพื่อเปลี่ยนลำดับ
@@ -373,37 +401,37 @@ export default function GameinfoPackEditor({ game, lang, suggestions }) {
 
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-semibold text-slate-700">สกุลเงิน ({currencies.length})</h2>
+          <h2 className="font-semibold text-linear-ink">สกุลเงิน ({currencies.length})</h2>
           <div className="flex gap-2">
             <button
               type="button"
               onClick={() => setModalOpen(true)}
-              className="rounded-md border border-indigo-300 px-3 py-1 text-xs text-indigo-600 hover:bg-indigo-50"
+              className="flex items-center gap-1 rounded-md border border-linear-primary/40 px-3 py-1 text-xs text-linear-primary hover:bg-linear-primary/10"
             >
-              + เพิ่มสูตร
+              <Plus size={13} /> สูตร
             </button>
             <button
               type="button"
               onClick={addCurrency}
-              className="rounded-md border border-indigo-300 px-3 py-1 text-xs text-indigo-600 hover:bg-indigo-50"
+              className="flex items-center gap-1 rounded-md border border-linear-primary/40 px-3 py-1 text-xs text-linear-primary hover:bg-linear-primary/10"
             >
-              + เพิ่มสกุลเงิน
+              <Plus size={13} /> สกุลเงิน
             </button>
           </div>
         </div>
 
         {currencies.length === 0 && (
-          <div className="rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-400">
+          <div className="rounded-lg border border-dashed border-linear-hairline-strong bg-linear-surface-1 p-8 text-center text-sm text-linear-ink-tertiary">
             ยังไม่มีสกุลเงิน — กด &quot;เพิ่มสกุลเงิน&quot; เพื่อเริ่มสร้างแพ็ก
           </div>
         )}
 
         <div className="space-y-4">
           {currencies.map((currency, cIdx) => (
-            <div key={currency.id} className="rounded-lg border border-slate-200 bg-white p-4">
+            <div key={currency.id} className="rounded-lg border border-linear-hairline bg-linear-surface-1 p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
-                  <span className="shrink-0 rounded-full bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-600">
+                  <span className="shrink-0 rounded-full bg-linear-primary/10 px-2 py-1 text-xs font-medium text-linear-primary">
                     สกุลที่ {cIdx + 1}
                   </span>
                   <ImageUrlField
@@ -430,20 +458,22 @@ export default function GameinfoPackEditor({ game, lang, suggestions }) {
                 <button
                   type="button"
                   onClick={() => removeCurrency(cIdx)}
-                  className="shrink-0 rounded-md bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"
+                  title="ลบสกุลเงิน"
+                  aria-label="ลบสกุลเงิน"
+                  className="flex shrink-0 items-center justify-center rounded-md bg-red-500/10 p-1.5 text-red-400 hover:bg-red-500/15"
                 >
-                  ลบสกุลเงิน
+                  <Trash2 size={13} />
                 </button>
               </div>
 
               <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-sm font-medium text-slate-600">หมวดหมู่ pack</h3>
+                <h3 className="text-sm font-medium text-linear-ink-muted">หมวดหมู่ pack</h3>
                 <button
                   type="button"
                   onClick={() => addCategory(cIdx)}
-                  className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
+                  className="flex items-center gap-1 rounded-md border border-linear-hairline-strong px-2 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-2"
                 >
-                  + เพิ่มหมวดหมู่
+                  <Plus size={13} /> หมวดหมู่
                 </button>
               </div>
 
@@ -452,8 +482,7 @@ export default function GameinfoPackEditor({ game, lang, suggestions }) {
                   <CategoryBlock
                     key={cat.id}
                     category={cat}
-                    suggestions={suggestions}
-                    vpnOn={vpnOn}
+                    suggestions={liveSuggestions}
                     game={game}
                     computedColumns={parsedColumns}
                     invalidFields={invalidFields}
@@ -476,26 +505,50 @@ export default function GameinfoPackEditor({ game, lang, suggestions }) {
         </div>
       </section>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
 
-      <div className="sticky bottom-4 flex items-center gap-3 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur">
-        <button
-          type="button"
-          onClick={save}
-          disabled={pending}
-          className="rounded-md bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-        >
-          {pending ? "กำลังบันทึก..." : "บันทึกตารางแพ็ก"}
-        </button>
-        <button
-          type="button"
-          onClick={cancel}
-          disabled={pending}
-          className="rounded-md border border-slate-300 px-5 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-        >
-          ยกเลิก
-        </button>
-        {savedAt && !pending && <span className="text-sm text-emerald-600">บันทึกแล้ว ✓</span>}
+      {/* Same floating pill pattern as the game list table's ยกเลิก/เพิ่มเกม/
+          บันทึก bar (see gameinfo-gamelist-table.js) — ยกเลิก/บันทึก sit as
+          plain text in fixed-width side slots so the pill stays symmetric,
+          "กลับไปหน้าแก้" is the solid capsule popping out of the middle. Extra
+          bottom padding on the page (see packs/page.js) keeps this from
+          covering the last rows of a long pack table. */}
+      <div className="fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 flex-col items-center gap-2">
+        {savedAt && !pending && (
+          <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-400 shadow-lg">
+            บันทึกแล้ว
+          </span>
+        )}
+        <div className="flex h-11 items-center rounded-full border border-linear-hairline bg-linear-surface-1 shadow-lg">
+          <div className="min-w-0 flex-none w-[92px] flex justify-center overflow-hidden">
+            <button
+              type="button"
+              onClick={cancel}
+              disabled={pending}
+              className="w-full whitespace-nowrap py-2 text-center text-sm font-medium text-linear-ink-muted hover:text-linear-ink disabled:opacity-50"
+            >
+              ยกเลิก
+            </button>
+          </div>
+
+          <Link
+            href={`/gameinfo/${lang}/${game.id}`}
+            className="-my-0.5 flex h-10 items-center whitespace-nowrap rounded-full bg-linear-primary px-4 text-sm font-medium text-white shadow-md hover:bg-linear-primary-hover"
+          >
+            กลับไปหน้าแก้
+          </Link>
+
+          <div className="min-w-0 flex-none w-[92px] flex justify-center overflow-hidden">
+            <button
+              type="button"
+              onClick={save}
+              disabled={pending}
+              className="w-full whitespace-nowrap py-2 text-center text-sm font-medium text-linear-primary hover:text-linear-primary-hover disabled:opacity-50"
+            >
+              {pending ? "กำลังบันทึก..." : "บันทึก"}
+            </button>
+          </div>
+        </div>
       </div>
 
       {modalOpen && (
@@ -512,7 +565,6 @@ export default function GameinfoPackEditor({ game, lang, suggestions }) {
 function CategoryBlock({
   category,
   suggestions,
-  vpnOn,
   game,
   computedColumns,
   invalidFields,
@@ -525,7 +577,7 @@ function CategoryBlock({
   onRemovePack,
 }) {
   const [collapsed, setCollapsed] = useState(false);
-  const grid = packGridTemplate(vpnOn, computedColumns.length);
+  const grid = packGridTemplate(computedColumns.length);
   const columnSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
@@ -537,18 +589,18 @@ function CategoryBlock({
   }
 
   return (
-    <div className="rounded-md border border-slate-100 bg-slate-50 p-3">
+    <div className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
       <div className="mb-2 flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <button
             type="button"
             onClick={() => setCollapsed((c) => !c)}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-500 hover:bg-slate-200"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-linear-ink-subtle hover:bg-linear-surface-4"
             title={collapsed ? "ขยายหมวดหมู่" : "พับเก็บหมวดหมู่"}
             aria-label={collapsed ? "ขยายหมวดหมู่" : "พับเก็บหมวดหมู่"}
           >
-            <span className={`inline-block text-xs transition-transform ${collapsed ? "-rotate-90" : ""}`}>
-              ▾
+            <span className={`inline-flex transition-transform ${collapsed ? "-rotate-90" : ""}`}>
+              <ChevronDown size={14} />
             </span>
           </button>
           <div className="w-56 shrink-0">
@@ -557,37 +609,39 @@ function CategoryBlock({
               onChange={onRenameCategory}
               suggestions={suggestions?.categoryNames || []}
               placeholder="ชื่อหมวดหมู่ เช่น เติมปกติ"
-              className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm outline-none focus:border-indigo-500"
+              className="w-full rounded-md border border-linear-hairline-strong bg-linear-surface-1 px-2 py-1.5 text-sm outline-none focus:border-linear-primary"
             />
           </div>
-          <span className="shrink-0 text-xs text-slate-400">({category.packs.length} แพ็ก)</span>
+          <span className="shrink-0 text-xs text-linear-ink-tertiary">({category.packs.length} แพ็ก)</span>
         </div>
         <div className="flex shrink-0 gap-2">
           <button
             type="button"
             onClick={onAddPack}
-            className="rounded-md border border-indigo-300 px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50"
+            className="flex items-center gap-1 rounded-md border border-linear-primary/40 px-2 py-1 text-xs text-linear-primary hover:bg-linear-primary/10"
           >
-            + เพิ่ม pack
+            <Plus size={13} /> pack
           </button>
           <button
             type="button"
             onClick={onRemoveCategory}
-            className="rounded-md bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"
+            title="ลบหมวดหมู่"
+            aria-label="ลบหมวดหมู่"
+            className="flex items-center justify-center rounded-md bg-red-500/10 p-1.5 text-red-400 hover:bg-red-500/15"
           >
-            ลบหมวดหมู่
+            <Trash2 size={13} />
           </button>
         </div>
       </div>
 
       {collapsed ? null : category.packs.length === 0 ? (
-        <p className="px-1 py-2 text-xs text-slate-400">ยังไม่มี pack</p>
+        <p className="px-1 py-2 text-xs text-linear-ink-tertiary">ยังไม่มี pack</p>
       ) : (
-        <div className="mt-2 overflow-hidden rounded-md border border-slate-200 bg-white">
+        <div className="mt-2 overflow-hidden rounded-md border border-linear-hairline bg-linear-surface-1">
           {/* mt-2 keeps this box's rounded corner clear of the category
               card's own border right above it — without that gap the two
               curves sit close enough to visually clash (looks like a broken
-              edge). overflow-hidden clips the header row's flat bg-slate-50
+              edge). overflow-hidden clips the header row's flat bg-linear-surface-2
               background to these rounded corners — without it, that square
               background pokes out past the curve at the top corners. No
               scrollbar here — the grid columns are minmax(min, fr) so the row
@@ -595,7 +649,7 @@ function CategoryBlock({
           <div>
             <div
               style={{ gridTemplateColumns: grid.template }}
-              className="grid gap-2 border-b border-slate-200 bg-slate-50 px-2 py-1.5 text-[10px] text-slate-400"
+              className="grid gap-2 border-b border-linear-hairline bg-linear-surface-2 px-2 py-1.5 text-[10px] text-linear-ink-tertiary"
             >
               <span></span>
               <span className="px-2">รูป</span>
@@ -605,7 +659,7 @@ function CategoryBlock({
               <span className="px-2">ยอดที่กด + fee</span>
               <span className="px-2">ช่องทางหลัก</span>
               <span className="px-2">ช่องทางรอง</span>
-              {vpnOn && <span className="px-2">ประเทศ (VPN)</span>}
+              <span className="px-2">ประเทศ</span>
               <DndContext
                 sensors={columnSensors}
                 collisionDetection={closestCenter}
@@ -634,7 +688,6 @@ function CategoryBlock({
                 pack={pack}
                 game={game}
                 suggestions={suggestions}
-                vpnOn={vpnOn}
                 computedColumns={computedColumns}
                 gridTemplate={grid.template}
                 invalid={{
@@ -659,7 +712,6 @@ function PackRow({
   pack,
   game,
   suggestions,
-  vpnOn,
   computedColumns,
   gridTemplate,
   invalid,
@@ -672,9 +724,9 @@ function PackRow({
   return (
     <div
       style={{ gridTemplateColumns: gridTemplate }}
-      className="grid items-center gap-2 border-b border-slate-100 px-2 py-2 text-sm last:border-b-0"
+      className="grid items-center gap-2 border-b border-linear-hairline px-2 py-2 text-sm last:border-b-0"
     >
-      <span className="text-xs text-slate-400">{index}.</span>
+      <span className="text-xs text-linear-ink-tertiary">{index}.</span>
 
       <ImageUrlField value={pack.image ?? ""} onChange={(v) => onUpdate({ image: v })} compact />
 
@@ -690,8 +742,12 @@ function PackRow({
           autoFocus
           value={pack.name}
           onChange={(e) => onUpdate({ name: e.target.value })}
+          onBlur={(e) => {
+            const normalized = normalizeSpaces(e.target.value);
+            if (normalized !== e.target.value) onUpdate({ name: normalized });
+          }}
           placeholder="ชื่อ pack เช่น 86 Diamonds"
-          className="h-9 w-full rounded border border-indigo-300 px-2 text-sm outline-none"
+          className="h-9 w-full rounded border border-linear-primary/40 px-2 text-sm outline-none"
         />
       </PackCell>
 
@@ -709,7 +765,7 @@ function PackRow({
           value={pack.price ?? ""}
           onChange={(e) => onUpdate({ price: numericOnly(e.target.value) })}
           placeholder="ราคา"
-          className="h-9 w-full rounded border border-indigo-300 px-2 text-sm outline-none"
+          className="h-9 w-full rounded border border-linear-primary/40 px-2 text-sm outline-none"
         />
       </PackCell>
 
@@ -726,7 +782,7 @@ function PackRow({
           value={pack.amountCharged ?? ""}
           onChange={(e) => onUpdate({ amountCharged: numericOnly(e.target.value) })}
           placeholder="ยอดที่กด"
-          className="h-9 w-full rounded border border-indigo-300 px-2 text-sm outline-none"
+          className="h-9 w-full rounded border border-linear-primary/40 px-2 text-sm outline-none"
         />
       </PackCell>
 
@@ -744,7 +800,7 @@ function PackRow({
           value={pack.amountChargedFee ?? ""}
           onChange={(e) => onUpdate({ amountChargedFee: numericOnly(e.target.value) })}
           placeholder="ยอดที่กด + fee"
-          className="h-9 w-full rounded border border-indigo-300 px-2 text-sm outline-none"
+          className="h-9 w-full rounded border border-linear-primary/40 px-2 text-sm outline-none"
         />
       </PackCell>
 
@@ -763,31 +819,33 @@ function PackRow({
         placeholder="พิมพ์แล้ว Enter"
       />
 
-      {vpnOn && (
-        <PackCell
-          editing={isEditing("country")}
+      {/* Always shown, not gated behind a VPN toggle — VPN itself is now
+          derived from whether this field is filled in (see
+          listGamelistVpnByGame()), so it has to be settable regardless.
+          Fine to leave empty for packs that don't need it. */}
+      <PackCell
+        editing={isEditing("country")}
+        value={pack.country ?? ""}
+        placeholder="ประเทศ (กรณี VPN)"
+        onStartEdit={() => setEditing("country")}
+        onCommit={() => setEditing(null)}
+      >
+        <GameinfoMemoryInput
           value={pack.country ?? ""}
-          placeholder="ประเทศ"
-          onStartEdit={() => setEditing("country")}
-          onCommit={() => setEditing(null)}
-        >
-          <GameinfoMemoryInput
-            value={pack.country ?? ""}
-            onChange={(v) => onUpdate({ country: v })}
-            suggestions={suggestions?.countries || []}
-            placeholder="เลือก/พิมพ์ชื่อประเทศ"
-            className="h-9 w-full rounded border border-indigo-300 px-2 text-sm outline-none"
-            autoFocus
-          />
-        </PackCell>
-      )}
+          onChange={(v) => onUpdate({ country: v })}
+          suggestions={suggestions?.countries || []}
+          placeholder="เลือก/พิมพ์ชื่อประเทศ"
+          className="h-9 w-full rounded border border-linear-primary/40 px-2 text-sm outline-none"
+          autoFocus
+        />
+      </PackCell>
 
       {computedColumns.map((fc) => {
         const value = fc.ast
           ? evaluateFormula(fc.ast, (label) => resolveGameinfoField(pack, game, label))
           : null;
         return (
-          <span key={fc.key} className="truncate px-2 text-slate-600">
+          <span key={fc.key} className="truncate px-2 text-linear-ink-muted">
             {formatCell(value, fc.type)}
           </span>
         );
@@ -796,9 +854,11 @@ function PackRow({
       <button
         type="button"
         onClick={onRemove}
-        className="justify-self-end rounded-md bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100"
+        title="ลบ pack"
+        aria-label="ลบ pack"
+        className="flex items-center justify-center justify-self-end rounded-md bg-red-500/10 p-1.5 text-red-400 hover:bg-red-500/15"
       >
-        ลบ pack
+        <Trash2 size={13} />
       </button>
     </div>
   );
@@ -823,7 +883,7 @@ function SortableColumnHeader({ column, index, onRemove }) {
       style={style}
       {...attributes}
       {...listeners}
-      className="flex min-w-0 cursor-grab items-center gap-1 truncate px-2 text-indigo-500 active:cursor-grabbing"
+      className="flex min-w-0 cursor-grab items-center gap-1 truncate px-2 text-linear-primary active:cursor-grabbing"
       title="กดค้างแล้วลากเพื่อเปลี่ยนลำดับ"
     >
       <span className="truncate">{column.label || `สูตร ${index + 1}`}</span>
@@ -834,10 +894,10 @@ function SortableColumnHeader({ column, index, onRemove }) {
           e.stopPropagation();
           onRemove();
         }}
-        className="shrink-0 text-slate-400 hover:text-red-600"
+        className="shrink-0 text-linear-ink-tertiary hover:text-red-400"
         title="ลบคอลัมน์นี้"
       >
-        ×
+        <X size={12} />
       </button>
     </span>
   );
@@ -848,11 +908,11 @@ function PackCell({ editing, value, placeholder, invalid, onStartEdit, onCommit,
   return (
     <span
       onClick={onStartEdit}
-      className={`flex h-9 cursor-pointer items-center truncate rounded border px-2 text-slate-600 ${
-        invalid ? "border-red-300" : "border-transparent hover:bg-slate-50"
+      className={`flex h-9 cursor-pointer items-center truncate rounded border px-2 text-linear-ink-muted ${
+        invalid ? "border-red-500/40" : "border-transparent hover:bg-linear-surface-2"
       }`}
     >
-      {value || <span className="text-slate-300">{placeholder ?? "-"}</span>}
+      {value || <span className="text-linear-ink-tertiary">{placeholder ?? "-"}</span>}
     </span>
   );
 }
@@ -886,8 +946,8 @@ function PlainThumb({ value }) {
     // eslint-disable-next-line @next/next/no-img-element
     <img src={value} alt="" className="h-7 w-7 shrink-0 rounded object-cover" />
   ) : (
-    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-slate-100 text-xs text-slate-300">
-      🖼
+    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-linear-surface-3 text-linear-ink-tertiary">
+      <ImageIcon size={14} />
     </span>
   );
 }
@@ -916,7 +976,7 @@ function ImageUrlField({ value, onChange, compact }) {
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="ลิงก์รูป"
-          className="h-7 w-28 rounded border border-slate-200 px-1.5 text-[10px] outline-none focus:border-indigo-300"
+          className="h-7 w-28 rounded border border-linear-hairline px-1.5 text-[10px] outline-none focus:border-linear-primary/40"
         />
       </div>
     );
@@ -931,7 +991,7 @@ function ImageUrlField({ value, onChange, compact }) {
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="ลิงก์รูป"
-          className="h-9 w-full rounded border border-indigo-300 px-1.5 text-[10px] outline-none"
+          className="h-9 w-full rounded border border-linear-primary/40 px-1.5 text-[10px] outline-none"
         />
       </PackCellEditBox>
     );
@@ -952,7 +1012,7 @@ function ImageUrlField({ value, onChange, compact }) {
 // needing horizontal scroll — the index/image/delete columns stay a fixed
 // small width, everything else is minmax(min, fr) so it shrinks to fit the
 // available width instead of forcing the row wider than its container.
-function packGridTemplate(vpnOn, computedCount) {
+function packGridTemplate(computedCount) {
   const tracks = [
     "24px", // idx
     "40px", // image
@@ -962,8 +1022,8 @@ function packGridTemplate(vpnOn, computedCount) {
     "minmax(70px, 0.8fr)", // amount charged + fee
     "minmax(90px, 1fr)", // channels main
     "minmax(90px, 1fr)", // channels secondary
+    "minmax(80px, 0.8fr)", // country
   ];
-  if (vpnOn) tracks.push("minmax(80px, 0.8fr)"); // country
   for (let i = 0; i < computedCount; i++) tracks.push("minmax(70px, 0.8fr)"); // computed columns
   tracks.push("64px"); // delete
   return { template: tracks.join(" ") };

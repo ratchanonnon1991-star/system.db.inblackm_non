@@ -1,21 +1,205 @@
 "use client";
 
-import { ComputedColumnModal } from "@/components/gamedb-modals";
+import { useEffect, useMemo, useState } from "react";
+import { Calculator, Plus, X } from "lucide-react";
+import {
+  evaluateFormula,
+  extractFormulaRefs,
+  inferFormulaType,
+  parseFormula,
+} from "@/lib/gamedb-formula";
+import { formatCell } from "@/lib/gamedb-layout";
 import { GAMEINFO_FIELD_NAMES } from "@/lib/gameinfo-formula-fields";
 
-// Thin wrapper around the systemdb formula editor (same parser, validation
-// and function library), scoped to gameinfo's fixed pack/game field list
-// instead of arbitrary query columns — this fixed list is what makes it
-// "simpler" than the systemdb-side editor, not a forked engine.
+// Same parser, validation and function library as the systemdb-side formula
+// editor (gamedb-modals.js's ComputedColumnModal) — this one is a full
+// rebuild rather than a themed wrapper around it, so gameinfo's popups (dark
+// linear-* surfaces, hairline borders, lavender accent) stay one consistent
+// design system instead of dropping into the light zinc form the rest of
+// systemdb still uses. Scoped to gameinfo's fixed pack/game field list
+// (GAMEINFO_FIELD_NAMES) instead of arbitrary query columns — that fixed
+// list is what makes this "simpler" than the systemdb editor, not a forked
+// engine underneath.
+const TYPE_LABELS = {
+  number: "ตัวเลข",
+  text: "ข้อความ",
+  date: "วันที่",
+  boolean: "ใช่ / ไม่ใช่",
+};
+
+// Grouped the way someone reaches for them, not alphabetically.
+const FUNCTION_HELP = [
+  ["เงื่อนไข", "IF(เงื่อนไข, ค่าเมื่อจริง, ค่าเมื่อเท็จ) · AND · OR · NOT · ISBLANK · COALESCE"],
+  ["วันที่", "TODAY() · DAYSUNTIL(วันที่) เหลืออีกกี่วัน · DAYS(ปลายทาง, ต้นทาง) · ADDDAYS · YEAR · MONTH · DAY"],
+  ["ข้อความ", "CONCAT · LEFT · RIGHT · MID · LEN · UPPER · LOWER · TRIM · TEXT · CONTAINS · ต่อข้อความด้วย &"],
+  ["ตัวเลข", "ROUND · ABS · MIN · MAX · SUM"],
+];
+
 export default function GameinfoComputedEditor({ sampleRow, onAdd, onClose }) {
+  const [label, setLabel] = useState("");
+  const [formula, setFormula] = useState("");
+  // Empty until touched, so the type follows the formula while the user is
+  // still writing it and stops the moment they choose one themselves.
+  const [typeChoice, setTypeChoice] = useState("");
+
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const validation = useMemo(() => {
+    if (!formula.trim()) return { ok: false, message: "", type: "number" };
+    try {
+      const ast = parseFormula(formula);
+      const refs = [...extractFormulaRefs(ast)];
+      const unknown = refs.filter((name) => !GAMEINFO_FIELD_NAMES.includes(name));
+      if (unknown.length > 0) {
+        return { ok: false, message: `ไม่รู้จักคอลัมน์: ${unknown.join(", ")}`, type: "number" };
+      }
+      const type = inferFormulaType(ast);
+      let preview = "";
+      if (sampleRow) {
+        const value = evaluateFormula(ast, (name) => sampleRow[name]);
+        preview = ` · แถวแรกได้ ${formatCell(value, typeChoice || type)}`;
+      }
+      return { ok: true, message: `สูตรถูกต้อง${preview}`, type };
+    } catch (err) {
+      return { ok: false, message: err.message, type: "number" };
+    }
+  }, [formula, sampleRow, typeChoice]);
+
+  const type = typeChoice || validation.type;
+  const missing = [
+    !label.trim() && "ชื่อคอลัมน์",
+    !formula.trim() && "สูตร",
+    formula.trim() && !validation.ok && "สูตรที่ถูกต้อง (ดูข้อความใต้ช่องสูตร)",
+  ].filter(Boolean);
+
+  function submit() {
+    if (!label.trim() || !validation.ok) return;
+    onAdd({ key: `col_${Date.now()}`, label: label.trim(), formula: formula.trim(), type });
+  }
+
   return (
-    <ComputedColumnModal
-      availableNames={GAMEINFO_FIELD_NAMES}
-      sampleRow={sampleRow}
-      onClose={onClose}
-      onAdd={({ label, formula, type }) => {
-        onAdd({ key: `col_${Date.now()}`, label, formula, type });
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
       }}
-    />
+    >
+      <div className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-linear-hairline bg-linear-surface-1 shadow-2xl">
+        <div className="flex items-center justify-between border-b border-linear-hairline px-5 py-3">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-linear-ink">
+            <Calculator size={15} className="text-linear-primary" /> เพิ่มคอลัมน์/สูตร
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-7 w-7 items-center justify-center rounded text-linear-ink-tertiary hover:bg-linear-surface-2 hover:text-linear-ink"
+            aria-label="ปิด"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+          <div>
+            <label className="mb-1 block text-xs text-linear-ink-tertiary">ชื่อคอลัมน์</label>
+            <input
+              type="text"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="เช่น กำไร"
+              className="h-9 w-full rounded border border-linear-hairline-strong bg-linear-surface-2 px-2 text-sm text-linear-ink outline-none focus:border-linear-primary"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs text-linear-ink-tertiary">
+              สูตร — ใช้ + - * / ( ) เทียบด้วย = &lt;&gt; &lt; &gt; ใส่ข้อความในเครื่องหมายคำพูด
+              และอ้างคอลัมน์ด้วย [ชื่อคอลัมน์]
+            </label>
+            <input
+              type="text"
+              value={formula}
+              onChange={(e) => setFormula(e.target.value)}
+              placeholder={'เช่น IF(DAYSUNTIL([วันหมดอายุ]) < 3, "ใกล้หมดอายุ", "ปกติ")'}
+              className="h-9 w-full rounded border border-linear-hairline-strong bg-linear-surface-2 px-2 font-mono text-xs text-linear-ink outline-none focus:border-linear-primary"
+            />
+            {formula.trim() && (
+              <p className={`mt-1 text-xs ${validation.ok ? "text-emerald-400" : "text-red-400"}`}>
+                {validation.message}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label htmlFor="gameinfo-computed-type" className="mb-1 block text-xs text-linear-ink-tertiary">
+              ผลลัพธ์เป็น {typeChoice ? "(เลือกเอง)" : "(เดาจากสูตร)"}
+            </label>
+            <select
+              id="gameinfo-computed-type"
+              value={type}
+              onChange={(e) => setTypeChoice(e.target.value)}
+              className="h-9 w-full rounded border border-linear-hairline-strong bg-linear-surface-2 px-2 text-sm text-linear-ink outline-none focus:border-linear-primary"
+            >
+              {Object.entries(TYPE_LABELS).map(([value, text]) => (
+                <option key={value} value={value}>
+                  {text}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
+            <p className="mb-1.5 text-xs font-medium text-linear-ink-muted">ฟังก์ชันที่ใช้ได้</p>
+            <dl className="space-y-1">
+              {FUNCTION_HELP.map(([group, list]) => (
+                <div key={group} className="flex gap-2 text-xs leading-relaxed">
+                  <dt className="w-12 shrink-0 text-linear-ink-tertiary">{group}</dt>
+                  <dd className="min-w-0 font-mono text-linear-ink-subtle">{list}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+
+          <div>
+            <p className="mb-1.5 text-xs text-linear-ink-tertiary">คอลัมน์ที่ใช้ได้ (กดเพื่อแทรก):</p>
+            <div className="flex flex-wrap gap-1.5">
+              {GAMEINFO_FIELD_NAMES.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => setFormula((prev) => `${prev}[${name}]`)}
+                  className="rounded bg-linear-surface-3 px-2 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-4"
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {missing.length > 0 && (
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+              ยังบันทึกไม่ได้ — ต้องกรอก: {missing.join(" · ")}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end border-t border-linear-hairline px-5 py-3">
+          <button
+            type="button"
+            onClick={submit}
+            disabled={!label.trim() || !validation.ok}
+            className="flex items-center gap-1.5 rounded-md bg-linear-primary px-4 py-2 text-sm font-medium text-white hover:bg-linear-primary-hover disabled:opacity-50"
+          >
+            <Plus size={14} /> เพิ่มคอลัมน์
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

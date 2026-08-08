@@ -20,7 +20,11 @@ const nextConfig = {
               "script-src 'self' 'unsafe-inline'" +
                 (process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'"),
               "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: blob:",
+              // gameinfo lets staff paste arbitrary image/currency/tutorial
+              // URLs (see gameinfo-pack-editor.js, gameinfo-tutorial-modal.js)
+              // rendered as plain <img> tags — those hosts aren't known ahead
+              // of time, so img-src has to allow any https origin.
+              "img-src 'self' data: blob: https:",
               "connect-src 'self'",
               "frame-ancestors 'none'",
               "base-uri 'self'",

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { X } from "lucide-react";
 
 // Multi-value chip input with the same "remembers past values" dropdown as
 // GameinfoMemoryInput — used for pack payment channels. Ported from
@@ -70,23 +71,23 @@ export default function GameinfoTagsInput({
   return (
     <div className="relative" ref={ref}>
       <div
-        className={`flex min-h-9 w-full flex-wrap items-center gap-1.5 rounded border px-2 py-1 focus-within:border-indigo-300 focus-within:bg-white ${
-          invalid ? "border-red-300" : "border-transparent hover:bg-slate-50"
+        className={`flex min-h-9 w-full flex-wrap items-center gap-1.5 rounded border px-2 py-1 focus-within:border-linear-primary/40 focus-within:bg-linear-surface-1 ${
+          invalid ? "border-red-500/40" : "border-transparent hover:bg-linear-surface-2"
         }`}
       >
         {values.map((v, i) => (
           <span
             key={`${v}-${i}`}
-            className="inline-flex items-center gap-1 rounded bg-indigo-100 px-2 py-0.5 text-xs text-indigo-800"
+            className="inline-flex items-center gap-1 rounded bg-linear-primary/15 px-2 py-0.5 text-xs text-linear-primary"
           >
             {v}
             <button
               type="button"
               onClick={() => remove(i)}
-              className="text-indigo-500 hover:text-indigo-800"
+              className="flex items-center text-linear-primary hover:text-linear-primary"
               aria-label="ลบ"
             >
-              ×
+              <X size={12} />
             </button>
           </span>
         ))}
@@ -100,6 +101,10 @@ export default function GameinfoTagsInput({
               setOpen(true);
             }}
             onFocus={() => setOpen(true)}
+            // Adding a tag keeps the input focused (its onMouseDown calls
+            // preventDefault) — a later click to reopen the dropdown
+            // wouldn't re-fire onFocus since focus never changed.
+            onClick={() => setOpen(true)}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === ",") {
                 e.preventDefault();
@@ -109,7 +114,7 @@ export default function GameinfoTagsInput({
               }
             }}
             autoComplete="off"
-            className="min-w-[80px] flex-1 border-none py-0.5 text-sm outline-none placeholder:text-slate-300"
+            className="min-w-[80px] flex-1 border-none py-0.5 text-sm outline-none placeholder:text-linear-ink-tertiary"
           />
         )}
       </div>
@@ -121,7 +126,7 @@ export default function GameinfoTagsInput({
         createPortal(
           <ul
             style={{ top: pos.top + 4, left: pos.left, width: pos.width }}
-            className="fixed z-50 max-h-56 overflow-auto rounded-md border border-slate-200 bg-white py-1 shadow-lg"
+            className="fixed z-50 max-h-56 overflow-auto rounded-md border border-linear-hairline bg-linear-surface-1 py-1 shadow-lg"
           >
             {filtered.map((s) => (
               <li key={s}>
@@ -131,7 +136,7 @@ export default function GameinfoTagsInput({
                     e.preventDefault();
                     add(s);
                   }}
-                  className="block w-full px-3 py-1.5 text-left text-sm hover:bg-indigo-50"
+                  className="block w-full px-3 py-1.5 text-left text-sm text-white hover:bg-linear-primary/10"
                 >
                   {s}
                 </button>

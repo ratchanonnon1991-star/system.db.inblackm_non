@@ -5,15 +5,6 @@ function uniq(arr) {
   return Array.from(new Set(arr.filter(Boolean))).sort((a, b) => a.localeCompare(b, "th"));
 }
 
-export function buildGameSuggestions(games) {
-  return {
-    gameNames: uniq(games.map((g) => g.gameName)),
-    regions: uniq(games.map((g) => g.region)),
-    platforms: uniq(games.map((g) => g.platform)),
-    servers: uniq(games.map((g) => g.server)),
-  };
-}
-
 export function buildPackSuggestions(game) {
   const currencyNames = [];
   const categoryNames = [];

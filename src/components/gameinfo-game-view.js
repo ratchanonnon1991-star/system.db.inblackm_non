@@ -1,196 +1,96 @@
-import GameinfoImagePreview from "./gameinfo-image-preview";
+"use client";
+
+import { useMemo } from "react";
+import { ExternalLink, Gamepad2 } from "lucide-react";
 import { evaluateFormula, parseFormula } from "@/lib/gamedb-formula";
-import { formatCell } from "@/lib/gamedb-layout";
+import { formatCell as formatComputedCell } from "@/lib/gamedb-layout";
 import { resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
+import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
 
-// A formula saved with a typo or a since-removed field should not take the
-// whole detail page down — it just renders as a dash for that column.
-function parseComputedColumns(columns) {
-  return (columns || []).map((col) => {
-    try {
-      return { ...col, ast: parseFormula(col.formula) };
-    } catch {
-      return { ...col, ast: null };
-    }
-  });
-}
-
-// Full read-only view of a gameinfo game: header + one table per pack
-// category, grouped by currency. Ported from gameinfo's GameFullView.
-export default function GameinfoGameView({ game }) {
-  const showCountryCol = game.vpn === "YES";
-  const computedColumns = parseComputedColumns(game.computedColumns);
-  const grid = packViewGridTemplate(showCountryCol, computedColumns.length);
+// One game's game_list row, read-only (editing region/platform/server/etc.
+// happens on the list table or the pack editor, not here — see
+// gameinfo-gamelist-table.js and GameinfoPackEditor) plus its packs — same
+// currencies/computedColumns tree the pack editor saves to gamelist_packs,
+// so what's shown here always matches what "จัดการแพ็ก" last saved.
+export default function GameinfoGameView({ row, currencies, computedColumns }) {
+  // Same field set the pack editor's formulas can reference (see
+  // gameinfo-formula-fields.js) — built from the game_list row, not the
+  // gamelist_packs game shape, since that's all this page has.
+  const formulaGame = useMemo(
+    () => ({ gameName: row.game, region: row.region, platform: row.platform, server: row.server }),
+    [row.game, row.region, row.platform, row.server]
+  );
+  const parsedColumns = useMemo(
+    () =>
+      (computedColumns || []).map((col) => {
+        try {
+          return { ...col, ast: parseFormula(col.formula) };
+        } catch {
+          return { ...col, ast: null };
+        }
+      }),
+    [computedColumns]
+  );
 
   return (
     <div>
-      <div className="mb-8 flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-5 sm:flex-row">
-        <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100">
-          {game.image ? (
-            <GameinfoImagePreview src={game.image} alt={game.gameName}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={game.image}
-                alt={game.gameName}
-                className="h-24 w-24 object-cover"
-              />
-            </GameinfoImagePreview>
-          ) : (
-            <span className="text-4xl">🎮</span>
-          )}
+      {/* Compact view card — icon, bold title, one-line Region/Platform/
+          Server/VPN summary, pill button to the game's top-up website. */}
+      <div className="mb-8 flex items-start gap-4 rounded-xl border border-linear-hairline bg-linear-surface-1 p-4">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-linear-primary/10">
+          <Gamepad2 size={26} className="text-linear-primary" />
         </div>
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold text-slate-800">{game.gameName}</h1>
-          <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-600">
-            {game.region && <span>Region: {game.region}</span>}
-            {game.platform && <span>Platform: {game.platform}</span>}
-            {game.server && <span>Server: {game.server}</span>}
-            <span>
-              VPN:{" "}
-              {game.vpn === "YES" ? (
-                <span className="rounded bg-rose-100 px-1.5 py-0.5 text-xs text-rose-700">
-                  YES
-                </span>
-              ) : (
-                "NO"
-              )}
-            </span>
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-base font-bold uppercase tracking-tight text-linear-ink">
+            {row.game}
+          </h1>
+          {/* Horizontal flowing summary — every field from the list table's
+              column set (ลำดับ, ID, Region, Platform, Server, VPN, Bot/
+              Manual) except Link, which is represented by the button below
+              instead of repeated as inline text. Wraps onto more than one
+              line on narrow screens rather than stacking one field per row. */}
+          <p className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-linear-ink-tertiary">
+            <span>ลำดับ: {row.orderPosition ?? "-"}</span>
+            <span>ID: {row.id}</span>
+            <span>Region: {row.region || "-"}</span>
+            <span>Platform: {row.platform || "-"}</span>
+            <span>Server: {row.server || "-"}</span>
+            <span>VPN: {row.vpnComputed || "NO"}</span>
+            <span>Bot/Manual: {row.botManual || "-"}</span>
+          </p>
+          <ChannelSummary channels={row.channels} className="mt-1.5" />
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {row.link ? (
+              <a
+                href={row.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded-md bg-linear-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-linear-primary-hover"
+              >
+                ไปที่เว็บเติมเกม <ExternalLink size={13} />
+              </a>
+            ) : (
+              <span className="inline-block text-xs text-linear-ink-tertiary">
+                ยังไม่มีลิงก์เว็บเติมเกม
+              </span>
+            )}
+            {/* Always view-only here regardless of role — editing the
+                tutorial happens from the "⋮" menu / list table, not this
+                page (see gameinfo-gamelist-table.js). */}
+            <GameinfoTutorialButton gameId={row.id} gameName={row.game} editable={false} />
           </div>
-          {game.webTopup && (
-            <a
-              href={game.webTopup}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-3 inline-block rounded-md bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-700"
-            >
-              ไปที่เว็บเติมเกม ↗
-            </a>
-          )}
         </div>
       </div>
 
-      {game.currencies.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center text-slate-400">
+      <h2 className="mb-3 text-lg font-semibold text-linear-ink">แพ็ก</h2>
+      {(currencies || []).length === 0 ? (
+        <p className="rounded-lg border border-dashed border-linear-hairline-strong bg-linear-surface-1 p-8 text-center text-linear-ink-tertiary">
           ยังไม่มีข้อมูลแพ็กสำหรับเกมนี้
         </p>
       ) : (
-        <div className="space-y-8">
-          {game.currencies.map((currency) => (
-            <section key={currency.id}>
-              <div className="mb-3 flex items-center gap-2">
-                {currency.image && (
-                  <GameinfoImagePreview src={currency.image} alt={currency.name}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={currency.image}
-                      alt={currency.name}
-                      className="h-7 w-7 rounded object-cover"
-                    />
-                  </GameinfoImagePreview>
-                )}
-                <h2 className="text-lg font-semibold text-slate-800">
-                  <span className="text-slate-400">สกุลเงิน: </span>
-                  {currency.name || "-"}
-                </h2>
-              </div>
-
-              <div className="space-y-5">
-                {currency.categories.map((cat) => (
-                  <div key={cat.id}>
-                    {cat.name && (
-                      <h3 className="mb-2 text-sm font-medium text-slate-600">
-                        {cat.name}
-                      </h3>
-                    )}
-                    {/* overflow-hidden clips the header row's flat
-                        bg-slate-50 background to these rounded corners —
-                        without it, that square background pokes out past
-                        the curve at the top. */}
-                    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-                    <div className="overflow-x-auto">
-                      <div style={{ minWidth: grid.minWidth }}>
-                        <div
-                          style={{ gridTemplateColumns: grid.template }}
-                          className="grid gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs text-slate-500"
-                        >
-                          <span>Pack</span>
-                          <span>ราคา</span>
-                          <span>ยอดที่กด</span>
-                          <span>ยอดที่กด + fee</span>
-                          <span>ช่องทางหลัก</span>
-                          <span>ช่องทางรอง</span>
-                          {showCountryCol && <span>ประเทศ</span>}
-                          {computedColumns.map((col) => (
-                            <span key={col.key} className="truncate text-indigo-600">
-                              {col.label}
-                            </span>
-                          ))}
-                        </div>
-                        {cat.packs.map((pack, pIdx) => (
-                          <div
-                            key={pack.id}
-                            style={{ gridTemplateColumns: grid.template }}
-                            className="grid items-center gap-2 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0"
-                          >
-                            <div className="flex min-w-0 items-center gap-2">
-                              <span className="shrink-0 text-xs text-slate-400">
-                                {pIdx + 1}.
-                              </span>
-                              {pack.image && (
-                                <GameinfoImagePreview src={pack.image} alt={pack.name}>
-                                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img
-                                    src={pack.image}
-                                    alt={pack.name}
-                                    className="h-6 w-6 shrink-0 rounded object-cover"
-                                  />
-                                </GameinfoImagePreview>
-                              )}
-                              <span className="truncate font-medium text-slate-700">
-                                {pack.name || "-"}
-                              </span>
-                            </div>
-                            <span className="truncate text-slate-600">
-                              {pack.price || "-"}
-                            </span>
-                            <span className="truncate text-slate-600">
-                              {pack.amountCharged || "-"}
-                            </span>
-                            <span className="truncate text-slate-600">
-                              {pack.amountChargedFee || "-"}
-                            </span>
-                            <span className="truncate text-slate-600">
-                              {(pack.channelsMain || []).join(", ") || "-"}
-                            </span>
-                            <span className="truncate text-slate-600">
-                              {(pack.channelsSecondary || []).join(", ") || "-"}
-                            </span>
-                            {showCountryCol && (
-                              <span className="truncate text-slate-600">
-                                {pack.country || "-"}
-                              </span>
-                            )}
-                            {computedColumns.map((col) => {
-                              const value = col.ast
-                                ? evaluateFormula(col.ast, (label) =>
-                                    resolveGameinfoField(pack, game, label)
-                                  )
-                                : null;
-                              return (
-                                <span key={col.key} className="truncate text-slate-600">
-                                  {formatCell(value, col.type)}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
+        <div className="space-y-4">
+          {currencies.map((currency) => (
+            <PackCurrency key={currency.id} currency={currency} game={formulaGame} computedColumns={parsedColumns} />
           ))}
         </div>
       )}
@@ -198,24 +98,121 @@ export default function GameinfoGameView({ game }) {
   );
 }
 
-// Fixed grid columns so every pack table (every category/currency) lines up
-// — one extra 120px track per computed column, appended after the fixed
-// ones. minWidth is computed the same way as the reference app's
-// packViewGridTemplate so the table is only as wide as it needs to be
-// (never narrower than 900px), rather than a flat guess.
-function packViewGridTemplate(showCountryCol, computedCount = 0) {
-  const cols = ["minmax(200px,1fr)", "90px", "110px", "110px", "160px", "160px"];
-  const widths = [200, 90, 110, 110, 160, 160];
-  if (showCountryCol) {
-    cols.push("140px");
-    widths.push(140);
-  }
-  for (let i = 0; i < computedCount; i++) {
-    cols.push("120px");
-    widths.push(120);
-  }
-  const gap = 8;
-  const pad = 24; // px-3 on both sides
-  const minWidth = widths.reduce((a, b) => a + b, 0) + gap * (widths.length - 1) + pad;
-  return { template: cols.join(" "), minWidth: Math.max(minWidth, 900) };
+function PackCurrency({ currency, game, computedColumns }) {
+  return (
+    <div className="rounded-lg border border-linear-hairline bg-linear-surface-1 p-4">
+      <div className="mb-3 flex items-center gap-2">
+        {currency.image ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={currency.image} alt="" className="h-6 w-6 shrink-0 rounded object-cover" />
+        ) : null}
+        <h3 className="font-medium text-linear-ink">{currency.name || "(ไม่มีชื่อสกุลเงิน)"}</h3>
+      </div>
+      <div className="space-y-3">
+        {currency.categories.map((cat) => (
+          <PackCategory key={cat.id} category={cat} game={game} computedColumns={computedColumns} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PackCategory({ category, game, computedColumns }) {
+  return (
+    <div className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-linear-ink-muted">{category.name || "(ไม่มีชื่อหมวดหมู่)"}</h4>
+        <span className="text-xs text-linear-ink-tertiary">({category.packs.length} แพ็ก)</span>
+      </div>
+      {category.packs.length === 0 ? (
+        <p className="px-1 py-2 text-xs text-linear-ink-tertiary">ยังไม่มี pack</p>
+      ) : (
+        <div className="overflow-hidden rounded-md border border-linear-hairline bg-linear-surface-1">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[700px] text-left text-sm">
+              <thead className="border-b border-linear-hairline bg-linear-surface-2 text-xs text-linear-ink-subtle">
+                <tr>
+                  <th className="px-3 py-2 font-medium">ชื่อ pack</th>
+                  <th className="px-3 py-2 font-medium">ราคา</th>
+                  <th className="px-3 py-2 font-medium">ยอดที่กด</th>
+                  <th className="px-3 py-2 font-medium">ยอดที่กด + fee</th>
+                  <th className="px-3 py-2 font-medium">ช่องทางหลัก</th>
+                  <th className="px-3 py-2 font-medium">ช่องทางรอง</th>
+                  <th className="px-3 py-2 font-medium">ประเทศ</th>
+                  {computedColumns.map((fc) => (
+                    <th key={fc.key} className="whitespace-nowrap px-3 py-2 font-medium">
+                      {fc.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {category.packs.map((pack) => (
+                  <tr key={pack.id} className="border-b border-linear-hairline last:border-b-0">
+                    <td className="max-w-[220px] truncate px-3 py-2 text-linear-ink-muted">
+                      {pack.name || "-"}
+                    </td>
+                    <td className="px-3 py-2 text-linear-ink-muted">{pack.price || "-"}</td>
+                    <td className="px-3 py-2 text-linear-ink-muted">{pack.amountCharged || "-"}</td>
+                    <td className="px-3 py-2 text-linear-ink-muted">{pack.amountChargedFee || "-"}</td>
+                    <td className="px-3 py-2 text-linear-ink-muted">
+                      {pack.channelsMain?.length ? pack.channelsMain.join(", ") : "-"}
+                    </td>
+                    <td className="px-3 py-2 text-linear-ink-muted">
+                      {pack.channelsSecondary?.length ? pack.channelsSecondary.join(", ") : "-"}
+                    </td>
+                    <td className="px-3 py-2 text-linear-ink-muted">{pack.country || "-"}</td>
+                    {computedColumns.map((fc) => {
+                      const value = fc.ast
+                        ? evaluateFormula(fc.ast, (label) => resolveGameinfoField(pack, game, label))
+                        : null;
+                      return (
+                        <td key={fc.key} className="max-w-[160px] truncate px-3 py-2 text-linear-ink-muted">
+                          {formatComputedCell(value, fc.type)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Main and secondary channels labeled separately (not merged into one
+// list), and secondary explicitly says "ไม่มี" when empty instead of just
+// disappearing, so it's clear that side was checked and found empty.
+function ChannelSummary({ channels, className = "" }) {
+  const main = channels?.main || [];
+  const secondary = channels?.secondary || [];
+  return (
+    <div className={`space-y-1 text-xs ${className}`}>
+      <ChannelSummaryRow label="ช่องทางหลัก" tags={main} />
+      <ChannelSummaryRow label="ช่องทางรอง" tags={secondary} />
+    </div>
+  );
+}
+
+function ChannelSummaryRow({ label, tags }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      <span className="shrink-0 text-linear-ink-tertiary">{label}:</span>
+      {tags.length === 0 ? (
+        <span className="text-linear-ink-tertiary">ไม่มี</span>
+      ) : (
+        tags.map((v) => (
+          <span
+            key={v}
+            className="truncate rounded bg-linear-surface-3 px-1.5 py-0.5 text-[11px] text-linear-ink-muted"
+          >
+            {v}
+          </span>
+        ))
+      )}
+    </div>
+  );
 }
