@@ -71,7 +71,10 @@ export default async function GameinfoGameDetailPage({ params }) {
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
       <div className="mb-4 flex items-center justify-between">
-        <GameinfoBackLink className="flex items-center gap-1 text-sm text-linear-primary hover:underline" />
+        <GameinfoBackLink
+          className="flex items-center gap-1 text-sm text-linear-primary hover:underline"
+          fallbackHref={`/gameinfo/${lang}`}
+        />
         {editable && (
           <Link
             href={`/gameinfo/${lang}/${row.id}/packs`}

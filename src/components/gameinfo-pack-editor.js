@@ -584,7 +584,12 @@ export default function GameinfoPackEditor({
 
           <button
             type="button"
-            onClick={() => router.back()}
+            onClick={() => {
+              // Same "opened this page directly, nothing to go back to"
+              // guard as GameinfoBackLink.
+              if (window.history.length <= 1) router.push(`/gameinfo/${lang}/${game.id}`);
+              else router.back();
+            }}
             className="-my-0.5 flex h-10 items-center whitespace-nowrap rounded-full bg-linear-primary px-4 text-sm font-medium text-white shadow-md hover:bg-linear-primary-hover"
           >
             ย้อนกลับ

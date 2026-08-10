@@ -86,7 +86,7 @@ function renderStepText(text) {
 // the popup opens rather than preloaded onto every row of the list table.
 // `editable` (staff/admin) gets the add/edit/save form; everyone else gets a
 // read-only view of the same content.
-export default function GameinfoTutorialButton({ gameId, gameName, editable, hasData }) {
+export default function GameinfoTutorialButton({ gameId, gameName, editable, hasData, disabled }) {
   const [open, setOpen] = useState(false);
 
   // View-only (role "user") gets nothing to click if there's no tutorial to
@@ -99,10 +99,12 @@ export default function GameinfoTutorialButton({ gameId, gameName, editable, has
         type="button"
         onClick={(e) => {
           e.stopPropagation();
+          if (disabled) return;
           setOpen(true);
         }}
-        className="rounded-md border border-linear-hairline-strong px-2 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink"
-        title="วิธีเติมเกม"
+        disabled={disabled}
+        className="rounded-md border border-linear-hairline-strong px-2 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
+        title={disabled ? "บันทึกเกมนี้ก่อนถึงจะใส่ tutorial ได้" : "วิธีเติมเกม"}
       >
         Tutorial
       </button>

@@ -890,6 +890,7 @@ function RowCells({
           gameName={row.game}
           editable={editable}
           hasData={row.hasTutorial}
+          disabled={isTempId(row.id)}
         />
       </span>
 
@@ -1116,9 +1117,21 @@ function OrderCell({ editable, editing, order, totalRows, onStartEdit, onCommit,
 function RowThumb({ gameId, image, editable }) {
   const [value, setValue] = useState(image);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [saveError, setSaveError] = useState(false);
+  const isDraft = isTempId(gameId);
+
+  // The `image` prop can change out from under this row's own local pick —
+  // cancelAll() resets `rows` back to savedRows, and router.refresh() can
+  // bring in a fresher value — without this the thumbnail would keep
+  // showing a stale locally-picked image after either happens.
+  useEffect(() => {
+    setValue(image);
+  }, [image]);
 
   async function handleChange(next) {
+    const previous = value;
     setValue(next);
+    setSaveError(false);
     try {
       await apiJson(`/api/gameinfo/gamelist/${gameId}/image`, {
         method: "PUT",
@@ -1127,15 +1140,25 @@ function RowThumb({ gameId, image, editable }) {
         fallbackError: "บันทึกรูปไม่สำเร็จ",
       });
     } catch {
-      // best-effort — the thumbnail already reflects the picked value locally
+      // Revert the optimistic update — leaving it in place would show a
+      // "saved" thumbnail that never actually persisted server-side.
+      setValue(previous);
+      setSaveError(true);
+      setTimeout(() => setSaveError(false), 4000);
     }
   }
 
+  // Errors are surfaced as a title tooltip + red ring on the thumbnail
+  // itself, not a floating absolutely-positioned tag — the table this sits
+  // in scrolls (overflow-x: auto forces overflow-y: auto too), so anything
+  // positioned outside a row's own box risks being clipped by the table's
+  // scroll container or overlapping the row below it.
+  const errorRing = saveError ? "ring-2 ring-red-500" : "";
   const thumb = value ? (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={value} alt="" className="h-9 w-9 shrink-0 rounded object-cover" />
+    <img src={value} alt="" className={`h-9 w-9 shrink-0 rounded object-cover ${errorRing}`} />
   ) : (
-    <span className="flex h-9 w-9 items-center justify-center rounded bg-linear-surface-3 text-linear-ink-tertiary">
+    <span className={`flex h-9 w-9 items-center justify-center rounded bg-linear-surface-3 text-linear-ink-tertiary ${errorRing}`}>
       <ImageIcon size={14} />
     </span>
   );
@@ -1151,14 +1174,36 @@ function RowThumb({ gameId, image, editable }) {
     );
   }
 
+  // A draft row from "เพิ่มเกม" has no real id yet (game_list.id doesn't
+  // exist until "บันทึก" creates it) — the image side table is keyed on
+  // that id, so there's nothing to save to until then.
+  if (isDraft) {
+    return (
+      <span title="บันทึกเกมนี้ก่อนถึงจะใส่รูปได้" className="cursor-not-allowed opacity-60">
+        {thumb}
+      </span>
+    );
+  }
+
+  // title on the wrapper (not GameinfoImagePreview, which doesn't forward
+  // one to its own wrapper div) still tooltips on hover of anything inside
+  // it, per normal HTML title inheritance.
   return (
-    <span onClick={(e) => e.stopPropagation()}>
+    <span
+      onClick={(e) => e.stopPropagation()}
+      title={saveError ? "บันทึกรูปไม่สำเร็จ — ลองใหม่อีกครั้ง" : undefined}
+    >
       {value ? (
         <GameinfoImagePreview src={value} alt="" onClick={() => setPickerOpen(true)}>
           {thumb}
         </GameinfoImagePreview>
       ) : (
-        <button type="button" onClick={() => setPickerOpen(true)} title="ใส่รูปเกม" className="shrink-0">
+        <button
+          type="button"
+          onClick={() => setPickerOpen(true)}
+          title={saveError ? undefined : "ใส่รูปเกม"}
+          className="shrink-0"
+        >
           {thumb}
         </button>
       )}

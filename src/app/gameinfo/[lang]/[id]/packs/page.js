@@ -52,7 +52,10 @@ export default async function GameinfoGamelistPacksPage({ params }) {
 
   return (
     <div className="px-4 py-8 pb-24">
-      <GameinfoBackLink className="mb-4 inline-flex items-center gap-1 text-sm text-linear-primary hover:underline" />
+      <GameinfoBackLink
+        className="mb-4 inline-flex items-center gap-1 text-sm text-linear-primary hover:underline"
+        fallbackHref={`/gameinfo/${lang}/${row.id}`}
+      />
       <h1 className="mb-6 text-2xl font-bold text-linear-ink">แพ็ก — {row.game}</h1>
       <GameinfoPackEditor
         game={game}
