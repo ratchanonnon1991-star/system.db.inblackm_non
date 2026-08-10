@@ -7,6 +7,8 @@ import {
   Camera,
   ChartColumn,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ClipboardPaste,
   Combine,
   CornerDownRight,
@@ -28,6 +30,8 @@ import {
   RefreshCw,
   Eraser,
   Search,
+  ChevronsLeft,
+  ChevronsRight,
   SlidersHorizontal,
   Table2,
   Timer,
@@ -82,6 +86,50 @@ const menuItemClass =
 
 const paramPresetButtonClass =
   "rounded-sm border border-zinc-200 bg-white px-2 py-1 text-[9px] font-black text-zinc-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700";
+
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 200];
+
+function PaginationBar({ rowCount, page, pageCount, pageSize, onPageChange, onPageSizeChange }) {
+  const first = rowCount ? (page - 1) * pageSize + 1 : 0;
+  const last = Math.min(rowCount, page * pageSize);
+  const buttonClass =
+    "flex h-7 w-7 items-center justify-center rounded-sm border border-zinc-200 bg-white text-zinc-500 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-35";
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-100 bg-zinc-50 px-3 py-1.5 text-[10px] font-semibold text-zinc-500">
+      <span>
+        แสดง {first.toLocaleString("th-TH")}-{last.toLocaleString("th-TH")} จาก {rowCount.toLocaleString("th-TH")} แถว
+      </span>
+      <div className="flex items-center gap-1.5">
+        <label className="flex items-center gap-1">
+          ต่อหน้า
+          <select
+            value={pageSize}
+            onChange={(event) => onPageSizeChange(Number(event.target.value))}
+            className="h-7 rounded-sm border border-zinc-200 bg-white px-1.5 font-bold outline-none focus:border-red-500"
+          >
+            {PAGE_SIZE_OPTIONS.map((size) => (
+              <option key={size} value={size}>{size}</option>
+            ))}
+          </select>
+        </label>
+        <button type="button" onClick={() => onPageChange(1)} disabled={page === 1} className={buttonClass} title="หน้าแรก">
+          <ChevronsLeft size={13} />
+        </button>
+        <button type="button" onClick={() => onPageChange(page - 1)} disabled={page === 1} className={buttonClass} title="หน้าก่อนหน้า">
+          <ChevronLeft size={13} />
+        </button>
+        <span className="min-w-16 text-center font-bold text-zinc-600">{page}/{pageCount}</span>
+        <button type="button" onClick={() => onPageChange(page + 1)} disabled={page === pageCount} className={buttonClass} title="หน้าถัดไป">
+          <ChevronRight size={13} />
+        </button>
+        <button type="button" onClick={() => onPageChange(pageCount)} disabled={page === pageCount} className={buttonClass} title="หน้าสุดท้าย">
+          <ChevronsRight size={13} />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 const RESIZE_HINT = "ลากเพื่อปรับขนาด · ดับเบิลคลิกเพื่อรีเซ็ต";
 const MIN_FRAME_WIDTH = 280;
@@ -441,6 +489,8 @@ export default function QueryPanel({
   const [showParamErrors, setShowParamErrors] = useState(false);
   const paramStorageLoadedRef = useRef(null);
   const [rowFilter, setRowFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [view, setView] = useState("table");
   const [modal, setModal] = useState(null);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
@@ -666,6 +716,7 @@ export default function QueryPanel({
         previousRowsRef.current = { columns: data.columns, rows: data.rows };
         rowsLoadedRef.current = data.rows.length;
         setResult(data);
+        if (!silent) setPage(1);
         if (!layoutDirtyRef.current && !overrideRef.current) {
           setLayout(normalizeLayout(data.layout));
         }
@@ -756,6 +807,7 @@ export default function QueryPanel({
     // The rows on screen were fetched with the values that were just thrown
     // away, so keeping them would show a table that no filter accounts for.
     setResult(null);
+    setPage(1);
     setRunError("");
     setChangedKeys(new Set());
     previousRowsRef.current = null;
@@ -960,6 +1012,14 @@ export default function QueryPanel({
     }
     return rows;
   }, [result, visibleColumns, baseNameToIndex, rowFilter, layout.sort, layout.merge, mergeIndex]);
+
+  const pageCount = Math.max(1, Math.ceil(displayRows.length / pageSize));
+  const activePage = Math.min(page, pageCount);
+  const pageOffset = (activePage - 1) * pageSize;
+  const pagedRows = useMemo(
+    () => displayRows.slice(pageOffset, pageOffset + pageSize),
+    [displayRows, pageOffset, pageSize]
+  );
 
   // Report what is on screen so the workbook export can pick it up — including
   // how it looks, so the download is the table rather than its values.
@@ -1208,6 +1268,7 @@ export default function QueryPanel({
       });
       previousRowsRef.current = null;
       setViewingSnapshot(data.snapshot);
+      setPage(1);
       setResult({
         columns: data.snapshot.columns,
         rows: data.snapshot.rows,
@@ -1587,6 +1648,28 @@ export default function QueryPanel({
           </p>
         </div>
 
+        {canCustomizeLayout && hiddenColumns.length > 0 && (
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-black text-zinc-400">คอลัมน์ที่ซ่อน:</span>
+            {hiddenColumns.map((col) => (
+              <button
+                key={col.id}
+                type="button"
+                onClick={() =>
+                  mutateLayout((prev) => ({
+                    ...prev,
+                    hidden: prev.hidden.filter((id) => id !== col.id),
+                  }))
+                }
+                className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-bold text-zinc-500 transition hover:bg-zinc-100"
+                title="กดเพื่อแสดงคอลัมน์นี้"
+              >
+                <Eye size={10} /> {col.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {toolbarHost &&
           createPortal(
             <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
@@ -1595,7 +1678,10 @@ export default function QueryPanel({
           <input
             type="text"
             value={rowFilter}
-            onChange={(e) => setRowFilter(e.target.value)}
+            onChange={(e) => {
+              setRowFilter(e.target.value);
+              setPage(1);
+            }}
             placeholder="ค้นหาในผลลัพธ์..."
             className="h-8 w-36 rounded-sm border border-zinc-200 bg-zinc-50 pl-8 pr-2 text-[11px] font-semibold outline-none focus:border-red-600 focus:bg-white"
           />
@@ -2111,28 +2197,6 @@ export default function QueryPanel({
             </div>
           )}
 
-          {canCustomizeLayout && hiddenColumns.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 border-b border-zinc-100 px-3 py-2">
-              <span className="text-[10px] font-black text-zinc-400">คอลัมน์ที่ซ่อน:</span>
-              {hiddenColumns.map((col) => (
-                <button
-                  key={col.id}
-                  type="button"
-                  onClick={() =>
-                    mutateLayout((prev) => ({
-                      ...prev,
-                      hidden: prev.hidden.filter((id) => id !== col.id),
-                    }))
-                  }
-                  className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[10px] font-bold text-zinc-500 transition hover:bg-zinc-100"
-                  title="กดเพื่อแสดงคอลัมน์นี้"
-                >
-                  <Eye size={10} /> {col.label}
-                </button>
-              ))}
-            </div>
-          )}
-
           {viewingSnapshot && (
             <div className="flex items-center justify-between gap-2 border-b border-amber-200 bg-amber-50 px-3 py-2">
               <p className="truncate text-[11px] font-bold text-amber-800">
@@ -2194,7 +2258,7 @@ export default function QueryPanel({
                 <PanelTable
                   columns={visibleColumns}
                   allColumns={displayColumns}
-                  rows={displayRows}
+                  rows={pagedRows}
                   layout={layout}
                   mutateLayout={mutateLayout}
                   canCustomizeLayout={canCustomizeLayout}
@@ -2216,6 +2280,22 @@ export default function QueryPanel({
                     queries.find((item) => item.id === layout.drill?.queryId)?.name || "Query"
                   } ด้วยค่าจากแถวนี้`}
                   canvasScale={canvasScale}
+                  canUseGameinfoTools={canCustomizeLayout}
+                  rowOffset={pageOffset}
+                />
+              )}
+
+              {view === "table" && (
+                <PaginationBar
+                  rowCount={displayRows.length}
+                  page={activePage}
+                  pageCount={pageCount}
+                  pageSize={pageSize}
+                  onPageChange={setPage}
+                  onPageSizeChange={(next) => {
+                    setPageSize(next);
+                    setPage(1);
+                  }}
                 />
               )}
 

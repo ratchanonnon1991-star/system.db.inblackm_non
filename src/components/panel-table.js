@@ -21,6 +21,7 @@ import {
   CornerDownRight,
   ExternalLink,
   EyeOff,
+  Image as ImageIcon,
   Layers,
   Pencil,
   Settings2,
@@ -28,6 +29,11 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { createPortal } from "react-dom";
+import { apiJson } from "@/lib/api-json";
+import GameinfoImagePickerModal from "@/components/gameinfo-image-picker-modal";
+import GameinfoImagePreview from "@/components/gameinfo-image-preview";
+import GameinfoTutorialButton from "@/components/gameinfo-tutorial-modal";
 import {
   buildHeaderGroups,
   clampColumnWidth,
@@ -333,7 +339,112 @@ function CellEditor({ config, column, options, value, onChange, onCommit, onCanc
 }
 
 /** What goes inside a cell once its column has a render mode set. */
-function CellContent({ text, render, chip }) {
+function gameIdOf(value) {
+  const id = Number(value);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+function GameinfoImageCell({ gameId, editable }) {
+  const [value, setValue] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    apiJson(`/api/gameinfo/gamelist/${gameId}/image`, {
+      fallbackError: "โหลดรูปไม่สำเร็จ",
+    })
+      .then((data) => {
+        if (!cancelled) setValue(data.imageUrl || "");
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [gameId]);
+
+  async function save(next) {
+    const previous = value;
+    setValue(next);
+    setError("");
+    try {
+      const data = await apiJson(`/api/gameinfo/gamelist/${gameId}/image`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageUrl: next }),
+        fallbackError: "บันทึกรูปไม่สำเร็จ",
+      });
+      setValue(data.imageUrl || "");
+    } catch (err) {
+      setValue(previous);
+      setError(err.message);
+    }
+  }
+
+  const thumb = value ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={value} alt="" className="h-8 w-8 rounded object-cover" />
+  ) : (
+    <span className="flex h-8 w-8 items-center justify-center rounded bg-zinc-100 text-zinc-400">
+      <ImageIcon size={13} />
+    </span>
+  );
+
+  if (loading) return <span className="text-[10px] text-zinc-400">กำลังโหลด...</span>;
+  return (
+    <span onClick={(event) => event.stopPropagation()} title={error || undefined}>
+      {value ? (
+        <GameinfoImagePreview
+          src={value}
+          alt=""
+          onClick={editable ? () => setPickerOpen(true) : undefined}
+        >
+          {thumb}
+        </GameinfoImagePreview>
+      ) : editable ? (
+        <button type="button" onClick={() => setPickerOpen(true)} title="วางรูป">
+          {thumb}
+        </button>
+      ) : (
+        thumb
+      )}
+      {pickerOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <GameinfoImagePickerModal
+            value={value}
+            onChange={save}
+            onClose={() => setPickerOpen(false)}
+          />,
+          document.body
+        )}
+    </span>
+  );
+}
+
+function CellContent({ text, raw, type, render, chip, gameName, canUseGameinfoTools }) {
+  const gameId = gameIdOf(raw);
+  if (type === "tutorial") {
+    if (!gameId) return "—";
+    return (
+      <GameinfoTutorialButton
+        gameId={gameId}
+        gameName={gameName || `เกม #${gameId}`}
+        editable={canUseGameinfoTools}
+        hasData
+        disabled={false}
+      />
+    );
+  }
+  if (type === "image") {
+    return gameId ? <GameinfoImageCell gameId={gameId} editable={canUseGameinfoTools} /> : "—";
+  }
   if (!text || text === "—") return text;
   if (render === "link" && SAFE_URL.test(text)) {
     return (
@@ -392,6 +503,8 @@ export default function PanelTable({
   onDrill,
   drillLabel,
   onDeleteRow,
+  canUseGameinfoTools = false,
+  rowOffset = 0,
   // The table lives on a canvas that can be zoomed. Anything read off the DOM or
   // off a pointer arrives in screen pixels; column widths are kept in canvas
   // units, so the two only agree at 100%.
@@ -400,6 +513,9 @@ export default function PanelTable({
   const [naturalWidths, setNaturalWidths] = useState({});
   const [resizing, setResizing] = useState(null);
   const [editingCell, setEditingCell] = useState(null);
+  const gameNameColumnIndex = columns.findIndex(
+    (col) => col.kind === "base" && col.column?.name === "game"
+  );
   // Which column the tools bar above the table is acting on. The tools used to
   // live in the header cell itself, where a narrow column left them nowhere to
   // go but on top of the next column's name.
@@ -730,7 +846,7 @@ export default function PanelTable({
       >
         {onDrill || onDeleteRow ? (
           <>
-            <span className="group-hover/row:hidden">{rowIndex + 1}</span>
+            <span className="group-hover/row:hidden">{rowOffset + rowIndex + 1}</span>
             <span className="hidden items-center justify-center gap-0.5 group-hover/row:flex">
               {onDrill && (
                 <button
@@ -755,7 +871,7 @@ export default function PanelTable({
             </span>
           </>
         ) : (
-          rowIndex + 1
+          rowOffset + rowIndex + 1
         )}
       </td>
       {row.cells.map((cell, cellIndex) => {
@@ -834,7 +950,19 @@ export default function PanelTable({
                 onCancel={() => setEditingCell(null)}
               />
             ) : (
-              <CellContent text={cell.text} render={format.render} chip={visual.chip} />
+              <CellContent
+                text={cell.text}
+                raw={cell.raw}
+                type={col.type}
+                render={format.render}
+                chip={visual.chip}
+                gameName={
+                  gameNameColumnIndex === -1
+                    ? ""
+                    : row.cells[gameNameColumnIndex]?.text
+                }
+                canUseGameinfoTools={canUseGameinfoTools}
+              />
             )}
           </td>
         );

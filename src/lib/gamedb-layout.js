@@ -153,7 +153,7 @@ export const TONE_NAMES = Object.keys(CELL_TONES);
 export const RULE_TONES = [...TONE_NAMES, "bar"];
 export const CELL_RENDERS = ["text", "link", "email", "chip", "copy"];
 // What a computed column's result is shown and exported as.
-export const COMPUTED_TYPES = ["number", "text", "date", "boolean"];
+export const COMPUTED_TYPES = ["number", "text", "date", "boolean", "tutorial", "image"];
 // The box the "add a row" form shows for a column.
 export const INPUT_WIDGETS = [
   "text",

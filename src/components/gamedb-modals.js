@@ -281,6 +281,8 @@ const COMPUTED_TYPE_LABELS = {
   text: "ข้อความ",
   date: "วันที่",
   boolean: "ใช่ / ไม่ใช่",
+  tutorial: "Tutorial (ใช้รหัสเกม)",
+  image: "วางรูป (ใช้รหัสเกม)",
 };
 
 // Grouped the way someone reaches for them, not alphabetically.

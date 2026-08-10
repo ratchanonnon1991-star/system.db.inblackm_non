@@ -36,7 +36,7 @@ check("a working formula has an ast", Boolean(columns[2].ast), true);
 check("computed ids are prefixed", columns.slice(2).map((c) => c.id), ["#a", "#b", "#c", "#d"]);
 
 const layoutWithJunkType = normalizeLayout({
-  computed: [{ key: "x", label: "x", formula: "1", type: "image" }],
+  computed: [{ key: "x", label: "x", formula: "1", type: "html" }],
 });
 check(
   "an unknown result type falls back to number",
@@ -44,16 +44,29 @@ check(
   "number"
 );
 
+const gameinfoColumns = buildDisplayColumns([], normalizeLayout({
+  computed: [
+    { key: "tutorial", label: "Tutorial", formula: "1", type: "tutorial" },
+    { key: "image", label: "วางรูป", formula: "1", type: "image" },
+  ],
+}));
+check("a tutorial action keeps its type", gameinfoColumns[0].type, "tutorial");
+check("an image action keeps its type", gameinfoColumns[1].type, "image");
+
 const clean = sanitizeLayout({
   computed: [
     { key: "a", label: "ok", formula: "1 + 1", type: "date" },
     { key: "b", label: "bad", formula: "1", type: "html" },
     { key: "c", label: "missing" },
+    { key: "d", label: "Tutorial", formula: "1", type: "tutorial" },
+    { key: "e", label: "วางรูป", formula: "1", type: "image" },
   ],
 });
 check("the sanitizer keeps a valid result type", clean.computed[0].type, "date");
 check("the sanitizer rejects an unknown result type", clean.computed[1].type, "number");
-check("the sanitizer drops an entry with no formula", clean.computed.length, 2);
+check("the sanitizer keeps a tutorial action", clean.computed[2].type, "tutorial");
+check("the sanitizer keeps an image action", clean.computed[3].type, "image");
+check("the sanitizer drops an entry with no formula", clean.computed.length, 4);
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);
