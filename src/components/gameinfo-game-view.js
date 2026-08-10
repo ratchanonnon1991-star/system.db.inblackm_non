@@ -39,7 +39,14 @@ export default function GameinfoGameView({ row, currencies, computedColumns }) {
           Server/VPN summary, pill button to the game's top-up website. */}
       <div className="mb-8 flex items-start gap-4 rounded-xl border border-linear-hairline bg-linear-surface-1 p-4">
         <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-linear-primary/10">
-          <Gamepad2 size={26} className="text-linear-primary" />
+          {row.image ? (
+            <GameinfoImagePreview src={row.image} alt="">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={row.image} alt="" className="h-14 w-14 rounded-lg object-cover" />
+            </GameinfoImagePreview>
+          ) : (
+            <Gamepad2 size={26} className="text-linear-primary" />
+          )}
         </div>
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-base font-bold uppercase tracking-tight text-linear-ink">
@@ -78,7 +85,12 @@ export default function GameinfoGameView({ row, currencies, computedColumns }) {
             {/* Always view-only here regardless of role — editing the
                 tutorial happens from the "⋮" menu / list table, not this
                 page (see gameinfo-gamelist-table.js). */}
-            <GameinfoTutorialButton gameId={row.id} gameName={row.game} editable={false} />
+            <GameinfoTutorialButton
+              gameId={row.id}
+              gameName={row.game}
+              editable={false}
+              hasData={row.hasTutorial}
+            />
           </div>
         </div>
       </div>

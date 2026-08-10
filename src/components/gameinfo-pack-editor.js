@@ -21,6 +21,7 @@ import { CSS } from "@dnd-kit/utilities";
 import GameinfoMemoryInput from "./gameinfo-memory-input";
 import GameinfoTagsInput from "./gameinfo-tags-input";
 import GameinfoImagePreview from "./gameinfo-image-preview";
+import GameinfoImagePickerModal from "./gameinfo-image-picker-modal";
 import GameinfoComputedEditor from "./gameinfo-computed-editor";
 import { apiJson } from "@/lib/api-json";
 import { evaluateFormula, parseFormula } from "@/lib/gamedb-formula";
@@ -952,13 +953,12 @@ function PlainThumb({ value }) {
   );
 }
 
-// Image field for v1: paste a URL rather than uploading a file (see plan) —
-// kept as its own component so swapping in a real upload button later only
-// touches this one place. `compact` swaps the always-visible URL input +
-// hover/lightbox preview for a click-to-edit thumbnail so it fits a dense
-// pack row.
+// Image field — clicking opens a popup to either paste a URL or upload a
+// file from disk (see gameinfo-image-picker-modal.js). `compact` swaps the
+// thumbnail-plus-button layout for a bare click-to-open thumbnail so it fits
+// a dense pack row.
 function ImageUrlField({ value, onChange, compact }) {
-  const [editing, setEditing] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   if (!compact) {
     return (
@@ -971,40 +971,34 @@ function ImageUrlField({ value, onChange, compact }) {
         ) : (
           <PlainThumb value={value} />
         )}
-        <input
-          type="url"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="ลิงก์รูป"
-          className="h-7 w-28 rounded border border-linear-hairline px-1.5 text-[10px] outline-none focus:border-linear-primary/40"
-        />
+        <button
+          type="button"
+          onClick={() => setPickerOpen(true)}
+          className="rounded border border-linear-hairline px-2 py-1 text-[10px] text-linear-ink-muted hover:bg-linear-surface-2"
+        >
+          {value ? "เปลี่ยนรูป" : "ใส่รูป"}
+        </button>
+        {pickerOpen && (
+          <GameinfoImagePickerModal value={value} onChange={onChange} onClose={() => setPickerOpen(false)} />
+        )}
       </div>
     );
   }
 
-  if (editing) {
-    return (
-      <PackCellEditBox onCommit={() => setEditing(false)}>
-        <input
-          autoFocus
-          type="url"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="ลิงก์รูป"
-          className="h-9 w-full rounded border border-linear-primary/40 px-1.5 text-[10px] outline-none"
-        />
-      </PackCellEditBox>
-    );
-  }
   return (
-    <button
-      type="button"
-      onClick={() => setEditing(true)}
-      className="justify-self-start"
-      title="ใส่ลิงก์รูป"
-    >
-      <PlainThumb value={value} />
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() => setPickerOpen(true)}
+        className="justify-self-start"
+        title="ใส่รูปภาพ"
+      >
+        <PlainThumb value={value} />
+      </button>
+      {pickerOpen && (
+        <GameinfoImagePickerModal value={value} onChange={onChange} onClose={() => setPickerOpen(false)} />
+      )}
+    </>
   );
 }
 

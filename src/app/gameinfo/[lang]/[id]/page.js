@@ -8,6 +8,8 @@ import {
   listGamelistChannelsByGame,
   listGamelistVpnByGame,
 } from "@/server/gameinfo-gamelist-packs";
+import { getGamelistTutorial } from "@/server/gameinfo-gamelist-tutorial";
+import { getGamelistImage } from "@/server/gameinfo-gamelist-image";
 import GameinfoGameView from "@/components/gameinfo-game-view";
 import GameinfoErrorNotice from "@/components/gameinfo-error-notice";
 
@@ -37,10 +39,12 @@ export default async function GameinfoGameDetailPage({ params }) {
       const packs = await getGamelistPacks(row.id);
       currencies = packs.currencies;
       computedColumns = packs.computedColumns;
-      const [vpnByGame, channelsByGame, allRows] = await Promise.all([
+      const [vpnByGame, channelsByGame, allRows, tutorial, image] = await Promise.all([
         listGamelistVpnByGame(),
         listGamelistChannelsByGame(),
         listGameListRows(),
+        getGamelistTutorial(row.id),
+        getGamelistImage(row.id),
       ]);
       // Same ordering the list table shows as "ลำดับ" (gamelist_order-aware,
       // falls back to id order) — this game's position within it.
@@ -50,6 +54,8 @@ export default async function GameinfoGameDetailPage({ params }) {
         vpnComputed: vpnByGame[row.id] ? "YES" : "NO",
         channels: channelsByGame[row.id] || { main: [], secondary: [] },
         orderPosition: orderPosition > 0 ? orderPosition : null,
+        hasTutorial: tutorial.steps.length > 0,
+        image: image.imageUrl,
       };
     }
   } catch (err) {

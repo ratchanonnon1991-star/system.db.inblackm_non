@@ -8,6 +8,7 @@ import { getPoolForConnection } from "@/lib/db";
 import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
 import { deleteGamelistPacksForGame } from "@/server/gameinfo-gamelist-packs";
 import { deleteGamelistTutorialForGame } from "@/server/gameinfo-gamelist-tutorial";
+import { deleteGamelistImageForGame } from "@/server/gameinfo-gamelist-image";
 
 const CONNECTION_NAME = "gameinfo";
 
@@ -229,4 +230,5 @@ export async function deleteGameListRow(id) {
   }
   await deleteGamelistPacksForGame(id);
   await deleteGamelistTutorialForGame(id);
+  await deleteGamelistImageForGame(id);
 }

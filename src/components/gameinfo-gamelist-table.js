@@ -34,6 +34,7 @@ import { apiJson } from "@/lib/api-json";
 import GameinfoMemoryInput from "./gameinfo-memory-input";
 import GameinfoNameInput from "./gameinfo-name-input";
 import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
+import GameinfoImagePickerModal from "./gameinfo-image-picker-modal";
 
 // Rank, ทำซ้ำได้ (isRepeatable), หมายเหตุ (remark) are hidden per request —
 // the fields/backend still exist (game_list columns, API fields), this only
@@ -45,9 +46,10 @@ import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
 // Tutorial is its own always-visible column (not folded into the "⋮" menu)
 // since role "user" needs to open it too, read-only — see
 // gameinfo-tutorial-modal.js.
-// รูป is a plain placeholder icon (see RowThumb) and pack count is shown
-// inline next to the game name (not its own column) — both ported from the
-// old admin games-table, see listGamelistPackCountByGame().
+// รูป is the game's own icon (see RowThumb / gameinfo-gamelist-image.js) and
+// pack count is shown inline next to the game name (not its own column) —
+// pack count ported from the old admin games-table, see
+// listGamelistPackCountByGame().
 const GRID_COLS =
   "grid-cols-[28px_60px_50px_44px_minmax(160px,1.4fr)_110px_110px_110px_130px_minmax(140px,1fr)_130px_minmax(140px,1fr)_110px_44px]";
 
@@ -338,6 +340,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
       link: "",
       remark: "",
       packCount: 0,
+      image: "",
     };
     // Clear any active search/filter first — otherwise the new row (still
     // blank in most fields) could fail to match and be invisible right after
@@ -373,32 +376,34 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
     onReorderByNumber,
   };
 
+  const rangeStart = filteredRows.length === 0 ? 0 : clampedPage * pageSize + 1;
+  const rangeEnd = Math.min(filteredRows.length, clampedPage * pageSize + pageSize);
+
   const paginationBar = filteredRows.length > 0 && (
     <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-      <span className="text-xs text-linear-ink-tertiary">
-        {filtersActive
-          ? `พบ ${filteredRows.length} จาก ${rows.length} เกม`
-          : `ทั้งหมด ${rows.length} เกม`}{" "}
-        — หน้า {clampedPage + 1}/{pageCount}
-      </span>
+      <label className="flex items-center gap-2 text-xs font-medium text-linear-ink-muted">
+        แสดงต่อหน้า
+        <select
+          value={pageSize}
+          onChange={(e) => {
+            setPageSize(Number(e.target.value));
+            setPage(0);
+          }}
+          className="h-8 rounded-lg border border-linear-hairline-strong bg-linear-surface-1 px-2.5 text-xs text-linear-ink outline-none"
+        >
+          {[10, 25, 50, 100, 200].map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </select>
+      </label>
+
       <div className="flex items-center gap-3">
-        <label className="flex items-center gap-1.5 text-xs text-linear-ink-tertiary">
-          แสดงต่อหน้า
-          <select
-            value={pageSize}
-            onChange={(e) => {
-              setPageSize(Number(e.target.value));
-              setPage(0);
-            }}
-            className="rounded border border-linear-hairline-strong bg-linear-surface-1 px-2 py-1 text-xs text-linear-ink outline-none"
-          >
-            {[10, 25, 50, 100, 200].map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-        </label>
+        <span className="text-xs text-linear-ink-tertiary">
+          {filtersActive && `พบ ${filteredRows.length} จาก ${rows.length} เกม — `}
+          {rangeStart}-{rangeEnd} จาก {filteredRows.length}
+        </span>
         <div className="flex items-center gap-1">
           <button
             type="button"
@@ -406,28 +411,29 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
             disabled={clampedPage === 0}
             title="หน้าแรก"
             aria-label="หน้าแรก"
-            className="flex items-center rounded border border-linear-hairline-strong p-1.5 text-linear-ink-muted hover:bg-linear-surface-2 disabled:opacity-40"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-linear-hairline-strong text-linear-ink-muted hover:bg-linear-surface-2 disabled:opacity-40"
           >
-            <ChevronsLeft size={13} />
+            <ChevronsLeft size={14} />
           </button>
           <button
             type="button"
             onClick={() => setPage(Math.max(0, clampedPage - 1))}
             disabled={clampedPage === 0}
-            className="flex items-center gap-1 rounded border border-linear-hairline-strong px-2.5 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-2 disabled:opacity-40"
+            title="ก่อนหน้า"
+            aria-label="ก่อนหน้า"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-linear-hairline-strong text-linear-ink-muted hover:bg-linear-surface-2 disabled:opacity-40"
           >
-            <ArrowLeft size={13} /> ก่อนหน้า
+            <ArrowLeft size={14} />
           </button>
-          <span className="px-2 text-xs text-linear-ink-tertiary">
-            {clampedPage + 1} / {pageCount}
-          </span>
           <button
             type="button"
             onClick={() => setPage(Math.min(pageCount - 1, clampedPage + 1))}
             disabled={clampedPage >= pageCount - 1}
-            className="flex items-center gap-1 rounded border border-linear-hairline-strong px-2.5 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-2 disabled:opacity-40"
+            title="ถัดไป"
+            aria-label="ถัดไป"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-linear-hairline-strong text-linear-ink-muted hover:bg-linear-surface-2 disabled:opacity-40"
           >
-            ถัดไป <ArrowRight size={13} />
+            <ArrowRight size={14} />
           </button>
           <button
             type="button"
@@ -435,9 +441,9 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
             disabled={clampedPage >= pageCount - 1}
             title="หน้าสุดท้าย"
             aria-label="หน้าสุดท้าย"
-            className="flex items-center rounded border border-linear-hairline-strong p-1.5 text-linear-ink-muted hover:bg-linear-surface-2 disabled:opacity-40"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-linear-hairline-strong text-linear-ink-muted hover:bg-linear-surface-2 disabled:opacity-40"
           >
-            <ChevronsRight size={13} />
+            <ChevronsRight size={14} />
           </button>
         </div>
       </div>
@@ -446,21 +452,21 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
 
   return (
     <>
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+      <div className="mb-3 flex flex-wrap items-center gap-2.5">
         <div className="relative min-w-[200px] flex-1 max-w-xs">
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="ค้นหาชื่อเกม..."
-            className="h-9 w-full rounded-md border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm text-linear-ink outline-none focus:border-linear-primary focus:ring-2 focus:ring-linear-primary/20"
+            className="h-10 w-full rounded-xl border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm text-linear-ink outline-none focus:border-linear-primary focus:ring-2 focus:ring-linear-primary/20"
           />
         </div>
 
         <select
           value={filterRegion}
           onChange={(e) => setFilterRegion(e.target.value)}
-          className="h-9 rounded-md border border-linear-hairline-strong bg-linear-surface-1 px-2 text-sm text-linear-ink outline-none focus:border-linear-primary"
+          className="h-10 rounded-xl border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm text-linear-ink outline-none focus:border-linear-primary"
         >
           <option value="">Region ทั้งหมด</option>
           {suggestions.regions.map((v) => (
@@ -473,7 +479,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
         <select
           value={filterPlatform}
           onChange={(e) => setFilterPlatform(e.target.value)}
-          className="h-9 rounded-md border border-linear-hairline-strong bg-linear-surface-1 px-2 text-sm text-linear-ink outline-none focus:border-linear-primary"
+          className="h-10 rounded-xl border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm text-linear-ink outline-none focus:border-linear-primary"
         >
           <option value="">Platform ทั้งหมด</option>
           {suggestions.platforms.map((v) => (
@@ -486,7 +492,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
         <select
           value={filterServer}
           onChange={(e) => setFilterServer(e.target.value)}
-          className="h-9 rounded-md border border-linear-hairline-strong bg-linear-surface-1 px-2 text-sm text-linear-ink outline-none focus:border-linear-primary"
+          className="h-10 rounded-xl border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm text-linear-ink outline-none focus:border-linear-primary"
         >
           <option value="">Server ทั้งหมด</option>
           {suggestions.servers.map((v) => (
@@ -499,7 +505,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
         <select
           value={filterVpn}
           onChange={(e) => setFilterVpn(e.target.value)}
-          className="h-9 rounded-md border border-linear-hairline-strong bg-linear-surface-1 px-2 text-sm text-linear-ink outline-none focus:border-linear-primary"
+          className="h-10 rounded-xl border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm text-linear-ink outline-none focus:border-linear-primary"
         >
           <option value="">VPN ทั้งหมด</option>
           <option value="NO">NO</option>
@@ -510,7 +516,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
           <button
             type="button"
             onClick={clearFilters}
-            className="h-9 rounded-md border border-linear-hairline-strong px-3 text-sm text-linear-ink-muted hover:bg-linear-surface-2"
+            className="h-10 rounded-xl border border-linear-hairline-strong px-3 text-sm text-linear-ink-muted hover:bg-linear-surface-2"
           >
             ล้างตัวกรอง
           </button>
@@ -519,11 +525,11 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
 
       {paginationBar && <div className="mb-3">{paginationBar}</div>}
 
-      <div className="overflow-hidden rounded-lg border border-linear-hairline bg-linear-surface-1">
+      <div className="overflow-hidden rounded-2xl border border-linear-hairline bg-linear-surface-1">
         <div className="scroll-x">
           <div className="min-w-[1400px]">
             <div
-              className={`grid ${GRID_COLS} gap-2 border-b border-linear-hairline bg-linear-surface-2 px-3 py-2 text-xs font-medium text-linear-ink-subtle`}
+              className={`grid ${GRID_COLS} gap-2 border-b border-linear-hairline bg-linear-surface-2 px-3 py-3 text-xs font-medium uppercase tracking-wide text-linear-ink-subtle`}
             >
               <span></span>
               <span>ลำดับ</span>
@@ -728,7 +734,7 @@ function RowCells({
       />
       <span className="text-linear-ink-tertiary">{row.id}</span>
 
-      <RowThumb />
+      <RowThumb gameId={row.id} image={row.image ?? ""} editable={editable} />
 
       <NameCell
         editable={editable}
@@ -857,7 +863,12 @@ function RowCells({
       {/* Always rendered regardless of editable — role "user" (and the
           "หน้าเว็บ" preview) can still open it, just read-only inside. */}
       <span className="flex justify-start" onClick={(e) => e.stopPropagation()}>
-        <GameinfoTutorialButton gameId={row.id} gameName={row.game} editable={editable} />
+        <GameinfoTutorialButton
+          gameId={row.id}
+          gameName={row.game}
+          editable={editable}
+          hasData={row.hasTutorial}
+        />
       </span>
 
       {/* In view-only mode (role "user", or the "หน้าเว็บ" toggle's ?view=1
@@ -1072,18 +1083,60 @@ function OrderCell({ editable, editing, order, totalRows, onStartEdit, onCommit,
   );
 }
 
-// Plain placeholder icon — game_list/gamelist_packs has no per-game "image"
-// field of its own. This used to borrow whichever pack/currency image was
-// entered first for that game (see the removed listGamelistThumbnailByGame()),
-// but that's not actually the game's own icon — it's just whatever image a
-// staff member happened to paste onto that game's first pack/currency, so a
-// row could show an unrelated, inconsistent thumbnail (a currency icon, a
-// promo banner, whatever) instead of reading as "no image set".
-function RowThumb() {
-  return (
+// The game's own icon — stored separately from any pack/currency image (see
+// gameinfo-gamelist-image.js) so it never falls back to borrowing whichever
+// pack/currency image happened to be entered first for that game (that was
+// the removed listGamelistThumbnailByGame() behavior — not actually the
+// game's own icon, just whatever a staff member happened to paste onto that
+// game's first pack/currency). Editable rows open the same upload/URL popup
+// used for pack and currency images (gameinfo-image-picker-modal.js); saves
+// immediately on change rather than joining the row's dirty/save-all flow.
+function RowThumb({ gameId, image, editable }) {
+  const [value, setValue] = useState(image);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  async function handleChange(next) {
+    setValue(next);
+    try {
+      await apiJson(`/api/gameinfo/gamelist/${gameId}/image`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageUrl: next }),
+        fallbackError: "บันทึกรูปไม่สำเร็จ",
+      });
+    } catch {
+      // best-effort — the thumbnail already reflects the picked value locally
+    }
+  }
+
+  const thumb = value ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={value} alt="" className="h-9 w-9 shrink-0 rounded object-cover" />
+  ) : (
     <span className="flex h-9 w-9 items-center justify-center rounded bg-linear-surface-3 text-linear-ink-tertiary">
       <ImageIcon size={14} />
     </span>
+  );
+
+  if (!editable) return thumb;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setPickerOpen(true);
+        }}
+        title="ใส่รูปเกม"
+        className="shrink-0"
+      >
+        {thumb}
+      </button>
+      {pickerOpen && (
+        <GameinfoImagePickerModal value={value} onChange={handleChange} onClose={() => setPickerOpen(false)} />
+      )}
+    </>
   );
 }
 
