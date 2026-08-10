@@ -53,6 +53,14 @@ check("a column with its own tint keeps it", tones[0][3], "green");
 check("a row rule reaches the cells with nothing of their own", tones[2][0], "redSolid");
 check("a row rule does not overwrite a cell's own tint", tones[2][1], "pink");
 
+const themedTones = buildToneGrid(
+  columns.slice(0, 2),
+  rows.slice(0, 1).map((row) => ({ ...row, cells: row.cells.slice(0, 2) })),
+  normalizeLayout({ tableTone: "sky", formats: { "ยอดเข้า": { bg: "pink" } } })
+);
+check("a table theme colours an otherwise plain cell", themedTones[0][0], "sky");
+check("a column tint overrides the table theme", themedTones[0][1], "pink");
+
 const groups = buildHeaderGroups(columns, layout);
 check(
   "neighbouring columns with the same label become one band",

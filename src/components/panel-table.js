@@ -513,6 +513,8 @@ export default function PanelTable({
   const [naturalWidths, setNaturalWidths] = useState({});
   const [resizing, setResizing] = useState(null);
   const [editingCell, setEditingCell] = useState(null);
+  const tableBodyTone = toneStyle(layout.tableTone);
+  const tableHeadTone = toneStyle(layout.tableTone, "head");
   const gameNameColumnIndex = columns.findIndex(
     (col) => col.kind === "base" && col.column?.name === "game"
   );
@@ -823,7 +825,7 @@ export default function PanelTable({
     const rowRule = rowRules.find((entry) =>
       ruleMatches(entry.rule, row.cells[entry.index]?.raw, row.cells[entry.index]?.text, resolve)
     );
-    const rowTone = rowRule ? toneStyle(rowRule.rule.tone) : null;
+    const rowTone = rowRule ? toneStyle(rowRule.rule.tone) : tableBodyTone;
 
     return (
     <tr
@@ -1094,10 +1096,10 @@ export default function PanelTable({
             <tr className="bg-zinc-100">
               <th
                 className="sticky top-0 border border-zinc-200 bg-zinc-100"
-                style={{ height: GROUP_ROW_HEIGHT, ...(freezeCount ? { left: 0, zIndex: 21 } : { zIndex: 11 }) }}
+                style={{ height: GROUP_ROW_HEIGHT, ...(tableHeadTone || {}), ...(freezeCount ? { left: 0, zIndex: 21 } : { zIndex: 11 }) }}
               />
               {headerGroups.map((group, index) => {
-                const tone = toneStyle(group.tone, "head");
+                const tone = toneStyle(group.tone, "head") || tableHeadTone;
                 // Only the columns to the left of the freeze line can be
                 // pinned; a band that straddles it scrolls with the rest.
                 const frozen = group.start + group.span <= freezeCount;
@@ -1120,20 +1122,21 @@ export default function PanelTable({
                   </th>
                 );
               })}
-              {measured && <th className="sticky top-0 border border-zinc-200 bg-zinc-100" style={{ zIndex: 11 }} />}
+              {measured && <th className="sticky top-0 border border-zinc-200 bg-zinc-100" style={{ zIndex: 11, ...(tableHeadTone || {}) }} />}
             </tr>
           )}
           <tr className="bg-zinc-100">
             <th
               className="sticky border border-zinc-200 bg-zinc-100 px-2 py-2 text-center font-black text-zinc-400"
-              style={{ top: headerTop, ...(freezeCount ? { left: 0, zIndex: 20 } : { zIndex: 10 }) }}
+              style={{ top: headerTop, ...(tableHeadTone || {}), ...(freezeCount ? { left: 0, zIndex: 20 } : { zIndex: 10 }) }}
             >
               #
             </th>
             {columns.map((col, index) => {
               const sorted = layout.sort && layout.sort.colId === col.id ? layout.sort.dir : null;
               const summaryKind = layout.summary[col.id];
-              const headTone = toneStyle(columnStyling[index].format.headerBg, "head");
+              const headTone =
+                toneStyle(columnStyling[index].format.headerBg, "head") || tableHeadTone;
               const frozen = index < freezeCount;
               return (
                 <th
@@ -1218,14 +1221,14 @@ export default function PanelTable({
             {measured && (
               <th
                 className="sticky border border-zinc-200 bg-zinc-100"
-                style={{ top: headerTop, zIndex: 10 }}
+                style={{ top: headerTop, zIndex: 10, ...(tableHeadTone || {}) }}
               />
             )}
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
-            <tr>
+            <tr style={tableBodyTone || undefined}>
               <td
                 colSpan={columns.length + (measured ? 2 : 1)}
                 className="border border-zinc-200 px-3 py-8 text-center font-semibold text-zinc-400"
@@ -1245,7 +1248,7 @@ export default function PanelTable({
                   const collapsed = collapsedGroups.has(group.key);
                   return (
                     <Fragment key={group.key}>
-                      <tr className="bg-zinc-100/80">
+                      <tr className="bg-zinc-100/80" style={tableHeadTone || undefined}>
                         <td
                           colSpan={columns.length + (measured ? 2 : 1)}
                           className="border border-zinc-200 px-2 py-1"
@@ -1285,7 +1288,7 @@ export default function PanelTable({
         </tbody>
         {summaryValues && (
           <tfoot>
-            <tr className="bg-zinc-100 font-black">
+            <tr className="bg-zinc-100 font-black" style={tableHeadTone || undefined}>
               <td
                 className="border border-zinc-200 bg-inherit px-2 py-1.5 text-center text-zinc-400"
                 style={freezeCount ? { position: "sticky", left: 0, zIndex: 2 } : undefined}

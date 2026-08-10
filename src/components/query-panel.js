@@ -56,6 +56,7 @@ import {
   normalizeLayout,
   REFRESH_CHOICES,
   rowsToCsv,
+  toneStyle,
 } from "@/lib/gamedb-layout";
 import { ComputedColumnModal } from "@/components/gamedb-modals";
 import {
@@ -89,14 +90,17 @@ const paramPresetButtonClass =
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 200];
 
-function PaginationBar({ rowCount, page, pageCount, pageSize, onPageChange, onPageSizeChange }) {
+function PaginationBar({ rowCount, page, pageCount, pageSize, tableTone, onPageChange, onPageSizeChange }) {
   const first = rowCount ? (page - 1) * pageSize + 1 : 0;
   const last = Math.min(rowCount, page * pageSize);
   const buttonClass =
     "flex h-7 w-7 items-center justify-center rounded-sm border border-zinc-200 bg-white text-zinc-500 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-35";
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-100 bg-zinc-50 px-3 py-1.5 text-[10px] font-semibold text-zinc-500">
+    <div
+      className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-100 bg-zinc-50 px-3 py-1.5 text-[10px] font-semibold text-zinc-500"
+      style={toneStyle(tableTone) || undefined}
+    >
       <span>
         แสดง {first.toLocaleString("th-TH")}-{last.toLocaleString("th-TH")} จาก {rowCount.toLocaleString("th-TH")} แถว
       </span>
@@ -1031,7 +1035,9 @@ export default function QueryPanel({
       // the text looks like, so a phone number keeps its leading zero.
       types: visibleColumns.map((col) => col.type),
       rows: displayRows.map((row) => row.cells.map((cell) => cell.raw ?? cell.text)),
-      headerTones: visibleColumns.map((col) => layout.formats[col.id]?.headerBg || ""),
+      headerTones: visibleColumns.map(
+        (col) => layout.formats[col.id]?.headerBg || layout.tableTone || ""
+      ),
       cellTones: buildToneGrid(visibleColumns, displayRows, layout),
       groups: buildHeaderGroups(visibleColumns, layout),
     });
@@ -1551,6 +1557,8 @@ export default function QueryPanel({
   };
 
   const bodyHeight = docked ? dockedHeight : panel.height;
+  const panelHeaderTone = toneStyle(layout.tableTone, "head");
+  const panelBorderColor = panelHeaderTone?.backgroundColor;
 
   return (
     <section
@@ -1562,16 +1570,17 @@ export default function QueryPanel({
           onBringToFront?.(query.id);
         }
       }}
-      style={
-        docked
+      style={{
+        ...(docked
           ? { position: "relative", width: "100%" }
           : {
               position: "absolute",
               left: panel.x || 0,
               top: panel.y || 0,
               width: panel.width,
-            }
-      }
+            }),
+        ...(panelBorderColor ? { borderColor: panelBorderColor } : {}),
+      }}
       className={`flex min-w-0 flex-col border border-zinc-200 bg-white shadow-sm transition-shadow ${
         panelDrag || frameDrag
           ? "z-30 shadow-xl ring-1 ring-red-500"
@@ -1591,7 +1600,10 @@ export default function QueryPanel({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2 border-b border-zinc-100 px-3 py-1.5">
+      <div
+        className="flex flex-wrap items-center gap-2 border-b border-zinc-100 px-3 py-1.5"
+        style={panelHeaderTone || undefined}
+      >
         {canCustomizeLayout && !docked ? <button
           type="button"
           onPointerDown={startPanelMove}
@@ -1831,10 +1843,10 @@ export default function QueryPanel({
                 <Paintbrush
                   size={14}
                   className={
-                    Object.keys(layout.formats).length || layout.freeze ? "text-red-600" : ""
+                    Object.keys(layout.formats).length || layout.freeze || layout.tableTone ? "text-red-600" : ""
                   }
                 />
-                รูปแบบคอลัมน์
+                รูปแบบและสีตาราง
               </button>
               <button
                 type="button"
@@ -2291,6 +2303,7 @@ export default function QueryPanel({
                   page={activePage}
                   pageCount={pageCount}
                   pageSize={pageSize}
+                  tableTone={layout.tableTone}
                   onPageChange={setPage}
                   onPageSizeChange={(next) => {
                     setPageSize(next);
@@ -2461,9 +2474,10 @@ export default function QueryPanel({
           columns={visibleColumns}
           formats={layout.formats}
           freeze={layout.freeze}
+          tableTone={layout.tableTone}
           onClose={() => setModal(null)}
-          onSave={({ formats, freeze }) => {
-            mutateLayout((prev) => ({ ...prev, formats, freeze }));
+          onSave={({ formats, freeze, tableTone }) => {
+            mutateLayout((prev) => ({ ...prev, formats, freeze, tableTone }));
             setModal(null);
           }}
         />

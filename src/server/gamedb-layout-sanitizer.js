@@ -14,6 +14,7 @@ import {
   RULE_OPS,
   RULE_TONES,
   SUMMARY_KINDS,
+  TABLE_TONES,
 } from "@/lib/gamedb-layout";
 import { isSafeIdentifier, isSafeIdentifierPart } from "@/lib/gamedb-identifier";
 
@@ -210,6 +211,7 @@ export function sanitizeLayout(raw) {
     // or SQL text.
     formats: capEntries(normalizeFormats(layout.formats), 200),
     freeze: normalizeFreeze(layout.freeze),
+    tableTone: TABLE_TONES.includes(layout.tableTone) ? layout.tableTone : "",
   };
 }
 

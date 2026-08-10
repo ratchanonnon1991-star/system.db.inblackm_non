@@ -29,6 +29,7 @@ export const EMPTY_LAYOUT = {
   refreshSeconds: 0,
   formats: {},
   freeze: 0,
+  tableTone: "",
 };
 
 export const PARAM_TYPES = [
@@ -149,6 +150,10 @@ export const CELL_TONES = {
 };
 
 export const TONE_NAMES = Object.keys(CELL_TONES);
+// Whole-table themes stay in the readable pastel range. Solid tones remain
+// available for individual cells and rules, where their stronger contrast is
+// useful without turning an entire query panel into one saturated block.
+export const TABLE_TONES = TONE_NAMES.filter((tone) => !tone.endsWith("Solid"));
 // "bar" is not a colour — it draws a proportional fill behind the number.
 export const RULE_TONES = [...TONE_NAMES, "bar"];
 export const CELL_RENDERS = ["text", "link", "email", "chip", "copy"];
@@ -292,6 +297,7 @@ export function normalizeLayout(raw) {
       : 0,
     formats: normalizeFormats(layout.formats),
     freeze: normalizeFreeze(layout.freeze),
+    tableTone: TABLE_TONES.includes(layout.tableTone) ? layout.tableTone : "",
   };
 }
 
@@ -352,10 +358,11 @@ export function buildHeaderGroups(columns, layout) {
   for (const col of columns) {
     const format = formatOf(layout, col.id);
     const last = runs[runs.length - 1];
-    if (last && last.label === format.group && last.tone === format.groupBg) {
+    const groupTone = format.groupBg || layout.tableTone || "";
+    if (last && last.label === format.group && last.tone === groupTone) {
       last.span += 1;
     } else {
-      runs.push({ label: format.group, tone: format.groupBg, span: 1 });
+      runs.push({ label: format.group, tone: groupTone, span: 1 });
     }
   }
   return runs;
@@ -411,7 +418,12 @@ export function buildToneGrid(columns, rows, layout) {
       const cell = row.cells[index];
       // On screen a row tone is the background the cell sits on, so a cell with
       // nothing of its own shows it; here that has to be spelled out.
-      return pickCellTone(rules, format, cell?.raw, cell?.text, resolve) || rowRule?.rule.tone || "";
+      return (
+        pickCellTone(rules, format, cell?.raw, cell?.text, resolve) ||
+        rowRule?.rule.tone ||
+        layout.tableTone ||
+        ""
+      );
     });
   });
 }

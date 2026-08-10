@@ -40,6 +40,7 @@ import {
   RULE_OP_LABELS,
   RULE_OPS,
   RULE_TONES,
+  TABLE_TONES,
   TONE_LABELS,
   TONE_NAMES,
   toneStyle,
@@ -1255,7 +1256,7 @@ const RENDER_LABELS = {
 
 const ALIGN_LABELS = { "": "อัตโนมัติ", left: "ซ้าย", center: "กลาง", right: "ขวา" };
 
-function ToneSelect({ value, onChange, label, part }) {
+function ToneSelect({ value, onChange, label, part, tones = TONE_NAMES }) {
   // The text picker has to preview what it does — ink on the page — or a solid
   // tone shows as a red block and reads as a background.
   const preview =
@@ -1274,7 +1275,7 @@ function ToneSelect({ value, onChange, label, part }) {
         style={preview}
       >
         <option value="">ไม่กำหนด</option>
-        {TONE_NAMES.map((tone) => (
+        {tones.map((tone) => (
           <option key={tone} value={tone}>
             {TONE_LABELS[tone]}
           </option>
@@ -1293,6 +1294,7 @@ export function FormatsModal({
   columns,
   formats,
   freeze,
+  tableTone,
   onSave,
   onClose,
 }) {
@@ -1302,6 +1304,7 @@ export function FormatsModal({
     return initial;
   });
   const [pinned, setPinned] = useState(freeze || 0);
+  const [theme, setTheme] = useState(tableTone || "");
 
   const update = (colId, patch) =>
     setDraft((prev) => ({ ...prev, [colId]: { ...prev[colId], ...patch } }));
@@ -1310,7 +1313,7 @@ export function FormatsModal({
 
   return (
     <ModalShell
-      title="รูปแบบคอลัมน์"
+      title="รูปแบบและสีตาราง"
       icon={<Paintbrush size={15} className="text-red-600" />}
       onClose={onClose}
       onSave={() => {
@@ -1321,25 +1324,35 @@ export function FormatsModal({
           if (isEmptyFormat(draft[col.id])) delete formatsOut[col.id];
           else formatsOut[col.id] = draft[col.id];
         }
-        onSave({ formats: formatsOut, freeze: pinned });
+        onSave({ formats: formatsOut, freeze: pinned, tableTone: theme });
       }}
     >
-      <div className="flex items-center gap-3 rounded-sm border border-zinc-200 bg-zinc-50 px-3 py-2">
-        <label htmlFor="freeze-count" className="text-[11px] font-black text-zinc-600">
-          ตรึงคอลัมน์ซ้ายไว้
+      <div className="grid gap-3 rounded-sm border border-zinc-200 bg-zinc-50 px-3 py-2 sm:grid-cols-2">
+        <ToneSelect
+          label="สีประจำตาราง Query นี้"
+          part="head"
+          tones={TABLE_TONES}
+          value={theme}
+          onChange={setTheme}
+        />
+        <label className="block">
+          <span className="mb-0.5 block text-[9px] font-black text-zinc-400">ตรึงคอลัมน์ซ้ายไว้</span>
+          <select
+            id="freeze-count"
+            value={pinned}
+            onChange={(event) => setPinned(Number(event.target.value))}
+            className="h-7 w-full rounded-sm border border-zinc-200 bg-white px-2 text-[10px] font-bold outline-none focus:border-red-600"
+          >
+            {Array.from({ length: MAX_FREEZE + 1 }, (_, n) => (
+              <option key={n} value={n}>
+                {n === 0 ? "ไม่ตรึง" : `${n} คอลัมน์แรก`}
+              </option>
+            ))}
+          </select>
         </label>
-        <select
-          id="freeze-count"
-          value={pinned}
-          onChange={(event) => setPinned(Number(event.target.value))}
-          className="h-8 rounded-sm border border-zinc-200 bg-white px-2 text-[11px] font-bold outline-none focus:border-red-600"
-        >
-          {Array.from({ length: MAX_FREEZE + 1 }, (_, n) => (
-            <option key={n} value={n}>
-              {n === 0 ? "ไม่ตรึง" : `${n} คอลัมน์แรก`}
-            </option>
-          ))}
-        </select>
+        <span className="text-[10px] font-semibold text-zinc-400">
+          {theme ? `ใช้สี ${TONE_LABELS[theme]} กับทั้งตาราง` : "ยังไม่ได้เลือกสีประจำตาราง"}
+        </span>
         <span className="text-[10px] font-semibold text-zinc-400">
           {touched > 0 ? `ตั้งรูปแบบไว้ ${touched} คอลัมน์` : "ยังไม่ได้ตั้งรูปแบบคอลัมน์ไหน"}
         </span>

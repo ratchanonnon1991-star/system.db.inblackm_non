@@ -13,6 +13,7 @@ import {
   toDate,
   toneStyle,
   CELL_TONES,
+  TABLE_TONES,
   RULE_TONES,
 } from "@/lib/gamedb-layout.js";
 import { sanitizeLayout } from "@/server/gamedb-layout-sanitizer.js";
@@ -143,6 +144,9 @@ for (const tone of RULE_TONES) {
 check("bar has no colour", toneStyle("bar"), null);
 check("no tone, no style", toneStyle(""), null);
 check("every tone has a hex bg", Object.values(CELL_TONES).every((t) => /^#[0-9a-f]{6}$/i.test(t.bg)), true);
+check("table themes omit solid tones", TABLE_TONES.some((tone) => tone.endsWith("Solid")), false);
+check("a known table theme survives", normalizeLayout({ tableTone: "sky" }).tableTone, "sky");
+check("an unknown table theme is dropped", normalizeLayout({ tableTone: "neon" }).tableTone, "");
 
 // --- layout round trip ---------------------------------------------------
 const layout = normalizeLayout({
@@ -182,6 +186,8 @@ check("the sanitizer drops an injected colour", clean.formats.bad, undefined);
 check("the sanitizer parses a numeric string freeze", clean.freeze, 4);
 check("the sanitizer keeps row scope", clean.rules[0].scope, "row");
 check("the sanitizer keeps the new op", clean.rules[0].op, "dueIn");
+check("the sanitizer keeps a table theme", sanitizeLayout({ tableTone: "sky" }).tableTone, "sky");
+check("the sanitizer rejects a solid table theme", sanitizeLayout({ tableTone: "redSolid" }).tableTone, "");
 
 // JSON only ever produces plain objects, so this is what a hostile body looks
 // like: the wrong type in every slot.
@@ -243,6 +249,11 @@ check(
   cols.length
 );
 check("no columns, no bands", buildHeaderGroups([], groupLayout), []);
+check(
+  "a table theme colours an uncoloured group band",
+  buildHeaderGroups(cols, normalizeLayout({ tableTone: "sky", formats: { b: { group: "ยอด" } } }))[1].tone,
+  "sky"
+);
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);
