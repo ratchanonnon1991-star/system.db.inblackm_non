@@ -21,6 +21,32 @@
   --color-linear-ink-tertiary: #62666d;
 }
 
+/* Light theme override for the /gameinfo module — the slate/indigo palette
+   gameinfo actually used before the Linear dark redesign (see the pre-redesign
+   gameinfo-pack-editor.js: bg-white cards, border-slate-200, text-slate-700,
+   indigo-600 accent). Every gameinfo component still just uses its existing
+   linear-prefixed background, text and border utility classes — toggling
+   data-theme="light" on the module's root element (see
+   gameinfo-theme-root.js) swaps what those custom properties resolve to, no
+   component classNames change. */
+[data-theme="light"] {
+  --color-linear-canvas: #ffffff;
+  --color-linear-surface-1: #ffffff;
+  --color-linear-surface-2: #f8fafc;
+  --color-linear-surface-3: #f1f5f9;
+  --color-linear-surface-4: #e2e8f0;
+  --color-linear-hairline: #e2e8f0;
+  --color-linear-hairline-strong: #cbd5e1;
+  --color-linear-hairline-tertiary: #94a3b8;
+  --color-linear-primary: #4f46e5;
+  --color-linear-primary-hover: #4338ca;
+  --color-linear-primary-focus: #4338ca;
+  --color-linear-ink: #334155;
+  --color-linear-ink-muted: #475569;
+  --color-linear-ink-subtle: #64748b;
+  --color-linear-ink-tertiary: #94a3b8;
+}
+
 /* Used throughout the gameinfo module's fixed-column-width tables (pack
    grids, games table, game list) — without this the wide grid just overflows
    its card with the browser's default overflow:visible instead of scrolling

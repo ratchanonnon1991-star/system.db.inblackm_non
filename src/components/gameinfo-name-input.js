@@ -152,7 +152,7 @@ export default function GameinfoNameInput({
             )}
             {similar.length > 0 && (
               <>
-                <div className="px-3 py-1 text-[11px] text-white/40">
+                <div className="px-3 py-1 text-[11px] text-linear-ink-tertiary">
                   ชื่อใกล้เคียง — พิมพ์ผิดรึเปล่า ใช่อันนี้ไหม?
                 </div>
                 {similar.map((s) => (
@@ -164,7 +164,7 @@ export default function GameinfoNameInput({
                       onChange(s);
                       setOpen(false);
                     }}
-                    className="block w-full px-3 py-1.5 text-left text-sm text-white hover:bg-linear-primary/10"
+                    className="block w-full px-3 py-1.5 text-left text-sm text-linear-ink hover:bg-linear-primary/10"
                   >
                     {s}
                   </button>

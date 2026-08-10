@@ -136,7 +136,7 @@ export default function GameinfoTagsInput({
                     e.preventDefault();
                     add(s);
                   }}
-                  className="block w-full px-3 py-1.5 text-left text-sm text-white hover:bg-linear-primary/10"
+                  className="block w-full px-3 py-1.5 text-left text-sm text-linear-ink hover:bg-linear-primary/10"
                 >
                   {s}
                 </button>

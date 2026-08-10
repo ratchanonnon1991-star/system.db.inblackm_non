@@ -22,6 +22,8 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
+  ChevronsLeft,
+  ChevronsRight,
   ExternalLink,
   GripVertical,
   Image as ImageIcon,
@@ -371,6 +373,77 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
     onReorderByNumber,
   };
 
+  const paginationBar = filteredRows.length > 0 && (
+    <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+      <span className="text-xs text-linear-ink-tertiary">
+        {filtersActive
+          ? `พบ ${filteredRows.length} จาก ${rows.length} เกม`
+          : `ทั้งหมด ${rows.length} เกม`}{" "}
+        — หน้า {clampedPage + 1}/{pageCount}
+      </span>
+      <div className="flex items-center gap-3">
+        <label className="flex items-center gap-1.5 text-xs text-linear-ink-tertiary">
+          แสดงต่อหน้า
+          <select
+            value={pageSize}
+            onChange={(e) => {
+              setPageSize(Number(e.target.value));
+              setPage(0);
+            }}
+            className="rounded border border-linear-hairline-strong bg-linear-surface-1 px-2 py-1 text-xs text-linear-ink outline-none"
+          >
+            {[10, 25, 50, 100, 200].map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setPage(0)}
+            disabled={clampedPage === 0}
+            title="หน้าแรก"
+            aria-label="หน้าแรก"
+            className="flex items-center rounded border border-linear-hairline-strong p-1.5 text-linear-ink-muted hover:bg-linear-surface-2 disabled:opacity-40"
+          >
+            <ChevronsLeft size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setPage(Math.max(0, clampedPage - 1))}
+            disabled={clampedPage === 0}
+            className="flex items-center gap-1 rounded border border-linear-hairline-strong px-2.5 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-2 disabled:opacity-40"
+          >
+            <ArrowLeft size={13} /> ก่อนหน้า
+          </button>
+          <span className="px-2 text-xs text-linear-ink-tertiary">
+            {clampedPage + 1} / {pageCount}
+          </span>
+          <button
+            type="button"
+            onClick={() => setPage(Math.min(pageCount - 1, clampedPage + 1))}
+            disabled={clampedPage >= pageCount - 1}
+            className="flex items-center gap-1 rounded border border-linear-hairline-strong px-2.5 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-2 disabled:opacity-40"
+          >
+            ถัดไป <ArrowRight size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setPage(pageCount - 1)}
+            disabled={clampedPage >= pageCount - 1}
+            title="หน้าสุดท้าย"
+            aria-label="หน้าสุดท้าย"
+            className="flex items-center rounded border border-linear-hairline-strong p-1.5 text-linear-ink-muted hover:bg-linear-surface-2 disabled:opacity-40"
+          >
+            <ChevronsRight size={13} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <>
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -444,6 +517,8 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
         )}
       </div>
 
+      {paginationBar && <div className="mb-3">{paginationBar}</div>}
+
       <div className="overflow-hidden rounded-lg border border-linear-hairline bg-linear-surface-1">
         <div className="scroll-x">
           <div className="min-w-[1400px]">
@@ -505,56 +580,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
         </div>
       </div>
 
-      {filteredRows.length > 0 && (
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm">
-          <span className="text-xs text-linear-ink-tertiary">
-            {filtersActive
-              ? `พบ ${filteredRows.length} จาก ${rows.length} เกม`
-              : `ทั้งหมด ${rows.length} เกม`}{" "}
-            — หน้า {clampedPage + 1}/{pageCount}
-          </span>
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-1.5 text-xs text-linear-ink-tertiary">
-              แสดงต่อหน้า
-              <select
-                value={pageSize}
-                onChange={(e) => {
-                  setPageSize(Number(e.target.value));
-                  setPage(0);
-                }}
-                className="rounded border border-linear-hairline-strong bg-linear-surface-1 px-2 py-1 text-xs text-linear-ink outline-none"
-              >
-                {[10, 25, 50, 100, 200].map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setPage(Math.max(0, clampedPage - 1))}
-                disabled={clampedPage === 0}
-                className="flex items-center gap-1 rounded border border-linear-hairline-strong px-2.5 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-2 disabled:opacity-40"
-              >
-                <ArrowLeft size={13} /> ก่อนหน้า
-              </button>
-              <span className="px-2 text-xs text-linear-ink-tertiary">
-                {clampedPage + 1} / {pageCount}
-              </span>
-              <button
-                type="button"
-                onClick={() => setPage(Math.min(pageCount - 1, clampedPage + 1))}
-                disabled={clampedPage >= pageCount - 1}
-                className="flex items-center gap-1 rounded border border-linear-hairline-strong px-2.5 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-2 disabled:opacity-40"
-              >
-                ถัดไป <ArrowRight size={13} />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {paginationBar && <div className="mt-3">{paginationBar}</div>}
 
       {editable && (
         <div className="fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 flex-col items-center gap-2">
@@ -907,7 +933,7 @@ function RowActionsMenu({ row, lang, editable, onDelete }) {
             <Link
               href={`/gameinfo/${lang}/${row.id}`}
               onClick={() => setOpen(false)}
-              className="block px-3 py-1.5 text-xs text-white hover:bg-linear-surface-2"
+              className="block px-3 py-1.5 text-xs text-linear-ink hover:bg-linear-surface-2"
             >
               ดู
             </Link>
@@ -915,7 +941,7 @@ function RowActionsMenu({ row, lang, editable, onDelete }) {
               <Link
                 href={`/gameinfo/${lang}/${row.id}/packs`}
                 onClick={() => setOpen(false)}
-                className="block px-3 py-1.5 text-xs text-white hover:bg-linear-surface-2"
+                className="block px-3 py-1.5 text-xs text-linear-ink hover:bg-linear-surface-2"
               >
                 แพ็ก
               </Link>

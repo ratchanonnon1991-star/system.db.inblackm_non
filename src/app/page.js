@@ -57,6 +57,7 @@ import { EditLogModal, HealthModal } from "@/components/admin-modals";
 export default function GamedbPage() {
   const [me, setMe] = useState(null);
   const [checkingMe, setCheckingMe] = useState(true);
+  const [view, setView] = useState("hub");
 
   useEffect(() => {
 
@@ -80,7 +81,128 @@ export default function GamedbPage() {
     return <LoginScreen onLoggedIn={setMe} />;
   }
 
-  return <GamedbWorkspace me={me} onLoggedOut={() => setMe(null)} />;
+  const handleLoggedOut = () => {
+    setMe(null);
+    setView("hub");
+  };
+
+  if (view === "systemdb") {
+    return (
+      <GamedbWorkspace
+        me={me}
+        onLoggedOut={handleLoggedOut}
+        onBackToMenu={() => setView("hub")}
+      />
+    );
+  }
+
+  return <SystemHub me={me} onLoggedOut={handleLoggedOut} onEnter={setView} />;
+}
+
+const SYSTEMS = [
+  {
+    key: "systemdb",
+    label: "System DB",
+    desc: "ฐานข้อมูลหลัก จัดการตาราง คิวรี และมุมมอง",
+    icon: Database,
+    kind: "view",
+  },
+  {
+    key: "gameinfo",
+    label: "GameInfo",
+    desc: "ฐานข้อมูลการเติมเกม",
+    icon: Gamepad2,
+    kind: "link",
+    href: "/gameinfo/th",
+  },
+];
+
+function SystemHub({ me, onLoggedOut, onEnter }) {
+  const isSuperAdmin = me.role === "admin";
+  const isTemplateUser = me.role === "user";
+  const [usersModal, setUsersModal] = useState(false);
+
+  const logout = async () => {
+    try {
+      await apiJson("/api/auth/logout", { method: "POST" });
+    } catch {
+      // ignore — cookie clear is best-effort, drop local state either way
+    }
+    onLoggedOut();
+  };
+
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-zinc-50 px-4 py-10">
+      <div className="flex w-full max-w-2xl items-center justify-between rounded-sm border border-zinc-200 bg-white px-4 py-3">
+        <div className="flex items-center gap-2">
+          <User size={13} className="text-zinc-500" />
+          <div className="text-[10px] font-semibold leading-tight">
+            <p className="font-black text-zinc-800">{me.displayName || me.username}</p>
+            <p className="text-zinc-500">
+              {isSuperAdmin ? "Admin" : isTemplateUser ? "User · Template" : "Staff"}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {isSuperAdmin && (
+            <button
+              type="button"
+              onClick={() => setUsersModal(true)}
+              className="flex items-center gap-2 rounded-sm border border-zinc-200 bg-white px-3 py-2 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
+            >
+              <Users size={14} /> จัดการสิทธิ์ผู้ใช้
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={logout}
+            title="ออกจากระบบ"
+            className="rounded-sm border border-zinc-200 bg-white p-2 text-zinc-500 transition hover:bg-red-50 hover:text-red-600"
+          >
+            <LogOut size={14} />
+          </button>
+        </div>
+      </div>
+
+      <div className="w-full max-w-2xl">
+        <h1 className="mb-4 text-lg font-black text-zinc-800">เลือกระบบที่ต้องการเข้าใช้งาน</h1>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {SYSTEMS.map((system) => {
+            const Icon = system.icon;
+            const content = (
+              <>
+                <span className="flex h-10 w-10 items-center justify-center rounded-sm bg-zinc-100 text-zinc-600">
+                  <Icon size={18} />
+                </span>
+                <span className="text-left">
+                  <span className="block text-sm font-black text-zinc-800">{system.label}</span>
+                  <span className="block text-xs text-zinc-500">{system.desc}</span>
+                </span>
+              </>
+            );
+            const className =
+              "flex items-center gap-3 rounded-sm border border-zinc-200 bg-white p-4 text-left transition hover:border-zinc-300 hover:bg-zinc-50";
+            return system.kind === "link" ? (
+              <NextLink key={system.key} href={system.href} className={className}>
+                {content}
+              </NextLink>
+            ) : (
+              <button
+                key={system.key}
+                type="button"
+                onClick={() => onEnter(system.key)}
+                className={className}
+              >
+                {content}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {usersModal && <UsersModal me={me} onClose={() => setUsersModal(false)} />}
+    </div>
+  );
 }
 
 function LoginScreen({ onLoggedIn }) {
@@ -496,7 +618,7 @@ function CanvasToolbar({
   );
 }
 
-function GamedbWorkspace({ me, onLoggedOut }) {
+function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
   const isSuperAdmin = me.role === "admin";
   const isTemplateUser = me.role === "user";
 
@@ -1852,6 +1974,14 @@ function GamedbWorkspace({ me, onLoggedOut }) {
               </p>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={onBackToMenu}
+            title="กลับเมนู"
+            className="rounded-sm border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
+          >
+            <LayoutGrid size={14} />
+          </button>
           <NextLink
             href="/gameinfo/th"
             title="ข้อมูลเกม (GameInfo)"

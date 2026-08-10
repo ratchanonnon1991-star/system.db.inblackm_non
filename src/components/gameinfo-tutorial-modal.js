@@ -296,7 +296,7 @@ function ReadOnlySteps({ steps }) {
                   <img
                     src={step.imageUrl}
                     alt=""
-                    className="max-h-80 w-full rounded-md object-cover"
+                    className="w-full rounded-md"
                   />
                 </GameinfoImagePreview>
               )}

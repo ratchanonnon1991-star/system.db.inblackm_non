@@ -1,10 +1,12 @@
 import { notFound } from "next/navigation";
 import { Noto_Sans_Thai } from "next/font/google";
 import Link from "next/link";
-import { Gamepad2 } from "lucide-react";
+import { Gamepad2, LayoutGrid } from "lucide-react";
 import { isSupportedLang } from "@/lib/gameinfo-i18n";
 import { getSessionUser } from "@/server/session-user";
 import GameinfoModeToggle from "@/components/gameinfo-mode-toggle";
+import GameinfoThemeRoot from "@/components/gameinfo-theme-root";
+import GameinfoThemeToggle from "@/components/gameinfo-theme-toggle";
 
 const notoThai = Noto_Sans_Thai({
   subsets: ["thai", "latin"],
@@ -33,7 +35,7 @@ export default async function GameinfoLangLayout({ children, params }) {
   const editableRole = user?.role === "admin" || user?.role === "staff";
 
   return (
-    <div
+    <GameinfoThemeRoot
       className={`${notoThai.variable} flex min-h-screen flex-col bg-linear-canvas text-linear-ink antialiased`}
       style={{ fontFamily: "var(--font-noto-thai), system-ui, sans-serif" }}
     >
@@ -46,7 +48,16 @@ export default async function GameinfoLangLayout({ children, params }) {
             <Gamepad2 size={20} />
             <span>GameInfo</span>
           </Link>
-          <nav className="flex items-center gap-4 text-sm">
+          <nav className="flex items-center gap-3 text-sm">
+            <Link
+              href="/"
+              title="กลับเมนู"
+              aria-label="กลับเมนู"
+              className="flex h-8 w-8 items-center justify-center rounded-md border border-linear-hairline-strong text-linear-ink-muted hover:bg-linear-surface-2"
+            >
+              <LayoutGrid size={15} />
+            </Link>
+            <GameinfoThemeToggle />
             <GameinfoModeToggle lang={lang} editableRole={editableRole} />
           </nav>
         </div>
@@ -58,6 +69,6 @@ export default async function GameinfoLangLayout({ children, params }) {
       <footer className="border-t border-linear-hairline bg-linear-canvas py-4 text-center text-xs text-linear-ink-tertiary">
         GameInfo · ฐานข้อมูลการเติมเกม
       </footer>
-    </div>
+    </GameinfoThemeRoot>
   );
 }

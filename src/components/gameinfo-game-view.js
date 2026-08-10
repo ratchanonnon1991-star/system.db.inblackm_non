@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo } from "react";
-import { ExternalLink, Gamepad2 } from "lucide-react";
+import { ExternalLink, Gamepad2, Image as ImageIcon } from "lucide-react";
 import { evaluateFormula, parseFormula } from "@/lib/gamedb-formula";
 import { formatCell as formatComputedCell } from "@/lib/gamedb-layout";
 import { resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
+import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
 
 // One game's game_list row, read-only (editing region/platform/server/etc.
@@ -117,6 +118,25 @@ function PackCurrency({ currency, game, computedColumns }) {
   );
 }
 
+// Per-pack thumbnail (pack.image, set in the pack editor's own image field —
+// not to be confused with the currency-level image shown in PackCurrency's
+// header) — click to zoom, same as the tutorial/pack-editor image previews.
+function PackThumb({ src }) {
+  if (!src) {
+    return (
+      <span className="flex h-8 w-8 items-center justify-center rounded bg-linear-surface-3 text-linear-ink-tertiary">
+        <ImageIcon size={14} />
+      </span>
+    );
+  }
+  return (
+    <GameinfoImagePreview src={src} alt="">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt="" className="h-8 w-8 rounded object-cover" />
+    </GameinfoImagePreview>
+  );
+}
+
 function PackCategory({ category, game, computedColumns }) {
   return (
     <div className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
@@ -132,6 +152,7 @@ function PackCategory({ category, game, computedColumns }) {
             <table className="w-full min-w-[700px] text-left text-sm">
               <thead className="border-b border-linear-hairline bg-linear-surface-2 text-xs text-linear-ink-subtle">
                 <tr>
+                  <th className="px-3 py-2 font-medium">รูป</th>
                   <th className="px-3 py-2 font-medium">ชื่อ pack</th>
                   <th className="px-3 py-2 font-medium">ราคา</th>
                   <th className="px-3 py-2 font-medium">ยอดที่กด</th>
@@ -149,6 +170,9 @@ function PackCategory({ category, game, computedColumns }) {
               <tbody>
                 {category.packs.map((pack) => (
                   <tr key={pack.id} className="border-b border-linear-hairline last:border-b-0">
+                    <td className="px-3 py-2">
+                      <PackThumb src={pack.image} />
+                    </td>
                     <td className="max-w-[220px] truncate px-3 py-2 text-linear-ink-muted">
                       {pack.name || "-"}
                     </td>

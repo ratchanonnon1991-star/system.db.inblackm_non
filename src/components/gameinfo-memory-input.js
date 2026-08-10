@@ -114,7 +114,7 @@ export default function GameinfoMemoryInput({
             className="fixed z-50 max-h-56 overflow-auto rounded-md border border-linear-hairline bg-linear-surface-1 py-1 shadow-lg"
           >
             {filtered.length === 0 ? (
-              <li className="px-3 py-1.5 text-sm text-white/40">ไม่มีตัวเลือกที่ตรงกัน</li>
+              <li className="px-3 py-1.5 text-sm text-linear-ink-tertiary">ไม่มีตัวเลือกที่ตรงกัน</li>
             ) : (
               filtered.map((s) => (
                 <li key={s}>
@@ -126,7 +126,7 @@ export default function GameinfoMemoryInput({
                       setOpen(false);
                       setHasTyped(false);
                     }}
-                    className="block w-full px-3 py-1.5 text-left text-sm text-white hover:bg-linear-primary/10"
+                    className="block w-full px-3 py-1.5 text-left text-sm text-linear-ink hover:bg-linear-primary/10"
                   >
                     {s}
                   </button>
