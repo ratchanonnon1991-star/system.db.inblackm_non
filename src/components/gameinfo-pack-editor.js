@@ -1,7 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
-import Link from "next/link";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Download, Image as ImageIcon, Plus, Trash2, X } from "lucide-react";
 import {
@@ -70,6 +69,17 @@ export default function GameinfoPackEditor({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [savedAt, setSavedAt] = useState(null);
+  const [savedVisible, setSavedVisible] = useState(false);
+
+  // "บันทึกแล้ว" badge auto-collapses 3s after each save — re-triggers on
+  // every save (not just the first) since savedAt gets a fresh timestamp
+  // each time, restarting this effect.
+  useEffect(() => {
+    if (!savedAt) return;
+    setSavedVisible(true);
+    const hideTimer = setTimeout(() => setSavedVisible(false), 3000);
+    return () => clearTimeout(hideTimer);
+  }, [savedAt]);
   const [error, setError] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -81,6 +91,15 @@ export default function GameinfoPackEditor({
   const [importErrors, setImportErrors] = useState([]);
   const [importMsg, setImportMsg] = useState("");
   const [pendingImport, setPendingImport] = useState(null); // { currencies, packCount }
+
+  // Drives the same "collapse ยกเลิก/บันทึก to w-0 around the middle pill"
+  // animation as the game list table's floating bar (see
+  // gameinfo-gamelist-table.js) — only shown once there's actually
+  // something to save, and cancel() resetting currencies/computedColumns
+  // back to game.* makes this false again, animating the pill closed.
+  const dirty =
+    JSON.stringify(currencies) !== JSON.stringify(game.currencies) ||
+    JSON.stringify(computedColumns) !== JSON.stringify(game.computedColumns ?? []);
 
   const parsedColumns = useMemo(
     () =>
@@ -234,12 +253,27 @@ export default function GameinfoPackEditor({
 
   function save() {
     setError("");
+    setSavedAt(null);
     const invalid = validatePacks();
     if (invalid.size > 0) {
       setInvalidFields(invalid);
       setError(
         "กรุณากรอกข้อมูลให้ครบก่อนบันทึก: ชื่อ pack, ราคา, ยอดที่กด + fee, ช่องทางหลัก (ช่องที่ไฮไลต์สีแดง)"
       );
+      // The floating บันทึก/ยกเลิก bar is fixed to the bottom of the
+      // viewport, so if the user is scrolled up while a pack further down
+      // fails validation, nothing near their cursor visibly changes — it
+      // just looks like the button did nothing. Jump to the first invalid
+      // pack row (see the matching id={`pack-row-${pack.id}`} in PackRow)
+      // so the red-highlighted fields are actually on screen; the error
+      // text itself is also mirrored into the fixed bar below so it's
+      // visible regardless of scroll position.
+      const [firstKey] = invalid;
+      const firstPackId = firstKey.split(":")[0];
+      document.getElementById(`pack-row-${firstPackId}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
       return;
     }
     setInvalidFields(new Set());
@@ -259,7 +293,7 @@ export default function GameinfoPackEditor({
   }
 
   function cancel() {
-    if (!confirm("ยกเลิกการแก้ไข? ข้อมูลที่ยังไม่บันทึกจะหายไป")) return;
+    if (!window.confirm("ยกเลิกการแก้ไข? ข้อมูลที่ยังไม่บันทึกจะหายไป")) return;
     setCurrencies(game.currencies);
     setComputedColumns(game.computedColumns ?? []);
     setInvalidFields(new Set());
@@ -506,44 +540,65 @@ export default function GameinfoPackEditor({
         </div>
       </section>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
-
       {/* Same floating pill pattern as the game list table's ยกเลิก/เพิ่มเกม/
           บันทึก bar (see gameinfo-gamelist-table.js) — ยกเลิก/บันทึก sit as
           plain text in fixed-width side slots so the pill stays symmetric,
           "กลับไปหน้าแก้" is the solid capsule popping out of the middle. Extra
           bottom padding on the page (see packs/page.js) keeps this from
-          covering the last rows of a long pack table. */}
-      <div className="fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 flex-col items-center gap-2">
+          covering the last rows of a long pack table. The error/success
+          message is mirrored here (not just left in the page's normal
+          scroll flow) so it's visible next to the buttons regardless of
+          where the user is scrolled — a validation error appearing only at
+          the bottom of a long pack list, out of view, used to look like the
+          save button just silently did nothing. */}
+      <div className="fixed bottom-6 left-1/2 z-30 flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 flex-col items-center gap-2">
+        {error && (
+          <p className="max-w-full rounded-full border border-red-500/40 bg-linear-surface-1 px-3 py-1.5 text-center text-xs text-red-400 shadow-lg">
+            {error}
+          </p>
+        )}
         {savedAt && !pending && (
-          <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-400 shadow-lg">
-            บันทึกแล้ว
-          </span>
+          <div
+            className={`overflow-hidden transition-all duration-300 ease-out ${
+              savedVisible ? "max-h-8 opacity-100" : "max-h-0 opacity-0"
+            }`}
+          >
+            <span className="text-xs text-linear-ink">บันทึกแล้ว</span>
+          </div>
         )}
         <div className="flex h-11 items-center rounded-full border border-linear-hairline bg-linear-surface-1 shadow-lg">
-          <div className="min-w-0 flex-none w-[92px] flex justify-center overflow-hidden">
+          <div
+            className={`min-w-0 flex-none flex justify-center overflow-hidden transition-all duration-300 ease-out ${
+              dirty ? "w-[92px] opacity-100" : "w-0 opacity-0"
+            }`}
+          >
             <button
               type="button"
               onClick={cancel}
-              disabled={pending}
+              disabled={pending || !dirty}
               className="w-full whitespace-nowrap py-2 text-center text-sm font-medium text-linear-ink-muted hover:text-linear-ink disabled:opacity-50"
             >
               ยกเลิก
             </button>
           </div>
 
-          <Link
-            href={`/gameinfo/${lang}/${game.id}`}
+          <button
+            type="button"
+            onClick={() => router.back()}
             className="-my-0.5 flex h-10 items-center whitespace-nowrap rounded-full bg-linear-primary px-4 text-sm font-medium text-white shadow-md hover:bg-linear-primary-hover"
           >
-            กลับไปหน้าแก้
-          </Link>
+            ย้อนกลับ
+          </button>
 
-          <div className="min-w-0 flex-none w-[92px] flex justify-center overflow-hidden">
+          <div
+            className={`min-w-0 flex-none flex justify-center overflow-hidden transition-all duration-300 ease-out ${
+              dirty ? "w-[92px] opacity-100" : "w-0 opacity-0"
+            }`}
+          >
             <button
               type="button"
               onClick={save}
-              disabled={pending}
+              disabled={pending || !dirty}
               className="w-full whitespace-nowrap py-2 text-center text-sm font-medium text-linear-primary hover:text-linear-primary-hover disabled:opacity-50"
             >
               {pending ? "กำลังบันทึก..." : "บันทึก"}
@@ -724,6 +779,7 @@ function PackRow({
 
   return (
     <div
+      id={`pack-row-${pack.id}`}
       style={{ gridTemplateColumns: gridTemplate }}
       className="grid items-center gap-2 border-b border-linear-hairline px-2 py-2 text-sm last:border-b-0"
     >
@@ -953,52 +1009,32 @@ function PlainThumb({ value }) {
   );
 }
 
-// Image field — clicking opens a popup to either paste a URL or upload a
-// file from disk (see gameinfo-image-picker-modal.js). `compact` swaps the
-// thumbnail-plus-button layout for a bare click-to-open thumbnail so it fits
-// a dense pack row.
+// Image field — hover the thumbnail to preview it, click to open a popup to
+// either paste a URL or upload a file from disk (see
+// gameinfo-image-picker-modal.js) — same click-the-thumbnail-itself pattern
+// as the game list table's own image column (see RowThumb in
+// gameinfo-gamelist-table.js), no separate "เปลี่ยนรูป" button. `compact`
+// only adjusts the wrapper's own layout class so it drops into a dense
+// pack row's CSS grid cell correctly.
 function ImageUrlField({ value, onChange, compact }) {
   const [pickerOpen, setPickerOpen] = useState(false);
-
-  if (!compact) {
-    return (
-      <div className="flex shrink-0 items-center gap-1.5">
-        {value ? (
-          <GameinfoImagePreview src={value} alt="">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={value} alt="" className="h-7 w-7 shrink-0 rounded object-cover" />
-          </GameinfoImagePreview>
-        ) : (
-          <PlainThumb value={value} />
-        )}
-        <button
-          type="button"
-          onClick={() => setPickerOpen(true)}
-          className="rounded border border-linear-hairline px-2 py-1 text-[10px] text-linear-ink-muted hover:bg-linear-surface-2"
-        >
-          {value ? "เปลี่ยนรูป" : "ใส่รูป"}
-        </button>
-        {pickerOpen && (
-          <GameinfoImagePickerModal value={value} onChange={onChange} onClose={() => setPickerOpen(false)} />
-        )}
-      </div>
-    );
-  }
+  const thumb = <PlainThumb value={value} />;
 
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => setPickerOpen(true)}
-        className="justify-self-start"
-        title="ใส่รูปภาพ"
-      >
-        <PlainThumb value={value} />
-      </button>
+    <div className={compact ? "justify-self-start" : "shrink-0"}>
+      {value ? (
+        <GameinfoImagePreview src={value} alt="" onClick={() => setPickerOpen(true)}>
+          {thumb}
+        </GameinfoImagePreview>
+      ) : (
+        <button type="button" onClick={() => setPickerOpen(true)} title="ใส่รูปภาพ">
+          {thumb}
+        </button>
+      )}
       {pickerOpen && (
         <GameinfoImagePickerModal value={value} onChange={onChange} onClose={() => setPickerOpen(false)} />
       )}
-    </>
+    </div>
   );
 }
 

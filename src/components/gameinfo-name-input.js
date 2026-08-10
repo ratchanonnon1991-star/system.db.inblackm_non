@@ -30,10 +30,10 @@ function norm(s) {
   return String(s || "").trim().toLowerCase();
 }
 
-// Game-name field — a search-style input, not a picklist like
-// GameinfoMemoryInput: typing doesn't offer "every past value" to swap in,
-// it checks the name you're typing against every *other* game's name and
-// flags:
+// Game-name field — same "click in, see every existing value, filter as you
+// type" picklist behavior as GameinfoMemoryInput (see that component), plus
+// the duplicate/typo checking this field always had on top of it: typing
+// still checks the name against every *other* game's name and flags:
 //  - an exact match (case/whitespace-insensitive) as a duplicate — reported
 //    up via onDuplicateChange so the caller can block saving that row;
 //  - close-but-not-exact matches (small edit distance — a likely typo) as a
@@ -50,6 +50,11 @@ export default function GameinfoNameInput({
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
+  // Same "show everything on focus, narrow to a substring match only once
+  // they've actually typed" behavior as GameinfoMemoryInput — the field's
+  // own current value shouldn't act as a filter query before the user has
+  // typed anything new.
+  const [hasTyped, setHasTyped] = useState(false);
   const ref = useRef(null);
   const listRef = useRef(null);
 
@@ -104,12 +109,20 @@ export default function GameinfoNameInput({
       .map((x) => x.name);
   }, [open, q, pool]);
 
+  // Same picklist as GameinfoMemoryInput — every other game's name before
+  // the user has typed anything, narrowed to a substring match once they
+  // have, so an exact existing name can just be clicked instead of retyped.
+  const browseList = useMemo(() => {
+    const filtered = hasTyped ? pool.filter((n) => norm(n).includes(q) && norm(n) !== q) : pool;
+    return filtered.slice(0, 50);
+  }, [hasTyped, q, pool]);
+
   useEffect(() => {
     onDuplicateChange?.(hasDuplicate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasDuplicate]);
 
-  const showDropdown = open && (hasDuplicate || similar.length > 0);
+  const showDropdown = open;
 
   return (
     <div className="relative" ref={ref}>
@@ -122,8 +135,12 @@ export default function GameinfoNameInput({
         onChange={(e) => {
           onChange(e.target.value);
           setOpen(true);
+          setHasTyped(true);
         }}
-        onFocus={() => setOpen(true)}
+        onFocus={() => {
+          setOpen(true);
+          setHasTyped(false);
+        }}
         onBlur={() => {
           const normalized = normalizeSpaces(value);
           if (normalized !== value) onChange(normalized);
@@ -170,6 +187,25 @@ export default function GameinfoNameInput({
                   </button>
                 ))}
               </>
+            )}
+            {browseList.length === 0 ? (
+              <div className="px-3 py-1.5 text-sm text-linear-ink-tertiary">ไม่มีตัวเลือกที่ตรงกัน</div>
+            ) : (
+              browseList.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    onChange(n);
+                    setOpen(false);
+                    setHasTyped(false);
+                  }}
+                  className="block w-full truncate px-3 py-1.5 text-left text-sm text-linear-ink hover:bg-linear-primary/10"
+                >
+                  {n}
+                </button>
+              ))
             )}
           </div>,
           document.body

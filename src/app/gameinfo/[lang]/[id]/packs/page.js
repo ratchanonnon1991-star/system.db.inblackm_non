@@ -1,12 +1,11 @@
 import { notFound, redirect } from "next/navigation";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { getSessionUser } from "@/server/session-user";
 import { getGameListRow } from "@/server/gameinfo-gamelist";
 import { getGamelistPacks, listAllGamelistChannels } from "@/server/gameinfo-gamelist-packs";
 import { buildPackSuggestions } from "@/lib/gameinfo-suggestions";
 import GameinfoPackEditor from "@/components/gameinfo-pack-editor";
 import GameinfoErrorNotice from "@/components/gameinfo-error-notice";
+import GameinfoBackLink from "@/components/gameinfo-back-link";
 
 export const metadata = {
   title: "GameDB — แพ็กเกม",
@@ -53,12 +52,7 @@ export default async function GameinfoGamelistPacksPage({ params }) {
 
   return (
     <div className="px-4 py-8 pb-24">
-      <Link
-        href={`/gameinfo/${lang}/${row.id}`}
-        className="mb-4 inline-flex items-center gap-1 text-sm text-linear-primary hover:underline"
-      >
-        <ArrowLeft size={14} /> กลับหน้ารายละเอียดเกม
-      </Link>
+      <GameinfoBackLink className="mb-4 inline-flex items-center gap-1 text-sm text-linear-primary hover:underline" />
       <h1 className="mb-6 text-2xl font-bold text-linear-ink">แพ็ก — {row.game}</h1>
       <GameinfoPackEditor
         game={game}

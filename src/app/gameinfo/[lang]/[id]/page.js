@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { getSessionUser } from "@/server/session-user";
 import { getGameListRow, listGameListRows } from "@/server/gameinfo-gamelist";
 import {
@@ -12,6 +12,7 @@ import { getGamelistTutorial } from "@/server/gameinfo-gamelist-tutorial";
 import { getGamelistImage } from "@/server/gameinfo-gamelist-image";
 import GameinfoGameView from "@/components/gameinfo-game-view";
 import GameinfoErrorNotice from "@/components/gameinfo-error-notice";
+import GameinfoBackLink from "@/components/gameinfo-back-link";
 
 export const metadata = {
   title: "GameDB — รายละเอียดเกม",
@@ -54,7 +55,7 @@ export default async function GameinfoGameDetailPage({ params }) {
         vpnComputed: vpnByGame[row.id] ? "YES" : "NO",
         channels: channelsByGame[row.id] || { main: [], secondary: [] },
         orderPosition: orderPosition > 0 ? orderPosition : null,
-        hasTutorial: tutorial.steps.length > 0,
+        hasTutorial: tutorial.categories.some((c) => c.steps.length > 0),
         image: image.imageUrl,
       };
     }
@@ -70,12 +71,7 @@ export default async function GameinfoGameDetailPage({ params }) {
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
       <div className="mb-4 flex items-center justify-between">
-        <Link
-          href={`/gameinfo/${lang}`}
-          className="flex items-center gap-1 text-sm text-linear-primary hover:underline"
-        >
-          <ArrowLeft size={14} /> กลับหน้า GameInfo
-        </Link>
+        <GameinfoBackLink className="flex items-center gap-1 text-sm text-linear-primary hover:underline" />
         {editable && (
           <Link
             href={`/gameinfo/${lang}/${row.id}/packs`}

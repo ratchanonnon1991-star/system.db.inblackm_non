@@ -37,15 +37,15 @@ export default function GameinfoGameView({ row, currencies, computedColumns }) {
     <div>
       {/* Compact view card — icon, bold title, one-line Region/Platform/
           Server/VPN summary, pill button to the game's top-up website. */}
-      <div className="mb-8 flex items-start gap-4 rounded-xl border border-linear-hairline bg-linear-surface-1 p-4">
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-linear-primary/10">
+      <div className="mb-8 flex items-center gap-4 rounded-xl border border-linear-hairline bg-linear-surface-1 p-4">
+        <div className="flex h-[126px] w-[126px] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-linear-primary/10">
           {row.image ? (
-            <GameinfoImagePreview src={row.image} alt="">
+            <GameinfoImagePreview src={row.image} alt="" wrapperClassName="block h-full w-full">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={row.image} alt="" className="h-14 w-14 rounded-lg object-cover" />
+              <img src={row.image} alt="" className="h-full w-full rounded-lg object-cover" />
             </GameinfoImagePreview>
           ) : (
-            <Gamepad2 size={26} className="text-linear-primary" />
+            <Gamepad2 size={32} className="text-linear-primary" />
           )}
         </div>
         <div className="min-w-0 flex-1">
@@ -116,8 +116,10 @@ function PackCurrency({ currency, game, computedColumns }) {
     <div className="rounded-lg border border-linear-hairline bg-linear-surface-1 p-4">
       <div className="mb-3 flex items-center gap-2">
         {currency.image ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={currency.image} alt="" className="h-6 w-6 shrink-0 rounded object-cover" />
+          <GameinfoImagePreview src={currency.image} alt="">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={currency.image} alt="" className="h-6 w-6 shrink-0 rounded object-cover" />
+          </GameinfoImagePreview>
         ) : null}
         <h3 className="font-medium text-linear-ink">{currency.name || "(ไม่มีชื่อสกุลเงิน)"}</h3>
       </div>
@@ -226,7 +228,7 @@ function ChannelSummary({ channels, className = "" }) {
   const main = channels?.main || [];
   const secondary = channels?.secondary || [];
   return (
-    <div className={`space-y-1 text-xs ${className}`}>
+    <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 text-xs ${className}`}>
       <ChannelSummaryRow label="ช่องทางหลัก" tags={main} />
       <ChannelSummaryRow label="ช่องทางรอง" tags={secondary} />
     </div>

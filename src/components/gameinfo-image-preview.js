@@ -14,13 +14,19 @@ import { X, ZoomIn, ZoomOut } from "lucide-react";
 // percentage against. `hoverPreview` (default true) can be turned off to
 // keep just the click-to-fullscreen behavior without the little hover popup
 // — useful for a full-width image already big enough on its own (see
-// gameinfo-tutorial-modal.js's read-only step view).
+// gameinfo-tutorial-modal.js's read-only step view). `onClick`, if given,
+// replaces the default "open fullscreen" click behavior — used where the
+// thumbnail is itself an edit trigger (hover still previews the current
+// image, but a click should open the upload/URL picker instead of a
+// zoomed view of it — see RowThumb in gameinfo-gamelist-table.js and
+// ImageUrlField in gameinfo-pack-editor.js).
 export default function GameinfoImagePreview({
   src,
   alt = "",
   children,
   wrapperClassName = "inline-block",
   hoverPreview = true,
+  onClick,
 }) {
   const [hover, setHover] = useState(false);
   const [open, setOpen] = useState(false);
@@ -117,9 +123,10 @@ export default function GameinfoImagePreview({
         onMouseLeave={hoverPreview ? () => setHover(false) : undefined}
         onClick={() => {
           setHover(false);
-          setOpen(true);
+          if (onClick) onClick();
+          else setOpen(true);
         }}
-        style={{ cursor: "zoom-in" }}
+        style={{ cursor: onClick ? "pointer" : "zoom-in" }}
       >
         {children}
       </div>

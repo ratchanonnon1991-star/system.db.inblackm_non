@@ -24,7 +24,6 @@ import {
   ArrowRight,
   ChevronsLeft,
   ChevronsRight,
-  ExternalLink,
   GripVertical,
   Image as ImageIcon,
   MoreVertical,
@@ -35,6 +34,7 @@ import GameinfoMemoryInput from "./gameinfo-memory-input";
 import GameinfoNameInput from "./gameinfo-name-input";
 import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
 import GameinfoImagePickerModal from "./gameinfo-image-picker-modal";
+import GameinfoImagePreview from "./gameinfo-image-preview";
 
 // Rank, ทำซ้ำได้ (isRepeatable), หมายเหตุ (remark) are hidden per request —
 // the fields/backend still exist (game_list columns, API fields), this only
@@ -84,7 +84,19 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
   // (see GameinfoNameInput) — blocks "บันทึก" until resolved.
   const [duplicateIds, setDuplicateIds] = useState(new Set());
   const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState(null);
+  const [savedVisible, setSavedVisible] = useState(false);
   const [editing, setEditing] = useState(null);
+
+  // "บันทึกแล้ว" text auto-collapses 3s after each save — see the matching
+  // pattern in gameinfo-pack-editor.js. Re-triggers on every save since
+  // savedAt gets a fresh timestamp each time.
+  useEffect(() => {
+    if (!savedAt) return;
+    setSavedVisible(true);
+    const hideTimer = setTimeout(() => setSavedVisible(false), 3000);
+    return () => clearTimeout(hideTimer);
+  }, [savedAt]);
   const [, startTransition] = useTransition();
   const draftIdRef = useRef(0);
   const sensors = useSensors(
@@ -294,6 +306,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
       setSavedRows(nextRows);
       setDirtyIds(new Set());
       setOrderDirty(false);
+      setSavedAt(Date.now());
     } finally {
       setSaving(false);
     }
@@ -595,6 +608,15 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
               <AlertTriangle size={13} /> มีชื่อเกมซ้ำกัน {duplicateIds.size} แถว — แก้ชื่อก่อนถึงจะบันทึกได้
             </span>
           )}
+          {savedAt && !saving && (
+            <div
+              className={`overflow-hidden transition-all duration-300 ease-out ${
+                savedVisible ? "max-h-8 opacity-100" : "max-h-0 opacity-0"
+              }`}
+            >
+              <span className="text-xs text-linear-ink">บันทึกแล้ว</span>
+            </div>
+          )}
           {/* One continuous pill (not three separate floating buttons) —
               ยกเลิก/บันทึก are plain text sitting inside it, "เพิ่มเกม" is a
               solid capsule a little taller than the bar so it visibly pops
@@ -848,9 +870,9 @@ function RowCells({
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
-              className="flex items-center gap-1 text-xs text-linear-primary hover:underline"
+              className="rounded-md border border-linear-hairline-strong px-2 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink"
             >
-              เว็บ <ExternalLink size={12} />
+              เว็บ
             </a>
           ) : (
             <span className="text-xs text-linear-ink-tertiary">-</span>
@@ -1118,25 +1140,32 @@ function RowThumb({ gameId, image, editable }) {
     </span>
   );
 
-  if (!editable) return thumb;
+  if (!editable) {
+    if (!value) return thumb;
+    return (
+      <span onClick={(e) => e.stopPropagation()}>
+        <GameinfoImagePreview src={value} alt="">
+          {thumb}
+        </GameinfoImagePreview>
+      </span>
+    );
+  }
 
   return (
-    <>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          setPickerOpen(true);
-        }}
-        title="ใส่รูปเกม"
-        className="shrink-0"
-      >
-        {thumb}
-      </button>
+    <span onClick={(e) => e.stopPropagation()}>
+      {value ? (
+        <GameinfoImagePreview src={value} alt="" onClick={() => setPickerOpen(true)}>
+          {thumb}
+        </GameinfoImagePreview>
+      ) : (
+        <button type="button" onClick={() => setPickerOpen(true)} title="ใส่รูปเกม" className="shrink-0">
+          {thumb}
+        </button>
+      )}
       {pickerOpen && (
         <GameinfoImagePickerModal value={value} onChange={handleChange} onClose={() => setPickerOpen(false)} />
       )}
-    </>
+    </span>
   );
 }
 

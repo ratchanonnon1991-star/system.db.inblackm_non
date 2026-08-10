@@ -1,16 +1,18 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Image as ImageIcon, Link as LinkIcon, Upload, X } from "lucide-react";
 
 // data: URLs go straight into the pack row's JSONB, keep it modest.
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
-// Popup for a non-Tutorial image field (currency/pack image) — choose
-// between pasting a URL or uploading a file from disk. There's no
-// upload-to-storage backend in this app, so an uploaded file is read as a
-// base64 data: URL and stored directly as the field's value, same as a
+// Popup for a non-Tutorial image field (currency/pack/game image) — choose
+// between pasting a URL, uploading a file from disk, or Ctrl+V-pasting an
+// image straight from the clipboard (screenshot, copied image, etc. — same
+// file path as the file picker, just a different source). There's no
+// upload-to-storage backend in this app, so a picked/pasted file is read as
+// a base64 data: URL and stored directly as the field's value, same as a
 // pasted https:// URL — the CSP's img-src already allows both (see
 // next.config.mjs).
 export default function GameinfoImagePickerModal({ value, onChange, onClose }) {
@@ -24,9 +26,7 @@ export default function GameinfoImagePickerModal({ value, onChange, onClose }) {
     onClose();
   }
 
-  function onFileChange(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  function processFile(file) {
     if (!file.type.startsWith("image/")) {
       setError("เลือกไฟล์รูปภาพเท่านั้น");
       return;
@@ -44,6 +44,36 @@ export default function GameinfoImagePickerModal({ value, onChange, onClose }) {
     reader.onerror = () => setError("อ่านไฟล์ไม่สำเร็จ");
     reader.readAsDataURL(file);
   }
+
+  function onFileChange(e) {
+    const file = e.target.files?.[0];
+    if (file) processFile(file);
+  }
+
+  // Ctrl+V anywhere while this popup is open — works regardless of which
+  // tab is active or what has focus, as long as the clipboard actually
+  // holds an image; a plain text paste (e.g. into the URL field) is left
+  // alone so normal paste-a-link behavior still works there.
+  useEffect(() => {
+    function onPaste(e) {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith("image/")) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (file) {
+            setMode("upload");
+            processFile(file);
+          }
+          return;
+        }
+      }
+    }
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return createPortal(
     <div
@@ -136,6 +166,9 @@ export default function GameinfoImagePickerModal({ value, onChange, onClose }) {
               />
             </div>
           )}
+          <p className="mt-2 text-center text-[11px] text-linear-ink-tertiary">
+            หรือกด Ctrl+V เพื่อวางรูปจากคลิปบอร์ดได้เลย
+          </p>
           {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
         </div>
       </div>
