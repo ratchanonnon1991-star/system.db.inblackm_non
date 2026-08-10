@@ -132,7 +132,7 @@ function SystemHub({ me, onLoggedOut, onEnter }) {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-zinc-50 px-4 py-10">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-zinc-50 px-4 px-8">
       <div className="flex w-full max-w-2xl items-center justify-between rounded-sm border border-zinc-200 bg-white px-4 py-3">
         <div className="flex items-center gap-1">
           <User size={13} className="text-zinc-500" />
@@ -148,7 +148,7 @@ function SystemHub({ me, onLoggedOut, onEnter }) {
             <button
               type="button"
               onClick={() => setUsersModal(true)}
-              className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-3 py-2 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
+              className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-3 py-1 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
             >
               <Users size={14} /> จัดการสิทธิ์ผู้ใช้
             </button>
@@ -166,7 +166,7 @@ function SystemHub({ me, onLoggedOut, onEnter }) {
 
       <div className="w-full max-w-2xl">
         <h1 className="mb-4 text-lg font-black text-zinc-800">เลือกระบบที่ต้องการเข้าใช้งาน</h1>
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid gap-1 sm:grid-cols-2">
           {SYSTEMS.map((system) => {
             const Icon = system.icon;
             const content = (
@@ -181,7 +181,7 @@ function SystemHub({ me, onLoggedOut, onEnter }) {
               </>
             );
             const className =
-              "flex items-center gap-2 rounded-sm border border-zinc-200 bg-white p-4 text-left transition hover:border-zinc-300 hover:bg-zinc-50";
+              "flex items-center gap-1 rounded-sm border border-zinc-200 bg-white p-4 text-left transition hover:border-zinc-300 hover:bg-zinc-50";
             return system.kind === "link" ? (
               <NextLink key={system.key} href={system.href} className={className}>
                 {content}
@@ -264,7 +264,7 @@ function LoginScreen({ onLoggedIn }) {
         />
 
         {error && (
-          <div className="mb-3 rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
+          <div className="mb-3 rounded-sm border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-bold text-red-600">
             {error}
           </div>
         )}
@@ -2018,7 +2018,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
               <button
                 type="button"
                 onClick={() => setViewsModal(true)}
-                className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
+                className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-4 py-1.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
                 title="บันทึกหน้าจอนี้เป็นเทมเพลต / ส่งให้คนอื่น"
               >
                 <Layers size={14} /> เทมเพลต ({views.length})
@@ -2042,21 +2042,21 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
               <button
                 type="button"
                 onClick={() => setUsersModal(true)}
-                className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
+                className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-4 py-1.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
               >
                 <Users size={14} /> ผู้ใช้
               </button>
               <button
                 type="button"
                 onClick={() => setConnectionsModal(true)}
-                className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
+                className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-4 py-1.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
               >
                 <Server size={14} /> ฐานข้อมูล ({connections.length + 1})
               </button>
               <button
                 type="button"
                 onClick={() => setEditorModal({ mode: "create" })}
-                className="flex items-center gap-1 rounded-sm bg-red-600 px-4 py-2.5 text-xs font-black text-white transition hover:bg-red-700"
+                className="flex items-center gap-1 rounded-sm bg-red-600 px-4 py-1.5 text-xs font-black text-white transition hover:bg-red-700"
               >
                 <Plus size={14} /> เพิ่ม Query
               </button>
@@ -2296,7 +2296,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
         </aside>}
 
         {layoutLocked && (
-          <div className="flex flex-wrap items-center gap-1 rounded-sm border border-zinc-200 bg-white px-3 py-2">
+          <div className="flex flex-wrap items-center gap-1 rounded-sm border border-zinc-200 bg-white px-3 py-1">
             <span className="flex items-center gap-1.5 text-[10px] font-bold text-zinc-500">
               <Lock size={12} /> Layout ถูกกำหนดโดย Admin
             </span>
@@ -2306,7 +2306,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
         )}
 
         {previewAsUser && (
-          <div className="flex items-center justify-between gap-2 rounded-sm border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-800">
+          <div className="flex items-center justify-between gap-1 rounded-sm border border-amber-300 bg-amber-50 px-3 py-1 text-[11px] font-bold text-amber-800">
             <span className="flex items-center gap-1">
               <Eye size={13} /> กำลังดูหน้าจอแบบ User
             </span>

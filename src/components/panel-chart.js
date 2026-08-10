@@ -43,14 +43,14 @@ export default function PanelChart({ chart, columns, rows, height }) {
 
   if (!series) {
     return (
-      <div className="flex items-center justify-center px-4 py-10 text-[11px] font-semibold text-zinc-400" style={{ height }}>
+      <div className="flex items-center justify-center px-4 px-8 text-[11px] font-semibold text-zinc-400" style={{ height }}>
         คอลัมน์ที่ตั้งไว้สำหรับกราฟไม่อยู่ในผลลัพธ์นี้ — กดปุ่มตั้งค่ากราฟเพื่อเลือกใหม่
       </div>
     );
   }
   if (series.points.length === 0) {
     return (
-      <div className="flex items-center justify-center px-4 py-10 text-[11px] font-semibold text-zinc-400" style={{ height }}>
+      <div className="flex items-center justify-center px-4 px-8 text-[11px] font-semibold text-zinc-400" style={{ height }}>
         ไม่มีข้อมูลสำหรับวาดกราฟ
       </div>
     );

@@ -348,7 +348,7 @@ export function EditLogModal({ onClose }) {
           <Loader2 size={14} className="animate-spin" /> กำลังโหลด...
         </p>
       ) : edits.length === 0 ? (
-        <p className="py-10 text-center text-xs font-semibold text-zinc-400">
+        <p className="px-8 text-center text-xs font-semibold text-zinc-400">
           ยังไม่มีการแก้ไขข้อมูล
         </p>
       ) : (
