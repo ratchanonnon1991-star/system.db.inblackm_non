@@ -7,6 +7,7 @@ import {
   updateQuery,
 } from "@/server/gamedb-repository";
 import { validateReadOnlySql } from "@/server/gamedb-query-runner";
+import { sanitizeLayout } from "@/server/gamedb-layout-sanitizer";
 
 export async function PATCH(request, { params }) {
   try {
@@ -36,6 +37,9 @@ export async function PATCH(request, { params }) {
         if (!connection) return jsonError("ไม่พบฐานข้อมูลที่เลือก", 404);
         fields.connectionId = connection.id;
       }
+    }
+    if (body.layout !== undefined) {
+      fields.layout = sanitizeLayout(body.layout);
     }
 
     const query = await updateQuery(id, fields);

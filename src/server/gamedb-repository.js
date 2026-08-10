@@ -181,17 +181,17 @@ export async function findQueryById(id) {
   return mapRow(result.rows[0]);
 }
 
-export async function insertQuery({ name, description, sqlText, createdBy, connectionId }) {
+export async function insertQuery({ name, description, sqlText, layout, createdBy, connectionId }) {
   await ensureSchema();
   const result = await getPool().query(
-    `INSERT INTO gamedb_queries (name, description, sql_text, sort_order, created_by, connection_id)
+    `INSERT INTO gamedb_queries (name, description, sql_text, layout, sort_order, created_by, connection_id)
      VALUES (
-       $1, $2, $3,
+       $1, $2, $3, $4::jsonb,
        COALESCE((SELECT MAX(sort_order) + 1 FROM gamedb_queries), 0),
-       $4, $5
+       $5, $6
      )
      RETURNING id`,
-    [name, description || "", sqlText, createdBy || "", connectionId ?? null]
+    [name, description || "", sqlText, JSON.stringify(layout || {}), createdBy || "", connectionId ?? null]
   );
   return findQueryById(result.rows[0].id);
 }

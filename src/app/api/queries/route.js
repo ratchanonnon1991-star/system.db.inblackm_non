@@ -2,6 +2,7 @@ import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireAdmin, requireSuperAdmin } from "@/server/auth";
 import { findConnectionById } from "@/server/connections-repository";
 import { insertQuery, listQueries } from "@/server/gamedb-repository";
+import { sanitizeLayout } from "@/server/gamedb-layout-sanitizer";
 import { validateReadOnlySql } from "@/server/gamedb-query-runner";
 
 export async function GET(request) {
@@ -33,6 +34,7 @@ export async function POST(request) {
       name,
       description: String(body.description || "").trim(),
       sqlText,
+      layout: sanitizeLayout(body.layout),
       createdBy: admin.email,
       connectionId,
     });

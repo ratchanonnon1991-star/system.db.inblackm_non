@@ -3,11 +3,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Calculator,
+  Code2,
+  Database,
   Loader2,
+  Pencil,
   Play,
   Plus,
   Save,
   Server,
+  Table2,
   Trash2,
   Users,
   X,
@@ -22,9 +26,11 @@ import {
 } from "@/lib/gamedb-formula";
 import { formatCell } from "@/lib/gamedb-layout";
 import { extractSqlParams } from "@/lib/gamedb-sql-params";
+import { buildVisualLayout, buildVisualSelect } from "@/lib/gamedb-visual-query";
 
 export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
   const isEdit = modal.mode === "edit";
+  const [builderMode, setBuilderMode] = useState(isEdit ? "sql" : "visual");
   const [name, setName] = useState(isEdit ? modal.query.name : "");
   const [description, setDescription] = useState(
     isEdit ? modal.query.description : ""
@@ -40,10 +46,60 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [error, setError] = useState("");
+  const [schemaData, setSchemaData] = useState(null);
+  const [schemaLoading, setSchemaLoading] = useState(false);
+  const [selectedTableKey, setSelectedTableKey] = useState("");
+  const [selectedColumns, setSelectedColumns] = useState([]);
+  const [editableColumns, setEditableColumns] = useState([]);
   // A test run needs values for whatever :placeholders the SQL currently has,
   // or it can only report that they are missing.
   const [testParams, setTestParams] = useState({});
-  const testParamNames = useMemo(() => extractSqlParams(sqlText), [sqlText]);
+  const selectedTable = useMemo(
+    () => schemaData?.tables?.find((table) => table.key === selectedTableKey) || null,
+    [schemaData, selectedTableKey]
+  );
+  const visualSql = useMemo(
+    () =>
+      selectedTable
+        ? buildVisualSelect({
+            schema: selectedTable.schema,
+            table: selectedTable.name,
+            columns: selectedTable.columns
+              .map((column) => column.name)
+              .filter((column) => selectedColumns.includes(column)),
+          })
+        : "",
+    [selectedTable, selectedColumns]
+  );
+  const effectiveSql = builderMode === "visual" ? visualSql : sqlText;
+  const testParamNames = useMemo(() => extractSqlParams(effectiveSql), [effectiveSql]);
+
+  const loadSchema = useCallback(async () => {
+    if (builderMode !== "visual") return;
+    setSchemaLoading(true);
+    setError("");
+    try {
+      const suffix = connectionId ? `?connectionId=${encodeURIComponent(connectionId)}` : "";
+      const data = await apiJson(`/api/query-builder/schema${suffix}`, {
+        fallbackError: "โหลดรายการตารางและคอลัมน์ไม่สำเร็จ",
+      });
+      setSchemaData(data);
+      setSelectedTableKey(data.tables?.[0]?.key || "");
+      setSelectedColumns([]);
+      setEditableColumns([]);
+    } catch (err) {
+      setSchemaData(null);
+      setSelectedTableKey("");
+      setError(err.message);
+    } finally {
+      setSchemaLoading(false);
+    }
+  }, [builderMode, connectionId]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- state changes after metadata request resolves
+    loadSchema();
+  }, [loadSchema]);
 
   const testRun = async () => {
     setTesting(true);
@@ -54,7 +110,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sqlText,
+          sqlText: effectiveSql,
           connectionId: connectionId ? Number(connectionId) : null,
           params: testParams,
         }),
@@ -75,8 +131,22 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
       const payload = {
         name,
         description,
-        sqlText,
+        sqlText: effectiveSql,
         connectionId: connectionId ? Number(connectionId) : null,
+        layout:
+          builderMode === "visual"
+            ? buildVisualLayout({
+                baseLayout: { ...(isEdit ? modal.query.layout || {} : {}), folder: folder.trim() },
+                schema: selectedTable?.schema,
+                table: selectedTable?.name,
+                primaryKey:
+                  selectedTable?.primaryKey?.length === 1 ? selectedTable.primaryKey[0] : "",
+                editableColumns,
+              })
+            : {
+                ...(isEdit ? modal.query.layout || {} : {}),
+                folder: folder.trim(),
+              },
       };
       const data = isEdit
         ? await apiJson(`/api/queries/${modal.query.id}`, {
@@ -92,20 +162,6 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
             fallbackError: "สร้าง Query ไม่สำเร็จ",
           });
 
-      // Folder lives in the layout, so it takes a second call. Merge rather
-      // than replace: the layout also holds columns, rules, params and more.
-      const savedFolder = (data.query.layout?.folder || "").trim();
-      if (folder.trim() !== savedFolder) {
-        await apiJson(`/api/queries/${data.query.id}/layout`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            layout: { ...(data.query.layout || {}), folder: folder.trim() },
-          }),
-          fallbackError: "บันทึกโฟลเดอร์ไม่สำเร็จ",
-        });
-      }
-
       onSaved(data.query);
     } catch (err) {
       setError(err.message);
@@ -115,7 +171,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-sm bg-white p-5 shadow-xl">
+      <div className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-sm bg-white p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-black">
             {isEdit ? "แก้ไข Query" : "เพิ่ม Query ใหม่"}
@@ -185,18 +241,150 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
               ))}
             </select>
           </div>
-          <div>
-            <label className="mb-1 block text-[10px] font-black text-zinc-500">
-              SQL (SELECT เท่านั้น — ระบบรันแบบอ่านอย่างเดียว จำกัด 1,000 แถว)
-            </label>
-            <textarea
-              value={sqlText}
-              onChange={(e) => setSqlText(e.target.value)}
-              rows={10}
-              spellCheck={false}
-              className="w-full rounded-sm border border-zinc-200 bg-zinc-900 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-emerald-300 outline-none focus:border-red-600"
-            />
+          <div className="grid grid-cols-2 gap-2 rounded-sm bg-zinc-100 p-1">
+            <button
+              type="button"
+              onClick={() => { setBuilderMode("visual"); setTestResult(null); }}
+              className={`flex items-center justify-center gap-1.5 rounded-sm px-3 py-2 text-[11px] font-black transition ${
+                builderMode === "visual" ? "bg-white text-red-600 shadow-sm" : "text-zinc-500"
+              }`}
+            >
+              <Table2 size={13} /> เลือกตารางและคอลัมน์
+            </button>
+            <button
+              type="button"
+              onClick={() => { setBuilderMode("sql"); setTestResult(null); }}
+              className={`flex items-center justify-center gap-1.5 rounded-sm px-3 py-2 text-[11px] font-black transition ${
+                builderMode === "sql" ? "bg-white text-red-600 shadow-sm" : "text-zinc-500"
+              }`}
+            >
+              <Code2 size={13} /> เขียน SQL เอง (ขั้นสูง)
+            </button>
           </div>
+
+          {builderMode === "visual" ? (
+            <div className="space-y-3 rounded-sm border border-zinc-200 p-3">
+              <div className="flex items-start gap-2 rounded-sm border border-blue-200 bg-blue-50 px-3 py-2 text-[10px] font-bold text-blue-700">
+                <Database size={14} className="mt-0.5 shrink-0" />
+                เลือกตารางและติ๊กคอลัมน์ที่ต้องการ ระบบจะสร้าง SELECT ให้อัตโนมัติ โดยไม่ต้องเขียน SQL
+              </div>
+              {schemaLoading ? (
+                <p className="flex items-center gap-2 py-6 text-xs font-bold text-zinc-400">
+                  <Loader2 size={14} className="animate-spin" /> กำลังโหลดโครงสร้างฐานข้อมูล...
+                </p>
+              ) : schemaData?.tables?.length ? (
+                <>
+                  <div>
+                    <label className="mb-1 block text-[10px] font-black text-zinc-500">ตาราง</label>
+                    <select
+                      value={selectedTableKey}
+                      onChange={(e) => {
+                        setSelectedTableKey(e.target.value);
+                        setSelectedColumns([]);
+                        setEditableColumns([]);
+                        setTestResult(null);
+                      }}
+                      className="h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+                    >
+                      {schemaData.tables.map((table) => (
+                        <option key={table.key} value={table.key}>{table.key}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-[10px] font-black text-zinc-500">คอลัมน์ที่จะแสดง</p>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedColumns(selectedTable.columns.filter((column) => column.canSelect).map((column) => column.name))}
+                        className="text-[10px] font-black text-red-600 hover:text-red-700"
+                      >
+                        เลือกทั้งหมด
+                      </button>
+                    </div>
+                    <div className="max-h-72 overflow-y-auto rounded-sm border border-zinc-200">
+                      {selectedTable.columns.map((column) => {
+                        const selected = selectedColumns.includes(column.name);
+                        const isPrimaryKey = selectedTable.primaryKey.includes(column.name);
+                        const keyRequired = isPrimaryKey && editableColumns.length > 0;
+                        return (
+                          <div key={column.name} className="grid gap-2 border-b border-zinc-100 px-3 py-2 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                            <label className="flex min-w-0 items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                disabled={!column.canSelect || keyRequired}
+                                onChange={(e) => {
+                                  setSelectedColumns((prev) => e.target.checked ? [...prev, column.name] : prev.filter((name) => name !== column.name));
+                                  if (!e.target.checked) setEditableColumns((prev) => prev.filter((name) => name !== column.name));
+                                  setTestResult(null);
+                                }}
+                                className="accent-red-600"
+                              />
+                              <span className="truncate font-mono text-[11px] font-black text-zinc-700">{column.name}</span>
+                              <span className="truncate text-[9px] font-semibold text-zinc-400">{column.type}</span>
+                              {isPrimaryKey && <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[8px] font-black text-violet-600">PK</span>}
+                            </label>
+                            <div className="sm:text-right">
+                              <label className={`inline-flex items-center gap-1.5 text-[10px] font-black ${column.editable ? "text-emerald-600" : "text-zinc-400"}`}>
+                                <input
+                                  type="checkbox"
+                                  checked={editableColumns.includes(column.name)}
+                                  disabled={!selected || !column.editable}
+                                  onChange={(e) => {
+                                    setEditableColumns((prev) => e.target.checked ? [...prev, column.name] : prev.filter((name) => name !== column.name));
+                                    if (e.target.checked && selectedTable.primaryKey.length === 1) {
+                                      const pk = selectedTable.primaryKey[0];
+                                      setSelectedColumns((prev) => prev.includes(pk) ? prev : [pk, ...prev]);
+                                    }
+                                  }}
+                                  className="accent-emerald-600"
+                                />
+                                <Pencil size={10} /> {column.editable ? "ให้แก้ไขค่าได้" : "อ่านอย่างเดียว"}
+                              </label>
+                              {!column.editable && (
+                                <p className="mt-0.5 text-[8px] font-semibold text-zinc-400">{column.editReason}</p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {!schemaData.allowWrite && (
+                      <p className="mt-1.5 text-[10px] font-bold text-amber-600">
+                        ฐานข้อมูลนี้ตั้งเป็นอ่านอย่างเดียว จึงเลือกแสดงคอลัมน์ได้ แต่เปิดแก้ไขค่าไม่ได้
+                      </p>
+                    )}
+                  </div>
+
+                  {visualSql && (
+                    <div>
+                      <p className="mb-1 text-[10px] font-black text-zinc-500">SQL ที่ระบบสร้างให้</p>
+                      <pre className="overflow-x-auto rounded-sm bg-zinc-900 px-3 py-2 font-mono text-[10px] leading-relaxed text-emerald-300">{visualSql}</pre>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="py-6 text-center text-xs font-bold text-zinc-400">
+                  ไม่พบตารางที่บัญชีฐานข้อมูลนี้มีสิทธิ์อ่าน
+                </div>
+              )}
+            </div>
+          ) : (
+            <div>
+              <label className="mb-1 block text-[10px] font-black text-zinc-500">
+                SQL (SELECT เท่านั้น — ระบบรันแบบอ่านอย่างเดียว จำกัด 1,000 แถว)
+              </label>
+              <textarea
+                value={sqlText}
+                onChange={(e) => setSqlText(e.target.value)}
+                rows={10}
+                spellCheck={false}
+                className="w-full rounded-sm border border-zinc-200 bg-zinc-900 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-emerald-300 outline-none focus:border-red-600"
+              />
+            </div>
+          )}
 
           {error && (
             <div className="rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
@@ -240,14 +428,14 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
         </div>
 
         <MissingNotice
-          items={[!name.trim() && "ชื่อ Query", !sqlText.trim() && "คำสั่ง SQL"].filter(Boolean)}
+          items={[!name.trim() && "ชื่อ Query", !effectiveSql.trim() && (builderMode === "visual" ? "คอลัมน์อย่างน้อย 1 คอลัมน์" : "คำสั่ง SQL")].filter(Boolean)}
         />
 
         <div className="mt-4 flex items-center justify-end gap-2">
           <button
             type="button"
             onClick={testRun}
-            disabled={testing || !sqlText.trim()}
+            disabled={testing || !effectiveSql.trim()}
             className="flex items-center gap-1.5 rounded-sm border border-zinc-200 px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-50"
           >
             {testing ? (
@@ -260,7 +448,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
           <button
             type="button"
             onClick={save}
-            disabled={saving || !name.trim() || !sqlText.trim()}
+            disabled={saving || !name.trim() || !effectiveSql.trim()}
             className="flex items-center gap-1.5 rounded-sm bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
           >
             {saving ? (
