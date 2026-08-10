@@ -70,7 +70,7 @@ export default function GamedbPage() {
   if (checkingMe) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <span className="flex animate-pulse items-center gap-2 text-sm font-bold text-zinc-500">
+        <span className="flex animate-pulse items-center gap-1 text-sm font-bold text-zinc-500">
           <Loader2 size={16} className="animate-spin" /> กำลังตรวจสอบสิทธิ์...
         </span>
       </div>
@@ -134,7 +134,7 @@ function SystemHub({ me, onLoggedOut, onEnter }) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-zinc-50 px-4 py-10">
       <div className="flex w-full max-w-2xl items-center justify-between rounded-sm border border-zinc-200 bg-white px-4 py-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <User size={13} className="text-zinc-500" />
           <div className="text-[10px] font-semibold leading-tight">
             <p className="font-black text-zinc-800">{me.displayName || me.username}</p>
@@ -143,12 +143,12 @@ function SystemHub({ me, onLoggedOut, onEnter }) {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           {isSuperAdmin && (
             <button
               type="button"
               onClick={() => setUsersModal(true)}
-              className="flex items-center gap-2 rounded-sm border border-zinc-200 bg-white px-3 py-2 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
+              className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-3 py-2 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
             >
               <Users size={14} /> จัดการสิทธิ์ผู้ใช้
             </button>
@@ -166,7 +166,7 @@ function SystemHub({ me, onLoggedOut, onEnter }) {
 
       <div className="w-full max-w-2xl">
         <h1 className="mb-4 text-lg font-black text-zinc-800">เลือกระบบที่ต้องการเข้าใช้งาน</h1>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-2 sm:grid-cols-2">
           {SYSTEMS.map((system) => {
             const Icon = system.icon;
             const content = (
@@ -181,7 +181,7 @@ function SystemHub({ me, onLoggedOut, onEnter }) {
               </>
             );
             const className =
-              "flex items-center gap-3 rounded-sm border border-zinc-200 bg-white p-4 text-left transition hover:border-zinc-300 hover:bg-zinc-50";
+              "flex items-center gap-2 rounded-sm border border-zinc-200 bg-white p-4 text-left transition hover:border-zinc-300 hover:bg-zinc-50";
             return system.kind === "link" ? (
               <NextLink key={system.key} href={system.href} className={className}>
                 {content}
@@ -272,7 +272,7 @@ function LoginScreen({ onLoggedIn }) {
         <button
           type="submit"
           disabled={submitting || !username.trim() || !password}
-          className="flex h-10 w-full items-center justify-center gap-2 rounded-sm bg-red-600 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
+          className="flex h-10 w-full items-center justify-center gap-1 rounded-sm bg-red-600 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
         >
           {submitting ? <Loader2 size={14} className="animate-spin" /> : <Lock size={13} />}
           เข้าสู่ระบบ
@@ -1812,7 +1812,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
   // Shown by both layouts when nothing is open, so it lives outside either.
   const emptyWorkspace = (
     <div className="flex h-full min-h-72 items-center justify-center p-4">
-      <div className="flex w-full max-w-md flex-col items-center justify-center gap-2 rounded-sm border border-dashed border-zinc-300 bg-white px-6 py-16 text-center">
+      <div className="flex w-full max-w-md flex-col items-center justify-center gap-1 rounded-sm border border-dashed border-zinc-300 bg-white px-6 py-16 text-center">
         {layoutLocked ? (
           <>
             <Lock size={22} className="text-zinc-300" />
@@ -1921,10 +1921,10 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
   };
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-[1900px] flex-col p-3 lg:p-4">
-      <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
+    <div className="mx-auto flex min-h-screen max-w-[1900px] flex-col p-1 lg:p-1">
+      <header className="mb-1 flex flex-wrap items-center justify-between gap-1">
         <div>
-          <h1 className="flex items-center gap-2 text-xl font-black tracking-tight">
+          <h1 className="flex items-center gap-1 text-xl font-black tracking-tight">
             <Database size={20} className="text-red-600" />
             Topup Panel
             <span className="rounded bg-red-600/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-red-600">
@@ -1932,9 +1932,9 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
             </span>
           </h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           {views.length > 0 && (
-            <div className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-2.5 py-2">
+            <div className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-1 py-1">
               <Layers size={13} className="text-red-600" />
               <select
                 value={activeView?.id ?? ""}
@@ -1965,7 +1965,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
               )}
             </div>
           )}
-          <div className="flex items-center gap-2 rounded-sm border border-zinc-200 bg-white px-3 py-2">
+          <div className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-1 py-1">
             <User size={13} className="text-zinc-500" />
             <div className="text-[10px] font-semibold leading-tight">
               <p className="font-black text-zinc-800">{me.displayName || me.username}</p>
@@ -2018,7 +2018,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
               <button
                 type="button"
                 onClick={() => setViewsModal(true)}
-                className="flex items-center gap-2 rounded-sm border border-zinc-200 bg-white px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
+                className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
                 title="บันทึกหน้าจอนี้เป็นเทมเพลต / ส่งให้คนอื่น"
               >
                 <Layers size={14} /> เทมเพลต ({views.length})
@@ -2042,21 +2042,21 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
               <button
                 type="button"
                 onClick={() => setUsersModal(true)}
-                className="flex items-center gap-2 rounded-sm border border-zinc-200 bg-white px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
+                className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
               >
                 <Users size={14} /> ผู้ใช้
               </button>
               <button
                 type="button"
                 onClick={() => setConnectionsModal(true)}
-                className="flex items-center gap-2 rounded-sm border border-zinc-200 bg-white px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
+                className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
               >
                 <Server size={14} /> ฐานข้อมูล ({connections.length + 1})
               </button>
               <button
                 type="button"
                 onClick={() => setEditorModal({ mode: "create" })}
-                className="flex items-center gap-2 rounded-sm bg-red-600 px-4 py-2.5 text-xs font-black text-white transition hover:bg-red-700"
+                className="flex items-center gap-1 rounded-sm bg-red-600 px-4 py-2.5 text-xs font-black text-white transition hover:bg-red-700"
               >
                 <Plus size={14} /> เพิ่ม Query
               </button>
@@ -2065,9 +2065,9 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-2">
+      <div className="flex min-h-0 flex-1 flex-col gap-1">
         {!layoutLocked && !sidebarOpen && (
-          <aside className="flex w-full shrink-0 items-center gap-2 rounded-sm border border-zinc-200 bg-white px-2 py-1.5">
+          <aside className="flex w-full shrink-0 items-center gap-1 rounded-sm border border-zinc-200 bg-white px-2 py-1.5">
             <button
               type="button"
               onClick={() => toggleSidebar(true)}
@@ -2149,7 +2149,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
             </button>
           </div>
           {listOpen && <div className="absolute left-2 top-full z-40 mt-1 flex max-h-[70vh] w-full max-w-sm flex-col overflow-hidden rounded-sm border border-zinc-200 bg-white shadow-xl">
-          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-100 px-2 py-1.5">
+          <div className="flex shrink-0 items-center justify-between gap-1 border-b border-zinc-100 px-2 py-1.5">
             <span className="text-[10px] font-black text-zinc-400">
               เปิดอยู่ {openPanels.length} ตาราง
             </span>
@@ -2176,7 +2176,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
             </div>
           </div>
           {loadingList ? (
-            <p className="flex items-center gap-2 px-2 py-4 text-xs font-semibold text-zinc-400">
+            <p className="flex items-center gap-1 px-2 py-4 text-xs font-semibold text-zinc-400">
               <Loader2 size={14} className="animate-spin" /> กำลังโหลด...
             </p>
           ) : listError ? (
@@ -2296,7 +2296,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
         </aside>}
 
         {layoutLocked && (
-          <div className="flex flex-wrap items-center gap-2 rounded-sm border border-zinc-200 bg-white px-3 py-2">
+          <div className="flex flex-wrap items-center gap-1 rounded-sm border border-zinc-200 bg-white px-3 py-2">
             <span className="flex items-center gap-1.5 text-[10px] font-bold text-zinc-500">
               <Lock size={12} /> Layout ถูกกำหนดโดย Admin
             </span>
@@ -2306,8 +2306,8 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
         )}
 
         {previewAsUser && (
-          <div className="flex items-center justify-between gap-3 rounded-sm border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-800">
-            <span className="flex items-center gap-2">
+          <div className="flex items-center justify-between gap-2 rounded-sm border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-800">
+            <span className="flex items-center gap-1">
               <Eye size={13} /> กำลังดูหน้าจอแบบ User
             </span>
             <button
@@ -2322,7 +2322,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
 
         {sheetMode ? (
           <div className="flex min-h-72 min-w-0 flex-1 flex-col overflow-hidden rounded-sm border border-zinc-200 bg-zinc-50">
-            <div className="min-h-0 flex-1 overflow-auto p-3">
+            <div className="min-h-0 flex-1 overflow-auto p-2">
               {activeSheetPanel ? renderPanel(activeSheetPanel, true) : emptyWorkspace}
             </div>
             {openPanels.length > 0 && (
@@ -2410,7 +2410,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
                 <button
                   type="button"
                   onPointerDown={() => closePanel(tabMenu.queryId)}
-                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[11px] font-bold text-zinc-600 hover:bg-zinc-100"
+                  className="flex w-full items-center gap-1 rounded-sm px-2 py-1.5 text-left text-[11px] font-bold text-zinc-600 hover:bg-zinc-100"
                 >
                   <X size={11} /> ปิดแท็บนี้
                 </button>
@@ -2418,7 +2418,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
                   type="button"
                   disabled={openPanels.length < 2}
                   onPointerDown={() => closeOtherTabs(tabMenu.queryId)}
-                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[11px] font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-40"
+                  className="flex w-full items-center gap-1 rounded-sm px-2 py-1.5 text-left text-[11px] font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-40"
                 >
                   <X size={11} /> ปิดแท็บอื่นทั้งหมด
                 </button>
