@@ -1796,7 +1796,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
         <button
           type="button"
           onClick={() => setShareQueryId(selectedPanelQuery.id)}
-          className="flex h-8 shrink-0 items-center gap-1.5 rounded-sm border border-zinc-200 px-2.5 text-[10px] font-black text-zinc-600 transition hover:bg-zinc-50"
+          className="flex h-8 shrink-0 items-center gap-1 rounded-sm border border-zinc-200 px-2.5 text-[10px] font-black text-zinc-600 transition hover:bg-zinc-50"
           title={`แชร์ "${selectedPanelQuery.name}" เป็นลิงก์ให้คนที่ไม่ได้ล็อกอินเปิดดู`}
         >
           <Link2 size={12} />
@@ -1804,7 +1804,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
       )}
       <div
         ref={setPanelToolbarHost}
-        className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1.5"
+        className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1"
       />
     </>
   ) : null;
@@ -1927,7 +1927,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
           <h1 className="flex items-center gap-1 text-xl font-black tracking-tight">
             <Database size={20} className="text-red-600" />
             Topup Panel
-            <span className="rounded bg-red-600/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-red-600">
+            <span className="rounded bg-red-600/15 px-1 py-0.5 text-[9px] font-black uppercase tracking-wider text-red-600">
               INBLACKM
             </span>
           </h1>
@@ -1978,14 +1978,14 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
             type="button"
             onClick={onBackToMenu}
             title="กลับเมนู"
-            className="rounded-sm border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
+            className="rounded-sm border border-zinc-200 bg-white p-1 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
           >
             <LayoutGrid size={14} />
           </button>
           <NextLink
             href="/gameinfo/th"
             title="ข้อมูลเกม (GameInfo)"
-            className="rounded-sm border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
+            className="rounded-sm border border-zinc-200 bg-white p-1 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
           >
             <Gamepad2 size={14} />
           </NextLink>
@@ -1993,7 +1993,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
             type="button"
             onClick={exportWorkbook}
             title="ดาวน์โหลดทุกตารางที่เปิดอยู่เป็น Excel หลายชีต (คีย์ลัด: e)"
-            className="rounded-sm border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
+            className="rounded-sm border border-zinc-200 bg-white p-1 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
           >
             <FileSpreadsheet size={14} />
           </button>
@@ -2001,7 +2001,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
             type="button"
             onClick={toggleTheme}
             title="สลับโหมดสว่าง/มืด (คีย์ลัด: d)"
-            className="rounded-sm border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
+            className="rounded-sm border border-zinc-200 bg-white p-1 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
           >
             {dark ? <Sun size={14} /> : <Moon size={14} />}
           </button>
@@ -2009,7 +2009,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
             type="button"
             onClick={logout}
             title="ออกจากระบบ"
-            className="rounded-sm border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-red-50 hover:text-red-600"
+            className="rounded-sm border border-zinc-200 bg-white p-1 text-zinc-500 transition hover:bg-red-50 hover:text-red-600"
           >
             <LogOut size={14} />
           </button>
@@ -2026,7 +2026,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
               <button
                 type="button"
                 onClick={() => setEditLogModal(true)}
-                className="rounded-sm border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
+                className="rounded-sm border border-zinc-200 bg-white p-1 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
                 title="ประวัติการแก้ไขข้อมูล"
               >
                 <History size={14} />
@@ -2034,7 +2034,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
               <button
                 type="button"
                 onClick={() => setHealthModal(true)}
-                className="rounded-sm border border-zinc-200 bg-white p-1.5 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
+                className="rounded-sm border border-zinc-200 bg-white p-1 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
                 title="ตรวจสุขภาพระบบ / สิทธิ์ฐานข้อมูล"
               >
                 <Activity size={14} />
@@ -2071,7 +2071,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
             <button
               type="button"
               onClick={() => toggleSidebar(true)}
-              className="rounded-sm p-1.5 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700"
+              className="rounded-sm p-1 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700"
               title="เปิดแถบรายการ Query (คีย์ลัด: b)"
             >
               <PanelLeftOpen size={15} />
@@ -2079,7 +2079,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
             <button
               type="button"
               onClick={focusSearch}
-              className="rounded-sm p-1.5 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700"
+              className="rounded-sm p-1 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700"
               title="ค้นหา Query (คีย์ลัด: /)"
             >
               <Search size={15} />
@@ -2098,7 +2098,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
           ref={listBoxRef}
           className="relative z-30 w-full shrink-0 rounded-sm border border-zinc-200 bg-white p-1"
         >
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1">
             {/* The box is a picker, not a place to read long text — past a few
                 hundred pixels it is only taking room from the table tools. */}
             <div className="relative w-full min-w-40 max-w-64 flex-1 sm:w-auto">
@@ -2142,7 +2142,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
             <button
               type="button"
               onClick={() => toggleSidebar(false)}
-              className="shrink-0 rounded-sm p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700"
+              className="shrink-0 rounded-sm p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700"
               title="ย่อแถบรายการเพื่อให้ตารางกว้างขึ้น (คีย์ลัด: b)"
             >
               <PanelLeftClose size={15} />
@@ -2296,8 +2296,8 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
         </aside>}
 
         {layoutLocked && (
-          <div className="flex flex-wrap items-center gap-1 rounded-sm border border-zinc-200 bg-white px-3 py-1">
-            <span className="flex items-center gap-1.5 text-[10px] font-bold text-zinc-500">
+          <div className="flex flex-wrap items-center gap-1 rounded-sm border border-zinc-200 bg-white px-1 py-1">
+            <span className="flex items-center gap-1 text-[10px] font-bold text-zinc-500">
               <Lock size={12} /> Layout ถูกกำหนดโดย Admin
             </span>
             {panelToolbarStrip}
@@ -2306,7 +2306,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
         )}
 
         {previewAsUser && (
-          <div className="flex items-center justify-between gap-1 rounded-sm border border-amber-300 bg-amber-50 px-3 py-1 text-[11px] font-bold text-amber-800">
+          <div className="flex items-center justify-between gap-1 rounded-sm border border-amber-300 bg-amber-50 px-1 py-1 text-[11px] font-bold text-amber-800">
             <span className="flex items-center gap-1">
               <Eye size={13} /> กำลังดูหน้าจอแบบ User
             </span>
@@ -2322,11 +2322,11 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
 
         {sheetMode ? (
           <div className="flex min-h-72 min-w-0 flex-1 flex-col overflow-hidden rounded-sm border border-zinc-200 bg-zinc-50">
-            <div className="min-h-0 flex-1 overflow-auto p-2">
+            <div className="min-h-0 flex-1 overflow-auto p-1">
               {activeSheetPanel ? renderPanel(activeSheetPanel, true) : emptyWorkspace}
             </div>
             {openPanels.length > 0 && (
-              <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-t border-zinc-200 bg-white px-2 py-1.5">
+              <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-t border-zinc-200 bg-white px-1 py-1">
                 {openPanels.map((panel, index) => {
                   const query = queryById.get(panel.queryId);
                   const isActive = activeSheetPanel?.queryId === panel.queryId;
@@ -2356,7 +2356,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
                         event.preventDefault();
                         setTabMenu({ queryId: panel.queryId, x: event.clientX, y: event.clientY });
                       }}
-                      className={`group flex shrink-0 cursor-grab items-center gap-1 rounded-t-lg border-b-2 px-2.5 py-1 transition active:cursor-grabbing ${
+                      className={`group flex shrink-0 cursor-grab items-center gap-1 rounded-t-lg border-b-2 px-1 py-1 transition active:cursor-grabbing ${
                         dragTabId === panel.queryId ? "opacity-40" : ""
                       } ${
                         isActive
