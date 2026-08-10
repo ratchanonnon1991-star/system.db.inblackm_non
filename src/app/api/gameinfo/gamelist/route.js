@@ -1,12 +1,13 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireAdmin, requireLayoutEditor } from "@/server/auth";
-import { createGameListRow, listGameListRows } from "@/server/gameinfo-gamelist";
+import { createGameListRow } from "@/server/gameinfo-gamelist";
+import { listGameinfoGamelistRows } from "@/server/gameinfo-gamelist-view";
 
 export async function GET(request) {
   try {
-    await requireAdmin(request);
-    const rows = await listGameListRows();
-    return jsonOk({ rows });
+    const user = await requireAdmin(request);
+    const rows = await listGameinfoGamelistRows();
+    return jsonOk({ rows, editable: user.role === "admin" || user.role === "staff" });
   } catch (err) {
     return handleApiError(err, "โหลดรายการเกมไม่สำเร็จ");
   }
