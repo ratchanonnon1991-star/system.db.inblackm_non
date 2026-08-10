@@ -69,13 +69,7 @@ function isTempId(id) {
 // (staff/admin). game_list itself has no order column (shared with Topup
 // Panel, not ours to ALTER) — drag order is persisted in a small side table,
 // gamelist_order, via src/server/gameinfo-gamelist.js's reorderGameListRows().
-export default function GameinfoGamelistTable({
-  initial,
-  editable,
-  lang,
-  embedded = false,
-  onChanged,
-}) {
+export default function GameinfoGamelistTable({ initial, editable, lang }) {
   const [rows, setRows] = useState(initial);
   // Last-known-persisted values (including order) — field edits, drag
   // reordering, and adding a new row all only touch `rows` (the draft) until
@@ -231,9 +225,7 @@ export default function GameinfoGamelistTable({
     });
     if (!isDraft) {
       startTransition(() => {
-        apiJson(`/api/gameinfo/gamelist/${id}`, { method: "DELETE" })
-          .then(() => onChanged?.())
-          .catch(() => {});
+        apiJson(`/api/gameinfo/gamelist/${id}`, { method: "DELETE" }).catch(() => {});
       });
     }
   }
@@ -315,7 +307,6 @@ export default function GameinfoGamelistTable({
       setDirtyIds(new Set());
       setOrderDirty(false);
       setSavedAt(Date.now());
-      onChanged?.();
     } finally {
       setSaving(false);
     }
@@ -611,13 +602,7 @@ export default function GameinfoGamelistTable({
       {paginationBar && <div className="mt-3">{paginationBar}</div>}
 
       {editable && (
-        <div
-          className={`${
-            embedded
-              ? "sticky bottom-3 z-30 mx-auto mt-3"
-              : "fixed bottom-6 left-1/2 z-30 -translate-x-1/2"
-          } flex w-fit flex-col items-center gap-2`}
-        >
+        <div className="fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 flex-col items-center gap-2">
           {duplicateIds.size > 0 && (
             <span className="flex items-center gap-1 rounded-full border border-red-500/40 bg-red-500/10 px-3 py-1 text-xs text-red-400 shadow-lg">
               <AlertTriangle size={13} /> มีชื่อเกมซ้ำกัน {duplicateIds.size} แถว — แก้ชื่อก่อนถึงจะบันทึกได้

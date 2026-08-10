@@ -13,7 +13,6 @@ import {
   ChevronUp,
   Download,
   Eye,
-  Gamepad2,
   GripVertical,
   Link2,
   Lock,
@@ -70,7 +69,6 @@ import {
 } from "@/components/panel-config-modals";
 import PanelTable from "@/components/panel-table";
 import PanelChart from "@/components/panel-chart";
-import GameinfoQueryView from "@/components/gameinfo-query-view";
 
 // One shared empty object, so a panel with no lookup fields does not hand its
 // children a new identity on every render.
@@ -443,8 +441,6 @@ export default function QueryPanel({
   const [showParamErrors, setShowParamErrors] = useState(false);
   const paramStorageLoadedRef = useRef(null);
   const [rowFilter, setRowFilter] = useState("");
-  const isGameListQuery = !shareToken && query.name.trim().toLowerCase() === "game_list";
-  const [tableMode, setTableMode] = useState(isGameListQuery ? "gameinfo" : "database");
   const [view, setView] = useState("table");
   const [modal, setModal] = useState(null);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
@@ -574,7 +570,7 @@ export default function QueryPanel({
   };
 
   const runQuery = useCallback(
-    async ({ silent = false, append = false, validate = false, fresh = !silent && !append } = {}) => {
+    async ({ silent = false, append = false, validate = false } = {}) => {
       // Nothing to send yet — show the inputs instead of a failed request.
       const firstInvalidParam = Object.keys(paramErrorsRef.current)[0];
       if (firstInvalidParam) {
@@ -604,7 +600,7 @@ export default function QueryPanel({
             offset: append ? rowsLoadedRef.current : 0,
             // Pressing refresh means "go and look", so skip the shared cache;
             // the auto-refresh timer is happy to reuse it.
-            fresh,
+            fresh: !silent && !append,
           }),
           fallbackError: "รัน Query ไม่สำเร็จ",
         });
@@ -1591,43 +1587,10 @@ export default function QueryPanel({
           </p>
         </div>
 
-        {isGameListQuery && (
-          <div className="flex shrink-0 rounded-sm border border-zinc-200 bg-zinc-50 p-0.5">
-            <button
-              type="button"
-              onClick={() => {
-                setView("table");
-                setTableMode("gameinfo");
-              }}
-              className={`flex h-7 items-center gap-1 rounded-sm px-2 text-[10px] font-black transition ${
-                view === "table" && tableMode === "gameinfo"
-                  ? "bg-white text-red-700 shadow-sm"
-                  : "text-zinc-500 hover:text-zinc-800"
-              }`}
-            >
-              <Gamepad2 size={12} /> GameInfo
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setView("table");
-                setTableMode("database");
-              }}
-              className={`flex h-7 items-center gap-1 rounded-sm px-2 text-[10px] font-black transition ${
-                view === "table" && tableMode === "database"
-                  ? "bg-white text-zinc-800 shadow-sm"
-                  : "text-zinc-500 hover:text-zinc-800"
-              }`}
-            >
-              <Table2 size={12} /> ตาราง DB
-            </button>
-          </div>
-        )}
-
         {toolbarHost &&
           createPortal(
             <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
-        {(!isGameListQuery || tableMode === "database" || view !== "table") && <div className="relative">
+        <div className="relative">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
           <input
             type="text"
@@ -1636,7 +1599,7 @@ export default function QueryPanel({
             placeholder="ค้นหาในผลลัพธ์..."
             className="h-8 w-36 rounded-sm border border-zinc-200 bg-zinc-50 pl-8 pr-2 text-[11px] font-semibold outline-none focus:border-red-600 focus:bg-white"
           />
-        </div>}
+        </div>
 
         {/* Available whether or not anything has changed: waiting for the panel
             to decide something counts as an edit made saving feel like a trap.
@@ -2227,12 +2190,6 @@ export default function QueryPanel({
                 >
                   ยังไม่ได้ตั้งค่ากราฟ — กดปุ่มตั้งค่ากราฟเพื่อเลือกแกน X/Y
                 </div>
-              ) : isGameListQuery && tableMode === "gameinfo" ? (
-                <GameinfoQueryView
-                  editable={canCustomizeLayout}
-                  height={bodyHeight}
-                  onChanged={() => runQuery({ silent: true, fresh: true })}
-                />
               ) : (
                 <PanelTable
                   columns={visibleColumns}
