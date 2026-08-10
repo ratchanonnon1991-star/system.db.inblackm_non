@@ -51,6 +51,7 @@ import {
   parseOption,
   toDate,
   toneStyle,
+  toneTextColor,
   cellVisual,
   toNumber,
   widgetForColumn,
@@ -1137,6 +1138,7 @@ export default function PanelTable({
               const summaryKind = layout.summary[col.id];
               const headTone =
                 toneStyle(columnStyling[index].format.headerBg, "head") || tableHeadTone;
+              const headerInk = toneTextColor(columnStyling[index].format.headerFg);
               const frozen = index < freezeCount;
               return (
                 <th
@@ -1151,6 +1153,7 @@ export default function PanelTable({
                     top: headerTop,
                     zIndex: frozen ? 20 : 10,
                     ...(headTone || {}),
+                    ...(headerInk ? { color: headerInk } : {}),
                     ...(frozen ? { left: freezeOffsets[index] } : {}),
                   }}
                 >
@@ -1160,7 +1163,7 @@ export default function PanelTable({
                       onClick={() => toggleSort(col.id)}
                       disabled={!canCustomizeLayout}
                       className={`flex min-w-0 flex-1 items-center gap-1 truncate text-left font-black ${
-                        headTone ? "" : HEADER_TONE[col.kind] || "text-zinc-700"
+                        headTone || headerInk ? "" : HEADER_TONE[col.kind] || "text-zinc-700"
                       }`}
                       title={
                         canCustomizeLayout

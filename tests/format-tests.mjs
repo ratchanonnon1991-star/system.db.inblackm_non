@@ -1,6 +1,7 @@
 // Exercises the new layout.formats / layout.freeze / rule ops against the real
 // modules (aliases rewritten), plus the server sanitizer they have to survive.
 import {
+  applyGroupTone,
   buildHeaderGroups,
   daysUntil,
   hasHeaderGroups,
@@ -118,6 +119,8 @@ ok("text equality", ruleMatches(rule("=", "ปกติ"), "ปกติ", "ป�
 // --- formats -------------------------------------------------------------
 check("unknown tone is dropped", normalizeFormat({ bg: "neon" }).bg, "");
 check("known tone survives", normalizeFormat({ bg: "pink" }).bg, "pink");
+check("a header text tone survives", normalizeFormat({ headerFg: "blue" }).headerFg, "blue");
+check("an unknown header text tone is dropped", normalizeFormat({ headerFg: "neon" }).headerFg, "");
 check("unknown render falls back to text", normalizeFormat({ render: "iframe" }).render, "text");
 check("wrap must be true, not truthy", normalizeFormat({ wrap: "yes" }).wrap, false);
 check("align is limited", normalizeFormat({ align: "justify" }).align, "");
@@ -126,7 +129,7 @@ ok("a format with a colour is not empty", !isEmptyFormat(normalizeFormat({ bg: "
 check(
   "empty formats are not stored",
   normalizeFormats({ a: {}, b: { bg: "red" } }),
-  { b: { bg: "red", fg: "", headerBg: "", render: "text", wrap: false, align: "", group: "", groupBg: "" } }
+  { b: { bg: "red", fg: "", headerBg: "", headerFg: "", render: "text", wrap: false, align: "", group: "", groupBg: "" } }
 );
 check("formats reject a non-object", normalizeFormats("nope"), {});
 
@@ -174,7 +177,7 @@ check("an empty layout is not frozen", empty.freeze, 0);
 // --- sanitizer -----------------------------------------------------------
 const clean = sanitizeLayout({
   formats: {
-    good: { bg: "violet", headerBg: "darkSolid", render: "copy", wrap: true, align: "center" },
+    good: { bg: "violet", headerBg: "darkSolid", headerFg: "blue", render: "copy", wrap: true, align: "center" },
     bad: { bg: "url(javascript:alert(1))", render: "<script>" },
   },
   freeze: "4",
@@ -182,6 +185,7 @@ const clean = sanitizeLayout({
 });
 check("the sanitizer keeps a valid format", clean.formats.good.bg, "violet");
 check("the sanitizer keeps the render mode", clean.formats.good.render, "copy");
+check("the sanitizer keeps the header text colour", clean.formats.good.headerFg, "blue");
 check("the sanitizer drops an injected colour", clean.formats.bad, undefined);
 check("the sanitizer parses a numeric string freeze", clean.freeze, 4);
 check("the sanitizer keeps row scope", clean.rules[0].scope, "row");
@@ -208,6 +212,18 @@ check("a long group label is cut", normalizeFormat({ group: "x".repeat(200) }).g
 check("a non-string group is dropped", normalizeFormat({ group: { toString: () => "x" } }).group, "");
 ok("a format with only a group is not empty", !isEmptyFormat(normalizeFormat({ group: "a" })));
 ok("a format with only a group tone is not empty", !isEmptyFormat(normalizeFormat({ groupBg: "red" })));
+ok("a format with only header text colour is not empty", !isEmptyFormat(normalizeFormat({ headerFg: "blue" })));
+const recolouredGroup = applyGroupTone(
+  {
+    a: normalizeFormat({ group: "ยอด", groupBg: "red" }),
+    b: normalizeFormat({ group: "ยอด", groupBg: "red" }),
+    c: normalizeFormat({ group: "อื่น", groupBg: "green" }),
+  },
+  "b",
+  "blue"
+);
+check("changing a group tone updates every member", [recolouredGroup.a.groupBg, recolouredGroup.b.groupBg], ["blue", "blue"]);
+check("changing a group tone leaves other groups alone", recolouredGroup.c.groupBg, "green");
 check(
   "the sanitizer keeps a group",
   sanitizeLayout({ formats: { a: { group: "ยอด", groupBg: "darkSolid" } } }).formats.a.group,

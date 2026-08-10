@@ -25,6 +25,7 @@ import MissingNotice from "@/components/missing-notice";
 import { isSafeIdentifier, isSafeIdentifierPart } from "@/lib/gamedb-identifier";
 import { extractSqlParams } from "@/lib/gamedb-sql-params";
 import {
+  applyGroupTone,
   CELL_ALIGNS,
   CELL_RENDERS,
   EMPTY_FORMAT,
@@ -1256,7 +1257,7 @@ const RENDER_LABELS = {
 
 const ALIGN_LABELS = { "": "อัตโนมัติ", left: "ซ้าย", center: "กลาง", right: "ขวา" };
 
-function ToneSelect({ value, onChange, label, part, tones = TONE_NAMES }) {
+function ToneSelect({ value, onChange, label, part, tones = TONE_NAMES, disabled = false }) {
   // The text picker has to preview what it does — ink on the page — or a solid
   // tone shows as a red block and reads as a background.
   const preview =
@@ -1271,7 +1272,8 @@ function ToneSelect({ value, onChange, label, part, tones = TONE_NAMES }) {
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-7 w-full rounded-sm border border-zinc-200 px-1 text-[10px] font-bold outline-none focus:border-red-600"
+        disabled={disabled}
+        className="h-7 w-full rounded-sm border border-zinc-200 px-1 text-[10px] font-bold outline-none focus:border-red-600 disabled:cursor-not-allowed disabled:opacity-50"
         style={preview}
       >
         <option value="">ไม่กำหนด</option>
@@ -1300,7 +1302,14 @@ export function FormatsModal({
 }) {
   const [draft, setDraft] = useState(() => {
     const initial = {};
-    for (const col of columns) initial[col.id] = normalizeFormat(formats?.[col.id]);
+    // Keep hidden columns in the draft too, so recolouring a named group also
+    // reaches members that are temporarily hidden from the table.
+    for (const [colId, format] of Object.entries(formats || {})) {
+      initial[colId] = normalizeFormat(format);
+    }
+    for (const col of columns) {
+      if (!initial[col.id]) initial[col.id] = normalizeFormat(formats?.[col.id]);
+    }
     return initial;
   });
   const [pinned, setPinned] = useState(freeze || 0);
@@ -1308,6 +1317,9 @@ export function FormatsModal({
 
   const update = (colId, patch) =>
     setDraft((prev) => ({ ...prev, [colId]: { ...prev[colId], ...patch } }));
+
+  const updateGroupTone = (colId, groupBg) =>
+    setDraft((prev) => applyGroupTone(prev, colId, groupBg));
 
   const touched = columns.filter((col) => !isEmptyFormat(draft[col.id])).length;
 
@@ -1317,12 +1329,12 @@ export function FormatsModal({
       icon={<Paintbrush size={15} className="text-red-600" />}
       onClose={onClose}
       onSave={() => {
-        // Only the visible columns are listed here, so start from what was
-        // saved before — a hidden column keeps the format it already had.
+        // Hidden columns are not listed in the UI, but stay in `draft` so a
+        // shared group colour remains consistent when they are shown again.
         const formatsOut = { ...(formats || {}) };
-        for (const col of columns) {
-          if (isEmptyFormat(draft[col.id])) delete formatsOut[col.id];
-          else formatsOut[col.id] = draft[col.id];
+        for (const [colId, format] of Object.entries(draft)) {
+          if (isEmptyFormat(format)) delete formatsOut[colId];
+          else formatsOut[colId] = format;
         }
         onSave({ formats: formatsOut, freeze: pinned, tableTone: theme });
       }}
@@ -1389,7 +1401,7 @@ export function FormatsModal({
                 onChange={(bg) => update(col.id, { bg })}
               />
               <ToneSelect
-                label="สีตัวอักษร"
+                label="สีข้อความในเซลล์"
                 part="text"
                 value={format.fg}
                 onChange={(fg) => update(col.id, { fg })}
@@ -1399,6 +1411,12 @@ export function FormatsModal({
                 part="head"
                 value={format.headerBg}
                 onChange={(headerBg) => update(col.id, { headerBg })}
+              />
+              <ToneSelect
+                label="สีข้อความหัวคอลัมน์"
+                part="text"
+                value={format.headerFg}
+                onChange={(headerFg) => update(col.id, { headerFg })}
               />
               <label className="block">
                 <span className="mb-0.5 block text-[9px] font-black text-zinc-400">แสดงเป็น</span>
@@ -1451,10 +1469,11 @@ export function FormatsModal({
                 />
               </label>
               <ToneSelect
-                label="สีหัวกลุ่ม"
+                label={format.group.trim() ? "สีหัวกลุ่ม (ใช้ทั้งกลุ่ม)" : "สีหัวกลุ่ม (ใส่ชื่อกลุ่มก่อน)"}
                 part="head"
                 value={format.groupBg}
-                onChange={(groupBg) => update(col.id, { groupBg })}
+                disabled={!format.group.trim()}
+                onChange={(groupBg) => updateGroupTone(col.id, groupBg)}
               />
             </div>
           </div>

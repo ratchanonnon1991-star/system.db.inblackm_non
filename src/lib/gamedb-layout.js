@@ -301,13 +301,14 @@ export function normalizeLayout(raw) {
   };
 }
 
-// formats = { [colId]: { bg, fg, headerBg, render, wrap, align } } — how a
+// formats = { [colId]: { bg, fg, headerBg, headerFg, render, wrap, align } } — how a
 // column looks regardless of its value, as opposed to `rules`, which react to
 // one. An entry with nothing set is dropped so the JSON stays small.
 export const EMPTY_FORMAT = {
   bg: "",
   fg: "",
   headerBg: "",
+  headerFg: "",
   render: "text",
   wrap: false,
   align: "",
@@ -323,6 +324,7 @@ export function normalizeFormat(raw) {
     bg: TONE_NAMES.includes(format.bg) ? format.bg : "",
     fg: TONE_NAMES.includes(format.fg) ? format.fg : "",
     headerBg: TONE_NAMES.includes(format.headerBg) ? format.headerBg : "",
+    headerFg: TONE_NAMES.includes(format.headerFg) ? format.headerFg : "",
     render: CELL_RENDERS.includes(format.render) ? format.render : "text",
     wrap: format.wrap === true,
     align: CELL_ALIGNS.includes(format.align) ? format.align : "",
@@ -338,11 +340,24 @@ export function isEmptyFormat(format) {
     !format.bg &&
     !format.fg &&
     !format.headerBg &&
+    !format.headerFg &&
     format.render === "text" &&
     !format.wrap &&
     !format.align &&
     !format.group &&
     !format.groupBg
+  );
+}
+
+/** Apply one group-header colour to every column that shares its group name. */
+export function applyGroupTone(formats, colId, groupBg) {
+  const group = String(formats?.[colId]?.group || "").trim();
+  if (!group || (groupBg && !TONE_NAMES.includes(groupBg))) return formats;
+  return Object.fromEntries(
+    Object.entries(formats).map(([id, format]) => [
+      id,
+      String(format.group || "").trim() === group ? { ...format, groupBg } : format,
+    ])
   );
 }
 
