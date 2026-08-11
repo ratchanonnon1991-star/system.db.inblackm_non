@@ -15,6 +15,43 @@ export const VISUAL_FILTER_OPS = [
   "isNotNull",
 ];
 
+// Ops a single :placeholder can stand in for -- "in" needs several values at
+// once and isNull/isNotNull have none at all, so making either "a box the
+// viewer fills in" doesn't mean anything the way it does for the rest.
+export const VISUAL_FILTER_PARAM_OPS = [
+  "eq",
+  "neq",
+  "contains",
+  "startsWith",
+  "endsWith",
+  "gt",
+  "gte",
+  "lt",
+  "lte",
+];
+
+const NAME_START = /[\p{L}\p{M}_]/u;
+const NAME_CHAR = /[\p{L}\p{M}\p{N}_]/u;
+
+/** A dedup'd :placeholder name for a filter, derived from its column so the
+ * generated SQL reads naturally -- same NAME_START/NAME_CHAR alphabet
+ * gamedb-sql-params.js accepts, so a Thai column name works here too. */
+function nextParamName(usedNames, column) {
+  const cleaned = String(column || "")
+    .split("")
+    .filter((ch, index) => (index === 0 ? NAME_START : NAME_CHAR).test(ch))
+    .join("");
+  const base = cleaned || "param";
+  let name = base;
+  let suffix = 2;
+  while (usedNames.has(name)) {
+    name = `${base}_${suffix}`;
+    suffix += 1;
+  }
+  usedNames.add(name);
+  return name;
+}
+
 function sqlLiteral(value, kind = "text") {
   const text = String(value ?? "").trim();
   if (kind === "number") {
@@ -38,12 +75,28 @@ function sqlLiteral(value, kind = "text") {
   return `E'${text.replaceAll("\\", "\\\\").replaceAll("'", "''")}'`;
 }
 
-function buildFilterSql(filter, tableAlias = "") {
+// Same three characters buildFilterSql's own pattern ops escape, done in SQL
+// this time (chr(92) rather than a literal backslash, so it reads the same
+// whether or not standard_conforming_strings is on): a viewer's search box
+// cannot be pre-escaped the way an admin's saved filter value can, so the
+// escaping has to happen where the value actually arrives, at query time.
+function sqlEscapeLikeExpr(valueExpr) {
+  return (
+    `replace(replace(replace(${valueExpr}, chr(92), chr(92) || chr(92)), ` +
+    `'%', chr(92) || '%'), '_', chr(92) || '_')`
+  );
+}
+
+function buildFilterSql(filter, tableAlias, usedParamNames) {
   if (!filter || !VISUAL_FILTER_OPS.includes(filter.op)) return "";
   const rawColumn = String(filter.column || "");
   const column = quoteIdentifier(tableAlias ? `${tableAlias}.${rawColumn}` : rawColumn);
   if (filter.op === "isNull") return `${column} IS NULL`;
   if (filter.op === "isNotNull") return `${column} IS NOT NULL`;
+
+  const asParam = filter.asParam && VISUAL_FILTER_PARAM_OPS.includes(filter.op);
+  const paramExpr = asParam ? `:${nextParamName(usedParamNames, rawColumn)}` : null;
+
   if (filter.op === "in") {
     const values = String(filter.value ?? "")
       .split(",")
@@ -57,6 +110,16 @@ function buildFilterSql(filter, tableAlias = "") {
     return `${column} IN (${values.map((value) => sqlLiteral(value, filter.kind)).join(", ")})`;
   }
   if (["contains", "startsWith", "endsWith"].includes(filter.op)) {
+    if (asParam) {
+      const escaped = sqlEscapeLikeExpr(paramExpr);
+      const pattern =
+        filter.op === "contains"
+          ? `'%' || ${escaped} || '%'`
+          : filter.op === "startsWith"
+            ? `${escaped} || '%'`
+            : `'%' || ${escaped}`;
+      return `CAST(${column} AS text) ILIKE (${pattern})`;
+    }
     const raw = String(filter.value ?? "").trim();
     if (!raw) {
       const err = new Error(`กรุณาใส่ค่าตัวกรอง "${filter.column}"`);
@@ -79,6 +142,7 @@ function buildFilterSql(filter, tableAlias = "") {
     lt: "<",
     lte: "<=",
   }[filter.op];
+  if (asParam) return `${column} ${operator} ${paramExpr}`;
   const value = String(filter.value ?? "").trim();
   if (!value) {
     const err = new Error(`กรุณาใส่ค่าตัวกรอง "${filter.column}"`);
@@ -137,7 +201,10 @@ export function buildVisualSelect({
       `LEFT JOIN ${quoteIdentifier(`${join.schema}.${join.table}`)} AS ${quoteIdentifier(alias)} ON ${on}`
     );
   });
-  const where = filters.map((filter) => buildFilterSql(filter, baseAlias)).filter(Boolean);
+  const usedParamNames = new Set();
+  const where = filters
+    .map((filter) => buildFilterSql(filter, baseAlias, usedParamNames))
+    .filter(Boolean);
   if (where.length > 0) clauses.push(`WHERE\n  ${where.join("\n  AND ")}`);
   if (sort?.column) {
     const sortName = baseAlias ? `${baseAlias}.${sort.column}` : String(sort.column);

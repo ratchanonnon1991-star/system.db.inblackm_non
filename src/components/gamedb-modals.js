@@ -28,7 +28,7 @@ import {
 } from "@/lib/gamedb-formula";
 import { CELL_TONES, formatCell, TABLE_TONES } from "@/lib/gamedb-layout";
 import { extractSqlParams } from "@/lib/gamedb-sql-params";
-import { buildVisualLayout, buildVisualSelect } from "@/lib/gamedb-visual-query";
+import { buildVisualLayout, buildVisualSelect, VISUAL_FILTER_PARAM_OPS } from "@/lib/gamedb-visual-query";
 
 const BUILDER_FILTER_LABELS = {
   eq: "เท่ากับ",
@@ -807,30 +807,52 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                               </select>
                               {valueless ? (
                                 <div className="flex h-8 items-center rounded-sm border border-dashed border-zinc-200 px-2 text-[9px] font-semibold text-zinc-400">ไม่ต้องใส่ค่า</div>
-                              ) : filterKind === "boolean" && filter.op !== "in" ? (
-                                <select
-                                  value={filter.value}
-                                  onChange={(e) => {
-                                    setFilters((prev) => prev.map((item) => item.id === filter.id ? { ...item, value: e.target.value } : item));
-                                    setTestResult(null);
-                                  }}
-                                  className="h-8 rounded-sm border border-zinc-200 bg-white px-2 text-[10px] font-bold outline-none focus:border-red-600"
-                                >
-                                  <option value="">เลือกค่า</option>
-                                  <option value="true">จริง / ใช่</option>
-                                  <option value="false">เท็จ / ไม่ใช่</option>
-                                </select>
                               ) : (
-                                <input
-                                  type={filter.op === "in" ? "text" : filterKind === "number" ? "number" : filterKind === "date" ? "date" : "text"}
-                                  value={filter.value}
-                                  onChange={(e) => {
-                                    setFilters((prev) => prev.map((item) => item.id === filter.id ? { ...item, value: e.target.value } : item));
-                                    setTestResult(null);
-                                  }}
-                                  placeholder={filter.op === "in" ? "เช่น A, B, C" : "ค่าที่ต้องการ"}
-                                  className="h-8 rounded-sm border border-zinc-200 bg-white px-2 text-[10px] font-semibold outline-none focus:border-red-600"
-                                />
+                                <div className="space-y-1">
+                                  {VISUAL_FILTER_PARAM_OPS.includes(filter.op) && (
+                                    <label className="flex items-center gap-1 text-[8px] font-black text-zinc-500">
+                                      <input
+                                        type="checkbox"
+                                        checked={Boolean(filter.asParam)}
+                                        onChange={(e) => {
+                                          setFilters((prev) => prev.map((item) => item.id === filter.id ? { ...item, asParam: e.target.checked } : item));
+                                          setTestResult(null);
+                                        }}
+                                        className="h-3 w-3 accent-red-600"
+                                      />
+                                      ให้กรอกตอนรัน (ไม่ต้องเขียน SQL)
+                                    </label>
+                                  )}
+                                  {filter.asParam && VISUAL_FILTER_PARAM_OPS.includes(filter.op) ? (
+                                    <div className="flex h-8 items-center rounded-sm border border-dashed border-red-200 bg-red-50 px-2 text-[9px] font-semibold text-red-500">
+                                      คนดูจะกรอกค่านี้เอง
+                                    </div>
+                                  ) : filterKind === "boolean" && filter.op !== "in" ? (
+                                    <select
+                                      value={filter.value}
+                                      onChange={(e) => {
+                                        setFilters((prev) => prev.map((item) => item.id === filter.id ? { ...item, value: e.target.value } : item));
+                                        setTestResult(null);
+                                      }}
+                                      className="h-8 w-full rounded-sm border border-zinc-200 bg-white px-2 text-[10px] font-bold outline-none focus:border-red-600"
+                                    >
+                                      <option value="">เลือกค่า</option>
+                                      <option value="true">จริง / ใช่</option>
+                                      <option value="false">เท็จ / ไม่ใช่</option>
+                                    </select>
+                                  ) : (
+                                    <input
+                                      type={filter.op === "in" ? "text" : filterKind === "number" ? "number" : filterKind === "date" ? "date" : "text"}
+                                      value={filter.value}
+                                      onChange={(e) => {
+                                        setFilters((prev) => prev.map((item) => item.id === filter.id ? { ...item, value: e.target.value } : item));
+                                        setTestResult(null);
+                                      }}
+                                      placeholder={filter.op === "in" ? "เช่น A, B, C" : "ค่าที่ต้องการ"}
+                                      className="h-8 w-full rounded-sm border border-zinc-200 bg-white px-2 text-[10px] font-semibold outline-none focus:border-red-600"
+                                    />
+                                  )}
+                                </div>
                               )}
                               <button
                                 type="button"

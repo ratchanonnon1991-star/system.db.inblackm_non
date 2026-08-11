@@ -238,4 +238,40 @@ check(
   ""
 );
 
+check(
+  "a filter marked asParam becomes a :placeholder instead of a baked-in literal",
+  buildVisualSelect({
+    schema: "public", table: "games", columns: ["id"],
+    filters: [{ column: "name", op: "eq", asParam: true }],
+  }).split("\n").pop(),
+  `  "name" = :name`
+);
+check(
+  "two asParam filters on the same column get distinct placeholder names",
+  buildVisualSelect({
+    schema: "public", table: "games", columns: ["id"],
+    filters: [
+      { column: "price", op: "gte", asParam: true },
+      { column: "price", op: "lte", asParam: true },
+    ],
+  }),
+  'SELECT\n  "id"\nFROM "public"."games"\nWHERE\n  "price" >= :price\n  AND "price" <= :price_2'
+);
+check(
+  "asParam is ignored for ops a single placeholder cannot express, falling back to the literal",
+  buildVisualSelect({
+    schema: "public", table: "games", columns: ["id"],
+    filters: [{ column: "id", op: "in", value: "1, 2", asParam: true }],
+  }).split("\n").pop(),
+  `  "id" IN (E'1', E'2')`
+);
+check(
+  "a parameterized contains filter escapes wildcards from the eventual bound value in SQL, not JS",
+  buildVisualSelect({
+    schema: "public", table: "games", columns: ["id"],
+    filters: [{ column: "name", op: "contains", asParam: true }],
+  }).split("\n").pop(),
+  "  CAST(\"name\" AS text) ILIKE ('%' || replace(replace(replace(:name, chr(92), chr(92) || chr(92)), '%', chr(92) || '%'), '_', chr(92) || '_') || '%')"
+);
+
 console.log(`${passed} passed`);
