@@ -32,7 +32,17 @@ export async function GET(request) {
       },
       body: JSON.stringify({ code }),
     });
-    if (!response.ok) return failure("code_rejected");
+    if (!response.ok) {
+      // 401 means the two apps' GAMEDB_SSO_SECRET don't match; 410 means the
+      // code was already used or its 60s TTL passed. Both reach the user as
+      // the same generic message, but this is what tells them apart on the
+      // server without needing hiring's own logs too.
+      console.error(
+        `hiring SSO exchange rejected: HTTP ${response.status}` +
+          (response.status === 401 ? " (GAMEDB_SSO_SECRET mismatch between the two apps)" : "")
+      );
+      return failure("code_rejected");
+    }
     const data = await response.json();
     email = String(data.email || "").trim();
   } catch (err) {
