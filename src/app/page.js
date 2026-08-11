@@ -562,10 +562,8 @@ const SELECTED_PANEL_KEY = "gamedb.selected-panel";
 function CanvasToolbar({
   layoutLocked,
   historyAvailability,
-  historyRevision,
   onUndo,
   onRedo,
-  onArrange,
   isSuperAdmin,
   activeView,
   templateSaveState,
@@ -573,7 +571,6 @@ function CanvasToolbar({
   zoom,
   onZoom,
   sheetMode,
-  onToggleSheetMode,
 }) {
   return (
     <div className="flex shrink-0 items-center gap-1 overflow-x-auto">
@@ -595,23 +592,6 @@ function CanvasToolbar({
       >
         <Redo2 size={14} />
       </button>
-      {!layoutLocked && (
-        <select
-          key={historyRevision}
-          defaultValue=""
-          onChange={(event) => {
-            if (event.target.value) onArrange(event.target.value);
-            event.target.value = "";
-          }}
-          className="h-8 rounded-sm border border-zinc-200 bg-white px-2 text-[10px] font-black text-zinc-600"
-          title="จัดกล่องอัตโนมัติ"
-        >
-          <option value="">จัดอัตโนมัติ</option>
-          <option value="grid">แบบ Grid</option>
-          <option value="vertical">เรียงแนวตั้ง</option>
-          <option value="horizontal">เรียงต่อกัน</option>
-        </select>
-      )}
       {isSuperAdmin && activeView && (
         <>
           <span
@@ -641,24 +621,6 @@ function CanvasToolbar({
           </button>
         </>
       )}
-      <span className="mx-0.5 h-5 w-px bg-zinc-200" />
-      <button
-        type="button"
-        onClick={onToggleSheetMode}
-        className={`flex h-8 items-center gap-1 rounded-sm border px-2 text-[10px] font-black transition ${
-          sheetMode
-            ? "border-red-600 bg-red-600 text-white"
-            : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"
-        }`}
-        title={
-          sheetMode
-            ? "กลับไปแบบ canvas (วางกล่องเองได้)"
-            : "สลับเป็นแบบชีต — ทีละตาราง มีแท็บด้านล่าง"
-        }
-      >
-        {sheetMode ? <LayoutGrid size={12} /> : <Table size={12} />}
-        {sheetMode ? "Canvas" : "ชีต"}
-      </button>
       {!sheetMode && (
         <>
       <span className="mx-0.5 h-5 w-px bg-zinc-200" />
@@ -688,6 +650,53 @@ function CanvasToolbar({
       </button>
         </>
       )}
+    </div>
+  );
+}
+
+function WorkspaceViewControls({
+  layoutLocked,
+  historyRevision,
+  onArrange,
+  sheetMode,
+  onToggleSheetMode,
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      {!layoutLocked && (
+        <select
+          key={historyRevision}
+          defaultValue=""
+          onChange={(event) => {
+            if (event.target.value) onArrange(event.target.value);
+            event.target.value = "";
+          }}
+          className="h-9 rounded-sm border border-zinc-200 bg-white px-2 text-[10px] font-black text-zinc-600"
+          title="จัดกล่องทุก Query อัตโนมัติ"
+        >
+          <option value="">จัดอัตโนมัติ</option>
+          <option value="grid">แบบ Grid</option>
+          <option value="vertical">เรียงแนวตั้ง</option>
+          <option value="horizontal">เรียงต่อกัน</option>
+        </select>
+      )}
+      <button
+        type="button"
+        onClick={onToggleSheetMode}
+        className={`flex h-9 items-center gap-1 rounded-sm border px-3 text-[10px] font-black transition ${
+          sheetMode
+            ? "border-red-600 bg-red-600 text-white"
+            : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+        }`}
+        title={
+          sheetMode
+            ? "กลับไปแบบ Canvas (วางกล่องเองได้)"
+            : "สลับเป็นแบบชีต — ทีละตาราง มีแท็บด้านล่าง"
+        }
+      >
+        {sheetMode ? <LayoutGrid size={12} /> : <Table size={12} />}
+        {sheetMode ? "Canvas" : "ชีต"}
+      </button>
     </div>
   );
 }
@@ -1802,16 +1811,22 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
     <CanvasToolbar
       layoutLocked={layoutLocked}
       historyAvailability={historyAvailability}
-      historyRevision={historyRevision}
       onUndo={undoPanels}
       onRedo={redoPanels}
-      onArrange={autoArrangePanels}
       isSuperAdmin={isSuperAdmin}
       activeView={activeView}
       templateSaveState={templateSaveState}
       onTogglePreview={() => setPreviewAsUser((value) => !value)}
       zoom={zoom}
       onZoom={setZoomAroundCenter}
+      sheetMode={sheetMode}
+    />
+  );
+  const workspaceViewControls = (
+    <WorkspaceViewControls
+      layoutLocked={layoutLocked}
+      historyRevision={historyRevision}
+      onArrange={autoArrangePanels}
       sheetMode={sheetMode}
       onToggleSheetMode={toggleSheetMode}
     />
@@ -2100,6 +2115,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
               <div ref={setQueryListHost} className="absolute bottom-0 right-0" />
             </div>
           )}
+          {workspaceViewControls}
         </div>
       </header>
 
@@ -2270,7 +2286,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
 
         {sheetMode ? (
           <div className="flex min-h-72 min-w-0 flex-1 flex-col overflow-hidden rounded-sm border border-zinc-200 bg-zinc-50">
-            <div className="min-h-0 flex-1 overflow-auto p-1">
+            <div className="min-h-0 flex-1 overflow-hidden px-1 pt-1">
               {activeSheetPanel ? renderPanel(activeSheetPanel, true) : emptyWorkspace}
             </div>
             {openPanels.length > 0 && (

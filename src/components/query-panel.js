@@ -99,7 +99,7 @@ function PaginationBar({ rowCount, page, pageCount, pageSize, tableTone, onPageC
 
   return (
     <div
-      className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-100 bg-zinc-50 px-3 py-1.5 text-[10px] font-semibold text-zinc-500"
+      className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-zinc-100 bg-zinc-50 px-3 py-1.5 text-[10px] font-semibold text-zinc-500"
       style={toneStyle(tableTone) || undefined}
     >
       <span>
@@ -140,18 +140,6 @@ const RESIZE_HINT = "ลากเพื่อปรับขนาด · ดั�
 const MIN_FRAME_WIDTH = 280;
 const MIN_FRAME_HEIGHT = 140;
 const MAX_FRAME_HEIGHT = 1600;
-// In sheet mode the panel is not the thing being laid out — the sheet is. Each
-// query carries its own canvas height, so honouring it here would make the body
-// jump to a different size every time the user switches tab. The window is the
-// same for every tab, so sizing to it keeps the table still while still using a
-// tall screen. The subtraction covers the app chrome, the panel header and the
-// tab strip.
-const DOCKED_CHROME = 260;
-const MIN_DOCKED_BODY = 320;
-function dockedBodyHeight(viewportHeight) {
-  return Math.max(MIN_DOCKED_BODY, Math.round(viewportHeight - DOCKED_CHROME));
-}
-
 // Eight Figma-like hit areas. The inner marker is shown when the frame is
 // selected, while the larger transparent area remains easy to grab.
 const FRAME_HANDLES = [
@@ -545,15 +533,20 @@ export default function QueryPanel({
     paramErrorsRef.current = paramErrors;
   }, [paramValues, paramErrors]);
 
-  // Sized from the window rather than from the panel, and only on resize, so
-  // every tab is the same height.
-  const [dockedHeight, setDockedHeight] = useState(MIN_DOCKED_BODY);
+  // The table can fill this area with CSS, while the hand-drawn SVG chart
+  // needs an actual pixel height for its scale calculations.
+  const dockedBodyRef = useRef(null);
+  const [dockedChartHeight, setDockedChartHeight] = useState(320);
   useEffect(() => {
-    if (!docked) return undefined;
-    const measure = () => setDockedHeight(dockedBodyHeight(window.innerHeight));
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
+    if (!docked || !dockedBodyRef.current) return undefined;
+    const element = dockedBodyRef.current;
+    const measure = () => {
+      const height = Math.round(element.getBoundingClientRect().height);
+      if (height > 0) setDockedChartHeight(height);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
   }, [docked]);
 
   const appliedDrillRef = useRef(null);
@@ -1558,7 +1551,8 @@ export default function QueryPanel({
     if (dirY) onResetHeight();
   };
 
-  const bodyHeight = docked ? dockedHeight : panel.height;
+  const bodyHeight = docked ? "100%" : panel.height;
+  const chartHeight = docked ? dockedChartHeight : panel.height;
   const panelHeaderTone = toneStyle(layout.tableTone, "head");
   const panelBorderColor = panelHeaderTone?.backgroundColor;
 
@@ -1574,7 +1568,7 @@ export default function QueryPanel({
       }}
       style={{
         ...(docked
-          ? { position: "relative", width: "100%" }
+          ? { position: "relative", width: "100%", height: "100%" }
           : {
               position: "absolute",
               left: panel.x || 0,
@@ -2238,12 +2232,12 @@ export default function QueryPanel({
             </div>
           )}
 
-          {/* Loading and empty states are shorter than a table, so in sheet mode
-              they are held to the same height rather than letting the panel
-              shrink and snap back on every tab switch. */}
+          {/* In sheet mode this fills the space between the panel header and the
+              sheet tabs. The table scrolls inside it while pagination stays at
+              the bottom edge. */}
           <div
-            className="flex min-w-0 flex-col"
-            style={docked ? { minHeight: dockedHeight } : undefined}
+            ref={docked ? dockedBodyRef : null}
+            className={`flex min-w-0 flex-col ${docked ? "min-h-0 flex-1" : ""}`}
           >
           {running ? (
             <p className="flex items-center justify-center gap-2 py-16 text-xs font-semibold text-zinc-400">
@@ -2264,12 +2258,12 @@ export default function QueryPanel({
                   chart={layout.chart}
                   columns={visibleColumns}
                   rows={displayRows}
-                  height={bodyHeight}
+                  height={chartHeight}
                 />
               ) : view === "chart" ? (
                 <div
                   className="flex items-center justify-center px-4 text-[11px] font-semibold text-zinc-400"
-                  style={{ height: bodyHeight }}
+                  style={{ height: chartHeight }}
                 >
                   ยังไม่ได้ตั้งค่ากราฟ — กดปุ่มตั้งค่ากราฟเพื่อเลือกแกน X/Y
                 </div>

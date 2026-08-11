@@ -977,7 +977,7 @@ export default function PanelTable({
     <div
       ref={scrollRef}
       onScroll={onScroll}
-      className="overflow-auto border-t border-zinc-100"
+      className="min-h-0 overflow-auto border-t border-zinc-100"
       style={{ height }}
     >
       <table
