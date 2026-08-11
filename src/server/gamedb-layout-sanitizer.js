@@ -9,6 +9,7 @@ import {
   normalizeInputs,
   normalizeInsertForm,
   normalizeMerge,
+  lookupsFromLayout,
   PARAM_TYPES,
   REFRESH_CHOICES,
   RULE_OPS,
@@ -173,9 +174,12 @@ export function sanitizeLayout(raw) {
           dir: layout.sort.dir === "desc" ? "desc" : "asc",
         }
       : null;
-  // Merge and drill only name another saved query and its columns; the join
-  // and the navigation happen in the browser, so nothing here reaches SQL.
+  // Merge, lookups and drill only name another saved query and its columns;
+  // the join and the navigation happen in the browser, so nothing here reaches
+  // SQL. `lookupsFromLayout` also folds a legacy `merge` into a one-item
+  // array, so a query saved before lookups existed keeps reading the same way.
   const merge = normalizeMerge(layout.merge);
+  const lookups = lookupsFromLayout(layout);
   const drill = normalizeDrill(layout.drill);
   const group =
     layout.group && typeof layout.group === "object" && layout.group.colId
@@ -200,6 +204,7 @@ export function sanitizeLayout(raw) {
     chart,
     sort,
     merge,
+    lookups,
     drill,
     group,
     folder,

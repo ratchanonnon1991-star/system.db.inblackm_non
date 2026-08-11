@@ -63,8 +63,12 @@ function buildFilterSql(filter, tableAlias = "") {
       err.status = 400;
       throw err;
     }
+    // % and _ are wildcards to ILIKE. Someone typing "50%" means the three
+    // characters, not "starts with 50", so they are escaped and only the
+    // wildcards this builder adds are left to mean anything.
+    const text = raw.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
     const pattern =
-      filter.op === "contains" ? `%${raw}%` : filter.op === "startsWith" ? `${raw}%` : `%${raw}`;
+      filter.op === "contains" ? `%${text}%` : filter.op === "startsWith" ? `${text}%` : `%${text}`;
     return `CAST(${column} AS text) ILIKE ${sqlLiteral(pattern)}`;
   }
   const operator = {
@@ -171,8 +175,8 @@ export function buildVisualLayout({
         }
       : null;
 
-  const labels = { ...((baseLayout || {}).labels || {}) };
-  const formats = { ...((baseLayout || {}).formats || {}) };
+  const labels = {};
+  const formats = {};
   [...new Set(selectedColumns.map(String))].forEach((column, index) => {
     const id = `c${index}`;
     const setting = columnSettings[column] || {};
@@ -190,5 +194,11 @@ export function buildVisualLayout({
     }
   });
 
-  return { ...(baseLayout || {}), labels, formats, tableTone, editable };
+  // Everything a layout holds about columns is keyed by result position
+  // (`c0`, `c1`, ...), and rebuilding the query in the visual builder moves
+  // those positions. Carrying the old keys over would hide, colour or sort a
+  // column that is no longer the one they were written for, so only the
+  // settings that say nothing about columns survive.
+  const { folder = "", refreshSeconds = 0 } = baseLayout || {};
+  return { folder, refreshSeconds, labels, formats, tableTone, editable };
 }

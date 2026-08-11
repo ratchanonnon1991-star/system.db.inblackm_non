@@ -77,9 +77,9 @@ ok("prefers Cloudflare client ip", clientIp(headersOf({
   "cf-connecting-ip": "198.51.100.4",
   "x-real-ip": "198.51.100.5",
 })) === "198.51.100.4");
-ok("uses nearest forwarded hop", clientIp(headersOf({
+ok("uses the browser hop, not the proxy that added itself", clientIp(headersOf({
   "x-forwarded-for": "198.51.100.6, 10.0.0.2",
-})) === "10.0.0.2");
+})) === "198.51.100.6");
 
 console.log(`${pass} passed, ${fail.length} failed`);
 if (fail.length) {

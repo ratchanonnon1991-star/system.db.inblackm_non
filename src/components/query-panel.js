@@ -53,6 +53,7 @@ import {
   compareCells,
   EMPTY_LAYOUT,
   formatCell,
+  MAX_LOOKUPS,
   mergeKeyOf,
   normalizeLayout,
   REFRESH_CHOICES,
@@ -66,6 +67,7 @@ import {
   DrillModal,
   EditableSettingsModal,
   FormatsModal,
+  LookupsListModal,
   MergeModal,
   ParamsSettingsModal,
   InsertFormModal,
@@ -852,88 +854,125 @@ export default function QueryPanel({
     setShowParamErrors(false);
   };
 
-  // --- merge with another query -------------------------------------------
-  const [mergeResult, setMergeResult] = useState(null);
-  const [mergeError, setMergeError] = useState("");
+  const baseNameToIndex = useMemo(() => {
+    const map = new Map();
+    (result?.columns || []).forEach((col, index) => {
+      if (!map.has(col.name)) map.set(col.name, index);
+    });
+    return map;
+  }, [result]);
 
-  const mergeQueryId = layout.merge?.queryId ?? null;
-  const mergedQueryName = useMemo(
-    () => queries.find((item) => item.id === mergeQueryId)?.name || "",
-    [queries, mergeQueryId]
-  );
+  // --- lookups: pull columns in from other queries --------------------------
+  // Up to MAX_LOOKUPS queries run alongside this one, each joined in by its own
+  // key columns. A layout saved before lookups existed has a single `merge`
+  // instead, which `normalizeLayout` already reads as a one-item lookups list,
+  // so nothing here needs to know the difference. Named `mergeSource*` rather
+  // than `lookup*` because that name is already taken by the FK dropdowns an
+  // editable cell can read from -- unrelated feature, same word.
+  const [mergeSourceResults, setMergeSourceResults] = useState({});
 
   useEffect(() => {
-    if (!mergeQueryId) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing state this effect owns when the merge is switched off
-      setMergeResult(null);
-      setMergeError("");
+    if (layout.lookups.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing state this effect owns when the last lookup is removed
+      setMergeSourceResults({});
       return undefined;
     }
     let cancelled = false;
-    // Through a share link the merged table is resolved from the shared
-    // query's own layout on the server, so the id never travels.
-    apiJson(shareToken ? `/api/share/${shareToken}/run` : `/api/queries/${mergeQueryId}/run`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(shareToken ? { merge: true } : { params: {} }),
-      fallbackError: "ดึงข้อมูลของ Query ที่รวมไว้ไม่สำเร็จ",
-    })
-      .then((data) => {
-        if (cancelled) return;
-        setMergeResult(data);
-        setMergeError("");
+    const requests = layout.lookups.map((lookup) =>
+      // Through a share link the pulled-in table is resolved from the shared
+      // query's own layout on the server, so the id never travels.
+      apiJson(shareToken ? `/api/share/${shareToken}/run` : `/api/queries/${lookup.queryId}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(shareToken ? { merge: true, lookupId: lookup.id } : { params: {} }),
+        fallbackError: "ดึงข้อมูลของ Query ที่ดึงมาไม่สำเร็จ",
       })
-      .catch((err) => {
-        if (cancelled) return;
-        setMergeResult(null);
-        setMergeError(err.message);
-      });
+        .then((data) => ({ id: lookup.id, data, error: "" }))
+        .catch((err) => ({ id: lookup.id, data: null, error: err.message }))
+    );
+    Promise.all(requests).then((results) => {
+      if (cancelled) return;
+      setMergeSourceResults(Object.fromEntries(results.map((item) => [item.id, item])));
+    });
     return () => {
       cancelled = true;
     };
-    // Re-run alongside this panel so a refresh pulls both sides.
-  }, [mergeQueryId, lastRunAt, shareToken]);
+    // Re-run alongside this panel so a refresh pulls every source again.
+  }, [layout.lookups, lastRunAt, shareToken]);
 
-  // One lookup for the whole render: join key -> matching row of the other query.
-  const mergeIndex = useMemo(() => {
-    if (!layout.merge || !mergeResult) return null;
-    const nameToIndex = new Map(mergeResult.columns.map((col, index) => [col.name, index]));
-    const rightKeyIndexes = layout.merge.on.map((pair) => nameToIndex.get(pair.right));
-    if (rightKeyIndexes.some((index) => index === undefined)) return null;
-
-    const byKey = new Map();
-    let duplicates = 0;
-    for (const row of mergeResult.rows) {
-      const key = mergeKeyOf(rightKeyIndexes.map((index) => row[index]));
-      if (byKey.has(key)) duplicates += 1;
-      else byKey.set(key, row);
+  // One index per lookup: its join key -> the matching row of that query.
+  const mergeSourceIndexes = useMemo(() => {
+    const indexes = {};
+    for (const lookup of layout.lookups) {
+      const data = mergeSourceResults[lookup.id]?.data;
+      if (!data) continue;
+      const nameToIndex = new Map(data.columns.map((col, index) => [col.name, index]));
+      const rightKeyIndexes = lookup.on.map((pair) => nameToIndex.get(pair.right));
+      if (rightKeyIndexes.some((index) => index === undefined)) continue;
+      const byKey = new Map();
+      for (const row of data.rows) {
+        const key = mergeKeyOf(rightKeyIndexes.map((index) => row[index]));
+        if (!byKey.has(key)) byKey.set(key, row);
+      }
+      indexes[lookup.id] = { byKey, nameToIndex };
     }
-    return { byKey, nameToIndex, duplicates };
-  }, [layout.merge, mergeResult]);
+    return indexes;
+  }, [layout.lookups, mergeSourceResults]);
+
+  // The base result's key column for each lookup, resolved once instead of on
+  // every row: `on` names a column, not a position, and that mapping does not
+  // change from row to row.
+  const mergeSourceKeyIndexes = useMemo(() => {
+    const indexes = {};
+    for (const lookup of layout.lookups) {
+      indexes[lookup.id] = lookup.on.map((pair) => baseNameToIndex.get(pair.left));
+    }
+    return indexes;
+  }, [layout.lookups, baseNameToIndex]);
 
   const mergedColumns = useMemo(() => {
-    if (!layout.merge || !mergeIndex) return [];
-    const suffix = mergedQueryName ? ` · ${mergedQueryName}` : "";
-    const brought = layout.merge.columns
-      .filter((name) => mergeIndex.nameToIndex.has(name))
-      .map((name) => ({
-        id: `~${name}`,
-        label: `${name}${suffix}`,
-        type: mergeResult.columns[mergeIndex.nameToIndex.get(name)].type,
-        kind: "merged",
-        source: name,
-      }));
-    const checks = layout.merge.compare
-      .filter((pair) => mergeIndex.nameToIndex.has(pair.right))
-      .map((pair) => ({
-        id: `?${pair.left}|${pair.right}`,
-        label: `${pair.left} = ${pair.right}?`,
-        type: "text",
-        kind: "compare",
-        pair,
-      }));
-    return [...brought, ...checks];
-  }, [layout.merge, mergeIndex, mergeResult, mergedQueryName]);
+    const columns = [];
+    for (const lookup of layout.lookups) {
+      const index = mergeSourceIndexes[lookup.id];
+      const data = mergeSourceResults[lookup.id]?.data;
+      if (!index || !data) continue;
+      // The label already carries the source query's name, which is what
+      // keeps two lookups pulling a same-named column from colliding both on
+      // screen and as a formula ref -- `[ราคาทุน · ราคาทุนสินค้า]` reads as
+      // one thing even though "ราคาทุน" alone might not be unique.
+      const targetName = queries.find((item) => item.id === lookup.queryId)?.name || "";
+      const suffix = targetName ? ` · ${targetName}` : "";
+      for (const name of lookup.columns) {
+        if (!index.nameToIndex.has(name)) continue;
+        columns.push({
+          id: `~${lookup.id}:${name}`,
+          label: `${name}${suffix}`,
+          type: data.columns[index.nameToIndex.get(name)].type,
+          kind: "merged",
+          lookupId: lookup.id,
+          source: name,
+        });
+      }
+      for (const pair of lookup.compare) {
+        if (!index.nameToIndex.has(pair.right)) continue;
+        columns.push({
+          id: `?${lookup.id}:${pair.left}|${pair.right}`,
+          label: `${pair.left} = ${pair.right}?${suffix}`,
+          type: "text",
+          kind: "compare",
+          lookupId: lookup.id,
+          pair,
+        });
+      }
+    }
+    return columns;
+  }, [layout.lookups, mergeSourceIndexes, mergeSourceResults, queries]);
+  // Looked up once per render, not once per row: a formula's `[name]` is
+  // matched against this the same way `baseNameToIndex` matches a base column.
+  const mergedColumnsByLabel = useMemo(
+    () => new Map(mergedColumns.map((col) => [col.label, col])),
+    [mergedColumns]
+  );
 
   const displayColumns = useMemo(
     () => (result ? buildDisplayColumns(result.columns, layout, mergedColumns) : []),
@@ -957,37 +996,70 @@ export default function QueryPanel({
     };
   }, [displayColumns, layout.computed, modalColumnId]);
 
-  const baseNameToIndex = useMemo(() => {
-    const map = new Map();
-    (result?.columns || []).forEach((col, index) => {
-      if (!map.has(col.name)) map.set(col.name, index);
-    });
-    return map;
-  }, [result]);
+  // Every lookup with a ready index and a fully-resolved key can match a row
+  // this refresh; one still loading, or referencing a column the query no
+  // longer has, sits out rather than reporting every row as unmatched.
+  const activeLookups = useMemo(
+    () =>
+      layout.lookups.filter((lookup) => {
+        const index = mergeSourceIndexes[lookup.id];
+        const keyIndexes = mergeSourceKeyIndexes[lookup.id];
+        return index && keyIndexes.every((keyIndex) => keyIndex !== undefined);
+      }),
+    [layout.lookups, mergeSourceIndexes, mergeSourceKeyIndexes]
+  );
+  const computePartners = useCallback(
+    (row) => {
+      const partners = {};
+      for (const lookup of activeLookups) {
+        const keyIndexes = mergeSourceKeyIndexes[lookup.id];
+        partners[lookup.id] = mergeSourceIndexes[lookup.id].byKey.get(
+          mergeKeyOf(keyIndexes.map((index) => row[index]))
+        );
+      }
+      return partners;
+    },
+    [activeLookups, mergeSourceIndexes, mergeSourceKeyIndexes]
+  );
+  // Raw, not coerced: the formula engine decides whether it wanted a number, a
+  // date or text, and a column of dates is none of the three until it is
+  // asked for. Base columns resolve by name first; a lookup's brought-in or
+  // compare column only exists under its (already disambiguated) label, so
+  // that is tried second. Shared with the formula editor's own preview, so a
+  // formula referencing a lookup column previews the same value it will run.
+  const resolveRowRef = useCallback(
+    (row, partners, name) => {
+      const baseIndex = baseNameToIndex.get(name);
+      if (baseIndex !== undefined) return row[baseIndex];
+      const col = mergedColumnsByLabel.get(name);
+      if (!col) return null;
+      const partner = partners[col.lookupId];
+      const index = mergeSourceIndexes[col.lookupId];
+      if (col.kind === "merged") {
+        return partner ? partner[index.nameToIndex.get(col.source)] : null;
+      }
+      if (col.kind === "compare") {
+        if (!partner) return null;
+        const left = row[baseNameToIndex.get(col.pair.left)];
+        const right = partner[index.nameToIndex.get(col.pair.right)];
+        return cellsEqual(left, right) ? 1 : 0;
+      }
+      return null;
+    },
+    [baseNameToIndex, mergedColumnsByLabel, mergeSourceIndexes]
+  );
 
   const displayRows = useMemo(() => {
     if (!result) return [];
-    const leftKeyIndexes = layout.merge
-      ? layout.merge.on.map((pair) => baseNameToIndex.get(pair.left))
-      : null;
-    const canMerge =
-      mergeIndex && leftKeyIndexes && leftKeyIndexes.every((index) => index !== undefined);
-
     let rows = result.rows.map((row, sourceIndex) => {
-      // Raw, not coerced: the formula engine decides whether it wanted a
-      // number, a date or text, and a column of dates is none of the three
-      // until it is asked for.
-      const resolveRef = (name) => {
-        const index = baseNameToIndex.get(name);
-        return index === undefined ? null : row[index];
-      };
-      const partner = canMerge
-        ? mergeIndex.byKey.get(mergeKeyOf(leftKeyIndexes.map((index) => row[index])))
-        : null;
+      const partners = computePartners(row);
+      const resolveRef = (name) => resolveRowRef(row, partners, name);
 
       return {
         sourceIndex,
-        matched: canMerge ? Boolean(partner) : null,
+        matchedByLookup: Object.fromEntries(
+          activeLookups.map((lookup) => [lookup.id, Boolean(partners[lookup.id])])
+        ),
         cells: visibleColumns.map((col) => {
           if (col.kind === "base") {
             // By position: two columns can share a name, and then a lookup by
@@ -996,13 +1068,15 @@ export default function QueryPanel({
             return { raw, text: formatCell(raw, col.type) };
           }
           if (col.kind === "merged") {
-            const raw = partner ? partner[mergeIndex.nameToIndex.get(col.source)] : null;
+            const partner = partners[col.lookupId];
+            const raw = partner ? partner[mergeSourceIndexes[col.lookupId].nameToIndex.get(col.source)] : null;
             return { raw, text: partner ? formatCell(raw, col.type) : "ไม่พบคู่" };
           }
           if (col.kind === "compare") {
+            const partner = partners[col.lookupId];
             if (!partner) return { raw: null, text: "ไม่พบคู่" };
             const left = row[baseNameToIndex.get(col.pair.left)];
-            const right = partner[mergeIndex.nameToIndex.get(col.pair.right)];
+            const right = partner[mergeSourceIndexes[col.lookupId].nameToIndex.get(col.pair.right)];
             const same = cellsEqual(left, right);
             return { raw: same ? 1 : 0, text: same ? "✓ ตรงกัน" : "✗ ต่างกัน" };
           }
@@ -1030,7 +1104,17 @@ export default function QueryPanel({
       }
     }
     return rows;
-  }, [result, visibleColumns, baseNameToIndex, rowFilter, layout.sort, layout.merge, mergeIndex]);
+  }, [
+    result,
+    visibleColumns,
+    baseNameToIndex,
+    mergeSourceIndexes,
+    activeLookups,
+    computePartners,
+    resolveRowRef,
+    rowFilter,
+    layout.sort,
+  ]);
 
   const pageCount = Math.max(1, Math.ceil(displayRows.length / pageSize));
   const activePage = Math.min(page, pageCount);
@@ -1058,13 +1142,26 @@ export default function QueryPanel({
     });
   }, [onDataChange, query.id, query.name, visibleColumns, displayRows, layout]);
 
-  const matchCount = useMemo(
-    () =>
-      displayRows.length && displayRows[0].matched !== null
-        ? displayRows.filter((row) => row.matched).length
-        : null,
-    [displayRows]
-  );
+  const lookupSummaries = useMemo(() => {
+    if (displayRows.length === 0) return [];
+    // Only a lookup that made it into matchedByLookup this round is reported --
+    // one still loading would otherwise read as "matched 0" for a moment.
+    return layout.lookups
+      .filter((lookup) => lookup.id in (displayRows[0].matchedByLookup || {}))
+      .map((lookup) => ({
+        id: lookup.id,
+        name: queries.find((item) => item.id === lookup.queryId)?.name || `Query #${lookup.queryId}`,
+        matched: displayRows.filter((row) => row.matchedByLookup[lookup.id]).length,
+        total: displayRows.length,
+      }));
+  }, [layout.lookups, displayRows, queries]);
+
+  const mergeSourceErrorText = useMemo(() => {
+    const messages = layout.lookups
+      .map((lookup) => mergeSourceResults[lookup.id]?.error)
+      .filter(Boolean);
+    return messages.join(" · ");
+  }, [layout.lookups, mergeSourceResults]);
 
   // Keys arrive as `rowIndex:columnName`; the table addresses cells by
   // display-column id, which is the same string for base columns.
@@ -1666,8 +1763,13 @@ export default function QueryPanel({
                 {lastRunAt
                   ? ` · อัปเดต ${lastRunAt.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
                   : ""}
-                {matchCount !== null
-                  ? ` · จับคู่กับ ${mergedQueryName} ได้ ${matchCount.toLocaleString("th-TH")}/${displayRows.length.toLocaleString("th-TH")} แถว`
+                {lookupSummaries.length > 0
+                  ? ` · ${lookupSummaries
+                      .map(
+                        (item) =>
+                          `จับคู่กับ ${item.name} ได้ ${item.matched.toLocaleString("th-TH")}/${item.total.toLocaleString("th-TH")}`
+                      )
+                      .join(" · ")}`
                   : ""}
               </>
             ) : (
@@ -1904,12 +2006,18 @@ export default function QueryPanel({
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => runMoreAction(() => setModal("merge"))}
+                onClick={() =>
+                  runMoreAction(() => {
+                    setModalColumnId(null);
+                    setModal("lookups");
+                  })
+                }
                 disabled={!result}
                 className={menuItemClass}
               >
-                <Combine size={14} className={layout.merge ? "text-red-600" : ""} />
-                รวมกับ Query อื่น
+                <Combine size={14} className={layout.lookups.length ? "text-red-600" : ""} />
+                ดึงคอลัมน์จาก Query อื่น
+                {layout.lookups.length > 0 ? ` (${layout.lookups.length})` : ""}
               </button>
               <button
                 type="button"
@@ -2261,9 +2369,9 @@ export default function QueryPanel({
             </div>
           )}
 
-          {(saveError || editError || mergeError) && (
+          {(saveError || editError || mergeSourceErrorText) && (
             <div className="mx-3 mt-3 rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
-              {saveError || editError || `รวมตารางไม่สำเร็จ: ${mergeError}`}
+              {saveError || editError || `ดึงคอลัมน์จาก Query อื่นไม่สำเร็จ: ${mergeSourceErrorText}`}
             </div>
           )}
 
@@ -2311,6 +2419,7 @@ export default function QueryPanel({
                   mutateLayout={mutateLayout}
                   canCustomizeLayout={canCustomizeLayout}
                   height={bodyHeight}
+                  viewportHeight={chartHeight}
                   canEdit={canEditCells}
                   editableColumns={editableColumns}
                   editableInputs={sharedEditable?.inputs || []}
@@ -2400,16 +2509,26 @@ export default function QueryPanel({
           <>
       {modal === "computed" && result && (
         <ComputedColumnModal
-          availableNames={[...new Set(result.columns.map((col) => col.name))]}
+          // Columns pulled in from another query are offered by the same
+          // (already query-suffixed) label the table shows for them, so a
+          // formula can read `[ราคาทุน · ราคาทุนสินค้า]` the same way it
+          // reads a column of this query's own result.
+          availableNames={[
+            ...new Set(result.columns.map((col) => col.name)),
+            ...mergedColumns.map((col) => col.label),
+          ]}
           // The first row, so the editor can show what the formula produces
           // before the column exists.
           sampleRow={
             result.rows.length
               ? Object.fromEntries(
-                  [...baseNameToIndex.entries()].map(([name, index]) => [
-                    name,
-                    result.rows[0][index],
-                  ])
+                  (() => {
+                    const row = result.rows[0];
+                    const partners = computePartners(row);
+                    return [...baseNameToIndex.keys(), ...mergedColumns.map((col) => col.label)].map(
+                      (name) => [name, resolveRowRef(row, partners, name)]
+                    );
+                  })()
                 )
               : null
           }
@@ -2472,16 +2591,60 @@ export default function QueryPanel({
           }}
         />
       )}
-      {modal === "merge" && result && (
+      {modal === "lookups" && result && (
+        <LookupsListModal
+          lookups={layout.lookups}
+          queries={queries}
+          onEdit={(lookupId) => {
+            setModalColumnId(lookupId);
+            setModal("lookup");
+          }}
+          onRemove={(lookupId) =>
+            mutateLayout((prev) => ({
+              ...prev,
+              lookups: prev.lookups.filter((item) => item.id !== lookupId),
+            }))
+          }
+          onClose={closeColumnModal}
+        />
+      )}
+      {modal === "lookup" && result && (
         <MergeModal
           query={query}
           queries={queries}
           columnNames={result.columns.map((col) => col.name)}
-          merge={layout.merge}
-          onClose={() => setModal(null)}
-          onSave={(merge) => {
-            mutateLayout((prev) => ({ ...prev, merge }));
-            setModal(null);
+          merge={layout.lookups.find((item) => item.id === modalColumnId) || null}
+          // Back to the list rather than closed outright: adding several
+          // sources is the point of there being a list at all.
+          onClose={() => setModal("lookups")}
+          onRemove={
+            modalColumnId
+              ? () => {
+                  mutateLayout((prev) => ({
+                    ...prev,
+                    lookups: prev.lookups.filter((item) => item.id !== modalColumnId),
+                  }));
+                  setModal("lookups");
+                }
+              : null
+          }
+          onSave={(value) => {
+            mutateLayout((prev) => {
+              if (modalColumnId && prev.lookups.some((item) => item.id === modalColumnId)) {
+                return {
+                  ...prev,
+                  lookups: prev.lookups.map((item) =>
+                    item.id === modalColumnId ? { ...value, id: modalColumnId } : item
+                  ),
+                };
+              }
+              if (prev.lookups.length >= MAX_LOOKUPS) return prev;
+              return {
+                ...prev,
+                lookups: [...prev.lookups, { ...value, id: `lk_${Date.now()}` }],
+              };
+            });
+            setModal("lookups");
           }}
         />
       )}

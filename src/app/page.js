@@ -2205,6 +2205,10 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
               <div ref={setQueryListHost} className="absolute bottom-0 right-0" />
             </div>
           )}
+          {/* The canvas tools normally ride in the toolbar of whichever panel is
+              selected. With nothing open there is no panel to carry them, and
+              undo, zoom and the view buttons still have work to do. */}
+          {openPanels.length === 0 && canvasToolbar}
           {workspaceViewControls}
         </div>
       </header>

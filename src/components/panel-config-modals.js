@@ -33,6 +33,7 @@ import {
   isEmptyFormat,
   MAX_FREEZE,
   MAX_GROUP_LABEL,
+  MAX_LOOKUPS,
   normalizeFormat,
   parseOption,
   PARAM_TYPES,
@@ -1515,6 +1516,7 @@ export function MergeModal({
   columnNames,
   merge,
   onSave,
+  onRemove = null,
   onClose,
 }) {
   const [queryId, setQueryId] = useState(merge?.queryId ? String(merge.queryId) : "");
@@ -1608,20 +1610,20 @@ export function MergeModal({
 
   return (
     <ModalShell
-      title="รวมตารางกับอีก Query"
+      title="ดึงคอลัมน์จาก Query อื่น"
       icon={<Combine size={15} className="text-red-600" />}
       onClose={onClose}
       saveDisabled={mergeMissing.length > 0}
       saveDisabledReason={`ยังไม่ได้เลือก: ${mergeMissing.join(", ")}`}
       onRemove={
-        merge
+        merge && onRemove
           ? () => {
-              onSave(null);
+              onRemove();
               onClose();
             }
           : null
       }
-      removeLabel="เลิกรวมตาราง"
+      removeLabel="เลิกดึงจาก Query นี้"
       onSave={() => {
         if (mergeMissing.length > 0) return;
         onSave({ queryId: Number(queryId), on, columns, compare });
@@ -1714,6 +1716,81 @@ export function MergeModal({
           </div>
         </>
       )}
+    </ModalShell>
+  );
+}
+
+/**
+ * The entry point for "pull columns from another query": a list of what is
+ * already wired up, each editable or removable, plus a way to add one more up
+ * to the cap. Editing a single entry still happens in `MergeModal` — this is
+ * only the part that makes there be more than one of them.
+ */
+export function LookupsListModal({ lookups, queries, onEdit, onRemove, onClose }) {
+  return (
+    <ModalShell
+      title="ดึงคอลัมน์จาก Query อื่น"
+      icon={<Combine size={15} className="text-red-600" />}
+      onClose={onClose}
+      onSave={onClose}
+      saveLabel="เสร็จแล้ว"
+    >
+      <p className="text-[10px] font-semibold text-zinc-400">
+        แต่ละรายการรัน Query นั้นแยกกันทุกครั้งที่รีเฟรชตารางนี้ จึงจำกัดไว้ที่ {MAX_LOOKUPS} รายการ
+      </p>
+      {lookups.length === 0 ? (
+        <p className="rounded-sm border border-dashed border-zinc-200 px-3 py-6 text-center text-[10px] font-semibold text-zinc-400">
+          ยังไม่ได้ดึงคอลัมน์จาก Query ไหน
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {lookups.map((lookup) => {
+            const target = queries.find((item) => item.id === lookup.queryId);
+            return (
+              <div
+                key={lookup.id}
+                className="flex items-center justify-between gap-2 rounded-sm border border-zinc-200 bg-zinc-50 px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-[11px] font-black text-zinc-700">
+                    {target?.name || `Query #${lookup.queryId} (ถูกลบไปแล้ว)`}
+                  </p>
+                  <p className="truncate text-[9px] font-semibold text-zinc-400">
+                    {lookup.columns.length} คอลัมน์ · จับคู่ {lookup.on.length} คู่
+                    {lookup.compare.length > 0 ? ` · เช็คค่า ${lookup.compare.length} คู่` : ""}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => onEdit(lookup.id)}
+                    className="rounded-sm border border-zinc-200 bg-white px-2 py-1 text-[10px] font-black text-zinc-600 transition hover:bg-zinc-100"
+                  >
+                    แก้ไข
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onRemove(lookup.id)}
+                    className="rounded-sm border border-zinc-200 bg-white p-1.5 text-zinc-400 transition hover:border-red-200 hover:text-red-600"
+                    aria-label={`เลิกดึงจาก ${target?.name || lookup.queryId}`}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => onEdit(null)}
+        disabled={lookups.length >= MAX_LOOKUPS}
+        title={lookups.length >= MAX_LOOKUPS ? `ดึงได้สูงสุด ${MAX_LOOKUPS} Query ต่อตาราง` : undefined}
+        className="flex h-9 w-full items-center justify-center gap-1 rounded-sm border border-dashed border-zinc-300 text-[11px] font-black text-zinc-500 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <Plus size={12} /> เพิ่มจาก Query อื่น
+      </button>
     </ModalShell>
   );
 }

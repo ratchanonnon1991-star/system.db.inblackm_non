@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Calculator,
   Code2,
@@ -256,8 +256,11 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
   const effectiveSql = builderMode === "visual" ? visualSql : sqlText;
   const testParamNames = useMemo(() => extractSqlParams(effectiveSql), [effectiveSql]);
 
+  // Loading the schema clears every choice made in the builder, so it happens
+  // once per database — not every time the SQL tab is looked at and left again.
+  // `false` means "nothing loaded yet"; "" is the main database.
+  const schemaLoadedForRef = useRef(false);
   const loadSchema = useCallback(async () => {
-    if (builderMode !== "visual") return;
     setSchemaLoading(true);
     setError("");
     try {
@@ -274,18 +277,20 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
       setColumnSettings({});
       setJoinColumns({});
     } catch (err) {
+      schemaLoadedForRef.current = false;
       setSchemaData(null);
       setSelectedTableKey("");
       setError(err.message);
     } finally {
       setSchemaLoading(false);
     }
-  }, [builderMode, connectionId]);
+  }, [connectionId]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- state changes after metadata request resolves
+    if (builderMode !== "visual" || schemaLoadedForRef.current === connectionId) return;
+    schemaLoadedForRef.current = connectionId;
     loadSchema();
-  }, [loadSchema]);
+  }, [builderMode, connectionId, loadSchema]);
 
   useEffect(() => {
     try {

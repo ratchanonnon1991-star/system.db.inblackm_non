@@ -20,8 +20,14 @@ const attempts = new Map();
 
 function tooManyAttempts(key) {
   const now = Date.now();
+  // Nothing else ever removes a username that was tried once and abandoned, so
+  // expired windows are swept here — otherwise a run through a username list
+  // leaves an entry per name for as long as the process lives.
+  for (const [name, entry] of attempts) {
+    if (now > entry.resetAt) attempts.delete(name);
+  }
   const entry = attempts.get(key);
-  if (!entry || now > entry.resetAt) {
+  if (!entry) {
     attempts.set(key, { count: 1, resetAt: now + WINDOW_MS });
     return false;
   }

@@ -47,6 +47,22 @@ check(
   true
 );
 check(
+  "like wildcards typed by the user are escaped",
+  buildVisualSelect({
+    schema: "public", table: "games", columns: ["id"],
+    filters: [{ column: "name", op: "contains", value: "50%_a" }],
+  }).split("\n").pop(),
+  `  CAST("name" AS text) ILIKE E'%50\\\\%\\\\_a%'`
+);
+check(
+  "a backslash in a like value stays one backslash",
+  buildVisualSelect({
+    schema: "public", table: "games", columns: ["id"],
+    filters: [{ column: "name", op: "startsWith", value: "a\\b" }],
+  }).split("\n").pop(),
+  `  CAST("name" AS text) ILIKE E'a\\\\\\\\b%'`
+);
+check(
   "limit is capped at the query runner maximum",
   buildVisualSelect({ schema: "public", table: "games", columns: ["id"], limit: 99999 }).endsWith("LIMIT 1000"),
   true
@@ -117,6 +133,32 @@ check("visual layout removes duplicate writable columns", layout.editable.column
 check("visual layout stores a friendly column label", layout.labels.c1, "ชื่อเกม");
 check("visual layout stores the selected renderer", layout.formats.c1.render, "chip");
 check("visual layout stores the selected cell colour", layout.formats.c1.bg, "amber");
+const rebuilt = buildVisualLayout({
+  baseLayout: {
+    folder: "เกม",
+    refreshSeconds: 60,
+    hidden: ["c3"],
+    order: ["c2", "c0"],
+    rules: [{ colId: "c4", op: ">", value: "1", tone: "red", scope: "cell" }],
+    sort: { colId: "c7", dir: "desc" },
+    labels: { c9: "ชื่อเดิมของคอลัมน์ที่หายไปแล้ว" },
+  },
+  schema: "public",
+  table: "games",
+  primaryKey: "id",
+  editableColumns: [],
+  selectedColumns: ["id"],
+});
+check("rebuilding keeps the folder", rebuilt.folder, "เกม");
+check("rebuilding keeps the refresh interval", rebuilt.refreshSeconds, 60);
+check("rebuilding drops column ids that no longer mean the same column", [
+  rebuilt.hidden,
+  rebuilt.order,
+  rebuilt.rules,
+  rebuilt.sort,
+  rebuilt.labels.c9,
+], [undefined, undefined, undefined, undefined, undefined]);
+
 const joinedLayout = buildVisualLayout({
   selectedColumns: ["id", "j1_c1_name"],
   columnSettings: { j1_c1_name: { label: "games.name" } },

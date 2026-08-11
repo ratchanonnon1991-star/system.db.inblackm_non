@@ -10,6 +10,8 @@ import {
   normalizeFormats,
   normalizeFreeze,
   normalizeLayout,
+  normalizeLookups,
+  lookupsFromLayout,
   ruleMatches,
   toDate,
   toneStyle,
@@ -269,6 +271,50 @@ check(
   "a table theme colours an uncoloured group band",
   buildHeaderGroups(cols, normalizeLayout({ tableTone: "sky", formats: { b: { group: "ยอด" } } }))[1].tone,
   "sky"
+);
+
+// --- lookups (multi-source merge) -----------------------------------------
+check("no lookups is an empty array", normalizeLookups(null), []);
+check(
+  "an entry missing a join key is dropped, not carried as a broken row",
+  normalizeLookups([{ queryId: 5, on: [] }, { queryId: 6, on: [{ left: "a", right: "b" }] }]),
+  [{ id: "lk1", queryId: 6, on: [{ left: "a", right: "b" }], columns: [], compare: [] }]
+);
+check(
+  "a saved id is kept so a panel can tell its lookups apart",
+  normalizeLookups([{ id: "picked", queryId: 6, on: [{ left: "a", right: "b" }] }])[0].id,
+  "picked"
+);
+check(
+  "more than the cap is trimmed rather than run at full cost every refresh",
+  normalizeLookups(
+    Array.from({ length: 5 }, (_, index) => ({
+      queryId: index + 1,
+      on: [{ left: "a", right: "b" }],
+    }))
+  ).length,
+  3
+);
+check(
+  "a layout saved before lookups existed reads its old merge as a one-item list",
+  lookupsFromLayout({ merge: { queryId: 9, on: [{ left: "id", right: "id" }], columns: ["name"] } }),
+  [{ id: "legacy", queryId: 9, on: [{ left: "id", right: "id" }], columns: ["name"], compare: [] }]
+);
+check(
+  "lookups takes priority over merge once a layout has both",
+  lookupsFromLayout({
+    merge: { queryId: 9, on: [{ left: "id", right: "id" }] },
+    lookups: [{ id: "new", queryId: 11, on: [{ left: "sku", right: "code" }] }],
+  }),
+  [{ id: "new", queryId: 11, on: [{ left: "sku", right: "code" }], columns: [], compare: [] }]
+);
+check("normalizeLayout exposes the same lookups list", normalizeLayout({
+  merge: { queryId: 9, on: [{ left: "id", right: "id" }] },
+}).lookups, [{ id: "legacy", queryId: 9, on: [{ left: "id", right: "id" }], columns: [], compare: [] }]);
+check(
+  "the sanitizer folds a legacy merge into lookups too",
+  sanitizeLayout({ merge: { queryId: 9, on: [{ left: "id", right: "id" }] } }).lookups,
+  [{ id: "legacy", queryId: 9, on: [{ left: "id", right: "id" }], columns: [], compare: [] }]
 );
 
 console.log(`\n${pass} passed, ${failures.length} failed`);

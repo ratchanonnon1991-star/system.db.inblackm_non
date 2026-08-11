@@ -496,6 +496,10 @@ export default function PanelTable({
   mutateLayout,
   canCustomizeLayout,
   height,
+  // Windowing needs a number. In sheet mode `height` is the CSS string "100%",
+  // because the table is sized by its flex parent rather than by a pixel value,
+  // so the measured height of that parent comes in separately.
+  viewportHeight = null,
   canEdit,
   editableColumns,
   editableInputs = [],
@@ -529,6 +533,7 @@ export default function PanelTable({
   // short grace period, avoiding a dead zone while the pointer crosses over.
   const [columnToolsPopover, setColumnToolsPopover] = useState(null);
   const columnToolsCloseTimerRef = useRef(0);
+  const columnToolsRef = useRef(null);
   const headRefs = useRef({});
   const scrollRef = useRef(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -548,6 +553,26 @@ export default function PanelTable({
     columnToolsCloseTimerRef.current = setTimeout(() => {
       setColumnToolsPopover(null);
     }, 120);
+  };
+
+  // The bar is a portal at the end of the document, so Tab out of the header
+  // cell would jump past it. Tab while it is open steps into it instead, and
+  // Escape hands focus back to the column it belongs to.
+  const focusColumnTools = () => {
+    const first = columnToolsRef.current?.querySelector("button");
+    if (!first) return false;
+    first.focus();
+    return true;
+  };
+
+  const columnToolsKeyDown = (colId) => (event) => {
+    if (!columnToolsPopover || columnToolsPopover.colId !== colId) return;
+    if (event.key === "Escape") {
+      closeColumnTools();
+      return;
+    }
+    if (event.key !== "Tab" || event.shiftKey) return;
+    if (focusColumnTools()) event.preventDefault();
   };
 
   const openColumnTools = (colId, index) => {
@@ -594,12 +619,17 @@ export default function PanelTable({
     [columns, layout]
   );
 
+  // A window that is too tall only renders rows nobody asked for; one that is
+  // NaN renders nothing at all, so the fallback is a screenful, never zero.
+  const windowHeight =
+    [viewportHeight, height].find((value) => Number.isFinite(value) && value > 0) || 800;
+
   const virtual = !grouped && !hasWrap && rows.length > VIRTUAL_THRESHOLD;
   const firstVisible = virtual
     ? Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
     : 0;
   const lastVisible = virtual
-    ? Math.min(rows.length, firstVisible + Math.ceil(height / ROW_HEIGHT) + OVERSCAN * 2)
+    ? Math.min(rows.length, firstVisible + Math.ceil(windowHeight / ROW_HEIGHT) + OVERSCAN * 2)
     : rows.length;
   const visibleRows = virtual ? rows.slice(firstVisible, lastVisible) : rows;
   const padTop = firstVisible * ROW_HEIGHT;
@@ -632,13 +662,20 @@ export default function PanelTable({
     };
   }, []);
 
+  // The bar is anchored to coordinates read once, so anything that moves the
+  // header out from under it — a window resize, a scroll anywhere on the way up
+  // to the document — has to take it down rather than leave it floating.
   useEffect(() => {
-    const handleResize = () => {
+    const dismiss = () => {
       clearTimeout(columnToolsCloseTimerRef.current);
       setColumnToolsPopover(null);
     };
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    window.addEventListener("resize", dismiss);
+    window.addEventListener("scroll", dismiss, true);
+    return () => {
+      window.removeEventListener("resize", dismiss);
+      window.removeEventListener("scroll", dismiss, true);
+    };
   }, []);
 
   const widthOf = useCallback(
@@ -1114,6 +1151,7 @@ export default function PanelTable({
                   onMouseLeave={scheduleColumnToolsClose}
                   onFocus={() => openColumnTools(col.id, index)}
                   onBlur={scheduleColumnToolsClose}
+                  onKeyDown={columnToolsKeyDown(col.id)}
                   className={`group sticky border border-zinc-200 px-2 py-1.5 text-left ${
                     headTone ? "" : "bg-zinc-100"
                   }`}
@@ -1281,11 +1319,18 @@ export default function PanelTable({
                 ? { right: columnToolsPopover.right }
                 : { left: columnToolsPopover.left }),
             }}
+            ref={columnToolsRef}
             onMouseEnter={cancelColumnToolsClose}
             onMouseLeave={scheduleColumnToolsClose}
             onFocus={cancelColumnToolsClose}
             onBlur={(event) => {
               if (!event.currentTarget.contains(event.relatedTarget)) scheduleColumnToolsClose();
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") return;
+              const anchor = headRefs.current[activeToolsColumn.id];
+              closeColumnTools();
+              anchor?.querySelector("button")?.focus();
             }}
             role="toolbar"
             aria-label={`เครื่องมือคอลัมน์ ${activeToolsColumn.label}`}

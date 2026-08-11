@@ -23,6 +23,7 @@ export const EMPTY_LAYOUT = {
   chart: null,
   sort: null,
   merge: null,
+  lookups: [],
   drill: null,
   group: null,
   folder: "",
@@ -241,6 +242,7 @@ export function normalizeLayout(raw) {
       ? { colId: String(layout.sort.colId), dir: layout.sort.dir === "desc" ? "desc" : "asc" }
       : null;
   const merge = normalizeMerge(layout.merge);
+  const lookups = lookupsFromLayout(layout);
   const drill = normalizeDrill(layout.drill);
 
   return {
@@ -286,6 +288,7 @@ export function normalizeLayout(raw) {
     chart,
     sort,
     merge,
+    lookups,
     drill,
     group:
       layout.group && typeof layout.group === "object" && layout.group.colId
@@ -637,6 +640,43 @@ export function normalizeMerge(raw) {
     columns: Array.isArray(raw.columns) ? raw.columns.map(String).slice(0, 40) : [],
     compare: pairs(raw.compare),
   };
+}
+
+// A table only has time to actually run so many other queries on every
+// refresh before it stops being "one panel" and starts being a batch job.
+export const MAX_LOOKUPS = 3;
+
+// lookups = [{ id, queryId, on, columns, compare }, ...] — `merge`, but more
+// than one at a time. Each entry is shaped exactly like `merge`; `id` is only
+// there so a panel can tell its lookups apart (which one a modal is editing,
+// which one a delete button removes) and never reaches SQL or a column id.
+//
+// A layout saved before lookups existed has `merge` instead, so
+// `normalizeLayout` and the sanitizer both wrap that single value into a
+// one-item array here rather than making every caller check two fields.
+export function normalizeLookups(raw) {
+  const list = Array.isArray(raw) ? raw : [];
+  return list
+    .map((item, index) => {
+      const merge = normalizeMerge(item);
+      if (!merge) return null;
+      const id =
+        typeof item?.id === "string" && item.id.trim()
+          ? item.id.trim().slice(0, 40)
+          : `lk${index}`;
+      return { id, ...merge };
+    })
+    .filter(Boolean)
+    .slice(0, MAX_LOOKUPS);
+}
+
+export function lookupsFromLayout(layout) {
+  if (!layout || typeof layout !== "object") return [];
+  if (Array.isArray(layout.lookups) && layout.lookups.length) {
+    return normalizeLookups(layout.lookups);
+  }
+  const legacy = normalizeMerge(layout.merge);
+  return legacy ? [{ id: "legacy", ...legacy }] : [];
 }
 
 // Plain decimal digits only, and short enough to survive the trip through a
