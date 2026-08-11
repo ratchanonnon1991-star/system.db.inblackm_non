@@ -8,12 +8,13 @@ import GamedbWorkspace from "@/components/gamedb-workspace";
 // navigation, so GamedbWorkspace stays usable outside a Next.js route too.
 // GamedbWorkspace already calls /api/auth/logout itself before invoking
 // onLoggedOut, so this only needs to send the browser back to the hub.
-export default function SystemDbScreen({ me }) {
+export default function SystemDbScreen({ me, initialViewId }) {
   const router = useRouter();
 
   return (
     <GamedbWorkspace
       me={me}
+      initialViewId={initialViewId}
       onLoggedOut={() => router.push("/")}
       onBackToMenu={() => router.push("/")}
     />

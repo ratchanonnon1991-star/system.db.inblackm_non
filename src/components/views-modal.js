@@ -5,6 +5,7 @@ import {
   Check,
   Eye,
   Layers,
+  Link2,
   Loader2,
   Play,
   Plus,
@@ -48,6 +49,20 @@ export default function ViewsModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [copiedId, setCopiedId] = useState(null);
+
+  const copyLink = async (view) => {
+    const url = `${window.location.origin}/view/${view.id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      // A blocked clipboard still leaves the URL visible via window.prompt.
+      window.prompt("คัดลอกลิงก์นี้:", url);
+      return;
+    }
+    setCopiedId(view.id);
+    setTimeout(() => setCopiedId((prev) => (prev === view.id ? null : prev)), 1500);
+  };
 
   const loadUsers = useCallback(async () => {
     try {
@@ -199,6 +214,16 @@ export default function ViewsModal({
                   title="เปิดเทมเพลตนี้"
                 >
                   <Play size={12} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => copyLink(view)}
+                  className={`shrink-0 rounded-sm p-1 transition hover:bg-zinc-200 hover:text-zinc-700 ${
+                    copiedId === view.id ? "text-emerald-600" : "text-zinc-400"
+                  }`}
+                  title="คัดลอกลิงก์ตรงไปเทมเพลตนี้ (/view/id) — เปิดได้เลยไม่ต้องเข้า SystemDB ก่อนแล้วค่อยเลือก"
+                >
+                  {copiedId === view.id ? <Check size={12} /> : <Link2 size={12} />}
                 </button>
                 <button
                   type="button"

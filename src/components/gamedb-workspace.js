@@ -402,9 +402,10 @@ function WorkspaceViewControls({
   );
 }
 
-export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
+export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initialViewId = null }) {
   const isSuperAdmin = me.role === "admin";
   const isTemplateUser = me.role === "user";
+  const [initialViewNotFound, setInitialViewNotFound] = useState(false);
 
   const [dark, setDark] = useState(false);
   const [pinned, setPinned] = useState([]);
@@ -771,6 +772,20 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
       if (hydrated.current) return;
       hydrated.current = true;
       const ids = new Set(list.map((query) => query.id));
+
+      // A link to /view/<id> opens that template directly, bypassing whatever
+      // this browser would otherwise restore -- listViewsFor already filtered
+      // viewList to what this user is allowed to see, so anything not in it
+      // is either deleted or not shared with them, not a permission bug here.
+      if (initialViewId) {
+        const requested = viewList.find((view) => Number(view.id) === Number(initialViewId));
+        if (requested && requested.config?.panels?.length) {
+          applyView(requested);
+          return;
+        }
+        setInitialViewNotFound(true);
+      }
+
       const fallback = viewList.find(
         (view) => view.isDefault && view.config?.panels?.length
       );
@@ -807,7 +822,7 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
         setPanels(initialPanels);
       }
     });
-  }, [loadQueries, loadViews, applyView, isTemplateUser, me.defaultViewId]);
+  }, [loadQueries, loadViews, applyView, isTemplateUser, me.defaultViewId, initialViewId]);
 
   useEffect(() => {
     if (!hydrated.current || isTemplateUser) return;
@@ -1903,6 +1918,20 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
           {workspaceViewControls}
         </div>
       </header>
+
+      {initialViewNotFound && (
+        <div className="mb-1 flex items-center justify-between gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
+          <span>ลิงก์นี้ชี้ไปเทมเพลตที่ไม่มีอยู่แล้ว หรือไม่ได้แชร์ให้บัญชีนี้ — แสดงหน้าจอเริ่มต้นแทน</span>
+          <button
+            type="button"
+            onClick={() => setInitialViewNotFound(false)}
+            className="shrink-0 rounded-sm p-0.5 text-amber-500 transition hover:bg-amber-100 hover:text-amber-700"
+            aria-label="ปิด"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      )}
 
       <div className="flex min-h-0 flex-1 flex-col gap-1">
         {!layoutLocked && queryListHost && listOpen && createPortal(
