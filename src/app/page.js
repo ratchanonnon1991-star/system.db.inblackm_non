@@ -235,16 +235,12 @@ function LoginScreen({ onLoggedIn }) {
   const [hiringSsoUrl, setHiringSsoUrl] = useState("");
   useEffect(() => {
     if (!HIRING_BASE_URL) return;
-
-    const callbackUrl =
-      `${window.location.origin}/api/sso/from-hiring`;
-
-    const hiringLoginUrl =
-      new URL("/admin", HIRING_BASE_URL);
-
-    hiringLoginUrl.searchParams.set("ssoReturn", callbackUrl);
-
-    setHiringSsoUrl(hiringLoginUrl.toString());
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- window.location is only known once mounted on the client
+    setHiringSsoUrl(
+      `${HIRING_BASE_URL}/api/sso/gamedb?return=${encodeURIComponent(
+        `${window.location.origin}/api/sso/from-hiring`
+      )}`
+    );
   }, []);
 
   const submit = async (event) => {
