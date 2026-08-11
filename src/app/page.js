@@ -19,7 +19,7 @@ import TurnstileWidget from "@/components/turnstile-widget";
 import { UsersModal } from "@/components/gamedb-modals";
 import SsoMapModal from "@/components/sso-map-modal";
 
-// Public by design: it is only where the "เข้าสู่ระบบด้วยบัญชี hiring" button
+// Public by design: it is only where the "เข้าสู่ระบบด้วยบัญชี experience" button
 // points the browser, never anything the server trusts on its own.
 const HIRING_BASE_URL = (process.env.NEXT_PUBLIC_HIRING_BASE_URL || "").replace(/\/+$/, "");
 
@@ -29,9 +29,9 @@ const HIRING_BASE_URL = (process.env.NEXT_PUBLIC_HIRING_BASE_URL || "").replace(
 // hiring-sso.js, so this client bundle never pulls in that module's
 // server-only secret getters.
 const SSO_ERROR_MESSAGES = {
-  missing_code: 'ลิงก์เข้าสู่ระบบไม่สมบูรณ์ กรุณาลองใหม่จากปุ่ม "เข้าสู่ระบบด้วยบัญชี hiring"',
+  missing_code: 'ลิงก์เข้าสู่ระบบไม่สมบูรณ์ กรุณาลองใหม่จากปุ่ม "เข้าสู่ระบบด้วยบัญชี experience"',
   code_rejected: "รหัสเข้าสู่ระบบหมดอายุหรือถูกใช้ไปแล้ว กรุณาลองใหม่",
-  exchange_failed: "ติดต่อระบบ hiring ไม่สำเร็จ กรุณาลองใหม่ภายหลัง",
+  exchange_failed: "ติดต่อระบบ experience ไม่สำเร็จ กรุณาลองใหม่ภายหลัง",
   provision_failed: "สร้างบัญชี gamedb ให้อัตโนมัติไม่สำเร็จ กรุณาลองใหม่ หรือแจ้ง Admin",
 };
 
@@ -224,7 +224,7 @@ function LoginScreen({ onLoggedIn }) {
     const code = params.get("ssoError");
     if (!code) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reading a one-shot URL param is exactly what an effect is for
-    setSsoError(SSO_ERROR_MESSAGES[code] || "เข้าสู่ระบบด้วยบัญชี hiring ไม่สำเร็จ");
+    setSsoError(SSO_ERROR_MESSAGES[code] || "เข้าสู่ระบบด้วยบัญชี experience ไม่สำเร็จ");
     window.history.replaceState(null, "", window.location.pathname);
   }, []);
 
@@ -359,7 +359,7 @@ function LoginScreen({ onLoggedIn }) {
               href={hiringSsoUrl}
               className="flex h-10 w-full items-center justify-center gap-1.5 rounded-sm border border-zinc-200 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
             >
-              เข้าสู่ระบบด้วยบัญชี hiring
+              เข้าสู่ระบบด้วยบัญชี experience
             </a>
           </>
         )}
@@ -371,7 +371,7 @@ function LoginScreen({ onLoggedIn }) {
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-sm border border-red-200 bg-red-50 text-red-600">
               <AlertTriangle size={22} />
             </div>
-            <h2 className="mb-1 text-sm font-black text-zinc-800">เข้าสู่ระบบด้วยบัญชี hiring ไม่สำเร็จ</h2>
+            <h2 className="mb-1 text-sm font-black text-zinc-800">เข้าสู่ระบบด้วยบัญชี experience ไม่สำเร็จ</h2>
             <p className="mb-4 text-[11px] font-semibold leading-relaxed text-zinc-500">{ssoError}</p>
             <button
               type="button"

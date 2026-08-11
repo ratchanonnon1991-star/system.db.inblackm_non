@@ -67,7 +67,7 @@ export default function SsoMapModal({ onClose }) {
   };
 
   const removeMapping = async (id) => {
-    if (!window.confirm("เลิกเชื่อมบัญชี hiring นี้?")) return;
+    if (!window.confirm("เลิกเชื่อมบัญชี experience นี้?")) return;
     setError("");
     try {
       await apiJson(`/api/sso-map/${id}`, {
@@ -86,7 +86,7 @@ export default function SsoMapModal({ onClose }) {
         <div className="mb-4 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-sm font-black">
             <Link2 size={15} className="text-red-600" />
-            เชื่อมบัญชี hiring
+            เชื่อมบัญชี experience
           </h2>
           <button
             type="button"
@@ -99,8 +99,8 @@ export default function SsoMapModal({ onClose }) {
         </div>
 
         <p className="mb-3 text-[11px] font-semibold text-zinc-500">
-          ผูกอีเมล Admin ของ hiring เข้ากับบัญชี gamedb — คนที่ login hiring ด้วยอีเมลนี้แล้วกดปุ่ม
-          &ldquo;เข้าสู่ระบบด้วยบัญชี hiring&rdquo; จะได้เข้า gamedb เป็นบัญชีที่เลือกไว้ ไม่ต้องพิมพ์ username/password ของ gamedb เอง
+          ผูกอีเมล Admin ของ experience เข้ากับบัญชี gamedb — คนที่ login experience ด้วยอีเมลนี้แล้วกดปุ่ม
+          &ldquo;เข้าสู่ระบบด้วยบัญชี experience&rdquo; จะได้เข้า gamedb เป็นบัญชีที่เลือกไว้ ไม่ต้องพิมพ์ username/password ของ gamedb เอง
         </p>
 
         <form onSubmit={addMapping} className="mb-4 grid gap-2 rounded-sm border border-zinc-200 bg-zinc-50 p-3 sm:grid-cols-[1fr_1fr_auto]">
@@ -109,7 +109,7 @@ export default function SsoMapModal({ onClose }) {
             required
             value={hiringEmail}
             onChange={(e) => setHiringEmail(e.target.value)}
-            placeholder="อีเมล Admin ของ hiring"
+            placeholder="อีเมล Admin ของ experience"
             className="h-9 rounded-sm border border-zinc-200 bg-white px-2.5 text-xs font-semibold outline-none focus:border-red-600"
           />
           <select
@@ -146,7 +146,7 @@ export default function SsoMapModal({ onClose }) {
             </p>
           ) : mappings.length === 0 ? (
             <p className="px-3 py-8 text-center text-[11px] font-semibold text-zinc-400">
-              ยังไม่มีบัญชี hiring ที่เชื่อมไว้
+              ยังไม่มีบัญชี experience ที่เชื่อมไว้
             </p>
           ) : (
             mappings.map((item) => (

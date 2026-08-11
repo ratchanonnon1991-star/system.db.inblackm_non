@@ -9,7 +9,7 @@ export async function GET(request) {
     const mappings = await listSsoMappings();
     return jsonOk({ mappings });
   } catch (err) {
-    return handleApiError(err, "โหลดรายการเชื่อมบัญชี hiring ไม่สำเร็จ");
+    return handleApiError(err, "โหลดรายการเชื่อมบัญชี experience ไม่สำเร็จ");
   }
 }
 
@@ -20,7 +20,7 @@ export async function POST(request) {
     const hiringEmail = String(body.hiringEmail || "").trim();
     const gamedbUsername = String(body.gamedbUsername || "").trim();
     if (!hiringEmail || !hiringEmail.includes("@")) {
-      return jsonError("กรุณากรอกอีเมล hiring ให้ถูกต้อง", 400);
+      return jsonError("กรุณากรอกอีเมล experience ให้ถูกต้อง", 400);
     }
     if (!gamedbUsername) {
       return jsonError("กรุณาเลือกบัญชี gamedb ที่จะเชื่อม", 400);
@@ -34,6 +34,6 @@ export async function POST(request) {
     const mapping = await upsertSsoMapping({ hiringEmail, gamedbUsername: user.username });
     return jsonOk({ mapping }, 201);
   } catch (err) {
-    return handleApiError(err, "เชื่อมบัญชี hiring ไม่สำเร็จ");
+    return handleApiError(err, "เชื่อมบัญชี experience ไม่สำเร็จ");
   }
 }

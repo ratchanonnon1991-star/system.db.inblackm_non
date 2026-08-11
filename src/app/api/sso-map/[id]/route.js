@@ -9,6 +9,6 @@ export async function DELETE(request, { params }) {
     await deleteSsoMapping(id);
     return jsonOk({ ok: true });
   } catch (err) {
-    return handleApiError(err, "เลิกเชื่อมบัญชี hiring ไม่สำเร็จ");
+    return handleApiError(err, "เลิกเชื่อมบัญชี experience ไม่สำเร็จ");
   }
 }
