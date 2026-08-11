@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   Database,
   Gamepad2,
+  Layers,
   Link2,
   Loader2,
   Lock,
@@ -88,6 +89,19 @@ function SystemHub({ me, onLoggedOut }) {
   const isTemplateUser = me.role === "user";
   const [usersModal, setUsersModal] = useState(false);
   const [ssoMapModal, setSsoMapModal] = useState(false);
+  const [views, setViews] = useState([]);
+  const [viewsLoading, setViewsLoading] = useState(true);
+
+  // /api/views already filters to what this account can see (admins get
+  // everything, everyone else gets public + shared-with-them + their
+  // assigned default) -- the hub just links straight into /view/<id> for
+  // each one instead of making people open System DB first.
+  useEffect(() => {
+    apiJson("/api/views", { fallbackError: "โหลดเทมเพลตหน้าจอไม่สำเร็จ" })
+      .then((data) => setViews((data.views || []).filter((view) => view.config?.panels?.length)))
+      .catch(() => setViews([]))
+      .finally(() => setViewsLoading(false));
+  }, []);
 
   const logout = async () => {
     try {
@@ -163,6 +177,46 @@ function SystemHub({ me, onLoggedOut }) {
           })}
         </div>
       </div>
+
+      {(viewsLoading || views.length > 0) && (
+        <div className="w-full max-w-2xl">
+          <h2 className="mb-2 flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider text-zinc-400">
+            <Layers size={13} /> เทมเพลตหน้าจอ
+          </h2>
+          {viewsLoading ? (
+            <p className="flex items-center gap-2 py-2 text-xs font-bold text-zinc-400">
+              <Loader2 size={13} className="animate-spin" /> กำลังโหลด...
+            </p>
+          ) : (
+            <div className="grid gap-1 sm:grid-cols-2">
+              {views.map((view) => (
+                <NextLink
+                  key={view.id}
+                  href={`/view/${view.id}`}
+                  className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white p-4 text-left transition hover:border-zinc-300 hover:bg-zinc-50"
+                >
+                  <span className="flex h-10 w-10 items-center justify-center rounded-sm bg-zinc-100 text-zinc-600">
+                    <Layers size={18} />
+                  </span>
+                  <span className="min-w-0 text-left">
+                    <span className="block truncate text-sm font-black text-zinc-800">
+                      {view.name}
+                      {view.isDefault && (
+                        <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 align-middle text-[9px] font-black text-amber-700">
+                          หน้าเริ่มต้น
+                        </span>
+                      )}
+                    </span>
+                    <span className="block truncate text-xs text-zinc-500">
+                      {view.description || `${view.config?.panels?.length || 0} ตาราง`}
+                    </span>
+                  </span>
+                </NextLink>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {usersModal && <UsersModal me={me} onClose={() => setUsersModal(false)} />}
       {ssoMapModal && <SsoMapModal onClose={() => setSsoMapModal(false)} />}
