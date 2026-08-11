@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionCookieOptions, SESSION_COOKIE, signSessionToken } from "@/lib/session";
-import { getHiringBaseUrl, getSsoSecret } from "@/lib/hiring-sso";
+import { getGamedbBaseUrl, getHiringBaseUrl, getSsoSecret } from "@/lib/hiring-sso";
 import {
   findGamedbUsernameByHiringEmail,
   provisionSsoUser,
@@ -23,7 +23,11 @@ export const revalidate = 0;
 export async function GET(request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code") || "";
-  const failure = (reason) => NextResponse.redirect(new URL(`/?ssoError=${reason}`, request.url));
+  // Not request.url: behind nginx, that is usually the internal upstream
+  // address (e.g. localhost:5589), not the public host in the browser's
+  // address bar -- see getGamedbBaseUrl for why that matters here.
+  const origin = getGamedbBaseUrl();
+  const failure = (reason) => NextResponse.redirect(new URL(`/?ssoError=${reason}`, origin));
 
   if (!code) return failure("missing_code");
 
@@ -72,7 +76,7 @@ export async function GET(request) {
     username: user.username,
     role: user.role,
   });
-  const response = NextResponse.redirect(new URL("/systemdb", request.url));
+  const response = NextResponse.redirect(new URL("/systemdb", origin));
   response.cookies.set(SESSION_COOKIE, token, getSessionCookieOptions());
   return response;
 }

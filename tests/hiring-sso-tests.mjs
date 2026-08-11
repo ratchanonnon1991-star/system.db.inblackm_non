@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { getHiringBaseUrl, getSsoSecret } from "@/lib/hiring-sso.js";
+import { getGamedbBaseUrl, getHiringBaseUrl, getSsoSecret } from "@/lib/hiring-sso.js";
 
 let passed = 0;
 function check(label, actual, expected) {
@@ -38,6 +38,27 @@ assert.throws(
   () => getSsoSecret({ NODE_ENV: "production" }),
   /GAMEDB_SSO_SECRET/,
   "a missing secret in production must not silently fall back to the dev value"
+);
+passed += 1;
+
+check(
+  "trims a trailing slash off gamedb's own configured base URL",
+  getGamedbBaseUrl({ GAMEDB_BASE_URL: "https://systemdb.inblackm.com/" }),
+  "https://systemdb.inblackm.com"
+);
+check(
+  "falls back to the public var if the server-only one is unset",
+  getGamedbBaseUrl({ NEXT_PUBLIC_GAMEDB_BASE_URL: "https://systemdb.inblackm.com" }),
+  "https://systemdb.inblackm.com"
+);
+assert.throws(
+  () => getGamedbBaseUrl({}),
+  /GAMEDB_BASE_URL/,
+  // Not request.url's origin: behind nginx that is usually the internal
+  // upstream address, and a redirect built from it sends the browser
+  // somewhere unreachable rather than merely wrong -- worth a hard error,
+  // not a silent guess.
+  "no configured URL at all is a hard error, not a guess from the request"
 );
 passed += 1;
 
