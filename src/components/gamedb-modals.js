@@ -5,6 +5,7 @@ import {
   Calculator,
   Code2,
   Database,
+  Filter,
   Loader2,
   Pencil,
   Play,
@@ -24,9 +25,56 @@ import {
   inferFormulaType,
   parseFormula,
 } from "@/lib/gamedb-formula";
-import { formatCell } from "@/lib/gamedb-layout";
+import { CELL_TONES, formatCell, TABLE_TONES } from "@/lib/gamedb-layout";
 import { extractSqlParams } from "@/lib/gamedb-sql-params";
 import { buildVisualLayout, buildVisualSelect } from "@/lib/gamedb-visual-query";
+
+const BUILDER_FILTER_LABELS = {
+  eq: "เท่ากับ",
+  neq: "ไม่เท่ากับ",
+  contains: "มีคำว่า",
+  startsWith: "ขึ้นต้นด้วย",
+  endsWith: "ลงท้ายด้วย",
+  gt: "มากกว่า",
+  gte: "มากกว่าหรือเท่ากับ",
+  lt: "น้อยกว่า",
+  lte: "น้อยกว่าหรือเท่ากับ",
+  in: "อยู่ในรายการ (คั่นด้วย ,)",
+  isNull: "ไม่มีค่า",
+  isNotNull: "มีค่า",
+};
+
+const BUILDER_RENDER_LABELS = {
+  text: "ข้อความปกติ",
+  chip: "ป้ายสี",
+  copy: "ปุ่มคัดลอก",
+  link: "ลิงก์",
+  email: "อีเมล",
+};
+
+const BUILDER_TONE_LABELS = {
+  "": "สีปกติ",
+  red: "แดง",
+  orange: "ส้ม",
+  amber: "อำพัน",
+  yellow: "เหลือง",
+  lime: "เขียวมะนาว",
+  green: "เขียว",
+  teal: "เขียวน้ำทะเล",
+  sky: "ฟ้า",
+  blue: "น้ำเงิน",
+  violet: "ม่วง",
+  pink: "ชมพู",
+  zinc: "เทา",
+};
+
+function builderColumnKind(column) {
+  const type = String(column?.type || "").toLowerCase();
+  if (/(int|numeric|decimal|real|double|money)/.test(type)) return "number";
+  if (/bool/.test(type)) return "boolean";
+  if (/(date|time)/.test(type)) return "date";
+  return "text";
+}
 
 export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
   const isEdit = modal.mode === "edit";
@@ -51,6 +99,12 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
   const [selectedTableKey, setSelectedTableKey] = useState("");
   const [selectedColumns, setSelectedColumns] = useState([]);
   const [editableColumns, setEditableColumns] = useState([]);
+  const [filters, setFilters] = useState([]);
+  const [sortColumn, setSortColumn] = useState("");
+  const [sortDirection, setSortDirection] = useState("asc");
+  const [rowLimit, setRowLimit] = useState(100);
+  const [columnSettings, setColumnSettings] = useState({});
+  const [tableTone, setTableTone] = useState("");
   // A test run needs values for whatever :placeholders the SQL currently has,
   // or it can only report that they are missing.
   const [testParams, setTestParams] = useState({});
@@ -58,19 +112,40 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
     () => schemaData?.tables?.find((table) => table.key === selectedTableKey) || null,
     [schemaData, selectedTableKey]
   );
-  const visualSql = useMemo(
+  const selectedColumnNames = useMemo(
     () =>
-      selectedTable
-        ? buildVisualSelect({
-            schema: selectedTable.schema,
-            table: selectedTable.name,
-            columns: selectedTable.columns
-              .map((column) => column.name)
-              .filter((column) => selectedColumns.includes(column)),
-          })
-        : "",
+      selectedTable?.columns
+        ?.map((column) => column.name)
+        .filter((column) => selectedColumns.includes(column)) || [],
     [selectedTable, selectedColumns]
   );
+  const visualBuild = useMemo(
+    () => {
+      if (!selectedTable) return { sql: "", error: "" };
+      try {
+        return {
+          sql: buildVisualSelect({
+              schema: selectedTable.schema,
+              table: selectedTable.name,
+              columns: selectedColumnNames,
+              filters: filters.map((filter) => ({
+                ...filter,
+                kind: builderColumnKind(
+                  selectedTable.columns.find((column) => column.name === filter.column)
+                ),
+              })),
+              sort: sortColumn ? { column: sortColumn, direction: sortDirection } : null,
+              limit: rowLimit,
+            }),
+          error: "",
+        };
+      } catch (err) {
+        return { sql: "", error: err.message };
+      }
+    },
+    [selectedTable, selectedColumnNames, filters, sortColumn, sortDirection, rowLimit]
+  );
+  const visualSql = visualBuild.sql;
   const effectiveSql = builderMode === "visual" ? visualSql : sqlText;
   const testParamNames = useMemo(() => extractSqlParams(effectiveSql), [effectiveSql]);
 
@@ -87,6 +162,9 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
       setSelectedTableKey(data.tables?.[0]?.key || "");
       setSelectedColumns([]);
       setEditableColumns([]);
+      setFilters([]);
+      setSortColumn("");
+      setColumnSettings({});
     } catch (err) {
       setSchemaData(null);
       setSelectedTableKey("");
@@ -101,7 +179,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
     loadSchema();
   }, [loadSchema]);
 
-  const testRun = async () => {
+  const testRun = useCallback(async (signal) => {
     setTesting(true);
     setError("");
     setTestResult(null);
@@ -114,15 +192,26 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
           connectionId: connectionId ? Number(connectionId) : null,
           params: testParams,
         }),
+        signal,
         fallbackError: "รัน SQL ไม่สำเร็จ",
       });
       setTestResult(data);
     } catch (err) {
-      setError(err.message);
+      if (err.name !== "AbortError") setError(err.message);
     } finally {
       setTesting(false);
     }
-  };
+  }, [effectiveSql, connectionId, testParams]);
+
+  useEffect(() => {
+    if (builderMode !== "visual" || !effectiveSql) return undefined;
+    const controller = new AbortController();
+    const timer = setTimeout(() => testRun(controller.signal), 650);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [builderMode, effectiveSql, testRun]);
 
   const save = async () => {
     setSaving(true);
@@ -142,6 +231,9 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                 primaryKey:
                   selectedTable?.primaryKey?.length === 1 ? selectedTable.primaryKey[0] : "",
                 editableColumns,
+                selectedColumns: selectedColumnNames,
+                columnSettings,
+                tableTone,
               })
             : {
                 ...(isEdit ? modal.query.layout || {} : {}),
@@ -282,6 +374,9 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                         setSelectedTableKey(e.target.value);
                         setSelectedColumns([]);
                         setEditableColumns([]);
+                        setFilters([]);
+                        setSortColumn("");
+                        setColumnSettings({});
                         setTestResult(null);
                       }}
                       className="h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
@@ -358,6 +453,208 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                     )}
                   </div>
 
+                  <div className="rounded-sm border border-zinc-200 bg-zinc-50 p-2.5">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="flex items-center gap-1.5 text-[10px] font-black text-zinc-600">
+                          <Filter size={11} /> ตัวกรองข้อมูล
+                        </p>
+                        <p className="text-[9px] font-semibold text-zinc-400">ทุกเงื่อนไขต้องตรงกัน (AND)</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const first = selectedColumnNames[0] || selectedTable.columns[0]?.name || "";
+                          setFilters((prev) => [...prev, { id: crypto.randomUUID(), column: first, op: "eq", value: "" }]);
+                          setTestResult(null);
+                        }}
+                        className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-2 py-1 text-[9px] font-black text-red-600 hover:bg-red-50"
+                      >
+                        <Plus size={10} /> เพิ่มเงื่อนไข
+                      </button>
+                    </div>
+                    {filters.length === 0 ? (
+                      <p className="rounded-sm border border-dashed border-zinc-200 px-2 py-3 text-center text-[9px] font-semibold text-zinc-400">ไม่กรอง — แสดงข้อมูลทุกแถวตามจำนวนที่กำหนด</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {filters.map((filter) => {
+                          const valueless = filter.op === "isNull" || filter.op === "isNotNull";
+                          const filterKind = builderColumnKind(
+                            selectedTable.columns.find((column) => column.name === filter.column)
+                          );
+                          return (
+                            <div key={filter.id} className="grid gap-1.5 sm:grid-cols-[minmax(8rem,1fr)_minmax(9rem,1fr)_minmax(8rem,1fr)_auto]">
+                              <select
+                                value={filter.column}
+                                onChange={(e) => {
+                                  setFilters((prev) => prev.map((item) => item.id === filter.id ? { ...item, column: e.target.value } : item));
+                                  setTestResult(null);
+                                }}
+                                className="h-8 rounded-sm border border-zinc-200 bg-white px-2 text-[10px] font-bold outline-none focus:border-red-600"
+                              >
+                                {selectedTable.columns.filter((column) => column.canSelect).map((column) => (
+                                  <option key={column.name} value={column.name}>{column.name}</option>
+                                ))}
+                              </select>
+                              <select
+                                value={filter.op}
+                                onChange={(e) => {
+                                  setFilters((prev) => prev.map((item) => item.id === filter.id ? { ...item, op: e.target.value } : item));
+                                  setTestResult(null);
+                                }}
+                                className="h-8 rounded-sm border border-zinc-200 bg-white px-2 text-[10px] font-bold outline-none focus:border-red-600"
+                              >
+                                {Object.entries(BUILDER_FILTER_LABELS).map(([value, label]) => (
+                                  <option key={value} value={value}>{label}</option>
+                                ))}
+                              </select>
+                              {valueless ? (
+                                <div className="flex h-8 items-center rounded-sm border border-dashed border-zinc-200 px-2 text-[9px] font-semibold text-zinc-400">ไม่ต้องใส่ค่า</div>
+                              ) : filterKind === "boolean" && filter.op !== "in" ? (
+                                <select
+                                  value={filter.value}
+                                  onChange={(e) => {
+                                    setFilters((prev) => prev.map((item) => item.id === filter.id ? { ...item, value: e.target.value } : item));
+                                    setTestResult(null);
+                                  }}
+                                  className="h-8 rounded-sm border border-zinc-200 bg-white px-2 text-[10px] font-bold outline-none focus:border-red-600"
+                                >
+                                  <option value="">เลือกค่า</option>
+                                  <option value="true">จริง / ใช่</option>
+                                  <option value="false">เท็จ / ไม่ใช่</option>
+                                </select>
+                              ) : (
+                                <input
+                                  type={filter.op === "in" ? "text" : filterKind === "number" ? "number" : filterKind === "date" ? "date" : "text"}
+                                  value={filter.value}
+                                  onChange={(e) => {
+                                    setFilters((prev) => prev.map((item) => item.id === filter.id ? { ...item, value: e.target.value } : item));
+                                    setTestResult(null);
+                                  }}
+                                  placeholder={filter.op === "in" ? "เช่น A, B, C" : "ค่าที่ต้องการ"}
+                                  className="h-8 rounded-sm border border-zinc-200 bg-white px-2 text-[10px] font-semibold outline-none focus:border-red-600"
+                                />
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setFilters((prev) => prev.filter((item) => item.id !== filter.id));
+                                  setTestResult(null);
+                                }}
+                                className="flex h-8 w-8 items-center justify-center rounded-sm border border-zinc-200 bg-white text-zinc-400 hover:border-red-200 hover:text-red-600"
+                                aria-label="ลบเงื่อนไข"
+                              >
+                                <Trash2 size={11} />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <label className="block">
+                      <span className="mb-1 block text-[9px] font-black text-zinc-500">เรียงตาม</span>
+                      <select
+                        value={sortColumn}
+                        onChange={(e) => { setSortColumn(e.target.value); setTestResult(null); }}
+                        className="h-9 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-2 text-[10px] font-bold outline-none focus:border-red-600"
+                      >
+                        <option value="">ไม่เรียง</option>
+                        {selectedTable.columns.filter((column) => column.canSelect).map((column) => (
+                          <option key={column.name} value={column.name}>{column.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[9px] font-black text-zinc-500">ลำดับ</span>
+                      <select
+                        value={sortDirection}
+                        disabled={!sortColumn}
+                        onChange={(e) => { setSortDirection(e.target.value); setTestResult(null); }}
+                        className="h-9 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-2 text-[10px] font-bold outline-none focus:border-red-600 disabled:opacity-50"
+                      >
+                        <option value="asc">น้อย → มาก / เก่า → ใหม่</option>
+                        <option value="desc">มาก → น้อย / ใหม่ → เก่า</option>
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[9px] font-black text-zinc-500">จำนวนแถวสูงสุด</span>
+                      <select
+                        value={rowLimit}
+                        onChange={(e) => { setRowLimit(Number(e.target.value)); setTestResult(null); }}
+                        className="h-9 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-2 text-[10px] font-bold outline-none focus:border-red-600"
+                      >
+                        {[25, 50, 100, 250, 500, 1000].map((value) => <option key={value} value={value}>{value.toLocaleString("th-TH")} แถว</option>)}
+                      </select>
+                    </label>
+                  </div>
+
+                  {selectedColumnNames.length > 0 && (
+                    <div className="rounded-sm border border-zinc-200 p-2.5">
+                      <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+                        <div>
+                          <p className="text-[10px] font-black text-zinc-600">ชื่อ รูปแบบ และสีคอลัมน์</p>
+                          <p className="text-[9px] font-semibold text-zinc-400">ตั้งค่าตรงนี้แล้วใช้งานได้ทันทีหลังสร้าง Query</p>
+                        </div>
+                        <label className="block min-w-40">
+                          <span className="mb-0.5 block text-[8px] font-black text-zinc-400">สีทั้งตาราง</span>
+                          <select
+                            value={tableTone}
+                            onChange={(e) => setTableTone(e.target.value)}
+                            className="h-8 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-2 text-[9px] font-bold outline-none focus:border-red-600"
+                          >
+                            <option value="">สีปกติ</option>
+                            {TABLE_TONES.map((tone) => <option key={tone} value={tone}>{BUILDER_TONE_LABELS[tone] || tone}</option>)}
+                          </select>
+                        </label>
+                      </div>
+                      <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                        {selectedColumnNames.map((column) => {
+                          const setting = columnSettings[column] || {};
+                          return (
+                            <div key={column} className="rounded-sm border border-zinc-100 bg-zinc-50 p-2">
+                              <p className="mb-1.5 truncate font-mono text-[9px] font-black text-zinc-500">{column}</p>
+                              <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
+                                <input
+                                  type="text"
+                                  value={setting.label || ""}
+                                  onChange={(e) => setColumnSettings((prev) => ({ ...prev, [column]: { ...prev[column], label: e.target.value } }))}
+                                  placeholder={`ชื่อหัว: ${column}`}
+                                  className="h-8 rounded-sm border border-zinc-200 bg-white px-2 text-[9px] font-semibold outline-none focus:border-red-600"
+                                />
+                                <select
+                                  value={setting.render || "text"}
+                                  onChange={(e) => setColumnSettings((prev) => ({ ...prev, [column]: { ...prev[column], render: e.target.value } }))}
+                                  className="h-8 rounded-sm border border-zinc-200 bg-white px-2 text-[9px] font-bold outline-none focus:border-red-600"
+                                >
+                                  {Object.entries(BUILDER_RENDER_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                                </select>
+                                <select
+                                  value={setting.bg || ""}
+                                  onChange={(e) => setColumnSettings((prev) => ({ ...prev, [column]: { ...prev[column], bg: e.target.value } }))}
+                                  className="h-8 rounded-sm border border-zinc-200 bg-white px-2 text-[9px] font-bold outline-none focus:border-red-600"
+                                >
+                                  <option value="">สีพื้นเซลล์</option>
+                                  {TABLE_TONES.map((tone) => <option key={tone} value={tone}>{BUILDER_TONE_LABELS[tone] || tone}</option>)}
+                                </select>
+                                <select
+                                  value={setting.headerBg || ""}
+                                  onChange={(e) => setColumnSettings((prev) => ({ ...prev, [column]: { ...prev[column], headerBg: e.target.value } }))}
+                                  className="h-8 rounded-sm border border-zinc-200 bg-white px-2 text-[9px] font-bold outline-none focus:border-red-600"
+                                >
+                                  <option value="">สีหัวคอลัมน์</option>
+                                  {TABLE_TONES.map((tone) => <option key={tone} value={tone}>{BUILDER_TONE_LABELS[tone] || tone}</option>)}
+                                </select>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {visualSql && (
                     <div>
                       <p className="mb-1 text-[10px] font-black text-zinc-500">SQL ที่ระบบสร้างให้</p>
@@ -391,6 +688,11 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
               {error}
             </div>
           )}
+          {builderMode === "visual" && visualBuild.error && (
+            <div className="rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
+              {visualBuild.error}
+            </div>
+          )}
           {testParamNames.length > 0 && (
             <div className="rounded-sm border border-zinc-200 bg-zinc-50 p-2.5">
               <p className="mb-1.5 text-[10px] font-black text-zinc-500">
@@ -419,22 +721,67 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
             </div>
           )}
           {testResult && (
-            <div className="rounded-sm border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-700">
-              รันสำเร็จ: {testResult.rowCount.toLocaleString("th-TH")} แถว ·{" "}
-              {testResult.columns.length} คอลัมน์ ({testResult.columns.map((col) => col.name).join(", ")}) ·{" "}
-              {testResult.durationMs} ms
+            <div className="overflow-hidden rounded-sm border border-emerald-200 bg-white">
+              <div className="flex flex-wrap items-center justify-between gap-1 bg-emerald-50 px-3 py-2 text-[10px] font-bold text-emerald-700">
+                <span>ตัวอย่างสำเร็จ: {testResult.rowCount.toLocaleString("th-TH")} แถว · {testResult.columns.length} คอลัมน์</span>
+                <span>{testResult.durationMs} ms · แสดงตัวอย่างไม่เกิน 10 แถว</span>
+              </div>
+              <div className="max-h-64 overflow-auto">
+                <table className="w-full border-collapse text-[10px]">
+                  <thead className="sticky top-0 z-10">
+                    <tr>
+                      {testResult.columns.map((column) => {
+                        const setting = columnSettings[column.name] || {};
+                        const tone = CELL_TONES[setting.headerBg || tableTone];
+                        return (
+                          <th
+                            key={column.key}
+                            className="whitespace-nowrap border-b border-r border-zinc-200 px-2 py-1.5 text-left font-black last:border-r-0"
+                            style={{ backgroundColor: tone?.head || "#f4f4f5", color: tone?.headFg || tone?.fg || "#3f3f46" }}
+                          >
+                            {setting.label?.trim() || column.name}
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {testResult.rows.slice(0, 10).map((row, rowIndex) => (
+                      <tr key={rowIndex}>
+                        {testResult.columns.map((column, columnIndex) => {
+                          const setting = columnSettings[column.name] || {};
+                          const tone = CELL_TONES[setting.bg || tableTone];
+                          return (
+                            <td
+                              key={column.key}
+                              className="max-w-64 truncate border-b border-r border-zinc-100 px-2 py-1.5 font-semibold last:border-r-0"
+                              style={{ backgroundColor: tone?.bg || "#ffffff", color: tone?.fg || "#52525b" }}
+                              title={formatCell(row[columnIndex], column.type)}
+                            >
+                              {formatCell(row[columnIndex], column.type)}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                    {testResult.rows.length === 0 && (
+                      <tr><td colSpan={testResult.columns.length || 1} className="px-3 py-6 text-center font-semibold text-zinc-400">ไม่พบข้อมูลตามเงื่อนไข</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
 
         <MissingNotice
-          items={[!name.trim() && "ชื่อ Query", !effectiveSql.trim() && (builderMode === "visual" ? "คอลัมน์อย่างน้อย 1 คอลัมน์" : "คำสั่ง SQL")].filter(Boolean)}
+          items={[!name.trim() && "ชื่อ Query", !effectiveSql.trim() && (builderMode === "visual" ? (visualBuild.error || "คอลัมน์อย่างน้อย 1 คอลัมน์") : "คำสั่ง SQL")].filter(Boolean)}
         />
 
         <div className="mt-4 flex items-center justify-end gap-2">
           <button
             type="button"
-            onClick={testRun}
+            onClick={() => testRun()}
             disabled={testing || !effectiveSql.trim()}
             className="flex items-center gap-1.5 rounded-sm border border-zinc-200 px-4 py-2.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-50"
           >

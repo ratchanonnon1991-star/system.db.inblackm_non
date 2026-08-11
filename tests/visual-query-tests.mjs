@@ -23,6 +23,50 @@ check(
   buildVisualSelect({ schema: "public", table: "games", columns: [] }),
   ""
 );
+check(
+  "filters sorting and limit are generated without raw identifiers",
+  buildVisualSelect({
+    schema: "public",
+    table: "games",
+    columns: ["id", "name"],
+    filters: [
+      { column: "name", op: "contains", value: "King's" },
+      { column: "id", op: "gte", value: "10", kind: "number" },
+    ],
+    sort: { column: "name", direction: "desc" },
+    limit: 50,
+  }),
+  'SELECT\n  "id",\n  "name"\nFROM "public"."games"\nWHERE\n  CAST("name" AS text) ILIKE E\'%King\'\'s%\'\n  AND "id" >= 10\nORDER BY "name" DESC\nLIMIT 50'
+);
+check(
+  "text filter escapes quotes and backslashes",
+  buildVisualSelect({
+    schema: "public", table: "games", columns: ["id"],
+    filters: [{ column: "name", op: "eq", value: "x\\' OR TRUE --" }],
+  }).includes("E'x\\\\'' OR TRUE --'"),
+  true
+);
+check(
+  "limit is capped at the query runner maximum",
+  buildVisualSelect({ schema: "public", table: "games", columns: ["id"], limit: 99999 }).endsWith("LIMIT 1000"),
+  true
+);
+assert.throws(
+  () => buildVisualSelect({
+    schema: "public", table: "games", columns: ["id"],
+    filters: [{ column: "id", op: "eq", value: "1 OR 1=1", kind: "number" }],
+  }),
+  /ค่าตัวเลขไม่ถูกต้อง/
+);
+passed += 1;
+assert.throws(
+  () => buildVisualSelect({
+    schema: "public", table: "games", columns: ["id"],
+    filters: [{ column: "name", op: "contains", value: "" }],
+  }),
+  /กรุณาใส่ค่าตัวกรอง/
+);
+passed += 1;
 
 const layout = buildVisualLayout({
   baseLayout: { folder: "เกม", tableTone: "sky" },
@@ -30,12 +74,20 @@ const layout = buildVisualLayout({
   table: "games",
   primaryKey: "id",
   editableColumns: ["name", "name"],
+  selectedColumns: ["id", "name"],
+  tableTone: "sky",
+  columnSettings: {
+    name: { label: "ชื่อเกม", render: "chip", bg: "amber", headerBg: "yellow", align: "left" },
+  },
 });
 check("visual layout preserves display settings", layout.folder, "เกม");
 check("visual layout preserves table colour", layout.tableTone, "sky");
 check("visual layout stores the qualified table", layout.editable.table, "public.games");
 check("visual layout stores one primary key", layout.editable.pk, "id");
 check("visual layout removes duplicate writable columns", layout.editable.columns, ["name"]);
+check("visual layout stores a friendly column label", layout.labels.c1, "ชื่อเกม");
+check("visual layout stores the selected renderer", layout.formats.c1.render, "chip");
+check("visual layout stores the selected cell colour", layout.formats.c1.bg, "amber");
 check(
   "no writable column leaves the query read-only",
   buildVisualLayout({ schema: "public", table: "games", primaryKey: "id", editableColumns: [] }).editable,
