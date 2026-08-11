@@ -485,6 +485,10 @@ export default function QueryPanel({
   const [showParamErrors, setShowParamErrors] = useState(false);
   const paramStorageLoadedRef = useRef(null);
   const [rowFilter, setRowFilter] = useState("");
+  // A per-browser view of the current result, same as rowFilter -- not part of
+  // layout, so it resets on reload rather than surviving as a saved setting
+  // nobody remembers turning on.
+  const [lookupRowFilter, setLookupRowFilter] = useState(null); // { lookupId, matched } | null
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [view, setView] = useState("table");
@@ -978,6 +982,14 @@ export default function QueryPanel({
     () => (result ? buildDisplayColumns(result.columns, layout, mergedColumns) : []),
     [result, layout, mergedColumns]
   );
+  // A formula can reference another formula column by its (possibly renamed)
+  // label, same as it references a base or a merged-in column. Built from
+  // every computed column regardless of hidden state, matching how a hidden
+  // base column stays referenceable too.
+  const computedColumnsByLabel = useMemo(
+    () => new Map(displayColumns.filter((col) => col.kind === "computed").map((col) => [col.label, col])),
+    [displayColumns]
+  );
   const visibleColumns = useMemo(
     () => displayColumns.filter((col) => !layout.hidden.includes(col.id)),
     [displayColumns, layout.hidden]
@@ -1025,29 +1037,47 @@ export default function QueryPanel({
   // date or text, and a column of dates is none of the three until it is
   // asked for. Base columns resolve by name first; a lookup's brought-in or
   // compare column only exists under its (already disambiguated) label, so
-  // that is tried second. Shared with the formula editor's own preview, so a
-  // formula referencing a lookup column previews the same value it will run.
-  const resolveRowRef = useCallback(
-    (row, partners, name) => {
-      const baseIndex = baseNameToIndex.get(name);
-      if (baseIndex !== undefined) return row[baseIndex];
-      const col = mergedColumnsByLabel.get(name);
-      if (!col) return null;
-      const partner = partners[col.lookupId];
-      const index = mergeSourceIndexes[col.lookupId];
-      if (col.kind === "merged") {
-        return partner ? partner[index.nameToIndex.get(col.source)] : null;
+  // that is tried second, and another formula column's own label third.
+  // Shared with the formula editor's own preview, so a formula referencing a
+  // lookup or another formula previews the same value it will run.
+  //
+  // `visiting` threads through the recursion into a formula column's own
+  // refs, not across separate top-level calls -- a cycle (A reads B, B reads
+  // A) breaks at whichever ref closes the loop by resolving to null there,
+  // same as any other ref this engine cannot satisfy.
+  // A named function declaration, not a memoized callback: it calls itself by
+  // name to walk a chain of formula-to-formula refs, and a self-reference
+  // inside a useCallback closure is exactly the pattern the React Compiler
+  // cannot safely memoize. Re-created every render like any other closure
+  // over these values -- displayRows below lists what it actually reads.
+  function resolveRowRef(row, partners, name, visiting) {
+    const baseIndex = baseNameToIndex.get(name);
+    if (baseIndex !== undefined) return row[baseIndex];
+    const mergedCol = mergedColumnsByLabel.get(name);
+    if (mergedCol) {
+      const partner = partners[mergedCol.lookupId];
+      const index = mergeSourceIndexes[mergedCol.lookupId];
+      if (mergedCol.kind === "merged") {
+        return partner ? partner[index.nameToIndex.get(mergedCol.source)] : null;
       }
-      if (col.kind === "compare") {
+      if (mergedCol.kind === "compare") {
         if (!partner) return null;
-        const left = row[baseNameToIndex.get(col.pair.left)];
-        const right = partner[index.nameToIndex.get(col.pair.right)];
+        const left = row[baseNameToIndex.get(mergedCol.pair.left)];
+        const right = partner[index.nameToIndex.get(mergedCol.pair.right)];
         return cellsEqual(left, right) ? 1 : 0;
       }
       return null;
-    },
-    [baseNameToIndex, mergedColumnsByLabel, mergeSourceIndexes]
-  );
+    }
+    const computedCol = computedColumnsByLabel.get(name);
+    if (computedCol) {
+      if (!computedCol.ast) return null;
+      const chain = visiting || new Set();
+      if (chain.has(name)) return null;
+      chain.add(name);
+      return evaluateFormula(computedCol.ast, (ref) => resolveRowRef(row, partners, ref, chain));
+    }
+    return null;
+  }
 
   const displayRows = useMemo(() => {
     if (!result) return [];
@@ -1094,6 +1124,12 @@ export default function QueryPanel({
       );
     }
 
+    if (lookupRowFilter) {
+      rows = rows.filter(
+        (row) => Boolean(row.matchedByLookup[lookupRowFilter.lookupId]) === lookupRowFilter.matched
+      );
+    }
+
     if (layout.sort) {
       const index = visibleColumns.findIndex((col) => col.id === layout.sort.colId);
       if (index !== -1) {
@@ -1104,15 +1140,21 @@ export default function QueryPanel({
       }
     }
     return rows;
+    // resolveRowRef is a plain function, not a hook value -- it closes over
+    // exactly the entries already listed below, so depending on it directly
+    // would recompute every render instead of only when one of those changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     result,
     visibleColumns,
     baseNameToIndex,
     mergeSourceIndexes,
+    mergedColumnsByLabel,
+    computedColumnsByLabel,
     activeLookups,
     computePartners,
-    resolveRowRef,
     rowFilter,
+    lookupRowFilter,
     layout.sort,
   ]);
 
@@ -1142,19 +1184,27 @@ export default function QueryPanel({
     });
   }, [onDataChange, query.id, query.name, visibleColumns, displayRows, layout]);
 
+  // Counted against every row the query returned, not the filtered/sorted
+  // displayRows -- so "matched 8/50" stays a stable reference to look at while
+  // a text search or the matched/unmatched filter below narrows what's shown,
+  // rather than degenerating to "8/8" the moment that filter is turned on.
   const lookupSummaries = useMemo(() => {
-    if (displayRows.length === 0) return [];
-    // Only a lookup that made it into matchedByLookup this round is reported --
-    // one still loading would otherwise read as "matched 0" for a moment.
-    return layout.lookups
-      .filter((lookup) => lookup.id in (displayRows[0].matchedByLookup || {}))
-      .map((lookup) => ({
+    if (!result || activeLookups.length === 0) return [];
+    return activeLookups.map((lookup) => {
+      const keyIndexes = mergeSourceKeyIndexes[lookup.id];
+      const index = mergeSourceIndexes[lookup.id];
+      let matched = 0;
+      for (const row of result.rows) {
+        if (index.byKey.has(mergeKeyOf(keyIndexes.map((i) => row[i])))) matched += 1;
+      }
+      return {
         id: lookup.id,
         name: queries.find((item) => item.id === lookup.queryId)?.name || `Query #${lookup.queryId}`,
-        matched: displayRows.filter((row) => row.matchedByLookup[lookup.id]).length,
-        total: displayRows.length,
-      }));
-  }, [layout.lookups, displayRows, queries]);
+        matched,
+        total: result.rows.length,
+      };
+    });
+  }, [result, activeLookups, mergeSourceIndexes, mergeSourceKeyIndexes, queries]);
 
   const mergeSourceErrorText = useMemo(() => {
     const messages = layout.lookups
@@ -1162,6 +1212,42 @@ export default function QueryPanel({
       .filter(Boolean);
     return messages.join(" · ");
   }, [layout.lookups, mergeSourceResults]);
+
+  // A filter naming a lookup that was since edited or removed would silently
+  // hide every row rather than showing what changed.
+  useEffect(() => {
+    if (lookupRowFilter && !layout.lookups.some((lookup) => lookup.id === lookupRowFilter.lookupId)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing a filter this effect owns when its target disappears
+      setLookupRowFilter(null);
+    }
+  }, [layout.lookups, lookupRowFilter]);
+
+  // Every ref the formula editor can offer: this query's own columns, plus
+  // anything pulled in from another query, plus every other formula column --
+  // never the one currently being edited, since listing a column among its
+  // own available refs is more likely to be clicked by mistake than used on
+  // purpose.
+  const computedFormulaRefNames = useMemo(() => {
+    const otherComputedLabels = displayColumns
+      .filter((col) => col.kind === "computed" && col.id !== modalColumnId)
+      .map((col) => col.label);
+    return {
+      available: [...new Set((result?.columns || []).map((col) => col.name)), ...mergedColumns.map((col) => col.label), ...otherComputedLabels],
+      all: [...baseNameToIndex.keys(), ...mergedColumns.map((col) => col.label), ...otherComputedLabels],
+    };
+  }, [displayColumns, modalColumnId, result, mergedColumns, baseNameToIndex]);
+  // The first row, so the formula editor can show what a formula produces
+  // before the column exists.
+  const computedFormulaSampleRow = useMemo(() => {
+    if (!result?.rows.length) return null;
+    const row = result.rows[0];
+    const partners = computePartners(row);
+    return Object.fromEntries(
+      computedFormulaRefNames.all.map((name) => [name, resolveRowRef(row, partners, name)])
+    );
+    // See the note on resolveRowRef above displayRows.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result, computePartners, computedFormulaRefNames]);
 
   // Keys arrive as `rowIndex:columnName`; the table addresses cells by
   // display-column id, which is the same string for base columns.
@@ -1755,7 +1841,14 @@ export default function QueryPanel({
             {result ? (
               <>
                 {displayRows.length.toLocaleString("th-TH")} แถว
-                {rowFilter.trim() ? ` (กรองจาก ${result.rowCount.toLocaleString("th-TH")})` : ""}
+                {rowFilter.trim() || lookupRowFilter
+                  ? ` (กรองจาก ${result.rowCount.toLocaleString("th-TH")})`
+                  : ""}
+                {lookupRowFilter
+                  ? ` · แสดงเฉพาะ${lookupRowFilter.matched ? "จับคู่ได้" : "ไม่พบคู่"}กับ ${
+                      lookupSummaries.find((item) => item.id === lookupRowFilter.lookupId)?.name || ""
+                    }`
+                  : ""}
                 {" · "}ใช้เวลา {result.durationMs} ms
                 {" · DB: "}
                 {query.connectionName || "หลัก (inblackm)"}
@@ -2019,6 +2112,34 @@ export default function QueryPanel({
                 ดึงคอลัมน์จาก Query อื่น
                 {layout.lookups.length > 0 ? ` (${layout.lookups.length})` : ""}
               </button>
+              {lookupSummaries.length > 0 && (
+                <div className="space-y-1 px-2.5 py-1.5">
+                  <p className="text-[9px] font-black text-zinc-400">กรองตามผลจับคู่</p>
+                  {lookupSummaries.map((item) => (
+                    <label key={item.id} className="flex items-center gap-1.5">
+                      <span className="min-w-0 flex-1 truncate text-[10px] font-bold text-zinc-500" title={item.name}>
+                        {item.name} ({item.matched}/{item.total})
+                      </span>
+                      <select
+                        value={
+                          lookupRowFilter?.lookupId === item.id
+                            ? String(lookupRowFilter.matched)
+                            : "all"
+                        }
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setLookupRowFilter(value === "all" ? null : { lookupId: item.id, matched: value === "true" });
+                        }}
+                        className="h-7 shrink-0 rounded-sm border border-zinc-200 bg-white px-1.5 text-[9px] font-bold text-zinc-600 outline-none focus:border-red-500"
+                      >
+                        <option value="all">ทั้งหมด</option>
+                        <option value="true">เฉพาะจับคู่ได้</option>
+                        <option value="false">เฉพาะไม่พบคู่</option>
+                      </select>
+                    </label>
+                  ))}
+                </div>
+              )}
               <button
                 type="button"
                 role="menuitem"
@@ -2509,29 +2630,13 @@ export default function QueryPanel({
           <>
       {modal === "computed" && result && (
         <ComputedColumnModal
-          // Columns pulled in from another query are offered by the same
-          // (already query-suffixed) label the table shows for them, so a
-          // formula can read `[ราคาทุน · ราคาทุนสินค้า]` the same way it
-          // reads a column of this query's own result.
-          availableNames={[
-            ...new Set(result.columns.map((col) => col.name)),
-            ...mergedColumns.map((col) => col.label),
-          ]}
-          // The first row, so the editor can show what the formula produces
-          // before the column exists.
-          sampleRow={
-            result.rows.length
-              ? Object.fromEntries(
-                  (() => {
-                    const row = result.rows[0];
-                    const partners = computePartners(row);
-                    return [...baseNameToIndex.keys(), ...mergedColumns.map((col) => col.label)].map(
-                      (name) => [name, resolveRowRef(row, partners, name)]
-                    );
-                  })()
-                )
-              : null
-          }
+          // Columns pulled in from another query, and every other formula
+          // column, are offered by the same label the table shows for them --
+          // so a formula can read `[ราคาทุน · ราคาทุนสินค้า]` or another
+          // computed column's name the same way it reads a plain result
+          // column.
+          availableNames={computedFormulaRefNames.available}
+          sampleRow={computedFormulaSampleRow}
           initialColumn={modalComputedColumn}
           onClose={closeColumnModal}
           onAdd={({ label, formula, type }) => {
