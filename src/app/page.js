@@ -22,10 +22,7 @@ import {
   Lock,
   LogOut,
   Moon,
-  PanelLeftClose,
-  PanelLeftOpen,
   Pencil,
-  Link2,
   Plus,
   Redo2,
   Search,
@@ -41,6 +38,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
+import { createPortal } from "react-dom";
 import NextLink from "next/link";
 import { apiJson } from "@/lib/api-json";
 import { buildXlsxBlob } from "@/lib/gamedb-xlsx";
@@ -51,7 +49,6 @@ import {
   UsersModal,
 } from "@/components/gamedb-modals";
 import ViewsModal from "@/components/views-modal";
-import { ShareLinkModal } from "@/components/panel-config-modals";
 import { EditLogModal, HealthModal } from "@/components/admin-modals";
 
 export default function GamedbPage() {
@@ -481,7 +478,6 @@ function folderColor(folder) {
 
 const THEME_KEY = "gamedb.theme";
 const PINNED_KEY = "gamedb.pinned";
-const SIDEBAR_KEY = "gamedb.sidebar";
 const SHEET_MODE_KEY = "gamedb.sheet-mode";
 const SELECTED_PANEL_KEY = "gamedb.selected-panel";
 
@@ -624,13 +620,11 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
 
   const [dark, setDark] = useState(false);
   const [pinned, setPinned] = useState([]);
-  // The query picker sits above the canvas and can collapse to a compact bar.
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   // Sheet view: one table at a time with a tab per open table along the bottom,
   // for people who would rather flip between them than arrange them on a canvas.
   const [sheetMode, setSheetMode] = useState(false);
 
-  // Theme, pins and the sidebar are per-browser preferences; read them once on mount.
+  // Theme, pins and the sheet mode are per-browser preferences; read them once on mount.
   useEffect(() => {
     try {
       const storedTheme = window.localStorage.getItem(THEME_KEY);
@@ -640,23 +634,10 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- reading a browser preference is exactly what an effect is for
       setDark(prefersDark);
       setPinned(JSON.parse(window.localStorage.getItem(PINNED_KEY) || "[]"));
-      setSidebarOpen(window.localStorage.getItem(SIDEBAR_KEY) !== "closed");
       setSheetMode(window.localStorage.getItem(SHEET_MODE_KEY) === "on");
     } catch {
       setDark(false);
     }
-  }, []);
-
-  const toggleSidebar = useCallback((next) => {
-    setSidebarOpen((prev) => {
-      const value = typeof next === "boolean" ? next : !prev;
-      try {
-        window.localStorage.setItem(SIDEBAR_KEY, value ? "open" : "closed");
-      } catch {
-        // preference is cosmetic; ignore a blocked storage
-      }
-      return value;
-    });
   }, []);
 
   const toggleSheetMode = useCallback(() => {
@@ -748,8 +729,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
       // ignore
     }
   }, [selectedPanelId]);
-  const [panelToolbarHost, setPanelToolbarHost] = useState(null);
-  const [shareQueryId, setShareQueryId] = useState(null);
+  const [queryListHost, setQueryListHost] = useState(null);
 
   const [panels, setPanels] = useState([]);
   const panelsStateRef = useRef([]);
@@ -1333,9 +1313,6 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
 
   // Keyboard shortcuts, ignored while typing in a field.
   const searchRef = useRef(null);
-  // Focusing the search box may have to wait for the sidebar to open again, and
-  // that render is scheduled by React rather than happening on the spot.
-  const wantSearchFocus = useRef(false);
 
   // The list of queries is a picker, not something to keep on screen: it drops
   // out of the search box and folds away again once it has been used.
@@ -1344,13 +1321,8 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
 
   const focusSearch = useCallback(() => {
     setListOpen(true);
-    if (!sidebarOpen) {
-      wantSearchFocus.current = true;
-      toggleSidebar(true);
-      return;
-    }
     searchRef.current?.focus();
-  }, [sidebarOpen, toggleSidebar]);
+  }, []);
 
   useEffect(() => {
     if (!listOpen) return undefined;
@@ -1370,11 +1342,6 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
     };
   }, [listOpen]);
 
-  useEffect(() => {
-    if (!sidebarOpen || !wantSearchFocus.current) return;
-    wantSearchFocus.current = false;
-    searchRef.current?.focus();
-  }, [sidebarOpen]);
   useEffect(() => {
     const onKeyDown = (event) => {
       const tag = event.target?.tagName;
@@ -1405,9 +1372,6 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
       if (event.key === "/") {
         event.preventDefault();
         focusSearch();
-      } else if (event.key === "b") {
-        event.preventDefault();
-        toggleSidebar();
       } else if (event.key === "r") {
         event.preventDefault();
         window.dispatchEvent(new CustomEvent("gamedb:refresh-all"));
@@ -1573,9 +1537,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
   const selectedPanel = openPanels.find(
     (panel) => panel.queryId === selectedPanelId
   );
-  const selectedPanelQuery = selectedPanel
-    ? queryById.get(selectedPanel.queryId)
-    : null;
+  const toolbarPanelId = selectedPanel?.queryId ?? openPanels[0]?.queryId ?? null;
   const captureRenderedPanelHeight = useCallback((queryId, height) => {
     renderedPanelHeightsRef.current = {
       ...renderedPanelHeightsRef.current,
@@ -1777,38 +1739,6 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
     />
   );
 
-  // The table's own tools used to sit in a second bar of their own, which cost a
-  // full row of height to show a handful of buttons. They now ride along in
-  // whichever top bar is on screen — there is exactly one at any time, so the
-  // host element this renders into is never duplicated.
-  const panelToolbarStrip = selectedPanelQuery ? (
-    <>
-      <span className="mx-0.5 h-5 w-px shrink-0 bg-zinc-200" />
-      <span
-        className="hidden max-w-32 shrink-0 truncate text-[11px] font-black text-zinc-700 lg:block"
-        title={selectedPanelQuery.name}
-      >
-        {selectedPanelQuery.name}
-      </span>
-      {/* Sharing belongs to the table, not to the view it happens to be in:
-          the same button is here whether the workspace is a canvas or a sheet. */}
-      {isSuperAdmin && !previewAsUser && (
-        <button
-          type="button"
-          onClick={() => setShareQueryId(selectedPanelQuery.id)}
-          className="flex h-8 shrink-0 items-center gap-1 rounded-sm border border-zinc-200 px-2.5 text-[10px] font-black text-zinc-600 transition hover:bg-zinc-50"
-          title={`แชร์ "${selectedPanelQuery.name}" เป็นลิงก์ให้คนที่ไม่ได้ล็อกอินเปิดดู`}
-        >
-          <Link2 size={12} />
-        </button>
-      )}
-      <div
-        ref={setPanelToolbarHost}
-        className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1"
-      />
-    </>
-  ) : null;
-
   // Shown by both layouts when nothing is open, so it lives outside either.
   const emptyWorkspace = (
     <div className="flex h-full min-h-72 items-center justify-center p-4">
@@ -1862,11 +1792,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
         canCustomizeLayout={!layoutLocked}
         isFullWidth={isFullWidth}
         isSelected={selectedPanelId === panel.queryId}
-        toolbarHost={
-          selectedPanelId === panel.queryId
-            ? panelToolbarHost
-            : null
-        }
+        workspaceToolbar={toolbarPanelId === panel.queryId ? canvasToolbar : null}
         onSelect={() => setSelectedPanelId(panel.queryId)}
         onPositionChange={movePanelTo}
         onFrameChange={resizePanel}
@@ -1933,7 +1859,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
             </span>
           </h1>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center justify-end gap-1">
           {views.length > 0 && (
             <div className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-1 py-1">
               <Layers size={13} className="text-red-600" />
@@ -2063,46 +1989,8 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
               </button>
             </>
           )}
-        </div>
-      </header>
-
-      <div className="flex min-h-0 flex-1 flex-col gap-1">
-        {!layoutLocked && !sidebarOpen && (
-          <aside className="flex w-full shrink-0 items-center gap-1 rounded-sm border border-zinc-200 bg-white px-2 py-1.5">
-            <button
-              type="button"
-              onClick={() => toggleSidebar(true)}
-              className="rounded-sm p-1 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700"
-              title="เปิดแถบรายการ Query (คีย์ลัด: b)"
-            >
-              <PanelLeftOpen size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={focusSearch}
-              className="rounded-sm p-1 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700"
-              title="ค้นหา Query (คีย์ลัด: /)"
-            >
-              <Search size={15} />
-            </button>
-            <span
-              className="rounded-sm bg-zinc-100 px-1.5 py-0.5 text-[10px] font-black text-zinc-500"
-              title={`เปิดอยู่ ${openPanels.length} ตาราง`}
-            >
-              {openPanels.length}
-            </span>
-            {panelToolbarStrip}
-            <div className="ml-auto">{canvasToolbar}</div>
-          </aside>
-        )}
-        {!layoutLocked && sidebarOpen && <aside
-          ref={listBoxRef}
-          className="relative z-30 w-full shrink-0 rounded-sm border border-zinc-200 bg-white p-1"
-        >
-          <div className="flex flex-wrap items-center gap-1">
-            {/* The box is a picker, not a place to read long text — past a few
-                hundred pixels it is only taking room from the table tools. */}
-            <div className="relative w-full min-w-40 max-w-64 flex-1 sm:w-auto">
+          {!layoutLocked && (
+            <div ref={listBoxRef} className="relative w-64 min-w-48">
               <Search
                 size={13}
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400"
@@ -2111,18 +1999,18 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
                 ref={searchRef}
                 type="text"
                 value={sidebarSearch}
-                onChange={(e) => {
-                  setSidebarSearch(e.target.value);
+                onChange={(event) => {
+                  setSidebarSearch(event.target.value);
                   setListOpen(true);
                 }}
                 onFocus={() => setListOpen(true)}
                 placeholder="ค้นหาชื่อ / SQL... (กด /)"
-                className="h-9 w-full rounded-sm border border-zinc-200 bg-zinc-50 pl-8 pr-8 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+                className="h-9 w-full rounded-sm border border-zinc-200 bg-white pl-8 pr-8 text-xs font-semibold outline-none focus:border-red-600"
               />
               <button
                 type="button"
                 onClick={() => setListOpen((open) => !open)}
-                className="absolute right-1 top-1/2 -translate-y-1/2 rounded-sm p-1 text-zinc-400 transition hover:bg-zinc-200 hover:text-zinc-700"
+                className="absolute right-1 top-1/2 -translate-y-1/2 rounded-sm p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700"
                 title={listOpen ? "ปิดรายการ Query" : "เปิดรายการ Query"}
                 aria-expanded={listOpen}
               >
@@ -2131,25 +2019,15 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
                   className={`transition ${listOpen ? "rotate-180" : ""}`}
                 />
               </button>
+              <div ref={setQueryListHost} className="absolute bottom-0 right-0" />
             </div>
-            <span
-              className="shrink-0 rounded-sm bg-zinc-100 px-2 py-1 text-[10px] font-black text-zinc-500"
-              title={`เปิดอยู่ ${openPanels.length} ตาราง`}
-            >
-              {openPanels.length} ตาราง
-            </span>
-            {panelToolbarStrip}
-            {canvasToolbar}
-            <button
-              type="button"
-              onClick={() => toggleSidebar(false)}
-              className="shrink-0 rounded-sm p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700"
-              title="ย่อแถบรายการเพื่อให้ตารางกว้างขึ้น (คีย์ลัด: b)"
-            >
-              <PanelLeftClose size={15} />
-            </button>
-          </div>
-          {listOpen && <div className="absolute left-2 top-full z-40 mt-1 flex max-h-[70vh] w-full max-w-sm flex-col overflow-hidden rounded-sm border border-zinc-200 bg-white shadow-xl">
+          )}
+        </div>
+      </header>
+
+      <div className="flex min-h-0 flex-1 flex-col gap-1">
+        {!layoutLocked && queryListHost && listOpen && createPortal(
+          <div className="absolute right-0 top-full z-50 mt-1 flex max-h-[70vh] w-96 max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-sm border border-zinc-200 bg-white shadow-xl">
           <div className="flex shrink-0 items-center justify-between gap-1 border-b border-zinc-100 px-2 py-1.5">
             <span className="text-[10px] font-black text-zinc-400">
               เปิดอยู่ {openPanels.length} ตาราง
@@ -2293,17 +2171,8 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
               ))}
             </div>
           )}
-          </div>}
-        </aside>}
-
-        {layoutLocked && (
-          <div className="flex flex-wrap items-center gap-1 rounded-sm border border-zinc-200 bg-white px-1 py-1">
-            <span className="flex items-center gap-1 text-[10px] font-bold text-zinc-500">
-              <Lock size={12} /> Layout ถูกกำหนดโดย Admin
-            </span>
-            {panelToolbarStrip}
-            <div className="ml-auto">{canvasToolbar}</div>
-          </div>
+          </div>,
+          queryListHost
         )}
 
         {previewAsUser && (
@@ -2535,9 +2404,6 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
 
       {usersModal && <UsersModal me={me} onClose={() => setUsersModal(false)} />}
       {healthModal && <HealthModal onClose={() => setHealthModal(false)} />}
-      {shareQueryId !== null && (
-        <ShareLinkModal queryId={shareQueryId} onClose={() => setShareQueryId(null)} />
-      )}
       {editLogModal && <EditLogModal onClose={() => setEditLogModal(false)} />}
 
       {viewsModal && (

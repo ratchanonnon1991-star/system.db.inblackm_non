@@ -419,7 +419,7 @@ export default function QueryPanel({
   canCustomizeLayout,
   isFullWidth,
   isSelected,
-  toolbarHost,
+  workspaceToolbar,
   onSelect,
   onPositionChange,
   onFrameChange,
@@ -1684,9 +1684,7 @@ export default function QueryPanel({
           </div>
         )}
 
-        {toolbarHost &&
-          createPortal(
-            <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
+        <div className="flex min-w-0 flex-[1_1_auto] flex-wrap items-center justify-end gap-1">
         <div className="relative">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
           <input
@@ -2036,9 +2034,8 @@ export default function QueryPanel({
         >
           <X size={13} />
         </button>}
-            </div>,
-            toolbarHost
-          )}
+        {workspaceToolbar}
+        </div>
       </div>
 
       {!panel.collapsed && (

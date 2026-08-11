@@ -24,7 +24,6 @@ import {
   Image as ImageIcon,
   Layers,
   Pencil,
-  Settings2,
   Sigma,
   Trash2,
   X,
@@ -519,10 +518,9 @@ export default function PanelTable({
   const gameNameColumnIndex = columns.findIndex(
     (col) => col.kind === "base" && col.column?.name === "game"
   );
-  // Which column the tools bar above the table is acting on. The tools used to
-  // live in the header cell itself, where a narrow column left them nowhere to
-  // go but on top of the next column's name.
-  const [toolsColId, setToolsColId] = useState(null);
+  // Raise the hovered header above its neighbours so the floating toolbox can
+  // overlap the table without reserving another row of vertical space.
+  const [hoveredToolsColId, setHoveredToolsColId] = useState(null);
   const headRefs = useRef({});
   const scrollRef = useRef(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -975,94 +973,7 @@ export default function PanelTable({
     );
   };
 
-  // Derived rather than kept in step by hand: hiding or deleting the column the
-  // bar is on takes it out of `columns`, and the bar closes with it.
-  const toolsCol = columns.find((col) => col.id === toolsColId) || null;
-
-  const columnTools = toolsCol && (
-    <div className="flex flex-wrap items-center gap-1 border-t border-zinc-100 bg-zinc-50 px-2 py-1.5">
-      <span className="mr-1 flex min-w-0 items-center gap-1 text-[10px] font-black text-zinc-500">
-        คอลัมน์
-        <span className="max-w-40 truncate text-zinc-700" title={toolsCol.label}>
-          {toolsCol.label}
-        </span>
-      </span>
-      <button type="button" onClick={() => moveColumn(toolsCol.id, -1)} className={headerButton} title="เลื่อนซ้าย">
-        <ArrowLeft size={12} />
-      </button>
-      <button type="button" onClick={() => moveColumn(toolsCol.id, 1)} className={headerButton} title="เลื่อนขวา">
-        <ArrowRight size={12} />
-      </button>
-      <button
-        type="button"
-        onClick={() => cycleSummary(toolsCol.id)}
-        className={headerButton}
-        title="สรุปท้ายตาราง (รวม → เฉลี่ย → ต่ำสุด → สูงสุด → นับ → ปิด)"
-      >
-        <Sigma size={12} />
-      </button>
-      <button
-        type="button"
-        onClick={() =>
-          mutateLayout((prev) => ({
-            ...prev,
-            group: prev.group?.colId === toolsCol.id ? null : { colId: toolsCol.id },
-          }))
-        }
-        className={`${headerButton} ${
-          layout.group?.colId === toolsCol.id ? "bg-zinc-300 text-zinc-700" : ""
-        }`}
-        title="จัดกลุ่มตามคอลัมน์นี้"
-      >
-        <Layers size={12} />
-      </button>
-      <button type="button" onClick={() => renameColumn(toolsCol)} className={headerButton} title="เปลี่ยนชื่อ">
-        <Pencil size={12} />
-      </button>
-      <button
-        type="button"
-        onClick={() =>
-          mutateLayout((prev) => ({
-            ...prev,
-            hidden: [...new Set([...prev.hidden, toolsCol.id])],
-          }))
-        }
-        className={headerButton}
-        title="ซ่อนคอลัมน์"
-      >
-        <EyeOff size={12} />
-      </button>
-      {toolsCol.kind === "computed" && (
-        <button
-          type="button"
-          onClick={() =>
-            mutateLayout((prev) => ({
-              ...prev,
-              computed: prev.computed.filter((item) => `#${item.key}` !== toolsCol.id),
-              order: prev.order.filter((id) => id !== toolsCol.id),
-              hidden: prev.hidden.filter((id) => id !== toolsCol.id),
-            }))
-          }
-          className="rounded p-1 text-zinc-400 hover:bg-zinc-200 hover:text-red-600"
-          title="ลบคอลัมน์สูตร"
-        >
-          <Trash2 size={12} />
-        </button>
-      )}
-      <button
-        type="button"
-        onClick={() => setToolsColId(null)}
-        className={`${headerButton} ml-auto`}
-        title="ปิดแถบเครื่องมือคอลัมน์"
-      >
-        <X size={12} />
-      </button>
-    </div>
-  );
-
   return (
-    <>
-    {columnTools}
     <div
       ref={scrollRef}
       onScroll={onScroll}
@@ -1146,12 +1057,20 @@ export default function PanelTable({
                   ref={(el) => {
                     headRefs.current[col.id] = el;
                   }}
+                  onMouseEnter={() => setHoveredToolsColId(col.id)}
+                  onMouseLeave={() => setHoveredToolsColId(null)}
+                  onFocus={() => setHoveredToolsColId(col.id)}
+                  onBlur={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget)) {
+                      setHoveredToolsColId(null);
+                    }
+                  }}
                   className={`group sticky border border-zinc-200 px-2 py-1.5 text-left ${
                     headTone ? "" : "bg-zinc-100"
                   }`}
                   style={{
                     top: headerTop,
-                    zIndex: frozen ? 20 : 10,
+                    zIndex: hoveredToolsColId === col.id ? 30 : frozen ? 20 : 10,
                     ...(headTone || {}),
                     ...(headerInk ? { color: headerInk } : {}),
                     ...(frozen ? { left: freezeOffsets[index] } : {}),
@@ -1180,26 +1099,75 @@ export default function PanelTable({
                         </span>
                       )}
                     </button>
-                    {/* One button, not seven: the tools themselves open in the bar
-                        above the table, where a narrow column cannot crush them. */}
-                    {canCustomizeLayout && (
+                  </div>
+                  {canCustomizeLayout && (
+                    <div
+                      className={`absolute top-full mt-1 hidden items-center gap-1 whitespace-nowrap rounded-sm border border-zinc-200 bg-white p-1 shadow-xl group-hover:flex group-focus-within:flex ${
+                        index > columns.length / 2 ? "right-1" : "left-1"
+                      }`}
+                      role="toolbar"
+                      aria-label={`เครื่องมือคอลัมน์ ${col.label}`}
+                    >
+                      <span className="max-w-36 truncate px-1 text-[10px] font-black text-zinc-600" title={col.label}>
+                        {col.label}
+                      </span>
+                      <button type="button" onClick={() => moveColumn(col.id, -1)} className={headerButton} title="เลื่อนซ้าย">
+                        <ArrowLeft size={12} />
+                      </button>
+                      <button type="button" onClick={() => moveColumn(col.id, 1)} className={headerButton} title="เลื่อนขวา">
+                        <ArrowRight size={12} />
+                      </button>
+                      <button type="button" onClick={() => cycleSummary(col.id)} className={headerButton} title="สรุปท้ายตาราง (รวม → เฉลี่ย → ต่ำสุด → สูงสุด → นับ → ปิด)">
+                        <Sigma size={12} />
+                      </button>
                       <button
                         type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setToolsColId((current) => (current === col.id ? null : col.id));
-                        }}
-                        className={`${headerButton} shrink-0 ${
-                          toolsColId === col.id
-                            ? "bg-zinc-300 text-zinc-700"
-                            : "hidden group-hover:block"
-                        }`}
-                        title={`ตั้งค่าคอลัมน์ ${col.label}`}
+                        onClick={() =>
+                          mutateLayout((prev) => ({
+                            ...prev,
+                            group: prev.group?.colId === col.id ? null : { colId: col.id },
+                          }))
+                        }
+                        className={`${headerButton} ${layout.group?.colId === col.id ? "bg-zinc-300 text-zinc-700" : ""}`}
+                        title="จัดกลุ่มตามคอลัมน์นี้"
                       >
-                        <Settings2 size={11} />
+                        <Layers size={12} />
                       </button>
-                    )}
-                  </div>
+                      <button type="button" onClick={() => renameColumn(col)} className={headerButton} title="เปลี่ยนชื่อ">
+                        <Pencil size={12} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          mutateLayout((prev) => ({
+                            ...prev,
+                            hidden: [...new Set([...prev.hidden, col.id])],
+                          }))
+                        }
+                        className={headerButton}
+                        title="ซ่อนคอลัมน์"
+                      >
+                        <EyeOff size={12} />
+                      </button>
+                      {col.kind === "computed" && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            mutateLayout((prev) => ({
+                              ...prev,
+                              computed: prev.computed.filter((item) => `#${item.key}` !== col.id),
+                              order: prev.order.filter((id) => id !== col.id),
+                              hidden: prev.hidden.filter((id) => id !== col.id),
+                            }))
+                          }
+                          className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-red-600"
+                          title="ลบคอลัมน์สูตร"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
+                    </div>
+                  )}
                   {canCustomizeLayout && <span
                     onPointerDown={(event) => {
                       event.preventDefault();
@@ -1323,6 +1291,5 @@ export default function PanelTable({
         )}
       </table>
     </div>
-    </>
   );
 }
