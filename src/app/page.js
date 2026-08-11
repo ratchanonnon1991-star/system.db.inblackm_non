@@ -126,7 +126,7 @@ function SystemHub({ me, onLoggedOut }) {
               onClick={() => setSsoMapModal(true)}
               className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-3 py-1 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
             >
-              <Link2 size={14} /> เชื่อมบัญชี hiring
+              <Link2 size={14} /> เชื่อมกับบัญชี experience
             </button>
           )}
           <button
