@@ -1,0 +1,58 @@
+import { NextResponse } from "next/server";
+import { getSessionCookieOptions, SESSION_COOKIE, signSessionToken } from "@/lib/session";
+import { getHiringBaseUrl, getSsoSecret } from "@/lib/hiring-sso";
+import { findGamedbUsernameByHiringEmail } from "@/server/gamedb-sso-map-repository";
+import { findUserByUsername } from "@/server/users-repository";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+/**
+ * Landed on by a plain browser redirect from hiring's /api/sso/gamedb, never
+ * a fetch -- there is no cookie of hiring's for gamedb to read anyway, only
+ * the one-time code hiring put in the URL. The code is exchanged for an
+ * email server-to-server (see getHiringBaseUrl/getSsoSecret), then that
+ * email has to already be linked to a gamedb username via /api/sso-map --
+ * hiring vouches for the person, not for what they are allowed to do here.
+ */
+export async function GET(request) {
+  const url = new URL(request.url);
+  const code = url.searchParams.get("code") || "";
+  const failure = (reason) => NextResponse.redirect(new URL(`/?ssoError=${reason}`, request.url));
+
+  if (!code) return failure("missing_code");
+
+  let email = "";
+  try {
+    const response = await fetch(`${getHiringBaseUrl()}/api/sso/gamedb/exchange`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-gamedb-sso-secret": getSsoSecret(),
+      },
+      body: JSON.stringify({ code }),
+    });
+    if (!response.ok) return failure("code_rejected");
+    const data = await response.json();
+    email = String(data.email || "").trim();
+  } catch (err) {
+    console.error("hiring SSO exchange failed", err);
+    return failure("exchange_failed");
+  }
+  if (!email) return failure("code_rejected");
+
+  const username = await findGamedbUsernameByHiringEmail(email);
+  if (!username) return failure("not_linked");
+
+  const user = await findUserByUsername(username);
+  if (!user) return failure("not_linked");
+
+  const token = signSessionToken({
+    sub: user.id,
+    username: user.username,
+    role: user.role,
+  });
+  const response = NextResponse.redirect(new URL("/systemdb", request.url));
+  response.cookies.set(SESSION_COOKIE, token, getSessionCookieOptions());
+  return response;
+}

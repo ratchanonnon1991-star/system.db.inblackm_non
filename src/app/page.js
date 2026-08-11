@@ -1,11 +1,29 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Database, Gamepad2, Loader2, Lock, LogOut, User, Users } from "lucide-react";
+import { Database, Gamepad2, Link2, Loader2, Lock, LogOut, User, Users } from "lucide-react";
 import NextLink from "next/link";
 import { apiJson } from "@/lib/api-json";
 import TurnstileWidget from "@/components/turnstile-widget";
 import { UsersModal } from "@/components/gamedb-modals";
+import SsoMapModal from "@/components/sso-map-modal";
+
+// Public by design: it is only where the "เข้าสู่ระบบด้วยบัญชี hiring" button
+// points the browser, never anything the server trusts on its own.
+const HIRING_BASE_URL = (process.env.NEXT_PUBLIC_HIRING_BASE_URL || "").replace(/\/+$/, "");
+
+// Keyed by the ?ssoError= codes /api/sso/from-hiring redirects back with
+// (see src/lib/hiring-sso.js and src/app/api/sso/from-hiring/route.js for
+// where each one is produced). Kept as its own copy here, not imported from
+// hiring-sso.js, so this client bundle never pulls in that module's
+// server-only secret getters.
+const SSO_ERROR_MESSAGES = {
+  missing_code: 'ลิงก์เข้าสู่ระบบไม่สมบูรณ์ กรุณาลองใหม่จากปุ่ม "เข้าสู่ระบบด้วยบัญชี hiring"',
+  code_rejected: "รหัสเข้าสู่ระบบหมดอายุหรือถูกใช้ไปแล้ว กรุณาลองใหม่",
+  exchange_failed: "ติดต่อระบบ hiring ไม่สำเร็จ กรุณาลองใหม่ภายหลัง",
+  not_linked:
+    "บัญชี hiring นี้ยังไม่ได้ผูกกับบัญชี gamedb — ติดต่อ Admin ให้เพิ่มการเชื่อมบัญชีให้",
+};
 
 export default function GamedbPage() {
   const [me, setMe] = useState(null);
@@ -59,6 +77,7 @@ function SystemHub({ me, onLoggedOut }) {
   const isSuperAdmin = me.role === "admin";
   const isTemplateUser = me.role === "user";
   const [usersModal, setUsersModal] = useState(false);
+  const [ssoMapModal, setSsoMapModal] = useState(false);
 
   const logout = async () => {
     try {
@@ -89,6 +108,15 @@ function SystemHub({ me, onLoggedOut }) {
               className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-3 py-1 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
             >
               <Users size={14} /> จัดการสิทธิ์ผู้ใช้
+            </button>
+          )}
+          {isSuperAdmin && (
+            <button
+              type="button"
+              onClick={() => setSsoMapModal(true)}
+              className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-3 py-1 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
+            >
+              <Link2 size={14} /> เชื่อมบัญชี hiring
             </button>
           )}
           <button
@@ -127,6 +155,7 @@ function SystemHub({ me, onLoggedOut }) {
       </div>
 
       {usersModal && <UsersModal me={me} onClose={() => setUsersModal(false)} />}
+      {ssoMapModal && <SsoMapModal onClose={() => setSsoMapModal(false)} />}
     </div>
   );
 }
@@ -136,6 +165,7 @@ function LoginScreen({ onLoggedIn }) {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [ssoError, setSsoError] = useState("");
   const [turnstileToken, setTurnstileToken] = useState("");
   const [turnstileAttempt, setTurnstileAttempt] = useState(0);
   const [turnstileConfig, setTurnstileConfig] = useState({
@@ -174,6 +204,33 @@ function LoginScreen({ onLoggedIn }) {
     return () => {
       active = false;
     };
+  }, []);
+
+  // /api/sso/from-hiring bounces back here with ?ssoError=... when the hiring
+  // login bridge could not complete. Read once and drop the param so a
+  // refresh does not keep re-showing a message about an attempt that is over.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("ssoError");
+    if (!code) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reading a one-shot URL param is exactly what an effect is for
+    setSsoError(SSO_ERROR_MESSAGES[code] || "เข้าสู่ระบบด้วยบัญชี hiring ไม่สำเร็จ");
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
+
+  // Built from window.location, so it has to wait for the client: computing
+  // it during the server render (this component ships to the client, but
+  // still renders once on the server first) would throw on the missing
+  // `window`.
+  const [hiringSsoUrl, setHiringSsoUrl] = useState("");
+  useEffect(() => {
+    if (!HIRING_BASE_URL) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- window.location is only known once mounted on the client
+    setHiringSsoUrl(
+      `${HIRING_BASE_URL}/api/sso/gamedb?return=${encodeURIComponent(
+        `${window.location.origin}/api/sso/from-hiring`
+      )}`
+    );
   }, []);
 
   const submit = async (event) => {
@@ -221,6 +278,12 @@ function LoginScreen({ onLoggedIn }) {
             เข้าสู่ระบบด้วยบัญชี GameDB
           </p>
         </div>
+
+        {ssoError && (
+          <div className="mb-3 rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
+            {ssoError}
+          </div>
+        )}
 
         <label className="mb-1 block text-[10px] font-black text-zinc-500">Username</label>
         <input
@@ -280,6 +343,22 @@ function LoginScreen({ onLoggedIn }) {
           {submitting ? <Loader2 size={14} className="animate-spin" /> : <Lock size={13} />}
           เข้าสู่ระบบ
         </button>
+
+        {hiringSsoUrl && (
+          <>
+            <div className="my-4 flex items-center gap-2 text-[9px] font-black uppercase tracking-wider text-zinc-300">
+              <span className="h-px flex-1 bg-zinc-200" />
+              หรือ
+              <span className="h-px flex-1 bg-zinc-200" />
+            </div>
+            <a
+              href={hiringSsoUrl}
+              className="flex h-10 w-full items-center justify-center gap-1.5 rounded-sm border border-zinc-200 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
+            >
+              เข้าสู่ระบบด้วยบัญชี hiring
+            </a>
+          </>
+        )}
       </form>
     </div>
   );
