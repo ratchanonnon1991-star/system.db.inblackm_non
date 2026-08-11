@@ -1314,6 +1314,8 @@ const EMPTY_USER_FORM = {
   password: "",
   role: "staff",
   defaultViewId: "",
+  canWriteData: false,
+  canUpdateData: false,
 };
 
 function roleLabel(role) {
@@ -1406,6 +1408,8 @@ export function UsersModal({ me, onClose }) {
       password: "",
       role: user.role,
       defaultViewId: user.defaultViewId ? String(user.defaultViewId) : "",
+      canWriteData: Boolean(user.canWriteData),
+      canUpdateData: Boolean(user.canUpdateData),
     });
     setError("");
   };
@@ -1422,6 +1426,8 @@ export function UsersModal({ me, onClose }) {
             displayName: form.displayName,
             role: form.role,
             defaultViewId: form.role === "user" ? form.defaultViewId || null : null,
+            canWriteData: form.role === "staff" && form.canWriteData,
+            canUpdateData: form.role === "staff" && form.canUpdateData,
             password: form.password || undefined,
           }),
           fallbackError: "บันทึกผู้ใช้ไม่สำเร็จ",
@@ -1430,7 +1436,11 @@ export function UsersModal({ me, onClose }) {
         await apiJson("/api/users", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(form),
+          body: JSON.stringify({
+            ...form,
+            canWriteData: form.role === "staff" && form.canWriteData,
+            canUpdateData: form.role === "staff" && form.canUpdateData,
+          }),
           fallbackError: "เพิ่มผู้ใช้ไม่สำเร็จ",
         });
       }
@@ -1545,6 +1555,17 @@ export function UsersModal({ me, onClose }) {
                     </p>
                     <p className="truncate text-[10px] font-semibold text-zinc-400">
                       {user.displayName} · {roleLabel(user.role)}
+                      {user.role === "staff" && (user.canWriteData || user.canUpdateData) && (
+                        <>
+                          {" · "}
+                          {[
+                            user.canWriteData && "เพิ่ม/ลบแถว",
+                            user.canUpdateData && "แก้ไขค่า",
+                          ]
+                            .filter(Boolean)
+                            .join(", ")}
+                        </>
+                      )}
                     </p>
                   </button>
                   {user.id !== me.id && (
@@ -1658,6 +1679,36 @@ export function UsersModal({ me, onClose }) {
                 </select>
                 <p className="mt-1 text-[9px] font-semibold text-zinc-400">
                   User จะเปิดหน้านี้อัตโนมัติและไม่สามารถย้ายหรือย่อขยายกล่องได้
+                </p>
+              </div>
+            )}
+            {form.role === "staff" && (
+              <div className="space-y-2 rounded-sm border border-zinc-200 p-3">
+                <p className="text-[10px] font-black text-zinc-500">
+                  สิทธิ์แก้ไขข้อมูลในตารางที่เปิด &quot;แก้ไขข้อมูล&quot; ไว้ (นอกเหนือจาก
+                  ดู/รัน query และจัด layout ที่ Staff ทำได้อยู่แล้ว)
+                </p>
+                <label className="flex items-center gap-2 text-[11px] font-bold text-zinc-600">
+                  <input
+                    type="checkbox"
+                    checked={form.canWriteData}
+                    onChange={(e) => setField("canWriteData", e.target.checked)}
+                    className="h-3.5 w-3.5 accent-red-600"
+                  />
+                  เพิ่ม / ลบแถวในตาราง
+                </label>
+                <label className="flex items-center gap-2 text-[11px] font-bold text-zinc-600">
+                  <input
+                    type="checkbox"
+                    checked={form.canUpdateData}
+                    onChange={(e) => setField("canUpdateData", e.target.checked)}
+                    className="h-3.5 w-3.5 accent-red-600"
+                  />
+                  แก้ไขค่าในแถวที่มีอยู่ (ดับเบิลคลิก / วางจาก Excel)
+                </label>
+                <p className="text-[9px] font-semibold text-zinc-400">
+                  ไม่รวมการเขียน SQL, ตั้งค่าคอลัมน์ที่แก้ไขได้, หรือจัดการผู้ใช้ — ยังเป็น
+                  Admin เท่านั้น
                 </p>
               </div>
             )}

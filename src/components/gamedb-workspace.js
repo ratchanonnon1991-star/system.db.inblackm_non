@@ -1679,6 +1679,8 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
         onDataChange={captureData}
         canManage={isSuperAdmin && !previewAsUser}
         canCustomizeLayout={!layoutLocked}
+        canWriteData={(isSuperAdmin && !previewAsUser) || (me.role === "staff" && Boolean(me.canWriteData))}
+        canUpdateData={(isSuperAdmin && !previewAsUser) || (me.role === "staff" && Boolean(me.canUpdateData))}
         isFullWidth={isFullWidth}
         isSelected={selectedPanelId === panel.queryId}
         workspaceToolbar={toolbarPanelId === panel.queryId ? canvasToolbar : null}

@@ -36,3 +36,26 @@ export async function requireLayoutEditor(request) {
   }
   return user;
 }
+
+/**
+ * Inline cell edit and add/remove rows ("the editable table" -- see
+ * /api/queries/[id]/cell and /api/queries/[id]/row) used to be Admin-only.
+ * A Staff account can now be granted one or both of these individually (see
+ * canWriteData/canUpdateData on gamedb_user_preferences, set from
+ * UsersModal) without becoming an Admin -- role "user" is excluded outright
+ * regardless of what is stored, since its entire point is a read-only
+ * template with no layout of its own to point an editable column at.
+ */
+export async function requireDataWriter(request) {
+  const user = await requireAdmin(request);
+  if (user.role === "admin") return user;
+  if (user.role === "staff" && user.canWriteData) return user;
+  throw createHttpError("บัญชีนี้ไม่มีสิทธิ์เพิ่ม/ลบแถวในตารางนี้", 403);
+}
+
+export async function requireDataUpdater(request) {
+  const user = await requireAdmin(request);
+  if (user.role === "admin") return user;
+  if (user.role === "staff" && user.canUpdateData) return user;
+  throw createHttpError("บัญชีนี้ไม่มีสิทธิ์แก้ไขข้อมูลในตารางนี้", 403);
+}

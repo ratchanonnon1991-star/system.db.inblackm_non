@@ -1,5 +1,5 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireSuperAdmin } from "@/server/auth";
+import { requireDataUpdater } from "@/server/auth";
 import { findConnectionWithSecret } from "@/server/connections-repository";
 import { findQueryById } from "@/server/gamedb-repository";
 import { updateCell } from "@/server/gamedb-cell-writer";
@@ -7,10 +7,11 @@ import { recordEdit } from "@/server/gamedb-edit-log";
 import { invalidateQuery } from "@/server/gamedb-result-cache";
 import { normalizeLayout } from "@/lib/gamedb-layout";
 
-// Writing data is the one thing staff cannot do — admins only.
+// Editing a cell's value is an Admin capability by default; a Staff account
+// can be granted it individually (see requireDataUpdater).
 export async function PATCH(request, { params }) {
   try {
-    const admin = await requireSuperAdmin(request);
+    const admin = await requireDataUpdater(request);
     const { id } = await params;
     const query = await findQueryById(id);
     if (!query) return jsonError("ไม่พบ Query นี้", 404);

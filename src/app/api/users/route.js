@@ -61,6 +61,8 @@ export async function POST(request) {
       password,
       role,
       defaultViewId: role === "user" ? defaultViewId : null,
+      canWriteData: Boolean(body.canWriteData),
+      canUpdateData: Boolean(body.canUpdateData),
     });
     return jsonOk({ user }, 201);
   } catch (err) {

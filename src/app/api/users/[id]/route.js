@@ -64,6 +64,8 @@ export async function PATCH(request, { params }) {
     } else if (fields.role && fields.role !== "user") {
       fields.defaultViewId = null;
     }
+    if (body.canWriteData !== undefined) fields.canWriteData = Boolean(body.canWriteData);
+    if (body.canUpdateData !== undefined) fields.canUpdateData = Boolean(body.canUpdateData);
 
     const user = await updateUser(id, fields);
     return jsonOk({ user });

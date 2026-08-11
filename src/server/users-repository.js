@@ -11,6 +11,12 @@ function mapRow(row) {
     displayName: row.display_name || row.username,
     role: row.role,
     defaultViewId: row.default_view_id || null,
+    // Only meaningful for role "staff" -- an admin already has every
+    // capability these gate, and "user" is template-locked regardless of
+    // what got stored here (see requireDataWriter/requireDataUpdater in
+    // server/auth.js, which check role first).
+    canWriteData: Boolean(row.can_write_data),
+    canUpdateData: Boolean(row.can_update_data),
     createdAt: row.created_at,
   };
 }
@@ -52,6 +58,18 @@ async function ensureSchema() {
         ALTER TABLE gamedb_user_preferences
         ADD COLUMN IF NOT EXISTS role_override VARCHAR(16)
       `);
+      // Per-account grants for a Staff account to reach the same "editable"
+      // table capability an Admin has (inline cell edit / add-remove rows),
+      // without becoming an Admin (no SQL editor, no user management). See
+      // requireDataWriter/requireDataUpdater in server/auth.js.
+      await client.query(`
+        ALTER TABLE gamedb_user_preferences
+        ADD COLUMN IF NOT EXISTS can_write_data BOOLEAN NOT NULL DEFAULT FALSE
+      `);
+      await client.query(`
+        ALTER TABLE gamedb_user_preferences
+        ADD COLUMN IF NOT EXISTS can_update_data BOOLEAN NOT NULL DEFAULT FALSE
+      `);
 
       // First-run seed: create the initial admin from env so no password
       // ever lives in the codebase. Only runs when the table is empty.
@@ -84,7 +102,7 @@ export async function findUserByUsername(username) {
   const result = await getPool().query(
     `SELECT u.id, u.username, u.display_name, u.password_hash,
             COALESCE(p.role_override, u.role) AS role,
-            p.default_view_id, u.created_at
+            p.default_view_id, p.can_write_data, p.can_update_data, u.created_at
      FROM gamedb_users u
      LEFT JOIN gamedb_user_preferences p ON p.user_id = u.id
      WHERE LOWER(u.username) = LOWER($1)`,
@@ -102,7 +120,7 @@ export async function findUserById(id) {
   const result = await getPool().query(
     `SELECT u.id, u.username, u.display_name,
             COALESCE(p.role_override, u.role) AS role,
-            p.default_view_id, u.created_at
+            p.default_view_id, p.can_write_data, p.can_update_data, u.created_at
      FROM gamedb_users u
      LEFT JOIN gamedb_user_preferences p ON p.user_id = u.id
      WHERE u.id = $1`,
@@ -116,7 +134,7 @@ export async function listUsers() {
   const result = await getPool().query(
     `SELECT u.id, u.username, u.display_name,
             COALESCE(p.role_override, u.role) AS role,
-            p.default_view_id, u.created_at
+            p.default_view_id, p.can_write_data, p.can_update_data, u.created_at
      FROM gamedb_users u
      LEFT JOIN gamedb_user_preferences p ON p.user_id = u.id
      ORDER BY u.id ASC`
@@ -138,6 +156,8 @@ export async function insertUser({
   password,
   role,
   defaultViewId = null,
+  canWriteData = false,
+  canUpdateData = false,
 }) {
   await ensureSchema();
   const client = await getPool().connect();
@@ -156,16 +176,23 @@ export async function insertUser({
       ]
     );
     userId = result.rows[0].id;
-    if (defaultViewId || role === "user") {
+    // Only "staff" ever reads these -- requireDataWriter/requireDataUpdater
+    // check role first, so storing true for another role is inert, but there
+    // is no reason to store it either.
+    const writeGrant = role === "staff" && Boolean(canWriteData);
+    const updateGrant = role === "staff" && Boolean(canUpdateData);
+    if (defaultViewId || role === "user" || writeGrant || updateGrant) {
       await client.query(
         `INSERT INTO gamedb_user_preferences
-           (user_id, default_view_id, role_override)
-         VALUES ($1, $2, $3)
+           (user_id, default_view_id, role_override, can_write_data, can_update_data)
+         VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (user_id) DO UPDATE
          SET default_view_id = EXCLUDED.default_view_id,
              role_override = EXCLUDED.role_override,
+             can_write_data = EXCLUDED.can_write_data,
+             can_update_data = EXCLUDED.can_update_data,
              updated_at = NOW()`,
-        [userId, defaultViewId, role === "user" ? "user" : null]
+        [userId, defaultViewId, role === "user" ? "user" : null, writeGrant, updateGrant]
       );
     }
     await client.query("COMMIT");
@@ -197,7 +224,13 @@ export async function updateUser(id, fields) {
     values.push(hashPassword(fields.password));
   }
 
-  if (!sets.length && fields.defaultViewId === undefined) {
+  const touchesPreferences =
+    fields.defaultViewId !== undefined ||
+    fields.role !== undefined ||
+    fields.canWriteData !== undefined ||
+    fields.canUpdateData !== undefined;
+
+  if (!sets.length && !touchesPreferences) {
     return findUserById(id);
   }
 
@@ -212,9 +245,9 @@ export async function updateUser(id, fields) {
         values
       );
     }
-    if (fields.defaultViewId !== undefined || fields.role !== undefined) {
+    if (touchesPreferences) {
       const currentPreference = await client.query(
-        `SELECT default_view_id, role_override
+        `SELECT default_view_id, role_override, can_write_data, can_update_data
          FROM gamedb_user_preferences WHERE user_id = $1`,
         [id]
       );
@@ -229,17 +262,30 @@ export async function updateUser(id, fields) {
             ? "user"
             : null
           : current.role_override || null;
+      // Inert unless the effective role ends up "staff" (see
+      // requireDataWriter/requireDataUpdater), so no need to look up the
+      // resulting role here just to gate storage.
+      const nextWriteGrant =
+        fields.canWriteData !== undefined
+          ? Boolean(fields.canWriteData)
+          : Boolean(current.can_write_data);
+      const nextUpdateGrant =
+        fields.canUpdateData !== undefined
+          ? Boolean(fields.canUpdateData)
+          : Boolean(current.can_update_data);
 
-      if (nextDefaultViewId || nextRoleOverride) {
+      if (nextDefaultViewId || nextRoleOverride || nextWriteGrant || nextUpdateGrant) {
         await client.query(
           `INSERT INTO gamedb_user_preferences
-             (user_id, default_view_id, role_override)
-           VALUES ($1, $2, $3)
+             (user_id, default_view_id, role_override, can_write_data, can_update_data)
+           VALUES ($1, $2, $3, $4, $5)
            ON CONFLICT (user_id) DO UPDATE
            SET default_view_id = EXCLUDED.default_view_id,
                role_override = EXCLUDED.role_override,
+               can_write_data = EXCLUDED.can_write_data,
+               can_update_data = EXCLUDED.can_update_data,
                updated_at = NOW()`,
-          [id, nextDefaultViewId, nextRoleOverride]
+          [id, nextDefaultViewId, nextRoleOverride, nextWriteGrant, nextUpdateGrant]
         );
       } else {
         await client.query(

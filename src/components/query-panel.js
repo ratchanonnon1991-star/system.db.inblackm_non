@@ -407,6 +407,8 @@ export default function QueryPanel({
   onDataChange,
   canManage,
   canCustomizeLayout,
+  canWriteData,
+  canUpdateData,
   isFullWidth,
   isSelected,
   workspaceToolbar,
@@ -1276,8 +1278,16 @@ export default function QueryPanel({
   useEffect(() => {
     pkNameRef.current = sharedEditable?.pk || "";
   }, [sharedEditable]);
+  // "Update" (PATCH /cell) and "write" (POST/DELETE /row) are grantable to a
+  // Staff account independently of each other (see canWriteData/canUpdateData
+  // in gamedb-workspace.js), so a delete-row button can't just reuse the same
+  // flag the cell-edit UI does — that would show a button the server then
+  // rejects for someone with update but not write.
   const canEditCells = Boolean(
-    canManage && sharedEditable && baseNameToIndex.has(sharedEditable.pk)
+    canUpdateData && sharedEditable && baseNameToIndex.has(sharedEditable.pk)
+  );
+  const canDeleteRows = Boolean(
+    canWriteData && sharedEditable && baseNameToIndex.has(sharedEditable.pk)
   );
   // Configured, but only in the editor or only for this user.
   const editableNotShared = Boolean(canManage && layout.editable && !sharedEditable);
@@ -2549,7 +2559,7 @@ export default function QueryPanel({
                   onEditCell={editCell}
                   changedKeys={changedCellKeys}
                   onDeleteRow={
-                    canEditCells && sharedEditable.allowDelete && !viewingSnapshot
+                    canDeleteRows && sharedEditable.allowDelete && !viewingSnapshot
                       ? deleteRow
                       : null
                   }

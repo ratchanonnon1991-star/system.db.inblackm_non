@@ -1,5 +1,5 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireSuperAdmin } from "@/server/auth";
+import { requireDataWriter } from "@/server/auth";
 import { findConnectionWithSecret } from "@/server/connections-repository";
 import { findQueryById } from "@/server/gamedb-repository";
 import { deleteRow, insertRow } from "@/server/gamedb-row-writer";
@@ -7,9 +7,10 @@ import { recordEdit } from "@/server/gamedb-edit-log";
 import { invalidateQuery } from "@/server/gamedb-result-cache";
 import { normalizeLayout } from "@/lib/gamedb-layout";
 
-// Adding and removing rows is an admin-only capability, like editing a cell.
+// Adding and removing rows is an Admin capability by default; a Staff
+// account can be granted it individually (see requireDataWriter).
 async function loadTarget(request, params) {
-  const admin = await requireSuperAdmin(request);
+  const admin = await requireDataWriter(request);
   const { id } = await params;
   const query = await findQueryById(id);
   if (!query) return { error: jsonError("ไม่พบ Query นี้", 404) };
