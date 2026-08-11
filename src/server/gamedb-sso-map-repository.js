@@ -1,4 +1,6 @@
+import crypto from "crypto";
 import { getPool } from "@/lib/db";
+import { findUserByUsername, insertUser } from "@/server/users-repository";
 
 // Maps a hiring admin's (OTP-verified) email to a gamedb username, so
 // /api/sso/from-hiring knows which gamedb account to sign in as. Deliberately
@@ -78,4 +80,50 @@ export async function upsertSsoMapping({ hiringEmail, gamedbUsername }) {
 export async function deleteSsoMapping(id) {
   await ensureSchema();
   await getPool().query(`DELETE FROM gamedb_sso_map WHERE id = $1`, [id]);
+}
+
+// Same 3-63 char alphabet the visual query builder already enforces on user
+// accounts (see /api/users): letters, digits, dot, underscore, hyphen.
+const USERNAME_PATTERN = /^[a-zA-Z0-9_.-]{3,32}$/;
+
+function usernameBaseFromEmail(email) {
+  const local = String(email).split("@")[0] || "";
+  const cleaned = local.toLowerCase().replace(/[^a-z0-9_.-]/g, "");
+  return (cleaned.length >= 3 ? cleaned : `${cleaned}usr`).slice(0, 28);
+}
+
+async function uniqueUsernameFromEmail(email) {
+  const base = usernameBaseFromEmail(email);
+  let candidate = base;
+  let suffix = 1;
+  // Bounded, not "while true": a username generator that can loop forever on
+  // bad input is worse than one that gives up and reports why.
+  while (suffix < 1000) {
+    if (USERNAME_PATTERN.test(candidate) && !(await findUserByUsername(candidate))) {
+      return candidate;
+    }
+    suffix += 1;
+    candidate = `${base}${suffix}`.slice(0, 32);
+  }
+  throw new Error(`สร้างชื่อผู้ใช้จากอีเมล "${email}" ไม่สำเร็จ`);
+}
+
+/**
+ * hiring already verified this person owns the email (its own login is
+ * OTP-to-a-real-inbox) -- that is enough to hand them a gamedb account of
+ * their own without an Admin pre-linking every hire by hand, but not enough
+ * to hand them anything more than the least-privileged role. An Admin can
+ * upgrade the account afterward from "จัดการสิทธิ์ผู้ใช้" the same as any
+ * account created by hand.
+ */
+export async function provisionSsoUser(email) {
+  const username = await uniqueUsernameFromEmail(email);
+  const user = await insertUser({
+    username,
+    displayName: email,
+    password: crypto.randomBytes(24).toString("base64url"),
+    role: "user",
+  });
+  await upsertSsoMapping({ hiringEmail: email, gamedbUsername: user.username });
+  return user;
 }

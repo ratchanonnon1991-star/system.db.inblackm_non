@@ -1,7 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Database, Gamepad2, Link2, Loader2, Lock, LogOut, User, Users } from "lucide-react";
+import {
+  AlertTriangle,
+  Database,
+  Gamepad2,
+  Link2,
+  Loader2,
+  Lock,
+  LogOut,
+  User,
+  Users,
+  X,
+} from "lucide-react";
 import NextLink from "next/link";
 import { apiJson } from "@/lib/api-json";
 import TurnstileWidget from "@/components/turnstile-widget";
@@ -21,8 +32,7 @@ const SSO_ERROR_MESSAGES = {
   missing_code: 'ลิงก์เข้าสู่ระบบไม่สมบูรณ์ กรุณาลองใหม่จากปุ่ม "เข้าสู่ระบบด้วยบัญชี hiring"',
   code_rejected: "รหัสเข้าสู่ระบบหมดอายุหรือถูกใช้ไปแล้ว กรุณาลองใหม่",
   exchange_failed: "ติดต่อระบบ hiring ไม่สำเร็จ กรุณาลองใหม่ภายหลัง",
-  not_linked:
-    "บัญชี hiring นี้ยังไม่ได้ผูกกับบัญชี gamedb — ติดต่อ Admin ให้เพิ่มการเชื่อมบัญชีให้",
+  provision_failed: "สร้างบัญชี gamedb ให้อัตโนมัติไม่สำเร็จ กรุณาลองใหม่ หรือแจ้ง Admin",
 };
 
 export default function GamedbPage() {
@@ -279,12 +289,6 @@ function LoginScreen({ onLoggedIn }) {
           </p>
         </div>
 
-        {ssoError && (
-          <div className="mb-3 rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
-            {ssoError}
-          </div>
-        )}
-
         <label className="mb-1 block text-[10px] font-black text-zinc-500">Username</label>
         <input
           type="text"
@@ -360,6 +364,25 @@ function LoginScreen({ onLoggedIn }) {
           </>
         )}
       </form>
+
+      {ssoError && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-sm bg-white p-5 text-center shadow-xl">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-sm border border-red-200 bg-red-50 text-red-600">
+              <AlertTriangle size={22} />
+            </div>
+            <h2 className="mb-1 text-sm font-black text-zinc-800">เข้าสู่ระบบด้วยบัญชี hiring ไม่สำเร็จ</h2>
+            <p className="mb-4 text-[11px] font-semibold leading-relaxed text-zinc-500">{ssoError}</p>
+            <button
+              type="button"
+              onClick={() => setSsoError("")}
+              className="flex h-9 w-full items-center justify-center gap-1.5 rounded-sm bg-red-600 text-xs font-black text-white transition hover:bg-red-700"
+            >
+              <X size={13} /> ปิด
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

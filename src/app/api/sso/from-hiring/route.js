@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSessionCookieOptions, SESSION_COOKIE, signSessionToken } from "@/lib/session";
 import { getHiringBaseUrl, getSsoSecret } from "@/lib/hiring-sso";
-import { findGamedbUsernameByHiringEmail } from "@/server/gamedb-sso-map-repository";
+import {
+  findGamedbUsernameByHiringEmail,
+  provisionSsoUser,
+} from "@/server/gamedb-sso-map-repository";
 import { findUserByUsername } from "@/server/users-repository";
 
 export const dynamic = "force-dynamic";
@@ -11,9 +14,11 @@ export const revalidate = 0;
  * Landed on by a plain browser redirect from hiring's /api/sso/gamedb, never
  * a fetch -- there is no cookie of hiring's for gamedb to read anyway, only
  * the one-time code hiring put in the URL. The code is exchanged for an
- * email server-to-server (see getHiringBaseUrl/getSsoSecret), then that
- * email has to already be linked to a gamedb username via /api/sso-map --
- * hiring vouches for the person, not for what they are allowed to do here.
+ * email server-to-server (see getHiringBaseUrl/getSsoSecret). A first-time
+ * email gets a "user"-role gamedb account provisioned on the spot -- hiring
+ * already verified the person owns it, so there is nothing an Admin needs to
+ * approve to let them in, only something an Admin may want to upgrade
+ * afterward if this person should have more than the least-privileged role.
  */
 export async function GET(request) {
   const url = new URL(request.url);
@@ -52,10 +57,15 @@ export async function GET(request) {
   if (!email) return failure("code_rejected");
 
   const username = await findGamedbUsernameByHiringEmail(email);
-  if (!username) return failure("not_linked");
-
-  const user = await findUserByUsername(username);
-  if (!user) return failure("not_linked");
+  let user = username ? await findUserByUsername(username) : null;
+  if (!user) {
+    try {
+      user = await provisionSsoUser(email);
+    } catch (err) {
+      console.error("failed to provision a gamedb account for hiring SSO", err);
+      return failure("provision_failed");
+    }
+  }
 
   const token = signSessionToken({
     sub: user.id,
