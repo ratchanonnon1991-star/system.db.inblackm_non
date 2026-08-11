@@ -557,7 +557,17 @@ function folderColor(folder) {
 const THEME_KEY = "gamedb.theme";
 const PINNED_KEY = "gamedb.pinned";
 const SHEET_MODE_KEY = "gamedb.sheet-mode";
+const SHEET_HEIGHT_KEY = "gamedb.sheet-height";
 const SELECTED_PANEL_KEY = "gamedb.selected-panel";
+const MIN_SHEET_HEIGHT = 288;
+const MAX_SHEET_HEIGHT = 2000;
+
+function clampSheetHeight(value) {
+  if (value === null || value === undefined || String(value).trim() === "") return null;
+  const height = Number(value);
+  if (!Number.isFinite(height)) return null;
+  return Math.round(Math.min(MAX_SHEET_HEIGHT, Math.max(MIN_SHEET_HEIGHT, height)));
+}
 
 function CanvasToolbar({
   layoutLocked,
@@ -710,8 +720,14 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
   // Sheet view: one table at a time with a tab per open table along the bottom,
   // for people who would rather flip between them than arrange them on a canvas.
   const [sheetMode, setSheetMode] = useState(false);
+  // Null means automatic: flex fills exactly the viewport space left below the
+  // page controls. Once dragged, the browser-specific height is remembered.
+  const [sheetHeight, setSheetHeight] = useState(null);
+  const sheetHeightRef = useRef(null);
+  const sheetFrameRef = useRef(null);
+  const [sheetResize, setSheetResize] = useState(null);
 
-  // Theme, pins and the sheet mode are per-browser preferences; read them once on mount.
+  // Theme, pins and sheet-view preferences are per-browser; read them once on mount.
   useEffect(() => {
     try {
       const storedTheme = window.localStorage.getItem(THEME_KEY);
@@ -722,6 +738,13 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
       setDark(prefersDark);
       setPinned(JSON.parse(window.localStorage.getItem(PINNED_KEY) || "[]"));
       setSheetMode(window.localStorage.getItem(SHEET_MODE_KEY) === "on");
+      const storedSheetHeight = clampSheetHeight(
+        window.localStorage.getItem(SHEET_HEIGHT_KEY)
+      );
+      if (storedSheetHeight !== null) {
+        sheetHeightRef.current = storedSheetHeight;
+        setSheetHeight(storedSheetHeight);
+      }
     } catch {
       setDark(false);
     }
@@ -1410,6 +1433,73 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
     setListOpen(true);
     searchRef.current?.focus();
   }, []);
+
+  const setManualSheetHeight = useCallback((value) => {
+    const next = clampSheetHeight(value);
+    if (next === null) return;
+    sheetHeightRef.current = next;
+    setSheetHeight(next);
+  }, []);
+
+  const rememberSheetHeight = useCallback(() => {
+    try {
+      if (sheetHeightRef.current === null) {
+        window.localStorage.removeItem(SHEET_HEIGHT_KEY);
+      } else {
+        window.localStorage.setItem(
+          SHEET_HEIGHT_KEY,
+          String(sheetHeightRef.current)
+        );
+      }
+    } catch {
+      // preference is cosmetic; ignore blocked storage
+    }
+  }, []);
+
+  const resetSheetHeight = useCallback(() => {
+    sheetHeightRef.current = null;
+    setSheetHeight(null);
+    try {
+      window.localStorage.removeItem(SHEET_HEIGHT_KEY);
+    } catch {
+      // preference is cosmetic; ignore blocked storage
+    }
+  }, []);
+
+  const startSheetResize = (event) => {
+    const frame = sheetFrameRef.current;
+    if (!frame) return;
+    event.preventDefault();
+    setSheetResize({
+      startY: event.clientY,
+      startHeight: frame.getBoundingClientRect().height,
+    });
+  };
+
+  useEffect(() => {
+    if (!sheetResize) return undefined;
+    const move = (event) => {
+      setManualSheetHeight(
+        sheetResize.startHeight + event.clientY - sheetResize.startY
+      );
+    };
+    const stop = () => {
+      rememberSheetHeight();
+      setSheetResize(null);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+  }, [rememberSheetHeight, setManualSheetHeight, sheetResize]);
 
   useEffect(() => {
     if (!listOpen) return undefined;
@@ -2285,12 +2375,57 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
         )}
 
         {sheetMode ? (
-          <div className="flex min-h-72 min-w-0 flex-1 flex-col overflow-hidden rounded-sm border border-zinc-200 bg-zinc-50">
+          <div
+            ref={sheetFrameRef}
+            className={`flex min-h-72 min-w-0 flex-col overflow-hidden rounded-sm border border-zinc-200 bg-zinc-50 ${
+              sheetHeight === null ? "flex-1" : "shrink-0"
+            }`}
+            style={sheetHeight === null ? undefined : { height: sheetHeight }}
+          >
             <div className="min-h-0 flex-1 overflow-hidden px-1 pt-1">
               {activeSheetPanel ? renderPanel(activeSheetPanel, true) : emptyWorkspace}
             </div>
             {openPanels.length > 0 && (
-              <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-t border-zinc-200 bg-white px-1 py-1">
+              <>
+                <div
+                  role="separator"
+                  aria-label="ปรับความสูงพื้นที่ตาราง"
+                  aria-orientation="horizontal"
+                  aria-valuemin={MIN_SHEET_HEIGHT}
+                  aria-valuemax={MAX_SHEET_HEIGHT}
+                  aria-valuenow={sheetHeight ?? undefined}
+                  tabIndex={0}
+                  onPointerDown={startSheetResize}
+                  onDoubleClick={resetSheetHeight}
+                  onKeyDown={(event) => {
+                    if (event.key === "Home") {
+                      event.preventDefault();
+                      resetSheetHeight();
+                      return;
+                    }
+                    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+                    event.preventDefault();
+                    const current =
+                      sheetHeight ?? sheetFrameRef.current?.getBoundingClientRect().height;
+                    setManualSheetHeight(
+                      Number(current || MIN_SHEET_HEIGHT) +
+                        (event.key === "ArrowDown" ? 32 : -32)
+                    );
+                    requestAnimationFrame(rememberSheetHeight);
+                  }}
+                  className={`group relative flex h-2 shrink-0 touch-none cursor-row-resize items-center justify-center border-t border-zinc-200 bg-zinc-50 outline-none transition hover:bg-red-50 focus:bg-red-50 ${
+                    sheetResize ? "bg-red-50" : ""
+                  }`}
+                  title="ลากขึ้น/ลงเพื่อปรับความสูง · ดับเบิลคลิกหรือกด Home เพื่อกลับเต็มพื้นที่หน้าจอ"
+                >
+                  <span className="h-0.5 w-12 rounded-full bg-zinc-300 transition group-hover:bg-red-500 group-focus:bg-red-500" />
+                  {sheetResize && (
+                    <span className="pointer-events-none absolute bottom-full mb-1 rounded-sm bg-zinc-900 px-2 py-1 font-mono text-[9px] font-bold text-white shadow-lg">
+                      {Math.round(sheetHeight || sheetResize.startHeight)} px
+                    </span>
+                  )}
+                </div>
+                <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-t border-zinc-200 bg-white px-1 py-1">
                 {openPanels.map((panel, index) => {
                   const query = queryById.get(panel.queryId);
                   const isActive = activeSheetPanel?.queryId === panel.queryId;
@@ -2361,8 +2496,9 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
                   title="เปิดตารางเพิ่ม"
                 >
                   <Plus size={13} />
-                </button>
-              </div>
+                  </button>
+                </div>
+              </>
             )}
             {tabMenu && (
               // Closing happens on pointerdown, which removes this before a
