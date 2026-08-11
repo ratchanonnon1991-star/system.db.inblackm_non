@@ -14,6 +14,9 @@ function mapRow(row) {
     config: row.config || { panels: [] },
     isPublic: row.is_public,
     isDefault: row.is_default,
+    // Locks layout AND data edits for whoever has this template open,
+    // Admin included -- see layoutLocked in gamedb-workspace.js.
+    isReadOnly: Boolean(row.is_read_only),
     sharedWith: Array.isArray(row.shared_with) ? row.shared_with : [],
     createdBy: row.created_by || "",
     createdAt: row.created_at,
@@ -25,20 +28,28 @@ async function ensureSchema() {
   if (schemaReady) return schemaReady;
   // Created by the service's own role, so this table and its sequence are
   // owned by it — no GRANT needed the way there is for the older tables.
-  schemaReady = getPool().query(`
-    CREATE TABLE IF NOT EXISTS gamedb_views (
-      id          SERIAL PRIMARY KEY,
-      name        VARCHAR(255) NOT NULL,
-      description TEXT,
-      config      JSONB NOT NULL DEFAULT '{}'::jsonb,
-      is_public   BOOLEAN NOT NULL DEFAULT FALSE,
-      is_default  BOOLEAN NOT NULL DEFAULT FALSE,
-      shared_with JSONB NOT NULL DEFAULT '[]'::jsonb,
-      created_by  VARCHAR(255),
-      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
+  schemaReady = (async () => {
+    await getPool().query(`
+      CREATE TABLE IF NOT EXISTS gamedb_views (
+        id          SERIAL PRIMARY KEY,
+        name        VARCHAR(255) NOT NULL,
+        description TEXT,
+        config      JSONB NOT NULL DEFAULT '{}'::jsonb,
+        is_public   BOOLEAN NOT NULL DEFAULT FALSE,
+        is_default  BOOLEAN NOT NULL DEFAULT FALSE,
+        shared_with JSONB NOT NULL DEFAULT '[]'::jsonb,
+        created_by  VARCHAR(255),
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    // gamedb_views is created (and owned) by this service's own role, unlike
+    // gamedb_users, so a plain ALTER is fine here.
+    await getPool().query(`
+      ALTER TABLE gamedb_views
+      ADD COLUMN IF NOT EXISTS is_read_only BOOLEAN NOT NULL DEFAULT FALSE
+    `);
+  })();
   schemaReady.catch(() => {
     schemaReady = null;
   });
@@ -137,8 +148,9 @@ export function canUseView(view, user) {
 export async function insertView(fields) {
   await ensureSchema();
   const result = await getPool().query(
-    `INSERT INTO gamedb_views (name, description, config, is_public, is_default, shared_with, created_by)
-     VALUES ($1, $2, $3::jsonb, $4, $5, $6::jsonb, $7)
+    `INSERT INTO gamedb_views
+       (name, description, config, is_public, is_default, is_read_only, shared_with, created_by)
+     VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7::jsonb, $8)
      RETURNING id`,
     [
       fields.name,
@@ -146,6 +158,7 @@ export async function insertView(fields) {
       JSON.stringify(sanitizeViewConfig(fields.config)),
       Boolean(fields.isPublic),
       Boolean(fields.isDefault),
+      Boolean(fields.isReadOnly),
       JSON.stringify(sanitizeSharedWith(fields.sharedWith)),
       fields.createdBy || "",
     ]
@@ -178,6 +191,10 @@ export async function updateView(id, fields) {
   if (fields.isDefault !== undefined) {
     sets.push(`is_default = $${i++}`);
     values.push(Boolean(fields.isDefault));
+  }
+  if (fields.isReadOnly !== undefined) {
+    sets.push(`is_read_only = $${i++}`);
+    values.push(Boolean(fields.isReadOnly));
   }
   if (fields.sharedWith !== undefined) {
     sets.push(`shared_with = $${i++}::jsonb`);

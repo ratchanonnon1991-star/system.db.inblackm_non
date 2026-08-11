@@ -26,6 +26,7 @@ const EMPTY_FORM = {
   description: "",
   isPublic: true,
   isDefault: false,
+  isReadOnly: false,
   sharedWith: [],
 };
 
@@ -92,6 +93,7 @@ export default function ViewsModal({
       description: view.description,
       isPublic: view.isPublic,
       isDefault: view.isDefault,
+      isReadOnly: Boolean(view.isReadOnly),
       sharedWith: view.sharedWith,
     });
     setError("");
@@ -199,6 +201,11 @@ export default function ViewsModal({
                         หน้าเริ่มต้น
                       </span>
                     )}
+                    {view.isReadOnly && (
+                      <span className="ml-1.5 rounded bg-zinc-200 px-1.5 py-0.5 text-[9px] font-black text-zinc-600">
+                        ดูอย่างเดียว
+                      </span>
+                    )}
                   </p>
                   <p className="truncate text-[10px] font-semibold text-zinc-400">
                     {view.config?.panels?.length || 0} ตาราง ·{" "}
@@ -298,6 +305,14 @@ export default function ViewsModal({
                   onChange={(e) => setField("isDefault", e.target.checked)}
                 />
                 ใช้เป็นหน้าเริ่มต้น (เปิดให้อัตโนมัติเมื่อยังไม่มีหน้าจอของตัวเอง)
+              </label>
+              <label className="flex items-center gap-2 text-[11px] font-bold text-zinc-600">
+                <input
+                  type="checkbox"
+                  checked={form.isReadOnly}
+                  onChange={(e) => setField("isReadOnly", e.target.checked)}
+                />
+                ดูอย่างเดียว (ล็อกไม่ให้แก้ layout หรือแก้ข้อมูล ไม่ว่าใครเปิด รวมถึง Admin)
               </label>
 
               {!form.isPublic && (

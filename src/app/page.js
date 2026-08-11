@@ -216,6 +216,11 @@ function SystemHub({ me, onLoggedOut }) {
                           หน้าเริ่มต้น
                         </span>
                       )}
+                      {view.isReadOnly && (
+                        <span className="rounded bg-zinc-200 px-1.5 py-0.5 text-[9px] font-black text-zinc-600">
+                          ดูอย่างเดียว
+                        </span>
+                      )}
                     </span>
                     <span className="block truncate text-[10px] text-zinc-400">
                       {view.description || `${view.config?.panels?.length || 0} ตาราง`}

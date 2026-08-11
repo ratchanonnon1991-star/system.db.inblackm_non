@@ -558,7 +558,6 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
   const panDragRef = useRef(null);
   const [snapGuides, setSnapGuides] = useState({ x: null, y: null });
   const [previewAsUser, setPreviewAsUser] = useState(false);
-  const layoutLocked = isTemplateUser || previewAsUser;
 
   useEffect(() => {
     panelsStateRef.current = panels;
@@ -635,6 +634,15 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
   const [views, setViews] = useState([]);
   const [viewsModal, setViewsModal] = useState(false);
   const [activeView, setActiveView] = useState(null);
+  // isTemplateUser/previewAsUser is about who this account IS -- it also
+  // hides ever switching away from the assigned template (see the header's
+  // view picker below). A template marked "ดูอย่างเดียว" is about what THIS
+  // template allows -- everyone it's open for is locked out of editing it
+  // while it's open, admin included, but can still switch away from it. Kept
+  // as two flags so the read-only lock never accidentally traps someone on
+  // the template they can't leave.
+  const layoutLocked = isTemplateUser || previewAsUser;
+  const editLocked = layoutLocked || Boolean(activeView?.isReadOnly);
   const [panelLayouts, setPanelLayouts] = useState({});
   const [layoutRevision, setLayoutRevision] = useState(0);
   const [templateSaveState, setTemplateSaveState] = useState("idle");
@@ -1235,7 +1243,7 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
         event.target?.isContentEditable;
       if (
         !isTyping &&
-        !layoutLocked &&
+        !editLocked &&
         (event.metaKey || event.ctrlKey) &&
         event.key.toLowerCase() === "z"
       ) {
@@ -1508,7 +1516,7 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
 
   const autoArrangePanels = useCallback(
     (mode) => {
-      if (layoutLocked || panelsStateRef.current.length === 0) return;
+      if (editLocked || panelsStateRef.current.length === 0) return;
       const canvasWidth = Math.max(
         MIN_PANEL_WIDTH,
         (containerWidth || DEFAULT_PANEL_WIDTH) - PANEL_GAP * 2
@@ -1543,7 +1551,7 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
         });
       });
     },
-    [containerWidth, layoutLocked, replacePanels]
+    [containerWidth, editLocked, replacePanels]
   );
 
   useEffect(
@@ -1605,7 +1613,7 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
 
   const canvasToolbar = (
     <CanvasToolbar
-      layoutLocked={layoutLocked}
+      layoutLocked={editLocked}
       historyAvailability={historyAvailability}
       onUndo={undoPanels}
       onRedo={redoPanels}
@@ -1620,7 +1628,7 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
   );
   const workspaceViewControls = (
     <WorkspaceViewControls
-      layoutLocked={layoutLocked}
+      layoutLocked={editLocked}
       historyRevision={historyRevision}
       onArrange={autoArrangePanels}
       sheetMode={sheetMode}
@@ -1677,10 +1685,16 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
         onSharedLayoutSaved={rememberSharedLayout}
         onLayoutChange={captureLayout}
         onDataChange={captureData}
-        canManage={isSuperAdmin && !previewAsUser}
-        canCustomizeLayout={!layoutLocked}
-        canWriteData={(isSuperAdmin && !previewAsUser) || (me.role === "staff" && Boolean(me.canWriteData))}
-        canUpdateData={(isSuperAdmin && !previewAsUser) || (me.role === "staff" && Boolean(me.canUpdateData))}
+        canManage={isSuperAdmin && !previewAsUser && !activeView?.isReadOnly}
+        canCustomizeLayout={!editLocked}
+        canWriteData={
+          !activeView?.isReadOnly &&
+          ((isSuperAdmin && !previewAsUser) || (me.role === "staff" && Boolean(me.canWriteData)))
+        }
+        canUpdateData={
+          !activeView?.isReadOnly &&
+          ((isSuperAdmin && !previewAsUser) || (me.role === "staff" && Boolean(me.canUpdateData)))
+        }
         isFullWidth={isFullWidth}
         isSelected={selectedPanelId === panel.queryId}
         workspaceToolbar={toolbarPanelId === panel.queryId ? canvasToolbar : null}
@@ -1880,7 +1894,7 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
               </button>
             </>
           )}
-          {!layoutLocked && (
+          {!editLocked && (
             <div ref={listBoxRef} className="relative w-64 min-w-48">
               <Search
                 size={13}
@@ -1936,7 +1950,7 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
       )}
 
       <div className="flex min-h-0 flex-1 flex-col gap-1">
-        {!layoutLocked && queryListHost && listOpen && createPortal(
+        {!editLocked && queryListHost && listOpen && createPortal(
           <div className="absolute right-0 top-full z-50 mt-1 flex max-h-[70vh] w-96 max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-sm border border-zinc-200 bg-white shadow-xl">
           <div className="flex shrink-0 items-center justify-between gap-1 border-b border-zinc-100 px-2 py-1.5">
             <span className="text-[10px] font-black text-zinc-400">
