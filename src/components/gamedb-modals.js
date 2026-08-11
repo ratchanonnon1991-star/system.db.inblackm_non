@@ -458,6 +458,7 @@ const EMPTY_USER_FORM = {
   password: "",
   role: "staff",
   defaultViewId: "",
+  projectmRole: false,
 };
 
 function roleLabel(role) {
@@ -516,6 +517,7 @@ export function UsersModal({ me, onClose }) {
       password: "",
       role: user.role,
       defaultViewId: user.defaultViewId ? String(user.defaultViewId) : "",
+      projectmRole: user.projectmRole === "admin",
     });
     setError("");
   };
@@ -533,6 +535,7 @@ export function UsersModal({ me, onClose }) {
             role: form.role,
             defaultViewId: form.role === "user" ? form.defaultViewId || null : null,
             password: form.password || undefined,
+            projectmRole: form.projectmRole,
           }),
           fallbackError: "บันทึกผู้ใช้ไม่สำเร็จ",
         });
@@ -619,6 +622,7 @@ export function UsersModal({ me, onClose }) {
                     </p>
                     <p className="truncate text-[10px] font-semibold text-zinc-400">
                       {user.displayName} · {roleLabel(user.role)}
+                      {user.projectmRole === "admin" ? " · Projectm Admin" : ""}
                     </p>
                   </button>
                   {user.id !== me.id && (
@@ -711,6 +715,16 @@ export function UsersModal({ me, onClose }) {
                 </p>
               </div>
             )}
+
+            <label className="flex items-center gap-2 rounded-sm border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[11px] font-bold text-zinc-600">
+              <input
+                type="checkbox"
+                checked={form.projectmRole}
+                onChange={(e) => setField("projectmRole", e.target.checked)}
+                className="h-3.5 w-3.5 accent-red-600"
+              />
+              สิทธิ์ Admin ระบบ Projectm (เห็นทั้ง Admin + Topup ใน /projectm — ไม่มีติ๊กจะเห็นแค่ Topup)
+            </label>
 
             {error && (
               <div className="rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">

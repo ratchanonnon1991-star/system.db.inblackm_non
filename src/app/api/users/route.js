@@ -61,6 +61,7 @@ export async function POST(request) {
       password,
       role,
       defaultViewId: role === "user" ? defaultViewId : null,
+      projectmRole: body.projectmRole ? "admin" : null,
     });
     return jsonOk({ user }, 201);
   } catch (err) {

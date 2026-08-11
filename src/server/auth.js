@@ -36,3 +36,14 @@ export async function requireLayoutEditor(request) {
   }
   return user;
 }
+
+// projectmRole is independent of the GameDB role above — a "staff"/"user"
+// GameDB account can still hold projectm-admin, and vice versa. Gates every
+// /api/projectm/itune route the same way the itune/admin page itself does.
+export async function requireProjectmAdmin(request) {
+  const user = await requireAdmin(request);
+  if (user.projectmRole !== "admin") {
+    throw createHttpError("ต้องมีสิทธิ์ Admin ระบบ Projectm เท่านั้น", 403);
+  }
+  return user;
+}

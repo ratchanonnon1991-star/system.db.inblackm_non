@@ -11,6 +11,9 @@ function mapRow(row) {
     displayName: row.display_name || row.username,
     role: row.role,
     defaultViewId: row.default_view_id || null,
+    // Independent of the GameDB role above — decides whether this user sees
+    // both the Admin and Topup sides of /projectm/itune, or only Topup.
+    projectmRole: row.projectm_role || null,
     createdAt: row.created_at,
   };
 }
@@ -43,6 +46,8 @@ async function ensureSchema() {
           default_view_id INTEGER,
           role_override   VARCHAR(16)
                           CHECK (role_override IS NULL OR role_override = 'user'),
+          projectm_role   VARCHAR(16)
+                          CHECK (projectm_role IS NULL OR projectm_role = 'admin'),
           updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
@@ -51,6 +56,12 @@ async function ensureSchema() {
       await client.query(`
         ALTER TABLE gamedb_user_preferences
         ADD COLUMN IF NOT EXISTS role_override VARCHAR(16)
+      `);
+      // Separate from the GameDB role entirely — this decides Admin+Topup vs
+      // Topup-only visibility inside /projectm/itune. NULL = topup-only.
+      await client.query(`
+        ALTER TABLE gamedb_user_preferences
+        ADD COLUMN IF NOT EXISTS projectm_role VARCHAR(16)
       `);
 
       // First-run seed: create the initial admin from env so no password
@@ -84,7 +95,7 @@ export async function findUserByUsername(username) {
   const result = await getPool().query(
     `SELECT u.id, u.username, u.display_name, u.password_hash,
             COALESCE(p.role_override, u.role) AS role,
-            p.default_view_id, u.created_at
+            p.default_view_id, p.projectm_role, u.created_at
      FROM gamedb_users u
      LEFT JOIN gamedb_user_preferences p ON p.user_id = u.id
      WHERE LOWER(u.username) = LOWER($1)`,
@@ -102,7 +113,7 @@ export async function findUserById(id) {
   const result = await getPool().query(
     `SELECT u.id, u.username, u.display_name,
             COALESCE(p.role_override, u.role) AS role,
-            p.default_view_id, u.created_at
+            p.default_view_id, p.projectm_role, u.created_at
      FROM gamedb_users u
      LEFT JOIN gamedb_user_preferences p ON p.user_id = u.id
      WHERE u.id = $1`,
@@ -116,7 +127,7 @@ export async function listUsers() {
   const result = await getPool().query(
     `SELECT u.id, u.username, u.display_name,
             COALESCE(p.role_override, u.role) AS role,
-            p.default_view_id, u.created_at
+            p.default_view_id, p.projectm_role, u.created_at
      FROM gamedb_users u
      LEFT JOIN gamedb_user_preferences p ON p.user_id = u.id
      ORDER BY u.id ASC`
@@ -138,6 +149,7 @@ export async function insertUser({
   password,
   role,
   defaultViewId = null,
+  projectmRole = null,
 }) {
   await ensureSchema();
   const client = await getPool().connect();
@@ -156,16 +168,17 @@ export async function insertUser({
       ]
     );
     userId = result.rows[0].id;
-    if (defaultViewId || role === "user") {
+    if (defaultViewId || role === "user" || projectmRole) {
       await client.query(
         `INSERT INTO gamedb_user_preferences
-           (user_id, default_view_id, role_override)
-         VALUES ($1, $2, $3)
+           (user_id, default_view_id, role_override, projectm_role)
+         VALUES ($1, $2, $3, $4)
          ON CONFLICT (user_id) DO UPDATE
          SET default_view_id = EXCLUDED.default_view_id,
              role_override = EXCLUDED.role_override,
+             projectm_role = EXCLUDED.projectm_role,
              updated_at = NOW()`,
-        [userId, defaultViewId, role === "user" ? "user" : null]
+        [userId, defaultViewId, role === "user" ? "user" : null, projectmRole || null]
       );
     }
     await client.query("COMMIT");
@@ -197,7 +210,11 @@ export async function updateUser(id, fields) {
     values.push(hashPassword(fields.password));
   }
 
-  if (!sets.length && fields.defaultViewId === undefined) {
+  if (
+    !sets.length &&
+    fields.defaultViewId === undefined &&
+    fields.projectmRole === undefined
+  ) {
     return findUserById(id);
   }
 
@@ -212,9 +229,13 @@ export async function updateUser(id, fields) {
         values
       );
     }
-    if (fields.defaultViewId !== undefined || fields.role !== undefined) {
+    if (
+      fields.defaultViewId !== undefined ||
+      fields.role !== undefined ||
+      fields.projectmRole !== undefined
+    ) {
       const currentPreference = await client.query(
-        `SELECT default_view_id, role_override
+        `SELECT default_view_id, role_override, projectm_role
          FROM gamedb_user_preferences WHERE user_id = $1`,
         [id]
       );
@@ -229,17 +250,22 @@ export async function updateUser(id, fields) {
             ? "user"
             : null
           : current.role_override || null;
+      const nextProjectmRole =
+        fields.projectmRole !== undefined
+          ? fields.projectmRole || null
+          : current.projectm_role || null;
 
-      if (nextDefaultViewId || nextRoleOverride) {
+      if (nextDefaultViewId || nextRoleOverride || nextProjectmRole) {
         await client.query(
           `INSERT INTO gamedb_user_preferences
-             (user_id, default_view_id, role_override)
-           VALUES ($1, $2, $3)
+             (user_id, default_view_id, role_override, projectm_role)
+           VALUES ($1, $2, $3, $4)
            ON CONFLICT (user_id) DO UPDATE
            SET default_view_id = EXCLUDED.default_view_id,
                role_override = EXCLUDED.role_override,
+               projectm_role = EXCLUDED.projectm_role,
                updated_at = NOW()`,
-          [id, nextDefaultViewId, nextRoleOverride]
+          [id, nextDefaultViewId, nextRoleOverride, nextProjectmRole]
         );
       } else {
         await client.query(

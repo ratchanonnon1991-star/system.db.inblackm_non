@@ -14,6 +14,7 @@ import {
   Database,
   FileSpreadsheet,
   Eye,
+  Folders,
   Gamepad2,
   History,
   Layers,
@@ -41,6 +42,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
+import { Inter } from "next/font/google";
 import NextLink from "next/link";
 import { apiJson } from "@/lib/api-json";
 import { buildXlsxBlob } from "@/lib/gamedb-xlsx";
@@ -53,6 +55,21 @@ import {
 import ViewsModal from "@/components/views-modal";
 import { ShareLinkModal } from "@/components/panel-config-modals";
 import { EditLogModal, HealthModal } from "@/components/admin-modals";
+import LLThemeToggle from "@/components/ll-theme-toggle";
+import { useLLTheme } from "@/lib/ll-theme";
+
+// Linear Light/Dark Mode type (see
+// ~/.claude/skills/linear-light-dark-mode): Inter at weight 500/600/700
+// substitutes for the proprietary Linear Display/Text families, only on the
+// login screen and the post-login hub — the authenticated workspace keeps
+// its existing zinc/system-ui look untouched. Light is the default theme
+// (the `ll-` token block in globals.css), with a user-toggleable dark mode
+// that reuses Linear's original near-black palette — see useLLTheme.
+const linearSans = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-linear-sans",
+});
 
 export default function GamedbPage() {
   const [me, setMe] = useState(null);
@@ -115,12 +132,21 @@ const SYSTEMS = [
     kind: "link",
     href: "/gameinfo/th",
   },
+  {
+    key: "projectm",
+    label: "Projectm",
+    desc: "Itune — ฝั่ง Admin และ Topup",
+    icon: Folders,
+    kind: "link",
+    href: "/projectm/th",
+  },
 ];
 
 function SystemHub({ me, onLoggedOut, onEnter }) {
   const isSuperAdmin = me.role === "admin";
   const isTemplateUser = me.role === "user";
   const [usersModal, setUsersModal] = useState(false);
+  const [theme, toggleTheme] = useLLTheme();
 
   const logout = async () => {
     try {
@@ -132,71 +158,89 @@ function SystemHub({ me, onLoggedOut, onEnter }) {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-zinc-50 px-4 py-10">
-      <div className="flex w-full max-w-2xl items-center justify-between rounded-sm border border-zinc-200 bg-white px-4 py-3">
-        <div className="flex items-center gap-2">
-          <User size={13} className="text-zinc-500" />
-          <div className="text-[10px] font-semibold leading-tight">
-            <p className="font-black text-zinc-800">{me.displayName || me.username}</p>
-            <p className="text-zinc-500">
-              {isSuperAdmin ? "Admin" : isTemplateUser ? "User · Template" : "Staff"}
-            </p>
+    <div
+      data-theme={theme}
+      className={`${linearSans.variable} flex min-h-screen flex-col bg-ll-canvas`}
+      style={{ fontFamily: "var(--font-linear-sans), sans-serif" }}
+    >
+      <LLThemeToggle theme={theme} onToggle={toggleTheme} />
+      <div className="flex flex-col items-center gap-8 px-4 pb-14 pt-10">
+        <div className="flex w-full max-w-2xl items-center justify-between rounded-lg border border-ll-hairline bg-ll-surface-1 px-4 py-3 shadow-[var(--ll-shadow-card)]">
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-ll-surface-2 text-ll-ink-subtle">
+              <User size={14} />
+            </span>
+            <div className="text-[13px] leading-tight">
+              <p className="font-medium text-ll-ink">{me.displayName || me.username}</p>
+              <p className="text-ll-ink-subtle">
+                {isSuperAdmin ? "Admin" : isTemplateUser ? "User · Template" : "Staff"}
+              </p>
+            </div>
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {isSuperAdmin && (
+          <div className="flex items-center gap-2">
+            {isSuperAdmin && (
+              <button
+                type="button"
+                onClick={() => setUsersModal(true)}
+                className="flex items-center gap-2 rounded-md border border-ll-hairline-strong px-3 py-2 text-[13px] font-medium text-ll-ink transition hover:bg-ll-surface-2"
+              >
+                <Users size={14} /> จัดการสิทธิ์ผู้ใช้
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => setUsersModal(true)}
-              className="flex items-center gap-2 rounded-sm border border-zinc-200 bg-white px-3 py-2 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
+              onClick={logout}
+              title="ออกจากระบบ"
+              className="rounded-md border border-ll-hairline-strong p-2 text-ll-ink-subtle transition hover:bg-ll-primary-subtle-bg hover:text-ll-primary-subtle-text"
             >
-              <Users size={14} /> จัดการสิทธิ์ผู้ใช้
+              <LogOut size={14} />
             </button>
-          )}
-          <button
-            type="button"
-            onClick={logout}
-            title="ออกจากระบบ"
-            className="rounded-sm border border-zinc-200 bg-white p-2 text-zinc-500 transition hover:bg-red-50 hover:text-red-600"
-          >
-            <LogOut size={14} />
-          </button>
+          </div>
         </div>
-      </div>
 
-      <div className="w-full max-w-2xl">
-        <h1 className="mb-4 text-lg font-black text-zinc-800">เลือกระบบที่ต้องการเข้าใช้งาน</h1>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {SYSTEMS.map((system) => {
-            const Icon = system.icon;
-            const content = (
-              <>
-                <span className="flex h-10 w-10 items-center justify-center rounded-sm bg-zinc-100 text-zinc-600">
-                  <Icon size={18} />
-                </span>
-                <span className="text-left">
-                  <span className="block text-sm font-black text-zinc-800">{system.label}</span>
-                  <span className="block text-xs text-zinc-500">{system.desc}</span>
-                </span>
-              </>
-            );
-            const className =
-              "flex items-center gap-3 rounded-sm border border-zinc-200 bg-white p-4 text-left transition hover:border-zinc-300 hover:bg-zinc-50";
-            return system.kind === "link" ? (
-              <NextLink key={system.key} href={system.href} className={className}>
-                {content}
-              </NextLink>
-            ) : (
-              <button
-                key={system.key}
-                type="button"
-                onClick={() => onEnter(system.key)}
-                className={className}
-              >
-                {content}
-              </button>
-            );
-          })}
+        <div className="w-full max-w-2xl">
+          <h1
+            className="mb-5 font-semibold text-ll-ink"
+            style={{ fontSize: 28, lineHeight: 1.2, letterSpacing: "-0.6px" }}
+          >
+            เลือกระบบที่ต้องการเข้าใช้งาน
+          </h1>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {SYSTEMS.map((system) => {
+              const Icon = system.icon;
+              const content = (
+                <>
+                  <span className="flex h-10 w-10 items-center justify-center rounded-md bg-ll-surface-2 text-ll-ink-subtle">
+                    <Icon size={18} />
+                  </span>
+                  <span className="text-left">
+                    <span className="block text-[16px] font-medium text-ll-ink">
+                      {system.label}
+                    </span>
+                    <span className="block text-[13px] text-ll-ink-subtle">
+                      {system.desc}
+                    </span>
+                  </span>
+                </>
+              );
+              const className =
+                "flex items-center gap-3 rounded-lg border border-ll-hairline bg-ll-surface-1 p-4 text-left shadow-[var(--ll-shadow-card)] transition hover:border-ll-hairline-strong hover:bg-ll-surface-2";
+              return system.kind === "link" ? (
+                <NextLink key={system.key} href={system.href} className={className}>
+                  {content}
+                </NextLink>
+              ) : (
+                <button
+                  key={system.key}
+                  type="button"
+                  onClick={() => onEnter(system.key)}
+                  className={className}
+                >
+                  {content}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -210,6 +254,7 @@ function LoginScreen({ onLoggedIn }) {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [theme, toggleTheme] = useLLTheme();
 
   const submit = async (event) => {
     event.preventDefault();
@@ -230,54 +275,70 @@ function LoginScreen({ onLoggedIn }) {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center p-6">
-      <form
-        onSubmit={submit}
-        className="w-full max-w-sm rounded-sm border border-zinc-200 bg-white p-6 shadow-sm"
-      >
-        <div className="mb-5 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-sm border border-red-200 bg-red-600/10 text-red-600">
-            <Lock size={26} />
-          </div>
-          <h1 className="text-lg font-black tracking-tight">GameDB</h1>
-          <p className="mt-1 text-[11px] font-semibold text-zinc-500">
-            เข้าสู่ระบบด้วยบัญชี GameDB
-          </p>
-        </div>
-
-        <label className="mb-1 block text-[10px] font-black text-zinc-500">Username</label>
-        <input
-          type="text"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          autoComplete="username"
-          autoFocus
-          className="mb-3 h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
-        />
-        <label className="mb-1 block text-[10px] font-black text-zinc-500">รหัสผ่าน</label>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoComplete="current-password"
-          className="mb-4 h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
-        />
-
-        {error && (
-          <div className="mb-3 rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
-            {error}
-          </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={submitting || !username.trim() || !password}
-          className="flex h-10 w-full items-center justify-center gap-2 rounded-sm bg-red-600 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
+    <div
+      data-theme={theme}
+      className={`${linearSans.variable} flex min-h-screen flex-col bg-ll-canvas`}
+      style={{ fontFamily: "var(--font-linear-sans), sans-serif" }}
+    >
+      <LLThemeToggle theme={theme} onToggle={toggleTheme} />
+      <div className="flex flex-1 flex-col items-center justify-center px-6 py-16">
+        <form
+          onSubmit={submit}
+          className="w-full max-w-sm rounded-lg border border-ll-hairline bg-ll-surface-1 p-8 shadow-[var(--ll-shadow-modal)]"
         >
-          {submitting ? <Loader2 size={14} className="animate-spin" /> : <Lock size={13} />}
-          เข้าสู่ระบบ
-        </button>
-      </form>
+          <div className="mb-7 text-center">
+            <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-md bg-ll-emphasis-bg text-ll-emphasis-text">
+              <Lock size={18} />
+            </div>
+            <h1
+              className="font-semibold text-ll-ink"
+              style={{ fontSize: 22, lineHeight: 1.25, letterSpacing: "-0.4px" }}
+            >
+              GameDB
+            </h1>
+            <p className="mt-1.5 text-[14px] text-ll-ink-subtle">
+              เข้าสู่ระบบด้วยบัญชี GameDB
+            </p>
+          </div>
+
+          <label className="mb-1.5 block text-[13px] font-medium text-ll-ink-muted">
+            Username
+          </label>
+          <input
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            autoComplete="username"
+            autoFocus
+            className="mb-4 h-10 w-full rounded-md border border-ll-hairline-strong bg-ll-surface-2 px-3 text-[14px] text-ll-ink outline-none focus:border-ll-primary"
+          />
+          <label className="mb-1.5 block text-[13px] font-medium text-ll-ink-muted">
+            รหัสผ่าน
+          </label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            className="mb-5 h-10 w-full rounded-md border border-ll-hairline-strong bg-ll-surface-2 px-3 text-[14px] text-ll-ink outline-none focus:border-ll-primary"
+          />
+
+          {error && (
+            <div className="mb-4 rounded-md border border-ll-primary/20 bg-ll-primary-subtle-bg px-3 py-2 text-[13px] font-medium text-ll-primary-subtle-text">
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={submitting || !username.trim() || !password}
+            className="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-ll-primary text-[14px] font-medium text-ll-on-primary transition hover:bg-ll-primary-hover disabled:opacity-50"
+          >
+            {submitting ? <Loader2 size={14} className="animate-spin" /> : <Lock size={13} />}
+            เข้าสู่ระบบ
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

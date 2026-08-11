@@ -47,6 +47,78 @@
   --color-linear-ink-tertiary: #94a3b8;
 }
 
+/* Linear Light/Dark Mode palette (see
+   ~/.claude/skills/linear-light-dark-mode) — used by the login screen, the
+   post-login system-select hub and the whole /projectm module. A separate
+   `ll-` token namespace from the `linear-` one above so this red-accent,
+   light-mode-first system can't collide with gameinfo's untouched
+   indigo/slate palette. Light values are the @theme default; dark mode
+   (Linear's original near-black palette, red accent) applies under
+   [data-theme="dark"] on each module's theme root.
+
+   Light surfaces follow gameinfo's own white-canvas pattern (canvas and
+   surface-1 are both #fff — cards read as lifted via hairline + shadow
+   alone, not a color step) plus Stripe's layered off-white secondary
+   surface for panels/hover fills — but recolored to Tailwind's true-neutral
+   "neutral" scale (equal R=G=B) instead of Stripe's cool-blue canvas-soft
+   (#f6f9fc) or gameinfo's cool slate (#f8fafc/#e2e8f0), which both carry a
+   blue tint this variant deliberately avoids. */
+@theme {
+  --color-ll-canvas: #ffffff;
+  --color-ll-surface-1: #ffffff;
+  --color-ll-surface-2: #fafafa;
+  --color-ll-surface-3: #f5f5f5;
+  --color-ll-hairline: #e5e5e5;
+  --color-ll-hairline-strong: #d4d4d4;
+  --color-ll-ink: #05141d;
+  --color-ll-ink-muted: #3e4a52;
+  --color-ll-ink-subtle: #6b7378;
+  --color-ll-ink-tertiary: #9ba1a4;
+  --color-ll-primary: #e20e17;
+  --color-ll-primary-hover: #f23a42;
+  --color-ll-primary-press: #b10a11;
+  --color-ll-primary-subtle-bg: #fce8e8;
+  --color-ll-primary-subtle-text: #b10a11;
+  --color-ll-on-primary: #ffffff;
+  --color-ll-emphasis-bg: #05141d;
+  --color-ll-emphasis-text: #ffffff;
+
+  /* Semantic pair the skill reference documents but this codebase hadn't
+     wired up yet — same values in both themes, no per-mode table in the
+     skill doc to draw from. */
+  --color-ll-success: #1d8a4a;
+  --color-ll-success-bg: #e6f4ea;
+  --color-ll-warning: #b45309;
+  --color-ll-warning-bg: #fef3c7;
+
+  --ll-shadow-card: 0 1px 2px rgba(5, 20, 29, 0.04), 0 1px 3px rgba(5, 20, 29, 0.06);
+  --ll-shadow-modal: 0 8px 24px rgba(5, 20, 29, 0.08), 0 2px 8px rgba(5, 20, 29, 0.04);
+}
+
+[data-theme="dark"] {
+  --color-ll-canvas: #010102;
+  --color-ll-surface-1: #0f1011;
+  --color-ll-surface-2: #141516;
+  --color-ll-surface-3: #18191a;
+  --color-ll-hairline: #23252a;
+  --color-ll-hairline-strong: #34343a;
+  --color-ll-ink: #f7f8f8;
+  --color-ll-ink-muted: #d0d6e0;
+  --color-ll-ink-subtle: #8a8f98;
+  --color-ll-ink-tertiary: #62666d;
+  --color-ll-primary: #e20e17;
+  --color-ll-primary-hover: #ff3b42;
+  --color-ll-primary-press: #b10a11;
+  --color-ll-primary-subtle-bg: #3a1416;
+  --color-ll-primary-subtle-text: #ff9096;
+  --color-ll-on-primary: #ffffff;
+  --color-ll-emphasis-bg: #f7f8f8;
+  --color-ll-emphasis-text: #05141d;
+
+  --ll-shadow-card: none;
+  --ll-shadow-modal: none;
+}
+
 /* Used throughout the gameinfo module's fixed-column-width tables (pack
    grids, games table, game list) — without this the wide grid just overflows
    its card with the browser's default overflow:visible instead of scrolling
