@@ -14,6 +14,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  Calculator,
   Check,
   ChevronDown,
   ChevronRight,
@@ -23,6 +24,8 @@ import {
   EyeOff,
   Image as ImageIcon,
   Layers,
+  Paintbrush,
+  Palette,
   Pencil,
   Sigma,
   Trash2,
@@ -503,6 +506,9 @@ export default function PanelTable({
   onDrill,
   drillLabel,
   onDeleteRow,
+  onOpenColumnFormat,
+  onOpenColumnRules,
+  onEditComputedColumn,
   canUseGameinfoTools = false,
   rowOffset = 0,
   // The table lives on a canvas that can be zoomed. Anything read off the DOM or
@@ -1268,7 +1274,7 @@ export default function PanelTable({
       {canCustomizeLayout && activeToolsColumn && typeof document !== "undefined" &&
         createPortal(
           <div
-            className="fixed z-[100] flex -translate-y-full items-center gap-1 whitespace-nowrap rounded-sm border border-zinc-200 bg-white p-1 shadow-xl"
+            className="fixed z-[100] flex max-w-[calc(100vw-8px)] -translate-y-full items-center gap-1 overflow-x-auto whitespace-nowrap rounded-sm border border-zinc-200 bg-white p-1 shadow-xl"
             style={{
               top: columnToolsPopover.top,
               ...(columnToolsPopover.left === null
@@ -1315,6 +1321,41 @@ export default function PanelTable({
             >
               <Layers size={12} />
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                onOpenColumnFormat?.(activeToolsColumn);
+                closeColumnTools();
+              }}
+              className={headerButton}
+              title="รูปแบบและสีของคอลัมน์นี้"
+            >
+              <Paintbrush size={12} />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onOpenColumnRules?.(activeToolsColumn);
+                closeColumnTools();
+              }}
+              className={headerButton}
+              title="เพิ่มเงื่อนไขสีให้คอลัมน์นี้"
+            >
+              <Palette size={12} />
+            </button>
+            {activeToolsColumn.kind === "computed" && (
+              <button
+                type="button"
+                onClick={() => {
+                  onEditComputedColumn?.(activeToolsColumn);
+                  closeColumnTools();
+                }}
+                className={headerButton}
+                title="แก้ชื่อ สูตร และชนิดผลลัพธ์"
+              >
+                <Calculator size={12} />
+              </button>
+            )}
             <button type="button" onClick={() => renameColumn(activeToolsColumn)} className={headerButton} title="เปลี่ยนชื่อ">
               <Pencil size={12} />
             </button>

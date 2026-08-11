@@ -1135,14 +1135,17 @@ const FUNCTION_HELP = [
 export function ComputedColumnModal({
   availableNames,
   sampleRow,
+  initialColumn = null,
   onClose,
   onAdd,
+  onSave,
 }) {
-  const [label, setLabel] = useState("");
-  const [formula, setFormula] = useState("");
+  const editing = Boolean(initialColumn);
+  const [label, setLabel] = useState(initialColumn?.label || "");
+  const [formula, setFormula] = useState(initialColumn?.formula || "");
   // Empty until touched, so the type follows the formula while the user is
   // still writing it and stops the moment they choose one themselves.
-  const [typeChoice, setTypeChoice] = useState("");
+  const [typeChoice, setTypeChoice] = useState(initialColumn?.type || "");
 
   const validation = useMemo(() => {
     if (!formula.trim()) return { ok: false, message: "", type: "number" };
@@ -1175,7 +1178,8 @@ export function ComputedColumnModal({
       <div className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-y-auto rounded-sm bg-white p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-sm font-black">
-            <Calculator size={15} className="text-red-600" /> เพิ่มคอลัมน์/สูตร
+            <Calculator size={15} className="text-red-600" />
+            {editing ? `แก้คอลัมน์สูตร · ${initialColumn.label}` : "เพิ่มคอลัมน์/สูตร"}
           </h2>
           <button
             type="button"
@@ -1281,11 +1285,16 @@ export function ComputedColumnModal({
         <div className="mt-5 flex justify-end">
           <button
             type="button"
-            onClick={() => onAdd({ label: label.trim(), formula: formula.trim(), type })}
+            onClick={() => {
+              const value = { label: label.trim(), formula: formula.trim(), type };
+              if (editing) onSave?.(value);
+              else onAdd?.(value);
+            }}
             disabled={!label.trim() || !validation.ok}
             className="flex items-center gap-1.5 rounded-sm bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
           >
-            <Plus size={13} /> เพิ่มคอลัมน์
+            {editing ? <Save size={13} /> : <Plus size={13} />}
+            {editing ? "บันทึกสูตร" : "เพิ่มคอลัมน์"}
           </button>
         </div>
       </div>

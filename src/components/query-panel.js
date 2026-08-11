@@ -487,6 +487,7 @@ export default function QueryPanel({
   const [pageSize, setPageSize] = useState(25);
   const [view, setView] = useState("table");
   const [modal, setModal] = useState(null);
+  const [modalColumnId, setModalColumnId] = useState(null);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const moreMenuRef = useRef(null);
   const [changedKeys, setChangedKeys] = useState(new Set());
@@ -788,6 +789,16 @@ export default function QueryPanel({
     setLayoutDirty(true);
   }, [canCustomizeLayout]);
 
+  const openColumnModal = (kind, column) => {
+    setModalColumnId(column.id);
+    setModal(kind);
+  };
+
+  const closeColumnModal = () => {
+    setModalColumnId(null);
+    setModal(null);
+  };
+
   const resetParamValues = () => {
     setParamValues(initialParamValues(effectiveParams));
     setShowParamErrors(false);
@@ -936,6 +947,15 @@ export default function QueryPanel({
     () => displayColumns.filter((col) => layout.hidden.includes(col.id)),
     [displayColumns, layout.hidden]
   );
+  const modalComputedColumn = useMemo(() => {
+    if (!modalColumnId) return null;
+    const item = layout.computed.find((column) => `#${column.key}` === modalColumnId);
+    if (!item) return null;
+    return {
+      ...item,
+      label: displayColumns.find((column) => column.id === modalColumnId)?.label || item.label,
+    };
+  }, [displayColumns, layout.computed, modalColumnId]);
 
   const baseNameToIndex = useMemo(() => {
     const map = new Map();
@@ -1821,7 +1841,12 @@ export default function QueryPanel({
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => runMoreAction(() => setModal("computed"))}
+                onClick={() =>
+                  runMoreAction(() => {
+                    setModalColumnId(null);
+                    setModal("computed");
+                  })
+                }
                 disabled={!result}
                 className={menuItemClass}
               >
@@ -1830,7 +1855,12 @@ export default function QueryPanel({
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => runMoreAction(() => setModal("formats"))}
+                onClick={() =>
+                  runMoreAction(() => {
+                    setModalColumnId(null);
+                    setModal("formats");
+                  })
+                }
                 disabled={!result}
                 className={menuItemClass}
               >
@@ -1845,7 +1875,12 @@ export default function QueryPanel({
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => runMoreAction(() => setModal("rules"))}
+                onClick={() =>
+                  runMoreAction(() => {
+                    setModalColumnId(null);
+                    setModal("rules");
+                  })
+                }
                 disabled={!result}
                 className={menuItemClass}
               >
@@ -2288,6 +2323,9 @@ export default function QueryPanel({
                       ? deleteRow
                       : null
                   }
+                  onOpenColumnFormat={(column) => openColumnModal("formats", column)}
+                  onOpenColumnRules={(column) => openColumnModal("rules", column)}
+                  onEditComputedColumn={(column) => openColumnModal("computed", column)}
                   onDrill={layout.drill && onDrill ? drillRow : null}
                   drillLabel={`เปิด ${
                     queries.find((item) => item.id === layout.drill?.queryId)?.name || "Query"
@@ -2375,14 +2413,29 @@ export default function QueryPanel({
                 )
               : null
           }
-          onClose={() => setModal(null)}
+          initialColumn={modalComputedColumn}
+          onClose={closeColumnModal}
           onAdd={({ label, formula, type }) => {
             const key = `calc_${Date.now()}`;
             mutateLayout((prev) => ({
               ...prev,
               computed: [...prev.computed, { key, label, formula, type }],
             }));
-            setModal(null);
+            closeColumnModal();
+          }}
+          onSave={({ label, formula, type }) => {
+            mutateLayout((prev) => ({
+              ...prev,
+              labels: Object.fromEntries(
+                Object.entries(prev.labels).filter(([colId]) => colId !== modalColumnId)
+              ),
+              computed: prev.computed.map((item) =>
+                `#${item.key}` === modalColumnId
+                  ? { ...item, label, formula, type }
+                  : item
+              ),
+            }));
+            closeColumnModal();
           }}
         />
       )}
@@ -2476,10 +2529,11 @@ export default function QueryPanel({
           formats={layout.formats}
           freeze={layout.freeze}
           tableTone={layout.tableTone}
-          onClose={() => setModal(null)}
+          initialColId={modalColumnId}
+          onClose={closeColumnModal}
           onSave={({ formats, freeze, tableTone }) => {
             mutateLayout((prev) => ({ ...prev, formats, freeze, tableTone }));
-            setModal(null);
+            closeColumnModal();
           }}
         />
       )}
@@ -2487,10 +2541,11 @@ export default function QueryPanel({
         <RulesModal
           columns={visibleColumns}
           rules={layout.rules}
-          onClose={() => setModal(null)}
+          initialColId={modalColumnId}
+          onClose={closeColumnModal}
           onSave={(rules) => {
             mutateLayout((prev) => ({ ...prev, rules }));
-            setModal(null);
+            closeColumnModal();
           }}
         />
       )}

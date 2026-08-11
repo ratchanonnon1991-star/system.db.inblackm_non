@@ -1104,10 +1104,12 @@ export function NewRowModal({
   );
 }
 
-export function RulesModal({ columns, rules, onSave, onClose }) {
+export function RulesModal({ columns, rules, initialColId = null, onSave, onClose }) {
   const [draft, setDraft] = useState(rules);
   const [form, setForm] = useState({
-    colId: columns[0]?.id || "",
+    colId: columns.some((col) => col.id === initialColId)
+      ? initialColId
+      : columns[0]?.id || "",
     op: ">",
     value: "",
     tone: "red",
@@ -1168,6 +1170,7 @@ export function RulesModal({ columns, rules, onSave, onClose }) {
           <select
             value={form.colId}
             onChange={(e) => setForm((prev) => ({ ...prev, colId: e.target.value }))}
+            autoFocus={Boolean(initialColId)}
             className={`${inputClass} sm:col-span-2`}
           >
             {columns.map((col) => (
@@ -1297,6 +1300,7 @@ export function FormatsModal({
   formats,
   freeze,
   tableTone,
+  initialColId = null,
   onSave,
   onClose,
 }) {
@@ -1314,6 +1318,13 @@ export function FormatsModal({
   });
   const [pinned, setPinned] = useState(freeze || 0);
   const [theme, setTheme] = useState(tableTone || "");
+  const orderedColumns = useMemo(() => {
+    if (!initialColId || !columns.some((col) => col.id === initialColId)) return columns;
+    return [
+      columns.find((col) => col.id === initialColId),
+      ...columns.filter((col) => col.id !== initialColId),
+    ];
+  }, [columns, initialColId]);
 
   const update = (colId, patch) =>
     setDraft((prev) => ({ ...prev, [colId]: { ...prev[colId], ...patch } }));
@@ -1370,7 +1381,7 @@ export function FormatsModal({
         </span>
       </div>
 
-      {columns.map((col) => {
+      {orderedColumns.map((col) => {
         const format = draft[col.id];
         return (
           <div
@@ -1380,8 +1391,13 @@ export function FormatsModal({
             }`}
           >
             <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="min-w-0 truncate text-[11px] font-black text-zinc-700">
-                {col.label}
+              <span className="flex min-w-0 items-center gap-1.5 truncate text-[11px] font-black text-zinc-700">
+                <span className="truncate">{col.label}</span>
+                {col.id === initialColId && (
+                  <span className="shrink-0 rounded bg-red-100 px-1.5 py-0.5 text-[8px] text-red-700">
+                    คอลัมน์ที่เลือก
+                  </span>
+                )}
               </span>
               {!isEmptyFormat(format) && (
                 <button
