@@ -11,6 +11,7 @@ import {
   Play,
   Plus,
   Save,
+  Search,
   Server,
   Table2,
   Trash2,
@@ -1329,6 +1330,21 @@ export function UsersModal({ me, onClose }) {
   const [form, setForm] = useState(EMPTY_USER_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
+
+  // A flat scroll of a couple hundred rows is where "find the one account"
+  // stops being findable by eye -- search + role narrow it back down, and the
+  // list gets its own scroll region (see the JSX) so a long result doesn't
+  // push the add/edit form itself off screen.
+  const filteredUsers = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return users.filter((user) => {
+      if (roleFilter !== "all" && user.role !== roleFilter) return false;
+      if (!needle) return true;
+      return `${user.username} ${user.displayName}`.toLowerCase().includes(needle);
+    });
+  }, [users, search, roleFilter]);
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
@@ -1443,14 +1459,50 @@ export function UsersModal({ me, onClose }) {
           </button>
         </div>
 
-        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto md:grid-cols-[1fr_1.2fr]">
-          <div className="space-y-1.5">
+        <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[1fr_1.2fr]">
+          <div className="flex min-h-0 flex-col">
+            <div className="mb-2 shrink-0 space-y-1.5">
+              <div className="flex items-center gap-1.5">
+                <div className="relative flex-1">
+                  <Search size={12} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+                  <input
+                    type="search"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="ค้นหาชื่อผู้ใช้หรือชื่อที่แสดง"
+                    className="h-9 w-full rounded-sm border border-zinc-200 bg-zinc-50 pl-8 pr-3 text-[11px] font-semibold outline-none focus:border-red-600 focus:bg-white"
+                  />
+                </div>
+                <select
+                  value={roleFilter}
+                  onChange={(e) => setRoleFilter(e.target.value)}
+                  className="h-9 shrink-0 rounded-sm border border-zinc-200 bg-zinc-50 px-2 text-[10px] font-bold outline-none focus:border-red-600"
+                >
+                  <option value="all">ทุก Role</option>
+                  <option value="admin">Admin</option>
+                  <option value="staff">Staff</option>
+                  <option value="user">User</option>
+                </select>
+              </div>
+              {!loading && (
+                <p className="text-[10px] font-semibold text-zinc-400">
+                  {search.trim() || roleFilter !== "all"
+                    ? `พบ ${filteredUsers.length} จากทั้งหมด ${users.length} คน`
+                    : `ทั้งหมด ${users.length} คน`}
+                </p>
+              )}
+            </div>
+            <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
             {loading ? (
               <p className="flex items-center gap-2 px-2 py-4 text-xs font-semibold text-zinc-400">
                 <Loader2 size={14} className="animate-spin" /> กำลังโหลด...
               </p>
+            ) : filteredUsers.length === 0 ? (
+              <p className="rounded-sm border border-dashed border-zinc-300 px-3 py-6 text-center text-[11px] font-semibold text-zinc-400">
+                ไม่พบผู้ใช้ตามคำค้นหาหรือตัวกรอง
+              </p>
             ) : (
-              users.map((user) => (
+              filteredUsers.map((user) => (
                 <div
                   key={user.id}
                   className={`group flex items-center gap-2 rounded-sm border px-3 py-2.5 transition ${
@@ -1489,10 +1541,11 @@ export function UsersModal({ me, onClose }) {
                 </div>
               ))
             )}
+            </div>
             <button
               type="button"
               onClick={startCreate}
-              className={`flex w-full items-center justify-center gap-1.5 rounded-sm border border-dashed px-3 py-2.5 text-[11px] font-black transition ${
+              className={`mt-1.5 flex w-full shrink-0 items-center justify-center gap-1.5 rounded-sm border border-dashed px-3 py-2.5 text-[11px] font-black transition ${
                 editingId === null
                   ? "border-red-600 text-red-600"
                   : "border-zinc-300 text-zinc-400 hover:border-zinc-400 hover:text-zinc-600"
@@ -1502,7 +1555,7 @@ export function UsersModal({ me, onClose }) {
             </button>
           </div>
 
-          <div className="space-y-2.5">
+          <div className="min-h-0 space-y-2.5 overflow-y-auto pr-1">
             <p className="text-[10px] font-black text-zinc-500">
               {editingId ? `แก้ไขผู้ใช้: ${form.username}` : "เพิ่มผู้ใช้ใหม่"}
             </p>
