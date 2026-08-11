@@ -1332,11 +1332,11 @@ export function UsersModal({ me, onClose }) {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 12;
 
   // A flat scroll of a couple hundred rows is where "find the one account"
-  // stops being findable by eye -- search + role narrow it back down, and the
-  // list gets its own scroll region (see the JSX) so a long result doesn't
-  // push the add/edit form itself off screen.
+  // stops being findable by eye -- search + role narrow it back down.
   const filteredUsers = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return users.filter((user) => {
@@ -1345,6 +1345,25 @@ export function UsersModal({ me, onClose }) {
       return `${user.username} ${user.displayName}`.toLowerCase().includes(needle);
     });
   }, [users, search, roleFilter]);
+
+  // A page of 12 stays put whether there are 20 accounts or 2000 -- an
+  // unbounded scroll region grows forever and still pushes the add/edit form
+  // off screen once it gets tall enough.
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageUsers = filteredUsers.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  // Changing what's being searched for lands back on page 1 in the same
+  // handler that changes the filter -- otherwise "page 4" from the old
+  // results could silently show as empty.
+  const updateSearch = (value) => {
+    setSearch(value);
+    setPage(1);
+  };
+  const updateRoleFilter = (value) => {
+    setRoleFilter(value);
+    setPage(1);
+  };
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
@@ -1468,14 +1487,14 @@ export function UsersModal({ me, onClose }) {
                   <input
                     type="search"
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
+                    onChange={(e) => updateSearch(e.target.value)}
                     placeholder="ค้นหาชื่อผู้ใช้หรือชื่อที่แสดง"
                     className="h-9 w-full rounded-sm border border-zinc-200 bg-zinc-50 pl-8 pr-3 text-[11px] font-semibold outline-none focus:border-red-600 focus:bg-white"
                   />
                 </div>
                 <select
                   value={roleFilter}
-                  onChange={(e) => setRoleFilter(e.target.value)}
+                  onChange={(e) => updateRoleFilter(e.target.value)}
                   className="h-9 shrink-0 rounded-sm border border-zinc-200 bg-zinc-50 px-2 text-[10px] font-bold outline-none focus:border-red-600"
                 >
                   <option value="all">ทุก Role</option>
@@ -1502,7 +1521,7 @@ export function UsersModal({ me, onClose }) {
                 ไม่พบผู้ใช้ตามคำค้นหาหรือตัวกรอง
               </p>
             ) : (
-              filteredUsers.map((user) => (
+              pageUsers.map((user) => (
                 <div
                   key={user.id}
                   className={`group flex items-center gap-2 rounded-sm border px-3 py-2.5 transition ${
@@ -1542,6 +1561,29 @@ export function UsersModal({ me, onClose }) {
               ))
             )}
             </div>
+            {totalPages > 1 && (
+              <div className="mt-1.5 flex shrink-0 items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={safePage <= 1}
+                  className="rounded-sm border border-zinc-200 px-2.5 py-1 text-[10px] font-black text-zinc-500 transition hover:bg-zinc-50 disabled:opacity-40"
+                >
+                  ก่อนหน้า
+                </button>
+                <span className="text-[10px] font-bold text-zinc-400">
+                  หน้า {safePage} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={safePage >= totalPages}
+                  className="rounded-sm border border-zinc-200 px-2.5 py-1 text-[10px] font-black text-zinc-500 transition hover:bg-zinc-50 disabled:opacity-40"
+                >
+                  ถัดไป
+                </button>
+              </div>
+            )}
             <button
               type="button"
               onClick={startCreate}
