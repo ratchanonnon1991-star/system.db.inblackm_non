@@ -76,7 +76,7 @@ export async function GET(request) {
     username: user.username,
     role: user.role,
   });
-  const response = NextResponse.redirect(new URL("/systemdb", origin));
+  const response = NextResponse.redirect(new URL("/", origin));
   response.cookies.set(SESSION_COOKIE, token, getSessionCookieOptions());
   return response;
 }
