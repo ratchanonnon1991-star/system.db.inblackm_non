@@ -34,6 +34,62 @@ const SCHEMA_SQL = `
   LIMIT 5000
 `;
 
+const FOREIGN_KEY_SQL = `
+  SELECT
+    con.oid::text AS constraint_id,
+    con.conname AS constraint_name,
+    source_ns.nspname AS source_schema,
+    source_table.relname AS source_table,
+    source_column.attname AS source_column,
+    target_ns.nspname AS target_schema,
+    target_table.relname AS target_table,
+    target_column.attname AS target_column,
+    keys.position
+  FROM pg_catalog.pg_constraint con
+  JOIN pg_catalog.pg_class source_table ON source_table.oid = con.conrelid
+  JOIN pg_catalog.pg_namespace source_ns ON source_ns.oid = source_table.relnamespace
+  JOIN pg_catalog.pg_class target_table ON target_table.oid = con.confrelid
+  JOIN pg_catalog.pg_namespace target_ns ON target_ns.oid = target_table.relnamespace
+  JOIN LATERAL unnest(con.conkey, con.confkey) WITH ORDINALITY
+    AS keys(source_attnum, target_attnum, position) ON TRUE
+  JOIN pg_catalog.pg_attribute source_column
+    ON source_column.attrelid = source_table.oid AND source_column.attnum = keys.source_attnum
+  JOIN pg_catalog.pg_attribute target_column
+    ON target_column.attrelid = target_table.oid AND target_column.attnum = keys.target_attnum
+  WHERE con.contype = 'f'
+    AND source_ns.nspname NOT IN ('pg_catalog', 'information_schema')
+    AND target_ns.nspname NOT IN ('pg_catalog', 'information_schema')
+    AND pg_catalog.has_table_privilege(source_table.oid, 'SELECT')
+    AND pg_catalog.has_table_privilege(target_table.oid, 'SELECT')
+  ORDER BY con.oid, keys.position
+  LIMIT 2000
+`;
+
+export function mapForeignKeyRows(rows) {
+  const relationships = [];
+  const byKey = new Map();
+  for (const row of rows || []) {
+    const key = String(row.constraint_id);
+    let relationship = byKey.get(key);
+    if (!relationship) {
+      relationship = {
+        key,
+        name: row.constraint_name,
+        fromTable: `${row.source_schema}.${row.source_table}`,
+        toTable: `${row.target_schema}.${row.target_table}`,
+        pairs: [],
+      };
+      byKey.set(key, relationship);
+      relationships.push(relationship);
+    }
+    relationship.pairs.push({
+      fromColumn: row.source_column,
+      toColumn: row.target_column,
+    });
+  }
+  return relationships;
+}
+
 export function mapSchemaRows(rows, allowWrite) {
   const tables = [];
   const byKey = new Map();
@@ -100,9 +156,14 @@ export function mapSchemaRows(rows, allowWrite) {
 
 export async function inspectDatabaseSchema(connection = null) {
   const flags = await getConnectionFlags(connection?.id ?? null);
-  const result = await getPoolForConnection(connection).query(SCHEMA_SQL);
+  const pool = getPoolForConnection(connection);
+  const [result, foreignKeys] = await Promise.all([
+    pool.query(SCHEMA_SQL),
+    pool.query(FOREIGN_KEY_SQL),
+  ]);
   return {
     allowWrite: Boolean(flags.allowWrite),
     tables: mapSchemaRows(result.rows, Boolean(flags.allowWrite)),
+    relationships: mapForeignKeyRows(foreignKeys.rows),
   };
 }

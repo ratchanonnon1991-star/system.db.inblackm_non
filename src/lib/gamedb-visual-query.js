@@ -38,9 +38,10 @@ function sqlLiteral(value, kind = "text") {
   return `E'${text.replaceAll("\\", "\\\\").replaceAll("'", "''")}'`;
 }
 
-function buildFilterSql(filter) {
+function buildFilterSql(filter, tableAlias = "") {
   if (!filter || !VISUAL_FILTER_OPS.includes(filter.op)) return "";
-  const column = quoteIdentifier(String(filter.column || ""));
+  const rawColumn = String(filter.column || "");
+  const column = quoteIdentifier(tableAlias ? `${tableAlias}.${rawColumn}` : rawColumn);
   if (filter.op === "isNull") return `${column} IS NULL`;
   if (filter.op === "isNotNull") return `${column} IS NOT NULL`;
   if (filter.op === "in") {
@@ -83,17 +84,60 @@ function buildFilterSql(filter) {
   return `${column} ${operator} ${sqlLiteral(value, filter.kind)}`;
 }
 
-export function buildVisualSelect({ schema, table, columns, filters = [], sort = null, limit = null }) {
+export function buildVisualSelect({
+  schema,
+  table,
+  columns,
+  filters = [],
+  sort = null,
+  limit = null,
+  joins = [],
+}) {
   const selected = [...new Set((columns || []).map(String))];
   if (!schema || !table || selected.length === 0) return "";
 
-  const clauses = [
-    `SELECT\n  ${selected.map((column) => quoteIdentifier(column)).join(",\n  ")}\nFROM ${quoteIdentifier(`${schema}.${table}`)}`,
-  ];
-  const where = filters.map(buildFilterSql).filter(Boolean);
+  const activeJoins = (joins || []).filter(
+    (join) =>
+      join &&
+      join.schema &&
+      join.table &&
+      Array.isArray(join.pairs) &&
+      join.pairs.length > 0 &&
+      Array.isArray(join.columns) &&
+      join.columns.length > 0
+  );
+  const baseAlias = activeJoins.length > 0 ? "t0" : "";
+  const selectExpressions = selected.map((column) =>
+    quoteIdentifier(baseAlias ? `${baseAlias}.${column}` : column)
+  );
+  activeJoins.forEach((join, index) => {
+    const alias = `t${index + 1}`;
+    join.columns.forEach((column) => {
+      selectExpressions.push(
+        `${quoteIdentifier(`${alias}.${column.name}`)} AS ${quoteIdentifier(String(column.alias))}`
+      );
+    });
+  });
+
+  const from = `${quoteIdentifier(`${schema}.${table}`)}${baseAlias ? ` AS ${quoteIdentifier(baseAlias)}` : ""}`;
+  const clauses = [`SELECT\n  ${selectExpressions.join(",\n  ")}\nFROM ${from}`];
+  activeJoins.forEach((join, index) => {
+    const alias = `t${index + 1}`;
+    const on = join.pairs
+      .map(
+        (pair) =>
+          `${quoteIdentifier(`t0.${pair.baseColumn}`)} = ${quoteIdentifier(`${alias}.${pair.joinColumn}`)}`
+      )
+      .join(" AND ");
+    clauses.push(
+      `LEFT JOIN ${quoteIdentifier(`${join.schema}.${join.table}`)} AS ${quoteIdentifier(alias)} ON ${on}`
+    );
+  });
+  const where = filters.map((filter) => buildFilterSql(filter, baseAlias)).filter(Boolean);
   if (where.length > 0) clauses.push(`WHERE\n  ${where.join("\n  AND ")}`);
   if (sort?.column) {
-    clauses.push(`ORDER BY ${quoteIdentifier(String(sort.column))} ${sort.direction === "desc" ? "DESC" : "ASC"}`);
+    const sortName = baseAlias ? `${baseAlias}.${sort.column}` : String(sort.column);
+    clauses.push(`ORDER BY ${quoteIdentifier(sortName)} ${sort.direction === "desc" ? "DESC" : "ASC"}`);
   }
   if (limit !== null && limit !== undefined && limit !== "") {
     const safeLimit = Math.min(1000, Math.max(1, Math.trunc(Number(limit) || 100)));

@@ -1912,6 +1912,7 @@ function GamedbWorkspace({ me, onLoggedOut, onBackToMenu }) {
           })
         }
         onEditQuery={() => setEditorModal({ mode: "edit", query })}
+        onDuplicateQuery={() => setEditorModal({ mode: "duplicate", query })}
         // Following a row into another query is reading, not arranging, so a
         // template account gets it too.
         onDrill={openDrill}

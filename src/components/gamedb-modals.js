@@ -78,17 +78,21 @@ function builderColumnKind(column) {
 
 export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
   const isEdit = modal.mode === "edit";
-  const [builderMode, setBuilderMode] = useState(isEdit ? "sql" : "visual");
-  const [name, setName] = useState(isEdit ? modal.query.name : "");
+  const isDuplicate = modal.mode === "duplicate";
+  const sourceQuery = isEdit || isDuplicate ? modal.query : null;
+  const [builderMode, setBuilderMode] = useState(sourceQuery ? "sql" : "visual");
+  const [name, setName] = useState(
+    isDuplicate ? `${sourceQuery.name} (สำเนา)` : isEdit ? sourceQuery.name : ""
+  );
   const [description, setDescription] = useState(
-    isEdit ? modal.query.description : ""
+    sourceQuery ? sourceQuery.description : ""
   );
   // The sidebar groups by this; it is kept in the query's layout because the
   // service cannot add a column to gamedb_queries.
-  const [folder, setFolder] = useState(isEdit ? modal.query.layout?.folder || "" : "");
-  const [sqlText, setSqlText] = useState(isEdit ? modal.query.sqlText : "SELECT ");
+  const [folder, setFolder] = useState(sourceQuery ? sourceQuery.layout?.folder || "" : "");
+  const [sqlText, setSqlText] = useState(sourceQuery ? sourceQuery.sqlText : "SELECT ");
   const [connectionId, setConnectionId] = useState(
-    isEdit && modal.query.connectionId ? String(modal.query.connectionId) : ""
+    sourceQuery?.connectionId ? String(sourceQuery.connectionId) : ""
   );
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -105,6 +109,12 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
   const [rowLimit, setRowLimit] = useState(100);
   const [columnSettings, setColumnSettings] = useState({});
   const [tableTone, setTableTone] = useState("");
+  const [tableSearch, setTableSearch] = useState("");
+  const [tableFilter, setTableFilter] = useState("all");
+  const [columnSearch, setColumnSearch] = useState("");
+  const [columnFilter, setColumnFilter] = useState("all");
+  const [joinColumns, setJoinColumns] = useState({});
+  const [recentTableKeys, setRecentTableKeys] = useState([]);
   // A test run needs values for whatever :placeholders the SQL currently has,
   // or it can only report that they are missing.
   const [testParams, setTestParams] = useState({});
@@ -118,6 +128,102 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
         ?.map((column) => column.name)
         .filter((column) => selectedColumns.includes(column)) || [],
     [selectedTable, selectedColumns]
+  );
+  const filteredTables = useMemo(() => {
+    const needle = tableSearch.trim().toLowerCase();
+    const matches = (schemaData?.tables || []).filter((table) => {
+      const searchable = `${table.key} ${table.columns.map((column) => column.name).join(" ")}`.toLowerCase();
+      if (needle && !searchable.includes(needle)) return false;
+      if (tableFilter === "editable" && !table.columns.some((column) => column.editable)) return false;
+      if (tableFilter === "pk" && table.primaryKey.length === 0) return false;
+      if (tableFilter === "recent" && !recentTableKeys.includes(table.key)) return false;
+      return true;
+    });
+    return selectedTable && !matches.some((table) => table.key === selectedTable.key)
+      ? [selectedTable, ...matches]
+      : matches;
+  }, [schemaData, selectedTable, tableSearch, tableFilter, recentTableKeys]);
+  const filteredColumns = useMemo(() => {
+    const needle = columnSearch.trim().toLowerCase();
+    return (selectedTable?.columns || []).filter((column) => {
+      if (needle && !`${column.name} ${column.type}`.toLowerCase().includes(needle)) return false;
+      if (columnFilter === "pk" && !selectedTable.primaryKey.includes(column.name)) return false;
+      if (columnFilter === "editable" && !column.editable) return false;
+      if (["number", "date", "text", "boolean"].includes(columnFilter) && builderColumnKind(column) !== columnFilter) return false;
+      return true;
+    });
+  }, [selectedTable, columnSearch, columnFilter]);
+  const availableRelationships = useMemo(
+    () =>
+      (schemaData?.relationships || []).filter(
+        (relationship) =>
+          relationship.fromTable === selectedTableKey || relationship.toTable === selectedTableKey
+      ),
+    [schemaData, selectedTableKey]
+  );
+  const joinDefinitions = useMemo(() => {
+    if (!selectedTable) return [];
+    return availableRelationships
+      .map((relationship) => {
+        const baseIsFrom = relationship.fromTable === selectedTable.key;
+        const targetKey = baseIsFrom ? relationship.toTable : relationship.fromTable;
+        const target = schemaData.tables.find((table) => table.key === targetKey);
+        const chosen = (joinColumns[relationship.key] || []).filter((column) =>
+          target?.columns.some((item) => item.name === column)
+        );
+        return { relationship, baseIsFrom, target, chosen };
+      })
+      .filter((join) => join.target && join.chosen.length > 0)
+      .map((join, joinIndex) => ({
+        ...join,
+        sql: {
+          schema: join.target.schema,
+          table: join.target.name,
+          pairs: join.relationship.pairs.map((pair) => ({
+            baseColumn: join.baseIsFrom ? pair.fromColumn : pair.toColumn,
+            joinColumn: join.baseIsFrom ? pair.toColumn : pair.fromColumn,
+          })),
+          columns: join.chosen.map((column, columnIndex) => ({
+            name: column,
+            alias: `j${joinIndex + 1}_c${columnIndex + 1}_${column}`.slice(0, 63),
+          })),
+        },
+      }));
+  }, [availableRelationships, joinColumns, schemaData, selectedTable]);
+  const joinedSettingColumns = useMemo(
+    () =>
+      joinDefinitions.flatMap((join) =>
+        join.sql.columns.map((column) => ({
+          key: column.alias,
+          source: `${join.target.key}.${column.name}`,
+          defaultLabel: `${join.target.name}.${column.name}`,
+        }))
+      ),
+    [joinDefinitions]
+  );
+  const resultColumnNames = useMemo(
+    () => [...selectedColumnNames, ...joinedSettingColumns.map((column) => column.key)],
+    [selectedColumnNames, joinedSettingColumns]
+  );
+  const settingColumns = useMemo(
+    () => [
+      ...selectedColumnNames.map((column) => ({ key: column, source: column, defaultLabel: "" })),
+      ...joinedSettingColumns,
+    ],
+    [selectedColumnNames, joinedSettingColumns]
+  );
+  const effectiveColumnSettings = useMemo(
+    () =>
+      Object.fromEntries(
+        settingColumns.map((column) => [
+          column.key,
+          {
+            ...(column.defaultLabel ? { label: column.defaultLabel } : {}),
+            ...(columnSettings[column.key] || {}),
+          },
+        ])
+      ),
+    [settingColumns, columnSettings]
   );
   const visualBuild = useMemo(
     () => {
@@ -136,6 +242,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
               })),
               sort: sortColumn ? { column: sortColumn, direction: sortDirection } : null,
               limit: rowLimit,
+              joins: joinDefinitions.map((join) => join.sql),
             }),
           error: "",
         };
@@ -143,7 +250,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
         return { sql: "", error: err.message };
       }
     },
-    [selectedTable, selectedColumnNames, filters, sortColumn, sortDirection, rowLimit]
+    [selectedTable, selectedColumnNames, filters, sortColumn, sortDirection, rowLimit, joinDefinitions]
   );
   const visualSql = visualBuild.sql;
   const effectiveSql = builderMode === "visual" ? visualSql : sqlText;
@@ -165,6 +272,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
       setFilters([]);
       setSortColumn("");
       setColumnSettings({});
+      setJoinColumns({});
     } catch (err) {
       setSchemaData(null);
       setSelectedTableKey("");
@@ -178,6 +286,18 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- state changes after metadata request resolves
     loadSchema();
   }, [loadSchema]);
+
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem("gamedb.recent-builder-tables") || "[]");
+      if (Array.isArray(stored)) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate local-only recent choices after mount
+        setRecentTableKeys(stored.filter((key) => typeof key === "string").slice(0, 8));
+      }
+    } catch {
+      // A corrupt or blocked local store simply means there are no recents.
+    }
+  }, []);
 
   const testRun = useCallback(async (signal) => {
     setTesting(true);
@@ -213,6 +333,46 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
     };
   }, [builderMode, effectiveSql, testRun]);
 
+  const rememberBuilderTable = (key) => {
+    if (!key) return;
+    const next = [key, ...recentTableKeys.filter((item) => item !== key)].slice(0, 8);
+    setRecentTableKeys(next);
+    try {
+      localStorage.setItem("gamedb.recent-builder-tables", JSON.stringify(next));
+    } catch {
+      // A blocked local store should not stop query creation.
+    }
+  };
+
+  const applyBuilderTemplate = (template) => {
+    if (!selectedTable) return;
+    const all = selectedTable.columns.filter((column) => column.canSelect).map((column) => column.name);
+    setSelectedColumns(all);
+    setFilters([]);
+    setColumnSettings({});
+    setJoinColumns({});
+    setTableTone("");
+    if (template === "recent") {
+      const dateColumn = selectedTable.columns.find((column) => builderColumnKind(column) === "date");
+      setSortColumn(dateColumn?.name || selectedTable.primaryKey[0] || all[0] || "");
+      setSortDirection("desc");
+      setRowLimit(100);
+      setEditableColumns([]);
+    } else if (template === "editable") {
+      setSortColumn(selectedTable.primaryKey[0] || "");
+      setSortDirection("asc");
+      setRowLimit(100);
+      setEditableColumns(selectedTable.columns.filter((column) => column.editable).map((column) => column.name));
+      setTableTone("sky");
+    } else {
+      setSortColumn("");
+      setSortDirection("asc");
+      setRowLimit(100);
+      setEditableColumns([]);
+    }
+    setTestResult(null);
+  };
+
   const save = async () => {
     setSaving(true);
     setError("");
@@ -225,18 +385,18 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
         layout:
           builderMode === "visual"
             ? buildVisualLayout({
-                baseLayout: { ...(isEdit ? modal.query.layout || {} : {}), folder: folder.trim() },
+                baseLayout: { ...(sourceQuery?.layout || {}), folder: folder.trim() },
                 schema: selectedTable?.schema,
                 table: selectedTable?.name,
                 primaryKey:
                   selectedTable?.primaryKey?.length === 1 ? selectedTable.primaryKey[0] : "",
                 editableColumns,
-                selectedColumns: selectedColumnNames,
-                columnSettings,
+                selectedColumns: resultColumnNames,
+                columnSettings: effectiveColumnSettings,
                 tableTone,
               })
             : {
-                ...(isEdit ? modal.query.layout || {} : {}),
+                ...(sourceQuery?.layout || {}),
                 folder: folder.trim(),
               },
       };
@@ -254,6 +414,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
             fallbackError: "สร้าง Query ไม่สำเร็จ",
           });
 
+      if (builderMode === "visual") rememberBuilderTable(selectedTableKey);
       onSaved(data.query);
     } catch (err) {
       setError(err.message);
@@ -266,7 +427,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
       <div className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-sm bg-white p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-black">
-            {isEdit ? "แก้ไข Query" : "เพิ่ม Query ใหม่"}
+            {isEdit ? "แก้ไข Query" : isDuplicate ? "ทำสำเนา Query" : "เพิ่ม Query ใหม่"}
           </h2>
           <button
             type="button"
@@ -367,24 +528,74 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
               ) : schemaData?.tables?.length ? (
                 <>
                   <div>
+                    <div className="mb-1 flex flex-wrap items-end gap-2">
+                      <label className="min-w-48 flex-1">
+                        <span className="mb-1 block text-[10px] font-black text-zinc-500">ค้นหาตารางหรือชื่อคอลัมน์</span>
+                        <input
+                          type="search"
+                          value={tableSearch}
+                          onChange={(e) => setTableSearch(e.target.value)}
+                          placeholder="เช่น orders, game_id"
+                          className="h-9 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-[10px] font-semibold outline-none focus:border-red-600 focus:bg-white"
+                        />
+                      </label>
+                      <label className="w-full sm:w-48">
+                        <span className="mb-1 block text-[10px] font-black text-zinc-500">กรองตาราง</span>
+                        <select
+                          value={tableFilter}
+                          onChange={(e) => setTableFilter(e.target.value)}
+                          className="h-9 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-2 text-[10px] font-bold outline-none focus:border-red-600"
+                        >
+                          <option value="all">ทั้งหมด</option>
+                          <option value="recent">ใช้ล่าสุด</option>
+                          <option value="editable">มีคอลัมน์แก้ไขได้</option>
+                          <option value="pk">มี Primary Key</option>
+                        </select>
+                      </label>
+                    </div>
                     <label className="mb-1 block text-[10px] font-black text-zinc-500">ตาราง</label>
                     <select
                       value={selectedTableKey}
                       onChange={(e) => {
                         setSelectedTableKey(e.target.value);
+                        rememberBuilderTable(e.target.value);
                         setSelectedColumns([]);
                         setEditableColumns([]);
                         setFilters([]);
                         setSortColumn("");
                         setColumnSettings({});
+                        setJoinColumns({});
+                        setColumnSearch("");
+                        setColumnFilter("all");
                         setTestResult(null);
                       }}
                       className="h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
                     >
-                      {schemaData.tables.map((table) => (
+                      {filteredTables.map((table) => (
                         <option key={table.key} value={table.key}>{table.key}</option>
                       ))}
                     </select>
+                    {filteredTables.length === 0 && (
+                      <p className="mt-1 text-[9px] font-bold text-amber-600">ไม่พบตารางตามคำค้นหาหรือตัวกรอง</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <p className="mb-1 text-[10px] font-black text-zinc-500">เริ่มจาก Template</p>
+                    <div className="grid gap-1.5 sm:grid-cols-3">
+                      <button type="button" onClick={() => applyBuilderTemplate("general")} className="rounded-sm border border-zinc-200 bg-white px-3 py-2 text-left transition hover:border-red-200 hover:bg-red-50">
+                        <span className="block text-[10px] font-black text-zinc-700">ตารางทั่วไป</span>
+                        <span className="text-[8px] font-semibold text-zinc-400">เลือกทุกคอลัมน์ · 100 แถว</span>
+                      </button>
+                      <button type="button" onClick={() => applyBuilderTemplate("recent")} className="rounded-sm border border-zinc-200 bg-white px-3 py-2 text-left transition hover:border-red-200 hover:bg-red-50">
+                        <span className="block text-[10px] font-black text-zinc-700">ข้อมูลล่าสุด</span>
+                        <span className="text-[8px] font-semibold text-zinc-400">เรียงวันที่/PK จากใหม่ไปเก่า</span>
+                      </button>
+                      <button type="button" onClick={() => applyBuilderTemplate("editable")} className="rounded-sm border border-zinc-200 bg-white px-3 py-2 text-left transition hover:border-red-200 hover:bg-red-50">
+                        <span className="block text-[10px] font-black text-zinc-700">ตารางแก้ไขข้อมูล</span>
+                        <span className="text-[8px] font-semibold text-zinc-400">เปิดคอลัมน์ที่แก้ได้ · ธีมสีฟ้า</span>
+                      </button>
+                    </div>
                   </div>
 
                   <div>
@@ -398,8 +609,30 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                         เลือกทั้งหมด
                       </button>
                     </div>
+                    <div className="mb-1.5 grid gap-1.5 sm:grid-cols-[minmax(0,1fr)_12rem]">
+                      <input
+                        type="search"
+                        value={columnSearch}
+                        onChange={(e) => setColumnSearch(e.target.value)}
+                        placeholder="ค้นหาชื่อหรือชนิดคอลัมน์"
+                        className="h-8 rounded-sm border border-zinc-200 bg-zinc-50 px-2 text-[9px] font-semibold outline-none focus:border-red-600 focus:bg-white"
+                      />
+                      <select
+                        value={columnFilter}
+                        onChange={(e) => setColumnFilter(e.target.value)}
+                        className="h-8 rounded-sm border border-zinc-200 bg-zinc-50 px-2 text-[9px] font-bold outline-none focus:border-red-600"
+                      >
+                        <option value="all">ทุกชนิด</option>
+                        <option value="pk">Primary Key</option>
+                        <option value="editable">แก้ไขได้</option>
+                        <option value="number">ตัวเลข</option>
+                        <option value="date">วันที่/เวลา</option>
+                        <option value="text">ข้อความ</option>
+                        <option value="boolean">ใช่/ไม่ใช่</option>
+                      </select>
+                    </div>
                     <div className="max-h-72 overflow-y-auto rounded-sm border border-zinc-200">
-                      {selectedTable.columns.map((column) => {
+                      {filteredColumns.map((column) => {
                         const selected = selectedColumns.includes(column.name);
                         const isPrimaryKey = selectedTable.primaryKey.includes(column.name);
                         const keyRequired = isPrimaryKey && editableColumns.length > 0;
@@ -445,11 +678,69 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                           </div>
                         );
                       })}
+                      {filteredColumns.length === 0 && (
+                        <p className="px-3 py-6 text-center text-[9px] font-semibold text-zinc-400">ไม่พบคอลัมน์ตามตัวกรอง</p>
+                      )}
                     </div>
                     {!schemaData.allowWrite && (
                       <p className="mt-1.5 text-[10px] font-bold text-amber-600">
                         ฐานข้อมูลนี้ตั้งเป็นอ่านอย่างเดียว จึงเลือกแสดงคอลัมน์ได้ แต่เปิดแก้ไขค่าไม่ได้
                       </p>
+                    )}
+                  </div>
+
+                  <div className="rounded-sm border border-violet-200 bg-violet-50/50 p-2.5">
+                    <div className="mb-2">
+                      <p className="text-[10px] font-black text-violet-700">Join ตารางจาก Foreign Key</p>
+                      <p className="text-[9px] font-semibold text-violet-500">เลือกคอลัมน์จากตารางที่เชื่อมกัน ระบบสร้าง LEFT JOIN ให้โดยอัตโนมัติ</p>
+                    </div>
+                    {availableRelationships.length === 0 ? (
+                      <p className="rounded-sm border border-dashed border-violet-200 bg-white/70 px-2 py-3 text-center text-[9px] font-semibold text-violet-400">ตารางนี้ไม่มี Foreign Key ที่บัญชีฐานข้อมูลอ่านได้</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {availableRelationships.map((relationship) => {
+                          const baseIsFrom = relationship.fromTable === selectedTable.key;
+                          const targetKey = baseIsFrom ? relationship.toTable : relationship.fromTable;
+                          const target = schemaData.tables.find((table) => table.key === targetKey);
+                          if (!target) return null;
+                          const pairs = relationship.pairs.map((pair) =>
+                            `${baseIsFrom ? pair.fromColumn : pair.toColumn} = ${target.name}.${baseIsFrom ? pair.toColumn : pair.fromColumn}`
+                          ).join(" + ");
+                          const chosen = joinColumns[relationship.key] || [];
+                          return (
+                            <div key={relationship.key} className="rounded-sm border border-violet-100 bg-white p-2">
+                              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-1">
+                                <div className="min-w-0">
+                                  <p className="truncate text-[9px] font-black text-zinc-700">{target.key}</p>
+                                  <p className="truncate font-mono text-[8px] font-semibold text-zinc-400">{pairs}</p>
+                                </div>
+                                <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[8px] font-black text-violet-600">{chosen.length} คอลัมน์</span>
+                              </div>
+                              <div className="flex max-h-28 flex-wrap gap-1 overflow-y-auto">
+                                {target.columns.filter((column) => column.canSelect).map((column) => (
+                                  <label key={column.name} className={`flex cursor-pointer items-center gap-1 rounded-sm border px-1.5 py-1 text-[8px] font-bold ${chosen.includes(column.name) ? "border-violet-300 bg-violet-50 text-violet-700" : "border-zinc-200 text-zinc-500"}`}>
+                                    <input
+                                      type="checkbox"
+                                      checked={chosen.includes(column.name)}
+                                      onChange={(e) => {
+                                        setJoinColumns((prev) => ({
+                                          ...prev,
+                                          [relationship.key]: e.target.checked
+                                            ? [...(prev[relationship.key] || []), column.name]
+                                            : (prev[relationship.key] || []).filter((name) => name !== column.name),
+                                        }));
+                                        setTestResult(null);
+                                      }}
+                                      className="accent-violet-600"
+                                    />
+                                    {column.name}
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
 
@@ -591,7 +882,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                     </label>
                   </div>
 
-                  {selectedColumnNames.length > 0 && (
+                  {resultColumnNames.length > 0 && (
                     <div className="rounded-sm border border-zinc-200 p-2.5">
                       <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
                         <div>
@@ -611,29 +902,29 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                         </label>
                       </div>
                       <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
-                        {selectedColumnNames.map((column) => {
-                          const setting = columnSettings[column] || {};
+                        {settingColumns.map((column) => {
+                          const setting = effectiveColumnSettings[column.key] || {};
                           return (
-                            <div key={column} className="rounded-sm border border-zinc-100 bg-zinc-50 p-2">
-                              <p className="mb-1.5 truncate font-mono text-[9px] font-black text-zinc-500">{column}</p>
+                            <div key={column.key} className="rounded-sm border border-zinc-100 bg-zinc-50 p-2">
+                              <p className="mb-1.5 truncate font-mono text-[9px] font-black text-zinc-500">{column.source}</p>
                               <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
                                 <input
                                   type="text"
                                   value={setting.label || ""}
-                                  onChange={(e) => setColumnSettings((prev) => ({ ...prev, [column]: { ...prev[column], label: e.target.value } }))}
-                                  placeholder={`ชื่อหัว: ${column}`}
+                                  onChange={(e) => setColumnSettings((prev) => ({ ...prev, [column.key]: { ...prev[column.key], label: e.target.value } }))}
+                                  placeholder={`ชื่อหัว: ${column.key}`}
                                   className="h-8 rounded-sm border border-zinc-200 bg-white px-2 text-[9px] font-semibold outline-none focus:border-red-600"
                                 />
                                 <select
                                   value={setting.render || "text"}
-                                  onChange={(e) => setColumnSettings((prev) => ({ ...prev, [column]: { ...prev[column], render: e.target.value } }))}
+                                  onChange={(e) => setColumnSettings((prev) => ({ ...prev, [column.key]: { ...prev[column.key], render: e.target.value } }))}
                                   className="h-8 rounded-sm border border-zinc-200 bg-white px-2 text-[9px] font-bold outline-none focus:border-red-600"
                                 >
                                   {Object.entries(BUILDER_RENDER_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                                 </select>
                                 <select
                                   value={setting.bg || ""}
-                                  onChange={(e) => setColumnSettings((prev) => ({ ...prev, [column]: { ...prev[column], bg: e.target.value } }))}
+                                  onChange={(e) => setColumnSettings((prev) => ({ ...prev, [column.key]: { ...prev[column.key], bg: e.target.value } }))}
                                   className="h-8 rounded-sm border border-zinc-200 bg-white px-2 text-[9px] font-bold outline-none focus:border-red-600"
                                 >
                                   <option value="">สีพื้นเซลล์</option>
@@ -641,7 +932,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                                 </select>
                                 <select
                                   value={setting.headerBg || ""}
-                                  onChange={(e) => setColumnSettings((prev) => ({ ...prev, [column]: { ...prev[column], headerBg: e.target.value } }))}
+                                  onChange={(e) => setColumnSettings((prev) => ({ ...prev, [column.key]: { ...prev[column.key], headerBg: e.target.value } }))}
                                   className="h-8 rounded-sm border border-zinc-200 bg-white px-2 text-[9px] font-bold outline-none focus:border-red-600"
                                 >
                                   <option value="">สีหัวคอลัมน์</option>
@@ -731,7 +1022,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                   <thead className="sticky top-0 z-10">
                     <tr>
                       {testResult.columns.map((column) => {
-                        const setting = columnSettings[column.name] || {};
+                        const setting = effectiveColumnSettings[column.name] || {};
                         const tone = CELL_TONES[setting.headerBg || tableTone];
                         return (
                           <th
@@ -749,7 +1040,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                     {testResult.rows.slice(0, 10).map((row, rowIndex) => (
                       <tr key={rowIndex}>
                         {testResult.columns.map((column, columnIndex) => {
-                          const setting = columnSettings[column.name] || {};
+                          const setting = effectiveColumnSettings[column.name] || {};
                           const tone = CELL_TONES[setting.bg || tableTone];
                           return (
                             <td
@@ -772,6 +1063,19 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
               </div>
             </div>
           )}
+          <div className="rounded-sm border border-zinc-200 bg-zinc-50 p-3">
+            <p className="mb-2 text-[10px] font-black text-zinc-700">สรุปก่อนบันทึก</p>
+            <div className="grid gap-2 text-[9px] sm:grid-cols-2 lg:grid-cols-4">
+              <div><span className="block font-black text-zinc-400">รูปแบบ</span><span className="font-bold text-zinc-700">{builderMode === "visual" ? "ไม่เขียน SQL" : "SQL ขั้นสูง"}</span></div>
+              <div><span className="block font-black text-zinc-400">ตารางหลัก</span><span className="font-mono font-bold text-zinc-700">{builderMode === "visual" ? selectedTableKey || "—" : "กำหนดใน SQL"}</span></div>
+              <div><span className="block font-black text-zinc-400">คอลัมน์ผลลัพธ์</span><span className="font-bold text-zinc-700">{builderMode === "visual" ? resultColumnNames.length : testResult?.columns?.length ?? "รอทดสอบ"}</span></div>
+              <div><span className="block font-black text-zinc-400">Join</span><span className="font-bold text-zinc-700">{builderMode === "visual" ? `${joinDefinitions.length} ตาราง` : "กำหนดใน SQL"}</span></div>
+              <div><span className="block font-black text-zinc-400">ตัวกรอง</span><span className="font-bold text-zinc-700">{builderMode === "visual" ? `${filters.length} เงื่อนไข` : `${testParamNames.length} พารามิเตอร์`}</span></div>
+              <div><span className="block font-black text-zinc-400">แก้ไขข้อมูล</span><span className={`font-bold ${editableColumns.length ? "text-emerald-600" : "text-zinc-500"}`}>{builderMode === "visual" ? `${editableColumns.length} คอลัมน์` : sourceQuery?.layout?.editable ? "คงค่าเดิม" : "อ่านอย่างเดียว"}</span></div>
+              <div><span className="block font-black text-zinc-400">จำนวนสูงสุด</span><span className="font-bold text-zinc-700">{builderMode === "visual" ? `${rowLimit.toLocaleString("th-TH")} แถว` : "ตาม SQL/ระบบ"}</span></div>
+              <div><span className="block font-black text-zinc-400">ฐานข้อมูล</span><span className="font-bold text-zinc-700">{connectionId ? connections.find((connection) => String(connection.id) === connectionId)?.name || "ฐานข้อมูลที่เลือก" : "หลัก (inblackm)"}</span></div>
+            </div>
+          </div>
         </div>
 
         <MissingNotice
@@ -803,7 +1107,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
             ) : (
               <Save size={13} />
             )}
-            บันทึก
+            {isDuplicate ? "สร้างสำเนา" : "บันทึก"}
           </button>
         </div>
       </div>

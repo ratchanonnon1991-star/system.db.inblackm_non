@@ -12,6 +12,7 @@ import {
   ClipboardPaste,
   Combine,
   CornerDownRight,
+  Copy,
   ChevronUp,
   Download,
   Eye,
@@ -433,6 +434,7 @@ export default function QueryPanel({
   onResetHeight,
   onResetWidth,
   onEditQuery,
+  onDuplicateQuery,
   onDrill,
   initialParams,
   // In the sheet view the panel is the page: it sits in the flow at full width
@@ -2003,6 +2005,14 @@ export default function QueryPanel({
                     className={menuItemClass}
                   >
                     <Pencil size={14} /> แก้ไข Query
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => runMoreAction(onDuplicateQuery)}
+                    className={menuItemClass}
+                  >
+                    <Copy size={14} /> ทำสำเนา Query
                   </button>
                 </>
               )}

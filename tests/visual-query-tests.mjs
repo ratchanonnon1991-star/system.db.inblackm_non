@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { buildVisualLayout, buildVisualSelect } from "@/lib/gamedb-visual-query.js";
-import { mapSchemaRows } from "@/server/gamedb-schema-inspector.js";
+import { mapForeignKeyRows, mapSchemaRows } from "@/server/gamedb-schema-inspector.js";
 
 let passed = 0;
 function check(label, actual, expected) {
@@ -51,6 +51,35 @@ check(
   buildVisualSelect({ schema: "public", table: "games", columns: ["id"], limit: 99999 }).endsWith("LIMIT 1000"),
   true
 );
+check(
+  "foreign-key joins qualify base columns and alias joined results",
+  buildVisualSelect({
+    schema: "public",
+    table: "orders",
+    columns: ["id", "game_id"],
+    joins: [{
+      schema: "public",
+      table: "games",
+      pairs: [{ baseColumn: "game_id", joinColumn: "id" }],
+      columns: [{ name: "name", alias: "j1_name" }],
+    }],
+    sort: { column: "id", direction: "desc" },
+    limit: 100,
+  }),
+  'SELECT\n  "t0"."id",\n  "t0"."game_id",\n  "t1"."name" AS "j1_name"\nFROM "public"."orders" AS "t0"\nLEFT JOIN "public"."games" AS "t1" ON "t0"."game_id" = "t1"."id"\nORDER BY "t0"."id" DESC\nLIMIT 100'
+);
+assert.throws(
+  () => buildVisualSelect({
+    schema: "public", table: "orders", columns: ["id"],
+    joins: [{
+      schema: "public", table: 'games"; DROP TABLE users; --',
+      pairs: [{ baseColumn: "game_id", joinColumn: "id" }],
+      columns: [{ name: "name", alias: "game_name" }],
+    }],
+  }),
+  /ชื่อตาราง\/คอลัมน์ไม่ถูกต้อง/
+);
+passed += 1;
 assert.throws(
   () => buildVisualSelect({
     schema: "public", table: "games", columns: ["id"],
@@ -88,6 +117,11 @@ check("visual layout removes duplicate writable columns", layout.editable.column
 check("visual layout stores a friendly column label", layout.labels.c1, "ชื่อเกม");
 check("visual layout stores the selected renderer", layout.formats.c1.render, "chip");
 check("visual layout stores the selected cell colour", layout.formats.c1.bg, "amber");
+const joinedLayout = buildVisualLayout({
+  selectedColumns: ["id", "j1_c1_name"],
+  columnSettings: { j1_c1_name: { label: "games.name" } },
+});
+check("joined result label is stored at its result position", joinedLayout.labels.c1, "games.name");
 check(
   "no writable column leaves the query read-only",
   buildVisualLayout({ schema: "public", table: "games", primaryKey: "id", editableColumns: [] }).editable,
@@ -119,5 +153,26 @@ check(
   tables[0].columns[1].editReason,
   "ฐานข้อมูลนี้เปิดโหมดอ่านอย่างเดียว"
 );
+
+const relationships = mapForeignKeyRows([
+  {
+    constraint_id: "42", constraint_name: "orders_game_id_fkey",
+    source_schema: "public", source_table: "orders", source_column: "game_id",
+    target_schema: "public", target_table: "games", target_column: "id", position: 1,
+  },
+  {
+    constraint_id: "43", constraint_name: "composite_fkey",
+    source_schema: "public", source_table: "packs", source_column: "game_id",
+    target_schema: "public", target_table: "games", target_column: "id", position: 1,
+  },
+  {
+    constraint_id: "43", constraint_name: "composite_fkey",
+    source_schema: "public", source_table: "packs", source_column: "region",
+    target_schema: "public", target_table: "games", target_column: "region", position: 2,
+  },
+]);
+check("foreign keys are grouped by constraint", relationships.length, 2);
+check("foreign key table names include schema", relationships[0].fromTable, "public.orders");
+check("composite foreign key keeps every pair", relationships[1].pairs.length, 2);
 
 console.log(`${passed} passed`);
