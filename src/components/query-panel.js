@@ -515,6 +515,23 @@ export default function QueryPanel({
     [effectiveParams]
   );
 
+  // The params bar is now a modal an "Input" button opens rather than a
+  // permanent strip across the top of every panel with any (it used to cover
+  // the table underneath on a narrow panel). Something still has to prompt a
+  // first-time visitor to open it, though, so it opens itself once on mount
+  // if there is nothing to show yet and a required value is missing --
+  // never again after that, so filling it in and closing it does not pop
+  // it back open on the next re-render.
+  const autoOpenedParamsModalRef = useRef(false);
+  useEffect(() => {
+    if (autoOpenedParamsModalRef.current) return;
+    if (effectiveParams.length === 0) return;
+    autoOpenedParamsModalRef.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot prompt on mount, not a live sync
+    if (!result && Object.keys(paramErrors).length > 0) setModal("paramsInput");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot check on mount, not a live sync
+  }, []);
+
   // runQuery must not be rebuilt whenever a parameter input changes, or the
   // effect below would re-run the query on every keystroke.
   const paramsRef = useRef(paramValues);
@@ -2287,6 +2304,23 @@ export default function QueryPanel({
           )}
         </div>}
 
+        {/* A button + modal instead of the params bar sitting permanently
+            across the top of the panel -- on a narrow panel that strip ate
+            enough height to cover the table underneath it. */}
+        {effectiveParams.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setModal("paramsInput")}
+            className={`flex h-8 items-center gap-1 rounded-sm border px-2 text-[10px] font-black transition ${
+              Object.keys(paramErrors).length > 0
+                ? "border-red-300 bg-red-50 text-red-600 hover:bg-red-100"
+                : "border-zinc-200 text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700"
+            }`}
+            title="กรอกค่าตัวกรองของ Query นี้"
+          >
+            <SlidersHorizontal size={13} /> Input
+          </button>
+        )}
         {canCustomizeLayout && <button type="button" onClick={onToggleFullWidth} className={iconButtonClass} title={isFullWidth ? "คืนความกว้างอัตโนมัติ" : "ขยายเต็มความกว้าง"}>
           {isFullWidth ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
         </button>}
@@ -2308,11 +2342,31 @@ export default function QueryPanel({
 
       {!panel.collapsed && (
         <>
-          {effectiveParams.length > 0 && (
-            <div className="flex flex-wrap items-start gap-x-2 gap-y-1 border-b border-zinc-100 bg-zinc-50/60 px-3 py-2">
+          {modal === "paramsInput" && effectiveParams.length > 0 && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm"
+              onClick={() => setModal(null)}
+            >
+            <div
+              className="flex max-h-[85vh] w-full max-w-2xl flex-col gap-2 overflow-y-auto rounded-sm bg-white p-4 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 text-sm font-black text-zinc-700">
+                  <SlidersHorizontal size={15} className="text-red-600" /> ตัวกรอง Query
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setModal(null)}
+                  className="rounded-sm border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
+                  aria-label="ปิด"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="flex flex-wrap items-start gap-x-2 gap-y-1">
               <div className="flex w-full flex-wrap items-center justify-between gap-2 pb-1">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="mr-1 text-[10px] font-black text-zinc-500">ตัวกรอง Query</span>
                   {dateRangeParams && (
                     <>
                       <button type="button" onClick={() => applyDateRangePreset("today")} className={paramPresetButtonClass}>
@@ -2432,7 +2486,9 @@ export default function QueryPanel({
                           setParamValues((prev) => ({ ...prev, [param.name]: e.target.value }))
                         }
                         onKeyDown={(e) => {
-                          if (e.key === "Enter") runQuery({ validate: true });
+                          if (e.key !== "Enter") return;
+                          runQuery({ validate: true });
+                          if (Object.keys(paramErrors).length === 0) setModal(null);
                         }}
                         placeholder={guide.placeholder}
                         aria-invalid={Boolean(error)}
@@ -2474,13 +2530,20 @@ export default function QueryPanel({
                 </span>
                 <button
                   type="button"
-                  onClick={() => runQuery({ validate: true })}
+                  onClick={() => {
+                    runQuery({ validate: true });
+                    // Closes on a valid submit only -- an invalid one leaves the
+                    // modal open so the highlighted field stays visible.
+                    if (Object.keys(paramErrors).length === 0) setModal(null);
+                  }}
                   disabled={running}
                   className="flex h-8 items-center gap-1.5 rounded-sm bg-zinc-800 px-3 text-[11px] font-black text-white transition hover:bg-zinc-900 disabled:opacity-50"
                 >
                   <Play size={11} /> ใช้ค่านี้
                 </button>
               </div>
+              </div>
+            </div>
             </div>
           )}
 
@@ -2523,7 +2586,15 @@ export default function QueryPanel({
             </div>
           ) : Object.keys(paramErrors).length > 0 && !result ? (
             <p className="px-4 py-12 text-center text-xs font-semibold text-zinc-400">
-              กรอกค่าด้านบนแล้วกด &quot;ใช้ค่านี้&quot; เพื่อดึงข้อมูล
+              ยังไม่มีข้อมูล — กด{" "}
+              <button
+                type="button"
+                onClick={() => setModal("paramsInput")}
+                className="font-black text-red-600 underline underline-offset-2 hover:text-red-700"
+              >
+                &quot;Input&quot;
+              </button>{" "}
+              ด้านบนเพื่อกรอกค่าตัวกรอง
             </p>
           ) : result ? (
             <>
