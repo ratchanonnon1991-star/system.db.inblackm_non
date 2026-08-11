@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChartColumn,
   ChevronDown,
@@ -8,6 +8,7 @@ import {
   Code2,
   Combine,
   CornerDownRight,
+  Database,
   Link2,
   Loader2,
   Paintbrush,
@@ -24,6 +25,7 @@ import { apiJson } from "@/lib/api-json";
 import MissingNotice from "@/components/missing-notice";
 import { isSafeIdentifier, isSafeIdentifierPart } from "@/lib/gamedb-identifier";
 import { extractSqlParams } from "@/lib/gamedb-sql-params";
+import { buildVisualInsert } from "@/lib/gamedb-visual-query";
 import {
   applyGroupTone,
   CELL_ALIGNS,
@@ -2169,17 +2171,85 @@ function fieldInputType(type) {
 }
 
 /**
- * Where an admin writes the INSERT that the add-data form will run.
+ * Where an admin sets up the INSERT that the add-data form will run.
  *
- * The boxes on the form are not designed here — they are read out of the SQL.
- * Every :placeholder in the statement becomes one field, so a script and its
- * form cannot drift apart: adding a column to the INSERT adds the box for it.
+ * The boxes on the form are not designed by hand — they are read out of the
+ * SQL. Every :placeholder in the statement becomes one field, so a script and
+ * its form cannot drift apart: adding a column to the INSERT adds the box for
+ * it. Most admins never see that SQL though: the default "เลือกตารางและ
+ * คอลัมน์" mode picks a table and ticks columns the same way the query
+ * builder does, and the INSERT is generated underneath — "เขียน SQL เอง" is
+ * there only for someone who already knows SQL and wants a script the picker
+ * cannot express (multi-table writes, expressions, etc).
  */
-export function InsertFormModal({ insertForm, onSave, onClose }) {
+export function InsertFormModal({ insertForm, connectionId, onSave, onClose }) {
+  const [builderMode, setBuilderMode] = useState(insertForm?.sql ? "sql" : "visual");
   const [sql, setSql] = useState(insertForm?.sql || "");
   const [label, setLabel] = useState(insertForm?.label || "");
   const [fields, setFields] = useState(() => insertForm?.fields || []);
-  const names = useMemo(() => extractSqlParams(sql), [sql]);
+
+  const [schemaData, setSchemaData] = useState(null);
+  const [schemaLoading, setSchemaLoading] = useState(false);
+  const [schemaError, setSchemaError] = useState("");
+  const [tableSearch, setTableSearch] = useState("");
+  const [selectedTableKey, setSelectedTableKey] = useState("");
+  const [selectedColumns, setSelectedColumns] = useState([]);
+
+  // Loaded once per connection, only once the picker is actually opened — an
+  // admin who only ever writes raw SQL should not pay for a schema fetch.
+  const schemaLoadedForRef = useRef(false);
+  useEffect(() => {
+    if (builderMode !== "visual" || schemaLoadedForRef.current === connectionId) return;
+    schemaLoadedForRef.current = connectionId;
+    (async () => {
+      setSchemaLoading(true);
+      setSchemaError("");
+      try {
+        const suffix = connectionId ? `?connectionId=${encodeURIComponent(connectionId)}` : "";
+        const data = await apiJson(`/api/query-builder/schema${suffix}`, {
+          fallbackError: "โหลดรายการตารางและคอลัมน์ไม่สำเร็จ",
+        });
+        setSchemaData(data);
+        setSelectedTableKey((prev) => prev || data.tables?.[0]?.key || "");
+      } catch (err) {
+        schemaLoadedForRef.current = false;
+        setSchemaError(err.message);
+      } finally {
+        setSchemaLoading(false);
+      }
+    })();
+  }, [builderMode, connectionId]);
+
+  const filteredTables = useMemo(() => {
+    const needle = tableSearch.trim().toLowerCase();
+    if (!needle) return schemaData?.tables || [];
+    return (schemaData?.tables || []).filter((table) => table.key.toLowerCase().includes(needle));
+  }, [schemaData, tableSearch]);
+
+  const selectedTable = useMemo(
+    () => schemaData?.tables?.find((table) => table.key === selectedTableKey) || null,
+    [schemaData, selectedTableKey]
+  );
+
+  // Identity/generated columns fill themselves in — offering a box for them
+  // would just produce an INSERT Postgres rejects.
+  const insertableColumns = useMemo(
+    () => (selectedTable?.columns || []).filter((column) => !column.identity && !column.generated),
+    [selectedTable]
+  );
+
+  const visualSql = useMemo(
+    () =>
+      buildVisualInsert({
+        schema: selectedTable?.schema,
+        table: selectedTable?.name,
+        columns: selectedColumns,
+      }),
+    [selectedTable, selectedColumns]
+  );
+
+  const effectiveSql = builderMode === "visual" ? visualSql : sql;
+  const names = useMemo(() => extractSqlParams(effectiveSql), [effectiveSql]);
 
   const draft = names.map((name) => {
     const existing = fields.find((field) => field.name === name);
@@ -2207,10 +2277,14 @@ export function InsertFormModal({ insertForm, onSave, onClose }) {
     setFields(draft.map((field) => (field.name === name ? { ...field, [key]: value } : field)));
 
   const looksLikeInsert = /^\s*insert\s+into\b/i.test(sql);
-  const insertMissing = [
-    !sql.trim() && "คำสั่ง INSERT",
-    sql.trim() && !looksLikeInsert && "สคริปต์ต้องขึ้นต้นด้วย INSERT INTO",
-  ].filter(Boolean);
+  const insertMissing =
+    builderMode === "visual"
+      ? [!visualSql && "เลือกตารางและติ๊กอย่างน้อยหนึ่งคอลัมน์"]
+      : [
+          !sql.trim() && "คำสั่ง INSERT",
+          sql.trim() && !looksLikeInsert && "สคริปต์ต้องขึ้นต้นด้วย INSERT INTO",
+        ];
+  const missing = insertMissing.filter(Boolean);
 
   return (
     <ModalShell
@@ -2218,8 +2292,8 @@ export function InsertFormModal({ insertForm, onSave, onClose }) {
       icon={<Plus size={15} />}
       onClose={onClose}
       saveLabel="บันทึกฟอร์ม"
-      saveDisabled={insertMissing.length > 0}
-      saveDisabledReason={`ยังไม่พร้อมบันทึก: ${insertMissing.join(", ")}`}
+      saveDisabled={missing.length > 0}
+      saveDisabledReason={`ยังไม่พร้อมบันทึก: ${missing.join(", ")}`}
       onRemove={
         insertForm
           ? () => {
@@ -2230,12 +2304,12 @@ export function InsertFormModal({ insertForm, onSave, onClose }) {
       }
       removeLabel="ลบฟอร์มนี้"
       onSave={() => {
-        if (insertMissing.length > 0) return;
-        onSave({ sql: sql.trim(), label: label.trim(), fields: draft });
+        if (missing.length > 0) return;
+        onSave({ sql: effectiveSql.trim(), label: label.trim(), fields: draft });
         onClose();
       }}
     >
-      <MissingNotice items={insertMissing} />
+      <MissingNotice items={missing} />
       <div>
         <label className={labelClass}>ชื่อปุ่ม / ฟอร์ม (ไม่ใส่ก็ได้)</label>
         <input
@@ -2247,26 +2321,174 @@ export function InsertFormModal({ insertForm, onSave, onClose }) {
         />
       </div>
 
-      <div>
-        <label className={labelClass}>คำสั่ง INSERT (ใช้ :ชื่อ แทนค่าที่จะให้กรอก)</label>
-        <textarea
-          value={sql}
-          onChange={(e) => setSql(e.target.value)}
-          rows={6}
-          spellCheck={false}
-          placeholder={"INSERT INTO games (name, region)\nVALUES (:ชื่อเกม, :region)"}
-          className="w-full rounded-sm border border-zinc-200 bg-zinc-50 p-3 font-mono text-[11px] font-semibold outline-none focus:border-red-600 focus:bg-white"
-        />
-        {sql.trim() && !looksLikeInsert && (
-          <p className="mt-1 text-[10px] font-bold text-amber-700">
-            สคริปต์ต้องขึ้นต้นด้วย INSERT INTO — เซิร์ฟเวอร์ปฏิเสธคำสั่งอื่นทุกครั้งที่รัน
-          </p>
-        )}
+      <div className="grid grid-cols-2 gap-2 rounded-sm bg-zinc-100 p-1">
+        <button
+          type="button"
+          onClick={() => {
+            if (builderMode === "sql" && sql.trim() && !visualSql) setSql(sql);
+            setBuilderMode("visual");
+          }}
+          className={`flex items-center justify-center gap-1.5 rounded-sm px-3 py-2 text-[11px] font-black transition ${
+            builderMode === "visual" ? "bg-white text-red-600 shadow-sm" : "text-zinc-500"
+          }`}
+        >
+          <Table2 size={13} /> เลือกตารางและคอลัมน์
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (builderMode === "visual" && visualSql) setSql(visualSql);
+            setBuilderMode("sql");
+          }}
+          className={`flex items-center justify-center gap-1.5 rounded-sm px-3 py-2 text-[11px] font-black transition ${
+            builderMode === "sql" ? "bg-white text-red-600 shadow-sm" : "text-zinc-500"
+          }`}
+        >
+          <Code2 size={13} /> เขียน SQL เอง (ขั้นสูง)
+        </button>
       </div>
+
+      {builderMode === "visual" ? (
+        <div className="space-y-3 rounded-sm border border-zinc-200 p-3">
+          <div className="flex items-start gap-2 rounded-sm border border-blue-200 bg-blue-50 px-3 py-2 text-[10px] font-bold text-blue-700">
+            <Database size={14} className="mt-0.5 shrink-0" />
+            เลือกตารางและติ๊กคอลัมน์ที่จะให้กรอก ระบบจะสร้างคำสั่ง INSERT ให้อัตโนมัติ โดยไม่ต้องเขียน SQL
+          </div>
+          {schemaError && (
+            <p className="rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[10px] font-bold text-red-600">
+              {schemaError}
+            </p>
+          )}
+          {schemaLoading ? (
+            <p className="flex items-center gap-2 py-6 text-xs font-bold text-zinc-400">
+              <Loader2 size={14} className="animate-spin" /> กำลังโหลดโครงสร้างฐานข้อมูล...
+            </p>
+          ) : schemaData?.tables?.length ? (
+            <>
+              <div>
+                <label className="mb-1 block text-[10px] font-black text-zinc-500">ค้นหาตาราง</label>
+                <input
+                  type="search"
+                  value={tableSearch}
+                  onChange={(e) => setTableSearch(e.target.value)}
+                  placeholder="เช่น games, orders"
+                  className="mb-1.5 h-9 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-[10px] font-semibold outline-none focus:border-red-600 focus:bg-white"
+                />
+                <label className="mb-1 block text-[10px] font-black text-zinc-500">ตาราง</label>
+                <select
+                  value={selectedTableKey}
+                  onChange={(e) => {
+                    setSelectedTableKey(e.target.value);
+                    setSelectedColumns([]);
+                  }}
+                  className="h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+                >
+                  {filteredTables.map((table) => (
+                    <option key={table.key} value={table.key}>
+                      {table.key}
+                    </option>
+                  ))}
+                </select>
+                {filteredTables.length === 0 && (
+                  <p className="mt-1 text-[9px] font-bold text-amber-600">ไม่พบตารางตามคำค้นหา</p>
+                )}
+              </div>
+
+              {selectedTable && (
+                <div>
+                  <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-[10px] font-black text-zinc-500">คอลัมน์ที่จะให้กรอก</p>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedColumns(insertableColumns.map((column) => column.name))}
+                      className="text-[10px] font-black text-red-600 hover:text-red-700"
+                    >
+                      เลือกทั้งหมด
+                    </button>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto rounded-sm border border-zinc-200">
+                    {insertableColumns.map((column) => {
+                      const checked = selectedColumns.includes(column.name);
+                      const isPrimaryKey = selectedTable.primaryKey.includes(column.name);
+                      return (
+                        <label
+                          key={column.name}
+                          className="flex items-center gap-2 border-b border-zinc-100 px-3 py-2 last:border-b-0"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) =>
+                              setSelectedColumns((prev) =>
+                                e.target.checked
+                                  ? [...prev, column.name]
+                                  : prev.filter((name) => name !== column.name)
+                              )
+                            }
+                            className="accent-red-600"
+                          />
+                          <span className="truncate font-mono text-[11px] font-black text-zinc-700">
+                            {column.name}
+                          </span>
+                          <span className="truncate text-[9px] font-semibold text-zinc-400">{column.type}</span>
+                          {isPrimaryKey && (
+                            <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[8px] font-black text-violet-600">
+                              PK
+                            </span>
+                          )}
+                          {!column.nullable && (
+                            <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[8px] font-black text-amber-600">
+                              NOT NULL
+                            </span>
+                          )}
+                        </label>
+                      );
+                    })}
+                    {insertableColumns.length === 0 && (
+                      <p className="px-3 py-6 text-center text-[9px] font-semibold text-zinc-400">
+                        ตารางนี้ไม่มีคอลัมน์ที่กรอกเองได้ (สร้างค่าอัตโนมัติทั้งหมด)
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            !schemaError && (
+              <p className="rounded-sm border border-dashed border-zinc-300 px-4 py-6 text-center text-[11px] font-semibold text-zinc-400">
+                ไม่พบตารางในฐานข้อมูลนี้
+              </p>
+            )
+          )}
+        </div>
+      ) : (
+        <div>
+          <label className={labelClass}>คำสั่ง INSERT (ใช้ :ชื่อ แทนค่าที่จะให้กรอก)</label>
+          <textarea
+            value={sql}
+            onChange={(e) => setSql(e.target.value)}
+            rows={6}
+            spellCheck={false}
+            placeholder={"INSERT INTO games (name, region)\nVALUES (:ชื่อเกม, :region)"}
+            className="w-full rounded-sm border border-zinc-200 bg-zinc-50 p-3 font-mono text-[11px] font-semibold outline-none focus:border-red-600 focus:bg-white"
+          />
+          {sql.trim() && !looksLikeInsert && (
+            <p className="mt-1 text-[10px] font-bold text-amber-700">
+              สคริปต์ต้องขึ้นต้นด้วย INSERT INTO — เซิร์ฟเวอร์ปฏิเสธคำสั่งอื่นทุกครั้งที่รัน
+            </p>
+          )}
+        </div>
+      )}
 
       {draft.length === 0 ? (
         <p className="rounded-sm border border-dashed border-zinc-300 px-4 py-6 text-center text-[11px] font-semibold text-zinc-400">
-          ยังไม่มี <code className="font-mono">:ชื่อ</code> ใน SQL — ใส่ก่อน ถึงจะมีช่องให้กรอก
+          {builderMode === "visual"
+            ? "ยังไม่ได้ติ๊กคอลัมน์ — เลือกตารางแล้วติ๊กคอลัมน์ด้านบน ถึงจะมีช่องให้กรอก"
+            : (
+              <>
+                ยังไม่มี <code className="font-mono">:ชื่อ</code> ใน SQL — ใส่ก่อน ถึงจะมีช่องให้กรอก
+              </>
+            )}
         </p>
       ) : (
         draft.map((field) => (

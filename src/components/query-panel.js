@@ -2769,6 +2769,7 @@ export default function QueryPanel({
       {modal === "insertForm" && (
         <InsertFormModal
           insertForm={layout.insertForm}
+          connectionId={query.connectionId}
           onSave={(insertForm) => mutateLayout((prev) => ({ ...prev, insertForm }))}
           onClose={() => setModal(null)}
         />

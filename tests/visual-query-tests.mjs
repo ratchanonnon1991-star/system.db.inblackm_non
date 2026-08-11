@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildVisualLayout, buildVisualSelect } from "@/lib/gamedb-visual-query.js";
+import { buildVisualInsert, buildVisualLayout, buildVisualSelect } from "@/lib/gamedb-visual-query.js";
 import { mapForeignKeyRows, mapSchemaRows } from "@/server/gamedb-schema-inspector.js";
 
 let passed = 0;
@@ -216,5 +216,26 @@ const relationships = mapForeignKeyRows([
 check("foreign keys are grouped by constraint", relationships.length, 2);
 check("foreign key table names include schema", relationships[0].fromTable, "public.orders");
 check("composite foreign key keeps every pair", relationships[1].pairs.length, 2);
+
+check(
+  "visual insert builder quotes identifiers and turns columns into :placeholders",
+  buildVisualInsert({ schema: "public", table: "game list", columns: ["name", "ชื่อเกม"] }),
+  'INSERT INTO "public"."game list" ("name", "ชื่อเกม")\nVALUES (:name, :ชื่อเกม)'
+);
+check(
+  "visual insert builder removes duplicate columns",
+  buildVisualInsert({ schema: "public", table: "games", columns: ["id", "id"] }),
+  'INSERT INTO "public"."games" ("id")\nVALUES (:id)'
+);
+check(
+  "an empty visual insert selection cannot produce SQL",
+  buildVisualInsert({ schema: "public", table: "games", columns: [] }),
+  ""
+);
+check(
+  "a visual insert with no table cannot produce SQL",
+  buildVisualInsert({ schema: "", table: "games", columns: ["id"] }),
+  ""
+);
 
 console.log(`${passed} passed`);

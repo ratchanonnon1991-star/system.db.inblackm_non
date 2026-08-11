@@ -150,6 +150,20 @@ export function buildVisualSelect({
   return clauses.join("\n");
 }
 
+/**
+ * SQL for the "pick a table, tick some columns" side of the add-data form
+ * builder — mirrors buildVisualSelect but for INSERT. Every chosen column
+ * becomes a :columnName placeholder, so the fields on the resulting form line
+ * up 1:1 with the columns without the admin ever typing SQL.
+ */
+export function buildVisualInsert({ schema, table, columns }) {
+  const selected = [...new Set((columns || []).map(String))];
+  if (!schema || !table || selected.length === 0) return "";
+  const columnList = selected.map((column) => quoteIdentifier(column)).join(", ");
+  const paramList = selected.map((column) => `:${column}`).join(", ");
+  return `INSERT INTO ${quoteIdentifier(`${schema}.${table}`)} (${columnList})\nVALUES (${paramList})`;
+}
+
 export function buildVisualLayout({
   baseLayout,
   schema,
