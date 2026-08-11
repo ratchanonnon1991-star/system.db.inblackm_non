@@ -112,6 +112,9 @@ npm run dev            # http://localhost:4183
 |---|---|
 | `PG_HOST` / `PG_PORT` / `PG_DATABASE` / `PG_USER` / `PG_PASSWORD` | PostgreSQL ที่เก็บตาราง `gamedb_*` |
 | `SESSION_SECRET` | คีย์เซ็น session cookie ของ gamedb เอง (string ยาว ๆ อะไรก็ได้) — **บน production ไม่ตั้งแล้วแอปจะไม่ยอมทำงาน** เพราะถ้า fallback ไปใช้คีย์ในโค้ด ใครก็ปลอม cookie เป็น admin ได้ |
+| `TURNSTILE_ENABLED` | ตั้ง `true` เพื่อบังคับ Cloudflare Turnstile ที่หน้า login; เมื่อเปิดแล้วแต่ key ไม่ครบ ระบบจะปฏิเสธ login แบบ fail-closed |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Site Key ที่ส่งให้ widget และ Secret Key ที่ใช้ตรวจ token ฝั่ง server ตามลำดับ ห้ามนำ Secret Key ไปใช้ใน client หรือ commit ลง Git |
+| `TURNSTILE_ALLOWED_HOSTNAMES` | hostname ที่ยอมรับจากผล `siteverify` คั่นด้วย comma เช่น `systemdb.inblackm.com,localhost` เพื่อกัน token จาก hostname อื่น |
 | `GAMEDB_ENC_KEY` | คีย์เข้ารหัสรหัสผ่าน connection (ตั้งแล้วห้ามเปลี่ยน ไม่งั้น connection เดิมถอดรหัสไม่ได้) |
 | `GAMEDB_ADMIN_USERNAME` / `GAMEDB_ADMIN_PASSWORD` | บัญชี admin คนแรก — ถูกสร้างอัตโนมัติครั้งเดียวตอนตาราง `gamedb_users` ยังว่าง |
 
@@ -124,13 +127,14 @@ npm run dev            # http://localhost:4183
 - SQL ทุกคำสั่งถูกบังคับ: `SELECT`/`WITH` statement เดียว + คัดกรองคีย์เวิร์ด (อ่านเฉพาะนอก string literal/comment) + รันใน transaction `READ ONLY` + timeout 8 วินาที + จำกัด 1,000 แถว
 - ค่าที่ผู้ใช้กรอก (`:param`) ถูก bind เป็น `$n` เสมอ ไม่ต่อสตริงเข้า SQL · ชื่อตาราง/คอลัมน์ที่ประกอบเข้า SQL ตอนเขียนข้อมูลมาจาก config ที่ Admin บันทึกไว้ และถูก validate + quote
 - ทุก API มี guard: ไม่มี cookie = 401 ทุกเส้น, staff แตะเส้นของ Admin = 403 · role อ่านจากฐานข้อมูลทุก request ไม่ใช่จาก cookie ดังนั้นถอดสิทธิ์แล้วมีผลทันที
-- response header: `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` และ CSP (`frame-ancestors 'none'`, `connect-src 'self'`)
+- response header: `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` และ CSP (`frame-ancestors 'none'`; อนุญาต `challenges.cloudflare.com` เฉพาะ script/frame/connect ที่ Turnstile ต้องใช้)
 
 ## Deploy production
 
 1. วาง `.env` บนเซิร์ฟเวอร์ (รวม `GAMEDB_ADMIN_USERNAME`/`GAMEDB_ADMIN_PASSWORD` สำหรับ seed รอบแรก)
 2. `npm run build` แล้ว `npm run pm2:start` (PM2 app ชื่อ `system.db.inblackm`, พอร์ต 5589) — หรือปล่อยให้ GitHub Actions (`.github/workflows/deploy.yml`) ทำให้เมื่อ push `main`
 3. เพิ่ม site ใน aaPanel/nginx: subdomain ชั้นเดียว เช่น `systemdb.inblackm.com` → reverse proxy `http://127.0.0.1:5589` (subdomain ซ้อน 2 ชั้นจะติดปัญหา cert ของ Cloudflare)
+4. ใน Cloudflare Turnstile เพิ่ม hostname `systemdb.inblackm.com` ให้ widget แล้วกำหนด `TURNSTILE_ENABLED=true` พร้อม Site Key/Secret Key ใน `.env` ก่อน restart PM2
 
 ## ให้สิทธิ์
 ```bash

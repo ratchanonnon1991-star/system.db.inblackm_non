@@ -43,6 +43,7 @@ import NextLink from "next/link";
 import { apiJson } from "@/lib/api-json";
 import { buildXlsxBlob } from "@/lib/gamedb-xlsx";
 import QueryPanel from "@/components/query-panel";
+import TurnstileWidget from "@/components/turnstile-widget";
 import {
   ConnectionsModal,
   QueryEditorModal,
@@ -207,22 +208,73 @@ function LoginScreen({ onLoggedIn }) {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileAttempt, setTurnstileAttempt] = useState(0);
+  const [turnstileConfig, setTurnstileConfig] = useState({
+    loading: true,
+    enabled: false,
+    misconfigured: false,
+    siteKey: "",
+    error: "",
+  });
+
+  useEffect(() => {
+    let active = true;
+    apiJson("/api/auth/config", {
+      fallbackError: "โหลดระบบตรวจสอบความปลอดภัยไม่สำเร็จ",
+    })
+      .then((data) => {
+        if (!active) return;
+        setTurnstileConfig({
+          loading: false,
+          enabled: Boolean(data.turnstileEnabled),
+          misconfigured: Boolean(data.turnstileMisconfigured),
+          siteKey: String(data.turnstileSiteKey || ""),
+          error: "",
+        });
+      })
+      .catch((err) => {
+        if (!active) return;
+        setTurnstileConfig({
+          loading: false,
+          enabled: false,
+          misconfigured: false,
+          siteKey: "",
+          error: err.message,
+        });
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const submit = async (event) => {
     event.preventDefault();
+    if (
+      turnstileConfig.loading ||
+      turnstileConfig.error ||
+      turnstileConfig.misconfigured ||
+      (turnstileConfig.enabled && !turnstileToken)
+    ) {
+      return;
+    }
     setSubmitting(true);
     setError("");
     try {
       const data = await apiJson("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, turnstileToken }),
         fallbackError: "เข้าสู่ระบบไม่สำเร็จ",
       });
       onLoggedIn(data.user);
     } catch (err) {
       setError(err.message);
       setSubmitting(false);
+      if (turnstileConfig.enabled) {
+        setTurnstileToken("");
+        setTurnstileAttempt((attempt) => attempt + 1);
+      }
     }
   };
 
@@ -260,6 +312,24 @@ function LoginScreen({ onLoggedIn }) {
           className="mb-4 h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
         />
 
+        {turnstileConfig.enabled && (
+          <div className="mb-3">
+            <TurnstileWidget
+              key={turnstileAttempt}
+              siteKey={turnstileConfig.siteKey}
+              onToken={setTurnstileToken}
+            />
+          </div>
+        )}
+
+        {(turnstileConfig.error || turnstileConfig.misconfigured) && (
+          <div className="mb-3 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
+            {turnstileConfig.misconfigured
+              ? "ระบบ Turnstile ยังตั้งค่าไม่ครบ กรุณาติดต่อผู้ดูแล"
+              : turnstileConfig.error}
+          </div>
+        )}
+
         {error && (
           <div className="mb-3 rounded-sm border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-bold text-red-600">
             {error}
@@ -268,7 +338,15 @@ function LoginScreen({ onLoggedIn }) {
 
         <button
           type="submit"
-          disabled={submitting || !username.trim() || !password}
+          disabled={
+            submitting ||
+            !username.trim() ||
+            !password ||
+            turnstileConfig.loading ||
+            Boolean(turnstileConfig.error) ||
+            turnstileConfig.misconfigured ||
+            (turnstileConfig.enabled && !turnstileToken)
+          }
           className="flex h-10 w-full items-center justify-center gap-1 rounded-sm bg-red-600 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
         >
           {submitting ? <Loader2 size={14} className="animate-spin" /> : <Lock size={13} />}

@@ -17,7 +17,7 @@ const nextConfig = {
             value: [
               "default-src 'self'",
               // Next injects its bootstrap inline, and the dev overlay needs eval.
-              "script-src 'self' 'unsafe-inline'" +
+              "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com" +
                 (process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'"),
               "style-src 'self' 'unsafe-inline'",
               // gameinfo lets staff paste arbitrary image/currency/tutorial
@@ -25,7 +25,8 @@ const nextConfig = {
               // rendered as plain <img> tags — those hosts aren't known ahead
               // of time, so img-src has to allow any https origin.
               "img-src 'self' data: blob: https:",
-              "connect-src 'self'",
+              "connect-src 'self' https://challenges.cloudflare.com",
+              "frame-src https://challenges.cloudflare.com",
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",

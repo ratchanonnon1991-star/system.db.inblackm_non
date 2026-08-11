@@ -6,6 +6,11 @@ import {
 } from "@/lib/session";
 import { verifyPassword } from "@/server/passwords";
 import { findUserByUsername } from "@/server/users-repository";
+import {
+  clientIp,
+  getTurnstileConfig,
+  verifyTurnstile,
+} from "@/lib/turnstile";
 
 // In-memory brute-force guard: max attempts per username within the window.
 // Good enough for a single PM2 instance; resets on process restart.
@@ -31,6 +36,23 @@ export async function POST(request) {
     const password = String(body.password || "");
     if (!username || !password) {
       return jsonError("กรุณากรอก username และรหัสผ่าน", 400);
+    }
+
+    const turnstile = getTurnstileConfig();
+    if (turnstile.requested && !turnstile.enabled) {
+      console.error("Turnstile is enabled but its site key or secret key is missing");
+      return jsonError("ระบบตรวจสอบความปลอดภัยยังไม่พร้อม กรุณาติดต่อผู้ดูแล", 503);
+    }
+    if (turnstile.enabled) {
+      const accepted = await verifyTurnstile({
+        secretKey: turnstile.secretKey,
+        token: body.turnstileToken,
+        ip: clientIp(request),
+        allowedHostnames: turnstile.allowedHostnames,
+      });
+      if (!accepted) {
+        return jsonError("ยืนยันว่าไม่ใช่โปรแกรมอัตโนมัติไม่สำเร็จ กรุณาลองใหม่", 400);
+      }
     }
 
     if (tooManyAttempts(username.toLowerCase())) {
