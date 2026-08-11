@@ -518,13 +518,49 @@ export default function PanelTable({
   const gameNameColumnIndex = columns.findIndex(
     (col) => col.kind === "base" && col.column?.name === "game"
   );
-  // Raise the hovered header above its neighbours so the floating toolbox can
-  // overlap the table without reserving another row of vertical space.
-  const [hoveredToolsColId, setHoveredToolsColId] = useState(null);
+  // Render header tools through a portal so the table's scroll container cannot
+  // clip them. The anchor overlaps the header by one pixel and closes with a
+  // short grace period, avoiding a dead zone while the pointer crosses over.
+  const [columnToolsPopover, setColumnToolsPopover] = useState(null);
+  const columnToolsCloseTimerRef = useRef(0);
   const headRefs = useRef({});
   const scrollRef = useRef(null);
   const [scrollTop, setScrollTop] = useState(0);
   const frameRef = useRef({ raf: 0, timer: 0 });
+
+  const cancelColumnToolsClose = () => {
+    clearTimeout(columnToolsCloseTimerRef.current);
+  };
+
+  const closeColumnTools = () => {
+    cancelColumnToolsClose();
+    setColumnToolsPopover(null);
+  };
+
+  const scheduleColumnToolsClose = () => {
+    cancelColumnToolsClose();
+    columnToolsCloseTimerRef.current = setTimeout(() => {
+      setColumnToolsPopover(null);
+    }, 120);
+  };
+
+  const openColumnTools = (colId, index) => {
+    cancelColumnToolsClose();
+    const anchor = headRefs.current[colId];
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    const alignRight = index > columns.length / 2;
+    setColumnToolsPopover({
+      colId,
+      top: rect.top + 1,
+      left: alignRight ? null : Math.max(4, rect.left),
+      right: alignRight ? Math.max(4, window.innerWidth - rect.right) : null,
+    });
+  };
+
+  const activeToolsColumn = columnToolsPopover
+    ? columns.find((col) => col.id === columnToolsPopover.colId)
+    : null;
 
   // Grouping and windowing are mutually exclusive: a grouped table is a
   // browsing aid, and its rows move around as groups collapse.
@@ -564,6 +600,7 @@ export default function PanelTable({
   const padBottom = Math.max(0, (rows.length - lastVisible) * ROW_HEIGHT);
 
   const onScroll = (event) => {
+    closeColumnTools();
     if (!virtual) return;
     const { scrollTop: next } = event.currentTarget;
     // One state update per frame while the tab is on screen. A background tab
@@ -585,7 +622,17 @@ export default function PanelTable({
     return () => {
       cancelAnimationFrame(handles.raf);
       clearTimeout(handles.timer);
+      clearTimeout(columnToolsCloseTimerRef.current);
     };
+  }, []);
+
+  useEffect(() => {
+    const handleResize = () => {
+      clearTimeout(columnToolsCloseTimerRef.current);
+      setColumnToolsPopover(null);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, []);
 
   const widthOf = useCallback(
@@ -1057,20 +1104,16 @@ export default function PanelTable({
                   ref={(el) => {
                     headRefs.current[col.id] = el;
                   }}
-                  onMouseEnter={() => setHoveredToolsColId(col.id)}
-                  onMouseLeave={() => setHoveredToolsColId(null)}
-                  onFocus={() => setHoveredToolsColId(col.id)}
-                  onBlur={(event) => {
-                    if (!event.currentTarget.contains(event.relatedTarget)) {
-                      setHoveredToolsColId(null);
-                    }
-                  }}
+                  onMouseEnter={() => openColumnTools(col.id, index)}
+                  onMouseLeave={scheduleColumnToolsClose}
+                  onFocus={() => openColumnTools(col.id, index)}
+                  onBlur={scheduleColumnToolsClose}
                   className={`group sticky border border-zinc-200 px-2 py-1.5 text-left ${
                     headTone ? "" : "bg-zinc-100"
                   }`}
                   style={{
                     top: headerTop,
-                    zIndex: hoveredToolsColId === col.id ? 30 : frozen ? 20 : 10,
+                    zIndex: columnToolsPopover?.colId === col.id ? 30 : frozen ? 20 : 10,
                     ...(headTone || {}),
                     ...(headerInk ? { color: headerInk } : {}),
                     ...(frozen ? { left: freezeOffsets[index] } : {}),
@@ -1100,74 +1143,6 @@ export default function PanelTable({
                       )}
                     </button>
                   </div>
-                  {canCustomizeLayout && (
-                    <div
-                      className={`absolute top-full mt-1 hidden items-center gap-1 whitespace-nowrap rounded-sm border border-zinc-200 bg-white p-1 shadow-xl group-hover:flex group-focus-within:flex ${
-                        index > columns.length / 2 ? "right-1" : "left-1"
-                      }`}
-                      role="toolbar"
-                      aria-label={`เครื่องมือคอลัมน์ ${col.label}`}
-                    >
-                      <span className="max-w-36 truncate px-1 text-[10px] font-black text-zinc-600" title={col.label}>
-                        {col.label}
-                      </span>
-                      <button type="button" onClick={() => moveColumn(col.id, -1)} className={headerButton} title="เลื่อนซ้าย">
-                        <ArrowLeft size={12} />
-                      </button>
-                      <button type="button" onClick={() => moveColumn(col.id, 1)} className={headerButton} title="เลื่อนขวา">
-                        <ArrowRight size={12} />
-                      </button>
-                      <button type="button" onClick={() => cycleSummary(col.id)} className={headerButton} title="สรุปท้ายตาราง (รวม → เฉลี่ย → ต่ำสุด → สูงสุด → นับ → ปิด)">
-                        <Sigma size={12} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          mutateLayout((prev) => ({
-                            ...prev,
-                            group: prev.group?.colId === col.id ? null : { colId: col.id },
-                          }))
-                        }
-                        className={`${headerButton} ${layout.group?.colId === col.id ? "bg-zinc-300 text-zinc-700" : ""}`}
-                        title="จัดกลุ่มตามคอลัมน์นี้"
-                      >
-                        <Layers size={12} />
-                      </button>
-                      <button type="button" onClick={() => renameColumn(col)} className={headerButton} title="เปลี่ยนชื่อ">
-                        <Pencil size={12} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          mutateLayout((prev) => ({
-                            ...prev,
-                            hidden: [...new Set([...prev.hidden, col.id])],
-                          }))
-                        }
-                        className={headerButton}
-                        title="ซ่อนคอลัมน์"
-                      >
-                        <EyeOff size={12} />
-                      </button>
-                      {col.kind === "computed" && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            mutateLayout((prev) => ({
-                              ...prev,
-                              computed: prev.computed.filter((item) => `#${item.key}` !== col.id),
-                              order: prev.order.filter((id) => id !== col.id),
-                              hidden: prev.hidden.filter((id) => id !== col.id),
-                            }))
-                          }
-                          className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-red-600"
-                          title="ลบคอลัมน์สูตร"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      )}
-                    </div>
-                  )}
                   {canCustomizeLayout && <span
                     onPointerDown={(event) => {
                       event.preventDefault();
@@ -1290,6 +1265,96 @@ export default function PanelTable({
           </tfoot>
         )}
       </table>
+      {canCustomizeLayout && activeToolsColumn && typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed z-[100] flex -translate-y-full items-center gap-1 whitespace-nowrap rounded-sm border border-zinc-200 bg-white p-1 shadow-xl"
+            style={{
+              top: columnToolsPopover.top,
+              ...(columnToolsPopover.left === null
+                ? { right: columnToolsPopover.right }
+                : { left: columnToolsPopover.left }),
+            }}
+            onMouseEnter={cancelColumnToolsClose}
+            onMouseLeave={scheduleColumnToolsClose}
+            onFocus={cancelColumnToolsClose}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) scheduleColumnToolsClose();
+            }}
+            role="toolbar"
+            aria-label={`เครื่องมือคอลัมน์ ${activeToolsColumn.label}`}
+          >
+            <span
+              className="max-w-36 truncate px-1 text-[10px] font-black text-zinc-600"
+              title={activeToolsColumn.label}
+            >
+              {activeToolsColumn.label}
+            </span>
+            <button type="button" onClick={() => moveColumn(activeToolsColumn.id, -1)} className={headerButton} title="เลื่อนซ้าย">
+              <ArrowLeft size={12} />
+            </button>
+            <button type="button" onClick={() => moveColumn(activeToolsColumn.id, 1)} className={headerButton} title="เลื่อนขวา">
+              <ArrowRight size={12} />
+            </button>
+            <button type="button" onClick={() => cycleSummary(activeToolsColumn.id)} className={headerButton} title="สรุปท้ายตาราง (รวม → เฉลี่ย → ต่ำสุด → สูงสุด → นับ → ปิด)">
+              <Sigma size={12} />
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                mutateLayout((prev) => ({
+                  ...prev,
+                  group:
+                    prev.group?.colId === activeToolsColumn.id
+                      ? null
+                      : { colId: activeToolsColumn.id },
+                }))
+              }
+              className={`${headerButton} ${layout.group?.colId === activeToolsColumn.id ? "bg-zinc-300 text-zinc-700" : ""}`}
+              title="จัดกลุ่มตามคอลัมน์นี้"
+            >
+              <Layers size={12} />
+            </button>
+            <button type="button" onClick={() => renameColumn(activeToolsColumn)} className={headerButton} title="เปลี่ยนชื่อ">
+              <Pencil size={12} />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                mutateLayout((prev) => ({
+                  ...prev,
+                  hidden: [...new Set([...prev.hidden, activeToolsColumn.id])],
+                }));
+                closeColumnTools();
+              }}
+              className={headerButton}
+              title="ซ่อนคอลัมน์"
+            >
+              <EyeOff size={12} />
+            </button>
+            {activeToolsColumn.kind === "computed" && (
+              <button
+                type="button"
+                onClick={() => {
+                  mutateLayout((prev) => ({
+                    ...prev,
+                    computed: prev.computed.filter(
+                      (item) => `#${item.key}` !== activeToolsColumn.id
+                    ),
+                    order: prev.order.filter((id) => id !== activeToolsColumn.id),
+                    hidden: prev.hidden.filter((id) => id !== activeToolsColumn.id),
+                  }));
+                  closeColumnTools();
+                }}
+                className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-red-600"
+                title="ลบคอลัมน์สูตร"
+              >
+                <Trash2 size={12} />
+              </button>
+            )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
