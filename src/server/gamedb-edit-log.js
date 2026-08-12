@@ -53,6 +53,36 @@ export async function recordEdit(entry) {
   );
 }
 
+/** One entry by id, for callers that need to trust its content server-side
+ * (e.g. restoring a deleted row from the snapshot it captured) rather than
+ * accept the same data back from the client. */
+export async function findEditById(id) {
+  await ensureSchema();
+  const result = await getPool().query(
+    `SELECT id, query_id, actor, table_name, pk_column, pk_value, column_name,
+            old_value, new_value, ip, user_agent, created_at
+     FROM gamedb_edit_log
+     WHERE id = $1`,
+    [id]
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    queryId: row.query_id,
+    actor: row.actor,
+    table: row.table_name,
+    pkColumn: row.pk_column,
+    pkValue: row.pk_value,
+    column: row.column_name,
+    oldValue: row.old_value,
+    newValue: row.new_value,
+    ip: row.ip,
+    userAgent: row.user_agent,
+    createdAt: row.created_at,
+  };
+}
+
 export async function listEdits(limit = 100) {
   await ensureSchema();
   const result = await getPool().query(

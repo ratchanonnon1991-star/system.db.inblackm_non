@@ -347,7 +347,7 @@ function EditLogSection() {
         await apiJson(`/api/queries/${entry.queryId}/row/restore`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ values: snapshot }),
+          body: JSON.stringify({ logEntryId: entry.id }),
           fallbackError: "กู้คืนแถวไม่สำเร็จ",
         });
         await load();
