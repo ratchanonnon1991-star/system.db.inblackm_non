@@ -501,6 +501,10 @@ export default function QueryPanel({
   const [changedKeys, setChangedKeys] = useState(new Set());
   const [editPending, setEditPending] = useState(null);
   const [editError, setEditError] = useState("");
+  // A row being filled in cell by cell before it exists anywhere -- null
+  // means no draft is open, {} means one is open but still blank.
+  const [draftRow, setDraftRow] = useState(null);
+  const [draftSaving, setDraftSaving] = useState(false);
 
   const effectiveParams = useMemo(
     () => resolveParams(layout, paramNames),
@@ -1306,6 +1310,7 @@ export default function QueryPanel({
   const canDeleteRows = Boolean(
     canWriteData && sharedEditable && baseNameToIndex.has(sharedEditable.pk)
   );
+  const canAddRow = Boolean(canWriteData && sharedEditable?.allowInsert);
   // Configured, but only in the editor or only for this user.
   const editableNotShared = Boolean(canManage && layout.editable && !sharedEditable);
 
@@ -1420,6 +1425,39 @@ export default function QueryPanel({
       await runQuery({ silent: true });
     } catch (err) {
       setEditError(err.message);
+    }
+  };
+
+  const startDraftRow = () => {
+    setEditError("");
+    setDraftRow({});
+  };
+
+  const changeDraftValue = (column, value) => {
+    setDraftRow((prev) => ({ ...(prev || {}), [column]: value }));
+  };
+
+  const cancelDraftRow = () => {
+    setDraftRow(null);
+    setEditError("");
+  };
+
+  const saveDraftRow = async () => {
+    setDraftSaving(true);
+    setEditError("");
+    try {
+      await apiJson(`/api/queries/${query.id}/row`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ values: draftRow || {} }),
+        fallbackError: "เพิ่มแถวไม่สำเร็จ",
+      });
+      setDraftRow(null);
+      await runQuery({ silent: true });
+    } catch (err) {
+      setEditError(err.message);
+    } finally {
+      setDraftSaving(false);
     }
   };
 
@@ -1995,6 +2033,21 @@ export default function QueryPanel({
             title={viewingSnapshot ? "ออกจาก snapshot ก่อนถึงจะเพิ่มข้อมูลได้" : "เพิ่มข้อมูลด้วยฟอร์มที่ Admin ตั้งไว้"}
           >
             <Plus size={12} /> {sharedInsertForm.label || "เพิ่มข้อมูล"}
+          </button>
+        )}
+        {canAddRow && (
+          <button
+            type="button"
+            onClick={startDraftRow}
+            disabled={Boolean(viewingSnapshot) || draftRow !== null}
+            className="flex h-8 items-center gap-1.5 rounded-sm border border-sky-300 bg-sky-50 px-2.5 text-[10px] font-black text-sky-700 transition hover:bg-sky-100 disabled:opacity-50"
+            title={
+              viewingSnapshot
+                ? "ออกจาก snapshot ก่อนถึงจะเพิ่มแถวได้"
+                : "เพิ่มแถวว่างในตาราง แล้วกรอกทีละช่อง"
+            }
+          >
+            <Plus size={12} /> เพิ่มแถว
           </button>
         )}
         <button type="button" onClick={() => runQuery({ validate: true })} disabled={running} className={iconButtonClass} title="รันใหม่">
@@ -2644,6 +2697,11 @@ export default function QueryPanel({
                   canvasScale={canvasScale}
                   canUseGameinfoTools={canCustomizeLayout}
                   rowOffset={pageOffset}
+                  draftRow={!viewingSnapshot ? draftRow : null}
+                  onDraftChange={changeDraftValue}
+                  onDraftSave={saveDraftRow}
+                  onDraftCancel={cancelDraftRow}
+                  draftSaving={draftSaving}
                 />
               )}
 

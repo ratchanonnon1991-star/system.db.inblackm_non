@@ -135,6 +135,8 @@ function CopyCell({ text }) {
 
 const editorClass =
   "w-full rounded border border-red-500 bg-white px-1 py-0.5 text-[11px] font-semibold outline-none";
+const draftEditorClass =
+  "w-full rounded border border-sky-400 bg-white px-1 py-0.5 text-[11px] font-semibold outline-none";
 
 /** yyyy-mm-dd for a date box, whatever the column happened to hold. */
 function toDateInput(value) {
@@ -169,24 +171,23 @@ function toDateTimeInput(value) {
 }
 
 /**
- * The box a cell turns into while it is being edited.
- *
- * Nothing here writes on its own. Every widget only holds a pending value, and
- * it takes the tick — or Enter, for something typed — to send it. Losing focus
- * used to save, which meant clicking anywhere after touching a cell wrote to the
- * database; now it leaves the box open and waiting.
+ * Just the form control for a column's widget -- select/checkbox/date/text/etc
+ * -- with no commit/cancel around it. Shared by CellEditor (which adds its own
+ * tick/cross, committed one cell at a time) and a draft row's cells (committed
+ * together, as one new row), so the switch over widget types lives in one
+ * place instead of drifting into two copies.
  */
-function CellEditor({ config, column, options, value, onChange, onCommit, onCancel, dirty }) {
-  const widget = config?.widget || widgetForColumn(column);
-  const keys = (event) => {
-    if (event.key === "Enter" && widget !== "textarea") onCommit();
-    if (event.key === "Escape") onCancel();
-  };
-  const escapeOnly = (event) => {
-    if (event.key === "Escape") onCancel();
-    if (event.key === "Enter") onCommit();
-  };
-
+function WidgetControl({
+  widget,
+  config,
+  column,
+  options,
+  value,
+  onChange,
+  onKeyDown,
+  autoFocus = true,
+  className = editorClass,
+}) {
   // A list read from another table arrives after the panel does. Undefined means
   // it is still on its way; an empty one means it arrived with nothing in it, and
   // a dropdown of nothing would be a dead end -- fall through to a plain box.
@@ -197,42 +198,18 @@ function CellEditor({ config, column, options, value, onChange, onCommit, onCanc
     return <span className="text-[10px] font-bold text-zinc-400">กำลังโหลดรายการ...</span>;
   }
 
-  // The tick and the cross, alongside whatever the column's own box is.
-  const withActions = (control) => (
-    <span className="flex items-center gap-0.5">
-      <span className="min-w-0 flex-1">{control}</span>
-      <button
-        type="button"
-        onClick={() => onCommit()}
-        disabled={!dirty}
-        className="shrink-0 rounded border border-emerald-300 bg-emerald-50 p-0.5 text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-40"
-        title={dirty ? "บันทึกค่านี้ (Enter)" : "ยังไม่ได้เปลี่ยนค่า"}
-      >
-        <Check size={11} />
-      </button>
-      <button
-        type="button"
-        onClick={onCancel}
-        className="shrink-0 rounded border border-zinc-300 bg-white p-0.5 text-zinc-500 transition hover:bg-zinc-100"
-        title="ยกเลิก (Esc)"
-      >
-        <X size={11} />
-      </button>
-    </span>
-  );
-
   if ((widget === "select" || widget === "lookup") && !emptyLookup) {
     // A typed-in list and a list read from another table end up the same shape.
     const choices =
-      widget === "lookup" ? options || [] : (config.options || []).map(parseOption);
+      widget === "lookup" ? options || [] : (config?.options || []).map(parseOption);
     const current = matchChoice(choices, value);
-    return withActions(
+    return (
       <select
-        autoFocus
+        autoFocus={autoFocus}
         value={current ? String(current.value) : ""}
         onChange={(event) => onChange(event.target.value)}
-        onKeyDown={escapeOnly}
-        className={editorClass}
+        onKeyDown={onKeyDown}
+        className={className}
       >
         <option value="">— ไม่ระบุ —</option>
         {/* A value already in the cell but missing from the list would silently
@@ -251,13 +228,13 @@ function CellEditor({ config, column, options, value, onChange, onCommit, onCanc
 
   if (widget === "checkbox") {
     const checked = value === true || value === "true" || value === "t" || value === 1;
-    return withActions(
+    return (
       <button
         type="button"
-        autoFocus
+        autoFocus={autoFocus}
         onClick={() => onChange(!checked)}
-        onKeyDown={escapeOnly}
-        className={`${editorClass} text-left`}
+        onKeyDown={onKeyDown}
+        className={`${className} text-left`}
       >
         {checked ? "✓ ใช่ — กดเพื่อเปลี่ยน" : "✗ ไม่ใช่ — กดเพื่อเปลี่ยน"}
       </button>
@@ -272,13 +249,13 @@ function CellEditor({ config, column, options, value, onChange, onCommit, onCanc
         : value === false || value === "false" || value === "f"
           ? "false"
           : "";
-    return withActions(
+    return (
       <select
-        autoFocus
+        autoFocus={autoFocus}
         value={current}
         onChange={(event) => onChange(event.target.value)}
-        onKeyDown={escapeOnly}
-        className={editorClass}
+        onKeyDown={onKeyDown}
+        className={className}
       >
         <option value="">— ไม่ระบุ —</option>
         <option value="true">true (ใช่)</option>
@@ -288,17 +265,14 @@ function CellEditor({ config, column, options, value, onChange, onCommit, onCanc
   }
 
   if (widget === "textarea") {
-    return withActions(
+    return (
       <textarea
-        autoFocus
+        autoFocus={autoFocus}
         rows={3}
         value={value ?? ""}
         onChange={(event) => onChange(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") onCancel();
-          if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) onCommit();
-        }}
-        className={`${editorClass} resize-y`}
+        onKeyDown={onKeyDown}
+        className={`${className} resize-y`}
       />
     );
   }
@@ -320,9 +294,9 @@ function CellEditor({ config, column, options, value, onChange, onCommit, onCanc
           ? toDateTimeInput(value)
           : (value ?? "");
 
-  return withActions(
+  return (
     <input
-      autoFocus
+      autoFocus={autoFocus}
       type={typed || "text"}
       // Whole-number column: the box will not offer 1.5. Time pickers hide the
       // seconds field unless the step asks for it, which would quietly drop them.
@@ -335,9 +309,161 @@ function CellEditor({ config, column, options, value, onChange, onCommit, onCanc
       }
       value={shown}
       onChange={(event) => onChange(event.target.value)}
-      onKeyDown={keys}
-      className={editorClass}
+      onKeyDown={onKeyDown}
+      className={className}
     />
+  );
+}
+
+/**
+ * The box a cell turns into while it is being edited.
+ *
+ * Nothing here writes on its own. Every widget only holds a pending value, and
+ * it takes the tick — or Enter, for something typed — to send it. Losing focus
+ * used to save, which meant clicking anywhere after touching a cell wrote to the
+ * database; now it leaves the box open and waiting.
+ */
+function CellEditor({ config, column, options, value, onChange, onCommit, onCancel, dirty }) {
+  const widget = config?.widget || widgetForColumn(column);
+  const keys = (event) => {
+    if (event.key === "Enter" && widget !== "textarea") onCommit();
+    if (event.key === "Escape") onCancel();
+  };
+  const escapeOnly = (event) => {
+    if (event.key === "Escape") onCancel();
+    if (event.key === "Enter") onCommit();
+  };
+  const textareaKeys = (event) => {
+    if (event.key === "Escape") onCancel();
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) onCommit();
+  };
+
+  const onKeyDown =
+    widget === "textarea"
+      ? textareaKeys
+      : widget === "select" || widget === "lookup" || widget === "checkbox" || widget === "boolean"
+        ? escapeOnly
+        : keys;
+
+  // A list read from another table arrives after the panel does. Undefined means
+  // it is still on its way -- shown without the tick/cross, since there is
+  // nothing to commit yet.
+  if (widget === "lookup" && !options) {
+    return <span className="text-[10px] font-bold text-zinc-400">กำลังโหลดรายการ...</span>;
+  }
+
+  // The tick and the cross, alongside whatever the column's own box is.
+  return (
+    <span className="flex items-center gap-0.5">
+      <span className="min-w-0 flex-1">
+        <WidgetControl
+          widget={widget}
+          config={config}
+          column={column}
+          options={options}
+          value={value}
+          onChange={onChange}
+          onKeyDown={onKeyDown}
+        />
+      </span>
+      <button
+        type="button"
+        onClick={() => onCommit()}
+        disabled={!dirty}
+        className="shrink-0 rounded border border-emerald-300 bg-emerald-50 p-0.5 text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-40"
+        title={dirty ? "บันทึกค่านี้ (Enter)" : "ยังไม่ได้เปลี่ยนค่า"}
+      >
+        <Check size={11} />
+      </button>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="shrink-0 rounded border border-zinc-300 bg-white p-0.5 text-zinc-500 transition hover:bg-zinc-100"
+        title="ยกเลิก (Esc)"
+      >
+        <X size={11} />
+      </button>
+    </span>
+  );
+}
+
+/** One row of blank boxes for the columns a new row can be inserted through,
+ * with its own tick/cross to add it (or drop it) as a whole -- there is no pk
+ * yet for a per-cell PATCH to target, so this can only ever be a single POST. */
+function DraftRow({
+  columns,
+  editableColumns,
+  editableInputs,
+  lookupOptions,
+  values,
+  onChange,
+  onSave,
+  onCancel,
+  saving,
+  freezeCount,
+  freezeOffsets,
+  measured,
+}) {
+  const inputConfigOf = (columnName) =>
+    editableInputs.find((input) => input.column === columnName) || null;
+
+  return (
+    <tr className="bg-sky-50">
+      <td
+        className="border border-zinc-200 bg-inherit px-1 py-1.5 text-center"
+        style={freezeCount ? { position: "sticky", left: 0, zIndex: 2 } : undefined}
+      >
+        <span className="flex items-center justify-center gap-0.5">
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saving}
+            className="shrink-0 rounded border border-emerald-300 bg-emerald-50 p-0.5 text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-40"
+            title="บันทึกแถวนี้"
+          >
+            <Check size={11} />
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={saving}
+            className="shrink-0 rounded border border-zinc-300 bg-white p-0.5 text-zinc-500 transition hover:bg-zinc-100 disabled:opacity-40"
+            title="ยกเลิกแถวนี้"
+          >
+            <X size={11} />
+          </button>
+        </span>
+      </td>
+      {columns.map((col, cellIndex) => {
+        const frozen = cellIndex < freezeCount;
+        const editable = col.kind === "base" && editableColumns.includes(col.column.name);
+        return (
+          <td
+            key={col.id}
+            className="border border-zinc-200 bg-inherit px-1 py-1"
+            style={frozen ? { position: "sticky", left: freezeOffsets[cellIndex], zIndex: 2 } : undefined}
+          >
+            {editable ? (
+              <WidgetControl
+                widget={inputConfigOf(col.column.name)?.widget || widgetForColumn(col.column)}
+                config={inputConfigOf(col.column.name)}
+                column={col.column}
+                options={lookupOptions[col.column.name]}
+                value={values[col.column.name] ?? ""}
+                onChange={(next) => onChange(col.column.name, next)}
+                autoFocus={false}
+                className={draftEditorClass}
+              />
+            ) : (
+              <span className="block px-1 text-[10px] font-semibold text-zinc-400">
+                {col.kind === "base" ? "(อัตโนมัติ)" : "—"}
+              </span>
+            )}
+          </td>
+        );
+      })}
+      {measured && <td className="border border-zinc-200 bg-inherit" />}
+    </tr>
   );
 }
 
@@ -515,6 +641,13 @@ export default function PanelTable({
   onEditComputedColumn,
   canUseGameinfoTools = false,
   rowOffset = 0,
+  // A row being filled in but not saved yet -- values is keyed by column
+  // name, same as what POST /row eventually sends.
+  draftRow = null,
+  onDraftChange,
+  onDraftSave,
+  onDraftCancel,
+  draftSaving = false,
   // The table lives on a canvas that can be zoomed. Anything read off the DOM or
   // off a pointer arrives in screen pixels; column widths are kept in canvas
   // units, so the two only agree at 100%.
@@ -1217,6 +1350,22 @@ export default function PanelTable({
           </tr>
         </thead>
         <tbody>
+          {draftRow && (
+            <DraftRow
+              columns={columns}
+              editableColumns={editableColumns}
+              editableInputs={editableInputs}
+              lookupOptions={lookupOptions}
+              values={draftRow}
+              onChange={onDraftChange}
+              onSave={onDraftSave}
+              onCancel={onDraftCancel}
+              saving={draftSaving}
+              freezeCount={freezeCount}
+              freezeOffsets={freezeOffsets}
+              measured={measured}
+            />
+          )}
           {rows.length === 0 ? (
             <tr style={tableBodyTone || undefined}>
               <td
