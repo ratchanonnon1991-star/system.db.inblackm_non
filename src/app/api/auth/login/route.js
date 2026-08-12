@@ -7,6 +7,17 @@ import {
 import { verifyPassword } from "@/server/passwords";
 import { findUserByUsername } from "@/server/users-repository";
 import { recordLogin } from "@/server/gamedb-login-log";
+
+// Logging an attempt must never be why an attempt fails -- a hiccup writing
+// to gamedb_login_log would otherwise turn a correct password into a raw 500,
+// or a wrong one into a confusing server error instead of "wrong password".
+async function recordLoginSafely(entry) {
+  try {
+    await recordLogin(entry);
+  } catch (err) {
+    console.error("recordLogin failed:", err);
+  }
+}
 import {
   clientIp,
   getTurnstileConfig,
@@ -68,7 +79,7 @@ export async function POST(request) {
 
     const user = await findUserByUsername(username);
     if (!user || !verifyPassword(password, user.passwordHash)) {
-      await recordLogin({
+      await recordLoginSafely({
         username,
         success: false,
         reason: "username หรือรหัสผ่านไม่ถูกต้อง",
@@ -78,7 +89,7 @@ export async function POST(request) {
     }
 
     attempts.delete(username.toLowerCase());
-    await recordLogin({ username: user.username, success: true, ip: clientIp(request) });
+    await recordLoginSafely({ username: user.username, success: true, ip: clientIp(request) });
     const token = signSessionToken({
       sub: user.id,
       username: user.username,

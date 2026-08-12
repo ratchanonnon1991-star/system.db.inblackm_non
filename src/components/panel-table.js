@@ -1311,6 +1311,14 @@ export default function PanelTable({
                       }
                     >
                       <span className="min-w-0 truncate">{col.label}</span>
+                      {draftRow &&
+                        col.kind === "base" &&
+                        editableInputs.find((input) => input.column === col.column.name)
+                          ?.required && (
+                          <span className="shrink-0 text-red-600" title="ต้องกรอกก่อนบันทึกแถวใหม่">
+                            *
+                          </span>
+                        )}
                       {sorted === "asc" && <ArrowUp size={10} className="shrink-0" />}
                       {sorted === "desc" && <ArrowDown size={10} className="shrink-0" />}
                       {summaryKind && (

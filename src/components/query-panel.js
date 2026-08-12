@@ -1438,6 +1438,10 @@ export default function QueryPanel({
   };
 
   const cancelDraftRow = () => {
+    const touched = Object.values(draftRow || {}).some((value) => String(value ?? "").trim() !== "");
+    if (touched && !window.confirm("ยังไม่ได้บันทึก — ยกเลิกแล้วข้อมูลที่กรอกไว้จะหายไป ยืนยันยกเลิกไหม?")) {
+      return;
+    }
     setDraftRow(null);
     setEditError("");
   };
