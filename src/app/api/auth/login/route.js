@@ -6,6 +6,7 @@ import {
 } from "@/lib/session";
 import { verifyPassword } from "@/server/passwords";
 import { findUserByUsername } from "@/server/users-repository";
+import { recordLogin } from "@/server/gamedb-login-log";
 import {
   clientIp,
   getTurnstileConfig,
@@ -67,10 +68,17 @@ export async function POST(request) {
 
     const user = await findUserByUsername(username);
     if (!user || !verifyPassword(password, user.passwordHash)) {
+      await recordLogin({
+        username,
+        success: false,
+        reason: "username หรือรหัสผ่านไม่ถูกต้อง",
+        ip: clientIp(request),
+      });
       return jsonError("username หรือรหัสผ่านไม่ถูกต้อง", 401);
     }
 
     attempts.delete(username.toLowerCase());
+    await recordLogin({ username: user.username, success: true, ip: clientIp(request) });
     const token = signSessionToken({
       sub: user.id,
       username: user.username,

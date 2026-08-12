@@ -49,7 +49,7 @@ import {
   UsersModal,
 } from "@/components/gamedb-modals";
 import ViewsModal from "@/components/views-modal";
-import { EditLogModal, HealthModal } from "@/components/admin-modals";
+import { HealthModal } from "@/components/admin-modals";
 
 const WORKSPACE_STORAGE_KEY = "gamedb.workspace.v1";
 const DEFAULT_PANEL_HEIGHT = 420;
@@ -628,7 +628,6 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
   const [connectionsModal, setConnectionsModal] = useState(false);
   const [usersModal, setUsersModal] = useState(false);
   const [healthModal, setHealthModal] = useState(false);
-  const [editLogModal, setEditLogModal] = useState(false);
 
   // Screen templates: a saved set of panels an admin can hand to other users.
   const [views, setViews] = useState([]);
@@ -1855,14 +1854,13 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
               >
                 <Layers size={14} /> เทมเพลต ({views.length})
               </button>
-              <button
-                type="button"
-                onClick={() => setEditLogModal(true)}
+              <NextLink
+                href="/log"
                 className="rounded-sm border border-zinc-200 bg-white p-1 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
-                title="ประวัติการแก้ไขข้อมูล"
+                title="ประวัติการใช้งาน (การเข้าสู่ระบบ / แก้ไขข้อมูล)"
               >
                 <History size={14} />
-              </button>
+              </NextLink>
               <button
                 type="button"
                 onClick={() => setHealthModal(true)}
@@ -2374,7 +2372,6 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
 
       {usersModal && <UsersModal me={me} onClose={() => setUsersModal(false)} />}
       {healthModal && <HealthModal onClose={() => setHealthModal(false)} />}
-      {editLogModal && <EditLogModal onClose={() => setEditLogModal(false)} />}
 
       {viewsModal && (
         <ViewsModal
