@@ -17,7 +17,6 @@ import {
   X,
 } from "lucide-react";
 import NextLink from "next/link";
-import { useRouter } from "next/navigation";
 import { apiJson } from "@/lib/api-json";
 import TurnstileWidget from "@/components/turnstile-widget";
 import { UsersModal } from "@/components/gamedb-modals";
@@ -52,7 +51,7 @@ export default function GamedbPage() {
 
   if (checkingMe) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-zinc-50 to-zinc-100">
         <span className="flex animate-pulse items-center gap-1 text-sm font-bold text-zinc-500">
           <Loader2 size={16} className="animate-spin" /> กำลังตรวจสอบสิทธิ์...
         </span>
@@ -88,7 +87,6 @@ const SYSTEMS = [
 ];
 
 function SystemHub({ me, onLoggedOut }) {
-  const router = useRouter();
   const isSuperAdmin = me.role === "admin";
   const isTemplateUser = me.role === "user";
   const [usersModal, setUsersModal] = useState(false);
@@ -107,22 +105,6 @@ function SystemHub({ me, onLoggedOut }) {
       .finally(() => setViewsLoading(false));
   }, []);
 
-  // A "user" (template-only) account has nothing to pick from this hub --
-  // there is only ever the one template experience for them, and clicking
-  // into a "System DB" tile that leads right back to the same template was
-  // just an extra step. Sent straight to it instead, same priority order
-  // /systemdb itself already resolves a default template with (assigned to
-  // this account -> marked as default -> first one available); with none
-  // assigned at all, /systemdb's own empty-state message is still there.
-  useEffect(() => {
-    if (!isTemplateUser || viewsLoading) return;
-    const target =
-      views.find((view) => Number(view.id) === Number(me.defaultViewId)) ||
-      views.find((view) => view.isDefault) ||
-      views[0];
-    router.replace(target ? `/view/${target.id}` : "/systemdb");
-  }, [isTemplateUser, viewsLoading, views, me.defaultViewId, router]);
-
   const logout = async () => {
     try {
       await apiJson("/api/auth/logout", { method: "POST" });
@@ -132,20 +114,7 @@ function SystemHub({ me, onLoggedOut }) {
     onLoggedOut();
   };
 
-  // Never rendered long enough to matter for anyone else, but a "user"
-  // account is redirected away above and would otherwise flash the tile
-  // picker they can't meaningfully use for a moment first.
-  if (isTemplateUser) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <span className="flex animate-pulse items-center gap-1 text-sm font-bold text-zinc-500">
-          <Loader2 size={16} className="animate-spin" /> กำลังเปิดหน้าของคุณ...
-        </span>
-      </div>
-    );
-  }
-
-  const roleLabel = isSuperAdmin ? "Admin" : isTemplateUser ? "User · Template" : "Staff";
+  const roleLabel = isSuperAdmin ? "Admin" : isTemplateUser ? "User" : "Staff";
   const initial = (me.displayName || me.username || "?").trim().slice(0, 1).toUpperCase();
 
   return (
@@ -221,53 +190,73 @@ function SystemHub({ me, onLoggedOut }) {
           <h1 className="text-2xl font-black tracking-tight text-zinc-800">
             สวัสดี, {me.displayName || me.username} 👋
           </h1>
-          <p className="mt-1 text-sm font-semibold text-zinc-500">เลือกระบบที่ต้องการเข้าใช้งาน</p>
+          <p className="mt-1 text-sm font-semibold text-zinc-500">
+            {isTemplateUser ? "เลือกหน้าจอที่ต้องการเข้าใช้งาน" : "เลือกระบบที่ต้องการเข้าใช้งาน"}
+          </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          {SYSTEMS.map((system) => {
-            const Icon = system.icon;
-            const accent =
-              system.key === "systemdb"
-                ? "bg-red-50 text-red-600 group-hover:bg-red-600 group-hover:text-white"
-                : "bg-sky-50 text-sky-600 group-hover:bg-sky-600 group-hover:text-white";
-            return (
-              <NextLink
-                key={system.key}
-                href={system.href}
-                className="group flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-md"
-              >
-                <span
-                  className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${accent}`}
+        {/* A "user" (template-only) account has nothing else on this hub --
+            System DB and GameInfo are both ad-hoc query surfaces it has no
+            access to, so showing the tiles only to invite a 403 click was
+            worse than just leaving them out. */}
+        {!isTemplateUser && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {SYSTEMS.map((system) => {
+              const Icon = system.icon;
+              const accent =
+                system.key === "systemdb"
+                  ? "bg-red-50 text-red-600 group-hover:bg-red-600 group-hover:text-white"
+                  : "bg-sky-50 text-sky-600 group-hover:bg-sky-600 group-hover:text-white";
+              return (
+                <NextLink
+                  key={system.key}
+                  href={system.href}
+                  className="group flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-md"
                 >
-                  <Icon size={22} />
-                </span>
-                <span>
-                  <span className="block text-base font-black text-zinc-800">{system.label}</span>
-                  <span className="mt-0.5 block text-xs font-semibold leading-relaxed text-zinc-500">
-                    {system.desc}
+                  <span
+                    className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${accent}`}
+                  >
+                    <Icon size={22} />
                   </span>
-                </span>
-              </NextLink>
-            );
-          })}
-        </div>
+                  <span>
+                    <span className="block text-base font-black text-zinc-800">{system.label}</span>
+                    <span className="mt-0.5 block text-xs font-semibold leading-relaxed text-zinc-500">
+                      {system.desc}
+                    </span>
+                  </span>
+                </NextLink>
+              );
+            })}
+          </div>
+        )}
 
         {/* Deliberately not another tile in the SYSTEMS grid above: a template
             is a saved arrangement of panels inside System DB, not a system of
             its own the way GameInfo is, and this section is styled to read as
             "shortcuts into System DB" (its own card, a lighter row style, an
             explicit "เทมเพลต" tag) rather than a peer entry a user could
-            confuse for a third top-level system. */}
-        {(viewsLoading || views.length > 0) && (
+            confuse for a third top-level system. For a "user" account this
+            list is the entire hub, not a shortcut past it -- there is no
+            System DB tile behind it to shortcut into.
+            An empty list still renders for a "user" account (unlike everyone
+            else, where nothing here just means "no templates yet, nothing
+            worth mentioning") since a User with nothing assigned has no other
+            way in at all, and that is worth saying plainly rather than
+            leaving the page looking simply blank/broken. */}
+        {(viewsLoading || views.length > 0 || isTemplateUser) && (
           <div>
             <h2 className="mb-2.5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-zinc-400">
-              <Layers size={12} /> ทางลัดเข้าเทมเพลตหน้าจอ (อยู่ใน System DB)
+              <Layers size={12} />{" "}
+              {isTemplateUser ? "หน้าจอของคุณ" : "ทางลัดเข้าเทมเพลตหน้าจอ (อยู่ใน System DB)"}
             </h2>
             <div className="rounded-2xl border border-zinc-200 bg-white p-2 shadow-sm">
               {viewsLoading ? (
                 <p className="flex items-center gap-2 px-3 py-3 text-xs font-bold text-zinc-400">
                   <Loader2 size={13} className="animate-spin" /> กำลังโหลด...
+                </p>
+              ) : views.length === 0 ? (
+                <p className="px-3 py-4 text-center text-xs font-semibold text-zinc-400">
+                  ยังไม่มีหน้าจอที่กำหนดให้บัญชีนี้ — ติดต่อผู้ดูแลระบบ
                 </p>
               ) : (
                 <div className="divide-y divide-zinc-100">
@@ -420,16 +409,16 @@ function LoginScreen({ onLoggedIn }) {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center p-6">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-zinc-50 to-zinc-100 p-6">
       <form
         onSubmit={submit}
-        className="w-full max-w-sm rounded-sm border border-zinc-200 bg-white p-6 shadow-sm"
+        className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-7 shadow-lg"
       >
-        <div className="mb-5 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-sm border border-red-200 bg-red-600/10 text-red-600">
-            <Lock size={26} />
+        <div className="mb-6 text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-red-600 text-white shadow-sm shadow-red-600/30">
+            <Lock size={24} />
           </div>
-          <h1 className="text-lg font-black tracking-tight">GameDB</h1>
+          <h1 className="text-lg font-black tracking-tight text-zinc-800">GameDB</h1>
           <p className="mt-1 text-[11px] font-semibold text-zinc-500">
             เข้าสู่ระบบด้วยบัญชี GameDB
           </p>
@@ -442,7 +431,7 @@ function LoginScreen({ onLoggedIn }) {
           onChange={(e) => setUsername(e.target.value)}
           autoComplete="username"
           autoFocus
-          className="mb-3 h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+          className="mb-3.5 h-11 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 text-xs font-semibold outline-none transition focus:border-red-500 focus:bg-white focus:ring-2 focus:ring-red-500/10"
         />
         <label className="mb-1 block text-[10px] font-black text-zinc-500">รหัสผ่าน</label>
         <input
@@ -450,11 +439,11 @@ function LoginScreen({ onLoggedIn }) {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="current-password"
-          className="mb-4 h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+          className="mb-4 h-11 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 text-xs font-semibold outline-none transition focus:border-red-500 focus:bg-white focus:ring-2 focus:ring-red-500/10"
         />
 
         {turnstileConfig.enabled && (
-          <div className="mb-3">
+          <div className="mb-3.5">
             <TurnstileWidget
               key={turnstileAttempt}
               siteKey={turnstileConfig.siteKey}
@@ -464,7 +453,7 @@ function LoginScreen({ onLoggedIn }) {
         )}
 
         {(turnstileConfig.error || turnstileConfig.misconfigured) && (
-          <div className="mb-3 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
+          <div className="mb-3.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[11px] font-bold text-amber-700">
             {turnstileConfig.misconfigured
               ? "ระบบ Turnstile ยังตั้งค่าไม่ครบ กรุณาติดต่อผู้ดูแล"
               : turnstileConfig.error}
@@ -472,7 +461,7 @@ function LoginScreen({ onLoggedIn }) {
         )}
 
         {error && (
-          <div className="mb-3 rounded-sm border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-bold text-red-600">
+          <div className="mb-3.5 rounded-xl border border-red-200 bg-red-50 px-3.5 py-2 text-[11px] font-bold text-red-600">
             {error}
           </div>
         )}
@@ -488,7 +477,7 @@ function LoginScreen({ onLoggedIn }) {
             turnstileConfig.misconfigured ||
             (turnstileConfig.enabled && !turnstileToken)
           }
-          className="flex h-10 w-full items-center justify-center gap-1 rounded-sm bg-red-600 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
+          className="flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-red-600 text-xs font-black text-white shadow-sm shadow-red-600/20 transition hover:bg-red-700 hover:shadow-md disabled:opacity-50 disabled:shadow-none"
         >
           {submitting ? <Loader2 size={14} className="animate-spin" /> : <Lock size={13} />}
           เข้าสู่ระบบ
@@ -503,7 +492,7 @@ function LoginScreen({ onLoggedIn }) {
             </div>
             <a
               href={hiringSsoUrl}
-              className="flex h-10 w-full items-center justify-center gap-1.5 rounded-sm border border-zinc-200 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
+              className="flex h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-zinc-200 text-xs font-black text-zinc-600 transition hover:border-zinc-300 hover:bg-zinc-50"
             >
               เข้าสู่ระบบด้วยบัญชี experience
             </a>
@@ -513,8 +502,8 @@ function LoginScreen({ onLoggedIn }) {
 
       {ssoError && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-sm bg-white p-5 text-center shadow-xl">
-            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-sm border border-red-200 bg-red-50 text-red-600">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-red-600">
               <AlertTriangle size={22} />
             </div>
             <h2 className="mb-1 text-sm font-black text-zinc-800">เข้าสู่ระบบด้วยบัญชี experience ไม่สำเร็จ</h2>
@@ -522,7 +511,7 @@ function LoginScreen({ onLoggedIn }) {
             <button
               type="button"
               onClick={() => setSsoError("")}
-              className="flex h-9 w-full items-center justify-center gap-1.5 rounded-sm bg-red-600 text-xs font-black text-white transition hover:bg-red-700"
+              className="flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-red-600 text-xs font-black text-white transition hover:bg-red-700"
             >
               <X size={13} /> ปิด
             </button>
