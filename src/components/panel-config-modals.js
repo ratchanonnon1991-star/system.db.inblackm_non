@@ -478,7 +478,11 @@ export function EditableSettingsModal({
   const [allowDelete, setAllowDelete] = useState(editable?.allowDelete || false);
   const [inputs, setInputs] = useState(() => editable?.inputs || []);
 
-  const realColumn = (name) => columnMap[name] ?? name;
+  // A result column can be a display label with no relation to any real
+  // column ("ซ้ำ/ไม่ซ้ำ" for is_duplicate) -- defaulting the real-name box to
+  // that label just hands back something guaranteed to fail the SQL-quoting
+  // check. Default to it only when it could plausibly BE the real name.
+  const realColumn = (name) => columnMap[name] ?? (isSafeIdentifierPart(name) ? name : "");
   const setRealColumn = (name, value) =>
     setColumnMap((prev) => ({ ...prev, [name]: value }));
 
@@ -895,21 +899,16 @@ export function EditableSettingsModal({
         </div>
       </div>
 
-      {matchedTable && (
-        <datalist id="editable-settings-columns">
-          {matchedTable.columns.map((column) => (
-            <option key={column.name} value={column.name} />
-          ))}
-        </datalist>
-      )}
       {columns.length > 0 && (
         <div className="rounded-sm border border-zinc-200 p-3">
           <p className="mb-1 text-[10px] font-black text-zinc-500">คอลัมน์ที่เขียนได้</p>
           <p className="mb-2 text-[10px] font-semibold leading-relaxed text-zinc-500">
-            ชื่อทางซ้ายคือหัวคอลัมน์ที่ Query ตั้งด้วย <code>AS</code> — กรอกชื่อคอลัมน์จริงในตาราง
-            ถ้าไม่ตรงกัน · ช่องกรอกที่เลือกใช้ทั้งตอนดับเบิลคลิกแก้ในตารางและตอนเพิ่มแถว ·
-            คอลัมน์ที่มาจากการคำนวณหรือ JOIN (<code>g.name</code>, <code>CASE ...</code>)
-            เขียนกลับไม่ได้ ให้เอาออกจากรายการด้านบน
+            ชื่อทางซ้ายคือหัวคอลัมน์ที่ Query ตั้งด้วย <code>AS</code> —{" "}
+            {matchedTable
+              ? "เลือกคอลัมน์จริงในตารางจากรายการทางขวาถ้าไม่ตรงชื่อกัน (พบตารางแล้ว เดาให้อัตโนมัติเท่าที่เดาได้)"
+              : "กรอกชื่อคอลัมน์จริงในตารางถ้าไม่ตรงกัน"}{" "}
+            · ช่องนี้ใช้ทั้งตอนดับเบิลคลิกแก้ในตารางและตอนเพิ่มแถว · คอลัมน์ที่มาจากการคำนวณหรือ JOIN
+            (<code>g.name</code>, <code>CASE ...</code>) เขียนกลับไม่ได้ ให้เอาออกจากรายการด้านบน
           </p>
           <div className="space-y-2">
             {columns.map((name) => {
@@ -923,17 +922,34 @@ export function EditableSettingsModal({
                     >
                       {name}
                     </span>
-                    <input
-                      type="text"
-                      list={matchedTable ? "editable-settings-columns" : undefined}
-                      value={realColumn(name)}
-                      onChange={(e) => {
-                        touchedColumns.current.add(name);
-                        setRealColumn(name, e.target.value);
-                      }}
-                      placeholder={`ชื่อจริง (${name})`}
-                      className="h-8 w-full rounded-sm border border-zinc-200 px-2 font-mono text-[10px] font-semibold outline-none focus:border-red-600"
-                    />
+                    {matchedTable ? (
+                      <select
+                        value={realColumn(name)}
+                        onChange={(e) => {
+                          touchedColumns.current.add(name);
+                          setRealColumn(name, e.target.value);
+                        }}
+                        className="h-8 w-full rounded-sm border border-zinc-200 px-1.5 font-mono text-[10px] font-semibold outline-none focus:border-red-600"
+                      >
+                        <option value="">— เลือกคอลัมน์จริงในตาราง —</option>
+                        {matchedTable.columns.map((column) => (
+                          <option key={column.name} value={column.name}>
+                            {column.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={realColumn(name)}
+                        onChange={(e) => {
+                          touchedColumns.current.add(name);
+                          setRealColumn(name, e.target.value);
+                        }}
+                        placeholder={`ชื่อจริง (${name})`}
+                        className="h-8 w-full rounded-sm border border-zinc-200 px-2 font-mono text-[10px] font-semibold outline-none focus:border-red-600"
+                      />
+                    )}
                   </div>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <select
