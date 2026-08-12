@@ -853,14 +853,31 @@ export function EditableSettingsModal({
         )}
       </div>
       <div>
-        <label className={labelClass}>ตารางที่จะเขียนกลับ (เช่น packages หรือ public.packages)</label>
-        <input
-          type="text"
-          value={table}
-          onChange={(e) => setTable(e.target.value)}
-          placeholder="ชื่อตารางจริงในฐานข้อมูล"
-          className={inputClass}
-        />
+        <label className={labelClass}>ตารางที่จะเขียนกลับ</label>
+        {schemaData?.tables?.length ? (
+          <select value={table} onChange={(e) => setTable(e.target.value)} className={inputClass}>
+            <option value="">— เลือกตาราง —</option>
+            {schemaData.tables.map((candidate) => (
+              <option key={candidate.key} value={candidate.key}>
+                {candidate.key}
+              </option>
+            ))}
+            {/* A table saved before this list existed, or one this schema
+                fetch doesn't know about, must stay visible instead of
+                silently vanishing from the list. */}
+            {table.trim() && !schemaData.tables.some((candidate) => candidate.key === table.trim()) && (
+              <option value={table.trim()}>{table.trim()} (ไม่พบในสคีมา)</option>
+            )}
+          </select>
+        ) : (
+          <input
+            type="text"
+            value={table}
+            onChange={(e) => setTable(e.target.value)}
+            placeholder={schemaLoading ? "กำลังโหลดรายชื่อตาราง..." : "ชื่อตารางจริงในฐานข้อมูล"}
+            className={inputClass}
+          />
+        )}
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
         <div>
