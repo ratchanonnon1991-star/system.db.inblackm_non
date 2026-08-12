@@ -57,8 +57,10 @@ import {
   mergeKeyOf,
   normalizeLayout,
   REFRESH_CHOICES,
+  resolveInputDefault,
   rowsToCsv,
   toneStyle,
+  widgetForColumn,
 } from "@/lib/gamedb-layout";
 import { ComputedColumnModal } from "@/components/gamedb-modals";
 import {
@@ -505,6 +507,10 @@ export default function QueryPanel({
   // means no draft is open, {} means one is open but still blank.
   const [draftRow, setDraftRow] = useState(null);
   const [draftSaving, setDraftSaving] = useState(false);
+  // What the draft started as (a date column may start pre-filled with
+  // today) -- "touched" compares against this, not against blank, so
+  // cancelling an untouched auto-filled draft doesn't ask to confirm.
+  const draftInitialRef = useRef({});
 
   const effectiveParams = useMemo(
     () => resolveParams(layout, paramNames),
@@ -1430,16 +1436,68 @@ export default function QueryPanel({
 
   const startDraftRow = () => {
     setEditError("");
-    setDraftRow({});
+    // Typing today's date into a date column by hand on every single row
+    // added is exactly the busywork this button exists to avoid, so a date/
+    // datetime/time column starts pre-filled with "right now" -- and an
+    // admin-configured default (including "@today"/"@now"/"@time") wins over
+    // that guess when one is set.
+    const defaults = {};
+    for (const columnName of editableColumns) {
+      const input = (sharedEditable?.inputs || []).find((item) => item.column === columnName);
+      const columnMeta = result?.columns?.[baseNameToIndex.get(columnName)];
+      const widget = input?.widget || widgetForColumn(columnMeta);
+      const configured = input?.defaultValue ? resolveInputDefault(input.defaultValue) : "";
+      const guessed =
+        widget === "date"
+          ? resolveInputDefault("@today")
+          : widget === "datetime"
+            ? resolveInputDefault("@now")
+            : widget === "time"
+              ? resolveInputDefault("@time")
+              : "";
+      const value = configured || guessed;
+      if (value) defaults[columnName] = value;
+    }
+    draftInitialRef.current = defaults;
+    setDraftRow(defaults);
   };
 
   const changeDraftValue = (column, value) => {
     setDraftRow((prev) => ({ ...(prev || {}), [column]: value }));
   };
 
+  // A draft row is only ever shown pinned to the top of whichever page is on
+  // screen — it has no page of its own — so switching pages while one is open
+  // would make it look like it silently jumped or duplicated. Anything that
+  // would move the row out from under what's being typed goes through here.
+  // Compared against what it started as, not against blank, so an untouched
+  // auto-filled date doesn't itself count as "something typed".
+  const draftRowTouched = () => {
+    const initial = draftInitialRef.current || {};
+    const current = draftRow || {};
+    const keys = new Set([...Object.keys(initial), ...Object.keys(current)]);
+    for (const key of keys) {
+      if (String(current[key] ?? "").trim() !== String(initial[key] ?? "").trim()) return true;
+    }
+    return false;
+  };
+
+  const confirmDiscardDraft = (message) => {
+    if (!draftRow) return true;
+    if (!draftRowTouched()) {
+      setDraftRow(null);
+      return true;
+    }
+    if (!window.confirm(message)) return false;
+    setDraftRow(null);
+    setEditError("");
+    return true;
+  };
+
   const cancelDraftRow = () => {
-    const touched = Object.values(draftRow || {}).some((value) => String(value ?? "").trim() !== "");
-    if (touched && !window.confirm("ยังไม่ได้บันทึก — ยกเลิกแล้วข้อมูลที่กรอกไว้จะหายไป ยืนยันยกเลิกไหม?")) {
+    if (
+      !confirmDiscardDraft("ยังไม่ได้บันทึก — ยกเลิกแล้วข้อมูลที่กรอกไว้จะหายไป ยืนยันยกเลิกไหม?")
+    ) {
       return;
     }
     setDraftRow(null);
@@ -2716,10 +2774,24 @@ export default function QueryPanel({
                   pageCount={pageCount}
                   pageSize={pageSize}
                   tableTone={layout.tableTone}
-                  onPageChange={setPage}
+                  onPageChange={(next) => {
+                    if (
+                      confirmDiscardDraft(
+                        "ยังไม่ได้บันทึกแถวที่กำลังกรอก — เปลี่ยนหน้าแล้วข้อมูลนี้จะหายไป ยืนยันไหม?"
+                      )
+                    ) {
+                      setPage(next);
+                    }
+                  }}
                   onPageSizeChange={(next) => {
-                    setPageSize(next);
-                    setPage(1);
+                    if (
+                      confirmDiscardDraft(
+                        "ยังไม่ได้บันทึกแถวที่กำลังกรอก — เปลี่ยนขนาดหน้าแล้วข้อมูลนี้จะหายไป ยืนยันไหม?"
+                      )
+                    ) {
+                      setPageSize(next);
+                      setPage(1);
+                    }
                   }}
                 />
               )}

@@ -16,18 +16,51 @@ function SectionCard({ icon, title, children }) {
   );
 }
 
+// Both tables fetch everything the API will give them (up to its own cap)
+// and page through it client-side, same pattern UsersModal already uses --
+// there's no filter here to reset a page on, so it's simpler still.
+const PAGE_SIZE = 20;
+
+function Pager({ page, totalPages, onChange }) {
+  if (totalPages <= 1) return null;
+  return (
+    <div className="mt-2 flex items-center justify-between gap-2">
+      <button
+        type="button"
+        onClick={() => onChange(Math.max(1, page - 1))}
+        disabled={page <= 1}
+        className="rounded-sm border border-zinc-200 px-2.5 py-1 text-[10px] font-black text-zinc-500 transition hover:bg-zinc-50 disabled:opacity-40"
+      >
+        ก่อนหน้า
+      </button>
+      <span className="text-[10px] font-bold text-zinc-400">
+        หน้า {page} / {totalPages}
+      </span>
+      <button
+        type="button"
+        onClick={() => onChange(Math.min(totalPages, page + 1))}
+        disabled={page >= totalPages}
+        className="rounded-sm border border-zinc-200 px-2.5 py-1 text-[10px] font-black text-zinc-500 transition hover:bg-zinc-50 disabled:opacity-40"
+      >
+        ถัดไป
+      </button>
+    </div>
+  );
+}
+
 /** Every login attempt, success or not -- read-only, there is nothing to
  * revert about someone having tried to sign in. */
 function LoginLogSection() {
   const [logins, setLogins] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const data = await apiJson("/api/login-log?limit=200", {
+        const data = await apiJson("/api/login-log?limit=500", {
           fallbackError: "โหลดประวัติการเข้าสู่ระบบไม่สำเร็จ",
         });
         if (!cancelled) setLogins(data.logins || []);
@@ -41,6 +74,10 @@ function LoginLogSection() {
       cancelled = true;
     };
   }, []);
+
+  const totalPages = Math.max(1, Math.ceil(logins.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageLogins = logins.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   return (
     <SectionCard icon={<LogIn size={15} className="text-red-600" />} title="ประวัติการเข้าสู่ระบบ">
@@ -69,7 +106,7 @@ function LoginLogSection() {
               </tr>
             </thead>
             <tbody>
-              {logins.map((entry) => (
+              {pageLogins.map((entry) => (
                 <tr key={entry.id} className="border-t border-zinc-100">
                   <td className="whitespace-nowrap px-2 py-1.5 text-zinc-500">
                     {new Date(entry.createdAt).toLocaleString("th-TH", {
@@ -99,6 +136,7 @@ function LoginLogSection() {
           </table>
         </div>
       )}
+      <Pager page={safePage} totalPages={totalPages} onChange={setPage} />
     </SectionCard>
   );
 }
@@ -110,12 +148,13 @@ function EditLogSection() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reverting, setReverting] = useState(null);
+  const [page, setPage] = useState(1);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const data = await apiJson("/api/edit-log?limit=200", {
+      const data = await apiJson("/api/edit-log?limit=500", {
         fallbackError: "โหลดประวัติการแก้ไขไม่สำเร็จ",
       });
       setEdits(data.edits || []);
@@ -231,6 +270,10 @@ function EditLogSection() {
     }
   };
 
+  const totalPages = Math.max(1, Math.ceil(edits.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageEdits = edits.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
   return (
     <SectionCard icon={<History size={15} className="text-red-600" />} title="ประวัติการแก้ไขข้อมูล">
       {error && (
@@ -261,7 +304,7 @@ function EditLogSection() {
               </tr>
             </thead>
             <tbody>
-              {edits.map((entry) => (
+              {pageEdits.map((entry) => (
                 <tr key={entry.id} className="border-t border-zinc-100">
                   <td className="whitespace-nowrap px-2 py-1.5 text-zinc-500">
                     {new Date(entry.createdAt).toLocaleString("th-TH", {
@@ -311,6 +354,7 @@ function EditLogSection() {
           </table>
         </div>
       )}
+      <Pager page={safePage} totalPages={totalPages} onChange={setPage} />
     </SectionCard>
   );
 }
