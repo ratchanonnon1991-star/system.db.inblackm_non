@@ -415,6 +415,12 @@ export default function QueryPanel({
   canCustomizeLayout,
   canWriteData,
   canUpdateData,
+  // The template this panel is being viewed through, if any -- write
+  // requests carry it so the server can check the template's own
+  // allowStaffEdit/allowUserEdit grant, not just the account's. null when
+  // browsing a query directly (e.g. plain /systemdb), where the account-level
+  // grant alone has always decided.
+  activeViewId = null,
   isFullWidth,
   isSelected,
   workspaceToolbar,
@@ -1531,6 +1537,7 @@ export default function QueryPanel({
           pkValue: result.rows[sourceIndex][baseNameToIndex.get(sharedEditable.pk)],
           column: col.column.name,
           value,
+          viewId: activeViewId,
         }),
         fallbackError: "แก้ไขข้อมูลไม่สำเร็จ",
       });
@@ -1569,7 +1576,7 @@ export default function QueryPanel({
       await apiJson(`/api/queries/${query.id}/row`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pkValue }),
+        body: JSON.stringify({ pkValue, viewId: activeViewId }),
         fallbackError: "ลบแถวไม่สำเร็จ",
       });
       await runQuery({ silent: true });
@@ -1655,7 +1662,7 @@ export default function QueryPanel({
       await apiJson(`/api/queries/${query.id}/row`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ values: draftRow || {} }),
+        body: JSON.stringify({ values: draftRow || {}, viewId: activeViewId }),
         fallbackError: "เพิ่มแถวไม่สำเร็จ",
       });
       setDraftRow(null);
@@ -1678,7 +1685,7 @@ export default function QueryPanel({
         await apiJson(`/api/queries/${query.id}/cell`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(edit),
+          body: JSON.stringify({ ...edit, viewId: activeViewId }),
           fallbackError: "แก้ไขไม่สำเร็จ",
         });
         ok += 1;

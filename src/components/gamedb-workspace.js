@@ -652,6 +652,20 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
   const ownerLockedOut = Boolean(
     activeView?.ownerOnly && activeView.createdBy && activeView.createdBy !== me.username
   );
+  // Mirrors the server's requireDataAccess (auth.js) for display purposes only
+  // -- the API routes re-check this themselves on every write, so getting this
+  // wrong here would only ever show/hide an affordance incorrectly, never
+  // actually let a write through it shouldn't. accountFlag is "canWriteData"
+  // (add/remove rows) or "canUpdateData" (edit existing cells).
+  const roleGrantsDataWrite = (accountFlag) => {
+    if (isSuperAdmin && !previewAsUser) return true;
+    if (me.role === "staff") {
+      if (!me[accountFlag]) return false;
+      return !activeView || activeView.allowStaffEdit;
+    }
+    if (me.role === "user") return Boolean(activeView?.allowUserEdit);
+    return false;
+  };
   const [panelLayouts, setPanelLayouts] = useState({});
   const [layoutRevision, setLayoutRevision] = useState(0);
   const [templateSaveState, setTemplateSaveState] = useState("idle");
@@ -1708,14 +1722,9 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
         onDataChange={captureData}
         canManage={isSuperAdmin && !previewAsUser && !activeView?.isReadOnly && !ownerLockedOut}
         canCustomizeLayout={!editLocked}
-        canWriteData={
-          !activeView?.isReadOnly &&
-          ((isSuperAdmin && !previewAsUser) || (me.role === "staff" && Boolean(me.canWriteData)))
-        }
-        canUpdateData={
-          !activeView?.isReadOnly &&
-          ((isSuperAdmin && !previewAsUser) || (me.role === "staff" && Boolean(me.canUpdateData)))
-        }
+        canWriteData={!activeView?.isReadOnly && roleGrantsDataWrite("canWriteData")}
+        canUpdateData={!activeView?.isReadOnly && roleGrantsDataWrite("canUpdateData")}
+        activeViewId={activeView?.id ?? null}
         isFullWidth={isFullWidth}
         isSelected={selectedPanelId === panel.queryId}
         workspaceToolbar={toolbarPanelId === panel.queryId ? canvasToolbar : null}

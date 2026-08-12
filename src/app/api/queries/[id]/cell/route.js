@@ -12,8 +12,10 @@ import { requestMeta } from "@/lib/request-meta";
 // can be granted it individually (see requireDataUpdater).
 export async function PATCH(request, { params }) {
   try {
-    const admin = await requireDataUpdater(request);
     const { id } = await params;
+    const queryId = Number(id);
+    const body = await request.json();
+    const admin = await requireDataUpdater(request, { queryId, viewId: body.viewId });
     const query = await findQueryById(id);
     if (!query) return jsonError("ไม่พบ Query นี้", 404);
 
@@ -22,7 +24,6 @@ export async function PATCH(request, { params }) {
       return jsonError("Query นี้ยังไม่ได้เปิดให้แก้ไขข้อมูล", 400);
     }
 
-    const body = await request.json();
     const column = String(body.column || "");
     const pkValue = body.pkValue;
     if (!column) return jsonError("ไม่ได้ระบุคอลัมน์ที่จะแก้", 400);

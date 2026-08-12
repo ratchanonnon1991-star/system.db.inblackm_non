@@ -43,6 +43,8 @@ export async function PATCH(request, { params }) {
     if (body.isDefault !== undefined) fields.isDefault = body.isDefault;
     if (body.isReadOnly !== undefined) fields.isReadOnly = body.isReadOnly;
     if (body.ownerOnly !== undefined) fields.ownerOnly = body.ownerOnly;
+    if (body.allowStaffEdit !== undefined) fields.allowStaffEdit = body.allowStaffEdit;
+    if (body.allowUserEdit !== undefined) fields.allowUserEdit = body.allowUserEdit;
     if (body.sharedWith !== undefined) fields.sharedWith = body.sharedWith;
 
     const view = await updateView(id, fields);

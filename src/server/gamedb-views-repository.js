@@ -24,6 +24,18 @@ function mapRow(row) {
     // panels) from the Templates modal regardless. See canManage in
     // gamedb-workspace.js.
     ownerOnly: Boolean(row.owner_only),
+    // Per-role data-write grants for THIS template specifically -- on top of
+    // (not instead of) the account-level canWriteData/canUpdateData a Staff
+    // account is given in UsersModal, and the hard "user" can never write
+    // rule in auth.js. allowStaffEdit defaults true so a template saved
+    // before this existed keeps behaving exactly as it did (Staff's account
+    // flags alone decided); allowUserEdit defaults false, matching the
+    // existing "user role never writes" rule until an admin opts a specific
+    // template in. See roleCanWriteView / requireDataWriter/Updater in auth.js.
+    allowStaffEdit: row.allow_staff_edit === null || row.allow_staff_edit === undefined
+      ? true
+      : Boolean(row.allow_staff_edit),
+    allowUserEdit: Boolean(row.allow_user_edit),
     sharedWith: Array.isArray(row.shared_with) ? row.shared_with : [],
     createdBy: row.created_by || "",
     createdAt: row.created_at,
@@ -59,6 +71,18 @@ async function ensureSchema() {
     await getPool().query(`
       ALTER TABLE gamedb_views
       ADD COLUMN IF NOT EXISTS owner_only BOOLEAN NOT NULL DEFAULT FALSE
+    `);
+    // DEFAULT TRUE here specifically -- so a template saved before this
+    // existed keeps letting Staff write exactly as before (account-level
+    // flags alone decided), rather than every existing template silently
+    // losing Staff write access the moment this column appears.
+    await getPool().query(`
+      ALTER TABLE gamedb_views
+      ADD COLUMN IF NOT EXISTS allow_staff_edit BOOLEAN NOT NULL DEFAULT TRUE
+    `);
+    await getPool().query(`
+      ALTER TABLE gamedb_views
+      ADD COLUMN IF NOT EXISTS allow_user_edit BOOLEAN NOT NULL DEFAULT FALSE
     `);
   })();
   schemaReady.catch(() => {
@@ -156,12 +180,34 @@ export function canUseView(view, user) {
   );
 }
 
+/** Whether this role may write data through this template specifically --
+ * the per-template half of the write decision; the caller still has to
+ * additionally check the per-account grant for "staff" (see
+ * requireDataWriter/Updater in auth.js), since this function only knows
+ * about the template. */
+export function roleCanWriteView(view, role) {
+  if (!view) return false;
+  if (role === "staff") return view.allowStaffEdit;
+  if (role === "user") return view.allowUserEdit;
+  return false;
+}
+
+/** A write request naming both a query and a view has to actually be for a
+ * query that view displays -- otherwise a template that grants writes on its
+ * own panels would just as well grant them on any query id at all. */
+export function viewContainsQuery(view, queryId) {
+  const target = Number(queryId);
+  if (!view || !Number.isInteger(target)) return false;
+  return (view.config?.panels || []).some((panel) => Number(panel.queryId) === target);
+}
+
 export async function insertView(fields) {
   await ensureSchema();
   const result = await getPool().query(
     `INSERT INTO gamedb_views
-       (name, description, config, is_public, is_default, is_read_only, owner_only, shared_with, created_by)
-     VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8::jsonb, $9)
+       (name, description, config, is_public, is_default, is_read_only, owner_only,
+        allow_staff_edit, allow_user_edit, shared_with, created_by)
+     VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10::jsonb, $11)
      RETURNING id`,
     [
       fields.name,
@@ -171,6 +217,8 @@ export async function insertView(fields) {
       Boolean(fields.isDefault),
       Boolean(fields.isReadOnly),
       Boolean(fields.ownerOnly),
+      fields.allowStaffEdit === undefined ? true : Boolean(fields.allowStaffEdit),
+      Boolean(fields.allowUserEdit),
       JSON.stringify(sanitizeSharedWith(fields.sharedWith)),
       fields.createdBy || "",
     ]
@@ -211,6 +259,14 @@ export async function updateView(id, fields) {
   if (fields.ownerOnly !== undefined) {
     sets.push(`owner_only = $${i++}`);
     values.push(Boolean(fields.ownerOnly));
+  }
+  if (fields.allowStaffEdit !== undefined) {
+    sets.push(`allow_staff_edit = $${i++}`);
+    values.push(Boolean(fields.allowStaffEdit));
+  }
+  if (fields.allowUserEdit !== undefined) {
+    sets.push(`allow_user_edit = $${i++}`);
+    values.push(Boolean(fields.allowUserEdit));
   }
   if (fields.sharedWith !== undefined) {
     sets.push(`shared_with = $${i++}::jsonb`);

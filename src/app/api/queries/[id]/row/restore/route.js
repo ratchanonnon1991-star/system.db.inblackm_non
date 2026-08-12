@@ -19,11 +19,11 @@ import { loadTarget } from "../route";
 // prior deleteRow() call, so its old_value is guaranteed to be a real row.
 export async function POST(request, { params }) {
   try {
-    const target = await loadTarget(request, params);
+    const body = await request.json();
+    const target = await loadTarget(request, params, { viewId: body.viewId });
     if (target.error) return target.error;
     const { admin, query, layout, connection } = target;
 
-    const body = await request.json();
     const logEntryId = Number(body.logEntryId);
     if (!Number.isInteger(logEntryId) || logEntryId <= 0) {
       return jsonError("ไม่มีข้อมูลที่จะกู้คืน", 400);

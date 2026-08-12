@@ -30,6 +30,12 @@ const EMPTY_FORM = {
   isDefault: false,
   isReadOnly: false,
   ownerOnly: false,
+  // Matches the DB column defaults (see gamedb-views-repository.js): a new
+  // template starts letting Staff write if their account is already granted
+  // to, same as every other template; "user" starts locked out, same as
+  // everywhere else a "user" account can go.
+  allowStaffEdit: true,
+  allowUserEdit: false,
   sharedWith: [],
 };
 
@@ -100,6 +106,8 @@ export default function ViewsModal({
       isDefault: view.isDefault,
       isReadOnly: Boolean(view.isReadOnly),
       ownerOnly: Boolean(view.ownerOnly),
+      allowStaffEdit: view.allowStaffEdit !== false,
+      allowUserEdit: Boolean(view.allowUserEdit),
       sharedWith: view.sharedWith,
     });
     setError("");
@@ -219,6 +227,16 @@ export default function ViewsModal({
                     {view.ownerOnly && (
                       <span className="ml-1.5 rounded bg-sky-100 px-1.5 py-0.5 text-[9px] font-black text-sky-700">
                         เจ้าของแก้ได้เท่านั้น
+                      </span>
+                    )}
+                    {!view.isReadOnly && view.allowUserEdit && (
+                      <span className="ml-1.5 rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black text-emerald-700">
+                        User แก้ข้อมูลได้
+                      </span>
+                    )}
+                    {!view.isReadOnly && !view.allowStaffEdit && (
+                      <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-black text-amber-700">
+                        ปิดสิทธิ์ Staff แก้ข้อมูล
                       </span>
                     )}
                   </p>
@@ -345,6 +363,37 @@ export default function ViewsModal({
                 จำกัดให้เจ้าของ{editingId ? ` (${views.find((v) => v.id === editingId)?.createdBy || "คุณ"})` : ""}
                 {" "}แก้ layout ได้เท่านั้นตอนเปิดใช้งานจริง (Admin คนอื่นยังจัดการเทมเพลตนี้ได้จากที่นี่เสมอ)
               </label>
+
+              <div className="rounded-sm border border-zinc-200 bg-zinc-50 p-2.5">
+                <p className="mb-1.5 text-[10px] font-black text-zinc-500">
+                  สิทธิ์แก้ไขข้อมูลในตาราง ผ่านเทมเพลตนี้โดยเฉพาะ
+                </p>
+                <label className="flex items-center gap-2 text-[11px] font-bold text-zinc-600">
+                  <input
+                    type="checkbox"
+                    checked={form.allowStaffEdit}
+                    disabled={form.isReadOnly}
+                    onChange={(e) => setField("allowStaffEdit", e.target.checked)}
+                  />
+                  อนุญาตให้ Staff แก้ไข/เพิ่ม/ลบข้อมูลผ่านเทมเพลตนี้ (ต้องได้รับสิทธิ์จาก
+                  &quot;จัดการสิทธิ์ผู้ใช้&quot; ของบัญชีนั้นด้วย — ติ๊กนี้ปิดได้เฉพาะเทมเพลตนี้เท่านั้น)
+                </label>
+                <label className="mt-1.5 flex items-center gap-2 text-[11px] font-bold text-zinc-600">
+                  <input
+                    type="checkbox"
+                    checked={form.allowUserEdit}
+                    disabled={form.isReadOnly}
+                    onChange={(e) => setField("allowUserEdit", e.target.checked)}
+                  />
+                  อนุญาตให้ User แก้ไข/เพิ่ม/ลบข้อมูลผ่านเทมเพลตนี้ (ปกติบัญชี User ดูอย่างเดียว —
+                  ติ๊กนี้เปิดสิทธิ์เขียนเฉพาะเทมเพลตนี้)
+                </label>
+                {form.isReadOnly && (
+                  <p className="mt-1.5 text-[10px] font-semibold text-zinc-400">
+                    ปิดใช้งานอยู่เพราะติ๊ก &quot;ดูอย่างเดียว&quot; ไว้ด้านบน — เทมเพลตนี้ล็อกไม่ให้แก้ข้อมูลทุกคนอยู่แล้ว
+                  </p>
+                )}
+              </div>
 
               {!form.isPublic && (
                 <div>

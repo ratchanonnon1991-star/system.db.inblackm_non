@@ -9,10 +9,11 @@ import { normalizeLayout } from "@/lib/gamedb-layout";
 import { requestMeta } from "@/lib/request-meta";
 
 // Adding and removing rows is an Admin capability by default; a Staff
-// account can be granted it individually (see requireDataWriter).
-export async function loadTarget(request, params) {
-  const admin = await requireDataWriter(request);
+// account can be granted it individually, and a "user" account only through
+// a template that opts in (see requireDataWriter).
+export async function loadTarget(request, params, { viewId } = {}) {
   const { id } = await params;
+  const admin = await requireDataWriter(request, { queryId: Number(id), viewId });
   const query = await findQueryById(id);
   if (!query) return { error: jsonError("ไม่พบ Query นี้", 404) };
 
@@ -32,11 +33,11 @@ export async function loadTarget(request, params) {
 
 export async function POST(request, { params }) {
   try {
-    const target = await loadTarget(request, params);
+    const body = await request.json();
+    const target = await loadTarget(request, params, { viewId: body.viewId });
     if (target.error) return target.error;
     const { admin, query, layout, connection } = target;
 
-    const body = await request.json();
     if (!body.values || typeof body.values !== "object" || Array.isArray(body.values)) {
       return jsonError("ไม่ได้ส่งค่าที่จะเพิ่ม", 400);
     }
@@ -68,11 +69,11 @@ export async function POST(request, { params }) {
 
 export async function DELETE(request, { params }) {
   try {
-    const target = await loadTarget(request, params);
+    const body = await request.json();
+    const target = await loadTarget(request, params, { viewId: body.viewId });
     if (target.error) return target.error;
     const { admin, query, layout, connection } = target;
 
-    const body = await request.json();
     const pkValue = body.pkValue;
     if (pkValue === null || pkValue === undefined || pkValue === "") {
       return jsonError(`ไม่พบค่า ${layout.editable.pk} ของแถวนี้`, 400);

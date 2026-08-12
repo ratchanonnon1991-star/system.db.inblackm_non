@@ -29,6 +29,8 @@ export async function POST(request) {
       isDefault: body.isDefault,
       isReadOnly: body.isReadOnly,
       ownerOnly: body.ownerOnly,
+      allowStaffEdit: body.allowStaffEdit,
+      allowUserEdit: body.allowUserEdit,
       sharedWith: body.sharedWith,
       createdBy: admin.username || "",
     });
