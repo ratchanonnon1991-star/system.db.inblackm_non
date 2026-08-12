@@ -2915,6 +2915,7 @@ export default function QueryPanel({
       {modal === "editable" && result && (
         <EditableSettingsModal
           queryId={query.id}
+          connectionId={query.connectionId}
           columnNames={result.columns.map((col) => col.name)}
           editable={layout.editable}
           onClose={() => setModal(null)}

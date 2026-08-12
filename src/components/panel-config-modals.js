@@ -445,8 +445,21 @@ const WIDGET_LABELS = {
 };
 
 /** Which table/rows this query is allowed to write back to. */
+// A result column named "ซ้ำ/ไม่ซ้ำ" and a DB column named "is_duplicate" will
+// never match by spelling, but "createdAt" and "created_at" should — this is
+// the only normalisation worth doing before giving up and asking the user.
+const normalizeForMatch = (value) => String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+function guessRealColumn(resultName, table) {
+  if (!table) return "";
+  const needle = normalizeForMatch(resultName);
+  const hit = table.columns.find((column) => normalizeForMatch(column.name) === needle);
+  return hit ? hit.name : "";
+}
+
 export function EditableSettingsModal({
   queryId,
+  connectionId,
   columnNames,
   editable,
   onSave,
@@ -467,6 +480,70 @@ export function EditableSettingsModal({
   const realColumn = (name) => columnMap[name] ?? name;
   const setRealColumn = (name, value) =>
     setColumnMap((prev) => ({ ...prev, [name]: value }));
+
+  // Loaded once so the table-name box can be matched against real columns —
+  // an admin who already knows every column name pays only the one request.
+  const [schemaData, setSchemaData] = useState(null);
+  const [schemaLoading, setSchemaLoading] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setSchemaLoading(true);
+    (async () => {
+      try {
+        const suffix = connectionId ? `?connectionId=${encodeURIComponent(connectionId)}` : "";
+        const data = await apiJson(`/api/query-builder/schema${suffix}`, {
+          fallbackError: "โหลดรายการตารางและคอลัมน์ไม่สำเร็จ",
+        });
+        if (!cancelled) setSchemaData(data);
+      } catch {
+        // Silent: this is a convenience guess, not a required step — the
+        // text boxes below still work by hand if the schema can't be read.
+      } finally {
+        if (!cancelled) setSchemaLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [connectionId]);
+
+  const matchedTable = useMemo(() => {
+    const typed = table.trim();
+    if (!typed || !schemaData?.tables) return null;
+    const [typedSchema, typedName] = typed.includes(".") ? typed.split(".", 2) : [null, typed];
+    return (
+      schemaData.tables.find((candidate) =>
+        typedSchema
+          ? candidate.schema.toLowerCase() === typedSchema.toLowerCase() &&
+            candidate.name.toLowerCase() === typedName.toLowerCase()
+          : candidate.name.toLowerCase() === typedName.toLowerCase()
+      ) || null
+    );
+  }, [table, schemaData]);
+
+  // Only fill boxes the admin has not touched — someone who typed a real
+  // column name by hand should never have it silently swapped back.
+  const touchedPkColumn = useRef(Boolean(editable?.pkColumn));
+  const touchedColumns = useRef(new Set(Object.keys(editable?.columnMap || {})));
+
+  useEffect(() => {
+    if (!matchedTable || touchedPkColumn.current || !pk) return;
+    const guess =
+      matchedTable.primaryKey.length === 1
+        ? matchedTable.primaryKey[0]
+        : guessRealColumn(pk, matchedTable);
+    if (guess && guess !== pk) setPkColumn(guess);
+  }, [matchedTable, pk]);
+
+  useEffect(() => {
+    if (!matchedTable) return;
+    for (const name of columns) {
+      if (touchedColumns.current.has(name) || columnMap[name]) continue;
+      const guess = guessRealColumn(name, matchedTable);
+      if (guess && guess !== name) setRealColumn(name, guess);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchedTable, columns]);
 
   const toggle = (name) =>
     setColumns((prev) =>
@@ -773,10 +850,23 @@ export function EditableSettingsModal({
           <input
             type="text"
             value={pkColumn}
-            onChange={(e) => setPkColumn(e.target.value)}
+            onChange={(e) => {
+              touchedPkColumn.current = true;
+              setPkColumn(e.target.value);
+            }}
             placeholder={pk ? `เช่น ${pk.toLowerCase()}` : "เช่น id"}
             className={inputClass}
           />
+          {matchedTable && !pkColumn.trim() && (
+            <p className="mt-1 text-[10px] font-semibold text-emerald-600">
+              พบตาราง &quot;{matchedTable.key}&quot; แล้ว — เดาคอลัมน์ให้อัตโนมัติถ้าชื่อไม่ตรงกัน
+            </p>
+          )}
+          {table.trim() && !schemaLoading && !matchedTable && (
+            <p className="mt-1 text-[10px] font-semibold text-zinc-400">
+              ไม่พบตาราง &quot;{table.trim()}&quot; ในสคีมา — เดาให้ไม่ได้ กรอกชื่อคอลัมน์เอง
+            </p>
+          )}
         </div>
       </div>
       {pk && (pkColumn.trim() || pk) && (
@@ -804,6 +894,13 @@ export function EditableSettingsModal({
         </div>
       </div>
 
+      {matchedTable && (
+        <datalist id="editable-settings-columns">
+          {matchedTable.columns.map((column) => (
+            <option key={column.name} value={column.name} />
+          ))}
+        </datalist>
+      )}
       {columns.length > 0 && (
         <div className="rounded-sm border border-zinc-200 p-3">
           <p className="mb-1 text-[10px] font-black text-zinc-500">คอลัมน์ที่เขียนได้</p>
@@ -827,8 +924,12 @@ export function EditableSettingsModal({
                     </span>
                     <input
                       type="text"
+                      list={matchedTable ? "editable-settings-columns" : undefined}
                       value={realColumn(name)}
-                      onChange={(e) => setRealColumn(name, e.target.value)}
+                      onChange={(e) => {
+                        touchedColumns.current.add(name);
+                        setRealColumn(name, e.target.value);
+                      }}
                       placeholder={`ชื่อจริง (${name})`}
                       className="h-8 w-full rounded-sm border border-zinc-200 px-2 font-mono text-[10px] font-semibold outline-none focus:border-red-600"
                     />
