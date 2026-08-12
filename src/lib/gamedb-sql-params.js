@@ -116,6 +116,73 @@ export function extractSqlParams(sql) {
   return names;
 }
 
+// Matches one `SELECT` list item that is a plain column reference aliased
+// with AS -- `is_repeatable AS "ซ้ำ/ไม่ซ้ำ"` or `g.name AS "Name"`. Anything
+// else (a JOIN expression, CASE, a function call, no alias at all) does not
+// match and is left alone -- there is no real column to point back to.
+const ALIAS_ITEM =
+  /^([A-Za-z_][A-Za-z0-9_]*)(?:\.([A-Za-z_][A-Za-z0-9_]*))?\s+AS\s+"([^"]+)"$/i;
+
+/**
+ * The query text itself already says which real column an aliased result
+ * column came from -- `is_repeatable AS "ซ้ำ/ไม่ซ้ำ"` means exactly that, no
+ * guessing against a live schema needed. Returns { alias: realColumnName }
+ * for every SELECT-list item shaped that way; anything computed or joined in
+ * is simply absent from the map rather than guessed at.
+ */
+export function parseSelectAliases(sql) {
+  const src = String(sql || "");
+  const masked = stripSqlLiterals(src);
+  const lower = masked.toLowerCase();
+  const selectAt = lower.indexOf("select");
+  if (selectAt === -1) return {};
+
+  // The first top-level FROM after SELECT -- depth tracked over the masked
+  // text so a FROM inside a subquery's parens does not end the list early.
+  let depth = 0;
+  let fromAt = -1;
+  for (let i = selectAt + 6; i < masked.length; i += 1) {
+    const ch = masked[i];
+    if (ch === "(") depth += 1;
+    else if (ch === ")") depth -= 1;
+    else if (depth === 0 && lower.startsWith("from", i)) {
+      const before = lower[i - 1];
+      const after = lower[i + 4];
+      if ((!before || /\s/.test(before)) && (!after || /\s/.test(after))) {
+        fromAt = i;
+        break;
+      }
+    }
+  }
+  if (fromAt === -1) return {};
+
+  const listMasked = masked.slice(selectAt + 6, fromAt);
+  const listSrc = src.slice(selectAt + 6, fromAt);
+
+  // Split on top-level commas -- same depth tracking, since a function call
+  // in the list (e.g. rpad(repeat(...), 3, '')) has commas of its own.
+  const items = [];
+  let start = 0;
+  let itemDepth = 0;
+  for (let i = 0; i < listMasked.length; i += 1) {
+    const ch = listMasked[i];
+    if (ch === "(") itemDepth += 1;
+    else if (ch === ")") itemDepth -= 1;
+    else if (ch === "," && itemDepth === 0) {
+      items.push(listSrc.slice(start, i));
+      start = i + 1;
+    }
+  }
+  items.push(listSrc.slice(start));
+
+  const map = {};
+  for (const item of items) {
+    const match = ALIAS_ITEM.exec(item.trim());
+    if (match) map[match[3]] = match[2] || match[1];
+  }
+  return map;
+}
+
 /**
  * Rewrites `:name` to positional placeholders.
  * Returns { text, values, missing } — missing lists names with no value, which

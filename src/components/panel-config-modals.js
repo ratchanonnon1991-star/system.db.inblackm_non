@@ -28,7 +28,7 @@ import ModalResizeHandle from "@/components/modal-resize-handle";
 import HueSlider from "@/components/hue-slider";
 import { useResizableModalWidth } from "@/lib/use-resizable-modal-width";
 import { isSafeIdentifier, isSafeIdentifierPart } from "@/lib/gamedb-identifier";
-import { extractSqlParams } from "@/lib/gamedb-sql-params";
+import { extractSqlParams, parseSelectAliases } from "@/lib/gamedb-sql-params";
 import { buildVisualInsert } from "@/lib/gamedb-visual-query";
 import {
   applyGroupTone,
@@ -463,6 +463,7 @@ export function EditableSettingsModal({
   connectionId,
   columnNames,
   editable,
+  sqlText,
   onSave,
   onClose,
 }) {
@@ -526,29 +527,46 @@ export function EditableSettingsModal({
     );
   }, [table, schemaData]);
 
+  // The query text itself already says which real column an aliased result
+  // column came from -- "is_repeatable AS "ซ้ำ/ไม่ซ้ำ"" needs no guessing at
+  // all, schema or otherwise. Tried first; the schema-based guess below only
+  // covers what the SQL doesn't say (a bare `SELECT *`, say).
+  const sqlAliasMap = useMemo(() => parseSelectAliases(sqlText || ""), [sqlText]);
+
   // Only fill boxes the admin has not touched — someone who typed a real
   // column name by hand should never have it silently swapped back.
   const touchedPkColumn = useRef(Boolean(editable?.pkColumn));
   const touchedColumns = useRef(new Set(Object.keys(editable?.columnMap || {})));
 
   useEffect(() => {
-    if (!matchedTable || touchedPkColumn.current || !pk) return;
+    if (touchedPkColumn.current || !pk) return;
+    const fromSql = sqlAliasMap[pk];
+    if (fromSql && fromSql !== pk) {
+      setPkColumn(fromSql);
+      return;
+    }
+    if (!matchedTable) return;
     const guess =
       matchedTable.primaryKey.length === 1
         ? matchedTable.primaryKey[0]
         : guessRealColumn(pk, matchedTable);
     if (guess && guess !== pk) setPkColumn(guess);
-  }, [matchedTable, pk]);
+  }, [matchedTable, pk, sqlAliasMap]);
 
   useEffect(() => {
-    if (!matchedTable) return;
     for (const name of columns) {
       if (touchedColumns.current.has(name) || columnMap[name]) continue;
+      const fromSql = sqlAliasMap[name];
+      if (fromSql && fromSql !== name) {
+        setRealColumn(name, fromSql);
+        continue;
+      }
+      if (!matchedTable) continue;
       const guess = guessRealColumn(name, matchedTable);
       if (guess && guess !== name) setRealColumn(name, guess);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [matchedTable, columns]);
+  }, [matchedTable, columns, sqlAliasMap]);
 
   const toggle = (name) =>
     setColumns((prev) =>
@@ -903,12 +921,14 @@ export function EditableSettingsModal({
         <div className="rounded-sm border border-zinc-200 p-3">
           <p className="mb-1 text-[10px] font-black text-zinc-500">คอลัมน์ที่เขียนได้</p>
           <p className="mb-2 text-[10px] font-semibold leading-relaxed text-zinc-500">
-            ชื่อทางซ้ายคือหัวคอลัมน์ที่ Query ตั้งด้วย <code>AS</code> —{" "}
+            ชื่อทางซ้ายคือหัวคอลัมน์ที่ Query ตั้งด้วย <code>AS</code> — คอลัมน์ที่เขียนใน SQL แบบ{" "}
+            <code>column AS &quot;ชื่อ&quot;</code> ระบบอ่านชื่อจริงจาก Query ให้อัตโนมัติแล้ว ไม่ต้อง
+            กรอกเอง ที่เหลือ{" "}
             {matchedTable
-              ? "เลือกคอลัมน์จริงในตารางจากรายการทางขวาถ้าไม่ตรงชื่อกัน (พบตารางแล้ว เดาให้อัตโนมัติเท่าที่เดาได้)"
-              : "กรอกชื่อคอลัมน์จริงในตารางถ้าไม่ตรงกัน"}{" "}
-            · ช่องนี้ใช้ทั้งตอนดับเบิลคลิกแก้ในตารางและตอนเพิ่มแถว · คอลัมน์ที่มาจากการคำนวณหรือ JOIN
-            (<code>g.name</code>, <code>CASE ...</code>) เขียนกลับไม่ได้ ให้เอาออกจากรายการด้านบน
+              ? "เลือกคอลัมน์จริงในตารางจากรายการทางขวาได้เลย (พบตารางแล้ว)"
+              : "กรอกชื่อคอลัมน์จริงในตารางเอง"}{" "}
+            · ช่องนี้ใช้ทั้งตอนดับเบิลคลิกแก้ในตารางและตอนเพิ่มแถว · คอลัมน์ที่มาจากการคำนวณ
+            (<code>CASE ...</code>) เขียนกลับไม่ได้ ให้เอาออกจากรายการด้านบน
           </p>
           <div className="space-y-2">
             {columns.map((name) => {

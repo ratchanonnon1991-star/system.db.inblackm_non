@@ -2946,6 +2946,7 @@ export default function QueryPanel({
           connectionId={query.connectionId}
           columnNames={result.columns.map((col) => col.name)}
           editable={layout.editable}
+          sqlText={query.sqlText}
           onClose={() => setModal(null)}
           onSave={(editable) => {
             mutateLayout((prev) => ({ ...prev, editable }));
