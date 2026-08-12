@@ -6,6 +6,7 @@ import {
   Code2,
   Database,
   Filter,
+  Link2,
   Loader2,
   Pencil,
   Play,
@@ -1369,6 +1370,16 @@ export function UsersModal({ me, onClose }) {
   const PAGE_SIZE = 12;
   const { width: modalWidth, startResize, resizing } = useResizableModalWidth(768);
 
+  // "เชื่อมบัญชี experience" used to be its own top-level modal, but a mapping
+  // is really just another property of one gamedb account -- keeping it here,
+  // next to the account it points at, means there is one place to look for
+  // everything about that account instead of two.
+  const [ssoMappings, setSsoMappings] = useState([]);
+  const [ssoLoading, setSsoLoading] = useState(true);
+  const [ssoEmail, setSsoEmail] = useState("");
+  const [ssoSaving, setSsoSaving] = useState(false);
+  const [ssoError, setSsoError] = useState("");
+
   // A flat scroll of a couple hundred rows is where "find the one account"
   // stops being findable by eye -- search + role narrow it back down.
   const filteredUsers = useMemo(() => {
@@ -1424,12 +1435,31 @@ export function UsersModal({ me, onClose }) {
       .catch(() => setViews([]));
   }, []);
 
+  const loadSsoMappings = useCallback(async () => {
+    setSsoLoading(true);
+    try {
+      const data = await apiJson("/api/sso-map", { fallbackError: "โหลดรายการเชื่อมบัญชี experience ไม่สำเร็จ" });
+      setSsoMappings(data.mappings || []);
+    } catch {
+      setSsoMappings([]);
+    } finally {
+      setSsoLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- state changes after the fetch resolves
+    loadSsoMappings();
+  }, [loadSsoMappings]);
+
   const setField = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
 
   const startCreate = () => {
     setEditingId(null);
     setForm(EMPTY_USER_FORM);
     setError("");
+    setSsoEmail("");
+    setSsoError("");
   };
 
   const startEdit = (user) => {
@@ -1444,6 +1474,47 @@ export function UsersModal({ me, onClose }) {
       canUpdateData: Boolean(user.canUpdateData),
     });
     setError("");
+    setSsoEmail("");
+    setSsoError("");
+  };
+
+  const mappingsForEditingUser = editingId
+    ? ssoMappings.filter((m) => m.gamedbUsername === form.username)
+    : [];
+
+  const addSsoMapping = async (event) => {
+    event.preventDefault();
+    if (!editingId) return;
+    setSsoSaving(true);
+    setSsoError("");
+    try {
+      const data = await apiJson("/api/sso-map", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hiringEmail: ssoEmail, gamedbUsername: form.username }),
+        fallbackError: "เชื่อมบัญชีไม่สำเร็จ",
+      });
+      setSsoMappings((prev) => [
+        ...prev.filter((item) => item.hiringEmail !== data.mapping.hiringEmail),
+        data.mapping,
+      ]);
+      setSsoEmail("");
+    } catch (err) {
+      setSsoError(err.message);
+    } finally {
+      setSsoSaving(false);
+    }
+  };
+
+  const removeSsoMapping = async (id) => {
+    if (!window.confirm("เลิกเชื่อมบัญชี experience นี้?")) return;
+    setSsoError("");
+    try {
+      await apiJson(`/api/sso-map/${id}`, { method: "DELETE", fallbackError: "เลิกเชื่อมบัญชีไม่สำเร็จ" });
+      setSsoMappings((prev) => prev.filter((item) => item.id !== id));
+    } catch (err) {
+      setSsoError(err.message);
+    }
   };
 
   const save = async () => {
@@ -1746,6 +1817,69 @@ export function UsersModal({ me, onClose }) {
                   ไม่รวมการเขียน SQL, ตั้งค่าคอลัมน์ที่แก้ไขได้, หรือจัดการผู้ใช้ — ยังเป็น
                   Admin เท่านั้น
                 </p>
+              </div>
+            )}
+
+            {editingId && (
+              <div className="space-y-2 rounded-sm border border-zinc-200 p-3">
+                <p className="flex items-center gap-1.5 text-[10px] font-black text-zinc-500">
+                  <Link2 size={11} className="text-red-600" /> บัญชี experience ที่เชื่อมไว้
+                </p>
+                <p className="text-[9px] font-semibold text-zinc-400">
+                  คนที่ login experience ด้วยอีเมลนี้แล้วกดปุ่ม &ldquo;เข้าสู่ระบบด้วยบัญชี
+                  experience&rdquo; จะได้เข้า gamedb เป็นบัญชีนี้ทันที ไม่ต้องพิมพ์ username/password
+                </p>
+                {ssoLoading ? (
+                  <p className="flex items-center gap-1.5 py-1 text-[10px] font-semibold text-zinc-400">
+                    <Loader2 size={12} className="animate-spin" /> กำลังโหลด...
+                  </p>
+                ) : mappingsForEditingUser.length > 0 ? (
+                  <div className="space-y-1">
+                    {mappingsForEditingUser.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between gap-2 rounded-sm bg-zinc-50 px-2 py-1.5"
+                      >
+                        <span className="min-w-0 truncate text-[10px] font-bold text-zinc-600">
+                          {item.hiringEmail}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeSsoMapping(item.id)}
+                          className="shrink-0 rounded-sm p-1 text-zinc-400 transition hover:bg-zinc-200 hover:text-red-600"
+                          aria-label={`เลิกเชื่อม ${item.hiringEmail}`}
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[10px] font-semibold text-zinc-400">
+                    ยังไม่มีบัญชี experience ที่เชื่อมไว้กับบัญชีนี้
+                  </p>
+                )}
+                <form onSubmit={addSsoMapping} className="flex items-center gap-1.5">
+                  <input
+                    type="email"
+                    required
+                    value={ssoEmail}
+                    onChange={(e) => setSsoEmail(e.target.value)}
+                    placeholder="อีเมล Admin ของ experience"
+                    className="h-8 flex-1 rounded-sm border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-semibold outline-none focus:border-red-600 focus:bg-white"
+                  />
+                  <button
+                    type="submit"
+                    disabled={ssoSaving || !ssoEmail.trim()}
+                    className="flex h-8 shrink-0 items-center justify-center gap-1 rounded-sm bg-red-600 px-2.5 text-[10px] font-black text-white transition hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {ssoSaving ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+                    เชื่อม
+                  </button>
+                </form>
+                {ssoError && (
+                  <p className="text-[10px] font-bold text-red-600">{ssoError}</p>
+                )}
               </div>
             )}
 

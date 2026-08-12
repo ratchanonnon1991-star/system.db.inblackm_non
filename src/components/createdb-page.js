@@ -2,7 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Plus, Table2, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronDown,
+  Columns3,
+  Database,
+  ListPlus,
+  Loader2,
+  Plus,
+  Table2,
+  Trash2,
+} from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { buildAddColumnSql, buildCreateTableSql, DDL_COLUMN_TYPES } from "@/lib/gamedb-schema-ddl";
 
@@ -12,6 +22,27 @@ const inputClass =
 
 function emptyColumn() {
   return { key: Math.random().toString(36).slice(2), name: "", type: "text", notNull: false };
+}
+
+function typeLabel(value) {
+  return DDL_COLUMN_TYPES.find((type) => type.value === value)?.label || value;
+}
+
+// A step's numbered circle -- purely visual, so the same eye-catching marker
+// walks a first-time admin through "database -> name -> columns -> preview"
+// in order instead of dropping every field on the page at once.
+function StepHeading({ n, title, hint }) {
+  return (
+    <div className="mb-2 flex items-start gap-2">
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-600 text-[10px] font-black text-white">
+        {n}
+      </span>
+      <div>
+        <p className="text-xs font-black text-zinc-700">{title}</p>
+        {hint && <p className="text-[10px] font-semibold text-zinc-400">{hint}</p>}
+      </div>
+    </div>
+  );
 }
 
 export default function CreateDbPage() {
@@ -163,6 +194,22 @@ export default function CreateDbPage() {
 
   const preview = mode === "createTable" ? createTablePreview : addColumnPreview;
 
+  // A one-sentence plain-language readout above the raw SQL -- most of this
+  // page's audience is here to add a column, not to read DDL, so the
+  // sentence is what confirms "yes, this is what I meant" and the SQL itself
+  // becomes optional reading for anyone who wants to double-check it.
+  const summarySentence = useMemo(() => {
+    if (mode === "createTable") {
+      const named = columns.filter((col) => col.name.trim());
+      if (!newTable.trim() || named.length === 0) return "";
+      const list = named.map((col) => `${col.name.trim()} (${typeLabel(col.type)})`).join(", ");
+      const pk = primaryKeyColumn.trim() ? ` โดยใช้ "${primaryKeyColumn.trim()}" เป็นคอลัมน์ key หลัก` : "";
+      return `จะสร้างตารางใหม่ชื่อ "${newTable.trim()}" มี ${named.length} คอลัมน์: ${list}${pk}`;
+    }
+    if (!targetTable || !newColumnName.trim()) return "";
+    return `จะเพิ่มคอลัมน์ "${newColumnName.trim()}" ชนิด ${typeLabel(newColumnType)} เข้าไปในตาราง "${targetTable}"`;
+  }, [mode, newTable, columns, primaryKeyColumn, targetTable, newColumnName, newColumnType]);
+
   return (
     <div className="min-h-screen bg-zinc-50 px-4 py-6 sm:px-8">
       <div className="mx-auto max-w-3xl space-y-4">
@@ -184,38 +231,63 @@ export default function CreateDbPage() {
           ประวัติการใช้งาน
         </p>
 
-        <div className="rounded-sm border border-zinc-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex gap-1.5">
-            <button
-              type="button"
-              onClick={() => setMode("createTable")}
-              className={`h-8 flex-1 rounded-sm text-xs font-black transition ${
-                mode === "createTable"
-                  ? "bg-red-600 text-white"
-                  : "border border-zinc-200 bg-zinc-50 text-zinc-500 hover:bg-zinc-100"
+        <div className="grid gap-2 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => setMode("createTable")}
+            className={`flex items-start gap-2.5 rounded-sm border p-3 text-left transition ${
+              mode === "createTable"
+                ? "border-red-600 bg-red-50"
+                : "border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50"
+            }`}
+          >
+            <span
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-sm ${
+                mode === "createTable" ? "bg-red-600 text-white" : "bg-zinc-100 text-zinc-500"
               }`}
             >
-              สร้างตารางใหม่
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode("addColumn")}
-              className={`h-8 flex-1 rounded-sm text-xs font-black transition ${
-                mode === "addColumn"
-                  ? "bg-red-600 text-white"
-                  : "border border-zinc-200 bg-zinc-50 text-zinc-500 hover:bg-zinc-100"
+              <Table2 size={16} />
+            </span>
+            <span>
+              <span className="block text-xs font-black text-zinc-800">สร้างตารางใหม่</span>
+              <span className="block text-[10px] font-semibold leading-relaxed text-zinc-400">
+                เริ่มตารางเปล่าใหม่ทั้งหมด พร้อมตั้งคอลัมน์ของมันเอง
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("addColumn")}
+            className={`flex items-start gap-2.5 rounded-sm border p-3 text-left transition ${
+              mode === "addColumn"
+                ? "border-red-600 bg-red-50"
+                : "border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50"
+            }`}
+          >
+            <span
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-sm ${
+                mode === "addColumn" ? "bg-red-600 text-white" : "bg-zinc-100 text-zinc-500"
               }`}
             >
-              เพิ่มคอลัมน์ในตารางเดิม
-            </button>
-          </div>
+              <ListPlus size={16} />
+            </span>
+            <span>
+              <span className="block text-xs font-black text-zinc-800">เพิ่มคอลัมน์ในตารางเดิม</span>
+              <span className="block text-[10px] font-semibold leading-relaxed text-zinc-400">
+                เติมคอลัมน์ใหม่ 1 ช่องเข้าไปในตารางที่มีอยู่แล้ว
+              </span>
+            </span>
+          </button>
+        </div>
 
-          <div className="mb-3">
-            <label className={labelClass}>ฐานข้อมูล</label>
+        <div className="rounded-sm border border-zinc-200 bg-white p-4 shadow-sm">
+          <StepHeading n={1} title="เลือกฐานข้อมูล" />
+          <div className="relative mb-5">
+            <Database size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
             <select
               value={connectionId}
               onChange={(e) => setConnectionId(e.target.value)}
-              className={inputClass}
+              className={`${inputClass} pl-8`}
             >
               <option value="">หลัก (inblackm)</option>
               {connections.map((conn) => (
@@ -227,9 +299,9 @@ export default function CreateDbPage() {
           </div>
 
           {mode === "createTable" ? (
-            <div className="space-y-3">
+            <div className="space-y-5">
               <div>
-                <label className={labelClass}>ชื่อตารางใหม่ (เช่น packages หรือ public.packages)</label>
+                <StepHeading n={2} title="ตั้งชื่อตาราง" hint="เช่น packages หรือ public.packages" />
                 <input
                   type="text"
                   value={newTable}
@@ -240,46 +312,63 @@ export default function CreateDbPage() {
               </div>
 
               <div>
-                <label className={labelClass}>คอลัมน์</label>
+                <StepHeading
+                  n={3}
+                  title="เพิ่มคอลัมน์"
+                  hint="แต่ละคอลัมน์ต้องมีชื่อและชนิดข้อมูล ทำได้หลายคอลัมน์ในตารางเดียว"
+                />
                 <div className="space-y-2">
-                  {columns.map((col) => (
-                    <div key={col.key} className="flex items-center gap-1.5">
-                      <input
-                        type="text"
-                        value={col.name}
-                        onChange={(e) => updateColumn(col.key, { name: e.target.value })}
-                        placeholder="ชื่อคอลัมน์"
-                        className={`${inputClass} flex-1`}
-                      />
-                      <select
-                        value={col.type}
-                        onChange={(e) => updateColumn(col.key, { type: e.target.value })}
-                        className="h-9 rounded-sm border border-zinc-200 bg-zinc-50 px-2 text-[11px] font-bold outline-none focus:border-red-600"
-                      >
-                        {DDL_COLUMN_TYPES.map((type) => (
-                          <option key={type.value} value={type.value}>
-                            {type.label}
-                          </option>
-                        ))}
-                      </select>
-                      <label className="flex h-9 shrink-0 items-center gap-1 text-[10px] font-bold text-zinc-500">
-                        <input
-                          type="checkbox"
-                          checked={col.notNull}
-                          onChange={(e) => updateColumn(col.key, { notNull: e.target.checked })}
-                          className="h-3.5 w-3.5 accent-red-600"
-                        />
-                        ต้องมีค่า
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => removeColumnRow(col.key)}
-                        disabled={columns.length === 1}
-                        className="shrink-0 rounded-sm p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600 disabled:opacity-30"
-                        title="ลบคอลัมน์นี้ออกจากรายการ"
-                      >
-                        <Trash2 size={13} />
-                      </button>
+                  {columns.map((col, index) => (
+                    <div key={col.key} className="rounded-sm border border-zinc-200 bg-zinc-50 p-2.5">
+                      <div className="mb-1.5 flex items-center justify-between">
+                        <span className="text-[9px] font-black uppercase tracking-wide text-zinc-400">
+                          คอลัมน์ที่ {index + 1}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeColumnRow(col.key)}
+                          disabled={columns.length === 1}
+                          className="shrink-0 rounded-sm p-1 text-zinc-400 transition hover:bg-zinc-200 hover:text-red-600 disabled:opacity-30"
+                          title="ลบคอลัมน์นี้ออกจากรายการ"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                      <div className="grid gap-1.5 sm:grid-cols-[1.3fr_1fr_auto]">
+                        <div>
+                          <label className="mb-0.5 block text-[9px] font-bold text-zinc-400">ชื่อคอลัมน์</label>
+                          <input
+                            type="text"
+                            value={col.name}
+                            onChange={(e) => updateColumn(col.key, { name: e.target.value })}
+                            placeholder="เช่น price"
+                            className="h-8 w-full rounded-sm border border-zinc-200 bg-white px-2 text-xs font-semibold outline-none focus:border-red-600"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-0.5 block text-[9px] font-bold text-zinc-400">ชนิดข้อมูล</label>
+                          <select
+                            value={col.type}
+                            onChange={(e) => updateColumn(col.key, { type: e.target.value })}
+                            className="h-8 w-full rounded-sm border border-zinc-200 bg-white px-2 text-[11px] font-bold outline-none focus:border-red-600"
+                          >
+                            {DDL_COLUMN_TYPES.map((type) => (
+                              <option key={type.value} value={type.value}>
+                                {type.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <label className="flex h-8 shrink-0 items-end gap-1 pb-1.5 text-[10px] font-bold text-zinc-500 sm:items-center sm:pb-0">
+                          <input
+                            type="checkbox"
+                            checked={col.notNull}
+                            onChange={(e) => updateColumn(col.key, { notNull: e.target.checked })}
+                            className="h-3.5 w-3.5 accent-red-600"
+                          />
+                          ต้องมีค่า
+                        </label>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -288,12 +377,16 @@ export default function CreateDbPage() {
                   onClick={addColumnRow}
                   className="mt-2 flex h-8 w-full items-center justify-center gap-1 rounded-sm border border-dashed border-zinc-300 text-[11px] font-black text-zinc-500 transition hover:bg-zinc-50"
                 >
-                  <Plus size={12} /> เพิ่มคอลัมน์
+                  <Plus size={12} /> เพิ่มคอลัมน์อีก 1 ช่อง
                 </button>
               </div>
 
               <div>
-                <label className={labelClass}>คอลัมน์ key หลัก (ไม่บังคับ)</label>
+                <StepHeading
+                  n={4}
+                  title="คอลัมน์ key หลัก"
+                  hint="ไม่บังคับ — ใช้ระบุแถวแต่ละแถวไม่ให้ซ้ำกัน เช่น id"
+                />
                 <select
                   value={primaryKeyColumn}
                   onChange={(e) => setPrimaryKeyColumn(e.target.value)}
@@ -311,9 +404,9 @@ export default function CreateDbPage() {
               </div>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-5">
               <div>
-                <label className={labelClass}>ตารางที่จะเพิ่มคอลัมน์</label>
+                <StepHeading n={2} title="เลือกตารางที่จะเพิ่มคอลัมน์" />
                 {schemaTables.length > 0 ? (
                   <select
                     value={targetTable}
@@ -339,49 +432,63 @@ export default function CreateDbPage() {
                   </p>
                 )}
               </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <div>
-                  <label className={labelClass}>ชื่อคอลัมน์ใหม่</label>
-                  <input
-                    type="text"
-                    value={newColumnName}
-                    onChange={(e) => setNewColumnName(e.target.value)}
-                    placeholder="ชื่อคอลัมน์"
-                    className={inputClass}
-                  />
+              <div>
+                <StepHeading n={3} title="ตั้งค่าคอลัมน์ใหม่" />
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div>
+                    <label className={labelClass}>ชื่อคอลัมน์ใหม่</label>
+                    <input
+                      type="text"
+                      value={newColumnName}
+                      onChange={(e) => setNewColumnName(e.target.value)}
+                      placeholder="ชื่อคอลัมน์"
+                      className={inputClass}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>ชนิดข้อมูล</label>
+                    <select
+                      value={newColumnType}
+                      onChange={(e) => setNewColumnType(e.target.value)}
+                      className={inputClass}
+                    >
+                      {DDL_COLUMN_TYPES.map((type) => (
+                        <option key={type.value} value={type.value}>
+                          {type.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-                <div>
-                  <label className={labelClass}>ชนิดข้อมูล</label>
-                  <select
-                    value={newColumnType}
-                    onChange={(e) => setNewColumnType(e.target.value)}
-                    className={inputClass}
-                  >
-                    {DDL_COLUMN_TYPES.map((type) => (
-                      <option key={type.value} value={type.value}>
-                        {type.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <p className="mt-1.5 text-[10px] font-semibold text-zinc-400">
+                  คอลัมน์ใหม่จะเว้นว่างได้เสมอ (nullable) — เผื่อตารางมีข้อมูลอยู่แล้ว ถ้าอยากบังคับต้องมีค่า
+                  ให้ไปตั้งเองทีหลังเมื่อกรอกข้อมูลครบทุกแถวแล้ว
+                </p>
               </div>
-              <p className="text-[10px] font-semibold text-zinc-400">
-                คอลัมน์ใหม่จะเว้นว่างได้เสมอ (nullable) — เผื่อตารางมีข้อมูลอยู่แล้ว ถ้าอยากบังคับต้องมีค่า
-                ให้ไปตั้งเองทีหลังเมื่อกรอกข้อมูลครบทุกแถวแล้ว
-              </p>
             </div>
           )}
 
-          <div className="mt-3">
-            <label className={labelClass}>คำสั่งที่จะรัน</label>
+          <div className="mt-5 border-t border-zinc-100 pt-4">
+            <StepHeading n={mode === "createTable" ? 5 : 4} title="ตรวจสอบก่อนสร้าง" />
+            {summarySentence && !preview.error && (
+              <p className="rounded-sm border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-bold leading-relaxed text-sky-700">
+                {summarySentence}
+              </p>
+            )}
             {preview.error ? (
-              <p className="rounded-sm border border-zinc-200 bg-zinc-50 px-3 py-2 text-[11px] font-semibold text-zinc-400">
+              <p className="mt-2 rounded-sm border border-zinc-200 bg-zinc-50 px-3 py-2 text-[11px] font-semibold text-zinc-400">
                 {preview.error}
               </p>
             ) : (
-              <pre className="overflow-x-auto rounded-sm border border-zinc-200 bg-zinc-900 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-emerald-300">
-                {preview.sql}
-              </pre>
+              <details className="group mt-2">
+                <summary className="flex cursor-pointer list-none items-center gap-1 text-[10px] font-black text-zinc-400 hover:text-zinc-600">
+                  <ChevronDown size={12} className="transition group-open:rotate-180" />
+                  ดูคำสั่ง SQL ที่จะรันจริง
+                </summary>
+                <pre className="mt-1.5 overflow-x-auto rounded-sm border border-zinc-200 bg-zinc-900 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-emerald-300">
+                  {preview.sql}
+                </pre>
+              </details>
             )}
           </div>
 
@@ -405,9 +512,13 @@ export default function CreateDbPage() {
             {submitting ? (
               <Loader2 size={13} className="animate-spin" />
             ) : mode === "createTable" ? (
-              "สร้างตาราง"
+              <>
+                <Table2 size={13} /> สร้างตาราง
+              </>
             ) : (
-              "เพิ่มคอลัมน์"
+              <>
+                <Columns3 size={13} /> เพิ่มคอลัมน์
+              </>
             )}
           </button>
         </div>

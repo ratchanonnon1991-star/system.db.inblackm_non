@@ -7,7 +7,6 @@ import {
   Gamepad2,
   History,
   Layers,
-  Link2,
   Loader2,
   Lock,
   LogOut,
@@ -20,7 +19,6 @@ import NextLink from "next/link";
 import { apiJson } from "@/lib/api-json";
 import TurnstileWidget from "@/components/turnstile-widget";
 import { UsersModal } from "@/components/gamedb-modals";
-import SsoMapModal from "@/components/sso-map-modal";
 
 // Public by design: it is only where the "เข้าสู่ระบบด้วยบัญชี experience" button
 // points the browser, never anything the server trusts on its own.
@@ -90,7 +88,6 @@ function SystemHub({ me, onLoggedOut }) {
   const isSuperAdmin = me.role === "admin";
   const isTemplateUser = me.role === "user";
   const [usersModal, setUsersModal] = useState(false);
-  const [ssoMapModal, setSsoMapModal] = useState(false);
   const [views, setViews] = useState([]);
   const [viewsLoading, setViewsLoading] = useState(true);
 
@@ -144,15 +141,6 @@ function SystemHub({ me, onLoggedOut }) {
                 className="flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-black text-zinc-600 transition hover:border-zinc-300 hover:bg-zinc-50"
               >
                 <Users size={13} /> จัดการสิทธิ์ผู้ใช้
-              </button>
-            )}
-            {isSuperAdmin && (
-              <button
-                type="button"
-                onClick={() => setSsoMapModal(true)}
-                className="flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-black text-zinc-600 transition hover:border-zinc-300 hover:bg-zinc-50"
-              >
-                <Link2 size={13} /> เชื่อมกับบัญชี experience
               </button>
             )}
             {isSuperAdmin && (
@@ -300,7 +288,6 @@ function SystemHub({ me, onLoggedOut }) {
       </main>
 
       {usersModal && <UsersModal me={me} onClose={() => setUsersModal(false)} />}
-      {ssoMapModal && <SsoMapModal onClose={() => setSsoMapModal(false)} />}
     </div>
   );
 }
