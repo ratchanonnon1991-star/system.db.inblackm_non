@@ -24,6 +24,7 @@ import {
   EyeOff,
   Image as ImageIcon,
   Layers,
+  MessageSquare,
   Paintbrush,
   Palette,
   Pencil,
@@ -652,6 +653,12 @@ export default function PanelTable({
   // off a pointer arrives in screen pixels; column widths are kept in canvas
   // units, so the two only agree at 100%.
   canvasScale = 1,
+  // Cell notes: Map<"pkValue:column", text>, and how to resolve a row's pk
+  // value and save a new note. All three come together (see notesEnabled in
+  // query-panel.js) -- null when the query has no pk to anchor a note to.
+  cellNotes = null,
+  pkValueOf = null,
+  onSaveNote = null,
 }) {
   const [naturalWidths, setNaturalWidths] = useState({});
   const [resizing, setResizing] = useState(null);
@@ -1014,6 +1021,20 @@ export default function PanelTable({
     });
   }, [columns, layout.summary, rows]);
 
+  const openNote = (row, col) => {
+    if (!onSaveNote || !pkValueOf) return;
+    const pkValue = pkValueOf(row.sourceIndex);
+    if (pkValue === undefined || pkValue === null) return;
+    const key = `${pkValue}:${col.column.name}`;
+    const current = cellNotes?.get(key) || "";
+    const next = window.prompt(
+      `โน้ตสำหรับ ${col.label} ของแถวนี้ (เว้นว่างแล้วบันทึกเพื่อลบโน้ต)`,
+      current
+    );
+    if (next === null) return;
+    onSaveNote(pkValue, col.column.name, next);
+  };
+
   const startEdit = (row, col, colIndex) => {
     if (!canEdit || col.kind !== "base" || !editableColumns.includes(col.column.name)) return;
     setEditingCell({
@@ -1132,6 +1153,12 @@ export default function PanelTable({
           editPending.sourceIndex === row.sourceIndex &&
           editPending.colId === col.id;
         const frozen = cellIndex < freezeCount;
+        const notable = Boolean(onSaveNote && pkValueOf && col.kind === "base");
+        const cellPkValue = notable ? pkValueOf(row.sourceIndex) : undefined;
+        const note =
+          notable && cellPkValue !== undefined && cellPkValue !== null
+            ? cellNotes?.get(`${cellPkValue}:${col.column.name}`)
+            : null;
 
         // Which colours win, and where they land, is decided in one tested
         // place rather than in four expressions that have to agree.
@@ -1146,7 +1173,7 @@ export default function PanelTable({
             key={col.id}
             title={editable ? `${cell.text} — ดับเบิลคลิกเพื่อแก้ไข` : cell.text}
             onDoubleClick={() => startEdit(row, col, cellIndex)}
-            className={`relative border border-[var(--cell-border)] px-2 py-1.5 font-semibold ${
+            className={`group relative border border-[var(--cell-border)] px-2 py-1.5 font-semibold ${
               format.wrap ? "whitespace-pre-wrap break-words align-top" : "truncate"
             } ${numeric && !format.align ? "font-mono tabular-nums" : ""} ${
               cellTone || changed ? "" : "bg-inherit"
@@ -1192,6 +1219,27 @@ export default function PanelTable({
                 }
                 canUseGameinfoTools={canUseGameinfoTools}
               />
+            )}
+            {note && (
+              <span
+                className="pointer-events-none absolute right-0 top-0 h-0 w-0 border-l-[7px] border-t-[7px] border-l-transparent border-t-amber-500"
+                title={note}
+              />
+            )}
+            {notable && !editing && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  openNote(row, col);
+                }}
+                title={note ? `แก้โน้ต: ${note}` : "ปักโน้ตที่เซลล์นี้"}
+                className={`absolute bottom-0 right-0 rounded-tl-sm bg-white/90 p-0.5 text-zinc-400 opacity-0 transition hover:text-amber-600 group-hover:opacity-100 ${
+                  note ? "text-amber-500" : ""
+                }`}
+              >
+                <MessageSquare size={10} />
+              </button>
             )}
           </td>
         );

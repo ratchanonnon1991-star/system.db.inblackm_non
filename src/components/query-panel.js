@@ -1390,6 +1390,56 @@ export default function QueryPanel({
     }));
   }, [result, sharedEditable, baseNameToIndex]);
 
+  // --- cell notes ------------------------------------------------------------
+  // Anchored to the row's own pk value (same identity findReplaceRows uses),
+  // so a note stays on the right cell across a refresh or a re-sort instead
+  // of tracking a row's position on screen.
+  const [notes, setNotes] = useState([]);
+  const notesEnabled = Boolean(sharedEditable?.pk);
+
+  const loadNotes = useCallback(async () => {
+    if (!notesEnabled) {
+      setNotes([]);
+      return;
+    }
+    try {
+      const data = await apiJson(`/api/queries/${query.id}/notes`, {
+        fallbackError: "โหลดโน้ตไม่สำเร็จ",
+      });
+      setNotes(data.notes || []);
+    } catch {
+      setNotes([]);
+    }
+  }, [query.id, notesEnabled]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- setState runs after the fetch resolves
+    loadNotes();
+  }, [loadNotes]);
+
+  const cellNotes = useMemo(() => {
+    const map = new Map();
+    for (const item of notes) map.set(`${item.pkValue}:${item.column}`, item.note);
+    return map;
+  }, [notes]);
+
+  const saveNote = async (pkValue, column, note) => {
+    try {
+      await apiJson(`/api/queries/${query.id}/notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pkValue, column, note }),
+        fallbackError: "บันทึกโน้ตไม่สำเร็จ",
+      });
+      await loadNotes();
+    } catch (err) {
+      window.alert(err.message);
+    }
+  };
+
+  const pkValueOf = (sourceIndex) =>
+    sharedEditable?.pk ? result?.rows?.[sourceIndex]?.[baseNameToIndex.get(sharedEditable.pk)] : undefined;
+
   const editCell = async ({ sourceIndex, colId, colIndex, value }) => {
     const col = visibleColumns[colIndex];
     if (!col || col.kind !== "base") return;
@@ -2805,6 +2855,9 @@ export default function QueryPanel({
                   onDraftSave={saveDraftRow}
                   onDraftCancel={cancelDraftRow}
                   draftSaving={draftSaving}
+                  cellNotes={notesEnabled ? cellNotes : null}
+                  pkValueOf={pkValueOf}
+                  onSaveNote={notesEnabled && !viewingSnapshot ? saveNote : null}
                 />
               )}
 
