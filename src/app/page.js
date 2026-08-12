@@ -145,147 +145,170 @@ function SystemHub({ me, onLoggedOut }) {
     );
   }
 
+  const roleLabel = isSuperAdmin ? "Admin" : isTemplateUser ? "User · Template" : "Staff";
+  const initial = (me.displayName || me.username || "?").trim().slice(0, 1).toUpperCase();
+
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-zinc-50 px-4 px-8">
-      <div className="flex w-full max-w-2xl items-center justify-between rounded-sm border border-zinc-200 bg-white px-4 py-3">
-        <div className="flex items-center gap-1">
-          <User size={13} className="text-zinc-500" />
-          <div className="text-[10px] font-semibold leading-tight">
-            <p className="font-black text-zinc-800">{me.displayName || me.username}</p>
-            <p className="text-zinc-500">
-              {isSuperAdmin ? "Admin" : isTemplateUser ? "User · Template" : "Staff"}
-            </p>
+    <div className="min-h-screen bg-gradient-to-b from-zinc-50 to-zinc-100">
+      <header className="border-b border-zinc-200 bg-white/90 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-600 text-sm font-black text-white">
+              {initial}
+            </span>
+            <div className="text-[11px] font-semibold leading-tight">
+              <p className="text-sm font-black text-zinc-800">{me.displayName || me.username}</p>
+              <p
+                className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide ${
+                  isSuperAdmin ? "bg-red-100 text-red-700" : "bg-zinc-100 text-zinc-500"
+                }`}
+              >
+                {roleLabel}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {isSuperAdmin && (
+              <button
+                type="button"
+                onClick={() => setUsersModal(true)}
+                className="flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-black text-zinc-600 transition hover:border-zinc-300 hover:bg-zinc-50"
+              >
+                <Users size={13} /> จัดการสิทธิ์ผู้ใช้
+              </button>
+            )}
+            {isSuperAdmin && (
+              <button
+                type="button"
+                onClick={() => setSsoMapModal(true)}
+                className="flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-black text-zinc-600 transition hover:border-zinc-300 hover:bg-zinc-50"
+              >
+                <Link2 size={13} /> เชื่อมกับบัญชี experience
+              </button>
+            )}
+            {isSuperAdmin && (
+              <NextLink
+                href="/log"
+                className="flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-black text-zinc-600 transition hover:border-zinc-300 hover:bg-zinc-50"
+                title="ประวัติการใช้งาน (การเข้าสู่ระบบ / แก้ไขข้อมูล)"
+              >
+                <History size={13} /> ประวัติการใช้งาน
+              </NextLink>
+            )}
+            {isSuperAdmin && (
+              <NextLink
+                href="/createdb"
+                className="flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-black text-zinc-600 transition hover:border-zinc-300 hover:bg-zinc-50"
+                title="สร้างตารางใหม่ / เพิ่มคอลัมน์ในตารางเดิม"
+              >
+                <Table2 size={13} /> สร้างตาราง/คอลัมน์
+              </NextLink>
+            )}
+            <button
+              type="button"
+              onClick={logout}
+              title="ออกจากระบบ"
+              className="rounded-full border border-zinc-200 bg-white p-2 text-zinc-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+            >
+              <LogOut size={14} />
+            </button>
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          {isSuperAdmin && (
-            <button
-              type="button"
-              onClick={() => setUsersModal(true)}
-              className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-3 py-1 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
-            >
-              <Users size={14} /> จัดการสิทธิ์ผู้ใช้
-            </button>
-          )}
-          {isSuperAdmin && (
-            <button
-              type="button"
-              onClick={() => setSsoMapModal(true)}
-              className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-3 py-1 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
-            >
-              <Link2 size={14} /> เชื่อมกับบัญชี experience
-            </button>
-          )}
-          {isSuperAdmin && (
-            <NextLink
-              href="/log"
-              className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-3 py-1 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
-              title="ประวัติการใช้งาน (การเข้าสู่ระบบ / แก้ไขข้อมูล)"
-            >
-              <History size={14} /> ประวัติการใช้งาน
-            </NextLink>
-          )}
-          {isSuperAdmin && (
-            <NextLink
-              href="/createdb"
-              className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-3 py-1 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
-              title="สร้างตารางใหม่ / เพิ่มคอลัมน์ในตารางเดิม"
-            >
-              <Table2 size={14} /> สร้างตาราง/คอลัมน์
-            </NextLink>
-          )}
-          <button
-            type="button"
-            onClick={logout}
-            title="ออกจากระบบ"
-            className="rounded-sm border border-zinc-200 bg-white p-2 text-zinc-500 transition hover:bg-red-50 hover:text-red-600"
-          >
-            <LogOut size={14} />
-          </button>
-        </div>
-      </div>
+      </header>
 
-      <div className="w-full max-w-2xl">
-        <h1 className="mb-4 text-lg font-black text-zinc-800">เลือกระบบที่ต้องการเข้าใช้งาน</h1>
-        <div className="grid gap-1 sm:grid-cols-2">
+      <main className="mx-auto flex max-w-3xl flex-col gap-8 px-4 py-12 sm:px-6">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight text-zinc-800">
+            สวัสดี, {me.displayName || me.username} 👋
+          </h1>
+          <p className="mt-1 text-sm font-semibold text-zinc-500">เลือกระบบที่ต้องการเข้าใช้งาน</p>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
           {SYSTEMS.map((system) => {
             const Icon = system.icon;
+            const accent =
+              system.key === "systemdb"
+                ? "bg-red-50 text-red-600 group-hover:bg-red-600 group-hover:text-white"
+                : "bg-sky-50 text-sky-600 group-hover:bg-sky-600 group-hover:text-white";
             return (
               <NextLink
                 key={system.key}
                 href={system.href}
-                className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white p-4 text-left transition hover:border-zinc-300 hover:bg-zinc-50"
+                className="group flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-md"
               >
-                <span className="flex h-10 w-10 items-center justify-center rounded-sm bg-zinc-100 text-zinc-600">
-                  <Icon size={18} />
+                <span
+                  className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${accent}`}
+                >
+                  <Icon size={22} />
                 </span>
-                <span className="text-left">
-                  <span className="block text-sm font-black text-zinc-800">{system.label}</span>
-                  <span className="block text-xs text-zinc-500">{system.desc}</span>
+                <span>
+                  <span className="block text-base font-black text-zinc-800">{system.label}</span>
+                  <span className="mt-0.5 block text-xs font-semibold leading-relaxed text-zinc-500">
+                    {system.desc}
+                  </span>
                 </span>
               </NextLink>
             );
           })}
         </div>
-      </div>
 
-      {/* Deliberately not another tile in the SYSTEMS grid above: a template
-          is a saved arrangement of panels inside System DB, not a system of
-          its own the way GameInfo is, and this section is styled to read as
-          "shortcuts into System DB" (dashed border, compact list, an explicit
-          "เทมเพลต" tag) rather than a peer entry a user could confuse for a
-          third top-level system. */}
-      {(viewsLoading || views.length > 0) && (
-        <div className="w-full max-w-2xl">
-          <div className="mb-2 flex items-center gap-2">
-            <span className="h-px flex-1 bg-zinc-200" />
-            <h2 className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-zinc-400">
+        {/* Deliberately not another tile in the SYSTEMS grid above: a template
+            is a saved arrangement of panels inside System DB, not a system of
+            its own the way GameInfo is, and this section is styled to read as
+            "shortcuts into System DB" (its own card, a lighter row style, an
+            explicit "เทมเพลต" tag) rather than a peer entry a user could
+            confuse for a third top-level system. */}
+        {(viewsLoading || views.length > 0) && (
+          <div>
+            <h2 className="mb-2.5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-zinc-400">
               <Layers size={12} /> ทางลัดเข้าเทมเพลตหน้าจอ (อยู่ใน System DB)
             </h2>
-            <span className="h-px flex-1 bg-zinc-200" />
-          </div>
-          {viewsLoading ? (
-            <p className="flex items-center gap-2 py-2 text-xs font-bold text-zinc-400">
-              <Loader2 size={13} className="animate-spin" /> กำลังโหลด...
-            </p>
-          ) : (
-            <div className="space-y-1">
-              {views.map((view) => (
-                <NextLink
-                  key={view.id}
-                  href={`/view/${view.id}`}
-                  className="flex items-center gap-2 rounded-sm border border-dashed border-zinc-300 bg-zinc-50/60 px-3 py-2 text-left transition hover:border-zinc-400 hover:bg-white"
-                >
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-zinc-100 text-zinc-500">
-                    <Layers size={13} />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-1.5 truncate text-xs font-black text-zinc-700">
-                      {view.name}
-                      {view.isDefault && (
-                        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-black text-amber-700">
-                          หน้าเริ่มต้น
+            <div className="rounded-2xl border border-zinc-200 bg-white p-2 shadow-sm">
+              {viewsLoading ? (
+                <p className="flex items-center gap-2 px-3 py-3 text-xs font-bold text-zinc-400">
+                  <Loader2 size={13} className="animate-spin" /> กำลังโหลด...
+                </p>
+              ) : (
+                <div className="divide-y divide-zinc-100">
+                  {views.map((view) => (
+                    <NextLink
+                      key={view.id}
+                      href={`/view/${view.id}`}
+                      className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition hover:bg-zinc-50"
+                    >
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500">
+                        <Layers size={14} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-1.5 truncate text-xs font-black text-zinc-700">
+                          {view.name}
+                          {view.isDefault && (
+                            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-black text-amber-700">
+                              หน้าเริ่มต้น
+                            </span>
+                          )}
+                          {view.isReadOnly && (
+                            <span className="rounded-full bg-zinc-200 px-1.5 py-0.5 text-[9px] font-black text-zinc-600">
+                              ดูอย่างเดียว
+                            </span>
+                          )}
                         </span>
-                      )}
-                      {view.isReadOnly && (
-                        <span className="rounded bg-zinc-200 px-1.5 py-0.5 text-[9px] font-black text-zinc-600">
-                          ดูอย่างเดียว
+                        <span className="block truncate text-[10px] text-zinc-400">
+                          {view.description || `${view.config?.panels?.length || 0} ตาราง`}
                         </span>
-                      )}
-                    </span>
-                    <span className="block truncate text-[10px] text-zinc-400">
-                      {view.description || `${view.config?.panels?.length || 0} ตาราง`}
-                    </span>
-                  </span>
-                  <span className="shrink-0 rounded bg-zinc-200 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-zinc-500">
-                    เทมเพลต
-                  </span>
-                </NextLink>
-              ))}
+                      </span>
+                      <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-zinc-500">
+                        เทมเพลต
+                      </span>
+                    </NextLink>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+      </main>
 
       {usersModal && <UsersModal me={me} onClose={() => setUsersModal(false)} />}
       {ssoMapModal && <SsoMapModal onClose={() => setSsoMapModal(false)} />}
