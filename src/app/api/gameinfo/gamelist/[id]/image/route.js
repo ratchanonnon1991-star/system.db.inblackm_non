@@ -2,6 +2,7 @@ import { handleApiError, jsonOk } from "@/lib/http";
 import { requireAdmin, requireLayoutEditor } from "@/server/auth";
 import { getGamelistImage, saveGamelistImage } from "@/server/gameinfo-gamelist-image";
 import { recordEdit } from "@/server/gamedb-edit-log";
+import { requestMeta } from "@/lib/request-meta";
 
 export async function GET(request, { params }) {
   try {
@@ -31,6 +32,7 @@ export async function PUT(request, { params }) {
         column: "(รูปเกม)",
         oldValue: before.imageUrl ? before.imageUrl.slice(0, 2000) : null,
         newValue: image.imageUrl ? image.imageUrl.slice(0, 2000) : null,
+        ...requestMeta(request),
       });
     }
     return jsonOk(image);

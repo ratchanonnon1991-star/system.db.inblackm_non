@@ -6,6 +6,7 @@ import {
   saveGamelistTutorial,
 } from "@/server/gameinfo-gamelist-tutorial";
 import { recordEdit } from "@/server/gamedb-edit-log";
+import { requestMeta } from "@/lib/request-meta";
 
 export async function GET(request, { params }) {
   try {
@@ -37,6 +38,7 @@ export async function PUT(request, { params }) {
       column: "(tutorial)",
       oldValue: JSON.stringify(before).slice(0, 2000),
       newValue: JSON.stringify(tutorial).slice(0, 2000),
+      ...requestMeta(request),
     });
     return jsonOk({ tutorial });
   } catch (err) {

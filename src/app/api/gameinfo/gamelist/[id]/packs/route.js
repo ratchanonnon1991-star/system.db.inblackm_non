@@ -3,6 +3,7 @@ import { requireLayoutEditor } from "@/server/auth";
 import { sanitizeComputedColumns } from "@/server/gamedb-layout-sanitizer";
 import { getGamelistPacks, saveGamelistPacks } from "@/server/gameinfo-gamelist-packs";
 import { recordEdit } from "@/server/gamedb-edit-log";
+import { requestMeta } from "@/lib/request-meta";
 
 export async function PUT(request, { params }) {
   try {
@@ -23,6 +24,7 @@ export async function PUT(request, { params }) {
       column: "(แพ็ก/ราคา)",
       oldValue: JSON.stringify(before).slice(0, 2000),
       newValue: JSON.stringify(packs).slice(0, 2000),
+      ...requestMeta(request),
     });
     return jsonOk({ game: { id: Number(id), ...packs } });
   } catch (err) {

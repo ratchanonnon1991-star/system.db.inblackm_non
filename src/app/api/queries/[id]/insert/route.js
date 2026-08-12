@@ -6,6 +6,7 @@ import { recordEdit } from "@/server/gamedb-edit-log";
 import { findQueryById } from "@/server/gamedb-repository";
 import { runInsertForm } from "@/server/gamedb-insert-runner";
 import { invalidateQuery } from "@/server/gamedb-result-cache";
+import { requestMeta } from "@/lib/request-meta";
 
 /**
  * Writing the script is an admin's job; running it is not. This is the one
@@ -59,6 +60,7 @@ export async function POST(request, { params }) {
       newValue: (layout.insertForm.fields || [])
         .map((field) => `${field.label || field.name}=${values[field.name] ?? ""}`)
         .join(", "),
+      ...requestMeta(request),
     });
     invalidateQuery(query.id);
 

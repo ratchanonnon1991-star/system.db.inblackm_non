@@ -2,6 +2,7 @@ import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireLayoutEditor } from "@/server/auth";
 import { deleteGameListRow, getGameListRow, updateGameListRow } from "@/server/gameinfo-gamelist";
 import { recordEdit } from "@/server/gamedb-edit-log";
+import { requestMeta } from "@/lib/request-meta";
 
 export async function PUT(request, { params }) {
   try {
@@ -23,6 +24,7 @@ export async function PUT(request, { params }) {
       column: "(แก้ไขเกม)",
       oldValue: before ? JSON.stringify(before).slice(0, 2000) : null,
       newValue: JSON.stringify(row).slice(0, 2000),
+      ...requestMeta(request),
     });
     return jsonOk({ row });
   } catch (err) {
@@ -45,6 +47,7 @@ export async function DELETE(request, { params }) {
       column: "(ลบเกม)",
       oldValue: before ? JSON.stringify(before).slice(0, 2000) : null,
       newValue: null,
+      ...requestMeta(request),
     });
     return jsonOk({ ok: true });
   } catch (err) {

@@ -2,6 +2,7 @@ import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireLayoutEditor } from "@/server/auth";
 import { reorderGameListRows } from "@/server/gameinfo-gamelist";
 import { recordEdit } from "@/server/gamedb-edit-log";
+import { requestMeta } from "@/lib/request-meta";
 
 export async function POST(request) {
   try {
@@ -22,6 +23,7 @@ export async function POST(request) {
       column: "(จัดเรียงลำดับ)",
       oldValue: null,
       newValue: JSON.stringify(orderedIds).slice(0, 2000),
+      ...requestMeta(request),
     });
     return jsonOk({ ok: true });
   } catch (err) {

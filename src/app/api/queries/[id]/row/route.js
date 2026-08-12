@@ -6,6 +6,7 @@ import { deleteRow, insertRow } from "@/server/gamedb-row-writer";
 import { recordEdit } from "@/server/gamedb-edit-log";
 import { invalidateQuery } from "@/server/gamedb-result-cache";
 import { normalizeLayout } from "@/lib/gamedb-layout";
+import { requestMeta } from "@/lib/request-meta";
 
 // Adding and removing rows is an Admin capability by default; a Staff
 // account can be granted it individually (see requireDataWriter).
@@ -56,6 +57,7 @@ export async function POST(request, { params }) {
       column: "(เพิ่มแถว)",
       oldValue: null,
       newValue: summary,
+      ...requestMeta(request),
     });
 
     return jsonOk({ pkValue });
@@ -92,6 +94,7 @@ export async function DELETE(request, { params }) {
       column: "(ลบแถว)",
       oldValue: summary,
       newValue: null,
+      ...requestMeta(request),
     });
 
     return jsonOk({ deleted: 1 });

@@ -2,6 +2,7 @@ import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireAdmin, requireLayoutEditor } from "@/server/auth";
 import { createGameListRow, listGameListRows } from "@/server/gameinfo-gamelist";
 import { recordEdit } from "@/server/gamedb-edit-log";
+import { requestMeta } from "@/lib/request-meta";
 
 export async function GET(request) {
   try {
@@ -32,6 +33,7 @@ export async function POST(request) {
       column: "(เพิ่มเกม)",
       oldValue: null,
       newValue: JSON.stringify(row).slice(0, 2000),
+      ...requestMeta(request),
     });
     return jsonOk({ row }, 201);
   } catch (err) {

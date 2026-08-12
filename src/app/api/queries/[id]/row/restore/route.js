@@ -2,6 +2,7 @@ import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { restoreRow } from "@/server/gamedb-row-writer";
 import { recordEdit } from "@/server/gamedb-edit-log";
 import { invalidateQuery } from "@/server/gamedb-result-cache";
+import { requestMeta } from "@/lib/request-meta";
 import { loadTarget } from "../route";
 
 // Undoes a row delete recorded in the edit log, using the full column
@@ -34,6 +35,7 @@ export async function POST(request, { params }) {
       column: "(กู้คืนแถวที่ลบ)",
       oldValue: null,
       newValue: JSON.stringify(body.values).slice(0, 2000),
+      ...requestMeta(request),
     });
 
     return jsonOk({ pkValue });

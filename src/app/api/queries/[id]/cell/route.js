@@ -6,6 +6,7 @@ import { updateCell } from "@/server/gamedb-cell-writer";
 import { recordEdit } from "@/server/gamedb-edit-log";
 import { invalidateQuery } from "@/server/gamedb-result-cache";
 import { normalizeLayout } from "@/lib/gamedb-layout";
+import { requestMeta } from "@/lib/request-meta";
 
 // Editing a cell's value is an Admin capability by default; a Staff account
 // can be granted it individually (see requireDataUpdater).
@@ -56,6 +57,7 @@ export async function PATCH(request, { params }) {
       column,
       oldValue,
       newValue,
+      ...requestMeta(request),
     });
 
     return jsonOk({ oldValue, newValue });

@@ -12,6 +12,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import { summarizeUserAgent } from "@/lib/user-agent";
 
 function SectionCard({ icon, title, children }) {
   return (
@@ -114,7 +115,8 @@ function LoginLogSection() {
       if (!needle) return true;
       return (
         entry.username.toLowerCase().includes(needle) ||
-        (entry.ip || "").toLowerCase().includes(needle)
+        (entry.ip || "").toLowerCase().includes(needle) ||
+        (entry.userAgent || "").toLowerCase().includes(needle)
       );
     });
   }, [logins, search, resultFilter]);
@@ -138,7 +140,7 @@ function LoginLogSection() {
               type="text"
               value={search}
               onChange={(e) => updateSearch(e.target.value)}
-              placeholder="ค้นหา username หรือ IP..."
+              placeholder="ค้นหา username, IP หรืออุปกรณ์..."
               className={`${filterInputClass} w-full pl-7`}
             />
           </div>
@@ -177,6 +179,7 @@ function LoginLogSection() {
                 <th className="px-2 py-1.5">Username</th>
                 <th className="px-2 py-1.5">ผล</th>
                 <th className="px-2 py-1.5">IP</th>
+                <th className="px-2 py-1.5">อุปกรณ์</th>
               </tr>
             </thead>
             <tbody>
@@ -204,6 +207,9 @@ function LoginLogSection() {
                     )}
                   </td>
                   <td className="px-2 py-1.5 font-mono text-zinc-600">{entry.ip || "-"}</td>
+                  <td className="px-2 py-1.5 text-zinc-600" title={entry.userAgent || ""}>
+                    {summarizeUserAgent(entry.userAgent) || "-"}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -387,8 +393,15 @@ function EditLogSection() {
       if (tableFilter && entry.table !== tableFilter) return false;
       if (queryFilter && queryNameOf(entry) !== queryFilter) return false;
       if (!needle) return true;
-      return [entry.actor, entry.table, entry.column, entry.pkValue, queryNameOf(entry)]
-        .some((field) => String(field ?? "").toLowerCase().includes(needle));
+      return [
+        entry.actor,
+        entry.table,
+        entry.column,
+        entry.pkValue,
+        queryNameOf(entry),
+        entry.ip,
+        entry.userAgent,
+      ].some((field) => String(field ?? "").toLowerCase().includes(needle));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- queryNameOf reads queryNames, already a dep
   }, [edits, search, tableFilter, queryFilter, queryNames]);
@@ -419,7 +432,7 @@ function EditLogSection() {
               type="text"
               value={search}
               onChange={(e) => updateSearch(e.target.value)}
-              placeholder="ค้นหาใคร / ตาราง / แถว / คอลัมน์ / Query..."
+              placeholder="ค้นหาใคร / ตาราง / แถว / คอลัมน์ / Query / IP / อุปกรณ์..."
               className={`${filterInputClass} w-full pl-7`}
             />
           </div>
@@ -476,6 +489,8 @@ function EditLogSection() {
                 <th className="px-2 py-1.5">แถว</th>
                 <th className="px-2 py-1.5">คอลัมน์</th>
                 <th className="px-2 py-1.5">เดิม → ใหม่</th>
+                <th className="px-2 py-1.5">IP</th>
+                <th className="px-2 py-1.5">อุปกรณ์</th>
                 <th className="px-2 py-1.5" />
               </tr>
             </thead>
@@ -501,6 +516,10 @@ function EditLogSection() {
                     <span className="text-zinc-400 line-through">{entry.oldValue ?? "(ว่าง)"}</span>
                     {" → "}
                     <span className="font-black text-zinc-800">{entry.newValue ?? "(ว่าง)"}</span>
+                  </td>
+                  <td className="px-2 py-1.5 font-mono text-zinc-600">{entry.ip || "-"}</td>
+                  <td className="px-2 py-1.5 text-zinc-600" title={entry.userAgent || ""}>
+                    {summarizeUserAgent(entry.userAgent) || "-"}
                   </td>
                   <td className="px-2 py-1.5 text-right">
                     <button

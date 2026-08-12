@@ -7,6 +7,12 @@ import {
 import { verifyPassword } from "@/server/passwords";
 import { findUserByUsername } from "@/server/users-repository";
 import { recordLogin } from "@/server/gamedb-login-log";
+import { requestMeta } from "@/lib/request-meta";
+import {
+  clientIp,
+  getTurnstileConfig,
+  verifyTurnstile,
+} from "@/lib/turnstile";
 
 // Logging an attempt must never be why an attempt fails -- a hiccup writing
 // to gamedb_login_log would otherwise turn a correct password into a raw 500,
@@ -18,11 +24,6 @@ async function recordLoginSafely(entry) {
     console.error("recordLogin failed:", err);
   }
 }
-import {
-  clientIp,
-  getTurnstileConfig,
-  verifyTurnstile,
-} from "@/lib/turnstile";
 
 // In-memory brute-force guard: max attempts per username within the window.
 // Good enough for a single PM2 instance; resets on process restart.
@@ -83,13 +84,17 @@ export async function POST(request) {
         username,
         success: false,
         reason: "username หรือรหัสผ่านไม่ถูกต้อง",
-        ip: clientIp(request),
+        ...requestMeta(request),
       });
       return jsonError("username หรือรหัสผ่านไม่ถูกต้อง", 401);
     }
 
     attempts.delete(username.toLowerCase());
-    await recordLoginSafely({ username: user.username, success: true, ip: clientIp(request) });
+    await recordLoginSafely({
+      username: user.username,
+      success: true,
+      ...requestMeta(request),
+    });
     const token = signSessionToken({
       sub: user.id,
       username: user.username,
