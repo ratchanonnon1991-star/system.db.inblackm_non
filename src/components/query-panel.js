@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
+  BookmarkPlus,
   Calculator,
   Camera,
   ChartColumn,
@@ -496,6 +497,7 @@ export default function QueryPanel({
   // layout, so it resets on reload rather than surviving as a saved setting
   // nobody remembers turning on.
   const [lookupRowFilter, setLookupRowFilter] = useState(null); // { lookupId, matched } | null
+  const [selectedFilterViewId, setSelectedFilterViewId] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [view, setView] = useState("table");
@@ -1451,6 +1453,68 @@ export default function QueryPanel({
   const pkValueOf = (sourceIndex) =>
     sharedEditable?.pk ? result?.rows?.[sourceIndex]?.[baseNameToIndex.get(sharedEditable.pk)] : undefined;
 
+  // --- saved filter views -----------------------------------------------------
+  // The search box text, the lookup match/no-match toggle, and the bound
+  // param values, captured together under a name -- picking one puts the
+  // table back exactly the way it was when it was saved, in one click
+  // instead of re-typing the same search + re-picking the same params again.
+  const [filterViews, setFilterViews] = useState([]);
+
+  const loadFilterViews = useCallback(async () => {
+    try {
+      const data = await apiJson(`/api/queries/${query.id}/filter-views`, {
+        fallbackError: "โหลดชุดตัวกรองไม่สำเร็จ",
+      });
+      setFilterViews(data.filterViews || []);
+    } catch {
+      setFilterViews([]);
+    }
+  }, [query.id]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- setState runs after the fetch resolves
+    loadFilterViews();
+  }, [loadFilterViews]);
+
+  const saveFilterView = async () => {
+    const name = window.prompt(
+      "ตั้งชื่อชุดตัวกรองนี้",
+      rowFilter.trim() || `ตัวกรอง ${new Date().toLocaleString("th-TH")}`
+    );
+    if (!name || !name.trim()) return;
+    try {
+      await apiJson(`/api/queries/${query.id}/filter-views`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), rowFilter, lookupRowFilter, paramValues }),
+        fallbackError: "บันทึกชุดตัวกรองไม่สำเร็จ",
+      });
+      await loadFilterViews();
+    } catch (err) {
+      window.alert(err.message);
+    }
+  };
+
+  const applyFilterView = (view) => {
+    setRowFilter(view.rowFilter || "");
+    setLookupRowFilter(view.lookupRowFilter || null);
+    setParamValues((prev) => ({ ...prev, ...(view.paramValues || {}) }));
+    setPage(1);
+  };
+
+  const deleteFilterView = async (viewId) => {
+    if (!window.confirm("ลบชุดตัวกรองนี้?")) return;
+    try {
+      await apiJson(`/api/queries/${query.id}/filter-views/${viewId}`, {
+        method: "DELETE",
+        fallbackError: "ลบชุดตัวกรองไม่สำเร็จ",
+      });
+      await loadFilterViews();
+    } catch (err) {
+      window.alert(err.message);
+    }
+  };
+
   const editCell = async ({ sourceIndex, colId, colIndex, value }) => {
     const col = visibleColumns[colIndex];
     if (!col || col.kind !== "base") return;
@@ -2124,6 +2188,48 @@ export default function QueryPanel({
             className="h-8 w-36 rounded-sm border border-zinc-200 bg-zinc-50 pl-8 pr-2 text-[11px] font-semibold outline-none focus:border-red-600 focus:bg-white"
           />
         </div>
+
+        {filterViews.length > 0 && (
+          <select
+            value={selectedFilterViewId}
+            onChange={(e) => {
+              const id = e.target.value;
+              setSelectedFilterViewId(id);
+              const view = filterViews.find((item) => String(item.id) === id);
+              if (view) applyFilterView(view);
+            }}
+            className="h-8 max-w-[140px] rounded-sm border border-zinc-200 bg-zinc-50 px-1.5 text-[10px] font-bold outline-none focus:border-red-600"
+            title="เลือกชุดตัวกรองที่บันทึกไว้"
+          >
+            <option value="">— ชุดตัวกรอง —</option>
+            {filterViews.map((view) => (
+              <option key={view.id} value={view.id}>
+                {view.name}
+              </option>
+            ))}
+          </select>
+        )}
+        {selectedFilterViewId && (
+          <button
+            type="button"
+            onClick={() => {
+              deleteFilterView(Number(selectedFilterViewId));
+              setSelectedFilterViewId("");
+            }}
+            title="ลบชุดตัวกรองที่เลือก"
+            className="rounded-sm p-1.5 text-zinc-400 transition hover:bg-red-50 hover:text-red-600"
+          >
+            <Trash2 size={13} />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={saveFilterView}
+          title="บันทึกตัวกรองปัจจุบัน (คำค้นหา + จับคู่ lookup + ค่าพารามิเตอร์) เป็นชุดใหม่"
+          className="rounded-sm p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700"
+        >
+          <BookmarkPlus size={14} />
+        </button>
 
         {/* Available whether or not anything has changed: waiting for the panel
             to decide something counts as an edit made saving feel like a trap.
