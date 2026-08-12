@@ -564,10 +564,10 @@ function EditLogSection() {
 export default function LogPage() {
   return (
     <div className="min-h-screen bg-zinc-50 px-4 py-6 sm:px-8">
-      <div className="mx-auto max-w-5xl space-y-4">
+      <div className="mx-auto max-w-[1600px] space-y-4">
         <div className="flex items-center gap-3">
           <Link
-            href="/systemdb"
+            href="/"
             className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-3 py-1.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
           >
             <ArrowLeft size={14} /> กลับ
