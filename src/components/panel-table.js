@@ -659,10 +659,15 @@ export default function PanelTable({
   cellNotes = null,
   pkValueOf = null,
   onSaveNote = null,
+  // Live re-fetch of one cell's value, called right before its editor opens
+  // -- see startEdit. null skips the refresh and opens with whatever is
+  // already on screen (e.g. a shared link with no write access anyway).
+  onPeekCell = null,
 }) {
   const [naturalWidths, setNaturalWidths] = useState({});
   const [resizing, setResizing] = useState(null);
   const [editingCell, setEditingCell] = useState(null);
+  const [peekingCell, setPeekingCell] = useState(null);
   const tableBodyTone = toneStyle(layout.tableTone);
   const tableHeadTone = toneStyle(layout.tableTone, "head");
   // Same tone the panel's own frame uses (see panelBorderColor in
@@ -1049,16 +1054,38 @@ export default function PanelTable({
     onSaveNote(pkValue, col.column.name, next);
   };
 
-  const startEdit = (row, col, colIndex) => {
+  const startEdit = async (row, col, colIndex) => {
     if (!canEdit || col.kind !== "base" || !editableColumns.includes(col.column.name)) return;
+    const displayed = row.cells[colIndex]?.raw ?? "";
+    let original = displayed;
+
+    // Refresh the value live before opening the box, so a cell someone else
+    // already changed opens with their value instead of whatever this
+    // browser last fetched -- the actual save is still checked again on the
+    // server (see updateCell's expectedValue), this is only to avoid opening
+    // on stale data in the first place.
+    const pkValue = pkValueOf ? pkValueOf(row.sourceIndex) : undefined;
+    if (onPeekCell && pkValue !== undefined && pkValue !== null) {
+      setPeekingCell({ sourceIndex: row.sourceIndex, colId: col.id });
+      try {
+        original = await onPeekCell(pkValue, col.column.name);
+      } catch {
+        // Peek failing (e.g. the row was just deleted) shouldn't silently
+        // open an editor on data that might not exist anymore -- fall back
+        // to what's on screen and let the save itself report the real error.
+      } finally {
+        setPeekingCell(null);
+      }
+    }
+
     setEditingCell({
       sourceIndex: row.sourceIndex,
       colId: col.id,
       colIndex,
-      value: row.cells[colIndex]?.raw ?? "",
+      value: original,
       // Kept so the tick can stay dark until something actually changed, and so
       // saving an untouched cell is not offered at all.
-      original: row.cells[colIndex]?.raw ?? "",
+      original,
     });
   };
 
@@ -1166,6 +1193,10 @@ export default function PanelTable({
           editPending &&
           editPending.sourceIndex === row.sourceIndex &&
           editPending.colId === col.id;
+        const peeking =
+          peekingCell &&
+          peekingCell.sourceIndex === row.sourceIndex &&
+          peekingCell.colId === col.id;
         const frozen = cellIndex < freezeCount;
         const notable = Boolean(onSaveNote && pkValueOf && col.kind === "base");
         const cellPkValue = notable ? pkValueOf(row.sourceIndex) : undefined;
@@ -1193,7 +1224,7 @@ export default function PanelTable({
               cellTone || changed ? "" : "bg-inherit"
             } ${changed ? "bg-yellow-100" : ""} ${
               cellTone || inkColor || rowTone ? "" : "text-zinc-700"
-            } ${editable ? "cursor-cell" : ""} ${saving ? "opacity-50" : ""}`}
+            } ${editable ? "cursor-cell" : ""} ${saving || peeking ? "opacity-50" : ""}`}
             style={{
               textAlign: align,
               ...(cellTone || {}),

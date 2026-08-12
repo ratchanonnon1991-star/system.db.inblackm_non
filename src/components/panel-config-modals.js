@@ -2368,7 +2368,15 @@ export function FindReplaceModal({ editable, rows, onApply, onClose }) {
     setApplying(true);
     setResult(null);
     const outcome = await onApply(
-      toApply.map(({ pkValue, column: col, newValue }) => ({ pkValue, column: col, value: newValue }))
+      // oldValue is what matched the search at scan time -- sent as
+      // expectedValue so a cell someone else already changed in the meantime
+      // reports as a failed row instead of silently overwriting them.
+      toApply.map(({ pkValue, column: col, newValue, oldValue }) => ({
+        pkValue,
+        column: col,
+        value: newValue,
+        expectedValue: oldValue,
+      }))
     );
     setResult(outcome);
     setApplying(false);

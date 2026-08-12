@@ -1521,23 +1521,37 @@ export default function QueryPanel({
     }
   };
 
-  const editCell = async ({ sourceIndex, colId, colIndex, value }) => {
+  // Live value of one cell, no lock -- used to refresh what the editor opens
+  // with (see onPeekCell on PanelTable) so a double-click shows what the
+  // table actually holds right now, not whatever this browser last fetched.
+  const peekCell = async (pkValue, column) => {
+    const params = new URLSearchParams({ pkValue: String(pkValue), column });
+    if (activeViewId) params.set("viewId", String(activeViewId));
+    const data = await apiJson(`/api/queries/${query.id}/cell?${params.toString()}`, {
+      fallbackError: "โหลดค่าล่าสุดไม่สำเร็จ",
+    });
+    return data.value;
+  };
+
+  const editCell = async ({ sourceIndex, colId, colIndex, value, original }) => {
     const col = visibleColumns[colIndex];
     if (!col || col.kind !== "base") return;
-    const current = result.rows[sourceIndex][col.index];
-    if (String(current ?? "") === String(value ?? "")) return;
+    if (String(original ?? "") === String(value ?? "")) return;
 
-    setEditPending({ sourceIndex, colId });
-    setEditError("");
-    try {
+    const pkValue = result.rows[sourceIndex][baseNameToIndex.get(sharedEditable.pk)];
+
+    // `expectedValue` undefined means "write regardless" -- used only for the
+    // retry after a conflict is confirmed, below.
+    const applyEdit = async (expectedValue) => {
       const data = await apiJson(`/api/queries/${query.id}/cell`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          pkValue: result.rows[sourceIndex][baseNameToIndex.get(sharedEditable.pk)],
+          pkValue,
           column: col.column.name,
           value,
           viewId: activeViewId,
+          ...(expectedValue === undefined ? {} : { expectedValue }),
         }),
         fallbackError: "แก้ไขข้อมูลไม่สำเร็จ",
       });
@@ -1557,8 +1571,33 @@ export default function QueryPanel({
       // writing the id back into the cell would leave a bare number on screen.
       // Only the query knows the name that goes with it.
       if (lookupColumns.includes(col.column.name)) await runQuery({ silent: true });
+    };
+
+    setEditPending({ sourceIndex, colId });
+    setEditError("");
+    try {
+      // `original` is what the editor opened with (freshly peeked, see
+      // onPeekCell) -- sent as the value the write is only allowed to
+      // replace, so someone else's edit landed in the gap between opening
+      // the box and hitting save is caught here, not silently overwritten.
+      await applyEdit(original);
     } catch (err) {
-      setEditError(err.message);
+      if (err.status === 409) {
+        const overwrite = window.confirm(
+          `${err.message}\n\nต้องการเขียนทับด้วยค่าที่คุณพิมพ์ไว้ไหม?`
+        );
+        if (overwrite) {
+          try {
+            await applyEdit(undefined);
+          } catch (err2) {
+            setEditError(err2.message);
+          }
+        } else {
+          await runQuery({ silent: true });
+        }
+      } else {
+        setEditError(err.message);
+      }
     } finally {
       setEditPending(null);
     }
@@ -2982,6 +3021,7 @@ export default function QueryPanel({
                   cellNotes={notesEnabled ? cellNotes : null}
                   pkValueOf={pkValueOf}
                   onSaveNote={notesEnabled && !viewingSnapshot ? saveNote : null}
+                  onPeekCell={peekCell}
                 />
               )}
 

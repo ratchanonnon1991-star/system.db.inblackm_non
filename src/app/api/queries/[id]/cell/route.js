@@ -2,11 +2,49 @@ import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireDataUpdater } from "@/server/auth";
 import { findConnectionWithSecret } from "@/server/connections-repository";
 import { findQueryById } from "@/server/gamedb-repository";
-import { updateCell } from "@/server/gamedb-cell-writer";
+import { peekCell, updateCell } from "@/server/gamedb-cell-writer";
 import { recordEdit } from "@/server/gamedb-edit-log";
 import { invalidateQuery } from "@/server/gamedb-result-cache";
 import { normalizeLayout } from "@/lib/gamedb-layout";
 import { requestMeta } from "@/lib/request-meta";
+
+// Same gate as writing it -- a live peek exists to refresh an editor right
+// before someone starts typing into it, not as a general read endpoint, and
+// whoever can open that editor could already see this value in the query
+// result anyway.
+export async function GET(request, { params }) {
+  try {
+    const { id } = await params;
+    const queryId = Number(id);
+    const url = new URL(request.url);
+    const column = url.searchParams.get("column") || "";
+    const pkValue = url.searchParams.get("pkValue");
+    const viewId = url.searchParams.get("viewId") || undefined;
+    await requireDataUpdater(request, { queryId, viewId });
+    const query = await findQueryById(id);
+    if (!query) return jsonError("ไม่พบ Query นี้", 404);
+
+    const layout = normalizeLayout(query.layout);
+    if (!layout.editable) {
+      return jsonError("Query นี้ยังไม่ได้เปิดให้แก้ไขข้อมูล", 400);
+    }
+    if (!column || pkValue === null || pkValue === "") {
+      return jsonError("ไม่มีเซลล์ที่จะโหลดค่าล่าสุด", 400);
+    }
+
+    const connection = query.connectionId
+      ? await findConnectionWithSecret(query.connectionId)
+      : null;
+    if (query.connectionId && !connection) {
+      return jsonError("ฐานข้อมูลของ Query นี้ถูกลบไปแล้ว", 409);
+    }
+
+    const { value } = await peekCell({ editable: layout.editable, connection, pkValue, column });
+    return jsonOk({ value });
+  } catch (err) {
+    return handleApiError(err, "โหลดค่าล่าสุดไม่สำเร็จ");
+  }
+}
 
 // Editing a cell's value is an Admin capability by default; a Staff account
 // can be granted it individually (see requireDataUpdater).
@@ -44,6 +82,7 @@ export async function PATCH(request, { params }) {
       pkValue,
       column,
       value: body.value,
+      expectedValue: body.expectedValue,
     });
 
     // A cached page must not be able to serve the value we just replaced.
