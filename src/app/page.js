@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import NextLink from "next/link";
+import { useRouter } from "next/navigation";
 import { apiJson } from "@/lib/api-json";
 import TurnstileWidget from "@/components/turnstile-widget";
 import { UsersModal } from "@/components/gamedb-modals";
@@ -86,6 +87,7 @@ const SYSTEMS = [
 ];
 
 function SystemHub({ me, onLoggedOut }) {
+  const router = useRouter();
   const isSuperAdmin = me.role === "admin";
   const isTemplateUser = me.role === "user";
   const [usersModal, setUsersModal] = useState(false);
@@ -104,6 +106,22 @@ function SystemHub({ me, onLoggedOut }) {
       .finally(() => setViewsLoading(false));
   }, []);
 
+  // A "user" (template-only) account has nothing to pick from this hub --
+  // there is only ever the one template experience for them, and clicking
+  // into a "System DB" tile that leads right back to the same template was
+  // just an extra step. Sent straight to it instead, same priority order
+  // /systemdb itself already resolves a default template with (assigned to
+  // this account -> marked as default -> first one available); with none
+  // assigned at all, /systemdb's own empty-state message is still there.
+  useEffect(() => {
+    if (!isTemplateUser || viewsLoading) return;
+    const target =
+      views.find((view) => Number(view.id) === Number(me.defaultViewId)) ||
+      views.find((view) => view.isDefault) ||
+      views[0];
+    router.replace(target ? `/view/${target.id}` : "/systemdb");
+  }, [isTemplateUser, viewsLoading, views, me.defaultViewId, router]);
+
   const logout = async () => {
     try {
       await apiJson("/api/auth/logout", { method: "POST" });
@@ -112,6 +130,19 @@ function SystemHub({ me, onLoggedOut }) {
     }
     onLoggedOut();
   };
+
+  // Never rendered long enough to matter for anyone else, but a "user"
+  // account is redirected away above and would otherwise flash the tile
+  // picker they can't meaningfully use for a moment first.
+  if (isTemplateUser) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <span className="flex animate-pulse items-center gap-1 text-sm font-bold text-zinc-500">
+          <Loader2 size={16} className="animate-spin" /> กำลังเปิดหน้าของคุณ...
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-zinc-50 px-4 px-8">
