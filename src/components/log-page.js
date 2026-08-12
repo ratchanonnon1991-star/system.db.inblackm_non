@@ -29,7 +29,8 @@ function SectionCard({ icon, title, children }) {
 // Both tables fetch everything the API will give them (up to its own cap)
 // and filter/page through it client-side, same pattern UsersModal already
 // uses for its user list.
-const PAGE_SIZE = 20;
+const DEFAULT_PAGE_SIZE = 20;
+const PAGE_SIZE_CHOICES = [10, 20, 50, 100];
 
 const filterInputClass =
   "h-8 rounded-sm border border-zinc-200 px-2 text-[11px] font-semibold outline-none focus:border-red-600";
@@ -40,29 +41,88 @@ function distinctOptions(rows, pick) {
   return [...new Set(rows.map(pick).filter(Boolean))].sort((a, b) => a.localeCompare(b, "th"));
 }
 
-function Pager({ page, totalPages, onChange }) {
-  if (totalPages <= 1) return null;
+// Windowed page numbers -- first, last, current ± 1, "…" for the gaps --
+// instead of only Prev/Next, so jumping from page 2 to page 20 of a long
+// login history is one click instead of eighteen.
+function pageWindow(page, totalPages) {
+  const pages = new Set([1, totalPages, page, page - 1, page + 1]);
+  const sorted = [...pages].filter((n) => n >= 1 && n <= totalPages).sort((a, b) => a - b);
+  const out = [];
+  let prev = 0;
+  for (const n of sorted) {
+    if (prev && n - prev > 1) out.push("…");
+    out.push(n);
+    prev = n;
+  }
+  return out;
+}
+
+function Pager({ page, totalPages, onChange, pageSize, onPageSizeChange, totalCount }) {
+  if (totalCount === 0) return null;
+  const start = (page - 1) * pageSize + 1;
+  const end = Math.min(totalCount, page * pageSize);
   return (
-    <div className="mt-2 flex items-center justify-between gap-2">
-      <button
-        type="button"
-        onClick={() => onChange(Math.max(1, page - 1))}
-        disabled={page <= 1}
-        className="rounded-sm border border-zinc-200 px-2.5 py-1 text-[10px] font-black text-zinc-500 transition hover:bg-zinc-50 disabled:opacity-40"
-      >
-        ก่อนหน้า
-      </button>
+    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-zinc-100 pt-2">
       <span className="text-[10px] font-bold text-zinc-400">
-        หน้า {page} / {totalPages}
+        แสดง {start.toLocaleString("th-TH")}–{end.toLocaleString("th-TH")} จาก{" "}
+        {totalCount.toLocaleString("th-TH")} รายการ
       </span>
-      <button
-        type="button"
-        onClick={() => onChange(Math.min(totalPages, page + 1))}
-        disabled={page >= totalPages}
-        className="rounded-sm border border-zinc-200 px-2.5 py-1 text-[10px] font-black text-zinc-500 transition hover:bg-zinc-50 disabled:opacity-40"
-      >
-        ถัดไป
-      </button>
+      <div className="flex flex-wrap items-center gap-1">
+        {onPageSizeChange && (
+          <select
+            value={pageSize}
+            onChange={(e) => onPageSizeChange(Number(e.target.value))}
+            className="h-7 rounded-sm border border-zinc-200 px-1.5 text-[10px] font-bold text-zinc-500 outline-none focus:border-red-600"
+            title="จำนวนแถวต่อหน้า"
+          >
+            {PAGE_SIZE_CHOICES.map((size) => (
+              <option key={size} value={size}>
+                {size} แถว/หน้า
+              </option>
+            ))}
+          </select>
+        )}
+        {totalPages > 1 && (
+          <>
+            <button
+              type="button"
+              onClick={() => onChange(Math.max(1, page - 1))}
+              disabled={page <= 1}
+              className="rounded-sm border border-zinc-200 px-2 py-1 text-[10px] font-black text-zinc-500 transition hover:bg-zinc-50 disabled:opacity-40"
+            >
+              ก่อนหน้า
+            </button>
+            {pageWindow(page, totalPages).map((entry, index) =>
+              entry === "…" ? (
+                <span key={`gap-${index}`} className="px-1 text-[10px] font-bold text-zinc-300">
+                  …
+                </span>
+              ) : (
+                <button
+                  key={entry}
+                  type="button"
+                  onClick={() => onChange(entry)}
+                  className={`h-7 min-w-[1.75rem] rounded-sm border px-1.5 text-[10px] font-black transition ${
+                    entry === page
+                      ? "border-red-600 bg-red-600 text-white"
+                      : "border-zinc-200 text-zinc-500 hover:bg-zinc-50"
+                  }`}
+                >
+                  {entry}
+                </button>
+              )
+            )}
+            <button
+              type="button"
+              onClick={() => onChange(Math.min(totalPages, page + 1))}
+              disabled={page >= totalPages}
+              className="rounded-sm border border-zinc-200 px-2 py-1 text-[10px] font-black text-zinc-500 transition hover:bg-zinc-50 disabled:opacity-40"
+            >
+              ถัดไป
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -75,6 +135,7 @@ function LoginLogSection() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [search, setSearch] = useState("");
   const [resultFilter, setResultFilter] = useState("all");
 
@@ -126,9 +187,9 @@ function LoginLogSection() {
     });
   }, [logins, search, resultFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredLogins.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filteredLogins.length / pageSize));
   const safePage = Math.min(page, totalPages);
-  const pageLogins = filteredLogins.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const pageLogins = filteredLogins.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   return (
     <SectionCard icon={<LogIn size={15} className="text-red-600" />} title="ประวัติการเข้าสู่ระบบ">
@@ -237,7 +298,17 @@ function LoginLogSection() {
           </table>
         </div>
       )}
-      <Pager page={safePage} totalPages={totalPages} onChange={setPage} />
+      <Pager
+        page={safePage}
+        totalPages={totalPages}
+        onChange={setPage}
+        pageSize={pageSize}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPage(1);
+        }}
+        totalCount={filteredLogins.length}
+      />
     </SectionCard>
   );
 }
@@ -250,6 +321,7 @@ function EditLogSection() {
   const [error, setError] = useState("");
   const [reverting, setReverting] = useState(null);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [search, setSearch] = useState("");
   const [tableFilter, setTableFilter] = useState("");
   const [queryFilter, setQueryFilter] = useState("");
@@ -439,9 +511,9 @@ function EditLogSection() {
     [edits, queryNames]
   );
 
-  const totalPages = Math.max(1, Math.ceil(filteredEdits.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filteredEdits.length / pageSize));
   const safePage = Math.min(page, totalPages);
-  const pageEdits = filteredEdits.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const pageEdits = filteredEdits.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   return (
     <SectionCard icon={<History size={15} className="text-red-600" />} title="ประวัติการแก้ไขข้อมูล">
@@ -582,7 +654,17 @@ function EditLogSection() {
           </table>
         </div>
       )}
-      <Pager page={safePage} totalPages={totalPages} onChange={setPage} />
+      <Pager
+        page={safePage}
+        totalPages={totalPages}
+        onChange={setPage}
+        pageSize={pageSize}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPage(1);
+        }}
+        totalCount={filteredEdits.length}
+      />
     </SectionCard>
   );
 }
