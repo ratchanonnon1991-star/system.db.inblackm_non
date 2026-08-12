@@ -1888,7 +1888,10 @@ export default function QueryPanel({
   const bodyHeight = docked ? "100%" : panel.height;
   const chartHeight = docked ? dockedChartHeight : panel.height;
   const panelHeaderTone = toneStyle(layout.tableTone, "head");
-  const panelBorderColor = panelHeaderTone?.backgroundColor;
+  // A separate border tone, when set, always wins — otherwise the border
+  // keeps following the table's header tint like before.
+  const panelBorderTone = toneStyle(layout.tableBorderTone, "head");
+  const panelBorderColor = panelBorderTone?.backgroundColor || panelHeaderTone?.backgroundColor;
   // The table's own rows already tint to this tone (see tableBodyTone in
   // panel-table.js) -- without this, the card's own frame around them (the
   // toolbar strip aside) stayed plain white, so a themed table's colour
@@ -3027,10 +3030,11 @@ export default function QueryPanel({
           formats={layout.formats}
           freeze={layout.freeze}
           tableTone={layout.tableTone}
+          tableBorderTone={layout.tableBorderTone}
           initialColId={modalColumnId}
           onClose={closeColumnModal}
-          onSave={({ formats, freeze, tableTone }) => {
-            mutateLayout((prev) => ({ ...prev, formats, freeze, tableTone }));
+          onSave={({ formats, freeze, tableTone, tableBorderTone }) => {
+            mutateLayout((prev) => ({ ...prev, formats, freeze, tableTone, tableBorderTone }));
             closeColumnModal();
           }}
         />

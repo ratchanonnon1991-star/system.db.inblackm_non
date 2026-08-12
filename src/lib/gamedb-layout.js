@@ -31,6 +31,7 @@ export const EMPTY_LAYOUT = {
   formats: {},
   freeze: 0,
   tableTone: "",
+  tableBorderTone: "",
 };
 
 export const PARAM_TYPES = [
@@ -364,6 +365,9 @@ export function normalizeLayout(raw) {
     formats: normalizeFormats(layout.formats),
     freeze: normalizeFreeze(layout.freeze),
     tableTone: isValidTone(layout.tableTone, TABLE_TONES) ? layout.tableTone : "",
+    tableBorderTone: isValidTone(layout.tableBorderTone, TABLE_TONES)
+      ? layout.tableBorderTone
+      : "",
   };
 }
 

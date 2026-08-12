@@ -1426,6 +1426,7 @@ export function FormatsModal({
   formats,
   freeze,
   tableTone,
+  tableBorderTone,
   initialColId = null,
   onSave,
   onClose,
@@ -1444,6 +1445,7 @@ export function FormatsModal({
   });
   const [pinned, setPinned] = useState(freeze || 0);
   const [theme, setTheme] = useState(tableTone || "");
+  const [borderTheme, setBorderTheme] = useState(tableBorderTone || "");
   const orderedColumns = useMemo(() => {
     if (!initialColId || !columns.some((col) => col.id === initialColId)) return columns;
     return [
@@ -1473,7 +1475,7 @@ export function FormatsModal({
           if (isEmptyFormat(format)) delete formatsOut[colId];
           else formatsOut[colId] = format;
         }
-        onSave({ formats: formatsOut, freeze: pinned, tableTone: theme });
+        onSave({ formats: formatsOut, freeze: pinned, tableTone: theme, tableBorderTone: borderTheme });
       }}
     >
       <div className="grid gap-3 rounded-sm border border-zinc-200 bg-zinc-50 px-3 py-2 sm:grid-cols-2">
@@ -1483,6 +1485,13 @@ export function FormatsModal({
           tones={TABLE_TONES}
           value={theme}
           onChange={setTheme}
+        />
+        <ToneSelect
+          label="สีเส้นขอบ Panel"
+          part="head"
+          tones={TABLE_TONES}
+          value={borderTheme}
+          onChange={setBorderTheme}
         />
         <label className="block">
           <span className="mb-0.5 block text-[9px] font-black text-zinc-400">ตรึงคอลัมน์ซ้ายไว้</span>
@@ -1501,6 +1510,11 @@ export function FormatsModal({
         </label>
         <span className="text-[10px] font-semibold text-zinc-400">
           {theme ? `ใช้สี ${toneLabel(theme)} กับทั้งตาราง` : "ยังไม่ได้เลือกสีประจำตาราง"}
+        </span>
+        <span className="text-[10px] font-semibold text-zinc-400">
+          {borderTheme
+            ? `ขอบใช้สี ${toneLabel(borderTheme)}`
+            : "ขอบยังไม่ได้กำหนด — ใช้สีเดียวกับสีประจำตาราง"}
         </span>
         <span className="text-[10px] font-semibold text-zinc-400">
           {touched > 0 ? `ตั้งรูปแบบไว้ ${touched} คอลัมน์` : "ยังไม่ได้ตั้งรูปแบบคอลัมน์ไหน"}

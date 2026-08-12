@@ -218,6 +218,9 @@ export function sanitizeLayout(raw) {
     formats: capEntries(normalizeFormats(layout.formats), 200),
     freeze: normalizeFreeze(layout.freeze),
     tableTone: isValidTone(layout.tableTone, TABLE_TONES) ? layout.tableTone : "",
+    tableBorderTone: isValidTone(layout.tableBorderTone, TABLE_TONES)
+      ? layout.tableBorderTone
+      : "",
   };
 }
 

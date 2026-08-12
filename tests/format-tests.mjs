@@ -230,6 +230,26 @@ check("the sanitizer keeps row scope", clean.rules[0].scope, "row");
 check("the sanitizer keeps the new op", clean.rules[0].op, "dueIn");
 check("the sanitizer keeps a table theme", sanitizeLayout({ tableTone: "sky" }).tableTone, "sky");
 check("the sanitizer rejects a solid table theme", sanitizeLayout({ tableTone: "redSolid" }).tableTone, "");
+check(
+  "a known border theme survives normalizeLayout",
+  normalizeLayout({ tableBorderTone: "sky" }).tableBorderTone,
+  "sky"
+);
+check(
+  "an unknown border theme is dropped by normalizeLayout",
+  normalizeLayout({ tableBorderTone: "neon" }).tableBorderTone,
+  ""
+);
+check(
+  "the sanitizer keeps a table border theme",
+  sanitizeLayout({ tableBorderTone: "violet" }).tableBorderTone,
+  "violet"
+);
+check(
+  "a hue-token table border theme survives sanitizeLayout",
+  sanitizeLayout({ tableBorderTone: "hue:120" }).tableBorderTone,
+  "hue:120"
+);
 
 // JSON only ever produces plain objects, so this is what a hostile body looks
 // like: the wrong type in every slot.
