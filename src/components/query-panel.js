@@ -68,6 +68,7 @@ import {
   ChartModal,
   DrillModal,
   EditableSettingsModal,
+  FindReplaceModal,
   FormatsModal,
   LookupsListModal,
   MergeModal,
@@ -1375,6 +1376,20 @@ export default function QueryPanel({
   // off should drop the lists without another render pass.
   const lookupOptions = hasLookups ? loadedLookups : NO_LOOKUPS;
 
+  // One flat {pkValue, values: {colName: raw}} record per row, cheap to scan
+  // client-side for FindReplaceModal — the table already holds the whole
+  // result set in memory for rendering, so this reuses it rather than
+  // re-fetching just to search.
+  const findReplaceRows = useMemo(() => {
+    if (!result || !sharedEditable?.pk) return [];
+    const pkIndex = baseNameToIndex.get(sharedEditable.pk);
+    if (pkIndex === undefined) return [];
+    return result.rows.map((row) => ({
+      pkValue: row[pkIndex],
+      values: Object.fromEntries(result.columns.map((col, index) => [col.name, row[index]])),
+    }));
+  }, [result, sharedEditable, baseNameToIndex]);
+
   const editCell = async ({ sourceIndex, colId, colIndex, value }) => {
     const col = visibleColumns[colIndex];
     if (!col || col.kind !== "base") return;
@@ -2410,6 +2425,16 @@ export default function QueryPanel({
                       <ClipboardPaste size={14} /> แก้หลายแถวจาก Excel
                     </button>
                   )}
+                  {canEditCells && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => runMoreAction(() => setModal("findReplace"))}
+                      className={menuItemClass}
+                    >
+                      <Search size={14} /> ค้นหา/แทนที่ในตาราง
+                    </button>
+                  )}
                   <button
                     type="button"
                     role="menuitem"
@@ -3020,6 +3045,14 @@ export default function QueryPanel({
         <BulkEditModal
           editable={sharedEditable}
           columnNames={result.columns.map((col) => col.name)}
+          onApply={applyBulkEdits}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal === "findReplace" && result && sharedEditable && (
+        <FindReplaceModal
+          editable={sharedEditable}
+          rows={findReplaceRows}
           onApply={applyBulkEdits}
           onClose={() => setModal(null)}
         />

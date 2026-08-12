@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -16,6 +16,7 @@ import {
   Play,
   Plus,
   Save,
+  Search,
   SlidersHorizontal,
   Table2,
   Trash2,
@@ -2163,6 +2164,197 @@ export function BulkEditModal({
           จะแก้ {parsed.rows.length} แถว × {parsed.targets.length} คอลัมน์ (
           {parsed.targets.map((target) => target.name).join(", ")}) = {" "}
           {parsed.rows.length * parsed.targets.length} เซลล์
+        </div>
+      )}
+
+      {result && (
+        <div className="space-y-1 rounded-sm border border-zinc-200 px-3 py-2 text-[11px] font-bold">
+          <p className="text-emerald-700">สำเร็จ {result.ok} เซลล์</p>
+          {result.failed.length > 0 && (
+            <div className="text-red-600">
+              <p>ไม่สำเร็จ {result.failed.length} เซลล์:</p>
+              <ul className="mt-1 max-h-32 list-disc overflow-y-auto pl-4 font-semibold">
+                {result.failed.slice(0, 20).map((failure, index) => (
+                  <li key={index}>
+                    {failure.pkValue} · {failure.column}: {failure.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </ModalShell>
+  );
+}
+
+// No regex: the search term is whatever the admin typed, and building a
+// RegExp out of it would mean escaping every special character first for no
+// real benefit — a plain scan-and-splice does the same job.
+function replaceAllOccurrences(text, find, replacement, caseSensitive) {
+  if (!find) return text;
+  const haystack = caseSensitive ? text : text.toLowerCase();
+  const needle = caseSensitive ? find : find.toLowerCase();
+  let out = "";
+  let i = 0;
+  for (;;) {
+    const at = haystack.indexOf(needle, i);
+    if (at === -1) {
+      out += text.slice(i);
+      return out;
+    }
+    out += text.slice(i, at) + replacement;
+    i = at + find.length;
+  }
+}
+
+const MAX_FIND_REPLACE_MATCHES = 500;
+
+/**
+ * Excel's Ctrl+H for the live table: find a substring across every editable
+ * column (or one chosen column) and replace it everywhere at once, instead of
+ * fixing the same typo cell by cell. Writes through the same one-cell-at-a-
+ * time endpoint as BulkEditModal/double-click editing, so every change still
+ * lands in the audit log individually.
+ */
+export function FindReplaceModal({ editable, rows, onApply, onClose }) {
+  const [find, setFind] = useState("");
+  const [replace, setReplace] = useState("");
+  const [column, setColumn] = useState("__all__");
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const targetColumns = useMemo(
+    () => (column === "__all__" ? editable.columns : [column]),
+    [column, editable.columns]
+  );
+
+  const matches = useMemo(() => {
+    if (!find.trim()) return [];
+    const out = [];
+    for (const row of rows) {
+      for (const col of targetColumns) {
+        const raw = String(row.values[col] ?? "");
+        const newValue = replaceAllOccurrences(raw, find, replace, caseSensitive);
+        if (newValue !== raw) {
+          out.push({ pkValue: row.pkValue, column: col, oldValue: raw, newValue });
+        }
+      }
+    }
+    return out;
+  }, [rows, find, replace, caseSensitive, targetColumns]);
+
+  const capped = matches.length > MAX_FIND_REPLACE_MATCHES;
+  const toApply = capped ? matches.slice(0, MAX_FIND_REPLACE_MATCHES) : matches;
+
+  const apply = async () => {
+    setApplying(true);
+    setResult(null);
+    const outcome = await onApply(
+      toApply.map(({ pkValue, column: col, newValue }) => ({ pkValue, column: col, value: newValue }))
+    );
+    setResult(outcome);
+    setApplying(false);
+  };
+
+  return (
+    <ModalShell
+      title="ค้นหา/แทนที่ในตาราง"
+      icon={<Search size={15} className="text-red-600" />}
+      onClose={onClose}
+      onSave={apply}
+      saveDisabled={toApply.length === 0 || applying}
+      saveLabel={applying ? "กำลังบันทึก..." : `แทนที่ทั้งหมด (${toApply.length} เซลล์)`}
+    >
+      <p className="rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
+        ค้นเฉพาะในคอลัมน์ที่แก้ไขได้ ({editable.columns.join(", ") || "ยังไม่ได้ตั้ง"}) และเขียนกลับ
+        ทีละเซลล์เหมือนดับเบิลคลิกแก้เอง — ขึ้น log ทุกเซลล์ที่เปลี่ยน
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <div>
+          <label className={labelClass}>ค้นหา</label>
+          <input
+            type="text"
+            value={find}
+            onChange={(e) => setFind(e.target.value)}
+            placeholder="ข้อความที่จะหา"
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>แทนที่ด้วย</label>
+          <input
+            type="text"
+            value={replace}
+            onChange={(e) => setReplace(e.target.value)}
+            placeholder="ข้อความใหม่ (เว้นว่าง = ลบออก)"
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>เฉพาะคอลัมน์</label>
+          <select value={column} onChange={(e) => setColumn(e.target.value)} className={inputClass}>
+            <option value="__all__">ทุกคอลัมน์ที่แก้ไขได้</option>
+            {editable.columns.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <label className="flex h-9 items-center gap-1.5 text-[11px] font-bold text-zinc-600">
+          <input
+            type="checkbox"
+            checked={caseSensitive}
+            onChange={(e) => setCaseSensitive(e.target.checked)}
+            className="h-3.5 w-3.5 accent-red-600"
+          />
+          ตัวพิมพ์เล็ก/ใหญ่ต้องตรงกัน
+        </label>
+      </div>
+
+      {find.trim() && (
+        <div
+          className={`rounded-sm border px-3 py-2 text-[11px] font-bold ${
+            matches.length > 0
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+              : "border-zinc-200 bg-zinc-50 text-zinc-400"
+          }`}
+        >
+          {matches.length > 0
+            ? `พบ ${matches.length} เซลล์ที่ตรง${capped ? ` — จะแทนที่แค่ ${MAX_FIND_REPLACE_MATCHES} เซลล์แรกก่อน แล้วรันซ้ำเพื่อทำที่เหลือ` : ""}`
+            : "ไม่พบข้อความนี้ในคอลัมน์ที่เลือก"}
+        </div>
+      )}
+
+      {matches.length > 0 && (
+        <div className="max-h-56 overflow-y-auto rounded-sm border border-zinc-200">
+          <table className="w-full text-[10px]">
+            <thead className="sticky top-0 bg-zinc-100 text-left font-black text-zinc-500">
+              <tr>
+                <th className="px-2 py-1">{editable.pk}</th>
+                <th className="px-2 py-1">คอลัมน์</th>
+                <th className="px-2 py-1">เดิม</th>
+                <th className="px-2 py-1">ใหม่</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {toApply.slice(0, 100).map((match, index) => (
+                <tr key={index}>
+                  <td className="px-2 py-1 font-mono text-zinc-500">{String(match.pkValue)}</td>
+                  <td className="px-2 py-1 font-bold text-zinc-700">{match.column}</td>
+                  <td className="px-2 py-1 text-red-600 line-through">{match.oldValue}</td>
+                  <td className="px-2 py-1 text-emerald-700">{match.newValue}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {toApply.length > 100 && (
+            <p className="border-t border-zinc-200 bg-zinc-50 px-2 py-1 text-[10px] font-semibold text-zinc-400">
+              และอีก {toApply.length - 100} เซลล์
+            </p>
+          )}
         </div>
       )}
 
