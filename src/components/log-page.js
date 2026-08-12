@@ -272,7 +272,14 @@ function EditLogSection() {
     setPage(1);
   };
 
-  const queryNameOf = (entry) => queryNames[entry.queryId] || "";
+  // GameInfo writes (game_list, gamelist_images/tutorials/packs/order) go
+  // through their own routes, not the generic Query system, so they log with
+  // queryId: null -- the only source that does. Labelling those "GameInfo"
+  // instead of leaving them blank makes them findable through the same
+  // search box and Query filter as everything else, which is the point of
+  // "หน้าไหน" filtering; the entries themselves aren't revertible from here
+  // either way (see canRevert), so this is display/search only.
+  const queryNameOf = (entry) => (entry.queryId ? queryNames[entry.queryId] || "" : "GameInfo");
 
   // A restore is itself an insert underneath, so undoing it is the same
   // "delete this row" action as undoing a plain add.
@@ -502,22 +509,26 @@ function EditLogSection() {
                       disabled={reverting === entry.id || !canRevert(entry)}
                       className="rounded-sm border border-zinc-200 px-2 py-1 text-[10px] font-black text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-40"
                       title={
-                        isRowInsert(entry)
-                          ? "ลบแถวที่เพิ่งเพิ่มนี้ทิ้ง"
-                          : isRowDelete(entry)
-                            ? canRevert(entry)
-                              ? "เพิ่มแถวนี้กลับเข้าตาราง"
-                              : "ข้อมูลแถวนี้ยาวเกินกว่าจะกู้คืนอัตโนมัติได้"
-                            : "เขียนค่าเดิมกลับเข้าไป"
+                        !entry.queryId
+                          ? "แก้ไขจากนอกระบบ Query — ย้อนกลับจากที่นี่ไม่ได้ ไปแก้ที่หน้าเดิมแทน"
+                          : isRowInsert(entry)
+                            ? "ลบแถวที่เพิ่งเพิ่มนี้ทิ้ง"
+                            : isRowDelete(entry)
+                              ? canRevert(entry)
+                                ? "เพิ่มแถวนี้กลับเข้าตาราง"
+                                : "ข้อมูลแถวนี้ยาวเกินกว่าจะกู้คืนอัตโนมัติได้"
+                              : "เขียนค่าเดิมกลับเข้าไป"
                       }
                     >
                       {reverting === entry.id
                         ? "..."
-                        : isRowInsert(entry)
-                          ? "ลบแถวนี้"
-                          : isRowDelete(entry)
-                            ? "กู้คืนแถว"
-                            : "ย้อนกลับ"}
+                        : !entry.queryId
+                          ? "—"
+                          : isRowInsert(entry)
+                            ? "ลบแถวนี้"
+                            : isRowDelete(entry)
+                              ? "กู้คืนแถว"
+                              : "ย้อนกลับ"}
                     </button>
                   </td>
                 </tr>
