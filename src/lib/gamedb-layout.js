@@ -131,19 +131,25 @@ export const VALUELESS_OPS = ["empty", "notEmpty", "overdue", "isToday"];
 // tone is picked as a text colour paints white text on a white cell — the
 // setting appearing to do nothing at all. `ink` is what the tone looks like as
 // text on the page's own background.
+// `head` used to be each hue's 300-level step (red bg #fee2e2 next to a
+// #fca5a5 header band) -- a two-step jump in one glance, since bg is the
+// 100-level step. Stepped down to each hue's 200-level (still the same
+// Tailwind scale these were already drawn from, not a new hand-picked hex)
+// so a themed table reads as one coherent tint instead of a light cell
+// under a noticeably more saturated header.
 export const CELL_TONES = {
-  red: { bg: "#fee2e2", fg: "#b91c1c", head: "#fca5a5", ink: "#b91c1c" },
-  orange: { bg: "#ffedd5", fg: "#c2410c", head: "#fdba74", ink: "#c2410c" },
-  amber: { bg: "#fef3c7", fg: "#b45309", head: "#fcd34d", ink: "#b45309" },
-  yellow: { bg: "#fef9c3", fg: "#854d0e", head: "#fde047", ink: "#854d0e" },
-  lime: { bg: "#ecfccb", fg: "#4d7c0f", head: "#bef264", ink: "#4d7c0f" },
-  green: { bg: "#dcfce7", fg: "#15803d", head: "#86efac", ink: "#15803d" },
-  teal: { bg: "#ccfbf1", fg: "#0f766e", head: "#5eead4", ink: "#0f766e" },
-  sky: { bg: "#e0f2fe", fg: "#0369a1", head: "#7dd3fc", ink: "#0369a1" },
-  blue: { bg: "#dbeafe", fg: "#1d4ed8", head: "#93c5fd", ink: "#1d4ed8" },
-  violet: { bg: "#ede9fe", fg: "#6d28d9", head: "#c4b5fd", ink: "#6d28d9" },
-  pink: { bg: "#fce7f3", fg: "#be185d", head: "#f9a8d4", ink: "#be185d" },
-  zinc: { bg: "#f4f4f5", fg: "#3f3f46", head: "#d4d4d8", ink: "#3f3f46" },
+  red: { bg: "#fee2e2", fg: "#b91c1c", head: "#fecaca", ink: "#b91c1c" },
+  orange: { bg: "#ffedd5", fg: "#c2410c", head: "#fed7aa", ink: "#c2410c" },
+  amber: { bg: "#fef3c7", fg: "#b45309", head: "#fde68a", ink: "#b45309" },
+  yellow: { bg: "#fef9c3", fg: "#854d0e", head: "#fef08a", ink: "#854d0e" },
+  lime: { bg: "#ecfccb", fg: "#4d7c0f", head: "#d9f99d", ink: "#4d7c0f" },
+  green: { bg: "#dcfce7", fg: "#15803d", head: "#bbf7d0", ink: "#15803d" },
+  teal: { bg: "#ccfbf1", fg: "#0f766e", head: "#99f6e4", ink: "#0f766e" },
+  sky: { bg: "#e0f2fe", fg: "#0369a1", head: "#bae6fd", ink: "#0369a1" },
+  blue: { bg: "#dbeafe", fg: "#1d4ed8", head: "#bfdbfe", ink: "#1d4ed8" },
+  violet: { bg: "#ede9fe", fg: "#6d28d9", head: "#ddd6fe", ink: "#6d28d9" },
+  pink: { bg: "#fce7f3", fg: "#be185d", head: "#fbcfe8", ink: "#be185d" },
+  zinc: { bg: "#f4f4f5", fg: "#3f3f46", head: "#e4e4e7", ink: "#3f3f46" },
   redSolid: { bg: "#dc2626", fg: "#ffffff", head: "#b91c1c", headFg: "#ffffff", ink: "#dc2626" },
   greenSolid: { bg: "#16a34a", fg: "#ffffff", head: "#15803d", headFg: "#ffffff", ink: "#15803d" },
   yellowSolid: { bg: "#facc15", fg: "#422006", head: "#eab308", headFg: "#422006", ink: "#a16207" },
