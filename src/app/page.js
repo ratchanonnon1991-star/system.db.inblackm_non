@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   Database,
   Gamepad2,
+  History,
   Layers,
   Link2,
   Loader2,
@@ -142,6 +143,15 @@ function SystemHub({ me, onLoggedOut }) {
             >
               <Link2 size={14} /> เชื่อมกับบัญชี experience
             </button>
+          )}
+          {isSuperAdmin && (
+            <NextLink
+              href="/log"
+              className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-3 py-1 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
+              title="ประวัติการใช้งาน (การเข้าสู่ระบบ / แก้ไขข้อมูล)"
+            >
+              <History size={14} /> ประวัติการใช้งาน
+            </NextLink>
           )}
           <button
             type="button"

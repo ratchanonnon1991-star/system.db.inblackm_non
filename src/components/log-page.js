@@ -1,8 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, History, Loader2, LogIn, XCircle } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  History,
+  Loader2,
+  LogIn,
+  Search,
+  XCircle,
+} from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 
 function SectionCard({ icon, title, children }) {
@@ -17,9 +25,18 @@ function SectionCard({ icon, title, children }) {
 }
 
 // Both tables fetch everything the API will give them (up to its own cap)
-// and page through it client-side, same pattern UsersModal already uses --
-// there's no filter here to reset a page on, so it's simpler still.
+// and filter/page through it client-side, same pattern UsersModal already
+// uses for its user list.
 const PAGE_SIZE = 20;
+
+const filterInputClass =
+  "h-8 rounded-sm border border-zinc-200 px-2 text-[11px] font-semibold outline-none focus:border-red-600";
+
+/** A distinct, sorted list of one field across a set of rows, for a filter
+ * dropdown -- always starts with "ทั้งหมด" so no filter is the default. */
+function distinctOptions(rows, pick) {
+  return [...new Set(rows.map(pick).filter(Boolean))].sort((a, b) => a.localeCompare(b, "th"));
+}
 
 function Pager({ page, totalPages, onChange }) {
   if (totalPages <= 1) return null;
@@ -55,6 +72,8 @@ function LoginLogSection() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [resultFilter, setResultFilter] = useState("all");
 
   useEffect(() => {
     let cancelled = false;
@@ -75,15 +94,66 @@ function LoginLogSection() {
     };
   }, []);
 
-  const totalPages = Math.max(1, Math.ceil(logins.length / PAGE_SIZE));
+  // setPage(1) happens in these handlers rather than an effect keyed off
+  // search/resultFilter, same reason UsersModal's search box does it this
+  // way -- a filter changing is a user action, not state to resynchronize.
+  const updateSearch = (value) => {
+    setSearch(value);
+    setPage(1);
+  };
+  const updateResultFilter = (value) => {
+    setResultFilter(value);
+    setPage(1);
+  };
+
+  const filteredLogins = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return logins.filter((entry) => {
+      if (resultFilter === "success" && !entry.success) return false;
+      if (resultFilter === "failed" && entry.success) return false;
+      if (!needle) return true;
+      return (
+        entry.username.toLowerCase().includes(needle) ||
+        (entry.ip || "").toLowerCase().includes(needle)
+      );
+    });
+  }, [logins, search, resultFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredLogins.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
-  const pageLogins = logins.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const pageLogins = filteredLogins.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   return (
     <SectionCard icon={<LogIn size={15} className="text-red-600" />} title="ประวัติการเข้าสู่ระบบ">
       {error && (
         <div className="mb-3 rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
           {error}
+        </div>
+      )}
+      {logins.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[180px] flex-1">
+            <Search size={12} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-zinc-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => updateSearch(e.target.value)}
+              placeholder="ค้นหา username หรือ IP..."
+              className={`${filterInputClass} w-full pl-7`}
+            />
+          </div>
+          <select
+            value={resultFilter}
+            onChange={(e) => updateResultFilter(e.target.value)}
+            className={filterInputClass}
+          >
+            <option value="all">ทุกผล</option>
+            <option value="success">สำเร็จเท่านั้น</option>
+            <option value="failed">ไม่สำเร็จเท่านั้น</option>
+          </select>
+          <span className="text-[10px] font-bold text-zinc-400">
+            {filteredLogins.length.toLocaleString("th-TH")} รายการ
+          </span>
         </div>
       )}
       {loading ? (
@@ -93,6 +163,10 @@ function LoginLogSection() {
       ) : logins.length === 0 ? (
         <p className="px-8 py-4 text-center text-xs font-semibold text-zinc-400">
           ยังไม่มีการเข้าสู่ระบบ
+        </p>
+      ) : filteredLogins.length === 0 ? (
+        <p className="px-8 py-4 text-center text-xs font-semibold text-zinc-400">
+          ไม่พบรายการที่ตรงกับตัวกรอง
         </p>
       ) : (
         <div className="overflow-x-auto rounded-sm border border-zinc-200">
@@ -149,15 +223,30 @@ function EditLogSection() {
   const [error, setError] = useState("");
   const [reverting, setReverting] = useState(null);
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [tableFilter, setTableFilter] = useState("");
+  const [queryFilter, setQueryFilter] = useState("");
+  // The log only keeps queryId, not the Query's own name (queries get
+  // renamed, deleted, re-pointed at a different table) -- fetched once here,
+  // purely to label/search/filter by "which Query" a row belongs to.
+  const [queryNames, setQueryNames] = useState({});
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const data = await apiJson("/api/edit-log?limit=500", {
-        fallbackError: "โหลดประวัติการแก้ไขไม่สำเร็จ",
-      });
-      setEdits(data.edits || []);
+      const [editsData, queriesData] = await Promise.all([
+        apiJson("/api/edit-log?limit=500", {
+          fallbackError: "โหลดประวัติการแก้ไขไม่สำเร็จ",
+        }),
+        apiJson("/api/queries", { fallbackError: "โหลดรายชื่อ Query ไม่สำเร็จ" }).catch(() => ({
+          queries: [],
+        })),
+      ]);
+      setEdits(editsData.edits || []);
+      setQueryNames(
+        Object.fromEntries((queriesData.queries || []).map((q) => [q.id, q.name]))
+      );
     } catch (err) {
       setError(err.message);
     } finally {
@@ -169,6 +258,21 @@ function EditLogSection() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- setState runs after the fetch resolves
     load();
   }, [load]);
+
+  const updateSearch = (value) => {
+    setSearch(value);
+    setPage(1);
+  };
+  const updateTableFilter = (value) => {
+    setTableFilter(value);
+    setPage(1);
+  };
+  const updateQueryFilter = (value) => {
+    setQueryFilter(value);
+    setPage(1);
+  };
+
+  const queryNameOf = (entry) => queryNames[entry.queryId] || "";
 
   // A restore is itself an insert underneath, so undoing it is the same
   // "delete this row" action as undoing a plain add.
@@ -270,15 +374,75 @@ function EditLogSection() {
     }
   };
 
-  const totalPages = Math.max(1, Math.ceil(edits.length / PAGE_SIZE));
+  const filteredEdits = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return edits.filter((entry) => {
+      if (tableFilter && entry.table !== tableFilter) return false;
+      if (queryFilter && queryNameOf(entry) !== queryFilter) return false;
+      if (!needle) return true;
+      return [entry.actor, entry.table, entry.column, entry.pkValue, queryNameOf(entry)]
+        .some((field) => String(field ?? "").toLowerCase().includes(needle));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- queryNameOf reads queryNames, already a dep
+  }, [edits, search, tableFilter, queryFilter, queryNames]);
+
+  const tableOptions = useMemo(() => distinctOptions(edits, (entry) => entry.table), [edits]);
+  const queryOptions = useMemo(
+    () => distinctOptions(edits, (entry) => queryNameOf(entry)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- queryNameOf reads queryNames, already a dep
+    [edits, queryNames]
+  );
+
+  const totalPages = Math.max(1, Math.ceil(filteredEdits.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
-  const pageEdits = edits.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const pageEdits = filteredEdits.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   return (
     <SectionCard icon={<History size={15} className="text-red-600" />} title="ประวัติการแก้ไขข้อมูล">
       {error && (
         <div className="mb-3 rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
           {error}
+        </div>
+      )}
+      {edits.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[180px] flex-1">
+            <Search size={12} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-zinc-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => updateSearch(e.target.value)}
+              placeholder="ค้นหาใคร / ตาราง / แถว / คอลัมน์ / Query..."
+              className={`${filterInputClass} w-full pl-7`}
+            />
+          </div>
+          <select
+            value={tableFilter}
+            onChange={(e) => updateTableFilter(e.target.value)}
+            className={filterInputClass}
+          >
+            <option value="">ทุกตาราง</option>
+            {tableOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={queryFilter}
+            onChange={(e) => updateQueryFilter(e.target.value)}
+            className={filterInputClass}
+          >
+            <option value="">ทุก Query</option>
+            {queryOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <span className="text-[10px] font-bold text-zinc-400">
+            {filteredEdits.length.toLocaleString("th-TH")} รายการ
+          </span>
         </div>
       )}
       {loading ? (
@@ -289,6 +453,10 @@ function EditLogSection() {
         <p className="px-8 py-4 text-center text-xs font-semibold text-zinc-400">
           ยังไม่มีการแก้ไขข้อมูล
         </p>
+      ) : filteredEdits.length === 0 ? (
+        <p className="px-8 py-4 text-center text-xs font-semibold text-zinc-400">
+          ไม่พบรายการที่ตรงกับตัวกรอง
+        </p>
       ) : (
         <div className="overflow-x-auto rounded-sm border border-zinc-200">
           <table className="w-full border-collapse text-[11px]">
@@ -296,6 +464,7 @@ function EditLogSection() {
               <tr className="bg-zinc-100 text-left font-black text-zinc-500">
                 <th className="px-2 py-1.5">เวลา</th>
                 <th className="px-2 py-1.5">ใคร</th>
+                <th className="px-2 py-1.5">Query</th>
                 <th className="px-2 py-1.5">ตาราง</th>
                 <th className="px-2 py-1.5">แถว</th>
                 <th className="px-2 py-1.5">คอลัมน์</th>
@@ -313,6 +482,9 @@ function EditLogSection() {
                     })}
                   </td>
                   <td className="px-2 py-1.5 font-bold text-zinc-700">{entry.actor}</td>
+                  <td className="px-2 py-1.5 font-semibold text-zinc-600">
+                    {queryNameOf(entry) || "—"}
+                  </td>
                   <td className="px-2 py-1.5 font-mono text-zinc-600">{entry.table}</td>
                   <td className="px-2 py-1.5 font-mono text-zinc-600">
                     {entry.pkColumn}={entry.pkValue}
