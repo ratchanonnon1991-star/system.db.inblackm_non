@@ -21,6 +21,7 @@ import {
 import { apiJson } from "@/lib/api-json";
 import MissingNotice from "@/components/missing-notice";
 import ModalResizeHandle from "@/components/modal-resize-handle";
+import HueSlider from "@/components/hue-slider";
 import { useResizableModalWidth } from "@/lib/use-resizable-modal-width";
 import {
   evaluateFormula,
@@ -28,7 +29,7 @@ import {
   inferFormulaType,
   parseFormula,
 } from "@/lib/gamedb-formula";
-import { CELL_TONES, formatCell, TABLE_TONES } from "@/lib/gamedb-layout";
+import { formatCell, toneStyle } from "@/lib/gamedb-layout";
 import { extractSqlParams } from "@/lib/gamedb-sql-params";
 import { buildVisualLayout, buildVisualSelect, VISUAL_FILTER_PARAM_OPS } from "@/lib/gamedb-visual-query";
 
@@ -53,22 +54,6 @@ const BUILDER_RENDER_LABELS = {
   copy: "ปุ่มคัดลอก",
   link: "ลิงก์",
   email: "อีเมล",
-};
-
-const BUILDER_TONE_LABELS = {
-  "": "สีปกติ",
-  red: "แดง",
-  orange: "ส้ม",
-  amber: "อำพัน",
-  yellow: "เหลือง",
-  lime: "เขียวมะนาว",
-  green: "เขียว",
-  teal: "เขียวน้ำทะเล",
-  sky: "ฟ้า",
-  blue: "น้ำเงิน",
-  violet: "ม่วง",
-  pink: "ชมพู",
-  zinc: "เทา",
 };
 
 function builderColumnKind(column) {
@@ -924,17 +909,15 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                           <p className="text-[10px] font-black text-zinc-600">ชื่อ รูปแบบ และสีคอลัมน์</p>
                           <p className="text-[9px] font-semibold text-zinc-400">ตั้งค่าตรงนี้แล้วใช้งานได้ทันทีหลังสร้าง Query</p>
                         </div>
-                        <label className="block min-w-40">
+                        <div className="min-w-48">
                           <span className="mb-0.5 block text-[8px] font-black text-zinc-400">สีทั้งตาราง</span>
-                          <select
-                            value={tableTone}
-                            onChange={(e) => setTableTone(e.target.value)}
-                            className="h-8 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-2 text-[9px] font-bold outline-none focus:border-red-600"
+                          <div
+                            className="flex h-8 items-center rounded-sm border border-zinc-200 px-1.5"
+                            style={toneStyle(tableTone, "head") || undefined}
                           >
-                            <option value="">สีปกติ</option>
-                            {TABLE_TONES.map((tone) => <option key={tone} value={tone}>{BUILDER_TONE_LABELS[tone] || tone}</option>)}
-                          </select>
-                        </label>
+                            <HueSlider value={tableTone} onChange={setTableTone} allowSolid={false} />
+                          </div>
+                        </div>
                       </div>
                       <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
                         {settingColumns.map((column) => {
@@ -957,22 +940,28 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                                 >
                                   {Object.entries(BUILDER_RENDER_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                                 </select>
-                                <select
-                                  value={setting.bg || ""}
-                                  onChange={(e) => setColumnSettings((prev) => ({ ...prev, [column.key]: { ...prev[column.key], bg: e.target.value } }))}
-                                  className="h-8 rounded-sm border border-zinc-200 bg-white px-2 text-[9px] font-bold outline-none focus:border-red-600"
+                                <div
+                                  className="flex h-8 items-center rounded-sm border border-zinc-200 px-1.5"
+                                  style={toneStyle(setting.bg) || undefined}
+                                  title="สีพื้นเซลล์"
                                 >
-                                  <option value="">สีพื้นเซลล์</option>
-                                  {TABLE_TONES.map((tone) => <option key={tone} value={tone}>{BUILDER_TONE_LABELS[tone] || tone}</option>)}
-                                </select>
-                                <select
-                                  value={setting.headerBg || ""}
-                                  onChange={(e) => setColumnSettings((prev) => ({ ...prev, [column.key]: { ...prev[column.key], headerBg: e.target.value } }))}
-                                  className="h-8 rounded-sm border border-zinc-200 bg-white px-2 text-[9px] font-bold outline-none focus:border-red-600"
+                                  <HueSlider
+                                    value={setting.bg || ""}
+                                    onChange={(bg) => setColumnSettings((prev) => ({ ...prev, [column.key]: { ...prev[column.key], bg } }))}
+                                    allowSolid={false}
+                                  />
+                                </div>
+                                <div
+                                  className="flex h-8 items-center rounded-sm border border-zinc-200 px-1.5"
+                                  style={toneStyle(setting.headerBg, "head") || undefined}
+                                  title="สีหัวคอลัมน์"
                                 >
-                                  <option value="">สีหัวคอลัมน์</option>
-                                  {TABLE_TONES.map((tone) => <option key={tone} value={tone}>{BUILDER_TONE_LABELS[tone] || tone}</option>)}
-                                </select>
+                                  <HueSlider
+                                    value={setting.headerBg || ""}
+                                    onChange={(headerBg) => setColumnSettings((prev) => ({ ...prev, [column.key]: { ...prev[column.key], headerBg } }))}
+                                    allowSolid={false}
+                                  />
+                                </div>
                               </div>
                             </div>
                           );
@@ -1058,12 +1047,16 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                     <tr>
                       {testResult.columns.map((column) => {
                         const setting = effectiveColumnSettings[column.name] || {};
-                        const tone = CELL_TONES[setting.headerBg || tableTone];
                         return (
                           <th
                             key={column.key}
                             className="whitespace-nowrap border-b border-r border-zinc-200 px-2 py-1.5 text-left font-black last:border-r-0"
-                            style={{ backgroundColor: tone?.head || "#f4f4f5", color: tone?.headFg || tone?.fg || "#3f3f46" }}
+                            style={
+                              toneStyle(setting.headerBg || tableTone, "head") || {
+                                backgroundColor: "#f4f4f5",
+                                color: "#3f3f46",
+                              }
+                            }
                           >
                             {setting.label?.trim() || column.name}
                           </th>
@@ -1076,12 +1069,16 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                       <tr key={rowIndex}>
                         {testResult.columns.map((column, columnIndex) => {
                           const setting = effectiveColumnSettings[column.name] || {};
-                          const tone = CELL_TONES[setting.bg || tableTone];
                           return (
                             <td
                               key={column.key}
                               className="max-w-64 truncate border-b border-r border-zinc-100 px-2 py-1.5 font-semibold last:border-r-0"
-                              style={{ backgroundColor: tone?.bg || "#ffffff", color: tone?.fg || "#52525b" }}
+                              style={
+                                toneStyle(setting.bg || tableTone) || {
+                                  backgroundColor: "#ffffff",
+                                  color: "#52525b",
+                                }
+                              }
                               title={formatCell(row[columnIndex], column.type)}
                             >
                               {formatCell(row[columnIndex], column.type)}

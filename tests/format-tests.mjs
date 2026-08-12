@@ -5,7 +5,9 @@ import {
   buildHeaderGroups,
   daysUntil,
   hasHeaderGroups,
+  hueTokenOf,
   isEmptyFormat,
+  isHueToken,
   normalizeFormat,
   normalizeFormats,
   normalizeFreeze,
@@ -14,7 +16,9 @@ import {
   lookupsFromLayout,
   ruleMatches,
   toDate,
+  toneLabel,
   toneStyle,
+  toneTextColor,
   CELL_TONES,
   TABLE_TONES,
   RULE_TONES,
@@ -150,6 +154,38 @@ check("bar has no colour", toneStyle("bar"), null);
 check("no tone, no style", toneStyle(""), null);
 check("every tone has a hex bg", Object.values(CELL_TONES).every((t) => /^#[0-9a-f]{6}$/i.test(t.bg)), true);
 check("table themes omit solid tones", TABLE_TONES.some((tone) => tone.endsWith("Solid")), false);
+
+// hue-token tones: a continuous pick alongside the 16 named presets
+check("a hue token round-trips through hueTokenOf", hueTokenOf(210), "hue:210");
+check("a solid hue token is tagged", hueTokenOf(210, true), "hueSolid:210");
+check("a hue wraps past 360", hueTokenOf(370), "hue:10");
+check("a negative hue wraps positive", hueTokenOf(-10), "hue:350");
+ok("a hue token is recognised", isHueToken("hue:210"));
+ok("a solid hue token is recognised", isHueToken("hueSolid:210"));
+ok("a named preset is not a hue token", !isHueToken("red"));
+ok("garbage is not a hue token", !isHueToken("hue:abc"));
+ok("a pastel hue token has a style", toneStyle("hue:210") !== null);
+ok("a pastel hue token has a header style", toneStyle("hue:210", "head") !== null);
+ok("a solid hue token has a style", toneStyle("hueSolid:210") !== null);
+check("a hue token has ink for text colour", toneTextColor("hue:210") !== "", true);
+check("a hue token gets a generic label", toneLabel("hue:210"), "สีที่เลือกเอง");
+check("a named preset keeps its own label", toneLabel("red"), "แดงอ่อน");
+check("a hue-token background survives normalizeFormat", normalizeFormat({ bg: "hue:210" }).bg, "hue:210");
+check(
+  "a hue-token background survives sanitizeLayout",
+  sanitizeLayout({ formats: { c0: { bg: "hue:210" } } }).formats.c0.bg,
+  "hue:210"
+);
+check(
+  "a hue-token table theme survives sanitizeLayout",
+  sanitizeLayout({ tableTone: "hueSolid:90" }).tableTone,
+  "hueSolid:90"
+);
+check(
+  "a hue-token rule colour survives sanitizeLayout",
+  sanitizeLayout({ rules: [{ colId: "c0", op: ">", value: "1", tone: "hue:45" }] }).rules[0].tone,
+  "hue:45"
+);
 check("a known table theme survives", normalizeLayout({ tableTone: "sky" }).tableTone, "sky");
 check("an unknown table theme is dropped", normalizeLayout({ tableTone: "neon" }).tableTone, "");
 

@@ -12,6 +12,7 @@ import {
   lookupsFromLayout,
   PARAM_TYPES,
   REFRESH_CHOICES,
+  isValidTone,
   RULE_OPS,
   RULE_TONES,
   SUMMARY_KINDS,
@@ -101,7 +102,7 @@ export function sanitizeLayout(raw) {
             rule &&
             typeof rule.colId === "string" &&
             RULE_OPS.includes(rule.op) &&
-            RULE_TONES.includes(rule.tone)
+            isValidTone(rule.tone, RULE_TONES)
         )
         .slice(0, 40)
         .map((rule) => ({
@@ -216,7 +217,7 @@ export function sanitizeLayout(raw) {
     // or SQL text.
     formats: capEntries(normalizeFormats(layout.formats), 200),
     freeze: normalizeFreeze(layout.freeze),
-    tableTone: TABLE_TONES.includes(layout.tableTone) ? layout.tableTone : "",
+    tableTone: isValidTone(layout.tableTone, TABLE_TONES) ? layout.tableTone : "",
   };
 }
 

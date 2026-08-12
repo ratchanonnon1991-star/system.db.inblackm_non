@@ -161,6 +161,63 @@ export const TONE_NAMES = Object.keys(CELL_TONES);
 // available for individual cells and rules, where their stronger contrast is
 // useful without turning an entire query panel into one saturated block.
 export const TABLE_TONES = TONE_NAMES.filter((tone) => !tone.endsWith("Solid"));
+
+// A tone no longer has to be one of the 16 named presets above -- a pick can
+// also be a point on the hue wheel, encoded as "hue:210" (pastel, same
+// bg/head/fg weight as the presets) or "hueSolid:210" (the presets' *Solid
+// tones, generalized to any hue instead of only red/green/yellow/dark).
+// Encoded as a string (not an object) so it slots into the exact same
+// format.bg/rule.tone/etc string fields the 16 presets already used, and old
+// saved layouts that reference a preset by name keep meaning what they meant.
+const HUE_TOKEN = /^hue(Solid)?:(-?\d+(?:\.\d+)?)$/;
+
+export function isHueToken(tone) {
+  return typeof tone === "string" && HUE_TOKEN.test(tone);
+}
+
+export function hueTokenOf(hue, solid = false) {
+  const h = ((Math.round(Number(hue) || 0) % 360) + 360) % 360;
+  return `${solid ? "hueSolid" : "hue"}:${h}`;
+}
+
+/** A tone value worth keeping: one of the named presets, or a hue token.
+ * `named` narrows to a specific preset list (TONE_NAMES, TABLE_TONES,
+ * RULE_TONES) -- a hue token always passes regardless of which list, since
+ * the wheel has no "not in this list" concept the way named presets do.
+ * Exported so the server-side sanitizer validates saved layouts against the
+ * exact same rule instead of a second copy of it. */
+export function isValidTone(tone, named) {
+  return named.includes(tone) || isHueToken(tone);
+}
+
+/** The same {bg, fg, head, ink[, headFg]} shape CELL_TONES entries have,
+ * generated from a hue instead of looked up -- kept at the same lightness
+ * bands the presets use (pastel bg/head a step apart, a solid variant for
+ * strong contrast) so a picked hue looks like it belongs next to them. */
+function hueToTone(hue, solid) {
+  const h = ((Math.round(Number(hue) || 0) % 360) + 360) % 360;
+  if (solid) {
+    return {
+      bg: `hsl(${h} 72% 45%)`,
+      fg: "#ffffff",
+      head: `hsl(${h} 72% 37%)`,
+      headFg: "#ffffff",
+      ink: `hsl(${h} 65% 36%)`,
+    };
+  }
+  return {
+    bg: `hsl(${h} 80% 92%)`,
+    fg: `hsl(${h} 55% 32%)`,
+    head: `hsl(${h} 70% 84%)`,
+    ink: `hsl(${h} 55% 32%)`,
+  };
+}
+
+function toneEntry(tone) {
+  if (CELL_TONES[tone]) return CELL_TONES[tone];
+  const match = HUE_TOKEN.exec(tone);
+  return match ? hueToTone(match[2], Boolean(match[1])) : null;
+}
 // "bar" is not a colour — it draws a proportional fill behind the number.
 export const RULE_TONES = [...TONE_NAMES, "bar"];
 export const CELL_RENDERS = ["text", "link", "email", "chip", "copy"];
@@ -279,7 +336,7 @@ export function normalizeLayout(raw) {
               rule &&
               typeof rule.colId === "string" &&
               RULE_OPS.includes(rule.op) &&
-              RULE_TONES.includes(rule.tone)
+              isValidTone(rule.tone, RULE_TONES)
           )
           .map((rule) => ({
             colId: rule.colId,
@@ -306,7 +363,7 @@ export function normalizeLayout(raw) {
       : 0,
     formats: normalizeFormats(layout.formats),
     freeze: normalizeFreeze(layout.freeze),
-    tableTone: TABLE_TONES.includes(layout.tableTone) ? layout.tableTone : "",
+    tableTone: isValidTone(layout.tableTone, TABLE_TONES) ? layout.tableTone : "",
   };
 }
 
@@ -330,17 +387,17 @@ export const MAX_GROUP_LABEL = 60;
 export function normalizeFormat(raw) {
   const format = raw && typeof raw === "object" ? raw : {};
   return {
-    bg: TONE_NAMES.includes(format.bg) ? format.bg : "",
-    fg: TONE_NAMES.includes(format.fg) ? format.fg : "",
-    headerBg: TONE_NAMES.includes(format.headerBg) ? format.headerBg : "",
-    headerFg: TONE_NAMES.includes(format.headerFg) ? format.headerFg : "",
+    bg: isValidTone(format.bg, TONE_NAMES) ? format.bg : "",
+    fg: isValidTone(format.fg, TONE_NAMES) ? format.fg : "",
+    headerBg: isValidTone(format.headerBg, TONE_NAMES) ? format.headerBg : "",
+    headerFg: isValidTone(format.headerFg, TONE_NAMES) ? format.headerFg : "",
     render: CELL_RENDERS.includes(format.render) ? format.render : "text",
     wrap: format.wrap === true,
     align: CELL_ALIGNS.includes(format.align) ? format.align : "",
     // The band above the header. Columns sharing a label and sitting next to
     // each other are drawn as one cell spanning them.
     group: typeof format.group === "string" ? format.group.trim().slice(0, MAX_GROUP_LABEL) : "",
-    groupBg: TONE_NAMES.includes(format.groupBg) ? format.groupBg : "",
+    groupBg: isValidTone(format.groupBg, TONE_NAMES) ? format.groupBg : "",
   };
 }
 
@@ -361,7 +418,7 @@ export function isEmptyFormat(format) {
 /** Apply one group-header colour to every column that shares its group name. */
 export function applyGroupTone(formats, colId, groupBg) {
   const group = String(formats?.[colId]?.group || "").trim();
-  if (!group || (groupBg && !TONE_NAMES.includes(groupBg))) return formats;
+  if (!group || (groupBg && !isValidTone(groupBg, TONE_NAMES))) return formats;
   return Object.fromEntries(
     Object.entries(formats).map(([id, format]) => [
       id,
@@ -838,15 +895,23 @@ export function cellVisual(format, ruleTone = "") {
 
 /** A tone used as a text colour: what it looks like as ink, not as a fill. */
 export function toneTextColor(tone) {
-  return CELL_TONES[tone]?.ink || "";
+  return toneEntry(tone)?.ink || "";
 }
 
-/** Inline style for a tone, or null for "no tone"/the bar pseudo-tone. */
+/** Inline style for a tone, or null for "no tone"/the bar pseudo-tone. Covers
+ * both a named preset and a hue token -- see toneEntry. */
 export function toneStyle(tone, part = "cell") {
-  const entry = CELL_TONES[tone];
+  const entry = toneEntry(tone);
   if (!entry) return null;
   if (part === "head") return { backgroundColor: entry.head, color: entry.headFg || "#27272a" };
   return { backgroundColor: entry.bg, color: entry.fg };
+}
+
+/** A short label for a tone picker/legend: the preset's Thai name, or a
+ * generic label for a hue-token pick (which has no fixed name). */
+export function toneLabel(tone) {
+  if (TONE_LABELS[tone]) return TONE_LABELS[tone];
+  return isHueToken(tone) ? "สีที่เลือกเอง" : "";
 }
 
 const COLUMN_REF = /^\[(.+)\]$/;

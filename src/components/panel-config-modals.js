@@ -24,6 +24,7 @@ import {
 import { apiJson } from "@/lib/api-json";
 import MissingNotice from "@/components/missing-notice";
 import ModalResizeHandle from "@/components/modal-resize-handle";
+import HueSlider from "@/components/hue-slider";
 import { useResizableModalWidth } from "@/lib/use-resizable-modal-width";
 import { isSafeIdentifier, isSafeIdentifierPart } from "@/lib/gamedb-identifier";
 import { extractSqlParams } from "@/lib/gamedb-sql-params";
@@ -45,10 +46,9 @@ import {
   widgetForColumn,
   RULE_OP_LABELS,
   RULE_OPS,
-  RULE_TONES,
   TABLE_TONES,
-  TONE_LABELS,
   TONE_NAMES,
+  toneLabel,
   toneStyle,
   toneTextColor,
   VALUELESS_OPS,
@@ -1151,7 +1151,7 @@ export function RulesModal({ columns, rules, initialColId = null, onSave, onClos
                 className="rounded px-2 py-1 text-[10px] font-black"
                 style={toneStyle(rule.tone) || { backgroundColor: "#f4f4f5", color: "#3f3f46" }}
               >
-                {TONE_LABELS[rule.tone]}
+                {toneLabel(rule.tone)}
               </span>
               <span className="min-w-0 flex-1 truncate text-[11px] font-bold text-zinc-700">
                 {column?.label || rule.colId} {RULE_OP_LABELS[rule.op] || rule.op}{" "}
@@ -1210,18 +1210,26 @@ export function RulesModal({ columns, rules, initialColId = null, onSave, onClos
             }
             className={`${inputClass} sm:col-span-2 disabled:bg-zinc-100 disabled:text-zinc-400`}
           />
-          <select
-            value={form.tone}
-            onChange={(e) => setForm((prev) => ({ ...prev, tone: e.target.value }))}
-            className={inputClass}
-            style={toneStyle(form.tone) || undefined}
+          <div
+            className="flex h-9 flex-col justify-center gap-0.5 rounded-sm border border-zinc-200 px-1.5"
+            style={form.tone !== "bar" ? toneStyle(form.tone) || undefined : undefined}
           >
-            {RULE_TONES.map((tone) => (
-              <option key={tone} value={tone}>
-                {TONE_LABELS[tone]}
-              </option>
-            ))}
-          </select>
+            <HueSlider
+              value={form.tone === "bar" ? "" : form.tone}
+              onChange={(next) => setForm((prev) => ({ ...prev, tone: next || "hue:0" }))}
+              disabled={form.tone === "bar"}
+            />
+            <label className="flex items-center gap-1 text-[8px] font-bold text-zinc-400">
+              <input
+                type="checkbox"
+                checked={form.tone === "bar"}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, tone: e.target.checked ? "bar" : "hue:0" }))
+                }
+              />
+              แถบวัดระดับแทนสี
+            </label>
+          </div>
           <select
             value={form.scope}
             onChange={(e) => setForm((prev) => ({ ...prev, scope: e.target.value }))}
@@ -1270,6 +1278,10 @@ const RENDER_LABELS = {
 
 const ALIGN_LABELS = { "": "อัตโนมัติ", left: "ซ้าย", center: "กลาง", right: "ขวา" };
 
+// tones only ever arrives as TABLE_TONES (the whole-table theme picker,
+// pastel only) or the TONE_NAMES default (everything else, solids included)
+// -- kept as the signal for whether the solid toggle makes sense here,
+// rather than adding a whole extra prop every call site would have to pass.
 function ToneSelect({ value, onChange, label, part, tones = TONE_NAMES, disabled = false }) {
   // The text picker has to preview what it does — ink on the page — or a solid
   // tone shows as a red block and reads as a background.
@@ -1282,20 +1294,23 @@ function ToneSelect({ value, onChange, label, part, tones = TONE_NAMES, disabled
   return (
     <label className="block">
       <span className="mb-0.5 block text-[9px] font-black text-zinc-400">{label}</span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        disabled={disabled}
-        className="h-7 w-full rounded-sm border border-zinc-200 px-1 text-[10px] font-bold outline-none focus:border-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-        style={preview}
+      <div
+        className="flex h-7 items-center rounded-sm border border-zinc-200 px-1.5"
+        style={part !== "text" ? preview : undefined}
       >
-        <option value="">ไม่กำหนด</option>
-        {tones.map((tone) => (
-          <option key={tone} value={tone}>
-            {TONE_LABELS[tone]}
-          </option>
-        ))}
-      </select>
+        <span
+          className="min-w-0 flex-1 truncate text-[9px] font-bold"
+          style={part === "text" ? preview : undefined}
+        >
+          {value ? toneLabel(value) || value : "ไม่กำหนด"}
+        </span>
+        <HueSlider
+          value={value}
+          onChange={onChange}
+          allowSolid={tones !== TABLE_TONES}
+          disabled={disabled}
+        />
+      </div>
     </label>
   );
 }
@@ -1384,7 +1399,7 @@ export function FormatsModal({
           </select>
         </label>
         <span className="text-[10px] font-semibold text-zinc-400">
-          {theme ? `ใช้สี ${TONE_LABELS[theme]} กับทั้งตาราง` : "ยังไม่ได้เลือกสีประจำตาราง"}
+          {theme ? `ใช้สี ${toneLabel(theme)} กับทั้งตาราง` : "ยังไม่ได้เลือกสีประจำตาราง"}
         </span>
         <span className="text-[10px] font-semibold text-zinc-400">
           {touched > 0 ? `ตั้งรูปแบบไว้ ${touched} คอลัมน์` : "ยังไม่ได้ตั้งรูปแบบคอลัมน์ไหน"}
