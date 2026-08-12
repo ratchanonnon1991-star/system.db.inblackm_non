@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   Fragment,
@@ -410,7 +410,7 @@ function DraftRow({
   return (
     <tr className="bg-sky-50">
       <td
-        className="border border-zinc-200 bg-inherit px-1 py-1.5 text-center"
+        className="border border-[var(--cell-border)] bg-inherit px-1 py-1.5 text-center"
         style={freezeCount ? { position: "sticky", left: 0, zIndex: 2 } : undefined}
       >
         <span className="flex items-center justify-center gap-0.5">
@@ -440,7 +440,7 @@ function DraftRow({
         return (
           <td
             key={col.id}
-            className="border border-zinc-200 bg-inherit px-1 py-1"
+            className="border border-[var(--cell-border)] bg-inherit px-1 py-1"
             style={frozen ? { position: "sticky", left: freezeOffsets[cellIndex], zIndex: 2 } : undefined}
           >
             {editable ? (
@@ -462,7 +462,7 @@ function DraftRow({
           </td>
         );
       })}
-      {measured && <td className="border border-zinc-200 bg-inherit" />}
+      {measured && <td className="border border-[var(--cell-border)] bg-inherit" />}
     </tr>
   );
 }
@@ -658,6 +658,11 @@ export default function PanelTable({
   const [editingCell, setEditingCell] = useState(null);
   const tableBodyTone = toneStyle(layout.tableTone);
   const tableHeadTone = toneStyle(layout.tableTone, "head");
+  // Same tone the panel's own frame uses (see panelBorderColor in
+  // query-panel.js) -- falls back to the table theme, then to the default
+  // grey, so the grid lines read as part of the same themed card.
+  const gridBorderTone = toneStyle(layout.tableBorderTone, "head") || tableHeadTone;
+  const gridBorderColor = gridBorderTone?.backgroundColor || "#e4e4e7";
   const gameNameColumnIndex = columns.findIndex(
     (col) => col.kind === "base" && col.column?.name === "game"
   );
@@ -1065,7 +1070,7 @@ export default function PanelTable({
       style={rowTone || undefined}
     >
       <td
-        className="border border-zinc-200 bg-inherit px-1 py-1.5 text-center font-bold text-zinc-400"
+        className="border border-[var(--cell-border)] bg-inherit px-1 py-1.5 text-center font-bold text-zinc-400"
         style={freezeCount ? { position: "sticky", left: 0, zIndex: 2 } : undefined}
       >
         {onDrill || onDeleteRow ? (
@@ -1141,7 +1146,7 @@ export default function PanelTable({
             key={col.id}
             title={editable ? `${cell.text} — ดับเบิลคลิกเพื่อแก้ไข` : cell.text}
             onDoubleClick={() => startEdit(row, col, cellIndex)}
-            className={`relative border border-zinc-200 px-2 py-1.5 font-semibold ${
+            className={`relative border border-[var(--cell-border)] px-2 py-1.5 font-semibold ${
               format.wrap ? "whitespace-pre-wrap break-words align-top" : "truncate"
             } ${numeric && !format.align ? "font-mono tabular-nums" : ""} ${
               cellTone || changed ? "" : "bg-inherit"
@@ -1191,7 +1196,7 @@ export default function PanelTable({
           </td>
         );
       })}
-      {measured && <td className="border border-zinc-200 bg-inherit" />}
+      {measured && <td className="border border-[var(--cell-border)] bg-inherit" />}
     </tr>
     );
   };
@@ -1201,7 +1206,7 @@ export default function PanelTable({
       ref={scrollRef}
       onScroll={onScroll}
       className="min-h-0 overflow-auto border-t border-zinc-100"
-      style={{ height }}
+      style={{ height, "--cell-border": gridBorderColor }}
     >
       <table
         className="border-collapse text-[11px]"
@@ -1230,7 +1235,7 @@ export default function PanelTable({
           {headerGroups && (
             <tr className="bg-zinc-100">
               <th
-                className="sticky top-0 border border-zinc-200 bg-zinc-100"
+                className="sticky top-0 border border-[var(--cell-border)] bg-zinc-100"
                 style={{ height: GROUP_ROW_HEIGHT, ...(tableHeadTone || {}), ...(freezeCount ? { left: 0, zIndex: 21 } : { zIndex: 11 }) }}
               />
               {headerGroups.map((group, index) => {
@@ -1242,7 +1247,7 @@ export default function PanelTable({
                   <th
                     key={`${group.label}-${index}`}
                     colSpan={group.span}
-                    className={`sticky top-0 truncate border border-zinc-200 px-2 text-center text-[10px] font-black ${
+                    className={`sticky top-0 truncate border border-[var(--cell-border)] px-2 text-center text-[10px] font-black ${
                       tone ? "" : "bg-zinc-100 text-zinc-500"
                     }`}
                     style={{
@@ -1257,12 +1262,12 @@ export default function PanelTable({
                   </th>
                 );
               })}
-              {measured && <th className="sticky top-0 border border-zinc-200 bg-zinc-100" style={{ zIndex: 11, ...(tableHeadTone || {}) }} />}
+              {measured && <th className="sticky top-0 border border-[var(--cell-border)] bg-zinc-100" style={{ zIndex: 11, ...(tableHeadTone || {}) }} />}
             </tr>
           )}
           <tr className="bg-zinc-100">
             <th
-              className="sticky border border-zinc-200 bg-zinc-100 px-2 py-2 text-center font-black text-zinc-400"
+              className="sticky border border-[var(--cell-border)] bg-zinc-100 px-2 py-2 text-center font-black text-zinc-400"
               style={{ top: headerTop, ...(tableHeadTone || {}), ...(freezeCount ? { left: 0, zIndex: 20 } : { zIndex: 10 }) }}
             >
               #
@@ -1285,7 +1290,7 @@ export default function PanelTable({
                   onFocus={() => openColumnTools(col.id, index)}
                   onBlur={scheduleColumnToolsClose}
                   onKeyDown={columnToolsKeyDown(col.id)}
-                  className={`group sticky border border-zinc-200 px-2 py-1.5 text-left ${
+                  className={`group sticky border border-[var(--cell-border)] px-2 py-1.5 text-left ${
                     headTone ? "" : "bg-zinc-100"
                   }`}
                   style={{
@@ -1351,7 +1356,7 @@ export default function PanelTable({
             })}
             {measured && (
               <th
-                className="sticky border border-zinc-200 bg-zinc-100"
+                className="sticky border border-[var(--cell-border)] bg-zinc-100"
                 style={{ top: headerTop, zIndex: 10, ...(tableHeadTone || {}) }}
               />
             )}
@@ -1378,7 +1383,7 @@ export default function PanelTable({
             <tr style={tableBodyTone || undefined}>
               <td
                 colSpan={columns.length + (measured ? 2 : 1)}
-                className="border border-zinc-200 px-3 py-8 text-center font-semibold text-zinc-400"
+                className="border border-[var(--cell-border)] px-3 py-8 text-center font-semibold text-zinc-400"
               >
                 ไม่มีข้อมูล
               </td>
@@ -1398,7 +1403,7 @@ export default function PanelTable({
                       <tr className="bg-zinc-100/80" style={tableHeadTone || undefined}>
                         <td
                           colSpan={columns.length + (measured ? 2 : 1)}
-                          className="border border-zinc-200 px-2 py-1"
+                          className="border border-[var(--cell-border)] px-2 py-1"
                         >
                           <button
                             type="button"
@@ -1437,7 +1442,7 @@ export default function PanelTable({
           <tfoot>
             <tr className="bg-zinc-100 font-black" style={tableHeadTone || undefined}>
               <td
-                className="border border-zinc-200 bg-inherit px-2 py-1.5 text-center text-zinc-400"
+                className="border border-[var(--cell-border)] bg-inherit px-2 py-1.5 text-center text-zinc-400"
                 style={freezeCount ? { position: "sticky", left: 0, zIndex: 2 } : undefined}
               >
                 Σ
@@ -1445,7 +1450,7 @@ export default function PanelTable({
               {summaryValues.map((entry, index) => (
                 <td
                   key={columns[index].id}
-                  className={`border border-zinc-200 bg-inherit px-2 py-1.5 text-zinc-700 ${
+                  className={`border border-[var(--cell-border)] bg-inherit px-2 py-1.5 text-zinc-700 ${
                     columns[index].type === "number" ? "text-right font-mono tabular-nums" : ""
                   }`}
                   style={
@@ -1461,7 +1466,7 @@ export default function PanelTable({
                   ) : null}
                 </td>
               ))}
-              {measured && <td className="border border-zinc-200" />}
+              {measured && <td className="border border-[var(--cell-border)]" />}
             </tr>
           </tfoot>
         )}
