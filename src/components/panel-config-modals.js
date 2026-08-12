@@ -538,6 +538,19 @@ export function EditableSettingsModal({
   const touchedPkColumn = useRef(Boolean(editable?.pkColumn));
   const touchedColumns = useRef(new Set(Object.keys(editable?.columnMap || {})));
 
+  // pkColumn belongs to whichever pk it was resolved for — switching the key
+  // dropdown to a different result column (e.g. from "ซ้ำ/ไม่ซ้ำ" to "id")
+  // must not leave the old column's real name sitting there unchanged. Once
+  // saved settings are loaded (pkColumnFor starts at editable.pk), any further
+  // change to pk clears the box and lets the guesses below fill it back in.
+  const pkColumnFor = useRef(editable?.pk || "");
+  useEffect(() => {
+    if (pk === pkColumnFor.current) return;
+    pkColumnFor.current = pk;
+    touchedPkColumn.current = false;
+    setPkColumn("");
+  }, [pk]);
+
   useEffect(() => {
     if (touchedPkColumn.current || !pk) return;
     const fromSql = sqlAliasMap[pk];
