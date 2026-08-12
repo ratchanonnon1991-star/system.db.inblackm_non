@@ -96,8 +96,24 @@ ok("check: nothing was written",
   !log.some((entry) => /^\s*(UPDATE|INSERT|DELETE)/i.test(entry.text)));
 ok("check: every probe bound its parameters",
   log.filter((e) => /SELECT/i.test(e.text)).every((e) => Array.isArray(e.params)));
-ok("check: no probe interpolated the table name",
-  !log.some((e) => /SELECT/i.test(e.text) && e.text.includes("topup_entry")));
+// Every catalog *probe* -- the ones asking pg_class/pg_attribute/pg_index
+// "does this exist" -- searches by name via a bound parameter, so none of
+// them should ever embed the resolved table name as literal text. The one
+// exception is the sample-row preview: that is a real `SELECT ... FROM
+// "topup"."topup_entry"` against the table itself, and a FROM target cannot
+// be a bound parameter -- same reasoning buildUpdateSql already relies on,
+// just quoted instead of interpolated. Excluded here by name deliberately,
+// not because the rule stopped mattering.
+const catalogProbes = log.filter(
+  (e) => /SELECT/i.test(e.text) && !e.text.includes('FROM "topup"."topup_entry"')
+);
+ok("check: no catalog probe interpolated the table name",
+  !catalogProbes.some((e) => e.text.includes("topup_entry")));
+ok("check: the sample preview reads from the table by its quoted identifier",
+  log.some((e) => e.text.includes('FROM "topup"."topup_entry"')));
+ok("check: sample preview selects the key plus writable columns",
+  out.sample.columns.join(",") === "id,rank,note");
+ok("check: sample preview shape survives an empty table", Array.isArray(out.sample.rows));
 
 // A read-only connection is reported, and the rest still runs
 reset();

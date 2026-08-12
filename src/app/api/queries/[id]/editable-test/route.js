@@ -38,8 +38,8 @@ export async function POST(request, { params }) {
       return jsonError("ฐานข้อมูลของ Query นี้ถูกลบไปแล้ว", 409);
     }
 
-    const { checks, sql } = await checkEditable({ editable, connection });
-    return jsonOk({ checks, sql, groups, ok: checks.every((check) => check.ok) });
+    const { checks, sql, sample } = await checkEditable({ editable, connection });
+    return jsonOk({ checks, sql, groups, sample, ok: checks.every((check) => check.ok) });
   } catch (err) {
     return handleApiError(err, "ทดสอบการตั้งค่าไม่สำเร็จ");
   }

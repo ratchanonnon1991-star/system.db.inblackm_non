@@ -793,6 +793,43 @@ export function EditableSettingsModal({
               ))}
             </ul>
 
+            {testResult.sample && testResult.sample.rows.length > 0 && (
+              <div>
+                <p className="mb-1 text-[10px] font-black text-zinc-500">
+                  ตัวอย่างข้อมูลจริง {testResult.sample.rows.length} แถวล่าสุด — ดูก่อนเปิดสิทธิ์เขียนจริง
+                </p>
+                <div className="overflow-x-auto rounded-sm border border-zinc-200">
+                  <table className="w-full text-[10px]">
+                    <thead className="bg-zinc-100 text-left font-black text-zinc-500">
+                      <tr>
+                        {testResult.sample.columns.map((column) => (
+                          <th key={column} className="px-2 py-1 font-mono">
+                            {column}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100">
+                      {testResult.sample.rows.map((row, index) => (
+                        <tr key={index}>
+                          {testResult.sample.columns.map((column) => (
+                            <td key={column} className="max-w-[160px] truncate px-2 py-1 text-zinc-700">
+                              {row[column] === null || row[column] === undefined
+                                ? "—"
+                                : String(row[column])}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            {testResult.sample && testResult.sample.rows.length === 0 && (
+              <p className="text-[10px] font-semibold text-zinc-400">ตารางนี้ยังไม่มีข้อมูลให้ดูตัวอย่าง</p>
+            )}
+
             {(testResult.groups || []).length > 0 && (
               <div>
                 <button

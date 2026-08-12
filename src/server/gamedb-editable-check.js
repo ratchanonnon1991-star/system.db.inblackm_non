@@ -294,11 +294,35 @@ export async function checkEditable({ editable, connection }) {
       );
     }
 
+    // A few real rows so an admin can see what they are about to let Staff
+    // write to before turning the write on -- read-only, same LIMIT 3 whether
+    // the config is otherwise clean or not, so it still shows the table even
+    // when a column is misconfigured.
+    let sample = null;
+    if (pkInfo) {
+      try {
+        const sampleColumns = [pkColumn, ...resolved.length ? editable.columns : []]
+          .map((column) => (column === pkColumn ? pkColumn : realColumnOf(editable, column)))
+          .filter((real, index, all) => byName.has(real) && all.indexOf(real) === index)
+          .slice(0, 6);
+        const selectList = sampleColumns.map((real) => quoteIdentifier(real)).join(", ");
+        const preview = await client.query(
+          `SELECT ${selectList} FROM ${quoteIdentifier(editable.table)}
+            ORDER BY ${quoteIdentifier(pkColumn)} DESC LIMIT 3`,
+          []
+        );
+        sample = { columns: sampleColumns, rows: preview.rows };
+      } catch {
+        // Preview only -- if it fails for any reason, the checks above still
+        // stand on their own.
+      }
+    }
+
     const sql = editable.columns.map((column) => buildUpdateSql(editable, column));
-    return { checks, sql };
+    return { checks, sql, sample };
   } catch (err) {
     checks.push({ ok: false, label: "ตรวจสอบไม่สำเร็จ", detail: err.message });
-    return { checks, sql: [] };
+    return { checks, sql: [], sample: null };
   } finally {
     client.release();
   }
