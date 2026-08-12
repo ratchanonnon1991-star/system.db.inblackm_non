@@ -187,8 +187,28 @@ export function hueTokenOf(hue, solid = false) {
  * the wheel has no "not in this list" concept the way named presets do.
  * Exported so the server-side sanitizer validates saved layouts against the
  * exact same rule instead of a second copy of it. */
+// The hue wheel can't reach true black/white/grey (it's saturation-only), and
+// dragging a slider to an exact brand colour is fiddly -- so a pick can also
+// be a literal hex colour from the browser's own colour dialog, encoded as
+// "rgb:#rrggbb". Same reasoning as the hue token: a string, so it slots into
+// the same fields, and old layouts that never saw one are unaffected.
+const RGB_TOKEN = /^rgb:(#[0-9a-fA-F]{6})$/;
+
+export function isRgbToken(tone) {
+  return typeof tone === "string" && RGB_TOKEN.test(tone);
+}
+
+export function rgbTokenOf(hex) {
+  const match = /^#?([0-9a-fA-F]{6})$/.exec(String(hex || "").trim());
+  return match ? `rgb:#${match[1].toLowerCase()}` : "";
+}
+
+export function isCustomTone(tone) {
+  return isHueToken(tone) || isRgbToken(tone);
+}
+
 export function isValidTone(tone, named) {
-  return named.includes(tone) || isHueToken(tone);
+  return named.includes(tone) || isCustomTone(tone);
 }
 
 /** The same {bg, fg, head, ink[, headFg]} shape CELL_TONES entries have,
@@ -214,10 +234,25 @@ function hueToTone(hue, solid) {
   };
 }
 
+// Perceived brightness (ITU-R BT.601) decides whether text on this exact
+// colour reads better in white or near-black -- same trick browsers use for
+// their own colour-input contrast, cheap enough to run on every render.
+function rgbToTone(hex) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const bright = (r * 299 + g * 587 + b * 114) / 1000;
+  const light = bright > 150;
+  const fg = light ? "#18181b" : "#ffffff";
+  return { bg: hex, fg, head: hex, headFg: fg, ink: light ? "#18181b" : hex };
+}
+
 function toneEntry(tone) {
   if (CELL_TONES[tone]) return CELL_TONES[tone];
-  const match = HUE_TOKEN.exec(tone);
-  return match ? hueToTone(match[2], Boolean(match[1])) : null;
+  const hueMatch = HUE_TOKEN.exec(tone);
+  if (hueMatch) return hueToTone(hueMatch[2], Boolean(hueMatch[1]));
+  const rgbMatch = RGB_TOKEN.exec(tone);
+  return rgbMatch ? rgbToTone(rgbMatch[1]) : null;
 }
 // "bar" is not a colour — it draws a proportional fill behind the number.
 export const RULE_TONES = [...TONE_NAMES, "bar"];
@@ -915,7 +950,7 @@ export function toneStyle(tone, part = "cell") {
  * generic label for a hue-token pick (which has no fixed name). */
 export function toneLabel(tone) {
   if (TONE_LABELS[tone]) return TONE_LABELS[tone];
-  return isHueToken(tone) ? "สีที่เลือกเอง" : "";
+  return isCustomTone(tone) ? "สีที่เลือกเอง" : "";
 }
 
 const COLUMN_REF = /^\[(.+)\]$/;

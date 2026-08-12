@@ -8,6 +8,8 @@ import {
   hueTokenOf,
   isEmptyFormat,
   isHueToken,
+  isRgbToken,
+  rgbTokenOf,
   normalizeFormat,
   normalizeFormats,
   normalizeFreeze,
@@ -185,6 +187,26 @@ check(
   "a hue-token rule colour survives sanitizeLayout",
   sanitizeLayout({ rules: [{ colId: "c0", op: ">", value: "1", tone: "hue:45" }] }).rules[0].tone,
   "hue:45"
+);
+check("rgbTokenOf normalises a hex colour", rgbTokenOf("#000000"), "rgb:#000000");
+check("rgbTokenOf accepts a hex without the leading #", rgbTokenOf("ABCDEF"), "rgb:#abcdef");
+check("rgbTokenOf rejects garbage", rgbTokenOf("not-a-colour"), "");
+check("isRgbToken recognises an rgb token", isRgbToken("rgb:#000000"), true);
+check("isRgbToken rejects a hue token", isRgbToken("hue:210"), false);
+check("black is a valid tone via rgb token", toneStyle("rgb:#000000")?.backgroundColor, "#000000");
+check("black text colour reads white", toneStyle("rgb:#000000")?.color, "#ffffff");
+check("white text colour reads dark", toneStyle("rgb:#ffffff")?.color, "#18181b");
+check("toneTextColor works for an rgb token", toneTextColor("rgb:#000000"), "#000000");
+check("toneLabel calls an rgb token a custom pick", toneLabel("rgb:#000000"), "สีที่เลือกเอง");
+check(
+  "an rgb token survives normalizeLayout",
+  normalizeLayout({ tableTone: "rgb:#123456" }).tableTone,
+  "rgb:#123456"
+);
+check(
+  "an rgb token survives sanitizeLayout",
+  sanitizeLayout({ formats: { c0: { bg: "rgb:#000000" } } }).formats.c0.bg,
+  "rgb:#000000"
 );
 check("a known table theme survives", normalizeLayout({ tableTone: "sky" }).tableTone, "sky");
 check("an unknown table theme is dropped", normalizeLayout({ tableTone: "neon" }).tableTone, "");
