@@ -50,6 +50,10 @@ export function getPoolForConnection() {
   return { connect: async () => client() };
 }
 
+// Routed through the same log/responder/nextRows machinery as
+// getPoolForConnection's client -- no module currently under test called
+// getPool().query() and relied on it always answering empty, so unifying the
+// two does not change any existing suite's behaviour.
 export function getPool() {
-  return { query: async () => ({ rows: [], rowCount: 0 }) };
+  return client();
 }

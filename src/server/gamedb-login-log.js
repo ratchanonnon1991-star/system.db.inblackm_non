@@ -72,6 +72,45 @@ export async function countRecentFailedLogins({ username, ip, since }) {
   };
 }
 
+// Same two thresholds the login route's brute-force guard blocks at (see
+// countRecentFailedLogins) -- shared here so the "someone is being blocked"
+// alert below can never drift from what actually gets blocked.
+export const MAX_ATTEMPTS_PER_USERNAME = 8;
+export const MAX_ATTEMPTS_PER_IP = 30;
+export const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+
+/** Usernames/IPs currently at or past the brute-force guard's threshold --
+ * i.e. actually being blocked right now, not just active. Surfaced on /log
+ * so an admin who opens it notices an attack in progress instead of only
+ * ever seeing it after the fact, one row at a time, in the full list. */
+export async function listLoginAlerts(since = new Date(Date.now() - RATE_LIMIT_WINDOW_MS)) {
+  await ensureSchema();
+  const [byUsername, byIp] = await Promise.all([
+    getPool().query(
+      `SELECT lower(username) AS key, COUNT(*) AS count
+         FROM gamedb_login_log
+        WHERE success = false AND created_at > $1 AND username <> ''
+        GROUP BY lower(username)
+       HAVING COUNT(*) >= $2
+        ORDER BY count DESC`,
+      [since, MAX_ATTEMPTS_PER_USERNAME]
+    ),
+    getPool().query(
+      `SELECT ip AS key, COUNT(*) AS count
+         FROM gamedb_login_log
+        WHERE success = false AND created_at > $1 AND ip <> ''
+        GROUP BY ip
+       HAVING COUNT(*) >= $2
+        ORDER BY count DESC`,
+      [since, MAX_ATTEMPTS_PER_IP]
+    ),
+  ]);
+  return [
+    ...byUsername.rows.map((row) => ({ type: "username", key: row.key, count: Number(row.count) })),
+    ...byIp.rows.map((row) => ({ type: "ip", key: row.key, count: Number(row.count) })),
+  ];
+}
+
 export async function listLogins(limit = 100) {
   await ensureSchema();
   const result = await getPool().query(

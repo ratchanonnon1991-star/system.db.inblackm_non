@@ -9,6 +9,7 @@ import {
   Loader2,
   LogIn,
   Search,
+  ShieldAlert,
   XCircle,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
@@ -70,6 +71,7 @@ function Pager({ page, totalPages, onChange }) {
  * revert about someone having tried to sign in. */
 function LoginLogSection() {
   const [logins, setLogins] = useState([]);
+  const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [page, setPage] = useState(1);
@@ -83,7 +85,10 @@ function LoginLogSection() {
         const data = await apiJson("/api/login-log?limit=500", {
           fallbackError: "โหลดประวัติการเข้าสู่ระบบไม่สำเร็จ",
         });
-        if (!cancelled) setLogins(data.logins || []);
+        if (!cancelled) {
+          setLogins(data.logins || []);
+          setAlerts(data.alerts || []);
+        }
       } catch (err) {
         if (!cancelled) setError(err.message);
       } finally {
@@ -130,6 +135,22 @@ function LoginLogSection() {
       {error && (
         <div className="mb-3 rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
           {error}
+        </div>
+      )}
+      {alerts.length > 0 && (
+        <div className="mb-3 space-y-1.5 rounded-sm border border-red-300 bg-red-50 px-3 py-2.5">
+          <p className="flex items-center gap-1.5 text-[11px] font-black text-red-700">
+            <ShieldAlert size={13} /> พบความพยายามเข้าสู่ระบบผิดพลาดถี่ผิดปกติในช่วง 10 นาทีล่าสุด —
+            ระบบบล็อกให้อัตโนมัติแล้ว
+          </p>
+          <ul className="space-y-0.5 pl-[19px] text-[10px] font-bold text-red-600">
+            {alerts.map((alert) => (
+              <li key={`${alert.type}:${alert.key}`}>
+                {alert.type === "username" ? "username" : "IP"} &quot;{alert.key}&quot; — ผิด{" "}
+                {alert.count} ครั้ง
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       {logins.length > 0 && (

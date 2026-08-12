@@ -6,7 +6,13 @@ import {
 } from "@/lib/session";
 import { verifyPassword } from "@/server/passwords";
 import { findUserByUsername } from "@/server/users-repository";
-import { countRecentFailedLogins, recordLogin } from "@/server/gamedb-login-log";
+import {
+  countRecentFailedLogins,
+  MAX_ATTEMPTS_PER_IP,
+  MAX_ATTEMPTS_PER_USERNAME,
+  RATE_LIMIT_WINDOW_MS,
+  recordLogin,
+} from "@/server/gamedb-login-log";
 import { requestMeta } from "@/lib/request-meta";
 import {
   clientIp,
@@ -32,10 +38,9 @@ async function recordLoginSafely(entry) {
 // account is caught by the tighter one; one attacker cycling through many
 // usernames from one IP (credential stuffing) is caught by the looser one,
 // kept loose enough that a shared office NAT address does not lock everyone
-// out over normal typos.
-const MAX_ATTEMPTS_PER_USERNAME = 8;
-const MAX_ATTEMPTS_PER_IP = 30;
-const WINDOW_MS = 10 * 60 * 1000;
+// out over normal typos. Thresholds live in gamedb-login-log.js, shared with
+// the /log page's "someone is being blocked right now" alert so the two can
+// never disagree about what counts as blocked.
 
 export async function POST(request) {
   try {
@@ -67,7 +72,7 @@ export async function POST(request) {
     const recent = await countRecentFailedLogins({
       username,
       ip,
-      since: new Date(Date.now() - WINDOW_MS),
+      since: new Date(Date.now() - RATE_LIMIT_WINDOW_MS),
     });
     if (recent.byUsername >= MAX_ATTEMPTS_PER_USERNAME || recent.byIp >= MAX_ATTEMPTS_PER_IP) {
       return jsonError("พยายามเข้าสู่ระบบบ่อยเกินไป ลองใหม่ใน 10 นาที", 429);
