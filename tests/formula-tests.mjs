@@ -193,8 +193,8 @@ check("COALESCE follows its arguments", typeOf('COALESCE("a", "b")'), "text");
 
 // --- how the panel renders each type -------------------------------------
 check("a blank formula result shows as a dash", formatCell(null, "number"), "—");
-check("a true shows as a tick", formatCell(true, "boolean"), "✓");
-check("a false shows as a cross", formatCell(false, "boolean"), "✗");
+check("a true shows as Yes", formatCell(true, "boolean"), "Yes");
+check("a false shows as No", formatCell(false, "boolean"), "No");
 check("text passes through", formatCell("ปกติ", "text"), "ปกติ");
 ok("a date result formats as a date", /\d/.test(formatCell(run('ADDDAYS("28/06/2026", 1)'), "date")));
 

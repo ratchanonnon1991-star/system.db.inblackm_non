@@ -236,7 +236,7 @@ function WidgetControl({
         onKeyDown={onKeyDown}
         className={`${className} text-left`}
       >
-        {checked ? "✓ ใช่ — กดเพื่อเปลี่ยน" : "✗ ไม่ใช่ — กดเพื่อเปลี่ยน"}
+        {checked ? "Yes — กดเพื่อเปลี่ยน" : "No — กดเพื่อเปลี่ยน"}
       </button>
     );
   }

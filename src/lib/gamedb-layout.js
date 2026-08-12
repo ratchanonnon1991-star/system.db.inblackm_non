@@ -842,7 +842,7 @@ export function formatCell(value, type) {
       ? String(value)
       : date.toLocaleDateString("th-TH");
   }
-  if (type === "boolean") return value ? "✓" : "✗";
+  if (type === "boolean") return value ? "Yes" : "No";
   return String(value);
 }
 
