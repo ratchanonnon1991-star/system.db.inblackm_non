@@ -13,6 +13,7 @@ import {
   PARAM_TYPES,
   REFRESH_CHOICES,
   isValidTone,
+  MAX_SORT_COLUMNS,
   RULE_OPS,
   RULE_TONES,
   SUMMARY_KINDS,
@@ -168,13 +169,24 @@ export function sanitizeLayout(raw) {
           y: sanitizeStringArray(layout.chart.y).slice(0, 6),
         }
       : null;
-  const sort =
-    layout.sort && typeof layout.sort === "object" && layout.sort.colId
-      ? {
-          colId: String(layout.sort.colId).slice(0, 200),
-          dir: layout.sort.dir === "desc" ? "desc" : "asc",
-        }
-      : null;
+  // Same shape normalizeSort produces, plus the length cap every other
+  // string field here gets -- kept as its own pass rather than importing
+  // normalizeSort so the 200-char cap on colId only has to be stated once.
+  const sortList = Array.isArray(layout.sort)
+    ? layout.sort
+    : layout.sort && typeof layout.sort === "object"
+      ? [layout.sort]
+      : [];
+  const seenSortCols = new Set();
+  const sort = [];
+  for (const entry of sortList) {
+    if (!entry || typeof entry !== "object" || !entry.colId) continue;
+    const colId = String(entry.colId).slice(0, 200);
+    if (seenSortCols.has(colId)) continue;
+    seenSortCols.add(colId);
+    sort.push({ colId, dir: entry.dir === "desc" ? "desc" : "asc" });
+    if (sort.length >= MAX_SORT_COLUMNS) break;
+  }
   // Merge, lookups and drill only name another saved query and its columns;
   // the join and the navigation happen in the browser, so nothing here reaches
   // SQL. `lookupsFromLayout` also folds a legacy `merge` into a one-item

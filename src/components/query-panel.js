@@ -1164,13 +1164,24 @@ export default function QueryPanel({
       );
     }
 
-    if (layout.sort) {
-      const index = visibleColumns.findIndex((col) => col.id === layout.sort.colId);
-      if (index !== -1) {
-        const direction = layout.sort.dir === "desc" ? -1 : 1;
-        rows = [...rows].sort(
-          (a, b) => direction * compareCells(a.cells[index]?.raw, b.cells[index]?.raw)
-        );
+    if (layout.sort?.length) {
+      // Each entry is a tiebreaker for the ones before it -- the first
+      // non-zero comparison along the list wins, same as an ORDER BY with
+      // several columns.
+      const plan = layout.sort
+        .map((entry) => ({
+          index: visibleColumns.findIndex((col) => col.id === entry.colId),
+          direction: entry.dir === "desc" ? -1 : 1,
+        }))
+        .filter((entry) => entry.index !== -1);
+      if (plan.length) {
+        rows = [...rows].sort((a, b) => {
+          for (const { index, direction } of plan) {
+            const result = direction * compareCells(a.cells[index]?.raw, b.cells[index]?.raw);
+            if (result !== 0) return result;
+          }
+          return 0;
+        });
       }
     }
     return rows;

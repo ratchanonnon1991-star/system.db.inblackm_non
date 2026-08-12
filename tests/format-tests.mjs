@@ -15,6 +15,7 @@ import {
   normalizeFreeze,
   normalizeLayout,
   normalizeLookups,
+  normalizeSort,
   lookupsFromLayout,
   ruleMatches,
   toDate,
@@ -271,6 +272,42 @@ check(
   "a hue-token table border theme survives sanitizeLayout",
   sanitizeLayout({ tableBorderTone: "hue:120" }).tableBorderTone,
   "hue:120"
+);
+
+// --- multi-column sort -----------------------------------------------------
+check(
+  "normalizeSort accepts the pre-multi-sort single-object shape",
+  normalizeSort({ colId: "a", dir: "desc" }),
+  [{ colId: "a", dir: "desc" }]
+);
+check(
+  "normalizeSort keeps array order -- priority is position",
+  normalizeSort([{ colId: "a" }, { colId: "b", dir: "desc" }]),
+  [{ colId: "a", dir: "asc" }, { colId: "b", dir: "desc" }]
+);
+check("normalizeSort drops a duplicate colId, keeping the first", normalizeSort([
+  { colId: "a", dir: "asc" },
+  { colId: "a", dir: "desc" },
+]), [{ colId: "a", dir: "asc" }]);
+check("normalizeSort drops an entry with no colId", normalizeSort([{ dir: "asc" }]), []);
+check("normalizeSort caps the list length", normalizeSort([
+  { colId: "a" }, { colId: "b" }, { colId: "c" }, { colId: "d" }, { colId: "e" }, { colId: "f" },
+]).length, 5);
+check("an empty layout has no sort", normalizeLayout({}).sort, []);
+check(
+  "normalizeLayout upgrades a legacy single-sort layout",
+  normalizeLayout({ sort: { colId: "a", dir: "desc" } }).sort,
+  [{ colId: "a", dir: "desc" }]
+);
+check(
+  "the sanitizer keeps multi-column sort in order",
+  sanitizeLayout({ sort: [{ colId: "a" }, { colId: "b", dir: "desc" }] }).sort,
+  [{ colId: "a", dir: "asc" }, { colId: "b", dir: "desc" }]
+);
+check(
+  "the sanitizer upgrades a legacy single-sort layout too",
+  sanitizeLayout({ sort: { colId: "a", dir: "desc" } }).sort,
+  [{ colId: "a", dir: "desc" }]
 );
 
 // JSON only ever produces plain objects, so this is what a hostile body looks

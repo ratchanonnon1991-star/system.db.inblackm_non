@@ -914,12 +914,26 @@ export default function PanelTable({
     }));
   };
 
-  const toggleSort = (colId) => {
+  // Plain click: this column alone, cycling asc -> desc -> off, the same as
+  // before multi-sort existed. Shift-click: add/cycle/drop this column as a
+  // tiebreaker after whatever is already sorted, leaving those untouched --
+  // an ORDER BY built one column at a time instead of typed in as a list.
+  const toggleSort = (colId, additive) => {
     mutateLayout((prev) => {
-      const current = prev.sort;
-      if (!current || current.colId !== colId) return { ...prev, sort: { colId, dir: "asc" } };
-      if (current.dir === "asc") return { ...prev, sort: { colId, dir: "desc" } };
-      return { ...prev, sort: null };
+      const current = prev.sort || [];
+      const index = current.findIndex((entry) => entry.colId === colId);
+      if (!additive) {
+        if (index === -1) return { ...prev, sort: [{ colId, dir: "asc" }] };
+        if (current[index].dir === "asc") return { ...prev, sort: [{ colId, dir: "desc" }] };
+        return { ...prev, sort: [] };
+      }
+      if (index === -1) return { ...prev, sort: [...current, { colId, dir: "asc" }] };
+      if (current[index].dir === "asc") {
+        const next = [...current];
+        next[index] = { colId, dir: "desc" };
+        return { ...prev, sort: next };
+      }
+      return { ...prev, sort: current.filter((entry) => entry.colId !== colId) };
     });
   };
 
@@ -1321,7 +1335,8 @@ export default function PanelTable({
               #
             </th>
             {columns.map((col, index) => {
-              const sorted = layout.sort && layout.sort.colId === col.id ? layout.sort.dir : null;
+              const sortIndex = (layout.sort || []).findIndex((entry) => entry.colId === col.id);
+              const sorted = sortIndex !== -1 ? layout.sort[sortIndex].dir : null;
               const summaryKind = layout.summary[col.id];
               const headTone =
                 toneStyle(columnStyling[index].format.headerBg, "head") || tableHeadTone;
@@ -1352,14 +1367,14 @@ export default function PanelTable({
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
-                      onClick={() => toggleSort(col.id)}
+                      onClick={(event) => toggleSort(col.id, event.shiftKey)}
                       disabled={!canCustomizeLayout}
                       className={`flex min-w-0 flex-1 items-center gap-1 truncate text-left font-black ${
                         headTone || headerInk ? "" : HEADER_TONE[col.kind] || "text-zinc-700"
                       }`}
                       title={
                         canCustomizeLayout
-                          ? columnTooltip(col)
+                          ? `${columnTooltip(col)} · shift+คลิกเพื่อเรียงซ้อนหลายคอลัมน์`
                           : `${columnTooltip(col)} · layout ถูกล็อกโดย template`
                       }
                     >
@@ -1374,6 +1389,11 @@ export default function PanelTable({
                         )}
                       {sorted === "asc" && <ArrowUp size={10} className="shrink-0" />}
                       {sorted === "desc" && <ArrowDown size={10} className="shrink-0" />}
+                      {sorted && layout.sort.length > 1 && (
+                        <span className="shrink-0 text-[8px] font-black opacity-70">
+                          {sortIndex + 1}
+                        </span>
+                      )}
                       {summaryKind && (
                         <span className="shrink-0 rounded bg-zinc-200 px-1 text-[8px] font-black text-zinc-500">
                           {SUMMARY_LABELS[summaryKind]}

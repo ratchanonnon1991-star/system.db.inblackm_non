@@ -21,7 +21,7 @@ export const EMPTY_LAYOUT = {
   rules: [],
   summary: {},
   chart: null,
-  sort: null,
+  sort: [],
   merge: null,
   lookups: [],
   drill: null,
@@ -276,6 +276,28 @@ export const INPUT_WIDGETS = [
 export const LOOKUP_LIMIT = 500;
 export const CELL_ALIGNS = ["", "left", "center", "right"];
 export const MAX_FREEZE = 5;
+// Past this many tiebreaker columns the sort is not communicating anything a
+// human can hold in their head anyway.
+export const MAX_SORT_COLUMNS = 5;
+
+/** A saved layout's `sort` -- always an array, `colId` first then dir, in
+ * priority order. Accepts the pre-multi-sort shape too (a lone {colId, dir}
+ * object) so a layout saved before this existed still sorts the same way. */
+export function normalizeSort(sort) {
+  const list = Array.isArray(sort) ? sort : sort && typeof sort === "object" ? [sort] : [];
+  const seen = new Set();
+  const out = [];
+  for (const entry of list) {
+    if (!entry || typeof entry !== "object" || !entry.colId) continue;
+    const colId = String(entry.colId);
+    if (seen.has(colId)) continue;
+    seen.add(colId);
+    out.push({ colId, dir: entry.dir === "desc" ? "desc" : "asc" });
+    if (out.length >= MAX_SORT_COLUMNS) break;
+  }
+  return out;
+}
+
 export const SUMMARY_KINDS = ["sum", "avg", "min", "max", "count"];
 export const REFRESH_CHOICES = [0, 15, 30, 60, 300, 900];
 
@@ -336,10 +358,7 @@ export function normalizeLayout(raw) {
           y: Array.isArray(layout.chart.y) ? layout.chart.y.map(String) : [],
         }
       : null;
-  const sort =
-    layout.sort && typeof layout.sort === "object" && layout.sort.colId
-      ? { colId: String(layout.sort.colId), dir: layout.sort.dir === "desc" ? "desc" : "asc" }
-      : null;
+  const sort = normalizeSort(layout.sort);
   const merge = normalizeMerge(layout.merge);
   const lookups = lookupsFromLayout(layout);
   const drill = normalizeDrill(layout.drill);
