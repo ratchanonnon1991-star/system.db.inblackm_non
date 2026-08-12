@@ -13,11 +13,13 @@ const SCHEMA_SQL = `
     a.attgenerated <> '' AS generated_column,
     pg_catalog.has_column_privilege(c.oid, a.attnum, 'SELECT') AS can_select,
     pg_catalog.has_column_privilege(c.oid, a.attnum, 'UPDATE') AS can_update,
-    COALESCE(pk.position, 0) AS primary_key_position
+    COALESCE(pk.position, 0) AS primary_key_position,
+    pg_get_expr(d.adbin, d.adrelid) AS column_default
   FROM pg_catalog.pg_class c
   JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
   JOIN pg_catalog.pg_attribute a
     ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+  LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
   LEFT JOIN LATERAL (
     SELECT key_position AS position
     FROM pg_catalog.pg_index i,
@@ -119,6 +121,11 @@ export function mapSchemaRows(rows, allowWrite) {
       generated: Boolean(row.generated_column),
       canSelect: Boolean(row.can_select),
       databaseCanUpdate: Boolean(row.can_update),
+      // Modern `GENERATED ... AS IDENTITY` sets identity_column directly; the
+      // older `SERIAL` sugar instead just leaves a DEFAULT nextval(...) --
+      // both mean the same thing to whoever is filling in an "add row" form:
+      // leave it blank, the database numbers it.
+      autoIncrement: Boolean(row.identity_column) || /^nextval\(/.test(row.column_default || ""),
     });
   }
 

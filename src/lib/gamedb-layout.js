@@ -270,6 +270,12 @@ export const INPUT_WIDGETS = [
   "lookup",
   "textarea",
   "checkbox",
+  // Same rendering panel-table.js's WidgetControl already had (a nullable
+  // true/false/unset dropdown, distinct from "checkbox" which has no unset
+  // state) -- just never reachable from the config UI or savable, since it
+  // was missing from this list and normalizeInputs falls back to "text" for
+  // anything not in it.
+  "boolean",
 ];
 // How many rows a lookup dropdown will read. Past this it stops being a
 // dropdown and wants a search box, which is a different feature.
@@ -621,6 +627,24 @@ export function widgetForColumn(column) {
     default:
       return "text";
   }
+}
+
+// Postgres's own type name, not the query-result classification above --
+// richer (it tells time apart from datetime, which a result column's type
+// never does) since it comes straight from schema introspection
+// (pg_catalog.format_type) rather than the smaller set a query result is
+// bucketed into. Used to guess a real DB column's input widget before an
+// admin has configured one, in EditableSettingsModal.
+export function widgetForPgType(pgType) {
+  const type = String(pgType || "").toLowerCase();
+  if (type === "boolean") return "boolean";
+  if (/^(integer|smallint|bigint|numeric|real|double precision|decimal|money)/.test(type)) {
+    return "number";
+  }
+  if (type.startsWith("timestamp")) return "datetime";
+  if (type.startsWith("time")) return "time";
+  if (type === "date") return "date";
+  return "text";
 }
 
 // lookup = { table, valueColumn, labelColumn } — the dropdown is the rows of

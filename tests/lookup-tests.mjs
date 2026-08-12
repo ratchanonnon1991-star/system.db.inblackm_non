@@ -3,11 +3,13 @@
 import { fetchLookupOptions } from "@/server/gamedb-lookup.js";
 import { log, reset } from "@/lib/db.js";
 import {
+  INPUT_WIDGETS,
   matchChoice,
   matchOption,
   normalizeInputs,
   normalizeLookup,
   parseOption,
+  widgetForPgType,
 } from "@/lib/gamedb-layout.js";
 import { sanitizeLayout } from "@/server/gamedb-layout-sanitizer.js";
 
@@ -82,6 +84,30 @@ check(
   "topup.game"
 );
 check("an input with no lookup has none", normalizeInputs([{ column: "a" }])[0].lookup, null);
+check(
+  "boolean is a real, savable widget -- not silently downgraded to text",
+  normalizeInputs([{ column: "a", widget: "boolean" }])[0].widget,
+  "boolean"
+);
+check("boolean is in the widget allowlist", INPUT_WIDGETS.includes("boolean"), true);
+
+// --- widgetForPgType: guessing an "add row" widget from the real DB type ---
+check("boolean type", widgetForPgType("boolean"), "boolean");
+check("integer type", widgetForPgType("integer"), "number");
+check("bigint type", widgetForPgType("bigint"), "number");
+check("numeric(12,2) type keeps its precision suffix but still matches", widgetForPgType("numeric(12,2)"), "number");
+check("date type", widgetForPgType("date"), "date");
+check("timestamp without time zone", widgetForPgType("timestamp without time zone"), "datetime");
+check("timestamp with time zone", widgetForPgType("timestamp with time zone"), "datetime");
+check(
+  "time without time zone is its own widget, not folded into datetime",
+  widgetForPgType("time without time zone"),
+  "time"
+);
+check("character varying(255) falls back to text", widgetForPgType("character varying(255)"), "text");
+check("uuid falls back to text (still editable, just no special widget)", widgetForPgType("uuid"), "text");
+check("jsonb falls back to text", widgetForPgType("jsonb"), "text");
+check("an empty/unknown type falls back to text", widgetForPgType(""), "text");
 
 // --- what the sanitizer lets through -------------------------------------
 const base = {

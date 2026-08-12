@@ -187,6 +187,22 @@ check("schema rows are grouped by table", tables.length, 1);
 check("primary key order is preserved", tables[0].primaryKey, ["id"]);
 check("primary key is shown as read-only", tables[0].columns[0].editable, false);
 check("ordinary updateable column is editable", tables[0].columns[1].editable, true);
+check("a modern IDENTITY column is flagged auto-increment", tables[0].columns[0].autoIncrement, true);
+check("an ordinary column is not auto-increment", tables[0].columns[1].autoIncrement, false);
+
+const serialRows = [
+  {
+    schema_name: "public", table_name: "packages", column_name: "id", data_type: "integer",
+    nullable: false, identity_column: false, generated_column: false, can_select: true,
+    can_update: true, primary_key_position: 1,
+    column_default: "nextval('packages_id_seq'::regclass)",
+  },
+];
+check(
+  "a legacy SERIAL column (DEFAULT nextval, no IDENTITY) is also flagged auto-increment",
+  mapSchemaRows(serialRows, true)[0].columns[0].autoIncrement,
+  true
+);
 
 tables = mapSchemaRows(rows, false);
 check("app read-only flag overrides database UPDATE privilege", tables[0].columns[1].editable, false);

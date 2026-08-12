@@ -45,6 +45,7 @@ import {
   PARAM_TYPES,
   resolveInputDefault,
   widgetForColumn,
+  widgetForPgType,
   RULE_OP_LABELS,
   RULE_OPS,
   TABLE_TONES,
@@ -443,6 +444,15 @@ const WIDGET_LABELS = {
   lookup: "เลือกจากอีกตาราง (FK)",
   textarea: "ข้อความหลายบรรทัด",
   checkbox: "ใช่ / ไม่ใช่",
+  boolean: "จริง / เท็จ (เว้นว่างได้)",
+};
+
+// Presets shown as buttons for a date/time/datetime default, instead of
+// expecting an admin to already know "@today" is a magic token worth typing.
+const DEFAULT_VALUE_PRESETS = {
+  date: [{ value: "@today", label: "วันที่ปัจจุบัน" }],
+  datetime: [{ value: "@now", label: "วันที่และเวลาปัจจุบัน" }],
+  time: [{ value: "@time", label: "เวลาปัจจุบัน" }],
 };
 
 /** Which table/rows this query is allowed to write back to. */
@@ -586,15 +596,26 @@ export function EditableSettingsModal({
       prev.includes(name) ? prev.filter((item) => item !== name) : [...prev, name]
     );
 
-  const inputFor = (name) =>
-    inputs.find((input) => input.column === name) || {
+  const schemaColumnFor = (name) =>
+    matchedTable?.columns.find((column) => column.name === realColumn(name));
+
+  const inputFor = (name) => {
+    const existing = inputs.find((input) => input.column === name);
+    if (existing) return existing;
+    // Nobody has configured this column yet -- guess from the real database
+    // type instead of just defaulting to a plain text box every time (a date
+    // column that opens as "ข้อความ" needs fixing by hand on every single
+    // column, every single query).
+    const schemaColumn = schemaColumnFor(name);
+    return {
       column: name,
-      widget: "text",
+      widget: schemaColumn ? widgetForPgType(schemaColumn.type) : "text",
       options: [],
       lookup: null,
       defaultValue: "",
       required: false,
     };
+  };
 
   // The options are one comma-separated line, and the parsed list cannot be the
   // value of the box that produces it: parsing on every keystroke drops the
@@ -616,6 +637,31 @@ export function EditableSettingsModal({
         (a, b) => columns.indexOf(a.column) - columns.indexOf(b.column)
       );
     });
+
+  // The guess in inputFor is display-only until something persists it --
+  // otherwise touching *any* other field for the column (e.g. just the
+  // "required" box) would capture whatever inputFor happened to return at
+  // that instant into `inputs`, which is fine once inputFor guesses
+  // correctly, but the guess also needs to land in `inputs` on its own for a
+  // column nobody touches at all, since the weaker runtime fallback
+  // (widgetForColumn, by query-result type) cannot tell a bare "time" column
+  // from anything else. Only fills columns the admin has not deliberately
+  // set a widget for themselves.
+  const touchedInputWidget = useRef(new Set((editable?.inputs || []).map((input) => input.column)));
+  useEffect(() => {
+    if (!matchedTable) return;
+    for (const name of columns) {
+      if (touchedInputWidget.current.has(name)) continue;
+      const schemaColumn = schemaColumnFor(name);
+      if (!schemaColumn) continue;
+      const guessedWidget = widgetForPgType(schemaColumn.type);
+      const current = inputs.find((input) => input.column === name);
+      if (current && current.widget === guessedWidget) continue;
+      if (guessedWidget === "text" && !current) continue;
+      updateInput(name, { widget: guessedWidget });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchedTable, columns, columnMap]);
 
   const pkInResult = !pk || columnNames.includes(pk);
   // The commonest way to get this wrong is the capitalisation of an alias, so
@@ -1000,6 +1046,8 @@ export function EditableSettingsModal({
           <div className="space-y-2">
             {columns.map((name) => {
               const input = inputFor(name);
+              const schemaColumn = schemaColumnFor(name);
+              const presets = DEFAULT_VALUE_PRESETS[input.widget] || [];
               return (
                 <div key={name} className="rounded-sm border border-zinc-200 px-2.5 py-2">
                   <div className="mb-1.5 grid grid-cols-2 items-center gap-2">
@@ -1051,10 +1099,19 @@ export function EditableSettingsModal({
                       />
                     )}
                   </div>
+                  {schemaColumn?.autoIncrement && (
+                    <p className="mb-1.5 text-[10px] font-semibold leading-relaxed text-emerald-700">
+                      ฐานข้อมูลเติมค่านี้ให้อัตโนมัติเป็นลำดับ (auto-increment) — เว้นว่างไว้ตอนเพิ่มแถวได้เลย
+                      ไม่ต้องกรอก
+                    </p>
+                  )}
                   <div className="grid gap-2 sm:grid-cols-2">
                     <select
                       value={input.widget}
-                      onChange={(e) => updateInput(name, { widget: e.target.value })}
+                      onChange={(e) => {
+                        touchedInputWidget.current.add(name);
+                        updateInput(name, { widget: e.target.value });
+                      }}
                       className="h-8 w-full rounded-sm border border-zinc-200 px-1.5 text-[10px] font-bold outline-none focus:border-red-600"
                     >
                       {INPUT_WIDGETS.map((widget) => (
@@ -1072,6 +1129,46 @@ export function EditableSettingsModal({
                       />
                       ต้องกรอก (ตอนเพิ่มแถว)
                     </label>
+                    {input.widget !== "lookup" && (
+                      <div className="sm:col-span-2">
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            value={input.defaultValue}
+                            onChange={(e) => updateInput(name, { defaultValue: e.target.value })}
+                            placeholder={
+                              schemaColumn?.autoIncrement
+                                ? "ไม่ต้องตั้งค่าเริ่มต้น (auto-increment)"
+                                : "ค่าเริ่มต้น (ตอนเพิ่มแถว) — เว้นว่าง = ไม่ตั้ง"
+                            }
+                            className="h-8 w-full rounded-sm border border-zinc-200 px-1.5 text-[10px] font-semibold outline-none focus:border-red-600"
+                          />
+                          {presets.map((preset) => (
+                            <button
+                              key={preset.value}
+                              type="button"
+                              onClick={() => updateInput(name, { defaultValue: preset.value })}
+                              className={`h-8 shrink-0 whitespace-nowrap rounded-sm border px-2 text-[10px] font-black transition ${
+                                input.defaultValue === preset.value
+                                  ? "border-red-600 bg-red-600 text-white"
+                                  : "border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100"
+                              }`}
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
+                          {input.defaultValue && (
+                            <button
+                              type="button"
+                              onClick={() => updateInput(name, { defaultValue: "" })}
+                              className="h-8 shrink-0 rounded-sm border border-zinc-200 bg-white px-2 text-[10px] font-bold text-zinc-400 transition hover:bg-zinc-50"
+                            >
+                              ล้าง
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
                     {input.widget === "select" && (
                       <input
                         type="text"
