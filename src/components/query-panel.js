@@ -79,6 +79,8 @@ import {
 } from "@/components/panel-config-modals";
 import PanelTable from "@/components/panel-table";
 import PanelChart from "@/components/panel-chart";
+import ModalResizeHandle from "@/components/modal-resize-handle";
+import { useResizableModalWidth } from "@/lib/use-resizable-modal-width";
 
 // One shared empty object, so a panel with no lookup fields does not hand its
 // children a new identity on every render.
@@ -511,6 +513,8 @@ export default function QueryPanel({
   // today) -- "touched" compares against this, not against blank, so
   // cancelling an untouched auto-filled draft doesn't ask to confirm.
   const draftInitialRef = useRef({});
+  const { width: paramsModalWidth, startResize: startParamsModalResize, resizing: paramsModalResizing } =
+    useResizableModalWidth(672);
 
   const effectiveParams = useMemo(
     () => resolveParams(layout, paramNames),
@@ -1885,6 +1889,12 @@ export default function QueryPanel({
   const chartHeight = docked ? dockedChartHeight : panel.height;
   const panelHeaderTone = toneStyle(layout.tableTone, "head");
   const panelBorderColor = panelHeaderTone?.backgroundColor;
+  // The table's own rows already tint to this tone (see tableBodyTone in
+  // panel-table.js) -- without this, the card's own frame around them (the
+  // toolbar strip aside) stayed plain white, so a themed table's colour
+  // stopped right at the table's edge instead of reading as one themed card.
+  const panelBodyTone = toneStyle(layout.tableTone);
+  const panelBodyColor = panelBodyTone?.backgroundColor;
 
   return (
     <section
@@ -1906,6 +1916,7 @@ export default function QueryPanel({
               width: panel.width,
             }),
         ...(panelBorderColor ? { borderColor: panelBorderColor } : {}),
+        ...(panelBodyColor ? { backgroundColor: panelBodyColor } : {}),
       }}
       className={`flex min-w-0 flex-col border border-zinc-200 bg-white shadow-sm transition-shadow ${
         panelDrag || frameDrag
@@ -2463,9 +2474,11 @@ export default function QueryPanel({
               onClick={() => setModal(null)}
             >
             <div
-              className="flex max-h-[85vh] w-full max-w-2xl flex-col gap-2 overflow-y-auto rounded-sm bg-white p-4 shadow-xl"
+              className="relative flex max-h-[85vh] w-full flex-col gap-2 overflow-y-auto rounded-sm bg-white p-4 shadow-xl"
+              style={{ maxWidth: paramsModalWidth }}
               onClick={(e) => e.stopPropagation()}
             >
+              <ModalResizeHandle onPointerDown={startParamsModalResize} active={paramsModalResizing} />
               <div className="mb-1 flex items-center justify-between gap-2">
                 <span className="flex items-center gap-1.5 text-sm font-black text-zinc-700">
                   <SlidersHorizontal size={15} className="text-red-600" /> ตัวกรอง Query

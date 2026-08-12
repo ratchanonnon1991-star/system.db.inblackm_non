@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import MissingNotice from "@/components/missing-notice";
+import ModalResizeHandle from "@/components/modal-resize-handle";
+import { useResizableModalWidth } from "@/lib/use-resizable-modal-width";
 import {
   evaluateFormula,
   extractFormulaRefs,
@@ -97,6 +99,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
   );
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const { width: modalWidth, startResize, resizing } = useResizableModalWidth(896);
   const [testResult, setTestResult] = useState(null);
   const [error, setError] = useState("");
   const [schemaData, setSchemaData] = useState(null);
@@ -430,7 +433,11 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-sm bg-white p-5 shadow-xl">
+      <div
+        className="relative flex max-h-[90vh] w-full flex-col rounded-sm bg-white p-5 shadow-xl"
+        style={{ maxWidth: modalWidth }}
+      >
+        <ModalResizeHandle onPointerDown={startResize} active={resizing} />
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-black">
             {isEdit ? "แก้ไข Query" : isDuplicate ? "ทำสำเนา Query" : "เพิ่ม Query ใหม่"}
@@ -1174,6 +1181,7 @@ export function ComputedColumnModal({
   // Empty until touched, so the type follows the formula while the user is
   // still writing it and stops the moment they choose one themselves.
   const [typeChoice, setTypeChoice] = useState(initialColumn?.type || "");
+  const { width: modalWidth, startResize, resizing } = useResizableModalWidth(512);
 
   const validation = useMemo(() => {
     if (!formula.trim()) return { ok: false, message: "", type: "number" };
@@ -1203,7 +1211,11 @@ export function ComputedColumnModal({
       {/* The help text and the column chips make this the tallest of the
           settings forms, so it scrolls inside the frame rather than running off
           the bottom of a short window. */}
-      <div className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-y-auto rounded-sm bg-white p-5 shadow-xl">
+      <div
+        className="relative flex max-h-[90vh] w-full flex-col overflow-y-auto rounded-sm bg-white p-5 shadow-xl"
+        style={{ maxWidth: modalWidth }}
+      >
+        <ModalResizeHandle onPointerDown={startResize} active={resizing} />
         <div className="mb-4 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-sm font-black">
             <Calculator size={15} className="text-red-600" />
@@ -1358,6 +1370,7 @@ export function UsersModal({ me, onClose }) {
   const [roleFilter, setRoleFilter] = useState("all");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 12;
+  const { width: modalWidth, startResize, resizing } = useResizableModalWidth(768);
 
   // A flat scroll of a couple hundred rows is where "find the one account"
   // stops being findable by eye -- search + role narrow it back down.
@@ -1495,7 +1508,11 @@ export function UsersModal({ me, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-sm bg-white p-5 shadow-xl">
+      <div
+        className="relative flex max-h-[90vh] w-full flex-col rounded-sm bg-white p-5 shadow-xl"
+        style={{ maxWidth: modalWidth }}
+      >
+        <ModalResizeHandle onPointerDown={startResize} active={resizing} />
         <div className="mb-4 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-sm font-black">
             <Users size={15} className="text-red-600" /> จัดการผู้ใช้
@@ -1799,6 +1816,7 @@ export function ConnectionsModal({ connections, onClose, onChanged }) {
   // save separately. Key 0 is the primary connection from .env.
   const [flags, setFlags] = useState({});
   const [flagsTarget, setFlagsTarget] = useState(0);
+  const { width: modalWidth, startResize, resizing } = useResizableModalWidth(768);
 
   const loadFlags = useCallback(async () => {
     try {
@@ -1946,7 +1964,11 @@ export function ConnectionsModal({ connections, onClose, onChanged }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-sm bg-white p-5 shadow-xl">
+      <div
+        className="relative flex max-h-[90vh] w-full flex-col rounded-sm bg-white p-5 shadow-xl"
+        style={{ maxWidth: modalWidth }}
+      >
+        <ModalResizeHandle onPointerDown={startResize} active={resizing} />
         <div className="mb-4 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-sm font-black">
             <Server size={15} className="text-red-600" /> จัดการฐานข้อมูล (PostgreSQL)

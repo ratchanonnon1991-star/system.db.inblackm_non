@@ -23,6 +23,8 @@ import {
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import MissingNotice from "@/components/missing-notice";
+import ModalResizeHandle from "@/components/modal-resize-handle";
+import { useResizableModalWidth } from "@/lib/use-resizable-modal-width";
 import { isSafeIdentifier, isSafeIdentifierPart } from "@/lib/gamedb-identifier";
 import { extractSqlParams } from "@/lib/gamedb-sql-params";
 import { buildVisualInsert } from "@/lib/gamedb-visual-query";
@@ -73,9 +75,14 @@ function ModalShell({
   onRemove = null,
   removeLabel = "ลบการตั้งค่านี้",
 }) {
+  const { width, startResize, resizing } = useResizableModalWidth(576);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-xl flex-col rounded-sm bg-white p-5 shadow-xl">
+      <div
+        className="relative flex max-h-[90vh] w-full flex-col rounded-sm bg-white p-5 shadow-xl"
+        style={{ maxWidth: width }}
+      >
+        <ModalResizeHandle onPointerDown={startResize} active={resizing} />
         <div className="mb-4 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-sm font-black">
             {icon} {title}
