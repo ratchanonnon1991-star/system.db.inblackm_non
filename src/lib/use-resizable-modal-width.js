@@ -15,7 +15,7 @@ export function useResizableModalWidth(defaultWidth, { min = 420, max } = {}) {
   // The original baselines were comfortable for short forms but cramped the
   // table/configuration modals, forcing users to resize almost every time.
   // `w-full` and the overlay padding still keep this inside narrow screens.
-  const initialWidth = Math.min(defaultWidth + 256, 1200);
+  const initialWidth = Math.min(defaultWidth + 380, 1200);
   const [width, setWidth] = useState(initialWidth);
   const [resizing, setResizing] = useState(false);
   const dragRef = useRef(null);
