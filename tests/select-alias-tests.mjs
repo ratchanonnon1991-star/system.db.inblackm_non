@@ -59,6 +59,22 @@ check(
   "c"
 );
 
+check(
+  "a CTE's own SELECT is not mistaken for the outer query's",
+  parseSelectAliases(`WITH cte AS (SELECT wrong_col AS "Y" FROM x) SELECT c AS "Y" FROM cte`).Y,
+  "c"
+);
+check(
+  "a CTE's FROM does not end the outer SELECT list early",
+  parseSelectAliases(`WITH cte AS (SELECT 1 FROM dual) SELECT a AS "A", b AS "B" FROM cte`),
+  { A: "a", B: "b" }
+);
+check(
+  "a column named from_date does not get mistaken for the FROM keyword",
+  parseSelectAliases(`SELECT from_date AS "D", x_col AS "X" FROM t`),
+  { D: "from_date", X: "x_col" }
+);
+
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);
 process.exit(failures.length ? 1 : 0);

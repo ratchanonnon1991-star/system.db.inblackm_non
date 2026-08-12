@@ -130,28 +130,48 @@ const ALIAS_ITEM =
  * for every SELECT-list item shaped that way; anything computed or joined in
  * is simply absent from the map rather than guessed at.
  */
+// A boundary check for a keyword found at index i in `lower` -- rejects a
+// match inside a longer identifier ("isSelected", "unfrom") the same way
+// `\b` would, without pulling in a regex for something this simple.
+function wordAt(lower, i, len) {
+  const before = lower[i - 1];
+  const after = lower[i + len];
+  return (!before || /\s/.test(before)) && (!after || /[\s(]/.test(after));
+}
+
 export function parseSelectAliases(sql) {
   const src = String(sql || "");
   const masked = stripSqlLiterals(src);
   const lower = masked.toLowerCase();
-  const selectAt = lower.indexOf("select");
+
+  // The outer SELECT, not a CTE's: `WITH cte AS (SELECT ...) SELECT ... FROM
+  // ...` has its own SELECT sitting inside the CTE's parens, at depth > 0, so
+  // tracking depth from the very start of the statement instead of jumping
+  // straight to the first "select" is what keeps this one single scan
+  // pointed at the query's real result columns.
+  let depth = 0;
+  let selectAt = -1;
+  for (let i = 0; i < masked.length; i += 1) {
+    const ch = masked[i];
+    if (ch === "(") depth += 1;
+    else if (ch === ")") depth -= 1;
+    else if (depth === 0 && lower.startsWith("select", i) && wordAt(lower, i, 6)) {
+      selectAt = i;
+      break;
+    }
+  }
   if (selectAt === -1) return {};
 
-  // The first top-level FROM after SELECT -- depth tracked over the masked
-  // text so a FROM inside a subquery's parens does not end the list early.
-  let depth = 0;
+  // The first top-level FROM after that SELECT -- same depth tracking so a
+  // FROM inside a subquery's parens does not end the list early.
   let fromAt = -1;
   for (let i = selectAt + 6; i < masked.length; i += 1) {
     const ch = masked[i];
     if (ch === "(") depth += 1;
     else if (ch === ")") depth -= 1;
-    else if (depth === 0 && lower.startsWith("from", i)) {
-      const before = lower[i - 1];
-      const after = lower[i + 4];
-      if ((!before || /\s/.test(before)) && (!after || /\s/.test(after))) {
-        fromAt = i;
-        break;
-      }
+    else if (depth === 0 && lower.startsWith("from", i) && wordAt(lower, i, 4)) {
+      fromAt = i;
+      break;
     }
   }
   if (fromAt === -1) return {};

@@ -965,11 +965,24 @@ export function EditableSettingsModal({
                         className="h-8 w-full rounded-sm border border-zinc-200 px-1.5 font-mono text-[10px] font-semibold outline-none focus:border-red-600"
                       >
                         <option value="">— เลือกคอลัมน์จริงในตาราง —</option>
-                        {matchedTable.columns.map((column) => (
-                          <option key={column.name} value={column.name}>
-                            {column.name}
-                          </option>
-                        ))}
+                        {/* Identity/generated columns Postgres fills in itself — offering
+                            them as an UPDATE target would just produce one it rejects. */}
+                        {matchedTable.columns
+                          .filter((column) => !column.identity && !column.generated)
+                          .map((column) => (
+                            <option key={column.name} value={column.name}>
+                              {column.name}
+                            </option>
+                          ))}
+                        {/* A value saved before the table was recognised, or one this
+                            schema fetch doesn't know about, must stay visible instead
+                            of silently vanishing from the list. */}
+                        {realColumn(name) &&
+                          !matchedTable.columns.some((column) => column.name === realColumn(name)) && (
+                            <option value={realColumn(name)}>
+                              {realColumn(name)} (ไม่พบในตารางนี้)
+                            </option>
+                          )}
                       </select>
                     ) : (
                       <input
