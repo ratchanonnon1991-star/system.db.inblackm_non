@@ -6,7 +6,7 @@ import {
 } from "@/lib/session";
 import { verifyPassword } from "@/server/passwords";
 import { findUserByUsername } from "@/server/users-repository";
-import { recordLogin } from "@/server/gamedb-login-log";
+import { countRecentFailedLogins, recordLogin } from "@/server/gamedb-login-log";
 import { requestMeta } from "@/lib/request-meta";
 import {
   clientIp,
@@ -25,28 +25,17 @@ async function recordLoginSafely(entry) {
   }
 }
 
-// In-memory brute-force guard: max attempts per username within the window.
-// Good enough for a single PM2 instance; resets on process restart.
-const MAX_ATTEMPTS = 8;
+// Brute-force guard, counted straight from gamedb_login_log rather than an
+// in-memory Map: a Map resets on every PM2 restart/deploy (an attacker could
+// just wait one out) and never saw attempts spread across many usernames
+// from one address. Two thresholds -- one attacker hammering a single
+// account is caught by the tighter one; one attacker cycling through many
+// usernames from one IP (credential stuffing) is caught by the looser one,
+// kept loose enough that a shared office NAT address does not lock everyone
+// out over normal typos.
+const MAX_ATTEMPTS_PER_USERNAME = 8;
+const MAX_ATTEMPTS_PER_IP = 30;
 const WINDOW_MS = 10 * 60 * 1000;
-const attempts = new Map();
-
-function tooManyAttempts(key) {
-  const now = Date.now();
-  // Nothing else ever removes a username that was tried once and abandoned, so
-  // expired windows are swept here — otherwise a run through a username list
-  // leaves an entry per name for as long as the process lives.
-  for (const [name, entry] of attempts) {
-    if (now > entry.resetAt) attempts.delete(name);
-  }
-  const entry = attempts.get(key);
-  if (!entry) {
-    attempts.set(key, { count: 1, resetAt: now + WINDOW_MS });
-    return false;
-  }
-  entry.count += 1;
-  return entry.count > MAX_ATTEMPTS;
-}
 
 export async function POST(request) {
   try {
@@ -62,11 +51,12 @@ export async function POST(request) {
       console.error("Turnstile is enabled but its site key or secret key is missing");
       return jsonError("ระบบตรวจสอบความปลอดภัยยังไม่พร้อม กรุณาติดต่อผู้ดูแล", 503);
     }
+    const ip = clientIp(request);
     if (turnstile.enabled) {
       const accepted = await verifyTurnstile({
         secretKey: turnstile.secretKey,
         token: body.turnstileToken,
-        ip: clientIp(request),
+        ip,
         allowedHostnames: turnstile.allowedHostnames,
       });
       if (!accepted) {
@@ -74,7 +64,12 @@ export async function POST(request) {
       }
     }
 
-    if (tooManyAttempts(username.toLowerCase())) {
+    const recent = await countRecentFailedLogins({
+      username,
+      ip,
+      since: new Date(Date.now() - WINDOW_MS),
+    });
+    if (recent.byUsername >= MAX_ATTEMPTS_PER_USERNAME || recent.byIp >= MAX_ATTEMPTS_PER_IP) {
       return jsonError("พยายามเข้าสู่ระบบบ่อยเกินไป ลองใหม่ใน 10 นาที", 429);
     }
 
@@ -89,7 +84,6 @@ export async function POST(request) {
       return jsonError("username หรือรหัสผ่านไม่ถูกต้อง", 401);
     }
 
-    attempts.delete(username.toLowerCase());
     await recordLoginSafely({
       username: user.username,
       success: true,

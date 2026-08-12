@@ -23,15 +23,17 @@ export function clientIp(request) {
   if (cloudflare) return cloudflare;
   const realIp = request.headers.get("x-real-ip")?.trim();
   if (realIp) return realIp;
-  // The first hop is the browser; every hop after it is a proxy that added
-  // itself. Turnstile scores the person who solved the challenge, so handing it
-  // nginx's address would describe the wrong end of the connection. In front of
-  // Cloudflare this branch is not reached at all — cf-connecting-ip is set and
-  // is the one value a client cannot forge.
+  // The LAST hop, not the first: a client can put anything it wants at the
+  // front of its own X-Forwarded-For header, and a proxy that appends
+  // (nginx's default $proxy_add_x_forwarded_for) only ever adds the address
+  // it actually saw the connection come from as the final entry. Reading the
+  // first hop would mean trusting a value the visitor made up themselves. In
+  // front of Cloudflare this branch is not reached at all — cf-connecting-ip
+  // is set and is the one value a client cannot forge.
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) {
     const hops = forwarded.split(",").map((part) => part.trim()).filter(Boolean);
-    if (hops.length) return hops[0];
+    if (hops.length) return hops[hops.length - 1];
   }
   return "";
 }

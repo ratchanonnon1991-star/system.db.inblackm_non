@@ -21,6 +21,17 @@ async function ensureSchema() {
     await getPool().query(
       `ALTER TABLE gamedb_login_log ADD COLUMN IF NOT EXISTS user_agent TEXT`
     );
+    // The brute-force guard now counts straight from this table on every
+    // login attempt (see countRecentFailedLogins) instead of an in-memory
+    // Map, so these two need to stay indexed as the table grows.
+    await getPool().query(
+      `CREATE INDEX IF NOT EXISTS gamedb_login_log_username_created_idx
+         ON gamedb_login_log (lower(username), created_at)`
+    );
+    await getPool().query(
+      `CREATE INDEX IF NOT EXISTS gamedb_login_log_ip_created_idx
+         ON gamedb_login_log (ip, created_at)`
+    );
   })();
   schemaReady.catch(() => {
     schemaReady = null;
@@ -37,6 +48,28 @@ export async function recordLogin({ username, success, reason = "", ip = "", use
      VALUES ($1, $2, $3, $4, $5)`,
     [username || "", Boolean(success), reason || "", ip || "", userAgent || ""]
   );
+}
+
+/** How many failed attempts a username or an IP has racked up since `since`
+ * -- the brute-force guard's source of truth, so it survives a process
+ * restart (an in-memory count would not) and, keyed by ip too, also catches
+ * someone cycling through many usernames from one address instead of just
+ * hammering one. */
+export async function countRecentFailedLogins({ username, ip, since }) {
+  await ensureSchema();
+  const result = await getPool().query(
+    `SELECT
+       COUNT(*) FILTER (WHERE lower(username) = lower($1)) AS by_username,
+       COUNT(*) FILTER (WHERE ip = $2 AND ip <> '') AS by_ip
+     FROM gamedb_login_log
+     WHERE success = false AND created_at > $3`,
+    [username || "", ip || "", since]
+  );
+  const row = result.rows[0] || {};
+  return {
+    byUsername: Number(row.by_username || 0),
+    byIp: Number(row.by_ip || 0),
+  };
 }
 
 export async function listLogins(limit = 100) {
