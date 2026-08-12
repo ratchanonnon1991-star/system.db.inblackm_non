@@ -303,7 +303,78 @@ export function EditLogModal({ onClose }) {
     load();
   }, [load]);
 
+  // A restore is itself an insert underneath, so undoing it is the same
+  // "delete this row" action as undoing a plain add.
+  const isRowInsert = (entry) => entry.column === "(เพิ่มแถว)" || entry.column === "(กู้คืนแถวที่ลบ)";
+  const isRowDelete = (entry) => entry.column === "(ลบแถว)";
+
+  // A delete's snapshot is the row's own JSON, cut off past SUMMARY_LIMIT
+  // characters (see gamedb-row-writer.js) -- past that point it can't be
+  // parsed back into a row, so restoring it can't be offered.
+  const deletedRowSnapshot = (entry) => {
+    if (!isRowDelete(entry) || !entry.oldValue || entry.oldValue.endsWith("…")) return null;
+    try {
+      const parsed = JSON.parse(entry.oldValue);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const canRevert = (entry) => {
+    if (!entry.queryId) return false;
+    if (isRowInsert(entry)) return entry.pkValue !== null && entry.pkValue !== undefined;
+    if (isRowDelete(entry)) return deletedRowSnapshot(entry) !== null;
+    return true;
+  };
+
   const revert = async (entry) => {
+    if (isRowInsert(entry)) {
+      if (!window.confirm(`ลบแถวที่เพิ่งเพิ่ม (${entry.pkColumn}=${entry.pkValue}) ที่เพิ่มพลาดหรือไม่ตั้งใจ?`)) {
+        return;
+      }
+      setReverting(entry.id);
+      setError("");
+      try {
+        await apiJson(`/api/queries/${entry.queryId}/row`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pkValue: entry.pkValue }),
+          fallbackError: "ลบแถวที่เพิ่มไปไม่สำเร็จ",
+        });
+        await load();
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setReverting(null);
+      }
+      return;
+    }
+
+    if (isRowDelete(entry)) {
+      const snapshot = deletedRowSnapshot(entry);
+      if (!snapshot) return;
+      if (!window.confirm(`กู้คืนแถวที่ถูกลบ (${entry.pkColumn}=${entry.pkValue}) กลับเข้าตาราง?`)) {
+        return;
+      }
+      setReverting(entry.id);
+      setError("");
+      try {
+        await apiJson(`/api/queries/${entry.queryId}/row/restore`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ values: snapshot }),
+          fallbackError: "กู้คืนแถวไม่สำเร็จ",
+        });
+        await load();
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setReverting(null);
+      }
+      return;
+    }
+
     if (
       !window.confirm(
         `ย้อนค่า ${entry.column} ของแถว ${entry.pkValue} กลับเป็น "${entry.oldValue ?? "(ว่าง)"}" ?`
@@ -389,11 +460,25 @@ export function EditLogModal({ onClose }) {
                     <button
                       type="button"
                       onClick={() => revert(entry)}
-                      disabled={reverting === entry.id || !entry.queryId}
+                      disabled={reverting === entry.id || !canRevert(entry)}
                       className="rounded-sm border border-zinc-200 px-2 py-1 text-[10px] font-black text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-40"
-                      title="เขียนค่าเดิมกลับเข้าไป"
+                      title={
+                        isRowInsert(entry)
+                          ? "ลบแถวที่เพิ่งเพิ่มนี้ทิ้ง"
+                          : isRowDelete(entry)
+                            ? canRevert(entry)
+                              ? "เพิ่มแถวนี้กลับเข้าตาราง"
+                              : "ข้อมูลแถวนี้ยาวเกินกว่าจะกู้คืนอัตโนมัติได้"
+                            : "เขียนค่าเดิมกลับเข้าไป"
+                      }
                     >
-                      {reverting === entry.id ? "..." : "ย้อนกลับ"}
+                      {reverting === entry.id
+                        ? "..."
+                        : isRowInsert(entry)
+                          ? "ลบแถวนี้"
+                          : isRowDelete(entry)
+                            ? "กู้คืนแถว"
+                            : "ย้อนกลับ"}
                     </button>
                   </td>
                 </tr>

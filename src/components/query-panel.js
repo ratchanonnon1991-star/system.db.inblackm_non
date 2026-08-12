@@ -1960,7 +1960,7 @@ export default function QueryPanel({
                 }
               >
                 {savingLayout ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-                บันทึก
+                บันทึกรูปแบบ
                 {layoutDirty && (
                   <span
                     className="h-1.5 w-1.5 rounded-sm bg-white"

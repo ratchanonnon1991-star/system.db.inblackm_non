@@ -9,7 +9,7 @@ import { normalizeLayout } from "@/lib/gamedb-layout";
 
 // Adding and removing rows is an Admin capability by default; a Staff
 // account can be granted it individually (see requireDataWriter).
-async function loadTarget(request, params) {
+export async function loadTarget(request, params) {
   const admin = await requireDataWriter(request);
   const { id } = await params;
   const query = await findQueryById(id);

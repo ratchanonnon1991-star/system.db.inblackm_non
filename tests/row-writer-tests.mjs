@@ -1,6 +1,6 @@
 // The INSERT/DELETE writer, against a fake pool that records every statement,
 // so what reaches SQL — and what does not — can be asserted directly.
-import { insertRow, deleteRow } from "@/server/gamedb-row-writer.js";
+import { insertRow, deleteRow, restoreRow } from "@/server/gamedb-row-writer.js";
 import { log, reset } from "@/lib/db.js";
 import { setAllowWrite } from "@/server/gamedb-side-tables.js";
 import { normalizeInputs, normalizeLayout } from "@/lib/gamedb-layout.js";
@@ -247,6 +247,54 @@ await rejects(
   "delete is refused when the database is read-only",
   deleteRow({ editable: EDITABLE, connection: null, pkValue: 4 }),
   { status: 403 }
+);
+setAllowWrite(true);
+
+// --- restore (undoing a delete) -------------------------------------------
+reset();
+const restored = await restoreRow({
+  editable: EDITABLE,
+  connection: null,
+  values: { ID_iTune: 4, Mail: "a@b.com", PASS: "Cz367599" },
+});
+check("the restored row's key comes back", restored.pkValue, 99);
+const restoreStatement = find(/^\s*INSERT/);
+ok(
+  "restore writes every snapshot column, including the primary key",
+  restoreStatement.text.includes('INSERT INTO "table7" ("ID_iTune", "Mail", "PASS")')
+);
+check("snapshot values travel as parameters, in order", restoreStatement.params, [
+  4,
+  "a@b.com",
+  "Cz367599",
+]);
+ok("the restore is committed", statements().at(-1) === "COMMIT");
+
+reset();
+await rejects(
+  "restoring with no columns is refused",
+  restoreRow({ editable: EDITABLE, connection: null, values: {} }),
+  { status: 400 }
+);
+check("nothing was sent to the database", statements(), []);
+
+reset();
+await rejects(
+  "restore is refused when the query does not allow inserting",
+  restoreRow({
+    editable: { ...EDITABLE, allowInsert: false },
+    connection: null,
+    values: { ID_iTune: 4, Mail: "a@b.com" },
+  }),
+  { status: 403 }
+);
+
+setAllowWrite(false);
+reset();
+await rejects(
+  "restore is refused when the database is read-only",
+  restoreRow({ editable: EDITABLE, connection: null, values: { ID_iTune: 4, Mail: "a@b.com" } }),
+  { status: 403, fragment: "ยังไม่ได้เปิดให้เขียน" }
 );
 setAllowWrite(true);
 

@@ -166,3 +166,49 @@ export async function deleteRow({ editable, connection, pkValue }) {
     client.release();
   }
 }
+
+/**
+ * Puts a row back exactly as it was before it got deleted, from the full
+ * column snapshot the edit log kept. Unlike insertRow this writes every
+ * column the snapshot has (including the primary key itself) rather than
+ * only the columns the query form exposes, since the point is to reproduce
+ * what was actually removed, not to accept new user input.
+ */
+export async function restoreRow({ editable, connection, values }) {
+  await assertWritable(editable, connection, "allowInsert", "กู้คืนแถวที่ลบ");
+
+  const entries = Object.entries(values || {}).filter(([, value]) => value !== undefined);
+  if (entries.length === 0) {
+    throw createHttpError("ไม่มีข้อมูลที่จะกู้คืน", 400);
+  }
+
+  const table = quoteIdentifier(editable.table);
+  const pk = quoteIdentifier(realPkOf(editable));
+  const columns = entries.map(([column]) => quoteIdentifier(column));
+  const params = entries.map(([, value]) => value);
+  const placeholders = params.map((_, index) => `$${index + 1}`);
+
+  const client = await connect(connection);
+  try {
+    await client.query("BEGIN");
+    await client.query(`SET LOCAL statement_timeout = ${STATEMENT_TIMEOUT_MS}`);
+    const inserted = await client.query(
+      `INSERT INTO ${table} (${columns.join(", ")})
+       VALUES (${placeholders.join(", ")})
+       RETURNING ${pk} AS pk`,
+      params
+    );
+    await client.query("COMMIT");
+    return { pkValue: inserted.rows[0]?.pk ?? null };
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore: the connection may already be aborted
+    }
+    if (err.status) throw err;
+    throw createHttpError(`กู้คืนแถวไม่สำเร็จ: ${err.message}`, 400);
+  } finally {
+    client.release();
+  }
+}
