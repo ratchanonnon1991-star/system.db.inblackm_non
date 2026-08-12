@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import MissingNotice from "@/components/missing-notice";
+import ModalResizeHandle from "@/components/modal-resize-handle";
+import { useResizableModalWidth } from "@/lib/use-resizable-modal-width";
 
 const inputClass =
   "h-9 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white";
@@ -27,6 +29,7 @@ const EMPTY_FORM = {
   isPublic: true,
   isDefault: false,
   isReadOnly: false,
+  ownerOnly: false,
   sharedWith: [],
 };
 
@@ -36,6 +39,7 @@ const EMPTY_FORM = {
  * accounts also use these templates, but cannot customize their arrangement.
  */
 export default function ViewsModal({
+  me,
   views,
   buildConfig,
   panelCount,
@@ -51,6 +55,7 @@ export default function ViewsModal({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [copiedId, setCopiedId] = useState(null);
+  const { width, startResize, resizing } = useResizableModalWidth(768);
 
   const copyLink = async (view) => {
     const url = `${window.location.origin}/view/${view.id}`;
@@ -94,6 +99,7 @@ export default function ViewsModal({
       isPublic: view.isPublic,
       isDefault: view.isDefault,
       isReadOnly: Boolean(view.isReadOnly),
+      ownerOnly: Boolean(view.ownerOnly),
       sharedWith: view.sharedWith,
     });
     setError("");
@@ -163,7 +169,11 @@ export default function ViewsModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-sm bg-white p-5 shadow-xl">
+      <div
+        className="relative flex max-h-[90vh] w-full flex-col rounded-sm bg-white p-5 shadow-xl"
+        style={{ maxWidth: width }}
+      >
+        <ModalResizeHandle onPointerDown={startResize} active={resizing} />
         <div className="mb-4 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-sm font-black">
             <Layers size={15} className="text-red-600" /> เทมเพลตหน้าจอ
@@ -206,12 +216,24 @@ export default function ViewsModal({
                         ดูอย่างเดียว
                       </span>
                     )}
+                    {view.ownerOnly && (
+                      <span className="ml-1.5 rounded bg-sky-100 px-1.5 py-0.5 text-[9px] font-black text-sky-700">
+                        เจ้าของแก้ได้เท่านั้น
+                      </span>
+                    )}
                   </p>
                   <p className="truncate text-[10px] font-semibold text-zinc-400">
                     {view.config?.panels?.length || 0} ตาราง ·{" "}
                     {view.isPublic
                       ? "ทุกคนเห็น"
                       : `${view.sharedWith.length} คนที่เลือกไว้`}
+                    {view.createdBy && (
+                      <>
+                        {" · "}
+                        เจ้าของ: {view.createdBy}
+                        {me && view.createdBy === me.username && " (คุณ)"}
+                      </>
+                    )}
                   </p>
                 </button>
                 <button
@@ -313,6 +335,15 @@ export default function ViewsModal({
                   onChange={(e) => setField("isReadOnly", e.target.checked)}
                 />
                 ดูอย่างเดียว (ล็อกไม่ให้แก้ layout หรือแก้ข้อมูล ไม่ว่าใครเปิด รวมถึง Admin)
+              </label>
+              <label className="flex items-center gap-2 text-[11px] font-bold text-zinc-600">
+                <input
+                  type="checkbox"
+                  checked={form.ownerOnly}
+                  onChange={(e) => setField("ownerOnly", e.target.checked)}
+                />
+                จำกัดให้เจ้าของ{editingId ? ` (${views.find((v) => v.id === editingId)?.createdBy || "คุณ"})` : ""}
+                {" "}แก้ layout ได้เท่านั้นตอนเปิดใช้งานจริง (Admin คนอื่นยังจัดการเทมเพลตนี้ได้จากที่นี่เสมอ)
               </label>
 
               {!form.isPublic && (

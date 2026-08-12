@@ -642,6 +642,16 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
   // the template they can't leave.
   const layoutLocked = isTemplateUser || previewAsUser;
   const editLocked = layoutLocked || Boolean(activeView?.isReadOnly);
+  // Narrower still, and Admin-only to begin with (canManage already required
+  // isSuperAdmin): a template's owner can ask that only they get to rearrange
+  // it in place while it's open, so a browsing-around Admin doesn't
+  // accidentally reshuffle someone else's saved layout. Any Admin can still
+  // fully manage the template (rename, re-share, replace its panels
+  // wholesale) from the Templates modal regardless -- this only affects
+  // canManage below.
+  const ownerLockedOut = Boolean(
+    activeView?.ownerOnly && activeView.createdBy && activeView.createdBy !== me.username
+  );
   const [panelLayouts, setPanelLayouts] = useState({});
   const [layoutRevision, setLayoutRevision] = useState(0);
   const [templateSaveState, setTemplateSaveState] = useState("idle");
@@ -1684,7 +1694,7 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
         onSharedLayoutSaved={rememberSharedLayout}
         onLayoutChange={captureLayout}
         onDataChange={captureData}
-        canManage={isSuperAdmin && !previewAsUser && !activeView?.isReadOnly}
+        canManage={isSuperAdmin && !previewAsUser && !activeView?.isReadOnly && !ownerLockedOut}
         canCustomizeLayout={!editLocked}
         canWriteData={
           !activeView?.isReadOnly &&
@@ -2375,6 +2385,7 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
 
       {viewsModal && (
         <ViewsModal
+          me={me}
           views={views}
           buildConfig={buildViewConfig}
           panelCount={openPanels.length}

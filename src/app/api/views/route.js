@@ -28,6 +28,7 @@ export async function POST(request) {
       isPublic: body.isPublic,
       isDefault: body.isDefault,
       isReadOnly: body.isReadOnly,
+      ownerOnly: body.ownerOnly,
       sharedWith: body.sharedWith,
       createdBy: admin.username || "",
     });

@@ -17,6 +17,13 @@ function mapRow(row) {
     // Locks layout AND data edits for whoever has this template open,
     // Admin included -- see layoutLocked in gamedb-workspace.js.
     isReadOnly: Boolean(row.is_read_only),
+    // Narrower than isReadOnly: only blocks in-place layout editing (drag,
+    // resize, formats, rules...) while browsing the template, for any Admin
+    // that isn't createdBy -- it does not touch data edits, and any Admin can
+    // still manage the template itself (rename, re-share, replace its saved
+    // panels) from the Templates modal regardless. See canManage in
+    // gamedb-workspace.js.
+    ownerOnly: Boolean(row.owner_only),
     sharedWith: Array.isArray(row.shared_with) ? row.shared_with : [],
     createdBy: row.created_by || "",
     createdAt: row.created_at,
@@ -48,6 +55,10 @@ async function ensureSchema() {
     await getPool().query(`
       ALTER TABLE gamedb_views
       ADD COLUMN IF NOT EXISTS is_read_only BOOLEAN NOT NULL DEFAULT FALSE
+    `);
+    await getPool().query(`
+      ALTER TABLE gamedb_views
+      ADD COLUMN IF NOT EXISTS owner_only BOOLEAN NOT NULL DEFAULT FALSE
     `);
   })();
   schemaReady.catch(() => {
@@ -149,8 +160,8 @@ export async function insertView(fields) {
   await ensureSchema();
   const result = await getPool().query(
     `INSERT INTO gamedb_views
-       (name, description, config, is_public, is_default, is_read_only, shared_with, created_by)
-     VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7::jsonb, $8)
+       (name, description, config, is_public, is_default, is_read_only, owner_only, shared_with, created_by)
+     VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8::jsonb, $9)
      RETURNING id`,
     [
       fields.name,
@@ -159,6 +170,7 @@ export async function insertView(fields) {
       Boolean(fields.isPublic),
       Boolean(fields.isDefault),
       Boolean(fields.isReadOnly),
+      Boolean(fields.ownerOnly),
       JSON.stringify(sanitizeSharedWith(fields.sharedWith)),
       fields.createdBy || "",
     ]
@@ -195,6 +207,10 @@ export async function updateView(id, fields) {
   if (fields.isReadOnly !== undefined) {
     sets.push(`is_read_only = $${i++}`);
     values.push(Boolean(fields.isReadOnly));
+  }
+  if (fields.ownerOnly !== undefined) {
+    sets.push(`owner_only = $${i++}`);
+    values.push(Boolean(fields.ownerOnly));
   }
   if (fields.sharedWith !== undefined) {
     sets.push(`shared_with = $${i++}::jsonb`);
