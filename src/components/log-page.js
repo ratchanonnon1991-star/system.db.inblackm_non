@@ -299,14 +299,19 @@ function EditLogSection() {
     setPage(1);
   };
 
-  // GameInfo writes (game_list, gamelist_images/tutorials/packs/order) go
-  // through their own routes, not the generic Query system, so they log with
-  // queryId: null -- the only source that does. Labelling those "GameInfo"
-  // instead of leaving them blank makes them findable through the same
-  // search box and Query filter as everything else, which is the point of
-  // "หน้าไหน" filtering; the entries themselves aren't revertible from here
-  // either way (see canRevert), so this is display/search only.
-  const queryNameOf = (entry) => (entry.queryId ? queryNames[entry.queryId] || "" : "GameInfo");
+  // GameInfo writes and /createdb's schema changes both go through their own
+  // routes, not the generic Query system, so both log with queryId: null --
+  // the two sources that do. Column is what tells them apart; labelling each
+  // instead of leaving both blank as just "no query" makes them findable
+  // through the same search box and Query filter as everything else, which
+  // is the point of "หน้าไหน" filtering. Neither is revertible from here
+  // either way (see canRevert, gated on entry.queryId), so this is
+  // display/search only.
+  const isSchemaDdl = (entry) => entry.column === "(สร้างตาราง)" || entry.column === "(เพิ่มคอลัมน์)";
+  const queryNameOf = (entry) => {
+    if (entry.queryId) return queryNames[entry.queryId] || "";
+    return isSchemaDdl(entry) ? "จัดการโครงสร้างตาราง" : "GameInfo";
+  };
 
   // A restore is itself an insert underneath, so undoing it is the same
   // "delete this row" action as undoing a plain add.

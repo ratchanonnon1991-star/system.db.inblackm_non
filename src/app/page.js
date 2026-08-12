@@ -11,6 +11,7 @@ import {
   Loader2,
   Lock,
   LogOut,
+  Table2,
   User,
   Users,
   X,
@@ -182,6 +183,15 @@ function SystemHub({ me, onLoggedOut }) {
               title="ประวัติการใช้งาน (การเข้าสู่ระบบ / แก้ไขข้อมูล)"
             >
               <History size={14} /> ประวัติการใช้งาน
+            </NextLink>
+          )}
+          {isSuperAdmin && (
+            <NextLink
+              href="/createdb"
+              className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-3 py-1 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
+              title="สร้างตารางใหม่ / เพิ่มคอลัมน์ในตารางเดิม"
+            >
+              <Table2 size={14} /> สร้างตาราง/คอลัมน์
             </NextLink>
           )}
           <button
