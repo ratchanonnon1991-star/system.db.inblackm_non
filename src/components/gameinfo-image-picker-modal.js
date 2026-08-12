@@ -82,7 +82,7 @@ export default function GameinfoImagePickerModal({ value, onChange, onClose }) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-sm overflow-hidden rounded-lg border border-linear-hairline bg-linear-surface-1 shadow-2xl">
+      <div className="w-full max-w-2xl overflow-hidden rounded-lg border border-linear-hairline bg-linear-surface-1 shadow-2xl">
         <div className="flex items-center justify-between border-b border-linear-hairline px-4 py-2.5">
           <h2 className="text-sm font-semibold text-linear-ink">ใส่รูปภาพ</h2>
           <button

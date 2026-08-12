@@ -90,7 +90,7 @@ export default function GameinfoComputedEditor({ sampleRow, onAdd, onClose }) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-linear-hairline bg-linear-surface-1 shadow-2xl">
+      <div className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-linear-hairline bg-linear-surface-1 shadow-2xl">
         <div className="flex items-center justify-between border-b border-linear-hairline px-5 py-3">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-linear-ink">
             <Calculator size={15} className="text-linear-primary" /> เพิ่มคอลัมน์/สูตร

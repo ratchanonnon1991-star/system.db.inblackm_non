@@ -296,7 +296,7 @@ function CanvasToolbar({
       {isSuperAdmin && activeView && (
         <>
           <span
-            className={`rounded-sm px-2 py-1 text-[9px] font-black ${
+            className={`inline-flex min-w-[92px] justify-center rounded-sm px-2 py-1 text-[9px] font-black ${
               templateSaveState === "error"
                 ? "bg-red-50 text-red-600"
                 : ["saving", "pending"].includes(templateSaveState)
@@ -660,6 +660,9 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
   // column drag and only matters when a template is saved.
   const liveLayouts = useRef({});
   const captureLayout = useCallback((queryId, layout) => {
+    if (JSON.stringify(liveLayouts.current[queryId] || null) === JSON.stringify(layout || null)) {
+      return;
+    }
     liveLayouts.current[queryId] = layout;
     setLayoutRevision((value) => value + 1);
   }, []);
@@ -766,6 +769,11 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
     for (const panel of view.config?.panels || []) {
       if (panel.layout) layouts[panel.queryId] = panel.layout;
     }
+    // Seed the autosave snapshot before the panels mount. Otherwise the first
+    // render sees every live layout as null and saves an unchanged template
+    // immediately, causing a visible saving loop and potentially wiping its
+    // stored column layout.
+    liveLayouts.current = { ...layouts };
     setPanelLayouts(layouts);
     panelsStateRef.current = panelsFromView;
     setPanels(panelsFromView);
@@ -781,6 +789,7 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
   const leaveView = () => {
     setActiveView(null);
     setPanelLayouts({});
+    liveLayouts.current = {};
   };
 
   useEffect(() => {
@@ -1315,7 +1324,10 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
           body: JSON.stringify({ config }),
           fallbackError: "บันทึก Template อัตโนมัติไม่สำเร็จ",
         });
-        lastSavedConfigRef.current = JSON.stringify(data.view?.config || config);
+        // Compare subsequent renders with exactly what this client sent. The
+        // server sanitizes/normalizes layout JSON, so comparing with its
+        // response can make an unchanged screen look dirty forever.
+        lastSavedConfigRef.current = serialized;
         if (data.view) {
           setActiveView(data.view);
           setViews((current) =>

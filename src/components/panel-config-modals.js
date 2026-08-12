@@ -172,7 +172,7 @@ export function ShareLinkModal({ queryId, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-lg rounded-sm bg-white p-5 shadow-xl">
+      <div className="w-full max-w-3xl rounded-sm bg-white p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-sm font-black">
             <Link2 size={15} /> แชร์เป็นลิงก์ (ดูอย่างเดียว)
