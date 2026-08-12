@@ -657,8 +657,15 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
   // wrong here would only ever show/hide an affordance incorrectly, never
   // actually let a write through it shouldn't. accountFlag is "canWriteData"
   // (add/remove rows) or "canUpdateData" (edit existing cells).
+  //
+  // previewAsUser ("กำลังดูหน้าจอแบบ User") is an Admin simulating a "user"
+  // account, not becoming one -- me.role is still "admin" the whole time, so
+  // a plain `me.role === "user"` check here would never match it and this
+  // preview would always show "cannot edit" regardless of what the template
+  // actually grants. Checked first, ahead of the real-role branches below.
   const roleGrantsDataWrite = (accountFlag) => {
-    if (isSuperAdmin && !previewAsUser) return true;
+    if (isSuperAdmin && previewAsUser) return Boolean(activeView?.allowUserEdit);
+    if (isSuperAdmin) return true;
     if (me.role === "staff") {
       if (!me[accountFlag]) return false;
       return !activeView || activeView.allowStaffEdit;
