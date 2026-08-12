@@ -30,7 +30,7 @@ function SectionCard({ icon, title, children }) {
 // and filter/page through it client-side, same pattern UsersModal already
 // uses for its user list.
 const DEFAULT_PAGE_SIZE = 20;
-const PAGE_SIZE_CHOICES = [10, 20, 50, 100];
+const PAGE_SIZE_CHOICES = [10, 25, 50, 100, 200];
 
 const filterInputClass =
   "h-8 rounded-sm border border-zinc-200 px-2 text-[11px] font-semibold outline-none focus:border-red-600";
