@@ -1136,9 +1136,15 @@ export function EditableSettingsModal({
         </div>
       </div>
       {pk && (pkColumn.trim() || pk) && (
-        <p className="rounded-sm bg-zinc-50 px-3 py-2 font-mono text-[10px] font-semibold text-zinc-500">
-          WHERE &quot;{pkColumn.trim() || pk}&quot; = ค่าจากคอลัมน์ &quot;{pk}&quot; ของแถวนั้น
-        </p>
+        <div className="rounded-sm bg-zinc-50 px-3 py-2">
+          <p className="text-[10px] font-semibold text-zinc-600">
+            ตอนแก้ไข ระบบจะดูค่าที่คอลัมน์ &quot;{pk}&quot; ของแถวนั้น แล้วหาแถวที่ตรงกันในตารางจริง
+            (เทียบกับคอลัมน์ &quot;{pkColumn.trim() || pk}&quot;) เพื่ออัปเดตเฉพาะแถวนั้นแถวเดียว
+          </p>
+          <p className="mt-1 font-mono text-[9px] font-semibold text-zinc-400">
+            WHERE &quot;{pkColumn.trim() || pk}&quot; = ค่าจากคอลัมน์ &quot;{pk}&quot; ของแถวนั้น
+          </p>
+        </div>
       )}
       <div>
         <label className={labelClass}>คอลัมน์ที่อนุญาตให้แก้</label>
