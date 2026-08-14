@@ -26,9 +26,9 @@
    gameinfo-pack-editor.js: bg-white cards, border-slate-200, text-slate-700,
    indigo-600 accent). Every gameinfo component still just uses its existing
    linear-prefixed background, text and border utility classes — toggling
-   data-theme="light" on the module's root element (see
-   gameinfo-theme-root.js) swaps what those custom properties resolve to, no
-   component classNames change. */
+   data-theme="light" on <html> (see gameinfo-theme-root.js, and the blocking
+   theme-init script in layout.js that stamps it before first paint) swaps
+   what those custom properties resolve to, no component classNames change. */
 [data-theme="light"] {
   --color-linear-canvas: #ffffff;
   --color-linear-surface-1: #ffffff;
@@ -54,7 +54,8 @@
    light-mode-first system can't collide with gameinfo's untouched
    indigo/slate palette. Light values are the @theme default; dark mode
    (Linear's original near-black palette, red accent) applies under
-   [data-theme="dark"] on each module's theme root.
+   [data-theme="dark"] on <html> (see ll-theme.js's useLLTheme, and the same
+   blocking theme-init script in layout.js).
 
    Light surfaces follow gameinfo's own white-canvas pattern (canvas and
    surface-1 are both #fff — cards read as lifted via hairline + shadow
@@ -84,8 +85,7 @@
   --color-ll-emphasis-text: #ffffff;
 
   /* Semantic pair the skill reference documents but this codebase hadn't
-     wired up yet — same values in both themes, no per-mode table in the
-     skill doc to draw from. */
+     wired up yet. Dark values are set below under [data-theme="dark"]. */
   --color-ll-success: #1d8a4a;
   --color-ll-success-bg: #e6f4ea;
   --color-ll-warning: #b45309;
@@ -114,6 +114,15 @@
   --color-ll-on-primary: #ffffff;
   --color-ll-emphasis-bg: #f7f8f8;
   --color-ll-emphasis-text: #05141d;
+
+  /* Same emerald/amber pair the legacy .dark zinc remap below uses for
+     bg-emerald-50/text-emerald-700 and bg-amber-50/text-amber-700, so the
+     two dark palettes agree. Light values (in the @theme block above)
+     otherwise leak through unstyled in dark mode. */
+  --color-ll-success: #34d399;
+  --color-ll-success-bg: #10312a;
+  --color-ll-warning: #fbbf24;
+  --color-ll-warning-bg: #3d2f0c;
 
   --ll-shadow-card: none;
   --ll-shadow-modal: none;

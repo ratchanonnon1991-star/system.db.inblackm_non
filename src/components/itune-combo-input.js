@@ -2,12 +2,20 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { AlertTriangle } from "lucide-react";
 import { normalizeSpaces } from "@/lib/text-normalize";
 
 // ll-themed port of GameinfoMemoryInput (see gameinfo-memory-input.js) — a
 // text input that suggests distinct existing values from the column but
 // still allows free typing. Same interaction logic, `linear-*` classes
 // swapped for this module's `ll-*` tokens.
+//
+// isDuplicate/duplicateMessage are optional — same shape as
+// GameinfoNameInput's own duplicate banner (see that component), just
+// without the Levenshtein "did you mean?" nudge: the caller already knows
+// whether the current value collides with another row (e.g. itune-admin-
+// table.js's linkSmsOwnersByValue) and hands over a plain boolean + message
+// instead of this component re-deriving it from `suggestions`.
 export default function ItuneComboInput({
   value,
   onChange,
@@ -17,6 +25,8 @@ export default function ItuneComboInput({
   id,
   autoFocus,
   onEnter,
+  isDuplicate,
+  duplicateMessage,
 }) {
   const [open, setOpen] = useState(autoFocus ?? false);
   const [pos, setPos] = useState(null);
@@ -96,33 +106,40 @@ export default function ItuneComboInput({
         pos &&
         typeof document !== "undefined" &&
         createPortal(
-          <ul
+          <div
             ref={listRef}
             data-ll-combo-dropdown="true"
             style={{ top: pos.top + 4, left: pos.left, width: pos.width }}
             className="fixed z-50 max-h-56 overflow-auto rounded-md border border-ll-hairline bg-ll-surface-1 py-1 shadow-[var(--ll-shadow-modal)]"
           >
-            {filtered.length === 0 ? (
-              <li className="px-3 py-1.5 text-sm text-ll-ink-tertiary">ไม่มีตัวเลือกที่ตรงกัน</li>
-            ) : (
-              filtered.map((s) => (
-                <li key={s}>
-                  <button
-                    type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      onChange(s);
-                      setOpen(false);
-                      setHasTyped(false);
-                    }}
-                    className="block w-full px-3 py-1.5 text-left text-sm text-ll-ink hover:bg-ll-primary/10"
-                  >
-                    {s}
-                  </button>
-                </li>
-              ))
+            {isDuplicate && (
+              <div className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-ll-primary">
+                <AlertTriangle size={13} /> {duplicateMessage || "ข้อมูลนี้ซ้ำกับที่มีอยู่แล้ว"}
+              </div>
             )}
-          </ul>,
+            <ul>
+              {filtered.length === 0 ? (
+                <li className="px-3 py-1.5 text-sm text-ll-ink-tertiary">ไม่มีตัวเลือกที่ตรงกัน</li>
+              ) : (
+                filtered.map((s) => (
+                  <li key={s}>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        onChange(s);
+                        setOpen(false);
+                        setHasTyped(false);
+                      }}
+                      className="block w-full truncate px-3 py-1.5 text-left text-sm text-ll-ink hover:bg-ll-primary/10"
+                    >
+                      {s}
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
+          </div>,
           document.body
         )}
     </div>

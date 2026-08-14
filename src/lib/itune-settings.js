@@ -9,6 +9,12 @@ const SETTINGS_KEY = "projectm.itune-admin.settings";
 
 const DEFAULT_SETTINGS = {
   rightClickPaste: true,
+  // Columns the search box skips — empty by default, i.e. search covers
+  // every column until someone opens the column filter and unchecks some.
+  searchExcludedColumns: [],
+  // Per-cell copy buttons, revealed on row hover. On by default; the
+  // "คัดลอกทั้งแถว" row-menu item is unaffected by this toggle.
+  copyButtonsEnabled: true,
 };
 
 export function useItuneSettings() {

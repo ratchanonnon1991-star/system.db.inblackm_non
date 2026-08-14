@@ -18,9 +18,15 @@ const linearSans = Inter({
 export default function ProjectmThemeRoot({ children }) {
   const [theme, toggleTheme] = useLLTheme();
 
+  // No data-theme attribute here — useLLTheme mirrors it onto <html> instead
+  // (see ll-theme.js), which is what keeps this in sync pre-hydration (the
+  // blocking script in layout.js) and reaches portaled popups that render
+  // outside this div entirely (image pickers, dropdowns, the itune admin
+  // settings modal). Adding it back here would just re-introduce the flash:
+  // this div is server-rendered with no theme info to go on, so it'd start
+  // wrong and only fix itself a render later.
   return (
     <div
-      data-theme={theme}
       className={`${linearSans.variable} min-h-screen bg-ll-canvas`}
       style={{ fontFamily: "var(--font-linear-sans), sans-serif" }}
     >

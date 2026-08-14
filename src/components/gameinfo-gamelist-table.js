@@ -53,6 +53,18 @@ import GameinfoImagePreview from "./gameinfo-image-preview";
 const GRID_COLS =
   "grid-cols-[28px_60px_50px_44px_minmax(160px,1.4fr)_110px_110px_110px_130px_minmax(140px,1fr)_130px_minmax(140px,1fr)_110px_44px]";
 
+// Same reasoning as itune-admin-table.js's GRID_MIN_WIDTH — derived from
+// GRID_COLS instead of a hand-typed literal, so it can't silently drift out
+// of sync with it (the min-w-[1400px] this replaces had: GRID_COLS's 14
+// tracks sum to 1366px, but the header/row divs below also carry gap-2 (8px)
+// between all 14 columns — 13 gaps × 8px = 104px more — for a true minimum
+// of 1470px, 70px more than the 1400px that was hardcoded here).
+const GRID_GAP_PX = 8; // Tailwind gap-2, used on the header/row grid divs below
+const GRID_PX_TRACKS = GRID_COLS.match(/\d+px/g) || [];
+const GRID_MIN_WIDTH =
+  GRID_PX_TRACKS.reduce((sum, px) => sum + parseInt(px, 10), 0) +
+  GRID_GAP_PX * Math.max(0, GRID_PX_TRACKS.length - 1);
+
 function uniq(arr) {
   return Array.from(new Set(arr.filter(Boolean))).sort((a, b) => a.localeCompare(b, "th"));
 }
@@ -540,7 +552,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
 
       <div className="overflow-hidden rounded-2xl border border-linear-hairline bg-linear-surface-1">
         <div className="scroll-x">
-          <div className="min-w-[1400px]">
+          <div style={{ minWidth: GRID_MIN_WIDTH }}>
             <div
               className={`grid ${GRID_COLS} gap-2 border-b border-linear-hairline bg-linear-surface-2 px-3 py-3 text-xs font-medium uppercase tracking-wide text-linear-ink-subtle`}
             >
@@ -560,7 +572,14 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
               <span className="px-2">Link</span>
               {/* หมายเหตุ (remark): not shown — hidden per request, field still exists on game_list */}
               <span className="px-2">Tutorial</span>
-              <span></span>
+              {/* Frozen "⋮" column — sticky right-0 with its own opaque
+                  background, same pattern as itune-admin-table.js's "⋮"
+                  column: a sticky child needs to repaint itself (the row's
+                  own bg only covers its own content box, which scrolls away
+                  with everything else) or the columns scrolling underneath
+                  show through it. No divider line here — the round trigger
+                  button's own hover circle is the only visual marker. */}
+              <div className="sticky right-0 z-10 bg-linear-surface-2" />
             </div>
 
             {filteredRows.length === 0 ? (
@@ -897,8 +916,16 @@ function RowCells({
       {/* In view-only mode (role "user", or the "หน้าเว็บ" toggle's ?view=1
           preview) the whole row already navigates to the detail page on
           click (see StaticRow) — the "⋮" menu only ever had "ดู" for that
-          case anyway, so it's redundant there and just hidden. */}
-      {editable && <RowActionsMenu row={row} lang={lang} editable={editable} onDelete={onDelete} />}
+          case anyway, so it's redundant there and just hidden. This branch
+          only ever renders inside SortableRow (editable=true always means
+          SortableRow, never StaticRow — see the ternary in the table body),
+          which has no row-level hover effect, so the sticky wrapper just
+          needs a static opaque background, no group-hover matching. */}
+      {editable && (
+        <div className="sticky right-0 z-10 flex min-w-0 items-center justify-end bg-linear-surface-1 pr-1">
+          <RowActionsMenu row={row} lang={lang} editable={editable} onDelete={onDelete} />
+        </div>
+      )}
     </>
   );
 }
@@ -944,12 +971,19 @@ function RowActionsMenu({ row, lang, editable, onDelete }) {
     // portal-rendered items, which still bubble through the React tree even
     // though they're not DOM descendants of this span) needs to not also
     // trigger that.
-    <span className="relative flex justify-end" onClick={(e) => e.stopPropagation()}>
+    //
+    // Trigger/dropdown shape copied wholesale from itune-admin-table.js's
+    // RowActionsMenu (justify-center, w-40 dropdown, px-3 py-2 full-width
+    // item rows) so both modules' "⋮" menus read as the same component,
+    // just re-themed onto linear-* tokens instead of ll-*. ลบ stays on raw
+    // Tailwind red rather than linear-primary (which is gameinfo's brand
+    // indigo, not a danger color) — linear-* has no danger token to swap in.
+    <span className="relative flex justify-center" onClick={(e) => e.stopPropagation()}>
       <button
         ref={triggerRef}
         type="button"
         onClick={toggleOpen}
-        className="flex h-7 w-7 items-center justify-center rounded text-linear-ink-tertiary hover:bg-linear-surface-2 hover:text-linear-ink-muted"
+        className="flex h-7 w-7 items-center justify-center rounded-full text-linear-ink-tertiary hover:bg-linear-surface-2 hover:text-linear-ink"
         aria-label="เมนู"
         title="เมนู"
       >
@@ -962,12 +996,12 @@ function RowActionsMenu({ row, lang, editable, onDelete }) {
           <div
             ref={menuRef}
             style={{ top: pos.top, right: pos.right }}
-            className="fixed z-50 w-32 overflow-hidden rounded-md border border-linear-hairline bg-linear-surface-1 py-1 shadow-lg"
+            className="fixed z-50 w-40 overflow-hidden rounded-md border border-linear-hairline bg-linear-surface-1 py-1 shadow-lg"
           >
             <Link
               href={`/gameinfo/${lang}/${row.id}`}
               onClick={() => setOpen(false)}
-              className="block px-3 py-1.5 text-xs text-linear-ink hover:bg-linear-surface-2"
+              className="block w-full px-3 py-2 text-left text-xs text-linear-ink hover:bg-linear-surface-2"
             >
               ดู
             </Link>
@@ -975,7 +1009,7 @@ function RowActionsMenu({ row, lang, editable, onDelete }) {
               <Link
                 href={`/gameinfo/${lang}/${row.id}/packs`}
                 onClick={() => setOpen(false)}
-                className="block px-3 py-1.5 text-xs text-linear-ink hover:bg-linear-surface-2"
+                className="block w-full px-3 py-2 text-left text-xs text-linear-ink hover:bg-linear-surface-2"
               >
                 แพ็ก
               </Link>
@@ -987,7 +1021,7 @@ function RowActionsMenu({ row, lang, editable, onDelete }) {
                   setOpen(false);
                   onDelete(row.id, row.game);
                 }}
-                className="block w-full px-3 py-1.5 text-left text-xs text-red-400 hover:bg-red-500/10"
+                className="block w-full px-3 py-2 text-left text-xs text-red-400 hover:bg-red-500/10"
               >
                 ลบ
               </button>

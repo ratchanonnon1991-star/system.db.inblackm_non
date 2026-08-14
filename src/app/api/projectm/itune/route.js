@@ -46,7 +46,6 @@ export async function POST(request) {
     const entry = await insertItuneEntry({
       createdByUserId: actor.id,
       addedAt: parseAddedAt(body.addedAt),
-      support: String(body.support || "").trim(),
       email: String(body.email || "").trim(),
       password: String(body.password || "").trim(),
       currency: String(body.currency || "").trim(),

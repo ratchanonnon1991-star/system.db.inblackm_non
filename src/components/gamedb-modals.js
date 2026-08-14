@@ -571,20 +571,26 @@ export function UsersModal({ me, onClose }) {
     }
   };
 
+  // ll-themed: unlike the workspace's other modals (this file, admin-modals.js,
+  // etc.), this one is also opened from the Linear Light/Dark hub/login screen
+  // (see page.js's SystemHub) — it needs to follow that surface's data-theme
+  // instead of staying hardcoded white/zinc/red. Outside the ll surfaces it
+  // falls back to the ll- tokens' light values, which read close enough to the
+  // old zinc look that the workspace's own appearance is effectively unchanged.
   const inputClass =
-    "h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white";
+    "h-10 w-full rounded-sm border border-ll-hairline bg-ll-surface-2 px-3 text-xs font-semibold text-ll-ink outline-none focus:border-ll-primary focus:bg-ll-surface-1";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-sm bg-white p-5 shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-sm bg-ll-surface-1 p-5 shadow-[var(--ll-shadow-modal)]">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-sm font-black">
-            <Users size={15} className="text-red-600" /> จัดการผู้ใช้
+          <h2 className="flex items-center gap-2 text-sm font-black text-ll-ink">
+            <Users size={15} className="text-ll-primary" /> จัดการผู้ใช้
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-sm border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
+            className="rounded-sm border border-ll-hairline p-1.5 text-ll-ink-subtle transition hover:bg-ll-surface-2"
             aria-label="ปิด"
           >
             <X size={14} />
@@ -594,7 +600,7 @@ export function UsersModal({ me, onClose }) {
         <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto md:grid-cols-[1fr_1.2fr]">
           <div className="space-y-1.5">
             {loading ? (
-              <p className="flex items-center gap-2 px-2 py-4 text-xs font-semibold text-zinc-400">
+              <p className="flex items-center gap-2 px-2 py-4 text-xs font-semibold text-ll-ink-tertiary">
                 <Loader2 size={14} className="animate-spin" /> กำลังโหลด...
               </p>
             ) : (
@@ -603,8 +609,8 @@ export function UsersModal({ me, onClose }) {
                   key={user.id}
                   className={`group flex items-center gap-2 rounded-sm border px-3 py-2.5 transition ${
                     editingId === user.id
-                      ? "border-red-600 bg-red-50"
-                      : "border-zinc-200 hover:bg-zinc-50"
+                      ? "border-ll-primary bg-ll-primary-subtle-bg"
+                      : "border-ll-hairline hover:bg-ll-surface-2"
                   }`}
                 >
                   <button
@@ -612,15 +618,15 @@ export function UsersModal({ me, onClose }) {
                     onClick={() => startEdit(user)}
                     className="min-w-0 flex-1 text-left"
                   >
-                    <p className="truncate text-xs font-black text-zinc-700">
+                    <p className="truncate text-xs font-black text-ll-ink">
                       {user.username}
                       {user.id === me.id ? (
-                        <span className="ml-1.5 rounded bg-zinc-100 px-1.5 py-0.5 text-[9px] font-black text-zinc-500">
+                        <span className="ml-1.5 rounded bg-ll-surface-2 px-1.5 py-0.5 text-[9px] font-black text-ll-ink-subtle">
                           คุณ
                         </span>
                       ) : null}
                     </p>
-                    <p className="truncate text-[10px] font-semibold text-zinc-400">
+                    <p className="truncate text-[10px] font-semibold text-ll-ink-tertiary">
                       {user.displayName} · {roleLabel(user.role)}
                       {user.projectmRole === "admin" ? " · Projectm Admin" : ""}
                     </p>
@@ -629,7 +635,7 @@ export function UsersModal({ me, onClose }) {
                     <button
                       type="button"
                       onClick={() => remove(user)}
-                      className="shrink-0 rounded-sm p-1 text-zinc-400 opacity-0 transition hover:bg-zinc-200 hover:text-red-600 group-hover:opacity-100"
+                      className="shrink-0 rounded-sm p-1 text-ll-ink-tertiary opacity-0 transition hover:bg-ll-surface-2 hover:text-ll-primary group-hover:opacity-100"
                       title="ลบผู้ใช้"
                     >
                       <Trash2 size={12} />
@@ -643,8 +649,8 @@ export function UsersModal({ me, onClose }) {
               onClick={startCreate}
               className={`flex w-full items-center justify-center gap-1.5 rounded-sm border border-dashed px-3 py-2.5 text-[11px] font-black transition ${
                 editingId === null
-                  ? "border-red-600 text-red-600"
-                  : "border-zinc-300 text-zinc-400 hover:border-zinc-400 hover:text-zinc-600"
+                  ? "border-ll-primary text-ll-primary"
+                  : "border-ll-hairline-strong text-ll-ink-tertiary hover:border-ll-ink-tertiary hover:text-ll-ink-subtle"
               }`}
             >
               <Plus size={12} /> เพิ่มผู้ใช้ใหม่
@@ -652,7 +658,7 @@ export function UsersModal({ me, onClose }) {
           </div>
 
           <div className="space-y-2.5">
-            <p className="text-[10px] font-black text-zinc-500">
+            <p className="text-[10px] font-black text-ll-ink-subtle">
               {editingId ? `แก้ไขผู้ใช้: ${form.username}` : "เพิ่มผู้ใช้ใหม่"}
             </p>
             {!editingId && (
@@ -695,7 +701,7 @@ export function UsersModal({ me, onClose }) {
             </select>
             {form.role === "user" && (
               <div>
-                <label className="mb-1 block text-[10px] font-black text-zinc-500">
+                <label className="mb-1 block text-[10px] font-black text-ll-ink-subtle">
                   Template หลักเมื่อเข้าสู่ระบบ
                 </label>
                 <select
@@ -710,24 +716,24 @@ export function UsersModal({ me, onClose }) {
                     </option>
                   ))}
                 </select>
-                <p className="mt-1 text-[9px] font-semibold text-zinc-400">
+                <p className="mt-1 text-[9px] font-semibold text-ll-ink-tertiary">
                   User จะเปิดหน้านี้อัตโนมัติและไม่สามารถย้ายหรือย่อขยายกล่องได้
                 </p>
               </div>
             )}
 
-            <label className="flex items-center gap-2 rounded-sm border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[11px] font-bold text-zinc-600">
+            <label className="flex items-center gap-2 rounded-sm border border-ll-hairline bg-ll-surface-2 px-3 py-2.5 text-[11px] font-bold text-ll-ink-muted">
               <input
                 type="checkbox"
                 checked={form.projectmRole}
                 onChange={(e) => setField("projectmRole", e.target.checked)}
-                className="h-3.5 w-3.5 accent-red-600"
+                className="h-3.5 w-3.5 accent-ll-primary"
               />
               สิทธิ์ Admin ระบบ Projectm (เห็นทั้ง Admin + Topup ใน /projectm — ไม่มีติ๊กจะเห็นแค่ Topup)
             </label>
 
             {error && (
-              <div className="rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
+              <div className="rounded-sm border border-ll-primary/20 bg-ll-primary-subtle-bg px-3 py-2 text-[11px] font-bold text-ll-primary-subtle-text">
                 {error}
               </div>
             )}
@@ -751,7 +757,7 @@ export function UsersModal({ me, onClose }) {
                   saving ||
                   (!editingId && (!form.username.trim() || form.password.length < 6))
                 }
-                className="flex items-center gap-1.5 rounded-sm bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded-sm bg-ll-primary px-5 py-2.5 text-xs font-black text-ll-on-primary transition hover:bg-ll-primary-hover disabled:opacity-50"
               >
                 {saving ? (
                   <Loader2 size={13} className="animate-spin" />

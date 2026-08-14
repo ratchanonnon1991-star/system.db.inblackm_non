@@ -158,8 +158,11 @@ function SystemHub({ me, onLoggedOut, onEnter }) {
   };
 
   return (
+    // No data-theme attribute here — useLLTheme mirrors it onto <html>
+    // instead (see ll-theme.js), which is what the blocking script in
+    // layout.js has already stamped there before first paint, and it's what
+    // reaches menus/modals that portal to document.body outside this div.
     <div
-      data-theme={theme}
       className={`${linearSans.variable} flex min-h-screen flex-col bg-ll-canvas`}
       style={{ fontFamily: "var(--font-linear-sans), sans-serif" }}
     >
@@ -275,8 +278,9 @@ function LoginScreen({ onLoggedIn }) {
   };
 
   return (
+    // Same reasoning as SystemHub above — no local data-theme, <html> already
+    // carries it (blocking script in layout.js + useLLTheme's mirror effect).
     <div
-      data-theme={theme}
       className={`${linearSans.variable} flex min-h-screen flex-col bg-ll-canvas`}
       style={{ fontFamily: "var(--font-linear-sans), sans-serif" }}
     >
