@@ -244,6 +244,12 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
   );
   const visualSql = visualBuild.sql;
   const effectiveSql = builderMode === "visual" ? visualSql : sqlText;
+  // True whenever the SQL that will actually be saved is still exactly what
+  // the picker generated — whether that's because the visual tab is active,
+  // or because the admin switched to the SQL tab but hasn't hand-edited it
+  // yet. Only then is it safe to attach the picker's editable/update config;
+  // once the SQL diverges from the picker it may describe a different query.
+  const layoutMatchesPicker = Boolean(selectedTable) && effectiveSql === visualSql;
   const testParamNames = useMemo(() => extractSqlParams(effectiveSql), [effectiveSql]);
 
   // Loading the schema clears every choice made in the builder, so it happens
@@ -378,7 +384,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
         sqlText: effectiveSql,
         connectionId: connectionId ? Number(connectionId) : null,
         layout:
-          builderMode === "visual"
+          layoutMatchesPicker
             ? buildVisualLayout({
                 baseLayout: { ...(sourceQuery?.layout || {}), folder: folder.trim() },
                 schema: selectedTable?.schema,
@@ -409,7 +415,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
             fallbackError: "สร้าง Query ไม่สำเร็จ",
           });
 
-      if (builderMode === "visual") rememberBuilderTable(selectedTableKey);
+      if (layoutMatchesPicker) rememberBuilderTable(selectedTableKey);
       onSaved(data.query);
     } catch (err) {
       setError(err.message);
@@ -505,7 +511,14 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
             </button>
             <button
               type="button"
-              onClick={() => { setBuilderMode("sql"); setTestResult(null); }}
+              onClick={() => {
+                // Carry over what the picker already built instead of leaving
+                // the SQL box on stale/default text — otherwise switching tabs
+                // throws away every table/column/filter/join choice.
+                if (builderMode === "visual" && visualSql) setSqlText(visualSql);
+                setBuilderMode("sql");
+                setTestResult(null);
+              }}
               className={`flex items-center justify-center gap-1.5 rounded-sm px-3 py-2 text-[11px] font-black transition ${
                 builderMode === "sql" ? "bg-white text-red-600 shadow-sm" : "text-zinc-500"
               }`}
