@@ -2421,18 +2421,25 @@ export default function QueryPanel({
             ))}
           </select>
         </div>
-        <button
-          type="button"
-          onClick={() => setView((prev) => (prev === "table" ? "chart" : "table"))}
-          disabled={!result}
-          className={`${iconButtonClass} ${view === "chart" ? "border-red-600 text-red-600" : ""}`}
-          title={view === "chart" ? "กลับไปดูตาราง" : "ดูเป็นกราฟ"}
-        >
-          <ChartColumn size={13} />
-        </button>
-        <button type="button" onClick={exportCsv} disabled={!result} className={iconButtonClass} title="ดาวน์โหลด CSV">
-          <Download size={13} />
-        </button>
+        {/* Someone without the "เพิ่มเติม" menu below (no layout permission)
+            has no other way to reach these, so they stay as icon buttons for
+            that case; everyone else finds them folded into the menu instead. */}
+        {!canCustomizeLayout && (
+          <>
+            <button
+              type="button"
+              onClick={() => setView((prev) => (prev === "table" ? "chart" : "table"))}
+              disabled={!result}
+              className={`${iconButtonClass} ${view === "chart" ? "border-red-600 text-red-600" : ""}`}
+              title={view === "chart" ? "กลับไปดูตาราง" : "ดูเป็นกราฟ"}
+            >
+              <ChartColumn size={13} />
+            </button>
+            <button type="button" onClick={exportCsv} disabled={!result} className={iconButtonClass} title="ดาวน์โหลด CSV">
+              <Download size={13} />
+            </button>
+          </>
+        )}
 
         {canCustomizeLayout && <div ref={moreMenuRef} className="relative">
           <button
@@ -2518,11 +2525,32 @@ export default function QueryPanel({
               >
                 <Play size={14} className="rotate-90" /> ตั้งค่ากราฟ
               </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() =>
+                  runMoreAction(() => setView((prev) => (prev === "table" ? "chart" : "table")))
+                }
+                disabled={!result}
+                className={menuItemClass}
+              >
+                <ChartColumn size={14} className={view === "chart" ? "text-red-600" : ""} />
+                {view === "chart" ? "กลับไปดูตาราง" : "ดูเป็นกราฟ"}
+              </button>
 
               <div className="my-1 border-t border-zinc-100" />
               <p className="px-2.5 pb-1 pt-1 text-[9px] font-black uppercase tracking-wider text-zinc-400">
                 ข้อมูล
               </p>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => runMoreAction(exportCsv)}
+                disabled={!result}
+                className={menuItemClass}
+              >
+                <Download size={14} /> ดาวน์โหลด CSV
+              </button>
               <button
                 type="button"
                 role="menuitem"
