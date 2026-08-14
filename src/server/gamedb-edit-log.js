@@ -83,6 +83,34 @@ export async function findEditById(id) {
   };
 }
 
+/**
+ * Every recorded change to one row of one table, newest first.
+ *
+ * The log page answers "what happened across the system"; this answers the
+ * question people actually ask while looking at a table -- "who changed THIS,
+ * and what was it before?" -- so it is scoped to a single row and returns no
+ * ip/user_agent, since it is readable by anyone who can already see the row.
+ */
+export async function listEditsForRow({ table, pkValue, limit = 50 }) {
+  await ensureSchema();
+  const result = await getPool().query(
+    `SELECT id, actor, column_name, old_value, new_value, created_at
+     FROM gamedb_edit_log
+     WHERE table_name = $1 AND pk_value = $2
+     ORDER BY id DESC
+     LIMIT $3`,
+    [table, String(pkValue), Math.min(200, Math.max(1, limit))]
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    actor: row.actor,
+    column: row.column_name,
+    oldValue: row.old_value,
+    newValue: row.new_value,
+    createdAt: row.created_at,
+  }));
+}
+
 export async function listEdits(limit = 100) {
   await ensureSchema();
   const result = await getPool().query(

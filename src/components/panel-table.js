@@ -22,6 +22,7 @@ import {
   CornerDownRight,
   ExternalLink,
   EyeOff,
+  History,
   Image as ImageIcon,
   Layers,
   MessageSquare,
@@ -635,6 +636,7 @@ export default function PanelTable({
   onDrill,
   drillLabel,
   onDeleteRow,
+  onRowHistory,
   onOpenColumnFormat,
   onOpenColumnRules,
   onEditComputedColumn,
@@ -1133,7 +1135,7 @@ export default function PanelTable({
         className="border border-[var(--cell-border)] bg-inherit px-1 py-1.5 text-center font-bold text-zinc-400"
         style={freezeCount ? { position: "sticky", left: 0, zIndex: 2 } : undefined}
       >
-        {onDrill || onDeleteRow ? (
+        {onDrill || onDeleteRow || onRowHistory ? (
           <>
             <span className="group-hover/row:hidden">{rowOffset + rowIndex + 1}</span>
             <span className="hidden items-center justify-center gap-0.5 group-hover/row:flex">
@@ -1145,6 +1147,16 @@ export default function PanelTable({
                   title={drillLabel}
                 >
                   <CornerDownRight size={12} />
+                </button>
+              )}
+              {onRowHistory && (
+                <button
+                  type="button"
+                  onClick={() => onRowHistory(row)}
+                  className="text-zinc-400 hover:text-zinc-700"
+                  title="ประวัติการแก้ไขของแถวนี้"
+                >
+                  <History size={12} />
                 </button>
               )}
               {onDeleteRow && (

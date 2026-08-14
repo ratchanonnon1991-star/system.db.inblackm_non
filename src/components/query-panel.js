@@ -18,6 +18,7 @@ import {
   Download,
   Eye,
   GripVertical,
+  History,
   Link2,
   Lock,
   Loader2,
@@ -38,6 +39,7 @@ import {
   Table2,
   Timer,
   Trash2,
+  Undo2,
   User,
   Save,
   X,
@@ -515,6 +517,15 @@ export default function QueryPanel({
   const [changedKeys, setChangedKeys] = useState(new Set());
   const [editPending, setEditPending] = useState(null);
   const [editError, setEditError] = useState("");
+  // The last cell edit, kept just long enough to offer it back. Editing a
+  // database by hand is the scariest thing a non-technical account does here,
+  // and "there is no way back" is what stops people using it at all -- so
+  // every write leaves a way to put the old value back, the way Ctrl+Z does
+  // in a spreadsheet. Cleared on a timer so it can never be mistaken for a
+  // permanent history (that is what the log page is for).
+  const [lastEdit, setLastEdit] = useState(null);
+  const [undoing, setUndoing] = useState(false);
+  const [rowHistory, setRowHistory] = useState(null);
   // A row being filled in cell by cell before it exists anywhere -- null
   // means no draft is open, {} means one is open but still blank.
   const [draftRow, setDraftRow] = useState(null);
@@ -1615,7 +1626,22 @@ export default function QueryPanel({
       // writing the id back into the cell would leave a bare number on screen.
       // Only the query knows the name that goes with it.
       if (lookupColumns.includes(col.column.name)) await runQuery({ silent: true });
+      return data.newValue;
     };
+
+    // What "put it back" would have to write, and what it may safely replace
+    // -- captured before the write so an undo can never depend on the row
+    // still sitting at the same index afterwards.
+    const rememberUndo = (writtenValue) =>
+      setLastEdit({
+        pkValue,
+        column: col.column.name,
+        colId,
+        sourceIndex,
+        label: col.label || col.column.name,
+        previousValue: original,
+        writtenValue,
+      });
 
     setEditPending({ sourceIndex, colId });
     setEditError("");
@@ -1624,7 +1650,7 @@ export default function QueryPanel({
       // onPeekCell) -- sent as the value the write is only allowed to
       // replace, so someone else's edit landed in the gap between opening
       // the box and hitting save is caught here, not silently overwritten.
-      await applyEdit(original);
+      rememberUndo(await applyEdit(original));
     } catch (err) {
       if (err.status === 409) {
         const overwrite = window.confirm(
@@ -1632,7 +1658,7 @@ export default function QueryPanel({
         );
         if (overwrite) {
           try {
-            await applyEdit(undefined);
+            rememberUndo(await applyEdit(undefined));
           } catch (err2) {
             setEditError(err2.message);
           }
@@ -1644,6 +1670,61 @@ export default function QueryPanel({
       }
     } finally {
       setEditPending(null);
+    }
+  };
+
+  const undoLastEdit = async () => {
+    if (!lastEdit) return;
+    setUndoing(true);
+    setEditError("");
+    try {
+      await apiJson(`/api/queries/${query.id}/cell`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pkValue: lastEdit.pkValue,
+          column: lastEdit.column,
+          value: lastEdit.previousValue,
+          viewId: activeViewId,
+          // Only undo what this edit actually wrote: if someone else has
+          // since changed the same cell, putting the old value back would
+          // quietly throw their work away, so let the 409 surface instead.
+          expectedValue: lastEdit.writtenValue,
+        }),
+        fallbackError: "เลิกทำไม่สำเร็จ",
+      });
+      setLastEdit(null);
+      await runQuery({ silent: true });
+    } catch (err) {
+      setEditError(
+        err.status === 409
+          ? `เลิกทำไม่ได้ — มีคนแก้ช่องนี้ต่อไปแล้วหลังจากคุณ (${err.message})`
+          : err.message
+      );
+    } finally {
+      setUndoing(false);
+    }
+  };
+
+  // Long enough to notice the mistake and reach the button, short enough that
+  // it never reads as a permanent undo history.
+  useEffect(() => {
+    if (!lastEdit) return undefined;
+    const timer = setTimeout(() => setLastEdit(null), 20000);
+    return () => clearTimeout(timer);
+  }, [lastEdit]);
+
+  const openRowHistory = async (row) => {
+    const pkValue = result.rows[row.sourceIndex][baseNameToIndex.get(sharedEditable.pk)];
+    setRowHistory({ pkValue, loading: true, entries: [], error: "" });
+    try {
+      const data = await apiJson(
+        `/api/queries/${query.id}/row-history?pkValue=${encodeURIComponent(String(pkValue))}`,
+        { fallbackError: "โหลดประวัติของแถวนี้ไม่สำเร็จ" }
+      );
+      setRowHistory({ pkValue, loading: false, entries: data.entries || [], error: "" });
+    } catch (err) {
+      setRowHistory({ pkValue, loading: false, entries: [], error: err.message });
     }
   };
 
@@ -3013,6 +3094,34 @@ export default function QueryPanel({
             </div>
           )}
 
+          {lastEdit && (
+            <div className="mx-3 mt-3 flex flex-wrap items-center justify-between gap-2 rounded-sm border border-emerald-200 bg-emerald-50 px-3 py-2">
+              <span className="min-w-0 text-[11px] font-bold text-emerald-800">
+                บันทึกแล้ว — แก้ &quot;{lastEdit.label}&quot; เป็น{" "}
+                <span className="font-mono">{String(lastEdit.writtenValue ?? "") || "(ว่าง)"}</span>
+              </span>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={undoLastEdit}
+                  disabled={undoing}
+                  className="flex items-center gap-1 rounded-sm border border-emerald-300 bg-white px-2.5 py-1 text-[10px] font-black text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50"
+                >
+                  {undoing ? <Loader2 size={11} className="animate-spin" /> : <Undo2 size={11} />}
+                  เลิกทำ
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLastEdit(null)}
+                  className="rounded-sm p-1 text-emerald-600 transition hover:bg-emerald-100"
+                  aria-label="ปิด"
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* In sheet mode this fills the space between the panel header and the
               sheet tabs. The table scrolls inside it while pagination stays at
               the bottom edge. */}
@@ -3078,6 +3187,9 @@ export default function QueryPanel({
                       ? deleteRow
                       : null
                   }
+                  // Only a query that writes somewhere has a history worth
+                  // showing -- everything else has never been edited here.
+                  onRowHistory={sharedEditable && !viewingSnapshot ? openRowHistory : null}
                   onOpenColumnFormat={(column) => openColumnModal("formats", column)}
                   onOpenColumnRules={(column) => openColumnModal("rules", column)}
                   onEditComputedColumn={(column) => openColumnModal("computed", column)}
@@ -3213,6 +3325,72 @@ export default function QueryPanel({
       )}
       {modal === "share" && (
         <ShareLinkModal queryId={query.id} onClose={() => setModal(null)} />
+      )}
+      {rowHistory && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm"
+          onClick={() => setRowHistory(null)}
+        >
+          <div
+            className="flex max-h-[80vh] w-full max-w-xl flex-col rounded-sm bg-white p-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="flex items-center gap-1.5 text-sm font-black text-zinc-700">
+                  <History size={15} className="text-red-600" /> ประวัติการแก้ไขของแถวนี้
+                </p>
+                <p className="truncate text-[10px] font-semibold text-zinc-400">
+                  {sharedEditable?.pk} = {String(rowHistory.pkValue)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRowHistory(null)}
+                className="shrink-0 rounded-sm border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
+                aria-label="ปิด"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            {rowHistory.loading ? (
+              <p className="flex items-center gap-2 py-10 text-xs font-bold text-zinc-400">
+                <Loader2 size={14} className="animate-spin" /> กำลังโหลด...
+              </p>
+            ) : rowHistory.error ? (
+              <p className="rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
+                {rowHistory.error}
+              </p>
+            ) : rowHistory.entries.length === 0 ? (
+              <p className="rounded-sm border border-dashed border-zinc-200 px-3 py-10 text-center text-[11px] font-semibold text-zinc-400">
+                แถวนี้ยังไม่เคยถูกแก้ไขผ่านระบบนี้
+              </p>
+            ) : (
+              <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
+                {rowHistory.entries.map((entry) => (
+                  <div key={entry.id} className="rounded-sm border border-zinc-200 bg-zinc-50 p-2.5">
+                    <div className="mb-1 flex flex-wrap items-center justify-between gap-1">
+                      <span className="text-[10px] font-black text-zinc-700">{entry.column}</span>
+                      <span className="text-[9px] font-semibold text-zinc-400">
+                        {entry.actor || "ไม่ทราบผู้แก้"} ·{" "}
+                        {new Date(entry.createdAt).toLocaleString("th-TH")}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-semibold">
+                      <span className="rounded-sm bg-red-50 px-1.5 py-0.5 font-mono text-red-600 line-through">
+                        {entry.oldValue === null || entry.oldValue === "" ? "(ว่าง)" : entry.oldValue}
+                      </span>
+                      <span className="text-zinc-400">→</span>
+                      <span className="rounded-sm bg-emerald-50 px-1.5 py-0.5 font-mono text-emerald-700">
+                        {entry.newValue === null || entry.newValue === "" ? "(ว่าง)" : entry.newValue}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       )}
       {modal === "params" && (
         <ParamsSettingsModal
