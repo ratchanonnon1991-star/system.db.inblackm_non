@@ -12,9 +12,12 @@ import {
   Plus,
   Table2,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { buildAddColumnSql, buildCreateTableSql, DDL_COLUMN_TYPES } from "@/lib/gamedb-schema-ddl";
+import { guessColumnsFromCsv, toColumnName } from "@/lib/gamedb-csv-schema";
+import { parseCsv } from "@/lib/gameinfo-csv";
 
 const labelClass = "mb-1 block text-[10px] font-black text-zinc-500";
 const inputClass =
@@ -68,6 +71,46 @@ export default function CreateDbPage() {
   const [newTable, setNewTable] = useState("");
   const [columns, setColumns] = useState([emptyColumn()]);
   const [primaryKeyColumn, setPrimaryKeyColumn] = useState("");
+
+  const [importNote, setImportNote] = useState("");
+  const [importError, setImportError] = useState("");
+
+  // Most people arrive with the data already in a spreadsheet, so retyping
+  // every column name and picking every type by hand is the slowest route to
+  // a table that is sitting right there in a file. This only ever fills the
+  // form in -- the DDL preview and the confirm below are unchanged, so a bad
+  // guess costs one dropdown, never a wrong table.
+  const importCsvFile = async (file) => {
+    setImportError("");
+    setImportNote("");
+    try {
+      const { headers, rows } = parseCsv(await file.text());
+      if (headers.length === 0) {
+        setImportError("ไม่พบหัวตารางในไฟล์นี้ — แถวแรกของไฟล์ต้องเป็นชื่อคอลัมน์");
+        return;
+      }
+      const guessed = guessColumnsFromCsv({ headers, rows });
+      setColumns(
+        guessed.map((column) => ({
+          key: crypto.randomUUID(),
+          name: column.name,
+          type: column.type,
+          notNull: column.notNull,
+        }))
+      );
+      setPrimaryKeyColumn("");
+      if (!newTable.trim()) {
+        const base = file.name.replace(/\.[^.]+$/, "");
+        setNewTable(toColumnName(base));
+      }
+      setImportNote(
+        `อ่านไฟล์ได้ ${guessed.length} คอลัมน์ จาก ${rows.length.toLocaleString("th-TH")} แถว — ` +
+          "ระบบเดาชนิดข้อมูลให้แล้ว ตรวจดูก่อนกดสร้างได้เลย"
+      );
+    } catch (err) {
+      setImportError(`อ่านไฟล์ไม่สำเร็จ: ${err.message}`);
+    }
+  };
 
   const updateColumn = (key, patch) =>
     setColumns((prev) => prev.map((col) => (col.key === key ? { ...col, ...patch } : col)));
@@ -300,6 +343,34 @@ export default function CreateDbPage() {
 
           {mode === "createTable" ? (
             <div className="space-y-5">
+              <div className="rounded-sm border border-sky-200 bg-sky-50 p-3">
+                <p className="flex items-center gap-1.5 text-xs font-black text-sky-800">
+                  <Upload size={13} /> มีไฟล์ Excel/CSV อยู่แล้วใช่ไหม?
+                </p>
+                <p className="mt-0.5 text-[10px] font-semibold text-sky-600">
+                  เลือกไฟล์ .csv (ใน Excel กด &quot;Save As&quot; แล้วเลือก CSV)
+                  ระบบจะอ่านชื่อคอลัมน์และเดาชนิดข้อมูลให้อัตโนมัติ
+                  แล้วค่อยตรวจแก้ก่อนกดสร้างจริง
+                </p>
+                <input
+                  type="file"
+                  accept=".csv,text/csv"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) importCsvFile(file);
+                    // Reset so picking the same file twice still fires.
+                    e.target.value = "";
+                  }}
+                  className="mt-2 block w-full text-[10px] font-semibold text-sky-800 file:mr-2 file:rounded-sm file:border-0 file:bg-sky-600 file:px-3 file:py-1.5 file:text-[10px] file:font-black file:text-white hover:file:bg-sky-700"
+                />
+                {importNote && (
+                  <p className="mt-1.5 text-[10px] font-bold text-emerald-700">{importNote}</p>
+                )}
+                {importError && (
+                  <p className="mt-1.5 text-[10px] font-bold text-red-600">{importError}</p>
+                )}
+              </div>
+
               <div>
                 <StepHeading n={2} title="ตั้งชื่อตาราง" hint="เช่น packages หรือ public.packages" />
                 <input
