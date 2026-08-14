@@ -4,7 +4,12 @@ import { runInsertForm, validateInsertSql } from "@/server/gamedb-insert-runner.
 import { bindSqlParams, extractSqlParams } from "@/lib/gamedb-sql-params.js";
 import { log, reset } from "@/lib/db.js";
 import { setAllowWrite } from "@/server/gamedb-side-tables.js";
-import { normalizeInsertForm, normalizeLayout } from "@/lib/gamedb-layout.js";
+import {
+  normalizeInsertForm,
+  normalizeLayout,
+  PARAM_TYPES,
+  widgetForPgType,
+} from "@/lib/gamedb-layout.js";
 import { sanitizeLayout } from "@/server/gamedb-layout-sanitizer.js";
 
 let pass = 0;
@@ -273,6 +278,46 @@ check(
   normalizeInsertForm({ sql: `INSERT INTO t (a) VALUES ('${"x".repeat(6000)}')` }).sql.length,
   5000
 );
+
+// --- the field type a new form field starts as ---------------------------
+// InsertFormModal seeds each field's type from the real column type via
+// widgetForPgType. That only works while every value it can return is also a
+// valid field type -- otherwise normalizeInsertForm silently rewrites it back
+// to "text" and the form quietly goes back to being all text boxes.
+const PG_TYPES = [
+  "boolean",
+  "integer",
+  "smallint",
+  "bigint",
+  "numeric(12,2)",
+  "real",
+  "double precision",
+  "money",
+  "date",
+  "time without time zone",
+  "timestamp without time zone",
+  "timestamp with time zone",
+  "character varying(255)",
+  "text",
+  "uuid",
+  "jsonb",
+  "",
+];
+for (const pgType of PG_TYPES) {
+  const guessed = widgetForPgType(pgType);
+  ok(`"${pgType || "(unknown)"}" seeds a field type the form can keep`, PARAM_TYPES.includes(guessed));
+  check(
+    `...and survives normalizeInsertForm as "${guessed}"`,
+    normalizeInsertForm({
+      sql: "INSERT INTO t (a) VALUES (:a)",
+      fields: [{ name: "a", type: guessed }],
+    }).fields[0].type,
+    guessed
+  );
+}
+check("a date column seeds a date picker, not a text box", widgetForPgType("date"), "date");
+check("a boolean column seeds a switch", widgetForPgType("boolean"), "boolean");
+check("a numeric column seeds a number box", widgetForPgType("numeric(12,2)"), "number");
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);

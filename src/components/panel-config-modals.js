@@ -2868,6 +2868,24 @@ function fieldInputType(type) {
  * there only for someone who already knows SQL and wants a script the picker
  * cannot express (multi-table writes, expressions, etc).
  */
+/**
+ * Which table a hand-written INSERT is aimed at, matched against the schema
+ * we already hold. Only used to work out what kind of box each field should
+ * be, so an unqualified name shared by two tables resolves to nothing rather
+ * than to a guess -- being wrong about a column's type is worse than falling
+ * back to a plain text box.
+ */
+function tableFromInsertSql(sql, tables) {
+  if (!tables?.length) return null;
+  const match = /^\s*insert\s+into\s+([^\s(]+)/i.exec(String(sql || ""));
+  if (!match) return null;
+  const named = match[1].replace(/"/g, "").toLowerCase();
+  const qualified = tables.find((table) => table.key.toLowerCase() === named);
+  if (qualified) return qualified;
+  const byName = tables.filter((table) => table.name.toLowerCase() === named);
+  return byName.length === 1 ? byName[0] : null;
+}
+
 export function InsertFormModal({ insertForm, connectionId, onSave, onClose }) {
   const [builderMode, setBuilderMode] = useState(insertForm?.sql ? "sql" : "visual");
   const [sql, setSql] = useState(insertForm?.sql || "");
@@ -2937,18 +2955,35 @@ export function InsertFormModal({ insertForm, connectionId, onSave, onClose }) {
   const effectiveSql = builderMode === "visual" ? visualSql : sql;
   const names = useMemo(() => extractSqlParams(effectiveSql), [effectiveSql]);
 
+  // The real column behind each :placeholder, so a new field starts as the
+  // kind of box that column actually needs -- a date column as a date picker,
+  // a boolean as a switch -- instead of everything defaulting to plain text
+  // and having to be corrected by hand one field at a time.
+  //
+  // In visual mode the placeholder IS the column name (see buildVisualInsert).
+  // In SQL mode the statement names its own table, so read it back out of the
+  // SQL -- but only against a schema that was already fetched, since raw-SQL
+  // use deliberately skips that fetch (see the effect above).
+  const columnByName = useMemo(() => {
+    const table =
+      builderMode === "visual" ? selectedTable : tableFromInsertSql(sql, schemaData?.tables);
+    return new Map((table?.columns || []).map((column) => [column.name, column]));
+  }, [builderMode, selectedTable, sql, schemaData]);
+
   const draft = names.map((name) => {
     const existing = fields.find((field) => field.name === name);
-    return (
-      existing || {
-        name,
-        label: name,
-        type: "text",
-        defaultValue: "",
-        options: [],
-        required: true,
-      }
-    );
+    if (existing) return existing;
+    const column = columnByName.get(name);
+    return {
+      name,
+      label: name,
+      type: column ? widgetForPgType(column.type) : "text",
+      defaultValue: "",
+      options: [],
+      // A column the database itself allows to be empty should not be forced
+      // on whoever fills the form in; one declared NOT NULL still is.
+      required: column ? !column.nullable : true,
+    };
   });
 
   // Same trap as the parameter modal: parsing on every keystroke would eat the
