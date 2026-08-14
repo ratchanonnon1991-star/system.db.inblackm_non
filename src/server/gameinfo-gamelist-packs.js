@@ -186,6 +186,9 @@ export async function getGamelistPacks(gameId) {
     return {
       currencies: reconstructCurrencies(packRows),
       computedColumns: Array.isArray(computedRow?.data?.columns) ? computedRow.data.columns : [],
+      columnOrder: Array.isArray(computedRow?.data?.columnOrder)
+        ? computedRow.data.columnOrder.filter((key) => typeof key === "string")
+        : [],
     };
   } finally {
     client.release();
@@ -194,7 +197,7 @@ export async function getGamelistPacks(gameId) {
 
 /** Full-tree replace, same shape as the old saveGameinfoPacks — delete every
  * row for this game and reinsert, including the computed-columns sentinel. */
-export async function saveGamelistPacks(gameId, { currencies, computedColumns }) {
+export async function saveGamelistPacks(gameId, { currencies, computedColumns, columnOrder }) {
   const pool = await getReadyPool();
   const client = await pool.connect();
   try {
@@ -209,7 +212,14 @@ export async function saveGamelistPacks(gameId, { currencies, computedColumns })
     }
     await client.query(
       `INSERT INTO gamelist_packs (game_id, pack_id, data) VALUES ($1, $2, $3)`,
-      [gameId, COMPUTED_SENTINEL, JSON.stringify({ columns: Array.isArray(computedColumns) ? computedColumns : [] })]
+      [
+        gameId,
+        COMPUTED_SENTINEL,
+        JSON.stringify({
+          columns: Array.isArray(computedColumns) ? computedColumns : [],
+          columnOrder: Array.isArray(columnOrder) ? columnOrder : [],
+        }),
+      ]
     );
     await client.query("COMMIT");
   } catch (error) {

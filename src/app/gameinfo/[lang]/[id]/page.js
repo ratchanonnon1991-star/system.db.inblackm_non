@@ -10,6 +10,7 @@ import {
 } from "@/server/gameinfo-gamelist-packs";
 import { getGamelistTutorial } from "@/server/gameinfo-gamelist-tutorial";
 import { getGamelistImage } from "@/server/gameinfo-gamelist-image";
+import { getUsdtThbRate } from "@/server/gameinfo-usdt-rate";
 import GameinfoGameView from "@/components/gameinfo-game-view";
 import GameinfoErrorNotice from "@/components/gameinfo-error-notice";
 import GameinfoBackLink from "@/components/gameinfo-back-link";
@@ -67,6 +68,7 @@ export default async function GameinfoGameDetailPage({ params }) {
     );
   }
   if (!row) notFound();
+  const usdtRate = await getUsdtThbRate();
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
@@ -84,7 +86,12 @@ export default async function GameinfoGameDetailPage({ params }) {
           </Link>
         )}
       </div>
-      <GameinfoGameView row={row} currencies={currencies} computedColumns={computedColumns} />
+      <GameinfoGameView
+        row={row}
+        currencies={currencies}
+        computedColumns={computedColumns}
+        initialUsdtThb={usdtRate.value}
+      />
     </div>
   );
 }

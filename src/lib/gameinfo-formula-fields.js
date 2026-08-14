@@ -13,6 +13,7 @@ export const GAMEINFO_FIELDS = {
   "ภูมิภาค": "region",
   "แพลตฟอร์ม": "platform",
   "เซิร์ฟเวอร์": "server",
+  "USDT/THB": "usdtThb",
 };
 
 export const GAMEINFO_FIELD_NAMES = Object.keys(GAMEINFO_FIELDS);

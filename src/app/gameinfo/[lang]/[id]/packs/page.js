@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { getSessionUser } from "@/server/session-user";
 import { getGameListRow } from "@/server/gameinfo-gamelist";
+import { getUsdtThbRate } from "@/server/gameinfo-usdt-rate";
 import { getGamelistPacks, listAllGamelistChannels } from "@/server/gameinfo-gamelist-packs";
 import { buildPackSuggestions } from "@/lib/gameinfo-suggestions";
 import GameinfoPackEditor from "@/components/gameinfo-pack-editor";
@@ -39,6 +40,7 @@ export default async function GameinfoGamelistPacksPage({ params }) {
     );
   }
   if (!row) notFound();
+  const usdtRate = await getUsdtThbRate();
 
   const game = {
     id: row.id,
@@ -46,8 +48,10 @@ export default async function GameinfoGamelistPacksPage({ params }) {
     region: row.region,
     platform: row.platform,
     server: row.server,
+    usdtThb: usdtRate.value,
     currencies: packs.currencies,
     computedColumns: packs.computedColumns,
+    columnOrder: packs.columnOrder,
   };
 
   return (

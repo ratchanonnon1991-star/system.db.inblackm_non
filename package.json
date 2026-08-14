@@ -18,11 +18,25 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@univerjs/core": "0.25.1",
+    "@univerjs/design": "0.25.1",
+    "@univerjs/docs": "0.25.1",
+    "@univerjs/docs-ui": "0.25.1",
+    "@univerjs/engine-formula": "0.25.1",
+    "@univerjs/engine-render": "0.25.1",
+    "@univerjs/sheets": "0.25.1",
+    "@univerjs/sheets-formula": "0.25.1",
+    "@univerjs/sheets-formula-ui": "0.25.1",
+    "@univerjs/sheets-numfmt": "0.25.1",
+    "@univerjs/sheets-numfmt-ui": "0.25.1",
+    "@univerjs/sheets-ui": "0.25.1",
+    "@univerjs/ui": "0.25.1",
     "lucide-react": "^1.18.0",
     "next": "16.2.12",
     "pg": "^8.21.0",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "rxjs": "^7.8.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -31,5 +45,11 @@
     "picomatch": "^4.0.5",
     "tailwindcss": "^4",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "nanoid": "3.3.18",
+    "@univerjs/core": {
+      "nanoid": "5.1.16"
+    }
   }
 }

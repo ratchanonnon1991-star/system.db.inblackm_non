@@ -135,11 +135,16 @@ async function run() {
   const loaded = await getGamelistPacks(5);
   check("round-trip: reconstructs the original currency/category/pack tree", loaded.currencies, ORIGINAL_TREE);
   check("round-trip: reconstructs the computed columns", loaded.computedColumns, computedColumns);
+  check("round-trip: defaults the sheet column order", loaded.columnOrder, []);
 
   reset();
   setResponder(() => ({ rows: [] }));
   const empty = await getGamelistPacks(5);
-  check("empty: no rows gives an empty tree and no computed columns", empty, { currencies: [], computedColumns: [] });
+  check("empty: no rows gives an empty tree and no computed columns", empty, {
+    currencies: [],
+    computedColumns: [],
+    columnOrder: [],
+  });
 
   // --- listGamelistPackCountByGame: excludes the __computed__ sentinel ------
   reset();

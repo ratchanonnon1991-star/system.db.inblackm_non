@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Download, Image as ImageIcon, Plus, Trash2, X } from "lucide-react";
 import {
@@ -28,6 +29,18 @@ import { formatCell } from "@/lib/gamedb-layout";
 import { GAMEINFO_FIELD_NAMES, resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
 import { mergeCurrencies } from "@/lib/gameinfo-import";
 import { normalizeSpaces } from "@/lib/text-normalize";
+import { useGameinfoUsdtRate } from "./use-gameinfo-usdt-rate";
+
+const GameinfoPackUniver = dynamic(() => import("./gameinfo-pack-univer"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-[420px] items-center justify-center rounded-lg border border-linear-hairline bg-linear-surface-1 text-sm text-linear-ink-subtle">
+      กำลังเปิดตาราง Pack…
+    </div>
+  ),
+});
+
+const USE_UNIVER_PACK_SHEET = true;
 
 const REQUIRED_PACK_FIELDS = ["name", "price", "amountChargedFee", "channelsMain"];
 
@@ -71,6 +84,8 @@ export default function GameinfoPackEditor({
   exportUrl = `/api/gameinfo/import/export?gameId=${game.id}`,
 }) {
   const router = useRouter();
+  const usdtThb = useGameinfoUsdtRate(game.usdtThb);
+  const formulaGame = useMemo(() => ({ ...game, usdtThb }), [game, usdtThb]);
   const [pending, startTransition] = useTransition();
   const [savedAt, setSavedAt] = useState(null);
   const [savedVisible, setSavedVisible] = useState(false);
@@ -88,12 +103,16 @@ export default function GameinfoPackEditor({
 
   const [currencies, setCurrencies] = useState(game.currencies);
   const [computedColumns, setComputedColumns] = useState(game.computedColumns ?? []);
+  const [columnOrder, setColumnOrder] = useState(game.columnOrder ?? []);
+  const [sheetRevision, setSheetRevision] = useState(0);
+  const [sheetSelection, setSheetSelection] = useState(null);
   // Last server-confirmed snapshot. `game.*` is only the initial server prop;
   // router.refresh() does not remount this client component, so comparing the
   // draft to `game.*` forever can leave the editor dirty after a successful
   // save. Advance this snapshot from the PUT response instead.
   const [savedCurrencies, setSavedCurrencies] = useState(game.currencies);
   const [savedComputedColumns, setSavedComputedColumns] = useState(game.computedColumns ?? []);
+  const [savedColumnOrder, setSavedColumnOrder] = useState(game.columnOrder ?? []);
   const [invalidFields, setInvalidFields] = useState(new Set());
 
   const [importing, setImporting] = useState(false);
@@ -107,7 +126,9 @@ export default function GameinfoPackEditor({
   // something to save, and save()/cancel() moving the draft back onto the
   // last server-confirmed snapshot makes this false, animating the pill shut.
   const dirty =
-    !sameJson(currencies, savedCurrencies) || !sameJson(computedColumns, savedComputedColumns);
+    !sameJson(currencies, savedCurrencies) ||
+    !sameJson(computedColumns, savedComputedColumns) ||
+    !sameJson(columnOrder, savedColumnOrder);
 
   const parsedColumns = useMemo(
     () =>
@@ -125,9 +146,11 @@ export default function GameinfoPackEditor({
     const pack = firstPack(currencies);
     if (!pack) return null;
     const row = {};
-    for (const label of GAMEINFO_FIELD_NAMES) row[label] = resolveGameinfoField(pack, game, label);
+    for (const label of GAMEINFO_FIELD_NAMES) {
+      row[label] = resolveGameinfoField(pack, formulaGame, label);
+    }
     return row;
-  }, [currencies, game]);
+  }, [currencies, formulaGame]);
 
   // Channel "memory" — grows the moment a tag is added (Enter) to any pack's
   // channelsMain/channelsSecondary in this session, not just from what was
@@ -227,10 +250,13 @@ export default function GameinfoPackEditor({
 
   function addComputedColumn({ key, label, formula, type }) {
     setComputedColumns((prev) => [...prev, { key, label, formula, type }]);
+    setSheetRevision((value) => value + 1);
     setModalOpen(false);
   }
   function removeComputedColumn(key) {
     setComputedColumns((prev) => prev.filter((c) => c.key !== key));
+    setColumnOrder((prev) => prev.filter((columnKey) => columnKey !== `computed:${key}`));
+    setSheetRevision((value) => value + 1);
   }
   // Drag-and-drop reorder (press-and-hold a column header, drag it) —
   // computed columns are game-level state shared by every category's table,
@@ -288,12 +314,13 @@ export default function GameinfoPackEditor({
     setInvalidFields(new Set());
     const submittedCurrencies = currencies;
     const submittedComputedColumns = computedColumns;
+    const submittedColumnOrder = columnOrder;
     startTransition(async () => {
       try {
         const data = await apiJson(savePacksUrl, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ currencies, computedColumns }),
+          body: JSON.stringify({ currencies, computedColumns, columnOrder }),
         });
         // Use the round-tripped server value as both the visible draft and
         // the new clean baseline. This also absorbs storage normalization
@@ -301,6 +328,7 @@ export default function GameinfoPackEditor({
         // unsaved immediately after the request succeeded.
         const nextCurrencies = data.game.currencies;
         const nextComputedColumns = data.game.computedColumns ?? [];
+        const nextColumnOrder = data.game.columnOrder ?? [];
         // If the user managed to type again while the request was in flight,
         // keep those newer edits. They should remain dirty relative to the
         // snapshot that was just saved instead of being overwritten.
@@ -310,8 +338,12 @@ export default function GameinfoPackEditor({
         setComputedColumns((current) =>
           sameJson(current, submittedComputedColumns) ? nextComputedColumns : current
         );
+        setColumnOrder((current) =>
+          sameJson(current, submittedColumnOrder) ? nextColumnOrder : current
+        );
         setSavedCurrencies(nextCurrencies);
         setSavedComputedColumns(nextComputedColumns);
+        setSavedColumnOrder(nextColumnOrder);
         setImportMsg("");
         setImportErrors([]);
         setPendingImport(null);
@@ -328,6 +360,9 @@ export default function GameinfoPackEditor({
     if (!window.confirm("ยกเลิกการแก้ไข? ข้อมูลที่ยังไม่บันทึกจะหายไป")) return;
     setCurrencies(savedCurrencies);
     setComputedColumns(savedComputedColumns);
+    setColumnOrder(savedColumnOrder);
+    setSheetSelection(null);
+    setSheetRevision((value) => value + 1);
     setInvalidFields(new Set());
     setError("");
     setSavedAt(null);
@@ -356,6 +391,7 @@ export default function GameinfoPackEditor({
       const errors = data.errors ?? [];
       if (currencies.length === 0) {
         setCurrencies(data.game.currencies);
+        setSheetRevision((value) => value + 1);
         setImportErrors(errors);
         setImportMsg(
           `นำเข้าแล้ว ${data.game.packCount} แพ็ก — ตรวจสอบด้านล่างแล้วกด "บันทึกตารางแพ็ก"`
@@ -378,12 +414,97 @@ export default function GameinfoPackEditor({
     } else {
       setCurrencies((prev) => mergeCurrencies(prev, pendingImport.currencies));
     }
+    setSheetRevision((value) => value + 1);
     setImportMsg(
       `นำเข้าแล้ว ${pendingImport.packCount} แพ็ก (${
         mode === "replace" ? "แทนที่ทั้งชุด" : "เพิ่มเข้าไป"
       }) — ตรวจสอบด้านล่างแล้วกด "บันทึกตารางแพ็ก"`
     );
     setPendingImport(null);
+  }
+
+  function updateSheetStructure(mutator) {
+    updateCurrencies(mutator);
+    setSheetSelection(null);
+    setSheetRevision((value) => value + 1);
+  }
+
+  function addSheetCurrency() {
+    updateSheetStructure((draft) => {
+      draft.push({ id: genId("c"), name: "", image: "", categories: [] });
+    });
+  }
+
+  function addSheetCategory() {
+    const currencyId = sheetSelection?.currencyId;
+    if (!currencyId) return;
+    updateSheetStructure((draft) => {
+      const currency = draft.find((item) => String(item.id) === String(currencyId));
+      currency?.categories.push({ id: genId("cat"), name: "", packs: [] });
+    });
+  }
+
+  function addSheetPack() {
+    const currencyId = sheetSelection?.currencyId;
+    const categoryId = sheetSelection?.categoryId;
+    if (!currencyId || !categoryId) return;
+    updateSheetStructure((draft) => {
+      const currency = draft.find((item) => String(item.id) === String(currencyId));
+      const category = currency?.categories.find(
+        (item) => String(item.id) === String(categoryId)
+      );
+      category?.packs.push({
+        id: genId("pk"),
+        name: "",
+        image: "",
+        price: "",
+        amountCharged: "",
+        amountChargedFee: "",
+        channelsMain: [],
+        channelsSecondary: [],
+        country: "",
+      });
+    });
+  }
+
+  function deleteSheetSelection() {
+    if (!sheetSelection) return;
+    const label = sheetSelection.name ||
+      (sheetSelection.type === "currency" ? "สกุลเงินนี้" : sheetSelection.type === "category" ? "หมวดหมู่นี้" : "Pack นี้");
+    if (!window.confirm(`ลบ ${label}?`)) return;
+    updateSheetStructure((draft) => {
+      const currencyIndex = draft.findIndex(
+        (item) => String(item.id) === String(sheetSelection.currencyId)
+      );
+      if (currencyIndex < 0) return;
+      if (sheetSelection.type === "currency") {
+        draft.splice(currencyIndex, 1);
+        return;
+      }
+      const categories = draft[currencyIndex].categories;
+      const categoryIndex = categories.findIndex(
+        (item) => String(item.id) === String(sheetSelection.categoryId)
+      );
+      if (categoryIndex < 0) return;
+      if (sheetSelection.type === "category") {
+        categories.splice(categoryIndex, 1);
+        return;
+      }
+      const packs = categories[categoryIndex].packs;
+      const packIndex = packs.findIndex(
+        (item) => String(item.id) === String(sheetSelection.packId)
+      );
+      if (packIndex >= 0) packs.splice(packIndex, 1);
+    });
+  }
+
+  function deleteSelectedSheetColumn() {
+    const key = sheetSelection?.computedColumnKey;
+    if (!key) return;
+    const label = sheetSelection.columnLabel || "คอลัมน์สูตรนี้";
+    if (!window.confirm(`ลบคอลัมน์ ${label}?`)) return;
+    removeComputedColumn(key);
+    setSheetSelection(null);
   }
 
   return (
@@ -471,6 +592,131 @@ export default function GameinfoPackEditor({
       </p>
 
       <section>
+        {USE_UNIVER_PACK_SHEET ? (
+          <>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-semibold text-linear-ink">
+                  ตาราง Pack เดียว ({currencies.reduce((count, currency) => count + currency.categories.reduce((sum, category) => sum + category.packs.length, 0), 0)} แพ็ก)
+                </h2>
+                <p className="mt-0.5 text-xs text-linear-ink-subtle">
+                  เลือกหัวข้อหรือ Pack ในตารางก่อนใช้ปุ่มเพิ่มและลบ
+                  {sheetSelection?.name ? ` — เลือก: ${sheetSelection.name}` : ""}
+                </p>
+              </div>
+              <div data-pack-sheet-controls className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setModalOpen(true)}
+                  className="flex items-center gap-1 rounded-md border border-linear-primary/40 px-2.5 py-1.5 text-xs text-linear-primary hover:bg-linear-primary/10"
+                >
+                  <Plus size={13} /> สูตร
+                </button>
+                <button
+                  type="button"
+                  onClick={addSheetCurrency}
+                  className="flex items-center gap-1 rounded-md border border-linear-hairline-strong px-2.5 py-1.5 text-xs text-linear-ink-muted hover:bg-linear-surface-2"
+                >
+                  <Plus size={13} /> สกุลเงิน
+                </button>
+                <button
+                  type="button"
+                  onClick={addSheetCategory}
+                  disabled={!sheetSelection?.currencyId}
+                  className="flex items-center gap-1 rounded-md border border-linear-hairline-strong px-2.5 py-1.5 text-xs text-linear-ink-muted hover:bg-linear-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Plus size={13} /> หมวดหมู่
+                </button>
+                <button
+                  type="button"
+                  onClick={addSheetPack}
+                  disabled={!sheetSelection?.categoryId}
+                  className="flex items-center gap-1 rounded-md border border-linear-hairline-strong px-2.5 py-1.5 text-xs text-linear-ink-muted hover:bg-linear-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Plus size={13} /> Pack
+                </button>
+                <button
+                  type="button"
+                  onClick={deleteSheetSelection}
+                  disabled={!sheetSelection}
+                  title="ลบรายการที่เลือก"
+                  className="flex items-center gap-1 rounded-md bg-red-500/10 px-2.5 py-1.5 text-xs text-red-400 hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Trash2 size={13} /> ลบ
+                </button>
+              </div>
+            </div>
+
+            {computedColumns.length > 0 && (
+              <div className="mb-3 flex flex-wrap gap-1.5">
+                {computedColumns.map((column) => (
+                  <span
+                    key={column.key}
+                    className="inline-flex items-center gap-1 rounded-full border border-linear-primary/25 bg-linear-primary/10 px-2 py-1 text-[11px] text-linear-primary"
+                  >
+                    {column.label}
+                    <button
+                      type="button"
+                      onClick={() => removeComputedColumn(column.key)}
+                      className="rounded-full p-0.5 hover:bg-red-500/15 hover:text-red-400"
+                      aria-label={`ลบสูตร ${column.label}`}
+                    >
+                      <X size={11} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <GameinfoPackUniver
+              game={formulaGame}
+              currencies={currencies}
+              computedColumns={computedColumns}
+              columnOrder={columnOrder}
+              revision={sheetRevision}
+              invalidFields={invalidFields}
+              canDeleteRow={sheetSelection?.type === "pack"}
+              onDeleteRow={deleteSheetSelection}
+              canDeleteColumn={Boolean(sheetSelection?.computedColumnKey)}
+              onDeleteColumn={deleteSelectedSheetColumn}
+              onSelectionContext={setSheetSelection}
+              onChange={(next) => {
+                setCurrencies(next.currencies);
+                setComputedColumns(next.computedColumns);
+                setColumnOrder(next.columnOrder);
+                setInvalidFields((previous) => {
+                  if (previous.size === 0) return previous;
+                  const remaining = new Set();
+                  for (const currency of next.currencies) {
+                    for (const category of currency.categories) {
+                      for (const pack of category.packs) {
+                        if (!String(pack.name ?? "").trim() && previous.has(`${pack.id}:name`))
+                          remaining.add(`${pack.id}:name`);
+                        if (!String(pack.price ?? "").trim() && previous.has(`${pack.id}:price`))
+                          remaining.add(`${pack.id}:price`);
+                        if (
+                          !String(pack.amountChargedFee ?? "").trim() &&
+                          previous.has(`${pack.id}:amountChargedFee`)
+                        )
+                          remaining.add(`${pack.id}:amountChargedFee`);
+                        if (
+                          (!Array.isArray(pack.channelsMain) || pack.channelsMain.length === 0) &&
+                          previous.has(`${pack.id}:channelsMain`)
+                        )
+                          remaining.add(`${pack.id}:channelsMain`);
+                      }
+                    }
+                  }
+                  return remaining.size === previous.size &&
+                    [...remaining].every((key) => previous.has(key))
+                    ? previous
+                    : remaining;
+                });
+              }}
+            />
+          </>
+        ) : (
+          <>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="font-semibold text-linear-ink">สกุลเงิน ({currencies.length})</h2>
           <div className="flex gap-2">
@@ -554,7 +800,7 @@ export default function GameinfoPackEditor({
                     key={cat.id}
                     category={cat}
                     suggestions={liveSuggestions}
-                    game={game}
+                    game={formulaGame}
                     computedColumns={parsedColumns}
                     invalidFields={invalidFields}
                     onRemoveColumn={removeComputedColumn}
@@ -574,6 +820,8 @@ export default function GameinfoPackEditor({
             </div>
           ))}
         </div>
+          </>
+        )}
       </section>
 
       {/* Same floating pill pattern as the game list table's ยกเลิก/เพิ่มเกม/

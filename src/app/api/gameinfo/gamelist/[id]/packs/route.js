@@ -11,6 +11,12 @@ export async function PUT(request, { params }) {
     const packs = await saveGamelistPacks(Number(id), {
       currencies: Array.isArray(body.currencies) ? body.currencies : [],
       computedColumns: sanitizeComputedColumns(body.computedColumns),
+      columnOrder: Array.isArray(body.columnOrder)
+        ? body.columnOrder
+            .filter((key) => typeof key === "string")
+            .slice(0, 40)
+            .map((key) => key.slice(0, 96))
+        : [],
     });
     return jsonOk({ game: { id: Number(id), ...packs } });
   } catch (err) {

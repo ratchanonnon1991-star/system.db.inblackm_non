@@ -7,19 +7,27 @@ import { formatCell as formatComputedCell } from "@/lib/gamedb-layout";
 import { resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
 import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
+import { useGameinfoUsdtRate } from "./use-gameinfo-usdt-rate";
 
 // One game's game_list row, read-only (editing region/platform/server/etc.
 // happens on the list table or the pack editor, not here — see
 // gameinfo-gamelist-table.js and GameinfoPackEditor) plus its packs — same
 // currencies/computedColumns tree the pack editor saves to gamelist_packs,
 // so what's shown here always matches what "จัดการแพ็ก" last saved.
-export default function GameinfoGameView({ row, currencies, computedColumns }) {
+export default function GameinfoGameView({ row, currencies, computedColumns, initialUsdtThb }) {
+  const usdtThb = useGameinfoUsdtRate(initialUsdtThb);
   // Same field set the pack editor's formulas can reference (see
   // gameinfo-formula-fields.js) — built from the game_list row, not the
   // gamelist_packs game shape, since that's all this page has.
   const formulaGame = useMemo(
-    () => ({ gameName: row.game, region: row.region, platform: row.platform, server: row.server }),
-    [row.game, row.region, row.platform, row.server]
+    () => ({
+      gameName: row.game,
+      region: row.region,
+      platform: row.platform,
+      server: row.server,
+      usdtThb,
+    }),
+    [row.game, row.region, row.platform, row.server, usdtThb]
   );
   const parsedColumns = useMemo(
     () =>
