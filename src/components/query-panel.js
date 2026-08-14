@@ -36,6 +36,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   SlidersHorizontal,
+  Sigma,
   Table2,
   Timer,
   Trash2,
@@ -62,6 +63,8 @@ import {
   REFRESH_CHOICES,
   resolveInputDefault,
   rowsToCsv,
+  summarize,
+  SUMMARY_LABELS,
   toneStyle,
   widgetForColumn,
 } from "@/lib/gamedb-layout";
@@ -1321,6 +1324,29 @@ export default function QueryPanel({
     lookupRowFilter,
     layout.sort,
   ]);
+
+  // Big-number cards, built from the per-column summaries an admin has
+  // already set (the ones shown under the table) rather than a second thing
+  // to configure. A query with none still gets the one number every table
+  // has: how many rows it is showing.
+  const kpiCards = useMemo(() => {
+    const cards = Object.entries(layout.summary || {})
+      .map(([colId, kind]) => {
+        const index = visibleColumns.findIndex((col) => col.id === colId);
+        if (index === -1) return null;
+        return {
+          id: colId,
+          kind,
+          label: visibleColumns[index].label,
+          value: summarize(kind, displayRows.map((row) => row.cells[index]?.raw)),
+        };
+      })
+      .filter(Boolean);
+    return [
+      { id: "__rows__", kind: "count", label: "จำนวนแถว", value: displayRows.length },
+      ...cards,
+    ];
+  }, [layout.summary, visibleColumns, displayRows]);
 
   const pageCount = Math.max(1, Math.ceil(displayRows.length / pageSize));
   const activePage = Math.min(page, pageCount);
@@ -2707,6 +2733,18 @@ export default function QueryPanel({
                 <ChartColumn size={14} className={view === "chart" ? "text-red-600" : ""} />
                 {view === "chart" ? "กลับไปดูตาราง" : "ดูเป็นกราฟ"}
               </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() =>
+                  runMoreAction(() => setView((prev) => (prev === "kpi" ? "table" : "kpi")))
+                }
+                disabled={!result}
+                className={menuItemClass}
+              >
+                <Sigma size={14} className={view === "kpi" ? "text-red-600" : ""} />
+                {view === "kpi" ? "กลับไปดูตาราง" : "ดูเป็นตัวเลขใหญ่ (สรุป)"}
+              </button>
 
               <div className="my-1 border-t border-zinc-100" />
               <p className="px-2.5 pb-1 pt-1 text-[9px] font-black uppercase tracking-wider text-zinc-400">
@@ -3239,7 +3277,31 @@ export default function QueryPanel({
             </p>
           ) : result ? (
             <>
-              {view === "chart" && layout.chart ? (
+              {view === "kpi" ? (
+                <div className="overflow-auto p-3" style={{ height: chartHeight }}>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {kpiCards.map((card) => (
+                      <div
+                        key={card.id}
+                        className="rounded-sm border border-zinc-200 bg-white p-4 shadow-sm"
+                      >
+                        <p className="truncate text-[10px] font-black uppercase tracking-wide text-zinc-400">
+                          {SUMMARY_LABELS[card.kind]} · {card.label}
+                        </p>
+                        <p className="mt-1 truncate text-3xl font-black tabular-nums text-zinc-800">
+                          {card.value === null ? "—" : formatCell(card.value, "number")}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  {kpiCards.length === 1 && (
+                    <p className="mt-3 rounded-sm border border-dashed border-zinc-200 px-3 py-4 text-center text-[10px] font-semibold text-zinc-400">
+                      อยากเห็นตัวเลขอื่นด้วย? กลับไปดูเป็นตาราง แล้วชี้ที่หัวคอลัมน์ที่เป็นตัวเลข
+                      กดปุ่ม Σ เพื่อเลือกว่าจะ รวม / เฉลี่ย / ต่ำสุด / สูงสุด — คอลัมน์นั้นจะขึ้นเป็นการ์ดตรงนี้
+                    </p>
+                  )}
+                </div>
+              ) : view === "chart" && layout.chart ? (
                 <PanelChart
                   chart={layout.chart}
                   columns={visibleColumns}
