@@ -37,6 +37,7 @@ import { apiJson } from "@/lib/api-json";
 import GameinfoImagePickerModal from "@/components/gameinfo-image-picker-modal";
 import GameinfoImagePreview from "@/components/gameinfo-image-preview";
 import GameinfoTutorialButton from "@/components/gameinfo-tutorial-modal";
+import SearchableSelect from "@/components/searchable-select";
 import {
   buildHeaderGroups,
   clampColumnWidth,
@@ -204,26 +205,23 @@ function WidgetControl({
     const choices =
       widget === "lookup" ? options || [] : (config?.options || []).map(parseOption);
     const current = matchChoice(choices, value);
+    // A value already in the cell but missing from the list would silently
+    // reset itself on save, so it is offered back instead.
+    const missingOption =
+      !current && String(value ?? "").trim() !== ""
+        ? { value: String(value), label: `${String(value)} (ไม่มีในรายการ)` }
+        : null;
     return (
-      <select
+      <SearchableSelect
         autoFocus={autoFocus}
-        value={current ? String(current.value) : ""}
-        onChange={(event) => onChange(event.target.value)}
+        value={current ? String(current.value) : missingOption ? missingOption.value : ""}
+        onChange={onChange}
         onKeyDown={onKeyDown}
+        options={choices.map((option) => ({ value: String(option.value), label: option.label }))}
+        extraOption={missingOption}
+        emptyLabel="— ไม่ระบุ —"
         className={className}
-      >
-        <option value="">— ไม่ระบุ —</option>
-        {/* A value already in the cell but missing from the list would silently
-            reset itself on save, so it is offered back instead. */}
-        {!current && String(value ?? "").trim() !== "" && (
-          <option value={String(value)}>{String(value)} (ไม่มีในรายการ)</option>
-        )}
-        {choices.map((option) => (
-          <option key={String(option.value)} value={String(option.value)}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      />
     );
   }
 

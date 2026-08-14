@@ -80,6 +80,7 @@ import {
   ShareLinkModal,
 } from "@/components/panel-config-modals";
 import PanelTable from "@/components/panel-table";
+import SearchableSelect from "@/components/searchable-select";
 import PanelChart from "@/components/panel-chart";
 import ModalResizeHandle from "@/components/modal-resize-handle";
 import { useResizableModalWidth } from "@/lib/use-resizable-modal-width";
@@ -2901,12 +2902,15 @@ export default function QueryPanel({
                           <Loader2 size={12} className="animate-spin" /> กำลังโหลดตัวเลือก...
                         </p>
                       ) : (
-                        <select
+                        <SearchableSelect
                           id={inputId}
                           value={paramValues[param.name] ?? ""}
-                          onChange={(e) =>
-                            setParamValues((prev) => ({ ...prev, [param.name]: e.target.value }))
+                          onChange={(next) =>
+                            setParamValues((prev) => ({ ...prev, [param.name]: next }))
                           }
+                          options={param.options.map((option) => ({ value: option, label: option }))}
+                          emptyLabel="— เลือกค่า —"
+                          placeholder="พิมพ์เพื่อค้นหา..."
                           aria-invalid={Boolean(error)}
                           aria-describedby={error ? errorId : hintId}
                           className={`h-8 min-w-40 rounded-sm border bg-white px-2 text-[11px] font-semibold outline-none ${
@@ -2914,14 +2918,7 @@ export default function QueryPanel({
                               ? "border-red-400 bg-red-50/50 focus:border-red-600"
                               : "border-zinc-200 focus:border-red-600"
                           }`}
-                        >
-                          <option value="">— เลือกค่า —</option>
-                          {param.options.map((option) => (
-                            <option key={option} value={option}>
-                              {option}
-                            </option>
-                          ))}
-                        </select>
+                        />
                       )
                     ) : (
                       <input
