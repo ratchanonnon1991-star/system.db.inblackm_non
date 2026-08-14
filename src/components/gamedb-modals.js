@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   Calculator,
+  ChevronDown,
   Code2,
   Database,
   Filter,
@@ -578,7 +579,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                           <option value="all">ทั้งหมด</option>
                           <option value="recent">ใช้ล่าสุด</option>
                           <option value="editable">มีคอลัมน์แก้ไขได้</option>
-                          <option value="pk">มี Primary Key</option>
+                          <option value="pk">มีคอลัมน์รหัสหลัก (Primary Key)</option>
                         </select>
                       </label>
                     </div>
@@ -610,7 +611,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                   </div>
 
                   <div>
-                    <p className="mb-1 text-[10px] font-black text-zinc-500">เริ่มจาก Template</p>
+                    <p className="mb-1 text-[10px] font-black text-zinc-500">เริ่มจากแบบสำเร็จรูป (ไม่บังคับ)</p>
                     <div className="grid gap-1.5 sm:grid-cols-3">
                       <button type="button" onClick={() => applyBuilderTemplate("general")} className="rounded-sm border border-zinc-200 bg-white px-3 py-2 text-left transition hover:border-red-200 hover:bg-red-50">
                         <span className="block text-[10px] font-black text-zinc-700">ตารางทั่วไป</span>
@@ -618,7 +619,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                       </button>
                       <button type="button" onClick={() => applyBuilderTemplate("recent")} className="rounded-sm border border-zinc-200 bg-white px-3 py-2 text-left transition hover:border-red-200 hover:bg-red-50">
                         <span className="block text-[10px] font-black text-zinc-700">ข้อมูลล่าสุด</span>
-                        <span className="text-[8px] font-semibold text-zinc-400">เรียงวันที่/PK จากใหม่ไปเก่า</span>
+                        <span className="text-[8px] font-semibold text-zinc-400">เรียงวันที่หรือรหัสหลักจากใหม่ไปเก่า</span>
                       </button>
                       <button type="button" onClick={() => applyBuilderTemplate("editable")} className="rounded-sm border border-zinc-200 bg-white px-3 py-2 text-left transition hover:border-red-200 hover:bg-red-50">
                         <span className="block text-[10px] font-black text-zinc-700">ตารางแก้ไขข้อมูล</span>
@@ -652,7 +653,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                         className="h-8 rounded-sm border border-zinc-200 bg-zinc-50 px-2 text-[9px] font-bold outline-none focus:border-red-600"
                       >
                         <option value="all">ทุกชนิด</option>
-                        <option value="pk">Primary Key</option>
+                        <option value="pk">รหัสหลัก (Primary Key)</option>
                         <option value="editable">แก้ไขได้</option>
                         <option value="number">ตัวเลข</option>
                         <option value="date">วันที่/เวลา</option>
@@ -681,7 +682,14 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                               />
                               <span className="truncate font-mono text-[11px] font-black text-zinc-700">{column.name}</span>
                               <span className="truncate text-[9px] font-semibold text-zinc-400">{column.type}</span>
-                              {isPrimaryKey && <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[8px] font-black text-violet-600">PK</span>}
+                              {isPrimaryKey && (
+                                <span
+                                  className="rounded bg-violet-50 px-1.5 py-0.5 text-[8px] font-black text-violet-600"
+                                  title="รหัสหลัก (Primary Key) — ค่าที่ใช้ระบุแต่ละแถวไม่ให้ซ้ำกัน"
+                                >
+                                  PK
+                                </span>
+                              )}
                             </label>
                             <div className="sm:text-right">
                               <label className={`inline-flex items-center gap-1.5 text-[10px] font-black ${column.editable ? "text-emerald-600" : "text-zinc-400"}`}>
@@ -720,11 +728,17 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
 
                   <div className="rounded-sm border border-violet-200 bg-violet-50/50 p-2.5">
                     <div className="mb-2">
-                      <p className="text-[10px] font-black text-violet-700">Join ตารางจาก Foreign Key</p>
-                      <p className="text-[9px] font-semibold text-violet-500">เลือกคอลัมน์จากตารางที่เชื่อมกัน ระบบสร้าง LEFT JOIN ให้โดยอัตโนมัติ</p>
+                      <p className="text-[10px] font-black text-violet-700">ดึงคอลัมน์จากตารางที่เชื่อมกัน</p>
+                      <p className="text-[9px] font-semibold text-violet-500">
+                        บางตารางเชื่อมกับตารางนี้ไว้อยู่แล้ว (เช่น ตารางออเดอร์เชื่อมกับตารางลูกค้า) —
+                        ติ๊กคอลัมน์จากตารางที่เชื่อมกัน แล้วระบบจะดึงมาแสดงในผลลัพธ์เดียวกันให้อัตโนมัติ
+                        โดยไม่ต้องเขียน SQL
+                      </p>
                     </div>
                     {availableRelationships.length === 0 ? (
-                      <p className="rounded-sm border border-dashed border-violet-200 bg-white/70 px-2 py-3 text-center text-[9px] font-semibold text-violet-400">ตารางนี้ไม่มี Foreign Key ที่บัญชีฐานข้อมูลอ่านได้</p>
+                      <p className="rounded-sm border border-dashed border-violet-200 bg-white/70 px-2 py-3 text-center text-[9px] font-semibold text-violet-400">
+                        ตารางนี้ไม่มีตารางอื่นเชื่อมโยงไว้ (หรือบัญชีฐานข้อมูลนี้ไม่มีสิทธิ์เห็นความเชื่อมโยงนั้น)
+                      </p>
                     ) : (
                       <div className="space-y-2">
                         {availableRelationships.map((relationship) => {
@@ -779,7 +793,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                         <p className="flex items-center gap-1.5 text-[10px] font-black text-zinc-600">
                           <Filter size={11} /> ตัวกรองข้อมูล
                         </p>
-                        <p className="text-[9px] font-semibold text-zinc-400">ทุกเงื่อนไขต้องตรงกัน (AND)</p>
+                        <p className="text-[9px] font-semibold text-zinc-400">ต้องผ่านครบทุกเงื่อนไข ถึงจะแสดงแถวนั้น</p>
                       </div>
                       <button
                         type="button"
@@ -1002,10 +1016,13 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                   )}
 
                   {visualSql && (
-                    <div>
-                      <p className="mb-1 text-[10px] font-black text-zinc-500">SQL ที่ระบบสร้างให้</p>
-                      <pre className="overflow-x-auto rounded-sm bg-zinc-900 px-3 py-2 font-mono text-[10px] leading-relaxed text-emerald-300">{visualSql}</pre>
-                    </div>
+                    <details className="group rounded-sm border border-zinc-200 p-2.5">
+                      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[10px] font-black text-zinc-500">
+                        <ChevronDown size={12} className="transition group-open:rotate-180" />
+                        ดูคำสั่ง SQL ที่ระบบสร้างให้ (ไม่จำเป็นต้องอ่านก็ใช้งานได้)
+                      </summary>
+                      <pre className="mt-2 overflow-x-auto rounded-sm bg-zinc-900 px-3 py-2 font-mono text-[10px] leading-relaxed text-emerald-300">{visualSql}</pre>
+                    </details>
                   )}
                 </>
               ) : (
@@ -1797,21 +1814,21 @@ export function UsersModal({ me, onClose }) {
               onChange={(e) => setField("role", e.target.value)}
               className={inputClass}
             >
-              <option value="user">User — ดู/รัน query, ใช้ layout จาก template เท่านั้น</option>
+              <option value="user">User — ดู/รัน query, ใช้ layout จากเทมเพลตเท่านั้น</option>
               <option value="staff">Staff — ดู/รัน query, จัด layout</option>
               <option value="admin">Admin — จัดการทุกอย่างรวมถึง SQL และผู้ใช้</option>
             </select>
             {form.role === "user" && (
               <div>
                 <label className="mb-1 block text-[10px] font-black text-zinc-500">
-                  Template หลักเมื่อเข้าสู่ระบบ
+                  เทมเพลตหลักเมื่อเข้าสู่ระบบ
                 </label>
                 <select
                   value={form.defaultViewId}
                   onChange={(e) => setField("defaultViewId", e.target.value)}
                   className={inputClass}
                 >
-                  <option value="">ใช้ Template เริ่มต้นของระบบ</option>
+                  <option value="">ใช้เทมเพลตเริ่มต้นของระบบ</option>
                   {views.map((view) => (
                     <option key={view.id} value={view.id}>
                       {view.name}
