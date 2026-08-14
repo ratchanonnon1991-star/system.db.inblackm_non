@@ -1,6 +1,6 @@
 // Per-column input widgets, dropdowns whose options come from another table,
 // and the label/value split a CASE column needs.
-import { fetchLookupOptions } from "@/server/gamedb-lookup.js";
+import { fetchLookupOptions, fetchDistinctColumnValues } from "@/server/gamedb-lookup.js";
 import { log, reset } from "@/lib/db.js";
 import {
   INPUT_WIDGETS,
@@ -213,6 +213,76 @@ await rejects(
     connection: null,
   }),
   "relation does not exist"
+);
+
+// --- a "select" param's dropdown filled in from a column, not typed by hand
+reset({ rows: [{ value: "IDENTITY V / IDV" }, { value: "ROV" }] });
+const distinct = await fetchDistinctColumnValues({
+  table: "topup.game",
+  column: "name",
+  connection: null,
+});
+check("distinct values come back as plain strings", distinct, ["IDENTITY V / IDV", "ROV"]);
+const distinctSelect = statements().find((s) => s.startsWith("SELECT"));
+ok("it selects distinct", distinctSelect.includes("SELECT DISTINCT"));
+ok("the column is quoted", distinctSelect.includes('"name" AS value'));
+ok("it reads the named table", distinctSelect.includes('FROM "topup"."game"'));
+ok("it orders by the column itself", distinctSelect.includes('ORDER BY "name"'));
+ok("it is capped", /LIMIT 500/.test(distinctSelect));
+ok("blanks are skipped", distinctSelect.includes('WHERE "name" IS NOT NULL'));
+
+reset();
+await rejects(
+  "a hostile table cannot reach the database",
+  fetchDistinctColumnValues({ table: 'x"; DROP TABLE gamedb_users; --', column: "id", connection: null }),
+  "ไม่ถูกต้อง"
+);
+check("nothing was run", statements(), []);
+
+// --- the sanitizer only keeps a "column" source when it is fully valid ---
+const columnSourced = sanitizeLayout({
+  params: [
+    {
+      name: "game",
+      type: "select",
+      optionsSource: "column",
+      optionsTable: "topup.game",
+      optionsColumn: "name",
+    },
+    {
+      name: "channel",
+      type: "select",
+      optionsSource: "column",
+      optionsTable: 'x"; DROP TABLE gamedb_users; --',
+      optionsColumn: "name",
+    },
+    {
+      name: "status",
+      type: "select",
+      options: ["a", "b"],
+    },
+  ],
+});
+check("a fully-specified column source is kept", columnSourced.params[0], {
+  name: "game",
+  label: "game",
+  type: "select",
+  defaultValue: "",
+  options: [],
+  required: true,
+  optionsSource: "column",
+  optionsTable: "topup.game",
+  optionsColumn: "name",
+});
+check(
+  "a hostile table falls back to manual instead of reaching the database",
+  columnSourced.params[1].optionsSource,
+  "manual"
+);
+check(
+  "a param that never opted into a column source defaults to manual",
+  columnSourced.params[2].optionsSource,
+  "manual"
 );
 
 console.log(`\n${pass} passed, ${failures.length} failed`);

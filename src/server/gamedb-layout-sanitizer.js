@@ -94,6 +94,15 @@ export function sanitizeLayout(raw) {
             .slice(0, 100)
             .map((option) => option.slice(0, 200)),
           required: param.required !== false,
+          optionsSource:
+            param.optionsSource === "column" && isSafeIdentifier(param.optionsTable) &&
+            isSafeIdentifierPart(param.optionsColumn)
+              ? "column"
+              : "manual",
+          optionsTable: isSafeIdentifier(param.optionsTable) ? String(param.optionsTable) : "",
+          optionsColumn: isSafeIdentifierPart(param.optionsColumn)
+            ? String(param.optionsColumn)
+            : "",
         }))
     : [];
   const rules = Array.isArray(layout.rules)

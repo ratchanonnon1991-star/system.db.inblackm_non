@@ -3,6 +3,7 @@ import { quoteIdentifier } from "@/lib/gamedb-identifier";
 import { LOOKUP_LIMIT } from "@/lib/gamedb-layout";
 
 const STATEMENT_TIMEOUT_MS = 8000;
+const DISTINCT_VALUES_LIMIT = 500;
 
 /**
  * The rows behind a lookup dropdown.
@@ -43,6 +44,47 @@ export async function fetchLookupOptions({ lookup, connection }) {
     }));
   } catch (err) {
     const error = new Error(`อ่านรายการตัวเลือกไม่สำเร็จ: ${err.message}`);
+    error.status = 400;
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * The distinct values of one column, for a "select" query param whose
+ * dropdown is set to fill itself in from the database instead of an admin
+ * typing every value by hand. `table` is checked against the query's own SQL
+ * text before this is ever called (see /api/queries/[id]/param-options), so
+ * it cannot be pointed at a table the query does not already read from.
+ */
+export async function fetchDistinctColumnValues({ table, column, connection }) {
+  const quotedTable = quoteIdentifier(table);
+  const quotedColumn = quoteIdentifier(column);
+
+  let client;
+  try {
+    client = await getPoolForConnection(connection).connect();
+  } catch (err) {
+    const error = new Error(
+      `เชื่อมต่อฐานข้อมูล${connection ? ` "${connection.name}"` : "หลัก"}ไม่ได้: ${err.message}`
+    );
+    error.status = 502;
+    throw error;
+  }
+
+  try {
+    await client.query(`SET LOCAL statement_timeout = ${STATEMENT_TIMEOUT_MS}`);
+    const result = await client.query(
+      `SELECT DISTINCT ${quotedColumn} AS value
+       FROM ${quotedTable}
+       WHERE ${quotedColumn} IS NOT NULL
+       ORDER BY ${quotedColumn}
+       LIMIT ${DISTINCT_VALUES_LIMIT}`
+    );
+    return result.rows.map((row) => String(row.value));
+  } catch (err) {
+    const error = new Error(`อ่านรายการค่าในคอลัมน์ไม่สำเร็จ: ${err.message}`);
     error.status = 400;
     throw error;
   } finally {

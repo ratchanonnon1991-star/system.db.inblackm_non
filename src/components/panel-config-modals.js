@@ -258,7 +258,7 @@ export function ShareLinkModal({ queryId, onClose }) {
 }
 
 /** Turns the :placeholders found in the SQL into labelled, typed inputs. */
-export function ParamsSettingsModal({ sqlText, params, onSave, onClose }) {
+export function ParamsSettingsModal({ sqlText, params, connectionId, onSave, onClose }) {
   const names = useMemo(() => extractSqlParams(sqlText), [sqlText]);
   const [draft, setDraft] = useState(() =>
     names.map((name) => {
@@ -271,6 +271,9 @@ export function ParamsSettingsModal({ sqlText, params, onSave, onClose }) {
           defaultValue: "",
           options: [],
           required: true,
+          optionsSource: "manual",
+          optionsTable: "",
+          optionsColumn: "",
         }
       );
     })
@@ -287,6 +290,42 @@ export function ParamsSettingsModal({ sqlText, params, onSave, onClose }) {
     setDraft((prev) =>
       prev.map((param) => (param.name === name ? { ...param, [key]: value } : param))
     );
+
+  // The table/column list for the "ดึงจากตาราง" source, loaded once and only
+  // if some param actually needs it -- most Query params never touch this.
+  const [schemaData, setSchemaData] = useState(null);
+  const [schemaLoading, setSchemaLoading] = useState(false);
+  const [schemaError, setSchemaError] = useState("");
+  const schemaRequestedRef = useRef(false);
+  const loadSchema = useCallback(() => {
+    if (schemaRequestedRef.current) return;
+    schemaRequestedRef.current = true;
+    (async () => {
+      setSchemaLoading(true);
+      setSchemaError("");
+      try {
+        const suffix = connectionId ? `?connectionId=${encodeURIComponent(connectionId)}` : "";
+        const data = await apiJson(`/api/query-builder/schema${suffix}`, {
+          fallbackError: "โหลดรายการตารางและคอลัมน์ไม่สำเร็จ",
+        });
+        setSchemaData(data);
+      } catch (err) {
+        schemaRequestedRef.current = false;
+        setSchemaError(err.message);
+      } finally {
+        setSchemaLoading(false);
+      }
+    })();
+  }, [connectionId]);
+
+  // Only a table this Query's own SQL actually mentions can be picked -- the
+  // server checks this again before running anything, but filtering here
+  // saves an admin from picking one that will just fail at runtime.
+  const referencableTables = useMemo(() => {
+    if (!schemaData?.tables) return [];
+    const sql = sqlText.toLowerCase();
+    return schemaData.tables.filter((table) => sql.includes(table.name.toLowerCase()));
+  }, [schemaData, sqlText]);
 
   const setOptions = (name, text) => {
     setOptionsText((prev) => ({ ...prev, [name]: text }));
@@ -410,20 +449,111 @@ export function ParamsSettingsModal({ sqlText, params, onSave, onClose }) {
                 ต้องกรอกก่อนรัน
               </label>
               {param.type === "select" && (
-                <div>
-                  <label className={labelClass}>ตัวเลือก (คั่นด้วย ,)</label>
-                  <input
-                    type="text"
-                    value={optionsText[param.name] ?? ""}
-                    onChange={(e) => setOptions(param.name, e.target.value)}
-                    placeholder="เช่น TRUEMONEY, BANK, CREDIT"
-                    className={inputClass}
-                  />
-                  <p className="mt-1 text-[9px] font-semibold text-zinc-400">
-                    {(param.options || []).length > 0
-                      ? `${param.options.length} ตัวเลือก: ${param.options.join(" / ")}`
-                      : "ยังไม่มีตัวเลือก — พิมพ์แล้วคั่นด้วย ,"}
-                  </p>
+                <div className="sm:col-span-2">
+                  <label className={labelClass}>แหล่งตัวเลือก</label>
+                  <div className="mb-2 grid grid-cols-2 gap-2 rounded-sm bg-zinc-100 p-1">
+                    <button
+                      type="button"
+                      onClick={() => setField(param.name, "optionsSource", "manual")}
+                      className={`rounded-sm px-2.5 py-1.5 text-[10px] font-black transition ${
+                        (param.optionsSource || "manual") === "manual"
+                          ? "bg-white text-red-600 shadow-sm"
+                          : "text-zinc-500"
+                      }`}
+                    >
+                      พิมพ์เอง
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setField(param.name, "optionsSource", "column");
+                        loadSchema();
+                      }}
+                      className={`rounded-sm px-2.5 py-1.5 text-[10px] font-black transition ${
+                        param.optionsSource === "column"
+                          ? "bg-white text-red-600 shadow-sm"
+                          : "text-zinc-500"
+                      }`}
+                    >
+                      ดึงจากคอลัมน์ในตาราง
+                    </button>
+                  </div>
+
+                  {param.optionsSource === "column" ? (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <div>
+                        <label className={labelClass}>ตาราง</label>
+                        {schemaLoading ? (
+                          <p className="flex h-9 items-center gap-1.5 text-[10px] font-semibold text-zinc-400">
+                            <Loader2 size={12} className="animate-spin" /> กำลังโหลด...
+                          </p>
+                        ) : (
+                          <select
+                            value={param.optionsTable}
+                            onChange={(e) => {
+                              setField(param.name, "optionsTable", e.target.value);
+                              setField(param.name, "optionsColumn", "");
+                            }}
+                            className={inputClass}
+                          >
+                            <option value="">— เลือกตาราง —</option>
+                            {referencableTables.map((table) => (
+                              <option key={table.key} value={table.key}>
+                                {table.key}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        {schemaError && (
+                          <p className="mt-1 text-[9px] font-bold text-red-600">{schemaError}</p>
+                        )}
+                        {!schemaLoading && !schemaError && referencableTables.length === 0 && (
+                          <p className="mt-1 text-[9px] font-semibold text-amber-600">
+                            ไม่พบตารางที่ SQL ของ Query นี้อ้างถึง — ดึงจากคอลัมน์ได้เฉพาะตารางที่ Query อ่านอยู่แล้ว
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <label className={labelClass}>คอลัมน์</label>
+                        <select
+                          value={param.optionsColumn}
+                          onChange={(e) => setField(param.name, "optionsColumn", e.target.value)}
+                          disabled={!param.optionsTable}
+                          className={`${inputClass} disabled:opacity-50`}
+                        >
+                          <option value="">— เลือกคอลัมน์ —</option>
+                          {(
+                            referencableTables.find((table) => table.key === param.optionsTable)
+                              ?.columns || []
+                          ).map((column) => (
+                            <option key={column.name} value={column.name}>
+                              {column.name}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="mt-1 text-[9px] font-semibold text-zinc-400">
+                          {param.optionsTable && param.optionsColumn
+                            ? `ดึงค่าไม่ซ้ำจาก ${param.optionsTable}.${param.optionsColumn} ให้อัตโนมัติทุกครั้งที่เปิดตัวกรอง`
+                            : "เลือกตารางและคอลัมน์ก่อน"}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <input
+                        type="text"
+                        value={optionsText[param.name] ?? ""}
+                        onChange={(e) => setOptions(param.name, e.target.value)}
+                        placeholder="เช่น TRUEMONEY, BANK, CREDIT"
+                        className={inputClass}
+                      />
+                      <p className="mt-1 text-[9px] font-semibold text-zinc-400">
+                        {(param.options || []).length > 0
+                          ? `${param.options.length} ตัวเลือก: ${param.options.join(" / ")}`
+                          : "ยังไม่มีตัวเลือก — พิมพ์แล้วคั่นด้วย ,"}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

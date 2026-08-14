@@ -386,6 +386,13 @@ export function normalizeLayout(raw) {
             defaultValue: param.defaultValue == null ? "" : String(param.defaultValue),
             options: Array.isArray(param.options) ? param.options.map(String) : [],
             required: param.required !== false,
+            // A "select" param's dropdown can either be typed once by hand
+            // ("manual", the options array above) or looked up live from a
+            // table/column the query already touches ("column") -- see
+            // /api/queries/[id]/param-options.
+            optionsSource: param.optionsSource === "column" ? "column" : "manual",
+            optionsTable: typeof param.optionsTable === "string" ? param.optionsTable : "",
+            optionsColumn: typeof param.optionsColumn === "string" ? param.optionsColumn : "",
           }))
       : [],
     editable,

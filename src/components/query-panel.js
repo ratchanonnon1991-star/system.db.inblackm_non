@@ -529,9 +529,52 @@ export default function QueryPanel({
     () => resolveParams(layout, paramNames),
     [layout, paramNames]
   );
+
+  // "select" params can be set to fill their dropdown in from a table/column
+  // instead of an admin typing every value by hand -- fetched lazily, only
+  // once, only when a param actually needs it.
+  const columnSourcedParamNames = useMemo(
+    () =>
+      effectiveParams
+        .filter((param) => param.type === "select" && param.optionsSource === "column")
+        .map((param) => param.name),
+    [effectiveParams]
+  );
+  const [columnParamOptions, setColumnParamOptions] = useState({});
+  const [columnParamOptionsLoading, setColumnParamOptionsLoading] = useState(false);
+  const columnParamOptionsLoadedForRef = useRef(null);
+  useEffect(() => {
+    if (columnSourcedParamNames.length === 0) return;
+    if (columnParamOptionsLoadedForRef.current === query.id) return;
+    columnParamOptionsLoadedForRef.current = query.id;
+    (async () => {
+      setColumnParamOptionsLoading(true);
+      try {
+        const data = await apiJson(`/api/queries/${query.id}/param-options`, {
+          fallbackError: "โหลดตัวเลือกจากคอลัมน์ไม่สำเร็จ",
+        });
+        setColumnParamOptions(data.options || {});
+      } catch {
+        setColumnParamOptions({});
+      } finally {
+        setColumnParamOptionsLoading(false);
+      }
+    })();
+  }, [columnSourcedParamNames.length, query.id]);
+
+  const resolvedParams = useMemo(
+    () =>
+      effectiveParams.map((param) =>
+        param.type === "select" && param.optionsSource === "column"
+          ? { ...param, options: columnParamOptions[param.name] || [] }
+          : param
+      ),
+    [effectiveParams, columnParamOptions]
+  );
+
   const paramErrors = useMemo(
-    () => validateParamValues(effectiveParams, paramValues),
-    [effectiveParams, paramValues]
+    () => validateParamValues(resolvedParams, paramValues),
+    [resolvedParams, paramValues]
   );
   const dateRangeParams = useMemo(
     () => findDateRangeParams(effectiveParams),
@@ -2768,8 +2811,9 @@ export default function QueryPanel({
                   </button>
                 </div>
               </div>
-              {effectiveParams.map((param) => {
+              {resolvedParams.map((param) => {
                 const guide = paramInputGuide(param);
+                const isColumnSourced = param.type === "select" && param.optionsSource === "column";
                 const inputId = `query-${query.id}-param-${param.name}`;
                 const hintId = `${inputId}-hint`;
                 const errorId = `${inputId}-error`;
@@ -2824,27 +2868,33 @@ export default function QueryPanel({
                         {(paramValues[param.name] ?? "false") === "true" ? "ใช่" : "ไม่ใช่"}
                       </button>
                     ) : param.type === "select" ? (
-                      <select
-                        id={inputId}
-                        value={paramValues[param.name] ?? ""}
-                        onChange={(e) =>
-                          setParamValues((prev) => ({ ...prev, [param.name]: e.target.value }))
-                        }
-                        aria-invalid={Boolean(error)}
-                        aria-describedby={error ? errorId : hintId}
-                        className={`h-8 min-w-40 rounded-sm border bg-white px-2 text-[11px] font-semibold outline-none ${
-                          error
-                            ? "border-red-400 bg-red-50/50 focus:border-red-600"
-                            : "border-zinc-200 focus:border-red-600"
-                        }`}
-                      >
-                        <option value="">— เลือกค่า —</option>
-                        {param.options.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
+                      isColumnSourced && columnParamOptionsLoading ? (
+                        <p className="flex h-8 items-center gap-1.5 text-[10px] font-semibold text-zinc-400">
+                          <Loader2 size={12} className="animate-spin" /> กำลังโหลดตัวเลือก...
+                        </p>
+                      ) : (
+                        <select
+                          id={inputId}
+                          value={paramValues[param.name] ?? ""}
+                          onChange={(e) =>
+                            setParamValues((prev) => ({ ...prev, [param.name]: e.target.value }))
+                          }
+                          aria-invalid={Boolean(error)}
+                          aria-describedby={error ? errorId : hintId}
+                          className={`h-8 min-w-40 rounded-sm border bg-white px-2 text-[11px] font-semibold outline-none ${
+                            error
+                              ? "border-red-400 bg-red-50/50 focus:border-red-600"
+                              : "border-zinc-200 focus:border-red-600"
+                          }`}
+                        >
+                          <option value="">— เลือกค่า —</option>
+                          {param.options.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                      )
                     ) : (
                       <input
                         id={inputId}
@@ -3143,6 +3193,7 @@ export default function QueryPanel({
         <ParamsSettingsModal
           sqlText={query.sqlText}
           params={layout.params}
+          connectionId={query.connectionId}
           onClose={() => setModal(null)}
           onSave={(params) => {
             mutateLayout((prev) => ({ ...prev, params }));
@@ -3153,6 +3204,10 @@ export default function QueryPanel({
               }
               return next;
             });
+            // The set of column-sourced params may have just changed --
+            // forget what was cached so the next fetch picks up the new config.
+            columnParamOptionsLoadedForRef.current = null;
+            setColumnParamOptions({});
             setModal(null);
           }}
         />
