@@ -8,6 +8,7 @@
 import {
   deleteGamelistPacksForGame,
   getGamelistPacks,
+  importGamelistPacks,
   listAllGamelistChannels,
   listGamelistPackCountByGame,
   saveGamelistPacks,
@@ -153,6 +154,39 @@ async function run() {
   const countStmt = find(/^SELECT game_id, COUNT\(\*\)::int AS pack_count FROM gamelist_packs/);
   ok("pack count: excludes the computed sentinel", countStmt && /pack_id != \$1/.test(countStmt.text));
   check("pack count: binds the sentinel value", countStmt?.params, ["__computed__"]);
+
+  // --- importGamelistPacks: multi-game replace in one transaction --------
+  reset();
+  setResponder((text, params) => {
+    if (/^SELECT id FROM game_list WHERE id = \$1 FOR UPDATE/.test(text)) {
+      return { rows: [{ id: params[0] }] };
+    }
+    return null;
+  });
+  await importGamelistPacks(
+    [
+      { gameId: 5, currencies: ORIGINAL_TREE, packCount: 2 },
+      { gameId: 7, currencies: [], packCount: 0 },
+    ],
+    "replace"
+  );
+  const bulkStmts = statements();
+  check("bulk import: uses one transaction for every game", [bulkStmts[0], bulkStmts.at(-1)], ["BEGIN", "COMMIT"]);
+  check(
+    "bulk import: locks and re-checks every target game",
+    log.filter((entry) => /^SELECT id FROM game_list WHERE id = \$1 FOR UPDATE/.test(entry.text)).map((entry) => entry.params),
+    [[5], [7]]
+  );
+  check(
+    "bulk import: replaces real packs for both games",
+    log.filter((entry) => /^DELETE FROM gamelist_packs WHERE game_id = \$1 AND pack_id != \$2/.test(entry.text)).map((entry) => entry.params),
+    [[5, "__computed__"], [7, "__computed__"]]
+  );
+  check(
+    "bulk import: preserves computed-column sentinel rows",
+    log.some((entry) => /^DELETE FROM gamelist_packs WHERE game_id = \$1$/.test(entry.text.trim())),
+    false
+  );
 
   // --- listAllGamelistChannels: merges main+secondary across every game -----
   reset();

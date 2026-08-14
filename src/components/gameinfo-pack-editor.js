@@ -52,6 +52,10 @@ function uniq(arr) {
   return Array.from(new Set(arr.filter(Boolean)));
 }
 
+function sameJson(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 // Pack/currency/category editor + game-level computed columns. Ported from
 // gameinfo's PackEditor.tsx with per-cell formula overrides dropped (data
 // model has no per-pack override) and computePackCell/FORMULA_TOKENS
@@ -76,7 +80,6 @@ export default function GameinfoPackEditor({
   // each time, restarting this effect.
   useEffect(() => {
     if (!savedAt) return;
-    setSavedVisible(true);
     const hideTimer = setTimeout(() => setSavedVisible(false), 3000);
     return () => clearTimeout(hideTimer);
   }, [savedAt]);
@@ -85,6 +88,12 @@ export default function GameinfoPackEditor({
 
   const [currencies, setCurrencies] = useState(game.currencies);
   const [computedColumns, setComputedColumns] = useState(game.computedColumns ?? []);
+  // Last server-confirmed snapshot. `game.*` is only the initial server prop;
+  // router.refresh() does not remount this client component, so comparing the
+  // draft to `game.*` forever can leave the editor dirty after a successful
+  // save. Advance this snapshot from the PUT response instead.
+  const [savedCurrencies, setSavedCurrencies] = useState(game.currencies);
+  const [savedComputedColumns, setSavedComputedColumns] = useState(game.computedColumns ?? []);
   const [invalidFields, setInvalidFields] = useState(new Set());
 
   const [importing, setImporting] = useState(false);
@@ -95,11 +104,10 @@ export default function GameinfoPackEditor({
   // Drives the same "collapse ยกเลิก/บันทึก to w-0 around the middle pill"
   // animation as the game list table's floating bar (see
   // gameinfo-gamelist-table.js) — only shown once there's actually
-  // something to save, and cancel() resetting currencies/computedColumns
-  // back to game.* makes this false again, animating the pill closed.
+  // something to save, and save()/cancel() moving the draft back onto the
+  // last server-confirmed snapshot makes this false, animating the pill shut.
   const dirty =
-    JSON.stringify(currencies) !== JSON.stringify(game.currencies) ||
-    JSON.stringify(computedColumns) !== JSON.stringify(game.computedColumns ?? []);
+    !sameJson(currencies, savedCurrencies) || !sameJson(computedColumns, savedComputedColumns);
 
   const parsedColumns = useMemo(
     () =>
@@ -254,6 +262,7 @@ export default function GameinfoPackEditor({
   function save() {
     setError("");
     setSavedAt(null);
+    setSavedVisible(false);
     const invalid = validatePacks();
     if (invalid.size > 0) {
       setInvalidFields(invalid);
@@ -277,13 +286,36 @@ export default function GameinfoPackEditor({
       return;
     }
     setInvalidFields(new Set());
+    const submittedCurrencies = currencies;
+    const submittedComputedColumns = computedColumns;
     startTransition(async () => {
       try {
-        await apiJson(savePacksUrl, {
+        const data = await apiJson(savePacksUrl, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ currencies, computedColumns }),
         });
+        // Use the round-tripped server value as both the visible draft and
+        // the new clean baseline. This also absorbs storage normalization
+        // (ordering/default empty values) without making the editor look
+        // unsaved immediately after the request succeeded.
+        const nextCurrencies = data.game.currencies;
+        const nextComputedColumns = data.game.computedColumns ?? [];
+        // If the user managed to type again while the request was in flight,
+        // keep those newer edits. They should remain dirty relative to the
+        // snapshot that was just saved instead of being overwritten.
+        setCurrencies((current) =>
+          sameJson(current, submittedCurrencies) ? nextCurrencies : current
+        );
+        setComputedColumns((current) =>
+          sameJson(current, submittedComputedColumns) ? nextComputedColumns : current
+        );
+        setSavedCurrencies(nextCurrencies);
+        setSavedComputedColumns(nextComputedColumns);
+        setImportMsg("");
+        setImportErrors([]);
+        setPendingImport(null);
+        setSavedVisible(true);
         setSavedAt(Date.now());
         router.refresh();
       } catch (e) {
@@ -294,11 +326,15 @@ export default function GameinfoPackEditor({
 
   function cancel() {
     if (!window.confirm("ยกเลิกการแก้ไข? ข้อมูลที่ยังไม่บันทึกจะหายไป")) return;
-    setCurrencies(game.currencies);
-    setComputedColumns(game.computedColumns ?? []);
+    setCurrencies(savedCurrencies);
+    setComputedColumns(savedComputedColumns);
     setInvalidFields(new Set());
     setError("");
     setSavedAt(null);
+    setSavedVisible(false);
+    setImportMsg("");
+    setImportErrors([]);
+    setPendingImport(null);
   }
 
   // CSV import for this one game — file's game_id column is ignored server
@@ -563,7 +599,9 @@ export default function GameinfoPackEditor({
               savedVisible ? "max-h-8 opacity-100" : "max-h-0 opacity-0"
             }`}
           >
-            <span className="text-xs text-linear-ink">บันทึกแล้ว</span>
+            <span className="text-xs text-linear-ink">
+              {dirty ? "บันทึกแล้ว — มีการแก้ไขใหม่" : "บันทึกแล้ว"}
+            </span>
           </div>
         )}
         <div className="flex h-11 items-center rounded-full border border-linear-hairline bg-linear-surface-1 shadow-lg">

@@ -58,6 +58,7 @@ export default async function GameinfoGamelistPacksPage({ params }) {
       />
       <h1 className="mb-6 text-2xl font-bold text-linear-ink">แพ็ก — {row.game}</h1>
       <GameinfoPackEditor
+        key={game.id}
         game={game}
         lang={lang}
         // channels: shared across every game (not just this one's own packs)

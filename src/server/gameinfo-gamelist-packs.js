@@ -11,6 +11,7 @@
 // shape the whole way through.
 import { getPoolForConnection } from "@/lib/db";
 import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
+import { mergeCurrencies } from "@/lib/gameinfo-import";
 
 const CONNECTION_NAME = "gameinfo";
 const COMPUTED_SENTINEL = "__computed__";
@@ -218,6 +219,60 @@ export async function saveGamelistPacks(gameId, { currencies, computedColumns })
     client.release();
   }
   return getGamelistPacks(gameId);
+}
+
+/** Imports several games in one transaction. CSV never carries computed
+ * columns, so their sentinel rows are preserved in both replace/add modes. */
+export async function importGamelistPacks(games, mode = "replace") {
+  if (!Array.isArray(games) || games.length === 0) return { gameCount: 0, packCount: 0 };
+  if (mode !== "replace" && mode !== "add") throw createHttpError("โหมดนำเข้าไม่ถูกต้อง", 400);
+
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  let packCount = 0;
+  try {
+    await client.query("BEGIN");
+    for (const game of games) {
+      // game_list is external and has no FK to gamelist_packs. Lock and
+      // re-check the target inside this transaction so a concurrent delete
+      // cannot leave newly imported orphan packs behind.
+      const target = await client.query(`SELECT id FROM game_list WHERE id = $1 FOR UPDATE`, [
+        game.gameId,
+      ]);
+      if (target.rows.length !== 1) {
+        throw createHttpError(`ไม่พบ game_id ${game.gameId}`, 404);
+      }
+      let currencies = Array.isArray(game.currencies) ? game.currencies : [];
+      if (mode === "add") {
+        const current = await client.query(
+          `SELECT game_id, pack_id, data FROM gamelist_packs
+           WHERE game_id = $1 AND pack_id != $2`,
+          [game.gameId, COMPUTED_SENTINEL]
+        );
+        currencies = mergeCurrencies(reconstructCurrencies(current.rows), currencies);
+      }
+
+      await client.query(
+        `DELETE FROM gamelist_packs WHERE game_id = $1 AND pack_id != $2`,
+        [game.gameId, COMPUTED_SENTINEL]
+      );
+      const rows = flattenCurrencies(game.gameId, currencies);
+      for (const row of rows) {
+        await client.query(
+          `INSERT INTO gamelist_packs (game_id, pack_id, data) VALUES ($1, $2, $3)`,
+          [row.gameId, row.packId, JSON.stringify(row.data)]
+        );
+      }
+      packCount += Number(game.packCount) || 0;
+    }
+    await client.query("COMMIT");
+    return { gameCount: games.length, packCount };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /** { [gameId]: { main: string[], secondary: string[] } } — unique

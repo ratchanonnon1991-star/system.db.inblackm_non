@@ -21,10 +21,11 @@ export function genId(prefix = "id") {
   return `${prefix}_${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-4)}`;
 }
 
-// Header order is identical to the reference app so exported files round-trip.
+// Only fields read by the current pack UI are accepted. Keeping this same
+// allowlist for template, preview, import, and export makes files round-trip
+// without exposing unused database fields.
 export const PACK_HEADERS = [
   "game_id",
-  "game_name",
   "currency_name",
   "currency_image",
   "category_name",
@@ -43,7 +44,6 @@ export const PACK_HEADERS = [
 export const PACK_SAMPLE = [
   {
     game_id: "1",
-    game_name: "ตัวอย่างเกม",
     currency_name: "Diamonds",
     currency_image: "",
     category_name: "เติมปกติ",
@@ -58,7 +58,6 @@ export const PACK_SAMPLE = [
   },
   {
     game_id: "1",
-    game_name: "ตัวอย่างเกม",
     currency_name: "Diamonds",
     currency_image: "",
     category_name: "เติมปกติ",
@@ -168,8 +167,8 @@ export function mergeCurrencies(existing, incoming) {
   return merged;
 }
 
-// Multi-game parse: group rows by the game_id column (first-seen order kept),
-// build a tree per game. `game_name` is display-only; linking is by id.
+// Multi-game parse: group rows by the game_id column (first-seen order kept)
+// and build a tree per game. Linking is only by the current game_list id.
 export function parsePacks(rows) {
   const errors = [];
   const order = [];
@@ -182,27 +181,45 @@ export function parsePacks(rows) {
       if (hasData) errors.push(`แถวที่ ${idx + 2}: ไม่มี game_id จึงถูกข้าม`);
       return;
     }
-    const gameId = parseInt(idRaw, 10);
-    if (Number.isNaN(gameId) || gameId <= 0) {
+    const gameId = Number(idRaw);
+    if (!Number.isInteger(gameId) || gameId <= 0) {
       errors.push(`แถวที่ ${idx + 2}: game_id "${idRaw}" ไม่ถูกต้อง`);
       return;
     }
     if (!groups.has(gameId)) {
-      groups.set(gameId, { gameName: norm(row["game_name"]), rows: [] });
+      groups.set(gameId, []);
       order.push(gameId);
     }
-    const g = groups.get(gameId);
-    if (!g.gameName && norm(row["game_name"])) g.gameName = norm(row["game_name"]);
-    g.rows.push(row);
+    groups.get(gameId).push(row);
   });
 
   const perGame = order.map((gameId) => {
-    const { gameName, rows: groupRows } = groups.get(gameId);
-    const tree = buildPackTree(groupRows);
-    return { gameId, gameName, currencies: tree.currencies, packCount: tree.packCount };
+    const tree = buildPackTree(groups.get(gameId));
+    return { gameId, currencies: tree.currencies, packCount: tree.packCount };
   });
 
   return { perGame, errors };
+}
+
+// Bulk import has no pack editor step in which required cells can be fixed,
+// so validate the same four fields that GameinfoPackEditor requires before a
+// file is allowed to write to the database. Blank placeholder rows (used by
+// export for games with no packs) remain valid.
+export function validatePackRows(rows) {
+  const errors = [];
+  rows.forEach((row, index) => {
+    const hasPackData = PACK_HEADERS.filter((field) => field !== "game_id").some((field) =>
+      norm(row[field])
+    );
+    if (!hasPackData) return;
+    const missing = [];
+    if (!norm(row.pack_name)) missing.push("pack_name");
+    if (!norm(row.price)) missing.push("price");
+    if (!norm(row.amount_charged_fee)) missing.push("amount_charged_fee");
+    if (!splitList(row.channel_main).length) missing.push("channel_main");
+    if (missing.length) errors.push(`แถวที่ ${index + 2}: ข้อมูลไม่ครบ (${missing.join(", ")})`);
+  });
+  return errors;
 }
 
 // Single-game parse (used inside one game's pack editor): the game_id column
@@ -210,11 +227,10 @@ export function parsePacks(rows) {
 export function parsePacksForGame(rows, gameId, fallbackGameName) {
   const dataRows = rows.filter((row) => Object.values(row).some((v) => norm(v) !== ""));
   const tree = buildPackTree(dataRows);
-  const gameNameFromFile = dataRows.map((r) => norm(r["game_name"])).find((n) => n);
   return {
     game: {
       gameId,
-      gameName: gameNameFromFile || fallbackGameName,
+      gameName: fallbackGameName,
       currencies: tree.currencies,
       packCount: tree.packCount,
     },
@@ -233,7 +249,6 @@ export function gamesToPackRows(games) {
         for (const p of cat.packs || []) {
           out.push({
             game_id: String(g.id),
-            game_name: g.gameName,
             currency_name: c.name,
             currency_image: c.image ?? "",
             category_name: cat.name,
@@ -253,7 +268,6 @@ export function gamesToPackRows(games) {
     if (!emitted) {
       out.push({
         game_id: String(g.id),
-        game_name: g.gameName,
         currency_name: "",
         currency_image: "",
         category_name: "",

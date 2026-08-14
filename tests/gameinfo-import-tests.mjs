@@ -8,6 +8,7 @@ import {
   parsePacks,
   parsePacksForGame,
   splitList,
+  validatePackRows,
 } from "@/lib/gameinfo-import.js";
 
 let pass = 0;
@@ -96,6 +97,11 @@ check(
   true
 );
 check(
+  "parsePacks rejects a partially numeric game_id",
+  parsePacks([packRow({ game_id: "1abc" })]).errors.length,
+  1
+);
+check(
   "parsePacks ignores a fully blank row silently",
   parsePacks([
     {
@@ -125,11 +131,42 @@ const single = parsePacksForGame(
 );
 check("parsePacksForGame forces every row onto the given game", single.game.gameId, 5);
 check("parsePacksForGame ignores the file's game_id split", single.game.packCount, 2);
-check("parsePacksForGame takes the game name from the file when present", single.game.gameName, "ML");
+check("parsePacksForGame ignores game_name and keeps the current game name", single.game.gameName, "Fallback");
 check(
   "parsePacksForGame falls back to the passed name when the file has none",
   parsePacksForGame([packRow({ game_name: "" })], 5, "Fallback").game.gameName,
   "Fallback"
+);
+
+// --- validatePackRows (bulk import required fields) ----------------------
+check("pack validation accepts a complete pack", validatePackRows([packRow()]), []);
+check(
+  "pack validation reports the same required fields as the editor",
+  validatePackRows([packRow({ pack_name: "", price: "", amount_charged_fee: "", channel_main: "" })])[0]
+    .includes("pack_name, price, amount_charged_fee, channel_main"),
+  true
+);
+check(
+  "pack validation allows an exported empty-game placeholder row",
+  validatePackRows([
+    packRow({
+      currency_name: "",
+      category_name: "",
+      pack_name: "",
+      price: "",
+      amount_charged: "",
+      amount_charged_fee: "",
+      channel_main: "",
+    }),
+  ]),
+  []
+);
+check(
+  "pack validation does not silently ignore a partial channel-only row",
+  validatePackRows([
+    packRow({ pack_name: "", price: "", amount_charged: "", amount_charged_fee: "", channel_main: "A" }),
+  ]).length,
+  1
 );
 
 // --- mergeCurrencies (add mode) ------------------------------------------

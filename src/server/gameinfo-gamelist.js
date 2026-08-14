@@ -192,6 +192,41 @@ export async function createGameListRow(fields) {
   }
 }
 
+/** Creates a CSV batch atomically: either every valid game is inserted or
+ * none is. Validation/duplicate checks happen before this repository call. */
+export async function createGameListRows(fieldsList) {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  const created = [];
+  try {
+    await client.query("BEGIN");
+    for (const fields of fieldsList) {
+      const result = await client.query(
+        `INSERT INTO game_list (game, region, platform, server, bot_manual, link, channel)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING *`,
+        [
+          normalizeFieldValue("game", fields.game),
+          normalizeFieldValue("region", fields.region),
+          fields.platform ? String(fields.platform) : null,
+          fields.server ? String(fields.server) : null,
+          normalizeFieldValue("botManual", fields.botManual),
+          fields.link ? String(fields.link) : null,
+          "",
+        ]
+      );
+      created.push(mapRow(result.rows[0]));
+    }
+    await client.query("COMMIT");
+    return created;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function updateGameListRow(id, fields) {
   const pool = await getReadyPool();
   const sets = [];
