@@ -9,7 +9,6 @@ import {
   useState,
 } from "react";
 import {
-  Activity,
   ChevronDown,
   Database,
   FileSpreadsheet,
@@ -1901,14 +1900,6 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
               </NextLink>
               <button
                 type="button"
-                onClick={() => setHealthModal(true)}
-                className="rounded-sm border border-zinc-200 bg-white p-1 text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-700"
-                title="ตรวจสุขภาพระบบ / สิทธิ์ฐานข้อมูล"
-              >
-                <Activity size={14} />
-              </button>
-              <button
-                type="button"
                 onClick={() => setUsersModal(true)}
                 className="flex items-center gap-1 rounded-sm border border-zinc-200 bg-white px-4 py-1.5 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
               >
@@ -2405,6 +2396,7 @@ export default function GamedbWorkspace({ me, onLoggedOut, onBackToMenu, initial
             await loadConnections();
             await loadQueries();
           }}
+          onOpenHealth={() => setHealthModal(true)}
         />
       )}
 

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Activity,
   Calculator,
   Code2,
   Database,
@@ -1948,7 +1949,7 @@ const EMPTY_CONNECTION_FORM = {
   ssl: false,
 };
 
-export function ConnectionsModal({ connections, onClose, onChanged }) {
+export function ConnectionsModal({ connections, onClose, onChanged, onOpenHealth }) {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(EMPTY_CONNECTION_FORM);
   const [saving, setSaving] = useState(false);
@@ -2117,14 +2118,26 @@ export function ConnectionsModal({ connections, onClose, onChanged }) {
           <h2 className="flex items-center gap-2 text-sm font-black">
             <Server size={15} className="text-red-600" /> จัดการฐานข้อมูล (PostgreSQL)
           </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-sm border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
-            aria-label="ปิด"
-          >
-            <X size={14} />
-          </button>
+          <div className="flex items-center gap-1.5">
+            {onOpenHealth && (
+              <button
+                type="button"
+                onClick={onOpenHealth}
+                className="flex items-center gap-1.5 rounded-sm border border-zinc-200 px-2.5 py-1.5 text-[10px] font-black text-zinc-600 transition hover:bg-zinc-50"
+                title="ตรวจสุขภาพระบบ / สิทธิ์ฐานข้อมูล"
+              >
+                <Activity size={13} /> ตรวจสุขภาพ
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-sm border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
+              aria-label="ปิด"
+            >
+              <X size={14} />
+            </button>
+          </div>
         </div>
 
         <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto md:grid-cols-[1fr_1.2fr]">
