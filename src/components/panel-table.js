@@ -686,6 +686,12 @@ export default function PanelTable({
   // clip them. The anchor overlaps the header by one pixel and closes with a
   // short grace period, avoiding a dead zone while the pointer crosses over.
   const [filterPopover, setFilterPopover] = useState(null);
+  const [cellMenu, setCellMenu] = useState(null);
+  // Click a cell, shift+click another, and the rectangle between them is
+  // summed at the bottom -- the one spreadsheet habit that needs no setup at
+  // all. Positions are page-relative because the selection is transient and
+  // never outlives the page you made it on.
+  const [selection, setSelection] = useState(null);
   const [columnToolsPopover, setColumnToolsPopover] = useState(null);
   const columnToolsCloseTimerRef = useRef(0);
   const columnToolsRef = useRef(null);
@@ -1113,6 +1119,46 @@ export default function PanelTable({
   const inputConfigOf = (columnName) =>
     editableInputs.find((input) => input.column === columnName) || null;
 
+  const selectionRange = selection
+    ? {
+        r1: Math.min(selection.anchor.r, selection.focus.r),
+        r2: Math.max(selection.anchor.r, selection.focus.r),
+        c1: Math.min(selection.anchor.c, selection.focus.c),
+        c2: Math.max(selection.anchor.c, selection.focus.c),
+      }
+    : null;
+
+  // What the bar at the bottom reports. Text cells still count towards
+  // "จำนวนช่อง", but only the ones that really hold a number are summed --
+  // a column of order ids summed by accident would be a lie.
+  const selectionStats = useMemo(() => {
+    if (!selectionRange) return null;
+    const numbers = [];
+    let cells = 0;
+    for (let r = selectionRange.r1; r <= selectionRange.r2; r++) {
+      const row = rows[r];
+      if (!row) continue;
+      for (let c = selectionRange.c1; c <= selectionRange.c2; c++) {
+        const cell = row.cells[c];
+        if (!cell) continue;
+        cells += 1;
+        const value = toNumber(cell.raw);
+        if (value !== null && Number.isFinite(value)) numbers.push(value);
+      }
+    }
+    if (cells < 2) return null;
+    const sum = numbers.reduce((total, value) => total + value, 0);
+    return {
+      cells,
+      count: numbers.length,
+      sum,
+      avg: numbers.length ? sum / numbers.length : null,
+      min: numbers.length ? Math.min(...numbers) : null,
+      max: numbers.length ? Math.max(...numbers) : null,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selection, rows]);
+
   // Shared by the windowed and the grouped rendering paths below.
   const renderRow = (row, rowIndex) => {
     const resolve = resolverFor(row);
@@ -1233,13 +1279,42 @@ export default function PanelTable({
             key={col.id}
             title={editable ? `${cell.text} — ดับเบิลคลิกเพื่อแก้ไข` : cell.text}
             onDoubleClick={() => startEdit(row, col, cellIndex)}
+            onClick={(event) => {
+              setSelection((prev) =>
+                event.shiftKey && prev
+                  ? { ...prev, focus: { r: rowIndex, c: cellIndex } }
+                  : {
+                      anchor: { r: rowIndex, c: cellIndex },
+                      focus: { r: rowIndex, c: cellIndex },
+                    }
+              );
+            }}
+            onContextMenu={(event) => {
+              if (!onSetColumnFilter) return;
+              event.preventDefault();
+              setCellMenu({
+                colId: col.id,
+                label: col.label,
+                text: cell.text,
+                top: event.clientY,
+                left: event.clientX,
+              });
+            }}
             className={`group relative border border-[var(--cell-border)] px-2 py-1.5 font-semibold ${
               format.wrap ? "whitespace-pre-wrap break-words align-top" : "truncate"
             } ${numeric && !format.align ? "font-mono tabular-nums" : ""} ${
               cellTone || changed ? "" : "bg-inherit"
             } ${changed ? "bg-yellow-100" : ""} ${
               cellTone || inkColor || rowTone ? "" : "text-zinc-700"
-            } ${editable ? "cursor-cell" : ""} ${saving || peeking ? "opacity-50" : ""}`}
+            } ${editable ? "cursor-cell" : ""} ${saving || peeking ? "opacity-50" : ""} ${
+              selectionRange &&
+              rowIndex >= selectionRange.r1 &&
+              rowIndex <= selectionRange.r2 &&
+              cellIndex >= selectionRange.c1 &&
+              cellIndex <= selectionRange.c2
+                ? "ring-1 ring-inset ring-sky-500"
+                : ""
+            }`}
             style={{
               textAlign: align,
               ...(cellTone || {}),
@@ -1611,6 +1686,98 @@ export default function PanelTable({
           </tfoot>
         )}
       </table>
+      {selectionStats && (
+        <div className="sticky bottom-0 left-0 z-40 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-sky-200 bg-sky-50/95 px-3 py-1.5 text-[10px] font-black text-sky-900 backdrop-blur">
+          <span>เลือก {selectionStats.cells.toLocaleString("th-TH")} ช่อง</span>
+          {selectionStats.count > 0 ? (
+            <>
+              <span>รวม {formatCell(selectionStats.sum, "number")}</span>
+              <span>เฉลี่ย {formatCell(selectionStats.avg, "number")}</span>
+              <span>ต่ำสุด {formatCell(selectionStats.min, "number")}</span>
+              <span>สูงสุด {formatCell(selectionStats.max, "number")}</span>
+              <span className="font-semibold text-sky-600">
+                (เป็นตัวเลข {selectionStats.count.toLocaleString("th-TH")} ช่อง)
+              </span>
+            </>
+          ) : (
+            <span className="font-semibold text-sky-600">ไม่มีช่องที่เป็นตัวเลขให้คำนวณ</span>
+          )}
+          <button
+            type="button"
+            onClick={() => setSelection(null)}
+            className="ml-auto rounded-sm p-0.5 text-sky-500 transition hover:bg-sky-100"
+            aria-label="ยกเลิกการเลือก"
+          >
+            <X size={11} />
+          </button>
+        </div>
+      )}
+      {cellMenu && typeof document !== "undefined" &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-[99]" onClick={() => setCellMenu(null)} onContextMenu={(e) => { e.preventDefault(); setCellMenu(null); }} />
+            <div
+              className="fixed z-[100] w-56 rounded-sm border border-zinc-200 bg-white p-1 shadow-xl"
+              style={{
+                top: Math.min(cellMenu.top, (typeof window !== "undefined" ? window.innerHeight : 800) - 160),
+                left: Math.min(cellMenu.left, (typeof window !== "undefined" ? window.innerWidth : 1200) - 232),
+              }}
+            >
+              <p className="truncate px-2 py-1 text-[9px] font-black text-zinc-400">
+                {cellMenu.label}: {cellMenu.text === "" ? "(ว่าง)" : cellMenu.text}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  onSetColumnFilter(cellMenu.colId, [cellMenu.text]);
+                  setCellMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[11px] font-bold text-zinc-700 hover:bg-zinc-50"
+              >
+                <Filter size={12} className="text-red-600" /> กรองเฉพาะค่านี้
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  // "Everything except this" is expressed as the tick-list of
+                  // all the other values, so it stays the same kind of filter
+                  // the header shows rather than a second hidden mechanism.
+                  const others = (columnValueOptions?.[cellMenu.colId] || []).filter(
+                    (value) => value !== cellMenu.text
+                  );
+                  onSetColumnFilter(cellMenu.colId, others);
+                  setCellMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[11px] font-bold text-zinc-700 hover:bg-zinc-50"
+              >
+                <EyeOff size={12} className="text-zinc-400" /> ซ่อนแถวที่เป็นค่านี้
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard?.writeText(cellMenu.text);
+                  setCellMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[11px] font-bold text-zinc-700 hover:bg-zinc-50"
+              >
+                <Copy size={12} className="text-zinc-400" /> คัดลอกค่านี้
+              </button>
+              {columnValueFilters?.[cellMenu.colId]?.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSetColumnFilter(cellMenu.colId, []);
+                    setCellMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[11px] font-bold text-zinc-500 hover:bg-zinc-50"
+                >
+                  <X size={12} className="text-zinc-400" /> ล้างตัวกรองของคอลัมน์นี้
+                </button>
+              )}
+            </div>
+          </>,
+          document.body
+        )}
       {filterPopover && typeof document !== "undefined" &&
         createPortal(
           <>
