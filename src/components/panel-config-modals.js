@@ -29,6 +29,7 @@ import HueSlider from "@/components/hue-slider";
 import { useResizableModalWidth } from "@/lib/use-resizable-modal-width";
 import { isSafeIdentifier, isSafeIdentifierPart } from "@/lib/gamedb-identifier";
 import { extractSqlParams, parseSelectAliases } from "@/lib/gamedb-sql-params";
+import { detectEditableTargets } from "@/lib/gamedb-sql-sources";
 import { buildVisualInsert } from "@/lib/gamedb-visual-query";
 import {
   applyGroupTone,
@@ -673,6 +674,15 @@ export function EditableSettingsModal({
   // covers what the SQL doesn't say (a bare `SELECT *`, say).
   const sqlAliasMap = useMemo(() => parseSelectAliases(sqlText || ""), [sqlText]);
 
+  // Which real tables this query's rows could be written back to, read
+  // straight out of the SQL. For `SELECT a.col1, b.col2 FROM a JOIN b` there
+  // is no way for an admin to know from the boxes below which of the two they
+  // are configuring -- so offer both, already worked out.
+  const detectedTargets = useMemo(
+    () => detectEditableTargets({ sql: sqlText || "", tables: schemaData?.tables || [] }),
+    [sqlText, schemaData]
+  );
+
   // Only fill boxes the admin has not touched — someone who typed a real
   // column name by hand should never have it silently swapped back.
   const touchedPkColumn = useRef(Boolean(editable?.pkColumn));
@@ -690,6 +700,38 @@ export function EditableSettingsModal({
     touchedPkColumn.current = false;
     setPkColumn("");
   }, [pk]);
+
+  /**
+   * Fill in every box from one detected table at once.
+   *
+   * This is the whole point of the detection: the table, the key column, the
+   * key's real name and each editable column's real name all have to agree
+   * with each other, and choosing them one dropdown at a time is exactly
+   * where that goes wrong. Everything is marked as touched so the guessing
+   * effects below leave the result alone.
+   */
+  const applyDetectedTarget = (target) => {
+    if (target.compositeKey || !target.pkResultColumn) return;
+    setTable(target.key);
+    setPk(target.pkResultColumn);
+    // Claim the pk here too, or the effect above sees pk change and wipes the
+    // real-name box straight back out again.
+    pkColumnFor.current = target.pkResultColumn;
+    touchedPkColumn.current = true;
+    setPkColumn(target.primaryKey);
+
+    // The key identifies the row; it is not itself something to overwrite.
+    const editableEntries = target.columns.filter(
+      (entry) => entry.column !== target.primaryKey
+    );
+    setColumns(editableEntries.map((entry) => entry.result));
+    setColumnMap(
+      Object.fromEntries(editableEntries.map((entry) => [entry.result, entry.column]))
+    );
+    touchedColumns.current = new Set(editableEntries.map((entry) => entry.result));
+    // Per-column widgets were guessed against the previous table's types.
+    setInputs([]);
+  };
 
   useEffect(() => {
     if (touchedPkColumn.current || !pk) return;
@@ -1065,6 +1107,81 @@ export function EditableSettingsModal({
           </div>
         )}
       </div>
+      {detectedTargets.length > 0 && (
+        <div className="rounded-sm border border-emerald-200 bg-emerald-50 p-3">
+          <p className="flex items-center gap-1.5 text-[11px] font-black text-emerald-800">
+            <Table2 size={13} /> ระบบอ่าน SQL แล้ว — เลือกได้เลยว่าจะแก้ตารางไหน
+          </p>
+          <p className="mt-0.5 text-[10px] font-semibold text-emerald-600">
+            กดตารางที่ต้องการ แล้วระบบจะกรอกคอลัมน์ที่เป็น key
+            และชื่อคอลัมน์จริงให้เองทั้งหมด ไม่ต้องกรอกเอง
+          </p>
+          <div className="mt-2 space-y-1.5">
+            {detectedTargets.map((target) => {
+              const blocked = target.compositeKey || !target.pkResultColumn;
+              const chosen = table.trim() === target.key;
+              return (
+                <button
+                  key={target.key}
+                  type="button"
+                  disabled={blocked}
+                  onClick={() => applyDetectedTarget(target)}
+                  className={`w-full rounded-sm border p-2 text-left transition ${
+                    blocked
+                      ? "cursor-not-allowed border-zinc-200 bg-white/60 opacity-70"
+                      : chosen
+                        ? "border-emerald-500 bg-white"
+                        : "border-emerald-200 bg-white hover:border-emerald-400"
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-1">
+                    <span className="font-mono text-[11px] font-black text-zinc-700">
+                      {target.key}
+                      {target.alias !== target.table && (
+                        <span className="ml-1 font-sans text-[9px] font-bold text-zinc-400">
+                          (ใน SQL เรียกว่า {target.alias})
+                        </span>
+                      )}
+                    </span>
+                    {chosen && (
+                      <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[8px] font-black text-emerald-700">
+                        เลือกอยู่
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-0.5 text-[9px] font-semibold text-zinc-500">
+                    {target.columns.length} คอลัมน์จากตารางนี้:{" "}
+                    {target.columns.map((entry) => entry.result).slice(0, 6).join(", ")}
+                    {target.columns.length > 6 ? " …" : ""}
+                  </p>
+                  {target.compositeKey ? (
+                    <p className="mt-0.5 text-[9px] font-bold text-amber-600">
+                      ตารางนี้ใช้หลายคอลัมน์รวมกันเป็น key — ระบบยังแก้ข้อมูลแบบนี้ไม่ได้
+                    </p>
+                  ) : !target.primaryKey ? (
+                    <p className="mt-0.5 text-[9px] font-bold text-amber-600">
+                      ตารางนี้ไม่มี key ประจำแถว จึงไม่รู้ว่าจะแก้แถวไหน
+                    </p>
+                  ) : !target.pkResultColumn ? (
+                    <p className="mt-0.5 text-[9px] font-bold text-amber-600">
+                      Query นี้ไม่ได้ดึงคอลัมน์ &quot;{target.primaryKey}&quot; ออกมาด้วย —
+                      เพิ่มเข้าไปใน SELECT ก่อน ถึงจะแก้ข้อมูลของตารางนี้ได้
+                    </p>
+                  ) : (
+                    <p className="mt-0.5 text-[9px] font-semibold text-emerald-600">
+                      key ประจำแถว: {target.primaryKey}
+                      {target.pkResultColumn !== target.primaryKey
+                        ? ` (ในผลลัพธ์ชื่อ "${target.pkResultColumn}")`
+                        : ""}
+                    </p>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div>
         <label className={labelClass}>ตารางที่จะเขียนกลับ</label>
         {schemaData?.tables?.length ? (
