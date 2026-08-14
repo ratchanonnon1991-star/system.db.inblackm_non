@@ -259,6 +259,79 @@ check("no schema loaded means no proposal", detectEditableTargets({ sql: "SELECT
 check("nonsense in, nothing out", detectEditableTargets({ sql: "not sql at all", tables: TABLES }), []);
 check("empty sql", detectEditableTargets({ sql: "", tables: TABLES }), []);
 
+// --- regressions ---------------------------------------------------------
+// A subquery written without a space after FROM used to have its opening
+// paren skipped, so the depth counter went negative on the closing one and
+// every table joined after it was lost.
+check(
+  "FROM( with no space still opens a paren",
+  parseFromTables("SELECT * FROM(SELECT 1) AS x"),
+  []
+);
+check(
+  "...and does not swallow the tables joined after it",
+  names(parseFromTables("SELECT * FROM(SELECT 1) AS x JOIN public.games g ON true")),
+  ["public.games AS g"]
+);
+
+// Postgres folds unquoted identifiers to lower case, so `O.Amount` really
+// means the column `amount` and comes back in a result column called
+// `amount`. Storing what was typed produced a column map pointing at a
+// column that does not exist, and a key that never matched.
+const folded = detectEditableTargets({
+  sql: "SELECT O.Amount, O.Id FROM Public.Orders O",
+  tables: TABLES,
+});
+check(
+  "an unquoted column resolves to how the table really spells it",
+  folded[0].columns,
+  [
+    { result: "amount", column: "amount" },
+    { result: "id", column: "id" },
+  ]
+);
+check("and the key is found despite the casing", folded[0].pkResultColumn, "id");
+check("an unquoted alias folds too", sourcesOf("SELECT o.id AS OrderId FROM t"), [
+  "orderid<-o.id",
+]);
+check(
+  "a quoted alias keeps its casing, because Postgres does",
+  sourcesOf('SELECT o.id AS "OrderId" FROM t'),
+  ["OrderId<-o.id"]
+);
+check(
+  "a quoted column reference keeps its casing too",
+  detectEditableTargets({
+    sql: 'SELECT o."Amount" FROM public.orders o',
+    tables: [
+      {
+        key: "public.orders",
+        schema: "public",
+        name: "orders",
+        primaryKey: ["id"],
+        columns: [{ name: "Amount" }, { name: "amount" }, { name: "id" }],
+      },
+    ],
+  })[0].columns,
+  [{ result: "Amount", column: "Amount" }]
+);
+check(
+  "a table holding both Amount and amount is not resolved by coin flip",
+  detectEditableTargets({
+    sql: "SELECT o.AMOUNT FROM public.orders o",
+    tables: [
+      {
+        key: "public.orders",
+        schema: "public",
+        name: "orders",
+        primaryKey: ["id"],
+        columns: [{ name: "Amount" }, { name: "amount" }, { name: "id" }],
+      },
+    ],
+  }),
+  []
+);
+
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);
 process.exit(failures.length ? 1 : 0);

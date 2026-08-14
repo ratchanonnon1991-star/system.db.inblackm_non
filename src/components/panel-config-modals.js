@@ -678,10 +678,21 @@ export function EditableSettingsModal({
   // straight out of the SQL. For `SELECT a.col1, b.col2 FROM a JOIN b` there
   // is no way for an admin to know from the boxes below which of the two they
   // are configuring -- so offer both, already worked out.
-  const detectedTargets = useMemo(
-    () => detectEditableTargets({ sql: sqlText || "", tables: schemaData?.tables || [] }),
-    [sqlText, schemaData]
-  );
+  //
+  // Reconciled against the columns the query actually returned: the parser is
+  // a best-effort read of the SQL text, `columnNames` is the truth. Anything
+  // it believes is in the result but is not actually there gets dropped
+  // rather than offered as a setting that could never match a real row.
+  const detectedTargets = useMemo(() => {
+    const returned = new Set(columnNames || []);
+    return detectEditableTargets({ sql: sqlText || "", tables: schemaData?.tables || [] })
+      .map((target) => ({
+        ...target,
+        columns: target.columns.filter((entry) => returned.has(entry.result)),
+        pkResultColumn: returned.has(target.pkResultColumn) ? target.pkResultColumn : "",
+      }))
+      .filter((target) => target.columns.length > 0);
+  }, [sqlText, schemaData, columnNames]);
 
   // Only fill boxes the admin has not touched — someone who typed a real
   // column name by hand should never have it silently swapped back.

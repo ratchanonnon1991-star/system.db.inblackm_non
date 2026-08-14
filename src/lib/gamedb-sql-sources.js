@@ -32,17 +32,30 @@ function skipSpace(src, i) {
   return j;
 }
 
-/** One identifier, quoted or bare. Returns null when there isn't one. */
+/**
+ * One identifier, quoted or bare. Returns null when there isn't one.
+ *
+ * `quoted` matters: Postgres folds an unquoted identifier to lower case, so
+ * `SELECT O.Id` comes back in a column called `id`, while `AS "Id"` comes
+ * back as `Id`. The editable config is matched against those result names,
+ * so getting this wrong produces settings that silently never match.
+ */
 function readNamePart(src, i) {
   if (src[i] === '"') {
     const end = src.indexOf('"', i + 1);
     if (end === -1) return null;
-    return { value: src.slice(i + 1, end), next: end + 1 };
+    return { value: src.slice(i + 1, end), next: end + 1, quoted: true };
   }
   let j = i;
   while (j < src.length && NAME_CHAR.test(src[j])) j += 1;
   if (j === i) return null;
-  return { value: src.slice(i, j), next: j };
+  return { value: src.slice(i, j), next: j, quoted: false };
+}
+
+/** The name a result column comes back under, applying Postgres's folding. */
+function resultName(part) {
+  if (!part) return "";
+  return part.quoted ? part.value : part.value.toLowerCase();
 }
 
 /** `name`, `schema.name`, or `alias.*` -- `allowStar` covers the SELECT list. */
@@ -51,14 +64,19 @@ function readQualifiedName(src, i, allowStar = false) {
   if (!first) return null;
   if (src[first.next] === ".") {
     if (allowStar && src[first.next + 1] === "*") {
-      return { qualifier: first.value, name: "*", next: first.next + 2 };
+      return { qualifier: first.value, name: "*", next: first.next + 2, part: null };
     }
     const second = readNamePart(src, first.next + 1);
     if (second) {
-      return { qualifier: first.value, name: second.value, next: second.next };
+      return {
+        qualifier: first.value,
+        name: second.value,
+        next: second.next,
+        part: second,
+      };
     }
   }
-  return { qualifier: "", name: first.value, next: first.next };
+  return { qualifier: "", name: first.value, next: first.next, part: first };
 }
 
 // A keyword match that isn't just the start of a longer identifier.
@@ -103,13 +121,17 @@ export function parseFromTables(sql) {
 
     let j = skipSpace(src, i + keywordLength);
     // `FROM (SELECT ...) AS x` -- a derived table, nothing to write back to.
+    // Resume ON the paren rather than past it: written without a space,
+    // `FROM(SELECT ...)`, skipping it would leave the subquery's contents
+    // being read at depth 0 and its closing paren pushing the depth
+    // negative, losing every table joined after it.
     if (src[j] === "(") {
-      i += keywordLength;
+      i = j - 1;
       continue;
     }
     const qualified = readQualifiedName(src, j);
     if (!qualified) {
-      i += keywordLength;
+      i = j - 1;
       continue;
     }
 
@@ -216,7 +238,7 @@ function parseSelectItem(raw) {
     else if (depth === 0 && lower.startsWith("as", i) && wordAt(lower, i, 2)) {
       const aliasPart = readNamePart(item, skipSpace(item, i + 2));
       if (aliasPart && skipSpace(item, aliasPart.next) >= item.length) {
-        alias = aliasPart.value;
+        alias = resultName(aliasPart);
         head = item.slice(0, i).trim();
         break;
       }
@@ -229,7 +251,7 @@ function parseSelectItem(raw) {
   // A plain column reference is one that accounts for the whole head.
   if (skipSpace(head, qualified.next) >= head.length) {
     return {
-      result: alias || qualified.name,
+      result: alias || (qualified.part ? resultName(qualified.part) : qualified.name),
       qualifier: qualified.qualifier,
       column: qualified.name,
     };
@@ -240,7 +262,7 @@ function parseSelectItem(raw) {
     const aliasPart = readNamePart(head, skipSpace(head, qualified.next));
     if (aliasPart && skipSpace(head, aliasPart.next) >= head.length) {
       return {
-        result: aliasPart.value,
+        result: resultName(aliasPart),
         qualifier: qualified.qualifier,
         column: qualified.name,
       };
@@ -250,6 +272,25 @@ function parseSelectItem(raw) {
   // An expression: `price * 2`, `count(*)`, a CASE, a cast. It still has a
   // result name when it was aliased, but no single column behind it.
   return { result: alias, qualifier: "", column: "" };
+}
+
+/**
+ * The column as the table really spells it, given the name as written in the
+ * SQL. Postgres folds an unquoted identifier to lower case, so `O.Amount`
+ * really does mean the column `amount` -- storing what was typed instead
+ * would produce a column map pointing at something that does not exist, and
+ * the write would only fail later, at the point someone edits a cell.
+ *
+ * Falls back to a case-insensitive match only when exactly one column
+ * answers to it; a table holding both "Amount" and "amount" is left alone
+ * rather than resolved by coin flip.
+ */
+function findColumn(table, name) {
+  const exact = table.columns.find((column) => column.name === name);
+  if (exact) return exact.name;
+  const lower = String(name || "").toLowerCase();
+  const matches = table.columns.filter((column) => column.name.toLowerCase() === lower);
+  return matches.length === 1 ? matches[0].name : "";
 }
 
 function findTable(tables, schema, name) {
@@ -327,16 +368,17 @@ export function detectEditableTargets({ sql, tables }) {
     if (!item.column) continue;
 
     if (item.qualifier) {
-      addColumn(byAlias.get(item.qualifier.toLowerCase()), item.result, item.column);
+      const table = byAlias.get(item.qualifier.toLowerCase());
+      if (table) addColumn(table, item.result, findColumn(table, item.column));
       continue;
     }
     // Unqualified: only safe when exactly one joined table has a column by
     // that name. `SELECT id FROM a JOIN b` where both have an `id` is
     // genuinely ambiguous -- Postgres itself would reject it.
-    const owners = resolved.filter((entry) =>
-      entry.table.columns.some((column) => column.name === item.column)
-    );
-    if (owners.length === 1) addColumn(owners[0].table, item.result, item.column);
+    const owners = resolved.filter((entry) => findColumn(entry.table, item.column));
+    if (owners.length === 1) {
+      addColumn(owners[0].table, item.result, findColumn(owners[0].table, item.column));
+    }
   }
 
   return resolved
