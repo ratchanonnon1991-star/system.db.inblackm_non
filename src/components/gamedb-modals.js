@@ -88,6 +88,11 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
   const [testing, setTesting] = useState(false);
   const { width: modalWidth, startResize, resizing } = useResizableModalWidth(896);
   const [testResult, setTestResult] = useState(null);
+  // Which SQL string `testResult` actually belongs to -- Save is only ever
+  // allowed once this still matches `effectiveSql`, so an edit made after a
+  // test (in either mode) makes the test stale instead of vouching for SQL
+  // it never actually ran.
+  const [testedSql, setTestedSql] = useState("");
   const [error, setError] = useState("");
   const [schemaData, setSchemaData] = useState(null);
   const [schemaLoading, setSchemaLoading] = useState(false);
@@ -305,6 +310,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
     setTesting(true);
     setError("");
     setTestResult(null);
+    const testedFor = effectiveSql;
     try {
       const data = await apiJson("/api/queries/preview", {
         method: "POST",
@@ -318,6 +324,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
         fallbackError: "รัน SQL ไม่สำเร็จ",
       });
       setTestResult(data);
+      setTestedSql(testedFor);
     } catch (err) {
       if (err.name !== "AbortError") setError(err.message);
     } finally {
@@ -534,6 +541,15 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                 <Database size={14} className="mt-0.5 shrink-0" />
                 เลือกตารางและติ๊กคอลัมน์ที่ต้องการ ระบบจะสร้าง SELECT ให้อัตโนมัติ โดยไม่ต้องเขียน SQL
               </div>
+              {sqlText.trim() && sqlText.trim() !== "SELECT" && sqlText !== visualSql && (
+                <div className="flex items-start gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] font-bold text-amber-700">
+                  <Code2 size={14} className="mt-0.5 shrink-0" />
+                  SQL ที่เขียนเองไว้ในแท็บ &quot;เขียน SQL เอง&quot; ไม่ตรงกับตัวเลือกด้านล่างนี้ —
+                  ตัวเลือกที่นี่แปลงกลับจาก SQL ที่เขียนเองให้อัตโนมัติไม่ได้ ถ้ากด
+                  &quot;บันทึก&quot; ตอนนี้ ระบบจะใช้ตัวเลือกด้านล่าง ไม่ใช่ SQL ที่เขียนไว้
+                  — สลับกลับไปแท็บ SQL ถ้าต้องการเก็บของเดิม
+                </div>
+              )}
               {schemaLoading ? (
                 <p className="flex items-center gap-2 py-6 text-xs font-bold text-zinc-400">
                   <Loader2 size={14} className="animate-spin" /> กำลังโหลดโครงสร้างฐานข้อมูล...
@@ -1005,7 +1021,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
               </label>
               <textarea
                 value={sqlText}
-                onChange={(e) => setSqlText(e.target.value)}
+                onChange={(e) => { setSqlText(e.target.value); setTestResult(null); }}
                 rows={10}
                 spellCheck={false}
                 className="w-full rounded-sm border border-zinc-200 bg-zinc-900 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-emerald-300 outline-none focus:border-red-600"
@@ -1126,7 +1142,11 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
         </div>
 
         <MissingNotice
-          items={[!name.trim() && "ชื่อ Query", !effectiveSql.trim() && (builderMode === "visual" ? (visualBuild.error || "คอลัมน์อย่างน้อย 1 คอลัมน์") : "คำสั่ง SQL")].filter(Boolean)}
+          items={[
+            !name.trim() && "ชื่อ Query",
+            !effectiveSql.trim() && (builderMode === "visual" ? (visualBuild.error || "คอลัมน์อย่างน้อย 1 คอลัมน์") : "คำสั่ง SQL"),
+            effectiveSql.trim() && testedSql !== effectiveSql && "ทดสอบรันให้ผ่านก่อน (SQL เปลี่ยนไปตั้งแต่ทดสอบครั้งล่าสุด หรือยังไม่เคยทดสอบ)",
+          ].filter(Boolean)}
         />
 
         <div className="mt-4 flex items-center justify-end gap-2">
@@ -1146,7 +1166,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
           <button
             type="button"
             onClick={save}
-            disabled={saving || !name.trim() || !effectiveSql.trim()}
+            disabled={saving || !name.trim() || !effectiveSql.trim() || testedSql !== effectiveSql}
             className="flex items-center gap-1.5 rounded-sm bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
           >
             {saving ? (
