@@ -692,6 +692,20 @@ export default function PanelTable({
   // all. Positions are page-relative because the selection is transient and
   // never outlives the page you made it on.
   const [selection, setSelection] = useState(null);
+  // A wide table on a phone is a horizontal-scroll maze, so a narrow viewport
+  // gets one card per row instead. `null` means "follow the screen"; picking
+  // a view explicitly pins it, so nobody is locked out of the real table.
+  const [viewChoice, setViewChoice] = useState(null);
+  const [narrowScreen, setNarrowScreen] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return undefined;
+    const query = window.matchMedia("(max-width: 767px)");
+    const sync = () => setNarrowScreen(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+  const asCards = viewChoice === null ? narrowScreen : viewChoice === "cards";
   const [columnToolsPopover, setColumnToolsPopover] = useState(null);
   const columnToolsCloseTimerRef = useRef(0);
   const columnToolsRef = useRef(null);
@@ -1384,6 +1398,76 @@ export default function PanelTable({
     );
   };
 
+  if (asCards) {
+    return (
+      <div
+        className="min-h-0 space-y-2 overflow-auto border-t border-zinc-100 p-2"
+        style={{ height }}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[10px] font-black text-zinc-400">
+            {rows.length.toLocaleString("th-TH")} รายการ
+          </span>
+          <button
+            type="button"
+            onClick={() => setViewChoice("table")}
+            className="rounded-sm border border-zinc-200 px-2 py-1 text-[10px] font-black text-zinc-600 transition hover:bg-zinc-50"
+          >
+            ดูเป็นตาราง
+          </button>
+        </div>
+        {rows.map((row, rowIndex) => (
+          <div key={row.sourceIndex} className="rounded-sm border border-zinc-200 bg-white p-2.5 shadow-sm">
+            <div className="mb-1.5 flex items-center justify-between gap-2 border-b border-zinc-100 pb-1.5">
+              <span className="text-[10px] font-black text-zinc-400">
+                #{rowOffset + rowIndex + 1}
+              </span>
+              <span className="flex items-center gap-1.5">
+                {onRowHistory && (
+                  <button type="button" onClick={() => onRowHistory(row)} className="text-zinc-400" title="ประวัติการแก้ไข">
+                    <History size={13} />
+                  </button>
+                )}
+                {onDrill && (
+                  <button type="button" onClick={() => onDrill(row)} className="text-red-600" title={drillLabel}>
+                    <CornerDownRight size={13} />
+                  </button>
+                )}
+                {onDeleteRow && (
+                  <button type="button" onClick={() => onDeleteRow(row)} className="text-zinc-400" title="ลบแถวนี้">
+                    <Trash2 size={13} />
+                  </button>
+                )}
+              </span>
+            </div>
+            <dl className="space-y-1">
+              {row.cells.map((cell, cellIndex) => {
+                const col = columns[cellIndex];
+                if (!col) return null;
+                return (
+                  <div key={col.id} className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-2">
+                    <dt className="truncate text-[10px] font-black text-zinc-400">{col.label}</dt>
+                    <dd
+                      className="min-w-0 break-words text-[11px] font-semibold text-zinc-700"
+                      onDoubleClick={() => startEdit(row, col, cellIndex)}
+                    >
+                      {cell.text === "" ? "—" : cell.text}
+                    </dd>
+                  </div>
+                );
+              })}
+            </dl>
+          </div>
+        ))}
+        {rows.length === 0 && (
+          <p className="px-3 py-10 text-center text-[11px] font-semibold text-zinc-400">
+            ไม่มีข้อมูลตามตัวกรองที่เลือก
+          </p>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div
       ref={scrollRef}
@@ -1391,6 +1475,17 @@ export default function PanelTable({
       className="min-h-0 overflow-auto border-t border-zinc-100"
       style={{ height, "--cell-border": gridBorderColor }}
     >
+      {narrowScreen && (
+        <div className="flex justify-end p-1.5">
+          <button
+            type="button"
+            onClick={() => setViewChoice("cards")}
+            className="rounded-sm border border-zinc-200 px-2 py-1 text-[10px] font-black text-zinc-600 transition hover:bg-zinc-50"
+          >
+            ดูเป็นการ์ด (เหมาะกับจอเล็ก)
+          </button>
+        </div>
+      )}
       <table
         className="border-collapse text-[11px]"
         style={
