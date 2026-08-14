@@ -22,6 +22,7 @@ import {
   CornerDownRight,
   ExternalLink,
   EyeOff,
+  Filter,
   History,
   Image as ImageIcon,
   Layers,
@@ -637,6 +638,9 @@ export default function PanelTable({
   drillLabel,
   onDeleteRow,
   onRowHistory,
+  columnValueFilters,
+  columnValueOptions,
+  onSetColumnFilter,
   onOpenColumnFormat,
   onOpenColumnRules,
   onEditComputedColumn,
@@ -681,6 +685,7 @@ export default function PanelTable({
   // Render header tools through a portal so the table's scroll container cannot
   // clip them. The anchor overlaps the header by one pixel and closes with a
   // short grace period, avoiding a dead zone while the pointer crosses over.
+  const [filterPopover, setFilterPopover] = useState(null);
   const [columnToolsPopover, setColumnToolsPopover] = useState(null);
   const columnToolsCloseTimerRef = useRef(0);
   const columnToolsRef = useRef(null);
@@ -1441,6 +1446,32 @@ export default function PanelTable({
                         </span>
                       )}
                     </button>
+                    {/* Deliberately not behind canCustomizeLayout: narrowing
+                        what you are looking at is not editing the layout, and
+                        this is the one filter every spreadsheet user already
+                        knows how to use. */}
+                    {onSetColumnFilter && (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          setFilterPopover((prev) =>
+                            prev?.colId === col.id
+                              ? null
+                              : { colId: col.id, top: rect.bottom + 4, left: rect.left, search: "" }
+                          );
+                        }}
+                        className={`shrink-0 rounded p-0.5 transition ${
+                          columnValueFilters?.[col.id]?.length
+                            ? "bg-red-100 text-red-600"
+                            : "text-zinc-400 opacity-0 hover:text-zinc-700 group-hover:opacity-100"
+                        }`}
+                        title="กรองเฉพาะค่าที่เลือกในคอลัมน์นี้"
+                      >
+                        <Filter size={11} />
+                      </button>
+                    )}
                   </div>
                   {canCustomizeLayout && <span
                     onPointerDown={(event) => {
@@ -1580,6 +1611,90 @@ export default function PanelTable({
           </tfoot>
         )}
       </table>
+      {filterPopover && typeof document !== "undefined" &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-[99]" onClick={() => setFilterPopover(null)} />
+            <div
+              className="fixed z-[100] flex max-h-80 w-64 flex-col rounded-sm border border-zinc-200 bg-white p-2 shadow-xl"
+              style={{ top: filterPopover.top, left: Math.min(filterPopover.left, (typeof window !== "undefined" ? window.innerWidth : 1200) - 272) }}
+            >
+              {(() => {
+                const values = columnValueOptions?.[filterPopover.colId] || [];
+                const picked = columnValueFilters?.[filterPopover.colId] || [];
+                const needle = filterPopover.search.trim().toLowerCase();
+                const shown = needle
+                  ? values.filter((value) => value.toLowerCase().includes(needle))
+                  : values;
+                return (
+                  <>
+                    <input
+                      type="search"
+                      autoFocus
+                      value={filterPopover.search}
+                      onChange={(e) =>
+                        setFilterPopover((prev) => ({ ...prev, search: e.target.value }))
+                      }
+                      placeholder="ค้นหาค่าในคอลัมน์นี้"
+                      className="mb-1.5 h-8 shrink-0 rounded-sm border border-zinc-200 bg-zinc-50 px-2 text-[10px] font-semibold outline-none focus:border-red-600 focus:bg-white"
+                    />
+                    <div className="mb-1.5 flex shrink-0 items-center justify-between gap-2 text-[9px] font-black">
+                      <button
+                        type="button"
+                        onClick={() => onSetColumnFilter(filterPopover.colId, shown)}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        เลือกทั้งหมด
+                      </button>
+                      <span className="text-zinc-400">
+                        {picked.length ? `เลือกไว้ ${picked.length}` : "แสดงทุกค่า"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onSetColumnFilter(filterPopover.colId, [])}
+                        className="text-zinc-500 hover:text-zinc-700"
+                      >
+                        ล้างตัวกรอง
+                      </button>
+                    </div>
+                    <div className="min-h-0 flex-1 overflow-y-auto">
+                      {shown.length === 0 ? (
+                        <p className="px-2 py-4 text-center text-[10px] font-semibold text-zinc-400">
+                          ไม่พบค่าที่ตรงกับคำค้นหา
+                        </p>
+                      ) : (
+                        shown.map((value) => (
+                          <label
+                            key={value}
+                            className="flex cursor-pointer items-center gap-1.5 rounded-sm px-1.5 py-1 hover:bg-zinc-50"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={picked.includes(value)}
+                              onChange={(e) =>
+                                onSetColumnFilter(
+                                  filterPopover.colId,
+                                  e.target.checked
+                                    ? [...picked, value]
+                                    : picked.filter((item) => item !== value)
+                                )
+                              }
+                              className="h-3 w-3 shrink-0 accent-red-600"
+                            />
+                            <span className="min-w-0 truncate text-[10px] font-semibold text-zinc-700">
+                              {value === "" ? "(ว่าง)" : value}
+                            </span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </>,
+          document.body
+        )}
       {canCustomizeLayout && activeToolsColumn && typeof document !== "undefined" &&
         createPortal(
           <div

@@ -502,6 +502,10 @@ export default function QueryPanel({
   const [showParamErrors, setShowParamErrors] = useState(false);
   const paramStorageLoadedRef = useRef(null);
   const [rowFilter, setRowFilter] = useState("");
+  // Ticked values per column, the way an AutoFilter works in a spreadsheet.
+  // Per-browser like rowFilter -- looking at a subset is not a layout change,
+  // so it never gets saved to the query for everyone else.
+  const [columnValueFilters, setColumnValueFilters] = useState({});
   // A per-browser view of the current result, same as rowFilter -- not part of
   // layout, so it resets on reload rather than surviving as a saved setting
   // nobody remembers turning on.
@@ -1176,9 +1180,12 @@ export default function QueryPanel({
     return null;
   }
 
-  const displayRows = useMemo(() => {
+  // Every row with its cells worked out, before any filtering. Kept separate
+  // from displayRows so the header filter can offer every value a column
+  // actually holds -- not just the ones that survived the filters already on.
+  const mappedRows = useMemo(() => {
     if (!result) return [];
-    let rows = result.rows.map((row, sourceIndex) => {
+    return result.rows.map((row, sourceIndex) => {
       const partners = computePartners(row);
       const resolveRef = (name) => resolveRowRef(row, partners, name);
 
@@ -1213,6 +1220,63 @@ export default function QueryPanel({
         }),
       };
     });
+    // resolveRowRef is a plain function, not a hook value -- it closes over
+    // exactly the entries already listed below, so depending on it directly
+    // would recompute every render instead of only when one of those changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    result,
+    visibleColumns,
+    baseNameToIndex,
+    mergeSourceIndexes,
+    mergedColumnsByLabel,
+    computedColumnsByLabel,
+    activeLookups,
+    computePartners,
+  ]);
+
+  // Every distinct value each column holds, for the tick-list in its header.
+  const columnValueOptions = useMemo(() => {
+    const byColumn = visibleColumns.map(() => new Set());
+    for (const row of mappedRows) {
+      row.cells.forEach((cell, index) => byColumn[index]?.add(cell.text));
+    }
+    return Object.fromEntries(
+      visibleColumns.map((col, index) => [
+        col.id,
+        [...byColumn[index]].sort((a, b) => a.localeCompare(b, "th")),
+      ])
+    );
+  }, [mappedRows, visibleColumns]);
+
+  const activeColumnFilterIds = useMemo(
+    () => Object.keys(columnValueFilters).filter((colId) => columnValueFilters[colId]?.length),
+    [columnValueFilters]
+  );
+
+  const displayRows = useMemo(() => {
+    if (!result) return [];
+    let rows = mappedRows;
+
+    // Ticking values in a column header keeps only rows holding one of them.
+    // Several columns filtered at once all have to match, the way stacked
+    // AutoFilters behave in a spreadsheet.
+    const activeColumnFilters = Object.entries(columnValueFilters).filter(
+      ([, values]) => values?.length
+    );
+    if (activeColumnFilters.length) {
+      const plan = activeColumnFilters
+        .map(([colId, values]) => ({
+          index: visibleColumns.findIndex((col) => col.id === colId),
+          allowed: new Set(values),
+        }))
+        .filter((entry) => entry.index !== -1);
+      if (plan.length) {
+        rows = rows.filter((row) =>
+          plan.every(({ index, allowed }) => allowed.has(row.cells[index]?.text))
+        );
+      }
+    }
 
     const filter = rowFilter.trim().toLowerCase();
     if (filter) {
@@ -1248,19 +1312,11 @@ export default function QueryPanel({
       }
     }
     return rows;
-    // resolveRowRef is a plain function, not a hook value -- it closes over
-    // exactly the entries already listed below, so depending on it directly
-    // would recompute every render instead of only when one of those changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     result,
+    mappedRows,
     visibleColumns,
-    baseNameToIndex,
-    mergeSourceIndexes,
-    mergedColumnsByLabel,
-    computedColumnsByLabel,
-    activeLookups,
-    computePartners,
+    columnValueFilters,
     rowFilter,
     lookupRowFilter,
     layout.sort,
@@ -2293,7 +2349,7 @@ export default function QueryPanel({
             {result ? (
               <>
                 {displayRows.length.toLocaleString("th-TH")} แถว
-                {rowFilter.trim() || lookupRowFilter
+                {rowFilter.trim() || lookupRowFilter || activeColumnFilterIds.length
                   ? ` (กรองจาก ${result.rowCount.toLocaleString("th-TH")})`
                   : ""}
                 {lookupRowFilter
@@ -2322,6 +2378,38 @@ export default function QueryPanel({
             )}
           </p>
         </div>
+
+        {activeColumnFilterIds.length > 0 && (
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-black text-zinc-400">กรองอยู่:</span>
+            {activeColumnFilterIds.map((colId) => (
+              <button
+                key={colId}
+                type="button"
+                onClick={() =>
+                  setColumnValueFilters((prev) => {
+                    const next = { ...prev };
+                    delete next[colId];
+                    return next;
+                  })
+                }
+                className="flex items-center gap-1 rounded-sm border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-black text-red-600 transition hover:bg-red-100"
+                title="เอาตัวกรองของคอลัมน์นี้ออก"
+              >
+                {visibleColumns.find((col) => col.id === colId)?.label || colId} (
+                {columnValueFilters[colId].length})
+                <X size={10} />
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setColumnValueFilters({})}
+              className="text-[10px] font-black text-zinc-500 underline underline-offset-2 hover:text-zinc-700"
+            >
+              ล้างทั้งหมด
+            </button>
+          </div>
+        )}
 
         {canCustomizeLayout && hiddenColumns.length > 0 && (
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -3190,6 +3278,17 @@ export default function QueryPanel({
                   // Only a query that writes somewhere has a history worth
                   // showing -- everything else has never been edited here.
                   onRowHistory={sharedEditable && !viewingSnapshot ? openRowHistory : null}
+                  columnValueFilters={columnValueFilters}
+                  columnValueOptions={columnValueOptions}
+                  onSetColumnFilter={(colId, values) => {
+                    setColumnValueFilters((prev) => {
+                      const next = { ...prev };
+                      if (values.length) next[colId] = values;
+                      else delete next[colId];
+                      return next;
+                    });
+                    setPage(1);
+                  }}
                   onOpenColumnFormat={(column) => openColumnModal("formats", column)}
                   onOpenColumnRules={(column) => openColumnModal("rules", column)}
                   onEditComputedColumn={(column) => openColumnModal("computed", column)}
