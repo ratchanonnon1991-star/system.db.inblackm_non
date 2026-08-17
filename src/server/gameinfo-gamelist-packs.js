@@ -104,6 +104,7 @@ function flattenCurrencies(gameId, currencies) {
             image: cleanPack.image,
             price: cleanPack.price,
             amountChargedFee: cleanPack.amountChargedFee,
+            serviceEnabled: cleanPack.serviceEnabled,
             costProfileId: cleanPack.costProfileId,
             channelsMain: cleanPack.channelsMain,
             channelsSecondary: cleanPack.channelsSecondary,
@@ -813,6 +814,29 @@ export async function listGamelistPackCountByGame() {
     const out = {};
     for (const row of result.rows) out[row.game_id] = row.pack_count;
     return out;
+  } finally {
+    client.release();
+  }
+}
+
+/** Disabled-pack count used to derive the orange game service light. Old
+ * rows without serviceEnabled are treated as enabled for compatibility. */
+export async function listGamelistPackServiceByGame() {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `SELECT game_id,
+              COUNT(*)::int AS total_count,
+              COUNT(*) FILTER (WHERE data->>'serviceEnabled' = 'false')::int AS disabled_count
+         FROM gamelist_packs
+        WHERE pack_id != $1
+        GROUP BY game_id`,
+      [COMPUTED_SENTINEL]
+    );
+    return Object.fromEntries(
+      result.rows.map((row) => [row.game_id, { total: row.total_count, disabled: row.disabled_count }])
+    );
   } finally {
     client.release();
   }

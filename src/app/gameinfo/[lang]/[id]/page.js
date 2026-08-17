@@ -42,6 +42,13 @@ export default async function GameinfoGameDetailPage({ params }) {
       currencies = packs.currencies;
       computedColumns = packs.computedColumns;
       costProfiles = packs.costProfiles;
+      const packDisabledCount = currencies.reduce(
+        (total, currency) => total + currency.categories.reduce(
+          (categoryTotal, category) => categoryTotal + category.packs.filter((pack) => pack.serviceEnabled === false).length,
+          0
+        ),
+        0
+      );
       const [vpnByGame, channelsByGame, allRows, tutorial, image] = await Promise.all([
         listGamelistVpnByGame(),
         listGamelistChannelsByGame(),
@@ -59,6 +66,8 @@ export default async function GameinfoGameDetailPage({ params }) {
         orderPosition: orderPosition > 0 ? orderPosition : null,
         hasTutorial: tutorial.categories.some((c) => c.steps.length > 0),
         image: image.imageUrl,
+        packDisabledCount,
+        serviceStatus: !row.serviceEnabled ? "offline" : packDisabledCount > 0 ? "partial" : "online",
       };
     }
   } catch (err) {

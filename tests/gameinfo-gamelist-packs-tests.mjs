@@ -13,6 +13,7 @@ import {
   listAllGamelistPackAudit,
   listGamelistPackAudit,
   listGamelistPackCountByGame,
+  listGamelistPackServiceByGame,
   listGamelistPackViewPresets,
   saveGamelistPacks,
   saveGamelistPackViewPreset,
@@ -51,6 +52,7 @@ const ORIGINAL_TREE = [
             image: "",
             price: "10",
             amountChargedFee: "12",
+            serviceEnabled: true,
             costProfileId: "",
             channelsMain: ["Wave"],
             channelsSecondary: [],
@@ -62,6 +64,7 @@ const ORIGINAL_TREE = [
             image: "",
             price: "20",
             amountChargedFee: "22",
+            serviceEnabled: true,
             costProfileId: "",
             channelsMain: ["Wave"],
             channelsSecondary: [],
@@ -283,6 +286,17 @@ async function run() {
   const countStmt = find(/^SELECT game_id, COUNT\(\*\)::int AS pack_count FROM gamelist_packs/);
   ok("pack count: excludes the computed sentinel", countStmt && /pack_id != \$1/.test(countStmt.text));
   check("pack count: binds the sentinel value", countStmt?.params, ["__computed__"]);
+
+  reset();
+  setResponder((text) => {
+    if (/disabled_count/.test(text)) {
+      return { rows: [{ game_id: 5, total_count: 3, disabled_count: 1 }] };
+    }
+    return null;
+  });
+  check("service summary: returns disabled packs per game", await listGamelistPackServiceByGame(), {
+    5: { total: 3, disabled: 1 },
+  });
 
   // --- listAllGamelistChannels: merges main+secondary across every game -----
   reset();

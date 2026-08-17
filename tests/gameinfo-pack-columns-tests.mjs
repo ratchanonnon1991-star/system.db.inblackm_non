@@ -33,6 +33,7 @@ check(
   "base and computed columns use one collision-safe id namespace",
   columns.map((column) => column.id),
   [
+    "serviceEnabled",
     "image",
     "name",
     "price",
@@ -49,7 +50,8 @@ const normalized = normalizeGameinfoPackLayout(
   { order: ["computed:profit", "price", "missing"], hidden: ["country", "missing", "country"] },
   columns
 );
-check("layout keeps known saved order then appends new columns", normalized.order, [
+check("layout pins the service status column to the front", normalized.order, [
+  "serviceEnabled",
   "computed:profit",
   "price",
   "image",
@@ -60,7 +62,7 @@ check("layout keeps known saved order then appends new columns", normalized.orde
   "channelsSecondary",
   "country",
 ]);
-check("layout drops unknown and duplicate hidden ids", normalized.hidden, ["country"]);
+check("layout drops unknown, duplicate, and hidden status ids", normalized.hidden, ["country"]);
 check("layout defaults to no row filters", normalized.filters, []);
 
 const filteredLayout = normalizeGameinfoPackLayout(
@@ -101,6 +103,7 @@ check(
   "column reorder moves one id without losing the others",
   reorderGameinfoPackColumns(normalized, "price", "channelsMain").order,
   [
+    "serviceEnabled",
     "computed:profit",
     "image",
     "name",

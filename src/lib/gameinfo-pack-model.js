@@ -19,6 +19,7 @@ export function sanitizeGameinfoPack(pack) {
     image: text(source.image),
     price: text(source.price),
     amountChargedFee: text(source.amountChargedFee),
+    serviceEnabled: source.serviceEnabled !== false,
     costProfileId: text(source.costProfileId),
     channelsMain: stringList(source.channelsMain),
     channelsSecondary: stringList(source.channelsSecondary),

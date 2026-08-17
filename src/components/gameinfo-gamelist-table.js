@@ -53,7 +53,7 @@ import GameinfoAllPackHistory from "./gameinfo-all-pack-history";
 // pack count ported from the old admin games-table, see
 // listGamelistPackCountByGame().
 const GRID_COLS =
-  "grid-cols-[28px_60px_50px_44px_minmax(160px,1.4fr)_110px_110px_110px_130px_minmax(140px,1fr)_130px_minmax(140px,1fr)_110px_44px]";
+  "grid-cols-[28px_28px_70px_60px_50px_44px_minmax(160px,1.4fr)_110px_110px_110px_130px_minmax(140px,1fr)_130px_minmax(140px,1fr)_110px_44px]";
 
 function uniq(arr) {
   return Array.from(new Set(arr.filter(Boolean))).sort((a, b) => a.localeCompare(b, "th"));
@@ -89,6 +89,10 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
   const [savedAt, setSavedAt] = useState(null);
   const [savedVisible, setSavedVisible] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [selectedGameIds, setSelectedGameIds] = useState(new Set());
+  const [statusError, setStatusError] = useState("");
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const selectionDragRef = useRef({ active: false, selecting: true });
 
   // "บันทึกแล้ว" text auto-collapses 3s after each save — see the matching
   // pattern in gameinfo-pack-editor.js. Re-triggers on every save since
@@ -104,6 +108,69 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
+
+  useEffect(() => {
+    function stopSelectionDrag() {
+      selectionDragRef.current.active = false;
+    }
+    window.addEventListener("pointerup", stopSelectionDrag);
+    window.addEventListener("pointercancel", stopSelectionDrag);
+    return () => {
+      window.removeEventListener("pointerup", stopSelectionDrag);
+      window.removeEventListener("pointercancel", stopSelectionDrag);
+    };
+  }, []);
+
+  function setGameSelected(gameId, selected) {
+    if (isTempId(gameId)) return;
+    setSelectedGameIds((current) => {
+      const next = new Set(current);
+      if (selected) next.add(gameId);
+      else next.delete(gameId);
+      return next;
+    });
+  }
+
+  function beginGameSelection(event, gameId) {
+    event.preventDefault();
+    event.stopPropagation();
+    const selecting = !selectedGameIds.has(gameId);
+    selectionDragRef.current = { active: true, selecting };
+    setGameSelected(gameId, selecting);
+  }
+
+  function enterGameSelection(gameId) {
+    if (!selectionDragRef.current.active) return;
+    setGameSelected(gameId, selectionDragRef.current.selecting);
+  }
+
+  async function setSelectedGamesStatus(enabled, explicitIds = null) {
+    const gameIds = explicitIds || [...selectedGameIds];
+    if (gameIds.length === 0 || updatingStatus) return;
+    setUpdatingStatus(true);
+    setStatusError("");
+    try {
+      await apiJson("/api/gameinfo/gamelist/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gameIds, enabled }),
+      });
+      const idSet = new Set(gameIds);
+      const applyStatus = (row) => idSet.has(row.id)
+        ? {
+            ...row,
+            serviceEnabled: enabled,
+            serviceStatus: enabled ? (row.packDisabledCount > 0 ? "partial" : "online") : "offline",
+          }
+        : row;
+      setRows((current) => current.map(applyStatus));
+      setSavedRows((current) => current.map(applyStatus));
+    } catch (error) {
+      setStatusError(error instanceof Error ? error.message : "เปลี่ยนสถานะเกมไม่สำเร็จ");
+    } finally {
+      setUpdatingStatus(false);
+    }
+  }
 
   // Search/filter — purely a display-level narrowing of `rows`, same idea as
   // pagination below. Never mutates `rows` itself, so it can't interfere with
@@ -212,6 +279,12 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
       : `ลบเกม "${name}" ออกจากฐานข้อมูลจริง (game_list) ใช่ไหม?\nข้อมูลนี้ใช้ร่วมกับ Topup Panel — ลบแล้วกู้คืนไม่ได้`;
     if (!window.confirm(message)) return;
     setRows((prev) => prev.filter((r) => r.id !== id));
+    setSelectedGameIds((current) => {
+      if (!current.has(id)) return current;
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
     if (!isDraft) setSavedRows((prev) => prev.filter((r) => r.id !== id));
     setDirtyIds((prev) => {
       if (!prev.has(id)) return prev;
@@ -356,6 +429,9 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
       remark: "",
       packCount: 0,
       image: "",
+      serviceEnabled: true,
+      serviceStatus: "online",
+      packDisabledCount: 0,
     };
     // Clear any active search/filter first — otherwise the new row (still
     // blank in most fields) could fail to match and be invisible right after
@@ -389,6 +465,10 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
     setRowDuplicate,
     totalRows: rows.length,
     onReorderByNumber,
+    selectedGameIds,
+    beginGameSelection,
+    enterGameSelection,
+    onSetGameStatus: (gameId, enabled) => setSelectedGamesStatus(enabled, [gameId]),
   };
 
   const rangeStart = filteredRows.length === 0 ? 0 : clampedPage * pageSize + 1;
@@ -539,7 +619,30 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
 
         {editable ? <GameinfoAllPackHistory /> : null}
         {editable ? <GameinfoCsvImportActions hasUnsavedChanges={dirty} /> : null}
+        {editable && selectedGameIds.size > 0 ? (
+          <div className="flex h-10 items-center gap-1 rounded-xl border border-linear-hairline-strong bg-linear-surface-1 px-2 text-xs">
+            <span className="px-1 text-linear-ink-tertiary">เลือก {selectedGameIds.size} เกม</span>
+            <button
+              type="button"
+              onClick={() => setSelectedGamesStatus(true)}
+              disabled={updatingStatus}
+              className="rounded-md px-2 py-1 text-emerald-400 hover:bg-emerald-500/10"
+            >เปิดบริการ</button>
+            <button
+              type="button"
+              onClick={() => setSelectedGamesStatus(false)}
+              disabled={updatingStatus}
+              className="rounded-md px-2 py-1 text-linear-ink-muted hover:bg-linear-surface-2"
+            >ปิดบริการ</button>
+          </div>
+        ) : null}
       </div>
+
+      {statusError ? (
+        <div role="alert" className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+          {statusError}
+        </div>
+      ) : null}
 
       {paginationBar && <div className="mb-3">{paginationBar}</div>}
 
@@ -549,7 +652,23 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
             <div
               className={`grid ${GRID_COLS} gap-2 border-b border-linear-hairline bg-linear-surface-2 px-3 py-3 text-xs font-medium uppercase tracking-wide text-linear-ink-subtle`}
             >
+              <span className="flex items-center justify-center">
+                {editable ? (
+                  <input
+                    type="checkbox"
+                    checked={rows.filter((row) => !isTempId(row.id)).length > 0 && rows.filter((row) => !isTempId(row.id)).every((row) => selectedGameIds.has(row.id))}
+                    onChange={(event) => setSelectedGameIds(
+                      event.target.checked
+                        ? new Set(rows.filter((row) => !isTempId(row.id)).map((row) => row.id))
+                        : new Set()
+                    )}
+                    aria-label="เลือกเกมทั้งหมด"
+                    className="accent-linear-primary"
+                  />
+                ) : null}
+              </span>
               <span></span>
+              <span>สถานะ</span>
               <span>ลำดับ</span>
               <span>ID</span>
               <span>รูป</span>
@@ -701,6 +820,16 @@ function SortableRow({ row, ...rest }) {
 
   return (
     <div ref={setNodeRef} style={style} className={`grid ${GRID_COLS} items-center gap-2 border-b border-linear-hairline px-3 py-2 text-sm last:border-b-0`}>
+      <input
+        type="checkbox"
+        checked={rest.selectedGameIds.has(row.id)}
+        disabled={isTempId(row.id)}
+        onPointerDown={(event) => rest.beginGameSelection(event, row.id)}
+        onPointerEnter={() => rest.enterGameSelection(row.id)}
+        onChange={() => {}}
+        aria-label={`เลือกเกม ${row.game}`}
+        className="justify-self-center accent-linear-primary disabled:opacity-30"
+      />
       <button
         {...attributes}
         {...listeners}
@@ -727,6 +856,7 @@ function StaticRow({ row, ...rest }) {
       className={`grid ${GRID_COLS} cursor-pointer items-center gap-2 border-b border-linear-hairline px-3 py-2 text-sm last:border-b-0 hover:bg-linear-surface-2`}
     >
       <span></span>
+      <span></span>
       <RowCells row={row} {...rest} />
     </div>
   );
@@ -746,10 +876,16 @@ function RowCells({
   setRowDuplicate,
   totalRows,
   onReorderByNumber,
+  onSetGameStatus,
 }) {
   const editingName = isEditing(row.id, "game");
   return (
     <>
+      <ServiceStatusLight
+        status={row.serviceStatus || (row.serviceEnabled === false ? "offline" : "online")}
+        editable={editable && !isTempId(row.id)}
+        onToggle={() => onSetGameStatus(row.id, row.serviceEnabled === false)}
+      />
       <OrderCell
         editable={editable}
         editing={isEditing(row.id, "order")}
@@ -1008,6 +1144,30 @@ function RowActionsMenu({ row, lang, editable, onDelete }) {
 // "YES" means at least one of this game's packs has a `country` set (country
 // is only meaningful on VPN-required packs, see the pack editor's vpnOn-gated
 // country field); otherwise "NO". Edit it via the pack editor, not here.
+function ServiceStatusLight({ status, editable, onToggle }) {
+  const config = status === "offline"
+    ? { color: "bg-zinc-500", label: "ปิดให้บริการ" }
+    : status === "partial"
+      ? { color: "bg-amber-400", label: "เปิดเกม แต่มีบาง pack ปิด" }
+      : { color: "bg-emerald-400", label: "ให้บริการปกติ" };
+  return (
+    <button
+      type="button"
+      disabled={!editable}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle?.();
+      }}
+      title={`${config.label}${editable ? " — กดเพื่อเปิด/ปิดเกม" : ""}`}
+      aria-label={config.label}
+      className="flex items-center gap-1.5 text-[10px] text-linear-ink-tertiary disabled:cursor-default"
+    >
+      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${config.color}`} />
+      <span className="truncate">{status === "partial" ? "บางส่วน" : status === "offline" ? "ปิด" : "ปกติ"}</span>
+    </button>
+  );
+}
+
 function VpnBadge({ value }) {
   const isYes = value === "YES";
   return (

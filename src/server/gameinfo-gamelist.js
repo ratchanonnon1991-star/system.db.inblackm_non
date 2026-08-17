@@ -48,6 +48,13 @@ function ensureOrderSchema(connection) {
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS gamelist_service_status (
+          game_id    INTEGER PRIMARY KEY,
+          enabled    BOOLEAN NOT NULL DEFAULT TRUE,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
     } finally {
       client.release();
     }
@@ -73,6 +80,7 @@ function mapRow(row) {
   return {
     id: row.id,
     sortOrder: row.sort_order ?? null,
+    serviceEnabled: row.service_enabled !== false,
     game: row.game,
     region: row.region,
     platform: row.platform || "",
@@ -117,9 +125,10 @@ export async function listGameListRows() {
   const client = await pool.connect();
   try {
     const result = await client.query(`
-      SELECT g.*, o.sort_order
+      SELECT g.*, o.sort_order, COALESCE(s.enabled, TRUE) AS service_enabled
       FROM game_list g
       LEFT JOIN gamelist_order o ON o.game_id = g.id
+      LEFT JOIN gamelist_service_status s ON s.game_id = g.id
       ORDER BY (o.sort_order IS NULL), o.sort_order ASC, g.id ASC
     `);
     return result.rows.map(mapRow);
@@ -156,7 +165,13 @@ export async function getGameListRow(id) {
   const pool = await getReadyPool();
   const client = await pool.connect();
   try {
-    const result = await client.query(`SELECT * FROM game_list WHERE id = $1`, [id]);
+    const result = await client.query(
+      `SELECT g.*, COALESCE(s.enabled, TRUE) AS service_enabled
+         FROM game_list g
+         LEFT JOIN gamelist_service_status s ON s.game_id = g.id
+        WHERE g.id = $1`,
+      [id]
+    );
     const row = result.rows[0];
     return row ? mapRow(row) : null;
   } finally {
@@ -258,12 +273,40 @@ export async function updateGameListRow(id, fields) {
   }
 }
 
+export async function setGameListServiceStatus(gameIds, enabled) {
+  const ids = [...new Set((gameIds || []).map(Number).filter((id) => Number.isInteger(id) && id > 0))];
+  if (ids.length === 0) throw createHttpError("กรุณาเลือกเกม", 400);
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const existing = await client.query(`SELECT id FROM game_list WHERE id = ANY($1::int[]) FOR UPDATE`, [ids]);
+    if (existing.rows.length !== ids.length) throw createHttpError("มีเกมที่เลือกไม่อยู่ในระบบ", 404);
+    for (const gameId of ids) {
+      await client.query(
+        `INSERT INTO gamelist_service_status (game_id, enabled, updated_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (game_id) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = NOW()`,
+        [gameId, enabled === true]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+  return { gameIds: ids, enabled: enabled === true };
+}
+
 export async function deleteGameListRow(id) {
   const pool = await getReadyPool();
   const client = await pool.connect();
   try {
     await client.query(`DELETE FROM game_list WHERE id = $1`, [id]);
     await client.query(`DELETE FROM gamelist_order WHERE game_id = $1`, [id]);
+    await client.query(`DELETE FROM gamelist_service_status WHERE game_id = $1`, [id]);
   } finally {
     client.release();
   }

@@ -77,9 +77,21 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-base font-bold uppercase tracking-tight text-linear-ink">
-            {row.game}
-          </h1>
+          <div className="flex items-center gap-2">
+            <span
+              className={`h-2.5 w-2.5 rounded-full ${
+                row.serviceStatus === "offline"
+                  ? "bg-zinc-500"
+                  : row.serviceStatus === "partial"
+                    ? "bg-amber-400"
+                    : "bg-emerald-400"
+              }`}
+              title={row.serviceStatus === "offline" ? "ปิดให้บริการ" : row.serviceStatus === "partial" ? "เปิดเกม แต่มีบาง pack ปิด" : "ให้บริการปกติ"}
+            />
+            <h1 className="truncate text-base font-bold uppercase tracking-tight text-linear-ink">
+              {row.game}
+            </h1>
+          </div>
           {/* Horizontal flowing summary — every field from the list table's
               column set (ลำดับ, ID, Region, Platform, Server, VPN, Bot/
               Manual) except Link, which is represented by the button below
@@ -381,6 +393,17 @@ function PackViewCell({
   externalValues,
   computedColumns,
 }) {
+  if (column.id === "serviceEnabled") {
+    const enabled = pack.serviceEnabled !== false;
+    return (
+      <td className={`px-3 py-2 text-xs ${enabled ? "text-emerald-400" : "text-linear-ink-tertiary"}`}>
+        <span className="inline-flex items-center gap-1.5">
+          <span className={`h-2.5 w-2.5 rounded-full ${enabled ? "bg-emerald-400" : "bg-zinc-500"}`} />
+          {enabled ? "เปิด" : "ปิด"}
+        </span>
+      </td>
+    );
+  }
   if (column.id === "image") {
     return (
       <td className="px-3 py-2">

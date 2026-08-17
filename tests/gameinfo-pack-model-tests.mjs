@@ -40,6 +40,7 @@ check("sanitize keeps fields currently displayed by the UID pack UI", sanitized,
   image: "/pack.png",
   price: "30",
   amountChargedFee: "103",
+  serviceEnabled: true,
   costProfileId: "cost_razer",
   channelsMain: ["Wavepay"],
   channelsSecondary: ["Razer"],
@@ -52,6 +53,12 @@ const duplicate = duplicateGameinfoPack(source, "pk_copy");
 check("duplicate receives the requested fresh id", duplicate.id, "pk_copy");
 check("duplicate is labelled as a copy", duplicate.name, "86 Diamonds (สำเนา)");
 check("duplicate keeps the current pack values", duplicate.amountChargedFee, "103");
+check("legacy pack defaults to enabled service", duplicate.serviceEnabled, true);
+check(
+  "explicitly disabled pack remains disabled",
+  sanitizeGameinfoPack({ ...source, serviceEnabled: false }).serviceEnabled,
+  false
+);
 ok("duplicate does not copy the legacy amountCharged field", !("amountCharged" in duplicate));
 
 duplicate.channelsMain.push("New channel");
@@ -64,6 +71,7 @@ check("blank pack has only the current editable fields", blank, {
   image: "",
   price: "",
   amountChargedFee: "",
+  serviceEnabled: true,
   costProfileId: "",
   channelsMain: [],
   channelsSecondary: [],

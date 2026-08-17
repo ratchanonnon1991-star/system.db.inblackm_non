@@ -216,6 +216,20 @@ API/UI/formula:
 - rollback migration ไม่ลบ pack rows
 - หลังตัด sentinel แล้ว list channel/VPN/count ยังถูกต้อง
 
+## 10. Service status (Task 19)
+
+- pack JSON เก่าที่ไม่มี `serviceEnabled` ถูก sanitize เป็น `true`
+- pack ที่มี `serviceEnabled: false` คงค่าเดิมหลัง sanitize/save/load
+- query สรุปจำนวน pack ปิดไม่นับ sentinel และถือค่า missing เป็นเปิด
+- เกมปิดแสดงเทาโดยไม่ขึ้นกับจำนวน pack ปิด
+- เกมเปิดและมี pack ปิดแสดงส้ม; ไม่มี pack ปิดแสดงเขียว
+- bulk game status กรอง ID ซ้ำ, lock แถวเกม, upsert side table และ commit เป็น transaction เดียว
+- bulk game status ที่มี ID ไม่พบ rollback ทั้งชุด
+- checkbox เลือกทั้งหมดและลากผ่านแถวรองรับทั้งโหมดเลือกและยกเลิกเลือก
+- bulk pack status แก้เฉพาะ pack ที่เลือก, ทำให้ draft dirty และ cancel คืนค่าเดิม
+- read-only view ไม่มีปุ่มเปลี่ยนสถานะ
+- API error ไม่แก้ client baseline และแสดงข้อความให้ผู้ใช้
+
 ## คำสั่งตรวจขั้นต่ำ
 
 ```bash

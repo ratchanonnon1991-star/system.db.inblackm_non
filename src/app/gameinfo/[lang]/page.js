@@ -4,6 +4,7 @@ import { listGameListRows } from "@/server/gameinfo-gamelist";
 import {
   listGamelistChannelsByGame,
   listGamelistPackCountByGame,
+  listGamelistPackServiceByGame,
   listGamelistVpnByGame,
 } from "@/server/gameinfo-gamelist-packs";
 import { listGamelistTutorialPresence } from "@/server/gameinfo-gamelist-tutorial";
@@ -32,12 +33,13 @@ export default async function GameinfoHomePage({ params, searchParams }) {
   let rows = null;
   let loadError = null;
   try {
-    const [gameListRows, channelsByGame, vpnByGame, packCountByGame, tutorialPresence, imageByGame] =
+    const [gameListRows, channelsByGame, vpnByGame, packCountByGame, packServiceByGame, tutorialPresence, imageByGame] =
       await Promise.all([
         listGameListRows(),
         listGamelistChannelsByGame(),
         listGamelistVpnByGame(),
         listGamelistPackCountByGame(),
+        listGamelistPackServiceByGame(),
         listGamelistTutorialPresence(),
         listGamelistImageByGame(),
       ]);
@@ -46,6 +48,12 @@ export default async function GameinfoHomePage({ params, searchParams }) {
       channels: channelsByGame[r.id] || { main: [], secondary: [] },
       vpnComputed: vpnByGame[r.id] ? "YES" : "NO",
       packCount: packCountByGame[r.id] || 0,
+      packDisabledCount: packServiceByGame[r.id]?.disabled || 0,
+      serviceStatus: !r.serviceEnabled
+        ? "offline"
+        : (packServiceByGame[r.id]?.disabled || 0) > 0
+          ? "partial"
+          : "online",
       hasTutorial: Boolean(tutorialPresence[r.id]),
       image: imageByGame[r.id] || "",
     }));

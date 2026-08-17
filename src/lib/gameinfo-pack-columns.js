@@ -1,6 +1,7 @@
 import { formatCell } from "@/lib/gamedb-layout";
 
 export const GAMEINFO_PACK_BASE_COLUMNS = [
+  { id: "serviceEnabled", label: "สถานะ", field: "serviceEnabled", track: "70px" },
   { id: "image", label: "รูป", field: "image", track: "40px" },
   { id: "name", label: "ชื่อ pack", field: "name", track: "minmax(110px, 1.6fr)", required: true },
   { id: "price", label: "ราคา", field: "price", track: "minmax(60px, 0.7fr)", required: true },
@@ -53,7 +54,9 @@ export function buildGameinfoPackColumns(computedColumns = []) {
 export function normalizeGameinfoPackLayout(raw, columns) {
   const ids = columns.map((column) => column.id);
   const known = new Set(ids);
+  const statusId = known.has("serviceEnabled") ? "serviceEnabled" : null;
   const order = [];
+  if (statusId) order.push(statusId);
   for (const id of Array.isArray(raw?.order) ? raw.order : []) {
     if (known.has(id) && !order.includes(id)) order.push(id);
   }
@@ -62,6 +65,7 @@ export function normalizeGameinfoPackLayout(raw, columns) {
   }
   const hidden = [];
   for (const id of Array.isArray(raw?.hidden) ? raw.hidden : []) {
+    if (id === statusId) continue;
     if (known.has(id) && !hidden.includes(id)) hidden.push(id);
   }
   const filters = [];
@@ -78,12 +82,13 @@ export function normalizeGameinfoPackLayout(raw, columns) {
 }
 
 export function reorderGameinfoPackColumns(layout, activeId, overId) {
+  if (activeId === "serviceEnabled") return layout;
   const order = [...layout.order];
   const from = order.indexOf(activeId);
   const to = order.indexOf(overId);
   if (from === -1 || to === -1 || from === to) return layout;
   order.splice(from, 1);
-  order.splice(to, 0, activeId);
+  order.splice(Math.max(1, to), 0, activeId);
   return { ...layout, order };
 }
 

@@ -108,6 +108,8 @@ export default function GameinfoPackEditor({
   const [modalOpen, setModalOpen] = useState(false);
   const [editingComputedColumn, setEditingComputedColumn] = useState(null);
   const [formulaMode, setFormulaMode] = useState("result");
+  const [selectedPackIds, setSelectedPackIds] = useState(new Set());
+  const packSelectionDragRef = useRef({ active: false, selecting: true });
   const rateState = useGameinfoRates();
 
   const [currencies, setCurrencies] = useState(game.currencies);
@@ -123,6 +125,18 @@ export default function GameinfoPackEditor({
   const [importMsg, setImportMsg] = useState("");
   const [pendingImport, setPendingImport] = useState(null); // { currencies, packCount }
   const [auditSource, setAuditSource] = useState("editor");
+
+  useEffect(() => {
+    function stopPackSelectionDrag() {
+      packSelectionDragRef.current.active = false;
+    }
+    window.addEventListener("pointerup", stopPackSelectionDrag);
+    window.addEventListener("pointercancel", stopPackSelectionDrag);
+    return () => {
+      window.removeEventListener("pointerup", stopPackSelectionDrag);
+      window.removeEventListener("pointercancel", stopPackSelectionDrag);
+    };
+  }, []);
 
   // Drives the same "collapse ยกเลิก/บันทึก to w-0 around the middle pill"
   // animation as the game list table's floating bar (see
@@ -198,6 +212,49 @@ export default function GameinfoPackEditor({
     return { ...suggestions, channels: uniq([...(suggestions?.channels || []), ...seen]) };
   }, [currencies, suggestions]);
 
+  const allPackIds = useMemo(
+    () => currencies.flatMap((currency) =>
+      currency.categories.flatMap((category) => category.packs.map((pack) => pack.id))
+    ),
+    [currencies]
+  );
+
+  function setPackSelected(packId, selected) {
+    setSelectedPackIds((current) => {
+      const next = new Set(current);
+      if (selected) next.add(packId);
+      else next.delete(packId);
+      return next;
+    });
+  }
+
+  function beginPackSelection(event, packId) {
+    event.preventDefault();
+    event.stopPropagation();
+    const selecting = !selectedPackIds.has(packId);
+    packSelectionDragRef.current = { active: true, selecting };
+    setPackSelected(packId, selecting);
+  }
+
+  function enterPackSelection(packId) {
+    if (!packSelectionDragRef.current.active) return;
+    setPackSelected(packId, packSelectionDragRef.current.selecting);
+  }
+
+  function setSelectedPacksStatus(enabled) {
+    if (selectedPackIds.size === 0) return;
+    updateCurrencies((draft) => {
+      for (const currency of draft) {
+        for (const category of currency.categories) {
+          for (const pack of category.packs) {
+            if (selectedPackIds.has(pack.id)) pack.serviceEnabled = enabled;
+          }
+        }
+      }
+    });
+    setAuditSource("editor");
+  }
+
   function updateCurrencies(fn) {
     setCurrencies((prev) => {
       const draft = structuredClone(prev);
@@ -253,6 +310,12 @@ export default function GameinfoPackEditor({
       draft[cIdx].categories[catIdx].packs.splice(pkIdx, 1);
     });
     if (packId) {
+      setSelectedPackIds((current) => {
+        if (!current.has(packId)) return current;
+        const next = new Set(current);
+        next.delete(packId);
+        return next;
+      });
       setComputedColumns((prev) => removeGameinfoFormulaOverridesForPack(prev, packId));
       setInvalidFields((prev) => {
         if (prev.size === 0) return prev;
@@ -412,6 +475,7 @@ export default function GameinfoPackEditor({
     setError("");
     setSavedAt(null);
     setAuditSource("editor");
+    setSelectedPackIds(new Set());
   }
 
   // CSV import for this one game — file's game_id column is ignored server
@@ -469,6 +533,24 @@ export default function GameinfoPackEditor({
   return (
     <div className="space-y-6">
       <div className="flex justify-end gap-2">
+        {allPackIds.length > 0 ? (
+          <label className="flex items-center gap-1.5 rounded-md border border-linear-hairline-strong px-2 py-1 text-xs text-linear-ink-muted">
+            <input
+              type="checkbox"
+              checked={allPackIds.every((packId) => selectedPackIds.has(packId))}
+              onChange={(event) => setSelectedPackIds(event.target.checked ? new Set(allPackIds) : new Set())}
+              className="accent-linear-primary"
+            />
+            ทั้งหมด
+          </label>
+        ) : null}
+        {selectedPackIds.size > 0 ? (
+          <div className="flex items-center gap-1 rounded-md border border-linear-hairline-strong px-2 py-1 text-xs">
+            <span className="text-linear-ink-tertiary">เลือก {selectedPackIds.size}</span>
+            <button type="button" onClick={() => setSelectedPacksStatus(true)} className="rounded px-1.5 py-0.5 text-emerald-400 hover:bg-emerald-500/10">เปิด</button>
+            <button type="button" onClick={() => setSelectedPacksStatus(false)} className="rounded px-1.5 py-0.5 text-linear-ink-muted hover:bg-linear-surface-2">ปิด</button>
+          </div>
+        ) : null}
         <GameinfoFormulaModeToggle
           mode={formulaMode}
           onChange={setFormulaMode}
@@ -734,6 +816,19 @@ export default function GameinfoPackEditor({
                     columns={packLayout.visibleColumns}
                     allColumns={packLayout.orderedColumns}
                     filters={packLayout.layout.filters}
+                    selectedPackIds={selectedPackIds}
+                    onBeginPackSelection={beginPackSelection}
+                    onEnterPackSelection={enterPackSelection}
+                    onSetCategorySelection={(packIds, selected) => {
+                      setSelectedPackIds((current) => {
+                        const next = new Set(current);
+                        for (const packId of packIds) {
+                          if (selected) next.add(packId);
+                          else next.delete(packId);
+                        }
+                        return next;
+                      });
+                    }}
                     formulaMode={formulaMode}
                     invalidFields={invalidFields}
                     onRemoveColumn={removeComputedColumn}
@@ -861,6 +956,10 @@ function CategoryBlock({
   columns,
   allColumns,
   filters,
+  selectedPackIds,
+  onBeginPackSelection,
+  onEnterPackSelection,
+  onSetCategorySelection,
   formulaMode,
   invalidFields,
   onRemoveColumn,
@@ -977,7 +1076,15 @@ function CategoryBlock({
               style={{ gridTemplateColumns: grid.template }}
               className="grid gap-2 border-b border-linear-hairline bg-linear-surface-2 px-2 py-1.5 text-[10px] text-linear-ink-tertiary"
             >
-              <span></span>
+              <span className="flex items-center justify-center">
+                <input
+                  type="checkbox"
+                  checked={visiblePacks.length > 0 && visiblePacks.every(({ pack }) => selectedPackIds.has(pack.id))}
+                  onChange={(event) => onSetCategorySelection(visiblePacks.map(({ pack }) => pack.id), event.target.checked)}
+                  aria-label={`เลือก pack ทั้งหมดใน ${category.name || "หมวดหมู่นี้"}`}
+                  className="accent-linear-primary"
+                />
+              </span>
               <DndContext
                 sensors={columnSensors}
                 collisionDetection={closestCenter}
@@ -1019,6 +1126,9 @@ function CategoryBlock({
                 suggestions={suggestions}
                 columns={columns}
                 computedColumns={allColumns.filter((item) => item.kind === "computed").map((item) => item.computed)}
+                selected={selectedPackIds.has(pack.id)}
+                onBeginSelection={onBeginPackSelection}
+                onEnterSelection={onEnterPackSelection}
                 formulaMode={formulaMode}
                 gridTemplate={grid.template}
                 invalid={{
@@ -1052,6 +1162,9 @@ function PackRow({
   suggestions,
   columns,
   computedColumns,
+  selected,
+  onBeginSelection,
+  onEnterSelection,
   formulaMode,
   gridTemplate,
   invalid,
@@ -1071,7 +1184,15 @@ function PackRow({
       style={{ gridTemplateColumns: gridTemplate }}
       className="grid items-center gap-2 border-b border-linear-hairline px-2 py-2 text-sm last:border-b-0"
     >
-      <span className="text-xs text-linear-ink-tertiary">{index}.</span>
+      <input
+        type="checkbox"
+        checked={selected}
+        onPointerDown={(event) => onBeginSelection(event, pack.id)}
+        onPointerEnter={() => onEnterSelection(pack.id)}
+        onChange={() => {}}
+        aria-label={`เลือก pack ${pack.name || index}`}
+        className="justify-self-center accent-linear-primary"
+      />
       {columns.map((column) => (
         <PackEditorColumn
           key={column.id}
@@ -1149,6 +1270,20 @@ function PackEditorColumn({
   onEditFormula,
   onEditMainFormula,
 }) {
+  if (column.id === "serviceEnabled") {
+    const enabled = pack.serviceEnabled !== false;
+    return (
+      <button
+        type="button"
+        onClick={() => onUpdate({ serviceEnabled: !enabled })}
+        title={enabled ? "pack เปิดให้บริการ — กดเพื่อปิด" : "pack ปิดให้บริการ — กดเพื่อเปิด"}
+        className={`flex items-center gap-1.5 rounded px-1.5 py-2 text-[10px] ${enabled ? "text-emerald-400" : "text-linear-ink-tertiary"}`}
+      >
+        <span className={`h-2.5 w-2.5 rounded-full ${enabled ? "bg-emerald-400" : "bg-zinc-500"}`} />
+        {enabled ? "เปิด" : "ปิด"}
+      </button>
+    );
+  }
   if (column.id === "image") {
     return <ImageUrlField value={pack.image ?? ""} onChange={(v) => onUpdate({ image: v })} compact />;
   }
