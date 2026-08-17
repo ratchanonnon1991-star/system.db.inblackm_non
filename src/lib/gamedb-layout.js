@@ -351,9 +351,15 @@ export function normalizeLayout(raw) {
           columnMap: normalizeColumnMap(layout.editable.columnMap),
           // Editing a cell was the only thing this config could do, so a query
           // saved before now can do only that.
-          allowInsert: layout.editable.allowInsert === true,
-          allowDelete: layout.editable.allowDelete === true,
+          // A stacked query has no one table to add a row to or remove one
+          // from -- "add a row to this result" is not a question with an
+          // answer -- so those stay off however the config was saved.
+          allowInsert:
+            layout.editable.allowInsert === true && !normalizeRowTargets(layout.editable.rowTargets),
+          allowDelete:
+            layout.editable.allowDelete === true && !normalizeRowTargets(layout.editable.rowTargets),
           inputs: normalizeInputs(layout.editable.inputs),
+          rowTargets: normalizeRowTargets(layout.editable.rowTargets),
           // Columns that belong to a different table than the one above --
           // `SELECT a.col1, b.col2 FROM a JOIN b` returns rows made of two
           // tables, and editing b.col2 has to reach b, with b's own key. A
@@ -711,6 +717,35 @@ export function normalizeEditableTargets(raw) {
     .filter((entry) => entry.columns.length > 0);
 }
 
+/**
+ * How a stacked query says which table each row belongs to: the result column
+ * carrying that answer, the one carrying the row's key, and one entry per
+ * half of the UNION saying what its columns are really called.
+ *
+ * Dropped whole rather than in part -- a config that can place some rows and
+ * not others is one that writes some of them somewhere wrong.
+ */
+export function normalizeRowTargets(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const sourceColumn = String(raw.sourceColumn || "").trim();
+  const keyColumn = String(raw.keyColumn || "").trim();
+  if (!sourceColumn || !keyColumn) return null;
+
+  const branches = (Array.isArray(raw.branches) ? raw.branches : [])
+    .slice(0, 10)
+    .filter((entry) => entry && typeof entry === "object" && entry.table && entry.pkColumn)
+    .map((entry) => ({
+      table: String(entry.table),
+      pkColumn: String(entry.pkColumn),
+      columnMap: normalizeColumnMap(entry.columnMap),
+    }));
+  // One branch is not a union, and two branches naming the same table cannot
+  // tell their rows apart.
+  if (branches.length < 2) return null;
+  if (new Set(branches.map((entry) => entry.table)).size !== branches.length) return null;
+  return { sourceColumn, keyColumn, branches };
+}
+
 /** The table column a result column is written back to. */
 export function realColumnOf(editable, resultName) {
   return editable?.columnMap?.[resultName] || resultName;
@@ -734,7 +769,32 @@ export function realPkOf(editable) {
  * target, which is every column of a single-table query and every column of
  * every config saved before targets existed.
  */
-export function writeTargetFor(editable, resultName) {
+export function writeTargetFor(editable, resultName, rowSource = undefined) {
+  // A stacked query (UNION) returns one set of columns holding rows from
+  // different tables, so the table is a fact about the row rather than about
+  // the column, and `rowSource` is the row's own answer -- read from the
+  // column the query carries for exactly this (see rowTargets).
+  // Once a config is per-row there is no per-column answer to fall back to:
+  // a row with no source, or one naming a branch that is not configured, is a
+  // row this cannot place, and the base table is not a safer guess than any
+  // other -- it is the specific wrong answer this column exists to prevent.
+  const rows = editable?.rowTargets;
+  if (rows) {
+    const branch =
+      rowSource === undefined || rowSource === null
+        ? null
+        : rows.branches?.find((entry) => entry.table === String(rowSource));
+    if (branch) {
+      return {
+        table: branch.table,
+        pk: rows.keyColumn,
+        pkColumn: branch.pkColumn,
+        realColumn: branch.columnMap?.[resultName] || resultName,
+      };
+    }
+    return { table: "", pk: "", pkColumn: "", realColumn: "" };
+  }
+
   const override = (editable?.targets || []).find((target) =>
     target.columns?.includes(resultName)
   );
@@ -743,6 +803,7 @@ export function writeTargetFor(editable, resultName) {
       table: editable?.table || "",
       pk: editable?.pk || "",
       pkColumn: realPkOf(editable),
+      realColumn: realColumnOf(editable, resultName),
     };
   }
   return {
@@ -752,6 +813,7 @@ export function writeTargetFor(editable, resultName) {
     // name for it -- and it is this target's key that stands in, never the
     // base table's, which names a column of a different table entirely.
     pkColumn: override.pkColumn || override.pk,
+    realColumn: realColumnOf(editable, resultName),
   };
 }
 

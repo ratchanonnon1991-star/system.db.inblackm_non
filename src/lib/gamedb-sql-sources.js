@@ -261,7 +261,11 @@ function parseSelectItem(raw) {
   }
 
   const qualified = readQualifiedName(head, 0, true);
-  if (!qualified) return null;
+  // An item that does not start with an identifier at all -- a literal, a
+  // number, a parenthesised expression. It still returns a column, under the
+  // alias it was given, and dropping it would leave the SELECT list short:
+  // the positions no longer line up with what the query actually returns.
+  if (!qualified) return alias ? { result: alias, qualifier: "", column: "" } : null;
 
   // A plain column reference is one that accounts for the whole head.
   if (skipSpace(head, qualified.next) >= head.length) {
@@ -345,9 +349,19 @@ export function usesCrossJoin(sql) {
  */
 export const KEY_COLUMN_PREFIX = "__key_";
 
+/**
+ * The column a UNION carries to say which half of it a row came from, and the
+ * one carrying that half's key. Stacked queries return one set of columns for
+ * rows belonging to different tables, so without these two the table an edit
+ * belongs to is a fact the result no longer contains.
+ */
+export const ROW_SOURCE_COLUMN = "__src";
+export const ROW_KEY_COLUMN = "__key_row";
+
 /** Whether a result column is one of those, and so not for anyone to look at. */
 export function isKeyOnlyColumn(name) {
-  return String(name || "").startsWith(KEY_COLUMN_PREFIX);
+  const text = String(name || "");
+  return text.startsWith(KEY_COLUMN_PREFIX) || text === ROW_SOURCE_COLUMN;
 }
 
 // Adding a column to a SELECT normally changes nothing about the rows. These
@@ -440,6 +454,218 @@ export function addMissingKeyColumns({ sql, tables }) {
   const head = src.slice(0, fromAt).trimEnd();
   const tail = src.slice(fromAt);
   return { sql: `${head}, ${pieces.join(", ")}\n${tail}`, added, refused };
+}
+
+/**
+ * A stacked query cut into its halves, at the top level only.
+ *
+ * `[{ op, start, end, sql }]` -- `op` is the operator that introduced this
+ * branch, empty for the first. A set operation inside parentheses belongs to a
+ * subquery and is left alone.
+ */
+export function splitSetOperationBranches(sql) {
+  const src = String(sql || "");
+  const masked = stripSqlLiterals(src);
+  const lower = masked.toLowerCase();
+  const cuts = [];
+  let depth = 0;
+
+  for (let i = 0; i < masked.length; i += 1) {
+    const ch = masked[i];
+    if (ch === "(") depth += 1;
+    else if (ch === ")") depth -= 1;
+    else if (depth === 0) {
+      for (const word of ["union", "intersect", "except"]) {
+        if (!lower.startsWith(word, i) || !wordAt(lower, i, word.length)) continue;
+        // `UNION ALL` / `UNION DISTINCT` -- the modifier belongs to the
+        // operator, not to the branch that follows it.
+        let after = skipSpace(src, i + word.length);
+        for (const modifier of ["all", "distinct"]) {
+          if (lower.startsWith(modifier, after) && wordAt(lower, after, modifier.length)) {
+            after = skipSpace(src, after + modifier.length);
+          }
+        }
+        // `opText` keeps the operator exactly as written, ALL and all --
+        // rebuilding `UNION ALL` as plain `UNION` would start removing
+        // duplicate rows from a query that deliberately kept them.
+        cuts.push({ op: word, opText: src.slice(i, after).trim(), at: i, next: after });
+        i = after - 1;
+        break;
+      }
+    }
+  }
+  if (cuts.length === 0) return [];
+
+  const branches = [];
+  let start = 0;
+  let op = "";
+  let opText = "";
+  for (const cut of cuts) {
+    branches.push({ op, opText, start, end: cut.at, sql: src.slice(start, cut.at) });
+    op = cut.op;
+    opText = cut.opText;
+    start = cut.next;
+  }
+  branches.push({ op, opText, start, end: src.length, sql: src.slice(start) });
+  return branches;
+}
+
+/**
+ * What a stacked query can be edited through, one entry per branch.
+ *
+ * A UNION returns one set of columns holding rows from different tables, and
+ * a row on its own no longer says which. So the answer is per row rather than
+ * per column, and it only exists once the query carries a column saying where
+ * each row came from -- which addUnionRowSource writes in.
+ *
+ * Result column names come from the first branch, whatever the later ones
+ * call theirs, so branches are lined up by position. Everything here refuses
+ * rather than approximates: `{ ok: false, reason }` is an answer, a branch
+ * matched to the wrong table is not.
+ */
+export function detectUnionTargets({ sql, tables }) {
+  const schemaTables = Array.isArray(tables) ? tables : [];
+  const branches = splitSetOperationBranches(sql);
+  if (branches.length < 2) return null;
+
+  // INTERSECT and EXCEPT return rows that exist in both halves or in neither,
+  // so "which half did this row come from" has no answer to record.
+  if (branches.some((branch) => branch.op && branch.op !== "union")) {
+    return { ok: false, reason: "รองรับเฉพาะ UNION — INTERSECT / EXCEPT บอกไม่ได้ว่าแถวมาจากตารางไหน" };
+  }
+  if (schemaTables.length === 0) return { ok: false, reason: "ยังไม่ได้อ่านโครงสร้างฐานข้อมูล" };
+
+  const read = [];
+  for (const branch of branches) {
+    const found = resolveQueryTables({ sql: branch.sql, tables: schemaTables });
+    if (found.length !== 1) {
+      return {
+        ok: false,
+        reason: "แต่ละส่วนของ UNION ต้องอ่านจากตารางเดียว (ยังไม่รองรับ join ข้างใน)",
+      };
+    }
+    const items = parseSelectSources(branch.sql);
+    if (items.some((item) => item.column === "*")) {
+      return { ok: false, reason: "ใน UNION ต้องระบุชื่อคอลัมน์ ใช้ * ไม่ได้" };
+    }
+    const table = found[0];
+    const { key, source } = rowKeyOf(
+      table,
+      items.map((item) => ({ column: findColumn(table, item.column) }))
+    );
+    if (!key) {
+      return { ok: false, reason: `ตาราง ${table.key} ไม่มีคอลัมน์ที่ระบุแถวได้` };
+    }
+    read.push({ branch, table, items, primaryKey: key, keySource: source });
+  }
+
+  const width = read[0].items.length;
+  if (read.some((entry) => entry.items.length !== width)) {
+    return { ok: false, reason: "จำนวนคอลัมน์ของแต่ละส่วนไม่เท่ากัน" };
+  }
+  if (new Set(read.map((entry) => entry.table.key)).size !== read.length) {
+    return { ok: false, reason: "แต่ละส่วนของ UNION ต้องเป็นคนละตาราง" };
+  }
+
+  // The names the rows actually come back under: the first branch's.
+  const resultNames = read[0].items.map((item) => item.result);
+  const branchTargets = read.map((entry) => {
+    const columnMap = {};
+    entry.items.forEach((item, index) => {
+      const result = resultNames[index];
+      const real = item.column ? findColumn(entry.table, item.column) : "";
+      // A position that is an expression in any branch cannot be written
+      // through in that branch, and is dropped from it alone.
+      if (result && real) columnMap[result] = real;
+    });
+    return {
+      table: entry.table.key,
+      alias: parseFromTables(entry.branch.sql)[0]?.alias || entry.table.name,
+      primaryKey: entry.primaryKey,
+      keySource: entry.keySource,
+      columnMap,
+    };
+  });
+
+  // Only positions every branch can write through: a column a row from one
+  // half could change and a row from the other could not is a table that
+  // works sometimes, which is worse than one that never does.
+  const columns = resultNames.filter(
+    (name) =>
+      name &&
+      !isKeyOnlyColumn(name) &&
+      branchTargets.every(
+        (target) => target.columnMap[name] && target.columnMap[name] !== target.primaryKey
+      )
+  );
+
+  return {
+    ok: true,
+    sourceColumn: ROW_SOURCE_COLUMN,
+    keyColumn: ROW_KEY_COLUMN,
+    hasSourceColumn: resultNames.includes(ROW_SOURCE_COLUMN),
+    hasKeyColumn: resultNames.includes(ROW_KEY_COLUMN),
+    columns,
+    branches: branchTargets,
+  };
+}
+
+/**
+ * The same query with the two columns a stacked one needs to be editable: one
+ * naming the table each row came from, one carrying that table's key.
+ *
+ * Both are added to every branch at the same position, so they line up -- the
+ * result column holds whichever branch's key produced the row. Named by
+ * convention (`__src`, `__key_row`) and never rendered.
+ */
+export function addUnionRowSource({ sql, tables }) {
+  const src = String(sql || "");
+  const read = detectUnionTargets({ sql: src, tables });
+  if (!read) return { sql: src, added: [], reason: "" };
+  if (!read.ok) return { sql: src, added: [], reason: read.reason };
+  if (read.hasSourceColumn && read.hasKeyColumn) return { sql: src, added: [], reason: "" };
+
+  const branches = splitSetOperationBranches(src);
+  const pieces = [];
+  for (let index = 0; index < branches.length; index += 1) {
+    const branch = branches[index];
+    const target = read.branches[index];
+    if (!PLAIN_ALIAS.test(target.alias)) {
+      return {
+        sql: src,
+        added: [],
+        reason: `ชื่อย่อ "${target.alias}" เขียนกลับเข้า SQL ให้อัตโนมัติไม่ได้`,
+      };
+    }
+    const masked = stripSqlLiterals(branch.sql);
+    const { selectAt, fromAt } = outerSelectRange(masked, masked.toLowerCase());
+    if (selectAt === -1 || fromAt === -1) return { sql: src, added: [], reason: "อ่าน SELECT ไม่ออก" };
+
+    const additions = [];
+    if (!read.hasSourceColumn) {
+      // A literal, not an identifier: this is data about the row.
+      additions.push(
+        `'${target.table.replaceAll("'", "''")}' AS ${quoteIdentifier(ROW_SOURCE_COLUMN)}`
+      );
+    }
+    if (!read.hasKeyColumn) {
+      additions.push(
+        `${target.alias}.${quoteIdentifier(target.primaryKey)} AS ${quoteIdentifier(ROW_KEY_COLUMN)}`
+      );
+    }
+    const head = branch.sql.slice(0, fromAt).trimEnd();
+    pieces.push(`${head}, ${additions.join(", ")}\n${branch.sql.slice(fromAt).trim()}`);
+  }
+
+  const rebuilt = pieces
+    .map((piece, index) => (index === 0 ? piece : `${branches[index].opText} ${piece}`))
+    .join("\n");
+
+  return {
+    sql: rebuilt,
+    added: read.branches.map((target) => ({ table: target.table, column: target.primaryKey })),
+    reason: "",
+  };
 }
 
 /**

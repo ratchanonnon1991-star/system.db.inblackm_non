@@ -36,6 +36,7 @@ import { formatCell, toneStyle } from "@/lib/gamedb-layout";
 import { extractSqlParams } from "@/lib/gamedb-sql-params";
 import {
   addMissingKeyColumns,
+  addUnionRowSource,
   checkJoinQualification,
   rowKeyColumnOf,
   usesCrossJoin,
@@ -381,13 +382,30 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
     // land visibly in the SQL box rather than behind anyone's back.
     let sqlToRun = effectiveSql;
     if (builderMode === "sql" && schemaData?.tables?.length) {
-      const completed = addMissingKeyColumns({ sql: effectiveSql, tables: schemaData.tables });
-      if (completed.added.length > 0) {
-        sqlToRun = completed.sql;
-        setSqlText(completed.sql);
+      // A stacked query needs a different pair of columns than a joined one:
+      // which half each row came from, and that half's key. Both branches of
+      // this end with the SQL box holding exactly what is about to run.
+      const stacked = addUnionRowSource({ sql: effectiveSql, tables: schemaData.tables });
+      if (stacked.added.length > 0) {
+        sqlToRun = stacked.sql;
+        setSqlText(stacked.sql);
+        setKeyColumnsAdded(
+          stacked.added.map((entry) => ({ ...entry, forUnion: true }))
+        );
+        setKeyColumnsRefused([]);
+      } else {
+        const completed = addMissingKeyColumns({ sql: sqlToRun, tables: schemaData.tables });
+        if (completed.added.length > 0) {
+          sqlToRun = completed.sql;
+          setSqlText(completed.sql);
+        }
+        setKeyColumnsAdded(completed.added);
+        setKeyColumnsRefused(
+          stacked.reason
+            ? [{ table: "UNION", column: "", reason: stacked.reason }]
+            : completed.refused
+        );
       }
-      setKeyColumnsAdded(completed.added);
-      setKeyColumnsRefused(completed.refused);
     }
 
     const testedFor = sqlToRun;
@@ -1139,8 +1157,10 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                     {keyColumnsAdded
                       .map((entry) => `${entry.table} → ${entry.column}`)
                       .join(" · ")}{" "}
-                    — ต้องมีค่านี้ในผลลัพธ์ ระบบถึงจะรู้ว่าเวลาแก้ข้อมูลของตารางนั้น
-                    ต้องแก้แถวไหน คอลัมน์ที่เพิ่มจะไม่แสดงในตาราง
+                    {keyColumnsAdded.some((entry) => entry.forUnion)
+                      ? "— UNION รวมแถวจากหลายตารางไว้ในคอลัมน์ชุดเดียว ระบบจึงเพิ่มคอลัมน์บอกว่าแต่ละแถวมาจากตารางไหน พร้อม key ของตารางนั้น"
+                      : "— ต้องมีค่านี้ในผลลัพธ์ ระบบถึงจะรู้ว่าเวลาแก้ข้อมูลของตารางนั้น ต้องแก้แถวไหน"}{" "}
+                    คอลัมน์ที่เพิ่มจะไม่แสดงในตาราง
                   </p>
                 </div>
               )}

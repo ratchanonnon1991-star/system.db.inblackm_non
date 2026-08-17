@@ -31,6 +31,7 @@ import { isSafeIdentifier, isSafeIdentifierPart } from "@/lib/gamedb-identifier"
 import { extractSqlParams, parseSelectAliases } from "@/lib/gamedb-sql-params";
 import {
   detectEditableTargets,
+  detectUnionTargets,
   isKeyOnlyColumn,
   resolveQueryTables,
 } from "@/lib/gamedb-sql-sources";
@@ -619,6 +620,8 @@ export function EditableSettingsModal({
   const [columnMap, setColumnMap] = useState(() => editable?.columnMap || {});
   // Columns whose table is not the one above -- see writeTargetFor.
   const [targets, setTargets] = useState(() => editable?.targets || []);
+  // For a stacked query, the table is decided per row rather than per column.
+  const [rowTargets, setRowTargets] = useState(() => editable?.rowTargets || null);
   // No longer settable: adding data goes through the saved INSERT form. Kept so
   // a config saved before that change round-trips unchanged instead of being
   // silently rewritten by opening this modal.
@@ -714,6 +717,21 @@ export function EditableSettingsModal({
    * actually carries that key -- anything less is a guess about where writes
    * land, which is the one thing worth refusing over.
    */
+  /**
+   * A stacked query, read per branch. Only usable once the query carries the
+   * two columns that say where each row came from -- the query editor writes
+   * those in on the test run, so by the time this modal opens they are there.
+   */
+  const unionRead = useMemo(() => {
+    const read = detectUnionTargets({ sql: sqlText || "", tables: schemaData?.tables || [] });
+    if (!read?.ok) return read;
+    const returned = new Set(columnNames || []);
+    if (!returned.has(read.sourceColumn) || !returned.has(read.keyColumn)) {
+      return { ok: false, reason: "ยังไม่มีคอลัมน์บอกที่มาของแถว — กดทดสอบรันใน Query ก่อน" };
+    }
+    return { ...read, columns: read.columns.filter((name) => returned.has(name)) };
+  }, [sqlText, schemaData, columnNames]);
+
   const soleQueryTable = useMemo(() => {
     if (detectedTargets.length > 0) return null;
     const found = resolveQueryTables({ sql: sqlText || "", tables: schemaData?.tables || [] });
@@ -837,6 +855,32 @@ export function EditableSettingsModal({
       pkColumnFor.current = soleQueryTable.pkResultColumn;
       touchedPkColumn.current = true;
       setPkColumn(soleQueryTable.primaryKey);
+      return;
+    }
+    // A stacked query: the table is decided per row, from the column the
+    // query carries saying so. `table` and `pk` still get filled in because
+    // the rest of the config is shaped around having them, but nothing reads
+    // them once rowTargets is set -- see writeTargetFor.
+    if (unionRead?.ok) {
+      autoApplied.current = true;
+      setTable(unionRead.branches[0].table);
+      setPk(unionRead.keyColumn);
+      pkColumnFor.current = unionRead.keyColumn;
+      touchedPkColumn.current = true;
+      setPkColumn(unionRead.branches[0].primaryKey);
+      setColumns(unionRead.columns);
+      setColumnMap({});
+      touchedColumns.current = new Set(unionRead.columns);
+      setRowTargets({
+        sourceColumn: unionRead.sourceColumn,
+        keyColumn: unionRead.keyColumn,
+        branches: unionRead.branches.map((branch) => ({
+          table: branch.table,
+          pkColumn: branch.primaryKey,
+          columnMap: branch.columnMap,
+        })),
+      });
+      setInputs([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detectedTargets, soleQueryTable]);
@@ -845,7 +889,8 @@ export function EditableSettingsModal({
   // behind an "advanced" fold at all.
   const detectionUsable =
     detectedTargets.some((target) => !target.compositeKey && target.pkResultColumn) ||
-    Boolean(soleQueryTable);
+    Boolean(soleQueryTable) ||
+    Boolean(unionRead?.ok);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
@@ -976,6 +1021,7 @@ export function EditableSettingsModal({
           allowInsert,
           allowDelete,
           inputs: inputs.filter((input) => columns.includes(input.column)),
+          rowTargets,
           // Only the ones still claiming a column that is actually editable --
           // unticking every column of a joined table should drop that table
           // rather than leave a target pointing at nothing.
@@ -1235,6 +1281,63 @@ export function EditableSettingsModal({
           </div>
         )}
       </div>
+      {unionRead && (
+        <div
+          className={`rounded-sm border p-3 ${
+            unionRead.ok ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"
+          }`}
+        >
+          <p
+            className={`flex items-center gap-1.5 text-[11px] font-black ${
+              unionRead.ok ? "text-emerald-800" : "text-amber-800"
+            }`}
+          >
+            <Table2 size={13} />
+            {unionRead.ok
+              ? "Query นี้เป็น UNION — ระบบดูที่มาของแต่ละแถวให้เอง"
+              : "Query นี้เป็น UNION แต่ยังแก้ข้อมูลไม่ได้"}
+          </p>
+          {unionRead.ok ? (
+            <>
+              <p className="mt-0.5 text-[10px] font-semibold leading-relaxed text-emerald-700">
+                UNION วางแถวจากหลายตารางซ้อนกันในคอลัมน์ชุดเดียว ตัวคอลัมน์จึงบอกไม่ได้ว่าเป็นของตารางไหน
+                ระบบดูจากคอลัมน์{" "}
+                <span className="font-mono font-black">{unionRead.sourceColumn}</span>{" "}
+                ของแถวนั้นแทน แล้วแก้ที่ตารางนั้นด้วย key ของมันเอง (
+                <span className="font-mono font-black">{unionRead.keyColumn}</span>)
+              </p>
+              <div className="mt-2 space-y-1">
+                {unionRead.branches.map((branch) => (
+                  <p
+                    key={branch.table}
+                    className="rounded-sm border border-emerald-200 bg-white px-2 py-1.5 text-[9px] font-semibold text-zinc-600"
+                  >
+                    <span className="font-mono text-[10px] font-black text-zinc-700">
+                      {branch.table}
+                    </span>{" "}
+                    · key {branch.primaryKey}
+                    {branch.keySource === "unique" ? " (คอลัมน์ที่ unique)" : ""} ·{" "}
+                    {unionRead.columns
+                      .map((name) =>
+                        branch.columnMap[name] === name
+                          ? name
+                          : `${name} → ${branch.columnMap[name]}`
+                      )
+                      .join(", ") || "ไม่มีคอลัมน์ที่แก้ได้"}
+                  </p>
+                ))}
+              </div>
+              <p className="mt-2 text-[9px] font-semibold leading-relaxed text-zinc-500">
+                แก้ค่าได้อย่างเดียว — เพิ่มแถวหรือลบแถวทำไม่ได้ เพราะไม่มีตารางเดียวที่บอกได้ว่าจะเพิ่ม/ลบที่ไหน
+              </p>
+            </>
+          ) : (
+            <p className="mt-0.5 text-[10px] font-semibold leading-relaxed text-amber-700">
+              {unionRead.reason}
+            </p>
+          )}
+        </div>
+      )}
       {soleQueryTable && (
         <div className="rounded-sm border border-emerald-200 bg-emerald-50 p-3">
           <p className="flex items-center gap-1.5 text-[11px] font-black text-emerald-800">

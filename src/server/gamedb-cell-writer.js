@@ -1,6 +1,6 @@
 import { getPoolForConnection } from "@/lib/db";
 import { quoteIdentifier } from "@/lib/gamedb-identifier";
-import { realColumnOf, realPkOf, writeTargetFor } from "@/lib/gamedb-layout";
+import { realPkOf, writeTargetFor } from "@/lib/gamedb-layout";
 import { getConnectionFlags } from "@/server/gamedb-side-tables";
 
 const STATEMENT_TIMEOUT_MS = 8000;
@@ -21,17 +21,37 @@ export function assertEditAllowed(editable, column) {
 }
 
 /**
+ * Where this particular write lands, refusing rather than falling back.
+ *
+ * For a stacked query the table is a property of the row, and `rowSource` is
+ * the value the result carries to say so. A row whose source names no
+ * configured branch is one this config cannot place -- and writing it to
+ * whichever table happened to be listed first is the exact failure the source
+ * column exists to prevent.
+ */
+function resolveTarget(editable, column, rowSource) {
+  const target = writeTargetFor(editable, column, rowSource);
+  if (!target.table) {
+    throw createHttpError(
+      `แถวนี้ระบุไม่ได้ว่ามาจากตารางไหน (ค่า "${rowSource ?? ""}" ไม่ตรงกับที่ตั้งค่าไว้) จึงไม่แก้ไขให้`,
+      409
+    );
+  }
+  return target;
+}
+
+/**
  * The value a cell holds right now, read live (no lock -- nothing is being
  * changed). Used to refresh what an editor opens with, so double-clicking a
  * cell someone else already changed shows their value instead of whatever
  * was on screen from the last time this browser ran the query.
  */
-export async function peekCell({ editable, connection, pkValue, column }) {
+export async function peekCell({ editable, connection, pkValue, column, rowSource }) {
   assertEditAllowed(editable, column);
-  const writeTarget = writeTargetFor(editable, column);
+  const writeTarget = resolveTarget(editable, column, rowSource);
   const table = quoteIdentifier(writeTarget.table);
   const pk = quoteIdentifier(realPkOf(writeTarget));
-  const target = quoteIdentifier(realColumnOf(editable, column));
+  const target = quoteIdentifier(writeTarget.realColumn);
   let client;
   try {
     client = await getPoolForConnection(connection).connect();
@@ -67,7 +87,15 @@ export async function peekCell({ editable, connection, pkValue, column }) {
  * rather than silently overwriting whatever they wrote, and the caller
  * decides whether to show the new value or write over it anyway.
  */
-export async function updateCell({ editable, connection, pkValue, column, value, expectedValue }) {
+export async function updateCell({
+  editable,
+  connection,
+  pkValue,
+  column,
+  value,
+  expectedValue,
+  rowSource,
+}) {
   assertEditAllowed(editable, column);
 
   // Second gate, independent of the query's config: a database has to be
@@ -84,12 +112,12 @@ export async function updateCell({ editable, connection, pkValue, column, value,
   // Which table this particular column lives in. For a query that joins, the
   // answer differs column by column, and so does the key that identifies the
   // row -- `pkValue` is the caller's value for *this* target's key column.
-  const writeTarget = writeTargetFor(editable, column);
+  const writeTarget = resolveTarget(editable, column, rowSource);
   const table = quoteIdentifier(writeTarget.table);
   // `column` and the target's pk name columns in the query's result; the table
   // knows them by whatever the SELECT aliased away from.
   const pk = quoteIdentifier(realPkOf(writeTarget));
-  const target = quoteIdentifier(realColumnOf(editable, column));
+  const target = quoteIdentifier(writeTarget.realColumn);
   const nextValue = value === "" || value === undefined ? null : value;
 
   let client;

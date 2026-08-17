@@ -39,7 +39,15 @@ export async function GET(request, { params }) {
       return jsonError("ฐานข้อมูลของ Query นี้ถูกลบไปแล้ว", 409);
     }
 
-    const { value } = await peekCell({ editable: layout.editable, connection, pkValue, column });
+    const { value } = await peekCell({
+      editable: layout.editable,
+      connection,
+      pkValue,
+      column,
+      // Which half of a stacked query this row came from. Absent for every
+      // ordinary query, where the table is a property of the column instead.
+      rowSource: url.searchParams.get("rowSource") ?? undefined,
+    });
     return jsonOk({ value });
   } catch (err) {
     return handleApiError(err, "โหลดค่าล่าสุดไม่สำเร็จ");
@@ -69,9 +77,10 @@ export async function PATCH(request, { params }) {
     // -- across a join that differs column by column, and the edit log has to
     // record the one actually written, or "ย้อนค่า" would later put the old
     // value back into the wrong table.
-    const writeTarget = writeTargetFor(layout.editable, column);
+    const rowSource = body.rowSource ?? undefined;
+    const writeTarget = writeTargetFor(layout.editable, column, rowSource);
     if (pkValue === null || pkValue === undefined || pkValue === "") {
-      return jsonError(`ไม่พบค่า ${writeTarget.pk} ของแถวนี้`, 400);
+      return jsonError(`ไม่พบค่า ${writeTarget.pk || "key"} ของแถวนี้`, 400);
     }
 
     const connection = query.connectionId
@@ -88,6 +97,7 @@ export async function PATCH(request, { params }) {
       column,
       value: body.value,
       expectedValue: body.expectedValue,
+      rowSource,
     });
 
     // A cached page must not be able to serve the value we just replaced.

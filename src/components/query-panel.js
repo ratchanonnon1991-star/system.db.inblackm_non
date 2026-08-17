@@ -1564,7 +1564,12 @@ export default function QueryPanel({
   // of both tools rather than written to the wrong place; editing them one
   // cell at a time still works, because that path resolves the key per column.
   const baseTableEditable = useMemo(() => {
-    if (!sharedEditable || (sharedEditable.targets || []).length === 0) return sharedEditable;
+    if (!sharedEditable) return sharedEditable;
+    // A stacked query has no single table at all: which one a row belongs to
+    // is decided row by row, which is precisely what these two tools cannot
+    // do. They offer nothing here rather than offering the wrong table.
+    if (sharedEditable.rowTargets) return { ...sharedEditable, columns: [] };
+    if ((sharedEditable.targets || []).length === 0) return sharedEditable;
     return {
       ...sharedEditable,
       columns: sharedEditable.columns.filter(
@@ -1696,8 +1701,20 @@ export default function QueryPanel({
    * key for a joined column would either find nothing or -- when both tables
    * number their rows from 1 -- find a completely unrelated row.
    */
+  /**
+   * Which half of a stacked query a row came from, read out of the column the
+   * query carries for exactly that. Undefined for every ordinary query, where
+   * the table is a property of the column instead of of the row.
+   */
+  const rowSourceOf = (sourceIndex) => {
+    const column = sharedEditable?.rowTargets?.sourceColumn;
+    if (!column) return undefined;
+    const index = baseNameToIndex.get(column);
+    return index === undefined ? undefined : result?.rows?.[sourceIndex]?.[index];
+  };
+
   const editPkValueOf = (sourceIndex, column) => {
-    const target = writeTargetFor(sharedEditable, column);
+    const target = writeTargetFor(sharedEditable, column, rowSourceOf(sourceIndex));
     const index = baseNameToIndex.get(target.pk);
     return index === undefined ? undefined : result?.rows?.[sourceIndex]?.[index];
   };
@@ -1705,7 +1722,9 @@ export default function QueryPanel({
   const peekCell = async (sourceIndex, column) => {
     const pkValue = editPkValueOf(sourceIndex, column);
     if (pkValue === undefined || pkValue === null) return undefined;
+    const rowSource = rowSourceOf(sourceIndex);
     const params = new URLSearchParams({ pkValue: String(pkValue), column });
+    if (rowSource !== undefined && rowSource !== null) params.set("rowSource", String(rowSource));
     if (activeViewId) params.set("viewId", String(activeViewId));
     const data = await apiJson(`/api/queries/${query.id}/cell?${params.toString()}`, {
       fallbackError: "โหลดค่าล่าสุดไม่สำเร็จ",
@@ -1737,6 +1756,7 @@ export default function QueryPanel({
           column: col.column.name,
           value,
           viewId: activeViewId,
+          rowSource: rowSourceOf(sourceIndex),
           ...(expectedValue === undefined ? {} : { expectedValue }),
         }),
         fallbackError: "แก้ไขข้อมูลไม่สำเร็จ",
@@ -1772,6 +1792,9 @@ export default function QueryPanel({
         label: col.label || col.column.name,
         previousValue: original,
         writtenValue,
+        // Captured with the rest: the undo has to land on the same table the
+        // edit did, and by then the row may not be at the same index.
+        rowSource: rowSourceOf(sourceIndex),
       });
 
     setEditPending({ sourceIndex, colId });
@@ -1817,6 +1840,7 @@ export default function QueryPanel({
           column: lastEdit.column,
           value: lastEdit.previousValue,
           viewId: activeViewId,
+          rowSource: lastEdit.rowSource,
           // Only undo what this edit actually wrote: if someone else has
           // since changed the same cell, putting the old value back would
           // quietly throw their work away, so let the 409 surface instead.

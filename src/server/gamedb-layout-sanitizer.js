@@ -10,6 +10,7 @@ import {
   normalizeInputs,
   normalizeInsertForm,
   normalizeMerge,
+  normalizeRowTargets,
   lookupsFromLayout,
   PARAM_TYPES,
   REFRESH_CHOICES,
@@ -168,6 +169,21 @@ export function sanitizeLayout(raw) {
           columnMap: Object.fromEntries(
             Object.entries(columnMap).filter(([name]) => editableColumns.includes(name))
           ),
+          // Every table and key name here is quoted straight into an UPDATE,
+          // so each branch is checked the same way the base table is, and a
+          // set of branches with one bad entry is dropped whole -- a config
+          // that can place some rows and not others places the rest wrong.
+          rowTargets: (() => {
+            const rows = normalizeRowTargets(rawEditable.rowTargets);
+            if (!rows) return null;
+            const usable = rows.branches.every(
+              (branch) =>
+                isSafeIdentifier(branch.table) &&
+                isSafeIdentifierPart(branch.pkColumn) &&
+                Object.values(branch.columnMap).every((real) => isSafeIdentifierPart(real))
+            );
+            return usable ? rows : null;
+          })(),
           allowInsert: rawEditable.allowInsert === true,
           allowDelete: rawEditable.allowDelete === true,
           // A form field for a column that is not writable would be a box that
