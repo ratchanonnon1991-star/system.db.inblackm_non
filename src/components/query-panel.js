@@ -1485,6 +1485,14 @@ export default function QueryPanel({
   const canEditCells = Boolean(
     canUpdateData && sharedEditable && baseNameToIndex.has(sharedEditable.pk)
   );
+  // The result columns a person chose to see. The ones added to identify a
+  // row (__src, __key_row) are not shown in the table and have no business
+  // being offered as a lookup key, a drill parameter or something to
+  // find-and-replace across either.
+  const userColumnNames = useMemo(
+    () => (result?.columns || []).map((col) => col.name).filter((name) => !isKeyOnlyColumn(name)),
+    [result]
+  );
   const canDeleteRows = Boolean(
     canWriteData && sharedEditable && baseNameToIndex.has(sharedEditable.pk)
   );
@@ -1577,6 +1585,11 @@ export default function QueryPanel({
       ),
     };
   }, [sharedEditable]);
+
+  // Whether the two column-at-a-time tools have anything to act on. For a
+  // stacked query they do not, and an entry that opens an empty modal is a
+  // worse answer than no entry.
+  const canBulkEdit = canEditCells && (baseTableEditable?.columns?.length || 0) > 0;
 
   // --- cell notes ------------------------------------------------------------
   // Anchored to the row's own pk value (same identity findReplaceRows uses),
@@ -2998,7 +3011,11 @@ export default function QueryPanel({
                       กด &quot;บันทึกให้ทุกคน&quot; ก่อน ถึงจะแก้ข้อมูลได้
                     </p>
                   )}
-                  {canEditCells && (
+                  {/* Both work a column at a time across every row, which
+                      needs one table for the whole result -- a stacked query
+                      decides that per row, so there is nothing here for them
+                      to offer and the entries go rather than open empty. */}
+                  {canBulkEdit && (
                     <button
                       type="button"
                       role="menuitem"
@@ -3008,7 +3025,7 @@ export default function QueryPanel({
                       <ClipboardPaste size={14} /> แก้หลายแถวจาก Excel
                     </button>
                   )}
-                  {canEditCells && (
+                  {canBulkEdit && (
                     <button
                       type="button"
                       role="menuitem"
@@ -3702,7 +3719,7 @@ export default function QueryPanel({
         <MergeModal
           query={query}
           queries={queries}
-          columnNames={result.columns.map((col) => col.name)}
+          columnNames={userColumnNames}
           merge={layout.lookups.find((item) => item.id === modalColumnId) || null}
           // Back to the list rather than closed outright: adding several
           // sources is the point of there being a list at all.
@@ -3742,7 +3759,7 @@ export default function QueryPanel({
         <DrillModal
           query={query}
           queries={queries}
-          columnNames={result.columns.map((col) => col.name)}
+          columnNames={userColumnNames}
           drill={layout.drill}
           onClose={() => setModal(null)}
           onSave={(drill) => {
@@ -3773,7 +3790,7 @@ export default function QueryPanel({
       {modal === "bulk" && result && sharedEditable && (
         <BulkEditModal
           editable={baseTableEditable}
-          columnNames={result.columns.map((col) => col.name)}
+          columnNames={userColumnNames}
           onApply={applyBulkEdits}
           onClose={() => setModal(null)}
         />
