@@ -350,6 +350,11 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
         const suffix = connectionId ? `?connectionId=${encodeURIComponent(connectionId)}` : "";
         const data = await apiJson(`/api/query-builder/schema${suffix}`);
         setSchemaData(data);
+        // Seed the picker's selection along with the data. The picker renders
+        // as soon as there are tables, and every part of it reads the selected
+        // one -- leaving that empty means switching to this tab renders a
+        // picker with no table selected, which is not a state it has.
+        setSelectedTableKey((prev) => prev || data.tables?.[0]?.key || "");
       } catch {
         // Best effort -- without it the key completion below simply does not
         // run, and the query stays exactly as it was written.
@@ -653,7 +658,11 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                 <p className="flex items-center gap-2 py-6 text-xs font-bold text-zinc-400">
                   <Loader2 size={14} className="animate-spin" /> กำลังโหลดโครงสร้างฐานข้อมูล...
                 </p>
-              ) : schemaData?.tables?.length ? (
+              ) : /* Everything below reads the selected table. A list with
+                     nothing selected is not a state the picker has, and
+                     rendering it anyway takes the whole page down -- so wait,
+                     rather than trust that the two always arrive together. */
+                schemaData?.tables?.length && selectedTable ? (
                 <>
                   <div>
                     <div className="mb-1 flex flex-wrap items-end gap-2">
