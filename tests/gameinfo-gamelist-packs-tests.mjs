@@ -9,6 +9,7 @@ import {
   deleteGamelistPacksForGame,
   getGamelistPacks,
   listAllGamelistChannels,
+  listGamelistPackAudit,
   listGamelistPackCountByGame,
   saveGamelistPacks,
 } from "@/server/gameinfo-gamelist-packs.js";
@@ -44,7 +45,6 @@ const ORIGINAL_TREE = [
             name: "Pack A",
             image: "",
             price: "10",
-            amountCharged: "",
             amountChargedFee: "12",
             channelsMain: ["Wave"],
             channelsSecondary: [],
@@ -55,7 +55,6 @@ const ORIGINAL_TREE = [
             name: "Pack B",
             image: "",
             price: "20",
-            amountCharged: "",
             amountChargedFee: "22",
             channelsMain: ["Wave"],
             channelsSecondary: [],
@@ -77,7 +76,11 @@ async function run() {
   // --- saveGamelistPacks: replaces every row for this game in one transaction
   reset();
   const computedColumns = [{ key: "col_1", label: "กำไร", formula: "[ราคา]*1.1", type: "number" }];
-  await saveGamelistPacks(5, { currencies: ORIGINAL_TREE, computedColumns });
+  await saveGamelistPacks(5, {
+    currencies: ORIGINAL_TREE,
+    computedColumns,
+    actor: { id: 9, name: "Pack Admin" },
+  });
 
   const saveStmts = statements();
   check(
@@ -106,6 +109,7 @@ async function run() {
     ["c1", "cat1"]
   );
   check("save: data keeps this pack's position for reconstruction", firstPackData.packOrder, 0);
+  ok("save: legacy amountCharged is not persisted", !("amountCharged" in firstPackData));
   check("save: the second pack keeps its own position", JSON.parse(packInserts[1].params[2]).packOrder, 1);
 
   const sentinelInsert = log.find(
@@ -116,6 +120,112 @@ async function run() {
     "save: sentinel data stores the computed columns array",
     JSON.parse(sentinelInsert.params[2]).columns,
     computedColumns
+  );
+
+  const auditInserts = log.filter((e) => /^INSERT INTO gamelist_pack_audit_logs/.test(e.text));
+  check("audit: initial save records two creates plus one config change", auditInserts.length, 3);
+  check(
+    "audit: create records actor, game, pack and action with bound parameters",
+    auditInserts[0]?.params?.slice(0, 5),
+    [5, "pk1", 9, "Pack Admin", "create"]
+  );
+  ok("audit: insert happens before COMMIT", log.indexOf(auditInserts[0]) < log.findIndex((e) => e.text.trim() === "COMMIT"));
+
+  // Existing ids are diffed, removed ids become delete events, and a newly
+  // generated id whose values match an old pack is recognized as duplicate.
+  reset();
+  setResponder((text) => {
+    if (/^SELECT game_id, pack_id, data FROM gamelist_packs WHERE game_id = \$1/.test(text)) {
+      return {
+        rows: [
+          ...packInserts.map((e) => ({
+            game_id: e.params[0],
+            pack_id: e.params[1],
+            data: JSON.parse(e.params[2]),
+          })),
+          { game_id: 5, pack_id: "__computed__", data: { columns: computedColumns } },
+        ],
+      };
+    }
+    return null;
+  });
+  const changedTree = structuredClone(ORIGINAL_TREE);
+  changedTree[0].categories[0].packs[0].price = "11";
+  changedTree[0].categories[0].packs.splice(1, 1);
+  changedTree[0].categories[0].packs.push({
+    ...structuredClone(ORIGINAL_TREE[0].categories[0].packs[1]),
+    id: "pk_copy",
+    name: "Pack B (สำเนา)",
+  });
+  await saveGamelistPacks(5, {
+    currencies: changedTree,
+    computedColumns,
+    actor: { id: 9, name: "Pack Admin" },
+    source: "csv_append",
+  });
+  check(
+    "audit: save diff records update, delete, and duplicate actions",
+    log
+      .filter((e) => /^INSERT INTO gamelist_pack_audit_logs/.test(e.text))
+      .map((e) => e.params[4])
+      .sort(),
+    ["delete", "duplicate", "import_append", "update"]
+  );
+  check(
+    "audit: CSV save records the request source",
+    log
+      .filter((e) => /^INSERT INTO gamelist_pack_audit_logs/.test(e.text))
+      .map((e) => e.params[5]),
+    ["csv_append", "csv_append", "csv_append", "csv_append"]
+  );
+
+  // Audit failure must roll back the pack replacement too.
+  reset();
+  setResponder((text) => {
+    if (/^INSERT INTO gamelist_pack_audit_logs/.test(text)) throw new Error("audit unavailable");
+    return null;
+  });
+  let auditFailed = false;
+  try {
+    await saveGamelistPacks(6, {
+      currencies: ORIGINAL_TREE,
+      computedColumns: [],
+      actor: { id: 9, name: "Pack Admin" },
+    });
+  } catch {
+    auditFailed = true;
+  }
+  ok("audit: insert failure rejects the save", auditFailed);
+  ok("audit: insert failure rolls back pack writes", statements().includes("ROLLBACK"));
+  check("audit: failed transaction never commits", statements().includes("COMMIT"), false);
+
+  // PostgreSQL JSONB may return object keys in a different order. Equal data
+  // must not become a fake update event merely because JSON key order changed.
+  reset();
+  setResponder((text) => {
+    if (/^SELECT game_id, pack_id, data FROM gamelist_packs WHERE game_id = \$1/.test(text)) {
+      return {
+        rows: [
+          ...packInserts.map((e) => {
+            const data = JSON.parse(e.params[2]);
+            const reversed = Object.fromEntries(Object.entries(data).reverse());
+            return { game_id: e.params[0], pack_id: e.params[1], data: reversed };
+          }),
+          { game_id: 5, pack_id: "__computed__", data: { columns: computedColumns } },
+        ],
+      };
+    }
+    return null;
+  });
+  await saveGamelistPacks(5, {
+    currencies: ORIGINAL_TREE,
+    computedColumns,
+    actor: { id: 9, name: "Pack Admin" },
+  });
+  check(
+    "audit: JSONB key-order differences do not create fake events",
+    log.filter((e) => /^INSERT INTO gamelist_pack_audit_logs/.test(e.text)).length,
+    0
   );
 
   // --- getGamelistPacks: round-trips the tree + computed columns back out ---
@@ -180,6 +290,45 @@ async function run() {
   const cleanupStmt = find(/^DELETE FROM gamelist_packs WHERE game_id = \$1/);
   ok("cleanup: deletes every row for the game", Boolean(cleanupStmt));
   check("cleanup: binds the game id", cleanupStmt?.params, [5]);
+
+  // --- listGamelistPackAudit --------------------------------------------
+  reset();
+  setResponder((text) => {
+    if (/FROM gamelist_pack_audit_logs/.test(text)) {
+      return {
+        rows: [
+          {
+            id: 3,
+            game_id: 5,
+            pack_id: "pk1",
+            actor_id: 9,
+            actor_name: "Pack Admin",
+            action: "update",
+            source: "editor",
+            before_data: { price: "10" },
+            after_data: { price: "12" },
+            created_at: "2026-08-17T10:00:00.000Z",
+          },
+        ],
+      };
+    }
+    return null;
+  });
+  const history = await listGamelistPackAudit(5, 9999);
+  check("history: maps database fields to API fields", history[0], {
+    id: 3,
+    gameId: 5,
+    packId: "pk1",
+    actorId: 9,
+    actorName: "Pack Admin",
+    action: "update",
+    source: "editor",
+    before: { price: "10" },
+    after: { price: "12" },
+    createdAt: "2026-08-17T10:00:00.000Z",
+  });
+  const historyQuery = find(/FROM gamelist_pack_audit_logs/);
+  check("history: binds game id and clamps the limit", historyQuery?.params, [5, 500]);
 
   console.log(`\n${pass} passed, ${failures.length} failed`);
   for (const failure of failures) console.log(`  FAIL ${failure}`);

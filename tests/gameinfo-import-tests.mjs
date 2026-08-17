@@ -5,6 +5,7 @@ import {
   buildPackTree,
   gamesToPackRows,
   mergeCurrencies,
+  PACK_HEADERS,
   parsePacks,
   parsePacksForGame,
   splitList,
@@ -31,7 +32,7 @@ const packRow = (over = {}) => ({
   pack_name: "86 Diamonds",
   pack_image: "",
   price: "30",
-  amount_charged: "100",
+  amount_charged: "",
   amount_charged_fee: "103",
   channel_main: "A",
   channel_secondary: "",
@@ -77,6 +78,18 @@ check(
 ok(
   "buildPackTree does not emit a per-pack formulas field",
   !("formulas" in buildPackTree([packRow()]).currencies[0].categories[0].packs[0])
+);
+check("pack CSV headers no longer advertise amount_charged", PACK_HEADERS.includes("amount_charged"), false);
+check(
+  "legacy amount_charged is ignored with a non-blocking warning",
+  parsePacksForGame([packRow({ amount_charged: "100" })], 5, "Fallback").errors,
+  ["พบคอลัมน์ amount_charged 1 แถว — ระบบเลิกใช้แล้วและจะไม่นำเข้าค่านี้"]
+);
+ok(
+  "legacy amount_charged never enters the parsed pack model",
+  !("amountCharged" in
+    parsePacksForGame([packRow({ amount_charged: "100" })], 5, "Fallback").game.currencies[0]
+      .categories[0].packs[0])
 );
 
 // --- parsePacks (multi-game) ---------------------------------------------
@@ -209,6 +222,7 @@ const exported = gamesToPackRows(games);
 check("export emits one row per pack", exported.filter((r) => r.pack_name).length, 1);
 check("export still emits a blank-pack row for a game with no packs", exported.length, 2);
 check("export joins channels with a comma", exported[0].channel_main, "A, B");
+ok("export does not emit amount_charged", !("amount_charged" in exported[0]));
 
 const reparsed = parsePacks(exported);
 // Both games are recovered — game 8's blank-pack row keeps it addressable on

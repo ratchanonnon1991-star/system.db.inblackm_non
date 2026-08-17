@@ -31,7 +31,6 @@ export const PACK_HEADERS = [
   "pack_name",
   "pack_image",
   "price",
-  "amount_charged",
   "amount_charged_fee",
   "channel_main",
   "channel_secondary",
@@ -50,7 +49,6 @@ export const PACK_SAMPLE = [
     pack_name: "86 Diamonds",
     pack_image: "",
     price: "30",
-    amount_charged: "100",
     amount_charged_fee: "103",
     channel_main: "ช่องหลัก A",
     channel_secondary: "ช่องรอง B",
@@ -65,7 +63,6 @@ export const PACK_SAMPLE = [
     pack_name: "172 Diamonds",
     pack_image: "",
     price: "60",
-    amount_charged: "200",
     amount_charged_fee: "206",
     channel_main: "ช่องหลัก A, ช่องหลัก B",
     channel_secondary: "",
@@ -89,7 +86,6 @@ export function buildPackTree(groupRows) {
     const hasPackData =
       packName ||
       norm(row["price"]) ||
-      norm(row["amount_charged"]) ||
       norm(row["amount_charged_fee"]);
     if (!hasPackData) continue;
 
@@ -114,7 +110,6 @@ export function buildPackTree(groupRows) {
       name: packName,
       image: norm(row["pack_image"]),
       price: norm(row["price"]),
-      amountCharged: norm(row["amount_charged"]),
       amountChargedFee: norm(row["amount_charged_fee"]),
       channelsMain: splitList(row["channel_main"]),
       channelsSecondary: splitList(row["channel_secondary"]),
@@ -171,7 +166,7 @@ export function mergeCurrencies(existing, incoming) {
 // Multi-game parse: group rows by the game_id column (first-seen order kept),
 // build a tree per game. `game_name` is display-only; linking is by id.
 export function parsePacks(rows) {
-  const errors = [];
+  const errors = legacyAmountWarnings(rows);
   const order = [];
   const groups = new Map();
 
@@ -218,7 +213,7 @@ export function parsePacksForGame(rows, gameId, fallbackGameName) {
       currencies: tree.currencies,
       packCount: tree.packCount,
     },
-    errors: [],
+    errors: legacyAmountWarnings(rows),
   };
 }
 
@@ -240,7 +235,6 @@ export function gamesToPackRows(games) {
             pack_name: p.name,
             pack_image: p.image ?? "",
             price: p.price ?? "",
-            amount_charged: p.amountCharged ?? "",
             amount_charged_fee: p.amountChargedFee ?? "",
             channel_main: (p.channelsMain || []).join(", "),
             channel_secondary: (p.channelsSecondary || []).join(", "),
@@ -260,7 +254,6 @@ export function gamesToPackRows(games) {
         pack_name: "",
         pack_image: "",
         price: "",
-        amount_charged: "",
         amount_charged_fee: "",
         channel_main: "",
         channel_secondary: "",
@@ -269,4 +262,11 @@ export function gamesToPackRows(games) {
     }
   }
   return out;
+}
+
+function legacyAmountWarnings(rows) {
+  const count = (rows || []).filter((row) => norm(row?.amount_charged) !== "").length;
+  return count
+    ? [`พบคอลัมน์ amount_charged ${count} แถว — ระบบเลิกใช้แล้วและจะไม่นำเข้าค่านี้`]
+    : [];
 }

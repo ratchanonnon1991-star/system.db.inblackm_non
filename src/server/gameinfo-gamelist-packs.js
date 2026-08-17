@@ -10,6 +10,7 @@
 // rather than adding a second table — keeps the "just id -> pack_id -> json"
 // shape the whole way through.
 import { getPoolForConnection } from "@/lib/db";
+import { sanitizeGameinfoPack } from "@/lib/gameinfo-pack-model";
 import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
 
 const CONNECTION_NAME = "gameinfo";
@@ -50,16 +51,8 @@ function reconstructCurrencies(packRows) {
       });
     }
     currency.categories.get(d.categoryId).packs.push({
-      id: packId,
+      ...sanitizeGameinfoPack({ ...d, id: packId }),
       order: d.packOrder ?? 0,
-      name: d.name || "",
-      image: d.image || "",
-      price: d.price || "",
-      amountCharged: d.amountCharged || "",
-      amountChargedFee: d.amountChargedFee || "",
-      channelsMain: Array.isArray(d.channelsMain) ? d.channelsMain : [],
-      channelsSecondary: Array.isArray(d.channelsSecondary) ? d.channelsSecondary : [],
-      country: d.country || "",
     });
   }
   return [...currencies.values()]
@@ -89,8 +82,9 @@ function flattenCurrencies(gameId, currencies) {
   (currencies || []).forEach((currency, currencyOrder) => {
     (currency.categories || []).forEach((category, categoryOrder) => {
       (category.packs || []).forEach((pack, packOrder) => {
+        const cleanPack = sanitizeGameinfoPack(pack);
         rows.push({
-          packId: String(pack.id),
+          packId: cleanPack.id,
           gameId,
           data: {
             currencyId: currency.id,
@@ -101,16 +95,13 @@ function flattenCurrencies(gameId, currencies) {
             categoryName: category.name || "",
             categoryOrder,
             packOrder,
-            name: pack.name || "",
-            image: pack.image || "",
-            price: pack.price || "",
-            amountCharged: pack.amountCharged || "",
-            amountChargedFee: pack.amountChargedFee || "",
-            channelsMain: Array.isArray(pack.channelsMain) ? pack.channelsMain : [],
-            channelsSecondary: Array.isArray(pack.channelsSecondary)
-              ? pack.channelsSecondary
-              : [],
-            country: pack.country || "",
+            name: cleanPack.name,
+            image: cleanPack.image,
+            price: cleanPack.price,
+            amountChargedFee: cleanPack.amountChargedFee,
+            channelsMain: cleanPack.channelsMain,
+            channelsSecondary: cleanPack.channelsSecondary,
+            country: cleanPack.country,
           },
         });
       });
@@ -149,6 +140,28 @@ function ensureSchema(connection) {
       `);
       await client.query(`
         CREATE INDEX IF NOT EXISTS gamelist_packs_game_id_idx ON gamelist_packs (game_id)
+      `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS gamelist_pack_audit_logs (
+          id          BIGSERIAL PRIMARY KEY,
+          game_id     INTEGER NOT NULL,
+          pack_id     TEXT,
+          actor_id    INTEGER,
+          actor_name  VARCHAR(255) NOT NULL DEFAULT '',
+          action      VARCHAR(32) NOT NULL,
+          source      VARCHAR(32) NOT NULL DEFAULT 'editor',
+          before_data JSONB,
+          after_data  JSONB,
+          created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS gamelist_pack_audit_game_time_idx
+        ON gamelist_pack_audit_logs (game_id, created_at DESC, id DESC)
+      `);
+      await client.query(`
+        ALTER TABLE gamelist_pack_audit_logs
+        ADD COLUMN IF NOT EXISTS source VARCHAR(32) NOT NULL DEFAULT 'editor'
       `);
     } finally {
       client.release();
@@ -193,14 +206,34 @@ export async function getGamelistPacks(gameId) {
 
 /** Full-tree replace, same shape as the old saveGameinfoPacks — delete every
  * row for this game and reinsert, including the computed-columns sentinel. */
-export async function saveGamelistPacks(gameId, { currencies, computedColumns }) {
+export async function saveGamelistPacks(
+  gameId,
+  { currencies, computedColumns, actor = null, source = "editor" }
+) {
   const pool = await getReadyPool();
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const previousResult = await client.query(
+      `SELECT game_id, pack_id, data FROM gamelist_packs WHERE game_id = $1`,
+      [gameId]
+    );
+    const previousComputed = previousResult.rows.find((row) => row.pack_id === COMPUTED_SENTINEL);
+    const previousRows = previousResult.rows.filter((row) => row.pack_id !== COMPUTED_SENTINEL);
+    const nextRows = flattenCurrencies(gameId, Array.isArray(currencies) ? currencies : []);
+    const nextComputed = Array.isArray(computedColumns) ? computedColumns : [];
+    const auditEvents = buildAuditEvents({
+      previousRows,
+      nextRows,
+      previousComputed: Array.isArray(previousComputed?.data?.columns)
+        ? previousComputed.data.columns
+        : [],
+      nextComputed,
+      source,
+    });
+
     await client.query(`DELETE FROM gamelist_packs WHERE game_id = $1`, [gameId]);
-    const rows = flattenCurrencies(gameId, Array.isArray(currencies) ? currencies : []);
-    for (const r of rows) {
+    for (const r of nextRows) {
       await client.query(
         `INSERT INTO gamelist_packs (game_id, pack_id, data) VALUES ($1, $2, $3)`,
         [r.gameId, r.packId, JSON.stringify(r.data)]
@@ -208,8 +241,11 @@ export async function saveGamelistPacks(gameId, { currencies, computedColumns })
     }
     await client.query(
       `INSERT INTO gamelist_packs (game_id, pack_id, data) VALUES ($1, $2, $3)`,
-      [gameId, COMPUTED_SENTINEL, JSON.stringify({ columns: Array.isArray(computedColumns) ? computedColumns : [] })]
+      [gameId, COMPUTED_SENTINEL, JSON.stringify({ columns: nextComputed })]
     );
+    for (const event of auditEvents) {
+      await insertPackAudit(client, gameId, actor, event, source);
+    }
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
@@ -218,6 +254,141 @@ export async function saveGamelistPacks(gameId, { currencies, computedColumns })
     client.release();
   }
   return getGamelistPacks(gameId);
+}
+
+function buildAuditEvents({ previousRows, nextRows, previousComputed, nextComputed, source }) {
+  const events = [];
+  const before = new Map(previousRows.map((row) => [String(row.pack_id), row.data || {}]));
+  const after = new Map(nextRows.map((row) => [String(row.packId), row.data || {}]));
+
+  for (const [packId, data] of before) {
+    if (!after.has(packId)) {
+      events.push({ packId, action: "delete", before: data, after: null });
+    }
+  }
+
+  for (const [packId, data] of after) {
+    const old = before.get(packId);
+    if (old) {
+      if (!sameJson(old, data)) {
+        events.push({
+          packId,
+          action: onlyPositionChanged(old, data) ? "reorder" : "update",
+          before: old,
+          after: data,
+        });
+      }
+      continue;
+    }
+    const duplicateSource = findDuplicateSource(before, data);
+    events.push({
+      packId,
+      action: duplicateSource ? "duplicate" : "create",
+      before: duplicateSource
+        ? { sourcePackId: duplicateSource.packId, ...duplicateSource.data }
+        : null,
+      after: data,
+    });
+  }
+
+  if (!sameJson(previousComputed, nextComputed)) {
+    events.push({
+      packId: null,
+      action: "config_update",
+      before: { computedColumns: previousComputed },
+      after: { computedColumns: nextComputed },
+    });
+  }
+  if ((source === "csv_append" || source === "csv_replace") && events.length > 0) {
+    events.push({
+      packId: null,
+      action: source === "csv_append" ? "import_append" : "import_replace",
+      before: { packCount: previousRows.length },
+      after: { packCount: nextRows.length },
+    });
+  }
+  return events;
+}
+
+function findDuplicateSource(before, nextData) {
+  for (const [packId, data] of before) {
+    if (nextData.name !== `${data.name || ""} (สำเนา)`) continue;
+    const sourceComparable = { ...data, name: nextData.name, packOrder: nextData.packOrder };
+    if (sameJson(sourceComparable, nextData)) return { packId, data };
+  }
+  return null;
+}
+
+function sameJson(a, b) {
+  return JSON.stringify(canonicalJson(a)) === JSON.stringify(canonicalJson(b));
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (!value || typeof value !== "object") return value;
+  const out = {};
+  for (const key of Object.keys(value).sort()) out[key] = canonicalJson(value[key]);
+  return out;
+}
+
+function onlyPositionChanged(before, after) {
+  const withoutPosition = (value) => {
+    const { currencyOrder, categoryOrder, packOrder, ...rest } = value || {};
+    return rest;
+  };
+  return sameJson(withoutPosition(before), withoutPosition(after));
+}
+
+async function insertPackAudit(client, gameId, actor, event, source) {
+  const actorId = Number(actor?.id);
+  const safeActorId = Number.isInteger(actorId) && actorId > 0 ? actorId : null;
+  const actorName = String(actor?.name || "").slice(0, 255);
+  await client.query(
+    `INSERT INTO gamelist_pack_audit_logs
+       (game_id, pack_id, actor_id, actor_name, action, source, before_data, after_data)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb)`,
+    [
+      gameId,
+      event.packId,
+      safeActorId,
+      actorName,
+      event.action,
+      source === "csv_append" || source === "csv_replace" ? source : "editor",
+      event.before == null ? null : JSON.stringify(event.before),
+      event.after == null ? null : JSON.stringify(event.after),
+    ]
+  );
+}
+
+export async function listGamelistPackAudit(gameId, limit = 100) {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    const safeLimit = Math.min(500, Math.max(1, Number(limit) || 100));
+    const result = await client.query(
+      `SELECT id, game_id, pack_id, actor_id, actor_name, action, source,
+              before_data, after_data, created_at
+       FROM gamelist_pack_audit_logs
+       WHERE game_id = $1
+       ORDER BY created_at DESC, id DESC
+       LIMIT $2`,
+      [gameId, safeLimit]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      gameId: row.game_id,
+      packId: row.pack_id,
+      actorId: row.actor_id,
+      actorName: row.actor_name,
+      action: row.action,
+      source: row.source || "editor",
+      before: row.before_data,
+      after: row.after_data,
+      createdAt: row.created_at,
+    }));
+  } finally {
+    client.release();
+  }
 }
 
 /** { [gameId]: { main: string[], secondary: string[] } } — unique

@@ -21,7 +21,7 @@ function ok(name, value) {
 }
 
 const game = { gameName: "Mobile Legends", region: "Global", platform: "Android/iOS", server: "Asia" };
-const pack = { name: "86 Diamonds", price: "100", amountCharged: "86", amountChargedFee: "90", country: "" };
+const pack = { name: "86 Diamonds", price: "100", amountChargedFee: "90", country: "" };
 
 check(
   "every advertised field name resolves to a real key",
@@ -30,6 +30,12 @@ check(
 );
 
 check("pack field resolves", resolveGameinfoField(pack, game, "ราคา"), "100");
+check("the removed amount label is hidden from the formula picker", GAMEINFO_FIELD_NAMES.includes("ยอดที่กด"), false);
+check(
+  "an existing saved formula using the removed label falls back to amountChargedFee",
+  resolveGameinfoField(pack, game, "ยอดที่กด"),
+  "90"
+);
 check("pack field falls back to the game", resolveGameinfoField(pack, game, "ชื่อเกม"), "Mobile Legends");
 check("an unknown label resolves to undefined", resolveGameinfoField(pack, game, "ไม่มีจริง"), undefined);
 

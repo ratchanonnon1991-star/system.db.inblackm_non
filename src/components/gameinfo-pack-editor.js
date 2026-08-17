@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Download, Image as ImageIcon, Plus, Trash2, X } from "lucide-react";
+import { ChevronDown, Copy, Download, Image as ImageIcon, Plus, Trash2, X } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -22,11 +22,13 @@ import GameinfoTagsInput from "./gameinfo-tags-input";
 import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoImagePickerModal from "./gameinfo-image-picker-modal";
 import GameinfoComputedEditor from "./gameinfo-computed-editor";
+import GameinfoPackHistory from "./gameinfo-pack-history";
 import { apiJson } from "@/lib/api-json";
 import { evaluateFormula, parseFormula } from "@/lib/gamedb-formula";
 import { formatCell } from "@/lib/gamedb-layout";
 import { GAMEINFO_FIELD_NAMES, resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
 import { mergeCurrencies } from "@/lib/gameinfo-import";
+import { createBlankGameinfoPack, duplicateGameinfoPack } from "@/lib/gameinfo-pack-model";
 import { normalizeSpaces } from "@/lib/text-normalize";
 
 const REQUIRED_PACK_FIELDS = ["name", "price", "amountChargedFee", "channelsMain"];
@@ -65,6 +67,7 @@ export default function GameinfoPackEditor({
   savePacksUrl = `/api/gameinfo/gamelist/${game.id}/packs`,
   importPreviewUrl = `/api/gameinfo/import/preview?gameId=${game.id}`,
   exportUrl = `/api/gameinfo/import/export?gameId=${game.id}`,
+  historyUrl = `/api/gameinfo/gamelist/${game.id}/packs/history?limit=200`,
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -85,12 +88,15 @@ export default function GameinfoPackEditor({
 
   const [currencies, setCurrencies] = useState(game.currencies);
   const [computedColumns, setComputedColumns] = useState(game.computedColumns ?? []);
+  const [savedCurrencies, setSavedCurrencies] = useState(game.currencies);
+  const [savedComputedColumns, setSavedComputedColumns] = useState(game.computedColumns ?? []);
   const [invalidFields, setInvalidFields] = useState(new Set());
 
   const [importing, setImporting] = useState(false);
   const [importErrors, setImportErrors] = useState([]);
   const [importMsg, setImportMsg] = useState("");
   const [pendingImport, setPendingImport] = useState(null); // { currencies, packCount }
+  const [auditSource, setAuditSource] = useState("editor");
 
   // Drives the same "collapse ยกเลิก/บันทึก to w-0 around the middle pill"
   // animation as the game list table's floating bar (see
@@ -98,8 +104,8 @@ export default function GameinfoPackEditor({
   // something to save, and cancel() resetting currencies/computedColumns
   // back to game.* makes this false again, animating the pill closed.
   const dirty =
-    JSON.stringify(currencies) !== JSON.stringify(game.currencies) ||
-    JSON.stringify(computedColumns) !== JSON.stringify(game.computedColumns ?? []);
+    JSON.stringify(currencies) !== JSON.stringify(savedCurrencies) ||
+    JSON.stringify(computedColumns) !== JSON.stringify(savedComputedColumns);
 
   const parsedColumns = useMemo(
     () =>
@@ -171,17 +177,15 @@ export default function GameinfoPackEditor({
 
   function addPack(cIdx, catIdx) {
     updateCurrencies((draft) => {
-      draft[cIdx].categories[catIdx].packs.push({
-        id: genId("pk"),
-        name: "",
-        image: "",
-        price: "",
-        amountCharged: "",
-        amountChargedFee: "",
-        channelsMain: [],
-        channelsSecondary: [],
-        country: "",
-      });
+      draft[cIdx].categories[catIdx].packs.push(createBlankGameinfoPack(genId("pk")));
+    });
+  }
+  function duplicatePack(cIdx, catIdx, pkIdx) {
+    updateCurrencies((draft) => {
+      const packs = draft[cIdx].categories[catIdx].packs;
+      const source = packs[pkIdx];
+      if (!source) return;
+      packs.splice(pkIdx + 1, 0, duplicateGameinfoPack(source, genId("pk")));
     });
   }
   function removePack(cIdx, catIdx, pkIdx) {
@@ -279,11 +283,21 @@ export default function GameinfoPackEditor({
     setInvalidFields(new Set());
     startTransition(async () => {
       try {
-        await apiJson(savePacksUrl, {
+        const data = await apiJson(savePacksUrl, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ currencies, computedColumns }),
+          body: JSON.stringify({ currencies, computedColumns, auditSource }),
         });
+        const savedGame = data.game || {};
+        const nextCurrencies = Array.isArray(savedGame.currencies) ? savedGame.currencies : currencies;
+        const nextComputedColumns = Array.isArray(savedGame.computedColumns)
+          ? savedGame.computedColumns
+          : computedColumns;
+        setCurrencies(nextCurrencies);
+        setComputedColumns(nextComputedColumns);
+        setSavedCurrencies(nextCurrencies);
+        setSavedComputedColumns(nextComputedColumns);
+        setAuditSource("editor");
         setSavedAt(Date.now());
         router.refresh();
       } catch (e) {
@@ -294,11 +308,12 @@ export default function GameinfoPackEditor({
 
   function cancel() {
     if (!window.confirm("ยกเลิกการแก้ไข? ข้อมูลที่ยังไม่บันทึกจะหายไป")) return;
-    setCurrencies(game.currencies);
-    setComputedColumns(game.computedColumns ?? []);
+    setCurrencies(savedCurrencies);
+    setComputedColumns(savedComputedColumns);
     setInvalidFields(new Set());
     setError("");
     setSavedAt(null);
+    setAuditSource("editor");
   }
 
   // CSV import for this one game — file's game_id column is ignored server
@@ -320,6 +335,7 @@ export default function GameinfoPackEditor({
       const errors = data.errors ?? [];
       if (currencies.length === 0) {
         setCurrencies(data.game.currencies);
+        setAuditSource("csv_replace");
         setImportErrors(errors);
         setImportMsg(
           `นำเข้าแล้ว ${data.game.packCount} แพ็ก — ตรวจสอบด้านล่างแล้วกด "บันทึกตารางแพ็ก"`
@@ -339,8 +355,10 @@ export default function GameinfoPackEditor({
     if (!pendingImport) return;
     if (mode === "replace") {
       setCurrencies(pendingImport.currencies);
+      setAuditSource("csv_replace");
     } else {
       setCurrencies((prev) => mergeCurrencies(prev, pendingImport.currencies));
+      setAuditSource("csv_append");
     }
     setImportMsg(
       `นำเข้าแล้ว ${pendingImport.packCount} แพ็ก (${
@@ -352,6 +370,9 @@ export default function GameinfoPackEditor({
 
   return (
     <div className="space-y-6">
+      <div className="flex justify-end">
+        <GameinfoPackHistory gameId={game.id} historyUrl={historyUrl} />
+      </div>
       <section className="rounded-lg border border-linear-hairline bg-linear-surface-1 p-4">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-semibold text-linear-ink">นำเข้าแพ็กจาก CSV (เกมนี้)</h2>
@@ -374,6 +395,57 @@ export default function GameinfoPackEditor({
           อัปโหลดไฟล์ .csv ตามรูปแบบ pack template (ไม่ต้องมีคอลัมน์ game_id ก็ได้ ทุกแถวถือเป็นของเกมนี้)
           — ยังไม่บันทึกจนกว่าจะกด &quot;บันทึกตารางแพ็ก&quot;
         </p>
+        <details className="mb-3 rounded-md border border-linear-hairline bg-linear-surface-2 px-3 py-2 text-xs text-linear-ink-subtle">
+          <summary className="cursor-pointer font-medium text-linear-primary">ดูคู่มือคอลัมน์ CSV และการใช้ ID</summary>
+          <div className="mt-2 space-y-2">
+            <p>
+              <code>game_id</code> คือ ID ตัวเลขของเกมจากฐานข้อมูล ไม่ใช่ชื่อเกมหรือลำดับแถว
+              แต่เมื่อนำเข้าจากหน้านี้ ระบบจะยึดเกม ID {game.id} จาก URL และไม่ใช้ค่า
+              <code> game_id</code> ในไฟล์
+            </p>
+            <p>
+              1 แถวเท่ากับ 1 pack · ช่องทางหลายค่าให้คั่นด้วย comma เช่น
+              <code> Wavepay, Razer</code> · การเลือก “เพิ่มเข้าไป” จะสร้าง pack ID ใหม่ทุกแถว
+              จึงนำเข้าข้อมูลซ้ำเป็นสำเนาได้
+            </p>
+            <div className="overflow-x-auto">
+              <table className="min-w-[620px] text-left">
+                <thead className="text-linear-ink-muted">
+                  <tr>
+                    <th className="pr-3 font-medium">คอลัมน์</th>
+                    <th className="pr-3 font-medium">ใช้ทำอะไร</th>
+                    <th className="font-medium">จำเป็น</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    ["game_id", "ID เกม (หน้านี้ไม่ใช้ค่าในไฟล์)", "ไม่"],
+                    ["game_name", "ชื่อสำหรับช่วยตรวจไฟล์ ไม่ใช้ผูกเกม", "ไม่"],
+                    ["currency_name", "ชื่อสกุลเงิน/กลุ่มใหญ่", "ไม่"],
+                    ["currency_image", "URL รูปสกุลเงิน", "ไม่"],
+                    ["category_name", "ชื่อหมวดหมู่", "ไม่"],
+                    ["pack_name", "ชื่อ pack", "ใช่"],
+                    ["pack_image", "URL รูป pack", "ไม่"],
+                    ["price", "ราคาขาย", "ใช่"],
+                    ["amount_charged_fee", "ยอดที่กดรวม fee", "ใช่"],
+                    ["channel_main", "ช่องทางหลัก", "ใช่"],
+                    ["channel_secondary", "ช่องทางรอง", "ไม่"],
+                    ["country", "ประเทศสำหรับ pack ที่ต้องใช้ VPN", "ไม่"],
+                  ].map(([column, description, required]) => (
+                    <tr key={column} className="border-t border-linear-hairline">
+                      <td className="py-1 pr-3"><code>{column}</code></td>
+                      <td className="py-1 pr-3">{description}</td>
+                      <td className="py-1">{required}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p>
+              คอลัมน์เก่า <code>amount_charged</code> เลิกใช้แล้ว ระบบจะแจ้งเตือนและไม่นำค่าเข้ามา
+            </p>
+          </div>
+        </details>
         <input
           type="file"
           accept=".csv"
@@ -531,6 +603,7 @@ export default function GameinfoPackEditor({
                     onRemoveCategory={() => removeCategory(cIdx, catIdx)}
                     onAddPack={() => addPack(cIdx, catIdx)}
                     onUpdatePack={(pkIdx, patch) => updatePack(cIdx, catIdx, pkIdx, patch)}
+                    onDuplicatePack={(pkIdx) => duplicatePack(cIdx, catIdx, pkIdx)}
                     onRemovePack={(pkIdx) => removePack(cIdx, catIdx, pkIdx)}
                   />
                 ))}
@@ -635,6 +708,7 @@ function CategoryBlock({
   onRemoveCategory,
   onAddPack,
   onUpdatePack,
+  onDuplicatePack,
   onRemovePack,
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -716,7 +790,6 @@ function CategoryBlock({
               <span className="px-2">รูป</span>
               <span className="px-2">ชื่อ pack</span>
               <span className="px-2">ราคา</span>
-              <span className="px-2">ยอดที่กด</span>
               <span className="px-2">ยอดที่กด + fee</span>
               <span className="px-2">ช่องทางหลัก</span>
               <span className="px-2">ช่องทางรอง</span>
@@ -758,6 +831,7 @@ function CategoryBlock({
                   channelsMain: invalidFields.has(`${pack.id}:channelsMain`),
                 }}
                 onUpdate={(patch) => onUpdatePack(pkIdx, patch)}
+                onDuplicate={() => onDuplicatePack(pkIdx)}
                 onRemove={() => onRemovePack(pkIdx)}
               />
             ))}
@@ -777,6 +851,7 @@ function PackRow({
   gridTemplate,
   invalid,
   onUpdate,
+  onDuplicate,
   onRemove,
 }) {
   const [editing, setEditing] = useState(null);
@@ -827,23 +902,6 @@ function PackRow({
           value={pack.price ?? ""}
           onChange={(e) => onUpdate({ price: numericOnly(e.target.value) })}
           placeholder="ราคา"
-          className="h-9 w-full rounded border border-linear-primary/40 px-2 text-sm outline-none"
-        />
-      </PackCell>
-
-      <PackCell
-        editing={isEditing("amountCharged")}
-        value={pack.amountCharged ?? ""}
-        placeholder="ยอดที่กด"
-        onStartEdit={() => setEditing("amountCharged")}
-        onCommit={() => setEditing(null)}
-      >
-        <input
-          autoFocus
-          inputMode="decimal"
-          value={pack.amountCharged ?? ""}
-          onChange={(e) => onUpdate({ amountCharged: numericOnly(e.target.value) })}
-          placeholder="ยอดที่กด"
           className="h-9 w-full rounded border border-linear-primary/40 px-2 text-sm outline-none"
         />
       </PackCell>
@@ -913,15 +971,26 @@ function PackRow({
         );
       })}
 
-      <button
-        type="button"
-        onClick={onRemove}
-        title="ลบ pack"
-        aria-label="ลบ pack"
-        className="flex items-center justify-center justify-self-end rounded-md bg-red-500/10 p-1.5 text-red-400 hover:bg-red-500/15"
-      >
-        <Trash2 size={13} />
-      </button>
+      <div className="flex items-center justify-self-end gap-1">
+        <button
+          type="button"
+          onClick={onDuplicate}
+          title="ทำสำเนา pack"
+          aria-label="ทำสำเนา pack"
+          className="flex items-center justify-center rounded-md bg-linear-primary/10 p-1.5 text-linear-primary hover:bg-linear-primary/15"
+        >
+          <Copy size={13} />
+        </button>
+        <button
+          type="button"
+          onClick={onRemove}
+          title="ลบ pack"
+          aria-label="ลบ pack"
+          className="flex items-center justify-center rounded-md bg-red-500/10 p-1.5 text-red-400 hover:bg-red-500/15"
+        >
+          <Trash2 size={13} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -1053,13 +1122,12 @@ function packGridTemplate(computedCount) {
     "40px", // image
     "minmax(110px, 1.6fr)", // name
     "minmax(60px, 0.7fr)", // price
-    "minmax(70px, 0.8fr)", // amount charged
     "minmax(70px, 0.8fr)", // amount charged + fee
     "minmax(90px, 1fr)", // channels main
     "minmax(90px, 1fr)", // channels secondary
     "minmax(80px, 0.8fr)", // country
   ];
   for (let i = 0; i < computedCount; i++) tracks.push("minmax(70px, 0.8fr)"); // computed columns
-  tracks.push("64px"); // delete
+  tracks.push("72px"); // duplicate + delete
   return { template: tracks.join(" ") };
 }

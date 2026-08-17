@@ -169,7 +169,6 @@ function PackCategory({ category, game, computedColumns }) {
                   <th className="px-3 py-2 font-medium">รูป</th>
                   <th className="px-3 py-2 font-medium">ชื่อ pack</th>
                   <th className="px-3 py-2 font-medium">ราคา</th>
-                  <th className="px-3 py-2 font-medium">ยอดที่กด</th>
                   <th className="px-3 py-2 font-medium">ยอดที่กด + fee</th>
                   <th className="px-3 py-2 font-medium">ช่องทางหลัก</th>
                   <th className="px-3 py-2 font-medium">ช่องทางรอง</th>
@@ -191,7 +190,6 @@ function PackCategory({ category, game, computedColumns }) {
                       {pack.name || "-"}
                     </td>
                     <td className="px-3 py-2 text-linear-ink-muted">{pack.price || "-"}</td>
-                    <td className="px-3 py-2 text-linear-ink-muted">{pack.amountCharged || "-"}</td>
                     <td className="px-3 py-2 text-linear-ink-muted">{pack.amountChargedFee || "-"}</td>
                     <td className="px-3 py-2 text-linear-ink-muted">
                       {pack.channelsMain?.length ? pack.channelsMain.join(", ") : "-"}

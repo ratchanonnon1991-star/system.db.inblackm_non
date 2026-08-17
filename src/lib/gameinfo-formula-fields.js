@@ -6,7 +6,6 @@
 export const GAMEINFO_FIELDS = {
   "ชื่อแพ็ก": "name",
   "ราคา": "price",
-  "ยอดที่กด": "amountCharged",
   "ยอดที่กด + fee": "amountChargedFee",
   "ประเทศ": "country",
   "ชื่อเกม": "gameName",
@@ -18,6 +17,9 @@ export const GAMEINFO_FIELDS = {
 export const GAMEINFO_FIELD_NAMES = Object.keys(GAMEINFO_FIELDS);
 
 export function resolveGameinfoField(pack, game, label) {
+  // Existing saved formulas may still contain the removed label. Resolve it
+  // to the only remaining charge field without advertising it in the picker.
+  if (label === "ยอดที่กด") return pack?.amountChargedFee;
   const key = GAMEINFO_FIELDS[label];
   if (!key) return undefined;
   if (pack && key in pack) return pack[key];
