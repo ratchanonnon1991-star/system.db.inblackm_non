@@ -8,9 +8,16 @@
 import {
   deleteGamelistPacksForGame,
   getGamelistPacks,
+  importGamelistPacks,
   listAllGamelistChannels,
+  listAllGamelistPackAudit,
+  listGamelistPackAudit,
   listGamelistPackCountByGame,
+  listGamelistPackServiceByGame,
+  listGamelistPackViewPresets,
   saveGamelistPacks,
+  saveGamelistPackViewPreset,
+  sanitizeGamelistPackViewPresetLayout,
 } from "@/server/gameinfo-gamelist-packs.js";
 import { log, reset, setResponder } from "@/lib/db.js";
 
@@ -44,8 +51,10 @@ const ORIGINAL_TREE = [
             name: "Pack A",
             image: "",
             price: "10",
-            amountCharged: "",
             amountChargedFee: "12",
+            serviceEnabled: true,
+            serviceStatus: "",
+            costProfileId: "",
             channelsMain: ["Wave"],
             channelsSecondary: [],
             country: "",
@@ -55,8 +64,10 @@ const ORIGINAL_TREE = [
             name: "Pack B",
             image: "",
             price: "20",
-            amountCharged: "",
             amountChargedFee: "22",
+            serviceEnabled: true,
+            serviceStatus: "",
+            costProfileId: "",
             channelsMain: ["Wave"],
             channelsSecondary: [],
             country: "",
@@ -76,8 +87,20 @@ async function run() {
 
   // --- saveGamelistPacks: replaces every row for this game in one transaction
   reset();
-  const computedColumns = [{ key: "col_1", label: "กำไร", formula: "[ราคา]*1.1", type: "number" }];
-  await saveGamelistPacks(5, { currencies: ORIGINAL_TREE, computedColumns });
+  const computedColumns = [
+    {
+      key: "col_1",
+      label: "กำไร",
+      formula: "[ราคา]*1.1",
+      type: "number",
+      rowOverrides: { pk1: "[ราคา]*1.2" },
+    },
+  ];
+  await saveGamelistPacks(5, {
+    currencies: ORIGINAL_TREE,
+    computedColumns,
+    actor: { id: 9, name: "Pack Admin" },
+  });
 
   const saveStmts = statements();
   check(
@@ -106,6 +129,7 @@ async function run() {
     ["c1", "cat1"]
   );
   check("save: data keeps this pack's position for reconstruction", firstPackData.packOrder, 0);
+  ok("save: legacy amountCharged is not persisted", !("amountCharged" in firstPackData));
   check("save: the second pack keeps its own position", JSON.parse(packInserts[1].params[2]).packOrder, 1);
 
   const sentinelInsert = log.find(
@@ -116,6 +140,112 @@ async function run() {
     "save: sentinel data stores the computed columns array",
     JSON.parse(sentinelInsert.params[2]).columns,
     computedColumns
+  );
+
+  const auditInserts = log.filter((e) => /^INSERT INTO gamelist_pack_audit_logs/.test(e.text));
+  check("audit: initial save records two creates plus one config change", auditInserts.length, 3);
+  check(
+    "audit: create records actor, game, pack and action with bound parameters",
+    auditInserts[0]?.params?.slice(0, 5),
+    [5, "pk1", 9, "Pack Admin", "create"]
+  );
+  ok("audit: insert happens before COMMIT", log.indexOf(auditInserts[0]) < log.findIndex((e) => e.text.trim() === "COMMIT"));
+
+  // Existing ids are diffed, removed ids become delete events, and a newly
+  // generated id whose values match an old pack is recognized as duplicate.
+  reset();
+  setResponder((text) => {
+    if (/^SELECT game_id, pack_id, data FROM gamelist_packs WHERE game_id = \$1/.test(text)) {
+      return {
+        rows: [
+          ...packInserts.map((e) => ({
+            game_id: e.params[0],
+            pack_id: e.params[1],
+            data: JSON.parse(e.params[2]),
+          })),
+          { game_id: 5, pack_id: "__computed__", data: { columns: computedColumns } },
+        ],
+      };
+    }
+    return null;
+  });
+  const changedTree = structuredClone(ORIGINAL_TREE);
+  changedTree[0].categories[0].packs[0].price = "11";
+  changedTree[0].categories[0].packs.splice(1, 1);
+  changedTree[0].categories[0].packs.push({
+    ...structuredClone(ORIGINAL_TREE[0].categories[0].packs[1]),
+    id: "pk_copy",
+    name: "Pack B (สำเนา)",
+  });
+  await saveGamelistPacks(5, {
+    currencies: changedTree,
+    computedColumns,
+    actor: { id: 9, name: "Pack Admin" },
+    source: "csv_append",
+  });
+  check(
+    "audit: save diff records update, delete, and duplicate actions",
+    log
+      .filter((e) => /^INSERT INTO gamelist_pack_audit_logs/.test(e.text))
+      .map((e) => e.params[4])
+      .sort(),
+    ["delete", "duplicate", "import_append", "update"]
+  );
+  check(
+    "audit: CSV save records the request source",
+    log
+      .filter((e) => /^INSERT INTO gamelist_pack_audit_logs/.test(e.text))
+      .map((e) => e.params[5]),
+    ["csv_append", "csv_append", "csv_append", "csv_append"]
+  );
+
+  // Audit failure must roll back the pack replacement too.
+  reset();
+  setResponder((text) => {
+    if (/^INSERT INTO gamelist_pack_audit_logs/.test(text)) throw new Error("audit unavailable");
+    return null;
+  });
+  let auditFailed = false;
+  try {
+    await saveGamelistPacks(6, {
+      currencies: ORIGINAL_TREE,
+      computedColumns: [],
+      actor: { id: 9, name: "Pack Admin" },
+    });
+  } catch {
+    auditFailed = true;
+  }
+  ok("audit: insert failure rejects the save", auditFailed);
+  ok("audit: insert failure rolls back pack writes", statements().includes("ROLLBACK"));
+  check("audit: failed transaction never commits", statements().includes("COMMIT"), false);
+
+  // PostgreSQL JSONB may return object keys in a different order. Equal data
+  // must not become a fake update event merely because JSON key order changed.
+  reset();
+  setResponder((text) => {
+    if (/^SELECT game_id, pack_id, data FROM gamelist_packs WHERE game_id = \$1/.test(text)) {
+      return {
+        rows: [
+          ...packInserts.map((e) => {
+            const data = JSON.parse(e.params[2]);
+            const reversed = Object.fromEntries(Object.entries(data).reverse());
+            return { game_id: e.params[0], pack_id: e.params[1], data: reversed };
+          }),
+          { game_id: 5, pack_id: "__computed__", data: { columns: computedColumns } },
+        ],
+      };
+    }
+    return null;
+  });
+  await saveGamelistPacks(5, {
+    currencies: ORIGINAL_TREE,
+    computedColumns,
+    actor: { id: 9, name: "Pack Admin" },
+  });
+  check(
+    "audit: JSONB key-order differences do not create fake events",
+    log.filter((e) => /^INSERT INTO gamelist_pack_audit_logs/.test(e.text)).length,
+    0
   );
 
   // --- getGamelistPacks: round-trips the tree + computed columns back out ---
@@ -138,7 +268,12 @@ async function run() {
   reset();
   setResponder(() => ({ rows: [] }));
   const empty = await getGamelistPacks(5);
-  check("empty: no rows gives an empty tree and no computed columns", empty, { currencies: [], computedColumns: [] });
+  check("empty: no rows gives empty data and version-one config", empty, {
+    currencies: [],
+    computedColumns: [],
+    costProfiles: [],
+    schemaVersion: 1,
+  });
 
   // --- listGamelistPackCountByGame: excludes the __computed__ sentinel ------
   reset();
@@ -153,6 +288,17 @@ async function run() {
   const countStmt = find(/^SELECT game_id, COUNT\(\*\)::int AS pack_count FROM gamelist_packs/);
   ok("pack count: excludes the computed sentinel", countStmt && /pack_id != \$1/.test(countStmt.text));
   check("pack count: binds the sentinel value", countStmt?.params, ["__computed__"]);
+
+  reset();
+  setResponder((text) => {
+    if (/disabled_count/.test(text)) {
+      return { rows: [{ game_id: 5, total_count: 3, disabled_count: 1 }] };
+    }
+    return null;
+  });
+  check("service summary: returns disabled packs per game", await listGamelistPackServiceByGame(), {
+    5: { total: 3, disabled: 1 },
+  });
 
   // --- listAllGamelistChannels: merges main+secondary across every game -----
   reset();
@@ -180,6 +326,213 @@ async function run() {
   const cleanupStmt = find(/^DELETE FROM gamelist_packs WHERE game_id = \$1/);
   ok("cleanup: deletes every row for the game", Boolean(cleanupStmt));
   check("cleanup: binds the game id", cleanupStmt?.params, [5]);
+
+  // --- listGamelistPackAudit --------------------------------------------
+  reset();
+  setResponder((text) => {
+    if (/FROM gamelist_pack_audit_logs/.test(text)) {
+      return {
+        rows: [
+          {
+            id: 3,
+            game_id: 5,
+            pack_id: "pk1",
+            actor_id: 9,
+            actor_name: "Pack Admin",
+            action: "update",
+            source: "editor",
+            before_data: { price: "10" },
+            after_data: { price: "12" },
+            created_at: "2026-08-17T10:00:00.000Z",
+          },
+        ],
+      };
+    }
+    return null;
+  });
+  const history = await listGamelistPackAudit(5, 9999);
+  check("history: maps database fields to API fields", history[0], {
+    id: 3,
+    gameId: 5,
+    packId: "pk1",
+    actorId: 9,
+    actorName: "Pack Admin",
+    action: "update",
+    source: "editor",
+    before: { price: "10" },
+    after: { price: "12" },
+    createdAt: "2026-08-17T10:00:00.000Z",
+  });
+  const historyQuery = find(/FROM gamelist_pack_audit_logs/);
+  check("history: binds game id and clamps the limit", historyQuery?.params, [5, 500]);
+
+  // --- multi-game CSV import -------------------------------------------
+  reset();
+  setResponder((text) => {
+    if (/SELECT id FROM game_list/.test(text)) return { rows: [{ id: 5 }] };
+    if (/SELECT game_id, pack_id, data FROM gamelist_packs/.test(text)) return { rows: [] };
+    return null;
+  });
+  const bulk = await importGamelistPacks(
+    [{ gameId: 5, currencies: ORIGINAL_TREE, packCount: 2 }],
+    "replace",
+    { id: 9, name: "Pack Admin" }
+  );
+  check("bulk import returns imported game and pack counts", bulk, { gameCount: 1, packCount: 2 });
+  ok("bulk import locks the target game before writing", Boolean(find(/SELECT id FROM game_list.*FOR UPDATE/)));
+  check(
+    "bulk import records csv_replace as the audit source",
+    log.filter((entry) => /^INSERT INTO gamelist_pack_audit_logs/.test(entry.text))[0]?.params?.[5],
+    "csv_replace"
+  );
+  ok("bulk import commits all games as one transaction", statements().includes("COMMIT"));
+
+  // --- combined history ------------------------------------------------
+  reset();
+  setResponder((text) => {
+    if (/FROM gamelist_pack_audit_logs a/.test(text)) {
+      return { rows: [{ id: 8, game_id: 5, game: "Game A", pack_id: "pk1", actor_id: 9, actor_name: "Admin", action: "update", source: "editor", before_data: {}, after_data: { name: "Pack" }, created_at: "2026-08-17T10:00:00.000Z" }] };
+    }
+    return null;
+  });
+  const allHistory = await listAllGamelistPackAudit(9999);
+  check("combined history includes the game name", allHistory[0].gameName, "Game A");
+  check("combined history clamps its one bound limit", find(/FROM gamelist_pack_audit_logs a/)?.params, [2000]);
+
+  // --- personal column presets (Tasks 15 + 16) ------------------------
+  check(
+    "preset layout: only keeps unique, bounded string column ids",
+    sanitizeGamelistPackViewPresetLayout({
+      order: ["price", "price", "", 123, "computed:profit"],
+      hidden: ["country", "country", "  ", "price"],
+      filters: [
+        { columnId: "name", operator: "contains", value: "diamond" },
+        { columnId: "", operator: "equals", value: "ignored" },
+      ],
+    }),
+    {
+      order: ["price", "computed:profit"],
+      hidden: ["country", "price"],
+      filters: [{ columnId: "name", operator: "contains", value: "diamond" }],
+    }
+  );
+
+  reset();
+  setResponder((text) => {
+    if (/FROM gamelist_pack_view_presets/.test(text)) {
+      return {
+        rows: [
+          {
+            id: 42,
+            game_id: 5,
+            user_id: 9,
+            surface: "view",
+            name: "เฉพาะราคา",
+            layout: { order: ["price", "name"], hidden: ["country"] },
+            created_at: "2026-08-17T10:00:00.000Z",
+            updated_at: "2026-08-17T11:00:00.000Z",
+          },
+        ],
+      };
+    }
+    return null;
+  });
+  const presets = await listGamelistPackViewPresets({ gameId: 5, userId: 9, surface: "view" });
+  check("preset list: scopes rows to game, user and surface", presets[0], {
+    id: 42,
+    gameId: 5,
+    userId: 9,
+    surface: "view",
+    name: "เฉพาะราคา",
+    layout: { order: ["price", "name"], hidden: ["country"] },
+    createdAt: "2026-08-17T10:00:00.000Z",
+    updatedAt: "2026-08-17T11:00:00.000Z",
+  });
+  check(
+    "preset list: binds game, user and surface instead of interpolating them",
+    find(/FROM gamelist_pack_view_presets/)?.params,
+    [5, 9, "view"]
+  );
+
+  reset();
+  setResponder((text) => {
+    if (/^INSERT INTO gamelist_pack_view_presets/.test(text)) {
+      return {
+        rows: [
+          {
+            id: 43,
+            game_id: 5,
+            user_id: 9,
+            surface: "edit",
+            name: "แก้ไขแบบย่อ",
+            layout: { order: ["name", "price"], hidden: ["image"] },
+            created_at: "2026-08-17T12:00:00.000Z",
+            updated_at: "2026-08-17T12:00:00.000Z",
+          },
+        ],
+      };
+    }
+    return null;
+  });
+  const createdPreset = await saveGamelistPackViewPreset({
+    gameId: 5,
+    userId: 9,
+    surface: "edit",
+    name: "  แก้ไขแบบย่อ  ",
+    layout: { order: ["name", "price"], hidden: ["image"] },
+  });
+  check("preset save: creates and returns the normalized named preset", createdPreset, {
+    id: 43,
+    gameId: 5,
+    userId: 9,
+    surface: "edit",
+    name: "แก้ไขแบบย่อ",
+    layout: { order: ["name", "price"], hidden: ["image"] },
+    createdAt: "2026-08-17T12:00:00.000Z",
+    updatedAt: "2026-08-17T12:00:00.000Z",
+  });
+  const presetInsert = find(/^INSERT INTO gamelist_pack_view_presets/);
+  check(
+    "preset save: binds JSON layout and its owner scope",
+    [presetInsert?.params?.slice(0, 4), JSON.parse(presetInsert?.params?.[4] || "null")],
+    [[5, 9, "edit", "แก้ไขแบบย่อ"], { order: ["name", "price"], hidden: ["image"] }]
+  );
+
+  reset();
+  setResponder((text) => {
+    if (/^UPDATE gamelist_pack_view_presets/.test(text)) {
+      return {
+        rows: [
+          {
+            id: 43,
+            game_id: 5,
+            user_id: 9,
+            surface: "edit",
+            name: "แก้ไขแบบเต็ม",
+            layout: { order: ["price", "name"], hidden: [] },
+            created_at: "2026-08-17T12:00:00.000Z",
+            updated_at: "2026-08-17T13:00:00.000Z",
+          },
+        ],
+      };
+    }
+    return null;
+  });
+  const updatedPreset = await saveGamelistPackViewPreset({
+    gameId: 5,
+    userId: 9,
+    surface: "edit",
+    presetId: 43,
+    name: "แก้ไขแบบเต็ม",
+    layout: { order: ["price", "name"], hidden: [] },
+  });
+  check("preset update: returns the revised preset", updatedPreset.name, "แก้ไขแบบเต็ม");
+  const presetUpdate = find(/^UPDATE gamelist_pack_view_presets/);
+  check(
+    "preset update: limits the write to the selected user, game and surface",
+    presetUpdate?.params?.slice(0, 5),
+    [43, 5, 9, "edit", "แก้ไขแบบเต็ม"]
+  );
 
   console.log(`\n${pass} passed, ${failures.length} failed`);
   for (const failure of failures) console.log(`  FAIL ${failure}`);

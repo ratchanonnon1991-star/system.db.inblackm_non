@@ -9,6 +9,7 @@ import { findConnectionWithSecret, listConnections } from "@/server/connections-
 import { deleteGamelistPacksForGame } from "@/server/gameinfo-gamelist-packs";
 import { deleteGamelistTutorialForGame } from "@/server/gameinfo-gamelist-tutorial";
 import { deleteGamelistImageForGame } from "@/server/gameinfo-gamelist-image";
+import { deleteGamelistLinksForGame } from "@/server/gameinfo-gamelist-links";
 
 const CONNECTION_NAME = "gameinfo";
 
@@ -48,6 +49,18 @@ function ensureOrderSchema(connection) {
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS gamelist_service_status (
+          game_id    INTEGER PRIMARY KEY,
+          enabled    BOOLEAN NOT NULL DEFAULT TRUE,
+          is_new     BOOLEAN NOT NULL DEFAULT FALSE,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await client.query(`
+        ALTER TABLE gamelist_service_status
+        ADD COLUMN IF NOT EXISTS is_new BOOLEAN NOT NULL DEFAULT FALSE
+      `);
     } finally {
       client.release();
     }
@@ -73,6 +86,8 @@ function mapRow(row) {
   return {
     id: row.id,
     sortOrder: row.sort_order ?? null,
+    serviceEnabled: row.service_enabled !== false,
+    serviceNew: row.service_new === true,
     game: row.game,
     region: row.region,
     platform: row.platform || "",
@@ -117,9 +132,12 @@ export async function listGameListRows() {
   const client = await pool.connect();
   try {
     const result = await client.query(`
-      SELECT g.*, o.sort_order
+      SELECT g.*, o.sort_order,
+             COALESCE(s.enabled, TRUE) AS service_enabled,
+             COALESCE(s.is_new, FALSE) AS service_new
       FROM game_list g
       LEFT JOIN gamelist_order o ON o.game_id = g.id
+      LEFT JOIN gamelist_service_status s ON s.game_id = g.id
       ORDER BY (o.sort_order IS NULL), o.sort_order ASC, g.id ASC
     `);
     return result.rows.map(mapRow);
@@ -156,7 +174,15 @@ export async function getGameListRow(id) {
   const pool = await getReadyPool();
   const client = await pool.connect();
   try {
-    const result = await client.query(`SELECT * FROM game_list WHERE id = $1`, [id]);
+    const result = await client.query(
+      `SELECT g.*,
+              COALESCE(s.enabled, TRUE) AS service_enabled,
+              COALESCE(s.is_new, FALSE) AS service_new
+         FROM game_list g
+         LEFT JOIN gamelist_service_status s ON s.game_id = g.id
+        WHERE g.id = $1`,
+      [id]
+    );
     const row = result.rows[0];
     return row ? mapRow(row) : null;
   } finally {
@@ -192,6 +218,45 @@ export async function createGameListRow(fields) {
   }
 }
 
+/** CSV batch insert: validation happens before this call and the transaction
+ * guarantees an all-or-nothing result if any row fails at the database. */
+export async function createGameListRows(fieldsList) {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  const created = [];
+  try {
+    await client.query("BEGIN");
+    for (const fields of fieldsList) {
+      const result = await client.query(
+        `INSERT INTO game_list (game, region, platform, server, vpn, channel, rank_stars, bot_manual, is_repeatable, link, remark)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         RETURNING *`,
+        [
+          normalizeFieldValue("game", fields.game),
+          normalizeFieldValue("region", fields.region),
+          fields.platform ? String(fields.platform) : null,
+          fields.server ? String(fields.server) : null,
+          normalizeFieldValue("vpn", "NO VPN"),
+          "",
+          0,
+          normalizeFieldValue("botManual", fields.botManual),
+          false,
+          fields.link ? String(fields.link) : null,
+          null,
+        ]
+      );
+      created.push(mapRow(result.rows[0]));
+    }
+    await client.query("COMMIT");
+    return created;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function updateGameListRow(id, fields) {
   const pool = await getReadyPool();
   const sets = [];
@@ -219,16 +284,48 @@ export async function updateGameListRow(id, fields) {
   }
 }
 
+export async function setGameListServiceStatus(gameIds, enabled, isNew = false) {
+  const ids = [...new Set((gameIds || []).map(Number).filter((id) => Number.isInteger(id) && id > 0))];
+  if (ids.length === 0) throw createHttpError("กรุณาเลือกเกม", 400);
+  const normalizedNew = isNew === true;
+  const normalizedEnabled = normalizedNew || enabled === true;
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const existing = await client.query(`SELECT id FROM game_list WHERE id = ANY($1::int[]) FOR UPDATE`, [ids]);
+    if (existing.rows.length !== ids.length) throw createHttpError("มีเกมที่เลือกไม่อยู่ในระบบ", 404);
+    for (const gameId of ids) {
+      await client.query(
+        `INSERT INTO gamelist_service_status (game_id, enabled, is_new, updated_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (game_id) DO UPDATE
+         SET enabled = EXCLUDED.enabled, is_new = EXCLUDED.is_new, updated_at = NOW()`,
+        [gameId, normalizedEnabled, normalizedNew]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+  return { gameIds: ids, enabled: normalizedEnabled, isNew: normalizedNew };
+}
+
 export async function deleteGameListRow(id) {
   const pool = await getReadyPool();
   const client = await pool.connect();
   try {
     await client.query(`DELETE FROM game_list WHERE id = $1`, [id]);
     await client.query(`DELETE FROM gamelist_order WHERE game_id = $1`, [id]);
+    await client.query(`DELETE FROM gamelist_service_status WHERE game_id = $1`, [id]);
   } finally {
     client.release();
   }
   await deleteGamelistPacksForGame(id);
   await deleteGamelistTutorialForGame(id);
   await deleteGamelistImageForGame(id);
+  await deleteGamelistLinksForGame(id);
 }

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   Database,
+  Folders,
   Gamepad2,
   History,
   Layers,
@@ -16,9 +17,25 @@ import {
   X,
 } from "lucide-react";
 import NextLink from "next/link";
+import { Inter } from "next/font/google";
 import { apiJson } from "@/lib/api-json";
 import TurnstileWidget from "@/components/turnstile-widget";
 import { UsersModal } from "@/components/gamedb-modals";
+import LLThemeToggle from "@/components/ll-theme-toggle";
+import { useLLTheme } from "@/lib/ll-theme";
+
+// Linear Light/Dark Mode type (see ~/.claude/skills/linear-light-dark-mode):
+// Inter at weight 400-700 substitutes for the proprietary Linear
+// Display/Text families, only on the login screen and this hub -- the
+// authenticated workspace at /systemdb keeps its existing zinc/system-ui
+// look untouched. Light is the default theme (the `ll-` token block in
+// globals.css), with a user-toggleable dark mode that reuses Linear's
+// original near-black palette -- see useLLTheme.
+const linearSans = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-linear-sans",
+});
 
 // Public by design: it is only where the "เข้าสู่ระบบด้วยบัญชี experience" button
 // points the browser, never anything the server trusts on its own.
@@ -49,8 +66,8 @@ export default function GamedbPage() {
 
   if (checkingMe) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-zinc-50 to-zinc-100">
-        <span className="flex animate-pulse items-center gap-1 text-sm font-bold text-zinc-500">
+      <div className="flex min-h-screen items-center justify-center bg-ll-canvas">
+        <span className="flex animate-pulse items-center gap-1 text-sm text-ll-ink-subtle">
           <Loader2 size={16} className="animate-spin" /> กำลังตรวจสอบสิทธิ์...
         </span>
       </div>
@@ -82,12 +99,20 @@ const SYSTEMS = [
     icon: Gamepad2,
     href: "/gameinfo/th",
   },
+  {
+    key: "projectm",
+    label: "Projectm",
+    desc: "Itune — ฝั่ง Admin และ Topup",
+    icon: Folders,
+    href: "/projectm/th",
+  },
 ];
 
 function SystemHub({ me, onLoggedOut }) {
   const isSuperAdmin = me.role === "admin";
   const isTemplateUser = me.role === "user";
   const [usersModal, setUsersModal] = useState(false);
+  const [theme, toggleTheme] = useLLTheme();
   const [views, setViews] = useState([]);
   const [viewsLoading, setViewsLoading] = useState(true);
 
@@ -115,18 +140,25 @@ function SystemHub({ me, onLoggedOut }) {
   const initial = (me.displayName || me.username || "?").trim().slice(0, 1).toUpperCase();
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-zinc-50 to-zinc-100">
-      <header className="border-b border-zinc-200 bg-white/90 backdrop-blur">
+    <div
+      data-theme={theme}
+      className={`${linearSans.variable} min-h-screen bg-ll-canvas`}
+      style={{ fontFamily: "var(--font-linear-sans), sans-serif" }}
+    >
+      <LLThemeToggle theme={theme} onToggle={toggleTheme} />
+      <header className="border-b border-ll-hairline bg-ll-surface-1">
         <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-600 text-sm font-black text-white">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-ll-emphasis-bg text-sm font-semibold text-ll-emphasis-text">
               {initial}
             </span>
             <div className="text-[11px] font-semibold leading-tight">
-              <p className="text-sm font-black text-zinc-800">{me.displayName || me.username}</p>
+              <p className="text-sm font-medium text-ll-ink">{me.displayName || me.username}</p>
               <p
                 className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide ${
-                  isSuperAdmin ? "bg-red-100 text-red-700" : "bg-zinc-100 text-zinc-500"
+                  isSuperAdmin
+                    ? "bg-ll-emphasis-bg text-ll-emphasis-text"
+                    : "bg-ll-surface-2 text-ll-ink-subtle"
                 }`}
               >
                 {roleLabel}
@@ -138,7 +170,7 @@ function SystemHub({ me, onLoggedOut }) {
               <button
                 type="button"
                 onClick={() => setUsersModal(true)}
-                className="flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-black text-zinc-600 transition hover:border-zinc-300 hover:bg-zinc-50"
+                className="flex items-center gap-1 rounded-md border border-ll-hairline-strong px-3 py-1.5 text-[12px] font-medium text-ll-ink transition hover:bg-ll-surface-2"
               >
                 <Users size={13} /> จัดการสิทธิ์ผู้ใช้
               </button>
@@ -146,7 +178,7 @@ function SystemHub({ me, onLoggedOut }) {
             {isSuperAdmin && (
               <NextLink
                 href="/log"
-                className="flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-black text-zinc-600 transition hover:border-zinc-300 hover:bg-zinc-50"
+                className="flex items-center gap-1 rounded-md border border-ll-hairline-strong px-3 py-1.5 text-[12px] font-medium text-ll-ink transition hover:bg-ll-surface-2"
                 title="ประวัติการใช้งาน (การเข้าสู่ระบบ / แก้ไขข้อมูล)"
               >
                 <History size={13} /> ประวัติการใช้งาน
@@ -155,7 +187,7 @@ function SystemHub({ me, onLoggedOut }) {
             {isSuperAdmin && (
               <NextLink
                 href="/createdb"
-                className="flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-black text-zinc-600 transition hover:border-zinc-300 hover:bg-zinc-50"
+                className="flex items-center gap-1 rounded-md border border-ll-hairline-strong px-3 py-1.5 text-[12px] font-medium text-ll-ink transition hover:bg-ll-surface-2"
                 title="สร้างตารางใหม่ / เพิ่มคอลัมน์ในตารางเดิม"
               >
                 <Table2 size={13} /> สร้างตาราง/คอลัมน์
@@ -165,7 +197,7 @@ function SystemHub({ me, onLoggedOut }) {
               type="button"
               onClick={logout}
               title="ออกจากระบบ"
-              className="rounded-full border border-zinc-200 bg-white p-2 text-zinc-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+              className="rounded-md border border-ll-hairline-strong p-2 text-ll-ink-subtle transition hover:bg-ll-primary-subtle-bg hover:text-ll-primary-subtle-text"
             >
               <LogOut size={14} />
             </button>
@@ -175,10 +207,10 @@ function SystemHub({ me, onLoggedOut }) {
 
       <main className="mx-auto flex max-w-3xl flex-col gap-8 px-4 py-12 sm:px-6">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-zinc-800">
+          <h1 className="text-2xl font-semibold tracking-tight text-ll-ink">
             สวัสดี, {me.displayName || me.username} 👋
           </h1>
-          <p className="mt-1 text-sm font-semibold text-zinc-500">
+          <p className="mt-1 text-sm text-ll-ink-subtle">
             {isTemplateUser ? "เลือกหน้าจอที่ต้องการเข้าใช้งาน" : "เลือกระบบที่ต้องการเข้าใช้งาน"}
           </p>
         </div>
@@ -199,7 +231,7 @@ function SystemHub({ me, onLoggedOut }) {
                 <NextLink
                   key={system.key}
                   href={system.href}
-                  className="group flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-md"
+                  className="group flex flex-col gap-3 rounded-lg border border-ll-hairline bg-ll-surface-1 p-5 shadow-[var(--ll-shadow-card)] transition hover:border-ll-hairline-strong hover:bg-ll-surface-2"
                 >
                   <span
                     className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${accent}`}
@@ -207,8 +239,8 @@ function SystemHub({ me, onLoggedOut }) {
                     <Icon size={22} />
                   </span>
                   <span>
-                    <span className="block text-base font-black text-zinc-800">{system.label}</span>
-                    <span className="mt-0.5 block text-xs font-semibold leading-relaxed text-zinc-500">
+                    <span className="block text-base font-medium text-ll-ink">{system.label}</span>
+                    <span className="mt-0.5 block text-[13px] leading-relaxed text-ll-ink-subtle">
                       {system.desc}
                     </span>
                   </span>
@@ -233,32 +265,32 @@ function SystemHub({ me, onLoggedOut }) {
             leaving the page looking simply blank/broken. */}
         {(viewsLoading || views.length > 0 || isTemplateUser) && (
           <div>
-            <h2 className="mb-2.5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-zinc-400">
+            <h2 className="mb-2.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-ll-ink-tertiary">
               <Layers size={12} />{" "}
               {isTemplateUser ? "หน้าจอของคุณ" : "ทางลัดเข้าเทมเพลตหน้าจอ (อยู่ใน System DB)"}
             </h2>
-            <div className="rounded-2xl border border-zinc-200 bg-white p-2 shadow-sm">
+            <div className="rounded-lg border border-ll-hairline bg-ll-surface-1 p-2 shadow-[var(--ll-shadow-card)]">
               {viewsLoading ? (
-                <p className="flex items-center gap-2 px-3 py-3 text-xs font-bold text-zinc-400">
+                <p className="flex items-center gap-2 px-3 py-3 text-[13px] text-ll-ink-subtle">
                   <Loader2 size={13} className="animate-spin" /> กำลังโหลด...
                 </p>
               ) : views.length === 0 ? (
-                <p className="px-3 py-4 text-center text-xs font-semibold text-zinc-400">
+                <p className="px-3 py-4 text-center text-[13px] text-ll-ink-subtle">
                   ยังไม่มีหน้าจอที่กำหนดให้บัญชีนี้ — ติดต่อผู้ดูแลระบบ
                 </p>
               ) : (
-                <div className="divide-y divide-zinc-100">
+                <div className="divide-y divide-ll-hairline">
                   {views.map((view) => (
                     <NextLink
                       key={view.id}
                       href={`/view/${view.id}`}
-                      className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition hover:bg-zinc-50"
+                      className="flex items-center gap-2.5 rounded-md px-3 py-2.5 text-left transition hover:bg-ll-surface-2"
                     >
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-ll-surface-2 text-ll-ink-subtle">
                         <Layers size={14} />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-1.5 truncate text-xs font-black text-zinc-700">
+                        <span className="flex items-center gap-1.5 truncate text-[13px] font-medium text-ll-ink">
                           {view.name}
                           {view.isDefault && (
                             <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-black text-amber-700">
@@ -271,11 +303,11 @@ function SystemHub({ me, onLoggedOut }) {
                             </span>
                           )}
                         </span>
-                        <span className="block truncate text-[10px] text-zinc-400">
+                        <span className="block truncate text-[11px] text-ll-ink-tertiary">
                           {view.description || `${view.config?.panels?.length || 0} ตาราง`}
                         </span>
                       </span>
-                      <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-zinc-500">
+                      <span className="shrink-0 rounded-full bg-ll-surface-2 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-ll-ink-subtle">
                         เทมเพลต
                       </span>
                     </NextLink>
@@ -298,6 +330,7 @@ function LoginScreen({ onLoggedIn }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [ssoError, setSsoError] = useState("");
+  const [theme, toggleTheme] = useLLTheme();
   const [turnstileToken, setTurnstileToken] = useState("");
   const [turnstileAttempt, setTurnstileAttempt] = useState(0);
   const [turnstileConfig, setTurnstileConfig] = useState({
@@ -396,37 +429,47 @@ function LoginScreen({ onLoggedIn }) {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-zinc-50 to-zinc-100 p-6">
+    <div
+      data-theme={theme}
+      className={`${linearSans.variable} flex min-h-screen flex-col items-center justify-center bg-ll-canvas p-6`}
+      style={{ fontFamily: "var(--font-linear-sans), sans-serif" }}
+    >
+      <LLThemeToggle theme={theme} onToggle={toggleTheme} />
       <form
         onSubmit={submit}
-        className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-7 shadow-lg"
+        className="w-full max-w-sm rounded-lg border border-ll-hairline bg-ll-surface-1 p-8 shadow-[var(--ll-shadow-modal)]"
       >
-        <div className="mb-6 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-red-600 text-white shadow-sm shadow-red-600/30">
-            <Lock size={24} />
+        <div className="mb-7 text-center">
+          <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-md bg-ll-emphasis-bg text-ll-emphasis-text">
+            <Lock size={18} />
           </div>
-          <h1 className="text-lg font-black tracking-tight text-zinc-800">GameDB</h1>
-          <p className="mt-1 text-[11px] font-semibold text-zinc-500">
+          <h1
+            className="font-semibold text-ll-ink"
+            style={{ fontSize: 22, lineHeight: 1.25, letterSpacing: "-0.4px" }}
+          >
+            GameDB
+          </h1>
+          <p className="mt-1.5 text-[14px] text-ll-ink-subtle">
             เข้าสู่ระบบด้วยบัญชี GameDB
           </p>
         </div>
 
-        <label className="mb-1 block text-[10px] font-black text-zinc-500">Username</label>
+        <label className="mb-1 block text-[12px] font-medium text-ll-ink-subtle">Username</label>
         <input
           type="text"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           autoComplete="username"
           autoFocus
-          className="mb-3.5 h-11 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 text-xs font-semibold outline-none transition focus:border-red-500 focus:bg-white focus:ring-2 focus:ring-red-500/10"
+          className="mb-3.5 h-10 w-full rounded-md border border-ll-hairline-strong bg-ll-surface-2 px-3 text-[14px] text-ll-ink outline-none transition focus:border-ll-primary focus:bg-ll-surface-1"
         />
-        <label className="mb-1 block text-[10px] font-black text-zinc-500">รหัสผ่าน</label>
+        <label className="mb-1 block text-[12px] font-medium text-ll-ink-subtle">รหัสผ่าน</label>
         <input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="current-password"
-          className="mb-4 h-11 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 text-xs font-semibold outline-none transition focus:border-red-500 focus:bg-white focus:ring-2 focus:ring-red-500/10"
+          className="mb-4 h-10 w-full rounded-md border border-ll-hairline-strong bg-ll-surface-2 px-3 text-[14px] text-ll-ink outline-none transition focus:border-ll-primary focus:bg-ll-surface-1"
         />
 
         {turnstileConfig.enabled && (
@@ -440,7 +483,7 @@ function LoginScreen({ onLoggedIn }) {
         )}
 
         {(turnstileConfig.error || turnstileConfig.misconfigured) && (
-          <div className="mb-3.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[11px] font-bold text-amber-700">
+          <div className="mb-3.5 rounded-md border border-ll-hairline-strong bg-ll-surface-2 px-3 py-2.5 text-[13px] text-ll-ink-subtle">
             {turnstileConfig.misconfigured
               ? "ระบบ Turnstile ยังตั้งค่าไม่ครบ กรุณาติดต่อผู้ดูแล"
               : turnstileConfig.error}
@@ -448,7 +491,7 @@ function LoginScreen({ onLoggedIn }) {
         )}
 
         {error && (
-          <div className="mb-3.5 rounded-xl border border-red-200 bg-red-50 px-3.5 py-2 text-[11px] font-bold text-red-600">
+          <div className="mb-3.5 rounded-md border border-ll-primary/20 bg-ll-primary-subtle-bg px-3 py-2 text-[13px] text-ll-primary-subtle-text">
             {error}
           </div>
         )}
@@ -464,7 +507,7 @@ function LoginScreen({ onLoggedIn }) {
             turnstileConfig.misconfigured ||
             (turnstileConfig.enabled && !turnstileToken)
           }
-          className="flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-red-600 text-xs font-black text-white shadow-sm shadow-red-600/20 transition hover:bg-red-700 hover:shadow-md disabled:opacity-50 disabled:shadow-none"
+          className="flex h-10 w-full items-center justify-center gap-1.5 rounded-md bg-ll-primary text-[14px] font-medium text-ll-on-primary transition hover:bg-ll-primary-hover disabled:opacity-50"
         >
           {submitting ? <Loader2 size={14} className="animate-spin" /> : <Lock size={13} />}
           เข้าสู่ระบบ
@@ -472,14 +515,14 @@ function LoginScreen({ onLoggedIn }) {
 
         {hiringSsoUrl && (
           <>
-            <div className="my-4 flex items-center gap-2 text-[9px] font-black uppercase tracking-wider text-zinc-300">
-              <span className="h-px flex-1 bg-zinc-200" />
+            <div className="my-4 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-ll-ink-tertiary">
+              <span className="h-px flex-1 bg-ll-hairline" />
               หรือ
-              <span className="h-px flex-1 bg-zinc-200" />
+              <span className="h-px flex-1 bg-ll-hairline" />
             </div>
             <a
               href={hiringSsoUrl}
-              className="flex h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-zinc-200 text-xs font-black text-zinc-600 transition hover:border-zinc-300 hover:bg-zinc-50"
+              className="flex h-10 w-full items-center justify-center gap-1.5 rounded-md border border-ll-hairline-strong text-[14px] font-medium text-ll-ink transition hover:bg-ll-surface-2"
             >
               เข้าสู่ระบบด้วยบัญชี experience
             </a>
@@ -489,16 +532,16 @@ function LoginScreen({ onLoggedIn }) {
 
       {ssoError && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl">
-            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+          <div className="w-full max-w-sm rounded-lg border border-ll-hairline bg-ll-surface-1 p-6 text-center shadow-[var(--ll-shadow-modal)]">
+            <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-md bg-ll-primary-subtle-bg text-ll-primary-subtle-text">
               <AlertTriangle size={22} />
             </div>
-            <h2 className="mb-1 text-sm font-black text-zinc-800">เข้าสู่ระบบด้วยบัญชี experience ไม่สำเร็จ</h2>
-            <p className="mb-4 text-[11px] font-semibold leading-relaxed text-zinc-500">{ssoError}</p>
+            <h2 className="mb-1 text-[15px] font-semibold text-ll-ink">เข้าสู่ระบบด้วยบัญชี experience ไม่สำเร็จ</h2>
+            <p className="mb-4 text-[13px] leading-relaxed text-ll-ink-subtle">{ssoError}</p>
             <button
               type="button"
               onClick={() => setSsoError("")}
-              className="flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-red-600 text-xs font-black text-white transition hover:bg-red-700"
+              className="flex h-10 w-full items-center justify-center gap-1.5 rounded-md bg-ll-primary text-[14px] font-medium text-ll-on-primary transition hover:bg-ll-primary-hover"
             >
               <X size={13} /> ปิด
             </button>

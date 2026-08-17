@@ -29,6 +29,16 @@ function sanitizeStringArray(value) {
     : [];
 }
 
+function sanitizeGameinfoRowOverrides(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const overrides = {};
+  for (const [packId, formula] of Object.entries(value).slice(0, 2000)) {
+    if (typeof formula !== "string" || !formula.trim()) continue;
+    overrides[String(packId).slice(0, 128)] = formula.trim().slice(0, 500);
+  }
+  return overrides;
+}
+
 // Shared with the gameinfo module: a game's computed_column JSONB column
 // holds the same shape, so both surfaces can edit it with this one sanitizer.
 export function sanitizeComputedColumns(raw) {
@@ -48,6 +58,13 @@ export function sanitizeComputedColumns(raw) {
           formula: col.formula.slice(0, 500),
           // Absent on every column saved before formulas could return text.
           type: COMPUTED_TYPES.includes(col.type) ? col.type : "number",
+          // Plain display text only; React escapes it when rendered. Keep the
+          // exact spacing so values such as "USD " can control presentation.
+          symbol:
+            typeof col.symbol === "string" && col.symbol.trim()
+              ? col.symbol.slice(0, 24)
+              : "",
+          rowOverrides: sanitizeGameinfoRowOverrides(col.rowOverrides),
         }))
     : [];
 }

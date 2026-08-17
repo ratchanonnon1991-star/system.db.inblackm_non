@@ -6,6 +6,7 @@ import { buildPackSuggestions } from "@/lib/gameinfo-suggestions";
 import GameinfoPackEditor from "@/components/gameinfo-pack-editor";
 import GameinfoErrorNotice from "@/components/gameinfo-error-notice";
 import GameinfoBackLink from "@/components/gameinfo-back-link";
+import { getGameinfoFormulaVariables } from "@/server/gameinfo-formula-variables";
 
 export const metadata = {
   title: "GameDB — แพ็กเกม",
@@ -26,10 +27,18 @@ export default async function GameinfoGamelistPacksPage({ params }) {
   let row;
   let packs;
   let allChannels = [];
+  let formulaVariables = [];
   try {
     row = await getGameListRow(numericId);
     if (row) {
-      [packs, allChannels] = await Promise.all([getGamelistPacks(row.id), listAllGamelistChannels()]);
+      const [packData, channels, variableData] = await Promise.all([
+        getGamelistPacks(row.id),
+        listAllGamelistChannels(),
+        getGameinfoFormulaVariables(row.id),
+      ]);
+      packs = packData;
+      allChannels = channels;
+      formulaVariables = variableData.variables;
     }
   } catch (err) {
     return (
@@ -48,6 +57,8 @@ export default async function GameinfoGamelistPacksPage({ params }) {
     server: row.server,
     currencies: packs.currencies,
     computedColumns: packs.computedColumns,
+    costProfiles: packs.costProfiles,
+    formulaVariables,
   };
 
   return (
@@ -60,6 +71,7 @@ export default async function GameinfoGamelistPacksPage({ params }) {
       <GameinfoPackEditor
         game={game}
         lang={lang}
+        userId={user.id}
         // channels: shared across every game (not just this one's own packs)
         // so a channel typed once while editing any game is immediately
         // offered again while editing any other — see

@@ -4,10 +4,18 @@ import { listGameListRows } from "@/server/gameinfo-gamelist";
 import {
   listGamelistChannelsByGame,
   listGamelistPackCountByGame,
+  listGamelistPackServiceByGame,
   listGamelistVpnByGame,
 } from "@/server/gameinfo-gamelist-packs";
-import { listGamelistTutorialPresence } from "@/server/gameinfo-gamelist-tutorial";
+import {
+  listGamelistTutorialPresence,
+  listGamelistWarningPresence,
+} from "@/server/gameinfo-gamelist-tutorial";
 import { listGamelistImageByGame } from "@/server/gameinfo-gamelist-image";
+import {
+  legacyGamelistLinks,
+  listGamelistLinksByGame,
+} from "@/server/gameinfo-gamelist-links";
 import GameinfoGamelistTable from "@/components/gameinfo-gamelist-table";
 import GameinfoErrorNotice from "@/components/gameinfo-error-notice";
 
@@ -32,22 +40,37 @@ export default async function GameinfoHomePage({ params, searchParams }) {
   let rows = null;
   let loadError = null;
   try {
-    const [gameListRows, channelsByGame, vpnByGame, packCountByGame, tutorialPresence, imageByGame] =
+    const [gameListRows, channelsByGame, vpnByGame, packCountByGame, packServiceByGame, tutorialPresence, warningPresence, imageByGame, linksByGame] =
       await Promise.all([
         listGameListRows(),
         listGamelistChannelsByGame(),
         listGamelistVpnByGame(),
         listGamelistPackCountByGame(),
+        listGamelistPackServiceByGame(),
         listGamelistTutorialPresence(),
+        listGamelistWarningPresence(),
         listGamelistImageByGame(),
+        listGamelistLinksByGame(),
       ]);
     rows = gameListRows.map((r) => ({
       ...r,
       channels: channelsByGame[r.id] || { main: [], secondary: [] },
       vpnComputed: vpnByGame[r.id] ? "YES" : "NO",
       packCount: packCountByGame[r.id] || 0,
+      packDisabledCount: packServiceByGame[r.id]?.disabled || 0,
+      serviceStatus: r.serviceNew
+        ? "new"
+        : !r.serviceEnabled
+        ? "offline"
+        : (packServiceByGame[r.id]?.disabled || 0) > 0
+          ? "partial"
+          : "online",
       hasTutorial: Boolean(tutorialPresence[r.id]),
+      hasWarning: Boolean(warningPresence[r.id]),
       image: imageByGame[r.id] || "",
+      links: Object.prototype.hasOwnProperty.call(linksByGame, r.id)
+        ? linksByGame[r.id]
+        : legacyGamelistLinks(r.link),
     }));
   } catch (err) {
     loadError = err.message || "โหลดข้อมูลไม่สำเร็จ";

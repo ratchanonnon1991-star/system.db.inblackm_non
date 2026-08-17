@@ -38,9 +38,14 @@ function ensureSchema(connection) {
         CREATE TABLE IF NOT EXISTS gamelist_tutorials (
           game_id    INTEGER PRIMARY KEY,
           data       JSONB NOT NULL DEFAULT '{"steps":[]}'::jsonb,
+          warning_data JSONB NOT NULL DEFAULT '{"categories":[]}'::jsonb,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
+      `);
+      await client.query(`
+        ALTER TABLE gamelist_tutorials
+        ADD COLUMN IF NOT EXISTS warning_data JSONB NOT NULL DEFAULT '{"categories":[]}'::jsonb
       `);
     } finally {
       client.release();
@@ -141,6 +146,39 @@ export async function saveGamelistTutorial(gameId, categories) {
   }
 }
 
+/** Separate caution content for the same game. It shares the tutorial row
+ * only as storage; warning_data is loaded, saved, and displayed independently. */
+export async function getGamelistWarning(gameId) {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `SELECT warning_data FROM gamelist_tutorials WHERE game_id = $1`,
+      [gameId]
+    );
+    return { categories: normalizeCategories(result.rows[0]?.warning_data) };
+  } finally {
+    client.release();
+  }
+}
+
+export async function saveGamelistWarning(gameId, categories) {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    const normalized = normalizeCategories({ categories });
+    await client.query(
+      `INSERT INTO gamelist_tutorials (game_id, data, warning_data, updated_at)
+       VALUES ($1, '{"categories":[]}'::jsonb, $2, NOW())
+       ON CONFLICT (game_id) DO UPDATE SET warning_data = $2, updated_at = NOW()`,
+      [gameId, JSON.stringify({ categories: normalized })]
+    );
+    return { categories: normalized };
+  } finally {
+    client.release();
+  }
+}
+
 /** Cleanup hook for deleteGameListRow() — game_list isn't ours to put an FK
  * CASCADE on, so this has to be called explicitly, same as
  * deleteGamelistPacksForGame(). */
@@ -182,6 +220,24 @@ export async function listAllGamelistTutorialCategories() {
   }
 }
 
+export async function listAllGamelistWarningCategories() {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`SELECT warning_data FROM gamelist_tutorials`);
+    const all = new Set();
+    for (const row of result.rows) {
+      for (const category of row.warning_data?.categories ?? []) {
+        const name = String(category?.name ?? "").trim();
+        if (name) all.add(name);
+      }
+    }
+    return [...all].sort((a, b) => a.localeCompare(b, "th"));
+  } finally {
+    client.release();
+  }
+}
+
 /** { [gameId]: true } for games that have at least one tutorial step (inside
  * any category, or in the older ungrouped shape) — lets the list table show
  * a filled vs. empty Tutorial button without a per-row query. */
@@ -195,6 +251,25 @@ export async function listGamelistTutorialPresence() {
         SELECT 1 FROM jsonb_array_elements(COALESCE(data->'categories', '[]'::jsonb)) c
         WHERE jsonb_array_length(COALESCE(c->'steps', '[]'::jsonb)) > 0
       ) OR jsonb_array_length(COALESCE(data->'steps', '[]'::jsonb)) > 0
+    `);
+    const out = {};
+    for (const row of result.rows) out[row.game_id] = true;
+    return out;
+  } finally {
+    client.release();
+  }
+}
+
+export async function listGamelistWarningPresence() {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT game_id FROM gamelist_tutorials
+      WHERE EXISTS (
+        SELECT 1 FROM jsonb_array_elements(COALESCE(warning_data->'categories', '[]'::jsonb)) c
+        WHERE jsonb_array_length(COALESCE(c->'steps', '[]'::jsonb)) > 0
+      )
     `);
     const out = {};
     for (const row of result.rows) out[row.game_id] = true;

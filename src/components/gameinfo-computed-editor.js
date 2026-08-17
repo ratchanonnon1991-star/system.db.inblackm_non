@@ -8,8 +8,9 @@ import {
   inferFormulaType,
   parseFormula,
 } from "@/lib/gamedb-formula";
-import { formatCell } from "@/lib/gamedb-layout";
 import { GAMEINFO_FIELD_NAMES } from "@/lib/gameinfo-formula-fields";
+import { formatGameinfoPackColumnValue, GAMEINFO_PACK_SYMBOLS } from "@/lib/gameinfo-pack-columns";
+import { validateGameinfoComputedDependencies } from "@/lib/gameinfo-computed-evaluator";
 
 // Same parser, validation and function library as the systemdb-side formula
 // editor (gamedb-modals.js's ComputedColumnModal) — this one is a full
@@ -35,12 +36,25 @@ const FUNCTION_HELP = [
   ["ตัวเลข", "ROUND · ABS · MIN · MAX · SUM"],
 ];
 
-export default function GameinfoComputedEditor({ sampleRow, onAdd, onClose }) {
-  const [label, setLabel] = useState("");
-  const [formula, setFormula] = useState("");
+const EMPTY_FIELD_NAMES = [];
+
+export default function GameinfoComputedEditor({
+  sampleRow,
+  otherColumns = [],
+  onAdd,
+  onSave,
+  onClose,
+  initialColumn = null,
+  extraFieldNames = EMPTY_FIELD_NAMES,
+}) {
+  const editingMainFormula = Boolean(initialColumn);
+  const [label, setLabel] = useState(initialColumn?.label || "");
+  const [formula, setFormula] = useState(initialColumn?.formula || "");
   // Empty until touched, so the type follows the formula while the user is
   // still writing it and stops the moment they choose one themselves.
-  const [typeChoice, setTypeChoice] = useState("");
+  const [typeChoice, setTypeChoice] = useState(initialColumn?.type || "");
+  const [symbol, setSymbol] = useState(initialColumn?.symbol || "");
+  const [resetOverrides, setResetOverrides] = useState(false);
 
   useEffect(() => {
     function onKey(e) {
@@ -55,21 +69,37 @@ export default function GameinfoComputedEditor({ sampleRow, onAdd, onClose }) {
     try {
       const ast = parseFormula(formula);
       const refs = [...extractFormulaRefs(ast)];
-      const unknown = refs.filter((name) => !GAMEINFO_FIELD_NAMES.includes(name));
+      const availableNames = [...GAMEINFO_FIELD_NAMES, ...extraFieldNames, ...otherColumns.map((column) => column.label)];
+      const unknown = refs.filter((name) => !availableNames.includes(name) && name !== label.trim());
       if (unknown.length > 0) {
         return { ok: false, message: `ไม่รู้จักคอลัมน์: ${unknown.join(", ")}`, type: "number" };
+      }
+      const candidate = {
+        key: initialColumn?.key || "__draft__",
+        label: label.trim() || "__draft__",
+        formula: formula.trim(),
+      };
+      const dependencyErrors = validateGameinfoComputedDependencies([
+        ...otherColumns.filter((column) => column.key !== candidate.key),
+        candidate,
+      ], extraFieldNames);
+      if (dependencyErrors.length) {
+        return { ok: false, message: dependencyErrors[0], type: "number" };
       }
       const type = inferFormulaType(ast);
       let preview = "";
       if (sampleRow) {
         const value = evaluateFormula(ast, (name) => sampleRow[name]);
-        preview = ` · แถวแรกได้ ${formatCell(value, typeChoice || type)}`;
+        preview = ` · แถวแรกได้ ${formatGameinfoPackColumnValue(value, {
+          type: typeChoice || type,
+          symbol: (typeChoice || type) === "number" ? symbol : "",
+        })}`;
       }
       return { ok: true, message: `สูตรถูกต้อง${preview}`, type };
     } catch (err) {
       return { ok: false, message: err.message, type: "number" };
     }
-  }, [formula, sampleRow, typeChoice]);
+  }, [extraFieldNames, formula, initialColumn, label, otherColumns, sampleRow, symbol, typeChoice]);
 
   const type = typeChoice || validation.type;
   const missing = [
@@ -80,7 +110,15 @@ export default function GameinfoComputedEditor({ sampleRow, onAdd, onClose }) {
 
   function submit() {
     if (!label.trim() || !validation.ok) return;
-    onAdd({ key: `col_${Date.now()}`, label: label.trim(), formula: formula.trim(), type });
+    const nextColumn = {
+      key: initialColumn?.key || `col_${Date.now()}`,
+      label: label.trim(),
+      formula: formula.trim(),
+      type,
+      symbol: type === "number" ? symbol : "",
+    };
+    if (editingMainFormula) onSave?.(nextColumn, { resetOverrides });
+    else onAdd(nextColumn);
   }
 
   return (
@@ -93,7 +131,7 @@ export default function GameinfoComputedEditor({ sampleRow, onAdd, onClose }) {
       <div className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-linear-hairline bg-linear-surface-1 shadow-2xl">
         <div className="flex items-center justify-between border-b border-linear-hairline px-5 py-3">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-linear-ink">
-            <Calculator size={15} className="text-linear-primary" /> เพิ่มคอลัมน์/สูตร
+            <Calculator size={15} className="text-linear-primary" /> {editingMainFormula ? "แก้ไขสูตรหลัก" : "เพิ่มคอลัมน์/สูตร"}
           </h2>
           <button
             type="button"
@@ -154,6 +192,45 @@ export default function GameinfoComputedEditor({ sampleRow, onAdd, onClose }) {
             </select>
           </div>
 
+          {editingMainFormula && Object.keys(initialColumn?.rowOverrides || {}).length > 0 ? (
+            <label className="flex cursor-pointer items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+              <input
+                type="checkbox"
+                checked={resetOverrides}
+                onChange={(event) => setResetOverrides(event.target.checked)}
+                className="mt-0.5 accent-linear-primary"
+              />
+              <span>
+                ใช้สูตรหลักนี้กับทุก pack และล้างสูตรเฉพาะแถวทั้งหมด ({Object.keys(initialColumn.rowOverrides).length} แถว)
+              </span>
+            </label>
+          ) : null}
+
+          <div>
+            <label htmlFor="gameinfo-computed-symbol" className="mb-1 block text-xs text-linear-ink-tertiary">
+              สัญลักษณ์ที่แสดง
+            </label>
+            <input
+              id="gameinfo-computed-symbol"
+              type="text"
+              value={type === "number" ? symbol : ""}
+              disabled={type !== "number"}
+              onChange={(e) => setSymbol(e.target.value)}
+              maxLength={24}
+              list="gameinfo-computed-symbol-suggestions"
+              placeholder="เช่น ฿, %, USD, Coins"
+              className="h-9 w-full rounded border border-linear-hairline-strong bg-linear-surface-2 px-2 text-sm text-linear-ink outline-none focus:border-linear-primary disabled:opacity-50"
+            />
+            <datalist id="gameinfo-computed-symbol-suggestions">
+              {GAMEINFO_PACK_SYMBOLS.map((value) => (
+                value ? <option key={value} value={value} /> : null
+              ))}
+            </datalist>
+            <p className="mt-1 text-[11px] text-linear-ink-tertiary">
+              พิมพ์สัญลักษณ์หรือข้อความเองได้ สูงสุด 24 ตัวอักษร และจะบันทึกพร้อมคอลัมน์
+            </p>
+          </div>
+
           <div className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
             <p className="mb-1.5 text-xs font-medium text-linear-ink-muted">ฟังก์ชันที่ใช้ได้</p>
             <dl className="space-y-1">
@@ -169,7 +246,7 @@ export default function GameinfoComputedEditor({ sampleRow, onAdd, onClose }) {
           <div>
             <p className="mb-1.5 text-xs text-linear-ink-tertiary">คอลัมน์ที่ใช้ได้ (กดเพื่อแทรก):</p>
             <div className="flex flex-wrap gap-1.5">
-              {GAMEINFO_FIELD_NAMES.map((name) => (
+              {[...new Set([...GAMEINFO_FIELD_NAMES, ...extraFieldNames, ...otherColumns.map((column) => column.label)])].map((name) => (
                 <button
                   key={name}
                   type="button"
@@ -196,7 +273,7 @@ export default function GameinfoComputedEditor({ sampleRow, onAdd, onClose }) {
             disabled={!label.trim() || !validation.ok}
             className="flex items-center gap-1.5 rounded-md bg-linear-primary px-4 py-2 text-sm font-medium text-white hover:bg-linear-primary-hover disabled:opacity-50"
           >
-            <Plus size={14} /> เพิ่มคอลัมน์
+            <Plus size={14} /> {editingMainFormula ? "บันทึกสูตรหลัก" : "เพิ่มคอลัมน์"}
           </button>
         </div>
       </div>

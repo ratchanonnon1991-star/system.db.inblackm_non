@@ -1,19 +1,41 @@
 "use client";
 
-import { useMemo } from "react";
-import { ExternalLink, Gamepad2, Image as ImageIcon } from "lucide-react";
-import { evaluateFormula, parseFormula } from "@/lib/gamedb-formula";
-import { formatCell as formatComputedCell } from "@/lib/gamedb-layout";
-import { resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
+import { useMemo, useState } from "react";
+import { Gamepad2, Image as ImageIcon } from "lucide-react";
+import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { parseFormula } from "@/lib/gamedb-formula";
+import {
+  buildGameinfoPackColumns,
+  formatGameinfoPackColumnValue,
+  matchesGameinfoPackFilters,
+} from "@/lib/gameinfo-pack-columns";
+import { getGameinfoFormulaDisplay } from "@/lib/gameinfo-formula-overrides";
+import { evaluateGameinfoComputedColumn } from "@/lib/gameinfo-computed-evaluator";
+import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
+import GameinfoRatePanel, { useGameinfoRates } from "./gameinfo-rate-panel";
 import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
+import { GameinfoGameLinkButtons } from "./gameinfo-game-links";
+import {
+  GameinfoPackColumnControls,
+  useGameinfoPackColumnLayout,
+} from "./gameinfo-pack-column-layout";
 
 // One game's game_list row, read-only (editing region/platform/server/etc.
 // happens on the list table or the pack editor, not here — see
 // gameinfo-gamelist-table.js and GameinfoPackEditor) plus its packs — same
 // currencies/computedColumns tree the pack editor saves to gamelist_packs,
 // so what's shown here always matches what "จัดการแพ็ก" last saved.
-export default function GameinfoGameView({ row, currencies, computedColumns }) {
+export default function GameinfoGameView({ row, currencies, computedColumns, costProfiles = [], formulaVariables = [], userId }) {
+  const [formulaMode, setFormulaMode] = useState("result");
+  const rateState = useGameinfoRates();
   // Same field set the pack editor's formulas can reference (see
   // gameinfo-formula-fields.js) — built from the game_list row, not the
   // gamelist_packs game shape, since that's all this page has.
@@ -32,6 +54,13 @@ export default function GameinfoGameView({ row, currencies, computedColumns }) {
       }),
     [computedColumns]
   );
+  const packColumns = useMemo(() => buildGameinfoPackColumns(parsedColumns), [parsedColumns]);
+  const packLayout = useGameinfoPackColumnLayout({
+    columns: packColumns,
+    userId,
+    gameId: row.id,
+    surface: "view",
+  });
 
   return (
     <div>
@@ -49,9 +78,23 @@ export default function GameinfoGameView({ row, currencies, computedColumns }) {
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-base font-bold uppercase tracking-tight text-linear-ink">
-            {row.game}
-          </h1>
+          <div className="flex items-center gap-2">
+            <span
+              className={`h-2.5 w-2.5 rounded-full ${
+                row.serviceStatus === "new"
+                  ? "bg-red-500"
+                  : row.serviceStatus === "offline"
+                  ? "bg-zinc-500"
+                  : row.serviceStatus === "partial"
+                    ? "bg-amber-400"
+                    : "bg-emerald-400"
+              }`}
+              title={row.serviceStatus === "new" ? "เกมใหม่" : row.serviceStatus === "offline" ? "ปิดให้บริการ" : row.serviceStatus === "partial" ? "เปิดเกม แต่มีบาง pack ปิด" : "ให้บริการปกติ"}
+            />
+            <h1 className="truncate text-base font-bold uppercase tracking-tight text-linear-ink">
+              {row.game}
+            </h1>
+          </div>
           {/* Horizontal flowing summary — every field from the list table's
               column set (ลำดับ, ID, Region, Platform, Server, VPN, Bot/
               Manual) except Link, which is represented by the button below
@@ -68,20 +111,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns }) {
           </p>
           <ChannelSummary channels={row.channels} className="mt-1.5" />
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            {row.link ? (
-              <a
-                href={row.link}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 rounded-md bg-linear-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-linear-primary-hover"
-              >
-                ไปที่เว็บเติมเกม <ExternalLink size={13} />
-              </a>
-            ) : (
-              <span className="inline-block text-xs text-linear-ink-tertiary">
-                ยังไม่มีลิงก์เว็บเติมเกม
-              </span>
-            )}
+            <GameinfoGameLinkButtons links={row.links || []} />
             {/* Always view-only here regardless of role — editing the
                 tutorial happens from the "⋮" menu / list table, not this
                 page (see gameinfo-gamelist-table.js). */}
@@ -91,11 +121,57 @@ export default function GameinfoGameView({ row, currencies, computedColumns }) {
               editable={false}
               hasData={row.hasTutorial}
             />
+            <GameinfoTutorialButton
+              gameId={row.id}
+              gameName={row.game}
+              editable={false}
+              hasData={row.hasWarning}
+              variant="warning"
+              autoOpen
+            />
           </div>
         </div>
       </div>
 
-      <h2 className="mb-3 text-lg font-semibold text-linear-ink">แพ็ก</h2>
+      <div className="mb-4">
+        <GameinfoRatePanel
+          rates={rateState.rates}
+          loading={rateState.loading}
+          error={rateState.error}
+          onRefresh={rateState.refresh}
+        />
+      </div>
+
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold text-linear-ink">แพ็ก</h2>
+        <div className="flex items-center gap-2">
+          <GameinfoFormulaModeToggle
+            mode={formulaMode}
+            onChange={setFormulaMode}
+            disabled={(computedColumns || []).length === 0}
+          />
+          <GameinfoPackColumnControls
+            columns={packLayout.orderedColumns}
+            hidden={packLayout.layout.hidden}
+            filters={packLayout.layout.filters}
+            presets={packLayout.presets}
+            selectedPresetId={packLayout.selectedPresetId}
+            presetName={packLayout.presetName}
+            dirty={packLayout.dirty}
+            loading={packLayout.loading}
+            saving={packLayout.saving}
+            error={packLayout.error}
+            notice={packLayout.notice}
+            legacyDraft={packLayout.legacyDraft}
+            onSetVisible={packLayout.setVisible}
+            onFiltersChange={packLayout.setFilters}
+            onReset={packLayout.reset}
+            onSelectPreset={packLayout.selectPreset}
+            onPresetNameChange={packLayout.setPresetName}
+            onSavePreset={packLayout.savePreset}
+          />
+        </div>
+      </div>
       {(currencies || []).length === 0 ? (
         <p className="rounded-lg border border-dashed border-linear-hairline-strong bg-linear-surface-1 p-8 text-center text-linear-ink-tertiary">
           ยังไม่มีข้อมูลแพ็กสำหรับเกมนี้
@@ -103,7 +179,19 @@ export default function GameinfoGameView({ row, currencies, computedColumns }) {
       ) : (
         <div className="space-y-4">
           {currencies.map((currency) => (
-            <PackCurrency key={currency.id} currency={currency} game={formulaGame} computedColumns={parsedColumns} />
+            <PackCurrency
+              key={currency.id}
+              currency={currency}
+              game={formulaGame}
+              columns={packLayout.visibleColumns}
+              allColumns={packLayout.orderedColumns}
+              filters={packLayout.layout.filters}
+              formulaMode={formulaMode}
+              costProfiles={costProfiles}
+              formulaVariables={formulaVariables}
+              externalValues={rateState.externalValues}
+              onReorderColumns={packLayout.reorder}
+            />
           ))}
         </div>
       )}
@@ -111,7 +199,18 @@ export default function GameinfoGameView({ row, currencies, computedColumns }) {
   );
 }
 
-function PackCurrency({ currency, game, computedColumns }) {
+function PackCurrency({
+  currency,
+  game,
+  columns,
+  allColumns,
+  filters,
+  formulaMode,
+  costProfiles,
+  formulaVariables,
+  externalValues,
+  onReorderColumns,
+}) {
   return (
     <div className="rounded-lg border border-linear-hairline bg-linear-surface-1 p-4">
       <div className="mb-3 flex items-center gap-2">
@@ -125,7 +224,19 @@ function PackCurrency({ currency, game, computedColumns }) {
       </div>
       <div className="space-y-3">
         {currency.categories.map((cat) => (
-          <PackCategory key={cat.id} category={cat} game={game} computedColumns={computedColumns} />
+          <PackCategory
+            key={cat.id}
+            category={cat}
+            game={game}
+            columns={columns}
+            allColumns={allColumns}
+            filters={filters}
+            formulaMode={formulaMode}
+            costProfiles={costProfiles}
+            formulaVariables={formulaVariables}
+            externalValues={externalValues}
+            onReorderColumns={onReorderColumns}
+          />
         ))}
       </div>
     </div>
@@ -151,65 +262,98 @@ function PackThumb({ src }) {
   );
 }
 
-function PackCategory({ category, game, computedColumns }) {
+function PackCategory({
+  category,
+  game,
+  columns,
+  allColumns,
+  filters,
+  formulaMode,
+  costProfiles,
+  formulaVariables,
+  externalValues,
+  onReorderColumns,
+}) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+  const visiblePacks = category.packs.filter((pack) =>
+    matchesGameinfoPackFilters(pack, filters, (columnId, targetPack) => {
+      const column = allColumns.find((item) => item.id === columnId);
+      if (!column) return "";
+      if (column.id === "costProfileId") {
+        return costProfiles.find((profile) => profile.id === targetPack.costProfileId)?.label || "";
+      }
+      if (column.kind !== "computed") return targetPack[column.field];
+      try {
+        return evaluateGameinfoComputedColumn(
+          column.computed,
+          allColumns.filter((item) => item.kind === "computed").map((item) => item.computed),
+          targetPack,
+          game,
+          { costProfiles, formulaVariables, externalValues }
+        );
+      } catch {
+        return "";
+      }
+    })
+  );
+
+  function handleColumnDragEnd({ active, over }) {
+    if (over && active.id !== over.id) onReorderColumns(active.id, over.id);
+  }
+
   return (
-    <div className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
+    <div className="p-3">
       <div className="mb-2 flex items-center gap-2">
         <h4 className="text-sm font-medium text-linear-ink-muted">{category.name || "(ไม่มีชื่อหมวดหมู่)"}</h4>
-        <span className="text-xs text-linear-ink-tertiary">({category.packs.length} แพ็ก)</span>
+        <span className="text-xs text-linear-ink-tertiary">
+          ({visiblePacks.length === category.packs.length ? category.packs.length : `${visiblePacks.length}/${category.packs.length}`} แพ็ก)
+        </span>
       </div>
-      {category.packs.length === 0 ? (
-        <p className="px-1 py-2 text-xs text-linear-ink-tertiary">ยังไม่มี pack</p>
+      {visiblePacks.length === 0 ? (
+        <p className="px-1 py-2 text-xs text-linear-ink-tertiary">
+          {category.packs.length === 0 ? "ยังไม่มี pack" : "ไม่มี pack ที่ตรงกับตัวกรอง"}
+        </p>
       ) : (
         <div className="overflow-hidden rounded-md border border-linear-hairline bg-linear-surface-1">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[700px] text-left text-sm">
               <thead className="border-b border-linear-hairline bg-linear-surface-2 text-xs text-linear-ink-subtle">
                 <tr>
-                  <th className="px-3 py-2 font-medium">รูป</th>
-                  <th className="px-3 py-2 font-medium">ชื่อ pack</th>
-                  <th className="px-3 py-2 font-medium">ราคา</th>
-                  <th className="px-3 py-2 font-medium">ยอดที่กด</th>
-                  <th className="px-3 py-2 font-medium">ยอดที่กด + fee</th>
-                  <th className="px-3 py-2 font-medium">ช่องทางหลัก</th>
-                  <th className="px-3 py-2 font-medium">ช่องทางรอง</th>
-                  <th className="px-3 py-2 font-medium">ประเทศ</th>
-                  {computedColumns.map((fc) => (
-                    <th key={fc.key} className="whitespace-nowrap px-3 py-2 font-medium">
-                      {fc.label}
-                    </th>
-                  ))}
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleColumnDragEnd}
+                  >
+                    <SortableContext
+                      items={columns.map((column) => column.id)}
+                      strategy={horizontalListSortingStrategy}
+                    >
+                      {columns.map((column) => (
+                        <SortableViewHeader key={column.id} column={column} />
+                      ))}
+                    </SortableContext>
+                  </DndContext>
                 </tr>
               </thead>
               <tbody>
-                {category.packs.map((pack) => (
+                {visiblePacks.map((pack) => (
                   <tr key={pack.id} className="border-b border-linear-hairline last:border-b-0">
-                    <td className="px-3 py-2">
-                      <PackThumb src={pack.image} />
-                    </td>
-                    <td className="max-w-[220px] truncate px-3 py-2 text-linear-ink-muted">
-                      {pack.name || "-"}
-                    </td>
-                    <td className="px-3 py-2 text-linear-ink-muted">{pack.price || "-"}</td>
-                    <td className="px-3 py-2 text-linear-ink-muted">{pack.amountCharged || "-"}</td>
-                    <td className="px-3 py-2 text-linear-ink-muted">{pack.amountChargedFee || "-"}</td>
-                    <td className="px-3 py-2 text-linear-ink-muted">
-                      {pack.channelsMain?.length ? pack.channelsMain.join(", ") : "-"}
-                    </td>
-                    <td className="px-3 py-2 text-linear-ink-muted">
-                      {pack.channelsSecondary?.length ? pack.channelsSecondary.join(", ") : "-"}
-                    </td>
-                    <td className="px-3 py-2 text-linear-ink-muted">{pack.country || "-"}</td>
-                    {computedColumns.map((fc) => {
-                      const value = fc.ast
-                        ? evaluateFormula(fc.ast, (label) => resolveGameinfoField(pack, game, label))
-                        : null;
-                      return (
-                        <td key={fc.key} className="max-w-[160px] truncate px-3 py-2 text-linear-ink-muted">
-                          {formatComputedCell(value, fc.type)}
-                        </td>
-                      );
-                    })}
+                    {columns.map((column) => (
+                      <PackViewCell
+                        key={column.id}
+                        column={column}
+                        pack={pack}
+                        game={game}
+                        formulaMode={formulaMode}
+                        costProfiles={costProfiles}
+                        formulaVariables={formulaVariables}
+                        externalValues={externalValues}
+                        computedColumns={allColumns.filter((item) => item.kind === "computed").map((item) => item.computed)}
+                      />
+                    ))}
                   </tr>
                 ))}
               </tbody>
@@ -218,6 +362,122 @@ function PackCategory({ category, game, computedColumns }) {
         </div>
       )}
     </div>
+  );
+}
+
+function SortableViewHeader({ column }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: column.id,
+  });
+  return (
+    <th
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+      }}
+      {...attributes}
+      {...listeners}
+      className="cursor-grab whitespace-nowrap px-3 py-2 font-medium active:cursor-grabbing"
+      title="กดค้างแล้วลากเพื่อเปลี่ยนลำดับ"
+    >
+      {column.label}
+    </th>
+  );
+}
+
+function PackViewCell({
+  column,
+  pack,
+  game,
+  formulaMode,
+  costProfiles,
+  formulaVariables,
+  externalValues,
+  computedColumns,
+}) {
+  if (column.id === "serviceEnabled") {
+    const enabled = pack.serviceEnabled !== false;
+    const isNew = pack.serviceStatus === "new";
+    return (
+      <td className={`px-3 py-2 text-xs ${isNew ? "text-red-400" : enabled ? "text-emerald-400" : "text-linear-ink-tertiary"}`}>
+        <span className="inline-flex items-center gap-1.5">
+          <span className={`h-2.5 w-2.5 rounded-full ${isNew ? "bg-red-500" : enabled ? "bg-emerald-400" : "bg-zinc-500"}`} />
+          {isNew ? "ใหม่" : enabled ? "เปิด" : "ปิด"}
+        </span>
+      </td>
+    );
+  }
+  if (column.id === "image") {
+    return (
+      <td className="px-3 py-2">
+        <PackThumb src={pack.image} />
+      </td>
+    );
+  }
+  if (column.kind === "computed") {
+    const formula = column.computed;
+    const effective = getGameinfoFormulaDisplay(formula, pack.id);
+    let value = null;
+    let formulaError = false;
+    try {
+      value = evaluateGameinfoComputedColumn(
+        formula,
+        computedColumns,
+        pack,
+        game,
+        { costProfiles, formulaVariables, externalValues }
+      );
+    } catch {
+      formulaError = true;
+    }
+    if (formulaMode === "formula") {
+      return (
+        <td
+          className={`max-w-[220px] px-3 py-2 ${
+            formulaError ? "text-red-400" : "text-linear-ink-muted"
+          }`}
+          title={effective.formula}
+        >
+          <span className="block truncate font-mono text-[11px]">
+            {effective.formula || "(ไม่มีสูตร)"}
+          </span>
+          <span
+            className={`mt-0.5 inline-block text-[9px] ${
+              effective.overridden ? "text-linear-primary" : "text-linear-ink-tertiary"
+            }`}
+          >
+            {formulaError ? `สูตรผิด · ${effective.sourceLabel}` : effective.sourceLabel}
+          </span>
+        </td>
+      );
+    }
+    return (
+      <td
+        className={`max-w-[160px] truncate px-3 py-2 ${
+          formulaError ? "text-red-400" : "text-linear-ink-muted"
+        }`}
+        title={effective.overridden ? "ใช้สูตรเฉพาะ pack" : "ใช้สูตรหลักของคอลัมน์"}
+      >
+        {formulaError ? "สูตรผิด" : formatGameinfoPackColumnValue(value, column)}
+      </td>
+    );
+  }
+  if (column.id === "costProfileId") {
+    const profile = costProfiles.find((item) => item.id === pack.costProfileId);
+    return (
+      <td className="max-w-[180px] truncate px-3 py-2 text-linear-ink-muted">
+        {profile?.label || "-"}
+      </td>
+    );
+  }
+  const raw = pack[column.field];
+  const value = Array.isArray(raw) ? (raw.length ? raw.join(", ") : "-") : raw || "-";
+  return (
+    <td className="max-w-[220px] truncate px-3 py-2 text-linear-ink-muted">
+      {value}
+    </td>
   );
 }
 

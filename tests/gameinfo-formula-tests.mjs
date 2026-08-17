@@ -7,6 +7,15 @@ import {
   GAMEINFO_FIELD_NAMES,
   resolveGameinfoField,
 } from "@/lib/gameinfo-formula-fields.js";
+import {
+  evaluateGameinfoPackCost,
+  sanitizeGameinfoCostProfiles,
+  validateGameinfoCostProfiles,
+} from "@/lib/gameinfo-cost-profiles.js";
+import {
+  evaluateGameinfoComputedColumn,
+  validateGameinfoComputedDependencies,
+} from "@/lib/gameinfo-computed-evaluator.js";
 
 let pass = 0;
 const failures = [];
@@ -21,7 +30,7 @@ function ok(name, value) {
 }
 
 const game = { gameName: "Mobile Legends", region: "Global", platform: "Android/iOS", server: "Asia" };
-const pack = { name: "86 Diamonds", price: "100", amountCharged: "86", amountChargedFee: "90", country: "" };
+const pack = { name: "86 Diamonds", price: "100", amountChargedFee: "90", country: "" };
 
 check(
   "every advertised field name resolves to a real key",
@@ -30,8 +39,87 @@ check(
 );
 
 check("pack field resolves", resolveGameinfoField(pack, game, "ราคา"), "100");
+check("the removed amount label is hidden from the formula picker", GAMEINFO_FIELD_NAMES.includes("ยอดที่กด"), false);
+check(
+  "an existing saved formula using the removed label falls back to amountChargedFee",
+  resolveGameinfoField(pack, game, "ยอดที่กด"),
+  "90"
+);
 check("pack field falls back to the game", resolveGameinfoField(pack, game, "ชื่อเกม"), "Mobile Legends");
 check("an unknown label resolves to undefined", resolveGameinfoField(pack, game, "ไม่มีจริง"), undefined);
+check(
+  "external exchange rate resolves from formula context",
+  resolveGameinfoField(pack, game, "USDT/THB", { externalValues: { "USDT/THB": 33.75 } }),
+  33.75
+);
+
+const costProfiles = [
+  { id: "cost_usd", label: "USD", inputCurrency: "USD", baseValue: "0.5", rateFormula: "" },
+];
+const packWithCost = { ...pack, costProfileId: "cost_usd" };
+check(
+  "selected cost profile exposes its multiplier",
+  resolveGameinfoField(packWithCost, game, "อัตราต้นทุน", { costProfiles }),
+  0.5
+);
+check(
+  "selected cost profile exposes charge times multiplier as cost",
+  resolveGameinfoField(packWithCost, game, "ต้นทุน", { costProfiles }),
+  45
+);
+check(
+  "cost can be used by a normal computed formula",
+  evaluateFormula(
+    parseFormula("([ราคา] - [ต้นทุน]) / [ราคา] * 100"),
+    (label) => resolveGameinfoField(packWithCost, game, label, { costProfiles })
+  ),
+  55.00000000000001
+);
+check(
+  "cost profile formula can reference its stable baseValue token",
+  evaluateGameinfoPackCost(pack, { ...costProfiles[0], rateFormula: "[baseValue] * 2" }).cost,
+  90
+);
+check(
+  "cost profile sanitizer removes duplicate ids and normalizes currency",
+  sanitizeGameinfoCostProfiles([
+    { id: "cost_usd", label: " USD ", inputCurrency: "usd", baseValue: "0.5" },
+    { id: "cost_usd", label: "duplicate", baseValue: "2" },
+  ]).map(({ id, label, inputCurrency }) => ({ id, label, inputCurrency })),
+  [{ id: "cost_usd", label: "USD", inputCurrency: "USD" }]
+);
+check(
+  "invalid cost formula is rejected by validation",
+  validateGameinfoCostProfiles([{ ...costProfiles[0], rateFormula: "([baseValue]" }]).length,
+  1
+);
+
+const dependentColumns = [
+  { key: "cost", label: "ต้นทุนคำนวณ", formula: "[ยอดที่กด + fee] * 0.5" },
+  { key: "profit", label: "กำไร", formula: "[ราคา] - [ต้นทุนคำนวณ]" },
+];
+check(
+  "computed formula can reference another computed column",
+  evaluateGameinfoComputedColumn(dependentColumns[1], dependentColumns, pack, game),
+  55
+);
+check("valid computed dependency graph has no errors", validateGameinfoComputedDependencies(dependentColumns), []);
+check(
+  "computed dependency cycle is rejected",
+  validateGameinfoComputedDependencies([
+    { key: "a", label: "A", formula: "[B] + 1" },
+    { key: "b", label: "B", formula: "[A] + 1" },
+  ]).some((message) => message.includes("วนซ้ำ")),
+  true
+);
+check(
+  "duplicate computed labels are rejected",
+  validateGameinfoComputedDependencies([
+    { key: "a", label: "ซ้ำ", formula: "1" },
+    { key: "b", label: "ซ้ำ", formula: "2" },
+  ]).some((message) => message.includes("ชื่อคอลัมน์สูตรซ้ำ")),
+  true
+);
 
 // A game-level field of the same key as a pack field: the pack's own value
 // wins, since a formula about "this row" should mean this row's fields first.

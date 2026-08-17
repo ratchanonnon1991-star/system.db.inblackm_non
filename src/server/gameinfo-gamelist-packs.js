@@ -10,6 +10,12 @@
 // rather than adding a second table — keeps the "just id -> pack_id -> json"
 // shape the whole way through.
 import { getPoolForConnection } from "@/lib/db";
+import { sanitizeGameinfoPack } from "@/lib/gameinfo-pack-model";
+import {
+  sanitizeGameinfoCostProfiles,
+  validateGameinfoCostProfiles,
+} from "@/lib/gameinfo-cost-profiles";
+import { mergeCurrencies } from "@/lib/gameinfo-import";
 import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
 
 const CONNECTION_NAME = "gameinfo";
@@ -50,16 +56,8 @@ function reconstructCurrencies(packRows) {
       });
     }
     currency.categories.get(d.categoryId).packs.push({
-      id: packId,
+      ...sanitizeGameinfoPack({ ...d, id: packId }),
       order: d.packOrder ?? 0,
-      name: d.name || "",
-      image: d.image || "",
-      price: d.price || "",
-      amountCharged: d.amountCharged || "",
-      amountChargedFee: d.amountChargedFee || "",
-      channelsMain: Array.isArray(d.channelsMain) ? d.channelsMain : [],
-      channelsSecondary: Array.isArray(d.channelsSecondary) ? d.channelsSecondary : [],
-      country: d.country || "",
     });
   }
   return [...currencies.values()]
@@ -89,8 +87,9 @@ function flattenCurrencies(gameId, currencies) {
   (currencies || []).forEach((currency, currencyOrder) => {
     (currency.categories || []).forEach((category, categoryOrder) => {
       (category.packs || []).forEach((pack, packOrder) => {
+        const cleanPack = sanitizeGameinfoPack(pack);
         rows.push({
-          packId: String(pack.id),
+          packId: cleanPack.id,
           gameId,
           data: {
             currencyId: currency.id,
@@ -101,16 +100,16 @@ function flattenCurrencies(gameId, currencies) {
             categoryName: category.name || "",
             categoryOrder,
             packOrder,
-            name: pack.name || "",
-            image: pack.image || "",
-            price: pack.price || "",
-            amountCharged: pack.amountCharged || "",
-            amountChargedFee: pack.amountChargedFee || "",
-            channelsMain: Array.isArray(pack.channelsMain) ? pack.channelsMain : [],
-            channelsSecondary: Array.isArray(pack.channelsSecondary)
-              ? pack.channelsSecondary
-              : [],
-            country: pack.country || "",
+            name: cleanPack.name,
+            image: cleanPack.image,
+            price: cleanPack.price,
+            amountChargedFee: cleanPack.amountChargedFee,
+            serviceEnabled: cleanPack.serviceEnabled,
+            serviceStatus: cleanPack.serviceStatus,
+            costProfileId: cleanPack.costProfileId,
+            channelsMain: cleanPack.channelsMain,
+            channelsSecondary: cleanPack.channelsSecondary,
+            country: cleanPack.country,
           },
         });
       });
@@ -150,6 +149,45 @@ function ensureSchema(connection) {
       await client.query(`
         CREATE INDEX IF NOT EXISTS gamelist_packs_game_id_idx ON gamelist_packs (game_id)
       `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS gamelist_pack_audit_logs (
+          id          BIGSERIAL PRIMARY KEY,
+          game_id     INTEGER NOT NULL,
+          pack_id     TEXT,
+          actor_id    INTEGER,
+          actor_name  VARCHAR(255) NOT NULL DEFAULT '',
+          action      VARCHAR(32) NOT NULL,
+          source      VARCHAR(32) NOT NULL DEFAULT 'editor',
+          before_data JSONB,
+          after_data  JSONB,
+          created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS gamelist_pack_audit_game_time_idx
+        ON gamelist_pack_audit_logs (game_id, created_at DESC, id DESC)
+      `);
+      await client.query(`
+        ALTER TABLE gamelist_pack_audit_logs
+        ADD COLUMN IF NOT EXISTS source VARCHAR(32) NOT NULL DEFAULT 'editor'
+      `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS gamelist_pack_view_presets (
+          id          BIGSERIAL PRIMARY KEY,
+          game_id     INTEGER NOT NULL,
+          user_id     INTEGER NOT NULL,
+          surface     VARCHAR(12) NOT NULL CHECK (surface IN ('edit', 'view')),
+          name        VARCHAR(80) NOT NULL,
+          layout      JSONB NOT NULL DEFAULT '{"order": [], "hidden": []}'::jsonb,
+          created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (game_id, user_id, surface, name)
+        )
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS gamelist_pack_view_presets_owner_idx
+        ON gamelist_pack_view_presets (game_id, user_id, surface, updated_at DESC, id DESC)
+      `);
     } finally {
       client.release();
     }
@@ -171,7 +209,7 @@ async function getReadyPool() {
   return getPoolForConnection(connection);
 }
 
-/** { currencies, computedColumns } for one game_list row's id. */
+/** Shared pack data/config for one game_list row's id. */
 export async function getGamelistPacks(gameId) {
   const pool = await getReadyPool();
   const client = await pool.connect();
@@ -185,6 +223,8 @@ export async function getGamelistPacks(gameId) {
     return {
       currencies: reconstructCurrencies(packRows),
       computedColumns: Array.isArray(computedRow?.data?.columns) ? computedRow.data.columns : [],
+      costProfiles: sanitizeGameinfoCostProfiles(computedRow?.data?.costProfiles),
+      schemaVersion: Number(computedRow?.data?.schemaVersion) || 1,
     };
   } finally {
     client.release();
@@ -193,14 +233,60 @@ export async function getGamelistPacks(gameId) {
 
 /** Full-tree replace, same shape as the old saveGameinfoPacks — delete every
  * row for this game and reinsert, including the computed-columns sentinel. */
-export async function saveGamelistPacks(gameId, { currencies, computedColumns }) {
+export async function saveGamelistPacks(
+  gameId,
+  { currencies, computedColumns, costProfiles, actor = null, source = "editor" }
+) {
   const pool = await getReadyPool();
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const previousResult = await client.query(
+      `SELECT game_id, pack_id, data FROM gamelist_packs WHERE game_id = $1`,
+      [gameId]
+    );
+    const previousComputed = previousResult.rows.find((row) => row.pack_id === COMPUTED_SENTINEL);
+    const previousRows = previousResult.rows.filter((row) => row.pack_id !== COMPUTED_SENTINEL);
+    const nextRows = flattenCurrencies(gameId, Array.isArray(currencies) ? currencies : []);
+    const nextComputed = Array.isArray(computedColumns) ? computedColumns : [];
+    const previousCostProfiles = sanitizeGameinfoCostProfiles(previousComputed?.data?.costProfiles);
+    const submittedCostProfiles = sanitizeGameinfoCostProfiles(costProfiles);
+    const actorId = Number(actor?.id);
+    const changedAt = new Date().toISOString();
+    const nextCostProfiles = submittedCostProfiles.map((profile) => {
+      const previous = previousCostProfiles.find((item) => item.id === profile.id);
+      if (previous && sameJson(costProfileDefinition(previous), costProfileDefinition(profile))) {
+        return { ...profile, updatedAt: previous.updatedAt, updatedBy: previous.updatedBy };
+      }
+      return {
+        ...profile,
+        updatedAt: changedAt,
+        updatedBy: Number.isInteger(actorId) && actorId > 0 ? actorId : null,
+      };
+    });
+    const profileErrors = validateGameinfoCostProfiles(nextCostProfiles);
+    if (profileErrors.length) throw createHttpError(profileErrors[0], 400);
+    const validProfileIds = new Set(nextCostProfiles.map((profile) => profile.id));
+    const missingProfile = nextRows.find(
+      (row) => row.data.costProfileId && !validProfileIds.has(row.data.costProfileId)
+    );
+    if (missingProfile) {
+      throw createHttpError(`pack ${missingProfile.packId} อ้างโปรไฟล์ต้นทุนที่ไม่มีอยู่`, 400);
+    }
+    const auditEvents = buildAuditEvents({
+      previousRows,
+      nextRows,
+      previousComputed: Array.isArray(previousComputed?.data?.columns)
+        ? previousComputed.data.columns
+        : [],
+      nextComputed,
+      previousCostProfiles,
+      nextCostProfiles,
+      source,
+    });
+
     await client.query(`DELETE FROM gamelist_packs WHERE game_id = $1`, [gameId]);
-    const rows = flattenCurrencies(gameId, Array.isArray(currencies) ? currencies : []);
-    for (const r of rows) {
+    for (const r of nextRows) {
       await client.query(
         `INSERT INTO gamelist_packs (game_id, pack_id, data) VALUES ($1, $2, $3)`,
         [r.gameId, r.packId, JSON.stringify(r.data)]
@@ -208,8 +294,15 @@ export async function saveGamelistPacks(gameId, { currencies, computedColumns })
     }
     await client.query(
       `INSERT INTO gamelist_packs (game_id, pack_id, data) VALUES ($1, $2, $3)`,
-      [gameId, COMPUTED_SENTINEL, JSON.stringify({ columns: Array.isArray(computedColumns) ? computedColumns : [] })]
+      [
+        gameId,
+        COMPUTED_SENTINEL,
+        JSON.stringify({ schemaVersion: 2, columns: nextComputed, costProfiles: nextCostProfiles }),
+      ]
     );
+    for (const event of auditEvents) {
+      await insertPackAudit(client, gameId, actor, event, source);
+    }
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
@@ -218,6 +311,420 @@ export async function saveGamelistPacks(gameId, { currencies, computedColumns })
     client.release();
   }
   return getGamelistPacks(gameId);
+}
+
+/** Computed-column configs for every game, used to protect the one global
+ * formula-variable set from removing a name that any saved formula needs. */
+export async function listAllGamelistComputedColumns() {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `SELECT game_id, data FROM gamelist_packs WHERE pack_id = $1 ORDER BY game_id`,
+      [COMPUTED_SENTINEL]
+    );
+    return result.rows.map((row) => ({
+      gameId: row.game_id,
+      computedColumns: Array.isArray(row.data?.columns) ? row.data.columns : [],
+    }));
+  } finally {
+    client.release();
+  }
+}
+
+/** Multi-game CSV import in one transaction. Computed-column sentinel rows
+ * are preserved; only real pack rows are replaced/merged. */
+export async function importGamelistPacks(games, mode = "replace", actor = null) {
+  if (!Array.isArray(games) || games.length === 0) return { gameCount: 0, packCount: 0 };
+  if (mode !== "replace" && mode !== "add") throw createHttpError("โหมดนำเข้าไม่ถูกต้อง", 400);
+  const source = mode === "add" ? "csv_append" : "csv_replace";
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  let importedPackCount = 0;
+  try {
+    await client.query("BEGIN");
+    for (const game of games) {
+      const target = await client.query(`SELECT id FROM game_list WHERE id = $1 FOR UPDATE`, [game.gameId]);
+      if (target.rows.length !== 1) throw createHttpError(`ไม่พบ game_id ${game.gameId}`, 404);
+
+      const previousResult = await client.query(
+        `SELECT game_id, pack_id, data FROM gamelist_packs WHERE game_id = $1`,
+        [game.gameId]
+      );
+      const previousComputed = previousResult.rows.find((row) => row.pack_id === COMPUTED_SENTINEL);
+      const previousRows = previousResult.rows.filter((row) => row.pack_id !== COMPUTED_SENTINEL);
+      let currencies = Array.isArray(game.currencies) ? game.currencies : [];
+      if (mode === "add") currencies = mergeCurrencies(reconstructCurrencies(previousRows), currencies);
+      const nextRows = flattenCurrencies(game.gameId, currencies);
+      const computedColumns = Array.isArray(previousComputed?.data?.columns)
+        ? previousComputed.data.columns
+        : [];
+      const costProfiles = sanitizeGameinfoCostProfiles(previousComputed?.data?.costProfiles);
+      const auditEvents = buildAuditEvents({
+        previousRows,
+        nextRows,
+        previousComputed: computedColumns,
+        nextComputed: computedColumns,
+        previousCostProfiles: costProfiles,
+        nextCostProfiles: costProfiles,
+        source,
+      });
+
+      await client.query(
+        `DELETE FROM gamelist_packs WHERE game_id = $1 AND pack_id != $2`,
+        [game.gameId, COMPUTED_SENTINEL]
+      );
+      for (const row of nextRows) {
+        await client.query(
+          `INSERT INTO gamelist_packs (game_id, pack_id, data) VALUES ($1, $2, $3)`,
+          [row.gameId, row.packId, JSON.stringify(row.data)]
+        );
+      }
+      for (const event of auditEvents) {
+        await insertPackAudit(client, game.gameId, actor, event, source);
+      }
+      importedPackCount += Number(game.packCount) || 0;
+    }
+    await client.query("COMMIT");
+    return { gameCount: games.length, packCount: importedPackCount };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+function buildAuditEvents({
+  previousRows,
+  nextRows,
+  previousComputed,
+  nextComputed,
+  previousCostProfiles = [],
+  nextCostProfiles = [],
+  source,
+}) {
+  const events = [];
+  const before = new Map(previousRows.map((row) => [String(row.pack_id), row.data || {}]));
+  const after = new Map(nextRows.map((row) => [String(row.packId), row.data || {}]));
+
+  for (const [packId, data] of before) {
+    if (!after.has(packId)) {
+      events.push({ packId, action: "delete", before: data, after: null });
+    }
+  }
+
+  for (const [packId, data] of after) {
+    const old = before.get(packId);
+    if (old) {
+      if (!sameJson(old, data)) {
+        events.push({
+          packId,
+          action: onlyPositionChanged(old, data) ? "reorder" : "update",
+          before: old,
+          after: data,
+        });
+      }
+      continue;
+    }
+    const duplicateSource = findDuplicateSource(before, data);
+    events.push({
+      packId,
+      action: duplicateSource ? "duplicate" : "create",
+      before: duplicateSource
+        ? { sourcePackId: duplicateSource.packId, ...duplicateSource.data }
+        : null,
+      after: data,
+    });
+  }
+
+  if (!sameJson(previousComputed, nextComputed) || !sameJson(previousCostProfiles, nextCostProfiles)) {
+    events.push({
+      packId: null,
+      action: "config_update",
+      before: { computedColumns: previousComputed, costProfiles: previousCostProfiles },
+      after: { computedColumns: nextComputed, costProfiles: nextCostProfiles },
+    });
+  }
+  if ((source === "csv_append" || source === "csv_replace") && events.length > 0) {
+    events.push({
+      packId: null,
+      action: source === "csv_append" ? "import_append" : "import_replace",
+      before: { packCount: previousRows.length },
+      after: { packCount: nextRows.length },
+    });
+  }
+  return events;
+}
+
+function findDuplicateSource(before, nextData) {
+  for (const [packId, data] of before) {
+    if (nextData.name !== `${data.name || ""} (สำเนา)`) continue;
+    const sourceComparable = { ...data, name: nextData.name, packOrder: nextData.packOrder };
+    if (sameJson(sourceComparable, nextData)) return { packId, data };
+  }
+  return null;
+}
+
+function sameJson(a, b) {
+  return JSON.stringify(canonicalJson(a)) === JSON.stringify(canonicalJson(b));
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (!value || typeof value !== "object") return value;
+  const out = {};
+  for (const key of Object.keys(value).sort()) out[key] = canonicalJson(value[key]);
+  return out;
+}
+
+function costProfileDefinition(profile) {
+  const { updatedAt, updatedBy, ...definition } = profile || {};
+  return definition;
+}
+
+function onlyPositionChanged(before, after) {
+  const withoutPosition = (value) => {
+    const { currencyOrder, categoryOrder, packOrder, ...rest } = value || {};
+    return rest;
+  };
+  return sameJson(withoutPosition(before), withoutPosition(after));
+}
+
+async function insertPackAudit(client, gameId, actor, event, source) {
+  const actorId = Number(actor?.id);
+  const safeActorId = Number.isInteger(actorId) && actorId > 0 ? actorId : null;
+  const actorName = String(actor?.name || "").slice(0, 255);
+  await client.query(
+    `INSERT INTO gamelist_pack_audit_logs
+       (game_id, pack_id, actor_id, actor_name, action, source, before_data, after_data)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb)`,
+    [
+      gameId,
+      event.packId,
+      safeActorId,
+      actorName,
+      event.action,
+      source === "csv_append" || source === "csv_replace" ? source : "editor",
+      event.before == null ? null : JSON.stringify(event.before),
+      event.after == null ? null : JSON.stringify(event.after),
+    ]
+  );
+}
+
+export async function listGamelistPackAudit(gameId, limit = 100) {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    const safeLimit = Math.min(500, Math.max(1, Number(limit) || 100));
+    const result = await client.query(
+      `SELECT id, game_id, pack_id, actor_id, actor_name, action, source,
+              before_data, after_data, created_at
+       FROM gamelist_pack_audit_logs
+       WHERE game_id = $1
+       ORDER BY created_at DESC, id DESC
+       LIMIT $2`,
+      [gameId, safeLimit]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      gameId: row.game_id,
+      packId: row.pack_id,
+      actorId: row.actor_id,
+      actorName: row.actor_name,
+      action: row.action,
+      source: row.source || "editor",
+      before: row.before_data,
+      after: row.after_data,
+      createdAt: row.created_at,
+    }));
+  } finally {
+    client.release();
+  }
+}
+
+export async function listAllGamelistPackAudit(limit = 1000) {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    const safeLimit = Math.min(2000, Math.max(1, Number(limit) || 1000));
+    const result = await client.query(
+      `SELECT a.id, a.game_id, g.game, a.pack_id, a.actor_id, a.actor_name,
+              a.action, a.source, a.before_data, a.after_data, a.created_at
+       FROM gamelist_pack_audit_logs a
+       LEFT JOIN game_list g ON g.id = a.game_id
+       ORDER BY a.created_at DESC, a.id DESC
+       LIMIT $1`,
+      [safeLimit]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      gameId: row.game_id,
+      gameName: row.game || `Game ID ${row.game_id}`,
+      packId: row.pack_id,
+      actorId: row.actor_id,
+      actorName: row.actor_name,
+      action: row.action,
+      source: row.source || "editor",
+      before: row.before_data,
+      after: row.after_data,
+      createdAt: row.created_at,
+    }));
+  } finally {
+    client.release();
+  }
+}
+
+// --- Personal pack-table display presets ---------------------------------
+// These are deliberately separate from gamelist_packs and its audit log:
+// they change only one person's screen, never the underlying pack data. The
+// gameinfo connection owns this table, while the user row itself lives in the
+// primary GameDB connection, so user_id is intentionally not a foreign key.
+
+function normalizePresetScope({ gameId, userId, surface }) {
+  const safeGameId = Number(gameId);
+  const safeUserId = Number(userId);
+  if (!Number.isInteger(safeGameId) || safeGameId <= 0) {
+    throw createHttpError("gameId ไม่ถูกต้อง", 400);
+  }
+  if (!Number.isInteger(safeUserId) || safeUserId <= 0) {
+    throw createHttpError("ผู้ใช้ไม่ถูกต้อง", 400);
+  }
+  if (surface !== "edit" && surface !== "view") {
+    throw createHttpError("surface ต้องเป็น edit หรือ view", 400);
+  }
+  return { gameId: safeGameId, userId: safeUserId, surface };
+}
+
+function normalizePresetName(value) {
+  if (typeof value !== "string") throw createHttpError("กรุณาตั้งชื่อ preset", 400);
+  const name = value.trim().replace(/\s+/g, " ");
+  if (!name) throw createHttpError("กรุณาตั้งชื่อ preset", 400);
+  if (name.length > 80) throw createHttpError("ชื่อ preset ยาวได้ไม่เกิน 80 ตัวอักษร", 400);
+  return name;
+}
+
+function presetColumnIds(value) {
+  const ids = [];
+  for (const item of Array.isArray(value) ? value : []) {
+    const id = typeof item === "string" ? item.trim() : "";
+    if (!id || id.length > 128 || ids.includes(id)) continue;
+    ids.push(id);
+    if (ids.length >= 200) break;
+  }
+  return ids;
+}
+
+/** Keep a persisted layout deliberately generic. The client knows the live
+ * column schema and will safely merge this into it; the server only accepts a
+ * bounded JSON shape so a preset cannot be used to store arbitrary data. */
+export function sanitizeGamelistPackViewPresetLayout(layout) {
+  const filters = [];
+  for (const filter of Array.isArray(layout?.filters) ? layout.filters : []) {
+    const columnId = typeof filter?.columnId === "string" ? filter.columnId.trim().slice(0, 128) : "";
+    const operator = ["contains", "equals", "not_empty", "empty"].includes(filter?.operator)
+      ? filter.operator
+      : "contains";
+    if (!columnId) continue;
+    filters.push({ columnId, operator, value: String(filter?.value ?? "").slice(0, 200) });
+    if (filters.length >= 10) break;
+  }
+  const sanitized = {
+    order: presetColumnIds(layout?.order),
+    hidden: presetColumnIds(layout?.hidden),
+  };
+  if (Array.isArray(layout?.filters)) sanitized.filters = filters;
+  return sanitized;
+}
+
+function mapGamelistPackViewPreset(row) {
+  return {
+    id: row.id,
+    gameId: row.game_id,
+    userId: row.user_id,
+    surface: row.surface,
+    name: row.name,
+    layout: sanitizeGamelistPackViewPresetLayout(row.layout),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function listGamelistPackViewPresets({ gameId, userId, surface }) {
+  const scope = normalizePresetScope({ gameId, userId, surface });
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `SELECT id, game_id, user_id, surface, name, layout, created_at, updated_at
+       FROM gamelist_pack_view_presets
+       WHERE game_id = $1 AND user_id = $2 AND surface = $3
+       ORDER BY updated_at DESC, id DESC`,
+      [scope.gameId, scope.userId, scope.surface]
+    );
+    return result.rows.map(mapGamelistPackViewPreset);
+  } finally {
+    client.release();
+  }
+}
+
+/** Create a named preset, or update only a preset in the current user's
+ * game/surface scope. `presetId` is omitted for Save as new. */
+export async function saveGamelistPackViewPreset({
+  gameId,
+  userId,
+  surface,
+  presetId = null,
+  name,
+  layout,
+}) {
+  const scope = normalizePresetScope({ gameId, userId, surface });
+  const safeName = normalizePresetName(name);
+  const safeLayout = sanitizeGamelistPackViewPresetLayout(layout);
+  const safePresetId = presetId == null || presetId === "" ? null : Number(presetId);
+  if (safePresetId != null && (!Number.isInteger(safePresetId) || safePresetId <= 0)) {
+    throw createHttpError("presetId ไม่ถูกต้อง", 400);
+  }
+
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    let result;
+    if (safePresetId == null) {
+      result = await client.query(
+        `INSERT INTO gamelist_pack_view_presets (game_id, user_id, surface, name, layout)
+         VALUES ($1, $2, $3, $4, $5::jsonb)
+         RETURNING id, game_id, user_id, surface, name, layout, created_at, updated_at`,
+        [scope.gameId, scope.userId, scope.surface, safeName, JSON.stringify(safeLayout)]
+      );
+    } else {
+      result = await client.query(
+        `UPDATE gamelist_pack_view_presets
+         SET name = $5, layout = $6::jsonb, updated_at = NOW()
+         WHERE id = $1 AND game_id = $2 AND user_id = $3 AND surface = $4
+         RETURNING id, game_id, user_id, surface, name, layout, created_at, updated_at`,
+        [
+          safePresetId,
+          scope.gameId,
+          scope.userId,
+          scope.surface,
+          safeName,
+          JSON.stringify(safeLayout),
+        ]
+      );
+      if (result.rows.length === 0) throw createHttpError("ไม่พบ preset ที่ต้องการบันทึก", 404);
+    }
+    return mapGamelistPackViewPreset(result.rows[0]);
+  } catch (error) {
+    // The unique constraint remains the authority under concurrent browser
+    // requests; turn its database error into a recoverable UI message.
+    if (error?.code === "23505") {
+      throw createHttpError("มี preset ชื่อนี้อยู่แล้ว กรุณาตั้งชื่ออื่น", 409);
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /** { [gameId]: { main: string[], secondary: string[] } } — unique
@@ -327,6 +834,29 @@ export async function listGamelistPackCountByGame() {
     const out = {};
     for (const row of result.rows) out[row.game_id] = row.pack_count;
     return out;
+  } finally {
+    client.release();
+  }
+}
+
+/** Disabled-pack count used to derive the orange game service light. Old
+ * rows without serviceEnabled are treated as enabled for compatibility. */
+export async function listGamelistPackServiceByGame() {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `SELECT game_id,
+              COUNT(*)::int AS total_count,
+              COUNT(*) FILTER (WHERE data->>'serviceEnabled' = 'false')::int AS disabled_count
+         FROM gamelist_packs
+        WHERE pack_id != $1
+        GROUP BY game_id`,
+      [COMPUTED_SENTINEL]
+    );
+    return Object.fromEntries(
+      result.rows.map((row) => [row.game_id, { total: row.total_count, disabled: row.disabled_count }])
+    );
   } finally {
     client.release();
   }

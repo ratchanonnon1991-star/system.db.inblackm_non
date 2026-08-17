@@ -84,3 +84,14 @@ export async function requireDataWriter(request, ctx) {
 export async function requireDataUpdater(request, ctx) {
   return requireDataAccess(request, "canUpdateData", "บัญชีนี้ไม่มีสิทธิ์แก้ไขข้อมูลในตารางนี้", ctx);
 }
+
+// projectmRole is independent of the GameDB role above — a "staff"/"user"
+// GameDB account can still hold projectm-admin, and vice versa. Gates every
+// /api/projectm/itune route the same way the itune/admin page itself does.
+export async function requireProjectmAdmin(request) {
+  const user = await requireAdmin(request);
+  if (user.projectmRole !== "admin") {
+    throw createHttpError("ต้องมีสิทธิ์ Admin ระบบ Projectm เท่านั้น", 403);
+  }
+  return user;
+}

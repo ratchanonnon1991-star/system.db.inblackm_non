@@ -51,6 +51,11 @@ export async function PATCH(request, { params }) {
       }
       fields.role = role;
     }
+    if (body.projectmRole !== undefined) {
+      // Independent of the GameDB role — decides Admin+Topup vs Topup-only
+      // visibility inside /projectm/itune.
+      fields.projectmRole = body.projectmRole ? "admin" : null;
+    }
     if (body.defaultViewId !== undefined) {
       const defaultViewId = parseDefaultViewId(body.defaultViewId);
       if (defaultViewId === undefined) {

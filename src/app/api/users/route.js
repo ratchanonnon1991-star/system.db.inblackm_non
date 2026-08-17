@@ -63,6 +63,7 @@ export async function POST(request) {
       defaultViewId: role === "user" ? defaultViewId : null,
       canWriteData: Boolean(body.canWriteData),
       canUpdateData: Boolean(body.canUpdateData),
+      projectmRole: body.projectmRole ? "admin" : null,
     });
     return jsonOk({ user }, 201);
   } catch (err) {
