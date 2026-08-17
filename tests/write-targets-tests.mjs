@@ -369,6 +369,27 @@ check(
   null
 );
 
+// The preview has to describe every half, or it describes a write that never
+// happens to half the rows.
+const stackedPreview = buildAllSql(STACKED);
+check("a stacked config previews editing only", stackedPreview.map((g) => g.action), [
+  "แก้ค่าในช่อง (UPDATE)",
+]);
+const stackedTitle = stackedPreview[0].statements.find((s) => s.label === "title").sql;
+check(
+  "with one statement per half",
+  [
+    stackedTitle.includes('UPDATE "public"."orders" SET "title"'),
+    stackedTitle.includes('UPDATE "public"."games" SET "name"'),
+  ],
+  [true, true]
+);
+check(
+  "and says which source value picks which",
+  stackedTitle.includes("__src = 'public.games'"),
+  true
+);
+
 setResponder(null);
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);

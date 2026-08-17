@@ -37,6 +37,39 @@ export function buildAllSql(editable) {
   const pk = quoteIdentifier(realPkOf(editable));
   const columns = editable.columns || [];
 
+  // A stacked query has no single table: which one a row belongs to is read
+  // off the row itself, so the statement for one column is one statement per
+  // half. Showing only the first would describe a write that never happens to
+  // half the rows.
+  const rows = editable.rowTargets;
+  if (rows) {
+    return [
+      {
+        action: "แก้ค่าในช่อง (UPDATE)",
+        always: true,
+        statements: columns.map((column) => ({
+          label: column,
+          sql: rows.branches
+            .map((branch) => {
+              const real = quoteIdentifier(branch.columnMap?.[column] || column);
+              const branchTable = quoteIdentifier(branch.table);
+              const branchPk = quoteIdentifier(branch.pkColumn);
+              return (
+                `-- เมื่อ ${rows.sourceColumn} = '${branch.table}'\n` +
+                `UPDATE ${branchTable} SET ${real} = $1 WHERE ${branchPk} = $2 ` +
+                `RETURNING ${real} AS value`
+              );
+            })
+            .join("\n"),
+        })),
+        note:
+          `$1 คือค่าใหม่ · $2 คือค่าจากคอลัมน์ "${rows.keyColumn}" ของแถวนั้น · ` +
+          `ระบบเลือกคำสั่งจากค่าในคอลัมน์ "${rows.sourceColumn}" ของแถวนั้น ` +
+          "ถ้าค่าไม่ตรงกับตารางไหนเลย จะไม่เขียนอะไรทั้งสิ้น",
+      },
+    ];
+  }
+
   const groups = [
     {
       action: "แก้ค่าในช่อง (UPDATE)",
@@ -282,6 +315,55 @@ export async function checkEditable({ editable, connection }) {
               ok: false,
               label: `ไม่พบในตาราง ${missing.length} คอลัมน์`,
               detail: `${missing.join(", ")} — คอลัมน์ที่มาจากการคำนวณเขียนกลับไม่ได้`,
+            }
+      );
+    }
+
+    // Every half of a stacked query gets the same two questions the base
+    // table did, against its own names for the shared columns.
+    for (const branch of editable.rowTargets?.branches || []) {
+      const where = splitTable(branch.table);
+      const branchFound = await client.query(FIND_TABLE_SQL, [where.table, where.schema]);
+      if (branchFound.rowCount === 0) {
+        checks.push({
+          ok: false,
+          label: `ไม่พบตาราง "${branch.table}"`,
+          detail: `เป็นหนึ่งในตารางที่ UNION นี้ดึงมา`,
+        });
+        continue;
+      }
+      const branchColumns = await client.query(TABLE_COLUMNS_SQL, [
+        branchFound.rows[0].table,
+        branchFound.rows[0].schema,
+      ]);
+      const present = new Set(branchColumns.rows.map((row) => row.name));
+      const wanted = [
+        branch.pkColumn,
+        ...editable.columns.map((name) => branch.columnMap?.[name] || name),
+      ];
+      const absent = wanted.filter(
+        (name, index, all) => !present.has(name) && all.indexOf(name) === index
+      );
+      checks.push(
+        absent.length === 0
+          ? {
+              ok: true,
+              label: `เขียนกลับตาราง "${branch.table}" ได้`,
+              detail: `ระบุแถวด้วย ${branch.pkColumn} · ${editable.columns
+                .map((name) =>
+                  branch.columnMap?.[name] && branch.columnMap[name] !== name
+                    ? `${name} → ${branch.columnMap[name]}`
+                    : name
+                )
+                .join(", ")}`,
+            }
+          : {
+              ok: false,
+              label: `ตาราง "${branch.table}" ไม่มีคอลัมน์ ${absent.join(", ")}`,
+              detail: `ตารางนี้มี: ${branchColumns.rows
+                .map((row) => row.name)
+                .slice(0, 25)
+                .join(", ")}`,
             }
       );
     }

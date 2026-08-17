@@ -1625,8 +1625,33 @@ export default function QueryPanel({
     }
   };
 
-  const pkValueOf = (sourceIndex) =>
-    sharedEditable?.pk ? result?.rows?.[sourceIndex]?.[baseNameToIndex.get(sharedEditable.pk)] : undefined;
+  /**
+   * Which half of a stacked query a row came from, read out of the column the
+   * query carries for exactly that. Undefined for every ordinary query, where
+   * the table is a property of the column instead of of the row.
+   */
+  const rowSourceOf = (sourceIndex) => {
+    const column = sharedEditable?.rowTargets?.sourceColumn;
+    if (!column) return undefined;
+    const index = baseNameToIndex.get(column);
+    return index === undefined ? undefined : result?.rows?.[sourceIndex]?.[index];
+  };
+
+  /**
+   * What a cell note is filed under.
+   *
+   * The row's key on its own is enough for an ordinary query. For a stacked
+   * one it is not: the two halves number their rows independently, so order 5
+   * and game 5 would file under the same "5" and each would show the other's
+   * note. The half is folded into the key to keep them apart.
+   */
+  const pkValueOf = (sourceIndex) => {
+    if (!sharedEditable?.pk) return undefined;
+    const value = result?.rows?.[sourceIndex]?.[baseNameToIndex.get(sharedEditable.pk)];
+    if (value === undefined || value === null || !sharedEditable.rowTargets) return value;
+    const source = rowSourceOf(sourceIndex);
+    return source === undefined || source === null ? undefined : `${source}:${value}`;
+  };
 
   // --- saved filter views -----------------------------------------------------
   // The search box text, the lookup match/no-match toggle, and the bound
@@ -1701,18 +1726,6 @@ export default function QueryPanel({
    * key for a joined column would either find nothing or -- when both tables
    * number their rows from 1 -- find a completely unrelated row.
    */
-  /**
-   * Which half of a stacked query a row came from, read out of the column the
-   * query carries for exactly that. Undefined for every ordinary query, where
-   * the table is a property of the column instead of of the row.
-   */
-  const rowSourceOf = (sourceIndex) => {
-    const column = sharedEditable?.rowTargets?.sourceColumn;
-    if (!column) return undefined;
-    const index = baseNameToIndex.get(column);
-    return index === undefined ? undefined : result?.rows?.[sourceIndex]?.[index];
-  };
-
   const editPkValueOf = (sourceIndex, column) => {
     const target = writeTargetFor(sharedEditable, column, rowSourceOf(sourceIndex));
     const index = baseNameToIndex.get(target.pk);
@@ -1871,10 +1884,15 @@ export default function QueryPanel({
 
   const openRowHistory = async (row) => {
     const pkValue = result.rows[row.sourceIndex][baseNameToIndex.get(sharedEditable.pk)];
+    // The history lives under the table the edit was actually written to,
+    // which for a stacked query is whichever half this row came from.
+    const source = rowSourceOf(row.sourceIndex);
+    const params = new URLSearchParams({ pkValue: String(pkValue) });
+    if (source !== undefined && source !== null) params.set("rowSource", String(source));
     setRowHistory({ pkValue, loading: true, entries: [], error: "" });
     try {
       const data = await apiJson(
-        `/api/queries/${query.id}/row-history?pkValue=${encodeURIComponent(String(pkValue))}`,
+        `/api/queries/${query.id}/row-history?${params.toString()}`,
         { fallbackError: "โหลดประวัติของแถวนี้ไม่สำเร็จ" }
       );
       setRowHistory({ pkValue, loading: false, entries: data.entries || [], error: "" });
