@@ -1,7 +1,11 @@
 import { notFound, redirect } from "next/navigation";
 import { getSessionUser } from "@/server/session-user";
 import { getGameListRow } from "@/server/gameinfo-gamelist";
-import { getGamelistPacks, listAllGamelistChannels } from "@/server/gameinfo-gamelist-packs";
+import {
+  getGamelistPacks,
+  listAllGamelistChannels,
+  listGamelistPackLanguages,
+} from "@/server/gameinfo-gamelist-packs";
 import { buildPackSuggestions } from "@/lib/gameinfo-suggestions";
 import GameinfoPackEditor from "@/components/gameinfo-pack-editor";
 import GameinfoErrorNotice from "@/components/gameinfo-error-notice";
@@ -34,19 +38,22 @@ export default async function GameinfoGamelistPacksPage({ params, searchParams }
   let packs;
   let allChannels = [];
   let formulaVariables = [];
+  let packLanguages = [];
   let modeFields = null;
   try {
     row = await getGameListRow(numericId);
     if (row) {
-      const [modeData, channels, variableData] = await Promise.all([
+      const [modeData, channels, variableData, languages] = await Promise.all([
         dataMode === "idpass" ? getGameinfoModeData(row.id, dataMode) : null,
         listAllGamelistChannels(),
         getGameinfoFormulaVariables(row.id),
+        listGamelistPackLanguages(),
       ]);
       packs = modeData?.packs || await getGamelistPacks(row.id);
       modeFields = modeData?.fields || null;
       allChannels = channels;
       formulaVariables = variableData.variables;
+      packLanguages = languages;
     }
   } catch (err) {
     return (
@@ -67,6 +74,7 @@ export default async function GameinfoGamelistPacksPage({ params, searchParams }
     computedColumns: packs.computedColumns,
     costProfiles: packs.costProfiles,
     formulaVariables,
+    packLanguages,
   };
 
   return (

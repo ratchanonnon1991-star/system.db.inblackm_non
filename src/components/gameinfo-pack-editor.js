@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Copy, Download, Image as ImageIcon, Pencil, Plus, Trash2, X } from "lucide-react";
+import { ChevronDown, Copy, Download, Image as ImageIcon, Languages, Pencil, Plus, Trash2, X } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -47,7 +47,11 @@ import {
   setGameinfoFormulaOverride,
   updateGameinfoComputedColumn,
 } from "@/lib/gameinfo-formula-overrides";
-import { createBlankGameinfoPack, duplicateGameinfoPack } from "@/lib/gameinfo-pack-model";
+import {
+  createBlankGameinfoPack,
+  duplicateGameinfoPack,
+  getGameinfoPackName,
+} from "@/lib/gameinfo-pack-model";
 import { evaluateGameinfoComputedColumn } from "@/lib/gameinfo-computed-evaluator";
 import { normalizeSpaces } from "@/lib/text-normalize";
 
@@ -115,6 +119,12 @@ export default function GameinfoPackEditor({
   const [computedColumns, setComputedColumns] = useState(game.computedColumns ?? []);
   const [costProfiles, setCostProfiles] = useState(game.costProfiles ?? []);
   const [formulaVariables, setFormulaVariables] = useState(game.formulaVariables ?? []);
+  const [packLanguages, setPackLanguages] = useState(game.packLanguages ?? []);
+  const [activeLanguageId, setActiveLanguageId] = useState("");
+  const [addingLanguage, setAddingLanguage] = useState(false);
+  const [languageDraft, setLanguageDraft] = useState("");
+  const [languagePending, setLanguagePending] = useState(false);
+  const [languageError, setLanguageError] = useState("");
   const [savedCurrencies, setSavedCurrencies] = useState(game.currencies);
   const [savedComputedColumns, setSavedComputedColumns] = useState(game.computedColumns ?? []);
   const [savedCostProfiles, setSavedCostProfiles] = useState(game.costProfiles ?? []);
@@ -206,6 +216,39 @@ export default function GameinfoPackEditor({
     }
     return { ...suggestions, channels: uniq([...(suggestions?.channels || []), ...seen]) };
   }, [currencies, suggestions]);
+
+  async function addPackLanguage(event) {
+    event.preventDefault();
+    const name = languageDraft.trim();
+    if (!name) {
+      setLanguageError("กรุณากรอกชื่อภาษา");
+      return;
+    }
+    setLanguagePending(true);
+    setLanguageError("");
+    try {
+      const data = await apiJson("/api/gameinfo/pack-languages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+        fallbackError: "เพิ่มภาษาไม่สำเร็จ",
+      });
+      const language = data.language;
+      setPackLanguages((current) => {
+        const next = current.some((item) => String(item.id) === String(language.id))
+          ? [...current]
+          : [...current, language];
+        return next.sort((a, b) => a.name.localeCompare(b.name, "th"));
+      });
+      setActiveLanguageId(String(language.id));
+      setLanguageDraft("");
+      setAddingLanguage(false);
+    } catch (error) {
+      setLanguageError(error instanceof Error ? error.message : "เพิ่มภาษาไม่สำเร็จ");
+    } finally {
+      setLanguagePending(false);
+    }
+  }
 
   function updateCurrencies(fn) {
     setCurrencies((prev) => {
@@ -640,6 +683,71 @@ export default function GameinfoPackEditor({
         กดค้างที่หัวคอลัมน์แล้วลากเพื่อเปลี่ยนลำดับ
       </p>
 
+      <section className="flex flex-wrap items-center gap-2 border-y border-linear-hairline py-3">
+        <div className="flex items-center gap-2 text-xs font-medium text-linear-ink-muted">
+          <Languages size={14} className="text-linear-primary" />
+          ภาษาชื่อ Pack
+        </div>
+        <select
+          value={activeLanguageId}
+          onChange={(event) => setActiveLanguageId(event.target.value)}
+          className="h-9 min-w-44 rounded-md border border-linear-hairline-strong bg-linear-surface-1 px-2 text-xs text-linear-ink outline-none focus:border-linear-primary"
+          aria-label="เลือกภาษาของชื่อ Pack"
+        >
+          <option value="">ชื่อหลัก</option>
+          {packLanguages.map((language) => (
+            <option key={language.id} value={String(language.id)}>
+              {language.name}
+            </option>
+          ))}
+        </select>
+        {addingLanguage ? (
+          <form onSubmit={addPackLanguage} className="flex flex-wrap items-center gap-2">
+            <input
+              autoFocus
+              value={languageDraft}
+              onChange={(event) => {
+                setLanguageDraft(event.target.value);
+                setLanguageError("");
+              }}
+              maxLength={80}
+              placeholder="ชื่อภาษา เช่น English"
+              className="h-9 w-48 rounded-md border border-linear-primary/50 bg-linear-surface-1 px-2 text-xs text-linear-ink outline-none focus:border-linear-primary"
+            />
+            <button
+              type="submit"
+              disabled={languagePending}
+              className="h-9 rounded-md bg-linear-primary px-3 text-xs font-medium text-white disabled:opacity-50"
+            >
+              {languagePending ? "กำลังเพิ่ม..." : "เพิ่มภาษา"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAddingLanguage(false);
+                setLanguageDraft("");
+                setLanguageError("");
+              }}
+              className="h-9 px-2 text-xs text-linear-ink-muted hover:text-linear-ink"
+            >
+              ยกเลิก
+            </button>
+          </form>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setAddingLanguage(true)}
+            className="flex h-9 items-center gap-1 rounded-md border border-linear-primary/40 px-3 text-xs text-linear-primary hover:bg-linear-primary/10"
+          >
+            <Plus size={13} /> ภาษา
+          </button>
+        )}
+        <span className="text-[11px] text-linear-ink-tertiary">
+          {activeLanguageId ? "ชื่อที่ยังไม่เคยแปลจะแสดงเป็นช่องว่าง" : "ชื่อเดิมที่ระบบใช้แสดง"}
+        </span>
+        {languageError ? <span className="w-full text-xs text-red-400">{languageError}</span> : null}
+      </section>
+
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="font-semibold text-linear-ink">สกุลเงิน ({currencies.length})</h2>
@@ -741,6 +849,7 @@ export default function GameinfoPackEditor({
                       setAuditSource("editor");
                     }}
                     formulaMode={formulaMode}
+                    packNameLanguageId={activeLanguageId}
                     invalidFields={invalidFields}
                     onRemoveColumn={removeComputedColumn}
                     onEditColumn={setEditingComputedColumn}
@@ -872,6 +981,7 @@ function CategoryBlock({
   filters,
   onSetCategoryStatus,
   formulaMode,
+  packNameLanguageId,
   invalidFields,
   onRemoveColumn,
   onEditColumn,
@@ -904,6 +1014,7 @@ function CategoryBlock({
         if (column.id === "costProfileId") {
           return costProfiles.find((profile) => profile.id === targetPack.costProfileId)?.label || "";
         }
+        if (column.id === "name") return getGameinfoPackName(targetPack, packNameLanguageId);
         if (column.kind !== "computed") return targetPack[column.field];
         try {
           return evaluateGameinfoComputedColumn(
@@ -1050,6 +1161,7 @@ function CategoryBlock({
                 columns={columns}
                 computedColumns={allColumns.filter((item) => item.kind === "computed").map((item) => item.computed)}
                 formulaMode={formulaMode}
+                packNameLanguageId={packNameLanguageId}
                 gridTemplate={grid.template}
                 invalid={{
                   name: invalidFields.has(`${pack.id}:name`),
@@ -1083,6 +1195,7 @@ function PackRow({
   columns,
   computedColumns,
   formulaMode,
+  packNameLanguageId,
   gridTemplate,
   invalid,
   onUpdate,
@@ -1113,6 +1226,7 @@ function PackRow({
           computedColumns={computedColumns}
           suggestions={suggestions}
           formulaMode={formulaMode}
+          packNameLanguageId={packNameLanguageId}
           invalid={invalid}
           editing={isEditing(column.id)}
           onStartEdit={() => setEditing(column.id)}
@@ -1173,6 +1287,7 @@ function PackEditorColumn({
   computedColumns,
   suggestions,
   formulaMode,
+  packNameLanguageId,
   invalid,
   editing,
   onStartEdit,
@@ -1310,8 +1425,21 @@ function PackEditorColumn({
   }
 
   const isName = column.id === "name";
-  const value = pack[column.field] ?? "";
+  const value = isName
+    ? getGameinfoPackName(pack, packNameLanguageId)
+    : pack[column.field] ?? "";
   const placeholder = isName ? "ชื่อ pack เช่น 86 Diamonds" : column.label;
+
+  function updateName(value) {
+    if (!packNameLanguageId) {
+      onUpdate({ name: value });
+      return;
+    }
+    const localizedNames = { ...(pack.localizedNames || {}) };
+    if (value) localizedNames[packNameLanguageId] = value;
+    else delete localizedNames[packNameLanguageId];
+    onUpdate({ localizedNames });
+  }
   return (
     <PackCell
       editing={editing}
@@ -1326,15 +1454,15 @@ function PackEditorColumn({
         inputMode={isName ? undefined : "decimal"}
         value={value}
         onChange={(event) =>
-          onUpdate({
-            [column.field]: isName ? event.target.value : numericOnly(event.target.value),
-          })
+          isName
+            ? updateName(event.target.value)
+            : onUpdate({ [column.field]: numericOnly(event.target.value) })
         }
         onBlur={
           isName
             ? (event) => {
                 const normalized = normalizeSpaces(event.target.value);
-                if (normalized !== event.target.value) onUpdate({ name: normalized });
+                if (normalized !== event.target.value) updateName(normalized);
               }
             : undefined
         }

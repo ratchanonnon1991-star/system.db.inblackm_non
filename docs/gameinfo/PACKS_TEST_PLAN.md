@@ -276,6 +276,17 @@ API/UI/formula:
 - formula-variable dependency validation ตรวจ computed columns ของทั้งสอง mode
 - CSV export ใช้ currencies ของ mode ที่เลือก
 
+## 15. Pack names in multiple languages (Task 25)
+
+- pack เก่าที่มีเฉพาะ `name` load/save ได้โดยไม่ถูกเพิ่ม translation ว่าง
+- sanitizer รับเฉพาะ language ID แบบตัวเลข ตัดชื่อว่างและ key ที่ไม่ถูกต้อง
+- เลือกภาษาที่ยังไม่มีคำแปลแล้วช่องชื่อ Pack เป็นค่าว่าง ไม่ fallback ไปชื่อหลัก
+- save/reload รักษาชื่อหลักและคำแปลทุกภาษา และ IDPASS ใช้ data contract เดียวกัน
+- duplicate Pack รักษาคำแปลทุกภาษาแต่สร้าง Pack ID ใหม่
+- รายการภาษากลาง normalize ชื่อซ้ำและใช้เลือกได้จากทุกเกม
+- เพิ่มภาษาแล้ว Dropdown เลือกภาษาใหม่ทันทีโดยไม่ reload หน้า
+- เปลี่ยนคำแปลไม่กระทบสูตร ราคา สถานะ ช่องทาง หรือ field อื่นของ Pack
+
 ## คำสั่งตรวจขั้นต่ำ
 
 ```bash

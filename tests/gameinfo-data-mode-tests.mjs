@@ -27,7 +27,7 @@ setResponder((text) => {
       links: [],
       tutorial: { categories: [] },
       warning: { categories: [] },
-      packs: { currencies: [{ id: "c", name: "Crystal", categories: [{ id: "cat", name: "Pack", packs: [{ id: "p", name: "60 Crystals", price: "10", amountChargedFee: "9", channelsMain: ["Web"] }] }] }], computedColumns: [], costProfiles: [] },
+      packs: { currencies: [{ id: "c", name: "Crystal", categories: [{ id: "cat", name: "Pack", packs: [{ id: "p", name: "60 Crystals", localizedNames: { 7: "English Pack", invalid: "ignored" }, price: "10", amountChargedFee: "9", channelsMain: ["Web"] }] }] }], computedColumns: [], costProfiles: [] },
       formulaVariables: [{ name: "must not be copied" }],
     } }] };
   }
@@ -36,6 +36,7 @@ setResponder((text) => {
 const loaded = await getGameinfoModeData(7, "idpass");
 check("IDPASS keeps its own list fields", loaded.fields, { region: "CN", platform: "PC", server: "S1", botManual: "Manual" });
 check("IDPASS packs are sanitized independently", loaded.packs.currencies[0].categories[0].packs[0].serviceEnabled, true);
+check("IDPASS preserves localized pack names", loaded.packs.currencies[0].categories[0].packs[0].localizedNames, { 7: "English Pack" });
 check("shared formula variables are not stored inside a mode", Object.hasOwn(loaded, "formulaVariables"), false);
 
 reset();

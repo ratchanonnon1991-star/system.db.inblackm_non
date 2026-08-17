@@ -11,9 +11,26 @@ function stringList(value) {
   return value.map(text).filter(Boolean);
 }
 
+export function sanitizeGameinfoPackLocalizedNames(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const result = {};
+  for (const [languageId, name] of Object.entries(value)) {
+    if (!/^\d+$/.test(languageId)) continue;
+    const normalized = text(name).trim().slice(0, 255);
+    if (normalized) result[languageId] = normalized;
+  }
+  return result;
+}
+
+export function getGameinfoPackName(pack, languageId = "") {
+  const key = String(languageId || "");
+  if (key) return sanitizeGameinfoPackLocalizedNames(pack?.localizedNames)[key] || "";
+  return text(pack?.name);
+}
+
 export function sanitizeGameinfoPack(pack) {
   const source = pack && typeof pack === "object" ? pack : {};
-  return {
+  const result = {
     id: text(source.id),
     name: text(source.name),
     image: text(source.image),
@@ -26,6 +43,9 @@ export function sanitizeGameinfoPack(pack) {
     channelsSecondary: stringList(source.channelsSecondary),
     country: text(source.country),
   };
+  const localizedNames = sanitizeGameinfoPackLocalizedNames(source.localizedNames);
+  if (Object.keys(localizedNames).length) result.localizedNames = localizedNames;
+  return result;
 }
 
 export function createBlankGameinfoPack(id) {
