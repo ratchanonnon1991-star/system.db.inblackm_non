@@ -2,7 +2,7 @@
 
 เอกสารนี้เรียง task ใหม่ตาม dependency โดยยังคงหมายเลข task เดิมของผู้ใช้เพื่ออ้างอิงได้ตรงกัน
 
-สถานะปัจจุบัน: Task 1, Task 2, Task 4 และ Task 6 ทำ milestone แรกแล้ว พร้อม unit/integration tests
+สถานะปัจจุบัน: Task 1, 2, 4, 6 และ 12–16 ทำ milestone ที่ระบุไว้แล้ว พร้อม unit/integration tests; Task 3, 5 และ 9 มีส่วนพื้นฐานแล้วและจะต่อยอดจาก preset ใน Task 15–16
 
 ## ลำดับที่ควรทำ
 
@@ -165,6 +165,13 @@ Acceptance criteria:
 - import ผิดหนึ่งเกมไม่เขียนเกมอื่นค้างไว้
 - export → import รักษาโครงสร้าง currency/category/pack ของทุกเกม
 - การแก้ไขในตาราง game list ที่ยังไม่บันทึกต้องเตือนก่อน reload หลัง import
+- bulk packs: ต้องมี game ID ที่มีอยู่จริง; `game_name` ไม่ใช้ผูก
+- single-game packs page: URL game ID เป็น source of truth และ ignore `game_id` ในไฟล์
+- append สร้าง `pack_id` ใหม่ทุกแถว จึง duplicate ได้
+- replace กระทบเฉพาะเกมที่ preview และผู้ใช้ยืนยัน
+- แสดง required/optional, ชนิดข้อมูล, ตัวอย่าง และคอลัมน์ที่ถูก ignore
+- หลัง Task 6 ใช้ `amount_charged_fee` และไม่รับ `amount_charged`
+- preview ต้องบอกจำนวน create/update/duplicate/skip ก่อน commit
 
 ## Task 13: ประวัติการแก้ไข packs แบบรวม
 
@@ -194,13 +201,35 @@ Acceptance criteria:
 - คอลัมน์สูตรเดิมแก้ได้โดยไม่เปลี่ยน `key` หรือ layout ส่วนตัว
 - update สูตรหลักถูกบันทึกใน config audit event
 - ล้าง override มีผลเฉพาะคอลัมน์ที่กำลังแก้ และสามารถยกเลิกก่อน save ได้
-- bulk packs: ต้องมี game ID ที่มีอยู่จริง; `game_name` ไม่ใช้ผูก
-- single-game packs page: URL game ID เป็น source of truth และ ignore `game_id` ในไฟล์
-- append สร้าง `pack_id` ใหม่ทุกแถว จึง duplicate ได้
-- replace กระทบเฉพาะเกมที่ preview และผู้ใช้ยืนยัน
-- แสดง required/optional, ชนิดข้อมูล, ตัวอย่าง และคอลัมน์ที่ถูก ignore
-- หลัง Task 6 ใช้ `amount_charged_fee` และไม่รับ `amount_charged`
-- preview ต้องบอกจำนวน create/update/duplicate/skip ก่อน commit
+
+## Task 15: preset การแสดงคอลัมน์ส่วนตัว
+
+- บันทึกชุดคอลัมน์ที่แสดง/ซ่อนเป็น preset ที่ตั้งชื่อได้
+- preset เป็นของผู้ใช้คนนั้น, game ID นั้น และแยกหน้า `edit`/`view` อย่างเด็ดขาด
+- เลือก preset ที่บันทึกไว้เพื่อสลับการแสดงทุก category/table ในหน้าเดียวกัน
+- หน้า view ที่อ่านข้อมูลอย่างเดียวสร้างและบันทึก preset ส่วนตัวได้ โดยไม่ให้แก้ pack data
+- ใช้ฐานข้อมูลเป็น source of truth; ค่า localStorage รุ่นเก่าอ่านได้ครั้งเดียวเป็น draft เพื่อให้ผู้ใช้ตั้งชื่อและย้ายเข้าระบบ
+
+Acceptance criteria:
+
+- ผู้ใช้ A ไม่เห็นหรือเขียนทับ preset ของผู้ใช้ B
+- preset หน้า edit ไม่ปนกับหน้า view
+- ชื่อ preset, visible columns และ order ถูกโหลดหลัง refresh
+- คอลัมน์ที่ถูกลบหรือยังไม่มีใน schema ปัจจุบันถูกละทิ้งอย่างปลอดภัยตอนแสดง/บันทึก
+
+## Task 16: บันทึกลำดับคอลัมน์แบบ explicit
+
+- การลากหัวตารางเปลี่ยนลำดับเพียงใน draft ของ preset ปัจจุบัน
+- การซ่อน/แสดงและการลากคอลัมน์จะไม่เขียน localStorage หรือฐานข้อมูลอัตโนมัติ
+- ผู้ใช้ต้องกด `บันทึก` เพื่ออัปเดต preset ที่เลือก หรือ `บันทึกเป็นใหม่` เพื่อสร้าง preset ชุดใหม่
+- เมื่อเปลี่ยน preset ขณะมี draft ที่ยังไม่บันทึก ต้องยืนยันก่อนทิ้งการแก้ไข
+
+Acceptance criteria:
+
+- drag แล้ว refresh ก่อนกดบันทึก ลำดับจากฐานข้อมูลเดิมยังคงอยู่
+- drag แล้วกดบันทึก และ refresh ลำดับถูกใช้กับทุก category/table ในหน้า
+- save error คง draft ไว้ให้แก้/ลองบันทึกใหม่
+- การกดคืนค่าเริ่มต้นเป็นเพียง draft จนกว่าจะกดบันทึก
 
 ## งาน migration ที่ควรแยก PR
 

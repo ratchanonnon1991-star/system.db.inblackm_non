@@ -164,6 +164,23 @@ function ensureSchema(connection) {
         ALTER TABLE gamelist_pack_audit_logs
         ADD COLUMN IF NOT EXISTS source VARCHAR(32) NOT NULL DEFAULT 'editor'
       `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS gamelist_pack_view_presets (
+          id          BIGSERIAL PRIMARY KEY,
+          game_id     INTEGER NOT NULL,
+          user_id     INTEGER NOT NULL,
+          surface     VARCHAR(12) NOT NULL CHECK (surface IN ('edit', 'view')),
+          name        VARCHAR(80) NOT NULL,
+          layout      JSONB NOT NULL DEFAULT '{"order": [], "hidden": []}'::jsonb,
+          created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (game_id, user_id, surface, name)
+        )
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS gamelist_pack_view_presets_owner_idx
+        ON gamelist_pack_view_presets (game_id, user_id, surface, updated_at DESC, id DESC)
+      `);
     } finally {
       client.release();
     }
@@ -479,6 +496,146 @@ export async function listAllGamelistPackAudit(limit = 1000) {
       after: row.after_data,
       createdAt: row.created_at,
     }));
+  } finally {
+    client.release();
+  }
+}
+
+// --- Personal pack-table display presets ---------------------------------
+// These are deliberately separate from gamelist_packs and its audit log:
+// they change only one person's screen, never the underlying pack data. The
+// gameinfo connection owns this table, while the user row itself lives in the
+// primary GameDB connection, so user_id is intentionally not a foreign key.
+
+function normalizePresetScope({ gameId, userId, surface }) {
+  const safeGameId = Number(gameId);
+  const safeUserId = Number(userId);
+  if (!Number.isInteger(safeGameId) || safeGameId <= 0) {
+    throw createHttpError("gameId ไม่ถูกต้อง", 400);
+  }
+  if (!Number.isInteger(safeUserId) || safeUserId <= 0) {
+    throw createHttpError("ผู้ใช้ไม่ถูกต้อง", 400);
+  }
+  if (surface !== "edit" && surface !== "view") {
+    throw createHttpError("surface ต้องเป็น edit หรือ view", 400);
+  }
+  return { gameId: safeGameId, userId: safeUserId, surface };
+}
+
+function normalizePresetName(value) {
+  if (typeof value !== "string") throw createHttpError("กรุณาตั้งชื่อ preset", 400);
+  const name = value.trim().replace(/\s+/g, " ");
+  if (!name) throw createHttpError("กรุณาตั้งชื่อ preset", 400);
+  if (name.length > 80) throw createHttpError("ชื่อ preset ยาวได้ไม่เกิน 80 ตัวอักษร", 400);
+  return name;
+}
+
+function presetColumnIds(value) {
+  const ids = [];
+  for (const item of Array.isArray(value) ? value : []) {
+    const id = typeof item === "string" ? item.trim() : "";
+    if (!id || id.length > 128 || ids.includes(id)) continue;
+    ids.push(id);
+    if (ids.length >= 200) break;
+  }
+  return ids;
+}
+
+/** Keep a persisted layout deliberately generic. The client knows the live
+ * column schema and will safely merge this into it; the server only accepts a
+ * bounded JSON shape so a preset cannot be used to store arbitrary data. */
+export function sanitizeGamelistPackViewPresetLayout(layout) {
+  return {
+    order: presetColumnIds(layout?.order),
+    hidden: presetColumnIds(layout?.hidden),
+  };
+}
+
+function mapGamelistPackViewPreset(row) {
+  return {
+    id: row.id,
+    gameId: row.game_id,
+    userId: row.user_id,
+    surface: row.surface,
+    name: row.name,
+    layout: sanitizeGamelistPackViewPresetLayout(row.layout),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function listGamelistPackViewPresets({ gameId, userId, surface }) {
+  const scope = normalizePresetScope({ gameId, userId, surface });
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `SELECT id, game_id, user_id, surface, name, layout, created_at, updated_at
+       FROM gamelist_pack_view_presets
+       WHERE game_id = $1 AND user_id = $2 AND surface = $3
+       ORDER BY updated_at DESC, id DESC`,
+      [scope.gameId, scope.userId, scope.surface]
+    );
+    return result.rows.map(mapGamelistPackViewPreset);
+  } finally {
+    client.release();
+  }
+}
+
+/** Create a named preset, or update only a preset in the current user's
+ * game/surface scope. `presetId` is omitted for Save as new. */
+export async function saveGamelistPackViewPreset({
+  gameId,
+  userId,
+  surface,
+  presetId = null,
+  name,
+  layout,
+}) {
+  const scope = normalizePresetScope({ gameId, userId, surface });
+  const safeName = normalizePresetName(name);
+  const safeLayout = sanitizeGamelistPackViewPresetLayout(layout);
+  const safePresetId = presetId == null || presetId === "" ? null : Number(presetId);
+  if (safePresetId != null && (!Number.isInteger(safePresetId) || safePresetId <= 0)) {
+    throw createHttpError("presetId ไม่ถูกต้อง", 400);
+  }
+
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    let result;
+    if (safePresetId == null) {
+      result = await client.query(
+        `INSERT INTO gamelist_pack_view_presets (game_id, user_id, surface, name, layout)
+         VALUES ($1, $2, $3, $4, $5::jsonb)
+         RETURNING id, game_id, user_id, surface, name, layout, created_at, updated_at`,
+        [scope.gameId, scope.userId, scope.surface, safeName, JSON.stringify(safeLayout)]
+      );
+    } else {
+      result = await client.query(
+        `UPDATE gamelist_pack_view_presets
+         SET name = $5, layout = $6::jsonb, updated_at = NOW()
+         WHERE id = $1 AND game_id = $2 AND user_id = $3 AND surface = $4
+         RETURNING id, game_id, user_id, surface, name, layout, created_at, updated_at`,
+        [
+          safePresetId,
+          scope.gameId,
+          scope.userId,
+          scope.surface,
+          safeName,
+          JSON.stringify(safeLayout),
+        ]
+      );
+      if (result.rows.length === 0) throw createHttpError("ไม่พบ preset ที่ต้องการบันทึก", 404);
+    }
+    return mapGamelistPackViewPreset(result.rows[0]);
+  } catch (error) {
+    // The unique constraint remains the authority under concurrent browser
+    // requests; turn its database error into a recoverable UI message.
+    if (error?.code === "23505") {
+      throw createHttpError("มี preset ชื่อนี้อยู่แล้ว กรุณาตั้งชื่ออื่น", 409);
+    }
+    throw error;
   } finally {
     client.release();
   }

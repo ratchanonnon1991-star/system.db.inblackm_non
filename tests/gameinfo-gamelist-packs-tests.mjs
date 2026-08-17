@@ -13,7 +13,10 @@ import {
   listAllGamelistPackAudit,
   listGamelistPackAudit,
   listGamelistPackCountByGame,
+  listGamelistPackViewPresets,
   saveGamelistPacks,
+  saveGamelistPackViewPreset,
+  sanitizeGamelistPackViewPresetLayout,
 } from "@/server/gameinfo-gamelist-packs.js";
 import { log, reset, setResponder } from "@/lib/db.js";
 
@@ -372,6 +375,133 @@ async function run() {
   const allHistory = await listAllGamelistPackAudit(9999);
   check("combined history includes the game name", allHistory[0].gameName, "Game A");
   check("combined history clamps its one bound limit", find(/FROM gamelist_pack_audit_logs a/)?.params, [2000]);
+
+  // --- personal column presets (Tasks 15 + 16) ------------------------
+  check(
+    "preset layout: only keeps unique, bounded string column ids",
+    sanitizeGamelistPackViewPresetLayout({
+      order: ["price", "price", "", 123, "computed:profit"],
+      hidden: ["country", "country", "  ", "price"],
+    }),
+    { order: ["price", "computed:profit"], hidden: ["country", "price"] }
+  );
+
+  reset();
+  setResponder((text) => {
+    if (/FROM gamelist_pack_view_presets/.test(text)) {
+      return {
+        rows: [
+          {
+            id: 42,
+            game_id: 5,
+            user_id: 9,
+            surface: "view",
+            name: "เฉพาะราคา",
+            layout: { order: ["price", "name"], hidden: ["country"] },
+            created_at: "2026-08-17T10:00:00.000Z",
+            updated_at: "2026-08-17T11:00:00.000Z",
+          },
+        ],
+      };
+    }
+    return null;
+  });
+  const presets = await listGamelistPackViewPresets({ gameId: 5, userId: 9, surface: "view" });
+  check("preset list: scopes rows to game, user and surface", presets[0], {
+    id: 42,
+    gameId: 5,
+    userId: 9,
+    surface: "view",
+    name: "เฉพาะราคา",
+    layout: { order: ["price", "name"], hidden: ["country"] },
+    createdAt: "2026-08-17T10:00:00.000Z",
+    updatedAt: "2026-08-17T11:00:00.000Z",
+  });
+  check(
+    "preset list: binds game, user and surface instead of interpolating them",
+    find(/FROM gamelist_pack_view_presets/)?.params,
+    [5, 9, "view"]
+  );
+
+  reset();
+  setResponder((text) => {
+    if (/^INSERT INTO gamelist_pack_view_presets/.test(text)) {
+      return {
+        rows: [
+          {
+            id: 43,
+            game_id: 5,
+            user_id: 9,
+            surface: "edit",
+            name: "แก้ไขแบบย่อ",
+            layout: { order: ["name", "price"], hidden: ["image"] },
+            created_at: "2026-08-17T12:00:00.000Z",
+            updated_at: "2026-08-17T12:00:00.000Z",
+          },
+        ],
+      };
+    }
+    return null;
+  });
+  const createdPreset = await saveGamelistPackViewPreset({
+    gameId: 5,
+    userId: 9,
+    surface: "edit",
+    name: "  แก้ไขแบบย่อ  ",
+    layout: { order: ["name", "price"], hidden: ["image"] },
+  });
+  check("preset save: creates and returns the normalized named preset", createdPreset, {
+    id: 43,
+    gameId: 5,
+    userId: 9,
+    surface: "edit",
+    name: "แก้ไขแบบย่อ",
+    layout: { order: ["name", "price"], hidden: ["image"] },
+    createdAt: "2026-08-17T12:00:00.000Z",
+    updatedAt: "2026-08-17T12:00:00.000Z",
+  });
+  const presetInsert = find(/^INSERT INTO gamelist_pack_view_presets/);
+  check(
+    "preset save: binds JSON layout and its owner scope",
+    [presetInsert?.params?.slice(0, 4), JSON.parse(presetInsert?.params?.[4] || "null")],
+    [[5, 9, "edit", "แก้ไขแบบย่อ"], { order: ["name", "price"], hidden: ["image"] }]
+  );
+
+  reset();
+  setResponder((text) => {
+    if (/^UPDATE gamelist_pack_view_presets/.test(text)) {
+      return {
+        rows: [
+          {
+            id: 43,
+            game_id: 5,
+            user_id: 9,
+            surface: "edit",
+            name: "แก้ไขแบบเต็ม",
+            layout: { order: ["price", "name"], hidden: [] },
+            created_at: "2026-08-17T12:00:00.000Z",
+            updated_at: "2026-08-17T13:00:00.000Z",
+          },
+        ],
+      };
+    }
+    return null;
+  });
+  const updatedPreset = await saveGamelistPackViewPreset({
+    gameId: 5,
+    userId: 9,
+    surface: "edit",
+    presetId: 43,
+    name: "แก้ไขแบบเต็ม",
+    layout: { order: ["price", "name"], hidden: [] },
+  });
+  check("preset update: returns the revised preset", updatedPreset.name, "แก้ไขแบบเต็ม");
+  const presetUpdate = find(/^UPDATE gamelist_pack_view_presets/);
+  check(
+    "preset update: limits the write to the selected user, game and surface",
+    presetUpdate?.params?.slice(0, 5),
+    [43, 5, 9, "edit", "แก้ไขแบบเต็ม"]
+  );
 
   console.log(`\n${pass} passed, ${failures.length} failed`);
   for (const failure of failures) console.log(`  FAIL ${failure}`);

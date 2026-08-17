@@ -400,8 +400,20 @@ export default function GameinfoPackEditor({
         <GameinfoPackColumnControls
           columns={packLayout.orderedColumns}
           hidden={packLayout.layout.hidden}
+          presets={packLayout.presets}
+          selectedPresetId={packLayout.selectedPresetId}
+          presetName={packLayout.presetName}
+          dirty={packLayout.dirty}
+          loading={packLayout.loading}
+          saving={packLayout.saving}
+          error={packLayout.error}
+          notice={packLayout.notice}
+          legacyDraft={packLayout.legacyDraft}
           onSetVisible={packLayout.setVisible}
           onReset={packLayout.reset}
+          onSelectPreset={packLayout.selectPreset}
+          onPresetNameChange={packLayout.setPresetName}
+          onSavePreset={packLayout.savePreset}
           lockRequired
         />
         <GameinfoPackHistory gameId={game.id} historyUrl={historyUrl} />

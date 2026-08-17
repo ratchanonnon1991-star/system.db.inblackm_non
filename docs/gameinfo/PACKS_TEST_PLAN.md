@@ -100,6 +100,18 @@ Round-trip:
 - override ราย pack คงอยู่ตามค่าเริ่มต้น
 - เลือก apply-to-all แล้วล้าง override เฉพาะคอลัมน์นั้น
 
+### Named column presets + explicit order save (Tasks 15 + 16)
+
+- preset query/saves bind `game_id`, `user_id` และ `surface`; ห้ามมี row ของผู้ใช้อื่นหลุดมา
+- create/update เก็บ name, visible/hidden set และ order ใน JSONB ที่ sanitize แล้ว
+- preset `edit` กับ `view` แยกกัน แม้เป็น game และผู้ใช้เดียวกัน
+- เปิดหน้าแล้วโหลด preset ล่าสุด; เลือก preset เปลี่ยนทุก category/table พร้อมกัน
+- drag/switch visibility/reset เปลี่ยน draft เท่านั้น และไม่มี write จนกดบันทึก
+- save ปกติอัปเดต preset ที่เลือก; save-as-new สร้าง record ใหม่โดยไม่ทับชุดเดิม
+- หน้า view บันทึก preset ส่วนตัวได้ แต่ไม่มี API สำหรับแก้ pack data
+- layout จาก localStorage รุ่นเดิมถูกใช้เป็น draft migration เท่านั้น และไม่ถูกเขียนกลับอัตโนมัติ
+- unknown/deleted/computed column ที่หายไปถูก drop ตอน normalize โดยไม่ทำให้ preset ใช้ไม่ได้
+
 ## 4. Personal columns/filter/order (Task 3, 5, 9)
 
 State reducer/unit:
@@ -112,7 +124,7 @@ State reducer/unit:
 
 Persistence:
 
-- preference key แยก user, game, edit/view และ schema version
+- named preset ใน DB แยก user, game, edit/view และ schema version ที่ client normalize ได้
 - ผู้ใช้ A ไม่เห็น preference ของ B
 - edit preset ไม่ทับ view preset
 - shared config เปลี่ยนแล้ว personal preference merge เฉพาะ key ที่ยังมีอยู่
