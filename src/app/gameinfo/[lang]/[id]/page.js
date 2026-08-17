@@ -8,8 +8,10 @@ import {
   listGamelistChannelsByGame,
   listGamelistVpnByGame,
 } from "@/server/gameinfo-gamelist-packs";
-import { getGamelistTutorial } from "@/server/gameinfo-gamelist-tutorial";
+import { getGamelistTutorial, getGamelistWarning } from "@/server/gameinfo-gamelist-tutorial";
 import { getGamelistImage } from "@/server/gameinfo-gamelist-image";
+import { getGamelistLinks, legacyGamelistLinks } from "@/server/gameinfo-gamelist-links";
+import { getGameinfoFormulaVariables } from "@/server/gameinfo-formula-variables";
 import GameinfoGameView from "@/components/gameinfo-game-view";
 import GameinfoErrorNotice from "@/components/gameinfo-error-notice";
 import GameinfoBackLink from "@/components/gameinfo-back-link";
@@ -35,6 +37,7 @@ export default async function GameinfoGameDetailPage({ params }) {
   let currencies = [];
   let computedColumns = [];
   let costProfiles = [];
+  let formulaVariables = [];
   try {
     row = await getGameListRow(numericId);
     if (row) {
@@ -49,12 +52,15 @@ export default async function GameinfoGameDetailPage({ params }) {
         ),
         0
       );
-      const [vpnByGame, channelsByGame, allRows, tutorial, image] = await Promise.all([
+      const [vpnByGame, channelsByGame, allRows, tutorial, warning, image, storedLinks, variableData] = await Promise.all([
         listGamelistVpnByGame(),
         listGamelistChannelsByGame(),
         listGameListRows(),
         getGamelistTutorial(row.id),
+        getGamelistWarning(row.id),
         getGamelistImage(row.id),
+        getGamelistLinks(row.id),
+        getGameinfoFormulaVariables(row.id),
       ]);
       // Same ordering the list table shows as "ลำดับ" (gamelist_order-aware,
       // falls back to id order) — this game's position within it.
@@ -65,10 +71,13 @@ export default async function GameinfoGameDetailPage({ params }) {
         channels: channelsByGame[row.id] || { main: [], secondary: [] },
         orderPosition: orderPosition > 0 ? orderPosition : null,
         hasTutorial: tutorial.categories.some((c) => c.steps.length > 0),
+        hasWarning: warning.categories.some((c) => c.steps.length > 0),
         image: image.imageUrl,
+        links: storedLinks.exists ? storedLinks.links : legacyGamelistLinks(row.link),
         packDisabledCount,
-        serviceStatus: !row.serviceEnabled ? "offline" : packDisabledCount > 0 ? "partial" : "online",
+        serviceStatus: row.serviceNew ? "new" : !row.serviceEnabled ? "offline" : packDisabledCount > 0 ? "partial" : "online",
       };
+      formulaVariables = variableData.variables;
     }
   } catch (err) {
     return (
@@ -100,6 +109,7 @@ export default async function GameinfoGameDetailPage({ params }) {
         currencies={currencies}
         computedColumns={computedColumns}
         costProfiles={costProfiles}
+        formulaVariables={formulaVariables}
         userId={user.id}
       />
     </div>

@@ -5,6 +5,7 @@ import { saveGamelistPacks } from "@/server/gameinfo-gamelist-packs";
 import { pruneGameinfoFormulaOverrides } from "@/lib/gameinfo-formula-overrides";
 import { sanitizeGameinfoCostProfiles } from "@/lib/gameinfo-cost-profiles";
 import { validateGameinfoComputedDependencies } from "@/lib/gameinfo-computed-evaluator";
+import { getGameinfoFormulaVariables } from "@/server/gameinfo-formula-variables";
 
 export async function PUT(request, { params }) {
   try {
@@ -26,7 +27,11 @@ export async function PUT(request, { params }) {
       sanitizeComputedColumns(body.computedColumns),
       packIds
     );
-    const formulaErrors = validateGameinfoComputedDependencies(computedColumns);
+    const variableData = await getGameinfoFormulaVariables(gameId);
+    const formulaErrors = validateGameinfoComputedDependencies(
+      computedColumns,
+      variableData.variables.map((variable) => variable.name)
+    );
     if (formulaErrors.length) return jsonError(formulaErrors[0], 400);
     const packs = await saveGamelistPacks(gameId, {
       currencies,

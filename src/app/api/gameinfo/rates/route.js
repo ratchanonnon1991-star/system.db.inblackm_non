@@ -5,7 +5,7 @@ import { getGameinfoExchangeRates, normalizeGameinfoRatePair } from "@/server/ga
 export async function GET(request) {
   try {
     await requireAdmin(request);
-    const rawPairs = request.nextUrl.searchParams.get("pairs") || "USDTTHB,CNYTHB";
+    const rawPairs = request.nextUrl.searchParams.get("pairs") || "USDTTHB,USDCNY";
     const requested = rawPairs.split(",");
     const unsupported = requested.filter((pair) => !normalizeGameinfoRatePair(pair));
     if (unsupported.length) return jsonError(`ไม่รองรับคู่สกุลเงิน: ${unsupported.join(", ")}`, 400);

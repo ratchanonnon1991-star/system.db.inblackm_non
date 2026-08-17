@@ -4,6 +4,7 @@
 // this is what makes the gameinfo editor "simpler" than systemdb's, which can
 // reference any column of any query.
 import { evaluateGameinfoPackCost, getGameinfoCostProfile } from "@/lib/gameinfo-cost-profiles";
+import { evaluateGameinfoFormulaVariable } from "@/lib/gameinfo-formula-variables";
 
 export const GAMEINFO_FIELDS = {
   "ชื่อแพ็ก": "name",
@@ -17,7 +18,7 @@ export const GAMEINFO_FIELDS = {
   "ต้นทุน": "__cost",
   "อัตราต้นทุน": "__costRate",
   "USDT/THB": "__externalRate",
-  "CNY/THB": "__externalRate",
+  USDCNY: "__externalRate",
 };
 
 export const GAMEINFO_FIELD_NAMES = Object.keys(GAMEINFO_FIELDS);
@@ -26,6 +27,11 @@ export function resolveGameinfoField(pack, game, label, context = {}) {
   // Existing saved formulas may still contain the removed label. Resolve it
   // to the only remaining charge field without advertising it in the picker.
   if (label === "ยอดที่กด") return pack?.amountChargedFee;
+  if ((context.formulaVariables || []).some((variable) => variable.name === label)) {
+    return evaluateGameinfoFormulaVariable(context.formulaVariables, label, (nestedLabel) =>
+      resolveGameinfoField(pack, game, nestedLabel, { ...context, formulaVariables: [] })
+    );
+  }
   const key = GAMEINFO_FIELDS[label];
   if (!key) return undefined;
   if (key === "__externalRate") return context.externalValues?.[label];

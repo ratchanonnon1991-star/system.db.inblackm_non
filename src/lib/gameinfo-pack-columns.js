@@ -13,12 +13,6 @@ export const GAMEINFO_PACK_BASE_COLUMNS = [
     required: true,
   },
   {
-    id: "costProfileId",
-    label: "ต้นทุนที่ใช้",
-    field: "costProfileId",
-    track: "minmax(100px, 1fr)",
-  },
-  {
     id: "channelsMain",
     label: "ช่องทางหลัก",
     field: "channelsMain",
@@ -46,7 +40,7 @@ export function buildGameinfoPackColumns(computedColumns = []) {
       track: "minmax(70px, 0.8fr)",
       computed,
       type: computed.type,
-      symbol: GAMEINFO_PACK_SYMBOLS.includes(computed.symbol) ? computed.symbol : "",
+      symbol: typeof computed.symbol === "string" ? computed.symbol.slice(0, 24) : "",
     })),
   ];
 }

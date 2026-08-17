@@ -98,7 +98,7 @@ Game
 }
 ```
 
-ตัวแปร external rate ต้องอยู่ใน namespace ของ formula engine เดียวกับ field ปกติ เช่น `[USDT/THB]` และ `[CNY/THB]` ไม่ใช้ cell address แบบ Excel และไม่เก็บค่าผลลัพธ์ลง pack
+ตัวแปร external rate ต้องอยู่ใน namespace ของ formula engine เดียวกับ field ปกติ เช่น `[USDT/THB]` และ `[USDCNY]` ไม่ใช้ cell address แบบ Excel และไม่เก็บค่าผลลัพธ์ลง pack
 
 ### ต้นทุนของเกม
 
@@ -186,7 +186,7 @@ POST   /api/gameinfo/gamelist/:gameId/packs/:packId/duplicate
 PATCH  /api/gameinfo/gamelist/:gameId/packs/:packId
 DELETE /api/gameinfo/gamelist/:gameId/packs/:packId
 PUT    /api/gameinfo/gamelist/:gameId/pack-config
-GET    /api/gameinfo/rates?pairs=USDTTHB,CNYTHB
+GET    /api/gameinfo/rates?pairs=USDTTHB,USDCNY
 GET    /api/gameinfo/gamelist/:gameId/pack-audit
 ```
 
@@ -197,4 +197,4 @@ GET    /api/gameinfo/gamelist/:gameId/pack-audit
 1. personal view ต้องตาม user ข้ามเครื่อง (DB) หรือจำเฉพาะ browser (localStorage)
 2. หน้า view “เพิ่มใหม่ได้” หมายถึงเพิ่ม filter preset หรือเพิ่ม pack; เอกสารนี้ตีความว่าเพิ่ม filter preset เท่านั้น
 3. custom cost เป็นค่าต่อเกม, ต่อ category หรือเลือกต่อ pack; ข้อเสนอเริ่มที่ต่อเกมและให้ pack เลือก cost profile
-4. `CNY/THB` ต้องเป็น direct rate หรือคำนวณผ่าน USD/USDT; API ควรส่ง source และเวลาให้ตรวจสอบได้
+4. `USDCNY` ใช้ direct USD/CNY rate; API ควรส่ง source และเวลาให้ตรวจสอบได้

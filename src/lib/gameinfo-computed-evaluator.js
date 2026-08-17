@@ -19,7 +19,7 @@ export function evaluateGameinfoComputedColumn(column, columns, pack, game, cont
   });
 }
 
-export function validateGameinfoComputedDependencies(columns) {
+export function validateGameinfoComputedDependencies(columns, extraFieldNames = []) {
   const errors = [];
   const labels = new Map();
   for (const column of columns || []) {
@@ -40,7 +40,7 @@ export function validateGameinfoComputedDependencies(columns) {
       for (const ref of extractFormulaRefs(ast)) {
         const dependency = labels.get(ref);
         if (dependency) visit(dependency, [...path, column.label]);
-        else if (!GAMEINFO_FIELD_NAMES.includes(ref)) errors.push(`${column.label}: ไม่รู้จักคอลัมน์ ${ref}`);
+        else if (!GAMEINFO_FIELD_NAMES.includes(ref) && !extraFieldNames.includes(ref)) errors.push(`${column.label}: ไม่รู้จักคอลัมน์ ${ref}`);
       }
     } catch (error) {
       errors.push(`${column.label}: ${error instanceof Error ? error.message : "สูตรไม่ถูกต้อง"}`);

@@ -41,6 +41,7 @@ check("sanitize keeps fields currently displayed by the UID pack UI", sanitized,
   price: "30",
   amountChargedFee: "103",
   serviceEnabled: true,
+  serviceStatus: "",
   costProfileId: "cost_razer",
   channelsMain: ["Wavepay"],
   channelsSecondary: ["Razer"],
@@ -59,6 +60,11 @@ check(
   sanitizeGameinfoPack({ ...source, serviceEnabled: false }).serviceEnabled,
   false
 );
+check(
+  "new pack status is preserved",
+  sanitizeGameinfoPack({ ...source, serviceStatus: "new" }).serviceStatus,
+  "new"
+);
 ok("duplicate does not copy the legacy amountCharged field", !("amountCharged" in duplicate));
 
 duplicate.channelsMain.push("New channel");
@@ -72,6 +78,7 @@ check("blank pack has only the current editable fields", blank, {
   price: "",
   amountChargedFee: "",
   serviceEnabled: true,
+  serviceStatus: "",
   costProfileId: "",
   channelsMain: [],
   channelsSecondary: [],

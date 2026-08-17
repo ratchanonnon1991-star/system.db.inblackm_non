@@ -37,6 +37,8 @@ import GameinfoImagePickerModal from "./gameinfo-image-picker-modal";
 import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoCsvImportActions from "./gameinfo-csv-import-actions";
 import GameinfoAllPackHistory from "./gameinfo-all-pack-history";
+import { GameinfoGameLinksButton } from "./gameinfo-game-links";
+import GameinfoFormulaVariablesButton from "./gameinfo-formula-variables";
 
 // Rank, ทำซ้ำได้ (isRepeatable), หมายเหตุ (remark) are hidden per request —
 // the fields/backend still exist (game_list columns, API fields), this only
@@ -53,7 +55,7 @@ import GameinfoAllPackHistory from "./gameinfo-all-pack-history";
 // pack count ported from the old admin games-table, see
 // listGamelistPackCountByGame().
 const GRID_COLS =
-  "grid-cols-[28px_28px_70px_60px_50px_44px_minmax(160px,1.4fr)_110px_110px_110px_130px_minmax(140px,1fr)_130px_minmax(140px,1fr)_110px_44px]";
+  "grid-cols-[28px_28px_70px_60px_50px_44px_minmax(160px,1.4fr)_110px_110px_110px_130px_minmax(140px,1fr)_130px_minmax(140px,1fr)_190px_44px]";
 
 function uniq(arr) {
   return Array.from(new Set(arr.filter(Boolean))).sort((a, b) => a.localeCompare(b, "th"));
@@ -144,7 +146,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
     setGameSelected(gameId, selectionDragRef.current.selecting);
   }
 
-  async function setSelectedGamesStatus(enabled, explicitIds = null) {
+  async function setSelectedGamesStatus(enabled, explicitIds = null, isNew = false) {
     const gameIds = explicitIds || [...selectedGameIds];
     if (gameIds.length === 0 || updatingStatus) return;
     setUpdatingStatus(true);
@@ -153,14 +155,15 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
       await apiJson("/api/gameinfo/gamelist/status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ gameIds, enabled }),
+        body: JSON.stringify({ gameIds, enabled, isNew }),
       });
       const idSet = new Set(gameIds);
       const applyStatus = (row) => idSet.has(row.id)
         ? {
             ...row,
             serviceEnabled: enabled,
-            serviceStatus: enabled ? (row.packDisabledCount > 0 ? "partial" : "online") : "offline",
+            serviceNew: isNew,
+            serviceStatus: isNew ? "new" : enabled ? (row.packDisabledCount > 0 ? "partial" : "online") : "offline",
           }
         : row;
       setRows((current) => current.map(applyStatus));
@@ -430,8 +433,12 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
       packCount: 0,
       image: "",
       serviceEnabled: true,
+      serviceNew: false,
       serviceStatus: "online",
       packDisabledCount: 0,
+      hasTutorial: false,
+      hasWarning: false,
+      links: [],
     };
     // Clear any active search/filter first — otherwise the new row (still
     // blank in most fields) could fail to match and be invisible right after
@@ -465,10 +472,19 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
     setRowDuplicate,
     totalRows: rows.length,
     onReorderByNumber,
+    onLinksSaved: (gameId, links) => {
+      const apply = (row) => row.id === gameId ? { ...row, links } : row;
+      setRows((current) => current.map(apply));
+      setSavedRows((current) => current.map(apply));
+    },
     selectedGameIds,
     beginGameSelection,
     enterGameSelection,
-    onSetGameStatus: (gameId, enabled) => setSelectedGamesStatus(enabled, [gameId]),
+    onSetGameStatus: (gameId, status) => {
+      if (status === "offline") return setSelectedGamesStatus(true, [gameId], true);
+      if (status === "new") return setSelectedGamesStatus(true, [gameId], false);
+      return setSelectedGamesStatus(false, [gameId], false);
+    },
   };
 
   const rangeStart = filteredRows.length === 0 ? 0 : clampedPage * pageSize + 1;
@@ -618,6 +634,9 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
         )}
 
         {editable ? <GameinfoAllPackHistory /> : null}
+        {editable ? (
+          <GameinfoFormulaVariablesButton endpoint="/api/gameinfo/variables" toolbar />
+        ) : null}
         {editable ? <GameinfoCsvImportActions hasUnsavedChanges={dirty} /> : null}
         {editable && selectedGameIds.size > 0 ? (
           <div className="flex h-10 items-center gap-1 rounded-xl border border-linear-hairline-strong bg-linear-surface-1 px-2 text-xs">
@@ -634,6 +653,12 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
               disabled={updatingStatus}
               className="rounded-md px-2 py-1 text-linear-ink-muted hover:bg-linear-surface-2"
             >ปิดบริการ</button>
+            <button
+              type="button"
+              onClick={() => setSelectedGamesStatus(true, null, true)}
+              disabled={updatingStatus}
+              className="rounded-md px-2 py-1 text-red-400 hover:bg-red-500/10"
+            >ใหม่</button>
           </div>
         ) : null}
       </div>
@@ -683,7 +708,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
               {/* ทำซ้ำได้ (isRepeatable): not shown — hidden per request, field still exists on game_list */}
               <span className="px-2">Link</span>
               {/* หมายเหตุ (remark): not shown — hidden per request, field still exists on game_list */}
-              <span className="px-2">Tutorial</span>
+              <span className="px-2">Tutorial / ข้อควรระวัง</span>
               <span></span>
             </div>
 
@@ -877,6 +902,7 @@ function RowCells({
   totalRows,
   onReorderByNumber,
   onSetGameStatus,
+  onLinksSaved,
 }) {
   const editingName = isEditing(row.id, "game");
   return (
@@ -884,7 +910,7 @@ function RowCells({
       <ServiceStatusLight
         status={row.serviceStatus || (row.serviceEnabled === false ? "offline" : "online")}
         editable={editable && !isTempId(row.id)}
-        onToggle={() => onSetGameStatus(row.id, row.serviceEnabled === false)}
+        onToggle={() => onSetGameStatus(row.id, row.serviceStatus || (row.serviceEnabled === false ? "offline" : "online"))}
       />
       <OrderCell
         editable={editable}
@@ -989,49 +1015,36 @@ function RowCells({
 
       {/* isRepeatable checkbox: not shown — hidden per request, row.isRepeatable still exists */}
 
-      {isEditing(row.id, "link") ? (
-        <EditBox onCommit={() => setEditing(null)}>
-          <GameinfoMemoryInput
-            value={row.link}
-            onChange={(v) => updateField(row.id, "link", v)}
-            suggestions={suggestions.links}
-            placeholder="https://..."
-            className="h-9 w-full rounded border border-linear-primary/40 px-2 text-sm outline-none"
-            autoFocus
-          />
-        </EditBox>
-      ) : (
-        <span
-          onClick={() => editable && setEditing({ id: row.id, field: "link" })}
-          className={`flex h-9 items-center truncate rounded border border-transparent px-2 ${editable ? "cursor-pointer hover:bg-linear-surface-2" : ""}`}
-        >
-          {row.link ? (
-            <a
-              href={row.link}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="rounded-md border border-linear-hairline-strong px-2 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink"
-            >
-              เว็บ
-            </a>
-          ) : (
-            <span className="text-xs text-linear-ink-tertiary">-</span>
-          )}
-        </span>
-      )}
+      <span className="flex h-9 items-center px-2" onClick={(event) => event.stopPropagation()}>
+        <GameinfoGameLinksButton
+          gameId={row.id}
+          gameName={row.game}
+          links={row.links || []}
+          editable={editable}
+          disabled={isTempId(row.id)}
+          onSaved={(links) => onLinksSaved(row.id, links)}
+        />
+      </span>
 
       {/* remark cell: not shown — hidden per request, row.remark still exists */}
 
       {/* Always rendered regardless of editable — role "user" (and the
           "หน้าเว็บ" preview) can still open it, just read-only inside. */}
-      <span className="flex justify-start" onClick={(e) => e.stopPropagation()}>
+      <span className="flex justify-start gap-1" onClick={(e) => e.stopPropagation()}>
         <GameinfoTutorialButton
           gameId={row.id}
           gameName={row.game}
           editable={editable}
           hasData={row.hasTutorial}
           disabled={isTempId(row.id)}
+        />
+        <GameinfoTutorialButton
+          gameId={row.id}
+          gameName={row.game}
+          editable={editable}
+          hasData={row.hasWarning}
+          disabled={isTempId(row.id)}
+          variant="warning"
         />
       </span>
 
@@ -1145,7 +1158,9 @@ function RowActionsMenu({ row, lang, editable, onDelete }) {
 // is only meaningful on VPN-required packs, see the pack editor's vpnOn-gated
 // country field); otherwise "NO". Edit it via the pack editor, not here.
 function ServiceStatusLight({ status, editable, onToggle }) {
-  const config = status === "offline"
+  const config = status === "new"
+    ? { color: "bg-red-500", label: "เกมใหม่" }
+    : status === "offline"
     ? { color: "bg-zinc-500", label: "ปิดให้บริการ" }
     : status === "partial"
       ? { color: "bg-amber-400", label: "เปิดเกม แต่มีบาง pack ปิด" }
@@ -1158,12 +1173,12 @@ function ServiceStatusLight({ status, editable, onToggle }) {
         event.stopPropagation();
         onToggle?.();
       }}
-      title={`${config.label}${editable ? " — กดเพื่อเปิด/ปิดเกม" : ""}`}
+      title={`${config.label}${editable ? " — กดเพื่อเปลี่ยนสถานะ ปกติ → ปิด → ใหม่" : ""}`}
       aria-label={config.label}
       className="flex items-center gap-1.5 text-[10px] text-linear-ink-tertiary disabled:cursor-default"
     >
       <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${config.color}`} />
-      <span className="truncate">{status === "partial" ? "บางส่วน" : status === "offline" ? "ปิด" : "ปกติ"}</span>
+      <span className="truncate">{status === "new" ? "ใหม่" : status === "partial" ? "บางส่วน" : status === "offline" ? "ปิด" : "ปกติ"}</span>
     </button>
   );
 }

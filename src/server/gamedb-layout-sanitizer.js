@@ -17,8 +17,6 @@ import {
 } from "@/lib/gamedb-layout";
 import { isSafeIdentifier, isSafeIdentifierPart } from "@/lib/gamedb-identifier";
 
-const GAMEINFO_COMPUTED_SYMBOLS = ["", "$", "฿", "%"];
-
 function sanitizeStringArray(value) {
   return Array.isArray(value)
     ? value.filter((item) => typeof item === "string").slice(0, 200)
@@ -54,7 +52,12 @@ export function sanitizeComputedColumns(raw) {
           formula: col.formula.slice(0, 500),
           // Absent on every column saved before formulas could return text.
           type: COMPUTED_TYPES.includes(col.type) ? col.type : "number",
-          symbol: GAMEINFO_COMPUTED_SYMBOLS.includes(col.symbol) ? col.symbol : "",
+          // Plain display text only; React escapes it when rendered. Keep the
+          // exact spacing so values such as "USD " can control presentation.
+          symbol:
+            typeof col.symbol === "string" && col.symbol.trim()
+              ? col.symbol.slice(0, 24)
+              : "",
           rowOverrides: sanitizeGameinfoRowOverrides(col.rowOverrides),
         }))
     : [];

@@ -23,7 +23,7 @@ async function rejects(name, fn) {
 
 check("normalizes compact USDT pair", normalizeGameinfoRatePair("usdthb"), null);
 check("normalizes USDT/THB", normalizeGameinfoRatePair("usdtthb"), "USDT/THB");
-check("normalizes slash CNY pair", normalizeGameinfoRatePair("CNY/THB"), "CNY/THB");
+check("normalizes USD/CNY pair token", normalizeGameinfoRatePair("USD/CNY"), "USDCNY");
 check("rejects unsupported pair", normalizeGameinfoRatePair("USD/THB"), null);
 check("accepts positive finite rate", validateGameinfoRateValue("34.25"), 34.25);
 await rejects("rejects zero rate", () => Promise.resolve(validateGameinfoRateValue(0)));
@@ -38,16 +38,16 @@ const crypto = await fetchGameinfoRate("USDT/THB", {
 check("CoinGecko response maps to USDT rate", crypto.rate, 33.7);
 check("USDT fetch uses tether simple-price endpoint", cryptoCalls[0].includes("ids=tether"), true);
 
-const fiat = await fetchGameinfoRate("CNYTHB", {
+const fiat = await fetchGameinfoRate("USDCNY", {
   fetchImpl: async (url) => ({
-    ok: url.includes("/rate/CNY/THB?providers=BOT"),
-    json: async () => ({ date: "2026-08-17", base: "CNY", quote: "THB", rate: 4.51 }),
+    ok: url.includes("/rate/USD/CNY?providers=ECB"),
+    json: async () => ({ date: "2026-08-17", base: "USD", quote: "CNY", rate: 7.18 }),
   }),
 });
-check("Frankfurter response maps to CNY rate", fiat, {
-  pair: "CNY/THB",
-  rate: 4.51,
-  provider: "Frankfurter/BOT",
+check("Frankfurter response maps to USD/CNY rate", fiat, {
+  pair: "USDCNY",
+  rate: 7.18,
+  provider: "Frankfurter/ECB",
   providerTime: "2026-08-17T00:00:00.000Z",
 });
 await rejects("fetch rejects unsupported provider pair", () => fetchGameinfoRate("EUR/THB", { fetchImpl: async () => ({}) }));

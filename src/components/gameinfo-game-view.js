@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ExternalLink, Gamepad2, Image as ImageIcon } from "lucide-react";
+import { Gamepad2, Image as ImageIcon } from "lucide-react";
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -22,6 +22,7 @@ import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
 import GameinfoRatePanel, { useGameinfoRates } from "./gameinfo-rate-panel";
 import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
+import { GameinfoGameLinkButtons } from "./gameinfo-game-links";
 import {
   GameinfoPackColumnControls,
   useGameinfoPackColumnLayout,
@@ -32,7 +33,7 @@ import {
 // gameinfo-gamelist-table.js and GameinfoPackEditor) plus its packs — same
 // currencies/computedColumns tree the pack editor saves to gamelist_packs,
 // so what's shown here always matches what "จัดการแพ็ก" last saved.
-export default function GameinfoGameView({ row, currencies, computedColumns, costProfiles = [], userId }) {
+export default function GameinfoGameView({ row, currencies, computedColumns, costProfiles = [], formulaVariables = [], userId }) {
   const [formulaMode, setFormulaMode] = useState("result");
   const rateState = useGameinfoRates();
   // Same field set the pack editor's formulas can reference (see
@@ -80,13 +81,15 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
           <div className="flex items-center gap-2">
             <span
               className={`h-2.5 w-2.5 rounded-full ${
-                row.serviceStatus === "offline"
+                row.serviceStatus === "new"
+                  ? "bg-red-500"
+                  : row.serviceStatus === "offline"
                   ? "bg-zinc-500"
                   : row.serviceStatus === "partial"
                     ? "bg-amber-400"
                     : "bg-emerald-400"
               }`}
-              title={row.serviceStatus === "offline" ? "ปิดให้บริการ" : row.serviceStatus === "partial" ? "เปิดเกม แต่มีบาง pack ปิด" : "ให้บริการปกติ"}
+              title={row.serviceStatus === "new" ? "เกมใหม่" : row.serviceStatus === "offline" ? "ปิดให้บริการ" : row.serviceStatus === "partial" ? "เปิดเกม แต่มีบาง pack ปิด" : "ให้บริการปกติ"}
             />
             <h1 className="truncate text-base font-bold uppercase tracking-tight text-linear-ink">
               {row.game}
@@ -108,20 +111,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
           </p>
           <ChannelSummary channels={row.channels} className="mt-1.5" />
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            {row.link ? (
-              <a
-                href={row.link}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 rounded-md bg-linear-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-linear-primary-hover"
-              >
-                ไปที่เว็บเติมเกม <ExternalLink size={13} />
-              </a>
-            ) : (
-              <span className="inline-block text-xs text-linear-ink-tertiary">
-                ยังไม่มีลิงก์เว็บเติมเกม
-              </span>
-            )}
+            <GameinfoGameLinkButtons links={row.links || []} />
             {/* Always view-only here regardless of role — editing the
                 tutorial happens from the "⋮" menu / list table, not this
                 page (see gameinfo-gamelist-table.js). */}
@@ -130,6 +120,14 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
               gameName={row.game}
               editable={false}
               hasData={row.hasTutorial}
+            />
+            <GameinfoTutorialButton
+              gameId={row.id}
+              gameName={row.game}
+              editable={false}
+              hasData={row.hasWarning}
+              variant="warning"
+              autoOpen
             />
           </div>
         </div>
@@ -190,6 +188,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
               filters={packLayout.layout.filters}
               formulaMode={formulaMode}
               costProfiles={costProfiles}
+              formulaVariables={formulaVariables}
               externalValues={rateState.externalValues}
               onReorderColumns={packLayout.reorder}
             />
@@ -208,6 +207,7 @@ function PackCurrency({
   filters,
   formulaMode,
   costProfiles,
+  formulaVariables,
   externalValues,
   onReorderColumns,
 }) {
@@ -233,6 +233,7 @@ function PackCurrency({
             filters={filters}
             formulaMode={formulaMode}
             costProfiles={costProfiles}
+            formulaVariables={formulaVariables}
             externalValues={externalValues}
             onReorderColumns={onReorderColumns}
           />
@@ -269,6 +270,7 @@ function PackCategory({
   filters,
   formulaMode,
   costProfiles,
+  formulaVariables,
   externalValues,
   onReorderColumns,
 }) {
@@ -290,7 +292,7 @@ function PackCategory({
           allColumns.filter((item) => item.kind === "computed").map((item) => item.computed),
           targetPack,
           game,
-          { costProfiles, externalValues }
+          { costProfiles, formulaVariables, externalValues }
         );
       } catch {
         return "";
@@ -303,7 +305,7 @@ function PackCategory({
   }
 
   return (
-    <div className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
+    <div className="p-3">
       <div className="mb-2 flex items-center gap-2">
         <h4 className="text-sm font-medium text-linear-ink-muted">{category.name || "(ไม่มีชื่อหมวดหมู่)"}</h4>
         <span className="text-xs text-linear-ink-tertiary">
@@ -347,6 +349,7 @@ function PackCategory({
                         game={game}
                         formulaMode={formulaMode}
                         costProfiles={costProfiles}
+                        formulaVariables={formulaVariables}
                         externalValues={externalValues}
                         computedColumns={allColumns.filter((item) => item.kind === "computed").map((item) => item.computed)}
                       />
@@ -390,16 +393,18 @@ function PackViewCell({
   game,
   formulaMode,
   costProfiles,
+  formulaVariables,
   externalValues,
   computedColumns,
 }) {
   if (column.id === "serviceEnabled") {
     const enabled = pack.serviceEnabled !== false;
+    const isNew = pack.serviceStatus === "new";
     return (
-      <td className={`px-3 py-2 text-xs ${enabled ? "text-emerald-400" : "text-linear-ink-tertiary"}`}>
+      <td className={`px-3 py-2 text-xs ${isNew ? "text-red-400" : enabled ? "text-emerald-400" : "text-linear-ink-tertiary"}`}>
         <span className="inline-flex items-center gap-1.5">
-          <span className={`h-2.5 w-2.5 rounded-full ${enabled ? "bg-emerald-400" : "bg-zinc-500"}`} />
-          {enabled ? "เปิด" : "ปิด"}
+          <span className={`h-2.5 w-2.5 rounded-full ${isNew ? "bg-red-500" : enabled ? "bg-emerald-400" : "bg-zinc-500"}`} />
+          {isNew ? "ใหม่" : enabled ? "เปิด" : "ปิด"}
         </span>
       </td>
     );
@@ -422,7 +427,7 @@ function PackViewCell({
         computedColumns,
         pack,
         game,
-        { costProfiles, externalValues }
+        { costProfiles, formulaVariables, externalValues }
       );
     } catch {
       formulaError = true;

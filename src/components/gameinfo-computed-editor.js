@@ -36,6 +36,8 @@ const FUNCTION_HELP = [
   ["ตัวเลข", "ROUND · ABS · MIN · MAX · SUM"],
 ];
 
+const EMPTY_FIELD_NAMES = [];
+
 export default function GameinfoComputedEditor({
   sampleRow,
   otherColumns = [],
@@ -43,6 +45,7 @@ export default function GameinfoComputedEditor({
   onSave,
   onClose,
   initialColumn = null,
+  extraFieldNames = EMPTY_FIELD_NAMES,
 }) {
   const editingMainFormula = Boolean(initialColumn);
   const [label, setLabel] = useState(initialColumn?.label || "");
@@ -66,7 +69,7 @@ export default function GameinfoComputedEditor({
     try {
       const ast = parseFormula(formula);
       const refs = [...extractFormulaRefs(ast)];
-      const availableNames = [...GAMEINFO_FIELD_NAMES, ...otherColumns.map((column) => column.label)];
+      const availableNames = [...GAMEINFO_FIELD_NAMES, ...extraFieldNames, ...otherColumns.map((column) => column.label)];
       const unknown = refs.filter((name) => !availableNames.includes(name) && name !== label.trim());
       if (unknown.length > 0) {
         return { ok: false, message: `ไม่รู้จักคอลัมน์: ${unknown.join(", ")}`, type: "number" };
@@ -79,7 +82,7 @@ export default function GameinfoComputedEditor({
       const dependencyErrors = validateGameinfoComputedDependencies([
         ...otherColumns.filter((column) => column.key !== candidate.key),
         candidate,
-      ]);
+      ], extraFieldNames);
       if (dependencyErrors.length) {
         return { ok: false, message: dependencyErrors[0], type: "number" };
       }
@@ -96,7 +99,7 @@ export default function GameinfoComputedEditor({
     } catch (err) {
       return { ok: false, message: err.message, type: "number" };
     }
-  }, [formula, initialColumn, label, otherColumns, sampleRow, symbol, typeChoice]);
+  }, [extraFieldNames, formula, initialColumn, label, otherColumns, sampleRow, symbol, typeChoice]);
 
   const type = typeChoice || validation.type;
   const missing = [
@@ -207,19 +210,25 @@ export default function GameinfoComputedEditor({
             <label htmlFor="gameinfo-computed-symbol" className="mb-1 block text-xs text-linear-ink-tertiary">
               สัญลักษณ์ที่แสดง
             </label>
-            <select
+            <input
               id="gameinfo-computed-symbol"
+              type="text"
               value={type === "number" ? symbol : ""}
               disabled={type !== "number"}
               onChange={(e) => setSymbol(e.target.value)}
+              maxLength={24}
+              list="gameinfo-computed-symbol-suggestions"
+              placeholder="เช่น ฿, %, USD, Coins"
               className="h-9 w-full rounded border border-linear-hairline-strong bg-linear-surface-2 px-2 text-sm text-linear-ink outline-none focus:border-linear-primary disabled:opacity-50"
-            >
+            />
+            <datalist id="gameinfo-computed-symbol-suggestions">
               {GAMEINFO_PACK_SYMBOLS.map((value) => (
-                <option key={value || "none"} value={value}>
-                  {value || "ไม่มี"}
-                </option>
+                value ? <option key={value} value={value} /> : null
               ))}
-            </select>
+            </datalist>
+            <p className="mt-1 text-[11px] text-linear-ink-tertiary">
+              พิมพ์สัญลักษณ์หรือข้อความเองได้ สูงสุด 24 ตัวอักษร และจะบันทึกพร้อมคอลัมน์
+            </p>
           </div>
 
           <div className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
@@ -237,7 +246,7 @@ export default function GameinfoComputedEditor({
           <div>
             <p className="mb-1.5 text-xs text-linear-ink-tertiary">คอลัมน์ที่ใช้ได้ (กดเพื่อแทรก):</p>
             <div className="flex flex-wrap gap-1.5">
-              {[...new Set([...GAMEINFO_FIELD_NAMES, ...otherColumns.map((column) => column.label)])].map((name) => (
+              {[...new Set([...GAMEINFO_FIELD_NAMES, ...extraFieldNames, ...otherColumns.map((column) => column.label)])].map((name) => (
                 <button
                   key={name}
                   type="button"

@@ -105,6 +105,7 @@ function flattenCurrencies(gameId, currencies) {
             price: cleanPack.price,
             amountChargedFee: cleanPack.amountChargedFee,
             serviceEnabled: cleanPack.serviceEnabled,
+            serviceStatus: cleanPack.serviceStatus,
             costProfileId: cleanPack.costProfileId,
             channelsMain: cleanPack.channelsMain,
             channelsSecondary: cleanPack.channelsSecondary,
@@ -310,6 +311,25 @@ export async function saveGamelistPacks(
     client.release();
   }
   return getGamelistPacks(gameId);
+}
+
+/** Computed-column configs for every game, used to protect the one global
+ * formula-variable set from removing a name that any saved formula needs. */
+export async function listAllGamelistComputedColumns() {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `SELECT game_id, data FROM gamelist_packs WHERE pack_id = $1 ORDER BY game_id`,
+      [COMPUTED_SENTINEL]
+    );
+    return result.rows.map((row) => ({
+      gameId: row.game_id,
+      computedColumns: Array.isArray(row.data?.columns) ? row.data.columns : [],
+    }));
+  } finally {
+    client.release();
+  }
 }
 
 /** Multi-game CSV import in one transaction. Computed-column sentinel rows

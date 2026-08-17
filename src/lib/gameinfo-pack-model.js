@@ -20,6 +20,7 @@ export function sanitizeGameinfoPack(pack) {
     price: text(source.price),
     amountChargedFee: text(source.amountChargedFee),
     serviceEnabled: source.serviceEnabled !== false,
+    serviceStatus: source.serviceStatus === "new" ? "new" : "",
     costProfileId: text(source.costProfileId),
     channelsMain: stringList(source.channelsMain),
     channelsSecondary: stringList(source.channelsSecondary),

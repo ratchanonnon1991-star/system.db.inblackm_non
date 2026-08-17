@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 
-const RATE_URL = "/api/gameinfo/rates?pairs=USDTTHB,CNYTHB";
+const RATE_URL = "/api/gameinfo/rates?pairs=USDTTHB,USDCNY";
 
 export function useGameinfoRates() {
   const [rates, setRates] = useState([]);

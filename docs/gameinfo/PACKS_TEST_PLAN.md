@@ -155,7 +155,7 @@ Parser/evaluator:
 - ลบ override แล้ว fallback ทันที
 - detect self-reference/cycle ระหว่าง computed columns
 - divide by zero, missing field, invalid formula เป็น cell error ไม่ throw ทั้งหน้า
-- `[USDT/THB]` และ `[CNY/THB]` resolve จาก rate context เดียวกับ field ปกติ
+- `[USDT/THB]` และ `[USDCNY]` resolve จาก rate context เดียวกับ field ปกติ
 - numeric input ที่เป็น decimal string คำนวณได้
 
 Formula mode UI:
@@ -164,7 +164,8 @@ Formula mode UI:
 - inherited กับ overridden มีป้ายต่างกัน
 - effective formula ที่แสดงตรงกับสูตรที่ evaluator ใช้
 - error cell เปิด editor ไปยังสูตรต้นเหตุได้
-- icon `$`, `฿`, `%` แสดงเฉพาะ result mode ตาม config
+- สัญลักษณ์/ข้อความ custom แสดงเฉพาะ result mode ตาม config และคงค่าหลัง save/reload
+- sanitizer รับ plain text ใหม่ได้เรื่อย ๆ และจำกัดความยาว 24 ตัวอักษร
 
 ## 6. Cost profiles (Task 11)
 
@@ -220,15 +221,49 @@ API/UI/formula:
 
 - pack JSON เก่าที่ไม่มี `serviceEnabled` ถูก sanitize เป็น `true`
 - pack ที่มี `serviceEnabled: false` คงค่าเดิมหลัง sanitize/save/load
+- pack สถานะ `ใหม่` คง `serviceStatus: "new"`, แสดงไฟแดง และยังไม่นับเป็น pack ปิด
 - query สรุปจำนวน pack ปิดไม่นับ sentinel และถือค่า missing เป็นเปิด
 - เกมปิดแสดงเทาโดยไม่ขึ้นกับจำนวน pack ปิด
+- เกมสถานะ `ใหม่` แสดงไฟแดงและยังบันทึกเป็นเกมที่เปิดให้บริการ
 - เกมเปิดและมี pack ปิดแสดงส้ม; ไม่มี pack ปิดแสดงเขียว
 - bulk game status กรอง ID ซ้ำ, lock แถวเกม, upsert side table และ commit เป็น transaction เดียว
 - bulk game status ที่มี ID ไม่พบ rollback ทั้งชุด
-- checkbox เลือกทั้งหมดและลากผ่านแถวรองรับทั้งโหมดเลือกและยกเลิกเลือก
-- bulk pack status แก้เฉพาะ pack ที่เลือก, ทำให้ draft dirty และ cancel คืนค่าเดิม
+- checkbox หน้าเกมเลือกทั้งหมดและลากผ่านแถวรองรับทั้งโหมดเลือกและยกเลิกเลือก
+- เปิด/ปิดทั้งหมวดแก้ทุก pack ในหมวดนั้นเท่านั้น, ทำให้ draft dirty และ cancel คืนค่าเดิม
 - read-only view ไม่มีปุ่มเปลี่ยนสถานะ
 - API error ไม่แก้ client baseline และแสดงข้อความให้ผู้ใช้
+
+## 11. Game warning popup (Task 20)
+
+- warning data normalize รูปแบบ category/step เหมือน Tutorial แต่เก็บคนละ JSON field
+- save warning ไม่เขียนทับ Tutorial และ save Tutorial ไม่เขียนทับ warning
+- presence query คืนเฉพาะเกมที่มี warning step อย่างน้อยหนึ่งรายการ
+- หน้า list แสดงปุ่ม warning สำหรับผู้แก้ไขแม้ยังไม่มีข้อมูล
+- หน้า view ซ่อนปุ่มและไม่ auto-open เมื่อ warning ว่าง
+- หน้า view ที่มี warning เปิด popup อัตโนมัติทุกครั้งที่เข้าใหม่ และปิดแล้วเปิดซ้ำจากปุ่มได้
+- read-only user เรียก GET ได้ แต่ PUT ถูกปฏิเสธตาม `requireLayoutEditor`
+
+## 12. Named game links (Task 21)
+
+- legacy `game_list.link` แปลงเป็นรายการชื่อ `เว็บเติมเกม` เมื่อยังไม่มี side-table row
+- side-table row ที่มี `links: []` ชนะ legacy link และคงเป็นรายการว่างหลัง reload
+- เพิ่ม แก้ชื่อ แก้ URL ลบ และบันทึกหลายลิงก์ได้
+- ปฏิเสธชื่อ/URL ว่าง, protocol ที่ไม่ใช่ HTTP(S), และรายการเกิน 20
+- list page โหลดลิงก์ทั้งหมดครั้งเดียวและจับคู่ด้วย game ID
+- view แสดงชื่อปุ่มตรงกับข้อมูลและใช้ `noopener noreferrer`
+- ลบเกมแล้ว cleanup `gamelist_links`
+
+## 13. Formula/price variables (Task 22)
+
+- sanitize ตัวแปรที่มีหมวดหมู่และไม่มีหมวดหมู่โดยไม่ทำข้อมูลวันที่/ผู้แก้หาย
+- ปฏิเสธชื่อซ้ำ ชื่อที่ชน pack field สูตรอ้างชื่อที่ไม่มี และ dependency วนซ้ำ
+- ประเมินตัวแปรซ้อนกันโดย resolve ค่า pack และ hourly exchange rate จาก context เดียวกับสูตร pack
+- computed-column validation ยอมรับชื่อตัวแปรชุดกลาง แต่ยังปฏิเสธชื่ออื่น
+- save ใช้ transaction-wide advisory lock ของ config กลาง, upsert config, insert audit และ commit ใน transaction เดียว
+- definition ที่ไม่เปลี่ยนคง `updatedAt`/`updatedBy` เดิมและไม่เขียน audit ซ้ำ
+- API รับสูงสุด 100 ตัวและไม่ยอมทิ้งรายการชื่อ/ID ว่างแบบเงียบ ๆ
+- หน้า Game List และ Packs ของทุกเกมเปิด editor ก้อนกลางเดียวกัน; save แล้ว refresh เห็นค่าตรงกันทุกหน้า
+- คอลัมน์โปรไฟล์ต้นทุนไม่อยู่ในตารางใหม่ แต่ pack legacy ที่มี `costProfileId` ยัง load/save โดยไม่สูญหาย
 
 ## คำสั่งตรวจขั้นต่ำ
 

@@ -86,8 +86,18 @@ function renderStepText(text) {
 // the popup opens rather than preloaded onto every row of the list table.
 // `editable` (staff/admin) gets the add/edit/save form; everyone else gets a
 // read-only view of the same content.
-export default function GameinfoTutorialButton({ gameId, gameName, editable, hasData, disabled }) {
-  const [open, setOpen] = useState(false);
+export default function GameinfoTutorialButton({
+  gameId,
+  gameName,
+  editable,
+  hasData,
+  disabled,
+  variant = "tutorial",
+  autoOpen = false,
+}) {
+  const isWarning = variant === "warning";
+  const [open, setOpen] = useState(Boolean(autoOpen && hasData));
+  const buttonLabel = isWarning ? "ข้อควรระวัง" : "Tutorial";
 
   // View-only (role "user") gets nothing to click if there's no tutorial to
   // show — editable users always keep the button so they can add one.
@@ -104,9 +114,9 @@ export default function GameinfoTutorialButton({ gameId, gameName, editable, has
         }}
         disabled={disabled}
         className="rounded-md border border-linear-hairline-strong px-2 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
-        title={disabled ? "บันทึกเกมนี้ก่อนถึงจะใส่ tutorial ได้" : "วิธีเติมเกม"}
+        title={disabled ? `บันทึกเกมนี้ก่อนถึงจะใส่${buttonLabel}ได้` : isWarning ? "ข้อควรระวังของเกม" : "วิธีเติมเกม"}
       >
-        Tutorial
+        {buttonLabel}
       </button>
       {open &&
         typeof document !== "undefined" &&
@@ -115,6 +125,7 @@ export default function GameinfoTutorialButton({ gameId, gameName, editable, has
             gameId={gameId}
             gameName={gameName}
             editable={editable}
+            variant={variant}
             onClose={() => setOpen(false)}
           />,
           document.body
@@ -123,7 +134,11 @@ export default function GameinfoTutorialButton({ gameId, gameName, editable, has
   );
 }
 
-function TutorialModal({ gameId, gameName, editable, onClose }) {
+function TutorialModal({ gameId, gameName, editable, variant, onClose }) {
+  const isWarning = variant === "warning";
+  const endpoint = `/api/gameinfo/gamelist/${gameId}/${isWarning ? "warning" : "tutorial"}`;
+  const dataKey = isWarning ? "warning" : "tutorial";
+  const contentLabel = isWarning ? "ข้อควรระวัง" : "tutorial";
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState([]);
   const [categoryNames, setCategoryNames] = useState([]);
@@ -141,17 +156,17 @@ function TutorialModal({ gameId, gameName, editable, onClose }) {
     let cancelled = false;
     (async () => {
       try {
-        const data = await apiJson(`/api/gameinfo/gamelist/${gameId}/tutorial`, {
-          fallbackError: "โหลด tutorial ไม่สำเร็จ",
+        const data = await apiJson(endpoint, {
+          fallbackError: `โหลด${contentLabel}ไม่สำเร็จ`,
         });
         if (!cancelled) {
-          setCategories(data.tutorial.categories);
+          setCategories(data[dataKey].categories);
           setCategoryNames(data.categoryNames || []);
-          setActiveCatId(data.tutorial.categories[0]?.id ?? null);
-          savedSnapshotRef.current = JSON.stringify(data.tutorial.categories);
+          setActiveCatId(data[dataKey].categories[0]?.id ?? null);
+          savedSnapshotRef.current = JSON.stringify(data[dataKey].categories);
         }
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "โหลด tutorial ไม่สำเร็จ");
+        if (!cancelled) setError(e instanceof Error ? e.message : `โหลด${contentLabel}ไม่สำเร็จ`);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -159,7 +174,7 @@ function TutorialModal({ gameId, gameName, editable, onClose }) {
     return () => {
       cancelled = true;
     };
-  }, [gameId]);
+  }, [contentLabel, dataKey, endpoint]);
 
   function requestClose() {
     const dirty = editable && savedSnapshotRef.current !== null && JSON.stringify(categories) !== savedSnapshotRef.current;
@@ -186,7 +201,7 @@ function TutorialModal({ gameId, gameName, editable, onClose }) {
   }
   function removeCategory(catId) {
     const category = categories.find((item) => item.id === catId);
-    if (!window.confirm(`ลบหมวดหมู่ tutorial "${category?.name || "ไม่มีชื่อ"}" พร้อมขั้นตอนทั้งหมด ใช่ไหม?`)) return;
+    if (!window.confirm(`ลบหมวดหมู่${isWarning ? "ข้อควรระวัง" : " tutorial"} "${category?.name || "ไม่มีชื่อ"}" พร้อมขั้นตอนทั้งหมด ใช่ไหม?`)) return;
     setCategories((prev) => prev.filter((c) => c.id !== catId));
     if (activeCatId === catId) {
       const idx = categories.findIndex((c) => c.id === catId);
@@ -223,17 +238,17 @@ function TutorialModal({ gameId, gameName, editable, onClose }) {
     setSaving(true);
     setError("");
     try {
-      const data = await apiJson(`/api/gameinfo/gamelist/${gameId}/tutorial`, {
+      const data = await apiJson(endpoint, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ categories }),
-        fallbackError: "บันทึก tutorial ไม่สำเร็จ",
+        fallbackError: `บันทึก${contentLabel}ไม่สำเร็จ`,
       });
-      setCategories(data.tutorial.categories);
-      savedSnapshotRef.current = JSON.stringify(data.tutorial.categories);
+      setCategories(data[dataKey].categories);
+      savedSnapshotRef.current = JSON.stringify(data[dataKey].categories);
       setSavedAt(Date.now());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "บันทึก tutorial ไม่สำเร็จ");
+      setError(e instanceof Error ? e.message : `บันทึก${contentLabel}ไม่สำเร็จ`);
     } finally {
       setSaving(false);
     }
@@ -249,7 +264,7 @@ function TutorialModal({ gameId, gameName, editable, onClose }) {
       >
         <div className="flex items-center justify-between border-b border-linear-hairline px-5 py-3">
           <h2 className="text-sm font-semibold text-linear-ink">
-            Tutorial: {gameName}
+            {isWarning ? "ข้อควรระวัง" : "Tutorial"}: {gameName}
           </h2>
           <button
             type="button"
@@ -279,7 +294,7 @@ function TutorialModal({ gameId, gameName, editable, onClose }) {
             <p className="rounded-lg border border-dashed border-linear-hairline-strong p-8 text-center text-sm text-linear-ink-tertiary">
               {editable
                 ? 'ยังไม่มีหมวดหมู่ กด "เพิ่มหมวดหมู่" ที่แถบแท็บด้านบนเพื่อเริ่ม'
-                : "ยังไม่มี tutorial สำหรับเกมนี้"}
+                : `ยังไม่มี${isWarning ? "ข้อควรระวัง" : " tutorial"}สำหรับเกมนี้`}
             </p>
           ) : editable ? (
             <EditableCategory

@@ -38,7 +38,6 @@ check(
     "name",
     "price",
     "amountChargedFee",
-    "costProfileId",
     "channelsMain",
     "channelsSecondary",
     "country",
@@ -57,7 +56,6 @@ check("layout pins the service status column to the front", normalized.order, [
   "image",
   "name",
   "amountChargedFee",
-  "costProfileId",
   "channelsMain",
   "channelsSecondary",
   "country",
@@ -108,7 +106,6 @@ check(
     "image",
     "name",
     "amountChargedFee",
-    "costProfileId",
     "channelsMain",
     "price",
     "channelsSecondary",
@@ -127,17 +124,29 @@ check(
   "12.5%"
 );
 check(
+  "custom display text is prefixed exactly as saved",
+  formatGameinfoPackColumnValue(25, { type: "number", symbol: "Coins " }),
+  "Coins 25"
+);
+check(
   "symbols are not added to an empty result",
   formatGameinfoPackColumnValue(null, { type: "number", symbol: "$" }),
   "—"
 );
 check(
-  "computed sanitizer keeps only supported display symbols",
+  "computed sanitizer preserves custom display text",
   sanitizeComputedColumns([
     { key: "a", label: "บาท", formula: "1", type: "number", symbol: "฿" },
-    { key: "b", label: "bad", formula: "2", type: "number", symbol: "<script>" },
+    { key: "b", label: "แต้ม", formula: "2", type: "number", symbol: "Coins " },
   ]).map((column) => column.symbol),
-  ["฿", ""]
+  ["฿", "Coins "]
+);
+check(
+  "computed sanitizer limits custom display text length",
+  sanitizeComputedColumns([
+    { key: "long", label: "ยาว", formula: "1", type: "number", symbol: "x".repeat(40) },
+  ])[0].symbol.length,
+  24
 );
 
 const sanitizedOverrides = sanitizeComputedColumns([
