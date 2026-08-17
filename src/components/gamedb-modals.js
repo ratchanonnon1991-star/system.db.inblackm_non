@@ -38,6 +38,7 @@ import {
   addMissingKeyColumns,
   checkJoinQualification,
   rowKeyColumnOf,
+  usesCrossJoin,
 } from "@/lib/gamedb-sql-sources";
 import { buildVisualLayout, buildVisualSelect, VISUAL_FILTER_PARAM_OPS } from "@/lib/gamedb-visual-query";
 
@@ -276,6 +277,11 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
   // qualifies every column, so in practice this only ever fires on hand-written
   // SQL.
   const joinQualification = useMemo(() => checkJoinQualification(effectiveSql), [effectiveSql]);
+
+  // The server refuses this outright (see validateReadOnlySql). Said here too
+  // so it shows up while the query is still being written, rather than as a
+  // failed test run.
+  const crossJoin = useMemo(() => usesCrossJoin(effectiveSql), [effectiveSql]);
 
   // The same duplicate-name problem, caught against what the run actually
   // returned rather than against the SQL text. `SELECT a.*, b.*` where both
@@ -1297,6 +1303,8 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
             !name.trim() && "ชื่อ Query",
             !effectiveSql.trim() && (builderMode === "visual" ? (visualBuild.error || "คอลัมน์อย่างน้อย 1 คอลัมน์") : "คำสั่ง SQL"),
             effectiveSql.trim() && testedSql !== effectiveSql && "ทดสอบรันให้ผ่านก่อน (SQL เปลี่ยนไปตั้งแต่ทดสอบครั้งล่าสุด หรือยังไม่เคยทดสอบ)",
+            crossJoin &&
+              "เอา CROSS JOIN ออก แล้วใช้ JOIN ... ON เพื่อระบุว่าสองตารางเชื่อมกันด้วยคอลัมน์อะไร",
             joinQualification.missingAlias.length > 0 &&
               `ตั้งชื่อย่อให้ตาราง ${joinQualification.missingAlias.join(", ")} เช่น FROM ${joinQualification.missingAlias[0]} a`,
             joinQualification.unqualified.length > 0 &&
@@ -1334,7 +1342,8 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
               !effectiveSql.trim() ||
               testedSql !== effectiveSql ||
               !joinQualification.ok ||
-              duplicateResultColumns.length > 0
+              duplicateResultColumns.length > 0 ||
+              crossJoin
             }
             className="flex items-center gap-1.5 rounded-sm bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
           >

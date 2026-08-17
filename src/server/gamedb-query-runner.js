@@ -1,5 +1,6 @@
 import { getPoolForConnection } from "@/lib/db";
 import { bindSqlParams, stripSqlLiterals } from "@/lib/gamedb-sql-params";
+import { usesCrossJoin } from "@/lib/gamedb-sql-sources";
 import { getConnectionFlags } from "@/server/gamedb-side-tables";
 
 export const GAMEDB_MAX_ROWS = 1000;
@@ -37,6 +38,16 @@ export function validateReadOnlySql(sqlText) {
   if (FORBIDDEN_KEYWORDS.test(bare)) {
     throw createHttpError(
       "SQL มีคำสั่งที่ไม่อนุญาต (อ่านข้อมูลได้อย่างเดียว)",
+      400
+    );
+  }
+  // Not a safety rule like the ones above -- a decision about what belongs in
+  // this app. A CROSS JOIN pairs every row with every row, which is a mistake
+  // far more often than it is a plan, and it is checked here rather than in
+  // the editor so it holds for the save, the preview and the API alike.
+  if (usesCrossJoin(sql)) {
+    throw createHttpError(
+      "ไม่อนุญาตให้ใช้ CROSS JOIN — ใช้ JOIN ... ON เพื่อระบุว่าสองตารางเชื่อมกันด้วยอะไร",
       400
     );
   }

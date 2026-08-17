@@ -326,6 +326,19 @@ function findTable(tables, schema, name) {
 }
 
 /**
+ * Whether the query joins two tables without saying how they relate.
+ *
+ * A CROSS JOIN pairs every row on one side with every row on the other, so a
+ * hundred rows against a hundred rows is ten thousand -- almost always a
+ * mistake, and when it is not, it is not something this app is for. Written
+ * over the literal-masked copy, so a column called `cross_join_note` and the
+ * words inside a string are not it.
+ */
+export function usesCrossJoin(sql) {
+  return /\bcross\s+join\b/.test(stripSqlLiterals(sql).toLowerCase());
+}
+
+/**
  * Result columns whose only job is to identify a row. Named by convention so
  * the panel can keep them out of sight without every query having to carry a
  * "hide this" setting of its own.
