@@ -34,6 +34,7 @@ import {
 } from "@/lib/gamedb-formula";
 import { formatCell, toneStyle } from "@/lib/gamedb-layout";
 import { extractSqlParams } from "@/lib/gamedb-sql-params";
+import { checkJoinQualification } from "@/lib/gamedb-sql-sources";
 import { buildVisualLayout, buildVisualSelect, VISUAL_FILTER_PARAM_OPS } from "@/lib/gamedb-visual-query";
 
 const BUILDER_FILTER_LABELS = {
@@ -258,6 +259,15 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
   // once the SQL diverges from the picker it may describe a different query.
   const layoutMatchesPicker = Boolean(selectedTable) && effectiveSql === visualSql;
   const testParamNames = useMemo(() => extractSqlParams(effectiveSql), [effectiveSql]);
+
+  // A join whose columns don't say which table they came from cannot be made
+  // editable later -- the "แก้ไขข้อมูล" settings work out where a write lands
+  // by reading exactly this. Caught here, at the one moment someone still has
+  // the query in front of them, rather than weeks later when an edit silently
+  // goes to the wrong table. The picker always emits t0/t1 aliases and
+  // qualifies every column, so in practice this only ever fires on hand-written
+  // SQL.
+  const joinQualification = useMemo(() => checkJoinQualification(effectiveSql), [effectiveSql]);
 
   // Loading the schema clears every choice made in the builder, so it happens
   // once per database — not every time the SQL tab is looked at and left again.
@@ -1043,6 +1053,23 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                 spellCheck={false}
                 className="w-full rounded-sm border border-zinc-200 bg-zinc-900 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-emerald-300 outline-none focus:border-red-600"
               />
+              {/* Say what to type, not just that something is wrong -- this is
+                  the rule most likely to be met with "แล้วจะให้เขียนยังไง". */}
+              {joinQualification.needed && !joinQualification.ok && (
+                <div className="mt-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2.5">
+                  <p className="text-[11px] font-black text-amber-800">
+                    Query นี้ดึงจากหลายตาราง — ต้องบอกให้ชัดว่าคอลัมน์ไหนมาจากตารางไหน
+                  </p>
+                  <p className="mt-1 text-[10px] font-semibold leading-relaxed text-amber-700">
+                    ตั้งชื่อย่อให้ทุกตาราง แล้วใส่ชื่อย่อนำหน้าทุกคอลัมน์ใน SELECT
+                    ถ้าไม่ใส่ ระบบจะไม่รู้ว่าเวลาแก้ข้อมูลต้องเขียนกลับไปที่ตารางไหน
+                    และตั้งค่า &quot;แก้ไขข้อมูล&quot; ให้อัตโนมัติไม่ได้
+                  </p>
+                  <pre className="mt-1.5 overflow-x-auto rounded-sm border border-amber-200 bg-white px-2 py-1.5 font-mono text-[10px] leading-relaxed text-zinc-700">
+{"SELECT b.col1, a.col2\nFROM   bbb AS b\nJOIN   aaa AS a ON a.id = b.aaa_id"}
+                  </pre>
+                </div>
+              )}
             </div>
           )}
 
@@ -1163,6 +1190,12 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
             !name.trim() && "ชื่อ Query",
             !effectiveSql.trim() && (builderMode === "visual" ? (visualBuild.error || "คอลัมน์อย่างน้อย 1 คอลัมน์") : "คำสั่ง SQL"),
             effectiveSql.trim() && testedSql !== effectiveSql && "ทดสอบรันให้ผ่านก่อน (SQL เปลี่ยนไปตั้งแต่ทดสอบครั้งล่าสุด หรือยังไม่เคยทดสอบ)",
+            joinQualification.missingAlias.length > 0 &&
+              `ตั้งชื่อย่อให้ตาราง ${joinQualification.missingAlias.join(", ")} เช่น FROM ${joinQualification.missingAlias[0]} a`,
+            joinQualification.unqualified.length > 0 &&
+              `ใส่ชื่อย่อตารางนำหน้าคอลัมน์ ${joinQualification.unqualified.slice(0, 5).join(", ")}${joinQualification.unqualified.length > 5 ? " …" : ""} เช่น a.${joinQualification.unqualified[0] === "*" ? "*" : joinQualification.unqualified[0]}`,
+            joinQualification.unknownQualifier.length > 0 &&
+              `${joinQualification.unknownQualifier.join(", ")} ใช้ชื่อย่อที่ไม่มีใน FROM/JOIN`,
           ].filter(Boolean)}
         />
 
@@ -1183,7 +1216,13 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
           <button
             type="button"
             onClick={save}
-            disabled={saving || !name.trim() || !effectiveSql.trim() || testedSql !== effectiveSql}
+            disabled={
+              saving ||
+              !name.trim() ||
+              !effectiveSql.trim() ||
+              testedSql !== effectiveSql ||
+              !joinQualification.ok
+            }
             className="flex items-center gap-1.5 rounded-sm bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
           >
             {saving ? (

@@ -151,6 +151,10 @@ export function parseFromTables(sql) {
       schema: qualified.qualifier,
       name: qualified.name,
       alias: alias || qualified.name,
+      // Whether the query said the alias out loud. A table with no alias can
+      // still be referred to by its bare name, but only in a query simple
+      // enough for that to be unambiguous -- see checkJoinQualification.
+      explicitAlias: Boolean(alias),
     });
     i = qualified.next - 1;
   }
@@ -308,6 +312,82 @@ function findTable(tables, schema, name) {
   // two schemas holding an "orders" each must not silently resolve to one.
   const matches = tables.filter((table) => table.name.toLowerCase() === lowerName);
   return matches.length === 1 ? matches[0] : null;
+}
+
+/**
+ * Whether a query that reads more than one table says clearly enough which
+ * table each result column came from.
+ *
+ * A single-table query needs none of this: there is only one place a column
+ * can have come from. The moment a second table joins in, a bare `name` in the
+ * SELECT list is a question nobody downstream can answer -- and the answer is
+ * what decides where an edit gets written. So for a join, ask for the two
+ * things that make it unambiguous:
+ *
+ *   - every table carries an alias, so there is a short name to point at
+ *   - every plain column in the SELECT list is written with that alias
+ *
+ * Expressions are exempt: `count(*) AS total` has no source column to name,
+ * and nothing tries to write back through one. A bare `*` is not exempt --
+ * across a join it silently resolves collisions in whatever order the tables
+ * happen to be in, which is exactly the kind of quiet wrong answer this is
+ * here to prevent. `b.*` is fine.
+ */
+export function checkJoinQualification(sql) {
+  const froms = parseFromTables(sql);
+  if (froms.length < 2) {
+    return { needed: false, ok: true, missingAlias: [], unqualified: [], unknownQualifier: [] };
+  }
+
+  const aliases = new Set(froms.map((from) => from.alias.toLowerCase()));
+  const missingAlias = froms.filter((from) => !from.explicitAlias).map((from) => from.name);
+  const unqualified = [];
+  const unknownQualifier = [];
+
+  for (const item of parseSelectSources(sql)) {
+    if (!item.column) continue;
+    if (!item.qualifier) {
+      unqualified.push(item.column === "*" ? "*" : item.result || item.column);
+      continue;
+    }
+    if (!aliases.has(item.qualifier.toLowerCase())) {
+      unknownQualifier.push(`${item.qualifier}.${item.column}`);
+    }
+  }
+
+  return {
+    needed: true,
+    ok: missingAlias.length === 0 && unqualified.length === 0 && unknownQualifier.length === 0,
+    missingAlias,
+    unqualified,
+    unknownQualifier,
+  };
+}
+
+/**
+ * The real schema tables this query reads from, in the order they are named.
+ *
+ * Narrower than detectEditableTargets: no primary key is required and no
+ * SELECT list is read, so it still answers for a query nothing can be written
+ * back through. What it is for is scoping a table picker to the handful of
+ * tables the query is actually about, instead of every table in the database.
+ * Anything that cannot be resolved to exactly one real table is left out
+ * rather than guessed at -- a narrowed list that is missing an entry sends
+ * someone to the full list, a wrong entry sends them to the wrong table.
+ */
+export function resolveQueryTables({ sql, tables }) {
+  const schemaTables = Array.isArray(tables) ? tables : [];
+  if (schemaTables.length === 0) return [];
+
+  const seen = new Set();
+  const found = [];
+  for (const from of parseFromTables(sql)) {
+    const table = findTable(schemaTables, from.schema, from.name);
+    if (!table || seen.has(table.key)) continue;
+    seen.add(table.key);
+    found.push(table);
+  }
+  return found;
 }
 
 /**

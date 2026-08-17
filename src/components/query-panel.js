@@ -3664,6 +3664,7 @@ export default function QueryPanel({
         <InsertFormModal
           insertForm={layout.insertForm}
           connectionId={query.connectionId}
+          sqlText={query.sqlText}
           onSave={(insertForm) => mutateLayout((prev) => ({ ...prev, insertForm }))}
           onClose={() => setModal(null)}
         />

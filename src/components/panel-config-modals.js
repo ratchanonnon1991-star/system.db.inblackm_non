@@ -29,7 +29,7 @@ import HueSlider from "@/components/hue-slider";
 import { useResizableModalWidth } from "@/lib/use-resizable-modal-width";
 import { isSafeIdentifier, isSafeIdentifierPart } from "@/lib/gamedb-identifier";
 import { extractSqlParams, parseSelectAliases } from "@/lib/gamedb-sql-params";
-import { detectEditableTargets } from "@/lib/gamedb-sql-sources";
+import { detectEditableTargets, resolveQueryTables } from "@/lib/gamedb-sql-sources";
 import { buildVisualInsert } from "@/lib/gamedb-visual-query";
 import {
   applyGroupTone,
@@ -744,6 +744,33 @@ export function EditableSettingsModal({
     setInputs([]);
   };
 
+  // With nothing saved yet and the SQL saying unambiguously where the rows
+  // came from, fill it in rather than asking someone to pick from a list --
+  // most queries read one table, and "choose the only option" is not a
+  // decision, it is a step to get wrong. Runs once: after that the boxes
+  // belong to whoever is looking at them, including a saved config being
+  // reopened (autoApplied starts true when there is one).
+  const autoApplied = useRef(Boolean(editable?.table));
+  useEffect(() => {
+    if (autoApplied.current) return;
+    const usable = detectedTargets.find((target) => !target.compositeKey && target.pkResultColumn);
+    if (!usable) return;
+    autoApplied.current = true;
+    applyDetectedTarget(usable);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detectedTargets]);
+
+  // Which detected table the boxes currently describe, and whether detection
+  // got far enough to be worth hiding them behind an "advanced" fold at all.
+  const chosenTarget = useMemo(
+    () => detectedTargets.find((target) => target.key === table.trim()) || null,
+    [detectedTargets, table]
+  );
+  const detectionUsable = detectedTargets.some(
+    (target) => !target.compositeKey && target.pkResultColumn
+  );
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
   useEffect(() => {
     if (touchedPkColumn.current || !pk) return;
     const fromSql = sqlAliasMap[pk];
@@ -1121,13 +1148,42 @@ export function EditableSettingsModal({
       {detectedTargets.length > 0 && (
         <div className="rounded-sm border border-emerald-200 bg-emerald-50 p-3">
           <p className="flex items-center gap-1.5 text-[11px] font-black text-emerald-800">
-            <Table2 size={13} /> ระบบอ่าน SQL แล้ว — เลือกได้เลยว่าจะแก้ตารางไหน
+            <Table2 size={13} />
+            {chosenTarget ? "ระบบอ่าน SQL แล้วตั้งค่าให้เรียบร้อย" : "ระบบอ่าน SQL แล้ว"}
           </p>
-          <p className="mt-0.5 text-[10px] font-semibold text-emerald-600">
-            กดตารางที่ต้องการ แล้วระบบจะกรอกคอลัมน์ที่เป็น key
-            และชื่อคอลัมน์จริงให้เองทั้งหมด ไม่ต้องกรอกเอง
-          </p>
-          <div className="mt-2 space-y-1.5">
+          {chosenTarget ? (
+            <p className="mt-0.5 text-[10px] font-semibold text-emerald-700">
+              การแก้ไขจะเขียนกลับที่ตาราง{" "}
+              <span className="font-mono font-black">{chosenTarget.key}</span> โดยระบุแถวด้วย{" "}
+              <span className="font-mono font-black">{chosenTarget.primaryKey}</span>
+              {chosenTarget.pkResultColumn !== chosenTarget.primaryKey
+                ? ` (ในผลลัพธ์ชื่อ "${chosenTarget.pkResultColumn}")`
+                : ""}{" "}
+              — ไม่ต้องกรอกอะไรเพิ่ม
+            </p>
+          ) : detectionUsable ? (
+            <p className="mt-0.5 text-[10px] font-semibold text-emerald-600">
+              กดตารางที่ต้องการ แล้วระบบจะกรอกคอลัมน์ที่เป็น key
+              และชื่อคอลัมน์จริงให้เองทั้งหมด ไม่ต้องกรอกเอง
+            </p>
+          ) : (
+            <p className="mt-0.5 text-[10px] font-semibold text-amber-700">
+              แต่ยังตั้งให้อัตโนมัติไม่ได้ — ดูเหตุผลของแต่ละตารางด้านล่าง
+            </p>
+          )}
+          {/* One table is not a choice -- the summary above already says
+              everything the card would. More than one is a real question
+              (which side of the join to write to), so the cards stay. */}
+          {detectedTargets.length > 1 && (
+            <p className="mt-2 text-[10px] font-bold text-emerald-700">
+              Query นี้ดึงข้อมูลจากหลายตาราง — ถ้าจะแก้ตารางอื่นแทน กดเลือกได้เลย
+            </p>
+          )}
+          <div
+            className={`space-y-1.5 ${
+              detectedTargets.length > 1 || !chosenTarget ? "mt-1.5" : "hidden"
+            }`}
+          >
             {detectedTargets.map((target) => {
               const blocked = target.compositeKey || !target.pkResultColumn;
               const chosen = table.trim() === target.key;
@@ -1193,7 +1249,19 @@ export function EditableSettingsModal({
         </div>
       )}
 
-      <div>
+      {/* Only worth offering once detection has failed or someone asks for
+          it: three boxes that have to agree with each other is exactly where
+          this used to go wrong, and the card above already fills all three. */}
+      {detectionUsable && (
+        <button
+          type="button"
+          onClick={() => setShowAdvanced((prev) => !prev)}
+          className="self-start text-[10px] font-black text-zinc-400 underline hover:text-zinc-600"
+        >
+          {showAdvanced ? "ซ่อนการตั้งค่าตาราง/key เอง" : "ตั้งค่าตาราง/key เอง (ขั้นสูง)"}
+        </button>
+      )}
+      <div className={detectionUsable && !showAdvanced ? "hidden" : ""}>
         <label className={labelClass}>ตารางที่จะเขียนกลับ</label>
         {schemaData?.tables?.length ? (
           <select value={table} onChange={(e) => setTable(e.target.value)} className={inputClass}>
@@ -1220,7 +1288,11 @@ export function EditableSettingsModal({
           />
         )}
       </div>
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div
+        className={`gap-2 sm:grid-cols-2 ${
+          detectionUsable && !showAdvanced ? "hidden" : "grid"
+        }`}
+      >
         <div>
           <label className={labelClass}>คอลัมน์ที่เป็น key — ชื่อในผลลัพธ์ของ Query</label>
           <select value={pk} onChange={(e) => setPk(e.target.value)} className={inputClass}>
@@ -3014,7 +3086,21 @@ function tableFromInsertSql(sql, tables) {
   return byName.length === 1 ? byName[0] : null;
 }
 
-export function InsertFormModal({ insertForm, connectionId, onSave, onClose }) {
+/**
+ * The columns a brand-new form should start with ticked.
+ *
+ * Everything the database does not fill in by itself: an identity or generated
+ * column has no box to offer, and a SERIAL key numbered by a DEFAULT nextval()
+ * is the same thing wearing older clothes -- offering it produces a form whose
+ * first field is an id nobody should be typing.
+ */
+function defaultInsertColumns(table) {
+  return (table?.columns || [])
+    .filter((column) => !column.identity && !column.generated && !column.autoIncrement)
+    .map((column) => column.name);
+}
+
+export function InsertFormModal({ insertForm, connectionId, sqlText, onSave, onClose }) {
   const [builderMode, setBuilderMode] = useState(insertForm?.sql ? "sql" : "visual");
   const [sql, setSql] = useState(insertForm?.sql || "");
   const [label, setLabel] = useState(insertForm?.label || "");
@@ -3042,7 +3128,6 @@ export function InsertFormModal({ insertForm, connectionId, onSave, onClose }) {
           fallbackError: "โหลดรายการตารางและคอลัมน์ไม่สำเร็จ",
         });
         setSchemaData(data);
-        setSelectedTableKey((prev) => prev || data.tables?.[0]?.key || "");
       } catch (err) {
         schemaLoadedForRef.current = false;
         setSchemaError(err.message);
@@ -3052,11 +3137,39 @@ export function InsertFormModal({ insertForm, connectionId, onSave, onClose }) {
     })();
   }, [builderMode, connectionId]);
 
+  // A form attached to a query almost always adds rows to a table that query
+  // already reads from. Listing every table in the database put unrelated ones
+  // (and whichever happens to sort first) in front of whoever opened this.
+  const queryTables = useMemo(
+    () => resolveQueryTables({ sql: sqlText || "", tables: schemaData?.tables || [] }),
+    [sqlText, schemaData]
+  );
+  const [showAllTables, setShowAllTables] = useState(false);
+  const tableChoices = useMemo(
+    () => (showAllTables || queryTables.length === 0 ? schemaData?.tables || [] : queryTables),
+    [showAllTables, queryTables, schemaData]
+  );
+  const onlyQueryTable =
+    !showAllTables && queryTables.length === 1 && selectedTableKey === queryTables[0].key;
+
+  // Pick and tick once, as soon as there is a schema to do it against. A form
+  // that was already saved keeps its own table; nothing here overwrites it.
+  const pickedInitial = useRef(false);
+  useEffect(() => {
+    if (pickedInitial.current || !schemaData?.tables?.length) return;
+    pickedInitial.current = true;
+    const saved = insertForm?.sql ? tableFromInsertSql(insertForm.sql, schemaData.tables) : null;
+    const table = saved || queryTables[0] || schemaData.tables[0];
+    if (!table) return;
+    setSelectedTableKey(table.key);
+    if (!saved) setSelectedColumns(defaultInsertColumns(table));
+  }, [schemaData, queryTables, insertForm]);
+
   const filteredTables = useMemo(() => {
     const needle = tableSearch.trim().toLowerCase();
-    if (!needle) return schemaData?.tables || [];
-    return (schemaData?.tables || []).filter((table) => table.key.toLowerCase().includes(needle));
-  }, [schemaData, tableSearch]);
+    if (!needle) return tableChoices;
+    return tableChoices.filter((table) => table.key.toLowerCase().includes(needle));
+  }, [tableChoices, tableSearch]);
 
   const selectedTable = useMemo(
     () => schemaData?.tables?.find((table) => table.key === selectedTableKey) || null,
@@ -3215,31 +3328,78 @@ export function InsertFormModal({ insertForm, connectionId, onSave, onClose }) {
           ) : schemaData?.tables?.length ? (
             <>
               <div>
-                <label className="mb-1 block text-[10px] font-black text-zinc-500">ค้นหาตาราง</label>
-                <input
-                  type="search"
-                  value={tableSearch}
-                  onChange={(e) => setTableSearch(e.target.value)}
-                  placeholder="เช่น games, orders"
-                  className="mb-1.5 h-9 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-[10px] font-semibold outline-none focus:border-red-600 focus:bg-white"
-                />
-                <label className="mb-1 block text-[10px] font-black text-zinc-500">ตาราง</label>
-                <select
-                  value={selectedTableKey}
-                  onChange={(e) => {
-                    setSelectedTableKey(e.target.value);
-                    setSelectedColumns([]);
-                  }}
-                  className="h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
-                >
-                  {filteredTables.map((table) => (
-                    <option key={table.key} value={table.key}>
-                      {table.key}
-                    </option>
-                  ))}
-                </select>
-                {filteredTables.length === 0 && (
-                  <p className="mt-1 text-[9px] font-bold text-amber-600">ไม่พบตารางตามคำค้นหา</p>
+                {/* One table and no reason to think it is the wrong one is not
+                    a choice worth presenting -- say what will happen and leave
+                    a way out, rather than opening on a dropdown of everything
+                    in the database with an unrelated table preselected. */}
+                {onlyQueryTable ? (
+                  <p className="rounded-sm border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] font-bold text-emerald-700">
+                    จะเพิ่มข้อมูลลงตาราง{" "}
+                    <span className="font-mono font-black">{selectedTableKey}</span> —
+                    ตารางที่ Query นี้ใช้อยู่
+                  </p>
+                ) : (
+                  <>
+                    {tableChoices.length > 8 && (
+                      <>
+                        <label className="mb-1 block text-[10px] font-black text-zinc-500">
+                          ค้นหาตาราง
+                        </label>
+                        <input
+                          type="search"
+                          value={tableSearch}
+                          onChange={(e) => setTableSearch(e.target.value)}
+                          placeholder="เช่น games, orders"
+                          className="mb-1.5 h-9 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-[10px] font-semibold outline-none focus:border-red-600 focus:bg-white"
+                        />
+                      </>
+                    )}
+                    <label className="mb-1 block text-[10px] font-black text-zinc-500">
+                      {showAllTables || queryTables.length === 0
+                        ? "ตาราง"
+                        : "ตารางที่ Query นี้ใช้"}
+                    </label>
+                    <select
+                      value={selectedTableKey}
+                      onChange={(e) => {
+                        setSelectedTableKey(e.target.value);
+                        setSelectedColumns(
+                          defaultInsertColumns(
+                            schemaData.tables.find((table) => table.key === e.target.value)
+                          )
+                        );
+                      }}
+                      className="h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white"
+                    >
+                      {filteredTables.map((table) => (
+                        <option key={table.key} value={table.key}>
+                          {table.key}
+                        </option>
+                      ))}
+                      {/* The table in use has to stay selectable even when the
+                          narrowed list or the search box excludes it. */}
+                      {selectedTableKey &&
+                        !filteredTables.some((table) => table.key === selectedTableKey) && (
+                          <option value={selectedTableKey}>{selectedTableKey}</option>
+                        )}
+                    </select>
+                    {filteredTables.length === 0 && (
+                      <p className="mt-1 text-[9px] font-bold text-amber-600">
+                        ไม่พบตารางตามคำค้นหา
+                      </p>
+                    )}
+                  </>
+                )}
+                {queryTables.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllTables((prev) => !prev)}
+                    className="mt-1.5 text-[10px] font-black text-zinc-400 underline hover:text-zinc-600"
+                  >
+                    {showAllTables
+                      ? `แสดงเฉพาะตารางที่ Query นี้ใช้ (${queryTables.length})`
+                      : "เลือกตารางอื่นในฐานข้อมูล"}
+                  </button>
                 )}
               </div>
 

@@ -3,7 +3,9 @@
 import {
   detectEditableTargets,
   parseFromTables,
+  checkJoinQualification,
   parseSelectSources,
+  resolveQueryTables,
 } from "@/lib/gamedb-sql-sources.js";
 
 let pass = 0;
@@ -331,6 +333,122 @@ check(
   }),
   []
 );
+
+// --- scoping a table picker to the query's own tables --------------------
+const keysOf = (list) => list.map((table) => table.key);
+check(
+  "the tables a query reads from, in the order it names them",
+  keysOf(
+    resolveQueryTables({
+      sql: "SELECT g.name FROM public.games g JOIN public.orders o ON o.game_id = g.id",
+      tables: TABLES,
+    })
+  ),
+  ["public.games", "public.orders"]
+);
+check(
+  "a table joined twice is listed once",
+  keysOf(
+    resolveQueryTables({
+      sql: "SELECT * FROM public.orders a JOIN public.orders b ON a.id = b.id",
+      tables: TABLES,
+    })
+  ),
+  ["public.orders"]
+);
+check(
+  "no primary key is required, unlike the editable proposal",
+  keysOf(resolveQueryTables({ sql: "SELECT a FROM public.notes", tables: TABLES })),
+  ["public.notes"]
+);
+check(
+  "an unqualified name two schemas answer to is left out rather than guessed",
+  resolveQueryTables({ sql: "SELECT * FROM orders", tables: TABLES }),
+  []
+);
+check(
+  "a table the schema does not know is left out",
+  resolveQueryTables({ sql: "SELECT * FROM nope.nope", tables: TABLES }),
+  []
+);
+check(
+  "a derived table narrows nothing but does not lose what is joined to it",
+  keysOf(
+    resolveQueryTables({
+      sql: "SELECT * FROM (SELECT 1) x JOIN public.games g ON true",
+      tables: TABLES,
+    })
+  ),
+  ["public.games"]
+);
+check("nonsense in, nothing out", resolveQueryTables({ sql: "not sql", tables: TABLES }), []);
+check("no schema, nothing out", resolveQueryTables({ sql: "SELECT * FROM public.games", tables: [] }), []);
+
+// --- requiring a join to say where its columns come from -----------------
+check(
+  "a single-table query is asked for nothing",
+  checkJoinQualification("SELECT id, name FROM public.games").needed,
+  false
+);
+check(
+  "a fully qualified join passes",
+  checkJoinQualification(
+    "SELECT b.col1, a.col2 FROM bbb AS b JOIN aaa AS a ON a.id = b.aaa_id"
+  ).ok,
+  true
+);
+check(
+  "an alias written without AS is still an alias",
+  checkJoinQualification("SELECT b.col1, a.col2 FROM bbb b JOIN aaa a ON a.id = b.id").ok,
+  true
+);
+check(
+  "a table with no alias is named",
+  checkJoinQualification("SELECT b.col1 FROM bbb b JOIN aaa ON aaa.id = b.id").missingAlias,
+  ["aaa"]
+);
+check(
+  "a bare column in a join is named",
+  checkJoinQualification("SELECT col1, a.col2 FROM bbb b JOIN aaa a ON a.id = b.id").unqualified,
+  ["col1"]
+);
+check(
+  "a bare * across a join is not waved through",
+  checkJoinQualification("SELECT * FROM bbb b JOIN aaa a ON a.id = b.id").unqualified,
+  ["*"]
+);
+check(
+  "but a qualified star is fine",
+  checkJoinQualification("SELECT b.* FROM bbb b JOIN aaa a ON a.id = b.id").ok,
+  true
+);
+check(
+  "an expression has no table to name, so it is exempt",
+  checkJoinQualification(
+    "SELECT count(*) AS total, b.col1 FROM bbb b JOIN aaa a ON a.id = b.id"
+  ).ok,
+  true
+);
+check(
+  "a prefix that matches no table in the query is caught",
+  checkJoinQualification("SELECT z.col1, b.col2 FROM bbb b JOIN aaa a ON a.id = b.id")
+    .unknownQualifier,
+  ["z.col1"]
+);
+check(
+  "the alias is what counts, not the table name it replaced",
+  checkJoinQualification("SELECT bbb.col1 FROM bbb b JOIN aaa a ON a.id = b.id").unknownQualifier,
+  ["bbb.col1"]
+);
+check(
+  "everything wrong at once is reported at once",
+  (() => {
+    const result = checkJoinQualification("SELECT col1, z.col2 FROM bbb JOIN aaa a ON a.id = 1");
+    return [result.missingAlias, result.unqualified, result.unknownQualifier];
+  })(),
+  [["bbb"], ["col1"], ["z.col2"]]
+);
+check("empty sql asks for nothing", checkJoinQualification("").needed, false);
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);
