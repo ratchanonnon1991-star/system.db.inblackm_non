@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Columns3, Copy, LoaderCircle, RotateCcw, Save, X } from "lucide-react";
+import { Columns3, Copy, LoaderCircle, Plus, RotateCcw, Save, Trash2, X } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import {
   gameinfoPackLayoutStorageKey,
@@ -159,6 +159,15 @@ export function useGameinfoPackColumnLayout({
     setNotice("");
   }
 
+  function setFilters(filters) {
+    if (loading || saving) return;
+    setLayout((current) => ({
+      ...normalizeLayoutForScreen(current, columns, lockRequired),
+      filters,
+    }));
+    setNotice("");
+  }
+
   function reset() {
     if (loading || saving) return;
     setLayout(normalizeLayoutForScreen(null, columns, lockRequired));
@@ -238,6 +247,7 @@ export function useGameinfoPackColumnLayout({
     notice,
     legacyDraft,
     setVisible,
+    setFilters,
     reorder,
     reset,
     selectPreset,
@@ -252,6 +262,7 @@ export function useGameinfoPackColumnLayout({
 export function GameinfoPackColumnControls({
   columns,
   hidden,
+  filters = [],
   presets,
   selectedPresetId,
   presetName,
@@ -262,6 +273,7 @@ export function GameinfoPackColumnControls({
   notice,
   legacyDraft,
   onSetVisible,
+  onFiltersChange,
   onReset,
   onSelectPreset,
   onPresetNameChange,
@@ -279,7 +291,7 @@ export function GameinfoPackColumnControls({
         onClick={() => setOpen((value) => !value)}
         className="inline-flex items-center gap-1.5 rounded-md border border-linear-hairline-strong px-3 py-1.5 text-xs text-linear-ink-muted hover:bg-linear-surface-2"
       >
-        <Columns3 size={14} /> คอลัมน์{dirty ? <span className="text-linear-primary">•</span> : null}
+        <Columns3 size={14} /> คอลัมน์/ตัวกรอง{dirty ? <span className="text-linear-primary">•</span> : null}
       </button>
       {open && (
         <div className="absolute right-0 z-40 mt-2 w-80 rounded-lg border border-linear-hairline bg-linear-surface-1 p-3 shadow-2xl">
@@ -364,6 +376,70 @@ export function GameinfoPackColumnControls({
                 </label>
               );
             })}
+          </div>
+
+          <div className="mt-3 border-t border-linear-hairline pt-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-xs font-medium text-linear-ink">ตัวกรองแถว (ตรงทุกเงื่อนไข)</p>
+              <button
+                type="button"
+                disabled={loading || saving || filters.length >= 10 || columns.length === 0}
+                onClick={() => onFiltersChange([
+                  ...filters,
+                  { columnId: columns[0]?.id || "", operator: "contains", value: "" },
+                ])}
+                className="inline-flex items-center gap-1 text-xs text-linear-primary hover:underline disabled:opacity-50"
+              >
+                <Plus size={12} /> เพิ่ม
+              </button>
+            </div>
+            {filters.length === 0 ? (
+              <p className="text-[10px] text-linear-ink-tertiary">ยังไม่กรอง — แสดงทุก pack</p>
+            ) : (
+              <div className="space-y-2">
+                {filters.map((filter, index) => (
+                  <div key={`${filter.columnId}:${index}`} className="grid grid-cols-[1fr_88px_auto] gap-1">
+                    <select
+                      value={filter.columnId}
+                      onChange={(event) => onFiltersChange(filters.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, columnId: event.target.value } : item
+                      ))}
+                      className="min-w-0 rounded border border-linear-hairline-strong bg-linear-surface-2 px-1.5 py-1 text-[10px] text-linear-ink"
+                    >
+                      {columns.map((column) => <option key={column.id} value={column.id}>{column.label}</option>)}
+                    </select>
+                    <select
+                      value={filter.operator}
+                      onChange={(event) => onFiltersChange(filters.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, operator: event.target.value } : item
+                      ))}
+                      className="rounded border border-linear-hairline-strong bg-linear-surface-2 px-1 py-1 text-[10px] text-linear-ink"
+                    >
+                      <option value="contains">มีคำว่า</option>
+                      <option value="equals">เท่ากับ</option>
+                      <option value="not_empty">มีข้อมูล</option>
+                      <option value="empty">ว่าง</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => onFiltersChange(filters.filter((_, itemIndex) => itemIndex !== index))}
+                      className="rounded p-1 text-red-400 hover:bg-red-500/10"
+                      aria-label="ลบตัวกรอง"
+                    ><Trash2 size={12} /></button>
+                    {filter.operator === "contains" || filter.operator === "equals" ? (
+                      <input
+                        value={filter.value}
+                        onChange={(event) => onFiltersChange(filters.map((item, itemIndex) =>
+                          itemIndex === index ? { ...item, value: event.target.value } : item
+                        ))}
+                        placeholder="ค่าที่ต้องการกรอง"
+                        className="col-span-3 rounded border border-linear-hairline-strong bg-linear-surface-2 px-2 py-1 text-[10px] text-linear-ink outline-none focus:border-linear-primary"
+                      />
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <p className="mt-3 text-[10px] text-linear-ink-tertiary">

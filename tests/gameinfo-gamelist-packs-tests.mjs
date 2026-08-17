@@ -389,8 +389,16 @@ async function run() {
     sanitizeGamelistPackViewPresetLayout({
       order: ["price", "price", "", 123, "computed:profit"],
       hidden: ["country", "country", "  ", "price"],
+      filters: [
+        { columnId: "name", operator: "contains", value: "diamond" },
+        { columnId: "", operator: "equals", value: "ignored" },
+      ],
     }),
-    { order: ["price", "computed:profit"], hidden: ["country", "price"] }
+    {
+      order: ["price", "computed:profit"],
+      hidden: ["country", "price"],
+      filters: [{ columnId: "name", operator: "contains", value: "diamond" }],
+    }
   );
 
   reset();

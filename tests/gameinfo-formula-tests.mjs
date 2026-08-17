@@ -12,6 +12,10 @@ import {
   sanitizeGameinfoCostProfiles,
   validateGameinfoCostProfiles,
 } from "@/lib/gameinfo-cost-profiles.js";
+import {
+  evaluateGameinfoComputedColumn,
+  validateGameinfoComputedDependencies,
+} from "@/lib/gameinfo-computed-evaluator.js";
 
 let pass = 0;
 const failures = [];
@@ -43,6 +47,11 @@ check(
 );
 check("pack field falls back to the game", resolveGameinfoField(pack, game, "ชื่อเกม"), "Mobile Legends");
 check("an unknown label resolves to undefined", resolveGameinfoField(pack, game, "ไม่มีจริง"), undefined);
+check(
+  "external exchange rate resolves from formula context",
+  resolveGameinfoField(pack, game, "USDT/THB", { externalValues: { "USDT/THB": 33.75 } }),
+  33.75
+);
 
 const costProfiles = [
   { id: "cost_usd", label: "USD", inputCurrency: "USD", baseValue: "0.5", rateFormula: "" },
@@ -83,6 +92,33 @@ check(
   "invalid cost formula is rejected by validation",
   validateGameinfoCostProfiles([{ ...costProfiles[0], rateFormula: "([baseValue]" }]).length,
   1
+);
+
+const dependentColumns = [
+  { key: "cost", label: "ต้นทุนคำนวณ", formula: "[ยอดที่กด + fee] * 0.5" },
+  { key: "profit", label: "กำไร", formula: "[ราคา] - [ต้นทุนคำนวณ]" },
+];
+check(
+  "computed formula can reference another computed column",
+  evaluateGameinfoComputedColumn(dependentColumns[1], dependentColumns, pack, game),
+  55
+);
+check("valid computed dependency graph has no errors", validateGameinfoComputedDependencies(dependentColumns), []);
+check(
+  "computed dependency cycle is rejected",
+  validateGameinfoComputedDependencies([
+    { key: "a", label: "A", formula: "[B] + 1" },
+    { key: "b", label: "B", formula: "[A] + 1" },
+  ]).some((message) => message.includes("วนซ้ำ")),
+  true
+);
+check(
+  "duplicate computed labels are rejected",
+  validateGameinfoComputedDependencies([
+    { key: "a", label: "ซ้ำ", formula: "1" },
+    { key: "b", label: "ซ้ำ", formula: "2" },
+  ]).some((message) => message.includes("ชื่อคอลัมน์สูตรซ้ำ")),
+  true
 );
 
 // A game-level field of the same key as a pack field: the pack's own value

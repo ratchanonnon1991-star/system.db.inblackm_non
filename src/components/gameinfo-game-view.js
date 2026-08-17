@@ -2,17 +2,24 @@
 
 import { useMemo, useState } from "react";
 import { ExternalLink, Gamepad2, Image as ImageIcon } from "lucide-react";
-import { DndContext, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
-import { SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { evaluateFormula, parseFormula } from "@/lib/gamedb-formula";
-import { resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
+import { parseFormula } from "@/lib/gamedb-formula";
 import {
   buildGameinfoPackColumns,
   formatGameinfoPackColumnValue,
+  matchesGameinfoPackFilters,
 } from "@/lib/gameinfo-pack-columns";
 import { getGameinfoFormulaDisplay } from "@/lib/gameinfo-formula-overrides";
+import { evaluateGameinfoComputedColumn } from "@/lib/gameinfo-computed-evaluator";
 import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
+import GameinfoRatePanel, { useGameinfoRates } from "./gameinfo-rate-panel";
 import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
 import {
@@ -27,6 +34,7 @@ import {
 // so what's shown here always matches what "จัดการแพ็ก" last saved.
 export default function GameinfoGameView({ row, currencies, computedColumns, costProfiles = [], userId }) {
   const [formulaMode, setFormulaMode] = useState("result");
+  const rateState = useGameinfoRates();
   // Same field set the pack editor's formulas can reference (see
   // gameinfo-formula-fields.js) — built from the game_list row, not the
   // gamelist_packs game shape, since that's all this page has.
@@ -115,6 +123,15 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
         </div>
       </div>
 
+      <div className="mb-4">
+        <GameinfoRatePanel
+          rates={rateState.rates}
+          loading={rateState.loading}
+          error={rateState.error}
+          onRefresh={rateState.refresh}
+        />
+      </div>
+
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="text-lg font-semibold text-linear-ink">แพ็ก</h2>
         <div className="flex items-center gap-2">
@@ -126,6 +143,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
           <GameinfoPackColumnControls
             columns={packLayout.orderedColumns}
             hidden={packLayout.layout.hidden}
+            filters={packLayout.layout.filters}
             presets={packLayout.presets}
             selectedPresetId={packLayout.selectedPresetId}
             presetName={packLayout.presetName}
@@ -136,6 +154,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
             notice={packLayout.notice}
             legacyDraft={packLayout.legacyDraft}
             onSetVisible={packLayout.setVisible}
+            onFiltersChange={packLayout.setFilters}
             onReset={packLayout.reset}
             onSelectPreset={packLayout.selectPreset}
             onPresetNameChange={packLayout.setPresetName}
@@ -155,8 +174,11 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
               currency={currency}
               game={formulaGame}
               columns={packLayout.visibleColumns}
+              allColumns={packLayout.orderedColumns}
+              filters={packLayout.layout.filters}
               formulaMode={formulaMode}
               costProfiles={costProfiles}
+              externalValues={rateState.externalValues}
               onReorderColumns={packLayout.reorder}
             />
           ))}
@@ -166,7 +188,17 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
   );
 }
 
-function PackCurrency({ currency, game, columns, formulaMode, costProfiles, onReorderColumns }) {
+function PackCurrency({
+  currency,
+  game,
+  columns,
+  allColumns,
+  filters,
+  formulaMode,
+  costProfiles,
+  externalValues,
+  onReorderColumns,
+}) {
   return (
     <div className="rounded-lg border border-linear-hairline bg-linear-surface-1 p-4">
       <div className="mb-3 flex items-center gap-2">
@@ -185,8 +217,11 @@ function PackCurrency({ currency, game, columns, formulaMode, costProfiles, onRe
             category={cat}
             game={game}
             columns={columns}
+            allColumns={allColumns}
+            filters={filters}
             formulaMode={formulaMode}
             costProfiles={costProfiles}
+            externalValues={externalValues}
             onReorderColumns={onReorderColumns}
           />
         ))}
@@ -214,8 +249,42 @@ function PackThumb({ src }) {
   );
 }
 
-function PackCategory({ category, game, columns, formulaMode, costProfiles, onReorderColumns }) {
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+function PackCategory({
+  category,
+  game,
+  columns,
+  allColumns,
+  filters,
+  formulaMode,
+  costProfiles,
+  externalValues,
+  onReorderColumns,
+}) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+  const visiblePacks = category.packs.filter((pack) =>
+    matchesGameinfoPackFilters(pack, filters, (columnId, targetPack) => {
+      const column = allColumns.find((item) => item.id === columnId);
+      if (!column) return "";
+      if (column.id === "costProfileId") {
+        return costProfiles.find((profile) => profile.id === targetPack.costProfileId)?.label || "";
+      }
+      if (column.kind !== "computed") return targetPack[column.field];
+      try {
+        return evaluateGameinfoComputedColumn(
+          column.computed,
+          allColumns.filter((item) => item.kind === "computed").map((item) => item.computed),
+          targetPack,
+          game,
+          { costProfiles, externalValues }
+        );
+      } catch {
+        return "";
+      }
+    })
+  );
 
   function handleColumnDragEnd({ active, over }) {
     if (over && active.id !== over.id) onReorderColumns(active.id, over.id);
@@ -225,10 +294,14 @@ function PackCategory({ category, game, columns, formulaMode, costProfiles, onRe
     <div className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
       <div className="mb-2 flex items-center gap-2">
         <h4 className="text-sm font-medium text-linear-ink-muted">{category.name || "(ไม่มีชื่อหมวดหมู่)"}</h4>
-        <span className="text-xs text-linear-ink-tertiary">({category.packs.length} แพ็ก)</span>
+        <span className="text-xs text-linear-ink-tertiary">
+          ({visiblePacks.length === category.packs.length ? category.packs.length : `${visiblePacks.length}/${category.packs.length}`} แพ็ก)
+        </span>
       </div>
-      {category.packs.length === 0 ? (
-        <p className="px-1 py-2 text-xs text-linear-ink-tertiary">ยังไม่มี pack</p>
+      {visiblePacks.length === 0 ? (
+        <p className="px-1 py-2 text-xs text-linear-ink-tertiary">
+          {category.packs.length === 0 ? "ยังไม่มี pack" : "ไม่มี pack ที่ตรงกับตัวกรอง"}
+        </p>
       ) : (
         <div className="overflow-hidden rounded-md border border-linear-hairline bg-linear-surface-1">
           <div className="overflow-x-auto">
@@ -252,7 +325,7 @@ function PackCategory({ category, game, columns, formulaMode, costProfiles, onRe
                 </tr>
               </thead>
               <tbody>
-                {category.packs.map((pack) => (
+                {visiblePacks.map((pack) => (
                   <tr key={pack.id} className="border-b border-linear-hairline last:border-b-0">
                     {columns.map((column) => (
                       <PackViewCell
@@ -262,6 +335,8 @@ function PackCategory({ category, game, columns, formulaMode, costProfiles, onRe
                         game={game}
                         formulaMode={formulaMode}
                         costProfiles={costProfiles}
+                        externalValues={externalValues}
+                        computedColumns={allColumns.filter((item) => item.kind === "computed").map((item) => item.computed)}
                       />
                     ))}
                   </tr>
@@ -297,7 +372,15 @@ function SortableViewHeader({ column }) {
   );
 }
 
-function PackViewCell({ column, pack, game, formulaMode, costProfiles }) {
+function PackViewCell({
+  column,
+  pack,
+  game,
+  formulaMode,
+  costProfiles,
+  externalValues,
+  computedColumns,
+}) {
   if (column.id === "image") {
     return (
       <td className="px-3 py-2">
@@ -311,8 +394,12 @@ function PackViewCell({ column, pack, game, formulaMode, costProfiles }) {
     let value = null;
     let formulaError = false;
     try {
-      value = evaluateFormula(parseFormula(effective.formula), (label) =>
-        resolveGameinfoField(pack, game, label, { costProfiles })
+      value = evaluateGameinfoComputedColumn(
+        formula,
+        computedColumns,
+        pack,
+        game,
+        { costProfiles, externalValues }
       );
     } catch {
       formulaError = true;

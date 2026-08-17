@@ -10,6 +10,7 @@ import {
 } from "@/lib/gamedb-formula";
 import { GAMEINFO_FIELD_NAMES } from "@/lib/gameinfo-formula-fields";
 import { formatGameinfoPackColumnValue, GAMEINFO_PACK_SYMBOLS } from "@/lib/gameinfo-pack-columns";
+import { validateGameinfoComputedDependencies } from "@/lib/gameinfo-computed-evaluator";
 
 // Same parser, validation and function library as the systemdb-side formula
 // editor (gamedb-modals.js's ComputedColumnModal) — this one is a full
@@ -35,7 +36,14 @@ const FUNCTION_HELP = [
   ["ตัวเลข", "ROUND · ABS · MIN · MAX · SUM"],
 ];
 
-export default function GameinfoComputedEditor({ sampleRow, onAdd, onSave, onClose, initialColumn = null }) {
+export default function GameinfoComputedEditor({
+  sampleRow,
+  otherColumns = [],
+  onAdd,
+  onSave,
+  onClose,
+  initialColumn = null,
+}) {
   const editingMainFormula = Boolean(initialColumn);
   const [label, setLabel] = useState(initialColumn?.label || "");
   const [formula, setFormula] = useState(initialColumn?.formula || "");
@@ -58,9 +66,22 @@ export default function GameinfoComputedEditor({ sampleRow, onAdd, onSave, onClo
     try {
       const ast = parseFormula(formula);
       const refs = [...extractFormulaRefs(ast)];
-      const unknown = refs.filter((name) => !GAMEINFO_FIELD_NAMES.includes(name));
+      const availableNames = [...GAMEINFO_FIELD_NAMES, ...otherColumns.map((column) => column.label)];
+      const unknown = refs.filter((name) => !availableNames.includes(name) && name !== label.trim());
       if (unknown.length > 0) {
         return { ok: false, message: `ไม่รู้จักคอลัมน์: ${unknown.join(", ")}`, type: "number" };
+      }
+      const candidate = {
+        key: initialColumn?.key || "__draft__",
+        label: label.trim() || "__draft__",
+        formula: formula.trim(),
+      };
+      const dependencyErrors = validateGameinfoComputedDependencies([
+        ...otherColumns.filter((column) => column.key !== candidate.key),
+        candidate,
+      ]);
+      if (dependencyErrors.length) {
+        return { ok: false, message: dependencyErrors[0], type: "number" };
       }
       const type = inferFormulaType(ast);
       let preview = "";
@@ -75,7 +96,7 @@ export default function GameinfoComputedEditor({ sampleRow, onAdd, onSave, onClo
     } catch (err) {
       return { ok: false, message: err.message, type: "number" };
     }
-  }, [formula, sampleRow, symbol, typeChoice]);
+  }, [formula, initialColumn, label, otherColumns, sampleRow, symbol, typeChoice]);
 
   const type = typeChoice || validation.type;
   const missing = [
@@ -216,7 +237,7 @@ export default function GameinfoComputedEditor({ sampleRow, onAdd, onSave, onClo
           <div>
             <p className="mb-1.5 text-xs text-linear-ink-tertiary">คอลัมน์ที่ใช้ได้ (กดเพื่อแทรก):</p>
             <div className="flex flex-wrap gap-1.5">
-              {GAMEINFO_FIELD_NAMES.map((name) => (
+              {[...new Set([...GAMEINFO_FIELD_NAMES, ...otherColumns.map((column) => column.label)])].map((name) => (
                 <button
                   key={name}
                   type="button"

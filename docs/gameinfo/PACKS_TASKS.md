@@ -2,7 +2,7 @@
 
 เอกสารนี้เรียง task ใหม่ตาม dependency โดยยังคงหมายเลข task เดิมของผู้ใช้เพื่ออ้างอิงได้ตรงกัน
 
-สถานะปัจจุบัน: Task 1, 2, 4, 6, 8, 11 และ 12–17 ทำ milestone ที่ระบุไว้แล้ว พร้อม unit/integration tests; Task 3, 5 และ 9 มีส่วนพื้นฐานแล้วและจะต่อยอดจาก preset ใน Task 15–16
+สถานะปัจจุบัน: Task 1–17 ทำ milestone ตามขอบเขต UID packs ครบแล้ว พร้อม unit/integration tests โดยส่วน ID+PASS ยังไม่อยู่ในขอบเขตรอบนี้
 
 ## ลำดับที่ควรทำ
 
@@ -72,6 +72,8 @@ Acceptance criteria:
 - หน้า view อ่าน pack อย่างเดียว แต่เพิ่ม personal filter preset ได้
 - personal view ของคนหนึ่งห้ามกระทบอีกคน
 
+สถานะ milestone: preset เก็บทั้งคอลัมน์ที่แสดง ลำดับ และตัวกรองแถวแบบหลายเงื่อนไข (`มีคำว่า`, `เท่ากับ`, `มีข้อมูล`, `ว่าง`) แยก user/game/surface และใช้พร้อมกันทุก category
+
 Acceptance criteria:
 
 - reload แล้วยังคง preset ตาม storage decision ใน Phase 0
@@ -85,11 +87,15 @@ Acceptance criteria:
 - ห้ามย้าย/แก้ divider หรือ structural columns
 - order เป็น personal view ไม่ใช่เปลี่ยนลำดับ field ใน pack JSON
 
+สถานะ milestone: รองรับ pointer และ keyboard reorder; ตารางปัจจุบันไม่มี divider/structural column ที่ถูกทำเป็นข้อมูล จึงไม่มีสิ่งดังกล่าวให้ย้ายหรือแก้
+
 #### Task 9: icon/format ของคอลัมน์
 
 - รองรับ prefix/suffix ที่จำเป็น: `$`, `฿`, `%`
 - แยก stored numeric value ออกจาก display string
 - format เป็น shared column config; personal view เลือกซ่อนได้แต่แก้ format กลางไม่ได้
+
+สถานะ milestone: `$`, `฿`, `%` อยู่ใน shared computed-column config และเติมเฉพาะตอน render ผลลัพธ์ ไม่ถูกเขียนรวมในค่าดิบ
 
 ### Phase 4 — formula model
 
@@ -100,6 +106,8 @@ Acceptance criteria:
 - ลบ override แล้วกลับไปใช้สูตรระดับคอลัมน์ทันที
 - resolver รองรับ pack fields, game fields, cost profiles และ external rates ผ่านชื่อที่กำหนด
 - validate dependency cycle และ division by zero
+
+สถานะ milestone: สูตรอ้าง computed column อื่นตามชื่อได้, dependency ถูกประเมินตามลำดับ, API/UI ปฏิเสธชื่อซ้ำและ cycle และ engine คืนค่าว่างเมื่อหารด้วยศูนย์
 
 #### Task 8: โหมดดูสูตร
 
@@ -142,6 +150,14 @@ Acceptance criteria ของ Phase 4:
 - กราฟอ่าน history ที่เก็บแบบ hourly
 - formula engine ใช้ `[USDT/THB]`, `[CNY/THB]` และ rate อื่นที่ allowlist
 - provider ล้มให้ใช้ last-known-good พร้อม stale indicator; ห้ามแทนด้วย 0
+
+สถานะ milestone:
+
+- `USDT/THB` ใช้ CoinGecko Simple Price และรองรับ Demo key ผ่าน `COINGECKO_DEMO_API_KEY` แบบไม่บังคับ
+- `CNY/THB` ใช้ Frankfurter โดยระบุ provider เป็น Bank of Thailand
+- server cache หนึ่งชั่วโมง, single-flight ต่อ pair และเก็บ history แบบ unique `(pair, fetched_hour)`
+- API/UI แสดง source, fetched time, stale/error และกราฟ 48 จุดล่าสุด
+- formula และ cost profile ใช้ `[USDT/THB]`, `[CNY/THB]` จาก snapshot เดียวกันโดยไม่เขียน rate ลง pack JSON
 
 Acceptance criteria:
 

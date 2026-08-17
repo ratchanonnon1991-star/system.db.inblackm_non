@@ -16,6 +16,8 @@ export const GAMEINFO_FIELDS = {
   "เซิร์ฟเวอร์": "server",
   "ต้นทุน": "__cost",
   "อัตราต้นทุน": "__costRate",
+  "USDT/THB": "__externalRate",
+  "CNY/THB": "__externalRate",
 };
 
 export const GAMEINFO_FIELD_NAMES = Object.keys(GAMEINFO_FIELDS);
@@ -26,6 +28,7 @@ export function resolveGameinfoField(pack, game, label, context = {}) {
   if (label === "ยอดที่กด") return pack?.amountChargedFee;
   const key = GAMEINFO_FIELDS[label];
   if (!key) return undefined;
+  if (key === "__externalRate") return context.externalValues?.[label];
   if (key === "__cost" || key === "__costRate") {
     const profile = getGameinfoCostProfile(context.costProfiles, pack?.costProfileId);
     const result = evaluateGameinfoPackCost(pack, profile, (nestedLabel) => {

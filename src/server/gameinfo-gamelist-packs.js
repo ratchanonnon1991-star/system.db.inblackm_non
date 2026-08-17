@@ -598,10 +598,22 @@ function presetColumnIds(value) {
  * column schema and will safely merge this into it; the server only accepts a
  * bounded JSON shape so a preset cannot be used to store arbitrary data. */
 export function sanitizeGamelistPackViewPresetLayout(layout) {
-  return {
+  const filters = [];
+  for (const filter of Array.isArray(layout?.filters) ? layout.filters : []) {
+    const columnId = typeof filter?.columnId === "string" ? filter.columnId.trim().slice(0, 128) : "";
+    const operator = ["contains", "equals", "not_empty", "empty"].includes(filter?.operator)
+      ? filter.operator
+      : "contains";
+    if (!columnId) continue;
+    filters.push({ columnId, operator, value: String(filter?.value ?? "").slice(0, 200) });
+    if (filters.length >= 10) break;
+  }
+  const sanitized = {
     order: presetColumnIds(layout?.order),
     hidden: presetColumnIds(layout?.hidden),
   };
+  if (Array.isArray(layout?.filters)) sanitized.filters = filters;
+  return sanitized;
 }
 
 function mapGamelistPackViewPreset(row) {

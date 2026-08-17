@@ -6,6 +6,7 @@ import { ChevronDown, Copy, Download, Image as ImageIcon, Pencil, Plus, Trash2, 
 import {
   DndContext,
   closestCenter,
+  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
@@ -13,6 +14,7 @@ import {
 import {
   SortableContext,
   horizontalListSortingStrategy,
+  sortableKeyboardCoordinates,
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -23,6 +25,7 @@ import GameinfoImagePickerModal from "./gameinfo-image-picker-modal";
 import GameinfoComputedEditor from "./gameinfo-computed-editor";
 import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
 import GameinfoCostProfileEditor from "./gameinfo-cost-profile-editor";
+import GameinfoRatePanel, { useGameinfoRates } from "./gameinfo-rate-panel";
 import GameinfoPackHistory from "./gameinfo-pack-history";
 import {
   GameinfoPackColumnControls,
@@ -35,6 +38,7 @@ import { mergeCurrencies } from "@/lib/gameinfo-import";
 import {
   buildGameinfoPackColumns,
   formatGameinfoPackColumnValue,
+  matchesGameinfoPackFilters,
 } from "@/lib/gameinfo-pack-columns";
 import {
   duplicateGameinfoFormulaOverrides,
@@ -44,6 +48,7 @@ import {
   updateGameinfoComputedColumn,
 } from "@/lib/gameinfo-formula-overrides";
 import { createBlankGameinfoPack, duplicateGameinfoPack } from "@/lib/gameinfo-pack-model";
+import { evaluateGameinfoComputedColumn } from "@/lib/gameinfo-computed-evaluator";
 import { normalizeSpaces } from "@/lib/text-normalize";
 
 const REQUIRED_PACK_FIELDS = ["name", "price", "amountChargedFee", "channelsMain"];
@@ -103,6 +108,7 @@ export default function GameinfoPackEditor({
   const [modalOpen, setModalOpen] = useState(false);
   const [editingComputedColumn, setEditingComputedColumn] = useState(null);
   const [formulaMode, setFormulaMode] = useState("result");
+  const rateState = useGameinfoRates();
 
   const [currencies, setCurrencies] = useState(game.currencies);
   const [computedColumns, setComputedColumns] = useState(game.computedColumns ?? []);
@@ -128,7 +134,10 @@ export default function GameinfoPackEditor({
     JSON.stringify(computedColumns) !== JSON.stringify(savedComputedColumns) ||
     JSON.stringify(costProfiles) !== JSON.stringify(savedCostProfiles);
 
-  const formulaContext = useMemo(() => ({ costProfiles }), [costProfiles]);
+  const formulaContext = useMemo(
+    () => ({ costProfiles, externalValues: rateState.externalValues }),
+    [costProfiles, rateState.externalValues]
+  );
 
   const parsedColumns = useMemo(
     () =>
@@ -157,8 +166,21 @@ export default function GameinfoPackEditor({
     for (const label of GAMEINFO_FIELD_NAMES) {
       row[label] = resolveGameinfoField(pack, game, label, formulaContext);
     }
+    for (const column of computedColumns) {
+      try {
+        row[column.label] = evaluateGameinfoComputedColumn(
+          column,
+          computedColumns,
+          pack,
+          game,
+          formulaContext
+        );
+      } catch {
+        row[column.label] = null;
+      }
+    }
     return row;
-  }, [currencies, formulaContext, game]);
+  }, [computedColumns, currencies, formulaContext, game]);
 
   // Channel "memory" — grows the moment a tag is added (Enter) to any pack's
   // channelsMain/channelsSecondary in this session, not just from what was
@@ -455,6 +477,7 @@ export default function GameinfoPackEditor({
         <GameinfoPackColumnControls
           columns={packLayout.orderedColumns}
           hidden={packLayout.layout.hidden}
+          filters={packLayout.layout.filters}
           presets={packLayout.presets}
           selectedPresetId={packLayout.selectedPresetId}
           presetName={packLayout.presetName}
@@ -465,6 +488,7 @@ export default function GameinfoPackEditor({
           notice={packLayout.notice}
           legacyDraft={packLayout.legacyDraft}
           onSetVisible={packLayout.setVisible}
+          onFiltersChange={packLayout.setFilters}
           onReset={packLayout.reset}
           onSelectPreset={packLayout.selectPreset}
           onPresetNameChange={packLayout.setPresetName}
@@ -600,6 +624,13 @@ export default function GameinfoPackEditor({
         )}
       </section>
 
+      <GameinfoRatePanel
+        rates={rateState.rates}
+        loading={rateState.loading}
+        error={rateState.error}
+        onRefresh={rateState.refresh}
+      />
+
       <GameinfoCostProfileEditor
         profiles={costProfiles}
         onAdd={addCostProfile}
@@ -699,7 +730,10 @@ export default function GameinfoPackEditor({
                     suggestions={liveSuggestions}
                     game={game}
                     costProfiles={costProfiles}
+                    externalValues={rateState.externalValues}
                     columns={packLayout.visibleColumns}
+                    allColumns={packLayout.orderedColumns}
+                    filters={packLayout.layout.filters}
                     formulaMode={formulaMode}
                     invalidFields={invalidFields}
                     onRemoveColumn={removeComputedColumn}
@@ -799,6 +833,7 @@ export default function GameinfoPackEditor({
       {modalOpen && (
         <GameinfoComputedEditor
           sampleRow={sampleRow}
+          otherColumns={computedColumns}
           onClose={() => setModalOpen(false)}
           onAdd={addComputedColumn}
         />
@@ -808,6 +843,7 @@ export default function GameinfoPackEditor({
           key={editingComputedColumn.key}
           initialColumn={editingComputedColumn}
           sampleRow={sampleRow}
+          otherColumns={computedColumns.filter((column) => column.key !== editingComputedColumn.key)}
           onClose={() => setEditingComputedColumn(null)}
           onSave={updateComputedColumn}
         />
@@ -821,7 +857,10 @@ function CategoryBlock({
   suggestions,
   game,
   costProfiles,
+  externalValues,
   columns,
+  allColumns,
+  filters,
   formulaMode,
   invalidFields,
   onRemoveColumn,
@@ -838,8 +877,32 @@ function CategoryBlock({
   const [collapsed, setCollapsed] = useState(false);
   const grid = packGridTemplate(columns);
   const columnSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
+  const visiblePacks = category.packs
+    .map((pack, pkIdx) => ({ pack, pkIdx }))
+    .filter(({ pack }) =>
+      matchesGameinfoPackFilters(pack, filters, (columnId, targetPack) => {
+        const column = allColumns.find((item) => item.id === columnId);
+        if (!column) return "";
+        if (column.id === "costProfileId") {
+          return costProfiles.find((profile) => profile.id === targetPack.costProfileId)?.label || "";
+        }
+        if (column.kind !== "computed") return targetPack[column.field];
+        try {
+          return evaluateGameinfoComputedColumn(
+            column.computed,
+            allColumns.filter((item) => item.kind === "computed").map((item) => item.computed),
+            targetPack,
+            game,
+            { costProfiles, externalValues }
+          );
+        } catch {
+          return "";
+        }
+      })
+    );
 
   function handleColumnDragEnd(e) {
     const { active, over } = e;
@@ -871,7 +934,9 @@ function CategoryBlock({
               className="w-full rounded-md border border-linear-hairline-strong bg-linear-surface-1 px-2 py-1.5 text-sm outline-none focus:border-linear-primary"
             />
           </div>
-          <span className="shrink-0 text-xs text-linear-ink-tertiary">({category.packs.length} แพ็ก)</span>
+          <span className="shrink-0 text-xs text-linear-ink-tertiary">
+            ({visiblePacks.length === category.packs.length ? category.packs.length : `${visiblePacks.length}/${category.packs.length}`} แพ็ก)
+          </span>
         </div>
         <div className="flex shrink-0 gap-2">
           <button
@@ -893,8 +958,10 @@ function CategoryBlock({
         </div>
       </div>
 
-      {collapsed ? null : category.packs.length === 0 ? (
-        <p className="px-1 py-2 text-xs text-linear-ink-tertiary">ยังไม่มี pack</p>
+      {collapsed ? null : visiblePacks.length === 0 ? (
+        <p className="px-1 py-2 text-xs text-linear-ink-tertiary">
+          {category.packs.length === 0 ? "ยังไม่มี pack" : "ไม่มี pack ที่ตรงกับตัวกรอง"}
+        </p>
       ) : (
         <div className="mt-2 overflow-hidden rounded-md border border-linear-hairline bg-linear-surface-1">
           {/* mt-2 keeps this box's rounded corner clear of the category
@@ -941,15 +1008,17 @@ function CategoryBlock({
               </DndContext>
               <span></span>
             </div>
-            {category.packs.map((pack, pkIdx) => (
+            {visiblePacks.map(({ pack, pkIdx }) => (
               <PackRow
                 key={pack.id}
                 index={pkIdx + 1}
                 pack={pack}
                 game={game}
                 costProfiles={costProfiles}
+                externalValues={externalValues}
                 suggestions={suggestions}
                 columns={columns}
+                computedColumns={allColumns.filter((item) => item.kind === "computed").map((item) => item.computed)}
                 formulaMode={formulaMode}
                 gridTemplate={grid.template}
                 invalid={{
@@ -979,8 +1048,10 @@ function PackRow({
   pack,
   game,
   costProfiles,
+  externalValues,
   suggestions,
   columns,
+  computedColumns,
   formulaMode,
   gridTemplate,
   invalid,
@@ -1008,6 +1079,8 @@ function PackRow({
           pack={pack}
           game={game}
           costProfiles={costProfiles}
+          externalValues={externalValues}
+          computedColumns={computedColumns}
           suggestions={suggestions}
           formulaMode={formulaMode}
           invalid={invalid}
@@ -1046,6 +1119,8 @@ function PackRow({
           pack={pack}
           game={game}
           costProfiles={costProfiles}
+          externalValues={externalValues}
+          computedColumns={computedColumns}
           onClose={() => setOverrideColumn(null)}
           onSave={(formula) => {
             onSetFormulaOverride(overrideColumn.computed.key, formula);
@@ -1062,6 +1137,8 @@ function PackEditorColumn({
   pack,
   game,
   costProfiles,
+  externalValues,
+  computedColumns,
   suggestions,
   formulaMode,
   invalid,
@@ -1130,8 +1207,12 @@ function PackEditorColumn({
     let value = null;
     let formulaError = false;
     try {
-      value = evaluateFormula(parseFormula(effective.formula), (label) =>
-        resolveGameinfoField(pack, game, label, { costProfiles })
+      value = evaluateGameinfoComputedColumn(
+        formula,
+        computedColumns,
+        pack,
+        game,
+        { costProfiles, externalValues }
       );
     } catch {
       formulaError = true;
@@ -1210,7 +1291,16 @@ function PackEditorColumn({
   );
 }
 
-function GameinfoFormulaOverrideEditor({ column, pack, game, costProfiles, onClose, onSave }) {
+function GameinfoFormulaOverrideEditor({
+  column,
+  pack,
+  game,
+  costProfiles,
+  externalValues,
+  computedColumns,
+  onClose,
+  onSave,
+}) {
   const existing = column.rowOverrides?.[pack.id] || "";
   const [formula, setFormula] = useState(existing);
 
@@ -1227,14 +1317,22 @@ function GameinfoFormulaOverrideEditor({ column, pack, game, costProfiles, onClo
     try {
       const ast = parseFormula(formula);
       const unknown = [...extractFormulaRefs(ast)].filter(
-        (name) => !GAMEINFO_FIELD_NAMES.includes(name)
+        (name) =>
+          !GAMEINFO_FIELD_NAMES.includes(name) &&
+          !computedColumns.some((computed) => computed.label === name)
       );
       if (unknown.length) {
         return { ok: false, message: `ไม่รู้จักคอลัมน์: ${unknown.join(", ")}`, value: null };
       }
-      const value = evaluateFormula(ast, (label) =>
-        resolveGameinfoField(pack, game, label, { costProfiles })
-      );
+      const value = evaluateFormula(ast, (label) => {
+        const dependency = computedColumns.find((computed) => computed.label === label);
+        return dependency
+          ? evaluateGameinfoComputedColumn(dependency, computedColumns, pack, game, {
+              costProfiles,
+              externalValues,
+            })
+          : resolveGameinfoField(pack, game, label, { costProfiles, externalValues });
+      });
       return {
         ok: true,
         message: `สูตรถูกต้อง · ผลลัพธ์แถวนี้ ${formatGameinfoPackColumnValue(value, column)}`,
@@ -1243,7 +1341,7 @@ function GameinfoFormulaOverrideEditor({ column, pack, game, costProfiles, onClo
     } catch (error) {
       return { ok: false, message: error.message, value: null };
     }
-  }, [column, costProfiles, formula, game, pack]);
+  }, [column, computedColumns, costProfiles, externalValues, formula, game, pack]);
 
   return (
     <div

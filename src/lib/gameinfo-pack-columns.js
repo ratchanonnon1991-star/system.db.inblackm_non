@@ -64,7 +64,17 @@ export function normalizeGameinfoPackLayout(raw, columns) {
   for (const id of Array.isArray(raw?.hidden) ? raw.hidden : []) {
     if (known.has(id) && !hidden.includes(id)) hidden.push(id);
   }
-  return { order, hidden };
+  const filters = [];
+  for (const filter of Array.isArray(raw?.filters) ? raw.filters : []) {
+    const columnId = String(filter?.columnId || "");
+    const operator = ["contains", "equals", "not_empty", "empty"].includes(filter?.operator)
+      ? filter.operator
+      : "contains";
+    if (!known.has(columnId)) continue;
+    filters.push({ columnId, operator, value: String(filter?.value ?? "").slice(0, 200) });
+    if (filters.length >= 10) break;
+  }
+  return { order, hidden, filters };
 }
 
 export function reorderGameinfoPackColumns(layout, activeId, overId) {
@@ -86,6 +96,19 @@ export function formatGameinfoPackColumnValue(value, column) {
   const formatted = formatCell(value, column?.type);
   if (formatted === "—" || !column?.symbol) return formatted;
   return column.symbol === "%" ? `${formatted}%` : `${column.symbol}${formatted}`;
+}
+
+export function matchesGameinfoPackFilters(pack, filters, resolveValue) {
+  return (filters || []).every((filter) => {
+    const raw = resolveValue(filter.columnId, pack);
+    const text = Array.isArray(raw) ? raw.join(", ") : String(raw ?? "");
+    const actual = text.trim().toLocaleLowerCase("th");
+    const expected = String(filter.value ?? "").trim().toLocaleLowerCase("th");
+    if (filter.operator === "empty") return !actual;
+    if (filter.operator === "not_empty") return Boolean(actual);
+    if (filter.operator === "equals") return actual === expected;
+    return actual.includes(expected);
+  });
 }
 
 export function gameinfoPackLayoutStorageKey({ userId, gameId, surface }) {

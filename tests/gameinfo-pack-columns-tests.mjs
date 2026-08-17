@@ -1,6 +1,7 @@
 import {
   buildGameinfoPackColumns,
   formatGameinfoPackColumnValue,
+  matchesGameinfoPackFilters,
   normalizeGameinfoPackLayout,
   reorderGameinfoPackColumns,
 } from "@/lib/gameinfo-pack-columns.js";
@@ -60,6 +61,41 @@ check("layout keeps known saved order then appends new columns", normalized.orde
   "country",
 ]);
 check("layout drops unknown and duplicate hidden ids", normalized.hidden, ["country"]);
+check("layout defaults to no row filters", normalized.filters, []);
+
+const filteredLayout = normalizeGameinfoPackLayout(
+  {
+    filters: [
+      { columnId: "name", operator: "contains", value: "diamond" },
+      { columnId: "missing", operator: "equals", value: "x" },
+    ],
+  },
+  columns
+);
+check("layout keeps filters for known columns", filteredLayout.filters, [
+  { columnId: "name", operator: "contains", value: "diamond" },
+]);
+check(
+  "pack filters compare arrays and text case-insensitively",
+  matchesGameinfoPackFilters(
+    { name: "86 Diamonds", channelsMain: ["WavePay"] },
+    [
+      { columnId: "name", operator: "contains", value: "DIAMOND" },
+      { columnId: "channelsMain", operator: "equals", value: "wavepay" },
+    ],
+    (columnId, pack) => pack[columnId]
+  ),
+  true
+);
+check(
+  "empty filter rejects a populated value",
+  matchesGameinfoPackFilters(
+    { country: "TH" },
+    [{ columnId: "country", operator: "empty", value: "" }],
+    (columnId, pack) => pack[columnId]
+  ),
+  false
+);
 
 check(
   "column reorder moves one id without losing the others",

@@ -4,6 +4,7 @@ import { sanitizeComputedColumns } from "@/server/gamedb-layout-sanitizer";
 import { saveGamelistPacks } from "@/server/gameinfo-gamelist-packs";
 import { pruneGameinfoFormulaOverrides } from "@/lib/gameinfo-formula-overrides";
 import { sanitizeGameinfoCostProfiles } from "@/lib/gameinfo-cost-profiles";
+import { validateGameinfoComputedDependencies } from "@/lib/gameinfo-computed-evaluator";
 
 export async function PUT(request, { params }) {
   try {
@@ -21,12 +22,15 @@ export async function PUT(request, { params }) {
         (category?.packs || []).map((pack) => pack?.id).filter(Boolean)
       )
     );
+    const computedColumns = pruneGameinfoFormulaOverrides(
+      sanitizeComputedColumns(body.computedColumns),
+      packIds
+    );
+    const formulaErrors = validateGameinfoComputedDependencies(computedColumns);
+    if (formulaErrors.length) return jsonError(formulaErrors[0], 400);
     const packs = await saveGamelistPacks(gameId, {
       currencies,
-      computedColumns: pruneGameinfoFormulaOverrides(
-        sanitizeComputedColumns(body.computedColumns),
-        packIds
-      ),
+      computedColumns,
       costProfiles: sanitizeGameinfoCostProfiles(body.costProfiles),
       actor: { id: user.id, name: user.displayName || user.username },
       source,
