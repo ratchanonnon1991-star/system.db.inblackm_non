@@ -700,6 +700,31 @@ export function EditableSettingsModal({
       .filter((target) => target.columns.length > 0);
   }, [sqlText, schemaData, columnNames]);
 
+  /**
+   * The one table a query reads, when the SELECT list itself says nothing.
+   *
+   * detectEditableTargets works by attributing result columns to tables, so a
+   * query whose every column is an expression -- `CASE ... END AS "สถานะ"`,
+   * a concat, a cast -- attributes nothing and proposes nothing, even though
+   * which table it reads is not in question at all. That is a real and common
+   * shape here, and leaving it to be filled in by hand is exactly the asking
+   * this is meant to stop.
+   *
+   * Only ever one table, with one key column, and only when the result
+   * actually carries that key -- anything less is a guess about where writes
+   * land, which is the one thing worth refusing over.
+   */
+  const soleQueryTable = useMemo(() => {
+    if (detectedTargets.length > 0) return null;
+    const found = resolveQueryTables({ sql: sqlText || "", tables: schemaData?.tables || [] });
+    if (found.length !== 1 || found[0].primaryKey.length !== 1) return null;
+    const key = found[0].primaryKey[0];
+    const inResult = (columnNames || []).find(
+      (name) => name === key || name.toLowerCase() === key.toLowerCase()
+    );
+    return inResult ? { table: found[0], pkResultColumn: inResult, primaryKey: key } : null;
+  }, [detectedTargets, sqlText, schemaData, columnNames]);
+
   // Only fill boxes the admin has not touched — someone who typed a real
   // column name by hand should never have it silently swapped back.
   const touchedPkColumn = useRef(Boolean(editable?.pkColumn));
@@ -792,17 +817,31 @@ export function EditableSettingsModal({
     const usable = detectedTargets.filter(
       (target) => !target.compositeKey && target.pkResultColumn
     );
-    if (usable.length === 0) return;
-    autoApplied.current = true;
-    applyDetection(usable);
+    if (usable.length > 0) {
+      autoApplied.current = true;
+      applyDetection(usable);
+      return;
+    }
+    // Nothing attributable in the SELECT list, but only one table to attribute
+    // to: fill in where writes go and how a row is identified, and leave the
+    // column allow-list empty for someone to tick, which is a choice about
+    // what may be edited rather than one about plumbing.
+    if (soleQueryTable) {
+      autoApplied.current = true;
+      setTable(soleQueryTable.table.key);
+      setPk(soleQueryTable.pkResultColumn);
+      pkColumnFor.current = soleQueryTable.pkResultColumn;
+      touchedPkColumn.current = true;
+      setPkColumn(soleQueryTable.primaryKey);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detectedTargets]);
+  }, [detectedTargets, soleQueryTable]);
 
   // Whether detection got far enough to be worth hiding the manual boxes
   // behind an "advanced" fold at all.
-  const detectionUsable = detectedTargets.some(
-    (target) => !target.compositeKey && target.pkResultColumn
-  );
+  const detectionUsable =
+    detectedTargets.some((target) => !target.compositeKey && target.pkResultColumn) ||
+    Boolean(soleQueryTable);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
@@ -1192,6 +1231,22 @@ export function EditableSettingsModal({
           </div>
         )}
       </div>
+      {soleQueryTable && (
+        <div className="rounded-sm border border-emerald-200 bg-emerald-50 p-3">
+          <p className="flex items-center gap-1.5 text-[11px] font-black text-emerald-800">
+            <Table2 size={13} /> ระบบอ่าน SQL แล้วตั้งค่าให้เรียบร้อย — ไม่ต้องเลือกอะไร
+          </p>
+          <p className="mt-0.5 text-[10px] font-semibold leading-relaxed text-emerald-700">
+            การแก้ไขจะเขียนกลับที่ตาราง{" "}
+            <span className="font-mono font-black">{soleQueryTable.table.key}</span> ระบุแถวด้วย{" "}
+            <span className="font-mono font-black">{soleQueryTable.primaryKey}</span>
+            {soleQueryTable.pkResultColumn !== soleQueryTable.primaryKey
+              ? ` (ในผลลัพธ์ชื่อ "${soleQueryTable.pkResultColumn}")`
+              : ""}{" "}
+            · Query นี้อ่านตารางเดียว เหลือแค่ติ๊กว่าจะให้แก้คอลัมน์ไหนบ้างด้านล่าง
+          </p>
+        </div>
+      )}
       {detectedTargets.length > 0 && (
         <div className="rounded-sm border border-emerald-200 bg-emerald-50 p-3">
           <p className="flex items-center gap-1.5 text-[11px] font-black text-emerald-800">
