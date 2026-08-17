@@ -447,15 +447,26 @@ export function addMissingKeyColumns({ sql, tables }) {
 export function checkJoinQualification(sql) {
   const froms = parseFromTables(sql);
   if (froms.length < 2) {
-    return { needed: false, ok: true, missingAlias: [], unqualified: [], unknownQualifier: [] };
+    return {
+      needed: false,
+      ok: true,
+      missingAlias: [],
+      unqualified: [],
+      unknownQualifier: [],
+      duplicateResults: [],
+    };
   }
 
   const aliases = new Set(froms.map((from) => from.alias.toLowerCase()));
   const missingAlias = froms.filter((from) => !from.explicitAlias).map((from) => from.name);
   const unqualified = [];
   const unknownQualifier = [];
+  const timesReturned = new Map();
 
   for (const item of parseSelectSources(sql)) {
+    if (item.result && item.column !== "*") {
+      timesReturned.set(item.result, (timesReturned.get(item.result) || 0) + 1);
+    }
     if (!item.column) continue;
     if (!item.qualifier) {
       unqualified.push(item.column === "*" ? "*" : item.result || item.column);
@@ -466,12 +477,25 @@ export function checkJoinQualification(sql) {
     }
   }
 
+  // `SELECT a.id, b.id` returns two columns both called `id`. Everything that
+  // configures an edit addresses a column by that name, so the two are
+  // indistinguishable and whichever is found first answers for both -- which
+  // is b's rows being written using a's key. An AS on either one settles it.
+  const duplicateResults = [...timesReturned.entries()]
+    .filter(([, count]) => count > 1)
+    .map(([name]) => name);
+
   return {
     needed: true,
-    ok: missingAlias.length === 0 && unqualified.length === 0 && unknownQualifier.length === 0,
+    ok:
+      missingAlias.length === 0 &&
+      unqualified.length === 0 &&
+      unknownQualifier.length === 0 &&
+      duplicateResults.length === 0,
     missingAlias,
     unqualified,
     unknownQualifier,
+    duplicateResults,
   };
 }
 
@@ -535,13 +559,15 @@ export function detectEditableTargets({ sql, tables }) {
   if (resolved.length === 0) return [];
 
   const items = parseSelectSources(sql);
-  const columnsByTableKey = new Map();
+  // Collected first, filtered second: everything downstream addresses a result
+  // column by name, so a name the query returns twice -- `SELECT a.id, b.id`
+  // returns two columns both called `id` -- cannot be addressed at all. Which
+  // of the two anything means is decided by whoever looks first, and looking
+  // first is how b's rows end up being written using a's key.
+  const found = [];
   const addColumn = (table, result, column) => {
     if (!table || !result || !column) return;
-    const existing = columnsByTableKey.get(table.key) || [];
-    if (existing.some((entry) => entry.result === result)) return;
-    existing.push({ result, column });
-    columnsByTableKey.set(table.key, existing);
+    found.push({ tableKey: table.key, result, column });
   };
 
   for (const item of items) {
@@ -570,6 +596,21 @@ export function detectEditableTargets({ sql, tables }) {
     if (owners.length === 1) {
       addColumn(owners[0].table, item.result, findColumn(owners[0].table, item.column));
     }
+  }
+
+  // A result name the query returns more than once belongs to nobody: it is
+  // not addressable, and quietly picking one of them is a write to a row
+  // nobody chose. Both copies go.
+  const timesReturned = new Map();
+  for (const entry of found) {
+    timesReturned.set(entry.result, (timesReturned.get(entry.result) || 0) + 1);
+  }
+  const columnsByTableKey = new Map();
+  for (const entry of found) {
+    if (timesReturned.get(entry.result) > 1) continue;
+    const existing = columnsByTableKey.get(entry.tableKey) || [];
+    existing.push({ result: entry.result, column: entry.column });
+    columnsByTableKey.set(entry.tableKey, existing);
   }
 
   return resolved

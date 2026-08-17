@@ -451,6 +451,77 @@ check(
 );
 check("empty sql asks for nothing", checkJoinQualification("").needed, false);
 
+// --- two columns coming back under the same name -------------------------
+// `a.id, b.id` returns two columns both called `id`. Everything that
+// configures an edit addresses a column by name, so the two are one as far as
+// the config is concerned -- and the one found first answers for both.
+check(
+  "a duplicated result name is called out",
+  checkJoinQualification("SELECT a.id, b.id FROM aaa a JOIN bbb b ON b.aaa_id = a.id")
+    .duplicateResults,
+  ["id"]
+);
+check(
+  "which is enough on its own to block the save",
+  checkJoinQualification("SELECT a.id, b.id FROM aaa a JOIN bbb b ON b.aaa_id = a.id").ok,
+  false
+);
+check(
+  "an AS on one of them settles it",
+  checkJoinQualification(
+    "SELECT a.id AS a_id, b.id FROM aaa a JOIN bbb b ON b.aaa_id = a.id"
+  ).ok,
+  true
+);
+check(
+  "and neither copy is attributed to a table while it is ambiguous",
+  detectEditableTargets({
+    sql: "SELECT o.id, g.id, o.amount FROM public.orders o JOIN public.games g ON o.game_id = g.id",
+    tables: TABLES,
+  }).map((target) => [target.key, target.columns.map((entry) => entry.result), target.pkResultColumn]),
+  [["public.orders", ["amount"], ""]]
+);
+check(
+  "once aliased apart, both tables come back with their own key",
+  detectEditableTargets({
+    sql: "SELECT o.id, g.id AS g_id, o.amount FROM public.orders o JOIN public.games g ON o.game_id = g.id",
+    tables: TABLES,
+  }).map((target) => [target.key, target.pkResultColumn]),
+  [
+    ["public.orders", "id"],
+    ["public.games", "g_id"],
+  ]
+);
+check(
+  "a name a single-table query returns twice is dropped as well",
+  detectEditableTargets({
+    sql: "SELECT id, id, name FROM public.games",
+    tables: TABLES,
+  })[0].columns.map((entry) => entry.result),
+  ["name"]
+);
+// Nothing is quietly repaired underneath an ambiguous query: with both `id`s
+// dropped, the joined table accounts for no result column at all and is not
+// offered. That is fine, because the duplicate blocks the save until it is
+// aliased apart -- and once it is, the key completion has something to work
+// with again.
+check(
+  "an ambiguous query is not silently completed",
+  addMissingKeyColumns({
+    sql: "SELECT o.id, g.id, o.amount FROM public.orders o JOIN public.games g ON o.game_id = g.id",
+    tables: TABLES,
+  }).added.some((entry) => entry.table === "public.games"),
+  false
+);
+check(
+  "but once aliased apart, the missing key is added as usual",
+  addMissingKeyColumns({
+    sql: "SELECT o.id AS o_id, g.name FROM public.orders o JOIN public.games g ON o.game_id = g.id",
+    tables: TABLES,
+  }).added,
+  [{ table: "public.games", column: "id", alias: "__key_g_id" }]
+);
+
 // --- completing a join so the joined table can be edited -----------------
 const completed = addMissingKeyColumns({
   sql: "SELECT o.id, o.amount, g.name FROM public.orders o JOIN public.games g ON o.game_id = g.id",

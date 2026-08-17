@@ -1142,9 +1142,16 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                     ตั้งชื่อย่อให้ทุกตาราง แล้วใส่ชื่อย่อนำหน้าทุกคอลัมน์ใน SELECT
                     ถ้าไม่ใส่ ระบบจะไม่รู้ว่าเวลาแก้ข้อมูลต้องเขียนกลับไปที่ตารางไหน
                     และตั้งค่า &quot;แก้ไขข้อมูล&quot; ให้อัตโนมัติไม่ได้
+                    {joinQualification.duplicateResults.length > 0 && (
+                      <>
+                        {" "}
+                        และถ้าสองตารางมีคอลัมน์ชื่อเดียวกัน ต้องตั้ง <code>AS</code> ให้ต่างกัน —
+                        ไม่งั้นผลลัพธ์จะมีคอลัมน์ชื่อซ้ำกันสองอัน แยกไม่ออกว่าอันไหนของตารางไหน
+                      </>
+                    )}
                   </p>
                   <pre className="mt-1.5 overflow-x-auto rounded-sm border border-amber-200 bg-white px-2 py-1.5 font-mono text-[10px] leading-relaxed text-zinc-700">
-{"SELECT b.col1, a.col2\nFROM   bbb AS b\nJOIN   aaa AS a ON a.id = b.aaa_id"}
+{"SELECT b.id AS b_id, b.col1, a.id AS a_id, a.col2\nFROM   bbb AS b\nJOIN   aaa AS a ON a.id = b.aaa_id"}
                   </pre>
                 </div>
               )}
@@ -1274,6 +1281,8 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
               `ใส่ชื่อย่อตารางนำหน้าคอลัมน์ ${joinQualification.unqualified.slice(0, 5).join(", ")}${joinQualification.unqualified.length > 5 ? " …" : ""} เช่น a.${joinQualification.unqualified[0] === "*" ? "*" : joinQualification.unqualified[0]}`,
             joinQualification.unknownQualifier.length > 0 &&
               `${joinQualification.unknownQualifier.join(", ")} ใช้ชื่อย่อที่ไม่มีใน FROM/JOIN`,
+            joinQualification.duplicateResults.length > 0 &&
+              `ตั้ง AS ให้คอลัมน์ที่ชื่อซ้ำกันในผลลัพธ์: ${joinQualification.duplicateResults.join(", ")} เช่น a.id AS a_id, b.id AS b_id`,
           ].filter(Boolean)}
         />
 
