@@ -48,6 +48,11 @@ const TABLES = [
   },
 ];
 
+const completionOfShape = (sql) =>
+  addMissingKeyColumns({ sql, tables: TABLES }).added.map(
+    (entry) => `${entry.table}->${entry.alias}`
+  );
+
 /** Each target as "table/key(in result)/columns", the whole answer in one line. */
 const readOf = (sql) =>
   detectEditableTargets({ sql, tables: TABLES }).map(
@@ -146,6 +151,58 @@ check(
   "a table identified by a unique column instead of a key",
   readOf("SELECT u.email, u.display_name FROM public.users u"),
   ["public.users|u|email|email|email,display_name"]
+);
+
+// --- every flavour of join ------------------------------------------------
+// The keyword between the tables changes which rows come back, never which
+// table a column belongs to -- but each spelling has to parse, and the words
+// in it must not be read as a table's alias.
+for (const [label, keyword] of [
+  ["INNER JOIN", "INNER JOIN"],
+  ["LEFT JOIN", "LEFT JOIN"],
+  ["LEFT OUTER JOIN", "LEFT OUTER JOIN"],
+  ["RIGHT JOIN", "RIGHT JOIN"],
+  ["RIGHT OUTER JOIN", "RIGHT OUTER JOIN"],
+  ["FULL JOIN", "FULL JOIN"],
+  ["FULL OUTER JOIN", "FULL OUTER JOIN"],
+  ["NATURAL JOIN", "NATURAL JOIN"],
+]) {
+  check(
+    `${label} reads both sides`,
+    readOf(`SELECT o.id, o.amount, g.id AS g_id, g.name
+      FROM public.orders o ${keyword} public.games g ON g.id = o.game_id`),
+    ["public.orders|o|id|id|id,amount", "public.games|g|id|g_id|g_id,name"]
+  );
+  check(
+    `${label} does not swallow the alias`,
+    checkJoinQualification(`SELECT o.id, g.id AS g_id
+      FROM public.orders o ${keyword} public.games g ON g.id = o.game_id`).missingAlias,
+    []
+  );
+}
+check(
+  "an unaliased table after RIGHT JOIN is still reported",
+  checkJoinQualification(
+    "SELECT o.id, games.id AS g_id FROM public.orders o RIGHT JOIN public.games ON games.id = o.game_id"
+  ).missingAlias,
+  ["games"]
+);
+// A LEFT JOIN leaves the right side's columns NULL on unmatched rows, key
+// included. Reading is unaffected -- the refusal happens at write time, where
+// a row with no key for that table cannot be identified at all.
+check(
+  "a LEFT JOIN reads exactly like an INNER one",
+  readOf(`SELECT o.id, g.id AS g_id, g.name
+    FROM public.orders o LEFT JOIN public.games g ON g.id = o.game_id`),
+  // Ordered by how much of the result each table accounts for, so the joined
+  // table leads here -- the side of the join has nothing to do with it.
+  ["public.games|g|id|g_id|g_id,name", "public.orders|o|id|id|id"]
+);
+check(
+  "and the missing key is added to the outer side the same way",
+  completionOfShape(`SELECT o.id, g.name
+    FROM public.orders o LEFT JOIN public.games g ON g.id = o.game_id`),
+  ["public.games->__key_g_id"]
 );
 
 // --- the same table joined to itself -------------------------------------

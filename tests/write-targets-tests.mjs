@@ -198,6 +198,30 @@ check(
   "public.orders"
 );
 
+// --- an outer join's unmatched row ---------------------------------------
+// A LEFT JOIN leaves the joined table's columns NULL where nothing matched,
+// its key included. There is no row of that table to write to, and the write
+// must find nothing rather than find something.
+reset({ rows: [] });
+await rejects(
+  "a row whose joined side did not match is not written to",
+  updateCell({
+    editable: JOINED,
+    connection: null,
+    pkValue: null,
+    column: "name",
+    value: "new",
+  }),
+  { status: 404 }
+);
+check(
+  "the lookup was scoped by the key, so a null one matched no row",
+  log.find((entry) => /FOR UPDATE/.test(entry.text))?.params,
+  [null]
+);
+check("and no UPDATE ran", log.some((entry) => /^UPDATE/i.test(entry.text)), false);
+check("the transaction was rolled back", log.some((entry) => entry.text === "ROLLBACK"), true);
+
 // --- a stacked query, where the table is a fact about the row ------------
 // `SELECT o.id, o.title, ... FROM orders o UNION ALL SELECT g.id, g.name, ...
 // FROM games g`, completed with __src and __key_row.
