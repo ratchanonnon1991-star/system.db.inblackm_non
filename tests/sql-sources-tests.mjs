@@ -600,6 +600,105 @@ check(
 );
 check("nothing to do on nonsense", addMissingKeyColumns({ sql: "nope", tables: TABLES }).added, []);
 
+// --- a table that identifies rows without declaring a primary key --------
+const UNIQUE_TABLES = [
+  {
+    key: "public.codes",
+    schema: "public",
+    name: "codes",
+    primaryKey: [],
+    uniqueKeys: ["code"],
+    columns: [{ name: "code" }, { name: "label" }],
+  },
+  {
+    key: "public.pairs",
+    schema: "public",
+    name: "pairs",
+    primaryKey: ["a", "b"],
+    uniqueKeys: ["slug"],
+    columns: [{ name: "a" }, { name: "b" }, { name: "slug" }, { name: "note" }],
+  },
+  {
+    key: "public.many",
+    schema: "public",
+    name: "many",
+    primaryKey: [],
+    uniqueKeys: ["ref", "sku"],
+    columns: [{ name: "ref" }, { name: "sku" }, { name: "note" }],
+  },
+  {
+    key: "public.nokey",
+    schema: "public",
+    name: "nokey",
+    primaryKey: [],
+    uniqueKeys: [],
+    columns: [{ name: "note" }],
+  },
+];
+const uniqueKeyed = detectEditableTargets({
+  sql: "SELECT code, label FROM public.codes",
+  tables: UNIQUE_TABLES,
+})[0];
+check("a unique column stands in for a missing primary key", uniqueKeyed.primaryKey, "code");
+check("and says where the key came from", uniqueKeyed.keySource, "unique");
+check("the result column carrying it is found the same way", uniqueKeyed.pkResultColumn, "code");
+check(
+  "a composite primary key is no longer a dead end when a unique column exists",
+  (() => {
+    const target = detectEditableTargets({
+      sql: "SELECT slug, note FROM public.pairs",
+      tables: UNIQUE_TABLES,
+    })[0];
+    return [target.primaryKey, target.keySource, target.compositeKey];
+  })(),
+  ["slug", "unique", false]
+);
+check(
+  "with several unique columns, the one the query already returns is used",
+  detectEditableTargets({ sql: "SELECT sku, note FROM public.many", tables: UNIQUE_TABLES })[0]
+    .primaryKey,
+  "sku"
+);
+check(
+  "and with none of them returned, one is still named so it can be added",
+  detectEditableTargets({ sql: "SELECT note FROM public.many", tables: UNIQUE_TABLES })[0]
+    .primaryKey,
+  "ref"
+);
+check(
+  "a table with no key of any kind is still refused",
+  (() => {
+    const target = detectEditableTargets({
+      sql: "SELECT note FROM public.nokey",
+      tables: UNIQUE_TABLES,
+    })[0];
+    return [target.primaryKey, target.pkResultColumn];
+  })(),
+  ["", ""]
+);
+check(
+  "a declared primary key still wins over a unique column",
+  detectEditableTargets({ sql: "SELECT id, name FROM public.games", tables: TABLES })[0].keySource,
+  "pk"
+);
+check(
+  "a composite key with nothing unique to fall back on is still flagged as such",
+  detectEditableTargets({ sql: "SELECT n.a, n.body FROM public.notes n", tables: TABLES })[0]
+    .compositeKey,
+  true
+);
+check(
+  "the missing unique key is added to the SELECT like any other",
+  addMissingKeyColumns({
+    sql: "SELECT m.note, c.label FROM public.many m JOIN public.codes c ON c.code = m.ref",
+    tables: UNIQUE_TABLES,
+  }).added,
+  [
+    { table: "public.many", column: "ref", alias: "__key_m_ref" },
+    { table: "public.codes", column: "code", alias: "__key_c_code" },
+  ]
+);
+
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);
 process.exit(failures.length ? 1 : 0);

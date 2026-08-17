@@ -717,8 +717,12 @@ export function EditableSettingsModal({
   const soleQueryTable = useMemo(() => {
     if (detectedTargets.length > 0) return null;
     const found = resolveQueryTables({ sql: sqlText || "", tables: schemaData?.tables || [] });
-    if (found.length !== 1 || found[0].primaryKey.length !== 1) return null;
-    const key = found[0].primaryKey[0];
+    if (found.length !== 1) return null;
+    // Same rule detectEditableTargets uses: the declared single-column key, or
+    // a column the database guarantees is unique on its own.
+    const key =
+      found[0].primaryKey?.length === 1 ? found[0].primaryKey[0] : found[0].uniqueKeys?.[0] || "";
+    if (!key) return null;
     const inResult = (columnNames || []).find(
       (name) => name === key || name.toLowerCase() === key.toLowerCase()
     );
@@ -1297,7 +1301,8 @@ export function EditableSettingsModal({
                     </p>
                   ) : !target.primaryKey ? (
                     <p className="mt-0.5 text-[9px] font-bold text-amber-600">
-                      ตารางนี้ไม่มี key ประจำแถว จึงไม่รู้ว่าจะแก้แถวไหน
+                      ตารางนี้ไม่มีคอลัมน์ที่ระบุแถวได้ (ไม่มี Primary Key และไม่มีคอลัมน์ที่ unique)
+                      จึงไม่รู้ว่าจะแก้แถวไหน
                     </p>
                   ) : !target.pkResultColumn ? (
                     <p className="mt-0.5 text-[9px] font-bold text-amber-600">
@@ -1307,6 +1312,7 @@ export function EditableSettingsModal({
                   ) : (
                     <p className="mt-0.5 text-[9px] font-semibold text-emerald-600">
                       key ประจำแถว: {target.primaryKey}
+                      {target.keySource === "unique" ? " (คอลัมน์ที่ unique — ตารางนี้ไม่มี Primary Key)" : ""}
                       {target.pkResultColumn !== target.primaryKey
                         ? ` (ในผลลัพธ์ชื่อ "${target.pkResultColumn}")`
                         : ""}

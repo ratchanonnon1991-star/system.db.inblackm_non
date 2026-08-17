@@ -204,6 +204,51 @@ check(
   true
 );
 
+// A table with no declared primary key but a NOT NULL unique column can still
+// identify a row, so it is editable -- with that column standing in as the key
+// and therefore read-only itself.
+const codeRows = [
+  {
+    schema_name: "public", table_name: "codes", column_name: "code", data_type: "text",
+    nullable: false, identity_column: false, generated_column: false, can_select: true,
+    can_update: true, primary_key_position: 0,
+  },
+  {
+    schema_name: "public", table_name: "codes", column_name: "label", data_type: "text",
+    nullable: true, identity_column: false, generated_column: false, can_select: true,
+    can_update: true, primary_key_position: 0,
+  },
+];
+const uniqueRows = [{ schema_name: "public", table_name: "codes", column_name: "code" }];
+const codeTable = mapSchemaRows(codeRows, true, uniqueRows)[0];
+check("a unique column is reported", codeTable.uniqueKeys, ["code"]);
+check("its other columns become editable", codeTable.columns[1].editable, true);
+check("and the key column itself does not", codeTable.columns[0].editable, false);
+check(
+  "with the reason saying why",
+  codeTable.columns[0].editReason,
+  "คอลัมน์นี้ใช้ระบุแถว จึงไม่ให้แก้"
+);
+check(
+  "without one, nothing is editable",
+  mapSchemaRows(codeRows, true)[0].columns[1].editable,
+  false
+);
+check(
+  "a column that is already the primary key is not listed twice",
+  mapSchemaRows(rows, true, [{ schema_name: "public", table_name: "games", column_name: "id" }])[0]
+    .uniqueKeys,
+  []
+);
+check(
+  "a unique row for a table this connection cannot read is ignored",
+  mapSchemaRows(codeRows, true, [
+    { schema_name: "other", table_name: "nope", column_name: "x" },
+    ...uniqueRows,
+  ])[0].uniqueKeys,
+  ["code"]
+);
+
 tables = mapSchemaRows(rows, false);
 check("app read-only flag overrides database UPDATE privilege", tables[0].columns[1].editable, false);
 check(

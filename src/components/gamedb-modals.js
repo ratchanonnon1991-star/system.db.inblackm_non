@@ -34,7 +34,11 @@ import {
 } from "@/lib/gamedb-formula";
 import { formatCell, toneStyle } from "@/lib/gamedb-layout";
 import { extractSqlParams } from "@/lib/gamedb-sql-params";
-import { addMissingKeyColumns, checkJoinQualification } from "@/lib/gamedb-sql-sources";
+import {
+  addMissingKeyColumns,
+  checkJoinQualification,
+  rowKeyColumnOf,
+} from "@/lib/gamedb-sql-sources";
 import { buildVisualLayout, buildVisualSelect, VISUAL_FILTER_PARAM_OPS } from "@/lib/gamedb-visual-query";
 
 const BUILDER_FILTER_LABELS = {
@@ -273,6 +277,21 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
   // SQL.
   const joinQualification = useMemo(() => checkJoinQualification(effectiveSql), [effectiveSql]);
 
+  // The same duplicate-name problem, caught against what the run actually
+  // returned rather than against the SQL text. `SELECT a.*, b.*` where both
+  // tables have a `name` produces two columns called `name` without either
+  // one being written down anywhere -- and every per-column setting in a
+  // layout (which columns are editable, what each maps to, the parameters,
+  // the lookups) is keyed by that name, so the second copy is unreachable and
+  // the first answers for both.
+  const duplicateResultColumns = useMemo(() => {
+    const counts = new Map();
+    for (const column of testResult?.columns || []) {
+      counts.set(column.name, (counts.get(column.name) || 0) + 1);
+    }
+    return [...counts.entries()].filter(([, count]) => count > 1).map(([name]) => name);
+  }, [testResult]);
+
   // Loading the schema clears every choice made in the builder, so it happens
   // once per database — not every time the SQL tab is looked at and left again.
   // `false` means "nothing loaded yet"; "" is the main database.
@@ -452,8 +471,9 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                 baseLayout: { ...(sourceQuery?.layout || {}), folder: folder.trim() },
                 schema: selectedTable?.schema,
                 table: selectedTable?.name,
-                primaryKey:
-                  selectedTable?.primaryKey?.length === 1 ? selectedTable.primaryKey[0] : "",
+                // Whatever identifies a row of this table -- its single-column
+                // primary key, or a column the database guarantees is unique.
+                primaryKey: rowKeyColumnOf(selectedTable),
                 editableColumns,
                 selectedColumns: resultColumnNames,
                 columnSettings: effectiveColumnSettings,
@@ -753,9 +773,11 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
                                   disabled={!selected || !column.editable}
                                   onChange={(e) => {
                                     setEditableColumns((prev) => e.target.checked ? [...prev, column.name] : prev.filter((name) => name !== column.name));
-                                    if (e.target.checked && selectedTable.primaryKey.length === 1) {
-                                      const pk = selectedTable.primaryKey[0];
-                                      setSelectedColumns((prev) => prev.includes(pk) ? prev : [pk, ...prev]);
+                                    // The key has to be in the result, or there
+                                    // is no way to say which row an edit means.
+                                    const rowKey = rowKeyColumnOf(selectedTable);
+                                    if (e.target.checked && rowKey) {
+                                      setSelectedColumns((prev) => prev.includes(rowKey) ? prev : [rowKey, ...prev]);
                                     }
                                   }}
                                   className="accent-emerald-600"
@@ -1281,8 +1303,11 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
               `ใส่ชื่อย่อตารางนำหน้าคอลัมน์ ${joinQualification.unqualified.slice(0, 5).join(", ")}${joinQualification.unqualified.length > 5 ? " …" : ""} เช่น a.${joinQualification.unqualified[0] === "*" ? "*" : joinQualification.unqualified[0]}`,
             joinQualification.unknownQualifier.length > 0 &&
               `${joinQualification.unknownQualifier.join(", ")} ใช้ชื่อย่อที่ไม่มีใน FROM/JOIN`,
-            joinQualification.duplicateResults.length > 0 &&
-              `ตั้ง AS ให้คอลัมน์ที่ชื่อซ้ำกันในผลลัพธ์: ${joinQualification.duplicateResults.join(", ")} เช่น a.id AS a_id, b.id AS b_id`,
+            [...new Set([...joinQualification.duplicateResults, ...duplicateResultColumns])]
+              .length > 0 &&
+              `ตั้ง AS ให้คอลัมน์ที่ชื่อซ้ำกันในผลลัพธ์: ${[
+                ...new Set([...joinQualification.duplicateResults, ...duplicateResultColumns]),
+              ].join(", ")} เช่น a.id AS a_id, b.id AS b_id`,
           ].filter(Boolean)}
         />
 
@@ -1308,7 +1333,8 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
               !name.trim() ||
               !effectiveSql.trim() ||
               testedSql !== effectiveSql ||
-              !joinQualification.ok
+              !joinQualification.ok ||
+              duplicateResultColumns.length > 0
             }
             className="flex items-center gap-1.5 rounded-sm bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
           >

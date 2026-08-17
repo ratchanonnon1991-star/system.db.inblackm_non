@@ -526,6 +526,39 @@ export function resolveQueryTables({ sql, tables }) {
 }
 
 /**
+ * The one column that says which row of this table a result row came from.
+ *
+ * A single-column primary key when the table declares one -- that is the
+ * table's own statement about what identifies a row. Failing that, any column
+ * the database guarantees is unique on its own does the job just as well, and
+ * plenty of real tables identify a row by a `code` or a `uuid` under a UNIQUE
+ * constraint without ever declaring a PK. What is never used is a column that
+ * merely looks like a key: `id` is a name, not a promise, and writing through
+ * a column that turns out to repeat means an edit hitting rows nobody chose.
+ *
+ * With several unique columns to choose from, one the query already returns
+ * wins -- any of them identifies the row correctly, but only that one lets the
+ * query be edited without being rewritten first.
+ */
+function rowKeyOf(table, columns) {
+  if (table.primaryKey?.length === 1) return { key: table.primaryKey[0], source: "pk" };
+  const uniques = table.uniqueKeys || [];
+  if (uniques.length === 0) return { key: "", source: "" };
+  const returned = uniques.find((name) => columns.some((entry) => entry.column === name));
+  return { key: returned || uniques[0], source: "unique" };
+}
+
+/**
+ * The same answer for a table on its own, with no query to prefer a column by.
+ * Used where a table is being picked rather than a query read -- the visual
+ * builder, which has to agree with the reader above or it would offer to make
+ * a table editable and then save nothing.
+ */
+export function rowKeyColumnOf(table) {
+  return rowKeyOf(table || {}, []).key;
+}
+
+/**
  * Which tables this query's rows could be written back to, and how.
  *
  * One entry per real table the SELECT list draws from, each carrying the
@@ -616,7 +649,7 @@ export function detectEditableTargets({ sql, tables }) {
   return resolved
     .map(({ from, table }) => {
       const columns = columnsByTableKey.get(table.key) || [];
-      const primaryKey = table.primaryKey?.length === 1 ? table.primaryKey[0] : "";
+      const { key: primaryKey, source: keySource } = rowKeyOf(table, columns);
       const pkEntry = primaryKey
         ? columns.find((entry) => entry.column === primaryKey)
         : null;
@@ -626,8 +659,11 @@ export function detectEditableTargets({ sql, tables }) {
         table: table.name,
         alias: from.alias,
         primaryKey,
+        keySource,
         pkResultColumn: pkEntry?.result || "",
-        compositeKey: (table.primaryKey?.length || 0) > 1,
+        // Only worth saying when it is the reason nothing can be done: a table
+        // with a composite key and a unique column of its own is editable.
+        compositeKey: !primaryKey && (table.primaryKey?.length || 0) > 1,
         columns,
       };
     })

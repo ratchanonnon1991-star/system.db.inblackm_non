@@ -223,13 +223,20 @@ export async function checkEditable({ editable, connection }) {
     // index is the thing that turns an edit into a 409 at the worst moment.
     if (pkInfo) {
       const unique = await client.query(
+        // Same conditions the schema reader uses to call a column a row
+        // identity: one key column, no expression, and no WHERE -- a partial
+        // unique index only promises uniqueness among the rows it covers, so
+        // it is not a promise about the row being written.
         `SELECT 1
            FROM pg_index i
            JOIN pg_class c ON c.oid = i.indrelid
            JOIN pg_namespace n ON n.oid = c.relnamespace
           WHERE c.relname = $1 AND n.nspname = $2
             AND i.indisunique
-            AND i.indnatts = 1
+            AND i.indisvalid
+            AND i.indnkeyatts = 1
+            AND i.indexprs IS NULL
+            AND i.indpred IS NULL
             AND i.indkey[0] = (SELECT attnum FROM pg_attribute
                                 WHERE attrelid = c.oid AND attname = $3)
           LIMIT 1`,
