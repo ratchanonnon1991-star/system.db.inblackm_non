@@ -8,6 +8,7 @@ import { sanitizeComputedColumns } from "@/server/gamedb-layout-sanitizer.js";
 import {
   duplicateGameinfoFormulaOverrides,
   getEffectiveGameinfoFormula,
+  getGameinfoFormulaDisplay,
   pruneGameinfoFormulaOverrides,
   removeGameinfoFormulaOverridesForPack,
   setGameinfoFormulaOverride,
@@ -126,6 +127,18 @@ check("effective formula falls back to the column formula", getEffectiveGameinfo
 check("effective formula uses a pack override", getEffectiveGameinfoFormula(formulaColumn, "pk_special"), {
   formula: "[ราคา] * 0.5",
   overridden: true,
+});
+check("formula display identifies an inherited main formula", getGameinfoFormulaDisplay(formulaColumn, "pk_normal"), {
+  formula: "[ราคา] - [ยอดที่กด + fee]",
+  overridden: false,
+  source: "main",
+  sourceLabel: "สูตรหลัก",
+});
+check("formula display identifies a pack override", getGameinfoFormulaDisplay(formulaColumn, "pk_special"), {
+  formula: "[ราคา] * 0.5",
+  overridden: true,
+  source: "override",
+  sourceLabel: "สูตรเฉพาะ pack",
 });
 
 const changed = setGameinfoFormulaOverride([formulaColumn], "profit", "pk_special", "");

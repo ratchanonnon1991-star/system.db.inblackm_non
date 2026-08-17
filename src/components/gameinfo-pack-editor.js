@@ -21,6 +21,7 @@ import GameinfoTagsInput from "./gameinfo-tags-input";
 import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoImagePickerModal from "./gameinfo-image-picker-modal";
 import GameinfoComputedEditor from "./gameinfo-computed-editor";
+import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
 import GameinfoPackHistory from "./gameinfo-pack-history";
 import {
   GameinfoPackColumnControls,
@@ -36,7 +37,7 @@ import {
 } from "@/lib/gameinfo-pack-columns";
 import {
   duplicateGameinfoFormulaOverrides,
-  getEffectiveGameinfoFormula,
+  getGameinfoFormulaDisplay,
   removeGameinfoFormulaOverridesForPack,
   setGameinfoFormulaOverride,
   updateGameinfoComputedColumn,
@@ -100,6 +101,7 @@ export default function GameinfoPackEditor({
   const [error, setError] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingComputedColumn, setEditingComputedColumn] = useState(null);
+  const [formulaMode, setFormulaMode] = useState("result");
 
   const [currencies, setCurrencies] = useState(game.currencies);
   const [computedColumns, setComputedColumns] = useState(game.computedColumns ?? []);
@@ -401,6 +403,11 @@ export default function GameinfoPackEditor({
   return (
     <div className="space-y-6">
       <div className="flex justify-end gap-2">
+        <GameinfoFormulaModeToggle
+          mode={formulaMode}
+          onChange={setFormulaMode}
+          disabled={computedColumns.length === 0}
+        />
         <GameinfoPackColumnControls
           columns={packLayout.orderedColumns}
           hidden={packLayout.layout.hidden}
@@ -641,6 +648,7 @@ export default function GameinfoPackEditor({
                     suggestions={liveSuggestions}
                     game={game}
                     columns={packLayout.visibleColumns}
+                    formulaMode={formulaMode}
                     invalidFields={invalidFields}
                     onRemoveColumn={removeComputedColumn}
                     onEditColumn={setEditingComputedColumn}
@@ -761,6 +769,7 @@ function CategoryBlock({
   suggestions,
   game,
   columns,
+  formulaMode,
   invalidFields,
   onRemoveColumn,
   onEditColumn,
@@ -887,6 +896,7 @@ function CategoryBlock({
                 game={game}
                 suggestions={suggestions}
                 columns={columns}
+                formulaMode={formulaMode}
                 gridTemplate={grid.template}
                 invalid={{
                   name: invalidFields.has(`${pack.id}:name`),
@@ -900,6 +910,7 @@ function CategoryBlock({
                 onSetFormulaOverride={(columnKey, formula) =>
                   onSetFormulaOverride(columnKey, pack.id, formula)
                 }
+                onEditMainFormula={onEditColumn}
               />
             ))}
           </div>
@@ -915,12 +926,14 @@ function PackRow({
   game,
   suggestions,
   columns,
+  formulaMode,
   gridTemplate,
   invalid,
   onUpdate,
   onDuplicate,
   onRemove,
   onSetFormulaOverride,
+  onEditMainFormula,
 }) {
   const [editing, setEditing] = useState(null);
   const [overrideColumn, setOverrideColumn] = useState(null);
@@ -940,12 +953,14 @@ function PackRow({
           pack={pack}
           game={game}
           suggestions={suggestions}
+          formulaMode={formulaMode}
           invalid={invalid}
           editing={isEditing(column.id)}
           onStartEdit={() => setEditing(column.id)}
           onCommit={() => setEditing(null)}
           onUpdate={onUpdate}
           onEditFormula={() => setOverrideColumn(column)}
+          onEditMainFormula={() => onEditMainFormula(column.computed)}
         />
       ))}
 
@@ -990,12 +1005,14 @@ function PackEditorColumn({
   pack,
   game,
   suggestions,
+  formulaMode,
   invalid,
   editing,
   onStartEdit,
   onCommit,
   onUpdate,
   onEditFormula,
+  onEditMainFormula,
 }) {
   if (column.id === "image") {
     return <ImageUrlField value={pack.image ?? ""} onChange={(v) => onUpdate({ image: v })} compact />;
@@ -1034,7 +1051,7 @@ function PackEditorColumn({
   }
   if (column.kind === "computed") {
     const formula = column.computed;
-    const effective = getEffectiveGameinfoFormula(formula, pack.id);
+    const effective = getGameinfoFormulaDisplay(formula, pack.id);
     let value = null;
     let formulaError = false;
     try {
@@ -1044,14 +1061,37 @@ function PackEditorColumn({
     } catch {
       formulaError = true;
     }
+    if (formulaMode === "formula") {
+      return (
+        <button
+          type="button"
+          onClick={effective.overridden ? onEditFormula : onEditMainFormula}
+          className={`min-w-0 rounded px-2 py-1.5 text-left hover:bg-linear-surface-2 ${
+            formulaError ? "text-red-400" : "text-linear-ink-muted"
+          }`}
+          title={`${effective.sourceLabel} — กดเพื่อแก้`}
+        >
+          <span className="block truncate font-mono text-[11px]" title={effective.formula}>
+            {effective.formula || "(ไม่มีสูตร)"}
+          </span>
+          <span
+            className={`mt-0.5 inline-block text-[9px] ${
+              effective.overridden ? "text-linear-primary" : "text-linear-ink-tertiary"
+            }`}
+          >
+            {formulaError ? `สูตรผิด · ${effective.sourceLabel}` : effective.sourceLabel}
+          </span>
+        </button>
+      );
+    }
     return (
       <button
         type="button"
-        onClick={onEditFormula}
+        onClick={formulaError && !effective.overridden ? onEditMainFormula : onEditFormula}
         className={`truncate rounded px-2 py-2 text-left hover:bg-linear-surface-2 ${
           formulaError ? "text-red-400" : "text-linear-ink-muted"
         }`}
-        title={effective.overridden ? "สูตรเฉพาะ pack — กดเพื่อแก้" : "ใช้สูตรของคอลัมน์ — กดเพื่อกำหนดสูตรเฉพาะ pack"}
+        title={effective.overridden ? "สูตรเฉพาะ pack — กดเพื่อแก้" : "ใช้สูตรหลัก — กดเพื่อกำหนดสูตรเฉพาะ pack"}
       >
         {formulaError ? "สูตรผิด" : formatGameinfoPackColumnValue(value, column)}
         {effective.overridden ? <span className="ml-1 text-[9px] text-linear-primary">เฉพาะแถว</span> : null}

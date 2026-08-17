@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { ExternalLink, Gamepad2, Image as ImageIcon } from "lucide-react";
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
@@ -11,7 +11,8 @@ import {
   buildGameinfoPackColumns,
   formatGameinfoPackColumnValue,
 } from "@/lib/gameinfo-pack-columns";
-import { getEffectiveGameinfoFormula } from "@/lib/gameinfo-formula-overrides";
+import { getGameinfoFormulaDisplay } from "@/lib/gameinfo-formula-overrides";
+import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
 import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
 import {
@@ -25,6 +26,7 @@ import {
 // currencies/computedColumns tree the pack editor saves to gamelist_packs,
 // so what's shown here always matches what "จัดการแพ็ก" last saved.
 export default function GameinfoGameView({ row, currencies, computedColumns, userId }) {
+  const [formulaMode, setFormulaMode] = useState("result");
   // Same field set the pack editor's formulas can reference (see
   // gameinfo-formula-fields.js) — built from the game_list row, not the
   // gamelist_packs game shape, since that's all this page has.
@@ -115,24 +117,31 @@ export default function GameinfoGameView({ row, currencies, computedColumns, use
 
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="text-lg font-semibold text-linear-ink">แพ็ก</h2>
-        <GameinfoPackColumnControls
-          columns={packLayout.orderedColumns}
-          hidden={packLayout.layout.hidden}
-          presets={packLayout.presets}
-          selectedPresetId={packLayout.selectedPresetId}
-          presetName={packLayout.presetName}
-          dirty={packLayout.dirty}
-          loading={packLayout.loading}
-          saving={packLayout.saving}
-          error={packLayout.error}
-          notice={packLayout.notice}
-          legacyDraft={packLayout.legacyDraft}
-          onSetVisible={packLayout.setVisible}
-          onReset={packLayout.reset}
-          onSelectPreset={packLayout.selectPreset}
-          onPresetNameChange={packLayout.setPresetName}
-          onSavePreset={packLayout.savePreset}
-        />
+        <div className="flex items-center gap-2">
+          <GameinfoFormulaModeToggle
+            mode={formulaMode}
+            onChange={setFormulaMode}
+            disabled={(computedColumns || []).length === 0}
+          />
+          <GameinfoPackColumnControls
+            columns={packLayout.orderedColumns}
+            hidden={packLayout.layout.hidden}
+            presets={packLayout.presets}
+            selectedPresetId={packLayout.selectedPresetId}
+            presetName={packLayout.presetName}
+            dirty={packLayout.dirty}
+            loading={packLayout.loading}
+            saving={packLayout.saving}
+            error={packLayout.error}
+            notice={packLayout.notice}
+            legacyDraft={packLayout.legacyDraft}
+            onSetVisible={packLayout.setVisible}
+            onReset={packLayout.reset}
+            onSelectPreset={packLayout.selectPreset}
+            onPresetNameChange={packLayout.setPresetName}
+            onSavePreset={packLayout.savePreset}
+          />
+        </div>
       </div>
       {(currencies || []).length === 0 ? (
         <p className="rounded-lg border border-dashed border-linear-hairline-strong bg-linear-surface-1 p-8 text-center text-linear-ink-tertiary">
@@ -146,6 +155,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns, use
               currency={currency}
               game={formulaGame}
               columns={packLayout.visibleColumns}
+              formulaMode={formulaMode}
               onReorderColumns={packLayout.reorder}
             />
           ))}
@@ -155,7 +165,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns, use
   );
 }
 
-function PackCurrency({ currency, game, columns, onReorderColumns }) {
+function PackCurrency({ currency, game, columns, formulaMode, onReorderColumns }) {
   return (
     <div className="rounded-lg border border-linear-hairline bg-linear-surface-1 p-4">
       <div className="mb-3 flex items-center gap-2">
@@ -174,6 +184,7 @@ function PackCurrency({ currency, game, columns, onReorderColumns }) {
             category={cat}
             game={game}
             columns={columns}
+            formulaMode={formulaMode}
             onReorderColumns={onReorderColumns}
           />
         ))}
@@ -201,7 +212,7 @@ function PackThumb({ src }) {
   );
 }
 
-function PackCategory({ category, game, columns, onReorderColumns }) {
+function PackCategory({ category, game, columns, formulaMode, onReorderColumns }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   function handleColumnDragEnd({ active, over }) {
@@ -242,7 +253,13 @@ function PackCategory({ category, game, columns, onReorderColumns }) {
                 {category.packs.map((pack) => (
                   <tr key={pack.id} className="border-b border-linear-hairline last:border-b-0">
                     {columns.map((column) => (
-                      <PackViewCell key={column.id} column={column} pack={pack} game={game} />
+                      <PackViewCell
+                        key={column.id}
+                        column={column}
+                        pack={pack}
+                        game={game}
+                        formulaMode={formulaMode}
+                      />
                     ))}
                   </tr>
                 ))}
@@ -277,7 +294,7 @@ function SortableViewHeader({ column }) {
   );
 }
 
-function PackViewCell({ column, pack, game }) {
+function PackViewCell({ column, pack, game, formulaMode }) {
   if (column.id === "image") {
     return (
       <td className="px-3 py-2">
@@ -287,7 +304,7 @@ function PackViewCell({ column, pack, game }) {
   }
   if (column.kind === "computed") {
     const formula = column.computed;
-    const effective = getEffectiveGameinfoFormula(formula, pack.id);
+    const effective = getGameinfoFormulaDisplay(formula, pack.id);
     let value = null;
     let formulaError = false;
     try {
@@ -296,6 +313,27 @@ function PackViewCell({ column, pack, game }) {
       );
     } catch {
       formulaError = true;
+    }
+    if (formulaMode === "formula") {
+      return (
+        <td
+          className={`max-w-[220px] px-3 py-2 ${
+            formulaError ? "text-red-400" : "text-linear-ink-muted"
+          }`}
+          title={effective.formula}
+        >
+          <span className="block truncate font-mono text-[11px]">
+            {effective.formula || "(ไม่มีสูตร)"}
+          </span>
+          <span
+            className={`mt-0.5 inline-block text-[9px] ${
+              effective.overridden ? "text-linear-primary" : "text-linear-ink-tertiary"
+            }`}
+          >
+            {formulaError ? `สูตรผิด · ${effective.sourceLabel}` : effective.sourceLabel}
+          </span>
+        </td>
+      );
     }
     return (
       <td
