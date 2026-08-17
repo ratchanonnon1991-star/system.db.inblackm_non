@@ -8,8 +8,8 @@ import {
   inferFormulaType,
   parseFormula,
 } from "@/lib/gamedb-formula";
-import { formatCell } from "@/lib/gamedb-layout";
 import { GAMEINFO_FIELD_NAMES } from "@/lib/gameinfo-formula-fields";
+import { formatGameinfoPackColumnValue, GAMEINFO_PACK_SYMBOLS } from "@/lib/gameinfo-pack-columns";
 
 // Same parser, validation and function library as the systemdb-side formula
 // editor (gamedb-modals.js's ComputedColumnModal) — this one is a full
@@ -41,6 +41,7 @@ export default function GameinfoComputedEditor({ sampleRow, onAdd, onClose }) {
   // Empty until touched, so the type follows the formula while the user is
   // still writing it and stops the moment they choose one themselves.
   const [typeChoice, setTypeChoice] = useState("");
+  const [symbol, setSymbol] = useState("");
 
   useEffect(() => {
     function onKey(e) {
@@ -63,13 +64,16 @@ export default function GameinfoComputedEditor({ sampleRow, onAdd, onClose }) {
       let preview = "";
       if (sampleRow) {
         const value = evaluateFormula(ast, (name) => sampleRow[name]);
-        preview = ` · แถวแรกได้ ${formatCell(value, typeChoice || type)}`;
+        preview = ` · แถวแรกได้ ${formatGameinfoPackColumnValue(value, {
+          type: typeChoice || type,
+          symbol: (typeChoice || type) === "number" ? symbol : "",
+        })}`;
       }
       return { ok: true, message: `สูตรถูกต้อง${preview}`, type };
     } catch (err) {
       return { ok: false, message: err.message, type: "number" };
     }
-  }, [formula, sampleRow, typeChoice]);
+  }, [formula, sampleRow, symbol, typeChoice]);
 
   const type = typeChoice || validation.type;
   const missing = [
@@ -80,7 +84,13 @@ export default function GameinfoComputedEditor({ sampleRow, onAdd, onClose }) {
 
   function submit() {
     if (!label.trim() || !validation.ok) return;
-    onAdd({ key: `col_${Date.now()}`, label: label.trim(), formula: formula.trim(), type });
+    onAdd({
+      key: `col_${Date.now()}`,
+      label: label.trim(),
+      formula: formula.trim(),
+      type,
+      symbol: type === "number" ? symbol : "",
+    });
   }
 
   return (
@@ -149,6 +159,25 @@ export default function GameinfoComputedEditor({ sampleRow, onAdd, onClose }) {
               {Object.entries(TYPE_LABELS).map(([value, text]) => (
                 <option key={value} value={value}>
                   {text}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="gameinfo-computed-symbol" className="mb-1 block text-xs text-linear-ink-tertiary">
+              สัญลักษณ์ที่แสดง
+            </label>
+            <select
+              id="gameinfo-computed-symbol"
+              value={type === "number" ? symbol : ""}
+              disabled={type !== "number"}
+              onChange={(e) => setSymbol(e.target.value)}
+              className="h-9 w-full rounded border border-linear-hairline-strong bg-linear-surface-2 px-2 text-sm text-linear-ink outline-none focus:border-linear-primary disabled:opacity-50"
+            >
+              {GAMEINFO_PACK_SYMBOLS.map((value) => (
+                <option key={value || "none"} value={value}>
+                  {value || "ไม่มี"}
                 </option>
               ))}
             </select>

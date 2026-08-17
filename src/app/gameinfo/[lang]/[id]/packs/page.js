@@ -60,6 +60,7 @@ export default async function GameinfoGamelistPacksPage({ params }) {
       <GameinfoPackEditor
         game={game}
         lang={lang}
+        userId={user.id}
         // channels: shared across every game (not just this one's own packs)
         // so a channel typed once while editing any game is immediately
         // offered again while editing any other — see

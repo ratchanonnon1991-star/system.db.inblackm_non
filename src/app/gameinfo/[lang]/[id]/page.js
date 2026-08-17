@@ -84,7 +84,12 @@ export default async function GameinfoGameDetailPage({ params }) {
           </Link>
         )}
       </div>
-      <GameinfoGameView row={row} currencies={currencies} computedColumns={computedColumns} />
+      <GameinfoGameView
+        row={row}
+        currencies={currencies}
+        computedColumns={computedColumns}
+        userId={user.id}
+      />
     </div>
   );
 }

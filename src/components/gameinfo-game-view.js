@@ -2,18 +2,28 @@
 
 import { useMemo } from "react";
 import { ExternalLink, Gamepad2, Image as ImageIcon } from "lucide-react";
+import { DndContext, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
+import { SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { evaluateFormula, parseFormula } from "@/lib/gamedb-formula";
-import { formatCell as formatComputedCell } from "@/lib/gamedb-layout";
 import { resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
+import {
+  buildGameinfoPackColumns,
+  formatGameinfoPackColumnValue,
+} from "@/lib/gameinfo-pack-columns";
 import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
+import {
+  GameinfoPackColumnControls,
+  useGameinfoPackColumnLayout,
+} from "./gameinfo-pack-column-layout";
 
 // One game's game_list row, read-only (editing region/platform/server/etc.
 // happens on the list table or the pack editor, not here — see
 // gameinfo-gamelist-table.js and GameinfoPackEditor) plus its packs — same
 // currencies/computedColumns tree the pack editor saves to gamelist_packs,
 // so what's shown here always matches what "จัดการแพ็ก" last saved.
-export default function GameinfoGameView({ row, currencies, computedColumns }) {
+export default function GameinfoGameView({ row, currencies, computedColumns, userId }) {
   // Same field set the pack editor's formulas can reference (see
   // gameinfo-formula-fields.js) — built from the game_list row, not the
   // gamelist_packs game shape, since that's all this page has.
@@ -32,6 +42,13 @@ export default function GameinfoGameView({ row, currencies, computedColumns }) {
       }),
     [computedColumns]
   );
+  const packColumns = useMemo(() => buildGameinfoPackColumns(parsedColumns), [parsedColumns]);
+  const packLayout = useGameinfoPackColumnLayout({
+    columns: packColumns,
+    userId,
+    gameId: row.id,
+    surface: "view",
+  });
 
   return (
     <div>
@@ -95,7 +112,15 @@ export default function GameinfoGameView({ row, currencies, computedColumns }) {
         </div>
       </div>
 
-      <h2 className="mb-3 text-lg font-semibold text-linear-ink">แพ็ก</h2>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold text-linear-ink">แพ็ก</h2>
+        <GameinfoPackColumnControls
+          columns={packLayout.orderedColumns}
+          hidden={packLayout.layout.hidden}
+          onSetVisible={packLayout.setVisible}
+          onReset={packLayout.reset}
+        />
+      </div>
       {(currencies || []).length === 0 ? (
         <p className="rounded-lg border border-dashed border-linear-hairline-strong bg-linear-surface-1 p-8 text-center text-linear-ink-tertiary">
           ยังไม่มีข้อมูลแพ็กสำหรับเกมนี้
@@ -103,7 +128,13 @@ export default function GameinfoGameView({ row, currencies, computedColumns }) {
       ) : (
         <div className="space-y-4">
           {currencies.map((currency) => (
-            <PackCurrency key={currency.id} currency={currency} game={formulaGame} computedColumns={parsedColumns} />
+            <PackCurrency
+              key={currency.id}
+              currency={currency}
+              game={formulaGame}
+              columns={packLayout.visibleColumns}
+              onReorderColumns={packLayout.reorder}
+            />
           ))}
         </div>
       )}
@@ -111,7 +142,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns }) {
   );
 }
 
-function PackCurrency({ currency, game, computedColumns }) {
+function PackCurrency({ currency, game, columns, onReorderColumns }) {
   return (
     <div className="rounded-lg border border-linear-hairline bg-linear-surface-1 p-4">
       <div className="mb-3 flex items-center gap-2">
@@ -125,7 +156,13 @@ function PackCurrency({ currency, game, computedColumns }) {
       </div>
       <div className="space-y-3">
         {currency.categories.map((cat) => (
-          <PackCategory key={cat.id} category={cat} game={game} computedColumns={computedColumns} />
+          <PackCategory
+            key={cat.id}
+            category={cat}
+            game={game}
+            columns={columns}
+            onReorderColumns={onReorderColumns}
+          />
         ))}
       </div>
     </div>
@@ -151,7 +188,13 @@ function PackThumb({ src }) {
   );
 }
 
-function PackCategory({ category, game, computedColumns }) {
+function PackCategory({ category, game, columns, onReorderColumns }) {
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  function handleColumnDragEnd({ active, over }) {
+    if (over && active.id !== over.id) onReorderColumns(active.id, over.id);
+  }
+
   return (
     <div className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
       <div className="mb-2 flex items-center gap-2">
@@ -166,48 +209,28 @@ function PackCategory({ category, game, computedColumns }) {
             <table className="w-full min-w-[700px] text-left text-sm">
               <thead className="border-b border-linear-hairline bg-linear-surface-2 text-xs text-linear-ink-subtle">
                 <tr>
-                  <th className="px-3 py-2 font-medium">รูป</th>
-                  <th className="px-3 py-2 font-medium">ชื่อ pack</th>
-                  <th className="px-3 py-2 font-medium">ราคา</th>
-                  <th className="px-3 py-2 font-medium">ยอดที่กด + fee</th>
-                  <th className="px-3 py-2 font-medium">ช่องทางหลัก</th>
-                  <th className="px-3 py-2 font-medium">ช่องทางรอง</th>
-                  <th className="px-3 py-2 font-medium">ประเทศ</th>
-                  {computedColumns.map((fc) => (
-                    <th key={fc.key} className="whitespace-nowrap px-3 py-2 font-medium">
-                      {fc.label}
-                    </th>
-                  ))}
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleColumnDragEnd}
+                  >
+                    <SortableContext
+                      items={columns.map((column) => column.id)}
+                      strategy={horizontalListSortingStrategy}
+                    >
+                      {columns.map((column) => (
+                        <SortableViewHeader key={column.id} column={column} />
+                      ))}
+                    </SortableContext>
+                  </DndContext>
                 </tr>
               </thead>
               <tbody>
                 {category.packs.map((pack) => (
                   <tr key={pack.id} className="border-b border-linear-hairline last:border-b-0">
-                    <td className="px-3 py-2">
-                      <PackThumb src={pack.image} />
-                    </td>
-                    <td className="max-w-[220px] truncate px-3 py-2 text-linear-ink-muted">
-                      {pack.name || "-"}
-                    </td>
-                    <td className="px-3 py-2 text-linear-ink-muted">{pack.price || "-"}</td>
-                    <td className="px-3 py-2 text-linear-ink-muted">{pack.amountChargedFee || "-"}</td>
-                    <td className="px-3 py-2 text-linear-ink-muted">
-                      {pack.channelsMain?.length ? pack.channelsMain.join(", ") : "-"}
-                    </td>
-                    <td className="px-3 py-2 text-linear-ink-muted">
-                      {pack.channelsSecondary?.length ? pack.channelsSecondary.join(", ") : "-"}
-                    </td>
-                    <td className="px-3 py-2 text-linear-ink-muted">{pack.country || "-"}</td>
-                    {computedColumns.map((fc) => {
-                      const value = fc.ast
-                        ? evaluateFormula(fc.ast, (label) => resolveGameinfoField(pack, game, label))
-                        : null;
-                      return (
-                        <td key={fc.key} className="max-w-[160px] truncate px-3 py-2 text-linear-ink-muted">
-                          {formatComputedCell(value, fc.type)}
-                        </td>
-                      );
-                    })}
+                    {columns.map((column) => (
+                      <PackViewCell key={column.id} column={column} pack={pack} game={game} />
+                    ))}
                   </tr>
                 ))}
               </tbody>
@@ -216,6 +239,56 @@ function PackCategory({ category, game, computedColumns }) {
         </div>
       )}
     </div>
+  );
+}
+
+function SortableViewHeader({ column }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: column.id,
+  });
+  return (
+    <th
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+      }}
+      {...attributes}
+      {...listeners}
+      className="cursor-grab whitespace-nowrap px-3 py-2 font-medium active:cursor-grabbing"
+      title="กดค้างแล้วลากเพื่อเปลี่ยนลำดับ"
+    >
+      {column.label}
+    </th>
+  );
+}
+
+function PackViewCell({ column, pack, game }) {
+  if (column.id === "image") {
+    return (
+      <td className="px-3 py-2">
+        <PackThumb src={pack.image} />
+      </td>
+    );
+  }
+  if (column.kind === "computed") {
+    const formula = column.computed;
+    const value = formula.ast
+      ? evaluateFormula(formula.ast, (label) => resolveGameinfoField(pack, game, label))
+      : null;
+    return (
+      <td className="max-w-[160px] truncate px-3 py-2 text-linear-ink-muted">
+        {formatGameinfoPackColumnValue(value, column)}
+      </td>
+    );
+  }
+  const raw = pack[column.field];
+  const value = Array.isArray(raw) ? (raw.length ? raw.join(", ") : "-") : raw || "-";
+  return (
+    <td className="max-w-[220px] truncate px-3 py-2 text-linear-ink-muted">
+      {value}
+    </td>
   );
 }
 
