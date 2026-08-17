@@ -77,8 +77,8 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
   // reordering, and adding a new row all only touch `rows` (the draft) until
   // "บันทึก" is pressed; "ยกเลิก" reverts `rows` back to this, which also
   // discards any not-yet-saved new row since it was never added here. Delete
-  // stays immediate — it already has its own confirm() gate (except for a
-  // still-unsaved draft row, which just disappears).
+  // stays immediate after its confirm() gate for both persisted and draft
+  // rows.
   const [savedRows, setSavedRows] = useState(initial);
   const [dirtyIds, setDirtyIds] = useState(new Set());
   const [orderDirty, setOrderDirty] = useState(false);
@@ -206,11 +206,11 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
   }
 
   function onDelete(id, name) {
-    // Unsaved draft row (never persisted — see addNewRow) — just drop it
-    // locally, no DELETE call and no confirm needed.
     const isDraft = isTempId(id);
-    if (!isDraft && !confirm(`ลบเกม "${name}" ออกจากฐานข้อมูลจริง (game_list)?\nข้อมูลนี้ใช้ร่วมกับ Topup Panel — ลบแล้วกู้คืนไม่ได้`))
-      return;
+    const message = isDraft
+      ? `ลบเกมฉบับร่าง "${name || "ไม่มีชื่อ"}" ใช่ไหม?`
+      : `ลบเกม "${name}" ออกจากฐานข้อมูลจริง (game_list) ใช่ไหม?\nข้อมูลนี้ใช้ร่วมกับ Topup Panel — ลบแล้วกู้คืนไม่ได้`;
+    if (!window.confirm(message)) return;
     setRows((prev) => prev.filter((r) => r.id !== id));
     if (!isDraft) setSavedRows((prev) => prev.filter((r) => r.id !== id));
     setDirtyIds((prev) => {

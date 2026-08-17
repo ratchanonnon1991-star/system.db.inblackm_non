@@ -112,6 +112,15 @@ Round-trip:
 - layout จาก localStorage รุ่นเดิมถูกใช้เป็น draft migration เท่านั้น และไม่ถูกเขียนกลับอัตโนมัติ
 - unknown/deleted/computed column ที่หายไปถูก drop ตอน normalize โดยไม่ทำให้ preset ใช้ไม่ได้
 
+### Destructive delete confirmation (Task 17)
+
+- ลบเกมจากหน้า list ทั้งแถวที่บันทึกแล้วและ draft ต้องเรียก confirmation ก่อน
+- ยกเลิก confirmation แล้ว game-list rows, pack tree และ formula columns ต้องไม่เปลี่ยน
+- ยืนยันลบเกมที่บันทึกแล้วจึงเรียก `DELETE` API; draft ลบเฉพาะ local state
+- ลบ currency, category, pack และคอลัมน์สูตรจากหน้า packs ต้องถามก่อนทุกครั้ง
+- ลบ tutorial category, step และรูปจาก modal ที่เปิดจากหน้า list ต้องถามก่อนทุกครั้ง
+- ปุ่มลบที่ถูกยกเลิกต้องไม่สร้าง audit/write request
+
 ## 4. Personal columns/filter/order (Task 3, 5, 9)
 
 State reducer/unit:

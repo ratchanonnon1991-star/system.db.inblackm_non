@@ -185,6 +185,8 @@ function TutorialModal({ gameId, gameName, editable, onClose }) {
     setActiveCatId(next.id);
   }
   function removeCategory(catId) {
+    const category = categories.find((item) => item.id === catId);
+    if (!window.confirm(`ลบหมวดหมู่ tutorial "${category?.name || "ไม่มีชื่อ"}" พร้อมขั้นตอนทั้งหมด ใช่ไหม?`)) return;
     setCategories((prev) => prev.filter((c) => c.id !== catId));
     if (activeCatId === catId) {
       const idx = categories.findIndex((c) => c.id === catId);
@@ -207,6 +209,8 @@ function TutorialModal({ gameId, gameName, editable, onClose }) {
     );
   }
   function removeStep(catId, stepIdx) {
+    const category = categories.find((item) => item.id === catId);
+    if (!window.confirm(`ลบข้อที่ ${stepIdx + 1} ของหมวดหมู่ "${category?.name || "ไม่มีชื่อ"}" ใช่ไหม?`)) return;
     setCategories((prev) =>
       prev.map((c) => (c.id !== catId ? c : { ...c, steps: c.steps.filter((_, j) => j !== stepIdx) }))
     );
@@ -545,9 +549,12 @@ function EditableCategory({
                     />
                     <button
                       type="button"
-                      onClick={() =>
-                        onUpdateStep(stepIdx, { imageUrls: step.imageUrls.filter((_, i) => i !== imgIdx) })
-                      }
+                      onClick={() => {
+                        if (!window.confirm("ลบรูปนี้ออกจากขั้นตอนใช่ไหม?")) return;
+                        onUpdateStep(stepIdx, {
+                          imageUrls: step.imageUrls.filter((_, i) => i !== imgIdx),
+                        });
+                      }}
                       title="ลบรูปนี้"
                       aria-label="ลบรูปนี้"
                       className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-linear-ink-tertiary hover:bg-linear-surface-3 hover:text-red-400"

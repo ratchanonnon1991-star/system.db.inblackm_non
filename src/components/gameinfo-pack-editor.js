@@ -214,7 +214,9 @@ export default function GameinfoPackEditor({
     setComputedColumns((prev) => duplicateGameinfoFormulaOverrides(prev, source.id, newId));
   }
   function removePack(cIdx, catIdx, pkIdx) {
-    const packId = currencies[cIdx]?.categories[catIdx]?.packs[pkIdx]?.id;
+    const pack = currencies[cIdx]?.categories[catIdx]?.packs[pkIdx];
+    if (!window.confirm(`ลบ pack "${pack?.name || "ไม่มีชื่อ"}" ใช่ไหม?`)) return;
+    const packId = pack?.id;
     updateCurrencies((draft) => {
       draft[cIdx].categories[catIdx].packs.splice(pkIdx, 1);
     });
@@ -252,6 +254,8 @@ export default function GameinfoPackEditor({
     setModalOpen(false);
   }
   function removeComputedColumn(key) {
+    const column = computedColumns.find((item) => item.key === key);
+    if (!window.confirm(`ลบคอลัมน์สูตร "${column?.label || key}" ใช่ไหม?`)) return;
     setComputedColumns((prev) => prev.filter((c) => c.key !== key));
   }
   function updateComputedColumn(nextColumn, { resetOverrides }) {
