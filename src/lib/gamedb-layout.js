@@ -354,6 +354,12 @@ export function normalizeLayout(raw) {
           allowInsert: layout.editable.allowInsert === true,
           allowDelete: layout.editable.allowDelete === true,
           inputs: normalizeInputs(layout.editable.inputs),
+          // Columns that belong to a different table than the one above --
+          // `SELECT a.col1, b.col2 FROM a JOIN b` returns rows made of two
+          // tables, and editing b.col2 has to reach b, with b's own key. A
+          // config saved before this has no targets and every column goes to
+          // the one table, exactly as it did.
+          targets: normalizeEditableTargets(layout.editable.targets),
         }
       : null;
   const chart =
@@ -682,6 +688,29 @@ export function normalizeColumnMap(raw) {
   return map;
 }
 
+/**
+ * The extra tables an editable config can write to, one entry per table other
+ * than the base one, each naming the result columns that belong to it and the
+ * result column carrying that table's key.
+ *
+ * An entry with no columns claims nothing and is dropped; so is one with no
+ * key, since without it there is no way to say which of that table's rows a
+ * result row came from.
+ */
+export function normalizeEditableTargets(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .slice(0, 10)
+    .filter((entry) => entry && typeof entry === "object" && entry.table && entry.pk)
+    .map((entry) => ({
+      table: String(entry.table),
+      pk: String(entry.pk),
+      pkColumn: String(entry.pkColumn || "").trim(),
+      columns: Array.isArray(entry.columns) ? entry.columns.map(String).slice(0, 50) : [],
+    }))
+    .filter((entry) => entry.columns.length > 0);
+}
+
 /** The table column a result column is written back to. */
 export function realColumnOf(editable, resultName) {
   return editable?.columnMap?.[resultName] || resultName;
@@ -690,6 +719,53 @@ export function realColumnOf(editable, resultName) {
 /** The table column the key lives in, which the result may have aliased. */
 export function realPkOf(editable) {
   return editable?.pkColumn || editable?.pk || "";
+}
+
+/**
+ * Where a write to one result column actually lands.
+ *
+ * A query that joins returns rows assembled from several tables, and each of
+ * those columns belongs to exactly one of them. Editing `b.col2` has to reach
+ * `b` and identify the row by `b`'s own key -- using the base table's key
+ * would either find nothing or, worse, find a different row that happens to
+ * share the number.
+ *
+ * Falls back to the single top-level table for every column not claimed by a
+ * target, which is every column of a single-table query and every column of
+ * every config saved before targets existed.
+ */
+export function writeTargetFor(editable, resultName) {
+  const override = (editable?.targets || []).find((target) =>
+    target.columns?.includes(resultName)
+  );
+  if (!override) {
+    return {
+      table: editable?.table || "",
+      pk: editable?.pk || "",
+      pkColumn: realPkOf(editable),
+    };
+  }
+  return {
+    table: override.table,
+    pk: override.pk,
+    // A blank real name means the result column is already the table's own
+    // name for it -- and it is this target's key that stands in, never the
+    // base table's, which names a column of a different table entirely.
+    pkColumn: override.pkColumn || override.pk,
+  };
+}
+
+/** Every distinct table this config can write to, base table first. */
+export function writeTablesOf(editable) {
+  if (!editable?.table) return [];
+  const seen = new Set([editable.table]);
+  const tables = [editable.table];
+  for (const target of editable.targets || []) {
+    if (seen.has(target.table)) continue;
+    seen.add(target.table);
+    tables.push(target.table);
+  }
+  return tables;
 }
 
 /**

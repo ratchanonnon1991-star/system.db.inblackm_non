@@ -34,7 +34,7 @@ import {
 } from "@/lib/gamedb-formula";
 import { formatCell, toneStyle } from "@/lib/gamedb-layout";
 import { extractSqlParams } from "@/lib/gamedb-sql-params";
-import { checkJoinQualification } from "@/lib/gamedb-sql-sources";
+import { addMissingKeyColumns, checkJoinQualification } from "@/lib/gamedb-sql-sources";
 import { buildVisualLayout, buildVisualSelect, VISUAL_FILTER_PARAM_OPS } from "@/lib/gamedb-visual-query";
 
 const BUILDER_FILTER_LABELS = {
@@ -95,6 +95,10 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
   // test (in either mode) makes the test stale instead of vouching for SQL
   // it never actually ran.
   const [testedSql, setTestedSql] = useState("");
+  // Keys the test run added to the SELECT so a joined table could be edited,
+  // and the ones it could not add, with the reason.
+  const [keyColumnsAdded, setKeyColumnsAdded] = useState([]);
+  const [keyColumnsRefused, setKeyColumnsRefused] = useState([]);
   const [error, setError] = useState("");
   const [schemaData, setSchemaData] = useState(null);
   const [schemaLoading, setSchemaLoading] = useState(false);
@@ -305,6 +309,28 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
     loadSchema();
   }, [builderMode, connectionId, loadSchema]);
 
+  // The SQL tab needs the schema too -- not to pick from, but to know which
+  // tables a hand-written join reads and whether it exposes their keys.
+  // loadSchema clears every builder choice, which is right when the picker is
+  // being opened and wrong here, so this only sets the data.
+  const sqlSchemaLoadedForRef = useRef(false);
+  useEffect(() => {
+    if (builderMode !== "sql" || schemaData || sqlSchemaLoadedForRef.current === connectionId) {
+      return;
+    }
+    sqlSchemaLoadedForRef.current = connectionId;
+    (async () => {
+      try {
+        const suffix = connectionId ? `?connectionId=${encodeURIComponent(connectionId)}` : "";
+        const data = await apiJson(`/api/query-builder/schema${suffix}`);
+        setSchemaData(data);
+      } catch {
+        // Best effort -- without it the key completion below simply does not
+        // run, and the query stays exactly as it was written.
+      }
+    })();
+  }, [builderMode, connectionId, schemaData]);
+
   useEffect(() => {
     try {
       const stored = JSON.parse(localStorage.getItem("gamedb.recent-builder-tables") || "[]");
@@ -321,13 +347,31 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
     setTesting(true);
     setError("");
     setTestResult(null);
-    const testedFor = effectiveSql;
+
+    // A hand-written join almost never selects the joined table's key, and
+    // without that value in the result there is no way to say which of its
+    // rows a result row came from -- so that table could never be edited.
+    // The query is completed here, before the run that vouches for it, so
+    // what gets tested is exactly what gets saved, and so the added columns
+    // land visibly in the SQL box rather than behind anyone's back.
+    let sqlToRun = effectiveSql;
+    if (builderMode === "sql" && schemaData?.tables?.length) {
+      const completed = addMissingKeyColumns({ sql: effectiveSql, tables: schemaData.tables });
+      if (completed.added.length > 0) {
+        sqlToRun = completed.sql;
+        setSqlText(completed.sql);
+      }
+      setKeyColumnsAdded(completed.added);
+      setKeyColumnsRefused(completed.refused);
+    }
+
+    const testedFor = sqlToRun;
     try {
       const data = await apiJson("/api/queries/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sqlText: effectiveSql,
+          sqlText: sqlToRun,
           connectionId: connectionId ? Number(connectionId) : null,
           params: testParams,
         }),
@@ -341,7 +385,7 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
     } finally {
       setTesting(false);
     }
-  }, [effectiveSql, connectionId, testParams]);
+  }, [effectiveSql, connectionId, testParams, builderMode, schemaData]);
 
   useEffect(() => {
     if (builderMode !== "visual" || !effectiveSql) return undefined;
@@ -1048,11 +1092,45 @@ export function QueryEditorModal({ modal, connections, onClose, onSaved }) {
               </label>
               <textarea
                 value={sqlText}
-                onChange={(e) => { setSqlText(e.target.value); setTestResult(null); }}
+                onChange={(e) => {
+                  setSqlText(e.target.value);
+                  setTestResult(null);
+                  setKeyColumnsAdded([]);
+                  setKeyColumnsRefused([]);
+                }}
                 rows={10}
                 spellCheck={false}
                 className="w-full rounded-sm border border-zinc-200 bg-zinc-900 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-emerald-300 outline-none focus:border-red-600"
               />
+              {keyColumnsAdded.length > 0 && (
+                <div className="mt-2 rounded-sm border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+                  <p className="text-[11px] font-black text-emerald-800">
+                    เพิ่มคอลัมน์ key ให้อัตโนมัติ {keyColumnsAdded.length} คอลัมน์
+                  </p>
+                  <p className="mt-1 text-[10px] font-semibold leading-relaxed text-emerald-700">
+                    {keyColumnsAdded
+                      .map((entry) => `${entry.table} → ${entry.column}`)
+                      .join(" · ")}{" "}
+                    — ต้องมีค่านี้ในผลลัพธ์ ระบบถึงจะรู้ว่าเวลาแก้ข้อมูลของตารางนั้น
+                    ต้องแก้แถวไหน คอลัมน์ที่เพิ่มจะไม่แสดงในตาราง
+                  </p>
+                </div>
+              )}
+              {keyColumnsRefused.length > 0 && (
+                <div className="mt-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2.5">
+                  <p className="text-[11px] font-black text-amber-800">
+                    บางตารางยังแก้ข้อมูลไม่ได้
+                  </p>
+                  <ul className="mt-1 space-y-0.5 text-[10px] font-semibold leading-relaxed text-amber-700">
+                    {keyColumnsRefused.map((entry) => (
+                      <li key={`${entry.table}:${entry.column}`}>
+                        {entry.table} — {entry.reason} (ถ้าต้องการ ให้เพิ่ม {entry.column}{" "}
+                        เข้าไปใน SELECT เอง)
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {/* Say what to type, not just that something is wrong -- this is
                   the rule most likely to be met with "แล้วจะให้เขียนยังไง". */}
               {joinQualification.needed && !joinQualification.ok && (

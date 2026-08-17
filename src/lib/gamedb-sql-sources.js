@@ -16,6 +16,7 @@
 // column) is reported as unknown rather than guessed at -- being confidently
 // wrong about where a write lands is far worse than asking.
 import { stripSqlLiterals } from "@/lib/gamedb-sql-params";
+import { quoteIdentifier } from "@/lib/gamedb-identifier";
 
 const NAME_CHAR = /[\p{L}\p{M}\p{N}_$]/u;
 
@@ -170,13 +171,16 @@ export function parseFromTables(sql) {
  * expression, a function call or a CASE has no single source column, so it
  * comes back with an empty `column` rather than a guess.
  */
-export function parseSelectSources(sql) {
-  const src = String(sql || "");
-  const masked = stripSqlLiterals(src);
-  const lower = masked.toLowerCase();
-
-  // The outer SELECT, not a CTE's -- same depth-from-the-start scan
-  // parseSelectAliases uses, for the same reason.
+/**
+ * Where the outer SELECT list starts and ends: the offsets of the query's own
+ * `SELECT` and the `FROM` that closes its list.
+ *
+ * Depth is tracked from the very start of the statement rather than from the
+ * first `select`, so a CTE's SELECT (which sits inside parens, at depth > 0)
+ * is skipped and this stays pointed at the query's real result columns. -1 for
+ * either offset means there is no outer select list to speak of.
+ */
+function outerSelectRange(masked, lower) {
   let depth = 0;
   let selectAt = -1;
   for (let i = 0; i < masked.length; i += 1) {
@@ -188,19 +192,26 @@ export function parseSelectSources(sql) {
       break;
     }
   }
-  if (selectAt === -1) return [];
+  if (selectAt === -1) return { selectAt: -1, fromAt: -1 };
 
-  let fromAt = -1;
   for (let i = selectAt + 6; i < masked.length; i += 1) {
     const ch = masked[i];
     if (ch === "(") depth += 1;
     else if (ch === ")") depth -= 1;
     else if (depth === 0 && lower.startsWith("from", i) && wordAt(lower, i, 4)) {
-      fromAt = i;
-      break;
+      return { selectAt, fromAt: i };
     }
   }
-  if (fromAt === -1) return [];
+  return { selectAt, fromAt: -1 };
+}
+
+export function parseSelectSources(sql) {
+  const src = String(sql || "");
+  const masked = stripSqlLiterals(src);
+  const lower = masked.toLowerCase();
+
+  const { selectAt, fromAt } = outerSelectRange(masked, lower);
+  if (selectAt === -1 || fromAt === -1) return [];
 
   const listMasked = masked.slice(selectAt + 6, fromAt);
   const listSrc = src.slice(selectAt + 6, fromAt);
@@ -312,6 +323,106 @@ function findTable(tables, schema, name) {
   // two schemas holding an "orders" each must not silently resolve to one.
   const matches = tables.filter((table) => table.name.toLowerCase() === lowerName);
   return matches.length === 1 ? matches[0] : null;
+}
+
+/**
+ * Result columns whose only job is to identify a row. Named by convention so
+ * the panel can keep them out of sight without every query having to carry a
+ * "hide this" setting of its own.
+ */
+export const KEY_COLUMN_PREFIX = "__key_";
+
+/** Whether a result column is one of those, and so not for anyone to look at. */
+export function isKeyOnlyColumn(name) {
+  return String(name || "").startsWith(KEY_COLUMN_PREFIX);
+}
+
+// Adding a column to a SELECT normally changes nothing about the rows. These
+// are the cases where it does: DISTINCT and GROUP BY both decide what counts
+// as one row from the columns listed, a set operation needs both sides to have
+// the same shape, and HAVING implies a grouping. Rather than reason about
+// whether a particular one is safe, none of them are extended.
+const CHANGES_THE_ROWS = /\b(distinct|union|intersect|except|having)\b|\bgroup\s+by\b/;
+
+// An alias only usable if it can be written back into SQL as-is. A quoted one
+// with a space in it could be requoted, but folding rules make "what Postgres
+// calls this" a guess, and a guess is not worth making for a convenience.
+const PLAIN_ALIAS = /^[\p{L}_][\p{L}\p{N}_$]*$/u;
+
+/**
+ * The same query with each writable table's key added to the SELECT list.
+ *
+ * A joined table can only be edited if the result carries the value that says
+ * *which* of its rows each result row came from. Very few people write
+ * `b.id` into a SELECT they never intended to look at, so the query is
+ * completed here instead of being handed back as an error -- the added columns
+ * are named `__key_…` and never rendered.
+ *
+ * Returns the rewritten SQL plus what was added, and what was refused and why.
+ * Nothing is added when doing so would change which rows come back.
+ */
+export function addMissingKeyColumns({ sql, tables }) {
+  const src = String(sql || "");
+  const missing = detectEditableTargets({ sql: src, tables }).filter(
+    (target) => !target.compositeKey && target.primaryKey && !target.pkResultColumn
+  );
+  if (missing.length === 0) return { sql: src, added: [], refused: [] };
+
+  const masked = stripSqlLiterals(src);
+  const lower = masked.toLowerCase();
+
+  const changesRows = CHANGES_THE_ROWS.exec(lower);
+  if (changesRows) {
+    return {
+      sql: src,
+      added: [],
+      refused: missing.map((target) => ({
+        table: target.key,
+        column: target.primaryKey,
+        reason: `query นี้ใช้ ${changesRows[0].toUpperCase()} — เพิ่มคอลัมน์เข้าไปแล้วผลลัพธ์จะเปลี่ยน`,
+      })),
+    };
+  }
+
+  const { selectAt, fromAt } = outerSelectRange(masked, lower);
+  if (selectAt === -1 || fromAt === -1) return { sql: src, added: [], refused: [] };
+
+  const taken = new Set(parseSelectSources(src).map((item) => item.result));
+  const pieces = [];
+  const added = [];
+  const refused = [];
+
+  for (const target of missing) {
+    if (!PLAIN_ALIAS.test(target.alias)) {
+      refused.push({
+        table: target.key,
+        column: target.primaryKey,
+        reason: `ชื่อย่อ "${target.alias}" เขียนกลับเข้า SQL ให้อัตโนมัติไม่ได้`,
+      });
+      continue;
+    }
+    const base = `${KEY_COLUMN_PREFIX}${target.alias}_${target.primaryKey}`.replace(
+      /[^\p{L}\p{N}_]/gu,
+      "_"
+    );
+    let alias = base;
+    let suffix = 2;
+    while (taken.has(alias)) {
+      alias = `${base}_${suffix}`;
+      suffix += 1;
+    }
+    taken.add(alias);
+    pieces.push(
+      `${target.alias}.${quoteIdentifier(target.primaryKey)} AS ${quoteIdentifier(alias)}`
+    );
+    added.push({ table: target.key, column: target.primaryKey, alias });
+  }
+
+  if (pieces.length === 0) return { sql: src, added: [], refused };
+
+  const head = src.slice(0, fromAt).trimEnd();
+  const tail = src.slice(fromAt);
+  return { sql: `${head}, ${pieces.join(", ")}\n${tail}`, added, refused };
 }
 
 /**

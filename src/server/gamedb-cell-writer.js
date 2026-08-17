@@ -1,6 +1,6 @@
 import { getPoolForConnection } from "@/lib/db";
 import { quoteIdentifier } from "@/lib/gamedb-identifier";
-import { realColumnOf, realPkOf } from "@/lib/gamedb-layout";
+import { realColumnOf, realPkOf, writeTargetFor } from "@/lib/gamedb-layout";
 import { getConnectionFlags } from "@/server/gamedb-side-tables";
 
 const STATEMENT_TIMEOUT_MS = 8000;
@@ -28,8 +28,9 @@ export function assertEditAllowed(editable, column) {
  */
 export async function peekCell({ editable, connection, pkValue, column }) {
   assertEditAllowed(editable, column);
-  const table = quoteIdentifier(editable.table);
-  const pk = quoteIdentifier(realPkOf(editable));
+  const writeTarget = writeTargetFor(editable, column);
+  const table = quoteIdentifier(writeTarget.table);
+  const pk = quoteIdentifier(realPkOf(writeTarget));
   const target = quoteIdentifier(realColumnOf(editable, column));
   let client;
   try {
@@ -80,10 +81,14 @@ export async function updateCell({ editable, connection, pkValue, column, value,
     );
   }
 
-  const table = quoteIdentifier(editable.table);
-  // `column` and `editable.pk` name columns in the query's result; the table
+  // Which table this particular column lives in. For a query that joins, the
+  // answer differs column by column, and so does the key that identifies the
+  // row -- `pkValue` is the caller's value for *this* target's key column.
+  const writeTarget = writeTargetFor(editable, column);
+  const table = quoteIdentifier(writeTarget.table);
+  // `column` and the target's pk name columns in the query's result; the table
   // knows them by whatever the SELECT aliased away from.
-  const pk = quoteIdentifier(realPkOf(editable));
+  const pk = quoteIdentifier(realPkOf(writeTarget));
   const target = quoteIdentifier(realColumnOf(editable, column));
   const nextValue = value === "" || value === undefined ? null : value;
 
@@ -110,7 +115,7 @@ export async function updateCell({ editable, connection, pkValue, column, value,
     }
     if (before.rowCount > 1) {
       throw createHttpError(
-        `คอลัมน์ "${editable.pk}" ไม่ใช่ค่าที่ไม่ซ้ำ — พบ ${before.rowCount} แถว จึงไม่แก้ไขให้`,
+        `คอลัมน์ "${writeTarget.pk}" ไม่ใช่ค่าที่ไม่ซ้ำ — พบ ${before.rowCount} แถว จึงไม่แก้ไขให้`,
         409
       );
     }

@@ -5,7 +5,7 @@ import { findQueryById } from "@/server/gamedb-repository";
 import { peekCell, updateCell } from "@/server/gamedb-cell-writer";
 import { recordEdit } from "@/server/gamedb-edit-log";
 import { invalidateQuery } from "@/server/gamedb-result-cache";
-import { normalizeLayout } from "@/lib/gamedb-layout";
+import { normalizeLayout, writeTargetFor } from "@/lib/gamedb-layout";
 import { requestMeta } from "@/lib/request-meta";
 
 // Same gate as writing it -- a live peek exists to refresh an editor right
@@ -65,8 +65,13 @@ export async function PATCH(request, { params }) {
     const column = String(body.column || "");
     const pkValue = body.pkValue;
     if (!column) return jsonError("ไม่ได้ระบุคอลัมน์ที่จะแก้", 400);
+    // Which table this column belongs to, and so which key identifies its row
+    // -- across a join that differs column by column, and the edit log has to
+    // record the one actually written, or "ย้อนค่า" would later put the old
+    // value back into the wrong table.
+    const writeTarget = writeTargetFor(layout.editable, column);
     if (pkValue === null || pkValue === undefined || pkValue === "") {
-      return jsonError(`ไม่พบค่า ${layout.editable.pk} ของแถวนี้`, 400);
+      return jsonError(`ไม่พบค่า ${writeTarget.pk} ของแถวนี้`, 400);
     }
 
     const connection = query.connectionId
@@ -91,8 +96,8 @@ export async function PATCH(request, { params }) {
     await recordEdit({
       queryId: query.id,
       actor: admin.username || admin.displayName || "",
-      table: layout.editable.table,
-      pkColumn: layout.editable.pk,
+      table: writeTarget.table,
+      pkColumn: writeTarget.pk,
       pkValue,
       column,
       oldValue,

@@ -1,6 +1,6 @@
 import { getPoolForConnection } from "@/lib/db";
 import { quoteIdentifier } from "@/lib/gamedb-identifier";
-import { LOOKUP_LIMIT, realColumnOf, realPkOf } from "@/lib/gamedb-layout";
+import { LOOKUP_LIMIT, realColumnOf, realPkOf, writeTargetFor } from "@/lib/gamedb-layout";
 import { getConnectionFlags } from "@/server/gamedb-side-tables";
 
 const STATEMENT_TIMEOUT_MS = 8000;
@@ -11,11 +11,13 @@ const STATEMENT_TIMEOUT_MS = 8000;
  * shown is what will run rather than a description of it.
  */
 export function buildUpdateSql(editable, column) {
-  const table = quoteIdentifier(editable.table);
-  const pk = quoteIdentifier(realPkOf(editable));
+  const writeTarget = writeTargetFor(editable, column);
+  const table = quoteIdentifier(writeTarget.table);
+  const pk = quoteIdentifier(realPkOf(writeTarget));
   const target = quoteIdentifier(realColumnOf(editable, column));
   return {
     column,
+    table: writeTarget.table,
     realColumn: realColumnOf(editable, column),
     lock: `SELECT ${target} AS value FROM ${table} WHERE ${pk} = $1 FOR UPDATE`,
     update: `UPDATE ${table} SET ${target} = $1 WHERE ${pk} = $2 RETURNING ${target} AS value`,
@@ -39,18 +41,28 @@ export function buildAllSql(editable) {
     {
       action: "แก้ค่าในช่อง (UPDATE)",
       always: true,
-      statements: columns.map((column) => ({
-        label: `${column}${realColumnOf(editable, column) === column ? "" : ` → ${realColumnOf(editable, column)}`}`,
-        sql: [buildUpdateSql(editable, column).lock, buildUpdateSql(editable, column).update].join(
-          "\n"
-        ),
-      })),
-      note: "$1 คือค่าใหม่ · $2 คือค่า key ของแถวนั้น",
+      statements: columns.map((column) => {
+        const built = buildUpdateSql(editable, column);
+        const renamed = built.realColumn === column ? "" : ` → ${built.realColumn}`;
+        // Which table each column goes to is the whole point once a query
+        // joins, so it is on the label rather than only inside the SQL.
+        const elsewhere = built.table === editable.table ? "" : ` (ในตาราง ${built.table})`;
+        return {
+          label: `${column}${renamed}${elsewhere}`,
+          sql: [built.lock, built.update].join("\n"),
+        };
+      }),
+      note: "$1 คือค่าใหม่ · $2 คือค่า key ของแถวนั้น ในตารางของคอลัมน์นั้นเอง",
     },
   ];
 
-  if (columns.length > 0) {
-    const real = columns.map((column) => quoteIdentifier(realColumnOf(editable, column)));
+  // Only the base table's own columns -- a joined table's column is editable
+  // but has no place in an INSERT that adds a row to this one.
+  const insertColumns = columns.filter(
+    (column) => writeTargetFor(editable, column).table === editable.table
+  );
+  if (insertColumns.length > 0) {
+    const real = insertColumns.map((column) => quoteIdentifier(realColumnOf(editable, column)));
     groups.push({
       action: "เพิ่มแถวใหม่ (INSERT)",
       always: Boolean(editable.allowInsert),
@@ -106,6 +118,31 @@ export function buildAllSql(editable) {
   return groups.filter((group) => group.statements.length > 0);
 }
 
+// No schema given means "whatever the search_path would have picked", which is
+// what the unqualified name in the config will resolve to.
+const FIND_TABLE_SQL = `
+  SELECT c.relname AS table, n.nspname AS schema
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE c.relname = $1
+     AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+     AND (CASE
+            WHEN $2::text IS NULL THEN pg_catalog.pg_table_is_visible(c.oid)
+            ELSE n.nspname = $2
+          END)
+   LIMIT 2`;
+
+const TABLE_COLUMNS_SQL = `
+  SELECT a.attname AS name,
+         pg_catalog.format_type(a.atttypid, a.atttypmod) AS type,
+         a.attnotnull AS not_null,
+         pg_get_expr(d.adbin, d.adrelid) IS NOT NULL AS has_default
+    FROM pg_attribute a
+    JOIN pg_class c ON c.oid = a.attrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+   WHERE c.relname = $1 AND n.nspname = $2 AND a.attnum > 0 AND NOT a.attisdropped`;
+
 function splitTable(name) {
   const parts = String(name).split(".");
   return parts.length === 2
@@ -149,21 +186,7 @@ export async function checkEditable({ editable, connection }) {
   try {
     await client.query(`SET LOCAL statement_timeout = ${STATEMENT_TIMEOUT_MS}`);
 
-    const found = await client.query(
-      // No schema given means "whatever the search_path would have picked",
-      // which is what the unqualified name in the config will resolve to.
-      `SELECT c.relname AS table, n.nspname AS schema
-         FROM pg_class c
-         JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE c.relname = $1
-          AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
-          AND (CASE
-                 WHEN $2::text IS NULL THEN pg_catalog.pg_table_is_visible(c.oid)
-                 ELSE n.nspname = $2
-               END)
-        LIMIT 2`,
-      [table, schema]
-    );
+    const found = await client.query(FIND_TABLE_SQL, [table, schema]);
     if (found.rowCount === 0) {
       checks.push({
         ok: false,
@@ -179,18 +202,7 @@ export async function checkEditable({ editable, connection }) {
       detail: `${resolvedSchema}.${found.rows[0].table}`,
     });
 
-    const columns = await client.query(
-      `SELECT a.attname AS name,
-              pg_catalog.format_type(a.atttypid, a.atttypmod) AS type,
-              a.attnotnull AS not_null,
-              pg_get_expr(d.adbin, d.adrelid) IS NOT NULL AS has_default
-         FROM pg_attribute a
-         JOIN pg_class c ON c.oid = a.attrelid
-         JOIN pg_namespace n ON n.oid = c.relnamespace
-         LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
-        WHERE c.relname = $1 AND n.nspname = $2 AND a.attnum > 0 AND NOT a.attisdropped`,
-      [found.rows[0].table, resolvedSchema]
-    );
+    const columns = await client.query(TABLE_COLUMNS_SQL, [found.rows[0].table, resolvedSchema]);
     const byName = new Map(columns.rows.map((row) => [row.name, row]));
 
     const pkInfo = byName.get(pkColumn);
@@ -234,9 +246,15 @@ export async function checkEditable({ editable, connection }) {
       );
     }
 
+    // Only the columns that write back to *this* table -- a joined table's
+    // columns are checked against their own table further down, and reporting
+    // them as missing here would be a false alarm on a correct config.
+    const baseColumns = editable.columns.filter(
+      (column) => writeTargetFor(editable, column).table === editable.table
+    );
     const missing = [];
     const resolved = [];
-    for (const column of editable.columns) {
+    for (const column of baseColumns) {
       const real = realColumnOf(editable, column);
       const info = byName.get(real);
       if (info) {
@@ -249,14 +267,58 @@ export async function checkEditable({ editable, connection }) {
         missing.push(`${column}${real === column ? "" : ` → ${real}`}`);
       }
     }
-    if (editable.columns.length > 0) {
+    if (baseColumns.length > 0) {
       checks.push(
         missing.length === 0
           ? { ok: true, label: "คอลัมน์ที่อนุญาตให้แก้มีครบ", detail: resolved.join(" · ") }
           : {
               ok: false,
               label: `ไม่พบในตาราง ${missing.length} คอลัมน์`,
-              detail: `${missing.join(", ")} — คอลัมน์ที่มาจากการคำนวณหรือ JOIN เขียนกลับไม่ได้`,
+              detail: `${missing.join(", ")} — คอลัมน์ที่มาจากการคำนวณเขียนกลับไม่ได้`,
+            }
+      );
+    }
+
+    // Each joined table gets the same two questions the base table did: is it
+    // there, and does it really own the columns and the key this config says
+    // it does. Nothing here is built from the config -- every value is bound.
+    for (const target of editable.targets || []) {
+      const targetColumns = target.columns.filter((name) => editable.columns.includes(name));
+      if (targetColumns.length === 0) continue;
+      const targetPk = target.pkColumn || target.pk;
+      const where = splitTable(target.table);
+      const targetFound = await client.query(FIND_TABLE_SQL, [where.table, where.schema]);
+      if (targetFound.rowCount === 0) {
+        checks.push({
+          ok: false,
+          label: `ไม่พบตาราง "${target.table}"`,
+          detail: `ตั้งไว้ให้คอลัมน์ ${targetColumns.join(", ")} เขียนกลับไปที่ตารางนี้`,
+        });
+        continue;
+      }
+      const targetColumnRows = await client.query(TABLE_COLUMNS_SQL, [
+        targetFound.rows[0].table,
+        targetFound.rows[0].schema,
+      ]);
+      const present = new Set(targetColumnRows.rows.map((row) => row.name));
+      const absent = [
+        targetPk,
+        ...targetColumns.map((name) => realColumnOf(editable, name)),
+      ].filter((name, index, all) => !present.has(name) && all.indexOf(name) === index);
+      checks.push(
+        absent.length === 0
+          ? {
+              ok: true,
+              label: `เขียนกลับตาราง "${target.table}" ได้`,
+              detail: `ระบุแถวด้วย ${targetPk} · ${targetColumns.join(", ")}`,
+            }
+          : {
+              ok: false,
+              label: `ตาราง "${target.table}" ไม่มีคอลัมน์ ${absent.join(", ")}`,
+              detail: `ตารางนี้มี: ${targetColumnRows.rows
+                .map((row) => row.name)
+                .slice(0, 25)
+                .join(", ")}`,
             }
       );
     }
@@ -301,7 +363,7 @@ export async function checkEditable({ editable, connection }) {
     let sample = null;
     if (pkInfo) {
       try {
-        const sampleColumns = [pkColumn, ...resolved.length ? editable.columns : []]
+        const sampleColumns = [pkColumn, ...(resolved.length ? baseColumns : [])]
           .map((column) => (column === pkColumn ? pkColumn : realColumnOf(editable, column)))
           .filter((real, index, all) => byName.has(real) && all.indexOf(real) === index)
           .slice(0, 6);

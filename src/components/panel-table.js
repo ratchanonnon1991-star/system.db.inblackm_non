@@ -1089,11 +1089,15 @@ export default function PanelTable({
     // browser last fetched -- the actual save is still checked again on the
     // server (see updateCell's expectedValue), this is only to avoid opening
     // on stale data in the first place.
-    const pkValue = pkValueOf ? pkValueOf(row.sourceIndex) : undefined;
-    if (onPeekCell && pkValue !== undefined && pkValue !== null) {
+    // Which row of which table this cell belongs to is the panel's business,
+    // not the table's -- across a join the answer differs column by column.
+    if (onPeekCell) {
       setPeekingCell({ sourceIndex: row.sourceIndex, colId: col.id });
       try {
-        original = await onPeekCell(pkValue, col.column.name);
+        // undefined means the panel had no key to look the row up by, which
+        // is not an answer -- keep what is on screen rather than blanking it.
+        const peeked = await onPeekCell(row.sourceIndex, col.column.name);
+        if (peeked !== undefined) original = peeked;
       } catch {
         // Peek failing (e.g. the row was just deleted) shouldn't silently
         // open an editor on data that might not exist anymore -- fall back

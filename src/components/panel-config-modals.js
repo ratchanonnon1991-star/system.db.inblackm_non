@@ -29,7 +29,11 @@ import HueSlider from "@/components/hue-slider";
 import { useResizableModalWidth } from "@/lib/use-resizable-modal-width";
 import { isSafeIdentifier, isSafeIdentifierPart } from "@/lib/gamedb-identifier";
 import { extractSqlParams, parseSelectAliases } from "@/lib/gamedb-sql-params";
-import { detectEditableTargets, resolveQueryTables } from "@/lib/gamedb-sql-sources";
+import {
+  detectEditableTargets,
+  isKeyOnlyColumn,
+  resolveQueryTables,
+} from "@/lib/gamedb-sql-sources";
 import { buildVisualInsert } from "@/lib/gamedb-visual-query";
 import {
   applyGroupTone,
@@ -613,6 +617,8 @@ export function EditableSettingsModal({
   const [pkColumn, setPkColumn] = useState(editable?.pkColumn || "");
   const [columns, setColumns] = useState(editable?.columns || []);
   const [columnMap, setColumnMap] = useState(() => editable?.columnMap || {});
+  // Columns whose table is not the one above -- see writeTargetFor.
+  const [targets, setTargets] = useState(() => editable?.targets || []);
   // No longer settable: adding data goes through the saved INSERT form. Kept so
   // a config saved before that change round-trips unchanged instead of being
   // silently rewritten by opening this modal.
@@ -712,34 +718,64 @@ export function EditableSettingsModal({
     setPkColumn("");
   }, [pk]);
 
+  /** The table a column writes to, or "" when it is the base one. */
+  const columnTargetTable = (name) =>
+    targets.find((target) => target.columns.includes(name))?.table || "";
+
   /**
-   * Fill in every box from one detected table at once.
-   *
-   * This is the whole point of the detection: the table, the key column, the
-   * key's real name and each editable column's real name all have to agree
-   * with each other, and choosing them one dropdown at a time is exactly
-   * where that goes wrong. Everything is marked as touched so the guessing
-   * effects below leave the result alone.
+   * The schema table a column is written to -- its own, when it belongs to a
+   * joined one. Everything read off this (the real-column list, the widget
+   * guessed from the column type) would otherwise describe the base table,
+   * which for a joined column is simply a different table's columns.
    */
-  const applyDetectedTarget = (target) => {
-    if (target.compositeKey || !target.pkResultColumn) return;
-    setTable(target.key);
-    setPk(target.pkResultColumn);
+  const tableForColumn = (name) => {
+    const targetTable = columnTargetTable(name);
+    if (!targetTable) return matchedTable;
+    return schemaData?.tables?.find((candidate) => candidate.key === targetTable) || null;
+  };
+
+  // The key identifies the row; it is not itself something to overwrite.
+  const writableColumnsOf = (target) =>
+    target.columns.filter((entry) => entry.column !== target.primaryKey);
+
+  /**
+   * Fill in every box from the detection at once.
+   *
+   * This is the whole point of it: the table, the key column, the key's real
+   * name and each editable column's real name all have to agree with each
+   * other, and choosing them one dropdown at a time is exactly where that
+   * goes wrong. Everything is marked as touched so the guessing effects below
+   * leave the result alone.
+   */
+  const applyDetection = (usableTargets) => {
+    const [base, ...rest] = usableTargets;
+    if (!base) return;
+    setTable(base.key);
+    setPk(base.pkResultColumn);
     // Claim the pk here too, or the effect above sees pk change and wipes the
     // real-name box straight back out again.
-    pkColumnFor.current = target.pkResultColumn;
+    pkColumnFor.current = base.pkResultColumn;
     touchedPkColumn.current = true;
-    setPkColumn(target.primaryKey);
+    setPkColumn(base.primaryKey);
 
-    // The key identifies the row; it is not itself something to overwrite.
-    const editableEntries = target.columns.filter(
-      (entry) => entry.column !== target.primaryKey
+    // Every table's columns, not just the base one's. A row of a joined
+    // result is assembled from several tables and editing it means editing
+    // whichever one the column came from -- each carrying its own key, which
+    // is what `targets` records.
+    const allEntries = usableTargets.flatMap((target) => writableColumnsOf(target));
+    setColumns(allEntries.map((entry) => entry.result));
+    setColumnMap(Object.fromEntries(allEntries.map((entry) => [entry.result, entry.column])));
+    touchedColumns.current = new Set(allEntries.map((entry) => entry.result));
+    setTargets(
+      rest
+        .map((target) => ({
+          table: target.key,
+          pk: target.pkResultColumn,
+          pkColumn: target.primaryKey,
+          columns: writableColumnsOf(target).map((entry) => entry.result),
+        }))
+        .filter((target) => target.columns.length > 0)
     );
-    setColumns(editableEntries.map((entry) => entry.result));
-    setColumnMap(
-      Object.fromEntries(editableEntries.map((entry) => [entry.result, entry.column]))
-    );
-    touchedColumns.current = new Set(editableEntries.map((entry) => entry.result));
     // Per-column widgets were guessed against the previous table's types.
     setInputs([]);
   };
@@ -753,19 +789,17 @@ export function EditableSettingsModal({
   const autoApplied = useRef(Boolean(editable?.table));
   useEffect(() => {
     if (autoApplied.current) return;
-    const usable = detectedTargets.find((target) => !target.compositeKey && target.pkResultColumn);
-    if (!usable) return;
+    const usable = detectedTargets.filter(
+      (target) => !target.compositeKey && target.pkResultColumn
+    );
+    if (usable.length === 0) return;
     autoApplied.current = true;
-    applyDetectedTarget(usable);
+    applyDetection(usable);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detectedTargets]);
 
-  // Which detected table the boxes currently describe, and whether detection
-  // got far enough to be worth hiding them behind an "advanced" fold at all.
-  const chosenTarget = useMemo(
-    () => detectedTargets.find((target) => target.key === table.trim()) || null,
-    [detectedTargets, table]
-  );
+  // Whether detection got far enough to be worth hiding the manual boxes
+  // behind an "advanced" fold at all.
   const detectionUsable = detectedTargets.some(
     (target) => !target.compositeKey && target.pkResultColumn
   );
@@ -794,8 +828,12 @@ export function EditableSettingsModal({
         setRealColumn(name, fromSql);
         continue;
       }
-      if (!matchedTable) continue;
-      const guess = guessRealColumn(name, matchedTable);
+      // Against the column's own table, which for a joined column is not the
+      // base one -- guessing there would match a same-named column of a
+      // different table, or nothing at all.
+      const owner = tableForColumn(name);
+      if (!owner) continue;
+      const guess = guessRealColumn(name, owner);
       if (guess && guess !== name) setRealColumn(name, guess);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -807,7 +845,7 @@ export function EditableSettingsModal({
     );
 
   const schemaColumnFor = (name) =>
-    matchedTable?.columns.find((column) => column.name === realColumn(name));
+    tableForColumn(name)?.columns.find((column) => column.name === realColumn(name));
 
   const inputFor = (name) => {
     const existing = inputs.find((input) => input.column === name);
@@ -895,6 +933,15 @@ export function EditableSettingsModal({
           allowInsert,
           allowDelete,
           inputs: inputs.filter((input) => columns.includes(input.column)),
+          // Only the ones still claiming a column that is actually editable --
+          // unticking every column of a joined table should drop that table
+          // rather than leave a target pointing at nothing.
+          targets: targets
+            .map((target) => ({
+              ...target,
+              columns: target.columns.filter((name) => columns.includes(name)),
+            }))
+            .filter((target) => target.columns.length > 0),
         }
       : null;
 
@@ -1149,56 +1196,24 @@ export function EditableSettingsModal({
         <div className="rounded-sm border border-emerald-200 bg-emerald-50 p-3">
           <p className="flex items-center gap-1.5 text-[11px] font-black text-emerald-800">
             <Table2 size={13} />
-            {chosenTarget ? "ระบบอ่าน SQL แล้วตั้งค่าให้เรียบร้อย" : "ระบบอ่าน SQL แล้ว"}
+            {detectionUsable
+              ? "ระบบอ่าน SQL แล้วตั้งค่าให้เรียบร้อย — ไม่ต้องเลือกอะไร"
+              : "ระบบอ่าน SQL แล้ว แต่ยังตั้งให้อัตโนมัติไม่ได้"}
           </p>
-          {chosenTarget ? (
-            <p className="mt-0.5 text-[10px] font-semibold text-emerald-700">
-              การแก้ไขจะเขียนกลับที่ตาราง{" "}
-              <span className="font-mono font-black">{chosenTarget.key}</span> โดยระบุแถวด้วย{" "}
-              <span className="font-mono font-black">{chosenTarget.primaryKey}</span>
-              {chosenTarget.pkResultColumn !== chosenTarget.primaryKey
-                ? ` (ในผลลัพธ์ชื่อ "${chosenTarget.pkResultColumn}")`
-                : ""}{" "}
-              — ไม่ต้องกรอกอะไรเพิ่ม
-            </p>
-          ) : detectionUsable ? (
-            <p className="mt-0.5 text-[10px] font-semibold text-emerald-600">
-              กดตารางที่ต้องการ แล้วระบบจะกรอกคอลัมน์ที่เป็น key
-              และชื่อคอลัมน์จริงให้เองทั้งหมด ไม่ต้องกรอกเอง
-            </p>
-          ) : (
-            <p className="mt-0.5 text-[10px] font-semibold text-amber-700">
-              แต่ยังตั้งให้อัตโนมัติไม่ได้ — ดูเหตุผลของแต่ละตารางด้านล่าง
-            </p>
-          )}
-          {/* One table is not a choice -- the summary above already says
-              everything the card would. More than one is a real question
-              (which side of the join to write to), so the cards stay. */}
-          {detectedTargets.length > 1 && (
-            <p className="mt-2 text-[10px] font-bold text-emerald-700">
-              Query นี้ดึงข้อมูลจากหลายตาราง — ถ้าจะแก้ตารางอื่นแทน กดเลือกได้เลย
-            </p>
-          )}
-          <div
-            className={`space-y-1.5 ${
-              detectedTargets.length > 1 || !chosenTarget ? "mt-1.5" : "hidden"
-            }`}
-          >
+          <p className="mt-0.5 text-[10px] font-semibold leading-relaxed text-emerald-700">
+            {detectionUsable
+              ? "แต่ละคอลัมน์รู้ว่าตัวเองมาจากตารางไหน เวลาแก้ ระบบจะเขียนกลับไปที่ตารางของคอลัมน์นั้นเอง โดยใช้ key ของตารางนั้น"
+              : "ดูเหตุผลของแต่ละตารางด้านล่าง"}
+          </p>
+          <div className="mt-2 space-y-1.5">
             {detectedTargets.map((target) => {
               const blocked = target.compositeKey || !target.pkResultColumn;
-              const chosen = table.trim() === target.key;
+              const isBase = table.trim() === target.key;
               return (
-                <button
+                <div
                   key={target.key}
-                  type="button"
-                  disabled={blocked}
-                  onClick={() => applyDetectedTarget(target)}
-                  className={`w-full rounded-sm border p-2 text-left transition ${
-                    blocked
-                      ? "cursor-not-allowed border-zinc-200 bg-white/60 opacity-70"
-                      : chosen
-                        ? "border-emerald-500 bg-white"
-                        : "border-emerald-200 bg-white hover:border-emerald-400"
+                  className={`rounded-sm border p-2 ${
+                    blocked ? "border-zinc-200 bg-white/60" : "border-emerald-200 bg-white"
                   }`}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-1">
@@ -1210,9 +1225,9 @@ export function EditableSettingsModal({
                         </span>
                       )}
                     </span>
-                    {chosen && (
+                    {isBase && (
                       <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[8px] font-black text-emerald-700">
-                        เลือกอยู่
+                        ตารางหลัก — ลบ/เพิ่มแถวที่นี่
                       </span>
                     )}
                   </div>
@@ -1242,10 +1257,20 @@ export function EditableSettingsModal({
                         : ""}
                     </p>
                   )}
-                </button>
+                </div>
               );
             })}
           </div>
+          {/* One row of the base table can appear several times when a join
+              fans out. Editing its cell edits that one row, so every copy on
+              screen changes -- correct, and alarming if nobody said so. */}
+          {targets.length > 0 && (
+            <p className="mt-2 rounded-sm bg-white px-2 py-1.5 text-[9px] font-semibold leading-relaxed text-zinc-500">
+              ถ้า join แล้วแถวของตารางหนึ่งถูกจับคู่กับหลายแถว
+              การแก้ค่าของตารางนั้นแถวเดียว จะทำให้ทุกแถวที่แสดงค่าเดียวกันเปลี่ยนตามไปด้วย
+              เพราะมันคือแถวเดียวกันในฐานข้อมูล
+            </p>
+          )}
         </div>
       )}
 
@@ -1349,7 +1374,9 @@ export function EditableSettingsModal({
       <div>
         <label className={labelClass}>คอลัมน์ที่อนุญาตให้แก้</label>
         <div className="flex flex-wrap gap-1">
-          {columnNames.map((name) => (
+          {/* The added key columns identify rows; they are not data anyone
+              edits, and they are not shown in the table either. */}
+          {columnNames.filter((name) => !isKeyOnlyColumn(name)).map((name) => (
             <button
               key={name}
               type="button"
@@ -1383,6 +1410,7 @@ export function EditableSettingsModal({
             {columns.map((name) => {
               const input = inputFor(name);
               const schemaColumn = schemaColumnFor(name);
+              const ownerTable = tableForColumn(name);
               const presets = DEFAULT_VALUE_PRESETS[input.widget] || [];
               return (
                 <div key={name} className="rounded-sm border border-zinc-200 px-2.5 py-2">
@@ -1392,8 +1420,16 @@ export function EditableSettingsModal({
                       title={name}
                     >
                       {name}
+                      {/* Where this one goes, when that is not the base table
+                          -- otherwise a config that writes to two tables looks
+                          exactly like one that writes to one. */}
+                      {columnTargetTable(name) && (
+                        <span className="ml-1 font-mono text-[9px] font-bold text-emerald-600">
+                          → {columnTargetTable(name)}
+                        </span>
+                      )}
                     </span>
-                    {matchedTable ? (
+                    {ownerTable ? (
                       <select
                         value={realColumn(name)}
                         onChange={(e) => {
@@ -1405,7 +1441,7 @@ export function EditableSettingsModal({
                         <option value="">— เลือกคอลัมน์จริงในตาราง —</option>
                         {/* Identity/generated columns Postgres fills in itself — offering
                             them as an UPDATE target would just produce one it rejects. */}
-                        {matchedTable.columns
+                        {ownerTable.columns
                           .filter((column) => !column.identity && !column.generated)
                           .map((column) => (
                             <option key={column.name} value={column.name}>
@@ -1416,7 +1452,7 @@ export function EditableSettingsModal({
                             schema fetch doesn't know about, must stay visible instead
                             of silently vanishing from the list. */}
                         {realColumn(name) &&
-                          !matchedTable.columns.some((column) => column.name === realColumn(name)) && (
+                          !ownerTable.columns.some((column) => column.name === realColumn(name)) && (
                             <option value={realColumn(name)}>
                               {realColumn(name)} (ไม่พบในตารางนี้)
                             </option>

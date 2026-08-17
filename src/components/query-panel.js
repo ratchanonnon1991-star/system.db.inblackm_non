@@ -67,7 +67,9 @@ import {
   SUMMARY_LABELS,
   toneStyle,
   widgetForColumn,
+  writeTargetFor,
 } from "@/lib/gamedb-layout";
+import { isKeyOnlyColumn } from "@/lib/gamedb-sql-sources";
 import { ComputedColumnModal } from "@/components/gamedb-modals";
 import {
   BulkEditModal,
@@ -1095,7 +1097,16 @@ export default function QueryPanel({
     [displayColumns]
   );
   const visibleColumns = useMemo(
-    () => displayColumns.filter((col) => !layout.hidden.includes(col.id)),
+    () =>
+      displayColumns.filter(
+        (col) =>
+          !layout.hidden.includes(col.id) &&
+          // Key columns the query editor added so a joined table could be
+          // edited. They carry no information for a reader -- only the row
+          // identity the write needs -- so they are not something anyone
+          // should have to hide, or be able to un-hide by mistake.
+          !(col.kind === "base" && isKeyOnlyColumn(col.column.name))
+      ),
     [displayColumns, layout.hidden]
   );
   const hiddenColumns = useMemo(
@@ -1546,6 +1557,22 @@ export default function QueryPanel({
     }));
   }, [result, sharedEditable, baseNameToIndex]);
 
+  // Bulk edit and find/replace identify every row by one key value, which only
+  // holds for the base table -- a joined column's row is a different row of a
+  // different table, and writing it with this key would land on whatever row
+  // of that table happens to carry the same number. Those columns are left out
+  // of both tools rather than written to the wrong place; editing them one
+  // cell at a time still works, because that path resolves the key per column.
+  const baseTableEditable = useMemo(() => {
+    if (!sharedEditable || (sharedEditable.targets || []).length === 0) return sharedEditable;
+    return {
+      ...sharedEditable,
+      columns: sharedEditable.columns.filter(
+        (column) => writeTargetFor(sharedEditable, column).table === sharedEditable.table
+      ),
+    };
+  }, [sharedEditable]);
+
   // --- cell notes ------------------------------------------------------------
   // Anchored to the row's own pk value (same identity findReplaceRows uses),
   // so a note stays on the right cell across a refresh or a re-sort instead
@@ -1661,7 +1688,23 @@ export default function QueryPanel({
   // Live value of one cell, no lock -- used to refresh what the editor opens
   // with (see onPeekCell on PanelTable) so a double-click shows what the
   // table actually holds right now, not whatever this browser last fetched.
-  const peekCell = async (pkValue, column) => {
+  /**
+   * The value identifying the row this column's write will land on.
+   *
+   * Across a join each column belongs to its own table, with its own key, and
+   * the result carries one column per table holding it. Using the base table's
+   * key for a joined column would either find nothing or -- when both tables
+   * number their rows from 1 -- find a completely unrelated row.
+   */
+  const editPkValueOf = (sourceIndex, column) => {
+    const target = writeTargetFor(sharedEditable, column);
+    const index = baseNameToIndex.get(target.pk);
+    return index === undefined ? undefined : result?.rows?.[sourceIndex]?.[index];
+  };
+
+  const peekCell = async (sourceIndex, column) => {
+    const pkValue = editPkValueOf(sourceIndex, column);
+    if (pkValue === undefined || pkValue === null) return undefined;
     const params = new URLSearchParams({ pkValue: String(pkValue), column });
     if (activeViewId) params.set("viewId", String(activeViewId));
     const data = await apiJson(`/api/queries/${query.id}/cell?${params.toString()}`, {
@@ -1675,7 +1718,13 @@ export default function QueryPanel({
     if (!col || col.kind !== "base") return;
     if (String(original ?? "") === String(value ?? "")) return;
 
-    const pkValue = result.rows[sourceIndex][baseNameToIndex.get(sharedEditable.pk)];
+    const pkValue = editPkValueOf(sourceIndex, col.column.name);
+    if (pkValue === undefined || pkValue === null) {
+      setEditError(
+        `แก้ไม่ได้ — ผลลัพธ์ไม่มีค่า key ของตารางที่คอลัมน์ "${col.column.name}" อยู่`
+      );
+      return;
+    }
 
     // `expectedValue` undefined means "write regardless" -- used only for the
     // retry after a conflict is confirmed, below.
@@ -3681,7 +3730,7 @@ export default function QueryPanel({
       )}
       {modal === "bulk" && result && sharedEditable && (
         <BulkEditModal
-          editable={sharedEditable}
+          editable={baseTableEditable}
           columnNames={result.columns.map((col) => col.name)}
           onApply={applyBulkEdits}
           onClose={() => setModal(null)}
@@ -3689,7 +3738,7 @@ export default function QueryPanel({
       )}
       {modal === "findReplace" && result && sharedEditable && (
         <FindReplaceModal
-          editable={sharedEditable}
+          editable={baseTableEditable}
           rows={findReplaceRows}
           onApply={applyBulkEdits}
           onClose={() => setModal(null)}

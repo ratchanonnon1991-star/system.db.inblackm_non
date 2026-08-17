@@ -1,6 +1,6 @@
 import { getPoolForConnection } from "@/lib/db";
 import { quoteIdentifier } from "@/lib/gamedb-identifier";
-import { realColumnOf, realPkOf } from "@/lib/gamedb-layout";
+import { realColumnOf, realPkOf, writeTargetFor } from "@/lib/gamedb-layout";
 import { getConnectionFlags } from "@/server/gamedb-side-tables";
 
 const STATEMENT_TIMEOUT_MS = 8000;
@@ -59,7 +59,15 @@ function summarize(object) {
 export async function insertRow({ editable, connection, values }) {
   await assertWritable(editable, connection, "allowInsert", "เพิ่มแถวใหม่");
 
-  const allowed = new Set(editable.columns);
+  // Adding a row adds it to one table, and that is the base one. A column that
+  // belongs to a joined table is editable but not insertable here -- putting it
+  // in this INSERT would either be rejected by Postgres or, if the base table
+  // happens to have a column by the same name, quietly write to the wrong one.
+  const allowed = new Set(
+    editable.columns.filter(
+      (column) => writeTargetFor(editable, column).table === editable.table
+    )
+  );
   const offered = Object.entries(values || {}).filter(([column]) => allowed.has(column));
   if (offered.length === 0) {
     throw createHttpError("ไม่มีคอลัมน์ที่อนุญาตให้เขียนในข้อมูลที่ส่งมา", 400);

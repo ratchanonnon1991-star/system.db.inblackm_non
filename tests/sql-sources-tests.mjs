@@ -1,6 +1,7 @@
 // Working out which real table each result column came from, so the editable
 // settings can be proposed instead of typed in by hand.
 import {
+  addMissingKeyColumns,
   detectEditableTargets,
   parseFromTables,
   checkJoinQualification,
@@ -449,6 +450,84 @@ check(
   [["bbb"], ["col1"], ["z.col2"]]
 );
 check("empty sql asks for nothing", checkJoinQualification("").needed, false);
+
+// --- completing a join so the joined table can be edited -----------------
+const completed = addMissingKeyColumns({
+  sql: "SELECT o.id, o.amount, g.name FROM public.orders o JOIN public.games g ON o.game_id = g.id",
+  tables: TABLES,
+});
+check(
+  "the joined table's key is added under a machine name",
+  completed.added,
+  [{ table: "public.games", column: "id", alias: "__key_g_id" }]
+);
+check(
+  "and lands at the end of the SELECT list, not inside the FROM",
+  completed.sql,
+  'SELECT o.id, o.amount, g.name, g."id" AS "__key_g_id"\nFROM public.orders o JOIN public.games g ON o.game_id = g.id'
+);
+check(
+  "the rewritten query really does expose the key now",
+  detectEditableTargets({ sql: completed.sql, tables: TABLES }).find(
+    (target) => target.key === "public.games"
+  ).pkResultColumn,
+  "__key_g_id"
+);
+check(
+  "a query that already has every key is left exactly as it was",
+  addMissingKeyColumns({
+    sql: "SELECT o.id, g.id AS gid, g.name FROM public.orders o JOIN public.games g ON o.game_id = g.id",
+    tables: TABLES,
+  }).added,
+  []
+);
+check(
+  "a single-table query needs nothing added",
+  addMissingKeyColumns({ sql: "SELECT id, name FROM public.games", tables: TABLES }).added,
+  []
+);
+
+// Adding a column to any of these changes which rows come back, so it is
+// refused rather than quietly altering what the query means.
+for (const [label, sql] of [
+  ["DISTINCT", "SELECT DISTINCT o.amount, g.name FROM public.orders o JOIN public.games g ON o.game_id = g.id"],
+  ["GROUP BY", "SELECT g.name, o.amount FROM public.orders o JOIN public.games g ON o.game_id = g.id GROUP BY g.name, o.amount"],
+  ["UNION", "SELECT o.amount, g.name FROM public.orders o JOIN public.games g ON o.game_id = g.id UNION SELECT 1, 'x'"],
+]) {
+  const attempt = addMissingKeyColumns({ sql, tables: TABLES });
+  check(`${label} is refused rather than rewritten`, attempt.added, []);
+  check(`${label} leaves the SQL untouched`, attempt.sql, sql);
+  check(
+    `${label} says which tables it gave up on`,
+    attempt.refused.some((entry) => entry.table === "public.games"),
+    true
+  );
+}
+check(
+  "a column named distinct_total is not mistaken for DISTINCT",
+  addMissingKeyColumns({
+    sql: "SELECT o.distinct_total, g.name FROM public.orders o JOIN public.games g ON o.game_id = g.id",
+    tables: TABLES,
+  }).added.length,
+  1
+);
+check(
+  "a machine name that would collide gets numbered instead",
+  addMissingKeyColumns({
+    sql: 'SELECT o.id, o.amount AS "__key_g_id", g.name FROM public.orders o JOIN public.games g ON o.game_id = g.id',
+    tables: TABLES,
+  }).added,
+  [{ table: "public.games", column: "id", alias: "__key_g_id_2" }]
+);
+check(
+  "a table with a composite key is not completed, since one column cannot identify its row",
+  addMissingKeyColumns({
+    sql: "SELECT o.id, n.body FROM public.orders o JOIN public.notes n ON n.a = o.id",
+    tables: TABLES,
+  }).added,
+  []
+);
+check("nothing to do on nonsense", addMissingKeyColumns({ sql: "nope", tables: TABLES }).added, []);
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);

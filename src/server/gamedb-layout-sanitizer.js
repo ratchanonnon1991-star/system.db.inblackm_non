@@ -4,6 +4,7 @@ import {
   COMPUTED_TYPES,
   normalizeColumnMap,
   normalizeDrill,
+  normalizeEditableTargets,
   normalizeFormats,
   normalizeFreeze,
   normalizeInputs,
@@ -146,6 +147,23 @@ export function sanitizeLayout(raw) {
           pk: pkResult,
           pkColumn,
           columns: editableColumns,
+          // Every target names a table and a key column that get quoted
+          // straight into an UPDATE, so each is checked the same way the base
+          // table is, and one that fails is dropped rather than repaired --
+          // those columns then fall back to the base table, where the write
+          // either works or fails loudly, instead of landing somewhere the
+          // config never really said.
+          targets: normalizeEditableTargets(rawEditable.targets)
+            .filter(
+              (target) =>
+                isSafeIdentifier(target.table) &&
+                isSafeIdentifierPart(target.pkColumn || target.pk)
+            )
+            .map((target) => ({
+              ...target,
+              columns: target.columns.filter((name) => editableColumns.includes(name)),
+            }))
+            .filter((target) => target.columns.length > 0),
           // A mapping for a column that is not writable is dead weight.
           columnMap: Object.fromEntries(
             Object.entries(columnMap).filter(([name]) => editableColumns.includes(name))
