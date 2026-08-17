@@ -132,12 +132,71 @@ export async function insertRow({ editable, connection, values, table }) {
   }
 }
 
+// Single-column foreign keys pointing at the column a row is identified by.
+// `to_regclass` resolves the configured name -- schema-qualified or not --
+// as a bound value rather than by building a name into the statement. A
+// composite foreign key is not listed; the DELETE still refuses on one, just
+// with Postgres's own message rather than a count.
+const REFERENCING_KEYS_SQL = `
+  SELECT src_ns.nspname || '.' || src.relname AS table_name,
+         src_col.attname AS column_name
+    FROM pg_catalog.pg_constraint con
+    JOIN pg_catalog.pg_class src ON src.oid = con.conrelid
+    JOIN pg_catalog.pg_namespace src_ns ON src_ns.oid = src.relnamespace
+    JOIN LATERAL unnest(con.conkey, con.confkey) WITH ORDINALITY
+      AS keys(src_attnum, tgt_attnum, position) ON TRUE
+    JOIN pg_catalog.pg_attribute src_col
+      ON src_col.attrelid = src.oid AND src_col.attnum = keys.src_attnum
+    JOIN pg_catalog.pg_attribute tgt_col
+      ON tgt_col.attrelid = con.confrelid AND tgt_col.attnum = keys.tgt_attnum
+   WHERE con.contype = 'f'
+     AND con.confrelid = to_regclass($1)::oid
+     AND tgt_col.attname = $2
+     AND array_length(con.conkey, 1) = 1
+   ORDER BY 1, 2
+   LIMIT 20
+`;
+
+/**
+ * Which other tables still point at this row, and how many rows each.
+ *
+ * Asked before the DELETE rather than after, so the answer is "public.orders
+ * still has 240 rows for this game" instead of a constraint name. Runs on the
+ * same client, inside the same transaction, with the row already locked --
+ * a count taken outside it could be stale by the time the delete ran.
+ */
+async function countReferencesTo(client, tableName, pkColumn, pkValue) {
+  const keys = await client.query(REFERENCING_KEYS_SQL, [tableName, pkColumn]);
+  const blocking = [];
+  for (const key of keys.rows) {
+    // Both names go into the count below. A row that does not carry them is
+    // not something to build a statement out of.
+    if (!key.table_name || !key.column_name) continue;
+    const counted = await client.query(
+      `SELECT count(*)::bigint AS n FROM ${quoteIdentifier(key.table_name)}
+        WHERE ${quoteIdentifier(key.column_name)} = $1`,
+      [pkValue]
+    );
+    const rows = Number(counted.rows[0]?.n || 0);
+    if (rows > 0) blocking.push({ table: key.table_name, column: key.column_name, rows });
+  }
+  return blocking;
+}
+
 /** Removes one row, and refuses if the key matches anything but exactly one. */
-export async function deleteRow({ editable, connection, pkValue }) {
+export async function deleteRow({ editable, connection, pkValue, table: fromTable }) {
   await assertWritable(editable, connection, "allowDelete", "ลบแถว");
 
-  const table = quoteIdentifier(editable.table);
-  const pk = quoteIdentifier(realPkOf(editable));
+  // Same list the add-a-row buttons come from: a row is removed from one
+  // table, and only ever one the saved config already writes to.
+  const targets = insertTargetsOf(editable);
+  const from = fromTable ? targets.find((entry) => entry.table === fromTable) : targets[0];
+  if (!from) {
+    throw createHttpError(`Query นี้ไม่ได้ตั้งค่าให้ลบแถวในตาราง "${fromTable}"`, 400);
+  }
+
+  const table = quoteIdentifier(from.table);
+  const pk = quoteIdentifier(from.pkColumn);
 
   const client = await connect(connection);
   try {
@@ -155,7 +214,21 @@ export async function deleteRow({ editable, connection, pkValue }) {
     }
     if (before.rowCount > 1) {
       throw createHttpError(
-        `คอลัมน์ "${editable.pk}" ไม่ใช่ค่าที่ไม่ซ้ำ — พบ ${before.rowCount} แถว จึงไม่ลบให้`,
+        `คอลัมน์ "${from.pkColumn}" ไม่ใช่ค่าที่ไม่ซ้ำ — พบ ${before.rowCount} แถว จึงไม่ลบให้`,
+        409
+      );
+    }
+
+    // Removing a row other rows still point at is not a small mistake, and a
+    // database configured to cascade would take them all with it without
+    // anyone being told. Say what is attached and stop; deciding what happens
+    // to 240 orders is not a decision to make by clicking delete on a game.
+    const blocking = await countReferencesTo(client, from.table, from.pkColumn, pkValue);
+    if (blocking.length > 0) {
+      throw createHttpError(
+        `ลบไม่ได้ — ยังมีข้อมูลอ้างถึงแถวนี้อยู่: ${blocking
+          .map((entry) => `${entry.table} (${entry.rows.toLocaleString("th-TH")} แถว)`)
+          .join(", ")} · ต้องจัดการข้อมูลเหล่านั้นก่อน`,
         409
       );
     }
@@ -166,7 +239,7 @@ export async function deleteRow({ editable, connection, pkValue }) {
     }
 
     await client.query("COMMIT");
-    return { summary: summarize(before.rows[0]) };
+    return { summary: summarize(before.rows[0]), table: from.table, pkColumn: from.pkColumn };
   } catch (err) {
     try {
       await client.query("ROLLBACK");
@@ -174,6 +247,17 @@ export async function deleteRow({ editable, connection, pkValue }) {
       // ignore: the connection may already be aborted
     }
     if (err.status) throw err;
+    // The count above misses composite foreign keys and anything added
+    // between the check and the delete. Postgres still refuses, and its
+    // refusal is turned into the same answer rather than a raw message.
+    if (err.code === "23503") {
+      throw createHttpError(
+        `ลบไม่ได้ — ยังมีข้อมูลในตารางอื่นอ้างถึงแถวนี้อยู่${
+          err.table ? ` (${err.table})` : ""
+        } ต้องจัดการข้อมูลนั้นก่อน`,
+        409
+      );
+    }
     throw createHttpError(`ลบแถวไม่สำเร็จ: ${err.message}`, 400);
   } finally {
     client.release();

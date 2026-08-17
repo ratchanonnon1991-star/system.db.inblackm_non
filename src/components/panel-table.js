@@ -637,6 +637,8 @@ export default function PanelTable({
   onDrill,
   drillLabel,
   onDeleteRow,
+  // The tables a row can be removed from, in the order they were read.
+  deleteTables = [],
   onRowHistory,
   columnValueFilters,
   columnValueOptions,
@@ -1318,6 +1320,7 @@ export default function PanelTable({
                 colId: col.id,
                 label: col.label,
                 text: cell.text,
+                row,
                 top: event.clientY,
                 left: event.clientX,
               });
@@ -1876,6 +1879,29 @@ export default function PanelTable({
                 >
                   <X size={12} className="text-zinc-400" /> ล้างตัวกรองของคอลัมน์นี้
                 </button>
+              )}
+              {/* Which table to remove from is a real question once a result
+                  row is made of rows from several, so each is named rather
+                  than one being picked. */}
+              {onDeleteRow && cellMenu.row && deleteTables.length > 0 && (
+                <>
+                  <div className="my-1 border-t border-zinc-100" />
+                  {deleteTables.map((table) => (
+                    <button
+                      key={table}
+                      type="button"
+                      onClick={() => {
+                        const target = cellMenu.row;
+                        setCellMenu(null);
+                        onDeleteRow(target, table);
+                      }}
+                      className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[11px] font-bold text-red-600 hover:bg-red-50"
+                    >
+                      <Trash2 size={12} />
+                      {deleteTables.length === 1 ? "ลบแถวนี้" : `ลบแถวนี้จาก ${table}`}
+                    </button>
+                  ))}
+                </>
               )}
             </div>
           </>,

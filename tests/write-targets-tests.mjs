@@ -2,7 +2,7 @@
 // table, with its own key, and an edit has to reach that one -- not the base
 // table that happens to be named first.
 import { updateCell } from "@/server/gamedb-cell-writer.js";
-import { insertRow } from "@/server/gamedb-row-writer.js";
+import { deleteRow, insertRow } from "@/server/gamedb-row-writer.js";
 import { buildAllSql, buildUpdateSql } from "@/server/gamedb-editable-check.js";
 import { log, reset, setResponder } from "@/lib/db.js";
 import { setAllowWrite } from "@/server/gamedb-side-tables.js";
@@ -216,6 +216,72 @@ await rejects(
   }),
   { status: 400, fragment: "ไม่มีคอลัมน์" }
 );
+
+// --- removing a row ------------------------------------------------------
+const DELETABLE = { ...JOINED, allowDelete: true };
+
+// Nothing points at it: the delete goes through, against the table asked for.
+reset({ rows: [{ id: 9, name: "Neverness" }] });
+setResponder((text) => (/pg_catalog\.pg_constraint/.test(text) ? { rows: [] } : null));
+const removed = await deleteRow({
+  editable: DELETABLE,
+  connection: null,
+  pkValue: 9,
+  table: "public.games",
+});
+check(
+  "the delete goes to the table asked for",
+  log.find((entry) => /^DELETE/i.test(entry.text)).text,
+  'DELETE FROM "public"."games" WHERE "id" = $1'
+);
+check("and reports it, so the log records the right one", removed.table, "public.games");
+check("it committed", log.some((entry) => entry.text === "COMMIT"), true);
+
+// Something does point at it: refused, and the message says what and how many.
+reset({ rows: [{ id: 9 }] });
+setResponder((text) => {
+  if (/pg_catalog\.pg_constraint/.test(text)) {
+    return { rows: [{ table_name: "public.orders", column_name: "game_id" }] };
+  }
+  if (/count\(\*\)/.test(text)) return { rows: [{ n: "240" }] };
+  return null;
+});
+await rejects(
+  "a row other rows still point at is not removed",
+  deleteRow({ editable: DELETABLE, connection: null, pkValue: 9, table: "public.games" }),
+  { status: 409, fragment: "public.orders (240 แถว)" }
+);
+check("no DELETE ran", log.some((entry) => /^DELETE/i.test(entry.text)), false);
+check("and it rolled back", log.some((entry) => entry.text === "ROLLBACK"), true);
+check(
+  "the count was scoped to that one row, as a bound value",
+  log.find((entry) => /count\(\*\)/.test(entry.text)).params,
+  [9]
+);
+
+// The table comes from the saved config, never from the request.
+reset({ rows: [{ id: 9 }] });
+await rejects(
+  "a table this query does not write to is refused",
+  deleteRow({ editable: DELETABLE, connection: null, pkValue: 9, table: "public.elsewhere" }),
+  { status: 400, fragment: "elsewhere" }
+);
+await rejects(
+  "and so is an injection dressed as one",
+  deleteRow({
+    editable: DELETABLE,
+    connection: null,
+    pkValue: 9,
+    table: 'public.games"; DROP TABLE x --',
+  }),
+  { status: 400 }
+);
+await rejects(
+  "deleting stays off until it is turned on",
+  deleteRow({ editable: JOINED, connection: null, pkValue: 9, table: "public.games" }),
+  { status: 403 }
+);
+setResponder(null);
 
 // --- what the preview shows ----------------------------------------------
 check(

@@ -1927,10 +1927,25 @@ export default function QueryPanel({
     }
   };
 
-  const deleteRow = async (row) => {
-    const pkValue = result.rows[row.sourceIndex][baseNameToIndex.get(sharedEditable.pk)];
+  /**
+   * Remove one row from one table.
+   *
+   * `table` says which, for a query that reads several -- a joined result row
+   * is made of a row from each, and "delete this row" means one of them. The
+   * key used is that table's own, so removing the joined side does not go
+   * looking for it by the base table's id.
+   */
+  const deleteRow = async (row, table) => {
+    const from = insertTargets.find((target) => target.table === table) || insertTargets[0];
+    if (!from) return;
+    const keyColumn = writeTargetFor(sharedEditable, from.columns[0] || "").pk;
+    const pkValue = result.rows[row.sourceIndex][baseNameToIndex.get(keyColumn)];
+    if (pkValue === undefined || pkValue === null) {
+      setEditError(`ลบไม่ได้ — แถวนี้ไม่มีค่า key ของตาราง ${from.table}`);
+      return;
+    }
     const confirmed = window.confirm(
-      `ลบแถวที่ ${sharedEditable.pk} = ${pkValue} ออกจากตาราง ${sharedEditable.table}?\n` +
+      `ลบแถวที่ ${from.pkColumn} = ${pkValue} ออกจากตาราง ${from.table}?\n` +
         "ลบแล้วเอากลับไม่ได้"
     );
     if (!confirmed) return;
@@ -1939,7 +1954,7 @@ export default function QueryPanel({
       await apiJson(`/api/queries/${query.id}/row`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pkValue, viewId: activeViewId }),
+        body: JSON.stringify({ pkValue, table: from.table, viewId: activeViewId }),
         fallbackError: "ลบแถวไม่สำเร็จ",
       });
       await runQuery({ silent: true });
@@ -3467,6 +3482,10 @@ export default function QueryPanel({
                       ? deleteRow
                       : null
                   }
+                  // One entry per table the row is made of. The gutter button
+                  // removes from the first; the right-click menu names each,
+                  // because removing from the wrong one is not a small slip.
+                  deleteTables={insertTargets.map((target) => target.table)}
                   // Only a query that writes somewhere has a history worth
                   // showing -- everything else has never been edited here.
                   onRowHistory={sharedEditable && !viewingSnapshot ? openRowHistory : null}

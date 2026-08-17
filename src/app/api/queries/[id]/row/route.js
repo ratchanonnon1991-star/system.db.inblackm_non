@@ -82,18 +82,21 @@ export async function DELETE(request, { params }) {
       return jsonError(`ไม่พบค่า ${layout.editable.pk} ของแถวนี้`, 400);
     }
 
-    const { summary } = await deleteRow({
+    // Which table to remove from, for a query that reads several. Checked
+    // against the saved config inside deleteRow, never quoted from here.
+    const { summary, table, pkColumn } = await deleteRow({
       editable: layout.editable,
       connection,
       pkValue,
+      table: body.table,
     });
 
     invalidateQuery(query.id);
     await recordEdit({
       queryId: query.id,
       actor: admin.username || admin.displayName || "",
-      table: layout.editable.table,
-      pkColumn: layout.editable.pk,
+      table,
+      pkColumn,
       pkValue,
       column: "(ลบแถว)",
       oldValue: summary,
