@@ -3,6 +3,7 @@ import { requireLayoutEditor } from "@/server/auth";
 import { sanitizeComputedColumns } from "@/server/gamedb-layout-sanitizer";
 import { saveGamelistPacks } from "@/server/gameinfo-gamelist-packs";
 import { pruneGameinfoFormulaOverrides } from "@/lib/gameinfo-formula-overrides";
+import { sanitizeGameinfoCostProfiles } from "@/lib/gameinfo-cost-profiles";
 
 export async function PUT(request, { params }) {
   try {
@@ -26,6 +27,7 @@ export async function PUT(request, { params }) {
         sanitizeComputedColumns(body.computedColumns),
         packIds
       ),
+      costProfiles: sanitizeGameinfoCostProfiles(body.costProfiles),
       actor: { id: user.id, name: user.displayName || user.username },
       source,
     });

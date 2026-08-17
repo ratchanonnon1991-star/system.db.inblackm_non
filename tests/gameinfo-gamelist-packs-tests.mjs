@@ -51,6 +51,7 @@ const ORIGINAL_TREE = [
             image: "",
             price: "10",
             amountChargedFee: "12",
+            costProfileId: "",
             channelsMain: ["Wave"],
             channelsSecondary: [],
             country: "",
@@ -61,6 +62,7 @@ const ORIGINAL_TREE = [
             image: "",
             price: "20",
             amountChargedFee: "22",
+            costProfileId: "",
             channelsMain: ["Wave"],
             channelsSecondary: [],
             country: "",
@@ -261,7 +263,12 @@ async function run() {
   reset();
   setResponder(() => ({ rows: [] }));
   const empty = await getGamelistPacks(5);
-  check("empty: no rows gives an empty tree and no computed columns", empty, { currencies: [], computedColumns: [] });
+  check("empty: no rows gives empty data and version-one config", empty, {
+    currencies: [],
+    computedColumns: [],
+    costProfiles: [],
+    schemaVersion: 1,
+  });
 
   // --- listGamelistPackCountByGame: excludes the __computed__ sentinel ------
   reset();

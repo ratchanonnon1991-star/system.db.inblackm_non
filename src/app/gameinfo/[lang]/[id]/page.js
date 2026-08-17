@@ -34,12 +34,14 @@ export default async function GameinfoGameDetailPage({ params }) {
   let row;
   let currencies = [];
   let computedColumns = [];
+  let costProfiles = [];
   try {
     row = await getGameListRow(numericId);
     if (row) {
       const packs = await getGamelistPacks(row.id);
       currencies = packs.currencies;
       computedColumns = packs.computedColumns;
+      costProfiles = packs.costProfiles;
       const [vpnByGame, channelsByGame, allRows, tutorial, image] = await Promise.all([
         listGamelistVpnByGame(),
         listGamelistChannelsByGame(),
@@ -88,6 +90,7 @@ export default async function GameinfoGameDetailPage({ params }) {
         row={row}
         currencies={currencies}
         computedColumns={computedColumns}
+        costProfiles={costProfiles}
         userId={user.id}
       />
     </div>

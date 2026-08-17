@@ -25,7 +25,7 @@ import {
 // gameinfo-gamelist-table.js and GameinfoPackEditor) plus its packs — same
 // currencies/computedColumns tree the pack editor saves to gamelist_packs,
 // so what's shown here always matches what "จัดการแพ็ก" last saved.
-export default function GameinfoGameView({ row, currencies, computedColumns, userId }) {
+export default function GameinfoGameView({ row, currencies, computedColumns, costProfiles = [], userId }) {
   const [formulaMode, setFormulaMode] = useState("result");
   // Same field set the pack editor's formulas can reference (see
   // gameinfo-formula-fields.js) — built from the game_list row, not the
@@ -156,6 +156,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns, use
               game={formulaGame}
               columns={packLayout.visibleColumns}
               formulaMode={formulaMode}
+              costProfiles={costProfiles}
               onReorderColumns={packLayout.reorder}
             />
           ))}
@@ -165,7 +166,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns, use
   );
 }
 
-function PackCurrency({ currency, game, columns, formulaMode, onReorderColumns }) {
+function PackCurrency({ currency, game, columns, formulaMode, costProfiles, onReorderColumns }) {
   return (
     <div className="rounded-lg border border-linear-hairline bg-linear-surface-1 p-4">
       <div className="mb-3 flex items-center gap-2">
@@ -185,6 +186,7 @@ function PackCurrency({ currency, game, columns, formulaMode, onReorderColumns }
             game={game}
             columns={columns}
             formulaMode={formulaMode}
+            costProfiles={costProfiles}
             onReorderColumns={onReorderColumns}
           />
         ))}
@@ -212,7 +214,7 @@ function PackThumb({ src }) {
   );
 }
 
-function PackCategory({ category, game, columns, formulaMode, onReorderColumns }) {
+function PackCategory({ category, game, columns, formulaMode, costProfiles, onReorderColumns }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   function handleColumnDragEnd({ active, over }) {
@@ -259,6 +261,7 @@ function PackCategory({ category, game, columns, formulaMode, onReorderColumns }
                         pack={pack}
                         game={game}
                         formulaMode={formulaMode}
+                        costProfiles={costProfiles}
                       />
                     ))}
                   </tr>
@@ -294,7 +297,7 @@ function SortableViewHeader({ column }) {
   );
 }
 
-function PackViewCell({ column, pack, game, formulaMode }) {
+function PackViewCell({ column, pack, game, formulaMode, costProfiles }) {
   if (column.id === "image") {
     return (
       <td className="px-3 py-2">
@@ -309,7 +312,7 @@ function PackViewCell({ column, pack, game, formulaMode }) {
     let formulaError = false;
     try {
       value = evaluateFormula(parseFormula(effective.formula), (label) =>
-        resolveGameinfoField(pack, game, label)
+        resolveGameinfoField(pack, game, label, { costProfiles })
       );
     } catch {
       formulaError = true;
@@ -343,6 +346,14 @@ function PackViewCell({ column, pack, game, formulaMode }) {
         title={effective.overridden ? "ใช้สูตรเฉพาะ pack" : "ใช้สูตรหลักของคอลัมน์"}
       >
         {formulaError ? "สูตรผิด" : formatGameinfoPackColumnValue(value, column)}
+      </td>
+    );
+  }
+  if (column.id === "costProfileId") {
+    const profile = costProfiles.find((item) => item.id === pack.costProfileId);
+    return (
+      <td className="max-w-[180px] truncate px-3 py-2 text-linear-ink-muted">
+        {profile?.label || "-"}
       </td>
     );
   }

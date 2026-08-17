@@ -11,6 +11,10 @@
 // shape the whole way through.
 import { getPoolForConnection } from "@/lib/db";
 import { sanitizeGameinfoPack } from "@/lib/gameinfo-pack-model";
+import {
+  sanitizeGameinfoCostProfiles,
+  validateGameinfoCostProfiles,
+} from "@/lib/gameinfo-cost-profiles";
 import { mergeCurrencies } from "@/lib/gameinfo-import";
 import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
 
@@ -100,6 +104,7 @@ function flattenCurrencies(gameId, currencies) {
             image: cleanPack.image,
             price: cleanPack.price,
             amountChargedFee: cleanPack.amountChargedFee,
+            costProfileId: cleanPack.costProfileId,
             channelsMain: cleanPack.channelsMain,
             channelsSecondary: cleanPack.channelsSecondary,
             country: cleanPack.country,
@@ -202,7 +207,7 @@ async function getReadyPool() {
   return getPoolForConnection(connection);
 }
 
-/** { currencies, computedColumns } for one game_list row's id. */
+/** Shared pack data/config for one game_list row's id. */
 export async function getGamelistPacks(gameId) {
   const pool = await getReadyPool();
   const client = await pool.connect();
@@ -216,6 +221,8 @@ export async function getGamelistPacks(gameId) {
     return {
       currencies: reconstructCurrencies(packRows),
       computedColumns: Array.isArray(computedRow?.data?.columns) ? computedRow.data.columns : [],
+      costProfiles: sanitizeGameinfoCostProfiles(computedRow?.data?.costProfiles),
+      schemaVersion: Number(computedRow?.data?.schemaVersion) || 1,
     };
   } finally {
     client.release();
@@ -226,7 +233,7 @@ export async function getGamelistPacks(gameId) {
  * row for this game and reinsert, including the computed-columns sentinel. */
 export async function saveGamelistPacks(
   gameId,
-  { currencies, computedColumns, actor = null, source = "editor" }
+  { currencies, computedColumns, costProfiles, actor = null, source = "editor" }
 ) {
   const pool = await getReadyPool();
   const client = await pool.connect();
@@ -240,6 +247,30 @@ export async function saveGamelistPacks(
     const previousRows = previousResult.rows.filter((row) => row.pack_id !== COMPUTED_SENTINEL);
     const nextRows = flattenCurrencies(gameId, Array.isArray(currencies) ? currencies : []);
     const nextComputed = Array.isArray(computedColumns) ? computedColumns : [];
+    const previousCostProfiles = sanitizeGameinfoCostProfiles(previousComputed?.data?.costProfiles);
+    const submittedCostProfiles = sanitizeGameinfoCostProfiles(costProfiles);
+    const actorId = Number(actor?.id);
+    const changedAt = new Date().toISOString();
+    const nextCostProfiles = submittedCostProfiles.map((profile) => {
+      const previous = previousCostProfiles.find((item) => item.id === profile.id);
+      if (previous && sameJson(costProfileDefinition(previous), costProfileDefinition(profile))) {
+        return { ...profile, updatedAt: previous.updatedAt, updatedBy: previous.updatedBy };
+      }
+      return {
+        ...profile,
+        updatedAt: changedAt,
+        updatedBy: Number.isInteger(actorId) && actorId > 0 ? actorId : null,
+      };
+    });
+    const profileErrors = validateGameinfoCostProfiles(nextCostProfiles);
+    if (profileErrors.length) throw createHttpError(profileErrors[0], 400);
+    const validProfileIds = new Set(nextCostProfiles.map((profile) => profile.id));
+    const missingProfile = nextRows.find(
+      (row) => row.data.costProfileId && !validProfileIds.has(row.data.costProfileId)
+    );
+    if (missingProfile) {
+      throw createHttpError(`pack ${missingProfile.packId} อ้างโปรไฟล์ต้นทุนที่ไม่มีอยู่`, 400);
+    }
     const auditEvents = buildAuditEvents({
       previousRows,
       nextRows,
@@ -247,6 +278,8 @@ export async function saveGamelistPacks(
         ? previousComputed.data.columns
         : [],
       nextComputed,
+      previousCostProfiles,
+      nextCostProfiles,
       source,
     });
 
@@ -259,7 +292,11 @@ export async function saveGamelistPacks(
     }
     await client.query(
       `INSERT INTO gamelist_packs (game_id, pack_id, data) VALUES ($1, $2, $3)`,
-      [gameId, COMPUTED_SENTINEL, JSON.stringify({ columns: nextComputed })]
+      [
+        gameId,
+        COMPUTED_SENTINEL,
+        JSON.stringify({ schemaVersion: 2, columns: nextComputed, costProfiles: nextCostProfiles }),
+      ]
     );
     for (const event of auditEvents) {
       await insertPackAudit(client, gameId, actor, event, source);
@@ -301,11 +338,14 @@ export async function importGamelistPacks(games, mode = "replace", actor = null)
       const computedColumns = Array.isArray(previousComputed?.data?.columns)
         ? previousComputed.data.columns
         : [];
+      const costProfiles = sanitizeGameinfoCostProfiles(previousComputed?.data?.costProfiles);
       const auditEvents = buildAuditEvents({
         previousRows,
         nextRows,
         previousComputed: computedColumns,
         nextComputed: computedColumns,
+        previousCostProfiles: costProfiles,
+        nextCostProfiles: costProfiles,
         source,
       });
 
@@ -334,7 +374,15 @@ export async function importGamelistPacks(games, mode = "replace", actor = null)
   }
 }
 
-function buildAuditEvents({ previousRows, nextRows, previousComputed, nextComputed, source }) {
+function buildAuditEvents({
+  previousRows,
+  nextRows,
+  previousComputed,
+  nextComputed,
+  previousCostProfiles = [],
+  nextCostProfiles = [],
+  source,
+}) {
   const events = [];
   const before = new Map(previousRows.map((row) => [String(row.pack_id), row.data || {}]));
   const after = new Map(nextRows.map((row) => [String(row.packId), row.data || {}]));
@@ -369,12 +417,12 @@ function buildAuditEvents({ previousRows, nextRows, previousComputed, nextComput
     });
   }
 
-  if (!sameJson(previousComputed, nextComputed)) {
+  if (!sameJson(previousComputed, nextComputed) || !sameJson(previousCostProfiles, nextCostProfiles)) {
     events.push({
       packId: null,
       action: "config_update",
-      before: { computedColumns: previousComputed },
-      after: { computedColumns: nextComputed },
+      before: { computedColumns: previousComputed, costProfiles: previousCostProfiles },
+      after: { computedColumns: nextComputed, costProfiles: nextCostProfiles },
     });
   }
   if ((source === "csv_append" || source === "csv_replace") && events.length > 0) {
@@ -407,6 +455,11 @@ function canonicalJson(value) {
   const out = {};
   for (const key of Object.keys(value).sort()) out[key] = canonicalJson(value[key]);
   return out;
+}
+
+function costProfileDefinition(profile) {
+  const { updatedAt, updatedBy, ...definition } = profile || {};
+  return definition;
 }
 
 function onlyPositionChanged(before, after) {

@@ -7,6 +7,11 @@ import {
   GAMEINFO_FIELD_NAMES,
   resolveGameinfoField,
 } from "@/lib/gameinfo-formula-fields.js";
+import {
+  evaluateGameinfoPackCost,
+  sanitizeGameinfoCostProfiles,
+  validateGameinfoCostProfiles,
+} from "@/lib/gameinfo-cost-profiles.js";
 
 let pass = 0;
 const failures = [];
@@ -38,6 +43,47 @@ check(
 );
 check("pack field falls back to the game", resolveGameinfoField(pack, game, "ชื่อเกม"), "Mobile Legends");
 check("an unknown label resolves to undefined", resolveGameinfoField(pack, game, "ไม่มีจริง"), undefined);
+
+const costProfiles = [
+  { id: "cost_usd", label: "USD", inputCurrency: "USD", baseValue: "0.5", rateFormula: "" },
+];
+const packWithCost = { ...pack, costProfileId: "cost_usd" };
+check(
+  "selected cost profile exposes its multiplier",
+  resolveGameinfoField(packWithCost, game, "อัตราต้นทุน", { costProfiles }),
+  0.5
+);
+check(
+  "selected cost profile exposes charge times multiplier as cost",
+  resolveGameinfoField(packWithCost, game, "ต้นทุน", { costProfiles }),
+  45
+);
+check(
+  "cost can be used by a normal computed formula",
+  evaluateFormula(
+    parseFormula("([ราคา] - [ต้นทุน]) / [ราคา] * 100"),
+    (label) => resolveGameinfoField(packWithCost, game, label, { costProfiles })
+  ),
+  55.00000000000001
+);
+check(
+  "cost profile formula can reference its stable baseValue token",
+  evaluateGameinfoPackCost(pack, { ...costProfiles[0], rateFormula: "[baseValue] * 2" }).cost,
+  90
+);
+check(
+  "cost profile sanitizer removes duplicate ids and normalizes currency",
+  sanitizeGameinfoCostProfiles([
+    { id: "cost_usd", label: " USD ", inputCurrency: "usd", baseValue: "0.5" },
+    { id: "cost_usd", label: "duplicate", baseValue: "2" },
+  ]).map(({ id, label, inputCurrency }) => ({ id, label, inputCurrency })),
+  [{ id: "cost_usd", label: "USD", inputCurrency: "USD" }]
+);
+check(
+  "invalid cost formula is rejected by validation",
+  validateGameinfoCostProfiles([{ ...costProfiles[0], rateFormula: "([baseValue]" }]).length,
+  1
+);
 
 // A game-level field of the same key as a pack field: the pack's own value
 // wins, since a formula about "this row" should mean this row's fields first.

@@ -2,7 +2,7 @@
 
 เอกสารนี้เรียง task ใหม่ตาม dependency โดยยังคงหมายเลข task เดิมของผู้ใช้เพื่ออ้างอิงได้ตรงกัน
 
-สถานะปัจจุบัน: Task 1, 2, 4, 6, 8 และ 12–17 ทำ milestone ที่ระบุไว้แล้ว พร้อม unit/integration tests; Task 3, 5 และ 9 มีส่วนพื้นฐานแล้วและจะต่อยอดจาก preset ใน Task 15–16
+สถานะปัจจุบัน: Task 1, 2, 4, 6, 8, 11 และ 12–17 ทำ milestone ที่ระบุไว้แล้ว พร้อม unit/integration tests; Task 3, 5 และ 9 มีส่วนพื้นฐานแล้วและจะต่อยอดจาก preset ใน Task 15–16
 
 ## ลำดับที่ควรทำ
 
@@ -124,6 +124,13 @@ Acceptance criteria ของ Phase 4:
 - profile มีชื่อ, currency/input, base value, formula และเวลาที่แก้
 - pack เลือก profile ที่ใช้ หรือสูตรอ้าง profile ตามชื่อที่ stable
 - validate ไม่ให้ลบ profile ที่ยังถูกสูตรใช้อยู่โดยไม่ยืนยัน/แก้ dependency
+
+สถานะ milestone:
+
+- shared config เก็บ profile ID, ชื่อ, สกุลเงิน, ค่าพื้นฐาน, สูตรอัตรา และข้อมูลผู้แก้ล่าสุด
+- pack เลือก profile ผ่านคอลัมน์ `ต้นทุนที่ใช้`; duplicate รักษา profile ID
+- formula ใช้ `[ต้นทุน]` และ `[อัตราต้นทุน]` ได้ โดย `[ต้นทุน] = [ยอดที่กด + fee] × [อัตราต้นทุน]`
+- API ปฏิเสธสูตร profile ที่ผิดและปฏิเสธ pack ที่อ้าง profile ที่ไม่มีอยู่
 
 ควรทำ Task 11 ก่อน Task 10 เพราะต้องรู้ว่า rate ถูกนำไปใช้กับต้นทุนอย่างไร ไม่เช่นนั้น API rate จะถูกผูกกับสูตรแบบเฉพาะกิจ
 

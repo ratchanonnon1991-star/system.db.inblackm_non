@@ -22,6 +22,7 @@ import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoImagePickerModal from "./gameinfo-image-picker-modal";
 import GameinfoComputedEditor from "./gameinfo-computed-editor";
 import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
+import GameinfoCostProfileEditor from "./gameinfo-cost-profile-editor";
 import GameinfoPackHistory from "./gameinfo-pack-history";
 import {
   GameinfoPackColumnControls,
@@ -105,8 +106,10 @@ export default function GameinfoPackEditor({
 
   const [currencies, setCurrencies] = useState(game.currencies);
   const [computedColumns, setComputedColumns] = useState(game.computedColumns ?? []);
+  const [costProfiles, setCostProfiles] = useState(game.costProfiles ?? []);
   const [savedCurrencies, setSavedCurrencies] = useState(game.currencies);
   const [savedComputedColumns, setSavedComputedColumns] = useState(game.computedColumns ?? []);
+  const [savedCostProfiles, setSavedCostProfiles] = useState(game.costProfiles ?? []);
   const [invalidFields, setInvalidFields] = useState(new Set());
 
   const [importing, setImporting] = useState(false);
@@ -122,7 +125,10 @@ export default function GameinfoPackEditor({
   // back to game.* makes this false again, animating the pill closed.
   const dirty =
     JSON.stringify(currencies) !== JSON.stringify(savedCurrencies) ||
-    JSON.stringify(computedColumns) !== JSON.stringify(savedComputedColumns);
+    JSON.stringify(computedColumns) !== JSON.stringify(savedComputedColumns) ||
+    JSON.stringify(costProfiles) !== JSON.stringify(savedCostProfiles);
+
+  const formulaContext = useMemo(() => ({ costProfiles }), [costProfiles]);
 
   const parsedColumns = useMemo(
     () =>
@@ -148,9 +154,11 @@ export default function GameinfoPackEditor({
     const pack = firstPack(currencies);
     if (!pack) return null;
     const row = {};
-    for (const label of GAMEINFO_FIELD_NAMES) row[label] = resolveGameinfoField(pack, game, label);
+    for (const label of GAMEINFO_FIELD_NAMES) {
+      row[label] = resolveGameinfoField(pack, game, label, formulaContext);
+    }
     return row;
-  }, [currencies, game]);
+  }, [currencies, formulaContext, game]);
 
   // Channel "memory" — grows the moment a tag is added (Enter) to any pack's
   // channelsMain/channelsSecondary in this session, not just from what was
@@ -272,6 +280,29 @@ export default function GameinfoPackEditor({
     );
   }
 
+  function addCostProfile() {
+    setCostProfiles((prev) => [
+      ...prev,
+      { id: genId("cost"), label: "", inputCurrency: "", baseValue: "1", rateFormula: "" },
+    ]);
+  }
+  function updateCostProfile(id, patch) {
+    setCostProfiles((prev) => prev.map((profile) => (profile.id === id ? { ...profile, ...patch } : profile)));
+  }
+  function removeCostProfile(id) {
+    const usedBy = currencies
+      .flatMap((currency) => currency.categories)
+      .flatMap((category) => category.packs)
+      .filter((pack) => pack.costProfileId === id);
+    if (usedBy.length > 0) {
+      setError(`ลบไม่ได้: โปรไฟล์ต้นทุนนี้ถูกใช้โดย ${usedBy.length} pack`);
+      return;
+    }
+    const profile = costProfiles.find((item) => item.id === id);
+    if (!window.confirm(`ลบโปรไฟล์ต้นทุน "${profile?.label || "ไม่มีชื่อ"}" ใช่ไหม?`)) return;
+    setCostProfiles((prev) => prev.filter((item) => item.id !== id));
+  }
+
   function validatePacks() {
     const invalid = new Set();
     for (const c of currencies) {
@@ -291,6 +322,13 @@ export default function GameinfoPackEditor({
     setError("");
     setSavedAt(null);
     const invalid = validatePacks();
+    const invalidCostProfile = costProfiles.find(
+      (profile) => !profile.label.trim() || (!profile.baseValue.trim() && !profile.rateFormula.trim())
+    );
+    if (invalidCostProfile) {
+      setError("กรุณากรอกชื่อและค่าพื้นฐานหรือสูตรของโปรไฟล์ต้นทุนให้ครบ");
+      return;
+    }
     if (invalid.size > 0) {
       setInvalidFields(invalid);
       setError(
@@ -318,17 +356,22 @@ export default function GameinfoPackEditor({
         const data = await apiJson(savePacksUrl, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ currencies, computedColumns, auditSource }),
+          body: JSON.stringify({ currencies, computedColumns, costProfiles, auditSource }),
         });
         const savedGame = data.game || {};
         const nextCurrencies = Array.isArray(savedGame.currencies) ? savedGame.currencies : currencies;
         const nextComputedColumns = Array.isArray(savedGame.computedColumns)
           ? savedGame.computedColumns
           : computedColumns;
+        const nextCostProfiles = Array.isArray(savedGame.costProfiles)
+          ? savedGame.costProfiles
+          : costProfiles;
         setCurrencies(nextCurrencies);
         setComputedColumns(nextComputedColumns);
         setSavedCurrencies(nextCurrencies);
         setSavedComputedColumns(nextComputedColumns);
+        setCostProfiles(nextCostProfiles);
+        setSavedCostProfiles(nextCostProfiles);
         setAuditSource("editor");
         setSavedAt(Date.now());
         router.refresh();
@@ -342,6 +385,7 @@ export default function GameinfoPackEditor({
     if (!window.confirm("ยกเลิกการแก้ไข? ข้อมูลที่ยังไม่บันทึกจะหายไป")) return;
     setCurrencies(savedCurrencies);
     setComputedColumns(savedComputedColumns);
+    setCostProfiles(savedCostProfiles);
     setInvalidFields(new Set());
     setError("");
     setSavedAt(null);
@@ -556,6 +600,13 @@ export default function GameinfoPackEditor({
         )}
       </section>
 
+      <GameinfoCostProfileEditor
+        profiles={costProfiles}
+        onAdd={addCostProfile}
+        onUpdate={updateCostProfile}
+        onRemove={removeCostProfile}
+      />
+
       <p className="text-xs text-linear-ink-subtle">
         คอลัมน์สูตร ({computedColumns.length}) คำนวณจากฟิลด์จริงของแต่ละแพ็ก — สูตรเดียวกับที่ใช้ในระบบ
         systemdb แก้ไขได้จากทั้งสองฝั่ง กดปุ่ม + ท้ายคอลัมน์ในตารางแพ็กด้านล่างเพื่อเพิ่ม
@@ -647,6 +698,7 @@ export default function GameinfoPackEditor({
                     category={cat}
                     suggestions={liveSuggestions}
                     game={game}
+                    costProfiles={costProfiles}
                     columns={packLayout.visibleColumns}
                     formulaMode={formulaMode}
                     invalidFields={invalidFields}
@@ -768,6 +820,7 @@ function CategoryBlock({
   category,
   suggestions,
   game,
+  costProfiles,
   columns,
   formulaMode,
   invalidFields,
@@ -894,6 +947,7 @@ function CategoryBlock({
                 index={pkIdx + 1}
                 pack={pack}
                 game={game}
+                costProfiles={costProfiles}
                 suggestions={suggestions}
                 columns={columns}
                 formulaMode={formulaMode}
@@ -924,6 +978,7 @@ function PackRow({
   index,
   pack,
   game,
+  costProfiles,
   suggestions,
   columns,
   formulaMode,
@@ -952,6 +1007,7 @@ function PackRow({
           column={column}
           pack={pack}
           game={game}
+          costProfiles={costProfiles}
           suggestions={suggestions}
           formulaMode={formulaMode}
           invalid={invalid}
@@ -989,6 +1045,7 @@ function PackRow({
           column={overrideColumn.computed}
           pack={pack}
           game={game}
+          costProfiles={costProfiles}
           onClose={() => setOverrideColumn(null)}
           onSave={(formula) => {
             onSetFormulaOverride(overrideColumn.computed.key, formula);
@@ -1004,6 +1061,7 @@ function PackEditorColumn({
   column,
   pack,
   game,
+  costProfiles,
   suggestions,
   formulaMode,
   invalid,
@@ -1049,6 +1107,23 @@ function PackEditorColumn({
       </PackCell>
     );
   }
+  if (column.id === "costProfileId") {
+    return (
+      <select
+        value={pack.costProfileId || ""}
+        onChange={(event) => onUpdate({ costProfileId: event.target.value })}
+        className="h-9 min-w-0 rounded border border-linear-hairline-strong bg-linear-surface-1 px-2 text-xs text-linear-ink outline-none focus:border-linear-primary"
+        title="เลือกโปรไฟล์ต้นทุนสำหรับ pack นี้"
+      >
+        <option value="">ไม่ใช้ต้นทุน</option>
+        {(costProfiles || []).map((profile) => (
+          <option key={profile.id} value={profile.id}>
+            {profile.label || "(ไม่มีชื่อ)"}
+          </option>
+        ))}
+      </select>
+    );
+  }
   if (column.kind === "computed") {
     const formula = column.computed;
     const effective = getGameinfoFormulaDisplay(formula, pack.id);
@@ -1056,7 +1131,7 @@ function PackEditorColumn({
     let formulaError = false;
     try {
       value = evaluateFormula(parseFormula(effective.formula), (label) =>
-        resolveGameinfoField(pack, game, label)
+        resolveGameinfoField(pack, game, label, { costProfiles })
       );
     } catch {
       formulaError = true;
@@ -1135,7 +1210,7 @@ function PackEditorColumn({
   );
 }
 
-function GameinfoFormulaOverrideEditor({ column, pack, game, onClose, onSave }) {
+function GameinfoFormulaOverrideEditor({ column, pack, game, costProfiles, onClose, onSave }) {
   const existing = column.rowOverrides?.[pack.id] || "";
   const [formula, setFormula] = useState(existing);
 
@@ -1157,7 +1232,9 @@ function GameinfoFormulaOverrideEditor({ column, pack, game, onClose, onSave }) 
       if (unknown.length) {
         return { ok: false, message: `ไม่รู้จักคอลัมน์: ${unknown.join(", ")}`, value: null };
       }
-      const value = evaluateFormula(ast, (label) => resolveGameinfoField(pack, game, label));
+      const value = evaluateFormula(ast, (label) =>
+        resolveGameinfoField(pack, game, label, { costProfiles })
+      );
       return {
         ok: true,
         message: `สูตรถูกต้อง · ผลลัพธ์แถวนี้ ${formatGameinfoPackColumnValue(value, column)}`,
@@ -1166,7 +1243,7 @@ function GameinfoFormulaOverrideEditor({ column, pack, game, onClose, onSave }) 
     } catch (error) {
       return { ok: false, message: error.message, value: null };
     }
-  }, [column, formula, game, pack]);
+  }, [column, costProfiles, formula, game, pack]);
 
   return (
     <div

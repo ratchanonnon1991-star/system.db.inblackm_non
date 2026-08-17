@@ -48,6 +48,7 @@ export default async function GameinfoGamelistPacksPage({ params }) {
     server: row.server,
     currencies: packs.currencies,
     computedColumns: packs.computedColumns,
+    costProfiles: packs.costProfiles,
   };
 
   return (
