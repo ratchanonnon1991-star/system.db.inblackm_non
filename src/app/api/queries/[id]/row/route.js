@@ -89,6 +89,7 @@ export async function DELETE(request, { params }) {
       connection,
       pkValue,
       table: body.table,
+      pk: body.pk,
     });
 
     invalidateQuery(query.id);

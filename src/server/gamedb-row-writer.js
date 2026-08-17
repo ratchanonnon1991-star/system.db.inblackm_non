@@ -1,6 +1,6 @@
 import { getPoolForConnection } from "@/lib/db";
 import { quoteIdentifier } from "@/lib/gamedb-identifier";
-import { insertTargetsOf, realColumnOf, realPkOf } from "@/lib/gamedb-layout";
+import { deleteTargetsOf, insertTargetsOf, realColumnOf, realPkOf } from "@/lib/gamedb-layout";
 import { getConnectionFlags } from "@/server/gamedb-side-tables";
 
 const STATEMENT_TIMEOUT_MS = 8000;
@@ -184,19 +184,26 @@ async function countReferencesTo(client, tableName, pkColumn, pkValue) {
 }
 
 /** Removes one row, and refuses if the key matches anything but exactly one. */
-export async function deleteRow({ editable, connection, pkValue, table: fromTable }) {
+export async function deleteRow({ editable, connection, pkValue, table: fromTable, pk }) {
   await assertWritable(editable, connection, "allowDelete", "ลบแถว");
 
-  // Same list the add-a-row buttons come from: a row is removed from one
-  // table, and only ever one the saved config already writes to.
-  const targets = insertTargetsOf(editable);
-  const from = fromTable ? targets.find((entry) => entry.table === fromTable) : targets[0];
+  // A row is removed from one table, identified by one key -- and the table
+  // alone does not say which when the same one appears twice, so the key is
+  // matched too. Both are only ever accepted from what the saved config
+  // already writes through.
+  const targets = deleteTargetsOf(editable);
+  const from = fromTable
+    ? targets.find((entry) => entry.table === fromTable && (!pk || entry.pk === pk))
+    : targets[0];
   if (!from) {
-    throw createHttpError(`Query นี้ไม่ได้ตั้งค่าให้ลบแถวในตาราง "${fromTable}"`, 400);
+    throw createHttpError(
+      `Query นี้ไม่ได้ตั้งค่าให้ลบแถวในตาราง "${fromTable}"${pk ? ` ด้วยคอลัมน์ "${pk}"` : ""}`,
+      400
+    );
   }
 
   const table = quoteIdentifier(from.table);
-  const pk = quoteIdentifier(from.pkColumn);
+  const keyColumn = quoteIdentifier(from.pkColumn);
 
   const client = await connect(connection);
   try {
@@ -206,7 +213,7 @@ export async function deleteRow({ editable, connection, pkValue, table: fromTabl
     // Read it first so the log says what was removed, and lock it so nothing
     // changes between the count and the delete.
     const before = await client.query(
-      `SELECT * FROM ${table} WHERE ${pk} = $1 FOR UPDATE`,
+      `SELECT * FROM ${table} WHERE ${keyColumn} = $1 FOR UPDATE`,
       [pkValue]
     );
     if (before.rowCount === 0) {
@@ -233,7 +240,7 @@ export async function deleteRow({ editable, connection, pkValue, table: fromTabl
       );
     }
 
-    const deleted = await client.query(`DELETE FROM ${table} WHERE ${pk} = $1`, [pkValue]);
+    const deleted = await client.query(`DELETE FROM ${table} WHERE ${keyColumn} = $1`, [pkValue]);
     if (deleted.rowCount !== 1) {
       throw createHttpError("ลบไม่สำเร็จ (จำนวนแถวไม่ตรง)", 409);
     }

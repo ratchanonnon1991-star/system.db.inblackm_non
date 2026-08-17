@@ -66,6 +66,7 @@ import {
   summarize,
   SUMMARY_LABELS,
   toneStyle,
+  deleteTargetsOf,
   insertTargetsOf,
   widgetForColumn,
   writeTargetFor,
@@ -1510,6 +1511,13 @@ export default function QueryPanel({
   const canAddRow = Boolean(
     canWriteData && sharedEditable?.allowInsert && insertTargets.length > 0
   );
+  // One per row-of-a-table the result is made of, which is not the same as one
+  // per table: a self-join puts two different rows of one table in each result
+  // row, and they are told apart by the key, never by the table name.
+  const deleteTargets = useMemo(
+    () => deleteTargetsOf(sharedEditable).filter((target) => baseNameToIndex.has(target.pk)),
+    [sharedEditable, baseNameToIndex]
+  );
   // Configured, but only in the editor or only for this user.
   const editableNotShared = Boolean(canManage && layout.editable && !sharedEditable);
 
@@ -1935,11 +1943,12 @@ export default function QueryPanel({
    * key used is that table's own, so removing the joined side does not go
    * looking for it by the base table's id.
    */
-  const deleteRow = async (row, table) => {
-    const from = insertTargets.find((target) => target.table === table) || insertTargets[0];
+  const deleteRow = async (row, targetId) => {
+    const from =
+      deleteTargets.find((target) => `${target.table}|${target.pk}` === targetId) ||
+      deleteTargets[0];
     if (!from) return;
-    const keyColumn = writeTargetFor(sharedEditable, from.columns[0] || "").pk;
-    const pkValue = result.rows[row.sourceIndex][baseNameToIndex.get(keyColumn)];
+    const pkValue = result.rows[row.sourceIndex][baseNameToIndex.get(from.pk)];
     if (pkValue === undefined || pkValue === null) {
       setEditError(`ลบไม่ได้ — แถวนี้ไม่มีค่า key ของตาราง ${from.table}`);
       return;
@@ -1954,7 +1963,7 @@ export default function QueryPanel({
       await apiJson(`/api/queries/${query.id}/row`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pkValue, table: from.table, viewId: activeViewId }),
+        body: JSON.stringify({ pkValue, table: from.table, pk: from.pk, viewId: activeViewId }),
         fallbackError: "ลบแถวไม่สำเร็จ",
       });
       await runQuery({ silent: true });
@@ -3485,7 +3494,15 @@ export default function QueryPanel({
                   // One entry per table the row is made of. The gutter button
                   // removes from the first; the right-click menu names each,
                   // because removing from the wrong one is not a small slip.
-                  deleteTables={insertTargets.map((target) => target.table)}
+                  deleteTargets={deleteTargets.map((target) => ({
+                    id: `${target.table}|${target.pk}`,
+                    // The key is only worth showing when the table alone does
+                    // not say which row -- a self-join has two of the same.
+                    label:
+                      deleteTargets.filter((other) => other.table === target.table).length > 1
+                        ? `${target.table} (ตาม ${target.pk})`
+                        : target.table,
+                  }))}
                   // Only a query that writes somewhere has a history worth
                   // showing -- everything else has never been edited here.
                   onRowHistory={sharedEditable && !viewingSnapshot ? openRowHistory : null}

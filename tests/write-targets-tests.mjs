@@ -7,6 +7,7 @@ import { buildAllSql, buildUpdateSql } from "@/server/gamedb-editable-check.js";
 import { log, reset, setResponder } from "@/lib/db.js";
 import { setAllowWrite } from "@/server/gamedb-side-tables.js";
 import {
+  deleteTargetsOf,
   insertTargetsOf,
   normalizeLayout,
   writeTablesOf,
@@ -146,8 +147,8 @@ check(
   "each table is offered on its own, with its own columns and key",
   insertTargetsOf(JOINED),
   [
-    { table: "public.orders", columns: ["amount"], pkColumn: "id" },
-    { table: "public.games", columns: ["name"], pkColumn: "id" },
+    { table: "public.orders", pk: "id", pkColumn: "id", columns: ["amount"] },
+    { table: "public.games", pk: "__key_g_id", pkColumn: "id", columns: ["name"] },
   ]
 );
 
@@ -216,6 +217,65 @@ await rejects(
   }),
   { status: 400, fragment: "ไม่มีคอลัมน์" }
 );
+
+// --- one table, two rows of it -------------------------------------------
+// `SELECT a.*, b.* FROM orders a JOIN orders b` puts two different rows of one
+// table in every result row. Adding a row is still one table; removing one is
+// a question the table name does not answer.
+const SELF_JOINED = {
+  table: "public.orders",
+  pk: "parent_id",
+  pkColumn: "id",
+  columns: ["parent_note", "child_note"],
+  columnMap: { parent_note: "note", child_note: "note" },
+  allowInsert: true,
+  allowDelete: true,
+  inputs: [],
+  targets: [
+    { table: "public.orders", pk: "child_id", pkColumn: "id", columns: ["child_note"] },
+  ],
+};
+check(
+  "adding is one table, with only one row's worth of columns",
+  insertTargetsOf(SELF_JOINED),
+  [{ table: "public.orders", pk: "parent_id", pkColumn: "id", columns: ["parent_note"] }]
+);
+check(
+  "removing is two, told apart by the key rather than the table",
+  deleteTargetsOf(SELF_JOINED).map((entry) => [entry.table, entry.pk]),
+  [
+    ["public.orders", "parent_id"],
+    ["public.orders", "child_id"],
+  ]
+);
+
+reset({ rows: [{ id: 5 }] });
+setResponder((text) => (/pg_catalog\.pg_constraint/.test(text) ? { rows: [] } : null));
+await deleteRow({
+  editable: SELF_JOINED,
+  connection: null,
+  pkValue: 5,
+  table: "public.orders",
+  pk: "child_id",
+});
+check(
+  "asking for the child row removes the child row",
+  log.find((entry) => /^DELETE/i.test(entry.text)).text,
+  'DELETE FROM "public"."orders" WHERE "id" = $1'
+);
+check("bound with the key that was asked for", log.find((entry) => /^DELETE/i.test(entry.text)).params, [5]);
+await rejects(
+  "a key this query does not identify rows by is refused",
+  deleteRow({
+    editable: SELF_JOINED,
+    connection: null,
+    pkValue: 5,
+    table: "public.orders",
+    pk: "some_other_id",
+  }),
+  { status: 400 }
+);
+setResponder(null);
 
 // --- removing a row ------------------------------------------------------
 const DELETABLE = { ...JOINED, allowDelete: true };

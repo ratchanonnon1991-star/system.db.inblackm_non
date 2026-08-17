@@ -637,8 +637,9 @@ export default function PanelTable({
   onDrill,
   drillLabel,
   onDeleteRow,
-  // The tables a row can be removed from, in the order they were read.
-  deleteTables = [],
+  // One entry per row-of-a-table this result row is made of: { id, label }.
+  // Not one per table -- a self-join contributes two rows of the same one.
+  deleteTargets = [],
   onRowHistory,
   columnValueFilters,
   columnValueOptions,
@@ -1883,22 +1884,22 @@ export default function PanelTable({
               {/* Which table to remove from is a real question once a result
                   row is made of rows from several, so each is named rather
                   than one being picked. */}
-              {onDeleteRow && cellMenu.row && deleteTables.length > 0 && (
+              {onDeleteRow && cellMenu.row && deleteTargets.length > 0 && (
                 <>
                   <div className="my-1 border-t border-zinc-100" />
-                  {deleteTables.map((table) => (
+                  {deleteTargets.map((target) => (
                     <button
-                      key={table}
+                      key={target.id}
                       type="button"
                       onClick={() => {
-                        const target = cellMenu.row;
+                        const row = cellMenu.row;
                         setCellMenu(null);
-                        onDeleteRow(target, table);
+                        onDeleteRow(row, target.id);
                       }}
                       className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[11px] font-bold text-red-600 hover:bg-red-50"
                     >
                       <Trash2 size={12} />
-                      {deleteTables.length === 1 ? "ลบแถวนี้" : `ลบแถวนี้จาก ${table}`}
+                      {deleteTargets.length === 1 ? "ลบแถวนี้" : `ลบแถวนี้จาก ${target.label}`}
                     </button>
                   ))}
                 </>

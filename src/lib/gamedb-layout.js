@@ -830,18 +830,63 @@ export function writeTargetFor(editable, resultName, rowSource = undefined) {
  * row there, and a row being added does not exist yet to be asked.
  */
 export function insertTargetsOf(editable) {
-  if (!editable || editable.rowTargets) return [];
-  return writeTablesOf(editable).map((table) => ({
-    table,
-    columns: (editable.columns || []).filter(
-      (column) => writeTargetFor(editable, column).table === table
-    ),
-    // The key to return, in that table's own terms.
-    pkColumn:
-      table === editable.table
-        ? realPkOf(editable)
-        : (editable.targets || []).find((target) => target.table === table)?.pkColumn || "",
-  }));
+  // One entry per *table*, first wins. A table joined to itself appears twice
+  // and is still one table to add a row to -- and putting both aliases'
+  // columns in one INSERT would name the same real column twice, because they
+  // are two rows of it, not two columns.
+  const seen = new Set();
+  return writeEntriesOf(editable).filter((entry) => {
+    if (seen.has(entry.table)) return false;
+    seen.add(entry.table);
+    return true;
+  });
+}
+
+/**
+ * The rows that can be removed, one entry per row of a table the result is
+ * made of -- which is not the same as one per table.
+ *
+ * `SELECT a.*, b.* FROM orders a JOIN orders b` puts two different rows of
+ * `orders` in every result row. "Delete from orders" does not say which, and
+ * picking one is a row of the right table and the wrong one. So entries are
+ * kept apart by the key that identifies them, not by the table name.
+ */
+export function deleteTargetsOf(editable) {
+  return writeEntriesOf(editable);
+}
+
+/**
+ * Every table-and-key this config writes through: the base one, then each
+ * target, with the result columns belonging to each.
+ */
+function writeEntriesOf(editable) {
+  // A stacked query decides all of this per row, from a value in the row --
+  // and a row being added does not exist yet to have one.
+  if (!editable?.table || editable.rowTargets) return [];
+
+  const targets = (editable.targets || []).filter((target) => target.table && target.pk);
+  const claimed = new Set(targets.flatMap((target) => target.columns || []));
+  const entries = [
+    {
+      table: editable.table,
+      pk: editable.pk,
+      pkColumn: realPkOf(editable),
+      columns: (editable.columns || []).filter((column) => !claimed.has(column)),
+    },
+  ];
+  const seen = new Set([`${editable.table} ${editable.pk}`]);
+  for (const target of targets) {
+    const id = `${target.table} ${target.pk}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    entries.push({
+      table: target.table,
+      pk: target.pk,
+      pkColumn: target.pkColumn || target.pk,
+      columns: (target.columns || []).filter((column) => (editable.columns || []).includes(column)),
+    });
+  }
+  return entries;
 }
 
 /** Every distinct table this config can write to, base table first. */
