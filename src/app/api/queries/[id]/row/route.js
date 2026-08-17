@@ -42,18 +42,21 @@ export async function POST(request, { params }) {
       return jsonError("ไม่ได้ส่งค่าที่จะเพิ่ม", 400);
     }
 
-    const { pkValue, summary } = await insertRow({
+    // Which table to add to, for a query that reads several. Checked against
+    // the saved config inside insertRow, never quoted straight from here.
+    const { pkValue, summary, table, pkColumn } = await insertRow({
       editable: layout.editable,
       connection,
       values: body.values,
+      table: body.table,
     });
 
     invalidateQuery(query.id);
     await recordEdit({
       queryId: query.id,
       actor: admin.username || admin.displayName || "",
-      table: layout.editable.table,
-      pkColumn: layout.editable.pk,
+      table,
+      pkColumn,
       pkValue,
       column: "(เพิ่มแถว)",
       oldValue: null,

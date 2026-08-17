@@ -817,6 +817,33 @@ export function writeTargetFor(editable, resultName, rowSource = undefined) {
   };
 }
 
+/**
+ * The tables a row can be added to, one entry each, with the columns that
+ * belong to them.
+ *
+ * A row is added to one table, and a joined query touches several. "Add a row
+ * to this result" has no single answer -- insert an order, a game, or both and
+ * link them? -- so rather than picking one and calling it the answer, each
+ * table is offered on its own, where the question does have one.
+ *
+ * A stacked query gets nothing: which table a row belongs to is decided row by
+ * row there, and a row being added does not exist yet to be asked.
+ */
+export function insertTargetsOf(editable) {
+  if (!editable || editable.rowTargets) return [];
+  return writeTablesOf(editable).map((table) => ({
+    table,
+    columns: (editable.columns || []).filter(
+      (column) => writeTargetFor(editable, column).table === table
+    ),
+    // The key to return, in that table's own terms.
+    pkColumn:
+      table === editable.table
+        ? realPkOf(editable)
+        : (editable.targets || []).find((target) => target.table === table)?.pkColumn || "",
+  }));
+}
+
 /** Every distinct table this config can write to, base table first. */
 export function writeTablesOf(editable) {
   if (!editable?.table) return [];

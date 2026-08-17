@@ -66,6 +66,7 @@ import {
   summarize,
   SUMMARY_LABELS,
   toneStyle,
+  insertTargetsOf,
   widgetForColumn,
   writeTargetFor,
 } from "@/lib/gamedb-layout";
@@ -538,6 +539,9 @@ export default function QueryPanel({
   // A row being filled in cell by cell before it exists anywhere -- null
   // means no draft is open, {} means one is open but still blank.
   const [draftRow, setDraftRow] = useState(null);
+  // Which table the open draft row will be added to. A query that reads one
+  // table has only ever one answer; a joined one asks before it starts.
+  const [draftTable, setDraftTable] = useState("");
   const [draftSaving, setDraftSaving] = useState(false);
   // What the draft started as (a date column may start pre-filled with
   // today) -- "touched" compares against this, not against blank, so
@@ -1496,7 +1500,16 @@ export default function QueryPanel({
   const canDeleteRows = Boolean(
     canWriteData && sharedEditable && baseNameToIndex.has(sharedEditable.pk)
   );
-  const canAddRow = Boolean(canWriteData && sharedEditable?.allowInsert);
+  // One entry per table this query can add a row to, each with its own
+  // columns -- "add a row to a join" has no answer, but "add a row to
+  // public.games" does.
+  const insertTargets = useMemo(
+    () => insertTargetsOf(sharedEditable).filter((target) => target.columns.length > 0),
+    [sharedEditable]
+  );
+  const canAddRow = Boolean(
+    canWriteData && sharedEditable?.allowInsert && insertTargets.length > 0
+  );
   // Configured, but only in the editor or only for this user.
   const editableNotShared = Boolean(canManage && layout.editable && !sharedEditable);
 
@@ -1935,15 +1948,18 @@ export default function QueryPanel({
     }
   };
 
-  const startDraftRow = () => {
+  const startDraftRow = (table) => {
     setEditError("");
+    const into = insertTargets.find((target) => target.table === table) || insertTargets[0];
+    if (!into) return;
+    setDraftTable(into.table);
     // Typing today's date into a date column by hand on every single row
     // added is exactly the busywork this button exists to avoid, so a date/
     // datetime/time column starts pre-filled with "right now" -- and an
     // admin-configured default (including "@today"/"@now"/"@time") wins over
     // that guess when one is set.
     const defaults = {};
-    for (const columnName of editableColumns) {
+    for (const columnName of into.columns) {
       const input = (sharedEditable?.inputs || []).find((item) => item.column === columnName);
       const columnMeta = result?.columns?.[baseNameToIndex.get(columnName)];
       const widget = input?.widget || widgetForColumn(columnMeta);
@@ -2012,7 +2028,7 @@ export default function QueryPanel({
       await apiJson(`/api/queries/${query.id}/row`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ values: draftRow || {}, viewId: activeViewId }),
+        body: JSON.stringify({ values: draftRow || {}, table: draftTable, viewId: activeViewId }),
         fallbackError: "เพิ่มแถวไม่สำเร็จ",
       });
       setDraftRow(null);
@@ -2682,21 +2698,27 @@ export default function QueryPanel({
             <Plus size={12} /> {sharedInsertForm.label || "เพิ่มข้อมูล"}
           </button>
         )}
-        {canAddRow && (
-          <button
-            type="button"
-            onClick={startDraftRow}
-            disabled={Boolean(viewingSnapshot) || draftRow !== null}
-            className="flex h-8 items-center gap-1.5 rounded-sm border border-sky-300 bg-sky-50 px-2.5 text-[10px] font-black text-sky-700 transition hover:bg-sky-100 disabled:opacity-50"
-            title={
-              viewingSnapshot
-                ? "ออกจาก snapshot ก่อนถึงจะเพิ่มแถวได้"
-                : "เพิ่มแถวว่างในตาราง แล้วกรอกทีละช่อง"
-            }
-          >
-            <Plus size={12} /> เพิ่มแถว
-          </button>
-        )}
+        {/* One button per table the query can add to. A row goes into one
+            table, so a joined query gets one button each rather than a single
+            one that has to guess which. */}
+        {canAddRow &&
+          insertTargets.map((target) => (
+            <button
+              key={target.table}
+              type="button"
+              onClick={() => startDraftRow(target.table)}
+              disabled={Boolean(viewingSnapshot) || draftRow !== null}
+              className="flex h-8 items-center gap-1.5 rounded-sm border border-sky-300 bg-sky-50 px-2.5 text-[10px] font-black text-sky-700 transition hover:bg-sky-100 disabled:opacity-50"
+              title={
+                viewingSnapshot
+                  ? "ออกจาก snapshot ก่อนถึงจะเพิ่มแถวได้"
+                  : `เพิ่มแถวใหม่ในตาราง ${target.table} แล้วกรอกทีละช่อง`
+              }
+            >
+              <Plus size={12} />
+              {insertTargets.length === 1 ? "เพิ่มแถว" : `เพิ่มแถวใน ${target.table}`}
+            </button>
+          ))}
         <button type="button" onClick={() => runQuery({ validate: true })} disabled={running} className={iconButtonClass} title="รันใหม่">
           <RefreshCw size={13} className={running ? "animate-spin" : ""} />
         </button>
@@ -3470,6 +3492,9 @@ export default function QueryPanel({
                   canUseGameinfoTools={canCustomizeLayout}
                   rowOffset={pageOffset}
                   draftRow={!viewingSnapshot ? draftRow : null}
+                  draftColumns={
+                    insertTargets.find((target) => target.table === draftTable)?.columns || null
+                  }
                   onDraftChange={changeDraftValue}
                   onDraftSave={saveDraftRow}
                   onDraftCancel={cancelDraftRow}

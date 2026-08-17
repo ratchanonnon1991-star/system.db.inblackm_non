@@ -6,7 +6,12 @@ import { insertRow } from "@/server/gamedb-row-writer.js";
 import { buildAllSql, buildUpdateSql } from "@/server/gamedb-editable-check.js";
 import { log, reset, setResponder } from "@/lib/db.js";
 import { setAllowWrite } from "@/server/gamedb-side-tables.js";
-import { normalizeLayout, writeTablesOf, writeTargetFor } from "@/lib/gamedb-layout.js";
+import {
+  insertTargetsOf,
+  normalizeLayout,
+  writeTablesOf,
+  writeTargetFor,
+} from "@/lib/gamedb-layout.js";
 import { sanitizeLayout } from "@/server/gamedb-layout-sanitizer.js";
 
 let pass = 0;
@@ -81,6 +86,11 @@ check(
   { table: "b", pk: "bid", pkColumn: "bid", realColumn: "x" }
 );
 check("every table it can write to", writeTablesOf(JOINED), ["public.orders", "public.games"]);
+check(
+  "a stacked query offers no add-a-row at all, since a new row has no half yet",
+  insertTargetsOf({ ...JOINED, rowTargets: { sourceColumn: "__src", keyColumn: "__key_row", branches: [] } }),
+  []
+);
 check("and none at all without a table", writeTablesOf(null), []);
 
 // --- what actually reaches SQL -------------------------------------------
@@ -130,6 +140,82 @@ check("the insert goes to the base table only", inserted.text.includes('"public"
 check("with the base table's column", inserted.text.includes('"amount"'), true);
 check("and not the joined table's", inserted.text.includes('"name"'), false);
 check("so only the base value is bound", inserted.params, [100]);
+
+// --- adding a row to a query that reads several tables -------------------
+check(
+  "each table is offered on its own, with its own columns and key",
+  insertTargetsOf(JOINED),
+  [
+    { table: "public.orders", columns: ["amount"], pkColumn: "id" },
+    { table: "public.games", columns: ["name"], pkColumn: "id" },
+  ]
+);
+
+reset();
+const addedToGames = await insertRow({
+  editable: JOINED,
+  connection: null,
+  values: { amount: 100, name: "Neverness" },
+  table: "public.games",
+});
+const gamesInsert = log.find((entry) => /^\s*INSERT/i.test(entry.text));
+check(
+  "asking for the joined table inserts into it",
+  gamesInsert.text.includes('INSERT INTO "public"."games" ("name")'),
+  true
+);
+check("with only that table's value bound", gamesInsert.params, ["Neverness"]);
+check(
+  "and it reports where the row went, so the log records the right table",
+  [addedToGames.table, addedToGames.pkColumn],
+  ["public.games", "id"]
+);
+
+reset();
+await insertRow({
+  editable: JOINED,
+  connection: null,
+  values: { amount: 100, name: "Neverness" },
+  table: "public.orders",
+});
+check(
+  "asking for the base table still inserts into that",
+  log.find((entry) => /^\s*INSERT/i.test(entry.text)).text.includes('INSERT INTO "public"."orders" ("amount")'),
+  true
+);
+
+// The table name is chosen from the saved config, never quoted from the
+// request -- a name that is not in it is refused rather than reached for.
+await rejects(
+  "a table this query does not write to is refused",
+  insertRow({
+    editable: JOINED,
+    connection: null,
+    values: { amount: 1 },
+    table: "public.somewhere_else",
+  }),
+  { status: 400, fragment: "somewhere_else" }
+);
+await rejects(
+  "and so is an injection dressed as a table name",
+  insertRow({
+    editable: JOINED,
+    connection: null,
+    values: { amount: 1 },
+    table: 'public.orders"; DROP TABLE x --',
+  }),
+  { status: 400 }
+);
+await rejects(
+  "values for the wrong table are not smuggled in with a right one",
+  insertRow({
+    editable: JOINED,
+    connection: null,
+    values: { name: "Neverness" },
+    table: "public.orders",
+  }),
+  { status: 400, fragment: "ไม่มีคอลัมน์" }
+);
 
 // --- what the preview shows ----------------------------------------------
 check(

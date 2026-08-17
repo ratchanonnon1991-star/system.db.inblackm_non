@@ -649,6 +649,10 @@ export default function PanelTable({
   // A row being filled in but not saved yet -- values is keyed by column
   // name, same as what POST /row eventually sends.
   draftRow = null,
+  // Which columns a new row may fill in. Narrower than editableColumns when
+  // the query touches several tables: a row is added to one of them, and the
+  // others' columns have no place in that INSERT.
+  draftColumns = null,
   onDraftChange,
   onDraftSave,
   onDraftCancel,
@@ -1680,7 +1684,7 @@ export default function PanelTable({
           {draftRow && (
             <DraftRow
               columns={columns}
-              editableColumns={editableColumns}
+              editableColumns={draftColumns || editableColumns}
               editableInputs={editableInputs}
               lookupOptions={lookupOptions}
               values={draftRow}

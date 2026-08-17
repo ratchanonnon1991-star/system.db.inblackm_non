@@ -1,6 +1,6 @@
 import { getPoolForConnection } from "@/lib/db";
 import { quoteIdentifier } from "@/lib/gamedb-identifier";
-import { realColumnOf, realPkOf, writeTargetFor } from "@/lib/gamedb-layout";
+import { insertTargetsOf, realColumnOf, realPkOf } from "@/lib/gamedb-layout";
 import { getConnectionFlags } from "@/server/gamedb-side-tables";
 
 const STATEMENT_TIMEOUT_MS = 8000;
@@ -56,18 +56,19 @@ function summarize(object) {
  * Adds one row. Only columns the query already allows editing may be written,
  * so opening insert cannot reach a column that update could not.
  */
-export async function insertRow({ editable, connection, values }) {
+export async function insertRow({ editable, connection, values, table }) {
   await assertWritable(editable, connection, "allowInsert", "เพิ่มแถวใหม่");
 
-  // Adding a row adds it to one table, and that is the base one. A column that
-  // belongs to a joined table is editable but not insertable here -- putting it
-  // in this INSERT would either be rejected by Postgres or, if the base table
-  // happens to have a column by the same name, quietly write to the wrong one.
-  const allowed = new Set(
-    editable.columns.filter(
-      (column) => writeTargetFor(editable, column).table === editable.table
-    )
-  );
+  const targets = insertTargetsOf(editable);
+  const into = table ? targets.find((entry) => entry.table === table) : targets[0];
+  if (!into) {
+    throw createHttpError(`Query นี้ไม่ได้ตั้งค่าให้เพิ่มแถวในตาราง "${table}"`, 400);
+  }
+
+  // Only that table's own columns. A column belonging to another table in the
+  // same query would either be rejected by Postgres or, if this table happens
+  // to have a column by the same name, quietly write to the wrong one.
+  const allowed = new Set(into.columns);
   const offered = Object.entries(values || {}).filter(([column]) => allowed.has(column));
   if (offered.length === 0) {
     throw createHttpError("ไม่มีคอลัมน์ที่อนุญาตให้เขียนในข้อมูลที่ส่งมา", 400);
@@ -92,9 +93,9 @@ export async function insertRow({ editable, connection, values }) {
     throw createHttpError("ยังไม่ได้กรอกค่าอะไรเลย", 400);
   }
 
-  const table = quoteIdentifier(editable.table);
+  const intoTable = quoteIdentifier(into.table);
   // The form is keyed by result column; the table is not.
-  const pk = quoteIdentifier(realPkOf(editable));
+  const pk = quoteIdentifier(into.pkColumn);
   const columns = entries.map(([column]) => quoteIdentifier(realColumnOf(editable, column)));
   const params = entries.map(([, value]) => value);
   const placeholders = params.map((_, index) => `$${index + 1}`);
@@ -104,7 +105,7 @@ export async function insertRow({ editable, connection, values }) {
     await client.query("BEGIN");
     await client.query(`SET LOCAL statement_timeout = ${STATEMENT_TIMEOUT_MS}`);
     const inserted = await client.query(
-      `INSERT INTO ${table} (${columns.join(", ")})
+      `INSERT INTO ${intoTable} (${columns.join(", ")})
        VALUES (${placeholders.join(", ")})
        RETURNING ${pk} AS pk`,
       params
@@ -112,6 +113,10 @@ export async function insertRow({ editable, connection, values }) {
     await client.query("COMMIT");
     return {
       pkValue: inserted.rows[0]?.pk ?? null,
+      // Which table it went into, so the log records the one actually written
+      // rather than whichever the query happens to name first.
+      table: into.table,
+      pkColumn: into.pkColumn,
       summary: summarize(Object.fromEntries(entries)),
     };
   } catch (err) {
