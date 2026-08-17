@@ -84,6 +84,7 @@ export default function GameinfoPackEditor({
   game,
   lang,
   userId,
+  dataMode = "uid",
   suggestions,
   savePacksUrl = `/api/gameinfo/gamelist/${game.id}/packs`,
   importPreviewUrl = `/api/gameinfo/import/preview?gameId=${game.id}`,

@@ -349,6 +349,25 @@ Acceptance criteria:
 - กล่องตัวแปรแต่ละใบแสดงวันที่และผู้แก้ล่าสุด และหน้าเดียวกันเปิดดูประวัติรวมได้
 - ลบเกมต้องไม่ลบ config หรือ log ชุดกลาง เพราะเกมอื่นยังใช้ร่วมกัน
 
+## Task 23: ชุดข้อมูล UID / IDPASS
+
+- เพิ่มตัวสลับ UID/IDPASS ในหน้า Game List ทั้งโหมดแก้ไขและ `?view=1`, หน้ารายละเอียดเกม และหน้า Packs
+- ชื่อเกม, ID, รูปเกม, ลำดับ, สถานะเกม และตัวแปรผสมสูตร/ราคาเป็นข้อมูลร่วม
+- Region, Platform, Server, Bot/Manual, Links, Tutorial, ข้อควรระวัง และข้อมูล Packs แยกตามชุด
+- UID ใช้ storage เดิมทั้งหมดเพื่อ backward compatibility; IDPASS เก็บเป็น JSON side table `gameinfo_mode_data`
+- หน้าเมนูของเกม clone ข้อมูลทั้งหมดจากอีกชุดได้ และหน้า Packs clone เฉพาะ Packs ได้ โดยถามยืนยันก่อนแทนที่
+- การเปลี่ยนตัวแปรผสมต้องตรวจ computed formulas ทั้ง UID และ IDPASS ทุกเกม
+
+Acceptance criteria:
+
+- สลับ mode แล้ว URL เก็บ `mode=idpass` และไม่ทำค่า `view=1` หาย
+- แก้ IDPASS ไม่เขียนทับ field หรือ Packs ของ UID และกลับกัน
+- Clone UID → IDPASS และ IDPASS → UID ไม่รวมตัวแปรผสมสูตร/ราคา
+- Clone จากหน้า Packs ไม่เขียนทับ Region/Links/Tutorial/Warning
+- หน้า view แสดง Links/Tutorial/Warning และสถานะ pack ของ mode ที่เลือก
+- CSV export จากหน้า Packs ส่งออก mode ที่กำลังเปิด
+- ลบเกมลบ IDPASS side data ด้วย แต่ไม่ลบตัวแปรผสมชุดกลาง
+
 ## งาน migration ที่ควรแยก PR
 
 1. เพิ่มตาราง config/audit/rate โดยยังอ่าน sentinel เดิมได้

@@ -31,7 +31,7 @@ const CONFIG = {
   guide: { title: "วิธีจัดข้อมูล CSV", description: "ระบบรับเฉพาะข้อมูลที่หน้า GameInfo ใช้จริง" },
 };
 
-export default function GameinfoCsvImportActions({ hasUnsavedChanges = false }) {
+export default function GameinfoCsvImportActions({ hasUnsavedChanges = false, dataMode = "uid" }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [kind, setKind] = useState(null);
   const [file, setFile] = useState(null);
@@ -86,7 +86,7 @@ export default function GameinfoCsvImportActions({ hasUnsavedChanges = false }) 
     try {
       const form = new FormData();
       form.append("file", nextFile);
-      const result = await apiJson(CONFIG[kind].previewUrl, {
+      const result = await apiJson(`${CONFIG[kind].previewUrl}${dataMode === "idpass" ? "?mode=idpass" : ""}`, {
         method: "POST",
         body: form,
         fallbackError: "อ่านไฟล์ไม่สำเร็จ",
@@ -108,7 +108,7 @@ export default function GameinfoCsvImportActions({ hasUnsavedChanges = false }) 
       const form = new FormData();
       form.append("file", file);
       if (kind === "packs") form.append("mode", mode);
-      const result = await apiJson(CONFIG[kind].applyUrl, {
+      const result = await apiJson(`${CONFIG[kind].applyUrl}${dataMode === "idpass" ? "?mode=idpass" : ""}`, {
         method: "PUT",
         body: form,
         fallbackError: "นำเข้า CSV ไม่สำเร็จ",
@@ -145,8 +145,8 @@ export default function GameinfoCsvImportActions({ hasUnsavedChanges = false }) 
             <MenuButton icon={FilePlus2} label="เพิ่มเกมด้วย CSV" onClick={() => open("games")} />
             <MenuButton icon={PackagePlus} label="นำเข้า Packs ทุกเกม" onClick={() => open("packs")} />
             <Divider />
-            <MenuLink label="โหลดรายการเกมล่าสุด" href="/api/gameinfo/gamelist/export" />
-            <MenuLink label="โหลด Packs ทุกเกม" href="/api/gameinfo/import/export" />
+            <MenuLink label="โหลดรายการเกมล่าสุด" href={`/api/gameinfo/gamelist/export${dataMode === "idpass" ? "?mode=idpass" : ""}`} />
+            <MenuLink label="โหลด Packs ทุกเกม" href={`/api/gameinfo/import/export${dataMode === "idpass" ? "?mode=idpass" : ""}`} />
             <Divider />
             <MenuButton icon={BookOpen} label="วิธีจัดข้อมูล CSV" onClick={() => open("guide")} />
           </div>

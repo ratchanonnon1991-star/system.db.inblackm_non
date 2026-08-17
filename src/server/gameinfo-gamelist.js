@@ -10,6 +10,7 @@ import { deleteGamelistPacksForGame } from "@/server/gameinfo-gamelist-packs";
 import { deleteGamelistTutorialForGame } from "@/server/gameinfo-gamelist-tutorial";
 import { deleteGamelistImageForGame } from "@/server/gameinfo-gamelist-image";
 import { deleteGamelistLinksForGame } from "@/server/gameinfo-gamelist-links";
+import { deleteGameinfoModeData } from "@/server/gameinfo-mode-data";
 
 const CONNECTION_NAME = "gameinfo";
 
@@ -328,4 +329,5 @@ export async function deleteGameListRow(id) {
   await deleteGamelistTutorialForGame(id);
   await deleteGamelistImageForGame(id);
   await deleteGamelistLinksForGame(id);
+  await deleteGameinfoModeData(id);
 }

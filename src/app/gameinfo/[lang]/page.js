@@ -18,6 +18,9 @@ import {
 } from "@/server/gameinfo-gamelist-links";
 import GameinfoGamelistTable from "@/components/gameinfo-gamelist-table";
 import GameinfoErrorNotice from "@/components/gameinfo-error-notice";
+import GameinfoDatasetToggle from "@/components/gameinfo-dataset-toggle";
+import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
+import { listGameinfoModeData } from "@/server/gameinfo-mode-data";
 
 export const metadata = {
   title: "GameDB — GameInfo",
@@ -28,7 +31,8 @@ export const metadata = {
 // role "user" gets the same table read-only. No separate admin page.
 export default async function GameinfoHomePage({ params, searchParams }) {
   const { lang } = await params;
-  const { view } = await searchParams;
+  const { view, mode: rawMode } = await searchParams;
+  const dataMode = normalizeGameinfoDataMode(rawMode);
   const user = await getSessionUser();
   if (!user) redirect("/");
   const editableRole = user.role === "admin" || user.role === "staff";
@@ -52,37 +56,66 @@ export default async function GameinfoHomePage({ params, searchParams }) {
         listGamelistImageByGame(),
         listGamelistLinksByGame(),
       ]);
-    rows = gameListRows.map((r) => ({
+    const modeDataByGame = dataMode === "idpass" ? await listGameinfoModeData(dataMode) : {};
+    rows = gameListRows.map((r) => {
+      const modeData = modeDataByGame[r.id];
+      const modeFields = modeData?.fields || {
+        region: "",
+        platform: "",
+        server: "",
+        botManual: "",
+      };
+      const modePacks = modeData?.packs?.currencies || [];
+      const flatModePacks = modePacks.flatMap((currency) => currency.categories.flatMap((category) => category.packs));
+      const modeChannels = {
+        main: [...new Set(flatModePacks.flatMap((pack) => pack.channelsMain || []))],
+        secondary: [...new Set(flatModePacks.flatMap((pack) => pack.channelsSecondary || []))],
+      };
+      const disabledPackCount = dataMode === "idpass"
+        ? flatModePacks.filter((pack) => pack.serviceEnabled === false).length
+        : packServiceByGame[r.id]?.disabled || 0;
+      return ({
       ...r,
-      channels: channelsByGame[r.id] || { main: [], secondary: [] },
-      vpnComputed: vpnByGame[r.id] ? "YES" : "NO",
-      packCount: packCountByGame[r.id] || 0,
-      packDisabledCount: packServiceByGame[r.id]?.disabled || 0,
+      ...(dataMode === "idpass" ? modeFields : {}),
+      channels: dataMode === "idpass" ? modeChannels : channelsByGame[r.id] || { main: [], secondary: [] },
+      vpnComputed: dataMode === "idpass" ? (flatModePacks.some((pack) => pack.country) ? "YES" : "NO") : vpnByGame[r.id] ? "YES" : "NO",
+      packCount: dataMode === "idpass" ? flatModePacks.length : packCountByGame[r.id] || 0,
+      packDisabledCount: disabledPackCount,
       serviceStatus: r.serviceNew
         ? "new"
         : !r.serviceEnabled
         ? "offline"
-        : (packServiceByGame[r.id]?.disabled || 0) > 0
+        : disabledPackCount > 0
           ? "partial"
           : "online",
-      hasTutorial: Boolean(tutorialPresence[r.id]),
-      hasWarning: Boolean(warningPresence[r.id]),
+      hasTutorial: dataMode === "idpass" ? Boolean(modeData?.tutorial?.categories?.some((category) => category.steps?.length)) : Boolean(tutorialPresence[r.id]),
+      hasWarning: dataMode === "idpass" ? Boolean(modeData?.warning?.categories?.some((category) => category.steps?.length)) : Boolean(warningPresence[r.id]),
       image: imageByGame[r.id] || "",
-      links: Object.prototype.hasOwnProperty.call(linksByGame, r.id)
+      links: dataMode === "idpass" ? modeData?.links || [] : Object.prototype.hasOwnProperty.call(linksByGame, r.id)
         ? linksByGame[r.id]
         : legacyGamelistLinks(r.link),
-    }));
+      });
+    });
   } catch (err) {
     loadError = err.message || "โหลดข้อมูลไม่สำเร็จ";
   }
 
   return (
     <div className="px-4 py-8">
-      <h1 className="mb-6 text-2xl font-bold text-linear-ink">GameInfo</h1>
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold text-linear-ink">GameInfo</h1>
+        <GameinfoDatasetToggle basePath={`/gameinfo/${lang}`} />
+      </div>
       {loadError ? (
         <GameinfoErrorNotice message={loadError} />
       ) : (
-        <GameinfoGamelistTable initial={rows} editable={editable} lang={lang} />
+        <GameinfoGamelistTable
+          key={dataMode}
+          initial={rows}
+          editable={editable}
+          lang={lang}
+          dataMode={dataMode}
+        />
       )}
     </div>
   );

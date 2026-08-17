@@ -15,13 +15,19 @@ import { getGameinfoFormulaVariables } from "@/server/gameinfo-formula-variables
 import GameinfoGameView from "@/components/gameinfo-game-view";
 import GameinfoErrorNotice from "@/components/gameinfo-error-notice";
 import GameinfoBackLink from "@/components/gameinfo-back-link";
+import GameinfoDatasetToggle from "@/components/gameinfo-dataset-toggle";
+import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
+import { getGameinfoModeData } from "@/server/gameinfo-mode-data";
+import GameinfoModeCloneButton from "@/components/gameinfo-mode-clone-button";
 
 export const metadata = {
   title: "GameDB — รายละเอียดเกม",
 };
 
-export default async function GameinfoGameDetailPage({ params }) {
+export default async function GameinfoGameDetailPage({ params, searchParams }) {
   const { lang, id } = await params;
+  const { mode: rawMode } = await searchParams;
+  const dataMode = normalizeGameinfoDataMode(rawMode);
   const user = await getSessionUser();
   if (!user) redirect("/");
   const editable = user.role === "admin" || user.role === "staff";
@@ -41,7 +47,8 @@ export default async function GameinfoGameDetailPage({ params }) {
   try {
     row = await getGameListRow(numericId);
     if (row) {
-      const packs = await getGamelistPacks(row.id);
+      const modeData = dataMode === "idpass" ? await getGameinfoModeData(row.id, dataMode) : null;
+      const packs = modeData?.packs || await getGamelistPacks(row.id);
       currencies = packs.currencies;
       computedColumns = packs.computedColumns;
       costProfiles = packs.costProfiles;
@@ -52,14 +59,21 @@ export default async function GameinfoGameDetailPage({ params }) {
         ),
         0
       );
+      const flatModePacks = currencies.flatMap((currency) =>
+        currency.categories.flatMap((category) => category.packs)
+      );
+      const modeChannels = {
+        main: [...new Set(flatModePacks.flatMap((pack) => pack.channelsMain || []))],
+        secondary: [...new Set(flatModePacks.flatMap((pack) => pack.channelsSecondary || []))],
+      };
       const [vpnByGame, channelsByGame, allRows, tutorial, warning, image, storedLinks, variableData] = await Promise.all([
         listGamelistVpnByGame(),
         listGamelistChannelsByGame(),
         listGameListRows(),
-        getGamelistTutorial(row.id),
-        getGamelistWarning(row.id),
+        dataMode === "idpass" ? Promise.resolve(modeData.tutorial) : getGamelistTutorial(row.id),
+        dataMode === "idpass" ? Promise.resolve(modeData.warning) : getGamelistWarning(row.id),
         getGamelistImage(row.id),
-        getGamelistLinks(row.id),
+        dataMode === "idpass" ? Promise.resolve({ exists: true, links: modeData.links }) : getGamelistLinks(row.id),
         getGameinfoFormulaVariables(row.id),
       ]);
       // Same ordering the list table shows as "ลำดับ" (gamelist_order-aware,
@@ -67,8 +81,9 @@ export default async function GameinfoGameDetailPage({ params }) {
       const orderPosition = allRows.findIndex((r) => r.id === row.id) + 1;
       row = {
         ...row,
-        vpnComputed: vpnByGame[row.id] ? "YES" : "NO",
-        channels: channelsByGame[row.id] || { main: [], secondary: [] },
+        ...(modeData?.fields || {}),
+        vpnComputed: dataMode === "idpass" ? (flatModePacks.some((pack) => pack.country) ? "YES" : "NO") : vpnByGame[row.id] ? "YES" : "NO",
+        channels: dataMode === "idpass" ? modeChannels : channelsByGame[row.id] || { main: [], secondary: [] },
         orderPosition: orderPosition > 0 ? orderPosition : null,
         hasTutorial: tutorial.categories.some((c) => c.steps.length > 0),
         hasWarning: warning.categories.some((c) => c.steps.length > 0),
@@ -90,27 +105,33 @@ export default async function GameinfoGameDetailPage({ params }) {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex items-center justify-between gap-3">
         <GameinfoBackLink
           className="flex items-center gap-1 text-sm text-linear-primary hover:underline"
-          fallbackHref={`/gameinfo/${lang}`}
+          fallbackHref={`/gameinfo/${lang}${dataMode === "idpass" ? "?mode=idpass" : ""}`}
         />
+        <div className="flex items-center gap-2">
+          {editable ? <GameinfoModeCloneButton gameId={row.id} currentMode={dataMode} /> : null}
+          <GameinfoDatasetToggle basePath={`/gameinfo/${lang}/${row.id}`} />
         {editable && (
           <Link
-            href={`/gameinfo/${lang}/${row.id}/packs`}
+            href={`/gameinfo/${lang}/${row.id}/packs${dataMode === "idpass" ? "?mode=idpass" : ""}`}
             className="flex items-center gap-1 rounded-md border border-linear-primary/40 px-3 py-1.5 text-xs font-medium text-linear-primary hover:bg-linear-primary/10"
           >
             จัดการแพ็ก (สกุลเงิน/หมวดหมู่/สูตร) <ArrowRight size={14} />
           </Link>
         )}
+        </div>
       </div>
       <GameinfoGameView
+        key={dataMode}
         row={row}
         currencies={currencies}
         computedColumns={computedColumns}
         costProfiles={costProfiles}
         formulaVariables={formulaVariables}
         userId={user.id}
+        dataMode={dataMode}
       />
     </div>
   );

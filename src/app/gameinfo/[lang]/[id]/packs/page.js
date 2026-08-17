@@ -7,13 +7,19 @@ import GameinfoPackEditor from "@/components/gameinfo-pack-editor";
 import GameinfoErrorNotice from "@/components/gameinfo-error-notice";
 import GameinfoBackLink from "@/components/gameinfo-back-link";
 import { getGameinfoFormulaVariables } from "@/server/gameinfo-formula-variables";
+import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
+import { getGameinfoModeData } from "@/server/gameinfo-mode-data";
+import GameinfoDatasetToggle from "@/components/gameinfo-dataset-toggle";
+import GameinfoModeCloneButton from "@/components/gameinfo-mode-clone-button";
 
 export const metadata = {
   title: "GameDB — แพ็กเกม",
 };
 
-export default async function GameinfoGamelistPacksPage({ params }) {
+export default async function GameinfoGamelistPacksPage({ params, searchParams }) {
   const { lang, id } = await params;
+  const { mode: rawMode } = await searchParams;
+  const dataMode = normalizeGameinfoDataMode(rawMode);
   const user = await getSessionUser();
   if (!user) redirect("/");
   if (user.role === "user") redirect(`/gameinfo/${lang}`);
@@ -28,15 +34,17 @@ export default async function GameinfoGamelistPacksPage({ params }) {
   let packs;
   let allChannels = [];
   let formulaVariables = [];
+  let modeFields = null;
   try {
     row = await getGameListRow(numericId);
     if (row) {
-      const [packData, channels, variableData] = await Promise.all([
-        getGamelistPacks(row.id),
+      const [modeData, channels, variableData] = await Promise.all([
+        dataMode === "idpass" ? getGameinfoModeData(row.id, dataMode) : null,
         listAllGamelistChannels(),
         getGameinfoFormulaVariables(row.id),
       ]);
-      packs = packData;
+      packs = modeData?.packs || await getGamelistPacks(row.id);
+      modeFields = modeData?.fields || null;
       allChannels = channels;
       formulaVariables = variableData.variables;
     }
@@ -52,9 +60,9 @@ export default async function GameinfoGamelistPacksPage({ params }) {
   const game = {
     id: row.id,
     gameName: row.game,
-    region: row.region,
-    platform: row.platform,
-    server: row.server,
+    region: modeFields?.region ?? row.region,
+    platform: modeFields?.platform ?? row.platform,
+    server: modeFields?.server ?? row.server,
     currencies: packs.currencies,
     computedColumns: packs.computedColumns,
     costProfiles: packs.costProfiles,
@@ -65,10 +73,17 @@ export default async function GameinfoGamelistPacksPage({ params }) {
     <div className="px-4 py-8 pb-24">
       <GameinfoBackLink
         className="mb-4 inline-flex items-center gap-1 text-sm text-linear-primary hover:underline"
-        fallbackHref={`/gameinfo/${lang}/${row.id}`}
+        fallbackHref={`/gameinfo/${lang}/${row.id}${dataMode === "idpass" ? "?mode=idpass" : ""}`}
       />
-      <h1 className="mb-6 text-2xl font-bold text-linear-ink">แพ็ก — {row.game}</h1>
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold text-linear-ink">แพ็ก — {row.game}</h1>
+        <div className="flex items-center gap-2">
+          <GameinfoModeCloneButton gameId={row.id} currentMode={dataMode} scope="packs" />
+          <GameinfoDatasetToggle basePath={`/gameinfo/${lang}/${row.id}/packs`} />
+        </div>
+      </div>
       <GameinfoPackEditor
+        key={dataMode}
         game={game}
         lang={lang}
         userId={user.id}
@@ -78,9 +93,11 @@ export default async function GameinfoGamelistPacksPage({ params }) {
         // listAllGamelistChannels(). Currency/category/country suggestions
         // stay scoped to this game only.
         suggestions={{ ...buildPackSuggestions(game), channels: allChannels }}
-        savePacksUrl={`/api/gameinfo/gamelist/${row.id}/packs`}
+        dataMode={dataMode}
+        historyUrl={`/api/gameinfo/gamelist/${row.id}/packs/history?limit=200${dataMode === "idpass" ? "&mode=idpass" : ""}`}
+        savePacksUrl={`/api/gameinfo/gamelist/${row.id}/packs${dataMode === "idpass" ? "?mode=idpass" : ""}`}
         importPreviewUrl={`/api/gameinfo/import/preview?gameId=${row.id}`}
-        exportUrl={`/api/gameinfo/import/export?gameId=${row.id}`}
+        exportUrl={`/api/gameinfo/import/export?gameId=${row.id}${dataMode === "idpass" ? "&mode=idpass" : ""}`}
       />
     </div>
   );
