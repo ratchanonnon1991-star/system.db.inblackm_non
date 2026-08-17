@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Copy, Download, Image as ImageIcon, Plus, Trash2, X } from "lucide-react";
+import { ChevronDown, Copy, Download, Image as ImageIcon, Pencil, Plus, Trash2, X } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -39,6 +39,7 @@ import {
   getEffectiveGameinfoFormula,
   removeGameinfoFormulaOverridesForPack,
   setGameinfoFormulaOverride,
+  updateGameinfoComputedColumn,
 } from "@/lib/gameinfo-formula-overrides";
 import { createBlankGameinfoPack, duplicateGameinfoPack } from "@/lib/gameinfo-pack-model";
 import { normalizeSpaces } from "@/lib/text-normalize";
@@ -98,6 +99,7 @@ export default function GameinfoPackEditor({
   }, [savedAt]);
   const [error, setError] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingComputedColumn, setEditingComputedColumn] = useState(null);
 
   const [currencies, setCurrencies] = useState(game.currencies);
   const [computedColumns, setComputedColumns] = useState(game.computedColumns ?? []);
@@ -251,6 +253,12 @@ export default function GameinfoPackEditor({
   }
   function removeComputedColumn(key) {
     setComputedColumns((prev) => prev.filter((c) => c.key !== key));
+  }
+  function updateComputedColumn(nextColumn, { resetOverrides }) {
+    setComputedColumns((prev) =>
+      updateGameinfoComputedColumn(prev, nextColumn, { resetOverrides })
+    );
+    setEditingComputedColumn(null);
   }
   function setFormulaOverride(columnKey, packId, formula) {
     setComputedColumns((prev) =>
@@ -619,6 +627,7 @@ export default function GameinfoPackEditor({
                     columns={packLayout.visibleColumns}
                     invalidFields={invalidFields}
                     onRemoveColumn={removeComputedColumn}
+                    onEditColumn={setEditingComputedColumn}
                     onReorderColumns={packLayout.reorder}
                     onSetFormulaOverride={setFormulaOverride}
                     onRenameCategory={(name) =>
@@ -718,6 +727,15 @@ export default function GameinfoPackEditor({
           onAdd={addComputedColumn}
         />
       )}
+      {editingComputedColumn && (
+        <GameinfoComputedEditor
+          key={editingComputedColumn.key}
+          initialColumn={editingComputedColumn}
+          sampleRow={sampleRow}
+          onClose={() => setEditingComputedColumn(null)}
+          onSave={updateComputedColumn}
+        />
+      )}
     </div>
   );
 }
@@ -729,6 +747,7 @@ function CategoryBlock({
   columns,
   invalidFields,
   onRemoveColumn,
+  onEditColumn,
   onReorderColumns,
   onSetFormulaOverride,
   onRenameCategory,
@@ -831,6 +850,11 @@ function CategoryBlock({
                       onRemove={
                         column.kind === "computed"
                           ? () => onRemoveColumn(column.computed.key)
+                          : undefined
+                      }
+                      onEdit={
+                        column.kind === "computed"
+                          ? () => onEditColumn(column.computed)
                           : undefined
                       }
                     />
@@ -1164,7 +1188,7 @@ function GameinfoFormulaOverrideEditor({ column, pack, game, onClose, onSave }) 
 // Computed-column header cell: press-and-hold anywhere on it and drag to
 // reorder (the whole cell is the drag handle, not a separate grip icon). The
 // remove button stops propagation so it doesn't also start a drag.
-function SortableColumnHeader({ column, index, onRemove }) {
+function SortableColumnHeader({ column, index, onRemove, onEdit }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: column.id,
   });
@@ -1186,6 +1210,21 @@ function SortableColumnHeader({ column, index, onRemove }) {
       title="กดค้างแล้วลากเพื่อเปลี่ยนลำดับ"
     >
       <span className="truncate">{column.label || `สูตร ${index + 1}`}</span>
+      {onEdit ? (
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit();
+          }}
+          className="shrink-0 text-linear-ink-tertiary hover:text-linear-primary"
+          title="แก้ไขสูตรหลัก"
+          aria-label={`แก้ไขสูตรหลัก ${column.label || `สูตร ${index + 1}`}`}
+        >
+          <Pencil size={11} />
+        </button>
+      ) : null}
       {onRemove ? (
         <button
           type="button"

@@ -35,6 +35,8 @@ import GameinfoNameInput from "./gameinfo-name-input";
 import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
 import GameinfoImagePickerModal from "./gameinfo-image-picker-modal";
 import GameinfoImagePreview from "./gameinfo-image-preview";
+import GameinfoCsvImportActions from "./gameinfo-csv-import-actions";
+import GameinfoAllPackHistory from "./gameinfo-all-pack-history";
 
 // Rank, ทำซ้ำได้ (isRepeatable), หมายเหตุ (remark) are hidden per request —
 // the fields/backend still exist (game_list columns, API fields), this only
@@ -534,6 +536,9 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
             ล้างตัวกรอง
           </button>
         )}
+
+        {editable ? <GameinfoAllPackHistory /> : null}
+        {editable ? <GameinfoCsvImportActions hasUnsavedChanges={dirty} /> : null}
       </div>
 
       {paginationBar && <div className="mb-3">{paginationBar}</div>}

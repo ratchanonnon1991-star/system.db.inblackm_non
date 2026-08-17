@@ -264,6 +264,23 @@ export function gamesToPackRows(games) {
   return out;
 }
 
+export function validatePackRows(rows) {
+  const errors = [];
+  rows.forEach((row, index) => {
+    const hasPackData = PACK_HEADERS.filter(
+      (field) => field !== "game_id" && field !== "game_name"
+    ).some((field) => norm(row[field]));
+    if (!hasPackData) return;
+    const missing = [];
+    if (!norm(row.pack_name)) missing.push("pack_name");
+    if (!norm(row.price)) missing.push("price");
+    if (!norm(row.amount_charged_fee)) missing.push("amount_charged_fee");
+    if (!splitList(row.channel_main).length) missing.push("channel_main");
+    if (missing.length) errors.push(`แถวที่ ${index + 2}: ข้อมูลไม่ครบ (${missing.join(", ")})`);
+  });
+  return errors;
+}
+
 function legacyAmountWarnings(rows) {
   const count = (rows || []).filter((row) => norm(row?.amount_charged) !== "").length;
   return count

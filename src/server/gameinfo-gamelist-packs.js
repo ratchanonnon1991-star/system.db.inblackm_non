@@ -11,6 +11,7 @@
 // shape the whole way through.
 import { getPoolForConnection } from "@/lib/db";
 import { sanitizeGameinfoPack } from "@/lib/gameinfo-pack-model";
+import { mergeCurrencies } from "@/lib/gameinfo-import";
 import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
 
 const CONNECTION_NAME = "gameinfo";
@@ -256,6 +257,66 @@ export async function saveGamelistPacks(
   return getGamelistPacks(gameId);
 }
 
+/** Multi-game CSV import in one transaction. Computed-column sentinel rows
+ * are preserved; only real pack rows are replaced/merged. */
+export async function importGamelistPacks(games, mode = "replace", actor = null) {
+  if (!Array.isArray(games) || games.length === 0) return { gameCount: 0, packCount: 0 };
+  if (mode !== "replace" && mode !== "add") throw createHttpError("โหมดนำเข้าไม่ถูกต้อง", 400);
+  const source = mode === "add" ? "csv_append" : "csv_replace";
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  let importedPackCount = 0;
+  try {
+    await client.query("BEGIN");
+    for (const game of games) {
+      const target = await client.query(`SELECT id FROM game_list WHERE id = $1 FOR UPDATE`, [game.gameId]);
+      if (target.rows.length !== 1) throw createHttpError(`ไม่พบ game_id ${game.gameId}`, 404);
+
+      const previousResult = await client.query(
+        `SELECT game_id, pack_id, data FROM gamelist_packs WHERE game_id = $1`,
+        [game.gameId]
+      );
+      const previousComputed = previousResult.rows.find((row) => row.pack_id === COMPUTED_SENTINEL);
+      const previousRows = previousResult.rows.filter((row) => row.pack_id !== COMPUTED_SENTINEL);
+      let currencies = Array.isArray(game.currencies) ? game.currencies : [];
+      if (mode === "add") currencies = mergeCurrencies(reconstructCurrencies(previousRows), currencies);
+      const nextRows = flattenCurrencies(game.gameId, currencies);
+      const computedColumns = Array.isArray(previousComputed?.data?.columns)
+        ? previousComputed.data.columns
+        : [];
+      const auditEvents = buildAuditEvents({
+        previousRows,
+        nextRows,
+        previousComputed: computedColumns,
+        nextComputed: computedColumns,
+        source,
+      });
+
+      await client.query(
+        `DELETE FROM gamelist_packs WHERE game_id = $1 AND pack_id != $2`,
+        [game.gameId, COMPUTED_SENTINEL]
+      );
+      for (const row of nextRows) {
+        await client.query(
+          `INSERT INTO gamelist_packs (game_id, pack_id, data) VALUES ($1, $2, $3)`,
+          [row.gameId, row.packId, JSON.stringify(row.data)]
+        );
+      }
+      for (const event of auditEvents) {
+        await insertPackAudit(client, game.gameId, actor, event, source);
+      }
+      importedPackCount += Number(game.packCount) || 0;
+    }
+    await client.query("COMMIT");
+    return { gameCount: games.length, packCount: importedPackCount };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 function buildAuditEvents({ previousRows, nextRows, previousComputed, nextComputed, source }) {
   const events = [];
   const before = new Map(previousRows.map((row) => [String(row.pack_id), row.data || {}]));
@@ -377,6 +438,38 @@ export async function listGamelistPackAudit(gameId, limit = 100) {
     return result.rows.map((row) => ({
       id: row.id,
       gameId: row.game_id,
+      packId: row.pack_id,
+      actorId: row.actor_id,
+      actorName: row.actor_name,
+      action: row.action,
+      source: row.source || "editor",
+      before: row.before_data,
+      after: row.after_data,
+      createdAt: row.created_at,
+    }));
+  } finally {
+    client.release();
+  }
+}
+
+export async function listAllGamelistPackAudit(limit = 1000) {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    const safeLimit = Math.min(2000, Math.max(1, Number(limit) || 1000));
+    const result = await client.query(
+      `SELECT a.id, a.game_id, g.game, a.pack_id, a.actor_id, a.actor_name,
+              a.action, a.source, a.before_data, a.after_data, a.created_at
+       FROM gamelist_pack_audit_logs a
+       LEFT JOIN game_list g ON g.id = a.game_id
+       ORDER BY a.created_at DESC, a.id DESC
+       LIMIT $1`,
+      [safeLimit]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      gameId: row.game_id,
+      gameName: row.game || `Game ID ${row.game_id}`,
       packId: row.pack_id,
       actorId: row.actor_id,
       actorName: row.actor_name,

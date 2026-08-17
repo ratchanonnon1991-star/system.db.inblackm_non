@@ -11,6 +11,7 @@ import {
   pruneGameinfoFormulaOverrides,
   removeGameinfoFormulaOverridesForPack,
   setGameinfoFormulaOverride,
+  updateGameinfoComputedColumn,
 } from "@/lib/gameinfo-formula-overrides.js";
 
 let pass = 0;
@@ -144,6 +145,24 @@ check(
   "saving prunes overrides for packs that no longer exist",
   pruneGameinfoFormulaOverrides(copied, ["pk_copy"])[0].rowOverrides,
   { pk_copy: "[ราคา] * 0.5" }
+);
+
+const updatedMainFormula = updateGameinfoComputedColumn(
+  [formulaColumn],
+  { key: "profit", label: "กำไรใหม่", formula: "[ราคา] * 2", type: "number", symbol: "฿" }
+);
+check("editing a main formula keeps explicit row overrides by default", updatedMainFormula[0], {
+  key: "profit",
+  formula: "[ราคา] * 2",
+  rowOverrides: { pk_special: "[ราคา] * 0.5" },
+  label: "กำไรใหม่",
+  type: "number",
+  symbol: "฿",
+});
+check(
+  "editing main formula can deliberately apply it to every pack by clearing overrides",
+  updateGameinfoComputedColumn(updatedMainFormula, { ...updatedMainFormula[0], formula: "[ราคา] * 3" }, { resetOverrides: true })[0].rowOverrides,
+  {}
 );
 
 console.log(`\n${pass} passed, ${failures.length} failed`);

@@ -63,6 +63,15 @@ Parser:
 Round-trip:
 
 - export → import รักษาค่าที่ใช้แสดงจริง
+
+### Bulk list-page CSV (Task 12)
+
+- game list CSV ตรวจ required `game`, ชื่อซ้ำในไฟล์ และชื่อซ้ำในฐานข้อมูล
+- game list batch insert commit ทั้งชุดหรือ rollback ทั้งชุด
+- packs CSV group ด้วย numeric `game_id`; unknown ID เป็น blocking error
+- replace และ add ให้ผลต่างกันตาม contract และไม่ลบ computed config
+- bulk pack audit มี actor/source และ rollback พร้อม pack writes
+- unknown headers ถูกปฏิเสธ ส่วน legacy header ที่อนุญาตเฉพาะ warning ไม่ถูก persist
 - Unicode ไทย/จีน, comma, quote และ newline ไม่เสีย
 - decimal string ไม่เสีย precision
 - เกมไม่มี pack ยัง export reference row ได้ถ้ายังต้องรองรับ workflow นี้
@@ -76,6 +85,20 @@ Round-trip:
 - bulk import สร้าง summary event และ detail ที่ค้นย้อนหลังได้โดยไม่เกิน payload limit
 - sanitizer ปิดบัง field sensitive ในอนาคต
 - staff/user ที่ไม่มีสิทธิ์อ่าน log ได้ 403
+
+### Combined audit history (Task 13)
+
+- query รวม bind limit ที่ clamp แล้วและเรียง `created_at DESC, id DESC`
+- mapping มี game name, pack ID, actor, action, before/after และ timestamp
+- grouping แยก game → pack และ config event โดยไม่ทำรายการสูญหาย
+- pack ที่ถูกลบใช้ชื่อจาก before data; duplicate ใช้ source/after ตามลำดับ
+
+### Main formula editing (Task 14)
+
+- edit สูตรหลักคง column key และ personal column layout เดิม
+- ทุก pack ที่ไม่มี override ใช้สูตรหลักใหม่
+- override ราย pack คงอยู่ตามค่าเริ่มต้น
+- เลือก apply-to-all แล้วล้าง override เฉพาะคอลัมน์นั้น
 
 ## 4. Personal columns/filter/order (Task 3, 5, 9)
 

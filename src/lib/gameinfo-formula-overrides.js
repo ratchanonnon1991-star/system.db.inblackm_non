@@ -51,3 +51,18 @@ export function pruneGameinfoFormulaOverrides(columns, packIds) {
     return { ...column, rowOverrides };
   });
 }
+
+export function updateGameinfoComputedColumn(columns, nextColumn, { resetOverrides = false } = {}) {
+  if (!nextColumn?.key) return columns || [];
+  return (columns || []).map((column) => {
+    if (column.key !== nextColumn.key) return column;
+    return {
+      ...column,
+      label: nextColumn.label,
+      formula: nextColumn.formula,
+      type: nextColumn.type,
+      symbol: nextColumn.symbol,
+      rowOverrides: resetOverrides ? {} : { ...(column.rowOverrides || {}) },
+    };
+  });
+}

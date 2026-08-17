@@ -35,13 +35,15 @@ const FUNCTION_HELP = [
   ["ตัวเลข", "ROUND · ABS · MIN · MAX · SUM"],
 ];
 
-export default function GameinfoComputedEditor({ sampleRow, onAdd, onClose }) {
-  const [label, setLabel] = useState("");
-  const [formula, setFormula] = useState("");
+export default function GameinfoComputedEditor({ sampleRow, onAdd, onSave, onClose, initialColumn = null }) {
+  const editingMainFormula = Boolean(initialColumn);
+  const [label, setLabel] = useState(initialColumn?.label || "");
+  const [formula, setFormula] = useState(initialColumn?.formula || "");
   // Empty until touched, so the type follows the formula while the user is
   // still writing it and stops the moment they choose one themselves.
-  const [typeChoice, setTypeChoice] = useState("");
-  const [symbol, setSymbol] = useState("");
+  const [typeChoice, setTypeChoice] = useState(initialColumn?.type || "");
+  const [symbol, setSymbol] = useState(initialColumn?.symbol || "");
+  const [resetOverrides, setResetOverrides] = useState(false);
 
   useEffect(() => {
     function onKey(e) {
@@ -84,13 +86,15 @@ export default function GameinfoComputedEditor({ sampleRow, onAdd, onClose }) {
 
   function submit() {
     if (!label.trim() || !validation.ok) return;
-    onAdd({
-      key: `col_${Date.now()}`,
+    const nextColumn = {
+      key: initialColumn?.key || `col_${Date.now()}`,
       label: label.trim(),
       formula: formula.trim(),
       type,
       symbol: type === "number" ? symbol : "",
-    });
+    };
+    if (editingMainFormula) onSave?.(nextColumn, { resetOverrides });
+    else onAdd(nextColumn);
   }
 
   return (
@@ -103,7 +107,7 @@ export default function GameinfoComputedEditor({ sampleRow, onAdd, onClose }) {
       <div className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-linear-hairline bg-linear-surface-1 shadow-2xl">
         <div className="flex items-center justify-between border-b border-linear-hairline px-5 py-3">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-linear-ink">
-            <Calculator size={15} className="text-linear-primary" /> เพิ่มคอลัมน์/สูตร
+            <Calculator size={15} className="text-linear-primary" /> {editingMainFormula ? "แก้ไขสูตรหลัก" : "เพิ่มคอลัมน์/สูตร"}
           </h2>
           <button
             type="button"
@@ -163,6 +167,20 @@ export default function GameinfoComputedEditor({ sampleRow, onAdd, onClose }) {
               ))}
             </select>
           </div>
+
+          {editingMainFormula && Object.keys(initialColumn?.rowOverrides || {}).length > 0 ? (
+            <label className="flex cursor-pointer items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+              <input
+                type="checkbox"
+                checked={resetOverrides}
+                onChange={(event) => setResetOverrides(event.target.checked)}
+                className="mt-0.5 accent-linear-primary"
+              />
+              <span>
+                ใช้สูตรหลักนี้กับทุก pack และล้างสูตรเฉพาะแถวทั้งหมด ({Object.keys(initialColumn.rowOverrides).length} แถว)
+              </span>
+            </label>
+          ) : null}
 
           <div>
             <label htmlFor="gameinfo-computed-symbol" className="mb-1 block text-xs text-linear-ink-tertiary">
@@ -225,7 +243,7 @@ export default function GameinfoComputedEditor({ sampleRow, onAdd, onClose }) {
             disabled={!label.trim() || !validation.ok}
             className="flex items-center gap-1.5 rounded-md bg-linear-primary px-4 py-2 text-sm font-medium text-white hover:bg-linear-primary-hover disabled:opacity-50"
           >
-            <Plus size={14} /> เพิ่มคอลัมน์
+            <Plus size={14} /> {editingMainFormula ? "บันทึกสูตรหลัก" : "เพิ่มคอลัมน์"}
           </button>
         </div>
       </div>

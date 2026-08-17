@@ -149,6 +149,51 @@ Acceptance criteria:
 คู่มือต้องระบุ:
 
 - `game_id` = `game_list.id` ตัวเลขจากปุ่ม export/หน้าเกม
+
+## Task 12: CSV รวมสำหรับ game list และ packs หลายเกม
+
+- รวมคำสั่ง CSV ไว้ใต้ปุ่มเดียวบน `/gameinfo/[lang]` ตาม workflow เดิมใน commit `ad368a79a109090ff22daec1cef5654232cce7ed`
+- เพิ่มเกมหลายเกมจาก CSV โดยตรวจชื่อซ้ำและบันทึกทั้งชุดแบบ transaction
+- นำเข้า packs หลายเกมด้วย `game_id` รองรับทั้งแทนที่และเพิ่มต่อ
+- ดาวน์โหลดรายการเกมล่าสุด, packs ทุกเกม, template และคู่มือจากเมนูเดียว
+- รับเฉพาะ field ที่หน้า GameInfo ใช้จริง; field เก่าที่ประกาศว่าเลิกใช้ให้เตือนและไม่นำเข้า
+- bulk pack import ต้องสร้าง audit event พร้อม actor/source และ rollback ทั้งชุดเมื่อเกมใดเกมหนึ่งผิดพลาด
+
+Acceptance criteria:
+
+- preview ไม่เขียนฐานข้อมูลและแสดง error แยกตามแถว/เกม
+- import ผิดหนึ่งเกมไม่เขียนเกมอื่นค้างไว้
+- export → import รักษาโครงสร้าง currency/category/pack ของทุกเกม
+- การแก้ไขในตาราง game list ที่ยังไม่บันทึกต้องเตือนก่อน reload หลัง import
+
+## Task 13: ประวัติการแก้ไข packs แบบรวม
+
+- เพิ่มทางเข้าจาก `/gameinfo/[lang]` สำหรับ admin/staff
+- สรุปชั้นแรกตามเกม แล้วแยกตาม pack (รวมรายการ config/import ที่ไม่มี pack ID)
+- ในแต่ละ pack แสดงจำนวนครั้ง, ผู้ที่เคยแก้, action และเวลาล่าสุด
+- กด pack เพื่อดู timeline และ before/after ของรายการภายใน
+- จำกัดจำนวนรายการและเรียงล่าสุดก่อน โดยเวลาแสดงเป็น Asia/Bangkok
+
+Acceptance criteria:
+
+- ผู้ไม่มีสิทธิ์แก้ layout อ่านประวัติรวมไม่ได้
+- รายการจากหลายเกมไม่ปนกลุ่มกัน
+- pack ที่ถูกลบยังค้นเจอด้วยชื่อจาก before data
+- summary และ drill-down ใช้ audit rows ชุดเดียวกัน ไม่ยิง query ต่อ pack
+
+## Task 14: แก้ไขสูตรหลักของคอลัมน์
+
+- เพิ่มปุ่มแก้ไขบนหัวคอลัมน์สูตรในหน้า packs
+- เปลี่ยนชื่อ, สูตร, type และสัญลักษณ์ของสูตรหลักได้
+- บันทึกแล้วทุก pack ที่สืบทอดสูตรหลักแสดงผลใหม่ทันที
+- สูตรเฉพาะ pack เป็นข้อยกเว้นที่ต้องคงไว้โดยค่าเริ่มต้น
+- มีตัวเลือก “ใช้สูตรหลักนี้กับทุก pack” เพื่อล้าง override ทั้งหมดอย่างชัดเจน
+
+Acceptance criteria:
+
+- คอลัมน์สูตรเดิมแก้ได้โดยไม่เปลี่ยน `key` หรือ layout ส่วนตัว
+- update สูตรหลักถูกบันทึกใน config audit event
+- ล้าง override มีผลเฉพาะคอลัมน์ที่กำลังแก้ และสามารถยกเลิกก่อน save ได้
 - bulk packs: ต้องมี game ID ที่มีอยู่จริง; `game_name` ไม่ใช้ผูก
 - single-game packs page: URL game ID เป็น source of truth และ ignore `game_id` ในไฟล์
 - append สร้าง `pack_id` ใหม่ทุกแถว จึง duplicate ได้

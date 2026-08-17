@@ -8,7 +8,9 @@
 import {
   deleteGamelistPacksForGame,
   getGamelistPacks,
+  importGamelistPacks,
   listAllGamelistChannels,
+  listAllGamelistPackAudit,
   listGamelistPackAudit,
   listGamelistPackCountByGame,
   saveGamelistPacks,
@@ -337,6 +339,39 @@ async function run() {
   });
   const historyQuery = find(/FROM gamelist_pack_audit_logs/);
   check("history: binds game id and clamps the limit", historyQuery?.params, [5, 500]);
+
+  // --- multi-game CSV import -------------------------------------------
+  reset();
+  setResponder((text) => {
+    if (/SELECT id FROM game_list/.test(text)) return { rows: [{ id: 5 }] };
+    if (/SELECT game_id, pack_id, data FROM gamelist_packs/.test(text)) return { rows: [] };
+    return null;
+  });
+  const bulk = await importGamelistPacks(
+    [{ gameId: 5, currencies: ORIGINAL_TREE, packCount: 2 }],
+    "replace",
+    { id: 9, name: "Pack Admin" }
+  );
+  check("bulk import returns imported game and pack counts", bulk, { gameCount: 1, packCount: 2 });
+  ok("bulk import locks the target game before writing", Boolean(find(/SELECT id FROM game_list.*FOR UPDATE/)));
+  check(
+    "bulk import records csv_replace as the audit source",
+    log.filter((entry) => /^INSERT INTO gamelist_pack_audit_logs/.test(entry.text))[0]?.params?.[5],
+    "csv_replace"
+  );
+  ok("bulk import commits all games as one transaction", statements().includes("COMMIT"));
+
+  // --- combined history ------------------------------------------------
+  reset();
+  setResponder((text) => {
+    if (/FROM gamelist_pack_audit_logs a/.test(text)) {
+      return { rows: [{ id: 8, game_id: 5, game: "Game A", pack_id: "pk1", actor_id: 9, actor_name: "Admin", action: "update", source: "editor", before_data: {}, after_data: { name: "Pack" }, created_at: "2026-08-17T10:00:00.000Z" }] };
+    }
+    return null;
+  });
+  const allHistory = await listAllGamelistPackAudit(9999);
+  check("combined history includes the game name", allHistory[0].gameName, "Game A");
+  check("combined history clamps its one bound limit", find(/FROM gamelist_pack_audit_logs a/)?.params, [2000]);
 
   console.log(`\n${pass} passed, ${failures.length} failed`);
   for (const failure of failures) console.log(`  FAIL ${failure}`);
