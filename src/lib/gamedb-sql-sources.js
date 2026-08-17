@@ -344,6 +344,10 @@ export function isKeyOnlyColumn(name) {
 // whether a particular one is safe, none of them are extended.
 const CHANGES_THE_ROWS = /\b(distinct|union|intersect|except|having)\b|\bgroup\s+by\b/;
 
+// The subset of those that stack rows from more than one query into one
+// result, which is not a thing to write back through at all.
+const SET_OPERATION = /\b(union|intersect|except)\b/;
+
 // An alias only usable if it can be written back into SQL as-is. A quoted one
 // with a space in it could be requoted, but folding rules make "what Postgres
 // calls this" a guess, and a guess is not worth making for a convenience.
@@ -574,19 +578,31 @@ export function detectEditableTargets({ sql, tables }) {
   const schemaTables = Array.isArray(tables) ? tables : [];
   if (schemaTables.length === 0) return [];
 
+  // A set operation stacks rows from two different queries into one result,
+  // and nothing in a row says which half it came from. `SELECT o.id FROM
+  // orders UNION SELECT g.id FROM games` returns a column of ids belonging to
+  // two different tables, and writing through it would update orders using a
+  // game's id -- a real row, chosen by nobody. There is no version of this
+  // that is safe to work out, so none is offered.
+  if (SET_OPERATION.test(stripSqlLiterals(sql).toLowerCase())) return [];
+
   const froms = parseFromTables(sql);
   if (froms.length === 0) return [];
 
-  // alias (and bare table name) -> the real table it stands for
+  // Every FROM/JOIN entry gets its own slot, keyed by alias rather than by
+  // table -- `FROM orders a JOIN orders b` is one table twice, and merging
+  // them would hand b's columns a's key, which finds a real row of the right
+  // table and the wrong one entirely.
   const byAlias = new Map();
   const resolved = [];
   for (const from of froms) {
     const table = findTable(schemaTables, from.schema, from.name);
     if (!table) continue;
+    const slot = resolved.length;
     resolved.push({ from, table });
-    byAlias.set(from.alias.toLowerCase(), table);
+    byAlias.set(from.alias.toLowerCase(), slot);
     if (!byAlias.has(from.name.toLowerCase())) {
-      byAlias.set(from.name.toLowerCase(), table);
+      byAlias.set(from.name.toLowerCase(), slot);
     }
   }
   if (resolved.length === 0) return [];
@@ -598,37 +614,42 @@ export function detectEditableTargets({ sql, tables }) {
   // of the two anything means is decided by whoever looks first, and looking
   // first is how b's rows end up being written using a's key.
   const found = [];
-  const addColumn = (table, result, column) => {
-    if (!table || !result || !column) return;
-    found.push({ tableKey: table.key, result, column });
+  const addColumn = (slot, result, column) => {
+    if (slot === undefined || !result || !column) return;
+    found.push({ slot, result, column });
   };
 
   for (const item of items) {
     // `*` / `a.*` -- expand from the schema, since that is exactly what
     // Postgres will return and it is a very common way to write these.
     if (item.column === "*") {
-      const targets = item.qualifier
-        ? [byAlias.get(item.qualifier.toLowerCase())].filter(Boolean)
-        : resolved.map((entry) => entry.table);
-      for (const table of targets) {
-        for (const column of table.columns) addColumn(table, column.name, column.name);
+      const slots = item.qualifier
+        ? [byAlias.get(item.qualifier.toLowerCase())].filter((slot) => slot !== undefined)
+        : resolved.map((entry, slot) => slot);
+      for (const slot of slots) {
+        for (const column of resolved[slot].table.columns) {
+          addColumn(slot, column.name, column.name);
+        }
       }
       continue;
     }
     if (!item.column) continue;
 
     if (item.qualifier) {
-      const table = byAlias.get(item.qualifier.toLowerCase());
-      if (table) addColumn(table, item.result, findColumn(table, item.column));
+      const slot = byAlias.get(item.qualifier.toLowerCase());
+      if (slot !== undefined) {
+        addColumn(slot, item.result, findColumn(resolved[slot].table, item.column));
+      }
       continue;
     }
-    // Unqualified: only safe when exactly one joined table has a column by
-    // that name. `SELECT id FROM a JOIN b` where both have an `id` is
-    // genuinely ambiguous -- Postgres itself would reject it.
-    const owners = resolved.filter((entry) => findColumn(entry.table, item.column));
-    if (owners.length === 1) {
-      addColumn(owners[0].table, item.result, findColumn(owners[0].table, item.column));
-    }
+    // Unqualified: only safe when exactly one entry in the FROM list has a
+    // column by that name. `SELECT id FROM a JOIN b` where both have an `id`
+    // is genuinely ambiguous -- Postgres itself would reject it -- and so is
+    // the same table joined to itself, where both entries always have it.
+    const owners = resolved
+      .map((entry, slot) => ({ slot, real: findColumn(entry.table, item.column) }))
+      .filter((entry) => entry.real);
+    if (owners.length === 1) addColumn(owners[0].slot, item.result, owners[0].real);
   }
 
   // A result name the query returns more than once belongs to nobody: it is
@@ -638,17 +659,18 @@ export function detectEditableTargets({ sql, tables }) {
   for (const entry of found) {
     timesReturned.set(entry.result, (timesReturned.get(entry.result) || 0) + 1);
   }
-  const columnsByTableKey = new Map();
+  const columnsBySlot = new Map();
   for (const entry of found) {
     if (timesReturned.get(entry.result) > 1) continue;
-    const existing = columnsByTableKey.get(entry.tableKey) || [];
+    const existing = columnsBySlot.get(entry.slot) || [];
+    if (existing.some((seen) => seen.result === entry.result)) continue;
     existing.push({ result: entry.result, column: entry.column });
-    columnsByTableKey.set(entry.tableKey, existing);
+    columnsBySlot.set(entry.slot, existing);
   }
 
   return resolved
-    .map(({ from, table }) => {
-      const columns = columnsByTableKey.get(table.key) || [];
+    .map(({ from, table }, slot) => {
+      const columns = columnsBySlot.get(slot) || [];
       const { key: primaryKey, source: keySource } = rowKeyOf(table, columns);
       const pkEntry = primaryKey
         ? columns.find((entry) => entry.column === primaryKey)

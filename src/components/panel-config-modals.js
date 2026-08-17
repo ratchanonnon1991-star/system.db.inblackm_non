@@ -1270,7 +1270,9 @@ export function EditableSettingsModal({
               const isBase = table.trim() === target.key;
               return (
                 <div
-                  key={target.key}
+                  // Alias, not table: the same table can appear twice, and a
+                  // self-join is two different rows of it.
+                  key={`${target.key}:${target.alias}`}
                   className={`rounded-sm border p-2 ${
                     blocked ? "border-zinc-200 bg-white/60" : "border-emerald-200 bg-white"
                   }`}

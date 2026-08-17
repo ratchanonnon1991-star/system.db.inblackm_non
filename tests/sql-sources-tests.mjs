@@ -563,7 +563,6 @@ check(
 for (const [label, sql] of [
   ["DISTINCT", "SELECT DISTINCT o.amount, g.name FROM public.orders o JOIN public.games g ON o.game_id = g.id"],
   ["GROUP BY", "SELECT g.name, o.amount FROM public.orders o JOIN public.games g ON o.game_id = g.id GROUP BY g.name, o.amount"],
-  ["UNION", "SELECT o.amount, g.name FROM public.orders o JOIN public.games g ON o.game_id = g.id UNION SELECT 1, 'x'"],
 ]) {
   const attempt = addMissingKeyColumns({ sql, tables: TABLES });
   check(`${label} is refused rather than rewritten`, attempt.added, []);
@@ -574,6 +573,16 @@ for (const [label, sql] of [
     true
   );
 }
+
+// A set operation is a step further: it is not editable at all, so there is
+// nothing to complete and nothing to explain giving up on.
+const unioned = addMissingKeyColumns({
+  sql: "SELECT o.amount, g.name FROM public.orders o JOIN public.games g ON o.game_id = g.id UNION SELECT 1, 'x'",
+  tables: TABLES,
+});
+check("a set operation is left exactly as written", unioned.sql.includes("UNION"), true);
+check("with nothing added", unioned.added, []);
+check("and nothing refused, because nothing was proposed", unioned.refused, []);
 check(
   "a column named distinct_total is not mistaken for DISTINCT",
   addMissingKeyColumns({
