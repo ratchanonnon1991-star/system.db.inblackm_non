@@ -5,6 +5,13 @@ import {
   reorderGameinfoPackColumns,
 } from "@/lib/gameinfo-pack-columns.js";
 import { sanitizeComputedColumns } from "@/server/gamedb-layout-sanitizer.js";
+import {
+  duplicateGameinfoFormulaOverrides,
+  getEffectiveGameinfoFormula,
+  pruneGameinfoFormulaOverrides,
+  removeGameinfoFormulaOverridesForPack,
+  setGameinfoFormulaOverride,
+} from "@/lib/gameinfo-formula-overrides.js";
 
 let pass = 0;
 const failures = [];
@@ -87,6 +94,56 @@ check(
     { key: "b", label: "bad", formula: "2", type: "number", symbol: "<script>" },
   ]).map((column) => column.symbol),
   ["฿", ""]
+);
+
+const sanitizedOverrides = sanitizeComputedColumns([
+  {
+    key: "profit",
+    label: "กำไร",
+    formula: "[ราคา] - [ยอดที่กด + fee]",
+    type: "number",
+    rowOverrides: {
+      pk_special: "[ราคา] * 0.5",
+      empty: "   ",
+      hostile: 123,
+    },
+  },
+])[0].rowOverrides;
+check("computed sanitizer keeps only non-empty string row overrides", sanitizedOverrides, {
+  pk_special: "[ราคา] * 0.5",
+});
+
+const formulaColumn = {
+  key: "profit",
+  formula: "[ราคา] - [ยอดที่กด + fee]",
+  rowOverrides: { pk_special: "[ราคา] * 0.5" },
+};
+check("effective formula falls back to the column formula", getEffectiveGameinfoFormula(formulaColumn, "pk_normal"), {
+  formula: "[ราคา] - [ยอดที่กด + fee]",
+  overridden: false,
+});
+check("effective formula uses a pack override", getEffectiveGameinfoFormula(formulaColumn, "pk_special"), {
+  formula: "[ราคา] * 0.5",
+  overridden: true,
+});
+
+const changed = setGameinfoFormulaOverride([formulaColumn], "profit", "pk_special", "");
+check("clearing an override restores inheritance", changed[0].rowOverrides, {});
+
+const copied = duplicateGameinfoFormulaOverrides([formulaColumn], "pk_special", "pk_copy");
+check("duplicating a pack copies its row formula override to the new id", copied[0].rowOverrides, {
+  pk_special: "[ราคา] * 0.5",
+  pk_copy: "[ราคา] * 0.5",
+});
+check(
+  "removing a pack also removes its orphaned override",
+  removeGameinfoFormulaOverridesForPack(copied, "pk_special")[0].rowOverrides,
+  { pk_copy: "[ราคา] * 0.5" }
+);
+check(
+  "saving prunes overrides for packs that no longer exist",
+  pruneGameinfoFormulaOverrides(copied, ["pk_copy"])[0].rowOverrides,
+  { pk_copy: "[ราคา] * 0.5" }
 );
 
 console.log(`\n${pass} passed, ${failures.length} failed`);

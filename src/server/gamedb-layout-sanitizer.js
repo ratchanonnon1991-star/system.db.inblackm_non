@@ -25,6 +25,16 @@ function sanitizeStringArray(value) {
     : [];
 }
 
+function sanitizeGameinfoRowOverrides(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const overrides = {};
+  for (const [packId, formula] of Object.entries(value).slice(0, 2000)) {
+    if (typeof formula !== "string" || !formula.trim()) continue;
+    overrides[String(packId).slice(0, 128)] = formula.trim().slice(0, 500);
+  }
+  return overrides;
+}
+
 // Shared with the gameinfo module: a game's computed_column JSONB column
 // holds the same shape, so both surfaces can edit it with this one sanitizer.
 export function sanitizeComputedColumns(raw) {
@@ -45,6 +55,7 @@ export function sanitizeComputedColumns(raw) {
           // Absent on every column saved before formulas could return text.
           type: COMPUTED_TYPES.includes(col.type) ? col.type : "number",
           symbol: GAMEINFO_COMPUTED_SYMBOLS.includes(col.symbol) ? col.symbol : "",
+          rowOverrides: sanitizeGameinfoRowOverrides(col.rowOverrides),
         }))
     : [];
 }

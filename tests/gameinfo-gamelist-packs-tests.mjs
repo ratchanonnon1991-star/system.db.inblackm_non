@@ -75,7 +75,15 @@ async function run() {
 
   // --- saveGamelistPacks: replaces every row for this game in one transaction
   reset();
-  const computedColumns = [{ key: "col_1", label: "กำไร", formula: "[ราคา]*1.1", type: "number" }];
+  const computedColumns = [
+    {
+      key: "col_1",
+      label: "กำไร",
+      formula: "[ราคา]*1.1",
+      type: "number",
+      rowOverrides: { pk1: "[ราคา]*1.2" },
+    },
+  ];
   await saveGamelistPacks(5, {
     currencies: ORIGINAL_TREE,
     computedColumns,

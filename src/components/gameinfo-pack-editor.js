@@ -27,13 +27,19 @@ import {
   useGameinfoPackColumnLayout,
 } from "./gameinfo-pack-column-layout";
 import { apiJson } from "@/lib/api-json";
-import { evaluateFormula, parseFormula } from "@/lib/gamedb-formula";
+import { evaluateFormula, extractFormulaRefs, parseFormula } from "@/lib/gamedb-formula";
 import { GAMEINFO_FIELD_NAMES, resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
 import { mergeCurrencies } from "@/lib/gameinfo-import";
 import {
   buildGameinfoPackColumns,
   formatGameinfoPackColumnValue,
 } from "@/lib/gameinfo-pack-columns";
+import {
+  duplicateGameinfoFormulaOverrides,
+  getEffectiveGameinfoFormula,
+  removeGameinfoFormulaOverridesForPack,
+  setGameinfoFormulaOverride,
+} from "@/lib/gameinfo-formula-overrides";
 import { createBlankGameinfoPack, duplicateGameinfoPack } from "@/lib/gameinfo-pack-model";
 import { normalizeSpaces } from "@/lib/text-normalize";
 
@@ -196,12 +202,14 @@ export default function GameinfoPackEditor({
     });
   }
   function duplicatePack(cIdx, catIdx, pkIdx) {
+    const source = currencies[cIdx]?.categories[catIdx]?.packs[pkIdx];
+    if (!source) return;
+    const newId = genId("pk");
     updateCurrencies((draft) => {
       const packs = draft[cIdx].categories[catIdx].packs;
-      const source = packs[pkIdx];
-      if (!source) return;
-      packs.splice(pkIdx + 1, 0, duplicateGameinfoPack(source, genId("pk")));
+      packs.splice(pkIdx + 1, 0, duplicateGameinfoPack(packs[pkIdx], newId));
     });
+    setComputedColumns((prev) => duplicateGameinfoFormulaOverrides(prev, source.id, newId));
   }
   function removePack(cIdx, catIdx, pkIdx) {
     const packId = currencies[cIdx]?.categories[catIdx]?.packs[pkIdx]?.id;
@@ -209,6 +217,7 @@ export default function GameinfoPackEditor({
       draft[cIdx].categories[catIdx].packs.splice(pkIdx, 1);
     });
     if (packId) {
+      setComputedColumns((prev) => removeGameinfoFormulaOverridesForPack(prev, packId));
       setInvalidFields((prev) => {
         if (prev.size === 0) return prev;
         const next = new Set(prev);
@@ -242,6 +251,11 @@ export default function GameinfoPackEditor({
   }
   function removeComputedColumn(key) {
     setComputedColumns((prev) => prev.filter((c) => c.key !== key));
+  }
+  function setFormulaOverride(columnKey, packId, formula) {
+    setComputedColumns((prev) =>
+      setGameinfoFormulaOverride(prev, columnKey, packId, formula)
+    );
   }
 
   function validatePacks() {
@@ -606,6 +620,7 @@ export default function GameinfoPackEditor({
                     invalidFields={invalidFields}
                     onRemoveColumn={removeComputedColumn}
                     onReorderColumns={packLayout.reorder}
+                    onSetFormulaOverride={setFormulaOverride}
                     onRenameCategory={(name) =>
                       updateCurrencies((d) => {
                         d[cIdx].categories[catIdx].name = name;
@@ -715,6 +730,7 @@ function CategoryBlock({
   invalidFields,
   onRemoveColumn,
   onReorderColumns,
+  onSetFormulaOverride,
   onRenameCategory,
   onRemoveCategory,
   onAddPack,
@@ -841,6 +857,9 @@ function CategoryBlock({
                 onUpdate={(patch) => onUpdatePack(pkIdx, patch)}
                 onDuplicate={() => onDuplicatePack(pkIdx)}
                 onRemove={() => onRemovePack(pkIdx)}
+                onSetFormulaOverride={(columnKey, formula) =>
+                  onSetFormulaOverride(columnKey, pack.id, formula)
+                }
               />
             ))}
           </div>
@@ -861,8 +880,10 @@ function PackRow({
   onUpdate,
   onDuplicate,
   onRemove,
+  onSetFormulaOverride,
 }) {
   const [editing, setEditing] = useState(null);
+  const [overrideColumn, setOverrideColumn] = useState(null);
   const isEditing = (field) => editing === field;
 
   return (
@@ -884,6 +905,7 @@ function PackRow({
           onStartEdit={() => setEditing(column.id)}
           onCommit={() => setEditing(null)}
           onUpdate={onUpdate}
+          onEditFormula={() => setOverrideColumn(column)}
         />
       ))}
 
@@ -907,6 +929,18 @@ function PackRow({
           <Trash2 size={13} />
         </button>
       </div>
+      {overrideColumn ? (
+        <GameinfoFormulaOverrideEditor
+          column={overrideColumn.computed}
+          pack={pack}
+          game={game}
+          onClose={() => setOverrideColumn(null)}
+          onSave={(formula) => {
+            onSetFormulaOverride(overrideColumn.computed.key, formula);
+            setOverrideColumn(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -921,6 +955,7 @@ function PackEditorColumn({
   onStartEdit,
   onCommit,
   onUpdate,
+  onEditFormula,
 }) {
   if (column.id === "image") {
     return <ImageUrlField value={pack.image ?? ""} onChange={(v) => onUpdate({ image: v })} compact />;
@@ -959,13 +994,28 @@ function PackEditorColumn({
   }
   if (column.kind === "computed") {
     const formula = column.computed;
-    const value = formula.ast
-      ? evaluateFormula(formula.ast, (label) => resolveGameinfoField(pack, game, label))
-      : null;
+    const effective = getEffectiveGameinfoFormula(formula, pack.id);
+    let value = null;
+    let formulaError = false;
+    try {
+      value = evaluateFormula(parseFormula(effective.formula), (label) =>
+        resolveGameinfoField(pack, game, label)
+      );
+    } catch {
+      formulaError = true;
+    }
     return (
-      <span className="truncate px-2 text-linear-ink-muted">
-        {formatGameinfoPackColumnValue(value, column)}
-      </span>
+      <button
+        type="button"
+        onClick={onEditFormula}
+        className={`truncate rounded px-2 py-2 text-left hover:bg-linear-surface-2 ${
+          formulaError ? "text-red-400" : "text-linear-ink-muted"
+        }`}
+        title={effective.overridden ? "สูตรเฉพาะ pack — กดเพื่อแก้" : "ใช้สูตรของคอลัมน์ — กดเพื่อกำหนดสูตรเฉพาะ pack"}
+      >
+        {formulaError ? "สูตรผิด" : formatGameinfoPackColumnValue(value, column)}
+        {effective.overridden ? <span className="ml-1 text-[9px] text-linear-primary">เฉพาะแถว</span> : null}
+      </button>
     );
   }
 
@@ -1002,6 +1052,112 @@ function PackEditorColumn({
         className="h-9 w-full rounded border border-linear-primary/40 px-2 text-sm outline-none"
       />
     </PackCell>
+  );
+}
+
+function GameinfoFormulaOverrideEditor({ column, pack, game, onClose, onSave }) {
+  const existing = column.rowOverrides?.[pack.id] || "";
+  const [formula, setFormula] = useState(existing);
+
+  useEffect(() => {
+    function handleKey(event) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  const validation = useMemo(() => {
+    if (!formula.trim()) return { ok: true, message: "เว้นว่างเพื่อใช้สูตรของคอลัมน์", value: null };
+    try {
+      const ast = parseFormula(formula);
+      const unknown = [...extractFormulaRefs(ast)].filter(
+        (name) => !GAMEINFO_FIELD_NAMES.includes(name)
+      );
+      if (unknown.length) {
+        return { ok: false, message: `ไม่รู้จักคอลัมน์: ${unknown.join(", ")}`, value: null };
+      }
+      const value = evaluateFormula(ast, (label) => resolveGameinfoField(pack, game, label));
+      return {
+        ok: true,
+        message: `สูตรถูกต้อง · ผลลัพธ์แถวนี้ ${formatGameinfoPackColumnValue(value, column)}`,
+        value,
+      };
+    } catch (error) {
+      return { ok: false, message: error.message, value: null };
+    }
+  }, [column, formula, game, pack]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="w-full max-w-lg rounded-lg border border-linear-hairline bg-linear-surface-1 shadow-2xl">
+        <div className="flex items-center justify-between border-b border-linear-hairline px-5 py-3">
+          <div>
+            <h2 className="text-sm font-semibold text-linear-ink">สูตรเฉพาะ pack — {column.label}</h2>
+            <p className="mt-0.5 text-xs text-linear-ink-tertiary">{pack.name || pack.id}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="ปิด" className="rounded p-1 text-linear-ink-tertiary hover:bg-linear-surface-2">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="space-y-3 px-5 py-4">
+          <div>
+            <p className="mb-1 text-xs text-linear-ink-tertiary">สูตรหลักของคอลัมน์</p>
+            <code className="block rounded bg-linear-surface-2 px-3 py-2 text-xs text-linear-ink-subtle">
+              {column.formula}
+            </code>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-linear-ink-tertiary">สูตรเฉพาะ pack</label>
+            <input
+              autoFocus
+              value={formula}
+              onChange={(event) => setFormula(event.target.value)}
+              placeholder="เว้นว่างเพื่อใช้สูตรหลัก"
+              className="h-10 w-full rounded border border-linear-hairline-strong bg-linear-surface-2 px-3 font-mono text-xs text-linear-ink outline-none focus:border-linear-primary"
+            />
+            <p className={`mt-1 text-xs ${validation.ok ? "text-emerald-400" : "text-red-400"}`}>
+              {validation.message}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {GAMEINFO_FIELD_NAMES.map((name) => (
+              <button
+                key={name}
+                type="button"
+                onClick={() => setFormula((current) => `${current}[${name}]`)}
+                className="rounded bg-linear-surface-3 px-2 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-4"
+              >
+                {name}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center justify-between border-t border-linear-hairline px-5 py-3">
+          <button
+            type="button"
+            onClick={() => onSave("")}
+            disabled={!existing}
+            className="text-xs text-linear-primary hover:underline disabled:opacity-40"
+          >
+            กลับไปใช้สูตรหลัก
+          </button>
+          <button
+            type="button"
+            onClick={() => onSave(formula)}
+            disabled={!validation.ok}
+            className="rounded-md bg-linear-primary px-4 py-2 text-sm font-medium text-white hover:bg-linear-primary-hover disabled:opacity-50"
+          >
+            บันทึกสูตรแถวนี้
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

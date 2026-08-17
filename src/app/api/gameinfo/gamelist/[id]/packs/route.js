@@ -2,6 +2,7 @@ import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireLayoutEditor } from "@/server/auth";
 import { sanitizeComputedColumns } from "@/server/gamedb-layout-sanitizer";
 import { saveGamelistPacks } from "@/server/gameinfo-gamelist-packs";
+import { pruneGameinfoFormulaOverrides } from "@/lib/gameinfo-formula-overrides";
 
 export async function PUT(request, { params }) {
   try {
@@ -13,9 +14,18 @@ export async function PUT(request, { params }) {
     const source = body.auditSource === "csv_append" || body.auditSource === "csv_replace"
       ? body.auditSource
       : "editor";
+    const currencies = Array.isArray(body.currencies) ? body.currencies : [];
+    const packIds = currencies.flatMap((currency) =>
+      (currency?.categories || []).flatMap((category) =>
+        (category?.packs || []).map((pack) => pack?.id).filter(Boolean)
+      )
+    );
     const packs = await saveGamelistPacks(gameId, {
-      currencies: Array.isArray(body.currencies) ? body.currencies : [],
-      computedColumns: sanitizeComputedColumns(body.computedColumns),
+      currencies,
+      computedColumns: pruneGameinfoFormulaOverrides(
+        sanitizeComputedColumns(body.computedColumns),
+        packIds
+      ),
       actor: { id: user.id, name: user.displayName || user.username },
       source,
     });

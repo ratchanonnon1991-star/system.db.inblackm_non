@@ -11,6 +11,7 @@ import {
   buildGameinfoPackColumns,
   formatGameinfoPackColumnValue,
 } from "@/lib/gameinfo-pack-columns";
+import { getEffectiveGameinfoFormula } from "@/lib/gameinfo-formula-overrides";
 import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
 import {
@@ -274,12 +275,24 @@ function PackViewCell({ column, pack, game }) {
   }
   if (column.kind === "computed") {
     const formula = column.computed;
-    const value = formula.ast
-      ? evaluateFormula(formula.ast, (label) => resolveGameinfoField(pack, game, label))
-      : null;
+    const effective = getEffectiveGameinfoFormula(formula, pack.id);
+    let value = null;
+    let formulaError = false;
+    try {
+      value = evaluateFormula(parseFormula(effective.formula), (label) =>
+        resolveGameinfoField(pack, game, label)
+      );
+    } catch {
+      formulaError = true;
+    }
     return (
-      <td className="max-w-[160px] truncate px-3 py-2 text-linear-ink-muted">
-        {formatGameinfoPackColumnValue(value, column)}
+      <td
+        className={`max-w-[160px] truncate px-3 py-2 ${
+          formulaError ? "text-red-400" : "text-linear-ink-muted"
+        }`}
+        title={effective.overridden ? "ใช้สูตรเฉพาะ pack" : "ใช้สูตรหลักของคอลัมน์"}
+      >
+        {formulaError ? "สูตรผิด" : formatGameinfoPackColumnValue(value, column)}
       </td>
     );
   }
