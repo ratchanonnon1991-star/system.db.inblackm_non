@@ -138,7 +138,7 @@ export default function GameinfoImagePreview({
         createPortal(
           <div
             style={{ top: pos.top, left: pos.left }}
-            className="pointer-events-none fixed z-50 rounded-lg border border-linear-hairline bg-linear-surface-1 p-1 shadow-xl"
+            className="pointer-events-none fixed z-50 rounded-lg border border-linear-hairline bg-linear-surface-1 p-1"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -162,7 +162,7 @@ export default function GameinfoImagePreview({
             <img
               src={src}
               alt={alt}
-              className="aspect-square h-[80vmin] w-[80vmin] select-none rounded-lg object-contain shadow-2xl"
+              className="h-[80vmin] w-auto max-w-full select-none rounded-lg object-contain"
               style={{
                 transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
                 transition: dragging ? "none" : "transform 0.15s ease-out",
