@@ -114,7 +114,11 @@ export default function GameinfoTutorialButton({
           setOpen(true);
         }}
         disabled={disabled}
-        className="rounded-md border border-linear-hairline-strong px-2 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
+        className={`rounded-md border px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent ${
+          isWarning
+            ? "border-red-600 bg-red-600 text-white hover:bg-red-700"
+            : "border-linear-hairline-strong text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink"
+        }`}
         title={disabled ? `บันทึกเกมนี้ก่อนถึงจะใส่${buttonLabel}ได้` : isWarning ? "ข้อควรระวังของเกม" : "วิธีเติมเกม"}
       >
         {buttonLabel}
