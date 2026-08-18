@@ -7,7 +7,11 @@
 // instead of a JOIN.
 import { getPool, getPoolForConnection } from "@/lib/db";
 import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
-import { DEFAULT_ITUNE_RELEASE_THRESHOLD, ITUNE_UNAVAILABLE_STATUS } from "@/lib/itune-status";
+import {
+  DEFAULT_ITUNE_PRIORITY_AMOUNT_THRESHOLD,
+  DEFAULT_ITUNE_RELEASE_THRESHOLD,
+  ITUNE_UNAVAILABLE_STATUS,
+} from "@/lib/itune-status";
 
 const CONNECTION_NAME = "topup_inblackm";
 
@@ -126,6 +130,14 @@ function mapRow(row, usernamesById = {}) {
     // row actually selected HAS_PENDING_REJECT_SQL; otherwise defaults to
     // false, which is the safe reading for callers that don't need it.
     hasPendingReject: row.has_pending_reject || false,
+    // Claim-queue controls (see the admin "จัดคิวรับเมล" page). Only the
+    // queries that actually select these columns carry real values;
+    // everywhere else they read as "unpinned, not held", which is the
+    // correct default for a caller that doesn't care.
+    priorityOrder: row.priority_order === null || row.priority_order === undefined
+      ? null
+      : Number(row.priority_order),
+    claimHold: row.claim_hold || false,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -139,6 +151,39 @@ const HAS_PENDING_REJECT_SQL = `EXISTS (
   SELECT 1 FROM projectm_itune_issue_log l
   WHERE l.entry_id = e.id AND l.is_reject AND l.reject_confirmed_at IS NULL
 ) AS has_pending_reject`;
+
+// The one true claim order, shared verbatim by claimItuneEntry (which takes
+// the first row) and listItunePriorityQueue (which shows the whole list to
+// an admin). These MUST stay identical — the entire point of the priority
+// page is that what it displays is what "รับเมล" will actually hand out, so
+// any divergence makes the page lie. $1 is the "ด่วน" amount threshold.
+//
+// Every column referenced lives on projectm_itune_entries itself, so no
+// JOIN is needed and claimItuneEntry's plain `FOR UPDATE SKIP LOCKED`
+// keeps working (a joined query would have to spell out FOR UPDATE OF e).
+const CLAIM_ORDER_SQL = `ORDER BY
+  (priority_order IS NULL),
+  priority_order ASC,
+  (amount < $1),
+  added_at ASC,
+  id ASC`;
+
+// Rows that are worth handing out at all: nobody holding them, not reported
+// unavailable, and still carrying a usable balance.
+//
+// $3 is the release threshold (projectm_itune_release_settings.max_amount) —
+// the same number that decides when a topup user is allowed to give a claim
+// back (see releaseItuneEntry). Below it an entry counts as drained, which
+// is precisely why releasing is permitted, so putting it back in the queue
+// would only hand someone an empty card to discover and return again.
+//
+// Two rules are deliberately NOT here because they differ per caller:
+// claim_hold (claimItuneEntry skips held rows; the admin page still lists
+// them so they can be un-held) and the per-user "you already rejected this
+// one" exclusion (see listItunePriorityQueue's comment).
+const CLAIMABLE_WHERE_SQL = `claimed_by_user_id IS NULL
+     AND (status IS NULL OR status <> $2)
+     AND amount >= $3`;
 
 // Resolves { userId: username } for whichever creators showed up in a batch
 // of rows — a plain lookup against the primary pool since it can't be a JOIN
@@ -274,6 +319,19 @@ function ensureSchema(connection) {
         ALTER TABLE projectm_itune_entries
         ADD COLUMN IF NOT EXISTS is_permanent BOOLEAN NOT NULL DEFAULT FALSE
       `);
+      // Claim-queue controls, driven from the admin "จัดคิวรับเมล" page (see
+      // listItunePriorityQueue/reorderItunePriority). priority_order is the
+      // manual pin: NULL means "leave this one to the automatic rule",
+      // a number means an admin placed it explicitly and it outranks every
+      // unpinned row (see claimItuneEntry's ORDER BY). claim_hold takes a
+      // single row out of the claimable pool without touching its status,
+      // the per-row counterpart to the global claim_paused switch on the
+      // settings singleton below.
+      await client.query(`
+        ALTER TABLE projectm_itune_entries
+        ADD COLUMN IF NOT EXISTS priority_order INTEGER,
+        ADD COLUMN IF NOT EXISTS claim_hold BOOLEAN NOT NULL DEFAULT FALSE
+      `);
       // Log of "อัปเดตยอดคงเหลือ" (update remaining balance) actions a topup
       // user makes while holding a claimed row — one row per adjustment, so
       // the balance's history stays auditable even though the live entry
@@ -317,6 +375,17 @@ function ensureSchema(connection) {
           updated_by_username   TEXT,
           CONSTRAINT projectm_itune_release_settings_singleton CHECK (id = 1)
         )
+      `);
+      // Same singleton row now also carries the claim-queue settings (see
+      // getItuneClaimSettings) — one row, one read, rather than a second
+      // config table for two more scalars. claim_paused stops "รับเมล"
+      // outright for everyone; priority_amount_threshold is the cutoff
+      // above which an entry sorts into the "ด่วน" tier ahead of the
+      // ordinary oldest-first queue (see claimItuneEntry's ORDER BY).
+      await client.query(`
+        ALTER TABLE projectm_itune_release_settings
+        ADD COLUMN IF NOT EXISTS claim_paused BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS priority_amount_threshold NUMERIC(14,2)
       `);
       // "log คนเติม" (topup activity log, see the admin page's ปัจจุบัน/
       // ประวัติ tabs) — one row per claim/release/reject, so who's holding
@@ -956,18 +1025,28 @@ function isProjectmAdminActor(actor) {
 
 const MAX_CLAIMS_PER_USER = 2;
 
-// "รับเมล" (claim) — assigns the lowest-id row that's neither already
-// claimed, reported unavailable (see ITUNE_UNAVAILABLE_STATUS — a topup
-// user should never be handed a card someone's already flagged broken), nor
-// the subject of a CONFIRMED reject by this specific actor (see
-// rejectItuneEntry/confirmItuneReject — a pending, not-yet-confirmed reject
-// request doesn't exclude anyone yet; once confirmed it's a permanent,
-// per-user-only exclusion — everyone else can still claim the entry
-// normally) to actor, capped at MAX_CLAIMS_PER_USER concurrent claims. FOR
-// UPDATE SKIP LOCKED so two topup users clicking "รับเมล" at the same
-// instant can't both land on the same row — the second just skips past it
-// to the next-lowest candidate instead of blocking on the first's lock.
+// "รับเมล" (claim) — assigns the first row in CLAIM_ORDER_SQL's order (an
+// admin's manual pin if there is one, otherwise the oldest entry in the
+// highest-value tier) that's neither already claimed, reported unavailable
+// (see ITUNE_UNAVAILABLE_STATUS — a topup user should never be handed a
+// card someone's already flagged broken), individually held back by an
+// admin (claim_hold), nor the subject of a CONFIRMED reject by this
+// specific actor (see rejectItuneEntry/confirmItuneReject — a pending,
+// not-yet-confirmed reject request doesn't exclude anyone yet; once
+// confirmed it's a permanent, per-user-only exclusion — everyone else can
+// still claim the entry normally) to actor, capped at MAX_CLAIMS_PER_USER
+// concurrent claims. FOR UPDATE SKIP LOCKED so two topup users clicking
+// "รับเมล" at the same instant can't both land on the same row — the second
+// just skips past it to the next candidate instead of blocking on the
+// first's lock.
 export async function claimItuneEntry(actor) {
+  // Read before opening the transaction: both values are plain settings,
+  // and a paused queue should fail before taking any row locks at all.
+  const { claimPaused, priorityAmountThreshold, maxAmount } =
+    await getItuneClaimSettings();
+  if (claimPaused) {
+    throw createHttpError("ระบบหยุดรับเมลชั่วคราว — ติดต่อแอดมิน", 423);
+  }
   const pool = await getReadyPool();
   const client = await pool.connect();
   let claimedId;
@@ -985,25 +1064,32 @@ export async function claimItuneEntry(actor) {
     }
     const { rows } = await client.query(
       `SELECT id, email, amount, amount_confirm_image FROM projectm_itune_entries e
-       WHERE claimed_by_user_id IS NULL
-         AND (status IS NULL OR status <> $1)
+       WHERE ${CLAIMABLE_WHERE_SQL}
+         AND claim_hold = FALSE
          AND NOT EXISTS (
            SELECT 1 FROM projectm_itune_issue_log l
            WHERE l.entry_id = e.id AND l.is_reject AND l.reject_confirmed_at IS NOT NULL
-             AND l.reported_by_user_id = $2
+             AND l.reported_by_user_id = $4
          )
-       ORDER BY id ASC
+       ${CLAIM_ORDER_SQL}
        LIMIT 1
        FOR UPDATE SKIP LOCKED`,
-      [ITUNE_UNAVAILABLE_STATUS, actor.id]
+      [priorityAmountThreshold, ITUNE_UNAVAILABLE_STATUS, maxAmount, actor.id]
     );
     if (rows.length === 0) {
       throw createHttpError("ไม่มีรายการว่างให้รับตอนนี้", 404);
     }
     const claimedRow = rows[0];
     claimedId = claimedRow.id;
+    // priority_order is cleared on the way out: a pin means "hand this one
+    // out next", and it has now been handed out. Leaving it set would put
+    // the row back at the head of the queue if it's ever released, ahead of
+    // entries that have been waiting since — the admin can always re-pin it
+    // from the priority page if that's actually what they want.
     await client.query(
-      `UPDATE projectm_itune_entries SET claimed_by_user_id = $1, claimed_at = NOW() WHERE id = $2`,
+      `UPDATE projectm_itune_entries
+       SET claimed_by_user_id = $1, claimed_at = NOW(), priority_order = NULL
+       WHERE id = $2`,
       [actor.id, claimedId]
     );
     // Baseline history row — old_amount = new_amount marks it as "this is
@@ -1038,6 +1124,96 @@ export async function claimItuneEntry(actor) {
     client.release();
   }
   return findItuneEntryById(claimedId);
+}
+
+// The admin "จัดคิวรับเมล" page's list: every entry that's up for grabs,
+// in exactly the order claimItuneEntry will hand them out, plus the ones an
+// admin has individually held back (returned too, flagged via claimHold, so
+// they can be un-held from the same screen rather than disappearing).
+//
+// Deliberately does NOT apply claimItuneEntry's per-user "you already had
+// this one rejected" exclusion: that rule differs for every caller, so
+// there is no single true queue to show. This is the queue as a user with
+// no confirmed rejects would see it — the page says as much on screen.
+export async function listItunePriorityQueue() {
+  const pool = await getReadyPool();
+  const { priorityAmountThreshold, maxAmount } = await getItuneClaimSettings();
+  const result = await pool.query(
+    `SELECT e.*, ${HAS_PENDING_REJECT_SQL} FROM projectm_itune_entries e
+     WHERE ${CLAIMABLE_WHERE_SQL}
+     ${CLAIM_ORDER_SQL}`,
+    [priorityAmountThreshold, ITUNE_UNAVAILABLE_STATUS, maxAmount]
+  );
+  const usernamesById = await fetchUsernamesById(
+    result.rows.map((row) => row.created_by_user_id)
+  );
+  return result.rows.map((row) => mapRow(row, usernamesById));
+}
+
+// Persists the admin's drag-to-reorder of the pinned zone. Mirrors
+// reorderGameListRows in gameinfo-gamelist.js: one transaction, one UPDATE
+// per row, position taken from the array index. Only ids the caller listed
+// are touched — unpinned entries keep priority_order NULL and stay on the
+// automatic rule.
+export async function reorderItunePriority(orderedIds) {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const [index, id] of orderedIds.entries()) {
+      await client.query(
+        `UPDATE projectm_itune_entries SET priority_order = $1, updated_at = NOW() WHERE id = $2`,
+        [index, id]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// Pin an entry to the manual queue (appended after whatever is already
+// pinned) or release it back to the automatic rule. MAX(priority_order)+1
+// is computed in the same statement so two admins pinning at once can't
+// both land on the same slot.
+export async function setItunePriorityPinned(id, pinned) {
+  const pool = await getReadyPool();
+  if (!pinned) {
+    const result = await pool.query(
+      `UPDATE projectm_itune_entries SET priority_order = NULL, updated_at = NOW()
+       WHERE id = $1 RETURNING id`,
+      [id]
+    );
+    if (!result.rows.length) throw createHttpError("ไม่พบรายการนี้", 404);
+    return findItuneEntryById(id);
+  }
+  const result = await pool.query(
+    `UPDATE projectm_itune_entries
+     SET priority_order = COALESCE(
+           (SELECT MAX(priority_order) + 1 FROM projectm_itune_entries), 0
+         ),
+         updated_at = NOW()
+     WHERE id = $1 RETURNING id`,
+    [id]
+  );
+  if (!result.rows.length) throw createHttpError("ไม่พบรายการนี้", 404);
+  return findItuneEntryById(id);
+}
+
+// Per-entry counterpart to the global claim_paused switch — takes one row
+// out of the claimable pool without touching its status or its pin.
+export async function setItuneClaimHold(id, hold) {
+  const pool = await getReadyPool();
+  const result = await pool.query(
+    `UPDATE projectm_itune_entries SET claim_hold = $1, updated_at = NOW()
+     WHERE id = $2 RETURNING id`,
+    [Boolean(hold), id]
+  );
+  if (!result.rows.length) throw createHttpError("ไม่พบรายการนี้", 404);
+  return findItuneEntryById(id);
 }
 
 // Rows currently held by a given topup user — what the topup page loads on
@@ -1150,6 +1326,69 @@ export async function saveItuneReleaseThreshold(maxAmount, actor) {
     [maxAmount, actor?.id ?? null, actor?.displayName || actor?.username || null]
   );
   return maxAmount;
+}
+
+// Everything on the settings singleton in one read — claimItuneEntry needs
+// two of these three on every claim, so splitting them into separate
+// getters would just mean two round trips for one row.
+export async function getItuneClaimSettings() {
+  const pool = await getReadyPool();
+  const result = await pool.query(
+    `SELECT max_amount, claim_paused, priority_amount_threshold
+     FROM projectm_itune_release_settings WHERE id = 1`
+  );
+  const row = result.rows[0];
+  const threshold = row?.priority_amount_threshold;
+  return {
+    maxAmount:
+      row?.max_amount === undefined || row?.max_amount === null
+        ? DEFAULT_ITUNE_RELEASE_THRESHOLD
+        : Number(row.max_amount),
+    claimPaused: row?.claim_paused || false,
+    priorityAmountThreshold:
+      threshold === undefined || threshold === null
+        ? DEFAULT_ITUNE_PRIORITY_AMOUNT_THRESHOLD
+        : Number(threshold),
+  };
+}
+
+// Partial update of the same singleton — only the keys actually present in
+// `fields` are written, so the release-settings modal and the priority
+// page's own controls can each save their own slice without clobbering
+// the other's. max_amount is NOT NULL, so an insert that doesn't set it
+// has to fall back to the current (or default) value rather than NULL.
+export async function saveItuneClaimSettings(fields, actor) {
+  const pool = await getReadyPool();
+  const current = await getItuneClaimSettings();
+  const next = {
+    maxAmount: fields.maxAmount === undefined ? current.maxAmount : fields.maxAmount,
+    claimPaused:
+      fields.claimPaused === undefined ? current.claimPaused : Boolean(fields.claimPaused),
+    priorityAmountThreshold:
+      fields.priorityAmountThreshold === undefined
+        ? current.priorityAmountThreshold
+        : fields.priorityAmountThreshold,
+  };
+  await pool.query(
+    `INSERT INTO projectm_itune_release_settings
+       (id, max_amount, claim_paused, priority_amount_threshold, updated_by_user_id, updated_by_username)
+     VALUES (1, $1, $2, $3, $4, $5)
+     ON CONFLICT (id) DO UPDATE
+       SET max_amount = EXCLUDED.max_amount,
+           claim_paused = EXCLUDED.claim_paused,
+           priority_amount_threshold = EXCLUDED.priority_amount_threshold,
+           updated_at = NOW(),
+           updated_by_user_id = EXCLUDED.updated_by_user_id,
+           updated_by_username = EXCLUDED.updated_by_username`,
+    [
+      next.maxAmount,
+      next.claimPaused,
+      next.priorityAmountThreshold,
+      actor?.id ?? null,
+      actor?.displayName || actor?.username || null,
+    ]
+  );
+  return next;
 }
 
 // Undoes claimItuneEntry — returns the row to the claimable pool. Only the
