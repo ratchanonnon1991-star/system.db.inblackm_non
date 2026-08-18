@@ -23,7 +23,6 @@ export async function PUT(request, { params }) {
     const body = await request.json();
     const fields = {};
 
-    if (body.support !== undefined) fields.support = String(body.support || "").trim();
     if (body.email !== undefined) fields.email = String(body.email || "").trim();
     if (body.password !== undefined) fields.password = String(body.password || "").trim();
     if (body.currency !== undefined) fields.currency = String(body.currency || "").trim();

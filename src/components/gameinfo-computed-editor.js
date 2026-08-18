@@ -9,6 +9,7 @@ import {
   parseFormula,
 } from "@/lib/gamedb-formula";
 import { GAMEINFO_FIELD_NAMES } from "@/lib/gameinfo-formula-fields";
+import { GAMEINFO_FORMULA_FUNCTION_HELP } from "@/lib/gameinfo-formula-help";
 import { formatGameinfoPackColumnValue, GAMEINFO_PACK_SYMBOLS } from "@/lib/gameinfo-pack-columns";
 import { validateGameinfoComputedDependencies } from "@/lib/gameinfo-computed-evaluator";
 
@@ -27,14 +28,6 @@ const TYPE_LABELS = {
   date: "วันที่",
   boolean: "ใช่ / ไม่ใช่",
 };
-
-// Grouped the way someone reaches for them, not alphabetically.
-const FUNCTION_HELP = [
-  ["เงื่อนไข", "IF(เงื่อนไข, ค่าเมื่อจริง, ค่าเมื่อเท็จ) · AND · OR · NOT · ISBLANK · COALESCE"],
-  ["วันที่", "TODAY() · DAYSUNTIL(วันที่) เหลืออีกกี่วัน · DAYS(ปลายทาง, ต้นทาง) · ADDDAYS · YEAR · MONTH · DAY"],
-  ["ข้อความ", "CONCAT · LEFT · RIGHT · MID · LEN · UPPER · LOWER · TRIM · TEXT · CONTAINS · ต่อข้อความด้วย &"],
-  ["ตัวเลข", "ROUND · ABS · MIN · MAX · SUM"],
-];
 
 const EMPTY_FIELD_NAMES = [];
 
@@ -234,7 +227,7 @@ export default function GameinfoComputedEditor({
           <div className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
             <p className="mb-1.5 text-xs font-medium text-linear-ink-muted">ฟังก์ชันที่ใช้ได้</p>
             <dl className="space-y-1">
-              {FUNCTION_HELP.map(([group, list]) => (
+              {GAMEINFO_FORMULA_FUNCTION_HELP.map(([group, list]) => (
                 <div key={group} className="flex gap-2 text-xs leading-relaxed">
                   <dt className="w-12 shrink-0 text-linear-ink-tertiary">{group}</dt>
                   <dd className="min-w-0 font-mono text-linear-ink-subtle">{list}</dd>

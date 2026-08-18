@@ -117,9 +117,15 @@ export default function ItuneImagePreview({
         pos &&
         typeof document !== "undefined" &&
         createPortal(
+          // z-[80] — same reasoning as the fullscreen overlay below: this
+          // thumbnail can be inside another modal (e.g. ประวัติยอด/
+          // ItuneAmountHistoryModal, opened from the "⋮" menu), whose own
+          // z-[70] backdrop would otherwise bury this hover preview. Safe to
+          // share a tier with the fullscreen overlay since `!open` above
+          // means the two never render at the same time.
           <div
             style={{ top: pos.top, left: pos.left }}
-            className="pointer-events-none fixed z-50 rounded-lg border border-ll-hairline bg-ll-surface-1 p-1 shadow-[var(--ll-shadow-modal)]"
+            className="pointer-events-none fixed z-[80] rounded-lg border border-ll-hairline bg-ll-surface-1 p-1 shadow-[var(--ll-shadow-modal)]"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -134,8 +140,13 @@ export default function ItuneImagePreview({
       {open &&
         typeof document !== "undefined" &&
         createPortal(
+          // z-[80], above every modal's z-[70] backdrop (see
+          // itune-admin-table.js) — a thumbnail can appear inside another
+          // modal (e.g. ประวัติยอด/ItuneAmountHistoryModal), and this
+          // fullscreen zoom needs to sit on top of that modal, not get
+          // buried behind its own backdrop.
           <div
-            className="fixed inset-0 z-[60] flex items-center justify-center overflow-hidden bg-black/70 p-6"
+            className="fixed inset-0 z-[80] flex items-center justify-center overflow-hidden bg-black/70 p-6"
             onClick={closeOverlay}
             onWheel={onWheel}
           >

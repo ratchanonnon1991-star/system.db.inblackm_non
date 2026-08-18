@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 // Read-only display for col 2 (Date_time): a 24h countdown from the moment
 // the row was added, switching to an "over by" counter once it passes 24h
 // and continuing to count up from there. `now` is handed down from the
@@ -14,17 +16,42 @@ function formatHm(ms) {
   return `${hours}:${String(minutes).padStart(2, "0")}`;
 }
 
-export default function ItuneCountdownCell({ addedAt, now }) {
-  if (!addedAt) return <span className="text-ll-ink-tertiary">-</span>;
+// `permanent` (row.isPermanent — see the "ตั้งเป็นเมลถาวร" row-menu action)
+// drops the countdown entirely: just the date, in blue, never ticking.
+// `frozen` (true once the entry's status is "ใช้หมดแล้ว" — see
+// ITUNE_DEPLETED_STATUS) is the lighter-touch version — it still shows a
+// countdown, just stops it at whatever it read the moment it became frozen
+// instead of continuing to tick with `now`. Captured into state (refs can't
+// be read/written during render) via an effect that only reacts to `frozen`/
+// `permanent` flipping, not every `now` tick — deliberately outside
+// exhaustive-deps for that reason.
+export default function ItuneCountdownCell({ addedAt, now, frozen, permanent }) {
+  const startMs = addedAt ? new Date(addedAt).getTime() : NaN;
+  const liveElapsed = Number.isFinite(startMs) ? now - startMs : null;
 
-  const startMs = new Date(addedAt).getTime();
-  if (!Number.isFinite(startMs)) return <span className="text-ll-ink-tertiary">-</span>;
+  const [frozenElapsed, setFrozenElapsed] = useState(null);
+
+  useEffect(() => {
+    if (frozen && !permanent) {
+      setFrozenElapsed((prev) => (prev === null ? liveElapsed : prev));
+    } else {
+      setFrozenElapsed(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to `frozen`/`permanent` flipping, not every `now` tick
+  }, [frozen, permanent]);
+
+  if (!addedAt || liveElapsed === null) return <span className="text-ll-ink-tertiary">-</span>;
 
   // Same th-TH date convention used elsewhere in the app (e.g.
   // query-panel.js, admin-modals.js) — the date it was added, with the
-  // countdown alongside it in parentheses.
+  // countdown alongside it in parentheses (except when permanent).
   const dateLabel = new Date(startMs).toLocaleDateString("th-TH");
-  const elapsed = now - startMs;
+
+  if (permanent) {
+    return <span className="text-sky-500">{dateLabel}</span>;
+  }
+
+  const elapsed = frozen && frozenElapsed !== null ? frozenElapsed : liveElapsed;
 
   if (elapsed <= DAY_MS) {
     return (

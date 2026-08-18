@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { getSessionUser } from "@/server/session-user";
-import { listItuneEntries } from "@/server/itune-entries-repository";
+import { listItuneEntries, getItuneReleaseThreshold } from "@/server/itune-entries-repository";
 import ItuneAdminTable from "@/components/itune-admin-table";
 
 export default async function ItuneAdminPage({ params }) {
@@ -20,9 +20,13 @@ export default async function ItuneAdminPage({ params }) {
   // notice instead of a hard 500 (same fallback shape as
   // gameinfo/[lang]/page.js's loadError handling).
   let entries = null;
+  let releaseThreshold = null;
   let loadError = null;
   try {
-    entries = await listItuneEntries();
+    [entries, releaseThreshold] = await Promise.all([
+      listItuneEntries(),
+      getItuneReleaseThreshold(),
+    ]);
   } catch (err) {
     loadError = err.message || "โหลดข้อมูลไม่สำเร็จ";
   }
@@ -41,7 +45,7 @@ export default async function ItuneAdminPage({ params }) {
             className="mt-2 font-semibold text-ll-ink"
             style={{ fontSize: 28, lineHeight: 1.2, letterSpacing: "-0.6px" }}
           >
-            Admin
+            Admin : {user.displayName}
           </h1>
         </div>
         <Link
@@ -57,7 +61,7 @@ export default async function ItuneAdminPage({ params }) {
           {loadError}
         </div>
       ) : (
-        <ItuneAdminTable initialEntries={entries} />
+        <ItuneAdminTable initialEntries={entries} initialReleaseThreshold={releaseThreshold} />
       )}
     </div>
   );
