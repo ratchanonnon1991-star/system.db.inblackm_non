@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   closestCenter,
@@ -249,7 +249,18 @@ export default function ItunePriorityTable({ initialEntries, initialSettings }) 
   const [thresholdDraft, setThresholdDraft] = useState(
     String(initialSettings?.priorityAmountThreshold ?? "")
   );
+  const thresholdRef = useRef(null);
   const now = useMinuteTicker();
+
+  // Background polling (and another admin's edit) can bring back a
+  // different threshold — mirror it into the input, but never while it has
+  // focus, or a poll landing mid-keystroke would overwrite what's being
+  // typed.
+  const savedThreshold = settings?.priorityAmountThreshold;
+  useEffect(() => {
+    if (thresholdRef.current === document.activeElement) return;
+    setThresholdDraft(String(savedThreshold ?? ""));
+  }, [savedThreshold]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -391,28 +402,6 @@ export default function ItunePriorityTable({ initialEntries, initialSettings }) 
             {paused ? "เปิดให้รับเมล" : "หยุดรับเมลทั้งระบบ"}
           </button>
 
-          <label className="flex items-center gap-2 text-[13px] text-ll-ink-subtle">
-            เกณฑ์ยอดด่วน
-            <input
-              type="number"
-              min={0}
-              value={thresholdDraft}
-              onChange={(e) => setThresholdDraft(e.target.value)}
-              onBlur={() => {
-                const numeric = Number(thresholdDraft);
-                if (!Number.isFinite(numeric) || numeric < 0) {
-                  setThresholdDraft(String(settings?.priorityAmountThreshold ?? ""));
-                  return;
-                }
-                if (numeric === Number(settings?.priorityAmountThreshold)) return;
-                saveSettings(
-                  { priorityAmountThreshold: numeric },
-                  "บันทึกเกณฑ์ยอดด่วนไม่สำเร็จ"
-                );
-              }}
-              className="h-9 w-28 rounded-md border border-ll-hairline-strong bg-ll-surface-2 px-3 text-[13px] text-ll-ink outline-none focus:border-ll-primary"
-            />
-          </label>
         </div>
 
         <p className="text-[12px] text-ll-ink-tertiary">
@@ -478,10 +467,39 @@ export default function ItunePriorityTable({ initialEntries, initialSettings }) 
             </DndContext>
           )}
 
-          <div className="border-b border-ll-hairline bg-ll-surface-2/60 px-3 py-1.5 text-[11px] font-medium text-ll-ink-subtle">
-            คิวอัตโนมัติ — ยอด ≥{" "}
-            {Number(settings?.priorityAmountThreshold ?? 0).toLocaleString("th-TH")} มาก่อน
-            จากนั้นเก่าก่อน ({automatic.length})
+          {/* The threshold lives here rather than up in the settings bar so
+              it sits on the divider it actually draws — everything above
+              this line outranks everything below it because of this number. */}
+          <div className="flex flex-wrap items-center gap-1.5 border-b border-ll-hairline bg-ll-surface-2/60 px-3 py-1.5 text-[11px] font-medium text-ll-ink-subtle">
+            <span>คิวอัตโนมัติ — ยอด ≥</span>
+            <input
+              ref={thresholdRef}
+              type="number"
+              min={0}
+              step={1}
+              value={thresholdDraft}
+              onChange={(e) => setThresholdDraft(e.target.value)}
+              onBlur={() => {
+                const numeric = Number(thresholdDraft);
+                if (!Number.isFinite(numeric) || numeric < 0) {
+                  setThresholdDraft(String(settings?.priorityAmountThreshold ?? ""));
+                  return;
+                }
+                if (numeric === Number(settings?.priorityAmountThreshold)) return;
+                saveSettings(
+                  { priorityAmountThreshold: numeric },
+                  "บันทึกเกณฑ์ยอดด่วนไม่สำเร็จ"
+                );
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+              }}
+              disabled={busy}
+              title="เกณฑ์ยอดด่วน — เมลที่ยอดถึงเกณฑ์นี้จะถูกแจกก่อน"
+              aria-label="เกณฑ์ยอดด่วน"
+              className="h-7 w-24 rounded-md border border-ll-hairline-strong bg-ll-surface-1 px-2 text-[11px] font-semibold text-ll-ink outline-none focus:border-ll-primary disabled:opacity-50"
+            />
+            <span>มาก่อน จากนั้นเก่าก่อน ({automatic.length})</span>
           </div>
           {automatic.length === 0 ? (
             <p className="px-3 py-6 text-center text-[12px] text-ll-ink-tertiary">

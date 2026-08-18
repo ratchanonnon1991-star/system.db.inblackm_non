@@ -27,12 +27,12 @@ export const DEFAULT_ITUNE_RELEASE_THRESHOLD = 0.99;
 // Amount at or above which an unpinned entry sorts into the "ด่วน" tier,
 // ahead of the ordinary oldest-first queue (see claimItuneEntry's ORDER BY
 // and the admin "จัดคิวรับเมล" page). Admin-configurable on the same
-// projectm_itune_release_settings singleton — this is only the fallback
-// before anything has been saved. Deliberately high enough that it stays a
-// genuine exception: if too many entries qualify, the low-amount ones at
-// the back never get handed out, which is exactly what the tier is meant
-// to avoid.
-export const DEFAULT_ITUNE_PRIORITY_AMOUNT_THRESHOLD = 3000;
+// projectm_itune_release_settings singleton via the threshold box on that
+// page — this is only the fallback before anything has been saved. Raise
+// it if too many entries qualify: once most of the queue is "ด่วน" the
+// low-amount entries at the back stop getting handed out at all, which is
+// exactly what the tier is meant to avoid.
+export const DEFAULT_ITUNE_PRIORITY_AMOUNT_THRESHOLD = 400;
 
 // Set by the "แจ้งปัญหา" (report issue) action — persisted in the row's own
 // `status` column, so it overrides the amount-derived status above until
