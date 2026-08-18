@@ -51,8 +51,12 @@ function StatusBadge({ row }) {
 }
 
 // The 12 shared data cells, rendered identically in both zones so a row
-// reads the same wherever it currently sits.
-function EntryCells({ entry, now }) {
+// reads the same wherever it currently sits. `threshold` only colours the
+// Amount — an entry at or above it is in the "ด่วน" tier and jumps the
+// ordinary queue, so the number that earned it that place is worth
+// spotting without reading the divider first.
+function EntryCells({ entry, now, threshold }) {
+  const isUrgent = Number(entry.amount) >= Number(threshold);
   return (
     <>
       <div className="min-w-0 truncate px-3 py-2 text-center font-mono text-xs text-ll-ink-subtle">
@@ -82,7 +86,12 @@ function EntryCells({ entry, now }) {
       <div className="min-w-0 truncate px-3 py-2 text-[13px] text-ll-ink-subtle">
         {entry.supplier || "—"}
       </div>
-      <div className="min-w-0 truncate px-3 py-2 text-right text-[13px] font-medium text-ll-ink">
+      <div
+        className={`min-w-0 truncate px-3 py-2 text-right text-[13px] ${
+          isUrgent ? "font-semibold text-ll-primary" : "font-medium text-ll-ink"
+        }`}
+        title={isUrgent ? `ยอดถึงเกณฑ์ด่วน (≥ ${Number(threshold).toLocaleString("th-TH")})` : undefined}
+      >
         {Number(entry.amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
       </div>
       <div className="min-w-0 px-3 py-2 text-center">
@@ -140,7 +149,7 @@ function RowActions({ entry, busy, onTogglePin, onToggleHold }) {
   );
 }
 
-function SortableRow({ entry, now, queueNumber, busy, onTogglePin, onToggleHold }) {
+function SortableRow({ entry, now, threshold, queueNumber, busy, onTogglePin, onToggleHold }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: entry.id,
   });
@@ -165,13 +174,13 @@ function SortableRow({ entry, now, queueNumber, busy, onTogglePin, onToggleHold 
         </button>
         <QueueNumber value={queueNumber} held={entry.claimHold} />
       </div>
-      <EntryCells entry={entry} now={now} />
+      <EntryCells entry={entry} now={now} threshold={threshold} />
       <RowActions entry={entry} busy={busy} onTogglePin={onTogglePin} onToggleHold={onToggleHold} />
     </div>
   );
 }
 
-function StaticRow({ entry, now, queueNumber, busy, onTogglePin, onToggleHold }) {
+function StaticRow({ entry, now, threshold, queueNumber, busy, onTogglePin, onToggleHold }) {
   return (
     <div
       className={`grid ${GRID_COLS} items-center border-b border-ll-hairline last:border-0 hover:bg-ll-surface-2/50 ${
@@ -182,7 +191,7 @@ function StaticRow({ entry, now, queueNumber, busy, onTogglePin, onToggleHold })
         <span className="h-7 w-6 shrink-0" />
         <QueueNumber value={queueNumber} held={entry.claimHold} />
       </div>
-      <EntryCells entry={entry} now={now} />
+      <EntryCells entry={entry} now={now} threshold={threshold} />
       <RowActions entry={entry} busy={busy} onTogglePin={onTogglePin} onToggleHold={onToggleHold} />
     </div>
   );
@@ -457,6 +466,7 @@ export default function ItunePriorityTable({ initialEntries, initialSettings }) 
                     key={entry.id}
                     entry={entry}
                     now={now}
+                    threshold={settings?.priorityAmountThreshold}
                     queueNumber={queueNumbers.get(entry.id)}
                     busy={busy}
                     onTogglePin={togglePin}
@@ -511,6 +521,7 @@ export default function ItunePriorityTable({ initialEntries, initialSettings }) 
                 key={entry.id}
                 entry={entry}
                 now={now}
+                threshold={settings?.priorityAmountThreshold}
                 queueNumber={queueNumbers.get(entry.id)}
                 busy={busy}
                 onTogglePin={togglePin}
