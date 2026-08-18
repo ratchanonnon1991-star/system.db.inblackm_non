@@ -33,7 +33,7 @@ import {
 // gameinfo-gamelist-table.js and GameinfoPackEditor) plus its packs — same
 // currencies/computedColumns tree the pack editor saves to gamelist_packs,
 // so what's shown here always matches what "จัดการแพ็ก" last saved.
-export default function GameinfoGameView({ row, currencies, computedColumns, costProfiles = [], formulaVariables = [], userId }) {
+export default function GameinfoGameView({ row, currencies, computedColumns, costProfiles = [], formulaVariables = [], userId, dataMode = "uid" }) {
   const [formulaMode, setFormulaMode] = useState("result");
   const rateState = useGameinfoRates();
   // Same field set the pack editor's formulas can reference (see
@@ -120,6 +120,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
               gameName={row.game}
               editable={false}
               hasData={row.hasTutorial}
+              dataMode={dataMode}
             />
             <GameinfoTutorialButton
               gameId={row.id}
@@ -128,6 +129,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
               hasData={row.hasWarning}
               variant="warning"
               autoOpen
+              dataMode={dataMode}
             />
           </div>
         </div>
@@ -319,45 +321,45 @@ function PackCategory({
       ) : (
         <div className="overflow-hidden rounded-md border border-linear-hairline bg-linear-surface-1">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px] text-left text-sm">
-              <thead className="border-b border-linear-hairline bg-linear-surface-2 text-xs text-linear-ink-subtle">
-                <tr>
-                  <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragEnd={handleColumnDragEnd}
-                  >
-                    <SortableContext
-                      items={columns.map((column) => column.id)}
-                      strategy={horizontalListSortingStrategy}
-                    >
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleColumnDragEnd}
+            >
+              <SortableContext
+                items={columns.map((column) => column.id)}
+                strategy={horizontalListSortingStrategy}
+              >
+                <table className="w-full min-w-[700px] text-left text-sm">
+                  <thead className="border-b border-linear-hairline bg-linear-surface-2 text-xs text-linear-ink-subtle">
+                    <tr>
                       {columns.map((column) => (
                         <SortableViewHeader key={column.id} column={column} />
                       ))}
-                    </SortableContext>
-                  </DndContext>
-                </tr>
-              </thead>
-              <tbody>
-                {visiblePacks.map((pack) => (
-                  <tr key={pack.id} className="border-b border-linear-hairline last:border-b-0">
-                    {columns.map((column) => (
-                      <PackViewCell
-                        key={column.id}
-                        column={column}
-                        pack={pack}
-                        game={game}
-                        formulaMode={formulaMode}
-                        costProfiles={costProfiles}
-                        formulaVariables={formulaVariables}
-                        externalValues={externalValues}
-                        computedColumns={allColumns.filter((item) => item.kind === "computed").map((item) => item.computed)}
-                      />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visiblePacks.map((pack) => (
+                      <tr key={pack.id} className="border-b border-linear-hairline last:border-b-0">
+                        {columns.map((column) => (
+                          <PackViewCell
+                            key={column.id}
+                            column={column}
+                            pack={pack}
+                            game={game}
+                            formulaMode={formulaMode}
+                            costProfiles={costProfiles}
+                            formulaVariables={formulaVariables}
+                            externalValues={externalValues}
+                            computedColumns={allColumns.filter((item) => item.kind === "computed").map((item) => item.computed)}
+                          />
+                        ))}
+                      </tr>
                     ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                  </tbody>
+                </table>
+              </SortableContext>
+            </DndContext>
           </div>
         </div>
       )}

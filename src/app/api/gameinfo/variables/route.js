@@ -14,6 +14,7 @@ import { getGameinfoExchangeRates } from "@/server/gameinfo-exchange-rates";
 import { GAMEINFO_FIELD_NAMES, resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
 import { sanitizeGameinfoFormulaVariables } from "@/lib/gameinfo-formula-variables";
 import { validateGameinfoComputedDependencies } from "@/lib/gameinfo-computed-evaluator";
+import { listGameinfoModeData } from "@/server/gameinfo-mode-data";
 
 function firstPack(currencies) {
   for (const currency of currencies || []) {
@@ -65,7 +66,17 @@ export async function PUT(request) {
     const user = await requireLayoutEditor(request);
     const body = await request.json();
     const candidateVariables = sanitizeGameinfoFormulaVariables(body.variables);
-    const configs = await listAllGamelistComputedColumns();
+    const [uidConfigs, idpassByGame] = await Promise.all([
+      listAllGamelistComputedColumns(),
+      listGameinfoModeData("idpass"),
+    ]);
+    const configs = [
+      ...uidConfigs,
+      ...Object.entries(idpassByGame).map(([gameId, data]) => ({
+        gameId: `${gameId} (IDPASS)`,
+        computedColumns: data.packs.computedColumns,
+      })),
+    ];
     for (const config of configs) {
       const dependencyErrors = validateGameinfoComputedDependencies(
         config.computedColumns,

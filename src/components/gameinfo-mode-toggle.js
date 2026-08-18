@@ -19,7 +19,11 @@ export default function GameinfoModeToggle({ lang, editableRole }) {
   }
 
   const isViewMode = searchParams.get("view") === "1";
-  const href = isViewMode ? `/gameinfo/${lang}` : `/gameinfo/${lang}?view=1`;
+  const nextParams = new URLSearchParams(searchParams.toString());
+  if (isViewMode) nextParams.delete("view");
+  else nextParams.set("view", "1");
+  const query = nextParams.toString();
+  const href = `/gameinfo/${lang}${query ? `?${query}` : ""}`;
 
   return (
     <Link

@@ -6,6 +6,7 @@ import { Boxes, History, Plus, Trash2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { evaluateGameinfoFormulaVariable } from "@/lib/gameinfo-formula-variables";
 import { GAMEINFO_FIELD_NAMES } from "@/lib/gameinfo-formula-fields";
+import { GAMEINFO_FORMULA_FUNCTION_HELP } from "@/lib/gameinfo-formula-help";
 
 function blankVariable() {
   return {
@@ -201,6 +202,17 @@ export default function GameinfoFormulaVariablesButton({ gameId, initialVariable
               ) : null}
               {!loading && !showHistory ? (
                 <div className="space-y-5">
+                  <section className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
+                    <p className="mb-1.5 text-xs font-medium text-linear-ink-muted">ฟังก์ชันที่ใช้ได้</p>
+                    <dl className="space-y-1">
+                      {GAMEINFO_FORMULA_FUNCTION_HELP.map(([group, list]) => (
+                        <div key={group} className="flex gap-2 text-xs leading-relaxed">
+                          <dt className="w-12 shrink-0 text-linear-ink-tertiary">{group}</dt>
+                          <dd className="min-w-0 font-mono text-linear-ink-subtle">{list}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </section>
                   <section className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
                     <p className="mb-2 text-[11px] text-linear-ink-tertiary">
                       ตัวแปรที่ใช้ได้ (กดเพื่อแทรกในช่องสูตรที่เลือก):

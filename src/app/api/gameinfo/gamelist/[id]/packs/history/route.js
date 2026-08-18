@@ -1,6 +1,7 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireLayoutEditor } from "@/server/auth";
 import { listGamelistPackAudit } from "@/server/gameinfo-gamelist-packs";
+import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 
 export async function GET(request, { params }) {
   try {
@@ -9,6 +10,9 @@ export async function GET(request, { params }) {
     const gameId = Number(id);
     if (!Number.isInteger(gameId) || gameId <= 0) return jsonError("gameId ไม่ถูกต้อง", 400);
     const limit = Number(new URL(request.url).searchParams.get("limit") || 100);
+    if (normalizeGameinfoDataMode(request.nextUrl.searchParams.get("mode")) === "idpass") {
+      return jsonOk({ history: [] });
+    }
     const history = await listGamelistPackAudit(gameId, limit);
     return jsonOk({ history });
   } catch (err) {

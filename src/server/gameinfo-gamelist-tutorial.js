@@ -97,7 +97,7 @@ function normalizeCategory(category, index) {
 // .category tag (a short-lived earlier version of this feature). Either old
 // shape gets folded into one category per distinct tag (untagged steps land
 // in a nameless group) so nothing already saved gets dropped on next read.
-function normalizeCategories(raw) {
+export function normalizeGamelistTutorialCategories(raw) {
   if (Array.isArray(raw?.categories)) {
     return raw.categories.map(normalizeCategory);
   }
@@ -145,6 +145,8 @@ export async function saveGamelistTutorial(gameId, categories) {
     client.release();
   }
 }
+
+const normalizeCategories = normalizeGamelistTutorialCategories;
 
 /** Separate caution content for the same game. It shares the tutorial row
  * only as storage; warning_data is loaded, saved, and displayed independently. */

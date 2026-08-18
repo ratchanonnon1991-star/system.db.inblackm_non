@@ -101,6 +101,7 @@ function flattenCurrencies(gameId, currencies) {
             categoryOrder,
             packOrder,
             name: cleanPack.name,
+            localizedNames: cleanPack.localizedNames,
             image: cleanPack.image,
             price: cleanPack.price,
             amountChargedFee: cleanPack.amountChargedFee,
@@ -187,6 +188,15 @@ function ensureSchema(connection) {
       await client.query(`
         CREATE INDEX IF NOT EXISTS gamelist_pack_view_presets_owner_idx
         ON gamelist_pack_view_presets (game_id, user_id, surface, updated_at DESC, id DESC)
+      `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS gamelist_pack_languages (
+          id              BIGSERIAL PRIMARY KEY,
+          name            VARCHAR(80) NOT NULL,
+          normalized_name VARCHAR(80) NOT NULL UNIQUE,
+          created_by      INTEGER,
+          created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
       `);
     } finally {
       client.release();
@@ -311,6 +321,44 @@ export async function saveGamelistPacks(
     client.release();
   }
   return getGamelistPacks(gameId);
+}
+
+function normalizePackLanguageName(value) {
+  return String(value ?? "").trim().replace(/\s+/g, " ").slice(0, 80);
+}
+
+export async function listGamelistPackLanguages() {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `SELECT id, name FROM gamelist_pack_languages ORDER BY name, id`
+    );
+    return result.rows.map((row) => ({ id: Number(row.id), name: row.name }));
+  } finally {
+    client.release();
+  }
+}
+
+export async function createGamelistPackLanguage(name, actorId = null) {
+  const cleanName = normalizePackLanguageName(name);
+  if (!cleanName) throw createHttpError("กรุณากรอกชื่อภาษา", 400);
+  const normalizedName = cleanName.toLocaleLowerCase("th");
+  const numericActorId = Number(actorId);
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `INSERT INTO gamelist_pack_languages (name, normalized_name, created_by)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (normalized_name) DO UPDATE SET name = gamelist_pack_languages.name
+       RETURNING id, name`,
+      [cleanName, normalizedName, Number.isInteger(numericActorId) && numericActorId > 0 ? numericActorId : null]
+    );
+    return { id: Number(result.rows[0].id), name: result.rows[0].name };
+  } finally {
+    client.release();
+  }
 }
 
 /** Computed-column configs for every game, used to protect the one global

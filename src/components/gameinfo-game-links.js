@@ -18,6 +18,7 @@ export function GameinfoGameLinksButton({
   gameName,
   links = [],
   editable,
+  dataMode = "uid",
   disabled,
   onSaved,
 }) {
@@ -47,7 +48,7 @@ export function GameinfoGameLinksButton({
     setSaving(true);
     setError("");
     try {
-      const data = await apiJson(`/api/gameinfo/gamelist/${gameId}/links`, {
+      const data = await apiJson(`/api/gameinfo/gamelist/${gameId}/links${dataMode === "idpass" ? "?mode=idpass" : ""}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ links: draft }),

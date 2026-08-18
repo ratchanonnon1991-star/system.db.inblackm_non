@@ -39,6 +39,7 @@ import GameinfoCsvImportActions from "./gameinfo-csv-import-actions";
 import GameinfoAllPackHistory from "./gameinfo-all-pack-history";
 import { GameinfoGameLinksButton } from "./gameinfo-game-links";
 import GameinfoFormulaVariablesButton from "./gameinfo-formula-variables";
+import GameinfoModeCloneButton from "./gameinfo-mode-clone-button";
 
 // Rank, ทำซ้ำได้ (isRepeatable), หมายเหตุ (remark) are hidden per request —
 // the fields/backend still exist (game_list columns, API fields), this only
@@ -73,7 +74,7 @@ function isTempId(id) {
 // (staff/admin). game_list itself has no order column (shared with Topup
 // Panel, not ours to ALTER) — drag order is persisted in a small side table,
 // gamelist_order, via src/server/gameinfo-gamelist.js's reorderGameListRows().
-export default function GameinfoGamelistTable({ initial, editable, lang }) {
+export default function GameinfoGamelistTable({ initial, editable, lang, dataMode = "uid" }) {
   const [rows, setRows] = useState(initial);
   // Last-known-persisted values (including order) — field edits, drag
   // reordering, and adding a new row all only touch `rows` (the draft) until
@@ -357,14 +358,21 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
           });
-          return [tempId, row];
+          if (dataMode === "idpass") {
+            await apiJson(`/api/gameinfo/gamelist/${row.id}?mode=idpass`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+          }
+          return [tempId, { ...row, ...(dataMode === "idpass" ? payload : {}) }];
         })
       );
       const idMap = new Map(created);
       const nextRows = rows.map((r) => idMap.get(r.id) ?? r);
 
       const requests = editedRows.map((r) =>
-        apiJson(`/api/gameinfo/gamelist/${r.id}`, {
+        apiJson(`/api/gameinfo/gamelist/${r.id}${dataMode === "idpass" ? "?mode=idpass" : ""}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(r),
@@ -462,6 +470,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
 
   const rowProps = {
     lang,
+    dataMode,
     editable,
     suggestions,
     isEditing,
@@ -637,7 +646,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang }) {
         {editable ? (
           <GameinfoFormulaVariablesButton endpoint="/api/gameinfo/variables" toolbar />
         ) : null}
-        {editable ? <GameinfoCsvImportActions hasUnsavedChanges={dirty} /> : null}
+        {editable ? <GameinfoCsvImportActions hasUnsavedChanges={dirty} dataMode={dataMode} /> : null}
         {editable && selectedGameIds.size > 0 ? (
           <div className="flex h-10 items-center gap-1 rounded-xl border border-linear-hairline-strong bg-linear-surface-1 px-2 text-xs">
             <span className="px-1 text-linear-ink-tertiary">เลือก {selectedGameIds.size} เกม</span>
@@ -877,7 +886,7 @@ function StaticRow({ row, ...rest }) {
   // anyway. RowActionsMenu still stops its own clicks from bubbling here.
   return (
     <div
-      onClick={() => router.push(`/gameinfo/${rest.lang}/${row.id}`)}
+      onClick={() => router.push(`/gameinfo/${rest.lang}/${row.id}${rest.dataMode === "idpass" ? "?mode=idpass" : ""}`)}
       className={`grid ${GRID_COLS} cursor-pointer items-center gap-2 border-b border-linear-hairline px-3 py-2 text-sm last:border-b-0 hover:bg-linear-surface-2`}
     >
       <span></span>
@@ -891,6 +900,7 @@ function RowCells({
   row,
   order,
   lang,
+  dataMode,
   editable,
   suggestions,
   isEditing,
@@ -926,7 +936,7 @@ function RowCells({
       <RowThumb gameId={row.id} image={row.image ?? ""} editable={editable} />
 
       <NameCell
-        editable={editable}
+        editable={editable && dataMode === "uid"}
         editing={editingName}
         value={row.game}
         packCount={row.packCount}
@@ -1021,6 +1031,7 @@ function RowCells({
           gameName={row.game}
           links={row.links || []}
           editable={editable}
+          dataMode={dataMode}
           disabled={isTempId(row.id)}
           onSaved={(links) => onLinksSaved(row.id, links)}
         />
@@ -1037,6 +1048,7 @@ function RowCells({
           editable={editable}
           hasData={row.hasTutorial}
           disabled={isTempId(row.id)}
+          dataMode={dataMode}
         />
         <GameinfoTutorialButton
           gameId={row.id}
@@ -1045,6 +1057,7 @@ function RowCells({
           hasData={row.hasWarning}
           disabled={isTempId(row.id)}
           variant="warning"
+          dataMode={dataMode}
         />
       </span>
 
@@ -1052,7 +1065,7 @@ function RowCells({
           preview) the whole row already navigates to the detail page on
           click (see StaticRow) — the "⋮" menu only ever had "ดู" for that
           case anyway, so it's redundant there and just hidden. */}
-      {editable && <RowActionsMenu row={row} lang={lang} editable={editable} onDelete={onDelete} />}
+      {editable && <RowActionsMenu row={row} lang={lang} dataMode={dataMode} editable={editable} onDelete={onDelete} />}
     </>
   );
 }
@@ -1061,7 +1074,7 @@ function RowCells({
 // from the trigger's own bounding rect) rather than inline — the table's
 // outer box uses overflow-hidden for its rounded corners, which would clip
 // an inline dropdown for any row near the bottom or right edge.
-function RowActionsMenu({ row, lang, editable, onDelete }) {
+function RowActionsMenu({ row, lang, dataMode, editable, onDelete }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
   const triggerRef = useRef(null);
@@ -1119,7 +1132,7 @@ function RowActionsMenu({ row, lang, editable, onDelete }) {
             className="fixed z-50 w-32 overflow-hidden rounded-md border border-linear-hairline bg-linear-surface-1 py-1 shadow-lg"
           >
             <Link
-              href={`/gameinfo/${lang}/${row.id}`}
+              href={`/gameinfo/${lang}/${row.id}${dataMode === "idpass" ? "?mode=idpass" : ""}`}
               onClick={() => setOpen(false)}
               className="block px-3 py-1.5 text-xs text-linear-ink hover:bg-linear-surface-2"
             >
@@ -1127,13 +1140,14 @@ function RowActionsMenu({ row, lang, editable, onDelete }) {
             </Link>
             {editable && (
               <Link
-                href={`/gameinfo/${lang}/${row.id}/packs`}
+                href={`/gameinfo/${lang}/${row.id}/packs${dataMode === "idpass" ? "?mode=idpass" : ""}`}
                 onClick={() => setOpen(false)}
                 className="block px-3 py-1.5 text-xs text-linear-ink hover:bg-linear-surface-2"
               >
                 แพ็ก
               </Link>
             )}
+            {editable && <GameinfoModeCloneButton gameId={row.id} currentMode={dataMode} compact />}
             {editable && (
               <button
                 type="button"

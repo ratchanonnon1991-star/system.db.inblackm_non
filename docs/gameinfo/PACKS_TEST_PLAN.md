@@ -265,6 +265,28 @@ API/UI/formula:
 - หน้า Game List และ Packs ของทุกเกมเปิด editor ก้อนกลางเดียวกัน; save แล้ว refresh เห็นค่าตรงกันทุกหน้า
 - คอลัมน์โปรไฟล์ต้นทุนไม่อยู่ในตารางใหม่ แต่ pack legacy ที่มี `costProfileId` ยัง load/save โดยไม่สูญหาย
 
+## 14. UID / IDPASS datasets (Task 23)
+
+- unknown/empty mode normalize เป็น UID; IDPASS ไม่ขึ้นกับตัวพิมพ์เล็กใหญ่
+- IDPASS document sanitize fields, links, tutorial, warning และ packs แต่ไม่รับ formula variables เข้า mode storage
+- partial save lock เกมและรักษา section อื่นใน document
+- list/view/packs ส่ง mode ผ่าน URL และ API mutation ทุกจุด
+- clone all คัดลอก metadata และ packs; clone packs คัดลอกเฉพาะ packs
+- clone ทั้งสองทิศทางถามยืนยันและไม่แตะตัวแปรผสมชุดกลาง
+- formula-variable dependency validation ตรวจ computed columns ของทั้งสอง mode
+- CSV export ใช้ currencies ของ mode ที่เลือก
+
+## 15. Pack names in multiple languages (Task 25)
+
+- pack เก่าที่มีเฉพาะ `name` load/save ได้โดยไม่ถูกเพิ่ม translation ว่าง
+- sanitizer รับเฉพาะ language ID แบบตัวเลข ตัดชื่อว่างและ key ที่ไม่ถูกต้อง
+- เลือกภาษาที่ยังไม่มีคำแปลแล้วช่องชื่อ Pack เป็นค่าว่าง ไม่ fallback ไปชื่อหลัก
+- save/reload รักษาชื่อหลักและคำแปลทุกภาษา และ IDPASS ใช้ data contract เดียวกัน
+- duplicate Pack รักษาคำแปลทุกภาษาแต่สร้าง Pack ID ใหม่
+- รายการภาษากลาง normalize ชื่อซ้ำและใช้เลือกได้จากทุกเกม
+- เพิ่มภาษาแล้ว Dropdown เลือกภาษาใหม่ทันทีโดยไม่ reload หน้า
+- เปลี่ยนคำแปลไม่กระทบสูตร ราคา สถานะ ช่องทาง หรือ field อื่นของ Pack
+
 ## คำสั่งตรวจขั้นต่ำ
 
 ```bash

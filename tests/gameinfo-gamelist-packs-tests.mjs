@@ -6,6 +6,7 @@
 // sentinel row, and the list-table pack-count/cross-game-channel aggregate
 // lookups.
 import {
+  createGamelistPackLanguage,
   deleteGamelistPacksForGame,
   getGamelistPacks,
   importGamelistPacks,
@@ -13,6 +14,7 @@ import {
   listAllGamelistPackAudit,
   listGamelistPackAudit,
   listGamelistPackCountByGame,
+  listGamelistPackLanguages,
   listGamelistPackServiceByGame,
   listGamelistPackViewPresets,
   saveGamelistPacks,
@@ -58,6 +60,7 @@ const ORIGINAL_TREE = [
             channelsMain: ["Wave"],
             channelsSecondary: [],
             country: "",
+            localizedNames: { 7: "English Pack A", 8: "日本語パックA" },
           },
           {
             id: "pk2",
@@ -84,6 +87,28 @@ async function run() {
   // the log for the calls that follow.
   reset();
   await getGamelistPacks(1);
+
+  // --- shared language memory -----------------------------------------
+  reset();
+  setResponder((text) => {
+    if (/INSERT INTO gamelist_pack_languages/.test(text)) {
+      return { rows: [{ id: "7", name: "English" }] };
+    }
+    return null;
+  });
+  const language = await createGamelistPackLanguage("  English  ", 9);
+  check("languages: creates a reusable normalized language", language, { id: 7, name: "English" });
+  const languageInsert = find(/INSERT INTO gamelist_pack_languages/);
+  check("languages: binds display name, lookup name, and actor", languageInsert?.params, ["English", "english", 9]);
+
+  reset();
+  setResponder((text) => /SELECT id, name FROM gamelist_pack_languages/.test(text)
+    ? { rows: [{ id: "7", name: "English" }, { id: "8", name: "日本語" }] }
+    : null);
+  check("languages: lists the shared choices for every game", await listGamelistPackLanguages(), [
+    { id: 7, name: "English" },
+    { id: 8, name: "日本語" },
+  ]);
 
   // --- saveGamelistPacks: replaces every row for this game in one transaction
   reset();
@@ -129,6 +154,7 @@ async function run() {
     ["c1", "cat1"]
   );
   check("save: data keeps this pack's position for reconstruction", firstPackData.packOrder, 0);
+  check("save: persists localized pack names", firstPackData.localizedNames, { 7: "English Pack A", 8: "日本語パックA" });
   ok("save: legacy amountCharged is not persisted", !("amountCharged" in firstPackData));
   check("save: the second pack keeps its own position", JSON.parse(packInserts[1].params[2]).packOrder, 1);
 

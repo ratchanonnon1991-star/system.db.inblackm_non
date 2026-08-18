@@ -13,6 +13,7 @@ import { validateGameinfoComputedDependencies } from "@/lib/gameinfo-computed-ev
 import { getGameListRow } from "@/server/gameinfo-gamelist";
 import { getGameinfoExchangeRates } from "@/server/gameinfo-exchange-rates";
 import { GAMEINFO_FIELD_NAMES, resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
+import { listGameinfoModeData } from "@/server/gameinfo-mode-data";
 
 function firstPack(currencies) {
   for (const currency of currencies || []) {
@@ -68,7 +69,17 @@ export async function PUT(request, { params }) {
     if (!Number.isInteger(gameId) || gameId <= 0) return jsonError("gameId ไม่ถูกต้อง", 400);
     const body = await request.json();
     const candidateVariables = sanitizeGameinfoFormulaVariables(body.variables);
-    const configs = await listAllGamelistComputedColumns();
+    const [uidConfigs, idpassByGame] = await Promise.all([
+      listAllGamelistComputedColumns(),
+      listGameinfoModeData("idpass"),
+    ]);
+    const configs = [
+      ...uidConfigs,
+      ...Object.entries(idpassByGame).map(([storedGameId, data]) => ({
+        gameId: `${storedGameId} (IDPASS)`,
+        computedColumns: data.packs.computedColumns,
+      })),
+    ];
     for (const config of configs) {
       const dependencyErrors = validateGameinfoComputedDependencies(
         config.computedColumns,

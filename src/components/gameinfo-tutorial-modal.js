@@ -94,6 +94,7 @@ export default function GameinfoTutorialButton({
   disabled,
   variant = "tutorial",
   autoOpen = false,
+  dataMode = "uid",
 }) {
   const isWarning = variant === "warning";
   const [open, setOpen] = useState(Boolean(autoOpen && hasData));
@@ -126,6 +127,7 @@ export default function GameinfoTutorialButton({
             gameName={gameName}
             editable={editable}
             variant={variant}
+            dataMode={dataMode}
             onClose={() => setOpen(false)}
           />,
           document.body
@@ -134,9 +136,9 @@ export default function GameinfoTutorialButton({
   );
 }
 
-function TutorialModal({ gameId, gameName, editable, variant, onClose }) {
+function TutorialModal({ gameId, gameName, editable, variant, dataMode = "uid", onClose }) {
   const isWarning = variant === "warning";
-  const endpoint = `/api/gameinfo/gamelist/${gameId}/${isWarning ? "warning" : "tutorial"}`;
+  const endpoint = `/api/gameinfo/gamelist/${gameId}/${isWarning ? "warning" : "tutorial"}${dataMode === "idpass" ? "?mode=idpass" : ""}`;
   const dataKey = isWarning ? "warning" : "tutorial";
   const contentLabel = isWarning ? "ข้อควรระวัง" : "tutorial";
   const [loading, setLoading] = useState(true);
