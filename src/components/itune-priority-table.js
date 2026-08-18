@@ -434,10 +434,22 @@ export default function ItunePriorityTable({ initialEntries, initialSettings }) 
         </div>
       )}
 
-      <p className="text-[12px] text-ll-ink-tertiary">
-        ลำดับนี้เป็นของผู้ใช้ที่ไม่เคยถูก reject เมลในคิว — ผู้ใช้ที่เคยถูก reject เมลใดเมลหนึ่ง
-        จะข้ามเมลนั้นไปรับตัวถัดไปแทน
-      </p>
+      <div className="flex flex-col gap-1 text-[12px] text-ll-ink-tertiary">
+        <p>
+          หน้านี้แสดงเฉพาะเมลที่ยังไม่มีคนถือ และยอดยังไม่ต่ำกว่าเกณฑ์คืนเมล{" "}
+          <span className="font-medium text-ll-ink-subtle">
+            ({Number(settings?.maxAmount ?? 0).toLocaleString("th-TH", {
+              minimumFractionDigits: 2,
+            })})
+          </span>{" "}
+          — เมลที่ยอดต่ำกว่านี้ถือว่าใช้หมดแล้ว จะไม่ถูกแจกอีก ตั้งค่าได้ที่ &quot;ตั้งค่าการคืนเมล&quot;
+          ในหน้า Admin
+        </p>
+        <p>
+          ลำดับนี้เป็นของผู้ใช้ที่ไม่เคยถูก reject เมลในคิว — ผู้ใช้ที่เคยถูก reject เมลใดเมลหนึ่ง
+          จะข้ามเมลนั้นไปรับตัวถัดไปแทน
+        </p>
+      </div>
 
       <div className="overflow-x-auto rounded-lg border border-ll-hairline bg-ll-surface-1">
         <div style={{ minWidth: GRID_MIN_WIDTH }}>
@@ -513,7 +525,7 @@ export default function ItunePriorityTable({ initialEntries, initialSettings }) 
           </div>
           {automatic.length === 0 ? (
             <p className="px-3 py-6 text-center text-[12px] text-ll-ink-tertiary">
-              ไม่มีเมลรอให้รับ
+              ไม่มีเมลรอให้รับ — เมลที่ยอดต่ำกว่าเกณฑ์คืนเมลจะไม่ขึ้นที่นี่
             </p>
           ) : (
             automatic.map((entry) => (

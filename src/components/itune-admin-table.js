@@ -969,8 +969,10 @@ function ItuneAdminFilterModal({ excluded, onChangeExcluded, onClose }) {
 // Single-field settings popup for the "คืนเมล" (release) threshold — a
 // topup user may only release their own claim once its Amount has dropped
 // below this value (see releaseItuneEntry/getItuneReleaseThreshold in
-// itune-entries-repository.js). Same overlay shape as
-// ItuneAdminSettingsModal/ItuneAdminFilterModal.
+// itune-entries-repository.js). The same number doubles as the drained
+// line for the claim queue: an entry below it is done, so claimItuneEntry
+// and the priority page both leave it out (see CLAIMABLE_WHERE_SQL). Same
+// overlay shape as ItuneAdminSettingsModal/ItuneAdminFilterModal.
 function ItuneReleaseSettingsModal({ releaseThreshold, saving, error, onSave, onClose }) {
   const [draft, setDraft] = useState(String(releaseThreshold ?? DEFAULT_ITUNE_RELEASE_THRESHOLD));
 
@@ -1007,7 +1009,7 @@ function ItuneReleaseSettingsModal({ releaseThreshold, saving, error, onSave, on
 
         <div className="p-4">
           <label className="block text-[12px] font-medium text-ll-ink">
-            ยอดคงเหลือต้องต่ำกว่าเท่าไหร่ถึงจะ &quot;คืนเมล&quot; ได้
+            ยอดคงเหลือขั้นต่ำที่ถือว่าเมล &quot;ยังใช้ได้&quot;
           </label>
           <input
             type="number"
@@ -1019,9 +1021,17 @@ function ItuneReleaseSettingsModal({ releaseThreshold, saving, error, onSave, on
             className="mt-1.5 h-9 w-32 rounded-md border border-ll-hairline-strong bg-ll-surface-2 px-2 text-[13px] text-ll-ink outline-none focus:border-ll-primary"
           />
           <p className="mt-1.5 text-[11px] text-ll-ink-subtle">
-            ค่าเริ่มต้น {DEFAULT_ITUNE_RELEASE_THRESHOLD} — topup ต้องใช้ยอดจนต่ำกว่าค่านี้ก่อนถึงจะกด
-            &quot;คืนเมล&quot; กลับเข้าพูลได้ (projectm-admin ยกเว้นข้อจำกัดนี้)
+            ค่าเริ่มต้น {DEFAULT_ITUNE_RELEASE_THRESHOLD} — ค่านี้ใช้ 2 อย่างพร้อมกัน:
           </p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[11px] text-ll-ink-subtle">
+            <li>
+              topup ต้องใช้ยอดจนต่ำกว่าค่านี้ก่อนถึงจะกด &quot;คืนเมล&quot; กลับเข้าพูลได้
+              (projectm-admin ยกเว้นข้อจำกัดนี้)
+            </li>
+            <li>
+              เมลที่ยอดต่ำกว่าค่านี้ถือว่าใช้หมดแล้ว จะไม่ขึ้นในคิว &quot;รับเมล&quot; อีก
+            </li>
+          </ul>
           {!valid && (
             <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-ll-primary-subtle-text">
               <AlertTriangle size={12} /> กรอกยอดเป็นตัวเลขไม่ติดลบ

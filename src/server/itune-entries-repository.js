@@ -168,14 +168,22 @@ const CLAIM_ORDER_SQL = `ORDER BY
   added_at ASC,
   id ASC`;
 
-// Rows that are up for grabs at all: nobody holding them, not reported
-// unavailable, and not individually held back by an admin. The per-user
-// "you already rejected this one" rule is NOT here — it differs per caller,
-// so claimItuneEntry adds it and the admin page deliberately doesn't (see
-// listItunePriorityQueue's comment).
+// Rows that are worth handing out at all: nobody holding them, not reported
+// unavailable, and still carrying a usable balance.
+//
+// $3 is the release threshold (projectm_itune_release_settings.max_amount) —
+// the same number that decides when a topup user is allowed to give a claim
+// back (see releaseItuneEntry). Below it an entry counts as drained, which
+// is precisely why releasing is permitted, so putting it back in the queue
+// would only hand someone an empty card to discover and return again.
+//
+// Two rules are deliberately NOT here because they differ per caller:
+// claim_hold (claimItuneEntry skips held rows; the admin page still lists
+// them so they can be un-held) and the per-user "you already rejected this
+// one" exclusion (see listItunePriorityQueue's comment).
 const CLAIMABLE_WHERE_SQL = `claimed_by_user_id IS NULL
      AND (status IS NULL OR status <> $2)
-     AND claim_hold = FALSE`;
+     AND amount >= $3`;
 
 // Resolves { userId: username } for whichever creators showed up in a batch
 // of rows — a plain lookup against the primary pool since it can't be a JOIN
@@ -1034,7 +1042,8 @@ const MAX_CLAIMS_PER_USER = 2;
 export async function claimItuneEntry(actor) {
   // Read before opening the transaction: both values are plain settings,
   // and a paused queue should fail before taking any row locks at all.
-  const { claimPaused, priorityAmountThreshold } = await getItuneClaimSettings();
+  const { claimPaused, priorityAmountThreshold, maxAmount } =
+    await getItuneClaimSettings();
   if (claimPaused) {
     throw createHttpError("ระบบหยุดรับเมลชั่วคราว — ติดต่อแอดมิน", 423);
   }
@@ -1056,15 +1065,16 @@ export async function claimItuneEntry(actor) {
     const { rows } = await client.query(
       `SELECT id, email, amount, amount_confirm_image FROM projectm_itune_entries e
        WHERE ${CLAIMABLE_WHERE_SQL}
+         AND claim_hold = FALSE
          AND NOT EXISTS (
            SELECT 1 FROM projectm_itune_issue_log l
            WHERE l.entry_id = e.id AND l.is_reject AND l.reject_confirmed_at IS NOT NULL
-             AND l.reported_by_user_id = $3
+             AND l.reported_by_user_id = $4
          )
        ${CLAIM_ORDER_SQL}
        LIMIT 1
        FOR UPDATE SKIP LOCKED`,
-      [priorityAmountThreshold, ITUNE_UNAVAILABLE_STATUS, actor.id]
+      [priorityAmountThreshold, ITUNE_UNAVAILABLE_STATUS, maxAmount, actor.id]
     );
     if (rows.length === 0) {
       throw createHttpError("ไม่มีรายการว่างให้รับตอนนี้", 404);
@@ -1127,13 +1137,12 @@ export async function claimItuneEntry(actor) {
 // no confirmed rejects would see it — the page says as much on screen.
 export async function listItunePriorityQueue() {
   const pool = await getReadyPool();
-  const { priorityAmountThreshold } = await getItuneClaimSettings();
+  const { priorityAmountThreshold, maxAmount } = await getItuneClaimSettings();
   const result = await pool.query(
     `SELECT e.*, ${HAS_PENDING_REJECT_SQL} FROM projectm_itune_entries e
-     WHERE claimed_by_user_id IS NULL
-       AND (status IS NULL OR status <> $2)
+     WHERE ${CLAIMABLE_WHERE_SQL}
      ${CLAIM_ORDER_SQL}`,
-    [priorityAmountThreshold, ITUNE_UNAVAILABLE_STATUS]
+    [priorityAmountThreshold, ITUNE_UNAVAILABLE_STATUS, maxAmount]
   );
   const usernamesById = await fetchUsernamesById(
     result.rows.map((row) => row.created_by_user_id)
