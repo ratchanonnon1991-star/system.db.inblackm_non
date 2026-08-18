@@ -11,6 +11,7 @@ import {
   Filter,
   History,
   Image as ImageIcon,
+  ListOrdered,
   MoreVertical,
   Plus,
   Search,
@@ -1582,6 +1583,14 @@ export default function ItuneAdminTable({ initialEntries, initialReleaseThreshol
           )}
         </div>
         <div className="flex items-center gap-2">
+          <Link
+            href={`/projectm/${lang}/itune/admin/priority`}
+            className="flex h-9 w-9 items-center justify-center rounded-md border border-ll-hairline-strong text-ll-ink-subtle hover:bg-ll-surface-2"
+            title="จัดคิวรับเมล"
+            aria-label="จัดคิวรับเมล"
+          >
+            <ListOrdered size={15} />
+          </Link>
           <Link
             href={`/projectm/${lang}/itune/admin/history`}
             className="flex h-9 w-9 items-center justify-center rounded-md border border-ll-hairline-strong text-ll-ink-subtle hover:bg-ll-surface-2"
