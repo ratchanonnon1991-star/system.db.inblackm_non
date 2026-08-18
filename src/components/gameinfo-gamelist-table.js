@@ -1061,11 +1061,17 @@ function RowCells({
         />
       </span>
 
-      {/* In view-only mode (role "user", or the "หน้าเว็บ" toggle's ?view=1
-          preview) the whole row already navigates to the detail page on
-          click (see StaticRow) — the "⋮" menu only ever had "ดู" for that
-          case anyway, so it's redundant there and just hidden. */}
-      {editable && <RowActionsMenu row={row} lang={lang} dataMode={dataMode} editable={editable} onDelete={onDelete} />}
+      {editable ? (
+        <RowActionsMenu row={row} lang={lang} dataMode={dataMode} editable={editable} onDelete={onDelete} />
+      ) : (
+        <Link
+          href={`/gameinfo/${lang}/${row.id}${dataMode === "idpass" ? "?mode=idpass" : ""}`}
+          onClick={(event) => event.stopPropagation()}
+          className="flex h-7 items-center justify-center rounded border border-linear-hairline px-2 text-xs font-medium text-linear-primary hover:bg-linear-surface-2"
+        >
+          ดู
+        </Link>
+      )}
     </>
   );
 }
@@ -1179,20 +1185,33 @@ function ServiceStatusLight({ status, editable, onToggle }) {
     : status === "partial"
       ? { color: "bg-amber-400", label: "เปิดเกม แต่มีบาง pack ปิด" }
       : { color: "bg-emerald-400", label: "ให้บริการปกติ" };
+  const content = (
+    <>
+      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${config.color}`} />
+      <span className="truncate">{status === "new" ? "ใหม่" : status === "partial" ? "บางส่วน" : status === "offline" ? "ปิด" : "ปกติ"}</span>
+    </>
+  );
+
+  if (!editable) {
+    return (
+      <span title={config.label} className="flex items-center gap-1.5 text-[10px] text-linear-ink-tertiary">
+        {content}
+      </span>
+    );
+  }
+
   return (
     <button
       type="button"
-      disabled={!editable}
       onClick={(event) => {
         event.stopPropagation();
         onToggle?.();
       }}
-      title={`${config.label}${editable ? " — กดเพื่อเปลี่ยนสถานะ ปกติ → ปิด → ใหม่" : ""}`}
+      title={`${config.label} — กดเพื่อเปลี่ยนสถานะ ปกติ → ปิด → ใหม่`}
       aria-label={config.label}
-      className="flex items-center gap-1.5 text-[10px] text-linear-ink-tertiary disabled:cursor-default"
+      className="flex items-center gap-1.5 text-[10px] text-linear-ink-tertiary"
     >
-      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${config.color}`} />
-      <span className="truncate">{status === "new" ? "ใหม่" : status === "partial" ? "บางส่วน" : status === "offline" ? "ปิด" : "ปกติ"}</span>
+      {content}
     </button>
   );
 }
