@@ -43,6 +43,11 @@ export async function POST(request) {
       return jsonError("Amount ต้องเป็นตัวเลขไม่ติดลบ", 400);
     }
 
+    const amountConfirmImage = String(body.amountConfirmImage || "").trim();
+    if (!amountConfirmImage) {
+      return jsonError("กรุณาแนบรูปยืนยันยอดเริ่มต้น", 400);
+    }
+
     const entry = await insertItuneEntry({
       createdByUserId: actor.id,
       addedAt: parseAddedAt(body.addedAt),
@@ -51,7 +56,7 @@ export async function POST(request) {
       currency: String(body.currency || "").trim(),
       supplier: String(body.supplier || "").trim(),
       amount,
-      amountConfirmImage: String(body.amountConfirmImage || "").trim(),
+      amountConfirmImage,
       linkSms: String(body.linkSms || "").trim(),
       qna: String(body.qna || "").trim(),
     });

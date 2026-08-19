@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
 import {
   DndContext,
   closestCenter,
@@ -15,7 +17,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Loader2, Pause, Pin, PinOff, Play } from "lucide-react";
+import { FlaskConical, GripVertical, Loader2, Pause, Pin, PinOff, Play } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { computeEffectiveItuneStatus, ITUNE_DEPLETED_STATUS } from "@/lib/itune-status";
 import { useMinuteTicker } from "@/lib/itune-ticker";
@@ -56,8 +58,9 @@ function StatusBadge({ row }) {
 // Amount — an entry at or above it is in the "ด่วน" tier and jumps the
 // ordinary queue, so the number that earned it that place is worth
 // spotting without reading the divider first.
-function EntryCells({ entry, now, threshold }) {
-  const isUrgent = Number(entry.amount) >= Number(threshold);
+function EntryCells({ entry, now }) {
+  const slack = Number(entry.completionSlackHours);
+  const isUrgent = Number.isFinite(slack) && slack <= 6;
   return (
     <>
       <div className="min-w-0 truncate px-3 py-2 text-center font-mono text-xs text-ll-ink-subtle">
@@ -91,7 +94,7 @@ function EntryCells({ entry, now, threshold }) {
         className={`min-w-0 truncate px-3 py-2 text-right text-[13px] ${
           isUrgent ? "font-semibold text-ll-primary" : "font-medium text-ll-ink"
         }`}
-        title={isUrgent ? `ยอดถึงเกณฑ์ด่วน (≥ ${Number(threshold).toLocaleString("th-TH")})` : undefined}
+        title={Number.isFinite(slack) ? `Completion slack ${slack.toFixed(1)} ชั่วโมง` : undefined}
       >
         {Number(entry.amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
       </div>
@@ -256,21 +259,8 @@ export default function ItunePriorityTable({ initialEntries, initialSettings }) 
   const [settings, setSettings] = useState(initialSettings);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [thresholdDraft, setThresholdDraft] = useState(
-    String(initialSettings?.priorityAmountThreshold ?? "")
-  );
-  const thresholdRef = useRef(null);
+  const { lang } = useParams();
   const now = useMinuteTicker();
-
-  // Background polling (and another admin's edit) can bring back a
-  // different threshold — mirror it into the input, but never while it has
-  // focus, or a poll landing mid-keystroke would overwrite what's being
-  // typed.
-  const savedThreshold = settings?.priorityAmountThreshold;
-  useEffect(() => {
-    if (thresholdRef.current === document.activeElement) return;
-    setThresholdDraft(String(savedThreshold ?? ""));
-  }, [savedThreshold]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -411,7 +401,12 @@ export default function ItunePriorityTable({ initialEntries, initialSettings }) 
             {paused ? <Play size={14} /> : <Pause size={14} />}
             {paused ? "เปิดให้รับเมล" : "หยุดรับเมลทั้งระบบ"}
           </button>
-
+          <Link
+            href={`/projectm/${lang}/itune/admin/priority/dev`}
+            className="flex h-10 items-center gap-2 rounded-lg border border-ll-hairline-strong px-3 text-[13px] font-medium text-ll-ink hover:bg-ll-surface-2"
+          >
+            <FlaskConical size={14} /> จำลองคิว (Dev)
+          </Link>
         </div>
 
         <p className="text-[12px] text-ll-ink-tertiary">
@@ -437,14 +432,11 @@ export default function ItunePriorityTable({ initialEntries, initialSettings }) 
 
       <div className="flex flex-col gap-1 text-[12px] text-ll-ink-tertiary">
         <p>
-          หน้านี้แสดงเฉพาะเมลที่ยังไม่มีคนถือ และยอดยังไม่ต่ำกว่าเกณฑ์คืนเมล{" "}
+          แสดงเฉพาะเมลที่ไม่มีคนถือและยอดตั้งแต่{" "}
           <span className="font-medium text-ll-ink-subtle">
-            ({Number(settings?.maxAmount ?? 0).toLocaleString("th-TH", {
-              minimumFractionDigits: 2,
-            })})
+            {Number(settings?.maxAmount ?? 0).toFixed(2)}
           </span>{" "}
-          — เมลที่ยอดต่ำกว่านี้ถือว่าใช้หมดแล้ว จะไม่ถูกแจกอีก ตั้งค่าได้ที่ &quot;ตั้งค่าการคืนเมล&quot;
-          ในหน้า Admin
+          ขึ้นไป โดยเรียงจาก Completion Slack น้อยที่สุด
         </p>
         <p>
           ลำดับนี้เป็นของผู้ใช้ที่ไม่เคยถูก reject เมลในคิว — ผู้ใช้ที่เคยถูก reject เมลใดเมลหนึ่ง
@@ -490,39 +482,11 @@ export default function ItunePriorityTable({ initialEntries, initialSettings }) 
             </DndContext>
           )}
 
-          {/* The threshold lives here rather than up in the settings bar so
-              it sits on the divider it actually draws — everything above
-              this line outranks everything below it because of this number. */}
-          <div className="flex flex-wrap items-center gap-1.5 border-b border-ll-hairline bg-ll-surface-2/60 px-3 py-1.5 text-[11px] font-medium text-ll-ink-subtle">
-            <span>คิวอัตโนมัติ — ยอด ≥</span>
-            <input
-              ref={thresholdRef}
-              type="number"
-              min={0}
-              step={1}
-              value={thresholdDraft}
-              onChange={(e) => setThresholdDraft(e.target.value)}
-              onBlur={() => {
-                const numeric = Number(thresholdDraft);
-                if (!Number.isFinite(numeric) || numeric < 0) {
-                  setThresholdDraft(String(settings?.priorityAmountThreshold ?? ""));
-                  return;
-                }
-                if (numeric === Number(settings?.priorityAmountThreshold)) return;
-                saveSettings(
-                  { priorityAmountThreshold: numeric },
-                  "บันทึกเกณฑ์ยอดด่วนไม่สำเร็จ"
-                );
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") e.currentTarget.blur();
-              }}
-              disabled={busy}
-              title="เกณฑ์ยอดด่วน — เมลที่ยอดถึงเกณฑ์นี้จะถูกแจกก่อน"
-              aria-label="เกณฑ์ยอดด่วน"
-              className="h-7 w-24 rounded-md border border-ll-hairline-strong bg-ll-surface-1 px-2 text-[11px] font-semibold text-ll-ink outline-none focus:border-ll-primary disabled:opacity-50"
-            />
-            <span>มาก่อน จากนั้นเก่าก่อน ({automatic.length})</span>
+          <div className="flex flex-wrap items-center gap-2 border-b border-ll-hairline bg-ll-surface-2/60 px-3 py-2 text-[11px] font-medium text-ll-ink-subtle">
+            <span>คิวอัตโนมัติ · Slack น้อยขึ้นก่อน ({automatic.length})</span>
+            <span className="text-ll-ink-tertiary">
+              เป้าหมาย {Number(settings?.targetHours ?? 24)} ชม. · ใช้ {Number(settings?.burnRateUsdPerHour ?? 50)} USD/ชม. · รอ {Number(settings?.expectedIdleHours ?? 6)} ชม.
+            </span>
           </div>
           {automatic.length === 0 ? (
             <p className="px-3 py-6 text-center text-[12px] text-ll-ink-tertiary">

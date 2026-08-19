@@ -12,6 +12,12 @@ import {
   DEFAULT_ITUNE_RELEASE_THRESHOLD,
   ITUNE_UNAVAILABLE_STATUS,
 } from "@/lib/itune-status";
+import {
+  DEFAULT_ITUNE_BURN_RATE,
+  DEFAULT_ITUNE_CLAIM_WARNING_HOURS,
+  DEFAULT_ITUNE_EXPECTED_IDLE_HOURS,
+  DEFAULT_ITUNE_TARGET_HOURS,
+} from "@/lib/itune-queue";
 
 const CONNECTION_NAME = "topup_inblackm";
 
@@ -138,8 +144,17 @@ function mapRow(row, usernamesById = {}) {
       ? null
       : Number(row.priority_order),
     claimHold: row.claim_hold || false,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    activeClaimSessionId: row.active_claim_session_id ? Number(row.active_claim_session_id) : null,
+    knownAgeHours:
+      row.known_age_hours === null || row.known_age_hours === undefined
+        ? null
+        : Number(row.known_age_hours),
+    completionSlackHours:
+      row.completion_slack_hours === null || row.completion_slack_hours === undefined
+        ? null
+        : Number(row.completion_slack_hours),
+    createdAt: toIsoString(row.created_at),
+    updatedAt: toIsoString(row.updated_at),
   };
 }
 
@@ -152,38 +167,25 @@ const HAS_PENDING_REJECT_SQL = `EXISTS (
   WHERE l.entry_id = e.id AND l.is_reject AND l.reject_confirmed_at IS NULL
 ) AS has_pending_reject`;
 
-// The one true claim order, shared verbatim by claimItuneEntry (which takes
-// the first row) and listItunePriorityQueue (which shows the whole list to
-// an admin). These MUST stay identical — the entire point of the priority
-// page is that what it displays is what "รับเมล" will actually hand out, so
-// any divergence makes the page lie. $1 is the "ด่วน" amount threshold.
-//
-// Every column referenced lives on projectm_itune_entries itself, so no
-// JOIN is needed and claimItuneEntry's plain `FOR UPDATE SKIP LOCKED`
-// keeps working (a joined query would have to spell out FOR UPDATE OF e).
+// Least-completion-slack is shared by the claim transaction and preview.
+const COMPLETION_SLACK_SQL = `(
+  EXTRACT(EPOCH FROM ((added_at + ($3 * INTERVAL '1 hour')) - NOW())) / 3600
+  - (amount / NULLIF($4, 0))
+  - $5
+)`;
+
 const CLAIM_ORDER_SQL = `ORDER BY
   (priority_order IS NULL),
-  priority_order ASC,
-  (amount < $1),
+  priority_order ASC NULLS LAST,
+  ${COMPLETION_SLACK_SQL} ASC,
+  amount DESC,
   added_at ASC,
   id ASC`;
 
-// Rows that are worth handing out at all: nobody holding them, not reported
-// unavailable, and still carrying a usable balance.
-//
-// $3 is the release threshold (projectm_itune_release_settings.max_amount) —
-// the same number that decides when a topup user is allowed to give a claim
-// back (see releaseItuneEntry). Below it an entry counts as drained, which
-// is precisely why releasing is permitted, so putting it back in the queue
-// would only hand someone an empty card to discover and return again.
-//
-// Two rules are deliberately NOT here because they differ per caller:
-// claim_hold (claimItuneEntry skips held rows; the admin page still lists
-// them so they can be un-held) and the per-user "you already rejected this
-// one" exclusion (see listItunePriorityQueue's comment).
+// Exactly at the depleted threshold remains usable.
 const CLAIMABLE_WHERE_SQL = `claimed_by_user_id IS NULL
-     AND (status IS NULL OR status <> $2)
-     AND amount >= $3`;
+     AND (status IS NULL OR status <> $1)
+     AND amount >= $2`;
 
 // Resolves { userId: username } for whichever creators showed up in a batch
 // of rows — a plain lookup against the primary pool since it can't be a JOIN
@@ -385,7 +387,11 @@ function ensureSchema(connection) {
       await client.query(`
         ALTER TABLE projectm_itune_release_settings
         ADD COLUMN IF NOT EXISTS claim_paused BOOLEAN NOT NULL DEFAULT FALSE,
-        ADD COLUMN IF NOT EXISTS priority_amount_threshold NUMERIC(14,2)
+        ADD COLUMN IF NOT EXISTS priority_amount_threshold NUMERIC(14,2),
+        ADD COLUMN IF NOT EXISTS target_hours NUMERIC(8,2),
+        ADD COLUMN IF NOT EXISTS burn_rate_usd_per_hour NUMERIC(14,2),
+        ADD COLUMN IF NOT EXISTS expected_idle_hours NUMERIC(8,2),
+        ADD COLUMN IF NOT EXISTS claim_warning_hours NUMERIC(8,2)
       `);
       // "log คนเติม" (topup activity log, see the admin page's ปัจจุบัน/
       // ประวัติ tabs) — one row per claim/release/reject, so who's holding
@@ -430,6 +436,32 @@ function ensureSchema(connection) {
         ALTER TABLE projectm_itune_claim_log
         ADD CONSTRAINT projectm_itune_claim_log_action_check
         CHECK (action IN ('claim', 'release', 'reject', 'reject_confirm', 'reject_decline', 'cancel_reject'))
+      `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS projectm_itune_claim_sessions (
+          id BIGSERIAL PRIMARY KEY,
+          entry_id INTEGER NOT NULL,
+          entry_email TEXT,
+          user_id INTEGER,
+          username TEXT,
+          claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          released_at TIMESTAMPTZ,
+          start_amount NUMERIC(14,2) NOT NULL,
+          end_amount NUMERIC(14,2),
+          amount_used NUMERIC(14,2),
+          outcome TEXT CHECK (outcome IN ('depleted', 'partial_release', 'unusable')),
+          proof_image TEXT,
+          note TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS projectm_itune_claim_sessions_entry_idx
+        ON projectm_itune_claim_sessions (entry_id, claimed_at DESC)
+      `);
+      await client.query(`
+        ALTER TABLE projectm_itune_entries
+        ADD COLUMN IF NOT EXISTS active_claim_session_id BIGINT
       `);
     } finally {
       client.release();
@@ -1043,8 +1075,13 @@ const ITUNE_CLAIM_LOCK_NAMESPACE = 0x4954554e; // "ITUN"
 export async function claimItuneEntry(actor) {
   // Read before opening the transaction: both values are plain settings,
   // and a paused queue should fail before taking any row locks at all.
-  const { claimPaused, priorityAmountThreshold, maxAmount } =
-    await getItuneClaimSettings();
+  const {
+    claimPaused,
+    maxAmount,
+    targetHours,
+    burnRateUsdPerHour,
+    expectedIdleHours,
+  } = await getItuneClaimSettings();
   if (claimPaused) {
     throw createHttpError("ระบบหยุดรับเมลชั่วคราว — ติดต่อแอดมิน", 423);
   }
@@ -1074,12 +1111,19 @@ export async function claimItuneEntry(actor) {
          AND NOT EXISTS (
            SELECT 1 FROM projectm_itune_issue_log l
            WHERE l.entry_id = e.id AND l.is_reject AND l.reject_confirmed_at IS NOT NULL
-             AND l.reported_by_user_id = $4
+             AND l.reported_by_user_id = $6
          )
        ${CLAIM_ORDER_SQL}
        LIMIT 1
        FOR UPDATE SKIP LOCKED`,
-      [priorityAmountThreshold, ITUNE_UNAVAILABLE_STATUS, maxAmount, actor.id]
+      [
+        ITUNE_UNAVAILABLE_STATUS,
+        maxAmount,
+        targetHours,
+        burnRateUsdPerHour,
+        expectedIdleHours,
+        actor.id,
+      ]
     );
     if (rows.length === 0) {
       throw createHttpError("ไม่มีรายการว่างให้รับตอนนี้", 404);
@@ -1091,12 +1135,32 @@ export async function claimItuneEntry(actor) {
     // the row back at the head of the queue if it's ever released, ahead of
     // entries that have been waiting since — the admin can always re-pin it
     // from the priority page if that's actually what they want.
+    const sessionResult = await client.query(
+      `INSERT INTO projectm_itune_claim_sessions
+         (entry_id, entry_email, user_id, username, start_amount)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id AS pk`,
+      [
+        claimedId,
+        claimedRow.email || null,
+        actor?.id ?? null,
+        actor?.displayName || actor?.username || null,
+        Number(claimedRow.amount || 0),
+      ]
+    );
+    const sessionId = sessionResult.rows[0]?.pk ?? null;
     await client.query(
       `UPDATE projectm_itune_entries
        SET claimed_by_user_id = $1, claimed_at = NOW(), priority_order = NULL
        WHERE id = $2`,
       [actor.id, claimedId]
     );
+    if (sessionId !== null) {
+      await client.query(
+        `UPDATE projectm_itune_entries SET active_claim_session_id = $1 WHERE id = $2`,
+        [sessionId, claimedId]
+      );
+    }
     // Baseline history row — old_amount = new_amount marks it as "this is
     // where the balance stood when the claim started", not a real
     // adjustment (see listItuneAmountLog's callers for how that's told
@@ -1142,12 +1206,26 @@ export async function claimItuneEntry(actor) {
 // no confirmed rejects would see it — the page says as much on screen.
 export async function listItunePriorityQueue() {
   const pool = await getReadyPool();
-  const { priorityAmountThreshold, maxAmount } = await getItuneClaimSettings();
+  const {
+    maxAmount,
+    targetHours,
+    burnRateUsdPerHour,
+    expectedIdleHours,
+  } = await getItuneClaimSettings();
   const result = await pool.query(
-    `SELECT e.*, ${HAS_PENDING_REJECT_SQL} FROM projectm_itune_entries e
+    `SELECT e.*, ${HAS_PENDING_REJECT_SQL},
+            EXTRACT(EPOCH FROM (NOW() - added_at)) / 3600 AS known_age_hours,
+            ${COMPLETION_SLACK_SQL} AS completion_slack_hours
+     FROM projectm_itune_entries e
      WHERE ${CLAIMABLE_WHERE_SQL}
      ${CLAIM_ORDER_SQL}`,
-    [priorityAmountThreshold, ITUNE_UNAVAILABLE_STATUS, maxAmount]
+    [
+      ITUNE_UNAVAILABLE_STATUS,
+      maxAmount,
+      targetHours,
+      burnRateUsdPerHour,
+      expectedIdleHours,
+    ]
   );
   const usernamesById = await fetchUsernamesById(
     result.rows.map((row) => row.created_by_user_id)
@@ -1339,29 +1417,35 @@ export async function saveItuneReleaseThreshold(maxAmount, actor) {
 export async function getItuneClaimSettings() {
   const pool = await getReadyPool();
   const result = await pool.query(
-    `SELECT max_amount, claim_paused, priority_amount_threshold
+    `SELECT max_amount, claim_paused, priority_amount_threshold,
+            target_hours, burn_rate_usd_per_hour, expected_idle_hours, claim_warning_hours
      FROM projectm_itune_release_settings WHERE id = 1`
   );
   const row = result.rows[0];
   const threshold = row?.priority_amount_threshold;
   return {
     maxAmount:
-      row?.max_amount === undefined || row?.max_amount === null
-        ? DEFAULT_ITUNE_RELEASE_THRESHOLD
-        : Number(row.max_amount),
+      row?.max_amount == null ? DEFAULT_ITUNE_RELEASE_THRESHOLD : Number(row.max_amount),
     claimPaused: row?.claim_paused || false,
     priorityAmountThreshold:
-      threshold === undefined || threshold === null
-        ? DEFAULT_ITUNE_PRIORITY_AMOUNT_THRESHOLD
-        : Number(threshold),
+      threshold == null ? DEFAULT_ITUNE_PRIORITY_AMOUNT_THRESHOLD : Number(threshold),
+    targetHours: row?.target_hours == null ? DEFAULT_ITUNE_TARGET_HOURS : Number(row.target_hours),
+    burnRateUsdPerHour:
+      row?.burn_rate_usd_per_hour == null
+        ? DEFAULT_ITUNE_BURN_RATE
+        : Number(row.burn_rate_usd_per_hour),
+    expectedIdleHours:
+      row?.expected_idle_hours == null
+        ? DEFAULT_ITUNE_EXPECTED_IDLE_HOURS
+        : Number(row.expected_idle_hours),
+    claimWarningHours:
+      row?.claim_warning_hours == null
+        ? DEFAULT_ITUNE_CLAIM_WARNING_HOURS
+        : Number(row.claim_warning_hours),
   };
 }
 
-// Partial update of the same singleton — only the keys actually present in
-// `fields` are written, so the release-settings modal and the priority
-// page's own controls can each save their own slice without clobbering
-// the other's. max_amount is NOT NULL, so an insert that doesn't set it
-// has to fall back to the current (or default) value rather than NULL.
+// Partial update: omitted fields keep their current values.
 export async function saveItuneClaimSettings(fields, actor) {
   const pool = await getReadyPool();
   const current = await getItuneClaimSettings();
@@ -1373,15 +1457,34 @@ export async function saveItuneClaimSettings(fields, actor) {
       fields.priorityAmountThreshold === undefined
         ? current.priorityAmountThreshold
         : fields.priorityAmountThreshold,
+    targetHours: fields.targetHours === undefined ? current.targetHours : fields.targetHours,
+    burnRateUsdPerHour:
+      fields.burnRateUsdPerHour === undefined
+        ? current.burnRateUsdPerHour
+        : fields.burnRateUsdPerHour,
+    expectedIdleHours:
+      fields.expectedIdleHours === undefined
+        ? current.expectedIdleHours
+        : fields.expectedIdleHours,
+    claimWarningHours:
+      fields.claimWarningHours === undefined
+        ? current.claimWarningHours
+        : fields.claimWarningHours,
   };
   await pool.query(
     `INSERT INTO projectm_itune_release_settings
-       (id, max_amount, claim_paused, priority_amount_threshold, updated_by_user_id, updated_by_username)
-     VALUES (1, $1, $2, $3, $4, $5)
+       (id, max_amount, claim_paused, priority_amount_threshold,
+        target_hours, burn_rate_usd_per_hour, expected_idle_hours, claim_warning_hours,
+        updated_by_user_id, updated_by_username)
+     VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT (id) DO UPDATE
        SET max_amount = EXCLUDED.max_amount,
            claim_paused = EXCLUDED.claim_paused,
            priority_amount_threshold = EXCLUDED.priority_amount_threshold,
+           target_hours = EXCLUDED.target_hours,
+           burn_rate_usd_per_hour = EXCLUDED.burn_rate_usd_per_hour,
+           expected_idle_hours = EXCLUDED.expected_idle_hours,
+           claim_warning_hours = EXCLUDED.claim_warning_hours,
            updated_at = NOW(),
            updated_by_user_id = EXCLUDED.updated_by_user_id,
            updated_by_username = EXCLUDED.updated_by_username`,
@@ -1389,6 +1492,10 @@ export async function saveItuneClaimSettings(fields, actor) {
       next.maxAmount,
       next.claimPaused,
       next.priorityAmountThreshold,
+      next.targetHours,
+      next.burnRateUsdPerHour,
+      next.expectedIdleHours,
+      next.claimWarningHours,
       actor?.id ?? null,
       actor?.displayName || actor?.username || null,
     ]
@@ -1396,48 +1503,169 @@ export async function saveItuneClaimSettings(fields, actor) {
   return next;
 }
 
-// Undoes claimItuneEntry — returns the row to the claimable pool. Only the
-// claimant themselves or a projectm-admin may release someone's claim. A
-// projectm-admin can force-release regardless of the current Amount/image
-// (e.g. to fix a stuck/mistaken claim); the claimant themselves must first
-// bring the Amount down below getItuneReleaseThreshold AND have a confirm
-// image attached — releasing while there's still a meaningful balance left,
-// or with no proof of the final balance, would just hand back an unfinished
-// or unverifiable card, defeating the point of claiming it in the first
-// place.
-export async function releaseItuneEntry(id, actor) {
+// Finishes one claim atomically. A normal user must submit the outcome,
+// latest balance and fresh proof image. Admins may still force-release a
+// stuck claim without details; that path is intentionally exceptional.
+export async function releaseItuneEntry(id, actor, details = null) {
   const pool = await getReadyPool();
   const threshold = await getItuneReleaseThreshold();
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     const { rows } = await client.query(
-      `SELECT claimed_by_user_id, amount, amount_confirm_image, email
+      `SELECT claimed_by_user_id, claimed_at, active_claim_session_id,
+              amount, amount_confirm_image, email, password, currency,
+              supplier, link_sms, qna, status
        FROM projectm_itune_entries WHERE id = $1 FOR UPDATE`,
       [id]
     );
     if (rows.length === 0) {
       throw createHttpError("ไม่พบรายการนี้ (อาจถูกลบไปแล้ว)", 404);
     }
+    const row = rows[0];
     const isAdmin = isProjectmAdminActor(actor);
-    if (!isAdmin && rows[0].claimed_by_user_id !== actor.id) {
+    if (!isAdmin && row.claimed_by_user_id !== actor.id) {
       throw createHttpError("คุณไม่ใช่ผู้รับเมลนี้", 403);
     }
-    const amount = rows[0].amount === null ? 0 : Number(rows[0].amount);
-    if (!isAdmin && amount >= threshold) {
-      throw createHttpError(
-        `ยอดคงเหลือต้องต่ำกว่า ${threshold} ก่อนถึงจะคืนเมลได้ (ตอนนี้เหลือ ${amount.toFixed(2)})`,
-        400
+    if (!row.claimed_by_user_id && !isAdmin) {
+      throw createHttpError("เมลนี้ไม่ได้อยู่ระหว่างการใช้งาน", 400);
+    }
+
+    const forceRelease = isAdmin && !details?.outcome;
+    let outcome = details?.outcome;
+    let amount = Number(details?.amount);
+    let image = String(details?.image || "").trim();
+    const note = String(details?.note || "").trim();
+
+    if (forceRelease) {
+      outcome = "partial_release";
+      amount = Number(row.amount || 0);
+      image = row.amount_confirm_image || "";
+    } else {
+      if (!["depleted", "partial_release", "unusable"].includes(outcome)) {
+        throw createHttpError("กรุณาเลือกผลลัพธ์การใช้งาน", 400);
+      }
+      if (!Number.isFinite(amount) || amount < 0) {
+        throw createHttpError("Amount ต้องเป็นตัวเลขไม่ติดลบ", 400);
+      }
+      if (!image) {
+        throw createHttpError("กรุณาแนบรูปยืนยันยอดล่าสุดก่อนคืนเมล", 400);
+      }
+      if (outcome === "depleted" && amount >= threshold) {
+        throw createHttpError(
+          `ยอดคงเหลือยังไม่ต่ำกว่า ${threshold} จึงถือว่ายังใช้ต่อได้ กรุณาเลือกคืนเข้าคิว`,
+          400
+        );
+      }
+      if (outcome === "partial_release" && amount < threshold) {
+        throw createHttpError(
+          `ยอดคงเหลือต่ำกว่า ${threshold} แล้ว กรุณาเลือกใช้หมดแล้ว`,
+          400
+        );
+      }
+      if (outcome === "unusable" && !note) {
+        throw createHttpError("กรุณาระบุปัญหาที่พบ", 400);
+      }
+    }
+
+    const oldAmount = Number(row.amount || 0);
+    await client.query(
+      `UPDATE projectm_itune_entries
+       SET amount = $2,
+           amount_confirm_image = $3,
+           status = CASE WHEN $4 THEN $5 ELSE status END,
+           other_notes = CASE WHEN $4 THEN $6 ELSE other_notes END,
+           claimed_by_user_id = NULL,
+           claimed_at = NULL,
+           active_claim_session_id = NULL,
+           updated_at = NOW()
+       WHERE id = $1`,
+      [id, amount, image || null, outcome === "unusable", ITUNE_UNAVAILABLE_STATUS, note || null]
+    );
+
+    await client.query(
+      `INSERT INTO projectm_itune_amount_log
+         (entry_id, entry_email, old_amount, new_amount, image,
+          changed_by_user_id, changed_by_username)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        id,
+        row.email || null,
+        oldAmount,
+        amount,
+        image || null,
+        actor?.id ?? null,
+        actor?.displayName || actor?.username || null,
+      ]
+    );
+
+    const sessionValues = [
+      amount,
+      Math.max(0, oldAmount - amount),
+      outcome,
+      image || null,
+      note || null,
+    ];
+    if (row.active_claim_session_id) {
+      await client.query(
+        `UPDATE projectm_itune_claim_sessions
+         SET released_at = NOW(), end_amount = $1, amount_used = $2,
+             outcome = $3, proof_image = $4, note = $5
+         WHERE id = $6 AND released_at IS NULL`,
+        [...sessionValues, row.active_claim_session_id]
+      );
+    } else {
+      await client.query(
+        `INSERT INTO projectm_itune_claim_sessions
+           (entry_id, entry_email, user_id, username, claimed_at, released_at,
+            start_amount, end_amount, amount_used, outcome, proof_image, note)
+         VALUES ($1, $2, $3, $4, COALESCE($5, NOW()), NOW(),
+                 $6, $7, $8, $9, $10, $11)`,
+        [
+          id,
+          row.email || null,
+          row.claimed_by_user_id || actor?.id || null,
+          actor?.displayName || actor?.username || null,
+          row.claimed_at,
+          oldAmount,
+          amount,
+          Math.max(0, oldAmount - amount),
+          outcome,
+          image || null,
+          note || null,
+        ]
       );
     }
-    if (!isAdmin && !rows[0].amount_confirm_image) {
-      throw createHttpError("กรุณาแนบรูปยืนยันยอดก่อนถึงจะคืนเมลได้", 400);
+
+    if (outcome === "unusable") {
+      await client.query(
+        `INSERT INTO projectm_itune_issue_log
+           (entry_id, entry_email, entry_password, entry_currency, entry_supplier,
+            entry_amount, entry_link_sms, entry_qna, note,
+            reported_by_user_id, reported_by_username)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [
+          id,
+          row.email || null,
+          row.password || null,
+          row.currency || null,
+          row.supplier || null,
+          amount,
+          row.link_sms || null,
+          row.qna || null,
+          note,
+          actor?.id ?? null,
+          actor?.displayName || actor?.username || null,
+        ]
+      );
     }
-    await client.query(
-      `UPDATE projectm_itune_entries SET claimed_by_user_id = NULL, claimed_at = NULL WHERE id = $1`,
-      [id]
-    );
-    await insertClaimLog(client, { entryId: id, entryEmail: rows[0].email, action: "release", actor });
+
+    await insertClaimLog(client, {
+      entryId: id,
+      entryEmail: row.email,
+      action: "release",
+      actor,
+    });
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
@@ -1448,14 +1676,7 @@ export async function releaseItuneEntry(id, actor) {
   return findItuneEntryById(id);
 }
 
-// "อัปเดตยอดคงเหลือ" (update remaining balance) — the core of the topup
-// workflow: a topup user periodically records what's left on a card they're
-// holding (see claimItuneEntry) after spending some of it elsewhere. Writes
-// the new amount (+ optional confirm image, the same slot the admin table's
-// image picker uses) and appends an old→new row to
-// projectm_itune_amount_log so the adjustment history stays auditable even
-// though the live row only ever carries its current balance — wrapped in
-// one transaction so the balance write and its log entry can't drift apart.
+// Balance adjustments while a claim is still active.
 export async function updateItuneEntryAmount(id, { amount, image }, actor) {
   const pool = await getReadyPool();
   const client = await pool.connect();
@@ -1528,15 +1749,202 @@ export async function listItuneAmountLog(entryId, actor) {
     }
   }
   const result = await pool.query(
-    `SELECT * FROM projectm_itune_amount_log WHERE entry_id = $1 ORDER BY id DESC LIMIT 100`,
+    `SELECT id, old_amount, new_amount, changed_by_username, changed_at,
+            (image IS NOT NULL AND image <> '') AS has_image
+     FROM projectm_itune_amount_log
+     WHERE entry_id = $1 ORDER BY id DESC LIMIT 100`,
     [entryId]
   );
   return result.rows.map((row) => ({
     id: row.id,
     oldAmount: Number(row.old_amount),
     newAmount: Number(row.new_amount),
-    image: row.image || "",
+    hasImage: row.has_image || false,
     changedByUsername: row.changed_by_username || "",
     changedAt: row.changed_at,
   }));
+}
+
+export async function getItuneAmountLogImage(logId, actor) {
+  const numericId = Number(logId);
+  if (!Number.isInteger(numericId) || numericId <= 0) {
+    throw createHttpError("ไม่พบรูปยืนยัน", 404);
+  }
+
+  const pool = await getReadyPool();
+  const result = isProjectmAdminActor(actor)
+    ? await pool.query(
+        `SELECT image FROM projectm_itune_amount_log WHERE id = $1`,
+        [numericId]
+      )
+    : await pool.query(
+        `SELECT l.image
+         FROM projectm_itune_amount_log l
+         JOIN projectm_itune_entries e ON e.id = l.entry_id
+         WHERE l.id = $1 AND e.claimed_by_user_id = $2`,
+        [numericId, actor?.id]
+      );
+
+  if (!result.rows.length) throw createHttpError("ไม่พบรูปยืนยัน", 404);
+  return result.rows[0].image || "";
+}
+
+function percentile(values, ratio) {
+  const sorted = values.map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+  if (sorted.length === 0) return 0;
+  const index = (sorted.length - 1) * ratio;
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+  if (lower === upper) return sorted[lower];
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower);
+}
+
+export async function getItuneStats({ days = 30 } = {}) {
+  const pool = await getReadyPool();
+  const settings = await getItuneClaimSettings();
+  const safeDays = Math.min(90, Math.max(7, Number(days) || 30));
+  const [overviewResult, sessionResult, dailyResult, userResult, bandResult] = await Promise.all([
+    pool.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE added_at >= CURRENT_DATE) AS emails_added_today,
+         COALESCE(SUM(amount) FILTER (
+           WHERE (status IS NULL OR status <> $1)
+             AND amount >= $2
+         ), 0) AS usable_stock,
+         COALESCE(SUM(amount) FILTER (WHERE claimed_by_user_id IS NOT NULL), 0) AS held_stock,
+         COUNT(*) FILTER (WHERE claimed_by_user_id IS NOT NULL) AS held_count,
+         COUNT(*) FILTER (
+           WHERE claimed_by_user_id IS NULL
+             AND (status IS NULL OR status <> $1)
+             AND amount >= $2
+         ) AS queue_count,
+         COUNT(*) FILTER (WHERE status = $1) AS unusable_count
+       FROM projectm_itune_entries`,
+      [ITUNE_UNAVAILABLE_STATUS, settings.maxAmount]
+    ),
+    pool.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE released_at >= CURRENT_DATE) AS sessions_today,
+         COALESCE(SUM(amount_used) FILTER (WHERE released_at >= CURRENT_DATE), 0) AS used_today,
+         COUNT(*) FILTER (WHERE released_at >= CURRENT_DATE AND outcome = 'depleted') AS depleted_today,
+         COUNT(*) FILTER (WHERE released_at >= CURRENT_DATE AND outcome = 'partial_release') AS partial_today,
+         COUNT(*) FILTER (WHERE released_at >= CURRENT_DATE AND outcome = 'unusable') AS unusable_today,
+         percentile_cont(0.5) WITHIN GROUP (
+           ORDER BY EXTRACT(EPOCH FROM (released_at - claimed_at)) / 3600
+         ) FILTER (WHERE released_at IS NOT NULL) AS hold_p50,
+         percentile_cont(0.75) WITHIN GROUP (
+           ORDER BY EXTRACT(EPOCH FROM (released_at - claimed_at)) / 3600
+         ) FILTER (WHERE released_at IS NOT NULL) AS hold_p75,
+         percentile_cont(0.9) WITHIN GROUP (
+           ORDER BY EXTRACT(EPOCH FROM (released_at - claimed_at)) / 3600
+         ) FILTER (WHERE released_at IS NOT NULL) AS hold_p90
+       FROM projectm_itune_claim_sessions`
+    ),
+    pool.query(
+      `SELECT released_at::date AS day, COUNT(*) AS sessions,
+              COALESCE(SUM(amount_used), 0) AS amount_used,
+              AVG(EXTRACT(EPOCH FROM (released_at - claimed_at)) / 3600) AS avg_hold_hours
+       FROM projectm_itune_claim_sessions
+       WHERE released_at >= CURRENT_DATE - ($1::int - 1)
+       GROUP BY released_at::date ORDER BY day ASC`,
+      [safeDays]
+    ),
+    pool.query(
+      `SELECT COALESCE(username, 'ไม่ทราบชื่อ') AS username,
+              COUNT(*) AS sessions, COALESCE(SUM(amount_used), 0) AS amount_used,
+              AVG(EXTRACT(EPOCH FROM (released_at - claimed_at)) / 3600) AS avg_hold_hours,
+              COUNT(*) FILTER (WHERE outcome = 'partial_release') AS partial_count
+       FROM projectm_itune_claim_sessions
+       WHERE released_at >= CURRENT_DATE - ($1::int - 1)
+       GROUP BY COALESCE(username, 'ไม่ทราบชื่อ')
+       ORDER BY amount_used DESC LIMIT 20`,
+      [safeDays]
+    ),
+    pool.query(
+      `SELECT CASE
+                WHEN start_amount < 300 THEN '200–299'
+                WHEN start_amount <= 500 THEN '300–500'
+                ELSE 'มากกว่า 500'
+              END AS band,
+              COUNT(*) AS sessions, COALESCE(SUM(amount_used), 0) AS amount_used,
+              AVG(EXTRACT(EPOCH FROM (released_at - claimed_at)) / 3600) AS avg_hold_hours,
+              COUNT(*) FILTER (WHERE outcome = 'depleted') AS depleted_count
+       FROM projectm_itune_claim_sessions
+       WHERE released_at >= CURRENT_DATE - ($1::int - 1)
+       GROUP BY 1 ORDER BY MIN(start_amount)`,
+      [safeDays]
+    ),
+  ]);
+
+  const overviewRow = overviewResult.rows[0] || {};
+  const sessionRow = sessionResult.rows[0] || {};
+  const daily = dailyResult.rows.map((row) => ({
+    day: row.day,
+    sessions: Number(row.sessions || 0),
+    amountUsed: Number(row.amount_used || 0),
+    avgHoldHours: Number(row.avg_hold_hours || 0),
+  }));
+  const bands = bandResult.rows.map((row) => ({
+    band: row.band,
+    sessions: Number(row.sessions || 0),
+    amountUsed: Number(row.amount_used || 0),
+    avgHoldHours: Number(row.avg_hold_hours || 0),
+    depletedCount: Number(row.depleted_count || 0),
+  }));
+  const sufficientlySampled = bands.filter((band) => band.sessions >= 5);
+  const bandCandidates = sufficientlySampled.length ? sufficientlySampled : bands;
+  const preferredBand = [...bandCandidates].sort((a, b) => {
+    const aRate = a.sessions ? a.depletedCount / a.sessions : 0;
+    const bRate = b.sessions ? b.depletedCount / b.sessions : 0;
+    return bRate - aRate || a.avgHoldHours - b.avgHoldHours;
+  })[0];
+  const preferredAmountPerEmail =
+    { "200–299": 250, "300–500": 400, "มากกว่า 500": 600 }[preferredBand?.band] || 350;
+
+  const dailyAmounts = daily.map((row) => row.amountUsed);
+  const demandP75 = percentile(dailyAmounts, 0.75);
+  const demandP90 = percentile(dailyAmounts, 0.9);
+  const usableStock = Number(overviewRow.usable_stock || 0);
+  const safetyStock = demandP90 * 0.1;
+  const recommendedDailyAmount = Math.max(0, demandP75 + safetyStock - usableStock);
+
+  return {
+    settings,
+    periodDays: safeDays,
+    overview: {
+      emailsAddedToday: Number(overviewRow.emails_added_today || 0),
+      usableStock,
+      heldStock: Number(overviewRow.held_stock || 0),
+      heldCount: Number(overviewRow.held_count || 0),
+      queueCount: Number(overviewRow.queue_count || 0),
+      unusableCount: Number(overviewRow.unusable_count || 0),
+      sessionsToday: Number(sessionRow.sessions_today || 0),
+      usedToday: Number(sessionRow.used_today || 0),
+      depletedToday: Number(sessionRow.depleted_today || 0),
+      partialToday: Number(sessionRow.partial_today || 0),
+      unusableToday: Number(sessionRow.unusable_today || 0),
+      holdP50: Number(sessionRow.hold_p50 || 0),
+      holdP75: Number(sessionRow.hold_p75 || 0),
+      holdP90: Number(sessionRow.hold_p90 || 0),
+      hoursOfCover: usableStock / Math.max(settings.burnRateUsdPerHour, 0.01),
+    },
+    purchase: {
+      demandP75,
+      demandP90,
+      safetyStock,
+      recommendedDailyAmount,
+      recommendedEmailCount: Math.ceil(recommendedDailyAmount / preferredAmountPerEmail),
+      preferredAmountPerEmail,
+      cutoffHour: 18,
+    },
+    daily,
+    users: userResult.rows.map((row) => ({
+      username: row.username,
+      sessions: Number(row.sessions || 0),
+      amountUsed: Number(row.amount_used || 0),
+      avgHoldHours: Number(row.avg_hold_hours || 0),
+      partialCount: Number(row.partial_count || 0),
+    })),
+    bands,
+  };
 }
