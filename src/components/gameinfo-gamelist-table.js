@@ -1025,7 +1025,7 @@ function RowCells({
 
       {/* isRepeatable checkbox: not shown — hidden per request, row.isRepeatable still exists */}
 
-      <span className="flex h-9 items-center px-2" onClick={(event) => event.stopPropagation()}>
+      <span className="flex h-9 items-center px-2">
         <GameinfoGameLinksButton
           gameId={row.id}
           gameName={row.game}
@@ -1041,7 +1041,7 @@ function RowCells({
 
       {/* Always rendered regardless of editable — role "user" (and the
           "หน้าเว็บ" preview) can still open it, just read-only inside. */}
-      <span className="flex justify-start gap-1" onClick={(e) => e.stopPropagation()}>
+      <span className="flex justify-start gap-1">
         <GameinfoTutorialButton
           gameId={row.id}
           gameName={row.game}
