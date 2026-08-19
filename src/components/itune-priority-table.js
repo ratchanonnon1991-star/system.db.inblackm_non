@@ -300,11 +300,17 @@ export default function ItunePriorityTable({ initialEntries, initialSettings }) 
     }
   }, []);
 
-  // Another admin reordering, or a topup user claiming the top of the queue,
-  // both change what this page is showing without anything happening here.
+  // SSE updates immediately after a queue mutation. The slower poll remains
+  // as a recovery path if a proxy or browser interrupts the event stream.
   useEffect(() => {
-    const id = setInterval(refresh, 15_000);
-    return () => clearInterval(id);
+    const source = new EventSource("/api/projectm/itune/priority/events");
+    source.addEventListener("queue", refresh);
+    const fallbackId = setInterval(refresh, 60_000);
+    return () => {
+      source.removeEventListener("queue", refresh);
+      source.close();
+      clearInterval(fallbackId);
+    };
   }, [refresh]);
 
   async function onDragEnd(event) {

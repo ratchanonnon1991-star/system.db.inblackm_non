@@ -18,6 +18,7 @@ import {
   DEFAULT_ITUNE_EXPECTED_IDLE_HOURS,
   DEFAULT_ITUNE_TARGET_HOURS,
 } from "@/lib/itune-queue";
+import { publishItuneQueueChanged } from "@/server/itune-queue-events";
 
 const CONNECTION_NAME = "topup_inblackm";
 
@@ -564,7 +565,9 @@ export async function insertItuneEntry({ createdByUserId, addedAt, ...fields }) 
     client.release();
   }
 
-  return findItuneEntryById(insertedId);
+  const entry = await findItuneEntryById(insertedId);
+  publishItuneQueueChanged();
+  return entry;
 }
 
 export async function findItuneEntryById(id) {
@@ -617,7 +620,9 @@ export async function updateItuneEntry(id, fields) {
     `UPDATE projectm_itune_entries SET ${sets.join(", ")} WHERE id = $${i}`,
     values
   );
-  return findItuneEntryById(id);
+  const entry = await findItuneEntryById(id);
+  publishItuneQueueChanged();
+  return entry;
 }
 
 // "แจ้งปัญหา" (report issue) — same shape as saveItuneEntryImage: a
@@ -674,7 +679,9 @@ export async function reportItuneEntryIssue(id, note, actor) {
   } finally {
     client.release();
   }
-  return findItuneEntryById(id);
+  const entry = await findItuneEntryById(id);
+  publishItuneQueueChanged();
+  return entry;
 }
 
 // Undoes reportItuneEntryIssue — clears the status override so the row falls
@@ -713,7 +720,9 @@ export async function resolveItuneEntryIssue(id, actor) {
   } finally {
     client.release();
   }
-  return findItuneEntryById(id);
+  const entry = await findItuneEntryById(id);
+  publishItuneQueueChanged();
+  return entry;
 }
 
 // "Reject" — a topup user's own "something's wrong with this one" request,
@@ -857,7 +866,9 @@ export async function confirmItuneReject(claimLogId, actor) {
   } finally {
     client.release();
   }
-  return findItuneEntryById(entryId);
+  const entry = await findItuneEntryById(entryId);
+  publishItuneQueueChanged();
+  return entry;
 }
 
 // Admin declines a pending Reject request — dismisses it as if it never
@@ -1025,6 +1036,7 @@ export async function saveItuneEntryImage(id, imageUrl) {
 export async function deleteItuneEntry(id) {
   const pool = await getReadyPool();
   await pool.query(`DELETE FROM projectm_itune_entries WHERE id = $1`, [id]);
+  publishItuneQueueChanged();
 }
 
 // "ตั้งเป็นเมลถาวร" / "ตั้งกลับเป็นเมลปกติ" — a standing admin override,
@@ -1041,7 +1053,9 @@ export async function setItuneEntryPermanent(id, isPermanent) {
   if (result.rowCount === 0) {
     throw createHttpError("ไม่พบรายการนี้ (อาจถูกลบไปแล้ว)", 404);
   }
-  return findItuneEntryById(id);
+  const entry = await findItuneEntryById(id);
+  publishItuneQueueChanged();
+  return entry;
 }
 
 // Every non-admin, logged-in GameDB user can use the topup self-service
@@ -1192,7 +1206,9 @@ export async function claimItuneEntry(actor) {
   } finally {
     client.release();
   }
-  return findItuneEntryById(claimedId);
+  const entry = await findItuneEntryById(claimedId);
+  publishItuneQueueChanged();
+  return entry;
 }
 
 // The admin "จัดคิวรับเมล" page's list: every entry that's up for grabs,
@@ -1256,6 +1272,7 @@ export async function reorderItunePriority(orderedIds) {
   } finally {
     client.release();
   }
+  publishItuneQueueChanged();
 }
 
 // Pin an entry to the manual queue (appended after whatever is already
@@ -1271,7 +1288,9 @@ export async function setItunePriorityPinned(id, pinned) {
       [id]
     );
     if (!result.rows.length) throw createHttpError("ไม่พบรายการนี้", 404);
-    return findItuneEntryById(id);
+    const entry = await findItuneEntryById(id);
+    publishItuneQueueChanged();
+    return entry;
   }
   const result = await pool.query(
     `UPDATE projectm_itune_entries
@@ -1283,7 +1302,9 @@ export async function setItunePriorityPinned(id, pinned) {
     [id]
   );
   if (!result.rows.length) throw createHttpError("ไม่พบรายการนี้", 404);
-  return findItuneEntryById(id);
+  const entry = await findItuneEntryById(id);
+  publishItuneQueueChanged();
+  return entry;
 }
 
 // Per-entry counterpart to the global claim_paused switch — takes one row
@@ -1296,7 +1317,9 @@ export async function setItuneClaimHold(id, hold) {
     [Boolean(hold), id]
   );
   if (!result.rows.length) throw createHttpError("ไม่พบรายการนี้", 404);
-  return findItuneEntryById(id);
+  const entry = await findItuneEntryById(id);
+  publishItuneQueueChanged();
+  return entry;
 }
 
 // Rows currently held by a given topup user — what the topup page loads on
@@ -1500,6 +1523,7 @@ export async function saveItuneClaimSettings(fields, actor) {
       actor?.displayName || actor?.username || null,
     ]
   );
+  publishItuneQueueChanged();
   return next;
 }
 
@@ -1673,7 +1697,9 @@ export async function releaseItuneEntry(id, actor, details = null) {
   } finally {
     client.release();
   }
-  return findItuneEntryById(id);
+  const entry = await findItuneEntryById(id);
+  publishItuneQueueChanged();
+  return entry;
 }
 
 // Balance adjustments while a claim is still active.
@@ -1731,7 +1757,9 @@ export async function updateItuneEntryAmount(id, { amount, image }, actor) {
   } finally {
     client.release();
   }
-  return findItuneEntryById(id);
+  const entry = await findItuneEntryById(id);
+  publishItuneQueueChanged();
+  return entry;
 }
 
 // Read side for the amount-adjustment history shown inside an expanded
