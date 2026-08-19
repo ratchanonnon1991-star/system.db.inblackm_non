@@ -1515,8 +1515,18 @@ export async function updateItuneEntryAmount(id, { amount, image }, actor) {
 
 // Read side for the amount-adjustment history shown inside an expanded
 // topup card — newest first, same idea as listItuneIssueLog.
-export async function listItuneAmountLog(entryId) {
+export async function listItuneAmountLog(entryId, actor) {
   const pool = await getReadyPool();
+  if (!isProjectmAdminActor(actor)) {
+    const ownership = await pool.query(
+      `SELECT 1 FROM projectm_itune_entries
+       WHERE id = $1 AND claimed_by_user_id = $2`,
+      [entryId, actor?.id]
+    );
+    if (!ownership.rows.length) {
+      throw createHttpError("คุณไม่มีสิทธิ์ดูประวัติยอดของรายการนี้", 403);
+    }
+  }
   const result = await pool.query(
     `SELECT * FROM projectm_itune_amount_log WHERE entry_id = $1 ORDER BY id DESC LIMIT 100`,
     [entryId]
