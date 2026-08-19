@@ -1024,6 +1024,7 @@ function isProjectmAdminActor(actor) {
 }
 
 const MAX_CLAIMS_PER_USER = 2;
+const ITUNE_CLAIM_LOCK_NAMESPACE = 0x4954554e; // "ITUN"
 
 // "รับเมล" (claim) — assigns the first row in CLAIM_ORDER_SQL's order (an
 // admin's manual pin if there is one, otherwise the oldest entry in the
@@ -1052,6 +1053,10 @@ export async function claimItuneEntry(actor) {
   let claimedId;
   try {
     await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock($1, $2)", [
+      ITUNE_CLAIM_LOCK_NAMESPACE,
+      actor.id,
+    ]);
     const { rows: countRows } = await client.query(
       `SELECT COUNT(*)::int AS count FROM projectm_itune_entries WHERE claimed_by_user_id = $1`,
       [actor.id]

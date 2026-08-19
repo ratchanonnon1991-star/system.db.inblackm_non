@@ -34,6 +34,7 @@ import ItuneComboInput from "@/components/itune-combo-input";
 import ItuneCountdownCell from "@/components/itune-countdown-cell";
 import ItuneImagePickerModal from "@/components/itune-image-picker-modal";
 import ItuneImagePreview from "@/components/itune-image-preview";
+import ItunePasswordValue, { ItunePasswordInput } from "@/components/itune-password-value";
 
 function uniq(arr) {
   return Array.from(new Set(arr.filter(Boolean))).sort((a, b) => a.localeCompare(b, "th"));
@@ -1521,25 +1522,35 @@ export default function ItuneAdminTable({ initialEntries, initialReleaseThreshol
     const value = row[field] || "";
     const isEditing = editing?.id === row.id && editing?.field === field;
     const duplicateMessage = field === "linkSms" ? linkSmsDuplicateMessage(row) : null;
+    const display = field === "password" ? <ItunePasswordValue value={value} /> : value;
     return (
       <EditableCell
         editing={isEditing}
-        display={value}
+        display={display}
         onStartEdit={() => setEditing({ id: row.id, field })}
         onContextMenu={(e) => handleCellRightClickPaste(e, row.id, field)}
         copyText={settings.copyButtonsEnabled ? value : ""}
       >
-        <ItuneComboInput
-          value={value}
-          onChange={(v) => updateField(row.id, field, v)}
-          suggestions={suggestions[field] || []}
-          placeholder={label}
-          autoFocus
-          onEnter={() => focusNextField(row.id, field)}
-          className="w-full rounded-md border border-ll-primary bg-ll-surface-1 px-2 py-1 text-sm text-ll-ink outline-none"
-          isDuplicate={Boolean(duplicateMessage)}
-          duplicateMessage={duplicateMessage}
-        />
+        {field === "password" ? (
+          <ItunePasswordInput
+            value={value}
+            onChange={(v) => updateField(row.id, field, v)}
+            onEnter={() => focusNextField(row.id, field)}
+            className="w-full rounded-md border border-ll-primary bg-ll-surface-1 px-2 py-1 text-sm text-ll-ink outline-none"
+          />
+        ) : (
+          <ItuneComboInput
+            value={value}
+            onChange={(v) => updateField(row.id, field, v)}
+            suggestions={suggestions[field] || []}
+            placeholder={label}
+            autoFocus
+            onEnter={() => focusNextField(row.id, field)}
+            className="w-full rounded-md border border-ll-primary bg-ll-surface-1 px-2 py-1 text-sm text-ll-ink outline-none"
+            isDuplicate={Boolean(duplicateMessage)}
+            duplicateMessage={duplicateMessage}
+          />
+        )}
       </EditableCell>
     );
   }

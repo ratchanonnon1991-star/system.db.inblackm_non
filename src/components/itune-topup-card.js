@@ -12,6 +12,7 @@ import {
 import ItuneCountdownCell from "@/components/itune-countdown-cell";
 import ItuneImagePickerModal from "@/components/itune-image-picker-modal";
 import ItuneImagePreview from "@/components/itune-image-preview";
+import ItunePasswordValue from "@/components/itune-password-value";
 
 // Same tone→class mapping as itune-admin-table.js's StatusBadge — kept as a
 // small local copy (see itune-issue-history.js for the same convention)
@@ -255,16 +256,24 @@ export default function ItuneTopupCard({ entry, now, releaseThreshold, onRelease
 
   return (
     <div className="overflow-hidden rounded-lg border border-ll-hairline bg-ll-surface-1 shadow-[var(--ll-shadow-card)]">
-      <button
-        type="button"
+      <div
         onClick={toggleExpanded}
         className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-ll-surface-2/50"
       >
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="truncate text-sm font-medium text-ll-ink">{entry.email || "-"}</span>
-          <span className="truncate text-xs text-ll-ink-subtle">{entry.password || "-"}</span>
+          <ItunePasswordValue value={entry.password} className="text-xs text-ll-ink-subtle" />
         </div>
-        <div className="flex shrink-0 items-center gap-3 text-xs">
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            toggleExpanded();
+          }}
+          aria-expanded={expanded}
+          aria-label={expanded ? "Collapse details" : "Expand details"}
+          className="flex shrink-0 items-center gap-3 rounded text-xs"
+        >
           <ItuneCountdownCell
             addedAt={entry.addedAt}
             now={now}
@@ -275,8 +284,8 @@ export default function ItuneTopupCard({ entry, now, releaseThreshold, onRelease
             size={16}
             className={`text-ll-ink-tertiary transition-transform ${expanded ? "rotate-180" : ""}`}
           />
-        </div>
-      </button>
+        </button>
+      </div>
 
       {expanded && (
         <div className="flex flex-col gap-5 border-t border-ll-hairline p-4">

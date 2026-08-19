@@ -21,6 +21,7 @@ import { computeEffectiveItuneStatus, ITUNE_DEPLETED_STATUS } from "@/lib/itune-
 import { useMinuteTicker } from "@/lib/itune-ticker";
 import ItuneCountdownCell from "@/components/itune-countdown-cell";
 import ItuneImagePreview from "@/components/itune-image-preview";
+import ItunePasswordValue from "@/components/itune-password-value";
 
 // Same tone→class mapping as itune-admin-table.js's StatusBadge — a small
 // local copy per call site is this app's convention (see that file and
@@ -72,7 +73,7 @@ function EntryCells({ entry, now, threshold }) {
       </div>
       <div className="min-w-0 truncate px-3 py-2 text-[13px] text-ll-ink">{entry.email}</div>
       <div className="min-w-0 truncate px-3 py-2 text-[13px] text-ll-ink-subtle">
-        {entry.password}
+        <ItunePasswordValue value={entry.password} />
       </div>
       <div className="min-w-0 px-3 py-2">
         <StatusBadge row={entry} />

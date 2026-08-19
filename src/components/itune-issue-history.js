@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiJson } from "@/lib/api-json";
+import ItunePasswordValue from "@/components/itune-password-value";
 
 // Same tone→class mapping as itune-admin-table.js's StatusBadge — kept as a
 // small local copy rather than a shared import since this is the only other
@@ -118,7 +119,9 @@ export default function ItuneIssueHistory() {
                       {formatIssueLogTime(issue.reportedAt)}
                     </td>
                     <td className="px-3 py-2 text-ll-ink">{issue.entryEmail || "—"}</td>
-                    <td className="px-3 py-2 text-ll-ink">{issue.entryPassword || "—"}</td>
+                    <td className="px-3 py-2 text-ll-ink">
+                      <ItunePasswordValue value={issue.entryPassword} />
+                    </td>
                     <td className="px-3 py-2 text-ll-ink">{issue.entryCurrency || "—"}</td>
                     <td className="px-3 py-2 text-ll-ink">{issue.entrySupplier || "—"}</td>
                     <td className="px-3 py-2 text-right text-ll-ink">
