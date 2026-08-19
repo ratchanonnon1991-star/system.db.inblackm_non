@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
@@ -259,6 +259,8 @@ export default function ItunePriorityTable({ initialEntries, initialSettings }) 
   const [settings, setSettings] = useState(initialSettings);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const localMutationRef = useRef(false);
+  const localMutationTimerRef = useRef(null);
   const { lang } = useParams();
   const now = useMinuteTicker();
 
@@ -300,18 +302,39 @@ export default function ItunePriorityTable({ initialEntries, initialSettings }) 
     }
   }, []);
 
-  // SSE updates immediately after a queue mutation. The slower poll remains
-  // as a recovery path if a proxy or browser interrupts the event stream.
+  // SSE updates immediately after a queue mutation. Events caused by this
+  // tab are ignored because the response already carries the latest queue.
+  // External bursts are coalesced into one refresh.
   useEffect(() => {
     const source = new EventSource("/api/projectm/itune/priority/events");
-    source.addEventListener("queue", refresh);
+    let refreshTimer = null;
+    const onQueueChange = () => {
+      if (localMutationRef.current) return;
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(refresh, 100);
+    };
+    source.addEventListener("queue", onQueueChange);
     const fallbackId = setInterval(refresh, 60_000);
     return () => {
-      source.removeEventListener("queue", refresh);
+      source.removeEventListener("queue", onQueueChange);
       source.close();
+      clearTimeout(refreshTimer);
+      clearTimeout(localMutationTimerRef.current);
       clearInterval(fallbackId);
     };
   }, [refresh]);
+
+  function beginLocalMutation() {
+    clearTimeout(localMutationTimerRef.current);
+    localMutationRef.current = true;
+  }
+
+  function endLocalMutation() {
+    clearTimeout(localMutationTimerRef.current);
+    localMutationTimerRef.current = setTimeout(() => {
+      localMutationRef.current = false;
+    }, 500);
+  }
 
   async function onDragEnd(event) {
     const { active, over } = event;
@@ -323,6 +346,7 @@ export default function ItunePriorityTable({ initialEntries, initialSettings }) 
     // Optimistic — the drop should feel instant; the server round trip
     // below replaces this with the authoritative order either way.
     setEntries([...nextPinned, ...automatic]);
+    beginLocalMutation();
     setBusy(true);
     setError("");
     try {
@@ -337,11 +361,13 @@ export default function ItunePriorityTable({ initialEntries, initialSettings }) 
       setError(err.message);
       await refresh();
     } finally {
+      endLocalMutation();
       setBusy(false);
     }
   }
 
   async function patchEntry(entry, body, fallbackError) {
+    beginLocalMutation();
     setBusy(true);
     setError("");
     try {
@@ -355,6 +381,7 @@ export default function ItunePriorityTable({ initialEntries, initialSettings }) 
     } catch (err) {
       setError(err.message);
     } finally {
+      endLocalMutation();
       setBusy(false);
     }
   }
@@ -366,6 +393,7 @@ export default function ItunePriorityTable({ initialEntries, initialSettings }) 
     patchEntry(entry, { claimHold: !entry.claimHold }, "อัปเดตสถานะหยุดรับไม่สำเร็จ");
 
   async function saveSettings(fields, fallbackError) {
+    beginLocalMutation();
     setBusy(true);
     setError("");
     try {
@@ -382,6 +410,7 @@ export default function ItunePriorityTable({ initialEntries, initialSettings }) 
     } catch (err) {
       setError(err.message);
     } finally {
+      endLocalMutation();
       setBusy(false);
     }
   }
