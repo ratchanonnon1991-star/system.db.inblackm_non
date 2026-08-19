@@ -785,7 +785,7 @@ export async function confirmItuneReject(claimLogId, actor) {
       throw createHttpError("รายการนี้ไม่ใช่คำขอ Reject", 400);
     }
     const { rows: issueRows } = await client.query(
-      `SELECT id, entry_id, is_reject, reject_confirmed_at
+      `SELECT id, entry_id, is_reject, reject_confirmed_at, reported_by_user_id
        FROM projectm_itune_issue_log WHERE id = $1 FOR UPDATE`,
       [claimRow.issue_log_id]
     );
@@ -802,8 +802,8 @@ export async function confirmItuneReject(claimLogId, actor) {
     await client.query(
       `UPDATE projectm_itune_entries
        SET claimed_by_user_id = NULL, claimed_at = NULL, updated_at = NOW()
-       WHERE id = $1`,
-      [issueRow.entry_id]
+       WHERE id = $1 AND claimed_by_user_id = $2`,
+      [issueRow.entry_id, issueRow.reported_by_user_id]
     );
     await client.query(
       `UPDATE projectm_itune_issue_log
