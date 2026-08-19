@@ -46,17 +46,17 @@ export default function ItuneStatsDashboard({ stats }) {
             <span className="rounded-full bg-ll-warning-bg px-3 py-1 text-[11px] font-medium text-ll-warning">ซื้อให้เสร็จก่อน 18:00</span>
           </div>
           <div className="mt-5 grid grid-cols-3 gap-3 border-t border-ll-hairline pt-4 text-[12px]">
-            {[["Demand P75", purchase.demandP75], ["Demand P90", purchase.demandP90], ["Safety stock", purchase.safetyStock]].map(([label, value]) => (
+            {[["Demand 75%", purchase.demandP75], ["Demand 90%", purchase.demandP90], ["Safety stock", purchase.safetyStock]].map(([label, value]) => (
               <div key={label}><p className="text-ll-ink-tertiary">{label}</p><p className="mt-1 font-semibold text-ll-ink">{"$" + money(value)}</p></div>
             ))}
           </div>
-          <p className="mt-4 text-[11px] leading-5 text-ll-ink-tertiary">คำแนะนำจะเริ่มแม่นขึ้นหลังมี session จริงหลายวัน และคำนวณใหม่จาก P75/P90 อัตโนมัติ</p>
+          <p className="mt-4 text-[11px] leading-5 text-ll-ink-tertiary">คำแนะนำจะเริ่มแม่นขึ้นหลังมี session จริงหลายวัน และคำนวณใหม่จาก 75%/90% อัตโนมัติ</p>
         </div>
 
         <div className="rounded-lg border border-ll-hairline bg-ll-surface-1 p-5">
           <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-ll-ink-tertiary">เวลาถือต่อ Session</p>
           <div className="mt-5 grid grid-cols-3 gap-3">
-            {[["P50", overview.holdP50], ["P75", overview.holdP75], ["P90", overview.holdP90]].map(([label, value]) => (
+            {[["50%", overview.holdP50], ["75%", overview.holdP75], ["90%", overview.holdP90]].map(([label, value]) => (
               <div key={label} className="rounded-md bg-ll-surface-2 p-3"><p className="text-[11px] text-ll-ink-tertiary">{label}</p><p className="mt-1 text-lg font-semibold text-ll-ink">{hours(value)}</p></div>
             ))}
           </div>
