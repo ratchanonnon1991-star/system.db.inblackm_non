@@ -11,6 +11,7 @@ import {
   CircleOff,
   Gamepad2,
   Search,
+  Settings,
 } from "lucide-react";
 import GameinfoDatasetToggle from "./gameinfo-dataset-toggle";
 import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
@@ -137,6 +138,14 @@ export default function GameinfoGamelistCards({ initial, editable = false, lang,
               <span className="flex items-center gap-2"><Bot size={16} /> Bot Auto</span>
               <span className="text-xs opacity-70">{counts.botAuto}</span>
             </button>
+            {editable ? (
+              <Link
+                href={`/gameinfo/${lang}?manage=1${dataMode === "idpass" ? "&mode=idpass" : ""}`}
+                className="mt-1 flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-sm text-linear-ink-subtle hover:bg-linear-surface-3"
+              >
+                <Settings size={16} /> ตั้งค่าระบบ
+              </Link>
+            ) : null}
           </div>
         </nav>
       </aside>
