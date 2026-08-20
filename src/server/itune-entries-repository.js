@@ -132,7 +132,7 @@ async function insertAdminLog(client, {
   entryEmail = null,
   oldValues = null,
   newValues = null,
-  details = null,
+  details = {},
 }) {
   await client.query(
     `INSERT INTO projectm_itune_admin_log
@@ -146,7 +146,7 @@ async function insertAdminLog(client, {
       entryEmail,
       oldValues ? JSON.stringify(oldValues) : null,
       newValues ? JSON.stringify(newValues) : null,
-      details ? JSON.stringify(details) : null,
+      JSON.stringify(details),
       actor?.id ?? null,
       actor?.displayName || actor?.username || null,
     ]

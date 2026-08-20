@@ -23,6 +23,7 @@ function checkAudit(action) {
   ok(`${action} records actor and old/new values atomically`,
     row?.params?.[7] === actor.id &&
     row.params?.[4] && row.params?.[5] &&
+    row.params?.[6] !== null &&
     log.some((item) => item.text === "BEGIN") &&
     log.some((item) => item.text === "COMMIT")
   );
