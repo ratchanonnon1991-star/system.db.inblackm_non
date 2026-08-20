@@ -39,13 +39,13 @@ export default async function GameinfoLangLayout({ children, params }) {
       className={`${notoThai.variable} flex min-h-screen flex-col bg-linear-canvas text-linear-ink antialiased`}
       style={{ fontFamily: "var(--font-noto-thai), system-ui, sans-serif" }}
     >
-      <header className="border-b border-linear-hairline bg-linear-canvas">
-        <div className="flex items-center justify-between px-4 py-3">
+      <header className="sticky top-0 z-40 border-b border-linear-hairline bg-linear-surface-1">
+        <div className="flex min-h-16 items-center justify-between px-4 sm:px-6">
           <Link
             href={`/gameinfo/${lang}`}
-            className="flex items-center gap-2 font-bold text-linear-primary"
+            className="flex items-center gap-2 text-lg font-semibold tracking-[-0.2px] text-linear-ink"
           >
-            <Gamepad2 size={20} />
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-linear-primary text-white"><Gamepad2 size={19} /></span>
             <span>GameInfo</span>
           </Link>
           <nav className="flex items-center gap-3 text-sm">

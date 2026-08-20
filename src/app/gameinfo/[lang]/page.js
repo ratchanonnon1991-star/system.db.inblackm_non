@@ -17,6 +17,7 @@ import {
   listGamelistLinksByGame,
 } from "@/server/gameinfo-gamelist-links";
 import GameinfoGamelistTable from "@/components/gameinfo-gamelist-table";
+import GameinfoGamelistCards from "@/components/gameinfo-gamelist-cards";
 import GameinfoErrorNotice from "@/components/gameinfo-error-notice";
 import GameinfoDatasetToggle from "@/components/gameinfo-dataset-toggle";
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
@@ -98,6 +99,10 @@ export default async function GameinfoHomePage({ params, searchParams }) {
     });
   } catch (err) {
     loadError = err.message || "โหลดข้อมูลไม่สำเร็จ";
+  }
+
+  if (!editable && !loadError) {
+    return <GameinfoGamelistCards initial={rows} lang={lang} dataMode={dataMode} />;
   }
 
   return (
