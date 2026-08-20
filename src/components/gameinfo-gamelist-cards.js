@@ -34,28 +34,47 @@ const STATUS_STYLE = {
   offline: { label: "ปิดใช้งาน", dot: "bg-linear-ink-tertiary", badge: "bg-linear-surface-3 text-linear-ink-subtle" },
 };
 
-export default function GameinfoGamelistCards({ initial, editable = false, lang, dataMode = "uid" }) {
+export default function GameinfoGamelistCards({ initial, initialReports = [], editable = false, lang, dataMode = "uid" }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [tag, setTag] = useState("");
   const [sort, setSort] = useState("order");
   const [page, setPage] = useState(0);
   const [favoriteIds, setFavoriteIds] = useState(() => new Set(initial.filter((row) => row.isFavorite).map((row) => row.id)));
+  const [reports, setReports] = useState(initialReports);
   const [favoriteBusy, setFavoriteBusy] = useState(null);
-  const [favoriteError, setFavoriteError] = useState("");
-  const rowsWithFavorites = useMemo(
-    () => initial.map((row) => ({ ...row, isFavorite: favoriteIds.has(row.id) })),
-    [favoriteIds, initial]
+  const [reportBusy, setReportBusy] = useState(null);
+  const [actionError, setActionError] = useState("");
+  const rowsWithState = useMemo(
+    () => {
+      const reportCounts = new Map();
+      for (const report of reports) reportCounts.set(report.gameId, (reportCounts.get(report.gameId) || 0) + 1);
+      return initial.map((row) => ({ ...row, isFavorite: favoriteIds.has(row.id), reportCount: reportCounts.get(row.id) || 0 }));
+    },
+    [favoriteIds, initial, reports]
   );
-  const counts = useMemo(() => summarizeGameinfoRows(rowsWithFavorites), [rowsWithFavorites]);
+  const counts = useMemo(() => summarizeGameinfoRows(rowsWithState), [rowsWithState]);
   const tagOptions = useMemo(() => listGameinfoTags(initial), [initial]);
   const rows = useMemo(
-    () => filterGameinfoRows(rowsWithFavorites, { query, status, tag, sort }),
-    [query, rowsWithFavorites, sort, status, tag]
+    () => filterGameinfoRows(rowsWithState, { query, status, tag, sort }),
+    [query, rowsWithState, sort, status, tag]
   );
-  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const reportRows = useMemo(() => {
+    const gameById = new Map(rowsWithState.map((row) => [row.id, row]));
+    const needle = query.trim().toLocaleLowerCase("th");
+    const filtered = reports
+      .map((report) => ({ report, game: gameById.get(report.gameId) }))
+      .filter(({ report, game }) => game
+        && (!tag || game.tags?.some((value) => value.toLocaleLowerCase("th") === tag.toLocaleLowerCase("th")))
+        && (!needle || [game.game, game.id, report.message, report.source, report.createdBy]
+          .some((value) => String(value ?? "").toLocaleLowerCase("th").includes(needle))));
+    if (sort === "name") return filtered.sort((a, b) => String(a.game.game).localeCompare(String(b.game.game), "th"));
+    return filtered;
+  }, [query, reports, rowsWithState, sort, tag]);
+  const displayRows = status === "review" ? reportRows : rows;
+  const pageCount = Math.max(1, Math.ceil(displayRows.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
-  const pageRows = rows.slice(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE);
+  const pageRows = displayRows.slice(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE);
 
   function chooseStatus(nextStatus) {
     setStatus(nextStatus);
@@ -69,7 +88,7 @@ export default function GameinfoGamelistCards({ initial, editable = false, lang,
 
   async function toggleFavorite(row) {
     setFavoriteBusy(row.id);
-    setFavoriteError("");
+    setActionError("");
     try {
       const response = await fetch(`/api/gameinfo/gamelist/${row.id}/favorite`, {
         method: "PUT",
@@ -84,9 +103,28 @@ export default function GameinfoGamelistCards({ initial, editable = false, lang,
         return next;
       });
     } catch (error) {
-      setFavoriteError(error.message);
+      setActionError(error.message);
     } finally {
       setFavoriteBusy(null);
+    }
+  }
+
+  async function resolveReport(report) {
+    setReportBusy(report.id);
+    setActionError("");
+    try {
+      const response = await fetch(`/api/gameinfo/gamelist/${report.gameId}/reports`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reportId: report.id, status: "resolved" }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "ยืนยันการแก้ไขไม่สำเร็จ");
+      setReports((current) => current.filter((item) => item.id !== data.report.id));
+    } catch (error) {
+      setActionError(error.message);
+    } finally {
+      setReportBusy(null);
     }
   }
 
@@ -202,7 +240,7 @@ export default function GameinfoGamelistCards({ initial, editable = false, lang,
           </div>
           <GameinfoDatasetToggle basePath={`/gameinfo/${lang}`} />
         </div>
-        {favoriteError ? <p role="alert" className="mb-4 text-sm text-linear-primary">{favoriteError}</p> : null}
+        {actionError ? <p role="alert" className="mb-4 text-sm text-linear-primary">{actionError}</p> : null}
 
         <section aria-label="สรุปสถานะเกม" className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard label="เกมทั้งหมด" count={counts.all} icon={Gamepad2} active={status === "all"} onClick={() => chooseStatus("all")} />
@@ -241,14 +279,28 @@ export default function GameinfoGamelistCards({ initial, editable = false, lang,
         </div>
 
         {pageRows.length ? (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-            {pageRows.map((row) => (
-              <GameCard key={row.id} row={row} editable={editable} lang={lang} dataMode={dataMode} favoriteBusy={favoriteBusy === row.id} onToggleFavorite={toggleFavorite} />
-            ))}
-          </div>
+          status === "review" ? (
+            <section aria-label="รายการที่ต้องตรวจสอบ">
+              <div className="mb-4">
+                <h2 className="text-lg font-semibold tracking-[-0.2px] text-linear-ink">Report ที่ยังไม่แก้</h2>
+                <p className="mt-1 text-xs text-linear-ink-tertiary">{reportRows.length} รายการ จาก {counts.review} เกม</p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {pageRows.map(({ report, game }) => (
+                  <ReportCard key={report.id} report={report} game={game} editable={editable} lang={lang} dataMode={dataMode} busy={reportBusy === report.id} onResolve={resolveReport} />
+                ))}
+              </div>
+            </section>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {pageRows.map((row) => (
+                <GameCard key={row.id} row={row} editable={editable} lang={lang} dataMode={dataMode} favoriteBusy={favoriteBusy === row.id} onToggleFavorite={toggleFavorite} />
+              ))}
+            </div>
+          )
         ) : (
           <div className="rounded-2xl border border-dashed border-linear-hairline-strong py-16 text-center text-sm text-linear-ink-tertiary">
-            ไม่พบเกมที่ตรงกับตัวกรอง
+            {status === "review" ? "ไม่มี Report ที่ต้องตรวจสอบ" : "ไม่พบเกมที่ตรงกับตัวกรอง"}
           </div>
         )}
 
@@ -283,6 +335,50 @@ function StatCard({ label, count, icon: Icon, active, onClick, tone }) {
       <span className={`flex h-10 w-10 items-center justify-center rounded-full ${iconClass}`}><Icon size={18} /></span>
       <span><span className="block text-xs text-linear-ink-subtle">{label}</span><strong className="text-xl font-semibold tracking-[-0.2px] text-linear-ink">{count}</strong></span>
     </button>
+  );
+}
+
+function ReportCard({ report, game, editable, lang, dataMode, busy, onResolve }) {
+  const params = new URLSearchParams();
+  if (dataMode === "idpass") params.set("mode", "idpass");
+  if (editable) params.set("manage", "1");
+  const href = `/gameinfo/${lang}/${game.id}${params.size ? `?${params}` : ""}`;
+  return (
+    <article className="overflow-hidden rounded-2xl border border-linear-hairline bg-linear-surface-1" style={{ boxShadow: "var(--ll-shadow-card)" }}>
+      <div className="flex gap-3 p-4">
+        <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-linear-primary">
+          {game.image ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={game.image} alt="" className="h-full w-full object-cover" />
+          ) : <Gamepad2 size={26} className="text-white" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-linear-primary/10 px-2 py-1 text-[11px] font-medium text-linear-primary">ยังไม่แก้</span>
+            <span className="rounded-full bg-linear-surface-3 px-2 py-1 text-[11px] text-linear-ink-muted">{report.source === "topup" ? "Topup" : "Admin"}</span>
+          </div>
+          <h3 className="mt-2 line-clamp-2 text-sm font-semibold uppercase text-linear-ink">{game.game}</h3>
+          <p className="mt-1 font-mono text-[11px] text-linear-ink-tertiary">Game ID: {game.id} · Report #{report.id}</p>
+        </div>
+      </div>
+      <div className="border-t border-linear-hairline px-4 py-3">
+        <p className="text-[11px] font-medium uppercase text-linear-ink-tertiary">เรื่องที่แจ้ง</p>
+        <p className="mt-1 whitespace-pre-wrap text-sm text-linear-ink-subtle">{report.message}</p>
+        <p className="mt-3 text-[11px] text-linear-ink-tertiary">
+          {report.createdBy ? `โดย ${report.createdBy} · ` : ""}{new Date(report.createdAt).toLocaleString("th-TH")}
+        </p>
+      </div>
+      <div className="flex items-center gap-2 border-t border-linear-hairline p-3">
+        <Link href={href} className="inline-flex h-10 flex-1 items-center justify-center rounded-lg border border-linear-hairline-strong px-3 text-xs font-medium text-linear-ink hover:bg-linear-surface-2">
+          {editable ? "เปิดจัดการเกม" : "เปิดดูเกม"}
+        </Link>
+        {editable ? (
+          <button type="button" disabled={busy} onClick={() => onResolve(report)} className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg bg-linear-ink px-3 text-xs font-medium text-linear-canvas disabled:opacity-40">
+            <CheckCircle2 size={15} /> ยืนยันแก้แล้ว
+          </button>
+        ) : null}
+      </div>
+    </article>
   );
 }
 

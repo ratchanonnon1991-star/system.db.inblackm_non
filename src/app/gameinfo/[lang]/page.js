@@ -23,7 +23,7 @@ import GameinfoDatasetToggle from "@/components/gameinfo-dataset-toggle";
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { listGameinfoModeData } from "@/server/gameinfo-mode-data";
 import { listGamelistTagsByGame } from "@/server/gameinfo-gamelist-tags";
-import { listOpenGamelistReportCountByGame } from "@/server/gameinfo-gamelist-reports";
+import { listOpenGamelistReports } from "@/server/gameinfo-gamelist-reports";
 import { listGamelistFavoriteIds } from "@/server/gameinfo-gamelist-favorites";
 
 export const metadata = {
@@ -42,9 +42,10 @@ export default async function GameinfoHomePage({ params, searchParams }) {
   const manageMode = editableRole && manage === "1";
 
   let rows = null;
+  let reports = [];
   let loadError = null;
   try {
-    const [gameListRows, channelsByGame, vpnByGame, packCountByGame, packServiceByGame, tutorialPresence, warningPresence, imageByGame, linksByGame, tagsByGame, reportCountByGame, favoriteIds] =
+    const [gameListRows, channelsByGame, vpnByGame, packCountByGame, packServiceByGame, tutorialPresence, warningPresence, imageByGame, linksByGame, tagsByGame, openReports, favoriteIds] =
       await Promise.all([
         listGameListRows(),
         listGamelistChannelsByGame(),
@@ -56,10 +57,15 @@ export default async function GameinfoHomePage({ params, searchParams }) {
         listGamelistImageByGame(),
         listGamelistLinksByGame(),
         listGamelistTagsByGame(),
-        listOpenGamelistReportCountByGame(),
+        listOpenGamelistReports(),
         listGamelistFavoriteIds(user.id),
       ]);
     const favoriteIdSet = new Set(favoriteIds);
+    const reportCountByGame = openReports.reduce((counts, report) => {
+      counts[report.gameId] = (counts[report.gameId] || 0) + 1;
+      return counts;
+    }, {});
+    reports = openReports;
     const modeDataByGame = dataMode === "idpass" ? await listGameinfoModeData(dataMode) : {};
     rows = gameListRows.map((r) => {
       const modeData = modeDataByGame[r.id];
@@ -108,7 +114,7 @@ export default async function GameinfoHomePage({ params, searchParams }) {
   }
 
   if (!manageMode && !loadError) {
-    return <GameinfoGamelistCards initial={rows} editable={editableRole} lang={lang} dataMode={dataMode} />;
+    return <GameinfoGamelistCards initial={rows} initialReports={reports} editable={editableRole} lang={lang} dataMode={dataMode} />;
   }
 
   return (

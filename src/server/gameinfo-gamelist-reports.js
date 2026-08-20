@@ -87,11 +87,11 @@ export async function listGamelistReports(gameId) {
   }
 }
 
-export async function listOpenGamelistReportCountByGame() {
+export async function listOpenGamelistReports() {
   const client = await (await getReadyPool()).connect();
   try {
-    const result = await client.query(`SELECT game_id, COUNT(*)::int AS count FROM gamelist_reports WHERE status = 'open' GROUP BY game_id`);
-    return Object.fromEntries(result.rows.map((row) => [row.game_id, Number(row.count)]));
+    const result = await client.query(`SELECT * FROM gamelist_reports WHERE status = 'open' ORDER BY created_at DESC`);
+    return result.rows.map(mapReport);
   } finally {
     client.release();
   }

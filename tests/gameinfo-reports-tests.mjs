@@ -1,6 +1,6 @@
 import {
   createGamelistReport,
-  listOpenGamelistReportCountByGame,
+  listOpenGamelistReports,
   normalizeGamelistReportMessage,
   setGamelistReportStatus,
 } from "@/server/gameinfo-gamelist-reports.js";
@@ -25,8 +25,8 @@ setResponder((text) => {
 check("topup report is created", (await createGamelistReport(5, { source: "topup", message: "เติมไม่ได้", actor: "staff1" })).source, "topup");
 
 reset();
-setResponder((text) => /COUNT\(\*\)/.test(text) ? { rows: [{ game_id: 5, count: 2 }] } : null);
-check("open reports are counted per game", await listOpenGamelistReportCountByGame(), { 5: 2 });
+setResponder((text) => /status = 'open'/.test(text) ? { rows: [reportRow] } : null);
+check("open reports include their game", (await listOpenGamelistReports())[0].gameId, 5);
 
 reset();
 setResponder((text) => /UPDATE gamelist_reports/.test(text)
