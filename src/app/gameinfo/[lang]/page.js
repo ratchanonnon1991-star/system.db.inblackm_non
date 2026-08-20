@@ -27,20 +27,16 @@ export const metadata = {
   title: "GameDB — GameInfo",
 };
 
-// Direct edit view of Topup Panel's `game_list` — see
-// src/server/gameinfo-gamelist.js. staff/admin can edit inline right here;
-// role "user" gets the same table read-only. No separate admin page.
+// Everyone lands on the card dashboard. staff/admin can switch to the
+// existing inline editor with ?manage=1; role "user" stays read-only.
 export default async function GameinfoHomePage({ params, searchParams }) {
   const { lang } = await params;
-  const { view, mode: rawMode } = await searchParams;
+  const { manage, mode: rawMode } = await searchParams;
   const dataMode = normalizeGameinfoDataMode(rawMode);
   const user = await getSessionUser();
   if (!user) redirect("/");
   const editableRole = user.role === "admin" || user.role === "staff";
-  // ?view=1 lets an admin/staff user manually preview the read-only view
-  // (toggled from the "หน้าเว็บ" nav button, see GameinfoModeToggle) — role
-  // "user" never gets a toggle, so this can't grant edit access either way.
-  const editable = editableRole && view !== "1";
+  const manageMode = editableRole && manage === "1";
 
   let rows = null;
   let loadError = null;
@@ -101,8 +97,8 @@ export default async function GameinfoHomePage({ params, searchParams }) {
     loadError = err.message || "โหลดข้อมูลไม่สำเร็จ";
   }
 
-  if (!editable && !loadError) {
-    return <GameinfoGamelistCards initial={rows} lang={lang} dataMode={dataMode} />;
+  if (!manageMode && !loadError) {
+    return <GameinfoGamelistCards initial={rows} editable={editableRole} lang={lang} dataMode={dataMode} />;
   }
 
   return (
@@ -117,7 +113,7 @@ export default async function GameinfoHomePage({ params, searchParams }) {
         <GameinfoGamelistTable
           key={dataMode}
           initial={rows}
-          editable={editable}
+          editable={editableRole}
           lang={lang}
           dataMode={dataMode}
         />

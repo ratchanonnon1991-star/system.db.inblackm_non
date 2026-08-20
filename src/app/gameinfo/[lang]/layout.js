@@ -13,21 +13,11 @@ const notoThai = Noto_Sans_Thai({
   variable: "--font-noto-thai",
 });
 
-// Header/footer chrome follows the Linear-inspired system (see
-// ~/.claude/skills/linear-design): near-black canvas, hairline dividers
-// instead of card shadows, lavender-blue as the single accent. Body copy
-// stays on Noto Sans Thai (Linear's own type family is proprietary and the
-// module's copy is mostly Thai, which doesn't take the spec's negative
-// letter-spacing well — see the pack/game name headings for where a little
-// negative tracking is applied selectively instead of blanket-wide).
+// Light-first Linear structure with the shared red GameInfo accent. Body copy
+// stays on Noto Sans Thai; negative tracking is applied only to headings.
 //
-// No separate "จัดการข้อมูล" (admin) nav link — the module now edits
-// Topup Panel's `game_list` directly, inline, on the same page everyone
-// sees (see src/server/gameinfo-gamelist.js, src/components/
-// gameinfo-gamelist-table.js). staff/admin get edit affordances there
-// automatically by role; role "user" gets the same page read-only. The old
-// games/game_packs admin pages (CRUD, CSV import, formulas) are left in the
-// codebase but unlinked.
+// staff/admin open the existing inline game_list editor through the
+// "จัดการข้อมูล" mode; role "user" gets the card dashboard only.
 export default async function GameinfoLangLayout({ children, params }) {
   const { lang } = await params;
   if (!isSupportedLang(lang)) notFound();

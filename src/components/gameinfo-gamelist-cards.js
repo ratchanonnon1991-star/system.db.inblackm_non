@@ -28,7 +28,7 @@ const STATUS_STYLE = {
   offline: { label: "ปิดใช้งาน", dot: "bg-linear-ink-tertiary", badge: "bg-linear-surface-3 text-linear-ink-subtle" },
 };
 
-export default function GameinfoGamelistCards({ initial, lang, dataMode = "uid" }) {
+export default function GameinfoGamelistCards({ initial, editable = false, lang, dataMode = "uid" }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [sort, setSort] = useState("order");
@@ -140,7 +140,7 @@ export default function GameinfoGamelistCards({ initial, lang, dataMode = "uid" 
         {pageRows.length ? (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {pageRows.map((row) => (
-              <GameCard key={row.id} row={row} lang={lang} dataMode={dataMode} />
+              <GameCard key={row.id} row={row} editable={editable} lang={lang} dataMode={dataMode} />
             ))}
           </div>
         ) : (
@@ -181,7 +181,7 @@ function StatCard({ label, count, icon: Icon, active, onClick, tone }) {
   );
 }
 
-function GameCard({ row, lang, dataMode }) {
+function GameCard({ row, editable, lang, dataMode }) {
   const status = STATUS_STYLE[row.serviceStatus] || STATUS_STYLE.online;
   const href = `/gameinfo/${lang}/${row.id}${dataMode === "idpass" ? "?mode=idpass" : ""}`;
   return (
@@ -216,7 +216,9 @@ function GameCard({ row, lang, dataMode }) {
       <div className="flex items-center gap-2 border-t border-linear-hairline p-3">
         <GameinfoTutorialButton gameId={row.id} gameName={row.game} editable={false} hasData={row.hasTutorial} dataMode={dataMode} />
         <GameinfoTutorialButton gameId={row.id} gameName={row.game} editable={false} hasData={row.hasWarning} variant="warning" dataMode={dataMode} />
-        <Link href={href} className="ml-auto inline-flex h-10 items-center rounded-lg bg-linear-ink px-3 text-xs font-medium text-linear-canvas">เปิดดู</Link>
+        <Link href={href} className="ml-auto inline-flex h-10 items-center rounded-lg bg-linear-ink px-3 text-xs font-medium text-linear-canvas">
+          {editable ? "เปิดจัดการ" : "เปิดดู"}
+        </Link>
       </div>
     </article>
   );
