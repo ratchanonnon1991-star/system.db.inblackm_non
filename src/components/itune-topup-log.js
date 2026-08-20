@@ -24,7 +24,6 @@ const ACTION_TONE_CLASS = {
 
 const TABS = [
   { key: "live", label: "กำลังถืออยู่" },
-  { key: "history", label: "ประวัติรับ–คืน / Reject" },
 ];
 
 // How often to silently re-sync whichever tab is currently visible, so a

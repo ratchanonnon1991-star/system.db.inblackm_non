@@ -127,19 +127,17 @@ export default function ItuneAdminSettingsDrawer({ onClose }) {
   }
 
   async function clearLogs() {
-    if (
-      !window.confirm(
-        "ลบ Log ทั้งหมด (แจ้งปัญหา/Reject, ยอด, รับ–คืนเมล) ถาวร? รายการเมลจะไม่ถูกลบ และกู้ประวัติคืนไม่ได้"
-      )
-    ) {
-      return;
-    }
+    const reason = window.prompt("ระบุเหตุผลที่ล้างประวัติ (ระบบจะเก็บผู้ล้าง เวลา เหตุผล และจำนวนรายการ)");
+    if (!reason?.trim()) return;
+    if (!window.confirm("ยืนยันล้างประวัติทั้งหมด? รายการเมลจะไม่ถูกลบ")) return;
     setClearing(true);
     setError("");
     setMessage("");
     try {
       await apiJson("/api/projectm/itune/dev-clear-logs", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reason.trim() }),
         fallbackError: "ลบ Log ไม่สำเร็จ",
       });
       window.dispatchEvent(new Event("itune:logs-cleared"));
@@ -263,7 +261,7 @@ export default function ItuneAdminSettingsDrawer({ onClose }) {
             <div className="mt-4 rounded-md border border-ll-primary/25 bg-ll-primary-subtle-bg p-4">
               <p className="text-[13px] font-medium text-ll-primary-subtle-text">ลบ Log ทั้งหมด (Dev)</p>
               <p className="mt-1 text-[11px] leading-5 text-ll-ink-subtle">
-                ลบประวัติแจ้งปัญหา, Reject, ยอด และรับ–คืนเมลถาวร โดยไม่ลบรายการเมล
+                ลบประวัติรับ–คืน ยอด ปัญหา และการแก้ข้อมูล โดยยังเก็บหลักฐานว่าใครล้าง เมื่อไร และเพราะอะไร
               </p>
               <button
                 type="button"

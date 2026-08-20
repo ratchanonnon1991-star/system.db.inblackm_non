@@ -2,14 +2,13 @@
 
 import { useCallback, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   ArrowLeft,
   BarChart3,
   History,
   Inbox,
   ListOrdered,
-  MessageSquareWarning,
   Moon,
   Settings,
   Sun,
@@ -21,7 +20,6 @@ import { useProjectmTheme } from "@/components/projectm-theme-context";
 
 export default function ItuneAdminShell({ lang, displayName, children }) {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsButtonRef = useRef(null);
   const { theme, toggleTheme } = useProjectmTheme();
@@ -35,10 +33,6 @@ export default function ItuneAdminShell({ lang, displayName, children }) {
 
   function isActive(item) {
     if (item.href === base) return pathname === base;
-    if (item.tab) {
-      const currentTab = searchParams.get("tab") === "history" ? "history" : "live";
-      return pathname === `${base}/topup-log` && currentTab === item.tab;
-    }
     return (
       pathname === item.href ||
       (item.href === `${base}/priority` && pathname.startsWith(`${item.href}/`))
@@ -59,8 +53,7 @@ export default function ItuneAdminShell({ lang, displayName, children }) {
         { label: "จัดคิว", href: `${base}/priority`, icon: ListOrdered },
         {
           label: "ผู้ถือเมล",
-          href: `${base}/topup-log?tab=live`,
-          tab: "live",
+          href: `${base}/topup-log`,
           icon: Users,
         },
       ],
@@ -69,12 +62,10 @@ export default function ItuneAdminShell({ lang, displayName, children }) {
       label: "ประวัติ",
       items: [
         {
-          label: "ประวัติการใช้งาน",
-          href: `${base}/topup-log?tab=history`,
-          tab: "history",
+          label: "ประวัติ iTune",
+          href: `${base}/history`,
           icon: History,
         },
-        { label: "แจ้งปัญหา", href: `${base}/history`, icon: MessageSquareWarning },
       ],
     },
   ];

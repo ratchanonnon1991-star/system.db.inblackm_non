@@ -85,6 +85,74 @@ const FIELD_COLUMNS = {
   qna: "qna",
 };
 
+function auditValue(key, value) {
+  if (key === "password") return value ? "[redacted]" : "";
+  if (key === "amountConfirmImage") return value ? "[image]" : "";
+  return value ?? "";
+}
+
+function valuesMatch(key, before, after) {
+  if (key === "amount") return Number(before || 0) === Number(after || 0);
+  return String(before ?? "") === String(after ?? "");
+}
+
+function entryAuditValues(row, fields = null) {
+  const values = {};
+  for (const key of EDITABLE_FIELDS) {
+    if (fields && fields[key] === undefined) continue;
+    const value = fields ? fields[key] : row[FIELD_COLUMNS[key]];
+    values[key] = auditValue(key, value);
+  }
+  return values;
+}
+
+async function insertEntryLog(client, { row, action, actor, oldValues = null, newValues = null }) {
+  await client.query(
+    `INSERT INTO projectm_itune_entry_log
+       (entry_id, entry_email, action, old_values, new_values,
+        changed_by_user_id, changed_by_username)
+     VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7)`,
+    [
+      row.id,
+      row.email || null,
+      action,
+      oldValues ? JSON.stringify(oldValues) : null,
+      newValues ? JSON.stringify(newValues) : null,
+      actor?.id ?? null,
+      actor?.displayName || actor?.username || null,
+    ]
+  );
+}
+
+async function insertAdminLog(client, {
+  category,
+  action,
+  actor,
+  entryId = null,
+  entryEmail = null,
+  oldValues = null,
+  newValues = null,
+  details = null,
+}) {
+  await client.query(
+    `INSERT INTO projectm_itune_admin_log
+       (category, action, entry_id, entry_email, old_values, new_values, details,
+        actor_user_id, actor_username)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9)`,
+    [
+      category,
+      action,
+      entryId,
+      entryEmail,
+      oldValues ? JSON.stringify(oldValues) : null,
+      newValues ? JSON.stringify(newValues) : null,
+      details ? JSON.stringify(details) : null,
+      actor?.id ?? null,
+      actor?.displayName || actor?.username || null,
+    ]
+  );
+}
+
 // pg returns TIMESTAMPTZ columns as JS Date objects; added_at is passed
 // through as an ISO string for the countdown cell.
 function toIsoString(value) {
@@ -239,6 +307,24 @@ function ensureSchema(connection) {
       await client.query(`
         ALTER TABLE projectm_itune_entries
         ADD COLUMN IF NOT EXISTS supplier TEXT
+      `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS projectm_itune_entry_log (
+          id                    BIGSERIAL PRIMARY KEY,
+          entry_id              INTEGER NOT NULL,
+          entry_email           TEXT,
+          action                TEXT NOT NULL
+                                CHECK (action IN ('create', 'update', 'delete', 'bulk_delete')),
+          old_values            JSONB,
+          new_values            JSONB,
+          changed_by_user_id    INTEGER,
+          changed_by_username   TEXT,
+          changed_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS projectm_itune_entry_log_entry_time_idx
+        ON projectm_itune_entry_log (entry_id, changed_at DESC)
       `);
       // Log of "แจ้งปัญหา" report/resolve cycles — one row per cycle (report
       // fills the reported_* columns, resolve later fills resolved_*; NULL
@@ -461,6 +547,25 @@ function ensureSchema(connection) {
         ON projectm_itune_claim_sessions (entry_id, claimed_at DESC)
       `);
       await client.query(`
+        CREATE TABLE IF NOT EXISTS projectm_itune_admin_log (
+          id BIGSERIAL PRIMARY KEY,
+          category TEXT NOT NULL CHECK (category IN ('system', 'admin')),
+          action TEXT NOT NULL,
+          entry_id INTEGER,
+          entry_email TEXT,
+          old_values JSONB,
+          new_values JSONB,
+          details JSONB,
+          actor_user_id INTEGER,
+          actor_username TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS projectm_itune_admin_log_time_idx
+        ON projectm_itune_admin_log (created_at DESC)
+      `);
+      await client.query(`
         ALTER TABLE projectm_itune_entries
         ADD COLUMN IF NOT EXISTS active_claim_session_id BIGINT
       `);
@@ -496,7 +601,7 @@ export async function listItuneEntries() {
   return result.rows.map((row) => mapRow(row, usernamesById));
 }
 
-export async function insertItuneEntry({ createdByUserId, addedAt, ...fields }) {
+export async function insertItuneEntry({ createdByUserId, addedAt, ...fields }, actor) {
   const pool = await getReadyPool();
   // ID (col 1) always picks up right after the current highest id, not
   // whatever the table's own SERIAL sequence has drifted to — rows deleted
@@ -553,10 +658,17 @@ export async function insertItuneEntry({ createdByUserId, addedAt, ...fields }) 
     const result = await client.query(
       `INSERT INTO projectm_itune_entries (${columns.join(", ")})
        VALUES (${placeholders.join(", ")})
-       RETURNING id`,
+       RETURNING *`,
       values
     );
-    insertedId = result.rows[0].id;
+    const inserted = result.rows[0];
+    insertedId = inserted.id;
+    await insertEntryLog(client, {
+      row: inserted,
+      action: "create",
+      actor,
+      newValues: entryAuditValues(inserted),
+    });
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
@@ -584,44 +696,69 @@ export async function findItuneEntryById(id) {
   return mapRow(row, usernamesById);
 }
 
-export async function updateItuneEntry(id, fields) {
+export async function updateItuneEntry(id, fields, actor) {
   const pool = await getReadyPool();
-
-  // Same Link_SMS uniqueness rule as insertItuneEntry — blank exempt, checked
-  // against every other row. No table lock here (unlike insert's id
-  // assignment, an update doesn't need one for its own logic), so this has a
-  // narrow race window against a concurrent write targeting the same value;
-  // acceptable for this admin-only, low-concurrency tool.
-  if (fields.linkSms) {
-    const dup = await pool.query(
-      `SELECT id FROM projectm_itune_entries WHERE link_sms = $1 AND id <> $2 LIMIT 1`,
-      [fields.linkSms, id]
+  const client = await pool.connect();
+  let changed = false;
+  try {
+    await client.query("BEGIN");
+    const currentResult = await client.query(
+      `SELECT * FROM projectm_itune_entries WHERE id = $1 FOR UPDATE`,
+      [id]
     );
-    if (dup.rows.length > 0) {
-      throw createHttpError(`Link_SMS นี้ถูกใช้แล้วที่ ID ${dup.rows[0].id}`, 409);
+    const current = currentResult.rows[0];
+    if (!current) throw createHttpError("ไม่พบรายการนี้ (อาจถูกลบไปแล้ว)", 404);
+
+    if (fields.linkSms) {
+      const dup = await client.query(
+        `SELECT id FROM projectm_itune_entries WHERE link_sms = $1 AND id <> $2 LIMIT 1`,
+        [fields.linkSms, id]
+      );
+      if (dup.rows.length > 0) {
+        throw createHttpError(`Link_SMS นี้ถูกใช้แล้วที่ ID ${dup.rows[0].id}`, 409);
+      }
     }
+
+    const sets = [];
+    const values = [];
+    const oldValues = {};
+    const newValues = {};
+    let i = 1;
+    for (const key of EDITABLE_FIELDS) {
+      if (fields[key] === undefined) continue;
+      const before = current[FIELD_COLUMNS[key]];
+      if (valuesMatch(key, before, fields[key])) continue;
+      sets.push(`${FIELD_COLUMNS[key]} = $${i++}`);
+      values.push(fields[key]);
+      oldValues[key] = auditValue(key, before);
+      newValues[key] = auditValue(key, fields[key]);
+    }
+
+    if (sets.length) {
+      sets.push("updated_at = NOW()");
+      values.push(id);
+      await client.query(
+        `UPDATE projectm_itune_entries SET ${sets.join(", ")} WHERE id = $${i}`,
+        values
+      );
+      await insertEntryLog(client, {
+        row: current,
+        action: "update",
+        actor,
+        oldValues,
+        newValues,
+      });
+      changed = true;
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
-
-  const sets = [];
-  const values = [];
-  let i = 1;
-
-  for (const key of EDITABLE_FIELDS) {
-    if (fields[key] === undefined) continue;
-    sets.push(`${FIELD_COLUMNS[key]} = $${i++}`);
-    values.push(fields[key]);
-  }
-
-  if (!sets.length) return findItuneEntryById(id);
-
-  sets.push("updated_at = NOW()");
-  values.push(id);
-  await pool.query(
-    `UPDATE projectm_itune_entries SET ${sets.join(", ")} WHERE id = $${i}`,
-    values
-  );
   const entry = await findItuneEntryById(id);
-  publishItuneQueueChanged();
+  if (changed) publishItuneQueueChanged();
   return entry;
 }
 
@@ -980,6 +1117,14 @@ export async function cancelItuneReject(claimLogId, actor) {
       actor,
       issueLogId: issueRow.id,
     });
+    await insertAdminLog(client, {
+      category: "admin",
+      action: "cancel_reject",
+      actor,
+      entryId,
+      entryEmail: claimRow.entry_email,
+      details: { issueLogId: issueRow.id, claimLogId: Number(claimLogId) },
+    });
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
@@ -1022,21 +1167,234 @@ export async function listItuneIssueLog({ limit = 200, resolved } = {}) {
   }));
 }
 
-export async function saveItuneEntryImage(id, imageUrl) {
-  const pool = await getReadyPool();
-  await pool.query(
-    `UPDATE projectm_itune_entries
-     SET amount_confirm_image = $1, updated_at = NOW()
-     WHERE id = $2`,
-    [imageUrl || null, id]
-  );
-  return findItuneEntryById(id);
+export async function deleteItuneEntry(id, actor) {
+  return deleteItuneEntries([id], actor);
 }
 
-export async function deleteItuneEntry(id) {
+export async function deleteItuneEntries(ids, actor) {
+  const numericIds = [...new Set(ids.map(Number))];
+  if (!numericIds.length || numericIds.some((id) => !Number.isInteger(id) || id <= 0)) {
+    throw createHttpError("รายการที่จะลบไม่ถูกต้อง", 400);
+  }
+  if (numericIds.length > 500) throw createHttpError("ลบได้ครั้งละไม่เกิน 500 รายการ", 400);
+
   const pool = await getReadyPool();
-  await pool.query(`DELETE FROM projectm_itune_entries WHERE id = $1`, [id]);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await client.query(
+      `SELECT id, email, currency, supplier, amount, link_sms, qna,
+              CASE WHEN password IS NULL OR password = '' THEN '' ELSE '[redacted]' END AS password,
+              CASE WHEN amount_confirm_image IS NULL OR amount_confirm_image = ''
+                   THEN '' ELSE '[image]' END AS amount_confirm_image
+       FROM projectm_itune_entries WHERE id = ANY($1::int[]) FOR UPDATE`,
+      [numericIds]
+    );
+    if (result.rows.length !== numericIds.length) {
+      throw createHttpError("มีบางรายการไม่อยู่แล้ว กรุณาโหลดหน้าใหม่", 409);
+    }
+    const action = numericIds.length > 1 ? "bulk_delete" : "delete";
+    // ponytail: one audit insert per row; batch it if 500-row deletes become slow.
+    for (const row of result.rows) {
+      await insertEntryLog(client, {
+        row,
+        action,
+        actor,
+        oldValues: entryAuditValues(row),
+      });
+    }
+    if (numericIds.length > 1) {
+      await insertAdminLog(client, {
+        category: "admin",
+        action: "bulk_delete",
+        actor,
+        details: {
+          count: numericIds.length,
+          entryIds: numericIds,
+          emails: result.rows.map((row) => row.email || ""),
+        },
+      });
+    }
+    await client.query(`DELETE FROM projectm_itune_entries WHERE id = ANY($1::int[])`, [numericIds]);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
   publishItuneQueueChanged();
+  return numericIds.length;
+}
+
+export async function listItuneEntryLogs(limit = 200) {
+  const pool = await getReadyPool();
+  const cappedLimit = Math.min(500, Math.max(1, Number(limit) || 200));
+  const result = await pool.query(
+    `SELECT id, entry_id, entry_email, action, old_values, new_values,
+            changed_by_user_id, changed_by_username, changed_at
+     FROM projectm_itune_entry_log ORDER BY id DESC LIMIT $1`,
+    [cappedLimit]
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    entryId: row.entry_id,
+    entryEmail: row.entry_email || "",
+    action: row.action,
+    oldValues: row.old_values || {},
+    newValues: row.new_values || {},
+    changedByUserId: row.changed_by_user_id || null,
+    changedByUsername: row.changed_by_username || "",
+    changedAt: row.changed_at,
+  }));
+}
+
+const ITUNE_HISTORY_CATEGORIES = new Set(["claim", "amount", "issue", "entry", "system", "admin"]);
+
+export async function listItuneHistory({ category, query, from, to, page = 1, pageSize = 50 } = {}) {
+  const pool = await getReadyPool();
+  const safePage = Math.max(1, Number(page) || 1);
+  const safePageSize = Math.min(100, Math.max(1, Number(pageSize) || 50));
+  const conditions = [];
+  const values = [];
+  const addValue = (value) => {
+    values.push(value);
+    return `$${values.length}`;
+  };
+
+  if (category && category !== "all") {
+    if (!ITUNE_HISTORY_CATEGORIES.has(category)) throw createHttpError("ประเภทประวัติไม่ถูกต้อง", 400);
+    conditions.push(`category = ${addValue(category)}`);
+  }
+  const cleanQuery = String(query || "").trim();
+  if (cleanQuery) {
+    const placeholder = addValue(`%${cleanQuery}%`);
+    conditions.push(`(
+      COALESCE(entry_email, '') ILIKE ${placeholder}
+      OR COALESCE(actor_username, '') ILIKE ${placeholder}
+      OR action ILIKE ${placeholder}
+      OR COALESCE(entry_id::text, '') ILIKE ${placeholder}
+    )`);
+  }
+  if (from) {
+    if (!Number.isFinite(Date.parse(from))) throw createHttpError("วันที่เริ่มต้นไม่ถูกต้อง", 400);
+    conditions.push(`occurred_at >= ${addValue(from)}::date`);
+  }
+  if (to) {
+    if (!Number.isFinite(Date.parse(to))) throw createHttpError("วันที่สิ้นสุดไม่ถูกต้อง", 400);
+    conditions.push(`occurred_at < (${addValue(to)}::date + INTERVAL '1 day')`);
+  }
+
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  const limitPlaceholder = addValue(safePageSize);
+  const offsetPlaceholder = addValue((safePage - 1) * safePageSize);
+  const result = await pool.query(
+    `WITH history AS (
+       SELECT 'claim-session-claim-' || s.id AS source_key, 'claim' AS category,
+              'claim' AS action, s.entry_id, s.entry_email,
+              s.user_id AS actor_user_id, s.username AS actor_username,
+              s.claimed_at AS occurred_at, NULL::jsonb AS old_values,
+              jsonb_build_object('startAmount', s.start_amount) AS new_values,
+              '{}'::jsonb AS details, NULL::bigint AS claim_log_id,
+              FALSE AS can_confirm, FALSE AS can_decline, FALSE AS can_cancel,
+              FALSE AS has_image, NULL::text AS image_kind, NULL::bigint AS image_id
+       FROM projectm_itune_claim_sessions s
+       UNION ALL
+       SELECT 'claim-session-release-' || s.id, 'claim', 'release', s.entry_id, s.entry_email,
+              s.user_id, s.username, s.released_at,
+              jsonb_build_object('startAmount', s.start_amount),
+              jsonb_build_object('endAmount', s.end_amount),
+              jsonb_build_object('amountUsed', s.amount_used, 'outcome', s.outcome, 'note', s.note),
+              NULL::bigint, FALSE, FALSE, FALSE,
+              COALESCE(s.proof_image, '') <> '', 'claim-session', s.id
+       FROM projectm_itune_claim_sessions s WHERE s.released_at IS NOT NULL
+       UNION ALL
+       SELECT 'amount-' || a.id, 'amount', 'amount_update', a.entry_id, a.entry_email,
+              a.changed_by_user_id, a.changed_by_username, a.changed_at,
+              jsonb_build_object('amount', a.old_amount),
+              jsonb_build_object('amount', a.new_amount), '{}'::jsonb,
+              NULL::bigint, FALSE, FALSE, FALSE,
+              COALESCE(a.image, '') <> '', 'amount', a.id::bigint
+       FROM projectm_itune_amount_log a
+       UNION ALL
+       SELECT 'issue-' || i.id, 'issue', 'issue_report', i.entry_id, i.entry_email,
+              i.reported_by_user_id, i.reported_by_username, i.reported_at,
+              NULL::jsonb, NULL::jsonb,
+              jsonb_build_object(
+                'note', i.note, 'status', CASE WHEN i.resolved_at IS NULL THEN 'open' ELSE 'resolved' END,
+                'resolvedAt', i.resolved_at, 'resolvedByUsername', i.resolved_by_username
+              ), NULL::bigint, FALSE, FALSE, FALSE, FALSE, NULL::text, NULL::bigint
+       FROM projectm_itune_issue_log i
+       WHERE NOT EXISTS (
+         SELECT 1 FROM projectm_itune_claim_log linked WHERE linked.issue_log_id = i.id
+       )
+       UNION ALL
+       SELECT 'reject-' || c.id, 'issue', c.action, c.entry_id, c.entry_email,
+              c.user_id, c.username, c.created_at, NULL::jsonb, NULL::jsonb,
+              jsonb_build_object('note', i.note), c.id::bigint,
+              c.action = 'reject' AND i.is_reject = TRUE AND i.reject_confirmed_at IS NULL,
+              c.action = 'reject' AND i.is_reject = TRUE AND i.reject_confirmed_at IS NULL,
+              c.action = 'reject_confirm' AND i.is_reject = TRUE AND i.reject_confirmed_at IS NOT NULL,
+              FALSE, NULL::text, NULL::bigint
+       FROM projectm_itune_claim_log c
+       LEFT JOIN projectm_itune_issue_log i ON i.id = c.issue_log_id
+       WHERE c.action NOT IN ('claim', 'release')
+       UNION ALL
+       SELECT 'entry-' || e.id, 'entry', e.action, e.entry_id, e.entry_email,
+              e.changed_by_user_id, e.changed_by_username, e.changed_at,
+              e.old_values, e.new_values, '{}'::jsonb, NULL::bigint,
+              FALSE, FALSE, FALSE, FALSE, NULL::text, NULL::bigint
+       FROM projectm_itune_entry_log e
+       UNION ALL
+       SELECT 'admin-' || a.id, a.category, a.action, a.entry_id, a.entry_email,
+              a.actor_user_id, a.actor_username, a.created_at,
+              a.old_values, a.new_values, COALESCE(a.details, '{}'::jsonb), NULL::bigint,
+              FALSE, FALSE, FALSE, FALSE, NULL::text, NULL::bigint
+       FROM projectm_itune_admin_log a
+     )
+     SELECT *, COUNT(*) OVER() AS total_count FROM history
+     ${where}
+     ORDER BY occurred_at DESC, source_key DESC
+     LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder}`,
+    values
+  );
+  return {
+    events: result.rows.map((row) => ({
+      id: row.source_key,
+      category: row.category,
+      action: row.action,
+      entryId: row.entry_id,
+      entryEmail: row.entry_email || "",
+      actorUserId: row.actor_user_id || null,
+      actorUsername: row.actor_username || "",
+      occurredAt: row.occurred_at,
+      oldValues: row.old_values || {},
+      newValues: row.new_values || {},
+      details: row.details || {},
+      claimLogId: row.claim_log_id ? Number(row.claim_log_id) : null,
+      canConfirm: row.can_confirm,
+      canDecline: row.can_decline,
+      canCancel: row.can_cancel,
+      imageUrl: row.has_image
+        ? row.image_kind === "amount"
+          ? `/api/projectm/itune/amount-log/${row.image_id}/image`
+          : `/api/projectm/itune/claim-session/${row.image_id}/image`
+        : null,
+    })),
+    page: safePage,
+    pageSize: safePageSize,
+    total: Number(result.rows[0]?.total_count || 0),
+  };
+}
+
+export async function getItuneClaimSessionImage(sessionId) {
+  const pool = await getReadyPool();
+  const result = await pool.query(
+    `SELECT proof_image FROM projectm_itune_claim_sessions WHERE id = $1`,
+    [sessionId]
+  );
+  if (!result.rows.length) throw createHttpError("ไม่พบรูปหลักฐาน", 404);
+  return result.rows[0].proof_image || "";
 }
 
 // "ตั้งเป็นเมลถาวร" / "ตั้งกลับเป็นเมลปกติ" — a standing admin override,
@@ -1044,14 +1402,39 @@ export async function deleteItuneEntry(id) {
 // counting at all (see ItuneCountdownCell's `frozen` prop). A plain toggle,
 // not a log — unlike the amount/issue history, there's nothing an admin
 // would need to audit here beyond the current on/off state.
-export async function setItuneEntryPermanent(id, isPermanent) {
+export async function setItuneEntryPermanent(id, isPermanent, actor) {
   const pool = await getReadyPool();
-  const result = await pool.query(
-    `UPDATE projectm_itune_entries SET is_permanent = $1, updated_at = NOW() WHERE id = $2`,
-    [isPermanent, id]
-  );
-  if (result.rowCount === 0) {
-    throw createHttpError("ไม่พบรายการนี้ (อาจถูกลบไปแล้ว)", 404);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await client.query(
+      `SELECT id, email, is_permanent FROM projectm_itune_entries WHERE id = $1 FOR UPDATE`,
+      [id]
+    );
+    const row = result.rows[0];
+    if (!row) throw createHttpError("ไม่พบรายการนี้ (อาจถูกลบไปแล้ว)", 404);
+    const next = Boolean(isPermanent);
+    if (row.is_permanent !== next) {
+      await client.query(
+        `UPDATE projectm_itune_entries SET is_permanent = $1, updated_at = NOW() WHERE id = $2`,
+        [next, id]
+      );
+      await insertAdminLog(client, {
+        category: "system",
+        action: next ? "permanent_enable" : "permanent_disable",
+        actor,
+        entryId: row.id,
+        entryEmail: row.email,
+        oldValues: { isPermanent: row.is_permanent },
+        newValues: { isPermanent: next },
+      });
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
   const entry = await findItuneEntryById(id);
   publishItuneQueueChanged();
@@ -1254,17 +1637,34 @@ export async function listItunePriorityQueue() {
 // per row, position taken from the array index. Only ids the caller listed
 // are touched — unpinned entries keep priority_order NULL and stay on the
 // automatic rule.
-export async function reorderItunePriority(orderedIds) {
+export async function reorderItunePriority(orderedIds, actor) {
   const pool = await getReadyPool();
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const before = await client.query(
+      `SELECT id, priority_order FROM projectm_itune_entries
+       WHERE id = ANY($1::int[]) FOR UPDATE`,
+      [orderedIds]
+    );
     for (const [index, id] of orderedIds.entries()) {
       await client.query(
         `UPDATE projectm_itune_entries SET priority_order = $1, updated_at = NOW() WHERE id = $2`,
         [index, id]
       );
     }
+    await insertAdminLog(client, {
+      category: "system",
+      action: "priority_reorder",
+      actor,
+      oldValues: {
+        orderedIds: before.rows
+          .sort((a, b) => Number(a.priority_order) - Number(b.priority_order))
+          .map((row) => row.id),
+      },
+      newValues: { orderedIds },
+      details: { count: orderedIds.length },
+    });
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
@@ -1279,29 +1679,51 @@ export async function reorderItunePriority(orderedIds) {
 // pinned) or release it back to the automatic rule. MAX(priority_order)+1
 // is computed in the same statement so two admins pinning at once can't
 // both land on the same slot.
-export async function setItunePriorityPinned(id, pinned) {
+export async function setItunePriorityPinned(id, pinned, actor) {
   const pool = await getReadyPool();
-  if (!pinned) {
-    const result = await pool.query(
-      `UPDATE projectm_itune_entries SET priority_order = NULL, updated_at = NOW()
-       WHERE id = $1 RETURNING id`,
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const currentResult = await client.query(
+      `SELECT id, email, priority_order FROM projectm_itune_entries WHERE id = $1 FOR UPDATE`,
       [id]
     );
-    if (!result.rows.length) throw createHttpError("ไม่พบรายการนี้", 404);
-    const entry = await findItuneEntryById(id);
-    publishItuneQueueChanged();
-    return entry;
+    const current = currentResult.rows[0];
+    if (!current) throw createHttpError("ไม่พบรายการนี้", 404);
+    const nextPinned = Boolean(pinned);
+    const wasPinned = current.priority_order !== null;
+    if (wasPinned !== nextPinned) {
+      const updated = nextPinned
+        ? await client.query(
+            `UPDATE projectm_itune_entries
+             SET priority_order = COALESCE(
+                   (SELECT MAX(priority_order) + 1 FROM projectm_itune_entries), 0
+                 ), updated_at = NOW()
+             WHERE id = $1 RETURNING priority_order`,
+            [id]
+          )
+        : await client.query(
+            `UPDATE projectm_itune_entries SET priority_order = NULL, updated_at = NOW()
+             WHERE id = $1 RETURNING priority_order`,
+            [id]
+          );
+      await insertAdminLog(client, {
+        category: "system",
+        action: nextPinned ? "priority_pin" : "priority_unpin",
+        actor,
+        entryId: current.id,
+        entryEmail: current.email,
+        oldValues: { priorityOrder: current.priority_order },
+        newValues: { priorityOrder: updated.rows[0].priority_order },
+      });
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
-  const result = await pool.query(
-    `UPDATE projectm_itune_entries
-     SET priority_order = COALESCE(
-           (SELECT MAX(priority_order) + 1 FROM projectm_itune_entries), 0
-         ),
-         updated_at = NOW()
-     WHERE id = $1 RETURNING id`,
-    [id]
-  );
-  if (!result.rows.length) throw createHttpError("ไม่พบรายการนี้", 404);
   const entry = await findItuneEntryById(id);
   publishItuneQueueChanged();
   return entry;
@@ -1309,14 +1731,40 @@ export async function setItunePriorityPinned(id, pinned) {
 
 // Per-entry counterpart to the global claim_paused switch — takes one row
 // out of the claimable pool without touching its status or its pin.
-export async function setItuneClaimHold(id, hold) {
+export async function setItuneClaimHold(id, hold, actor) {
   const pool = await getReadyPool();
-  const result = await pool.query(
-    `UPDATE projectm_itune_entries SET claim_hold = $1, updated_at = NOW()
-     WHERE id = $2 RETURNING id`,
-    [Boolean(hold), id]
-  );
-  if (!result.rows.length) throw createHttpError("ไม่พบรายการนี้", 404);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await client.query(
+      `SELECT id, email, claim_hold FROM projectm_itune_entries WHERE id = $1 FOR UPDATE`,
+      [id]
+    );
+    const row = result.rows[0];
+    if (!row) throw createHttpError("ไม่พบรายการนี้", 404);
+    const next = Boolean(hold);
+    if (row.claim_hold !== next) {
+      await client.query(
+        `UPDATE projectm_itune_entries SET claim_hold = $1, updated_at = NOW() WHERE id = $2`,
+        [next, id]
+      );
+      await insertAdminLog(client, {
+        category: "system",
+        action: next ? "claim_hold" : "claim_unhold",
+        actor,
+        entryId: row.id,
+        entryEmail: row.email,
+        oldValues: { claimHold: row.claim_hold },
+        newValues: { claimHold: next },
+      });
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
   const entry = await findItuneEntryById(id);
   publishItuneQueueChanged();
   return entry;
@@ -1401,11 +1849,48 @@ export async function listItuneClaimLog({ limit = 200 } = {}) {
 // entries exactly as they are — this only clears the audit trail behind
 // them, not current state, so a still-pending Reject or reported-unavailable
 // entry stays exactly as visible/claimable as it was before running this.
-export async function clearItuneLogs() {
+export async function clearItuneLogs(actor, reason) {
+  const cleanReason = String(reason || "").trim();
+  if (!cleanReason) throw createHttpError("กรุณาระบุเหตุผลที่ล้างประวัติ", 400);
   const pool = await getReadyPool();
-  await pool.query(`DELETE FROM projectm_itune_issue_log`);
-  await pool.query(`DELETE FROM projectm_itune_amount_log`);
-  await pool.query(`DELETE FROM projectm_itune_claim_log`);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const deletes = [
+      ["claimSessions", `DELETE FROM projectm_itune_claim_sessions WHERE released_at IS NOT NULL`],
+      ["issueLogs", `DELETE FROM projectm_itune_issue_log i
+        WHERE i.resolved_at IS NOT NULL OR (
+          i.is_reject = FALSE AND EXISTS (
+            SELECT 1 FROM projectm_itune_claim_log c WHERE c.issue_log_id = i.id
+          )
+        )`],
+      ["claimLogs", `DELETE FROM projectm_itune_claim_log c
+        WHERE c.issue_log_id IS NULL OR NOT EXISTS (
+          SELECT 1 FROM projectm_itune_issue_log i
+          WHERE i.id = c.issue_log_id AND i.is_reject = TRUE
+        )`],
+      ["amountLogs", `DELETE FROM projectm_itune_amount_log`],
+      ["entryLogs", `DELETE FROM projectm_itune_entry_log`],
+    ];
+    const counts = {};
+    for (const [key, statement] of deletes) {
+      const result = await client.query(statement);
+      counts[key] = result.rowCount;
+    }
+    await insertAdminLog(client, {
+      category: "admin",
+      action: "history_clear",
+      actor,
+      details: { reason: cleanReason, counts },
+    });
+    await client.query("COMMIT");
+    return counts;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 // Read side for the "คืนเมล" release threshold (see releaseItuneEntry).
@@ -1444,7 +1929,10 @@ export async function getItuneClaimSettings() {
             target_hours, burn_rate_usd_per_hour, expected_idle_hours, claim_warning_hours
      FROM projectm_itune_release_settings WHERE id = 1`
   );
-  const row = result.rows[0];
+  return mapItuneClaimSettings(result.rows[0]);
+}
+
+function mapItuneClaimSettings(row) {
   const threshold = row?.priority_amount_threshold;
   return {
     maxAmount:
@@ -1471,58 +1959,91 @@ export async function getItuneClaimSettings() {
 // Partial update: omitted fields keep their current values.
 export async function saveItuneClaimSettings(fields, actor) {
   const pool = await getReadyPool();
-  const current = await getItuneClaimSettings();
-  const next = {
-    maxAmount: fields.maxAmount === undefined ? current.maxAmount : fields.maxAmount,
-    claimPaused:
-      fields.claimPaused === undefined ? current.claimPaused : Boolean(fields.claimPaused),
-    priorityAmountThreshold:
-      fields.priorityAmountThreshold === undefined
+  const client = await pool.connect();
+  let next;
+  try {
+    await client.query("BEGIN");
+    const currentResult = await client.query(
+      `SELECT max_amount, claim_paused, priority_amount_threshold,
+              target_hours, burn_rate_usd_per_hour, expected_idle_hours, claim_warning_hours
+       FROM projectm_itune_release_settings WHERE id = 1 FOR UPDATE`
+    );
+    const current = mapItuneClaimSettings(currentResult.rows[0]);
+    next = {
+      maxAmount: fields.maxAmount === undefined ? current.maxAmount : fields.maxAmount,
+      claimPaused: fields.claimPaused === undefined ? current.claimPaused : Boolean(fields.claimPaused),
+      priorityAmountThreshold: fields.priorityAmountThreshold === undefined
         ? current.priorityAmountThreshold
         : fields.priorityAmountThreshold,
-    targetHours: fields.targetHours === undefined ? current.targetHours : fields.targetHours,
-    burnRateUsdPerHour:
-      fields.burnRateUsdPerHour === undefined
+      targetHours: fields.targetHours === undefined ? current.targetHours : fields.targetHours,
+      burnRateUsdPerHour: fields.burnRateUsdPerHour === undefined
         ? current.burnRateUsdPerHour
         : fields.burnRateUsdPerHour,
-    expectedIdleHours:
-      fields.expectedIdleHours === undefined
+      expectedIdleHours: fields.expectedIdleHours === undefined
         ? current.expectedIdleHours
         : fields.expectedIdleHours,
-    claimWarningHours:
-      fields.claimWarningHours === undefined
+      claimWarningHours: fields.claimWarningHours === undefined
         ? current.claimWarningHours
         : fields.claimWarningHours,
-  };
-  await pool.query(
-    `INSERT INTO projectm_itune_release_settings
-       (id, max_amount, claim_paused, priority_amount_threshold,
-        target_hours, burn_rate_usd_per_hour, expected_idle_hours, claim_warning_hours,
-        updated_by_user_id, updated_by_username)
-     VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9)
-     ON CONFLICT (id) DO UPDATE
-       SET max_amount = EXCLUDED.max_amount,
-           claim_paused = EXCLUDED.claim_paused,
-           priority_amount_threshold = EXCLUDED.priority_amount_threshold,
-           target_hours = EXCLUDED.target_hours,
-           burn_rate_usd_per_hour = EXCLUDED.burn_rate_usd_per_hour,
-           expected_idle_hours = EXCLUDED.expected_idle_hours,
-           claim_warning_hours = EXCLUDED.claim_warning_hours,
-           updated_at = NOW(),
-           updated_by_user_id = EXCLUDED.updated_by_user_id,
-           updated_by_username = EXCLUDED.updated_by_username`,
-    [
-      next.maxAmount,
-      next.claimPaused,
-      next.priorityAmountThreshold,
-      next.targetHours,
-      next.burnRateUsdPerHour,
-      next.expectedIdleHours,
-      next.claimWarningHours,
-      actor?.id ?? null,
-      actor?.displayName || actor?.username || null,
-    ]
-  );
+    };
+    const oldValues = {};
+    const newValues = {};
+    for (const key of Object.keys(next)) {
+      if (current[key] === next[key]) continue;
+      oldValues[key] = current[key];
+      newValues[key] = next[key];
+    }
+    if (!Object.keys(newValues).length) {
+      await client.query("COMMIT");
+      return next;
+    }
+    await client.query(
+      `INSERT INTO projectm_itune_release_settings
+         (id, max_amount, claim_paused, priority_amount_threshold,
+          target_hours, burn_rate_usd_per_hour, expected_idle_hours, claim_warning_hours,
+          updated_by_user_id, updated_by_username)
+       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9)
+       ON CONFLICT (id) DO UPDATE
+         SET max_amount = EXCLUDED.max_amount,
+             claim_paused = EXCLUDED.claim_paused,
+             priority_amount_threshold = EXCLUDED.priority_amount_threshold,
+             target_hours = EXCLUDED.target_hours,
+             burn_rate_usd_per_hour = EXCLUDED.burn_rate_usd_per_hour,
+             expected_idle_hours = EXCLUDED.expected_idle_hours,
+             claim_warning_hours = EXCLUDED.claim_warning_hours,
+             updated_at = NOW(),
+             updated_by_user_id = EXCLUDED.updated_by_user_id,
+             updated_by_username = EXCLUDED.updated_by_username`,
+      [
+        next.maxAmount,
+        next.claimPaused,
+        next.priorityAmountThreshold,
+        next.targetHours,
+        next.burnRateUsdPerHour,
+        next.expectedIdleHours,
+        next.claimWarningHours,
+        actor?.id ?? null,
+        actor?.displayName || actor?.username || null,
+      ]
+    );
+    await insertAdminLog(client, {
+      category: "system",
+      action: newValues.claimPaused === true
+        ? "claim_pause"
+        : newValues.claimPaused === false
+          ? "claim_resume"
+          : "settings_update",
+      actor,
+      oldValues,
+      newValues,
+    });
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
   publishItuneQueueChanged();
   return next;
 }

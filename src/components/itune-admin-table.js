@@ -2,15 +2,18 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import {
   AlertTriangle,
   Check,
   Copy,
   Filter,
+  History,
   Image as ImageIcon,
   MoreVertical,
   Plus,
   Search,
+  Trash2,
   X,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
@@ -684,7 +687,7 @@ function RowActionsMenu({
 // at any viewport width instead of one of the flexible columns swallowing
 // the leftover space before it.
 const GRID_COLS =
-  "grid-cols-[50px_180px_minmax(180px,1fr)_minmax(180px,0.8fr)_120px_100px_100px_80px_150px_120px_100px_minmax(130px,1fr)_minmax(180px,1fr)_44px]";
+  "grid-cols-[40px_50px_180px_minmax(180px,1fr)_minmax(180px,0.8fr)_120px_100px_100px_80px_150px_120px_100px_minmax(130px,1fr)_minmax(180px,1fr)_44px]";
 
 // The table's minimum width, derived straight from GRID_COLS's own track
 // list (every `Npx` — bare tracks and the min side of `minmax(Npx, fr)`
@@ -908,6 +911,8 @@ export default function ItuneAdminTable({ initialEntries }) {
   const [savingAmount, setSavingAmount] = useState(false);
   const [amountEditError, setAmountEditError] = useState("");
   const [amountHistoryFor, setAmountHistoryFor] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [deletingSelected, setDeletingSelected] = useState(false);
   const tempCounter = useRef(0);
   const now = useMinuteTicker();
   const [settings, setSetting] = useItuneSettings();
@@ -999,6 +1004,9 @@ export default function ItuneAdminTable({ initialEntries }) {
       activeColumns.some((c) => searchValueFor(row, c.key).toLowerCase().includes(q))
     );
   }, [rows, search, searchExcludedColumns]);
+  const selectableFilteredIds = filteredRows.filter((row) => !isTempId(row.id)).map((row) => row.id);
+  const allFilteredSelected =
+    selectableFilteredIds.length > 0 && selectableFilteredIds.every((id) => selectedIds.has(id));
 
   // A trailing/leading space typed mid-edit shouldn't flip a row to dirty —
   // trim before comparing, same as gameinfo-gamelist-table.js's updateField.
@@ -1134,8 +1142,54 @@ export default function ItuneAdminTable({ initialEntries }) {
       });
       setRows((prev) => prev.filter((r) => r.id !== row.id));
       setSavedRows((prev) => prev.filter((r) => r.id !== row.id));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(row.id);
+        return next;
+      });
     } catch (err) {
       window.alert(err.message);
+    }
+  }
+
+  function toggleSelected(id) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAllFiltered() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) selectableFilteredIds.forEach((id) => next.delete(id));
+      else selectableFilteredIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
+  async function deleteSelected() {
+    const ids = [...selectedIds];
+    if (!ids.length || !window.confirm(`ลบ ${ids.length} รายการที่เลือก? การลบนี้ย้อนกลับไม่ได้`)) return;
+    setDeletingSelected(true);
+    try {
+      await apiJson("/api/projectm/itune", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+        fallbackError: "ลบหลายรายการไม่สำเร็จ",
+      });
+      const deleted = new Set(ids);
+      setRows((prev) => prev.filter((row) => !deleted.has(row.id)));
+      setSavedRows((prev) => prev.filter((row) => !deleted.has(row.id)));
+      setDirtyIds((prev) => new Set([...prev].filter((id) => !deleted.has(id))));
+      setSelectedIds(new Set());
+    } catch (err) {
+      window.alert(err.message);
+    } finally {
+      setDeletingSelected(false);
     }
   }
 
@@ -1390,6 +1444,24 @@ export default function ItuneAdminTable({ initialEntries }) {
             />
           )}
         </div>
+        <div className="flex items-center gap-2">
+          <Link
+            href="history?category=entry"
+            className="flex h-9 items-center gap-1.5 rounded-md border border-ll-hairline-strong px-3 text-xs font-medium text-ll-ink-subtle hover:bg-ll-surface-2"
+          >
+            <History size={14} /> ประวัติข้อมูล
+          </Link>
+          {selectedIds.size > 0 && (
+            <button
+              type="button"
+              onClick={deleteSelected}
+              disabled={deletingSelected}
+              className="flex h-9 items-center gap-1.5 rounded-md border border-ll-primary/30 px-3 text-xs font-medium text-ll-primary hover:bg-ll-primary-subtle-bg disabled:opacity-50"
+            >
+              <Trash2 size={14} /> {deletingSelected ? "กำลังลบ..." : `ลบที่เลือก (${selectedIds.size})`}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-ll-hairline bg-ll-surface-1 shadow-[var(--ll-shadow-card)]">
@@ -1403,6 +1475,15 @@ export default function ItuneAdminTable({ initialEntries }) {
                 everything else, so a sticky child needs to repaint itself
                 or the columns scrolling underneath show through it. ID went
                 back to scrolling with the rest of the row (not frozen). */}
+            <div className="flex items-center justify-center px-2 py-2">
+              <input
+                type="checkbox"
+                checked={allFilteredSelected}
+                onChange={toggleAllFiltered}
+                disabled={selectableFilteredIds.length === 0}
+                aria-label="เลือกทุกรายการที่แสดง"
+              />
+            </div>
             <div className="truncate px-3 py-2 text-center">ID</div>
             <div className="truncate px-3 py-2">Date_time</div>
             <div className="truncate px-3 py-2">Email</div>
@@ -1424,6 +1505,16 @@ export default function ItuneAdminTable({ initialEntries }) {
               key={row.id}
               className={`group/row grid ${GRID_COLS} items-center border-b border-ll-hairline last:border-0 hover:bg-ll-surface-2/50`}
             >
+              <div className="flex items-center justify-center px-2 py-2">
+                {!isTempId(row.id) && (
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(row.id)}
+                    onChange={() => toggleSelected(row.id)}
+                    aria-label={`เลือก ID ${row.id}`}
+                  />
+                )}
+              </div>
               <div className="min-w-0 truncate px-3 py-2 text-center font-mono text-xs text-ll-ink-subtle">
                 {isTempId(row.id) ? (
                   "ใหม่"
