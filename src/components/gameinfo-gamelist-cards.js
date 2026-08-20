@@ -183,7 +183,11 @@ function StatCard({ label, count, icon: Icon, active, onClick, tone }) {
 
 function GameCard({ row, editable, lang, dataMode }) {
   const status = STATUS_STYLE[row.serviceStatus] || STATUS_STYLE.online;
-  const href = `/gameinfo/${lang}/${row.id}${dataMode === "idpass" ? "?mode=idpass" : ""}`;
+  const viewParams = new URLSearchParams();
+  if (dataMode === "idpass") viewParams.set("mode", "idpass");
+  const href = `/gameinfo/${lang}/${row.id}${viewParams.size ? `?${viewParams}` : ""}`;
+  if (editable) viewParams.set("manage", "1");
+  const actionHref = `/gameinfo/${lang}/${row.id}${viewParams.size ? `?${viewParams}` : ""}`;
   return (
     <article className="overflow-hidden rounded-2xl border border-linear-hairline bg-linear-surface-1" style={{ boxShadow: "var(--ll-shadow-card)" }}>
       <Link href={href} className="block p-4 hover:bg-linear-surface-2">
@@ -216,7 +220,7 @@ function GameCard({ row, editable, lang, dataMode }) {
       <div className="flex items-center gap-2 border-t border-linear-hairline p-3">
         <GameinfoTutorialButton gameId={row.id} gameName={row.game} editable={false} hasData={row.hasTutorial} dataMode={dataMode} />
         <GameinfoTutorialButton gameId={row.id} gameName={row.game} editable={false} hasData={row.hasWarning} variant="warning" dataMode={dataMode} />
-        <Link href={href} className="ml-auto inline-flex h-10 items-center rounded-lg bg-linear-ink px-3 text-xs font-medium text-linear-canvas">
+        <Link href={actionHref} className="ml-auto inline-flex h-10 items-center rounded-lg bg-linear-ink px-3 text-xs font-medium text-linear-canvas">
           {editable ? "เปิดจัดการ" : "เปิดดู"}
         </Link>
       </div>
