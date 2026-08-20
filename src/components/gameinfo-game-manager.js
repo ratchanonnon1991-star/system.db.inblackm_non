@@ -9,6 +9,7 @@ import GameinfoNameInput from "./gameinfo-name-input";
 import GameinfoImagePickerModal from "./gameinfo-image-picker-modal";
 import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
 import { GameinfoGameLinksButton } from "./gameinfo-game-links";
+import GameinfoTagsInput from "./gameinfo-tags-input";
 
 function fieldsFromRow(row) {
   return {
@@ -24,7 +25,7 @@ function statusFromRow(row) {
   return row.serviceNew ? "new" : row.serviceEnabled === false ? "offline" : "online";
 }
 
-export default function GameinfoGameManager({ row, existingNames, dataMode = "uid" }) {
+export default function GameinfoGameManager({ row, existingNames, tagSuggestions, dataMode = "uid" }) {
   const router = useRouter();
   const [saved, setSaved] = useState(() => fieldsFromRow(row));
   const [draft, setDraft] = useState(() => fieldsFromRow(row));
@@ -33,12 +34,14 @@ export default function GameinfoGameManager({ row, existingNames, dataMode = "ui
   const [savedStatus, setSavedStatus] = useState(() => statusFromRow(row));
   const [status, setStatus] = useState(() => statusFromRow(row));
   const [links, setLinks] = useState(row.links || []);
+  const [savedTags, setSavedTags] = useState(row.tags || []);
+  const [tags, setTags] = useState(row.tags || []);
   const [duplicate, setDuplicate] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const dirty = JSON.stringify(draft) !== JSON.stringify(saved) || image !== savedImage || status !== savedStatus;
+  const dirty = JSON.stringify(draft) !== JSON.stringify(saved) || image !== savedImage || status !== savedStatus || JSON.stringify(tags) !== JSON.stringify(savedTags);
 
   function update(field, value) {
     setDraft((current) => ({ ...current, [field]: value }));
@@ -49,6 +52,7 @@ export default function GameinfoGameManager({ row, existingNames, dataMode = "ui
     setDraft(saved);
     setImage(savedImage);
     setStatus(savedStatus);
+    setTags(savedTags);
     setError("");
   }
 
@@ -83,6 +87,16 @@ export default function GameinfoGameManager({ row, existingNames, dataMode = "ui
           body: JSON.stringify({ imageUrl: image }),
           fallbackError: "บันทึกรูปเกมไม่สำเร็จ",
         });
+      }
+      if (JSON.stringify(tags) !== JSON.stringify(savedTags)) {
+        const data = await apiJson(`/api/gameinfo/gamelist/${row.id}/tags`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tags }),
+          fallbackError: "บันทึก tags เกมไม่สำเร็จ",
+        });
+        setTags(data.tags);
+        setSavedTags(data.tags);
       }
       setSaved(draft);
       setSavedStatus(status);
@@ -142,6 +156,9 @@ export default function GameinfoGameManager({ row, existingNames, dataMode = "ui
           <Field label="Platform"><input value={draft.platform} onChange={(event) => update("platform", event.target.value)} className={inputClass} /></Field>
           <Field label="Server"><input value={draft.server} onChange={(event) => update("server", event.target.value)} className={inputClass} /></Field>
           <Field label="Bot / Manual"><input value={draft.botManual} onChange={(event) => update("botManual", event.target.value)} className={inputClass} /></Field>
+          <Field label="หมวดหมู่" wide>
+            <GameinfoTagsInput values={tags} onChange={setTags} suggestions={tagSuggestions} placeholder="เพิ่มหมวดหมู่แล้วกด Enter" max={10} neutral />
+          </Field>
         </div>
       </form>
 

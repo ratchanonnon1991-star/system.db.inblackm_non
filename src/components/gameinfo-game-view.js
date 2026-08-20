@@ -110,6 +110,11 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
             <span>Bot/Manual: {row.botManual || "-"}</span>
           </p>
           <ChannelSummary channels={row.channels} className="mt-1.5" />
+          {(row.tags || []).length ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {row.tags.map((tag) => <span key={tag} className="rounded-full bg-linear-surface-3 px-2 py-1 text-[11px] text-linear-ink-muted">{tag}</span>)}
+            </div>
+          ) : null}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <GameinfoGameLinkButtons links={row.links || []} />
             {/* Always view-only here regardless of role — editing the

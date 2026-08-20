@@ -16,6 +16,7 @@ import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
 import {
   GAMEINFO_STATUSES,
   filterGameinfoRows,
+  listGameinfoTags,
   summarizeGameinfoRows,
 } from "@/lib/gameinfo-dashboard";
 
@@ -31,12 +32,14 @@ const STATUS_STYLE = {
 export default function GameinfoGamelistCards({ initial, editable = false, lang, dataMode = "uid" }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
+  const [tag, setTag] = useState("");
   const [sort, setSort] = useState("order");
   const [page, setPage] = useState(0);
   const counts = useMemo(() => summarizeGameinfoRows(initial), [initial]);
+  const tagOptions = useMemo(() => listGameinfoTags(initial), [initial]);
   const rows = useMemo(
-    () => filterGameinfoRows(initial, { query, status, sort }),
-    [initial, query, sort, status]
+    () => filterGameinfoRows(initial, { query, status, tag, sort }),
+    [initial, query, sort, status, tag]
   );
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
@@ -47,15 +50,23 @@ export default function GameinfoGamelistCards({ initial, editable = false, lang,
     setPage(0);
   }
 
+  function chooseTag(nextTag) {
+    setTag(nextTag);
+    setPage(0);
+  }
+
   return (
     <div className="grid min-h-[calc(100vh-65px)] lg:grid-cols-[240px_minmax(0,1fr)]">
       <aside className="border-b border-linear-hairline bg-linear-surface-2 p-4 lg:border-b-0 lg:border-r">
         <nav aria-label="ตัวกรองเกม" className="lg:sticky lg:top-20">
           <button
             type="button"
-            onClick={() => chooseStatus("all")}
+            onClick={() => {
+              chooseStatus("all");
+              chooseTag("");
+            }}
             className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${
-              status === "all"
+              status === "all" && !tag
                 ? "bg-linear-ink text-linear-canvas"
                 : "text-linear-ink-subtle hover:bg-linear-surface-3"
             }`}
@@ -88,6 +99,27 @@ export default function GameinfoGamelistCards({ initial, editable = false, lang,
                 </button>
               ))}
             </div>
+          </details>
+
+          <details open className="mt-3 border-t border-linear-hairline pt-3">
+            <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-linear-ink-muted">
+              หมวดหมู่
+            </summary>
+            {tagOptions.length ? (
+              <div className="mt-1 space-y-1">
+                {tagOptions.map((item) => (
+                  <button
+                    key={item.name}
+                    type="button"
+                    onClick={() => chooseTag(tag === item.name ? "" : item.name)}
+                    className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${tag === item.name ? "bg-linear-ink text-linear-canvas" : "text-linear-ink-subtle hover:bg-linear-surface-3"}`}
+                  >
+                    <span className="truncate">{item.name}</span>
+                    <span className="text-xs opacity-70">{item.count}</span>
+                  </button>
+                ))}
+              </div>
+            ) : <p className="px-3 py-2 text-xs text-linear-ink-tertiary">ยังไม่มีหมวดหมู่</p>}
           </details>
         </nav>
       </aside>
@@ -216,6 +248,12 @@ function GameCard({ row, editable, lang, dataMode }) {
           <span className="rounded-full bg-linear-surface-3 px-2 py-1">{row.botManual || "ไม่ระบุระบบ"}</span>
           <span className="rounded-full bg-linear-surface-3 px-2 py-1">{row.packCount || 0} แพ็ก</span>
         </div>
+        {(row.tags || []).length ? (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {row.tags.slice(0, 3).map((tag) => <span key={tag} className="rounded-full bg-linear-surface-3 px-2 py-1 text-[11px] text-linear-ink-muted">{tag}</span>)}
+            {row.tags.length > 3 ? <span className="px-1 py-1 text-[11px] text-linear-ink-tertiary">+{row.tags.length - 3}</span> : null}
+          </div>
+        ) : null}
       </Link>
       <div className="flex items-center gap-2 border-t border-linear-hairline p-3">
         <GameinfoTutorialButton gameId={row.id} gameName={row.game} editable={false} hasData={row.hasTutorial} dataMode={dataMode} />

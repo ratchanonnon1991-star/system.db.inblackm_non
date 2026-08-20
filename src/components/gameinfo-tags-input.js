@@ -14,6 +14,7 @@ export default function GameinfoTagsInput({
   placeholder,
   max,
   invalid,
+  neutral = false,
 }) {
   const [text, setText] = useState("");
   const [open, setOpen] = useState(false);
@@ -78,13 +79,13 @@ export default function GameinfoTagsInput({
         {values.map((v, i) => (
           <span
             key={`${v}-${i}`}
-            className="inline-flex items-center gap-1 rounded bg-linear-primary/15 px-2 py-0.5 text-xs text-linear-primary"
+            className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs ${neutral ? "bg-linear-surface-3 text-linear-ink-muted" : "bg-linear-primary/15 text-linear-primary"}`}
           >
             {v}
             <button
               type="button"
               onClick={() => remove(i)}
-              className="flex items-center text-linear-primary hover:text-linear-primary"
+              className={neutral ? "flex items-center text-linear-ink-tertiary hover:text-linear-ink" : "flex items-center text-linear-primary"}
               aria-label="ลบ"
             >
               <X size={12} />

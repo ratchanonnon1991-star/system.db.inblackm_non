@@ -22,6 +22,7 @@ import GameinfoErrorNotice from "@/components/gameinfo-error-notice";
 import GameinfoDatasetToggle from "@/components/gameinfo-dataset-toggle";
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { listGameinfoModeData } from "@/server/gameinfo-mode-data";
+import { listGamelistTagsByGame } from "@/server/gameinfo-gamelist-tags";
 
 export const metadata = {
   title: "GameDB — GameInfo",
@@ -41,7 +42,7 @@ export default async function GameinfoHomePage({ params, searchParams }) {
   let rows = null;
   let loadError = null;
   try {
-    const [gameListRows, channelsByGame, vpnByGame, packCountByGame, packServiceByGame, tutorialPresence, warningPresence, imageByGame, linksByGame] =
+    const [gameListRows, channelsByGame, vpnByGame, packCountByGame, packServiceByGame, tutorialPresence, warningPresence, imageByGame, linksByGame, tagsByGame] =
       await Promise.all([
         listGameListRows(),
         listGamelistChannelsByGame(),
@@ -52,6 +53,7 @@ export default async function GameinfoHomePage({ params, searchParams }) {
         listGamelistWarningPresence(),
         listGamelistImageByGame(),
         listGamelistLinksByGame(),
+        listGamelistTagsByGame(),
       ]);
     const modeDataByGame = dataMode === "idpass" ? await listGameinfoModeData(dataMode) : {};
     rows = gameListRows.map((r) => {
@@ -91,6 +93,7 @@ export default async function GameinfoHomePage({ params, searchParams }) {
       links: dataMode === "idpass" ? modeData?.links || [] : Object.prototype.hasOwnProperty.call(linksByGame, r.id)
         ? linksByGame[r.id]
         : legacyGamelistLinks(r.link),
+      tags: tagsByGame[r.id] || [],
       });
     });
   } catch (err) {

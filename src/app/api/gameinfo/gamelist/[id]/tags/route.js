@@ -1,0 +1,24 @@
+import { handleApiError, jsonOk } from "@/lib/http";
+import { requireAdmin, requireLayoutEditor } from "@/server/auth";
+import { getGamelistTags, saveGamelistTags } from "@/server/gameinfo-gamelist-tags";
+
+export async function GET(request, { params }) {
+  try {
+    await requireAdmin(request);
+    const { id } = await params;
+    return jsonOk({ tags: await getGamelistTags(Number(id)) });
+  } catch (error) {
+    return handleApiError(error, "โหลด tags เกมไม่สำเร็จ");
+  }
+}
+
+export async function PUT(request, { params }) {
+  try {
+    await requireLayoutEditor(request);
+    const { id } = await params;
+    const body = await request.json();
+    return jsonOk({ tags: await saveGamelistTags(Number(id), body.tags) });
+  } catch (error) {
+    return handleApiError(error, "บันทึก tags เกมไม่สำเร็จ");
+  }
+}

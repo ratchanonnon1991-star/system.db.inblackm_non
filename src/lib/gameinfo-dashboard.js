@@ -17,12 +17,25 @@ export function summarizeGameinfoRows(rows) {
   );
 }
 
-export function filterGameinfoRows(rows, { query = "", status = "all", sort = "order" } = {}) {
+export function listGameinfoTags(rows) {
+  const tags = new Map();
+  for (const row of rows) {
+    for (const tag of row.tags || []) {
+      const key = tag.toLocaleLowerCase("th");
+      const current = tags.get(key);
+      tags.set(key, { name: current?.name || tag, count: (current?.count || 0) + 1 });
+    }
+  }
+  return [...tags.values()].sort((a, b) => a.name.localeCompare(b.name, "th"));
+}
+
+export function filterGameinfoRows(rows, { query = "", status = "all", tag = "", sort = "order" } = {}) {
   const needle = query.trim().toLocaleLowerCase("th");
   const filtered = rows.filter((row) => {
     if (status !== "all" && row.serviceStatus !== status) return false;
+    if (tag && !(row.tags || []).some((value) => value.toLocaleLowerCase("th") === tag.toLocaleLowerCase("th"))) return false;
     if (!needle) return true;
-    return [row.game, row.id, row.region, row.platform, row.server, row.vpnComputed]
+    return [row.game, row.id, row.region, row.platform, row.server, row.vpnComputed, ...(row.tags || [])]
       .some((value) => String(value ?? "").toLocaleLowerCase("th").includes(needle));
   });
   if (sort === "name") return [...filtered].sort((a, b) => String(a.game).localeCompare(String(b.game), "th"));
