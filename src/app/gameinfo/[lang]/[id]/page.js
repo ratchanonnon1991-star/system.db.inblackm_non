@@ -21,6 +21,8 @@ import { getGameinfoModeData } from "@/server/gameinfo-mode-data";
 import GameinfoModeCloneButton from "@/components/gameinfo-mode-clone-button";
 import GameinfoGameManager from "@/components/gameinfo-game-manager";
 import { listGamelistTagsByGame } from "@/server/gameinfo-gamelist-tags";
+import { listGamelistReports } from "@/server/gameinfo-gamelist-reports";
+import GameinfoReportPanel from "@/components/gameinfo-report-panel";
 
 export const metadata = {
   title: "GameDB — รายละเอียดเกม",
@@ -49,6 +51,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams }) {
   let formulaVariables = [];
   let existingNames = [];
   let tagSuggestions = [];
+  let reports = [];
   try {
     row = await getGameListRow(numericId);
     if (row) {
@@ -71,7 +74,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams }) {
         main: [...new Set(flatModePacks.flatMap((pack) => pack.channelsMain || []))],
         secondary: [...new Set(flatModePacks.flatMap((pack) => pack.channelsSecondary || []))],
       };
-      const [vpnByGame, channelsByGame, allRows, tutorial, warning, image, storedLinks, variableData, tagsByGame] = await Promise.all([
+      const [vpnByGame, channelsByGame, allRows, tutorial, warning, image, storedLinks, variableData, tagsByGame, loadedReports] = await Promise.all([
         listGamelistVpnByGame(),
         listGamelistChannelsByGame(),
         listGameListRows(),
@@ -81,12 +84,14 @@ export default async function GameinfoGameDetailPage({ params, searchParams }) {
         dataMode === "idpass" ? Promise.resolve({ exists: true, links: modeData.links }) : getGamelistLinks(row.id),
         getGameinfoFormulaVariables(row.id),
         listGamelistTagsByGame(),
+        listGamelistReports(row.id),
       ]);
       // Same ordering the list table shows as "ลำดับ" (gamelist_order-aware,
       // falls back to id order) — this game's position within it.
       const orderPosition = allRows.findIndex((r) => r.id === row.id) + 1;
       existingNames = allRows.filter((item) => item.id !== row.id).map((item) => item.game);
       tagSuggestions = [...new Set(Object.values(tagsByGame).flat())].sort((a, b) => a.localeCompare(b, "th"));
+      reports = loadedReports;
       row = {
         ...row,
         ...(modeData?.fields || {}),
@@ -100,6 +105,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams }) {
         packDisabledCount,
         serviceStatus: row.serviceNew ? "new" : !row.serviceEnabled ? "offline" : packDisabledCount > 0 ? "partial" : "online",
         tags: tagsByGame[row.id] || [],
+        reportCount: loadedReports.filter((report) => report.status === "open").length,
       };
       formulaVariables = variableData.variables;
     }
@@ -155,6 +161,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams }) {
         userId={user.id}
         dataMode={dataMode}
       />
+      <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage={editableRole} />
     </div>
   );
 }

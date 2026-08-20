@@ -23,6 +23,7 @@ import GameinfoDatasetToggle from "@/components/gameinfo-dataset-toggle";
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { listGameinfoModeData } from "@/server/gameinfo-mode-data";
 import { listGamelistTagsByGame } from "@/server/gameinfo-gamelist-tags";
+import { listOpenGamelistReportCountByGame } from "@/server/gameinfo-gamelist-reports";
 
 export const metadata = {
   title: "GameDB — GameInfo",
@@ -42,7 +43,7 @@ export default async function GameinfoHomePage({ params, searchParams }) {
   let rows = null;
   let loadError = null;
   try {
-    const [gameListRows, channelsByGame, vpnByGame, packCountByGame, packServiceByGame, tutorialPresence, warningPresence, imageByGame, linksByGame, tagsByGame] =
+    const [gameListRows, channelsByGame, vpnByGame, packCountByGame, packServiceByGame, tutorialPresence, warningPresence, imageByGame, linksByGame, tagsByGame, reportCountByGame] =
       await Promise.all([
         listGameListRows(),
         listGamelistChannelsByGame(),
@@ -54,6 +55,7 @@ export default async function GameinfoHomePage({ params, searchParams }) {
         listGamelistImageByGame(),
         listGamelistLinksByGame(),
         listGamelistTagsByGame(),
+        listOpenGamelistReportCountByGame(),
       ]);
     const modeDataByGame = dataMode === "idpass" ? await listGameinfoModeData(dataMode) : {};
     rows = gameListRows.map((r) => {
@@ -94,6 +96,7 @@ export default async function GameinfoHomePage({ params, searchParams }) {
         ? linksByGame[r.id]
         : legacyGamelistLinks(r.link),
       tags: tagsByGame[r.id] || [],
+      reportCount: reportCountByGame[r.id] || 0,
       });
     });
   } catch (err) {

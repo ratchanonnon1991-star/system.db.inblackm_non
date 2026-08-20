@@ -1,6 +1,7 @@
 export const GAMEINFO_STATUSES = [
   { id: "all", label: "เกมทั้งหมด" },
   { id: "online", label: "พร้อมใช้งาน" },
+  { id: "review", label: "ต้องตรวจสอบ" },
   { id: "partial", label: "เปิดบางส่วน" },
   { id: "new", label: "เกมใหม่" },
   { id: "offline", label: "ปิดใช้งาน" },
@@ -11,9 +12,10 @@ export function summarizeGameinfoRows(rows) {
     (counts, row) => {
       counts.all += 1;
       counts[row.serviceStatus || "online"] += 1;
+      if (row.reportCount > 0) counts.review += 1;
       return counts;
     },
-    { all: 0, online: 0, partial: 0, new: 0, offline: 0 }
+    { all: 0, online: 0, review: 0, partial: 0, new: 0, offline: 0 }
   );
 }
 
@@ -32,7 +34,7 @@ export function listGameinfoTags(rows) {
 export function filterGameinfoRows(rows, { query = "", status = "all", tag = "", sort = "order" } = {}) {
   const needle = query.trim().toLocaleLowerCase("th");
   const filtered = rows.filter((row) => {
-    if (status !== "all" && row.serviceStatus !== status) return false;
+    if (status === "review" ? !(row.reportCount > 0) : status !== "all" && row.serviceStatus !== status) return false;
     if (tag && !(row.tags || []).some((value) => value.toLocaleLowerCase("th") === tag.toLocaleLowerCase("th"))) return false;
     if (!needle) return true;
     return [row.game, row.id, row.region, row.platform, row.server, row.vpnComputed, ...(row.tags || [])]

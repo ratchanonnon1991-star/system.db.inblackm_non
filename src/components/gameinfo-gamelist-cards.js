@@ -24,6 +24,7 @@ const PAGE_SIZE = 12;
 
 const STATUS_STYLE = {
   online: { label: "พร้อมใช้งาน", dot: "bg-emerald-500", badge: "bg-emerald-500/10 text-emerald-700" },
+  review: { label: "ต้องตรวจสอบ", dot: "bg-linear-primary", badge: "bg-linear-primary/10 text-linear-primary" },
   partial: { label: "เปิดบางส่วน", dot: "bg-amber-500", badge: "bg-amber-500/10 text-amber-700" },
   new: { label: "เกมใหม่", dot: "bg-linear-primary", badge: "bg-linear-primary/10 text-linear-primary" },
   offline: { label: "ปิดใช้งาน", dot: "bg-linear-ink-tertiary", badge: "bg-linear-surface-3 text-linear-ink-subtle" },
@@ -136,7 +137,7 @@ export default function GameinfoGamelistCards({ initial, editable = false, lang,
         <section aria-label="สรุปสถานะเกม" className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard label="เกมทั้งหมด" count={counts.all} icon={Gamepad2} active={status === "all"} onClick={() => chooseStatus("all")} />
           <StatCard label="พร้อมใช้งาน" count={counts.online} icon={CheckCircle2} active={status === "online"} onClick={() => chooseStatus("online")} tone="success" />
-          <StatCard label="เปิดบางส่วน" count={counts.partial} icon={AlertTriangle} active={status === "partial"} onClick={() => chooseStatus("partial")} tone="warning" />
+          <StatCard label="ต้องตรวจสอบ" count={counts.review} icon={AlertTriangle} active={status === "review"} onClick={() => chooseStatus("review")} tone="danger" />
           <StatCard label="ปิดใช้งาน" count={counts.offline} icon={CircleOff} active={status === "offline"} onClick={() => chooseStatus("offline")} />
         </section>
 
@@ -196,6 +197,8 @@ export default function GameinfoGamelistCards({ initial, editable = false, lang,
 function StatCard({ label, count, icon: Icon, active, onClick, tone }) {
   const iconClass = tone === "success"
     ? "bg-emerald-500/10 text-emerald-700"
+    : tone === "danger"
+      ? "bg-linear-primary/10 text-linear-primary"
     : tone === "warning"
       ? "bg-amber-500/10 text-amber-700"
       : "bg-linear-surface-3 text-linear-ink-subtle";
@@ -247,6 +250,7 @@ function GameCard({ row, editable, lang, dataMode }) {
           <span className="rounded-full bg-linear-surface-3 px-2 py-1">VPN {row.vpnComputed || "NO"}</span>
           <span className="rounded-full bg-linear-surface-3 px-2 py-1">{row.botManual || "ไม่ระบุระบบ"}</span>
           <span className="rounded-full bg-linear-surface-3 px-2 py-1">{row.packCount || 0} แพ็ก</span>
+          {row.reportCount > 0 ? <span className="rounded-full bg-linear-primary/10 px-2 py-1 font-medium text-linear-primary">ต้องตรวจสอบ {row.reportCount}</span> : null}
         </div>
         {(row.tags || []).length ? (
           <div className="mt-3 flex flex-wrap gap-1.5">
