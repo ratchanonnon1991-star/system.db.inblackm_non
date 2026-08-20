@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bold, ChevronLeft, ChevronRight, Link as LinkIcon, Plus, Trash2, Type, X } from "lucide-react";
+import { Bold, ChevronLeft, ChevronRight, Link as LinkIcon, Plus, Trash2, TriangleAlert, Type, X } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoMemoryInput from "./gameinfo-memory-input";
@@ -95,6 +95,7 @@ export default function GameinfoTutorialButton({
   variant = "tutorial",
   autoOpen = false,
   dataMode = "uid",
+  compact = false,
 }) {
   const isWarning = variant === "warning";
   const [open, setOpen] = useState(Boolean(autoOpen && hasData));
@@ -114,14 +115,18 @@ export default function GameinfoTutorialButton({
           setOpen(true);
         }}
         disabled={disabled}
-        className={`rounded-md border px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent ${
-          isWarning
-            ? "border-red-600 bg-red-600 text-white hover:bg-red-700"
-            : "border-linear-hairline-strong text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink"
+        aria-label={isWarning ? "ข้อควรระวังของเกม" : undefined}
+        className={`border text-xs font-medium disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent ${compact
+          ? isWarning
+            ? "flex h-10 w-12 items-center justify-center rounded-lg border-linear-primary text-linear-primary hover:bg-linear-primary/10"
+            : "flex h-10 min-w-20 items-center justify-center rounded-lg border-linear-primary px-3 text-linear-primary hover:bg-linear-primary/10"
+          : isWarning
+            ? "rounded-md border-red-600 bg-red-600 px-2 py-1 text-white hover:bg-red-700"
+            : "rounded-md border-linear-hairline-strong px-2 py-1 text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink"
         }`}
         title={disabled ? `บันทึกเกมนี้ก่อนถึงจะใส่${buttonLabel}ได้` : isWarning ? "ข้อควรระวังของเกม" : "วิธีเติมเกม"}
       >
-        {buttonLabel}
+        {compact && isWarning ? <TriangleAlert size={17} /> : buttonLabel}
       </button>
       {open &&
         typeof document !== "undefined" &&

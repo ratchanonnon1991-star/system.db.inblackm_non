@@ -21,6 +21,7 @@ import {
   filterGameinfoRows,
   listGameinfoTags,
   summarizeGameinfoRows,
+  isGameinfoBotAuto,
 } from "@/lib/gameinfo-dashboard";
 
 const PAGE_SIZE = 12;
@@ -293,57 +294,49 @@ function GameCard({ row, editable, lang, dataMode, favoriteBusy, onToggleFavorit
   if (editable) viewParams.set("manage", "1");
   const actionHref = `/gameinfo/${lang}/${row.id}${viewParams.size ? `?${viewParams}` : ""}`;
   return (
-    <article className="overflow-hidden rounded-2xl border border-linear-hairline bg-linear-surface-1" style={{ boxShadow: "var(--ll-shadow-card)" }}>
+    <article className="relative overflow-hidden rounded-2xl border border-linear-hairline bg-linear-surface-1" style={{ boxShadow: "var(--ll-shadow-card)" }}>
+      <button
+        type="button"
+        onClick={() => onToggleFavorite(row)}
+        disabled={favoriteBusy}
+        aria-label={row.isFavorite ? `นำ ${row.game} ออกจากรายการโปรด` : `เพิ่ม ${row.game} ในรายการโปรด`}
+        aria-pressed={row.isFavorite}
+        className={`absolute right-3 top-3 z-10 flex h-10 w-10 items-center justify-center rounded-lg bg-linear-surface-1/90 hover:bg-linear-surface-3 disabled:opacity-40 ${row.isFavorite ? "text-linear-ink" : "text-linear-ink-tertiary"}`}
+      >
+        <Star size={17} className={row.isFavorite ? "fill-current" : ""} />
+      </button>
       <Link href={href} className="block p-4 hover:bg-linear-surface-2">
         <div className="flex gap-3">
-          <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-linear-surface-3">
+          <div className="flex aspect-square w-[46%] shrink-0 items-center justify-center overflow-hidden rounded-xl bg-linear-primary">
             {row.image ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={row.image} alt="" className="h-full w-full object-cover" />
             ) : <Gamepad2 size={28} className="text-linear-ink-tertiary" />}
           </div>
-          <div className="min-w-0 flex-1">
-            <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium ${status.badge}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />{status.label}
-            </span>
-            <h2 className="mt-2 line-clamp-2 text-base font-semibold uppercase tracking-[-0.2px] text-linear-ink">{row.game}</h2>
-            <p className="mt-1 font-mono text-xs text-linear-ink-tertiary">ID: {row.id}</p>
+          <div className="min-w-0 flex-1 pr-8">
+            <h2 className="line-clamp-3 text-[17px] font-semibold uppercase leading-[1.25] tracking-[-0.25px] text-linear-ink">{row.game}</h2>
+            <p className="mt-5 font-mono text-xs text-linear-ink-tertiary">ID: {row.id}</p>
+            <p className="mt-3 flex items-center gap-2 text-xs text-linear-ink-subtle">
+              <span className={`h-2 w-2 rounded-full ${status.dot}`} />{status.label}
+            </p>
+            {row.reportCount > 0 ? <p className="mt-2 text-[11px] font-medium text-linear-primary">ต้องตรวจสอบ {row.reportCount}</p> : null}
           </div>
         </div>
-        <dl className="mt-4 grid grid-cols-3 gap-2 text-xs">
+        <dl className="mt-4 grid grid-cols-[repeat(3,minmax(0,1fr))_auto] gap-2 text-xs">
           <Meta label="Region" value={row.region} />
           <Meta label="Platform" value={row.platform} />
           <Meta label="Server" value={row.server} />
-        </dl>
-        <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-linear-ink-subtle">
-          <span className="rounded-full bg-linear-surface-3 px-2 py-1">VPN {row.vpnComputed || "NO"}</span>
-          <span className="rounded-full bg-linear-surface-3 px-2 py-1">{row.botManual || "ไม่ระบุระบบ"}</span>
-          <span className="rounded-full bg-linear-surface-3 px-2 py-1">{row.packCount || 0} แพ็ก</span>
-          {row.reportCount > 0 ? <span className="rounded-full bg-linear-primary/10 px-2 py-1 font-medium text-linear-primary">ต้องตรวจสอบ {row.reportCount}</span> : null}
-        </div>
-        {(row.tags || []).length ? (
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {row.tags.slice(0, 3).map((tag) => <span key={tag} className="rounded-full bg-linear-surface-3 px-2 py-1 text-[11px] text-linear-ink-muted">{tag}</span>)}
-            {row.tags.length > 3 ? <span className="px-1 py-1 text-[11px] text-linear-ink-tertiary">+{row.tags.length - 3}</span> : null}
+          <div className={`flex items-end rounded-lg px-2 py-2 text-[11px] font-medium ${isGameinfoBotAuto(row.botManual) ? "bg-emerald-500/10 text-emerald-700" : "bg-linear-surface-2 text-linear-ink-muted"}`}>
+            <span className="truncate">{row.botManual || "Manual"}</span>
           </div>
-        ) : null}
+        </dl>
       </Link>
       <div className="flex items-center gap-2 border-t border-linear-hairline p-3">
-        <button
-          type="button"
-          onClick={() => onToggleFavorite(row)}
-          disabled={favoriteBusy}
-          aria-label={row.isFavorite ? `นำ ${row.game} ออกจากรายการโปรด` : `เพิ่ม ${row.game} ในรายการโปรด`}
-          aria-pressed={row.isFavorite}
-          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-linear-hairline-strong hover:bg-linear-surface-2 disabled:opacity-40 ${row.isFavorite ? "text-linear-ink" : "text-linear-ink-tertiary"}`}
-        >
-          <Star size={16} className={row.isFavorite ? "fill-current" : ""} />
-        </button>
-        <GameinfoTutorialButton gameId={row.id} gameName={row.game} editable={false} hasData={row.hasTutorial} dataMode={dataMode} />
-        <GameinfoTutorialButton gameId={row.id} gameName={row.game} editable={false} hasData={row.hasWarning} variant="warning" dataMode={dataMode} />
-        <Link href={actionHref} className="ml-auto inline-flex h-10 items-center rounded-lg bg-linear-ink px-3 text-xs font-medium text-linear-canvas">
+        <Link href={actionHref} className={`inline-flex h-10 min-w-0 flex-1 items-center justify-center rounded-lg px-3 text-xs font-medium text-white ${editable ? "bg-linear-primary hover:bg-linear-primary-hover" : "bg-linear-ink"}`}>
           {editable ? "เปิดจัดการ" : "เปิดดู"}
         </Link>
+        <GameinfoTutorialButton gameId={row.id} gameName={row.game} editable={false} hasData={row.hasTutorial} dataMode={dataMode} compact />
+        <GameinfoTutorialButton gameId={row.id} gameName={row.game} editable={false} hasData={row.hasWarning} variant="warning" dataMode={dataMode} compact />
       </div>
     </article>
   );
