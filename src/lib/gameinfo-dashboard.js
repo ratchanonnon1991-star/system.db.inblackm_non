@@ -13,10 +13,16 @@ export function summarizeGameinfoRows(rows) {
       counts.all += 1;
       counts[row.serviceStatus || "online"] += 1;
       if (row.reportCount > 0) counts.review += 1;
+      if (isGameinfoBotAuto(row.botManual)) counts.botAuto += 1;
       return counts;
     },
-    { all: 0, online: 0, review: 0, partial: 0, new: 0, offline: 0 }
+    { all: 0, online: 0, review: 0, partial: 0, new: 0, offline: 0, botAuto: 0 }
   );
+}
+
+export function isGameinfoBotAuto(value) {
+  const normalized = String(value ?? "").toLocaleLowerCase("en").replace(/[^a-z]/g, "");
+  return normalized === "bot" || normalized === "botauto";
 }
 
 export function listGameinfoTags(rows) {
@@ -34,7 +40,9 @@ export function listGameinfoTags(rows) {
 export function filterGameinfoRows(rows, { query = "", status = "all", tag = "", sort = "order" } = {}) {
   const needle = query.trim().toLocaleLowerCase("th");
   const filtered = rows.filter((row) => {
-    if (status === "review" ? !(row.reportCount > 0) : status !== "all" && row.serviceStatus !== status) return false;
+    if (status === "review" && !(row.reportCount > 0)) return false;
+    if (status === "bot-auto" && !isGameinfoBotAuto(row.botManual)) return false;
+    if (status !== "all" && status !== "review" && status !== "bot-auto" && row.serviceStatus !== status) return false;
     if (tag && !(row.tags || []).some((value) => value.toLocaleLowerCase("th") === tag.toLocaleLowerCase("th"))) return false;
     if (!needle) return true;
     return [row.game, row.id, row.region, row.platform, row.server, row.vpnComputed, ...(row.tags || [])]

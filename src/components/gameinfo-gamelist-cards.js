@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
+  Bot,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -122,6 +123,21 @@ export default function GameinfoGamelistCards({ initial, editable = false, lang,
               </div>
             ) : <p className="px-3 py-2 text-xs text-linear-ink-tertiary">ยังไม่มีหมวดหมู่</p>}
           </details>
+
+          <div className="mt-3 border-t border-linear-hairline pt-3">
+            <button
+              type="button"
+              onClick={() => chooseStatus("bot-auto")}
+              className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${
+                status === "bot-auto"
+                  ? "bg-linear-ink text-linear-canvas"
+                  : "text-linear-ink-subtle hover:bg-linear-surface-3"
+              }`}
+            >
+              <span className="flex items-center gap-2"><Bot size={16} /> Bot Auto</span>
+              <span className="text-xs opacity-70">{counts.botAuto}</span>
+            </button>
+          </div>
         </nav>
       </aside>
 
