@@ -1589,7 +1589,7 @@ const EMPTY_USER_FORM = {
   defaultViewId: "",
   canWriteData: false,
   canUpdateData: false,
-  projectmRole: false,
+  projectmRole: "",
 };
 
 function roleLabel(role) {
@@ -1714,7 +1714,7 @@ export function UsersModal({ me, onClose }) {
       defaultViewId: user.defaultViewId ? String(user.defaultViewId) : "",
       canWriteData: Boolean(user.canWriteData),
       canUpdateData: Boolean(user.canUpdateData),
-      projectmRole: user.projectmRole === "admin",
+      projectmRole: user.projectmRole || "",
     });
     setError("");
     setSsoEmail("");
@@ -1917,7 +1917,9 @@ export function UsersModal({ me, onClose }) {
                             .join(", ")}
                         </>
                       )}
-                      {user.projectmRole === "admin" ? " · Projectm Admin" : ""}
+                      {user.projectmRole
+                        ? ` · Projectm ${user.projectmRole === "admin" ? "Admin" : "Topup"}`
+                        : ""}
                     </p>
                   </button>
                   {user.id !== me.id && (
@@ -2128,14 +2130,17 @@ export function UsersModal({ me, onClose }) {
               </div>
             )}
 
-            <label className="flex items-center gap-2 rounded-sm border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[11px] font-bold text-zinc-600">
-              <input
-                type="checkbox"
-                checked={form.projectmRole}
-                onChange={(e) => setField("projectmRole", e.target.checked)}
-                className="h-3.5 w-3.5 accent-red-600"
-              />
-              สิทธิ์ Admin ระบบ Projectm (เห็นทั้ง Admin + Topup ใน /projectm — ไม่มีติ๊กจะเห็นแค่ Topup)
+            <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400">
+              สิทธิ์ Projectm
+              <select
+                value={form.projectmRole}
+                onChange={(e) => setField("projectmRole", e.target.value)}
+                className="mt-1 h-9 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold normal-case text-zinc-700 outline-none focus:border-red-600 focus:bg-white"
+              >
+                <option value="">ไม่มีสิทธิ์</option>
+                <option value="topup">Topup — เข้าหน้าคนเติม</option>
+                <option value="admin">Admin — เข้าได้ทั้ง Admin และ Topup</option>
+              </select>
             </label>
 
             {error && (

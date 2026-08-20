@@ -1,10 +1,10 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireAdmin } from "@/server/auth";
+import { requireProjectmAccess } from "@/server/auth";
 import { getItuneAmountLogImage } from "@/server/itune-entries-repository";
 
 export async function GET(request, { params }) {
   try {
-    const actor = await requireAdmin(request);
+    const actor = await requireProjectmAccess(request);
     const { logId } = await params;
     const image = await getItuneAmountLogImage(logId, actor);
     if (!image) return jsonError("ไม่พบรูปยืนยัน", 404);

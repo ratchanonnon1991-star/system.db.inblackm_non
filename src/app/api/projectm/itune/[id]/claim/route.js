@@ -1,12 +1,12 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireAdmin } from "@/server/auth";
+import { requireProjectmAccess } from "@/server/auth";
 import { findItuneEntryById, releaseItuneEntry } from "@/server/itune-entries-repository";
 
 const MAX_IMAGE_URL_LENGTH = 6_000_000;
 
 export async function DELETE(request, { params }) {
   try {
-    const actor = await requireAdmin(request);
+    const actor = await requireProjectmAccess(request);
     const { id } = await params;
     const target = await findItuneEntryById(id);
     if (!target) return jsonError("ไม่พบรายการนี้", 404);

@@ -58,7 +58,7 @@ setResponder(async (text, params, { clientId }) => {
   return null;
 });
 
-const actor = { id: 7, username: "topup", projectmRole: null };
+const actor = { id: 7, username: "topup", projectmRole: "topup" };
 const results = await Promise.allSettled([
   claimItuneEntry(actor),
   claimItuneEntry(actor),

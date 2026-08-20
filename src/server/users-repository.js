@@ -17,8 +17,7 @@ function mapRow(row) {
     // server/auth.js, which check role first).
     canWriteData: Boolean(row.can_write_data),
     canUpdateData: Boolean(row.can_update_data),
-    // Independent of the GameDB role above — decides whether this user sees
-    // both the Admin and Topup sides of /projectm/itune, or only Topup.
+    // Independent of the GameDB role above: admin, topup, or no access.
     projectmRole: row.projectm_role || null,
     createdAt: row.created_at,
   };
@@ -53,7 +52,7 @@ async function ensureSchema() {
           role_override   VARCHAR(16)
                           CHECK (role_override IS NULL OR role_override = 'user'),
           projectm_role   VARCHAR(16)
-                          CHECK (projectm_role IS NULL OR projectm_role = 'admin'),
+                          CHECK (projectm_role IS NULL OR projectm_role IN ('admin', 'topup')),
           updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
@@ -75,11 +74,19 @@ async function ensureSchema() {
         ALTER TABLE gamedb_user_preferences
         ADD COLUMN IF NOT EXISTS can_update_data BOOLEAN NOT NULL DEFAULT FALSE
       `);
-      // Separate from the GameDB role entirely — this decides Admin+Topup vs
-      // Topup-only visibility inside /projectm/itune. NULL = topup-only.
+      // Separate from the GameDB role entirely. NULL means no Projectm access.
       await client.query(`
         ALTER TABLE gamedb_user_preferences
         ADD COLUMN IF NOT EXISTS projectm_role VARCHAR(16)
+      `);
+      await client.query(`
+        ALTER TABLE gamedb_user_preferences
+        DROP CONSTRAINT IF EXISTS gamedb_user_preferences_projectm_role_check
+      `);
+      await client.query(`
+        ALTER TABLE gamedb_user_preferences
+        ADD CONSTRAINT gamedb_user_preferences_projectm_role_check
+        CHECK (projectm_role IS NULL OR projectm_role IN ('admin', 'topup'))
       `);
 
       // First-run seed: create the initial admin from env so no password

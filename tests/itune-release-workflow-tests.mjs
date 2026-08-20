@@ -6,7 +6,7 @@ const fail = [];
 const ok = (name, condition) => (condition ? pass++ : fail.push(name));
 
 reset();
-const actor = { id: 7, username: "topup", projectmRole: null };
+const actor = { id: 7, username: "topup", projectmRole: "topup" };
 
 setResponder((text) => {
   if (/SELECT max_amount FROM projectm_itune_release_settings/.test(text)) {

@@ -22,8 +22,6 @@ export default async function ItuneLangPage({ params }) {
   const { lang } = await params;
   const user = await getSessionUser();
   if (!user) redirect("/");
-  // Projectm admin sees both sides; everyone else (the topup staff this
-  // module is really for) only ever sees the one card they're allowed into.
   const isProjectmAdmin = user.projectmRole === "admin";
   const SECTIONS = isProjectmAdmin
     ? ALL_SECTIONS

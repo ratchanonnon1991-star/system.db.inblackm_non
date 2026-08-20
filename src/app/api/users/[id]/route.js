@@ -10,6 +10,7 @@ import { findViewById } from "@/server/gamedb-views-repository";
 
 const MIN_PASSWORD_LENGTH = 6;
 const USER_ROLES = new Set(["admin", "staff", "user"]);
+const PROJECTM_ROLES = new Set(["admin", "topup"]);
 
 function parseDefaultViewId(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -52,9 +53,11 @@ export async function PATCH(request, { params }) {
       fields.role = role;
     }
     if (body.projectmRole !== undefined) {
-      // Independent of the GameDB role — decides Admin+Topup vs Topup-only
-      // visibility inside /projectm/itune.
-      fields.projectmRole = body.projectmRole ? "admin" : null;
+      const projectmRole = body.projectmRole || null;
+      if (projectmRole !== null && !PROJECTM_ROLES.has(projectmRole)) {
+        return jsonError("สิทธิ์ Projectm ไม่ถูกต้อง", 400);
+      }
+      fields.projectmRole = projectmRole;
     }
     if (body.defaultViewId !== undefined) {
       const defaultViewId = parseDefaultViewId(body.defaultViewId);

@@ -8,7 +8,7 @@ let pass = 0;
 const fail = [];
 const ok = (name, condition) => (condition ? pass++ : fail.push(name));
 
-const user = { id: 7, username: "topup", projectmRole: null };
+const user = { id: 7, username: "topup", projectmRole: "topup" };
 const admin = { id: 1, username: "admin", projectmRole: "admin" };
 
 reset();

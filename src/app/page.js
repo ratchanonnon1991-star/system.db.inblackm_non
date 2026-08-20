@@ -138,6 +138,9 @@ function SystemHub({ me, onLoggedOut }) {
 
   const roleLabel = isSuperAdmin ? "Admin" : isTemplateUser ? "User" : "Staff";
   const initial = (me.displayName || me.username || "?").trim().slice(0, 1).toUpperCase();
+  const accessibleSystems = SYSTEMS.filter((system) =>
+    system.key === "projectm" ? Boolean(me.projectmRole) : !isTemplateUser
+  );
 
   return (
     <div
@@ -215,13 +218,9 @@ function SystemHub({ me, onLoggedOut }) {
           </p>
         </div>
 
-        {/* A "user" (template-only) account has nothing else on this hub --
-            System DB and GameInfo are both ad-hoc query surfaces it has no
-            access to, so showing the tiles only to invite a 403 click was
-            worse than just leaving them out. */}
-        {!isTemplateUser && (
+        {accessibleSystems.length > 0 && (
           <div className="grid gap-4 sm:grid-cols-2">
-            {SYSTEMS.map((system) => {
+            {accessibleSystems.map((system) => {
               const Icon = system.icon;
               const accent =
                 system.key === "systemdb"
@@ -255,9 +254,8 @@ function SystemHub({ me, onLoggedOut }) {
             its own the way GameInfo is, and this section is styled to read as
             "shortcuts into System DB" (its own card, a lighter row style, an
             explicit "เทมเพลต" tag) rather than a peer entry a user could
-            confuse for a third top-level system. For a "user" account this
-            list is the entire hub, not a shortcut past it -- there is no
-            System DB tile behind it to shortcut into.
+            confuse for a third top-level system. For a "user" account these
+            are its assigned screens; Projectm remains separate when granted.
             An empty list still renders for a "user" account (unlike everyone
             else, where nothing here just means "no templates yet, nothing
             worth mentioning") since a User with nothing assigned has no other
