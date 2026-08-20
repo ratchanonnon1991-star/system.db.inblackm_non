@@ -1,11 +1,12 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
 import { getSessionUser } from "@/server/session-user";
 import { getGameListRow, listGameListRows } from "@/server/gameinfo-gamelist";
 import {
   getGamelistPacks,
+  listAllGamelistChannels,
   listGamelistChannelsByGame,
+  listGamelistPackLanguages,
   listGamelistVpnByGame,
 } from "@/server/gameinfo-gamelist-packs";
 import { getGamelistTutorial, getGamelistWarning } from "@/server/gameinfo-gamelist-tutorial";
@@ -23,6 +24,8 @@ import GameinfoGameManager from "@/components/gameinfo-game-manager";
 import { listGamelistTagsByGame } from "@/server/gameinfo-gamelist-tags";
 import { listGamelistReports } from "@/server/gameinfo-gamelist-reports";
 import GameinfoReportPanel from "@/components/gameinfo-report-panel";
+import GameinfoPackEditor from "@/components/gameinfo-pack-editor";
+import { buildPackSuggestions } from "@/lib/gameinfo-suggestions";
 
 export const metadata = {
   title: "GameDB — รายละเอียดเกม",
@@ -52,6 +55,8 @@ export default async function GameinfoGameDetailPage({ params, searchParams }) {
   let existingNames = [];
   let tagSuggestions = [];
   let reports = [];
+  let allChannels = [];
+  let packLanguages = [];
   try {
     row = await getGameListRow(numericId);
     if (row) {
@@ -74,7 +79,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams }) {
         main: [...new Set(flatModePacks.flatMap((pack) => pack.channelsMain || []))],
         secondary: [...new Set(flatModePacks.flatMap((pack) => pack.channelsSecondary || []))],
       };
-      const [vpnByGame, channelsByGame, allRows, tutorial, warning, image, storedLinks, variableData, tagsByGame, loadedReports] = await Promise.all([
+      const [vpnByGame, channelsByGame, allRows, tutorial, warning, image, storedLinks, variableData, tagsByGame, loadedReports, sharedChannels, languages] = await Promise.all([
         listGamelistVpnByGame(),
         listGamelistChannelsByGame(),
         listGameListRows(),
@@ -85,6 +90,8 @@ export default async function GameinfoGameDetailPage({ params, searchParams }) {
         getGameinfoFormulaVariables(row.id),
         listGamelistTagsByGame(),
         listGamelistReports(row.id),
+        manageMode ? listAllGamelistChannels() : Promise.resolve([]),
+        manageMode ? listGamelistPackLanguages() : Promise.resolve([]),
       ]);
       // Same ordering the list table shows as "ลำดับ" (gamelist_order-aware,
       // falls back to id order) — this game's position within it.
@@ -92,6 +99,8 @@ export default async function GameinfoGameDetailPage({ params, searchParams }) {
       existingNames = allRows.filter((item) => item.id !== row.id).map((item) => item.game);
       tagSuggestions = [...new Set(Object.values(tagsByGame).flat())].sort((a, b) => a.localeCompare(b, "th"));
       reports = loadedReports;
+      allChannels = sharedChannels;
+      packLanguages = languages;
       row = {
         ...row,
         ...(modeData?.fields || {}),
@@ -123,9 +132,21 @@ export default async function GameinfoGameDetailPage({ params, searchParams }) {
   const viewHref = `/gameinfo/${lang}/${row.id}${viewParams.size ? `?${viewParams}` : ""}`;
   viewParams.set("manage", "1");
   const manageHref = `/gameinfo/${lang}/${row.id}?${viewParams}`;
+  const packGame = {
+    id: row.id,
+    gameName: row.game,
+    region: row.region,
+    platform: row.platform,
+    server: row.server,
+    currencies,
+    computedColumns,
+    costProfiles,
+    formulaVariables,
+    packLanguages,
+  };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8">
+    <div className={`${manageMode ? "" : "mx-auto max-w-7xl"} px-4 py-8`}>
       <div className="mb-4 flex items-center justify-between gap-3">
         <GameinfoBackLink
           className="flex items-center gap-1 text-sm text-linear-primary hover:underline"
@@ -139,29 +160,40 @@ export default async function GameinfoGameDetailPage({ params, searchParams }) {
           ) : null}
           {manageMode ? <GameinfoModeCloneButton gameId={row.id} currentMode={dataMode} /> : null}
           <GameinfoDatasetToggle basePath={`/gameinfo/${lang}/${row.id}`} />
-        {manageMode && (
-          <Link
-            href={`/gameinfo/${lang}/${row.id}/packs${dataMode === "idpass" ? "?mode=idpass" : ""}`}
-            className="flex items-center gap-1 rounded-md border border-linear-primary/40 px-3 py-1.5 text-xs font-medium text-linear-primary hover:bg-linear-primary/10"
-          >
-            จัดการแพ็ก (สกุลเงิน/หมวดหมู่/สูตร) <ArrowRight size={14} />
-          </Link>
-        )}
         </div>
       </div>
       {manageMode ? <GameinfoGameManager row={row} existingNames={existingNames} tagSuggestions={tagSuggestions} dataMode={dataMode} /> : null}
-      {manageMode ? <h2 className="mb-3 text-sm font-semibold text-linear-ink-muted">ตัวอย่างหน้าผู้ใช้</h2> : null}
-      <GameinfoGameView
-        key={dataMode}
-        row={row}
-        currencies={currencies}
-        computedColumns={computedColumns}
-        costProfiles={costProfiles}
-        formulaVariables={formulaVariables}
-        userId={user.id}
-        dataMode={dataMode}
-      />
-      <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage={editableRole} />
+      {manageMode ? (
+        <section className="mt-8 border-t border-linear-hairline pt-6" aria-labelledby="pack-editor-title">
+          <h2 id="pack-editor-title" className="mb-4 text-lg font-semibold tracking-[-0.2px] text-linear-ink">แก้ไข Pack</h2>
+          <GameinfoPackEditor
+            key={dataMode}
+            game={packGame}
+            lang={lang}
+            userId={user.id}
+            suggestions={{ ...buildPackSuggestions(packGame), channels: allChannels }}
+            dataMode={dataMode}
+            historyUrl={`/api/gameinfo/gamelist/${row.id}/packs/history?limit=200${dataMode === "idpass" ? "&mode=idpass" : ""}`}
+            savePacksUrl={`/api/gameinfo/gamelist/${row.id}/packs${dataMode === "idpass" ? "?mode=idpass" : ""}`}
+            importPreviewUrl={`/api/gameinfo/import/preview?gameId=${row.id}`}
+            exportUrl={`/api/gameinfo/import/export?gameId=${row.id}${dataMode === "idpass" ? "&mode=idpass" : ""}`}
+          />
+        </section>
+      ) : (
+        <>
+          <GameinfoGameView
+            key={dataMode}
+            row={row}
+            currencies={currencies}
+            computedColumns={computedColumns}
+            costProfiles={costProfiles}
+            formulaVariables={formulaVariables}
+            userId={user.id}
+            dataMode={dataMode}
+          />
+          <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage={editableRole} />
+        </>
+      )}
     </div>
   );
 }
