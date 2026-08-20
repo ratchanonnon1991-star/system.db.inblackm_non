@@ -12,6 +12,7 @@ import {
   Gamepad2,
   Search,
   Settings,
+  Star,
 } from "lucide-react";
 import GameinfoDatasetToggle from "./gameinfo-dataset-toggle";
 import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
@@ -38,11 +39,18 @@ export default function GameinfoGamelistCards({ initial, editable = false, lang,
   const [tag, setTag] = useState("");
   const [sort, setSort] = useState("order");
   const [page, setPage] = useState(0);
-  const counts = useMemo(() => summarizeGameinfoRows(initial), [initial]);
+  const [favoriteIds, setFavoriteIds] = useState(() => new Set(initial.filter((row) => row.isFavorite).map((row) => row.id)));
+  const [favoriteBusy, setFavoriteBusy] = useState(null);
+  const [favoriteError, setFavoriteError] = useState("");
+  const rowsWithFavorites = useMemo(
+    () => initial.map((row) => ({ ...row, isFavorite: favoriteIds.has(row.id) })),
+    [favoriteIds, initial]
+  );
+  const counts = useMemo(() => summarizeGameinfoRows(rowsWithFavorites), [rowsWithFavorites]);
   const tagOptions = useMemo(() => listGameinfoTags(initial), [initial]);
   const rows = useMemo(
-    () => filterGameinfoRows(initial, { query, status, tag, sort }),
-    [initial, query, sort, status, tag]
+    () => filterGameinfoRows(rowsWithFavorites, { query, status, tag, sort }),
+    [query, rowsWithFavorites, sort, status, tag]
   );
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
@@ -56,6 +64,29 @@ export default function GameinfoGamelistCards({ initial, editable = false, lang,
   function chooseTag(nextTag) {
     setTag(nextTag);
     setPage(0);
+  }
+
+  async function toggleFavorite(row) {
+    setFavoriteBusy(row.id);
+    setFavoriteError("");
+    try {
+      const response = await fetch(`/api/gameinfo/gamelist/${row.id}/favorite`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ favorite: !row.isFavorite }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "บันทึกรายการโปรดไม่สำเร็จ");
+      setFavoriteIds((current) => {
+        const next = new Set(current);
+        if (data.favorite) next.add(row.id); else next.delete(row.id);
+        return next;
+      });
+    } catch (error) {
+      setFavoriteError(error.message);
+    } finally {
+      setFavoriteBusy(null);
+    }
   }
 
   return (
@@ -128,8 +159,20 @@ export default function GameinfoGamelistCards({ initial, editable = false, lang,
           <div className="mt-3 border-t border-linear-hairline pt-3">
             <button
               type="button"
-              onClick={() => chooseStatus("bot-auto")}
+              onClick={() => chooseStatus("favorite")}
               className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${
+                status === "favorite"
+                  ? "bg-linear-ink text-linear-canvas"
+                  : "text-linear-ink-subtle hover:bg-linear-surface-3"
+              }`}
+            >
+              <span className="flex items-center gap-2"><Star size={16} /> รายการโปรด</span>
+              <span className="text-xs opacity-70">{counts.favorite}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => chooseStatus("bot-auto")}
+              className={`mt-1 flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${
                 status === "bot-auto"
                   ? "bg-linear-ink text-linear-canvas"
                   : "text-linear-ink-subtle hover:bg-linear-surface-3"
@@ -158,6 +201,7 @@ export default function GameinfoGamelistCards({ initial, editable = false, lang,
           </div>
           <GameinfoDatasetToggle basePath={`/gameinfo/${lang}`} />
         </div>
+        {favoriteError ? <p role="alert" className="mb-4 text-sm text-linear-primary">{favoriteError}</p> : null}
 
         <section aria-label="สรุปสถานะเกม" className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard label="เกมทั้งหมด" count={counts.all} icon={Gamepad2} active={status === "all"} onClick={() => chooseStatus("all")} />
@@ -198,7 +242,7 @@ export default function GameinfoGamelistCards({ initial, editable = false, lang,
         {pageRows.length ? (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {pageRows.map((row) => (
-              <GameCard key={row.id} row={row} editable={editable} lang={lang} dataMode={dataMode} />
+              <GameCard key={row.id} row={row} editable={editable} lang={lang} dataMode={dataMode} favoriteBusy={favoriteBusy === row.id} onToggleFavorite={toggleFavorite} />
             ))}
           </div>
         ) : (
@@ -241,7 +285,7 @@ function StatCard({ label, count, icon: Icon, active, onClick, tone }) {
   );
 }
 
-function GameCard({ row, editable, lang, dataMode }) {
+function GameCard({ row, editable, lang, dataMode, favoriteBusy, onToggleFavorite }) {
   const status = STATUS_STYLE[row.serviceStatus] || STATUS_STYLE.online;
   const viewParams = new URLSearchParams();
   if (dataMode === "idpass") viewParams.set("mode", "idpass");
@@ -285,6 +329,16 @@ function GameCard({ row, editable, lang, dataMode }) {
         ) : null}
       </Link>
       <div className="flex items-center gap-2 border-t border-linear-hairline p-3">
+        <button
+          type="button"
+          onClick={() => onToggleFavorite(row)}
+          disabled={favoriteBusy}
+          aria-label={row.isFavorite ? `นำ ${row.game} ออกจากรายการโปรด` : `เพิ่ม ${row.game} ในรายการโปรด`}
+          aria-pressed={row.isFavorite}
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-linear-hairline-strong hover:bg-linear-surface-2 disabled:opacity-40 ${row.isFavorite ? "text-linear-ink" : "text-linear-ink-tertiary"}`}
+        >
+          <Star size={16} className={row.isFavorite ? "fill-current" : ""} />
+        </button>
         <GameinfoTutorialButton gameId={row.id} gameName={row.game} editable={false} hasData={row.hasTutorial} dataMode={dataMode} />
         <GameinfoTutorialButton gameId={row.id} gameName={row.game} editable={false} hasData={row.hasWarning} variant="warning" dataMode={dataMode} />
         <Link href={actionHref} className="ml-auto inline-flex h-10 items-center rounded-lg bg-linear-ink px-3 text-xs font-medium text-linear-canvas">
