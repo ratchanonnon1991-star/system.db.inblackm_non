@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   AlertTriangle,
   Check,
@@ -29,7 +30,6 @@ import ItuneComboInput from "@/components/itune-combo-input";
 import ItuneCountdownCell from "@/components/itune-countdown-cell";
 import ItuneImagePickerModal from "@/components/itune-image-picker-modal";
 import ItuneImagePreview from "@/components/itune-image-preview";
-import ItuneAmountLogImage from "@/components/itune-amount-log-image";
 import ItunePasswordValue, { ItunePasswordInput } from "@/components/itune-password-value";
 
 function uniq(arr) {
@@ -380,100 +380,6 @@ function ItuneAmountEditModal({ row, saving, error, onSave, onClose }) {
   );
 }
 
-// Read-only popup listing every "อัปเดตยอดคงเหลือ"/"แก้ไขยอด" adjustment
-// ever logged for this row (see projectm_itune_amount_log) — same data the
-// topup card's expanded view shows inline, just as its own dialog here so
-// admin can check a row's history from the "⋮" menu without claiming it.
-function ItuneAmountHistoryModal({ row, onClose }) {
-  const [logs, setLogs] = useState(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let cancelled = false;
-    apiJson(`/api/projectm/itune/${row.id}/amount-log`, {
-      fallbackError: "โหลดประวัติยอดไม่สำเร็จ",
-    })
-      .then((data) => {
-        if (!cancelled) setLogs(data.logs || []);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err.message);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [row.id]);
-
-  useEffect(() => {
-    function onKeyDown(e) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
-  function formatLogTime(value) {
-    if (!value) return "-";
-    const ms = new Date(value).getTime();
-    if (!Number.isFinite(ms)) return "-";
-    return new Date(ms).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" });
-  }
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-ll-hairline bg-ll-surface-1 shadow-[var(--ll-shadow-modal)]">
-        <div className="flex items-center justify-between border-b border-ll-hairline px-4 py-2.5">
-          <h2 className="text-sm font-semibold text-ll-ink">
-            ประวัติยอด — {row.email || `ID ${row.id}`}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-6 w-6 items-center justify-center rounded text-ll-ink-tertiary hover:bg-ll-surface-2 hover:text-ll-ink"
-            aria-label="ปิด"
-          >
-            <X size={14} />
-          </button>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          {error && <p className="text-[13px] text-ll-primary">{error}</p>}
-          {!error && logs === null && (
-            <p className="text-center text-[13px] text-ll-ink-tertiary">กำลังโหลด...</p>
-          )}
-          {!error && logs && logs.length === 0 && (
-            <p className="text-center text-[13px] text-ll-ink-tertiary">ยังไม่มีประวัติยอด</p>
-          )}
-          {!error && logs && logs.length > 0 && (
-            <ul className="flex flex-col gap-2.5">
-              {logs.map((log) => (
-                <li key={log.id} className="flex items-center gap-2.5 text-[12px]">
-                  <ItuneAmountLogImage logId={log.id} hasImage={log.hasImage} />
-                  <span className="text-ll-ink">
-                    {Number(log.oldAmount) === Number(log.newAmount)
-                      ? `ยอดเริ่มต้น: ${Number(log.newAmount).toFixed(2)}`
-                      : `${Number(log.oldAmount).toFixed(2)} → ${Number(log.newAmount).toFixed(2)}`}
-                    <span className="block text-[11px] text-ll-ink-subtle">
-                      {log.changedByUsername ? `${log.changedByUsername} · ` : ""}
-                      {formatLogTime(log.changedAt)}
-                    </span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
-
 // Static display <-> input toggle, single active cell at a time app-wide
 // (tracked by the table via `editing`) — same click-to-edit shape as
 // gameinfo-gamelist-table.js's cell components.
@@ -543,7 +449,7 @@ function RowActionsMenu({
   onCopyRow,
   onReportIssue,
   onResolveIssue,
-  onViewAmountHistory,
+  amountHistoryHref,
   onTogglePermanent,
 }) {
   const [open, setOpen] = useState(false);
@@ -607,17 +513,14 @@ function RowActionsMenu({
             >
               คัดลอกทั้งแถว
             </button>
-            {onViewAmountHistory && (
-              <button
-                type="button"
-                onClick={() => {
-                  setOpen(false);
-                  onViewAmountHistory(row);
-                }}
+            {amountHistoryHref && (
+              <Link
+                href={amountHistoryHref}
+                onClick={() => setOpen(false)}
                 className="block w-full px-3 py-2 text-left text-xs text-ll-ink hover:bg-ll-surface-2"
               >
                 ประวัติยอด
-              </button>
+              </Link>
             )}
             {onTogglePermanent && (
               <button
@@ -885,6 +788,7 @@ function ItuneAdminFilterModal({ excluded, onChangeExcluded, onClose }) {
 }
 
 export default function ItuneAdminTable({ initialEntries }) {
+  const pathname = usePathname();
   const [rows, setRows] = useState(initialEntries);
   const [savedRows, setSavedRows] = useState(initialEntries);
   const [dirtyIds, setDirtyIds] = useState(new Set());
@@ -910,7 +814,6 @@ export default function ItuneAdminTable({ initialEntries }) {
   const [amountEditFor, setAmountEditFor] = useState(null);
   const [savingAmount, setSavingAmount] = useState(false);
   const [amountEditError, setAmountEditError] = useState("");
-  const [amountHistoryFor, setAmountHistoryFor] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [deletingSelected, setDeletingSelected] = useState(false);
   const tempCounter = useRef(0);
@@ -1446,7 +1349,7 @@ export default function ItuneAdminTable({ initialEntries }) {
         </div>
         <div className="flex items-center gap-2">
           <Link
-            href="history?category=entry"
+            href={`${pathname}/history?category=entry`}
             className="flex h-9 items-center gap-1.5 rounded-md border border-ll-hairline-strong px-3 text-xs font-medium text-ll-ink-subtle hover:bg-ll-surface-2"
           >
             <History size={14} /> ประวัติข้อมูล
@@ -1704,12 +1607,11 @@ export default function ItuneAdminTable({ initialEntries }) {
                       ? resolveIssue
                       : undefined
                   }
-                  onViewAmountHistory={isTempId(row.id) ? undefined : (r) => setAmountHistoryFor(r.id)}
+                  amountHistoryHref={isTempId(row.id)
+                    ? undefined
+                    : `${pathname}/history?category=amount&q=${encodeURIComponent(row.email || String(row.id))}`}
                   onTogglePermanent={isTempId(row.id) ? undefined : togglePermanent}
                 />
-                {amountHistoryFor === row.id && (
-                  <ItuneAmountHistoryModal row={row} onClose={() => setAmountHistoryFor(null)} />
-                )}
               </div>
             </div>
           ))}

@@ -112,6 +112,43 @@ ok(
   !log.some((item) => /SET amount = \$2/.test(item.text))
 );
 
+for (const scenario of [
+  { id: 103, outcome: "depleted", amount: 0.5, note: "" },
+  { id: 104, outcome: "unusable", amount: 5, note: "เข้าใช้งานไม่ได้" },
+]) {
+  reset();
+  setResponder((text) => {
+    if (/SELECT max_amount FROM projectm_itune_release_settings/.test(text)) {
+      return { rows: [{ max_amount: 0.99 }] };
+    }
+    if (/SELECT claimed_by_user_id, claimed_at, active_claim_session_id/.test(text)) {
+      return { rows: [{
+        claimed_by_user_id: actor.id,
+        claimed_at: new Date("2026-08-19T08:00:00Z"),
+        active_claim_session_id: scenario.id,
+        amount: 10,
+        email: `${scenario.outcome}@example.com`,
+      }] };
+    }
+    if (/SELECT e\.\*,/.test(text)) {
+      return { rows: [{ id: scenario.id, email: `${scenario.outcome}@example.com`, amount: scenario.amount }] };
+    }
+    return null;
+  });
+
+  await releaseItuneEntry(scenario.id, actor, {
+    outcome: scenario.outcome,
+    amount: scenario.amount,
+    image: `${scenario.outcome}-proof`,
+    note: scenario.note,
+  });
+  ok(`${scenario.outcome} records outcome and proof`, log.some((item) =>
+    /UPDATE projectm_itune_claim_sessions/.test(item.text) &&
+    item.params?.[2] === scenario.outcome &&
+    item.params?.[3] === `${scenario.outcome}-proof`
+  ));
+}
+
 console.log(`\n${pass} passed, ${fail.length} failed`);
 if (fail.length) {
   console.log(fail.join("\n"));

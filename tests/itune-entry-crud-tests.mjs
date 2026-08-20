@@ -1,10 +1,26 @@
-import { deleteItuneEntries, updateItuneEntry } from "@/server/itune-entries-repository.js";
+import { deleteItuneEntries, insertItuneEntry, updateItuneEntry } from "@/server/itune-entries-repository.js";
 import { log, reset, setResponder } from "@/lib/db.js";
 
 let pass = 0;
 const fail = [];
 const ok = (name, condition) => (condition ? pass++ : fail.push(name));
 const actor = { id: 7, username: "admin" };
+
+reset();
+setResponder((text) => {
+  if (/INSERT INTO projectm_itune_entries/.test(text)) {
+    return { rows: [{ id: 8, email: "created@example.com", password: "new-secret", amount: 100 }] };
+  }
+  if (/SELECT e\.\*,/.test(text)) {
+    return { rows: [{ id: 8, email: "created@example.com", password: "new-secret", amount: 100 }] };
+  }
+  return null;
+});
+
+await insertItuneEntry({ createdByUserId: actor.id, email: "created@example.com", password: "new-secret", amount: 100 }, actor);
+const createAudit = log.find((item) => /INSERT INTO projectm_itune_entry_log/.test(item.text));
+ok("create writes an audit row with its actor", createAudit?.params?.[2] === "create" && createAudit?.params?.[5] === actor.id);
+ok("create audit redacts its password", JSON.parse(createAudit?.params?.[4] || "{}").password === "[redacted]");
 
 reset();
 setResponder((text) => {

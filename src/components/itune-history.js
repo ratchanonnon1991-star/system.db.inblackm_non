@@ -125,6 +125,21 @@ function ChangeDetails({ event }) {
       {event.details.reason && <p><span className="text-ll-ink-subtle">เหตุผล: </span>{event.details.reason}</p>}
       {event.details.count !== undefined && <p><span className="text-ll-ink-subtle">จำนวน: </span>{event.details.count}</p>}
       {event.details.counts && <p><span className="text-ll-ink-subtle">รายการที่ล้าง: </span>{Object.entries(event.details.counts).map(([key, value]) => `${key} ${value}`).join(", ")}</p>}
+      {event.details.rejectTimeline?.length > 0 && (
+        <div className="rounded-md border border-ll-hairline bg-ll-surface-1 p-3">
+          <p className="mb-2 font-medium">Reject timeline</p>
+          <ol className="space-y-2 border-l border-ll-hairline-strong pl-3">
+            {event.details.rejectTimeline.map((item, index) => (
+              <li key={`${item.action}-${item.occurredAt}-${index}`}>
+                <span className="font-medium">{ACTION_LABELS[item.action] || item.action}</span>
+                <span className="block text-ll-ink-subtle">
+                  {item.actorUsername || "—"} · {formatTime(item.occurredAt)}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
     </div>
   );
 }

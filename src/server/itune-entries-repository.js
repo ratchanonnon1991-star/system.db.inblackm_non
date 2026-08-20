@@ -323,6 +323,40 @@ function ensureSchema(connection) {
         )
       `);
       await client.query(`
+        ALTER TABLE projectm_itune_entry_log
+        ADD COLUMN IF NOT EXISTS old_values JSONB,
+        ADD COLUMN IF NOT EXISTS new_values JSONB,
+        ADD COLUMN IF NOT EXISTS changed_by_user_id INTEGER,
+        ADD COLUMN IF NOT EXISTS changed_by_username TEXT,
+        ADD COLUMN IF NOT EXISTS changed_at TIMESTAMPTZ
+      `);
+      await client.query(`
+        UPDATE projectm_itune_entry_log
+        SET old_values = COALESCE(old_values, CASE WHEN action IN ('delete', 'bulk_delete')
+              THEN to_jsonb(projectm_itune_entry_log)->'changes' END),
+            new_values = COALESCE(new_values, CASE WHEN action NOT IN ('delete', 'bulk_delete')
+              THEN to_jsonb(projectm_itune_entry_log)->'changes' END),
+            changed_by_user_id = COALESCE(changed_by_user_id,
+              NULLIF(to_jsonb(projectm_itune_entry_log)->>'user_id', '')::INTEGER),
+            changed_by_username = COALESCE(changed_by_username,
+              to_jsonb(projectm_itune_entry_log)->>'username'),
+            changed_at = COALESCE(changed_at,
+              NULLIF(to_jsonb(projectm_itune_entry_log)->>'created_at', '')::TIMESTAMPTZ,
+              NOW())
+        WHERE changed_at IS NULL
+      `);
+      await client.query(`
+        ALTER TABLE projectm_itune_entry_log
+        ALTER COLUMN changed_at SET DEFAULT NOW(),
+        ALTER COLUMN changed_at SET NOT NULL,
+        DROP CONSTRAINT IF EXISTS projectm_itune_entry_log_action_check
+      `);
+      await client.query(`
+        ALTER TABLE projectm_itune_entry_log
+        ADD CONSTRAINT projectm_itune_entry_log_action_check
+        CHECK (action IN ('create', 'update', 'delete', 'bulk_delete'))
+      `);
+      await client.query(`
         CREATE INDEX IF NOT EXISTS projectm_itune_entry_log_entry_time_idx
         ON projectm_itune_entry_log (entry_id, changed_at DESC)
       `);
@@ -525,6 +559,10 @@ function ensureSchema(connection) {
         CHECK (action IN ('claim', 'release', 'reject', 'reject_confirm', 'reject_decline', 'cancel_reject'))
       `);
       await client.query(`
+        CREATE INDEX IF NOT EXISTS projectm_itune_claim_log_issue_time_idx
+        ON projectm_itune_claim_log (issue_log_id, created_at, id)
+      `);
+      await client.query(`
         CREATE TABLE IF NOT EXISTS projectm_itune_claim_sessions (
           id BIGSERIAL PRIMARY KEY,
           entry_id INTEGER NOT NULL,
@@ -560,6 +598,73 @@ function ensureSchema(connection) {
           actor_username TEXT,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
+      `);
+      // A previous startup may already have installed the append-only trigger
+      // before discovering this legacy schema. Permit only its one-time
+      // category backfill, then replace this function with the strict version.
+      await client.query(`
+        CREATE OR REPLACE FUNCTION projectm_itune_admin_log_append_only()
+        RETURNS TRIGGER AS $$
+        BEGIN
+          IF TG_OP = 'UPDATE' AND OLD.category IS NULL AND NEW.category IS NOT NULL THEN
+            RETURN NEW;
+          END IF;
+          RAISE EXCEPTION 'projectm_itune_admin_log is append-only';
+        END;
+        $$ LANGUAGE plpgsql
+      `);
+      await client.query(`
+        ALTER TABLE projectm_itune_admin_log
+        ADD COLUMN IF NOT EXISTS category TEXT,
+        ADD COLUMN IF NOT EXISTS entry_id INTEGER,
+        ADD COLUMN IF NOT EXISTS entry_email TEXT,
+        ADD COLUMN IF NOT EXISTS old_values JSONB,
+        ADD COLUMN IF NOT EXISTS new_values JSONB,
+        ADD COLUMN IF NOT EXISTS actor_user_id INTEGER,
+        ADD COLUMN IF NOT EXISTS actor_username TEXT
+      `);
+      await client.query(`
+        UPDATE projectm_itune_admin_log
+        SET action = CASE action
+              WHEN 'clear_logs' THEN 'history_clear'
+              WHEN 'reject_cancel' THEN 'cancel_reject'
+              ELSE action
+            END,
+            category = COALESCE(category, 'admin'),
+            entry_id = COALESCE(entry_id,
+              NULLIF(to_jsonb(projectm_itune_admin_log)->>'target_id', '')::INTEGER),
+            actor_user_id = COALESCE(actor_user_id,
+              NULLIF(to_jsonb(projectm_itune_admin_log)->>'user_id', '')::INTEGER),
+            actor_username = COALESCE(actor_username,
+              to_jsonb(projectm_itune_admin_log)->>'username')
+        WHERE category IS NULL
+      `);
+      await client.query(`
+        ALTER TABLE projectm_itune_admin_log
+        ALTER COLUMN category SET NOT NULL,
+        DROP CONSTRAINT IF EXISTS projectm_itune_admin_log_category_check
+      `);
+      await client.query(`
+        ALTER TABLE projectm_itune_admin_log
+        ADD CONSTRAINT projectm_itune_admin_log_category_check
+        CHECK (category IN ('system', 'admin'))
+      `);
+      await client.query(`
+        CREATE OR REPLACE FUNCTION projectm_itune_admin_log_append_only()
+        RETURNS TRIGGER AS $$
+        BEGIN
+          RAISE EXCEPTION 'projectm_itune_admin_log is append-only';
+        END;
+        $$ LANGUAGE plpgsql
+      `);
+      await client.query(`
+        DO $$
+        BEGIN
+          CREATE TRIGGER projectm_itune_admin_log_append_only
+          BEFORE UPDATE OR DELETE ON projectm_itune_admin_log
+          FOR EACH ROW EXECUTE FUNCTION projectm_itune_admin_log_append_only();
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
       `);
       await client.query(`
         CREATE INDEX IF NOT EXISTS projectm_itune_admin_log_time_idx
@@ -1331,7 +1436,20 @@ export async function listItuneHistory({ category, query, from, to, page = 1, pa
        UNION ALL
        SELECT 'reject-' || c.id, 'issue', c.action, c.entry_id, c.entry_email,
               c.user_id, c.username, c.created_at, NULL::jsonb, NULL::jsonb,
-              jsonb_build_object('note', i.note), c.id::bigint,
+              jsonb_build_object(
+                'note', i.note,
+                'issueLogId', i.id,
+                'rejectTimeline', COALESCE((
+                  SELECT jsonb_agg(jsonb_build_object(
+                    'action', timeline.action,
+                    'actorUserId', timeline.user_id,
+                    'actorUsername', timeline.username,
+                    'occurredAt', timeline.created_at
+                  ) ORDER BY timeline.created_at, timeline.id)
+                  FROM projectm_itune_claim_log timeline
+                  WHERE timeline.issue_log_id = i.id
+                ), '[]'::jsonb)
+              ), c.id::bigint,
               c.action = 'reject' AND i.is_reject = TRUE AND i.reject_confirmed_at IS NULL,
               c.action = 'reject' AND i.is_reject = TRUE AND i.reject_confirmed_at IS NULL,
               c.action = 'reject_confirm' AND i.is_reject = TRUE AND i.reject_confirmed_at IS NOT NULL,
