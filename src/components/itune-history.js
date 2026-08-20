@@ -16,6 +16,15 @@ const TABS = [
   ["admin", "แอดมิน"],
 ];
 const CATEGORIES = new Set(TABS.map(([key]) => key));
+const TAB_DESCRIPTIONS = {
+  all: "รวมประวัติการรับ–คืน เปลี่ยนยอด ปัญหา ข้อมูลเมล คิว ระบบ และกิจกรรมแอดมิน",
+  claim: "เก็บการรับและคืนเมล พร้อมยอดเริ่มต้น ยอดสุดท้าย ผลลัพธ์ ผู้ใช้งาน และเวลา",
+  amount: "เก็บการเปลี่ยนยอดเดิมเป็นยอดใหม่ พร้อมผู้ดำเนินการ เวลา และรูปหลักฐาน",
+  issue: "เก็บการแจ้งปัญหาและขั้นตอน Reject ตั้งแต่ส่งคำขอจนยืนยัน ปฏิเสธ หรือยกเลิก",
+  entry: "เก็บการเพิ่ม แก้ไข ลบ และลบหลายเมล พร้อมรายละเอียดค่าที่เปลี่ยนแปลง",
+  system: "เก็บการจัดลำดับคิว Pin, Hold, เมลถาวร และการเปลี่ยนค่าระบบ",
+  admin: "เก็บกิจกรรมสำคัญ เช่น ลบหลายเมล ยกเลิก Reject และล้างประวัติ",
+};
 
 const ACTION_LABELS = {
   claim: "รับเมล",
@@ -226,6 +235,9 @@ export default function ItuneHistory() {
           </button>
         ))}
       </div>
+      <p className="text-[12px] leading-5 text-ll-ink-subtle">
+        {TAB_DESCRIPTIONS[category]}
+      </p>
 
       <form onSubmit={(event) => { event.preventDefault(); updateParams({ q: search.trim() }); }} className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_150px_150px_auto]">
         <label className="relative">

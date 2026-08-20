@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   AlertTriangle,
+  BookmarkPlus,
   Check,
   Copy,
   Filter,
@@ -804,6 +805,7 @@ export default function ItuneAdminTable({ initialEntries }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [search, setSearch] = useState("");
+  const [selectedFilterId, setSelectedFilterId] = useState("");
   // The table keeps only its search-column filter locally.
   const [openPanel, setOpenPanel] = useState(null); // null | "filter"
   const [imagePickerFor, setImagePickerFor] = useState(null);
@@ -898,6 +900,8 @@ export default function ItuneAdminTable({ initialEntries }) {
   // Always an array — useItuneSettings seeds it from DEFAULT_SETTINGS before
   // localStorage is even read (see itune-settings.js), so this is never undefined.
   const searchExcludedColumns = settings.searchExcludedColumns;
+  const savedFilters = Array.isArray(settings.savedFilters) ? settings.savedFilters : [];
+  const dateTimeMode = settings.dateTimeMode === "dateTime" ? "dateTime" : "remaining";
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return rows;
@@ -910,6 +914,33 @@ export default function ItuneAdminTable({ initialEntries }) {
   const selectableFilteredIds = filteredRows.filter((row) => !isTempId(row.id)).map((row) => row.id);
   const allFilteredSelected =
     selectableFilteredIds.length > 0 && selectableFilteredIds.every((id) => selectedIds.has(id));
+
+  function saveFilter() {
+    const name = window.prompt("ตั้งชื่อชุดตัวกรองนี้", search.trim() || "ตัวกรองใหม่");
+    if (!name?.trim()) return;
+    const filter = {
+      id: String(Date.now()),
+      name: name.trim(),
+      search,
+      excludedColumns: searchExcludedColumns,
+    };
+    setSetting("savedFilters", [...savedFilters, filter]);
+    setSelectedFilterId(filter.id);
+  }
+
+  function applyFilter(filterId) {
+    setSelectedFilterId(filterId);
+    const filter = savedFilters.find((item) => item.id === filterId);
+    if (!filter) return;
+    setSearch(filter.search || "");
+    setSetting("searchExcludedColumns", filter.excludedColumns || []);
+  }
+
+  function deleteSelectedFilter() {
+    if (!selectedFilterId || !window.confirm("ลบชุดตัวกรองนี้?")) return;
+    setSetting("savedFilters", savedFilters.filter((item) => item.id !== selectedFilterId));
+    setSelectedFilterId("");
+  }
 
   // A trailing/leading space typed mid-edit shouldn't flip a row to dirty —
   // trim before comparing, same as gameinfo-gamelist-table.js's updateField.
@@ -1302,8 +1333,9 @@ export default function ItuneAdminTable({ initialEntries }) {
   return (
     <div className="flex flex-col gap-3 pb-24">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <div className="relative">
+        <div className="flex min-w-0 flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
             <Search
               size={14}
               className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ll-ink-tertiary"
@@ -1326,25 +1358,60 @@ export default function ItuneAdminTable({ initialEntries }) {
                 <X size={13} />
               </button>
             )}
-          </div>
-          <button
-            type="button"
-            onClick={() => setOpenPanel("filter")}
-            className="relative flex h-9 w-9 items-center justify-center rounded-md border border-ll-hairline-strong text-ll-ink-subtle hover:bg-ll-surface-2"
-            title="กรองคอลัมน์ที่จะค้นหา"
-            aria-label="กรองคอลัมน์ที่จะค้นหา"
-          >
-            <Filter size={15} />
-            {searchExcludedColumns.length > 0 && (
-              <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-ll-primary" />
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpenPanel("filter")}
+              className="relative flex h-9 items-center gap-1.5 rounded-md border border-ll-hairline-strong px-3 text-xs font-medium text-ll-ink-subtle hover:bg-ll-surface-2"
+              title="เลือกคอลัมน์ที่จะค้นหา"
+            >
+              <Filter size={14} /> คอลัมน์
+              {searchExcludedColumns.length > 0 && (
+                <span className="h-1.5 w-1.5 rounded-full bg-ll-primary" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={saveFilter}
+              className="flex h-9 items-center gap-1.5 rounded-md border border-ll-hairline-strong px-3 text-xs font-medium text-ll-ink-subtle hover:bg-ll-surface-2"
+              title="บันทึกคำค้นหาและคอลัมน์ที่เลือก"
+            >
+              <BookmarkPlus size={14} /> บันทึกชุดกรอง
+            </button>
+            {openPanel === "filter" && (
+              <ItuneAdminFilterModal
+                excluded={searchExcludedColumns}
+                onChangeExcluded={(next) => setSetting("searchExcludedColumns", next)}
+                onClose={() => setOpenPanel(null)}
+              />
             )}
-          </button>
-          {openPanel === "filter" && (
-            <ItuneAdminFilterModal
-              excluded={searchExcludedColumns}
-              onChangeExcluded={(next) => setSetting("searchExcludedColumns", next)}
-              onClose={() => setOpenPanel(null)}
-            />
+          </div>
+          {savedFilters.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-ll-ink-tertiary">ชุดที่บันทึก</span>
+              <select
+                value={selectedFilterId}
+                onChange={(event) => applyFilter(event.target.value)}
+                className="h-8 max-w-52 rounded-md border border-ll-hairline bg-ll-surface-2 px-2 text-xs text-ll-ink outline-none focus:border-ll-primary"
+                aria-label="เลือกชุดตัวกรองที่บันทึกไว้"
+              >
+                <option value="">เลือกชุดกรอง...</option>
+                {savedFilters.map((filter) => (
+                  <option key={filter.id} value={filter.id}>{filter.name}</option>
+                ))}
+              </select>
+              {selectedFilterId && (
+                <button
+                  type="button"
+                  onClick={deleteSelectedFilter}
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-ll-ink-tertiary hover:bg-ll-primary-subtle-bg hover:text-ll-primary"
+                  title="ลบชุดตัวกรองที่เลือก"
+                  aria-label="ลบชุดตัวกรองที่เลือก"
+                >
+                  <Trash2 size={13} />
+                </button>
+              )}
+            </div>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -1388,7 +1455,26 @@ export default function ItuneAdminTable({ initialEntries }) {
               />
             </div>
             <div className="truncate px-3 py-2 text-center">ID</div>
-            <div className="truncate px-3 py-2">Date_time</div>
+            <div className="flex items-center justify-between gap-2 px-3 py-1.5">
+              <span>เวลา</span>
+              <span className="flex rounded-full border border-ll-hairline bg-ll-surface-1 p-0.5 normal-case tracking-normal">
+                {[["remaining", "คงเหลือ"], ["dateTime", "วันเวลา"]].map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setSetting("dateTimeMode", mode)}
+                    aria-pressed={dateTimeMode === mode}
+                    className={`rounded-full px-2 py-1 text-[10px] font-medium ${
+                      dateTimeMode === mode
+                        ? "bg-ll-emphasis-bg text-ll-emphasis-text"
+                        : "text-ll-ink-tertiary hover:text-ll-ink"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </span>
+            </div>
             <div className="truncate px-3 py-2">Email</div>
             <div className="truncate px-3 py-2">Password</div>
             <div className="truncate px-3 py-2">Status</div>
@@ -1434,6 +1520,7 @@ export default function ItuneAdminTable({ initialEntries }) {
                   now={now}
                   frozen={computeEffectiveItuneStatus(row).label === ITUNE_DEPLETED_STATUS}
                   permanent={row.isPermanent}
+                  mode={dateTimeMode}
                 />
                 <CopyButton text={settings.copyButtonsEnabled ? searchValueFor(row, "addedAt") : ""} />
               </div>
