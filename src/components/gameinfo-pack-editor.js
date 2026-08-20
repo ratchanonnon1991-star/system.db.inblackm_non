@@ -35,6 +35,7 @@ import { apiJson } from "@/lib/api-json";
 import { evaluateFormula, extractFormulaRefs, parseFormula } from "@/lib/gamedb-formula";
 import { GAMEINFO_FIELD_NAMES, resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
 import { mergeCurrencies } from "@/lib/gameinfo-import";
+import { confirmGameinfoNavigation, useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
 import {
   buildGameinfoPackColumns,
   formatGameinfoPackColumnValue,
@@ -170,6 +171,7 @@ export default function GameinfoPackEditor({
     surface: "edit",
     lockRequired: true,
   });
+  useGameinfoUnsavedChanges(dirty || packLayout.dirty);
 
   const sampleRow = useMemo(() => {
     const pack = firstPack(currencies);
@@ -918,6 +920,7 @@ export default function GameinfoPackEditor({
           <button
             type="button"
             onClick={() => {
+              if (!confirmGameinfoNavigation()) return;
               // Same "opened this page directly, nothing to go back to"
               // guard as GameinfoBackLink.
               if (window.history.length <= 1) router.push(`/gameinfo/${lang}/${game.id}`);

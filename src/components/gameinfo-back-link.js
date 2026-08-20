@@ -2,6 +2,7 @@
 
 import { ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { confirmGameinfoNavigation } from "@/lib/gameinfo-unsaved-changes";
 
 // "ย้อนกลับ" — goes to whatever page was open before this one via browser
 // history (router.back()), not a hardcoded forward link to the game detail
@@ -19,6 +20,7 @@ export default function GameinfoBackLink({ className, fallbackHref }) {
     <button
       type="button"
       onClick={() => {
+        if (!confirmGameinfoNavigation()) return;
         if (fallbackHref && window.history.length <= 1) router.push(fallbackHref);
         else router.back();
       }}

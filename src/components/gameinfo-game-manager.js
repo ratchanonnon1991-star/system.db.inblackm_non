@@ -10,6 +10,7 @@ import GameinfoImagePickerModal from "./gameinfo-image-picker-modal";
 import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
 import { GameinfoGameLinksButton } from "./gameinfo-game-links";
 import GameinfoTagsInput from "./gameinfo-tags-input";
+import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
 
 function fieldsFromRow(row) {
   return {
@@ -42,6 +43,7 @@ export default function GameinfoGameManager({ row, existingNames, tagSuggestions
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved) || image !== savedImage || status !== savedStatus || JSON.stringify(tags) !== JSON.stringify(savedTags);
+  useGameinfoUnsavedChanges(dirty);
 
   function update(field, value) {
     setDraft((current) => ({ ...current, [field]: value }));

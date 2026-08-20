@@ -30,6 +30,7 @@ import {
   Plus,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
 import GameinfoMemoryInput from "./gameinfo-memory-input";
 import GameinfoNameInput from "./gameinfo-name-input";
 import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
@@ -465,6 +466,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
   }
 
   const dirty = dirtyIds.size > 0 || orderDirty;
+  useGameinfoUnsavedChanges(dirty);
 
   const isEditing = (rowId, field) => editing?.id === rowId && editing.field === field;
 
