@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/server/session-user";
+import { canManageGameinfo } from "@/server/auth";
 import { listGameListRows } from "@/server/gameinfo-gamelist";
 import {
   listGamelistChannelsByGame,
@@ -30,15 +31,14 @@ export const metadata = {
   title: "GameDB — GameInfo",
 };
 
-// Everyone lands on the card dashboard. staff/admin can switch to the
-// existing inline editor with ?manage=1; role "user" stays read-only.
+// Everyone lands on the card dashboard. Topup and role "user" stay read-only.
 export default async function GameinfoHomePage({ params, searchParams }) {
   const { lang } = await params;
   const { manage, mode: rawMode } = await searchParams;
   const dataMode = normalizeGameinfoDataMode(rawMode);
   const user = await getSessionUser();
   if (!user) redirect("/");
-  const editableRole = user.role === "admin" || user.role === "staff";
+  const editableRole = canManageGameinfo(user);
   const manageMode = editableRole && manage === "1";
 
   let rows = null;

@@ -1,5 +1,5 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireLayoutEditor } from "@/server/auth";
+import { requireGameinfoEditor } from "@/server/auth";
 import { parseCsv } from "@/lib/gameinfo-csv";
 import { mergeCurrencies, PACK_HEADERS, parsePacks, validatePackRows } from "@/lib/gameinfo-import";
 import { listGameListRows } from "@/server/gameinfo-gamelist";
@@ -9,7 +9,7 @@ import { getGameinfoModeData, saveGameinfoModeData } from "@/server/gameinfo-mod
 
 export async function PUT(request) {
   try {
-    const user = await requireLayoutEditor(request);
+    const user = await requireGameinfoEditor(request);
     const form = await request.formData();
     const file = form.get("file");
     const mode = String(form.get("mode") || "replace");

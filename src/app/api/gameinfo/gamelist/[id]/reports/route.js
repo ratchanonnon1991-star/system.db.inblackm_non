@@ -1,5 +1,5 @@
 import { handleApiError, jsonOk } from "@/lib/http";
-import { requireAdmin, requireLayoutEditor } from "@/server/auth";
+import { requireAdmin, requireGameinfoEditor } from "@/server/auth";
 import {
   createGamelistReport,
   listGamelistReports,
@@ -38,7 +38,7 @@ export async function POST(request, { params }) {
 
 export async function PUT(request, { params }) {
   try {
-    const user = await requireLayoutEditor(request);
+    const user = await requireGameinfoEditor(request);
     const { id } = await params;
     const body = await request.json();
     const report = await setGamelistReportStatus(Number(id), Number(body.reportId), body.status, actorName(user));

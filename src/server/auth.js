@@ -97,6 +97,18 @@ export async function requireProjectmAccess(request) {
   return user;
 }
 
+export function canManageGameinfo(user) {
+  return (user?.role === "admin" || user?.role === "staff") && user?.projectmRole !== "topup";
+}
+
+export async function requireGameinfoEditor(request) {
+  const user = await requireAdmin(request);
+  if (!canManageGameinfo(user)) {
+    throw createHttpError("บัญชีนี้ไม่มีสิทธิ์จัดการข้อมูลเกม", 403);
+  }
+  return user;
+}
+
 export async function requireProjectmAdmin(request) {
   const user = await requireProjectmAccess(request);
   if (user.projectmRole !== "admin") {

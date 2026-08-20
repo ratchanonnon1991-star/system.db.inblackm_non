@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getSessionUser } from "@/server/session-user";
+import { canManageGameinfo } from "@/server/auth";
 import { getGameListRow, listGameListRows } from "@/server/gameinfo-gamelist";
 import {
   getGamelistPacks,
@@ -37,7 +38,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams }) {
   const dataMode = normalizeGameinfoDataMode(rawMode);
   const user = await getSessionUser();
   if (!user) redirect("/");
-  const editableRole = user.role === "admin" || user.role === "staff";
+  const editableRole = canManageGameinfo(user);
   const manageMode = editableRole && manage === "1";
 
   // A non-numeric segment here (e.g. a stale /admin bookmark from before that

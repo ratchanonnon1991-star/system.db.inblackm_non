@@ -1,10 +1,10 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireLayoutEditor } from "@/server/auth";
+import { requireGameinfoEditor } from "@/server/auth";
 import { setGameListServiceStatus } from "@/server/gameinfo-gamelist";
 
 export async function POST(request) {
   try {
-    await requireLayoutEditor(request);
+    await requireGameinfoEditor(request);
     const body = await request.json();
     if (
       !Array.isArray(body?.gameIds) ||

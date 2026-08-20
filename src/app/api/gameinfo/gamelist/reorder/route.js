@@ -1,12 +1,12 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireLayoutEditor } from "@/server/auth";
+import { requireGameinfoEditor } from "@/server/auth";
 import { reorderGameListRows } from "@/server/gameinfo-gamelist";
 import { recordEdit } from "@/server/gamedb-edit-log";
 import { requestMeta } from "@/lib/request-meta";
 
 export async function POST(request) {
   try {
-    const admin = await requireLayoutEditor(request);
+    const admin = await requireGameinfoEditor(request);
     const body = await request.json();
     const orderedIds = Array.isArray(body.orderedIds) ? body.orderedIds.map(Number) : [];
     if (!orderedIds.length) return jsonError("ไม่มีลำดับที่จะบันทึก", 400);

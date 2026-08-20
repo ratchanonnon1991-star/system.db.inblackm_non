@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Gamepad2, LayoutGrid } from "lucide-react";
 import { isSupportedLang } from "@/lib/gameinfo-i18n";
 import { getSessionUser } from "@/server/session-user";
+import { canManageGameinfo } from "@/server/auth";
 import GameinfoModeToggle from "@/components/gameinfo-mode-toggle";
 import GameinfoThemeRoot from "@/components/gameinfo-theme-root";
 import GameinfoThemeToggle from "@/components/gameinfo-theme-toggle";
@@ -16,13 +17,12 @@ const notoThai = Noto_Sans_Thai({
 // Light-first Linear structure with the shared red GameInfo accent. Body copy
 // stays on Noto Sans Thai; negative tracking is applied only to headings.
 //
-// staff/admin open the existing inline game_list editor through the
-// "จัดการข้อมูล" mode; role "user" gets the card dashboard only.
+// Topup and role "user" get the card dashboard only.
 export default async function GameinfoLangLayout({ children, params }) {
   const { lang } = await params;
   if (!isSupportedLang(lang)) notFound();
   const user = await getSessionUser();
-  const editableRole = user?.role === "admin" || user?.role === "staff";
+  const editableRole = canManageGameinfo(user);
 
   return (
     <GameinfoThemeRoot

@@ -1,5 +1,5 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireAdmin, requireLayoutEditor } from "@/server/auth";
+import { requireAdmin, requireGameinfoEditor } from "@/server/auth";
 import { createGameListRow, listGameListRows } from "@/server/gameinfo-gamelist";
 import { recordEdit } from "@/server/gamedb-edit-log";
 import { requestMeta } from "@/lib/request-meta";
@@ -16,7 +16,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const admin = await requireLayoutEditor(request);
+    const admin = await requireGameinfoEditor(request);
     const body = await request.json();
     const game = String(body.game || "").trim();
     if (!game) return jsonError("กรุณากรอกชื่อเกม", 400);

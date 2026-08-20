@@ -18,7 +18,7 @@ async function readGameId(params) {
 
 // A read-only GameInfo "user" still owns their own visual preference, so
 // this intentionally uses requireAdmin (authenticated user) rather than
-// requireLayoutEditor (which controls pack-data mutations).
+// requireGameinfoEditor (which controls pack-data mutations).
 export async function GET(request, { params }) {
   try {
     const user = await requireAdmin(request);

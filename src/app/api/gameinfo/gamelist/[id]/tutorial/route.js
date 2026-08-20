@@ -1,5 +1,5 @@
 import { handleApiError, jsonOk } from "@/lib/http";
-import { requireAdmin, requireLayoutEditor } from "@/server/auth";
+import { requireAdmin, requireGameinfoEditor } from "@/server/auth";
 import {
   getGamelistTutorial,
   listAllGamelistTutorialCategories,
@@ -29,7 +29,7 @@ export async function GET(request, { params }) {
 
 export async function PUT(request, { params }) {
   try {
-    const admin = await requireLayoutEditor(request);
+    const admin = await requireGameinfoEditor(request);
     const { id } = await params;
     const body = await request.json();
     if (normalizeGameinfoDataMode(request.nextUrl.searchParams.get("mode")) === "idpass") {

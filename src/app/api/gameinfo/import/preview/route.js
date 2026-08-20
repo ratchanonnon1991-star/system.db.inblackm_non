@@ -1,5 +1,5 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireLayoutEditor } from "@/server/auth";
+import { requireGameinfoEditor } from "@/server/auth";
 import { parseCsv } from "@/lib/gameinfo-csv";
 import { PACK_HEADERS, parsePacks, parsePacksForGame, validatePackRows } from "@/lib/gameinfo-import";
 import { getGameListRow, listGameListRows } from "@/server/gameinfo-gamelist";
@@ -10,7 +10,7 @@ import { getGameListRow, listGameListRows } from "@/server/gameinfo-gamelist";
 // old multi-game games/game_packs admin import was removed).
 export async function POST(request) {
   try {
-    await requireLayoutEditor(request);
+    await requireGameinfoEditor(request);
     const { searchParams } = new URL(request.url);
     const gameIdRaw = searchParams.get("gameId");
     const form = await request.formData();

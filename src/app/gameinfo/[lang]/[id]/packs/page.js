@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { getSessionUser } from "@/server/session-user";
+import { canManageGameinfo } from "@/server/auth";
 import { getGameListRow } from "@/server/gameinfo-gamelist";
 import {
   getGamelistPacks,
@@ -26,7 +27,7 @@ export default async function GameinfoGamelistPacksPage({ params, searchParams }
   const dataMode = normalizeGameinfoDataMode(rawMode);
   const user = await getSessionUser();
   if (!user) redirect("/");
-  if (user.role === "user") redirect(`/gameinfo/${lang}`);
+  if (!canManageGameinfo(user)) redirect(`/gameinfo/${lang}`);
 
   // A non-numeric [id] segment would otherwise reach getGameListRow() as NaN
   // and blow up as a Postgres "invalid input syntax for type bigint" error
