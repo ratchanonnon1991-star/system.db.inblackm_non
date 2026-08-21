@@ -41,6 +41,7 @@ const linearSans = Inter({
 // Public by design: it is only where the "เข้าสู่ระบบด้วยบัญชี experience" button
 // points the browser, never anything the server trusts on its own.
 const HIRING_BASE_URL = (process.env.NEXT_PUBLIC_HIRING_BASE_URL || "").replace(/\/+$/, "");
+const MOCK_SSO_ENABLED = process.env.NODE_ENV !== "production";
 
 // Keyed by the ?ssoError= codes /api/sso/from-hiring redirects back with
 // (see src/lib/hiring-sso.js and src/app/api/sso/from-hiring/route.js for
@@ -146,7 +147,7 @@ function SystemHub({ me, onLoggedOut, onPermissionsChanged }) {
   const roleLabel = isSuperAdmin ? "Admin" : isTemplateUser ? "User" : "Staff";
   const initial = (me.displayName || me.username || "?").trim().slice(0, 1).toUpperCase();
   const accessibleSystems = SYSTEMS.filter((system) => {
-    if (system.key === "projectm") return hasPermission(me, "projectm.access");
+    if (system.key === "projectm") return true;
     if (system.key === "gameinfo") return hasPermission(me, "gameinfo.access");
     return !isTemplateUser;
   });
@@ -520,7 +521,7 @@ function LoginScreen({ onLoggedIn }) {
           เข้าสู่ระบบ
         </button>
 
-        {hiringSsoUrl && (
+        {(hiringSsoUrl || MOCK_SSO_ENABLED) && (
           <>
             <div className="my-4 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-ll-ink-tertiary">
               <span className="h-px flex-1 bg-ll-hairline" />
@@ -528,10 +529,10 @@ function LoginScreen({ onLoggedIn }) {
               <span className="h-px flex-1 bg-ll-hairline" />
             </div>
             <a
-              href={hiringSsoUrl}
+              href={hiringSsoUrl || "/api/sso/mock"}
               className="flex h-10 w-full items-center justify-center gap-1.5 rounded-md border border-ll-hairline-strong text-[14px] font-medium text-ll-ink transition hover:bg-ll-surface-2"
             >
-              เข้าสู่ระบบด้วยบัญชี experience
+              เข้าสู่ระบบด้วยบัญชี experience{hiringSsoUrl ? "" : " (Mock)"}
             </a>
           </>
         )}

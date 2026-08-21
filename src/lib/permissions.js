@@ -1,7 +1,6 @@
 export const PERMISSIONS = [
   { key: "systemdb.data.insert_delete", site: "System DB", label: "เพิ่ม/ลบแถว", path: "/systemdb" },
   { key: "systemdb.data.update", site: "System DB", label: "แก้ไขข้อมูล", path: "/systemdb" },
-  { key: "projectm.access", site: "Projectm", label: "เข้าใช้งาน", path: "/projectm/[lang]/itune" },
   { key: "projectm.claim", site: "Projectm", label: "Topup", path: "/projectm/[lang]/itune/topup" },
   { key: "projectm.admin", site: "Projectm", label: "Admin", path: "/projectm/[lang]/itune/admin" },
   { key: "gameinfo.access", site: "GameInfo", label: "ดูข้อมูล", path: "/gameinfo/[lang]" },
@@ -12,8 +11,8 @@ export const PERMISSIONS = [
 export const PERMISSION_KEYS = new Set(PERMISSIONS.map(({ key }) => key));
 
 export const PERMISSION_PRESETS = {
-  projectmTopup: ["projectm.access", "projectm.claim"],
-  projectmAdmin: ["projectm.access", "projectm.claim", "projectm.admin"],
+  projectmTopup: ["projectm.claim"],
+  projectmAdmin: ["projectm.claim", "projectm.admin"],
   gameinfoTopup: ["gameinfo.access", "gameinfo.report"],
   gameinfoAdmin: ["gameinfo.access", "gameinfo.report", "gameinfo.admin"],
 };
@@ -21,7 +20,6 @@ export const PERMISSION_PRESETS = {
 export function normalizePermissions(values = []) {
   const permissions = new Set(values.filter((key) => PERMISSION_KEYS.has(key)));
   if (permissions.has("projectm.admin")) PERMISSION_PRESETS.projectmAdmin.forEach((key) => permissions.add(key));
-  if (permissions.has("projectm.claim")) permissions.add("projectm.access");
   if (permissions.has("gameinfo.admin")) PERMISSION_PRESETS.gameinfoAdmin.forEach((key) => permissions.add(key));
   if (permissions.has("gameinfo.report")) permissions.add("gameinfo.access");
   return [...permissions].sort();
@@ -32,7 +30,6 @@ export function togglePermission(values, key, checked) {
   if (checked) permissions.add(key);
   else {
     permissions.delete(key);
-    if (key === "projectm.access") ["projectm.claim", "projectm.admin"].forEach((item) => permissions.delete(item));
     if (key === "projectm.claim") permissions.delete("projectm.admin");
     if (key === "gameinfo.access") ["gameinfo.report", "gameinfo.admin"].forEach((item) => permissions.delete(item));
     if (key === "gameinfo.report") permissions.delete("gameinfo.admin");
@@ -60,7 +57,7 @@ export function legacyPermissions({ canWriteData, canUpdateData, projectmRole, g
 export function permissionRole(permissions, site) {
   const set = new Set(permissions || []);
   if (set.has(`${site}.admin`)) return "admin";
-  if (set.has(`${site}.access`)) return "topup";
+  if (set.has(site === "projectm" ? "projectm.claim" : `${site}.access`)) return "topup";
   return null;
 }
 

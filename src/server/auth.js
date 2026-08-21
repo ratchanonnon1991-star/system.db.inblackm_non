@@ -90,15 +90,11 @@ export async function requireDataUpdater(request, ctx) {
 }
 
 export function hasProjectmAccess(user) {
-  return hasPermission(user, "projectm.access");
+  return Boolean(user);
 }
 
 export async function requireProjectmAccess(request) {
-  const user = await requireAdmin(request);
-  if (!hasProjectmAccess(user)) {
-    throw createHttpError("บัญชีนี้ไม่มีสิทธิ์เข้า Projectm", 403);
-  }
-  return user;
+  return requireAdmin(request);
 }
 
 export async function requireProjectmTopup(request) {
