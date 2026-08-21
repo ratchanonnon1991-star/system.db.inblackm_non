@@ -10,8 +10,5 @@ export function buildGameinfoUpdate(draft, dataMode = "uid") {
 }
 
 export function buildGameinfoStatusUpdate(status) {
-  return {
-    enabled: status !== "offline",
-    isNew: status === "new",
-  };
+  return { enabled: status !== "offline" };
 }

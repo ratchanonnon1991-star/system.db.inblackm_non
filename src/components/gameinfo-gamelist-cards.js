@@ -30,7 +30,6 @@ const STATUS_STYLE = {
   online: { label: "พร้อมใช้งาน", dot: "bg-emerald-500", badge: "bg-emerald-500/10 text-emerald-700" },
   review: { label: "ต้องตรวจสอบ", dot: "bg-linear-primary", badge: "bg-linear-primary/10 text-linear-primary" },
   partial: { label: "เปิดบางส่วน", dot: "bg-amber-500", badge: "bg-amber-500/10 text-amber-700" },
-  new: { label: "เกมใหม่", dot: "bg-linear-primary", badge: "bg-linear-primary/10 text-linear-primary" },
   offline: { label: "ปิดใช้งาน", dot: "bg-linear-ink-tertiary", badge: "bg-linear-surface-3 text-linear-ink-subtle" },
 };
 

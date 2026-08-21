@@ -81,15 +81,13 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
           <div className="flex items-center gap-2">
             <span
               className={`h-2.5 w-2.5 rounded-full ${
-                row.serviceStatus === "new"
-                  ? "bg-red-500"
-                  : row.serviceStatus === "offline"
+                row.serviceStatus === "offline"
                   ? "bg-zinc-500"
                   : row.serviceStatus === "partial"
                     ? "bg-amber-400"
                     : "bg-emerald-400"
               }`}
-              title={row.serviceStatus === "new" ? "เกมใหม่" : row.serviceStatus === "offline" ? "ปิดให้บริการ" : row.serviceStatus === "partial" ? "เปิดเกม แต่มีบาง pack ปิด" : "ให้บริการปกติ"}
+              title={row.serviceStatus === "offline" ? "ปิดให้บริการ" : row.serviceStatus === "partial" ? "เปิดเกม แต่มีบาง pack ปิด" : "ให้บริการปกติ"}
             />
             <h1 className="truncate text-base font-bold uppercase tracking-tight text-linear-ink">
               {row.game}

@@ -3,7 +3,6 @@ export const GAMEINFO_STATUSES = [
   { id: "online", label: "พร้อมใช้งาน" },
   { id: "review", label: "ต้องตรวจสอบ" },
   { id: "partial", label: "เปิดบางส่วน" },
-  { id: "new", label: "เกมใหม่" },
   { id: "offline", label: "ปิดใช้งาน" },
 ];
 
@@ -17,7 +16,7 @@ export function summarizeGameinfoRows(rows) {
       if (row.isFavorite) counts.favorite += 1;
       return counts;
     },
-    { all: 0, online: 0, review: 0, partial: 0, new: 0, offline: 0, botAuto: 0, favorite: 0 }
+    { all: 0, online: 0, review: 0, partial: 0, offline: 0, botAuto: 0, favorite: 0 }
   );
 }
 

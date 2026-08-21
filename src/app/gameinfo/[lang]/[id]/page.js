@@ -113,7 +113,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams }) {
         image: image.imageUrl,
         links: storedLinks.exists ? storedLinks.links : legacyGamelistLinks(row.link),
         packDisabledCount,
-        serviceStatus: row.serviceNew ? "new" : !row.serviceEnabled ? "offline" : packDisabledCount > 0 ? "partial" : "online",
+        serviceStatus: !row.serviceEnabled ? "offline" : packDisabledCount > 0 ? "partial" : "online",
         tags: tagsByGame[row.id] || [],
         reportCount: loadedReports.filter((report) => report.status === "open").length,
       };

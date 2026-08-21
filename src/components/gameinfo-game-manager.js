@@ -23,7 +23,7 @@ function fieldsFromRow(row) {
 }
 
 function statusFromRow(row) {
-  return row.serviceNew ? "new" : row.serviceEnabled === false ? "offline" : "online";
+  return row.serviceEnabled === false ? "offline" : "online";
 }
 
 export default function GameinfoGameManager({ row, existingNames, tagSuggestions, dataMode = "uid" }) {
@@ -150,7 +150,6 @@ export default function GameinfoGameManager({ row, existingNames, tagSuggestions
           <Field label="สถานะบริการ">
             <select value={status} onChange={(event) => setStatus(event.target.value)} className={inputClass}>
               <option value="online">พร้อมใช้งาน</option>
-              <option value="new">เกมใหม่</option>
               <option value="offline">ปิดใช้งาน</option>
             </select>
           </Field>

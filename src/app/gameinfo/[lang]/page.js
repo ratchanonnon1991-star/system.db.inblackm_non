@@ -91,9 +91,7 @@ export default async function GameinfoHomePage({ params, searchParams }) {
       vpnComputed: dataMode === "idpass" ? (flatModePacks.some((pack) => pack.country) ? "YES" : "NO") : vpnByGame[r.id] ? "YES" : "NO",
       packCount: dataMode === "idpass" ? flatModePacks.length : packCountByGame[r.id] || 0,
       packDisabledCount: disabledPackCount,
-      serviceStatus: r.serviceNew
-        ? "new"
-        : !r.serviceEnabled
+      serviceStatus: !r.serviceEnabled
         ? "offline"
         : disabledPackCount > 0
           ? "partial"

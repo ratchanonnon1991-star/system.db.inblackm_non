@@ -4,7 +4,7 @@ import { buildGameinfoStatusUpdate, buildGameinfoUpdate } from "../src/lib/gamei
 const draft = { game: "Test", region: "TH", platform: "Mobile", server: "Asia", botManual: "Bot" };
 assert.deepEqual(buildGameinfoUpdate(draft), draft);
 assert.equal(buildGameinfoUpdate(draft, "idpass").game, undefined);
-assert.deepEqual(buildGameinfoStatusUpdate("new"), { enabled: true, isNew: true });
-assert.deepEqual(buildGameinfoStatusUpdate("offline"), { enabled: false, isNew: false });
+assert.deepEqual(buildGameinfoStatusUpdate("online"), { enabled: true });
+assert.deepEqual(buildGameinfoStatusUpdate("offline"), { enabled: false });
 
 console.log("4 passed");

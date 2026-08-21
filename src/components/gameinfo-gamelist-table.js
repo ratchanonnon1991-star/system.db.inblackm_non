@@ -148,7 +148,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
     setGameSelected(gameId, selectionDragRef.current.selecting);
   }
 
-  async function setSelectedGamesStatus(enabled, explicitIds = null, isNew = false) {
+  async function setSelectedGamesStatus(enabled, explicitIds = null) {
     const gameIds = explicitIds || [...selectedGameIds];
     if (gameIds.length === 0 || updatingStatus) return;
     setUpdatingStatus(true);
@@ -157,15 +157,14 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
       await apiJson("/api/gameinfo/gamelist/status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ gameIds, enabled, isNew }),
+        body: JSON.stringify({ gameIds, enabled }),
       });
       const idSet = new Set(gameIds);
       const applyStatus = (row) => idSet.has(row.id)
         ? {
             ...row,
             serviceEnabled: enabled,
-            serviceNew: isNew,
-            serviceStatus: isNew ? "new" : enabled ? (row.packDisabledCount > 0 ? "partial" : "online") : "offline",
+            serviceStatus: enabled ? (row.packDisabledCount > 0 ? "partial" : "online") : "offline",
           }
         : row;
       setRows((current) => current.map(applyStatus));
@@ -442,7 +441,6 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
       packCount: 0,
       image: "",
       serviceEnabled: true,
-      serviceNew: false,
       serviceStatus: "online",
       packDisabledCount: 0,
       hasTutorial: false,
@@ -492,9 +490,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
     beginGameSelection,
     enterGameSelection,
     onSetGameStatus: (gameId, status) => {
-      if (status === "offline") return setSelectedGamesStatus(true, [gameId], true);
-      if (status === "new") return setSelectedGamesStatus(true, [gameId], false);
-      return setSelectedGamesStatus(false, [gameId], false);
+      return setSelectedGamesStatus(status === "offline", [gameId]);
     },
   };
 
@@ -664,12 +660,6 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
               disabled={updatingStatus}
               className="rounded-md px-2 py-1 text-linear-ink-muted hover:bg-linear-surface-2"
             >ปิดบริการ</button>
-            <button
-              type="button"
-              onClick={() => setSelectedGamesStatus(true, null, true)}
-              disabled={updatingStatus}
-              className="rounded-md px-2 py-1 text-red-400 hover:bg-red-500/10"
-            >ใหม่</button>
           </div>
         ) : null}
       </div>
@@ -1180,9 +1170,7 @@ function RowActionsMenu({ row, lang, dataMode, editable, onDelete }) {
 // is only meaningful on VPN-required packs, see the pack editor's vpnOn-gated
 // country field); otherwise "NO". Edit it via the pack editor, not here.
 function ServiceStatusLight({ status, editable, onToggle }) {
-  const config = status === "new"
-    ? { color: "bg-red-500", label: "เกมใหม่" }
-    : status === "offline"
+  const config = status === "offline"
     ? { color: "bg-zinc-500", label: "ปิดให้บริการ" }
     : status === "partial"
       ? { color: "bg-amber-400", label: "เปิดเกม แต่มีบาง pack ปิด" }
@@ -1190,7 +1178,7 @@ function ServiceStatusLight({ status, editable, onToggle }) {
   const content = (
     <>
       <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${config.color}`} />
-      <span className="truncate">{status === "new" ? "ใหม่" : status === "partial" ? "บางส่วน" : status === "offline" ? "ปิด" : "ปกติ"}</span>
+      <span className="truncate">{status === "partial" ? "บางส่วน" : status === "offline" ? "ปิด" : "ปกติ"}</span>
     </>
   );
 
@@ -1209,7 +1197,7 @@ function ServiceStatusLight({ status, editable, onToggle }) {
         event.stopPropagation();
         onToggle?.();
       }}
-      title={`${config.label} — กดเพื่อเปลี่ยนสถานะ ปกติ → ปิด → ใหม่`}
+      title={`${config.label} — กดเพื่อสลับสถานะ ปกติ/ปิด`}
       aria-label={config.label}
       className="flex items-center gap-1.5 text-[10px] text-linear-ink-tertiary"
     >
