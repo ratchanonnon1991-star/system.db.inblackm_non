@@ -1,28 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { gameinfoListHref, normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 
-// Everyone lands on the card dashboard. admin/staff can open the existing
-// inline table editor at ?manage=1; role "user" only gets the dashboard link.
+// Everyone lands on the card dashboard. Admin/staff can open /manage;
+// role "user" only gets the dashboard link.
 export default function GameinfoModeToggle({ lang, editableRole }) {
   const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const dataMode = normalizeGameinfoDataMode(searchParams.get("mode"));
 
   if (!editableRole) {
     return (
-      <Link href={`/gameinfo/${lang}`} className="text-linear-ink-muted hover:text-linear-primary">
+      <Link href={gameinfoListHref(lang, dataMode)} className="text-linear-ink-muted hover:text-linear-primary">
         หน้าเว็บ
       </Link>
     );
   }
 
-  const isManageMode = searchParams.get("manage") === "1";
-  const nextParams = new URLSearchParams(searchParams.toString());
-  nextParams.delete("view");
-  if (isManageMode) nextParams.delete("manage");
-  else nextParams.set("manage", "1");
-  const query = nextParams.toString();
-  const href = `/gameinfo/${lang}${query ? `?${query}` : ""}`;
+  const isManageMode = pathname.split("/").includes("manage");
+  const href = gameinfoListHref(lang, dataMode, !isManageMode);
 
   return (
     <Link

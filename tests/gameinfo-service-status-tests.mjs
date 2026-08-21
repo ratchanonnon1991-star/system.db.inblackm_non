@@ -3,6 +3,7 @@ import {
   listGameListRows,
   setGameListServiceStatus,
 } from "@/server/gameinfo-gamelist.js";
+import { filterGameinfoRows } from "@/lib/gameinfo-dashboard.js";
 import { log, reset, setResponder } from "@/lib/db.js";
 
 let pass = 0;
@@ -22,7 +23,7 @@ setResponder((text) => {
   if (/SELECT g\.\*, o\.sort_order/.test(text)) {
     return {
       rows: [{
-        id: 5,
+        id: "5",
         game: "Game A",
         region: "Global",
         platform: null,
@@ -36,7 +37,7 @@ setResponder((text) => {
         remark: null,
         service_enabled: false,
       }, {
-        id: 7,
+        id: "7",
         game: "Game B",
         region: "Global",
         service_enabled: true,
@@ -46,8 +47,12 @@ setResponder((text) => {
   return null;
 });
 const rows = await listGameListRows();
+check("list normalizes PostgreSQL bigint ids", rows.map((row) => row.id), [5, 7]);
 check("list maps a disabled game service status", rows[0].serviceEnabled, false);
 check("list maps an enabled game service status", rows[1].serviceEnabled, true);
+const reportCounts = new Map([[5, 1]]);
+const rowsWithReports = rows.map((row) => ({ ...row, reportCount: reportCounts.get(row.id) || 0 }));
+check("report game id matches the normalized game id", filterGameinfoRows(rowsWithReports, { status: "review" }).map((row) => row.id), [5]);
 ok("list joins the side-table without altering game_list", log.some((entry) => /LEFT JOIN gamelist_service_status/.test(entry.text)));
 
 reset();

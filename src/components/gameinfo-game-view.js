@@ -113,6 +113,12 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
               {row.tags.map((tag) => <span key={tag} className="rounded-full bg-linear-surface-3 px-2 py-1 text-[11px] text-linear-ink-muted">{tag}</span>)}
             </div>
           ) : null}
+          {(row.publishers || []).length ? (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-linear-ink-tertiary">ค่ายเกม</span>
+              {row.publishers.map((publisher) => <span key={publisher} className="rounded-full bg-linear-surface-3 px-2 py-1 text-[11px] text-linear-ink-muted">{publisher}</span>)}
+            </div>
+          ) : null}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <GameinfoGameLinkButtons links={row.links || []} />
             {/* Always view-only here regardless of role — editing the

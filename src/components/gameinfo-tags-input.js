@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
+import { Image as ImageIcon, X } from "lucide-react";
+import GameinfoImagePickerModal from "./gameinfo-image-picker-modal";
 
 // Multi-value chip input with the same "remembers past values" dropdown as
 // GameinfoMemoryInput — used for pack payment channels. Ported from
@@ -15,9 +16,14 @@ export default function GameinfoTagsInput({
   max,
   invalid,
   neutral = false,
+  tagImages,
+  onTagImageChange,
+  imageLabel = "หมวดหมู่",
 }) {
   const [text, setText] = useState("");
   const [open, setOpen] = useState(false);
+  const [imageTag, setImageTag] = useState("");
+  const [imageError, setImageError] = useState("");
   const [pos, setPos] = useState(null);
   const ref = useRef(null);
   const atMax = typeof max === "number" && values.length >= max;
@@ -57,6 +63,10 @@ export default function GameinfoTagsInput({
     if (atMax) return;
     onChange([...values, t]);
     setText("");
+    if (onTagImageChange && !(suggestions || []).some((s) => s.toLowerCase() === t.toLowerCase())) {
+      setOpen(false);
+      setImageTag(t);
+    }
   }
 
   function remove(i) {
@@ -68,6 +78,22 @@ export default function GameinfoTagsInput({
     .filter((s) => !values.some((v) => v.toLowerCase() === s.toLowerCase()))
     .filter((s) => s.toLowerCase().includes(q))
     .slice(0, 8);
+  const imageFor = (tag) => Object.entries(tagImages || {}).find(
+    ([name]) => name.toLocaleLowerCase("th") === tag.toLocaleLowerCase("th")
+  )?.[1] || "";
+
+  function editImage(tag) {
+    setOpen(false);
+    setImageError("");
+    setImageTag(tag);
+  }
+
+  function saveImage(imageUrl) {
+    const tag = imageTag;
+    Promise.resolve(onTagImageChange?.(tag, imageUrl)).catch((error) => {
+      setImageError(error instanceof Error ? error.message : `บันทึกรูป${imageLabel}ไม่สำเร็จ`);
+    });
+  }
 
   return (
     <div className="relative" ref={ref}>
@@ -81,6 +107,14 @@ export default function GameinfoTagsInput({
             key={`${v}-${i}`}
             className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs ${neutral ? "bg-linear-surface-3 text-linear-ink-muted" : "bg-linear-primary/15 text-linear-primary"}`}
           >
+            {onTagImageChange ? (
+              <button type="button" onClick={() => editImage(v)} className="flex items-center" aria-label={`ใส่รูป ${v}`} title={`ใส่รูป${imageLabel}`}>
+                {imageFor(v) ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={imageFor(v)} alt="" className="h-4 w-4 rounded object-cover" />
+                ) : <ImageIcon size={12} />}
+              </button>
+            ) : null}
             {v}
             <button
               type="button"
@@ -130,14 +164,31 @@ export default function GameinfoTagsInput({
             className="fixed z-50 max-h-56 overflow-auto rounded-md border border-linear-hairline bg-linear-surface-1 py-1 shadow-lg"
           >
             {filtered.map((s) => (
-              <li key={s}>
+              <li key={s} className="flex items-center">
+                {onTagImageChange ? (
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      editImage(s);
+                    }}
+                    className="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded text-linear-ink-tertiary hover:bg-linear-surface-2 hover:text-linear-ink"
+                    aria-label={`ใส่รูป ${s}`}
+                    title={`ใส่รูป${imageLabel}`}
+                  >
+                    {imageFor(s) ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={imageFor(s)} alt="" className="h-5 w-5 rounded object-cover" />
+                    ) : <ImageIcon size={14} />}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onMouseDown={(e) => {
                     e.preventDefault();
                     add(s);
                   }}
-                  className="block w-full px-3 py-1.5 text-left text-sm text-linear-ink hover:bg-linear-primary/10"
+                  className="block min-w-0 flex-1 px-3 py-1.5 text-left text-sm text-linear-ink hover:bg-linear-primary/10"
                 >
                   {s}
                 </button>
@@ -146,6 +197,14 @@ export default function GameinfoTagsInput({
           </ul>,
           document.body
         )}
+      {imageError ? <p className="mt-1 text-xs text-linear-primary">{imageError}</p> : null}
+      {imageTag ? (
+        <GameinfoImagePickerModal
+          value={imageFor(imageTag)}
+          onChange={saveImage}
+          onClose={() => setImageTag("")}
+        />
+      ) : null}
     </div>
   );
 }

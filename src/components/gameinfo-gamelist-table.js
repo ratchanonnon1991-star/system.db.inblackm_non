@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
+import { gameinfoGameHref, gameinfoPacksHref } from "@/lib/gameinfo-data-mode";
 import GameinfoMemoryInput from "./gameinfo-memory-input";
 import GameinfoNameInput from "./gameinfo-name-input";
 import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
@@ -893,7 +894,7 @@ function StaticRow({ row, ...rest }) {
   // anyway. RowActionsMenu still stops its own clicks from bubbling here.
   return (
     <div
-      onClick={() => router.push(`/gameinfo/${rest.lang}/${row.id}${rest.dataMode === "idpass" ? "?mode=idpass" : ""}`)}
+      onClick={() => router.push(gameinfoGameHref(rest.lang, row.id, rest.dataMode))}
       className={`grid ${GRID_COLS} cursor-pointer items-center gap-2 border-b border-linear-hairline px-3 py-2 text-sm last:border-b-0 hover:bg-linear-surface-2`}
     >
       <span></span>
@@ -1072,7 +1073,7 @@ function RowCells({
         <RowActionsMenu row={row} lang={lang} dataMode={dataMode} editable={editable} onDelete={onDelete} />
       ) : (
         <Link
-          href={`/gameinfo/${lang}/${row.id}${dataMode === "idpass" ? "?mode=idpass" : ""}`}
+          href={gameinfoGameHref(lang, row.id, dataMode)}
           onClick={(event) => event.stopPropagation()}
           className="flex h-7 items-center justify-center rounded border border-linear-hairline px-2 text-xs font-medium text-linear-primary hover:bg-linear-surface-2"
         >
@@ -1145,7 +1146,7 @@ function RowActionsMenu({ row, lang, dataMode, editable, onDelete }) {
             className="fixed z-50 w-32 overflow-hidden rounded-md border border-linear-hairline bg-linear-surface-1 py-1 shadow-lg"
           >
             <Link
-              href={`/gameinfo/${lang}/${row.id}${dataMode === "idpass" ? "?mode=idpass" : ""}`}
+              href={gameinfoGameHref(lang, row.id, dataMode)}
               onClick={() => setOpen(false)}
               className="block px-3 py-1.5 text-xs text-linear-ink hover:bg-linear-surface-2"
             >
@@ -1153,7 +1154,7 @@ function RowActionsMenu({ row, lang, dataMode, editable, onDelete }) {
             </Link>
             {editable && (
               <Link
-                href={`/gameinfo/${lang}/${row.id}/packs${dataMode === "idpass" ? "?mode=idpass" : ""}`}
+                href={gameinfoPacksHref(lang, row.id, dataMode)}
                 onClick={() => setOpen(false)}
                 className="block px-3 py-1.5 text-xs text-linear-ink hover:bg-linear-surface-2"
               >

@@ -2,16 +2,13 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { gameinfoModeQuery } from "@/lib/gameinfo-data-mode";
 
 export default function GameinfoDatasetToggle({ basePath }) {
   const searchParams = useSearchParams();
   const mode = searchParams.get("mode") === "idpass" ? "idpass" : "uid";
   function href(nextMode) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (nextMode === "idpass") params.set("mode", "idpass");
-    else params.delete("mode");
-    const query = params.toString();
-    return `${basePath}${query ? `?${query}` : ""}`;
+    return `${basePath}${gameinfoModeQuery(nextMode)}`;
   }
   return (
     <div className="inline-flex rounded-lg border border-linear-hairline-strong bg-linear-surface-1 p-1 text-xs">

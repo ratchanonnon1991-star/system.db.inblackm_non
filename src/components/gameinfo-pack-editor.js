@@ -87,9 +87,9 @@ function uniq(arr) {
 // (ported separately) via the /api/gameinfo/import/* routes.
 export default function GameinfoPackEditor({
   game,
-  lang,
   userId,
   dataMode = "uid",
+  backHref,
   suggestions,
   savePacksUrl = `/api/gameinfo/gamelist/${game.id}/packs`,
   importPreviewUrl = `/api/gameinfo/import/preview?gameId=${game.id}`,
@@ -932,10 +932,7 @@ export default function GameinfoPackEditor({
             type="button"
             onClick={() => {
               if (!confirmGameinfoNavigation()) return;
-              // Same "opened this page directly, nothing to go back to"
-              // guard as GameinfoBackLink.
-              if (window.history.length <= 1) router.push(`/gameinfo/${lang}/${game.id}`);
-              else router.back();
+              router.replace(backHref);
             }}
             className="-my-0.5 flex h-10 items-center whitespace-nowrap rounded-full bg-linear-primary px-4 text-sm font-medium text-white shadow-md hover:bg-linear-primary-hover"
           >

@@ -10,7 +10,7 @@ import { deleteGamelistPacksForGame } from "@/server/gameinfo-gamelist-packs";
 import { deleteGamelistTutorialForGame } from "@/server/gameinfo-gamelist-tutorial";
 import { deleteGamelistImageForGame } from "@/server/gameinfo-gamelist-image";
 import { deleteGamelistLinksForGame } from "@/server/gameinfo-gamelist-links";
-import { deleteGamelistTagsForGame } from "@/server/gameinfo-gamelist-tags";
+import { deleteGamelistPublishersForGame, deleteGamelistTagsForGame } from "@/server/gameinfo-gamelist-tags";
 import { deleteGamelistReportsForGame } from "@/server/gameinfo-gamelist-reports";
 import { deleteGamelistFavoritesForGame } from "@/server/gameinfo-gamelist-favorites";
 import { deleteGameinfoModeData } from "@/server/gameinfo-mode-data";
@@ -83,7 +83,7 @@ async function getReadyPool() {
 
 function mapRow(row) {
   return {
-    id: row.id,
+    id: Number(row.id),
     sortOrder: row.sort_order ?? null,
     serviceEnabled: row.service_enabled !== false,
     game: row.game,
@@ -319,6 +319,7 @@ export async function deleteGameListRow(id) {
     await deleteGamelistImageForGame(id, client);
     await deleteGamelistLinksForGame(id, client);
     await deleteGamelistTagsForGame(id, client);
+    await deleteGamelistPublishersForGame(id, client);
     await deleteGamelistReportsForGame(id, client);
     await deleteGamelistFavoritesForGame(id, client);
     await deleteGameinfoModeData(id, client);

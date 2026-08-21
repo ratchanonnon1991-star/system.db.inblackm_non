@@ -38,10 +38,14 @@ check("admin resolves report", (await setGamelistReportStatus(5, 9, "resolved", 
 const submitRoute = readFileSync(new URL("../src/app/api/gameinfo/gamelist/[id]/reports/route.js", import.meta.url), "utf8");
 const openRoute = readFileSync(new URL("../src/app/api/gameinfo/reports/route.js", import.meta.url), "utf8");
 const cards = readFileSync(new URL("../src/components/gameinfo-gamelist-cards.js", import.meta.url), "utf8");
+const detail = readFileSync(new URL("../src/components/gameinfo-game-detail-page.js", import.meta.url), "utf8");
 check("report source follows GameInfo permission", submitRoute.includes("source: user.gameinfoRole"), true);
 check("open report API is editor-only", openRoute.includes("requireGameinfoEditor(request)"), true);
 check("admin dashboard refreshes reports", cards.includes('fetch("/api/gameinfo/reports")'), true);
 check("game card can submit a report", cards.includes('method: "POST"') && cards.includes("onReport"), true);
+check("submitted report becomes visible", cards.includes('chooseStatus("review")'), true);
+check("manage page keeps report context", detail.match(/manageMode \? <GameinfoReportPanel/g)?.length, 1);
+check("review status reuses game cards", cards.includes('const pageRows = rows.slice') && !cards.includes("function ReportCard"), true);
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);

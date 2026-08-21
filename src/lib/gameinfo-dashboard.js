@@ -25,10 +25,10 @@ export function isGameinfoBotAuto(value) {
   return normalized === "bot" || normalized === "botauto";
 }
 
-export function listGameinfoTags(rows) {
+function listGameinfoValues(rows, field) {
   const tags = new Map();
   for (const row of rows) {
-    for (const tag of row.tags || []) {
+    for (const tag of row[field] || []) {
       const key = tag.toLocaleLowerCase("th");
       const current = tags.get(key);
       tags.set(key, { name: current?.name || tag, count: (current?.count || 0) + 1 });
@@ -37,7 +37,15 @@ export function listGameinfoTags(rows) {
   return [...tags.values()].sort((a, b) => a.name.localeCompare(b.name, "th"));
 }
 
-export function filterGameinfoRows(rows, { query = "", status = "all", tag = "", sort = "order" } = {}) {
+export function listGameinfoTags(rows) {
+  return listGameinfoValues(rows, "tags");
+}
+
+export function listGameinfoPublishers(rows) {
+  return listGameinfoValues(rows, "publishers");
+}
+
+export function filterGameinfoRows(rows, { query = "", status = "all", tag = "", publisher = "", sort = "order" } = {}) {
   const needle = query.trim().toLocaleLowerCase("th");
   const filtered = rows.filter((row) => {
     if (status === "review" && !(row.reportCount > 0)) return false;
@@ -45,8 +53,9 @@ export function filterGameinfoRows(rows, { query = "", status = "all", tag = "",
     if (status === "favorite" && !row.isFavorite) return false;
     if (status !== "all" && status !== "review" && status !== "bot-auto" && status !== "favorite" && row.serviceStatus !== status) return false;
     if (tag && !(row.tags || []).some((value) => value.toLocaleLowerCase("th") === tag.toLocaleLowerCase("th"))) return false;
+    if (publisher && !(row.publishers || []).some((value) => value.toLocaleLowerCase("th") === publisher.toLocaleLowerCase("th"))) return false;
     if (!needle) return true;
-    return [row.game, row.id, row.region, row.platform, row.server, row.vpnComputed, ...(row.tags || [])]
+    return [row.game, row.id, row.region, row.platform, row.server, row.vpnComputed, ...(row.tags || []), ...(row.publishers || [])]
       .some((value) => String(value ?? "").toLocaleLowerCase("th").includes(needle));
   });
   if (sort === "name") return [...filtered].sort((a, b) => String(a.game).localeCompare(String(b.game), "th"));

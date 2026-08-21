@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleOff,
+  Eye,
   Flag,
   Gamepad2,
   MoreVertical,
@@ -23,10 +24,12 @@ import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
 import {
   GAMEINFO_STATUSES,
   filterGameinfoRows,
+  listGameinfoPublishers,
   listGameinfoTags,
   summarizeGameinfoRows,
   isGameinfoBotAuto,
 } from "@/lib/gameinfo-dashboard";
+import { gameinfoGameHref, gameinfoListHref, gameinfoPacksHref } from "@/lib/gameinfo-data-mode";
 
 const PAGE_SIZE = 12;
 
@@ -37,16 +40,16 @@ const STATUS_STYLE = {
   offline: { label: "ปิดใช้งาน", dot: "bg-linear-ink-tertiary", badge: "bg-linear-surface-3 text-linear-ink-subtle" },
 };
 
-export default function GameinfoGamelistCards({ initial, initialReports = [], editable = false, lang, dataMode = "uid" }) {
+export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, editable = false, lang, dataMode = "uid" }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [tag, setTag] = useState("");
+  const [publisher, setPublisher] = useState("");
   const [sort, setSort] = useState("order");
   const [page, setPage] = useState(0);
   const [favoriteIds, setFavoriteIds] = useState(() => new Set(initial.filter((row) => row.isFavorite).map((row) => row.id)));
   const [reports, setReports] = useState(initialReports);
   const [favoriteBusy, setFavoriteBusy] = useState(null);
-  const [reportBusy, setReportBusy] = useState(null);
   const [reportGame, setReportGame] = useState(null);
   const [reportMessage, setReportMessage] = useState("");
   const [reportSubmitting, setReportSubmitting] = useState(false);
@@ -79,26 +82,14 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ed
   );
   const counts = useMemo(() => summarizeGameinfoRows(rowsWithState), [rowsWithState]);
   const tagOptions = useMemo(() => listGameinfoTags(initial), [initial]);
+  const publisherOptions = useMemo(() => listGameinfoPublishers(initial), [initial]);
   const rows = useMemo(
-    () => filterGameinfoRows(rowsWithState, { query, status, tag, sort }),
-    [query, rowsWithState, sort, status, tag]
+    () => filterGameinfoRows(rowsWithState, { query, status, tag, publisher, sort }),
+    [publisher, query, rowsWithState, sort, status, tag]
   );
-  const reportRows = useMemo(() => {
-    const gameById = new Map(rowsWithState.map((row) => [row.id, row]));
-    const needle = query.trim().toLocaleLowerCase("th");
-    const filtered = reports
-      .map((report) => ({ report, game: gameById.get(report.gameId) }))
-      .filter(({ report, game }) => game
-        && (!tag || game.tags?.some((value) => value.toLocaleLowerCase("th") === tag.toLocaleLowerCase("th")))
-        && (!needle || [game.game, game.id, report.message, report.source, report.createdBy]
-          .some((value) => String(value ?? "").toLocaleLowerCase("th").includes(needle))));
-    if (sort === "name") return filtered.sort((a, b) => String(a.game.game).localeCompare(String(b.game.game), "th"));
-    return filtered;
-  }, [query, reports, rowsWithState, sort, tag]);
-  const displayRows = status === "review" ? reportRows : rows;
-  const pageCount = Math.max(1, Math.ceil(displayRows.length / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
-  const pageRows = displayRows.slice(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE);
+  const pageRows = rows.slice(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE);
 
   function chooseStatus(nextStatus) {
     setStatus(nextStatus);
@@ -107,6 +98,11 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ed
 
   function chooseTag(nextTag) {
     setTag(nextTag);
+    setPage(0);
+  }
+
+  function choosePublisher(nextPublisher) {
+    setPublisher(nextPublisher);
     setPage(0);
   }
 
@@ -133,25 +129,6 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ed
     }
   }
 
-  async function resolveReport(report) {
-    setReportBusy(report.id);
-    setActionError("");
-    try {
-      const response = await fetch(`/api/gameinfo/gamelist/${report.gameId}/reports`, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ reportId: report.id, status: "resolved" }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "ยืนยันการแก้ไขไม่สำเร็จ");
-      setReports((current) => current.filter((item) => item.id !== data.report.id));
-    } catch (error) {
-      setActionError(error.message);
-    } finally {
-      setReportBusy(null);
-    }
-  }
-
   async function submitReport(event) {
     event.preventDefault();
     if (!reportGame) return;
@@ -166,6 +143,10 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ed
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "ส่งรายงานไม่สำเร็จ");
       setReports((current) => [data.report, ...current]);
+      setQuery("");
+      setTag("");
+      setPublisher("");
+      chooseStatus("review");
       setReportGame(null);
       setReportMessage("");
     } catch (error) {
@@ -184,9 +165,10 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ed
             onClick={() => {
               chooseStatus("all");
               chooseTag("");
+              choosePublisher("");
             }}
             className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${
-              status === "all" && !tag
+              status === "all" && !tag && !publisher
                 ? "bg-linear-ink text-linear-canvas"
                 : "text-linear-ink-subtle hover:bg-linear-surface-3"
             }`}
@@ -234,12 +216,45 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ed
                     onClick={() => chooseTag(tag === item.name ? "" : item.name)}
                     className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${tag === item.name ? "bg-linear-ink text-linear-canvas" : "text-linear-ink-subtle hover:bg-linear-surface-3"}`}
                   >
-                    <span className="truncate">{item.name}</span>
+                    <span className="flex min-w-0 items-center gap-2">
+                      {tagImages[item.name] ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={tagImages[item.name]} alt="" className="h-6 w-6 shrink-0 rounded object-cover" />
+                      ) : null}
+                      <span className="truncate">{item.name}</span>
+                    </span>
                     <span className="text-xs opacity-70">{item.count}</span>
                   </button>
                 ))}
               </div>
             ) : <p className="px-3 py-2 text-xs text-linear-ink-tertiary">ยังไม่มีหมวดหมู่</p>}
+          </details>
+
+          <details open className="mt-3 border-t border-linear-hairline pt-3">
+            <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-linear-ink-muted">
+              ค่ายเกม
+            </summary>
+            {publisherOptions.length ? (
+              <div className="mt-1 space-y-1">
+                {publisherOptions.map((item) => (
+                  <button
+                    key={item.name}
+                    type="button"
+                    onClick={() => choosePublisher(publisher === item.name ? "" : item.name)}
+                    className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${publisher === item.name ? "bg-linear-ink text-linear-canvas" : "text-linear-ink-subtle hover:bg-linear-surface-3"}`}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      {publisherImages[item.name] ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={publisherImages[item.name]} alt="" className="h-6 w-6 shrink-0 rounded object-cover" />
+                      ) : null}
+                      <span className="truncate">{item.name}</span>
+                    </span>
+                    <span className="text-xs opacity-70">{item.count}</span>
+                  </button>
+                ))}
+              </div>
+            ) : <p className="px-3 py-2 text-xs text-linear-ink-tertiary">ยังไม่มีค่ายเกม</p>}
           </details>
 
           <div className="mt-3 border-t border-linear-hairline pt-3">
@@ -269,7 +284,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ed
             </button>
             {editable ? (
               <Link
-                href={`/gameinfo/${lang}?manage=1${dataMode === "idpass" ? "&mode=idpass" : ""}`}
+                href={gameinfoListHref(lang, dataMode, true)}
                 className="mt-1 flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-sm text-linear-ink-subtle hover:bg-linear-surface-3"
               >
                 <Settings size={16} /> ตั้งค่าระบบ
@@ -327,29 +342,15 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ed
         </div>
 
         {pageRows.length ? (
-          status === "review" ? (
-            <section aria-label="รายการที่ต้องตรวจสอบ">
-              <div className="mb-4">
-                <h2 className="text-lg font-semibold tracking-[-0.2px] text-linear-ink">Report ที่ยังไม่แก้</h2>
-                <p className="mt-1 text-xs text-linear-ink-tertiary">{reportRows.length} รายการ จาก {counts.review} เกม</p>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {pageRows.map(({ report, game }) => (
-                  <ReportCard key={report.id} report={report} game={game} editable={editable} lang={lang} dataMode={dataMode} busy={reportBusy === report.id} onResolve={resolveReport} />
-                ))}
-              </div>
-            </section>
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-              {pageRows.map((row) => (
-                <GameCard key={row.id} row={row} editable={editable} lang={lang} dataMode={dataMode} favoriteBusy={favoriteBusy === row.id} onToggleFavorite={toggleFavorite} onReport={() => {
-                  setActionError("");
-                  setReportGame(row);
-                  setReportMessage("");
-                }} />
-              ))}
-            </div>
-          )
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            {pageRows.map((row) => (
+              <GameCard key={row.id} row={row} editable={editable} lang={lang} dataMode={dataMode} favoriteBusy={favoriteBusy === row.id} onToggleFavorite={toggleFavorite} onReport={() => {
+                setActionError("");
+                setReportGame(row);
+                setReportMessage("");
+              }} />
+            ))}
+          </div>
         ) : (
           <div className="rounded-2xl border border-dashed border-linear-hairline-strong py-16 text-center text-sm text-linear-ink-tertiary">
             {status === "review" ? "ไม่มี Report ที่ต้องตรวจสอบ" : "ไม่พบเกมที่ตรงกับตัวกรอง"}
@@ -408,58 +409,11 @@ function StatCard({ label, count, icon: Icon, active, onClick, tone }) {
   );
 }
 
-function ReportCard({ report, game, editable, lang, dataMode, busy, onResolve }) {
-  const params = new URLSearchParams();
-  if (dataMode === "idpass") params.set("mode", "idpass");
-  if (editable) params.set("manage", "1");
-  const href = `/gameinfo/${lang}/${game.id}${params.size ? `?${params}` : ""}`;
-  return (
-    <article className="overflow-hidden rounded-2xl border border-linear-hairline bg-linear-surface-1" style={{ boxShadow: "var(--ll-shadow-card)" }}>
-      <div className="flex gap-3 p-4">
-        <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-linear-primary">
-          {game.image ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={game.image} alt="" className="h-full w-full object-cover" />
-          ) : <Gamepad2 size={26} className="text-white" />}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-linear-primary/10 px-2 py-1 text-[11px] font-medium text-linear-primary">ยังไม่แก้</span>
-            <span className="rounded-full bg-linear-surface-3 px-2 py-1 text-[11px] text-linear-ink-muted">{report.source === "topup" ? "Topup" : "Admin"}</span>
-          </div>
-          <h3 className="mt-2 line-clamp-2 text-sm font-semibold uppercase text-linear-ink">{game.game}</h3>
-          <p className="mt-1 font-mono text-[11px] text-linear-ink-tertiary">Game ID: {game.id} · Report #{report.id}</p>
-        </div>
-      </div>
-      <div className="border-t border-linear-hairline px-4 py-3">
-        <p className="text-[11px] font-medium uppercase text-linear-ink-tertiary">เรื่องที่แจ้ง</p>
-        <p className="mt-1 whitespace-pre-wrap text-sm text-linear-ink-subtle">{report.message}</p>
-        <p className="mt-3 text-[11px] text-linear-ink-tertiary">
-          {report.createdBy ? `โดย ${report.createdBy} · ` : ""}{new Date(report.createdAt).toLocaleString("th-TH")}
-        </p>
-      </div>
-      <div className="flex items-center gap-2 border-t border-linear-hairline p-3">
-        <Link href={href} className="inline-flex h-10 flex-1 items-center justify-center rounded-lg border border-linear-hairline-strong px-3 text-xs font-medium text-linear-ink hover:bg-linear-surface-2">
-          {editable ? "เปิดจัดการเกม" : "เปิดดูเกม"}
-        </Link>
-        {editable ? (
-          <button type="button" disabled={busy} onClick={() => onResolve(report)} className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg bg-linear-ink px-3 text-xs font-medium text-linear-canvas disabled:opacity-40">
-            <CheckCircle2 size={15} /> ยืนยันแก้แล้ว
-          </button>
-        ) : null}
-      </div>
-    </article>
-  );
-}
-
 function GameCard({ row, editable, lang, dataMode, favoriteBusy, onToggleFavorite, onReport }) {
   const status = STATUS_STYLE[row.serviceStatus] || STATUS_STYLE.online;
-  const viewParams = new URLSearchParams();
-  if (dataMode === "idpass") viewParams.set("mode", "idpass");
-  const href = `/gameinfo/${lang}/${row.id}${viewParams.size ? `?${viewParams}` : ""}`;
-  const packsHref = `/gameinfo/${lang}/${row.id}/packs${dataMode === "idpass" ? "?mode=idpass" : ""}`;
-  if (editable) viewParams.set("manage", "1");
-  const actionHref = `/gameinfo/${lang}/${row.id}${viewParams.size ? `?${viewParams}` : ""}`;
+  const href = gameinfoGameHref(lang, row.id, dataMode);
+  const packsHref = gameinfoPacksHref(lang, row.id, dataMode);
+  const actionHref = gameinfoGameHref(lang, row.id, dataMode, editable);
   return (
     <article className="relative overflow-hidden rounded-2xl border border-linear-hairline bg-linear-surface-1" style={{ boxShadow: "var(--ll-shadow-card)" }}>
       <details className="group absolute right-3 top-3 z-20">
@@ -504,6 +458,16 @@ function GameCard({ row, editable, lang, dataMode, favoriteBusy, onToggleFavorit
         </dl>
       </Link>
       <div className="flex items-center gap-2 border-t border-linear-hairline p-3">
+        {editable ? (
+          <Link
+            href={href}
+            aria-label={`ดู ${row.game}`}
+            title="ดู"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-linear-hairline-strong text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink"
+          >
+            <Eye size={17} />
+          </Link>
+        ) : null}
         <Link href={actionHref} className={`inline-flex h-10 min-w-0 flex-1 items-center justify-center rounded-lg px-3 text-xs font-medium text-white ${editable ? "bg-linear-primary hover:bg-linear-primary-hover" : "bg-linear-ink"}`}>
           {editable ? "เปิดจัดการ" : "เปิดดู"}
         </Link>

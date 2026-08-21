@@ -1,4 +1,9 @@
-import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode.js";
+import {
+  gameinfoGameHref,
+  gameinfoListHref,
+  gameinfoPacksHref,
+  normalizeGameinfoDataMode,
+} from "@/lib/gameinfo-data-mode.js";
 import {
   getGameinfoModeData,
   saveGameinfoModeData,
@@ -18,6 +23,9 @@ function ok(name, value) { check(name, Boolean(value), true); }
 
 check("mode defaults to UID", normalizeGameinfoDataMode("unknown"), "uid");
 check("IDPASS mode is case-insensitive", normalizeGameinfoDataMode("IDPASS"), "idpass");
+check("list routes use a manage path", gameinfoListHref("th", "uid", true), "/gameinfo/th/manage");
+check("game manage routes preserve IDPASS", gameinfoGameHref("th", 7, "idpass", true), "/gameinfo/th/7/manage?mode=idpass");
+check("pack routes preserve IDPASS", gameinfoPacksHref("th", 7, "idpass"), "/gameinfo/th/7/packs?mode=idpass");
 
 reset();
 setResponder((text) => {
