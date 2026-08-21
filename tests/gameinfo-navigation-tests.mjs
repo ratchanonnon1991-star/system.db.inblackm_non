@@ -9,6 +9,7 @@ const homePage = read("../src/components/gameinfo-home-page.js");
 const detailPage = read("../src/components/gameinfo-game-detail-page.js");
 const backLink = read("../src/components/gameinfo-back-link.js");
 const packEditor = read("../src/components/gameinfo-pack-editor.js");
+const gamelistCards = read("../src/components/gameinfo-gamelist-cards.js");
 
 const checks = [
   homeRoute.includes('query.manage === "1"') && homeRoute.includes("gameinfoListHref(lang, dataMode, true)"),
@@ -18,6 +19,9 @@ const checks = [
   backLink.includes("confirmGameinfoNavigation()") && backLink.includes("router.replace(href)"),
   packEditor.includes("router.replace(backHref)"),
   !backLink.includes("router.back()") && !packEditor.includes("router.back()"),
+  gamelistCards.includes('aria-controls="gameinfo-filter-sidebar"') &&
+    gamelistCards.includes('sidebarOpen ? "visible translate-x-0" : "invisible -translate-x-full"') &&
+    gamelistCards.includes('event.key === "Escape"'),
 ];
 const failed = checks.filter((passed) => !passed).length;
 

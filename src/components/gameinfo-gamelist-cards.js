@@ -12,6 +12,7 @@ import {
   Eye,
   Flag,
   Gamepad2,
+  Menu,
   MoreVertical,
   Search,
   Send,
@@ -55,6 +56,15 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const [actionError, setActionError] = useState("");
   const [reportRefreshError, setReportRefreshError] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setSidebarOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [sidebarOpen]);
   useEffect(() => {
     if (!editable) return;
     const refreshReports = async () => {
@@ -94,16 +104,19 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
   function chooseStatus(nextStatus) {
     setStatus(nextStatus);
     setPage(0);
+    setSidebarOpen(false);
   }
 
   function chooseTag(nextTag) {
     setTag(nextTag);
     setPage(0);
+    setSidebarOpen(false);
   }
 
   function choosePublisher(nextPublisher) {
     setPublisher(nextPublisher);
     setPage(0);
+    setSidebarOpen(false);
   }
 
   async function toggleFavorite(row) {
@@ -158,7 +171,46 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
 
   return (
     <div className="grid min-h-[calc(100vh-65px)] lg:grid-cols-[240px_minmax(0,1fr)]">
-      <aside className="border-b border-linear-hairline bg-linear-surface-2 p-4 lg:border-b-0 lg:border-r">
+      <div className="flex h-14 items-center border-b border-linear-hairline bg-linear-surface-2 px-4 lg:hidden">
+        <button
+          type="button"
+          onClick={() => setSidebarOpen(true)}
+          aria-label="เปิดเมนูตัวกรอง"
+          aria-controls="gameinfo-filter-sidebar"
+          aria-expanded={sidebarOpen}
+          className="flex h-10 w-10 items-center justify-center rounded-lg border border-linear-hairline-strong bg-linear-surface-1 text-linear-ink transition hover:bg-linear-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-linear-primary/30"
+        >
+          <Menu size={20} />
+        </button>
+        <span className="ml-3 text-sm font-medium text-linear-ink">เมนูตัวกรอง</span>
+      </div>
+
+      {sidebarOpen ? (
+        <button
+          type="button"
+          aria-label="ปิดเมนูตัวกรอง"
+          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 z-40 bg-linear-ink/35 lg:hidden"
+        />
+      ) : null}
+
+      <aside
+        id="gameinfo-filter-sidebar"
+        className={`fixed inset-y-0 left-0 z-50 w-[280px] overflow-y-auto border-r border-linear-hairline bg-linear-surface-2 p-4 transition-transform duration-200 ${
+          sidebarOpen ? "visible translate-x-0" : "invisible -translate-x-full"
+        } lg:visible lg:static lg:w-auto lg:translate-x-0 lg:border-b-0`}
+      >
+        <div className="mb-3 flex items-center justify-between lg:hidden">
+          <span className="text-sm font-semibold text-linear-ink">ตัวกรองเกม</span>
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="ปิดเมนูตัวกรอง"
+            className="flex h-10 w-10 items-center justify-center rounded-lg text-linear-ink-subtle hover:bg-linear-surface-3 hover:text-linear-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-linear-primary/30"
+          >
+            <X size={20} />
+          </button>
+        </div>
         <nav aria-label="ตัวกรองเกม" className="lg:sticky lg:top-20">
           <button
             type="button"
