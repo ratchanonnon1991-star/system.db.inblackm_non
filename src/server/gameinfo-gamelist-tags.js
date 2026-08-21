@@ -108,11 +108,12 @@ export async function saveGamelistTags(gameId, tags) {
   }
 }
 
-export async function deleteGamelistTagsForGame(gameId) {
-  const client = await (await getReadyPool()).connect();
+export async function deleteGamelistTagsForGame(gameId, transactionClient = null) {
+  const pool = await getReadyPool();
+  const client = transactionClient || await pool.connect();
   try {
     await client.query(`DELETE FROM gamelist_tags WHERE game_id = $1`, [gameId]);
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
 }

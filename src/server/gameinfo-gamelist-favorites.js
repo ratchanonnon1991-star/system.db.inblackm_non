@@ -93,11 +93,12 @@ export async function setGamelistFavorite(userId, gameId, favorite) {
   }
 }
 
-export async function deleteGamelistFavoritesForGame(gameId) {
-  const client = await (await getReadyPool()).connect();
+export async function deleteGamelistFavoritesForGame(gameId, transactionClient = null) {
+  const pool = await getReadyPool();
+  const client = transactionClient || await pool.connect();
   try {
     await client.query(`DELETE FROM gamelist_favorites WHERE game_id = $1`, [gameId]);
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
 }

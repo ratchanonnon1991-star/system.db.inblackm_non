@@ -1,4 +1,4 @@
-import { canManageGameinfo, hasProjectmAccess } from "../src/server/auth.js";
+import { canManageGameinfo, hasGameinfoAccess, hasProjectmAccess } from "../src/server/auth.js";
 
 const cases = [
   ["admin เข้าได้", { projectmRole: "admin" }, true],
@@ -7,11 +7,18 @@ const cases = [
 ];
 const failed = cases.filter(([, user, expected]) => hasProjectmAccess(user) !== expected);
 
-cases.push(
-  ["topup จัดการเกมไม่ได้", { role: "staff", projectmRole: "topup" }, false],
-  ["staff ปกติจัดการเกมได้", { role: "staff", projectmRole: null }, true]
+const gameinfoCases = [
+  ["GameInfo Topup เข้าได้", { gameinfoRole: "topup" }, true, false],
+  ["GameInfo Admin จัดการได้", { role: "user", gameinfoRole: "admin" }, true, true],
+  ["ไม่มีสิทธิ์ GameInfo เข้าไม่ได้", { role: "admin", gameinfoRole: null }, false, false],
+];
+cases.push(...gameinfoCases);
+failed.push(
+  ...gameinfoCases.filter(
+    ([, user, canAccess, canManage]) =>
+      hasGameinfoAccess(user) !== canAccess || canManageGameinfo(user) !== canManage
+  )
 );
-failed.push(...cases.slice(3).filter(([, user, expected]) => canManageGameinfo(user) !== expected));
 
 console.log(`\n${cases.length - failed.length} passed, ${failed.length} failed`);
 if (failed.length) {

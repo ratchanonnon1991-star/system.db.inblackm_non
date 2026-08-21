@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -9,10 +9,14 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleOff,
+  Flag,
   Gamepad2,
+  MoreVertical,
   Search,
+  Send,
   Settings,
   Star,
+  X,
 } from "lucide-react";
 import GameinfoDatasetToggle from "./gameinfo-dataset-toggle";
 import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
@@ -43,7 +47,28 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ed
   const [reports, setReports] = useState(initialReports);
   const [favoriteBusy, setFavoriteBusy] = useState(null);
   const [reportBusy, setReportBusy] = useState(null);
+  const [reportGame, setReportGame] = useState(null);
+  const [reportMessage, setReportMessage] = useState("");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [reportRefreshError, setReportRefreshError] = useState("");
+  useEffect(() => {
+    if (!editable) return;
+    const refreshReports = async () => {
+      try {
+        const response = await fetch("/api/gameinfo/reports");
+        if (!response.ok) throw new Error();
+        const data = await response.json();
+        setReports(data.reports || []);
+        setReportRefreshError("");
+      } catch {
+        setReportRefreshError("อัปเดต Report ไม่สำเร็จ — ระบบจะลองใหม่อัตโนมัติ");
+      }
+    };
+    refreshReports();
+    const timer = window.setInterval(refreshReports, 15_000);
+    return () => window.clearInterval(timer);
+  }, [editable]);
   const rowsWithState = useMemo(
     () => {
       const reportCounts = new Map();
@@ -124,6 +149,29 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ed
       setActionError(error.message);
     } finally {
       setReportBusy(null);
+    }
+  }
+
+  async function submitReport(event) {
+    event.preventDefault();
+    if (!reportGame) return;
+    setReportSubmitting(true);
+    setActionError("");
+    try {
+      const response = await fetch(`/api/gameinfo/gamelist/${reportGame.id}/reports`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: reportMessage }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "ส่งรายงานไม่สำเร็จ");
+      setReports((current) => [data.report, ...current]);
+      setReportGame(null);
+      setReportMessage("");
+    } catch (error) {
+      setActionError(error.message);
+    } finally {
+      setReportSubmitting(false);
     }
   }
 
@@ -240,6 +288,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ed
           <GameinfoDatasetToggle basePath={`/gameinfo/${lang}`} />
         </div>
         {actionError ? <p role="alert" className="mb-4 text-sm text-linear-primary">{actionError}</p> : null}
+        {reportRefreshError ? <p role="status" className="mb-4 text-sm text-amber-700">{reportRefreshError}</p> : null}
 
         <section aria-label="สรุปสถานะเกม" className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard label="เกมทั้งหมด" count={counts.all} icon={Gamepad2} active={status === "all"} onClick={() => chooseStatus("all")} />
@@ -293,7 +342,11 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ed
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               {pageRows.map((row) => (
-                <GameCard key={row.id} row={row} editable={editable} lang={lang} dataMode={dataMode} favoriteBusy={favoriteBusy === row.id} onToggleFavorite={toggleFavorite} />
+                <GameCard key={row.id} row={row} editable={editable} lang={lang} dataMode={dataMode} favoriteBusy={favoriteBusy === row.id} onToggleFavorite={toggleFavorite} onReport={() => {
+                  setActionError("");
+                  setReportGame(row);
+                  setReportMessage("");
+                }} />
               ))}
             </div>
           )
@@ -311,6 +364,24 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ed
           </div>
         ) : null}
       </main>
+      {reportGame ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !reportSubmitting) setReportGame(null);
+        }}>
+          <form onSubmit={submitReport} role="dialog" aria-modal="true" aria-labelledby="report-dialog-title" className="w-full max-w-md rounded-2xl border border-linear-hairline bg-linear-surface-1 p-5" style={{ boxShadow: "var(--ll-shadow-modal)" }}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 id="report-dialog-title" className="text-lg font-semibold tracking-[-0.2px] text-linear-ink">รายงานปัญหา</h2>
+                <p className="mt-1 text-xs text-linear-ink-tertiary">{reportGame.game} · ID {reportGame.id}</p>
+              </div>
+              <button type="button" disabled={reportSubmitting} onClick={() => setReportGame(null)} aria-label="ปิด" className="flex h-10 w-10 items-center justify-center rounded-lg text-linear-ink-tertiary hover:bg-linear-surface-2 disabled:opacity-40"><X size={18} /></button>
+            </div>
+            <textarea autoFocus required maxLength={1000} rows={4} value={reportMessage} onChange={(event) => setReportMessage(event.target.value)} placeholder="แจ้งข้อมูลที่ผิดหรือปัญหาที่พบ..." className="mt-4 min-h-28 w-full resize-y rounded-lg border border-linear-hairline-strong bg-linear-canvas px-3 py-2 text-sm text-linear-ink outline-none placeholder:text-linear-ink-tertiary focus:border-linear-primary focus:ring-2 focus:ring-linear-primary/20" />
+            {actionError ? <p role="alert" className="mt-2 text-xs text-linear-primary">{actionError}</p> : null}
+            <button type="submit" disabled={reportSubmitting || !reportMessage.trim()} className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-linear-ink px-4 text-sm font-medium text-linear-canvas disabled:opacity-40"><Send size={15} /> {reportSubmitting ? "กำลังส่ง..." : "ส่งรายงาน"}</button>
+          </form>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -381,25 +452,31 @@ function ReportCard({ report, game, editable, lang, dataMode, busy, onResolve })
   );
 }
 
-function GameCard({ row, editable, lang, dataMode, favoriteBusy, onToggleFavorite }) {
+function GameCard({ row, editable, lang, dataMode, favoriteBusy, onToggleFavorite, onReport }) {
   const status = STATUS_STYLE[row.serviceStatus] || STATUS_STYLE.online;
   const viewParams = new URLSearchParams();
   if (dataMode === "idpass") viewParams.set("mode", "idpass");
   const href = `/gameinfo/${lang}/${row.id}${viewParams.size ? `?${viewParams}` : ""}`;
+  const packsHref = `/gameinfo/${lang}/${row.id}/packs${dataMode === "idpass" ? "?mode=idpass" : ""}`;
   if (editable) viewParams.set("manage", "1");
   const actionHref = `/gameinfo/${lang}/${row.id}${viewParams.size ? `?${viewParams}` : ""}`;
   return (
     <article className="relative overflow-hidden rounded-2xl border border-linear-hairline bg-linear-surface-1" style={{ boxShadow: "var(--ll-shadow-card)" }}>
-      <button
-        type="button"
-        onClick={() => onToggleFavorite(row)}
-        disabled={favoriteBusy}
-        aria-label={row.isFavorite ? `นำ ${row.game} ออกจากรายการโปรด` : `เพิ่ม ${row.game} ในรายการโปรด`}
-        aria-pressed={row.isFavorite}
-        className={`absolute right-3 top-3 z-10 flex h-10 w-10 items-center justify-center rounded-lg bg-linear-surface-1/90 hover:bg-linear-surface-3 disabled:opacity-40 ${row.isFavorite ? "text-linear-ink" : "text-linear-ink-tertiary"}`}
-      >
-        <Star size={17} className={row.isFavorite ? "fill-current" : ""} />
-      </button>
+      <details className="group absolute right-3 top-3 z-20">
+        <summary aria-label="เมนูเกม" title="เมนูเกม" className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-lg bg-linear-surface-1/90 text-linear-ink-tertiary hover:bg-linear-surface-3 hover:text-linear-ink [&::-webkit-details-marker]:hidden">
+          <MoreVertical size={18} />
+        </summary>
+        <div className="absolute right-0 mt-1 w-40 overflow-hidden rounded-lg border border-linear-hairline bg-linear-surface-1 py-1" style={{ boxShadow: "var(--ll-shadow-modal)" }}>
+          <button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); onToggleFavorite(row); }} disabled={favoriteBusy} aria-pressed={row.isFavorite} className="flex h-10 w-full items-center gap-2 px-3 text-left text-xs text-linear-ink-muted hover:bg-linear-surface-2 disabled:opacity-40">
+            <Star size={15} className={row.isFavorite ? "fill-current text-linear-ink" : ""} />
+            {row.isFavorite ? "เอาออกจากรายการโปรด" : "เพิ่มในรายการโปรด"}
+          </button>
+          <button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); onReport(); }} className="flex h-10 w-full items-center gap-2 px-3 text-left text-xs text-linear-ink-muted hover:bg-linear-surface-2">
+            <Flag size={15} /> รายงานปัญหา
+          </button>
+          {editable ? <Link href={packsHref} className="flex h-10 items-center gap-2 px-3 text-xs text-linear-ink-muted hover:bg-linear-surface-2"><Settings size={15} /> แก้ไข Pack</Link> : null}
+        </div>
+      </details>
       <Link href={href} className="block p-4 hover:bg-linear-surface-2">
         <div className="flex gap-3">
           <div className="flex aspect-square w-[46%] shrink-0 items-center justify-center overflow-hidden rounded-xl bg-linear-primary">

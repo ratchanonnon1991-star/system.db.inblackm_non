@@ -1,12 +1,12 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireAdmin, requireGameinfoEditor } from "@/server/auth";
+import { requireGameinfoAccess, requireGameinfoEditor } from "@/server/auth";
 import { createGameListRow, listGameListRows } from "@/server/gameinfo-gamelist";
 import { recordEdit } from "@/server/gamedb-edit-log";
 import { requestMeta } from "@/lib/request-meta";
 
 export async function GET(request) {
   try {
-    await requireAdmin(request);
+    await requireGameinfoAccess(request);
     const rows = await listGameListRows();
     return jsonOk({ rows });
   } catch (err) {

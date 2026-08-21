@@ -1,4 +1,5 @@
 import {
+  deleteGameListRow,
   listGameListRows,
   setGameListServiceStatus,
 } from "@/server/gameinfo-gamelist.js";
@@ -85,6 +86,27 @@ check(
   log.filter((entry) => /INSERT INTO gamelist_service_status/.test(entry.text)).length,
   0
 );
+
+reset();
+await deleteGameListRow(7);
+ok("delete commits all game cleanup atomically", log.some((entry) => entry.text.trim() === "COMMIT"));
+ok("delete removes pack audit history", log.some((entry) => /DELETE FROM gamelist_pack_audit_logs/.test(entry.text)));
+ok("delete removes pack view presets", log.some((entry) => /DELETE FROM gamelist_pack_view_presets/.test(entry.text)));
+
+reset();
+setResponder((text) => {
+  if (/DELETE FROM gamelist_images/.test(text)) throw new Error("cleanup failed");
+  return null;
+});
+let deleteError = null;
+try {
+  await deleteGameListRow(7);
+} catch (error) {
+  deleteError = error;
+}
+ok("delete surfaces cleanup failures", deleteError);
+ok("delete rolls back cleanup failures", log.some((entry) => entry.text.trim() === "ROLLBACK"));
+ok("delete does not remove game_list after failed cleanup", !log.some((entry) => /DELETE FROM game_list WHERE/.test(entry.text)));
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);

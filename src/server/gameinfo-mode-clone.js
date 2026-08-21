@@ -1,4 +1,4 @@
-import { getGameListRow, updateGameListRow } from "@/server/gameinfo-gamelist";
+import { getGameListRow, updateGameListRow, withGameinfoTransaction } from "@/server/gameinfo-gamelist";
 import { getGamelistPacks, saveGamelistPacks } from "@/server/gameinfo-gamelist-packs";
 import { getGamelistTutorial, getGamelistWarning, saveGamelistTutorial, saveGamelistWarning } from "@/server/gameinfo-gamelist-tutorial";
 import { getGamelistLinks, legacyGamelistLinks, saveGamelistLinks } from "@/server/gameinfo-gamelist-links";
@@ -32,18 +32,18 @@ async function readUid(gameId) {
   };
 }
 
-async function writeUid(gameId, data, scope, actor) {
+async function writeUid(gameId, data, scope, actor, client) {
   if (scope === "all") {
-    await updateGameListRow(gameId, data.fields);
-    await saveGamelistLinks(gameId, data.links);
-    await saveGamelistTutorial(gameId, data.tutorial.categories);
-    await saveGamelistWarning(gameId, data.warning.categories);
+    await updateGameListRow(gameId, data.fields, client);
+    await saveGamelistLinks(gameId, data.links, client);
+    await saveGamelistTutorial(gameId, data.tutorial.categories, client);
+    await saveGamelistWarning(gameId, data.warning.categories, client);
   }
   await saveGamelistPacks(gameId, {
     ...data.packs,
     actor,
     source: "mode_clone",
-  });
+  }, client);
 }
 
 export async function cloneGameinfoDataMode({ gameId, sourceMode, targetMode, scope = "all", actor }) {
@@ -56,7 +56,7 @@ export async function cloneGameinfoDataMode({ gameId, sourceMode, targetMode, sc
   }
   const sourceData = source === "uid" ? await readUid(gameId) : await getGameinfoModeData(gameId, source);
   if (target === "uid") {
-    await writeUid(gameId, sourceData, scope, actor);
+    await withGameinfoTransaction((client) => writeUid(gameId, sourceData, scope, actor, client));
   } else {
     const current = await getGameinfoModeData(gameId, target);
     await saveGameinfoModeData(gameId, target, scope === "packs" ? { ...current, packs: sourceData.packs } : sourceData);

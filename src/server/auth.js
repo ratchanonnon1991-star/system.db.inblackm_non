@@ -97,12 +97,24 @@ export async function requireProjectmAccess(request) {
   return user;
 }
 
+export function hasGameinfoAccess(user) {
+  return user?.gameinfoRole === "admin" || user?.gameinfoRole === "topup";
+}
+
+export async function requireGameinfoAccess(request) {
+  const user = await requireAdmin(request);
+  if (!hasGameinfoAccess(user)) {
+    throw createHttpError("บัญชีนี้ไม่มีสิทธิ์เข้า GameInfo", 403);
+  }
+  return user;
+}
+
 export function canManageGameinfo(user) {
-  return (user?.role === "admin" || user?.role === "staff") && user?.projectmRole !== "topup";
+  return user?.gameinfoRole === "admin";
 }
 
 export async function requireGameinfoEditor(request) {
-  const user = await requireAdmin(request);
+  const user = await requireGameinfoAccess(request);
   if (!canManageGameinfo(user)) {
     throw createHttpError("บัญชีนี้ไม่มีสิทธิ์จัดการข้อมูลเกม", 403);
   }

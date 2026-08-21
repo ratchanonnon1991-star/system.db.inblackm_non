@@ -90,6 +90,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
   // (see GameinfoNameInput) — blocks "บันทึก" until resolved.
   const [duplicateIds, setDuplicateIds] = useState(new Set());
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [savedAt, setSavedAt] = useState(null);
   const [savedVisible, setSavedVisible] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -276,12 +277,21 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
     setPage(Math.floor(targetIndex / pageSize));
   }
 
-  function onDelete(id, name) {
+  async function onDelete(id, name) {
     const isDraft = isTempId(id);
     const message = isDraft
       ? `ลบเกมฉบับร่าง "${name || "ไม่มีชื่อ"}" ใช่ไหม?`
       : `ลบเกม "${name}" ออกจากฐานข้อมูลจริง (game_list) ใช่ไหม?\nข้อมูลนี้ใช้ร่วมกับ Topup Panel — ลบแล้วกู้คืนไม่ได้`;
     if (!window.confirm(message)) return;
+    if (!isDraft) {
+      setStatusError("");
+      try {
+        await apiJson(`/api/gameinfo/gamelist/${id}`, { method: "DELETE" });
+      } catch (error) {
+        setStatusError(error instanceof Error ? error.message : "ลบเกมไม่สำเร็จ");
+        return;
+      }
+    }
     setRows((prev) => prev.filter((r) => r.id !== id));
     setSelectedGameIds((current) => {
       if (!current.has(id)) return current;
@@ -302,11 +312,6 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
       next.delete(id);
       return next;
     });
-    if (!isDraft) {
-      startTransition(() => {
-        apiJson(`/api/gameinfo/gamelist/${id}`, { method: "DELETE" }).catch(() => {});
-      });
-    }
   }
 
   // Field edits only update the local draft — no request until "บันทึก".
@@ -343,6 +348,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
   async function saveAll() {
     if (duplicateIds.size > 0) return; // belt-and-suspenders — the button is already disabled
     setSaving(true);
+    setSaveError("");
     try {
       const dirtyRows = rows.filter((r) => dirtyIds.has(r.id));
       const draftRows = dirtyRows.filter((r) => isTempId(r.id));
@@ -393,6 +399,8 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
       setDirtyIds(new Set());
       setOrderDirty(false);
       setSavedAt(Date.now());
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "บันทึกข้อมูลเกมไม่สำเร็จ");
     } finally {
       setSaving(false);
     }
@@ -400,6 +408,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
 
   function cancelAll() {
     setRows(savedRows);
+    setSaveError("");
     setDirtyIds(new Set());
     setOrderDirty(false);
     setDuplicateIds(new Set());
@@ -667,6 +676,12 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
       {statusError ? (
         <div role="alert" className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
           {statusError}
+        </div>
+      ) : null}
+      {saveError ? (
+        <div role="alert" className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+          <span>{saveError} ข้อมูลบางส่วนอาจถูกบันทึกแล้ว</span>
+          <button type="button" onClick={() => window.location.reload()} className="shrink-0 underline">โหลดข้อมูลล่าสุด</button>
         </div>
       ) : null}
 

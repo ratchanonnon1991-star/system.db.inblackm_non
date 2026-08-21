@@ -245,12 +245,14 @@ export async function getGamelistPacks(gameId) {
  * row for this game and reinsert, including the computed-columns sentinel. */
 export async function saveGamelistPacks(
   gameId,
-  { currencies, computedColumns, costProfiles, actor = null, source = "editor" }
+  { currencies, computedColumns, costProfiles, actor = null, source = "editor" },
+  transactionClient = null
 ) {
   const pool = await getReadyPool();
-  const client = await pool.connect();
+  const client = transactionClient || await pool.connect();
+  let transactionResult;
   try {
-    await client.query("BEGIN");
+    if (!transactionClient) await client.query("BEGIN");
     const previousResult = await client.query(
       `SELECT game_id, pack_id, data FROM gamelist_packs WHERE game_id = $1`,
       [gameId]
@@ -313,13 +315,15 @@ export async function saveGamelistPacks(
     for (const event of auditEvents) {
       await insertPackAudit(client, gameId, actor, event, source);
     }
-    await client.query("COMMIT");
+    transactionResult = { currencies, computedColumns: nextComputed, costProfiles: nextCostProfiles };
+    if (!transactionClient) await client.query("COMMIT");
   } catch (error) {
-    await client.query("ROLLBACK");
+    if (!transactionClient) await client.query("ROLLBACK");
     throw error;
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
+  if (transactionClient) return transactionResult;
   return getGamelistPacks(gameId);
 }
 
@@ -858,13 +862,15 @@ export async function listGamelistVpnByGame() {
 
 /** Cleanup hook for deleteGameListRow() — game_list isn't ours to put an FK
  * CASCADE on, so this has to be called explicitly. */
-export async function deleteGamelistPacksForGame(gameId) {
+export async function deleteGamelistPacksForGame(gameId, transactionClient = null) {
   const pool = await getReadyPool();
-  const client = await pool.connect();
+  const client = transactionClient || await pool.connect();
   try {
     await client.query(`DELETE FROM gamelist_packs WHERE game_id = $1`, [gameId]);
+    await client.query(`DELETE FROM gamelist_pack_audit_logs WHERE game_id = $1`, [gameId]);
+    await client.query(`DELETE FROM gamelist_pack_view_presets WHERE game_id = $1`, [gameId]);
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
 }
 

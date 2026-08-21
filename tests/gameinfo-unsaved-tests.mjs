@@ -9,7 +9,7 @@ const files = [
 ].map(read);
 const checks = [
   guard.includes('window.addEventListener("beforeunload"'),
-  guard.includes('window.addEventListener("popstate"'),
+  guard.includes('window.navigation?.addEventListener("navigate"'),
   guard.includes('document.addEventListener("click"'),
   files.every((source) => source.includes("useGameinfoUnsavedChanges(")),
 ];

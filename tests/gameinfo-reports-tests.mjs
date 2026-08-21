@@ -5,6 +5,7 @@ import {
   setGamelistReportStatus,
 } from "@/server/gameinfo-gamelist-reports.js";
 import { reset, setResponder } from "@/lib/db.js";
+import { readFileSync } from "node:fs";
 
 let pass = 0;
 const failures = [];
@@ -33,6 +34,14 @@ setResponder((text) => /UPDATE gamelist_reports/.test(text)
   ? { rows: [{ ...reportRow, status: "resolved", resolved_by: "admin", resolved_at: "later" }] }
   : null);
 check("admin resolves report", (await setGamelistReportStatus(5, 9, "resolved", "admin")).status, "resolved");
+
+const submitRoute = readFileSync(new URL("../src/app/api/gameinfo/gamelist/[id]/reports/route.js", import.meta.url), "utf8");
+const openRoute = readFileSync(new URL("../src/app/api/gameinfo/reports/route.js", import.meta.url), "utf8");
+const cards = readFileSync(new URL("../src/components/gameinfo-gamelist-cards.js", import.meta.url), "utf8");
+check("report source follows GameInfo permission", submitRoute.includes("source: user.gameinfoRole"), true);
+check("open report API is editor-only", openRoute.includes("requireGameinfoEditor(request)"), true);
+check("admin dashboard refreshes reports", cards.includes('fetch("/api/gameinfo/reports")'), true);
+check("game card can submit a report", cards.includes('method: "POST"') && cards.includes("onReport"), true);
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);

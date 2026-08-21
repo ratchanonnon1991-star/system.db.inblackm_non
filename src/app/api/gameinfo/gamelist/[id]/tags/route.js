@@ -1,10 +1,10 @@
 import { handleApiError, jsonOk } from "@/lib/http";
-import { requireAdmin, requireGameinfoEditor } from "@/server/auth";
+import { requireGameinfoAccess, requireGameinfoEditor } from "@/server/auth";
 import { getGamelistTags, saveGamelistTags } from "@/server/gameinfo-gamelist-tags";
 
 export async function GET(request, { params }) {
   try {
-    await requireAdmin(request);
+    await requireGameinfoAccess(request);
     const { id } = await params;
     return jsonOk({ tags: await getGamelistTags(Number(id)) });
   } catch (error) {

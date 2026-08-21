@@ -19,6 +19,7 @@ function mapRow(row) {
     canUpdateData: Boolean(row.can_update_data),
     // Independent of the GameDB role above: admin, topup, or no access.
     projectmRole: row.projectm_role || null,
+    gameinfoRole: row.gameinfo_role || null,
     createdAt: row.created_at,
   };
 }
@@ -53,6 +54,8 @@ async function ensureSchema() {
                           CHECK (role_override IS NULL OR role_override = 'user'),
           projectm_role   VARCHAR(16)
                           CHECK (projectm_role IS NULL OR projectm_role IN ('admin', 'topup')),
+          gameinfo_role   VARCHAR(16)
+                          CHECK (gameinfo_role IS NULL OR gameinfo_role IN ('admin', 'topup')),
           updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
@@ -88,6 +91,28 @@ async function ensureSchema() {
         ADD CONSTRAINT gamedb_user_preferences_projectm_role_check
         CHECK (projectm_role IS NULL OR projectm_role IN ('admin', 'topup'))
       `);
+      await client.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'gamedb_user_preferences'
+              AND column_name = 'gameinfo_role'
+          ) THEN
+            ALTER TABLE gamedb_user_preferences ADD COLUMN gameinfo_role VARCHAR(16);
+            UPDATE gamedb_user_preferences SET gameinfo_role = projectm_role;
+          END IF;
+        END $$
+      `);
+      await client.query(`
+        ALTER TABLE gamedb_user_preferences
+        DROP CONSTRAINT IF EXISTS gamedb_user_preferences_gameinfo_role_check
+      `);
+      await client.query(`
+        ALTER TABLE gamedb_user_preferences
+        ADD CONSTRAINT gamedb_user_preferences_gameinfo_role_check
+        CHECK (gameinfo_role IS NULL OR gameinfo_role IN ('admin', 'topup'))
+      `);
 
       // First-run seed: create the initial admin from env so no password
       // ever lives in the codebase. Only runs when the table is empty.
@@ -121,7 +146,7 @@ export async function findUserByUsername(username) {
     `SELECT u.id, u.username, u.display_name, u.password_hash,
             COALESCE(p.role_override, u.role) AS role,
             p.default_view_id, p.can_write_data, p.can_update_data,
-            p.projectm_role, u.created_at
+            p.projectm_role, p.gameinfo_role, u.created_at
      FROM gamedb_users u
      LEFT JOIN gamedb_user_preferences p ON p.user_id = u.id
      WHERE LOWER(u.username) = LOWER($1)`,
@@ -140,7 +165,7 @@ export async function findUserById(id) {
     `SELECT u.id, u.username, u.display_name,
             COALESCE(p.role_override, u.role) AS role,
             p.default_view_id, p.can_write_data, p.can_update_data,
-            p.projectm_role, u.created_at
+            p.projectm_role, p.gameinfo_role, u.created_at
      FROM gamedb_users u
      LEFT JOIN gamedb_user_preferences p ON p.user_id = u.id
      WHERE u.id = $1`,
@@ -155,7 +180,7 @@ export async function listUsers() {
     `SELECT u.id, u.username, u.display_name,
             COALESCE(p.role_override, u.role) AS role,
             p.default_view_id, p.can_write_data, p.can_update_data,
-            p.projectm_role, u.created_at
+            p.projectm_role, p.gameinfo_role, u.created_at
      FROM gamedb_users u
      LEFT JOIN gamedb_user_preferences p ON p.user_id = u.id
      ORDER BY u.id ASC`
@@ -180,6 +205,7 @@ export async function insertUser({
   canWriteData = false,
   canUpdateData = false,
   projectmRole = null,
+  gameinfoRole = null,
 }) {
   await ensureSchema();
   const client = await getPool().connect();
@@ -200,22 +226,23 @@ export async function insertUser({
     userId = result.rows[0].id;
     // Only "staff" ever reads these -- requireDataWriter/requireDataUpdater
     // check role first, so storing true for another role is inert, but there
-    // is no reason to store it either. projectmRole is not one of them: it is
-    // independent of the GameDB role and applies whatever that role is.
+    // is no reason to store it either. System roles are independent of the
+    // GameDB role and apply whatever that role is.
     const writeGrant = role === "staff" && Boolean(canWriteData);
     const updateGrant = role === "staff" && Boolean(canUpdateData);
-    if (defaultViewId || role === "user" || writeGrant || updateGrant || projectmRole) {
+    if (defaultViewId || role === "user" || writeGrant || updateGrant || projectmRole || gameinfoRole) {
       await client.query(
         `INSERT INTO gamedb_user_preferences
            (user_id, default_view_id, role_override, can_write_data, can_update_data,
-            projectm_role)
-         VALUES ($1, $2, $3, $4, $5, $6)
+            projectm_role, gameinfo_role)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (user_id) DO UPDATE
          SET default_view_id = EXCLUDED.default_view_id,
              role_override = EXCLUDED.role_override,
              can_write_data = EXCLUDED.can_write_data,
              can_update_data = EXCLUDED.can_update_data,
              projectm_role = EXCLUDED.projectm_role,
+             gameinfo_role = EXCLUDED.gameinfo_role,
              updated_at = NOW()`,
         [
           userId,
@@ -224,6 +251,7 @@ export async function insertUser({
           writeGrant,
           updateGrant,
           projectmRole || null,
+          gameinfoRole || null,
         ]
       );
     }
@@ -261,7 +289,8 @@ export async function updateUser(id, fields) {
     fields.role !== undefined ||
     fields.canWriteData !== undefined ||
     fields.canUpdateData !== undefined ||
-    fields.projectmRole !== undefined;
+    fields.projectmRole !== undefined ||
+    fields.gameinfoRole !== undefined;
 
   if (!sets.length && !touchesPreferences) {
     return findUserById(id);
@@ -281,7 +310,7 @@ export async function updateUser(id, fields) {
     if (touchesPreferences) {
       const currentPreference = await client.query(
         `SELECT default_view_id, role_override, can_write_data, can_update_data,
-                projectm_role
+                projectm_role, gameinfo_role
          FROM gamedb_user_preferences WHERE user_id = $1`,
         [id]
       );
@@ -311,27 +340,32 @@ export async function updateUser(id, fields) {
         fields.projectmRole !== undefined
           ? fields.projectmRole || null
           : current.projectm_role || null;
+      const nextGameinfoRole =
+        fields.gameinfoRole !== undefined
+          ? fields.gameinfoRole || null
+          : current.gameinfo_role || null;
 
-      // The row exists to hold these five; with none of them set there is
-      // nothing to keep, and the DELETE below clears it.
+      // With no preference set there is nothing to keep.
       if (
         nextDefaultViewId ||
         nextRoleOverride ||
         nextWriteGrant ||
         nextUpdateGrant ||
-        nextProjectmRole
+        nextProjectmRole ||
+        nextGameinfoRole
       ) {
         await client.query(
           `INSERT INTO gamedb_user_preferences
              (user_id, default_view_id, role_override, can_write_data, can_update_data,
-              projectm_role)
-           VALUES ($1, $2, $3, $4, $5, $6)
+              projectm_role, gameinfo_role)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
            ON CONFLICT (user_id) DO UPDATE
            SET default_view_id = EXCLUDED.default_view_id,
                role_override = EXCLUDED.role_override,
                can_write_data = EXCLUDED.can_write_data,
                can_update_data = EXCLUDED.can_update_data,
                projectm_role = EXCLUDED.projectm_role,
+               gameinfo_role = EXCLUDED.gameinfo_role,
                updated_at = NOW()`,
           [
             id,
@@ -340,6 +374,7 @@ export async function updateUser(id, fields) {
             nextWriteGrant,
             nextUpdateGrant,
             nextProjectmRole,
+            nextGameinfoRole,
           ]
         );
       } else {

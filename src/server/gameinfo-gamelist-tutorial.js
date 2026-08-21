@@ -129,9 +129,9 @@ export async function getGamelistTutorial(gameId) {
 
 /** Full replace, upserted — same "edit the whole list in memory, save it all
  * at once" shape as the pack editor. */
-export async function saveGamelistTutorial(gameId, categories) {
+export async function saveGamelistTutorial(gameId, categories, transactionClient = null) {
   const pool = await getReadyPool();
-  const client = await pool.connect();
+  const client = transactionClient || await pool.connect();
   try {
     const normalized = normalizeCategories({ categories });
     await client.query(
@@ -142,7 +142,7 @@ export async function saveGamelistTutorial(gameId, categories) {
     );
     return { categories: normalized };
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
 }
 
@@ -164,9 +164,9 @@ export async function getGamelistWarning(gameId) {
   }
 }
 
-export async function saveGamelistWarning(gameId, categories) {
+export async function saveGamelistWarning(gameId, categories, transactionClient = null) {
   const pool = await getReadyPool();
-  const client = await pool.connect();
+  const client = transactionClient || await pool.connect();
   try {
     const normalized = normalizeCategories({ categories });
     await client.query(
@@ -177,20 +177,20 @@ export async function saveGamelistWarning(gameId, categories) {
     );
     return { categories: normalized };
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
 }
 
 /** Cleanup hook for deleteGameListRow() — game_list isn't ours to put an FK
  * CASCADE on, so this has to be called explicitly, same as
  * deleteGamelistPacksForGame(). */
-export async function deleteGamelistTutorialForGame(gameId) {
+export async function deleteGamelistTutorialForGame(gameId, transactionClient = null) {
   const pool = await getReadyPool();
-  const client = await pool.connect();
+  const client = transactionClient || await pool.connect();
   try {
     await client.query(`DELETE FROM gamelist_tutorials WHERE game_id = $1`, [gameId]);
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
 }
 

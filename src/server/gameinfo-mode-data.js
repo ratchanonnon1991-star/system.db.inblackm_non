@@ -91,10 +91,10 @@ async function readyPool() {
   return getPoolForConnection(selected);
 }
 
-export async function getGameinfoModeData(gameId, mode) {
+export async function getGameinfoModeData(gameId, mode, transactionClient = null) {
   if (normalizeGameinfoDataMode(mode) !== "idpass") return emptyData();
   const pool = await readyPool();
-  const client = await pool.connect();
+  const client = transactionClient || await pool.connect();
   try {
     const result = await client.query(
       `SELECT data FROM gameinfo_mode_data WHERE game_id = $1 AND data_mode = 'idpass'`,
@@ -102,7 +102,7 @@ export async function getGameinfoModeData(gameId, mode) {
     );
     return sanitizeData(result.rows[0]?.data);
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
 }
 
@@ -118,11 +118,11 @@ export async function listGameinfoModeData(mode) {
   }
 }
 
-export async function saveGameinfoModeData(gameId, mode, nextData) {
+export async function saveGameinfoModeData(gameId, mode, nextData, transactionClient = null) {
   if (normalizeGameinfoDataMode(mode) !== "idpass") throw new Error("ใช้ mode storage ได้เฉพาะ IDPASS");
   const data = sanitizeData(nextData);
   const pool = await readyPool();
-  const client = await pool.connect();
+  const client = transactionClient || await pool.connect();
   try {
     await client.query(
       `INSERT INTO gameinfo_mode_data (game_id, data_mode, data, updated_at)
@@ -131,7 +131,7 @@ export async function saveGameinfoModeData(gameId, mode, nextData) {
       [gameId, JSON.stringify(data)]
     );
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
   return data;
 }
@@ -170,12 +170,12 @@ export async function updateGameinfoModeData(gameId, mode, updater) {
   }
 }
 
-export async function deleteGameinfoModeData(gameId) {
+export async function deleteGameinfoModeData(gameId, transactionClient = null) {
   const pool = await readyPool();
-  const client = await pool.connect();
+  const client = transactionClient || await pool.connect();
   try {
     await client.query(`DELETE FROM gameinfo_mode_data WHERE game_id = $1`, [gameId]);
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
 }

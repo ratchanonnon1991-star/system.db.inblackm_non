@@ -253,7 +253,7 @@ export async function createGameListRows(fieldsList) {
   }
 }
 
-export async function updateGameListRow(id, fields) {
+export async function updateGameListRow(id, fields, transactionClient = null) {
   const pool = await getReadyPool();
   const sets = [];
   const values = [];
@@ -268,7 +268,7 @@ export async function updateGameListRow(id, fields) {
   sets.push(`updated_at = NOW()`);
   values.push(id);
 
-  const client = await pool.connect();
+  const client = transactionClient || await pool.connect();
   try {
     const result = await client.query(
       `UPDATE game_list SET ${sets.join(", ")} WHERE id = $${i} RETURNING *`,
@@ -276,7 +276,7 @@ export async function updateGameListRow(id, fields) {
     );
     return result.rows[0] ? mapRow(result.rows[0]) : null;
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
 }
 
@@ -313,18 +313,38 @@ export async function deleteGameListRow(id) {
   const pool = await getReadyPool();
   const client = await pool.connect();
   try {
+    await client.query("BEGIN");
+    await deleteGamelistPacksForGame(id, client);
+    await deleteGamelistTutorialForGame(id, client);
+    await deleteGamelistImageForGame(id, client);
+    await deleteGamelistLinksForGame(id, client);
+    await deleteGamelistTagsForGame(id, client);
+    await deleteGamelistReportsForGame(id, client);
+    await deleteGamelistFavoritesForGame(id, client);
+    await deleteGameinfoModeData(id, client);
     await client.query(`DELETE FROM game_list WHERE id = $1`, [id]);
     await client.query(`DELETE FROM gamelist_order WHERE game_id = $1`, [id]);
     await client.query(`DELETE FROM gamelist_service_status WHERE game_id = $1`, [id]);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
   } finally {
     client.release();
   }
-  await deleteGamelistPacksForGame(id);
-  await deleteGamelistTutorialForGame(id);
-  await deleteGamelistImageForGame(id);
-  await deleteGamelistLinksForGame(id);
-  await deleteGamelistTagsForGame(id);
-  await deleteGamelistReportsForGame(id);
-  await deleteGamelistFavoritesForGame(id);
-  await deleteGameinfoModeData(id);
+}
+
+export async function withGameinfoTransaction(callback) {
+  const client = await (await getReadyPool()).connect();
+  try {
+    await client.query("BEGIN");
+    const result = await callback(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }

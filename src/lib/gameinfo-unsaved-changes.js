@@ -5,28 +5,31 @@ import { useEffect, useRef } from "react";
 const MESSAGE = "ยังไม่ได้บันทึกการแก้ไข ต้องการออกจากหน้านี้หรือไม่?";
 const dirtySources = new Set();
 let listening = false;
-let restoringHistory = false;
+let allowingNavigation = false;
 
 export function confirmGameinfoNavigation() {
-  return dirtySources.size === 0 || window.confirm(MESSAGE);
+  if (dirtySources.size === 0) return true;
+  if (!window.confirm(MESSAGE)) return false;
+  allowingNavigation = true;
+  window.setTimeout(() => { allowingNavigation = false; }, 0);
+  return true;
 }
 
 function listen() {
   if (listening) return;
   listening = true;
   window.addEventListener("beforeunload", (event) => {
-    if (dirtySources.size === 0) return;
+    if (dirtySources.size === 0 || allowingNavigation) return;
     event.preventDefault();
     event.returnValue = "";
   });
-  window.addEventListener("popstate", () => {
-    if (restoringHistory) {
-      restoringHistory = false;
+  window.navigation?.addEventListener("navigate", (event) => {
+    if (dirtySources.size === 0 || !event.cancelable) return;
+    if (allowingNavigation) {
+      allowingNavigation = false;
       return;
     }
-    if (confirmGameinfoNavigation()) return;
-    restoringHistory = true;
-    window.history.forward();
+    if (!confirmGameinfoNavigation()) event.preventDefault();
   });
   document.addEventListener("click", (event) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;

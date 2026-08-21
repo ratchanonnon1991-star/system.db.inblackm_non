@@ -1,10 +1,10 @@
 import { handleApiError, jsonOk } from "@/lib/http";
-import { requireAdmin } from "@/server/auth";
+import { requireGameinfoAccess } from "@/server/auth";
 import { setGamelistFavorite } from "@/server/gameinfo-gamelist-favorites";
 
 export async function PUT(request, { params }) {
   try {
-    const user = await requireAdmin(request);
+    const user = await requireGameinfoAccess(request);
     const { id } = await params;
     const gameId = Number(id);
     if (!Number.isInteger(gameId) || gameId <= 0) {

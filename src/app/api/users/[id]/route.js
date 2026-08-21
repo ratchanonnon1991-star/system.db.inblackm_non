@@ -10,7 +10,7 @@ import { findViewById } from "@/server/gamedb-views-repository";
 
 const MIN_PASSWORD_LENGTH = 6;
 const USER_ROLES = new Set(["admin", "staff", "user"]);
-const PROJECTM_ROLES = new Set(["admin", "topup"]);
+const SYSTEM_ROLES = new Set(["admin", "topup"]);
 
 function parseDefaultViewId(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -54,10 +54,17 @@ export async function PATCH(request, { params }) {
     }
     if (body.projectmRole !== undefined) {
       const projectmRole = body.projectmRole || null;
-      if (projectmRole !== null && !PROJECTM_ROLES.has(projectmRole)) {
+      if (projectmRole !== null && !SYSTEM_ROLES.has(projectmRole)) {
         return jsonError("สิทธิ์ Projectm ไม่ถูกต้อง", 400);
       }
       fields.projectmRole = projectmRole;
+    }
+    if (body.gameinfoRole !== undefined) {
+      const gameinfoRole = body.gameinfoRole || null;
+      if (gameinfoRole !== null && !SYSTEM_ROLES.has(gameinfoRole)) {
+        return jsonError("สิทธิ์ GameInfo ไม่ถูกต้อง", 400);
+      }
+      fields.gameinfoRole = gameinfoRole;
     }
     if (body.defaultViewId !== undefined) {
       const defaultViewId = parseDefaultViewId(body.defaultViewId);

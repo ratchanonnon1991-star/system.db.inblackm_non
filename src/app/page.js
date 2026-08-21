@@ -138,9 +138,11 @@ function SystemHub({ me, onLoggedOut }) {
 
   const roleLabel = isSuperAdmin ? "Admin" : isTemplateUser ? "User" : "Staff";
   const initial = (me.displayName || me.username || "?").trim().slice(0, 1).toUpperCase();
-  const accessibleSystems = SYSTEMS.filter((system) =>
-    system.key === "projectm" ? Boolean(me.projectmRole) : !isTemplateUser
-  );
+  const accessibleSystems = SYSTEMS.filter((system) => {
+    if (system.key === "projectm") return Boolean(me.projectmRole);
+    if (system.key === "gameinfo") return Boolean(me.gameinfoRole);
+    return !isTemplateUser;
+  });
 
   return (
     <div

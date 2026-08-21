@@ -1590,6 +1590,7 @@ const EMPTY_USER_FORM = {
   canWriteData: false,
   canUpdateData: false,
   projectmRole: "",
+  gameinfoRole: "",
 };
 
 function roleLabel(role) {
@@ -1715,6 +1716,7 @@ export function UsersModal({ me, onClose }) {
       canWriteData: Boolean(user.canWriteData),
       canUpdateData: Boolean(user.canUpdateData),
       projectmRole: user.projectmRole || "",
+      gameinfoRole: user.gameinfoRole || "",
     });
     setError("");
     setSsoEmail("");
@@ -1776,6 +1778,7 @@ export function UsersModal({ me, onClose }) {
             canUpdateData: form.role === "staff" && form.canUpdateData,
             password: form.password || undefined,
             projectmRole: form.projectmRole,
+            gameinfoRole: form.gameinfoRole,
           }),
           fallbackError: "บันทึกผู้ใช้ไม่สำเร็จ",
         });
@@ -1919,6 +1922,9 @@ export function UsersModal({ me, onClose }) {
                       )}
                       {user.projectmRole
                         ? ` · Projectm ${user.projectmRole === "admin" ? "Admin" : "Topup"}`
+                        : ""}
+                      {user.gameinfoRole
+                        ? ` · GameInfo ${user.gameinfoRole === "admin" ? "Admin" : "Topup"}`
                         : ""}
                     </p>
                   </button>
@@ -2140,6 +2146,19 @@ export function UsersModal({ me, onClose }) {
                 <option value="">ไม่มีสิทธิ์</option>
                 <option value="topup">Topup — เข้าหน้าคนเติม</option>
                 <option value="admin">Admin — เข้าได้ทั้ง Admin และ Topup</option>
+              </select>
+            </label>
+
+            <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400">
+              สิทธิ์ GameInfo
+              <select
+                value={form.gameinfoRole}
+                onChange={(e) => setField("gameinfoRole", e.target.value)}
+                className="mt-1 h-9 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold normal-case text-zinc-700 outline-none focus:border-red-600 focus:bg-white"
+              >
+                <option value="">ไม่มีสิทธิ์</option>
+                <option value="topup">Topup — ดูเกมและรายงานปัญหา</option>
+                <option value="admin">Admin — จัดการได้ทั้งหมด</option>
               </select>
             </label>
 

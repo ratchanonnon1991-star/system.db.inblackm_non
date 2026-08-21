@@ -1,5 +1,5 @@
 import { handleApiError, jsonOk } from "@/lib/http";
-import { requireAdmin, requireGameinfoEditor } from "@/server/auth";
+import { requireGameinfoAccess, requireGameinfoEditor } from "@/server/auth";
 import { getGameListRow } from "@/server/gameinfo-gamelist";
 import {
   getGamelistLinks,
@@ -11,7 +11,7 @@ import { getGameinfoModeData, updateGameinfoModeData } from "@/server/gameinfo-m
 
 export async function GET(request, { params }) {
   try {
-    await requireAdmin(request);
+    await requireGameinfoAccess(request);
     const { id } = await params;
     const gameId = Number(id);
     if (normalizeGameinfoDataMode(request.nextUrl.searchParams.get("mode")) === "idpass") {

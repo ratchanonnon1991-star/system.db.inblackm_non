@@ -10,7 +10,7 @@ import { findViewById } from "@/server/gamedb-views-repository";
 const USERNAME_PATTERN = /^[a-zA-Z0-9_.-]{3,32}$/;
 const MIN_PASSWORD_LENGTH = 6;
 const USER_ROLES = new Set(["admin", "staff", "user"]);
-const PROJECTM_ROLES = new Set(["admin", "topup"]);
+const SYSTEM_ROLES = new Set(["admin", "topup"]);
 
 function parseDefaultViewId(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -36,6 +36,7 @@ export async function POST(request) {
     const password = String(body.password || "");
     const role = String(body.role || "staff");
     const projectmRole = body.projectmRole || null;
+    const gameinfoRole = body.gameinfoRole || null;
 
     if (!USERNAME_PATTERN.test(username)) {
       return jsonError("username ต้องเป็น a-z, 0-9, _ . - ยาว 3-32 ตัว", 400);
@@ -46,8 +47,11 @@ export async function POST(request) {
     if (!USER_ROLES.has(role)) {
       return jsonError("ประเภทผู้ใช้ไม่ถูกต้อง", 400);
     }
-    if (projectmRole !== null && !PROJECTM_ROLES.has(projectmRole)) {
+    if (projectmRole !== null && !SYSTEM_ROLES.has(projectmRole)) {
       return jsonError("สิทธิ์ Projectm ไม่ถูกต้อง", 400);
+    }
+    if (gameinfoRole !== null && !SYSTEM_ROLES.has(gameinfoRole)) {
+      return jsonError("สิทธิ์ GameInfo ไม่ถูกต้อง", 400);
     }
     const defaultViewId = parseDefaultViewId(body.defaultViewId);
     if (defaultViewId === undefined) {
@@ -69,6 +73,7 @@ export async function POST(request) {
       canWriteData: Boolean(body.canWriteData),
       canUpdateData: Boolean(body.canUpdateData),
       projectmRole,
+      gameinfoRole,
     });
     return jsonOk({ user }, 201);
   } catch (err) {

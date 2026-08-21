@@ -1,12 +1,12 @@
 import { handleApiError, jsonOk } from "@/lib/http";
-import { requireAdmin, requireGameinfoEditor } from "@/server/auth";
+import { requireGameinfoAccess, requireGameinfoEditor } from "@/server/auth";
 import { getGamelistImage, saveGamelistImage } from "@/server/gameinfo-gamelist-image";
 import { recordEdit } from "@/server/gamedb-edit-log";
 import { requestMeta } from "@/lib/request-meta";
 
 export async function GET(request, { params }) {
   try {
-    await requireAdmin(request); // any logged-in role — read-only for "user"
+    await requireGameinfoAccess(request);
     const { id } = await params;
     const image = await getGamelistImage(Number(id));
     return jsonOk(image);

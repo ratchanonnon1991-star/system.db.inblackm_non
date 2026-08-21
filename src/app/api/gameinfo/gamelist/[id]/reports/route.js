@@ -1,5 +1,5 @@
 import { handleApiError, jsonOk } from "@/lib/http";
-import { requireAdmin, requireGameinfoEditor } from "@/server/auth";
+import { requireGameinfoAccess, requireGameinfoEditor } from "@/server/auth";
 import {
   createGamelistReport,
   listGamelistReports,
@@ -12,7 +12,7 @@ function actorName(user) {
 
 export async function GET(request, { params }) {
   try {
-    await requireAdmin(request);
+    await requireGameinfoAccess(request);
     const { id } = await params;
     return jsonOk({ reports: await listGamelistReports(Number(id)) });
   } catch (error) {
@@ -22,11 +22,11 @@ export async function GET(request, { params }) {
 
 export async function POST(request, { params }) {
   try {
-    const user = await requireAdmin(request);
+    const user = await requireGameinfoAccess(request);
     const { id } = await params;
     const body = await request.json();
     const report = await createGamelistReport(Number(id), {
-      source: user.role === "user" ? "topup" : "admin",
+      source: user.gameinfoRole,
       message: body.message,
       actor: actorName(user),
     });

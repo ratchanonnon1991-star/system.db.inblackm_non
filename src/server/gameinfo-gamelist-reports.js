@@ -135,11 +135,12 @@ export async function setGamelistReportStatus(gameId, reportId, status, actor) {
   }
 }
 
-export async function deleteGamelistReportsForGame(gameId) {
-  const client = await (await getReadyPool()).connect();
+export async function deleteGamelistReportsForGame(gameId, transactionClient = null) {
+  const pool = await getReadyPool();
+  const client = transactionClient || await pool.connect();
   try {
     await client.query(`DELETE FROM gamelist_reports WHERE game_id = $1`, [gameId]);
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
 }

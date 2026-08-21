@@ -1,10 +1,10 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Noto_Sans_Thai } from "next/font/google";
 import Link from "next/link";
 import { Gamepad2, LayoutGrid } from "lucide-react";
 import { isSupportedLang } from "@/lib/gameinfo-i18n";
 import { getSessionUser } from "@/server/session-user";
-import { canManageGameinfo } from "@/server/auth";
+import { canManageGameinfo, hasGameinfoAccess } from "@/server/auth";
 import GameinfoModeToggle from "@/components/gameinfo-mode-toggle";
 import GameinfoThemeRoot from "@/components/gameinfo-theme-root";
 import GameinfoThemeToggle from "@/components/gameinfo-theme-toggle";
@@ -22,6 +22,7 @@ export default async function GameinfoLangLayout({ children, params }) {
   const { lang } = await params;
   if (!isSupportedLang(lang)) notFound();
   const user = await getSessionUser();
+  if (!hasGameinfoAccess(user)) redirect("/");
   const editableRole = canManageGameinfo(user);
 
   return (
