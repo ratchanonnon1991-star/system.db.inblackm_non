@@ -27,10 +27,24 @@ function parseAddedAt(value) {
   return date.toISOString();
 }
 
+function parseDate(value) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value ? null : value;
+}
+
 export async function GET(request) {
   try {
     await requireProjectmAdmin(request);
-    const entries = await listItuneEntries();
+    const url = new URL(request.url);
+    const rawFrom = url.searchParams.get("from");
+    const rawTo = url.searchParams.get("to");
+    const from = parseDate(rawFrom);
+    const to = parseDate(rawTo);
+    if ((rawFrom && !from) || (rawTo && !to) || (from && to && from > to)) {
+      return jsonError("ช่วงวันที่ไม่ถูกต้อง", 400);
+    }
+    const entries = await listItuneEntries({ from, to, all: url.searchParams.get("all") === "1" });
     return jsonOk({ entries });
   } catch (err) {
     return handleApiError(err, "โหลดรายการไม่สำเร็จ");

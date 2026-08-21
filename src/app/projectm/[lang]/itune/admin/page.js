@@ -15,7 +15,7 @@ export default async function ItuneAdminPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-[-0.04em] text-ll-ink">รายการเมล</h1>
         <p className="mt-1 text-[13px] text-ll-ink-subtle">
-          ค้นหา เพิ่ม และแก้ไขข้อมูลเมลทั้งหมด
+          เริ่มต้นแสดงรายการของวันนี้และเมื่อวาน — เลือกช่วงวันที่หรือแสดงทั้งหมดได้
         </p>
       </div>
       {loadError ? (

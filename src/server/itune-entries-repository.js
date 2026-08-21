@@ -696,10 +696,25 @@ async function getReadyPool() {
   return getPoolForConnection(connection);
 }
 
-export async function listItuneEntries() {
+export async function listItuneEntries({ from = null, to = null, all = false } = {}) {
   const pool = await getReadyPool();
   const result = await pool.query(
-    `SELECT e.*, ${HAS_PENDING_REJECT_SQL} FROM projectm_itune_entries e ORDER BY id ASC`
+    `SELECT e.*, ${HAS_PENDING_REJECT_SQL}
+     FROM projectm_itune_entries e
+     WHERE $3::boolean OR (
+       e.added_at >= COALESCE(
+         $1::date::timestamp AT TIME ZONE 'Asia/Bangkok',
+         (date_trunc('day', NOW() AT TIME ZONE 'Asia/Bangkok') - INTERVAL '1 day')
+           AT TIME ZONE 'Asia/Bangkok'
+       )
+       AND e.added_at < COALESCE(
+         (($2::date + 1)::timestamp) AT TIME ZONE 'Asia/Bangkok',
+         (date_trunc('day', NOW() AT TIME ZONE 'Asia/Bangkok') + INTERVAL '1 day')
+           AT TIME ZONE 'Asia/Bangkok'
+       )
+     )
+     ORDER BY id ASC`,
+    [from, to, all]
   );
   const usernamesById = await fetchUsernamesById(
     result.rows.flatMap((r) => [r.created_by_user_id, r.claimed_by_user_id])
