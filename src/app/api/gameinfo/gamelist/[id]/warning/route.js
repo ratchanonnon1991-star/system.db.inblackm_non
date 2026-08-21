@@ -7,6 +7,7 @@ import {
 } from "@/server/gameinfo-gamelist-tutorial";
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { getGameinfoModeData, updateGameinfoModeData } from "@/server/gameinfo-mode-data";
+import { auditActor } from "@/server/gameinfo-gamelist-packs";
 
 export async function GET(request, { params }) {
   try {
@@ -27,17 +28,17 @@ export async function GET(request, { params }) {
 
 export async function PUT(request, { params }) {
   try {
-    await requireGameinfoEditor(request);
+    const user = await requireGameinfoEditor(request);
     const { id } = await params;
     const body = await request.json();
     if (normalizeGameinfoDataMode(request.nextUrl.searchParams.get("mode")) === "idpass") {
       const data = await updateGameinfoModeData(Number(id), "idpass", (current) => ({
         ...current,
         warning: { categories: body.categories },
-      }));
+      }), { area: "warning", actor: auditActor(user) });
       return jsonOk({ warning: data.warning });
     }
-    const warning = await saveGamelistWarning(Number(id), body.categories);
+    const warning = await saveGamelistWarning(Number(id), body.categories, null, auditActor(user));
     return jsonOk({ warning });
   } catch (error) {
     return handleApiError(error, "บันทึกข้อควรระวังไม่สำเร็จ");

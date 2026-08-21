@@ -7,6 +7,7 @@
 // together from the popup editor — no need for a second table.
 import { getPoolForConnection } from "@/lib/db";
 import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
+import { recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
 
 const CONNECTION_NAME = "gameinfo";
 
@@ -129,18 +130,32 @@ export async function getGamelistTutorial(gameId) {
 
 /** Full replace, upserted — same "edit the whole list in memory, save it all
  * at once" shape as the pack editor. */
-export async function saveGamelistTutorial(gameId, categories, transactionClient = null) {
+export async function saveGamelistTutorial(gameId, categories, transactionClient = null, actor = null) {
   const pool = await getReadyPool();
   const client = transactionClient || await pool.connect();
   try {
+    if (!transactionClient) await client.query("BEGIN");
     const normalized = normalizeCategories({ categories });
+    const previous = await client.query(`SELECT data FROM gamelist_tutorials WHERE game_id = $1`, [gameId]);
     await client.query(
       `INSERT INTO gamelist_tutorials (game_id, data, updated_at)
        VALUES ($1, $2, NOW())
        ON CONFLICT (game_id) DO UPDATE SET data = $2, updated_at = NOW()`,
       [gameId, JSON.stringify({ categories: normalized })]
     );
+    await recordGameinfoAudit({
+      gameId,
+      area: "tutorial",
+      actor,
+      before: previous.rows[0]?.data ?? null,
+      after: { categories: normalized },
+      client,
+    });
+    if (!transactionClient) await client.query("COMMIT");
     return { categories: normalized };
+  } catch (error) {
+    if (!transactionClient) await client.query("ROLLBACK");
+    throw error;
   } finally {
     if (!transactionClient) client.release();
   }
@@ -164,18 +179,32 @@ export async function getGamelistWarning(gameId) {
   }
 }
 
-export async function saveGamelistWarning(gameId, categories, transactionClient = null) {
+export async function saveGamelistWarning(gameId, categories, transactionClient = null, actor = null) {
   const pool = await getReadyPool();
   const client = transactionClient || await pool.connect();
   try {
+    if (!transactionClient) await client.query("BEGIN");
     const normalized = normalizeCategories({ categories });
+    const previous = await client.query(`SELECT warning_data FROM gamelist_tutorials WHERE game_id = $1`, [gameId]);
     await client.query(
       `INSERT INTO gamelist_tutorials (game_id, data, warning_data, updated_at)
        VALUES ($1, '{"categories":[]}'::jsonb, $2, NOW())
        ON CONFLICT (game_id) DO UPDATE SET warning_data = $2, updated_at = NOW()`,
       [gameId, JSON.stringify({ categories: normalized })]
     );
+    await recordGameinfoAudit({
+      gameId,
+      area: "warning",
+      actor,
+      before: previous.rows[0]?.warning_data ?? null,
+      after: { categories: normalized },
+      client,
+    });
+    if (!transactionClient) await client.query("COMMIT");
     return { categories: normalized };
+  } catch (error) {
+    if (!transactionClient) await client.query("ROLLBACK");
+    throw error;
   } finally {
     if (!transactionClient) client.release();
   }

@@ -6,7 +6,7 @@
 // created_at, updated_at.
 import { getPoolForConnection } from "@/lib/db";
 import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
-import { deleteGamelistPacksForGame } from "@/server/gameinfo-gamelist-packs";
+import { deleteGamelistPacksForGame, recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
 import { deleteGamelistTutorialForGame } from "@/server/gameinfo-gamelist-tutorial";
 import { deleteGamelistImageForGame } from "@/server/gameinfo-gamelist-image";
 import { deleteGamelistLinksForGame } from "@/server/gameinfo-gamelist-links";
@@ -145,11 +145,15 @@ export async function listGameListRows() {
 
 /** Persists the dragged order — one row per game in `gamelist_order`,
  * upserted so games reordered for the first time get a row created. */
-export async function reorderGameListRows(orderedIds) {
+export async function reorderGameListRows(orderedIds, actor = null) {
   const pool = await getReadyPool();
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const previous = await client.query(
+      `SELECT game_id, sort_order FROM gamelist_order WHERE game_id = ANY($1::int[]) ORDER BY sort_order, game_id`,
+      [orderedIds]
+    );
     for (let index = 0; index < orderedIds.length; index += 1) {
       await client.query(
         `INSERT INTO gamelist_order (game_id, sort_order, updated_at)
@@ -158,6 +162,14 @@ export async function reorderGameListRows(orderedIds) {
         [orderedIds[index], index]
       );
     }
+    await recordGameinfoAudit({
+      gameId: 0,
+      area: "order",
+      actor,
+      before: previous.rows,
+      after: orderedIds,
+      client,
+    });
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
@@ -186,10 +198,11 @@ export async function getGameListRow(id) {
   }
 }
 
-export async function createGameListRow(fields) {
+export async function createGameListRow(fields, actor = null) {
   const pool = await getReadyPool();
   const client = await pool.connect();
   try {
+    await client.query("BEGIN");
     const result = await client.query(
       `INSERT INTO game_list (game, region, platform, server, vpn, channel, rank_stars, bot_manual, is_repeatable, link, remark)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -208,7 +221,13 @@ export async function createGameListRow(fields) {
         fields.remark ? String(fields.remark) : null,
       ]
     );
-    return mapRow(result.rows[0]);
+    const row = mapRow(result.rows[0]);
+    await recordGameinfoAudit({ gameId: row.id, area: "game", action: "create", actor, after: row, client });
+    await client.query("COMMIT");
+    return row;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
   } finally {
     client.release();
   }
@@ -216,7 +235,7 @@ export async function createGameListRow(fields) {
 
 /** CSV batch insert: validation happens before this call and the transaction
  * guarantees an all-or-nothing result if any row fails at the database. */
-export async function createGameListRows(fieldsList) {
+export async function createGameListRows(fieldsList, actor = null) {
   const pool = await getReadyPool();
   const client = await pool.connect();
   const created = [];
@@ -241,7 +260,17 @@ export async function createGameListRows(fieldsList) {
           null,
         ]
       );
-      created.push(mapRow(result.rows[0]));
+      const row = mapRow(result.rows[0]);
+      created.push(row);
+      await recordGameinfoAudit({
+        gameId: row.id,
+        area: "import",
+        action: "create",
+        source: "import",
+        actor,
+        after: row,
+        client,
+      });
     }
     await client.query("COMMIT");
     return created;
@@ -253,7 +282,7 @@ export async function createGameListRows(fieldsList) {
   }
 }
 
-export async function updateGameListRow(id, fields, transactionClient = null) {
+export async function updateGameListRow(id, fields, transactionClient = null, actor = null) {
   const pool = await getReadyPool();
   const sets = [];
   const values = [];
@@ -270,17 +299,34 @@ export async function updateGameListRow(id, fields, transactionClient = null) {
 
   const client = transactionClient || await pool.connect();
   try {
+    if (!transactionClient) await client.query("BEGIN");
+    const previous = await client.query(`SELECT * FROM game_list WHERE id = $1 FOR UPDATE`, [id]);
     const result = await client.query(
       `UPDATE game_list SET ${sets.join(", ")} WHERE id = $${i} RETURNING *`,
       values
     );
-    return result.rows[0] ? mapRow(result.rows[0]) : null;
+    const updated = result.rows[0] ? mapRow(result.rows[0]) : null;
+    if (updated) {
+      await recordGameinfoAudit({
+        gameId: id,
+        area: "game",
+        actor,
+        before: previous.rows[0] ? mapRow(previous.rows[0]) : null,
+        after: updated,
+        client,
+      });
+    }
+    if (!transactionClient) await client.query("COMMIT");
+    return updated;
+  } catch (error) {
+    if (!transactionClient) await client.query("ROLLBACK");
+    throw error;
   } finally {
     if (!transactionClient) client.release();
   }
 }
 
-export async function setGameListServiceStatus(gameIds, enabled) {
+export async function setGameListServiceStatus(gameIds, enabled, actor = null) {
   const ids = [...new Set((gameIds || []).map(Number).filter((id) => Number.isInteger(id) && id > 0))];
   if (ids.length === 0) throw createHttpError("กรุณาเลือกเกม", 400);
   const normalizedEnabled = enabled === true;
@@ -290,6 +336,11 @@ export async function setGameListServiceStatus(gameIds, enabled) {
     await client.query("BEGIN");
     const existing = await client.query(`SELECT id FROM game_list WHERE id = ANY($1::int[]) FOR UPDATE`, [ids]);
     if (existing.rows.length !== ids.length) throw createHttpError("มีเกมที่เลือกไม่อยู่ในระบบ", 404);
+    const previous = await client.query(
+      `SELECT game_id, enabled FROM gamelist_service_status WHERE game_id = ANY($1::int[])`,
+      [ids]
+    );
+    const beforeById = new Map(previous.rows.map((row) => [Number(row.game_id), { enabled: row.enabled }]));
     for (const gameId of ids) {
       await client.query(
         `INSERT INTO gamelist_service_status (game_id, enabled, updated_at)
@@ -298,6 +349,14 @@ export async function setGameListServiceStatus(gameIds, enabled) {
          SET enabled = EXCLUDED.enabled, updated_at = NOW()`,
         [gameId, normalizedEnabled]
       );
+      await recordGameinfoAudit({
+        gameId,
+        area: "status",
+        actor,
+        before: beforeById.get(gameId) || { enabled: true },
+        after: { enabled: normalizedEnabled },
+        client,
+      });
     }
     await client.query("COMMIT");
   } catch (error) {
@@ -309,11 +368,22 @@ export async function setGameListServiceStatus(gameIds, enabled) {
   return { gameIds: ids, enabled: normalizedEnabled };
 }
 
-export async function deleteGameListRow(id) {
+export async function deleteGameListRow(id, actor = null) {
   const pool = await getReadyPool();
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const existing = await client.query(`SELECT * FROM game_list WHERE id = $1 FOR UPDATE`, [id]);
+    if (existing.rows[0]) {
+      await recordGameinfoAudit({
+        gameId: id,
+        area: "game",
+        action: "delete",
+        actor,
+        before: mapRow(existing.rows[0]),
+        client,
+      });
+    }
     await deleteGamelistPacksForGame(id, client);
     await deleteGamelistTutorialForGame(id, client);
     await deleteGamelistImageForGame(id, client);

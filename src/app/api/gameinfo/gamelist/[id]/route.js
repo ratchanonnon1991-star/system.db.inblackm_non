@@ -5,6 +5,7 @@ import { recordEdit } from "@/server/gamedb-edit-log";
 import { requestMeta } from "@/lib/request-meta";
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { updateGameinfoModeData } from "@/server/gameinfo-mode-data";
+import { auditActor } from "@/server/gameinfo-gamelist-packs";
 
 export async function PUT(request, { params }) {
   try {
@@ -23,14 +24,14 @@ export async function PUT(request, { params }) {
               .map((field) => [field, body[field]])
           ),
         },
-      }));
+      }), { area: "game", actor: auditActor(admin) });
       return jsonOk({ row: { id: Number(id), ...data.fields, links: data.links } });
     }
     if (body.game !== undefined && !String(body.game).trim()) {
       return jsonError("กรุณากรอกชื่อเกม", 400);
     }
     const before = await getGameListRow(Number(id));
-    const row = await updateGameListRow(Number(id), body);
+    const row = await updateGameListRow(Number(id), body, null, auditActor(admin));
     if (!row) return jsonError("ไม่พบเกมนี้", 404);
     await recordEdit({
       queryId: null,
@@ -54,7 +55,7 @@ export async function DELETE(request, { params }) {
     const admin = await requireGameinfoEditor(request);
     const { id } = await params;
     const before = await getGameListRow(Number(id));
-    await deleteGameListRow(Number(id));
+    await deleteGameListRow(Number(id), auditActor(admin));
     await recordEdit({
       queryId: null,
       actor: admin.username || admin.displayName || "",

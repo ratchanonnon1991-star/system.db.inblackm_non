@@ -4,6 +4,7 @@ import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { normalizeGamelistLinks } from "@/server/gameinfo-gamelist-links";
 import { normalizeGamelistTutorialCategories } from "@/server/gameinfo-gamelist-tutorial";
 import { sanitizeGameinfoPack } from "@/lib/gameinfo-pack-model";
+import { recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
 
 function sanitizeCurrencies(currencies) {
   return (Array.isArray(currencies) ? currencies : []).map((currency, currencyIndex) => ({
@@ -136,7 +137,7 @@ export async function saveGameinfoModeData(gameId, mode, nextData, transactionCl
   return data;
 }
 
-export async function updateGameinfoModeData(gameId, mode, updater) {
+export async function updateGameinfoModeData(gameId, mode, updater, { area = null, actor = null } = {}) {
   if (normalizeGameinfoDataMode(mode) !== "idpass") throw new Error("ใช้ mode storage ได้เฉพาะ IDPASS");
   const pool = await readyPool();
   const client = await pool.connect();
@@ -160,6 +161,25 @@ export async function updateGameinfoModeData(gameId, mode, updater) {
        ON CONFLICT (game_id, data_mode) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
       [gameId, JSON.stringify(next)]
     );
+    if (area) {
+      const slice = (data) => {
+        if (area === "game") return data.fields;
+        if (area === "pack") return data.packs;
+        if (area === "tutorial") return data.tutorial;
+        if (area === "warning") return data.warning;
+        if (area === "links") return data.links;
+        return data;
+      };
+      await recordGameinfoAudit({
+        gameId,
+        area,
+        dataMode: "idpass",
+        actor,
+        before: slice(current),
+        after: slice(next),
+        client,
+      });
+    }
     await client.query("COMMIT");
     return next;
   } catch (error) {

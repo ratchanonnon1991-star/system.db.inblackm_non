@@ -10,6 +10,7 @@ import { createGameListRows, listGameListRows } from "@/server/gameinfo-gamelist
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { saveGameinfoModeData } from "@/server/gameinfo-mode-data";
 import { legacyGamelistLinks } from "@/server/gameinfo-gamelist-links";
+import { auditActor } from "@/server/gameinfo-gamelist-packs";
 
 async function parseUpload(request) {
   const form = await request.formData();
@@ -51,12 +52,12 @@ export async function POST(request) {
 
 export async function PUT(request) {
   try {
-    await requireGameinfoEditor(request);
+    const user = await requireGameinfoEditor(request);
     const parsed = await parseUpload(request);
     if (parsed.error) return jsonError(parsed.error, 400);
     if (parsed.errors.length) return jsonError(parsed.errors.join("\n"), 400);
     if (!parsed.rows.length) return jsonError("ไม่พบเกมที่นำเข้าได้", 400);
-    const rows = await createGameListRows(parsed.rows);
+    const rows = await createGameListRows(parsed.rows, auditActor(user));
     if (normalizeGameinfoDataMode(request.nextUrl.searchParams.get("mode")) === "idpass") {
       await Promise.all(rows.map((row, index) => saveGameinfoModeData(row.id, "idpass", {
         fields: {

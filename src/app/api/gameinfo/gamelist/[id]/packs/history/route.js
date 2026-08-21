@@ -10,10 +10,9 @@ export async function GET(request, { params }) {
     const gameId = Number(id);
     if (!Number.isInteger(gameId) || gameId <= 0) return jsonError("gameId ไม่ถูกต้อง", 400);
     const limit = Number(new URL(request.url).searchParams.get("limit") || 100);
-    if (normalizeGameinfoDataMode(request.nextUrl.searchParams.get("mode")) === "idpass") {
-      return jsonOk({ history: [] });
-    }
-    const history = await listGamelistPackAudit(gameId, limit);
+    const history = await listGamelistPackAudit(gameId, limit, {
+      dataMode: normalizeGameinfoDataMode(request.nextUrl.searchParams.get("mode")),
+    });
     return jsonOk({ history });
   } catch (err) {
     return handleApiError(err, "โหลดประวัติการแก้ไขแพ็กไม่สำเร็จ");
