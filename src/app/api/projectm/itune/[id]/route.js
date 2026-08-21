@@ -2,7 +2,6 @@ import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireProjectmAdmin } from "@/server/auth";
 import {
   deleteItuneEntry,
-  findItuneEntryById,
   updateItuneEntry,
 } from "@/server/itune-entries-repository";
 
@@ -15,10 +14,8 @@ function parseAmount(value) {
 
 export async function PUT(request, { params }) {
   try {
-    await requireProjectmAdmin(request);
+    const actor = await requireProjectmAdmin(request);
     const { id } = await params;
-    const target = await findItuneEntryById(id);
-    if (!target) return jsonError("ไม่พบรายการนี้", 404);
 
     const body = await request.json();
     const fields = {};
@@ -40,7 +37,7 @@ export async function PUT(request, { params }) {
       fields.amount = amount;
     }
 
-    const entry = await updateItuneEntry(id, fields);
+    const entry = await updateItuneEntry(id, fields, actor);
     return jsonOk({ entry });
   } catch (err) {
     return handleApiError(err, "บันทึกรายการไม่สำเร็จ");
@@ -49,12 +46,9 @@ export async function PUT(request, { params }) {
 
 export async function DELETE(request, { params }) {
   try {
-    await requireProjectmAdmin(request);
+    const actor = await requireProjectmAdmin(request);
     const { id } = await params;
-    const target = await findItuneEntryById(id);
-    if (!target) return jsonError("ไม่พบรายการนี้", 404);
-
-    await deleteItuneEntry(id);
+    await deleteItuneEntry(id, actor);
     return jsonOk({ ok: true });
   } catch (err) {
     return handleApiError(err, "ลบรายการไม่สำเร็จ");

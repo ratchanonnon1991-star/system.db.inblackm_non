@@ -35,6 +35,7 @@ import { apiJson } from "@/lib/api-json";
 import { evaluateFormula, extractFormulaRefs, parseFormula } from "@/lib/gamedb-formula";
 import { GAMEINFO_FIELD_NAMES, resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
 import { mergeCurrencies } from "@/lib/gameinfo-import";
+import { confirmGameinfoNavigation, useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
 import {
   buildGameinfoPackColumns,
   formatGameinfoPackColumnValue,
@@ -86,9 +87,9 @@ function uniq(arr) {
 // (ported separately) via the /api/gameinfo/import/* routes.
 export default function GameinfoPackEditor({
   game,
-  lang,
   userId,
   dataMode = "uid",
+  backHref,
   suggestions,
   savePacksUrl = `/api/gameinfo/gamelist/${game.id}/packs`,
   importPreviewUrl = `/api/gameinfo/import/preview?gameId=${game.id}`,
@@ -170,6 +171,7 @@ export default function GameinfoPackEditor({
     surface: "edit",
     lockRequired: true,
   });
+  useGameinfoUnsavedChanges(dirty || packLayout.dirty);
 
   const sampleRow = useMemo(() => {
     const pack = firstPack(currencies);
@@ -490,35 +492,15 @@ export default function GameinfoPackEditor({
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-end gap-2">
-        <GameinfoFormulaModeToggle
-          mode={formulaMode}
-          onChange={setFormulaMode}
-          disabled={computedColumns.length === 0}
-        />
-        <GameinfoPackColumnControls
-          columns={packLayout.orderedColumns}
-          hidden={packLayout.layout.hidden}
-          filters={packLayout.layout.filters}
-          presets={packLayout.presets}
-          selectedPresetId={packLayout.selectedPresetId}
-          presetName={packLayout.presetName}
-          dirty={packLayout.dirty}
-          loading={packLayout.loading}
-          saving={packLayout.saving}
-          error={packLayout.error}
-          notice={packLayout.notice}
-          legacyDraft={packLayout.legacyDraft}
-          onSetVisible={packLayout.setVisible}
-          onFiltersChange={packLayout.setFilters}
-          onReset={packLayout.reset}
-          onSelectPreset={packLayout.selectPreset}
-          onPresetNameChange={packLayout.setPresetName}
-          onSavePreset={packLayout.savePreset}
-          lockRequired
-        />
-        <GameinfoPackHistory gameId={game.id} historyUrl={historyUrl} />
-      </div>
+      <details className="group rounded-xl border border-linear-hairline bg-linear-surface-1">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
+          <div>
+            <p className="text-sm font-medium text-linear-ink">เครื่องมือข้อมูล Pack</p>
+            <p className="mt-0.5 text-xs text-linear-ink-tertiary">ตัวแปรสูตร · อัตราแลกเปลี่ยน · นำเข้า CSV</p>
+          </div>
+          <ChevronDown size={16} className="text-linear-ink-tertiary transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="space-y-4 border-t border-linear-hairline bg-linear-surface-2 p-4">
       <section className="rounded-lg border border-linear-hairline bg-linear-surface-1 p-4">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-semibold text-linear-ink">นำเข้าแพ็กจาก CSV (เกมนี้)</h2>
@@ -682,8 +664,10 @@ export default function GameinfoPackEditor({
         systemdb แก้ไขได้จากทั้งสองฝั่ง กดปุ่ม + ท้ายคอลัมน์ในตารางแพ็กด้านล่างเพื่อเพิ่ม
         กดค้างที่หัวคอลัมน์แล้วลากเพื่อเปลี่ยนลำดับ
       </p>
+        </div>
+      </details>
 
-      <section className="flex flex-wrap items-center gap-2 border-y border-linear-hairline py-3">
+      <section className="flex flex-nowrap items-center gap-2 overflow-x-auto py-3">
         <div className="flex items-center gap-2 text-xs font-medium text-linear-ink-muted">
           <Languages size={14} className="text-linear-primary" />
           ภาษาชื่อ Pack
@@ -746,6 +730,35 @@ export default function GameinfoPackEditor({
           {activeLanguageId ? "ชื่อที่ยังไม่เคยแปลจะแสดงเป็นช่องว่าง" : "ชื่อเดิมที่ระบบใช้แสดง"}
         </span>
         {languageError ? <span className="w-full text-xs text-red-400">{languageError}</span> : null}
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        <GameinfoFormulaModeToggle
+          mode={formulaMode}
+          onChange={setFormulaMode}
+          disabled={computedColumns.length === 0}
+        />
+        <GameinfoPackColumnControls
+          columns={packLayout.orderedColumns}
+          hidden={packLayout.layout.hidden}
+          filters={packLayout.layout.filters}
+          presets={packLayout.presets}
+          selectedPresetId={packLayout.selectedPresetId}
+          presetName={packLayout.presetName}
+          dirty={packLayout.dirty}
+          loading={packLayout.loading}
+          saving={packLayout.saving}
+          error={packLayout.error}
+          notice={packLayout.notice}
+          legacyDraft={packLayout.legacyDraft}
+          onSetVisible={packLayout.setVisible}
+          onFiltersChange={packLayout.setFilters}
+          onReset={packLayout.reset}
+          onSelectPreset={packLayout.selectPreset}
+          onPresetNameChange={packLayout.setPresetName}
+          onSavePreset={packLayout.savePreset}
+          lockRequired
+        />
+        <GameinfoPackHistory gameId={game.id} historyUrl={historyUrl} />
+      </div>
       </section>
 
       <section>
@@ -918,10 +931,8 @@ export default function GameinfoPackEditor({
           <button
             type="button"
             onClick={() => {
-              // Same "opened this page directly, nothing to go back to"
-              // guard as GameinfoBackLink.
-              if (window.history.length <= 1) router.push(`/gameinfo/${lang}/${game.id}`);
-              else router.back();
+              if (!confirmGameinfoNavigation()) return;
+              router.replace(backHref);
             }}
             className="-my-0.5 flex h-10 items-center whitespace-nowrap rounded-full bg-linear-primary px-4 text-sm font-medium text-white shadow-md hover:bg-linear-primary-hover"
           >

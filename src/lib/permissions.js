@@ -1,0 +1,72 @@
+export const PERMISSIONS = [
+  { key: "systemdb.data.insert_delete", site: "System DB", label: "เพิ่ม/ลบแถว", path: "/systemdb" },
+  { key: "systemdb.data.update", site: "System DB", label: "แก้ไขข้อมูล", path: "/systemdb" },
+  { key: "projectm.access", site: "Projectm", label: "เข้าใช้งาน", path: "/projectm/[lang]/itune" },
+  { key: "projectm.claim", site: "Projectm", label: "Topup", path: "/projectm/[lang]/itune/topup" },
+  { key: "projectm.admin", site: "Projectm", label: "Admin", path: "/projectm/[lang]/itune/admin" },
+  { key: "gameinfo.access", site: "GameInfo", label: "ดูข้อมูล", path: "/gameinfo/[lang]" },
+  { key: "gameinfo.report", site: "GameInfo", label: "รายงานปัญหา", path: "/gameinfo/[lang]/[id]" },
+  { key: "gameinfo.admin", site: "GameInfo", label: "Admin", path: "/gameinfo/[lang]" },
+];
+
+export const PERMISSION_KEYS = new Set(PERMISSIONS.map(({ key }) => key));
+
+export const PERMISSION_PRESETS = {
+  projectmTopup: ["projectm.access", "projectm.claim"],
+  projectmAdmin: ["projectm.access", "projectm.claim", "projectm.admin"],
+  gameinfoTopup: ["gameinfo.access", "gameinfo.report"],
+  gameinfoAdmin: ["gameinfo.access", "gameinfo.report", "gameinfo.admin"],
+};
+
+export function normalizePermissions(values = []) {
+  const permissions = new Set(values.filter((key) => PERMISSION_KEYS.has(key)));
+  if (permissions.has("projectm.admin")) PERMISSION_PRESETS.projectmAdmin.forEach((key) => permissions.add(key));
+  if (permissions.has("projectm.claim")) permissions.add("projectm.access");
+  if (permissions.has("gameinfo.admin")) PERMISSION_PRESETS.gameinfoAdmin.forEach((key) => permissions.add(key));
+  if (permissions.has("gameinfo.report")) permissions.add("gameinfo.access");
+  return [...permissions].sort();
+}
+
+export function togglePermission(values, key, checked) {
+  const permissions = new Set(values || []);
+  if (checked) permissions.add(key);
+  else {
+    permissions.delete(key);
+    if (key === "projectm.access") ["projectm.claim", "projectm.admin"].forEach((item) => permissions.delete(item));
+    if (key === "projectm.claim") permissions.delete("projectm.admin");
+    if (key === "gameinfo.access") ["gameinfo.report", "gameinfo.admin"].forEach((item) => permissions.delete(item));
+    if (key === "gameinfo.report") permissions.delete("gameinfo.admin");
+  }
+  return normalizePermissions([...permissions]);
+}
+
+export function legacyPermissions({ canWriteData, canUpdateData, projectmRole, gameinfoRole } = {}) {
+  return normalizePermissions([
+    canWriteData && "systemdb.data.insert_delete",
+    canUpdateData && "systemdb.data.update",
+    ...(projectmRole === "admin"
+      ? PERMISSION_PRESETS.projectmAdmin
+      : projectmRole === "topup"
+        ? PERMISSION_PRESETS.projectmTopup
+        : []),
+    ...(gameinfoRole === "admin"
+      ? PERMISSION_PRESETS.gameinfoAdmin
+      : gameinfoRole === "topup"
+        ? PERMISSION_PRESETS.gameinfoTopup
+        : []),
+  ].filter(Boolean));
+}
+
+export function permissionRole(permissions, site) {
+  const set = new Set(permissions || []);
+  if (set.has(`${site}.admin`)) return "admin";
+  if (set.has(`${site}.access`)) return "topup";
+  return null;
+}
+
+export function hasPermission(user, key) {
+  if (!user) return false;
+  if (key === "systemdb.data.insert_delete" && user.role === "admin") return true;
+  if (key === "systemdb.data.update" && user.role === "admin") return true;
+  return (user.permissions || legacyPermissions(user)).includes(key);
+}

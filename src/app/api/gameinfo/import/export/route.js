@@ -1,5 +1,5 @@
 import { handleApiError, jsonError } from "@/lib/http";
-import { requireLayoutEditor } from "@/server/auth";
+import { requireGameinfoEditor } from "@/server/auth";
 import { toCsv } from "@/lib/gameinfo-csv";
 import { PACK_HEADERS, gamesToPackRows } from "@/lib/gameinfo-import";
 import { getGameListRow, listGameListRows } from "@/server/gameinfo-gamelist";
@@ -13,7 +13,7 @@ import { getGameinfoModeData } from "@/server/gameinfo-mode-data";
 // reachable from the removed multi-game games/game_packs admin import panel.
 export async function GET(request) {
   try {
-    await requireLayoutEditor(request);
+    await requireGameinfoEditor(request);
     const { searchParams } = new URL(request.url);
     const gameIdRaw = searchParams.get("gameId");
     const mode = normalizeGameinfoDataMode(searchParams.get("mode"));

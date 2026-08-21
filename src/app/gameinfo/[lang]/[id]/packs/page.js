@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { getSessionUser } from "@/server/session-user";
+import { canManageGameinfo } from "@/server/auth";
 import { getGameListRow } from "@/server/gameinfo-gamelist";
 import {
   getGamelistPacks,
@@ -11,7 +12,7 @@ import GameinfoPackEditor from "@/components/gameinfo-pack-editor";
 import GameinfoErrorNotice from "@/components/gameinfo-error-notice";
 import GameinfoBackLink from "@/components/gameinfo-back-link";
 import { getGameinfoFormulaVariables } from "@/server/gameinfo-formula-variables";
-import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
+import { gameinfoGameHref, gameinfoListHref, gameinfoPacksHref, normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { getGameinfoModeData } from "@/server/gameinfo-mode-data";
 import GameinfoDatasetToggle from "@/components/gameinfo-dataset-toggle";
 import GameinfoModeCloneButton from "@/components/gameinfo-mode-clone-button";
@@ -26,7 +27,7 @@ export default async function GameinfoGamelistPacksPage({ params, searchParams }
   const dataMode = normalizeGameinfoDataMode(rawMode);
   const user = await getSessionUser();
   if (!user) redirect("/");
-  if (user.role === "user") redirect(`/gameinfo/${lang}`);
+  if (!canManageGameinfo(user)) redirect(gameinfoListHref(lang, dataMode));
 
   // A non-numeric [id] segment would otherwise reach getGameListRow() as NaN
   // and blow up as a Postgres "invalid input syntax for type bigint" error
@@ -81,19 +82,18 @@ export default async function GameinfoGamelistPacksPage({ params, searchParams }
     <div className="px-4 py-8 pb-24">
       <GameinfoBackLink
         className="mb-4 inline-flex items-center gap-1 text-sm text-linear-primary hover:underline"
-        fallbackHref={`/gameinfo/${lang}/${row.id}${dataMode === "idpass" ? "?mode=idpass" : ""}`}
+        href={gameinfoGameHref(lang, row.id, dataMode)}
       />
       <div className="mb-6 flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-linear-ink">แพ็ก — {row.game}</h1>
         <div className="flex items-center gap-2">
           <GameinfoModeCloneButton gameId={row.id} currentMode={dataMode} scope="packs" />
-          <GameinfoDatasetToggle basePath={`/gameinfo/${lang}/${row.id}/packs`} />
+          <GameinfoDatasetToggle basePath={gameinfoPacksHref(lang, row.id, "uid")} />
         </div>
       </div>
       <GameinfoPackEditor
         key={dataMode}
         game={game}
-        lang={lang}
         userId={user.id}
         // channels: shared across every game (not just this one's own packs)
         // so a channel typed once while editing any game is immediately
@@ -102,6 +102,7 @@ export default async function GameinfoGamelistPacksPage({ params, searchParams }
         // stay scoped to this game only.
         suggestions={{ ...buildPackSuggestions(game), channels: allChannels }}
         dataMode={dataMode}
+        backHref={gameinfoGameHref(lang, row.id, dataMode)}
         historyUrl={`/api/gameinfo/gamelist/${row.id}/packs/history?limit=200${dataMode === "idpass" ? "&mode=idpass" : ""}`}
         savePacksUrl={`/api/gameinfo/gamelist/${row.id}/packs${dataMode === "idpass" ? "?mode=idpass" : ""}`}
         importPreviewUrl={`/api/gameinfo/import/preview?gameId=${row.id}`}

@@ -10,9 +10,12 @@ export const ITUNE_DEPLETED_STATUS = "ใช้หมดแล้ว";
 // and then deliberately removed; keep this simple unless asked again). Just
 // 2 tiers — a middle "เคลียร์เศษ" tier used to sit between these but was
 // removed, merged into ITUNE_DEPLETED_STATUS.
-export function computeItuneStatus(amount) {
+export function computeItuneStatus(amount, depletedThreshold = DEFAULT_ITUNE_RELEASE_THRESHOLD) {
   const value = Number(amount) || 0;
-  if (value < 1.0) return { label: ITUNE_DEPLETED_STATUS, tone: "subtle", allowClaim: true };
+  const threshold = Number(depletedThreshold);
+  if (value < (Number.isFinite(threshold) ? threshold : DEFAULT_ITUNE_RELEASE_THRESHOLD)) {
+    return { label: ITUNE_DEPLETED_STATUS, tone: "subtle", allowClaim: true };
+  }
   return { label: "ใช้ได้", tone: "success", allowClaim: true };
 }
 
@@ -41,9 +44,9 @@ export const DEFAULT_ITUNE_PRIORITY_AMOUNT_THRESHOLD = 400;
 // read as "unavailable".
 export const ITUNE_UNAVAILABLE_STATUS = "ไม่พร้อมใช้งาน";
 
-export function computeEffectiveItuneStatus(row) {
+export function computeEffectiveItuneStatus(row, depletedThreshold = DEFAULT_ITUNE_RELEASE_THRESHOLD) {
   if (row?.status === ITUNE_UNAVAILABLE_STATUS) {
     return { label: ITUNE_UNAVAILABLE_STATUS, tone: "danger", allowClaim: false };
   }
-  return computeItuneStatus(row?.amount);
+  return computeItuneStatus(row?.amount, depletedThreshold);
 }

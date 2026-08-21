@@ -1,5 +1,5 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireLayoutEditor } from "@/server/auth";
+import { requireGameinfoEditor } from "@/server/auth";
 import { parseCsv, toCsv } from "@/lib/gameinfo-csv";
 import {
   GAMELIST_HEADERS,
@@ -27,7 +27,7 @@ async function parseUpload(request) {
 
 export async function GET(request) {
   try {
-    await requireLayoutEditor(request);
+    await requireGameinfoEditor(request);
     return new Response("﻿" + toCsv(GAMELIST_HEADERS, GAMELIST_SAMPLE), {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
@@ -41,7 +41,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    await requireLayoutEditor(request);
+    await requireGameinfoEditor(request);
     const parsed = await parseUpload(request);
     return parsed.error ? jsonError(parsed.error, 400) : jsonOk(parsed);
   } catch (error) {
@@ -51,7 +51,7 @@ export async function POST(request) {
 
 export async function PUT(request) {
   try {
-    await requireLayoutEditor(request);
+    await requireGameinfoEditor(request);
     const parsed = await parseUpload(request);
     if (parsed.error) return jsonError(parsed.error, 400);
     if (parsed.errors.length) return jsonError(parsed.errors.join("\n"), 400);

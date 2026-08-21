@@ -1,5 +1,5 @@
 import { handleApiError } from "@/lib/http";
-import { requireLayoutEditor } from "@/server/auth";
+import { requireGameinfoEditor } from "@/server/auth";
 import { toCsv } from "@/lib/gameinfo-csv";
 import { GAMELIST_EXPORT_HEADERS, gameListRowsToCsvRows } from "@/lib/gameinfo-gamelist-csv";
 import { listGameListRows } from "@/server/gameinfo-gamelist";
@@ -8,7 +8,7 @@ import { listGameinfoModeData } from "@/server/gameinfo-mode-data";
 
 export async function GET(request) {
   try {
-    await requireLayoutEditor(request);
+    await requireGameinfoEditor(request);
     const baseRows = await listGameListRows();
     const mode = normalizeGameinfoDataMode(request.nextUrl.searchParams.get("mode"));
     const idpassByGame = mode === "idpass" ? await listGameinfoModeData(mode) : {};

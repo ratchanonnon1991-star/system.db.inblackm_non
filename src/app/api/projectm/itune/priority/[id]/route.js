@@ -13,7 +13,7 @@ import {
 // landed in the new order.
 export async function PATCH(request, { params }) {
   try {
-    await requireProjectmAdmin(request);
+    const actor = await requireProjectmAdmin(request);
     const { id } = await params;
     const entryId = Number(id);
     if (!Number.isInteger(entryId) || entryId <= 0) {
@@ -24,10 +24,10 @@ export async function PATCH(request, { params }) {
       return jsonError("ไม่มีการเปลี่ยนแปลงที่จะบันทึก", 400);
     }
     if (body.pinned !== undefined) {
-      await setItunePriorityPinned(entryId, Boolean(body.pinned));
+      await setItunePriorityPinned(entryId, Boolean(body.pinned), actor);
     }
     if (body.claimHold !== undefined) {
-      await setItuneClaimHold(entryId, Boolean(body.claimHold));
+      await setItuneClaimHold(entryId, Boolean(body.claimHold), actor);
     }
     const entries = await listItunePriorityQueue();
     return jsonOk({ entries });

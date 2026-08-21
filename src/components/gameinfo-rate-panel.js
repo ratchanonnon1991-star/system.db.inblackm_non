@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { ChevronDown, RefreshCw } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 
 const RATE_URL = "/api/gameinfo/rates?pairs=USDTTHB,USDCNY";
@@ -42,23 +42,25 @@ export function useGameinfoRates() {
 
 export default function GameinfoRatePanel({ rates, loading, error, onRefresh }) {
   return (
-    <section className="rounded-lg border border-linear-hairline bg-linear-surface-1 p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="font-semibold text-linear-ink">อัตราแลกเปลี่ยน</h2>
-          <p className="mt-0.5 text-xs text-linear-ink-tertiary">อัปเดตสูงสุดชั่วโมงละครั้งและใช้ค่าล่าสุดเมื่อ provider ขัดข้อง</p>
+    <section className="rounded-lg border border-linear-hairline bg-linear-surface-1 p-3">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="flex items-baseline gap-2">
+          <h2 className="text-sm font-semibold text-linear-ink">อัตราแลกเปลี่ยน</h2>
+          <span className="text-[10px] text-linear-ink-tertiary">อัปเดตทุก 1 ชม.</span>
         </div>
         <button
           type="button"
           onClick={onRefresh}
           disabled={loading}
-          className="flex items-center gap-1 rounded-md border border-linear-hairline-strong px-2 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-2 disabled:opacity-50"
+          aria-label="รีเฟรชอัตราแลกเปลี่ยน"
+          title="รีเฟรช"
+          className="flex h-8 w-8 items-center justify-center rounded-md text-linear-ink-muted hover:bg-linear-surface-2 disabled:opacity-50"
         >
-          <RefreshCw size={12} className={loading ? "animate-spin" : ""} /> รีเฟรช
+          <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
         </button>
       </div>
       {error ? <p className="mb-2 text-xs text-red-400">{error}</p> : null}
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-2 sm:grid-cols-2">
         {rates.length === 0 ? (
           <p className="text-xs text-linear-ink-tertiary">{loading ? "กำลังโหลดค่าเงิน..." : "ยังไม่มีข้อมูลค่าเงิน"}</p>
         ) : rates.map((rate) => <RateCard key={rate.pair} rate={rate} />)}
@@ -76,22 +78,25 @@ function RateCard({ rate }) {
       }).format(new Date(rate.fetchedAt))
     : "ยังไม่เคยดึงสำเร็จ";
   return (
-    <div className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
-      <div className="flex items-start justify-between gap-2">
+    <details className="group rounded-md border border-linear-hairline bg-linear-surface-1">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 [&::-webkit-details-marker]:hidden">
         <div>
-          <p className="text-xs text-linear-ink-tertiary">{rate.pair}</p>
-          <p className="mt-0.5 text-xl font-semibold tabular-nums text-linear-ink">
+          <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-linear-ink-tertiary">{rate.pair}</p>
+          <p className="text-lg font-semibold tabular-nums text-linear-ink">
             {rate.available ? Number(rate.rate).toLocaleString("th-TH", { maximumFractionDigits: 6 }) : "—"}
           </p>
         </div>
-        <span className={`rounded-full px-2 py-0.5 text-[10px] ${rate.stale ? "bg-amber-500/10 text-amber-300" : "bg-emerald-500/10 text-emerald-400"}`}>
-          {rate.stale ? "ค่าล่าสุด (stale)" : "ล่าสุด"}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={`h-2 w-2 rounded-full ${rate.stale ? "bg-amber-500" : "bg-emerald-500"}`} title={rate.stale ? "ใช้ค่าล่าสุดที่มี" : "ข้อมูลล่าสุด"} />
+          <ChevronDown size={14} className="text-linear-ink-tertiary transition-transform group-open:rotate-180" />
+        </div>
+      </summary>
+      <div className="border-t border-linear-hairline bg-linear-surface-2 px-3 pb-2 pt-1">
+        <RateSparkline history={rate.history || []} />
+        <p className="mt-1 text-[10px] text-linear-ink-tertiary">{rate.source || "ไม่ทราบแหล่งข้อมูล"} · {fetchedAt}</p>
+        {rate.error ? <p className="mt-1 text-[10px] text-amber-300">{rate.error}</p> : null}
       </div>
-      <RateSparkline history={rate.history || []} />
-      <p className="mt-1 text-[10px] text-linear-ink-tertiary">{rate.source || "ไม่ทราบแหล่งข้อมูล"} · {fetchedAt}</p>
-      {rate.error ? <p className="mt-1 text-[10px] text-amber-300">{rate.error}</p> : null}
-    </div>
+    </details>
   );
 }
 

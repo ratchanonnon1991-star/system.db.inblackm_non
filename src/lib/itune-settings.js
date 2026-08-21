@@ -3,7 +3,7 @@
 // Per-user preferences for the itune/admin page, same localStorage-hook
 // shape as useLLTheme(). A keyed object rather than a single flag so future
 // settings (or future paste-able columns) can extend this without a new hook.
-import { useCallback, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 const SETTINGS_KEY = "projectm.itune-admin.settings";
 
@@ -12,12 +12,16 @@ const DEFAULT_SETTINGS = {
   // Columns the search box skips — empty by default, i.e. search covers
   // every column until someone opens the column filter and unchecks some.
   searchExcludedColumns: [],
+  savedFilters: [],
+  dateTimeMode: "remaining",
   // Per-cell copy buttons, revealed on row hover. On by default; the
   // "คัดลอกทั้งแถว" row-menu item is unaffected by this toggle.
   copyButtonsEnabled: true,
 };
 
-export function useItuneSettings() {
+const ItuneSettingsContext = createContext(null);
+
+export function ItuneSettingsProvider({ children }) {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
 
   useEffect(() => {
@@ -45,5 +49,12 @@ export function useItuneSettings() {
     });
   }, []);
 
-  return [settings, setSetting];
+  const value = useMemo(() => [settings, setSetting], [settings, setSetting]);
+  return <ItuneSettingsContext.Provider value={value}>{children}</ItuneSettingsContext.Provider>;
+}
+
+export function useItuneSettings() {
+  const value = useContext(ItuneSettingsContext);
+  if (!value) throw new Error("useItuneSettings must be used inside ItuneSettingsProvider");
+  return value;
 }

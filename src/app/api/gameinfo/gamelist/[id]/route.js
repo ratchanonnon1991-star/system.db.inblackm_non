@@ -1,5 +1,5 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireLayoutEditor } from "@/server/auth";
+import { requireGameinfoEditor } from "@/server/auth";
 import { deleteGameListRow, getGameListRow, updateGameListRow } from "@/server/gameinfo-gamelist";
 import { recordEdit } from "@/server/gamedb-edit-log";
 import { requestMeta } from "@/lib/request-meta";
@@ -8,7 +8,7 @@ import { updateGameinfoModeData } from "@/server/gameinfo-mode-data";
 
 export async function PUT(request, { params }) {
   try {
-    const admin = await requireLayoutEditor(request);
+    const admin = await requireGameinfoEditor(request);
     const { id } = await params;
     const body = await request.json();
     const mode = normalizeGameinfoDataMode(request.nextUrl.searchParams.get("mode"));
@@ -51,7 +51,7 @@ export async function PUT(request, { params }) {
 
 export async function DELETE(request, { params }) {
   try {
-    const admin = await requireLayoutEditor(request);
+    const admin = await requireGameinfoEditor(request);
     const { id } = await params;
     const before = await getGameListRow(Number(id));
     await deleteGameListRow(Number(id));

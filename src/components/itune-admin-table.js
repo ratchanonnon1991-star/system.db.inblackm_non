@@ -3,27 +3,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   AlertTriangle,
+  BookmarkPlus,
   Check,
   Copy,
   Filter,
   History,
   Image as ImageIcon,
-  ListOrdered,
   MoreVertical,
   Plus,
   Search,
-  Settings,
-  SlidersHorizontal,
-  Users,
+  Trash2,
   X,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import {
   computeEffectiveItuneStatus,
-  DEFAULT_ITUNE_RELEASE_THRESHOLD,
   ITUNE_DEPLETED_STATUS,
   ITUNE_UNAVAILABLE_STATUS,
 } from "@/lib/itune-status";
@@ -34,6 +31,7 @@ import ItuneComboInput from "@/components/itune-combo-input";
 import ItuneCountdownCell from "@/components/itune-countdown-cell";
 import ItuneImagePickerModal from "@/components/itune-image-picker-modal";
 import ItuneImagePreview from "@/components/itune-image-preview";
+import ItunePasswordValue, { ItunePasswordInput } from "@/components/itune-password-value";
 
 function uniq(arr) {
   return Array.from(new Set(arr.filter(Boolean))).sort((a, b) => a.localeCompare(b, "th"));
@@ -174,7 +172,7 @@ function StatusBadge({ row }) {
 }
 
 // Popup for reporting a problem with a row — same overlay/portal shape as
-// ItuneAdminSettingsModal. Confirming sets the row's status to
+// Confirming this dialog sets the row's status to
 // ITUNE_UNAVAILABLE_STATUS server-side (see reportItuneEntryIssue) — this is
 // a persisted override, not the amount-derived status.
 function ItuneReportIssueModal({ onConfirm, onClose, submitting, error }) {
@@ -383,109 +381,6 @@ function ItuneAmountEditModal({ row, saving, error, onSave, onClose }) {
   );
 }
 
-// Read-only popup listing every "อัปเดตยอดคงเหลือ"/"แก้ไขยอด" adjustment
-// ever logged for this row (see projectm_itune_amount_log) — same data the
-// topup card's expanded view shows inline, just as its own dialog here so
-// admin can check a row's history from the "⋮" menu without claiming it.
-function ItuneAmountHistoryModal({ row, onClose }) {
-  const [logs, setLogs] = useState(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let cancelled = false;
-    apiJson(`/api/projectm/itune/${row.id}/amount-log`, {
-      fallbackError: "โหลดประวัติยอดไม่สำเร็จ",
-    })
-      .then((data) => {
-        if (!cancelled) setLogs(data.logs || []);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err.message);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [row.id]);
-
-  useEffect(() => {
-    function onKeyDown(e) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
-  function formatLogTime(value) {
-    if (!value) return "-";
-    const ms = new Date(value).getTime();
-    if (!Number.isFinite(ms)) return "-";
-    return new Date(ms).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" });
-  }
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-ll-hairline bg-ll-surface-1 shadow-[var(--ll-shadow-modal)]">
-        <div className="flex items-center justify-between border-b border-ll-hairline px-4 py-2.5">
-          <h2 className="text-sm font-semibold text-ll-ink">
-            ประวัติยอด — {row.email || `ID ${row.id}`}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-6 w-6 items-center justify-center rounded text-ll-ink-tertiary hover:bg-ll-surface-2 hover:text-ll-ink"
-            aria-label="ปิด"
-          >
-            <X size={14} />
-          </button>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          {error && <p className="text-[13px] text-ll-primary">{error}</p>}
-          {!error && logs === null && (
-            <p className="text-center text-[13px] text-ll-ink-tertiary">กำลังโหลด...</p>
-          )}
-          {!error && logs && logs.length === 0 && (
-            <p className="text-center text-[13px] text-ll-ink-tertiary">ยังไม่มีประวัติยอด</p>
-          )}
-          {!error && logs && logs.length > 0 && (
-            <ul className="flex flex-col gap-2.5">
-              {logs.map((log) => (
-                <li key={log.id} className="flex items-center gap-2.5 text-[12px]">
-                  {log.image ? (
-                    <ItuneImagePreview src={log.image}>
-                      <div className="h-9 w-9 shrink-0 overflow-hidden rounded border border-ll-hairline-strong">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={log.image} alt="" className="h-full w-full object-cover" />
-                      </div>
-                    </ItuneImagePreview>
-                  ) : (
-                    <span className="h-9 w-9 shrink-0 rounded border border-dashed border-ll-hairline-strong" />
-                  )}
-                  <span className="text-ll-ink">
-                    {Number(log.oldAmount) === Number(log.newAmount)
-                      ? `ยอดเริ่มต้น: ${Number(log.newAmount).toFixed(2)}`
-                      : `${Number(log.oldAmount).toFixed(2)} → ${Number(log.newAmount).toFixed(2)}`}
-                    <span className="block text-[11px] text-ll-ink-subtle">
-                      {log.changedByUsername ? `${log.changedByUsername} · ` : ""}
-                      {formatLogTime(log.changedAt)}
-                    </span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
-
 // Static display <-> input toggle, single active cell at a time app-wide
 // (tracked by the table via `editing`) — same click-to-edit shape as
 // gameinfo-gamelist-table.js's cell components.
@@ -555,7 +450,7 @@ function RowActionsMenu({
   onCopyRow,
   onReportIssue,
   onResolveIssue,
-  onViewAmountHistory,
+  amountHistoryHref,
   onTogglePermanent,
 }) {
   const [open, setOpen] = useState(false);
@@ -619,17 +514,14 @@ function RowActionsMenu({
             >
               คัดลอกทั้งแถว
             </button>
-            {onViewAmountHistory && (
-              <button
-                type="button"
-                onClick={() => {
-                  setOpen(false);
-                  onViewAmountHistory(row);
-                }}
+            {amountHistoryHref && (
+              <Link
+                href={amountHistoryHref}
+                onClick={() => setOpen(false)}
                 className="block w-full px-3 py-2 text-left text-xs text-ll-ink hover:bg-ll-surface-2"
               >
                 ประวัติยอด
-              </button>
+              </Link>
             )}
             {onTogglePermanent && (
               <button
@@ -699,7 +591,7 @@ function RowActionsMenu({
 // at any viewport width instead of one of the flexible columns swallowing
 // the leftover space before it.
 const GRID_COLS =
-  "grid-cols-[50px_180px_minmax(180px,1fr)_minmax(180px,0.8fr)_120px_100px_100px_80px_150px_120px_100px_minmax(130px,1fr)_minmax(180px,1fr)_44px]";
+  "grid-cols-[40px_50px_180px_minmax(180px,1fr)_minmax(180px,0.8fr)_120px_100px_100px_80px_150px_120px_100px_minmax(130px,1fr)_minmax(180px,1fr)_44px]";
 
 // The table's minimum width, derived straight from GRID_COLS's own track
 // list (every `Npx` — bare tracks and the min side of `minmax(Npx, fr)`
@@ -719,77 +611,7 @@ const GRID_MIN_WIDTH = (GRID_COLS.match(/\d+px/g) || []).reduce(
 // width — see the pill's render comment below.
 const SIDE_SLOT_WIDTH = "w-[104px]";
 
-// Popup window (portal + overlay), same shape as ItuneImagePickerModal —
-// swapped in for the old anchored dropdown so the settings surface isn't
-// clipped by the table's overflow-x-auto wrapper and reads consistently
-// with every other dialog in this app.
-function ItuneAdminSettingsModal({ settings, onSetting, onClose }) {
-  useEffect(() => {
-    function onKeyDown(e) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="w-full max-w-sm overflow-hidden rounded-lg border border-ll-hairline bg-ll-surface-1 shadow-[var(--ll-shadow-modal)]">
-        <div className="flex items-center justify-between border-b border-ll-hairline px-4 py-2.5">
-          <h2 className="text-sm font-semibold text-ll-ink">ตั้งค่า</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-6 w-6 items-center justify-center rounded text-ll-ink-tertiary hover:bg-ll-surface-2 hover:text-ll-ink"
-            aria-label="ปิด"
-          >
-            <X size={14} />
-          </button>
-        </div>
-
-        <div className="p-4">
-          <label className="flex items-start gap-2 text-[13px] text-ll-ink">
-            <input
-              type="checkbox"
-              checked={settings.rightClickPaste}
-              onChange={(e) => onSetting("rightClickPaste", e.target.checked)}
-              className="mt-0.5 h-3.5 w-3.5 accent-ll-primary"
-            />
-            <span>
-              วางข้อมูลด้วยคลิกขวา
-              <span className="mt-0.5 block text-[11px] text-ll-ink-subtle">
-                คลิกขวาแล้ววางจากคลิปบอร์ดได้ทันที ใช้ได้ทั้งรูป (คอลัมน์รูปทุกคอลัมน์) และช่องกรอกข้อมูลทุกช่อง — เปิดเป็นค่าเริ่มต้น
-              </span>
-            </span>
-          </label>
-
-          <label className="mt-3 flex items-start gap-2 text-[13px] text-ll-ink">
-            <input
-              type="checkbox"
-              checked={settings.copyButtonsEnabled}
-              onChange={(e) => onSetting("copyButtonsEnabled", e.target.checked)}
-              className="mt-0.5 h-3.5 w-3.5 accent-ll-primary"
-            />
-            <span>
-              ปุ่มคัดลอกข้อมูลรายช่อง
-              <span className="mt-0.5 block text-[11px] text-ll-ink-subtle">
-                แสดงปุ่มคัดลอกท้ายข้อมูลของแต่ละช่องเมื่อวางเมาส์ที่แถว — ปิดตัวนี้ไม่กระทบเมนู ⋮ → &quot;คัดลอกทั้งแถว&quot; ซึ่งใช้ได้เสมอ
-              </span>
-            </span>
-          </label>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
-
-// Same popup shape as ItuneAdminSettingsModal — picks which columns the
+// Popup window that picks which columns the
 // search box matches against. `excluded` is the list of column keys to skip;
 // checked in the list below means "included in search" (unchecking a column
 // adds it to `excluded`), so the default empty list reads as "search
@@ -966,116 +788,10 @@ function ItuneAdminFilterModal({ excluded, onChangeExcluded, onClose }) {
   );
 }
 
-// Single-field settings popup for the "คืนเมล" (release) threshold — a
-// topup user may only release their own claim once its Amount has dropped
-// below this value (see releaseItuneEntry/getItuneReleaseThreshold in
-// itune-entries-repository.js). The same number doubles as the drained
-// line for the claim queue: an entry below it is done, so claimItuneEntry
-// and the priority page both leave it out (see CLAIMABLE_WHERE_SQL). Same
-// overlay shape as ItuneAdminSettingsModal/ItuneAdminFilterModal.
-function ItuneReleaseSettingsModal({ releaseThreshold, saving, error, onSave, onClose }) {
-  const [draft, setDraft] = useState(String(releaseThreshold ?? DEFAULT_ITUNE_RELEASE_THRESHOLD));
-
-  useEffect(() => {
-    function onKeyDown(e) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
-  const numeric = Number(draft);
-  const valid = draft.trim() !== "" && Number.isFinite(numeric) && numeric >= 0;
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="w-full max-w-sm overflow-hidden rounded-lg border border-ll-hairline bg-ll-surface-1 shadow-[var(--ll-shadow-modal)]">
-        <div className="flex items-center justify-between border-b border-ll-hairline px-4 py-2.5">
-          <h2 className="text-sm font-semibold text-ll-ink">ตั้งค่าการคืนเมล</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-6 w-6 items-center justify-center rounded text-ll-ink-tertiary hover:bg-ll-surface-2 hover:text-ll-ink"
-            aria-label="ปิด"
-          >
-            <X size={14} />
-          </button>
-        </div>
-
-        <div className="p-4">
-          <label className="block text-[12px] font-medium text-ll-ink">
-            ยอดคงเหลือขั้นต่ำที่ถือว่าเมล &quot;ยังใช้ได้&quot;
-          </label>
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            autoFocus
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            className="mt-1.5 h-9 w-32 rounded-md border border-ll-hairline-strong bg-ll-surface-2 px-2 text-[13px] text-ll-ink outline-none focus:border-ll-primary"
-          />
-          <p className="mt-1.5 text-[11px] text-ll-ink-subtle">
-            ค่าเริ่มต้น {DEFAULT_ITUNE_RELEASE_THRESHOLD} — ค่านี้ใช้ 2 อย่างพร้อมกัน:
-          </p>
-          <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[11px] text-ll-ink-subtle">
-            <li>
-              topup ต้องใช้ยอดจนต่ำกว่าค่านี้ก่อนถึงจะกด &quot;คืนเมล&quot; กลับเข้าพูลได้
-              (projectm-admin ยกเว้นข้อจำกัดนี้)
-            </li>
-            <li>
-              เมลที่ยอดต่ำกว่าค่านี้ถือว่าใช้หมดแล้ว จะไม่ขึ้นในคิว &quot;รับเมล&quot; อีก
-            </li>
-          </ul>
-          {!valid && (
-            <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-ll-primary-subtle-text">
-              <AlertTriangle size={12} /> กรอกยอดเป็นตัวเลขไม่ติดลบ
-            </p>
-          )}
-          {error && (
-            <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-ll-primary-subtle-text">
-              <AlertTriangle size={12} /> {error}
-            </p>
-          )}
-        </div>
-
-        <div className="flex items-center justify-end gap-2 border-t border-ll-hairline px-4 py-2.5">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md px-3 py-1.5 text-[13px] font-medium text-ll-ink-subtle hover:bg-ll-surface-2"
-          >
-            ยกเลิก
-          </button>
-          <button
-            type="button"
-            onClick={() => onSave(numeric)}
-            disabled={saving || !valid}
-            className="rounded-md bg-ll-primary px-3 py-1.5 text-[13px] font-medium text-ll-on-primary hover:bg-ll-primary-hover disabled:opacity-50"
-          >
-            {saving ? "กำลังบันทึก..." : "บันทึก"}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
-
-export default function ItuneAdminTable({ initialEntries, initialReleaseThreshold }) {
+export default function ItuneAdminTable({ initialEntries }) {
+  const pathname = usePathname();
   const [rows, setRows] = useState(initialEntries);
   const [savedRows, setSavedRows] = useState(initialEntries);
-  // "คืนเมล" release threshold (see ItuneReleaseSettingsModal), saved via
-  // /api/projectm/itune/release-settings (see releaseItuneEntry/
-  // getItuneReleaseThreshold in itune-entries-repository.js).
-  const [releaseThreshold, setReleaseThreshold] = useState(
-    initialReleaseThreshold ?? DEFAULT_ITUNE_RELEASE_THRESHOLD
-  );
   const [dirtyIds, setDirtyIds] = useState(new Set());
   const [editing, setEditing] = useState(null); // { id, field }
   // Enter commits the current cell and jumps straight into the next one in
@@ -1089,17 +805,9 @@ export default function ItuneAdminTable({ initialEntries, initialReleaseThreshol
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [search, setSearch] = useState("");
-  // One slot, not independent booleans — keeps Filter/Settings mutually
-  // exclusive (both are full-screen portal overlays with their own
-  // Escape-key listener, so having more than one open at once stacked
-  // backdrops and made Escape close all of them instead of just the top
-  // one). History moved to its own page (see itune-issue-history.js) since
-  // its rows got wide enough (full entry snapshot) to want a real page
-  // instead of a dialog.
-  const [openPanel, setOpenPanel] = useState(null); // null | "filter" | "settings" | "release"
-  const [releaseSettingsSaving, setReleaseSettingsSaving] = useState(false);
-  const [releaseSettingsError, setReleaseSettingsError] = useState("");
-  const { lang } = useParams();
+  const [selectedFilterId, setSelectedFilterId] = useState("");
+  // The table keeps only its search-column filter locally.
+  const [openPanel, setOpenPanel] = useState(null); // null | "filter"
   const [imagePickerFor, setImagePickerFor] = useState(null);
   const [imageError, setImageError] = useState({});
   const [reportFor, setReportFor] = useState(null);
@@ -1108,7 +816,8 @@ export default function ItuneAdminTable({ initialEntries, initialReleaseThreshol
   const [amountEditFor, setAmountEditFor] = useState(null);
   const [savingAmount, setSavingAmount] = useState(false);
   const [amountEditError, setAmountEditError] = useState("");
-  const [amountHistoryFor, setAmountHistoryFor] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [deletingSelected, setDeletingSelected] = useState(false);
   const tempCounter = useRef(0);
   const now = useMinuteTicker();
   const [settings, setSetting] = useItuneSettings();
@@ -1191,6 +900,8 @@ export default function ItuneAdminTable({ initialEntries, initialReleaseThreshol
   // Always an array — useItuneSettings seeds it from DEFAULT_SETTINGS before
   // localStorage is even read (see itune-settings.js), so this is never undefined.
   const searchExcludedColumns = settings.searchExcludedColumns;
+  const savedFilters = Array.isArray(settings.savedFilters) ? settings.savedFilters : [];
+  const dateTimeMode = settings.dateTimeMode === "dateTime" ? "dateTime" : "remaining";
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return rows;
@@ -1200,6 +911,36 @@ export default function ItuneAdminTable({ initialEntries, initialReleaseThreshol
       activeColumns.some((c) => searchValueFor(row, c.key).toLowerCase().includes(q))
     );
   }, [rows, search, searchExcludedColumns]);
+  const selectableFilteredIds = filteredRows.filter((row) => !isTempId(row.id)).map((row) => row.id);
+  const allFilteredSelected =
+    selectableFilteredIds.length > 0 && selectableFilteredIds.every((id) => selectedIds.has(id));
+
+  function saveFilter() {
+    const name = window.prompt("ตั้งชื่อชุดตัวกรองนี้", search.trim() || "ตัวกรองใหม่");
+    if (!name?.trim()) return;
+    const filter = {
+      id: String(Date.now()),
+      name: name.trim(),
+      search,
+      excludedColumns: searchExcludedColumns,
+    };
+    setSetting("savedFilters", [...savedFilters, filter]);
+    setSelectedFilterId(filter.id);
+  }
+
+  function applyFilter(filterId) {
+    setSelectedFilterId(filterId);
+    const filter = savedFilters.find((item) => item.id === filterId);
+    if (!filter) return;
+    setSearch(filter.search || "");
+    setSetting("searchExcludedColumns", filter.excludedColumns || []);
+  }
+
+  function deleteSelectedFilter() {
+    if (!selectedFilterId || !window.confirm("ลบชุดตัวกรองนี้?")) return;
+    setSetting("savedFilters", savedFilters.filter((item) => item.id !== selectedFilterId));
+    setSelectedFilterId("");
+  }
 
   // A trailing/leading space typed mid-edit shouldn't flip a row to dirty —
   // trim before comparing, same as gameinfo-gamelist-table.js's updateField.
@@ -1252,6 +993,13 @@ export default function ItuneAdminTable({ initialEntries, initialReleaseThreshol
     // server-side in insertItuneEntry/updateItuneEntry as the authoritative
     // check either way.
     if (duplicateLinkSmsRowIds.size > 0) return;
+    const missingInitialProof = rows.some(
+      (row) => isTempId(row.id) && dirtyIds.has(row.id) && !row.amountConfirmImage
+    );
+    if (missingInitialProof) {
+      setSaveError("เมลใหม่ทุกแถวต้องแนบรูปยืนยันยอดเริ่มต้นก่อนบันทึก");
+      return;
+    }
     setSaving(true);
     setSaveError("");
     try {
@@ -1264,6 +1012,7 @@ export default function ItuneAdminTable({ initialEntries, initialReleaseThreshol
           const payload = {
             ...Object.fromEntries(EDITABLE_FIELDS.map((f) => [f, row[f]])),
             addedAt: row.addedAt,
+            amountConfirmImage: row.amountConfirmImage,
           };
           const data = await apiJson("/api/projectm/itune", {
             method: "POST",
@@ -1327,14 +1076,60 @@ export default function ItuneAdminTable({ initialEntries, initialReleaseThreshol
       });
       setRows((prev) => prev.filter((r) => r.id !== row.id));
       setSavedRows((prev) => prev.filter((r) => r.id !== row.id));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(row.id);
+        return next;
+      });
     } catch (err) {
       window.alert(err.message);
     }
   }
 
+  function toggleSelected(id) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAllFiltered() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) selectableFilteredIds.forEach((id) => next.delete(id));
+      else selectableFilteredIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
+  async function deleteSelected() {
+    const ids = [...selectedIds];
+    if (!ids.length || !window.confirm(`ลบ ${ids.length} รายการที่เลือก? การลบนี้ย้อนกลับไม่ได้`)) return;
+    setDeletingSelected(true);
+    try {
+      await apiJson("/api/projectm/itune", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+        fallbackError: "ลบหลายรายการไม่สำเร็จ",
+      });
+      const deleted = new Set(ids);
+      setRows((prev) => prev.filter((row) => !deleted.has(row.id)));
+      setSavedRows((prev) => prev.filter((row) => !deleted.has(row.id)));
+      setDirtyIds((prev) => new Set([...prev].filter((id) => !deleted.has(id))));
+      setSelectedIds(new Set());
+    } catch (err) {
+      window.alert(err.message);
+    } finally {
+      setDeletingSelected(false);
+    }
+  }
+
   async function saveImage(row, dataUrl) {
     if (isTempId(row.id)) {
-      window.alert("บันทึกแถวนี้ก่อน ถึงจะใส่รูปยืนยันได้");
+      updateField(row.id, "amountConfirmImage", dataUrl);
       return;
     }
     const previous = row.amountConfirmImage;
@@ -1436,25 +1231,6 @@ export default function ItuneAdminTable({ initialEntries, initialReleaseThreshol
     }
   }
 
-  async function saveReleaseThreshold(nextReleaseThreshold) {
-    setReleaseSettingsSaving(true);
-    setReleaseSettingsError("");
-    try {
-      const data = await apiJson("/api/projectm/itune/release-settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ maxAmount: nextReleaseThreshold }),
-        fallbackError: "บันทึกการตั้งค่าคืนเมลไม่สำเร็จ",
-      });
-      setReleaseThreshold(data.maxAmount);
-      setOpenPanel(null);
-    } catch (err) {
-      setReleaseSettingsError(err.message);
-    } finally {
-      setReleaseSettingsSaving(false);
-    }
-  }
-
   async function handleThumbRightClick(event, row) {
     if (!settings.rightClickPaste) return; // let the browser's native menu show
     event.preventDefault();
@@ -1521,25 +1297,35 @@ export default function ItuneAdminTable({ initialEntries, initialReleaseThreshol
     const value = row[field] || "";
     const isEditing = editing?.id === row.id && editing?.field === field;
     const duplicateMessage = field === "linkSms" ? linkSmsDuplicateMessage(row) : null;
+    const display = field === "password" ? <ItunePasswordValue value={value} /> : value;
     return (
       <EditableCell
         editing={isEditing}
-        display={value}
+        display={display}
         onStartEdit={() => setEditing({ id: row.id, field })}
         onContextMenu={(e) => handleCellRightClickPaste(e, row.id, field)}
         copyText={settings.copyButtonsEnabled ? value : ""}
       >
-        <ItuneComboInput
-          value={value}
-          onChange={(v) => updateField(row.id, field, v)}
-          suggestions={suggestions[field] || []}
-          placeholder={label}
-          autoFocus
-          onEnter={() => focusNextField(row.id, field)}
-          className="w-full rounded-md border border-ll-primary bg-ll-surface-1 px-2 py-1 text-sm text-ll-ink outline-none"
-          isDuplicate={Boolean(duplicateMessage)}
-          duplicateMessage={duplicateMessage}
-        />
+        {field === "password" ? (
+          <ItunePasswordInput
+            value={value}
+            onChange={(v) => updateField(row.id, field, v)}
+            onEnter={() => focusNextField(row.id, field)}
+            className="w-full rounded-md border border-ll-primary bg-ll-surface-1 px-2 py-1 text-sm text-ll-ink outline-none"
+          />
+        ) : (
+          <ItuneComboInput
+            value={value}
+            onChange={(v) => updateField(row.id, field, v)}
+            suggestions={suggestions[field] || []}
+            placeholder={label}
+            autoFocus
+            onEnter={() => focusNextField(row.id, field)}
+            className="w-full rounded-md border border-ll-primary bg-ll-surface-1 px-2 py-1 text-sm text-ll-ink outline-none"
+            isDuplicate={Boolean(duplicateMessage)}
+            duplicateMessage={duplicateMessage}
+          />
+        )}
       </EditableCell>
     );
   }
@@ -1547,8 +1333,9 @@ export default function ItuneAdminTable({ initialEntries, initialReleaseThreshol
   return (
     <div className="flex flex-col gap-3 pb-24">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <div className="relative">
+        <div className="flex min-w-0 flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
             <Search
               size={14}
               className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ll-ink-tertiary"
@@ -1571,88 +1358,78 @@ export default function ItuneAdminTable({ initialEntries, initialReleaseThreshol
                 <X size={13} />
               </button>
             )}
-          </div>
-          <button
-            type="button"
-            onClick={() => setOpenPanel("filter")}
-            className="relative flex h-9 w-9 items-center justify-center rounded-md border border-ll-hairline-strong text-ll-ink-subtle hover:bg-ll-surface-2"
-            title="กรองคอลัมน์ที่จะค้นหา"
-            aria-label="กรองคอลัมน์ที่จะค้นหา"
-          >
-            <Filter size={15} />
-            {searchExcludedColumns.length > 0 && (
-              <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-ll-primary" />
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpenPanel("filter")}
+              className="relative flex h-9 items-center gap-1.5 rounded-md border border-ll-hairline-strong px-3 text-xs font-medium text-ll-ink-subtle hover:bg-ll-surface-2"
+              title="เลือกคอลัมน์ที่จะค้นหา"
+            >
+              <Filter size={14} /> คอลัมน์
+              {searchExcludedColumns.length > 0 && (
+                <span className="h-1.5 w-1.5 rounded-full bg-ll-primary" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={saveFilter}
+              className="flex h-9 items-center gap-1.5 rounded-md border border-ll-hairline-strong px-3 text-xs font-medium text-ll-ink-subtle hover:bg-ll-surface-2"
+              title="บันทึกคำค้นหาและคอลัมน์ที่เลือก"
+            >
+              <BookmarkPlus size={14} /> บันทึกชุดกรอง
+            </button>
+            {openPanel === "filter" && (
+              <ItuneAdminFilterModal
+                excluded={searchExcludedColumns}
+                onChangeExcluded={(next) => setSetting("searchExcludedColumns", next)}
+                onClose={() => setOpenPanel(null)}
+              />
             )}
-          </button>
-          {openPanel === "filter" && (
-            <ItuneAdminFilterModal
-              excluded={searchExcludedColumns}
-              onChangeExcluded={(next) => setSetting("searchExcludedColumns", next)}
-              onClose={() => setOpenPanel(null)}
-            />
+          </div>
+          {savedFilters.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-ll-ink-tertiary">ชุดที่บันทึก</span>
+              <select
+                value={selectedFilterId}
+                onChange={(event) => applyFilter(event.target.value)}
+                className="h-8 max-w-52 rounded-md border border-ll-hairline bg-ll-surface-2 px-2 text-xs text-ll-ink outline-none focus:border-ll-primary"
+                aria-label="เลือกชุดตัวกรองที่บันทึกไว้"
+              >
+                <option value="">เลือกชุดกรอง...</option>
+                {savedFilters.map((filter) => (
+                  <option key={filter.id} value={filter.id}>{filter.name}</option>
+                ))}
+              </select>
+              {selectedFilterId && (
+                <button
+                  type="button"
+                  onClick={deleteSelectedFilter}
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-ll-ink-tertiary hover:bg-ll-primary-subtle-bg hover:text-ll-primary"
+                  title="ลบชุดตัวกรองที่เลือก"
+                  aria-label="ลบชุดตัวกรองที่เลือก"
+                >
+                  <Trash2 size={13} />
+                </button>
+              )}
+            </div>
           )}
         </div>
         <div className="flex items-center gap-2">
           <Link
-            href={`/projectm/${lang}/itune/admin/priority`}
-            className="flex h-9 w-9 items-center justify-center rounded-md border border-ll-hairline-strong text-ll-ink-subtle hover:bg-ll-surface-2"
-            title="จัดคิวรับเมล"
-            aria-label="จัดคิวรับเมล"
+            href={`${pathname}/history?category=entry`}
+            className="flex h-9 items-center gap-1.5 rounded-md border border-ll-hairline-strong px-3 text-xs font-medium text-ll-ink-subtle hover:bg-ll-surface-2"
           >
-            <ListOrdered size={15} />
+            <History size={14} /> ประวัติข้อมูล
           </Link>
-          <Link
-            href={`/projectm/${lang}/itune/admin/history`}
-            className="flex h-9 w-9 items-center justify-center rounded-md border border-ll-hairline-strong text-ll-ink-subtle hover:bg-ll-surface-2"
-            title="ประวัติการแจ้งปัญหา"
-            aria-label="ประวัติการแจ้งปัญหา"
-          >
-            <History size={15} />
-          </Link>
-          <Link
-            href={`/projectm/${lang}/itune/admin/topup-log`}
-            className="flex h-9 w-9 items-center justify-center rounded-md border border-ll-hairline-strong text-ll-ink-subtle hover:bg-ll-surface-2"
-            title="Log คนเติม"
-            aria-label="Log คนเติม"
-          >
-            <Users size={15} />
-          </Link>
-          <button
-            type="button"
-            onClick={() => {
-              setReleaseSettingsError("");
-              setOpenPanel("release");
-            }}
-            className="flex h-9 w-9 items-center justify-center rounded-md border border-ll-hairline-strong text-ll-ink-subtle hover:bg-ll-surface-2"
-            title="ตั้งค่าการคืนเมล"
-            aria-label="ตั้งค่าการคืนเมล"
-          >
-            <SlidersHorizontal size={15} />
-          </button>
-          {openPanel === "release" && (
-            <ItuneReleaseSettingsModal
-              releaseThreshold={releaseThreshold}
-              saving={releaseSettingsSaving}
-              error={releaseSettingsError}
-              onSave={saveReleaseThreshold}
-              onClose={() => setOpenPanel(null)}
-            />
-          )}
-          <button
-            type="button"
-            onClick={() => setOpenPanel("settings")}
-            className="flex h-9 w-9 items-center justify-center rounded-md border border-ll-hairline-strong text-ll-ink-subtle hover:bg-ll-surface-2"
-            title="ตั้งค่า"
-            aria-label="ตั้งค่า"
-          >
-            <Settings size={15} />
-          </button>
-          {openPanel === "settings" && (
-            <ItuneAdminSettingsModal
-              settings={settings}
-              onSetting={setSetting}
-              onClose={() => setOpenPanel(null)}
-            />
+          {selectedIds.size > 0 && (
+            <button
+              type="button"
+              onClick={deleteSelected}
+              disabled={deletingSelected}
+              className="flex h-9 items-center gap-1.5 rounded-md border border-ll-primary/30 px-3 text-xs font-medium text-ll-primary hover:bg-ll-primary-subtle-bg disabled:opacity-50"
+            >
+              <Trash2 size={14} /> {deletingSelected ? "กำลังลบ..." : `ลบที่เลือก (${selectedIds.size})`}
+            </button>
           )}
         </div>
       </div>
@@ -1668,8 +1445,36 @@ export default function ItuneAdminTable({ initialEntries, initialReleaseThreshol
                 everything else, so a sticky child needs to repaint itself
                 or the columns scrolling underneath show through it. ID went
                 back to scrolling with the rest of the row (not frozen). */}
+            <div className="flex items-center justify-center px-2 py-2">
+              <input
+                type="checkbox"
+                checked={allFilteredSelected}
+                onChange={toggleAllFiltered}
+                disabled={selectableFilteredIds.length === 0}
+                aria-label="เลือกทุกรายการที่แสดง"
+              />
+            </div>
             <div className="truncate px-3 py-2 text-center">ID</div>
-            <div className="truncate px-3 py-2">Date_time</div>
+            <div className="flex items-center justify-between gap-2 px-3 py-1.5">
+              <span>เวลา</span>
+              <span className="flex rounded-full border border-ll-hairline bg-ll-surface-1 p-0.5 normal-case tracking-normal">
+                {[["remaining", "คงเหลือ"], ["dateTime", "วันเวลา"]].map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setSetting("dateTimeMode", mode)}
+                    aria-pressed={dateTimeMode === mode}
+                    className={`rounded-full px-2 py-1 text-[10px] font-medium ${
+                      dateTimeMode === mode
+                        ? "bg-ll-emphasis-bg text-ll-emphasis-text"
+                        : "text-ll-ink-tertiary hover:text-ll-ink"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </span>
+            </div>
             <div className="truncate px-3 py-2">Email</div>
             <div className="truncate px-3 py-2">Password</div>
             <div className="truncate px-3 py-2">Status</div>
@@ -1689,6 +1494,16 @@ export default function ItuneAdminTable({ initialEntries, initialReleaseThreshol
               key={row.id}
               className={`group/row grid ${GRID_COLS} items-center border-b border-ll-hairline last:border-0 hover:bg-ll-surface-2/50`}
             >
+              <div className="flex items-center justify-center px-2 py-2">
+                {!isTempId(row.id) && (
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(row.id)}
+                    onChange={() => toggleSelected(row.id)}
+                    aria-label={`เลือก ID ${row.id}`}
+                  />
+                )}
+              </div>
               <div className="min-w-0 truncate px-3 py-2 text-center font-mono text-xs text-ll-ink-subtle">
                 {isTempId(row.id) ? (
                   "ใหม่"
@@ -1705,6 +1520,7 @@ export default function ItuneAdminTable({ initialEntries, initialReleaseThreshol
                   now={now}
                   frozen={computeEffectiveItuneStatus(row).label === ITUNE_DEPLETED_STATUS}
                   permanent={row.isPermanent}
+                  mode={dateTimeMode}
                 />
                 <CopyButton text={settings.copyButtonsEnabled ? searchValueFor(row, "addedAt") : ""} />
               </div>
@@ -1878,12 +1694,11 @@ export default function ItuneAdminTable({ initialEntries, initialReleaseThreshol
                       ? resolveIssue
                       : undefined
                   }
-                  onViewAmountHistory={isTempId(row.id) ? undefined : (r) => setAmountHistoryFor(r.id)}
+                  amountHistoryHref={isTempId(row.id)
+                    ? undefined
+                    : `${pathname}/history?category=amount&q=${encodeURIComponent(row.email || String(row.id))}`}
                   onTogglePermanent={isTempId(row.id) ? undefined : togglePermanent}
                 />
-                {amountHistoryFor === row.id && (
-                  <ItuneAmountHistoryModal row={row} onClose={() => setAmountHistoryFor(null)} />
-                )}
               </div>
             </div>
           ))}

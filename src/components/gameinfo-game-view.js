@@ -81,15 +81,13 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
           <div className="flex items-center gap-2">
             <span
               className={`h-2.5 w-2.5 rounded-full ${
-                row.serviceStatus === "new"
-                  ? "bg-red-500"
-                  : row.serviceStatus === "offline"
+                row.serviceStatus === "offline"
                   ? "bg-zinc-500"
                   : row.serviceStatus === "partial"
                     ? "bg-amber-400"
                     : "bg-emerald-400"
               }`}
-              title={row.serviceStatus === "new" ? "เกมใหม่" : row.serviceStatus === "offline" ? "ปิดให้บริการ" : row.serviceStatus === "partial" ? "เปิดเกม แต่มีบาง pack ปิด" : "ให้บริการปกติ"}
+              title={row.serviceStatus === "offline" ? "ปิดให้บริการ" : row.serviceStatus === "partial" ? "เปิดเกม แต่มีบาง pack ปิด" : "ให้บริการปกติ"}
             />
             <h1 className="truncate text-base font-bold uppercase tracking-tight text-linear-ink">
               {row.game}
@@ -110,6 +108,17 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
             <span>Bot/Manual: {row.botManual || "-"}</span>
           </p>
           <ChannelSummary channels={row.channels} className="mt-1.5" />
+          {(row.tags || []).length ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {row.tags.map((tag) => <span key={tag} className="rounded-full bg-linear-surface-3 px-2 py-1 text-[11px] text-linear-ink-muted">{tag}</span>)}
+            </div>
+          ) : null}
+          {(row.publishers || []).length ? (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-linear-ink-tertiary">ค่ายเกม</span>
+              {row.publishers.map((publisher) => <span key={publisher} className="rounded-full bg-linear-surface-3 px-2 py-1 text-[11px] text-linear-ink-muted">{publisher}</span>)}
+            </div>
+          ) : null}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <GameinfoGameLinkButtons links={row.links || []} />
             {/* Always view-only here regardless of role — editing the

@@ -102,13 +102,13 @@ export async function saveGamelistImage(gameId, imageUrl) {
 
 /** Cleanup hook for deleteGameListRow() — game_list isn't ours to put an FK
  * CASCADE on, same as deleteGamelistPacksForGame()/deleteGamelistTutorialForGame(). */
-export async function deleteGamelistImageForGame(gameId) {
+export async function deleteGamelistImageForGame(gameId, transactionClient = null) {
   const pool = await getReadyPool();
-  const client = await pool.connect();
+  const client = transactionClient || await pool.connect();
   try {
     await client.query(`DELETE FROM gamelist_images WHERE game_id = $1`, [gameId]);
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
 }
 

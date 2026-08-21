@@ -1,7 +1,9 @@
 import {
+  deleteGameListRow,
   listGameListRows,
   setGameListServiceStatus,
 } from "@/server/gameinfo-gamelist.js";
+import { filterGameinfoRows } from "@/lib/gameinfo-dashboard.js";
 import { log, reset, setResponder } from "@/lib/db.js";
 
 let pass = 0;
@@ -21,7 +23,7 @@ setResponder((text) => {
   if (/SELECT g\.\*, o\.sort_order/.test(text)) {
     return {
       rows: [{
-        id: 5,
+        id: "5",
         game: "Game A",
         region: "Global",
         platform: null,
@@ -34,21 +36,23 @@ setResponder((text) => {
         link: null,
         remark: null,
         service_enabled: false,
-        service_new: false,
       }, {
-        id: 7,
-        game: "Game New",
+        id: "7",
+        game: "Game B",
         region: "Global",
         service_enabled: true,
-        service_new: true,
       }],
     };
   }
   return null;
 });
 const rows = await listGameListRows();
+check("list normalizes PostgreSQL bigint ids", rows.map((row) => row.id), [5, 7]);
 check("list maps a disabled game service status", rows[0].serviceEnabled, false);
-check("list maps the red new-game status", rows[1].serviceNew, true);
+check("list maps an enabled game service status", rows[1].serviceEnabled, true);
+const reportCounts = new Map([[5, 1]]);
+const rowsWithReports = rows.map((row) => ({ ...row, reportCount: reportCounts.get(row.id) || 0 }));
+check("report game id matches the normalized game id", filterGameinfoRows(rowsWithReports, { status: "review" }).map((row) => row.id), [5]);
 ok("list joins the side-table without altering game_list", log.some((entry) => /LEFT JOIN gamelist_service_status/.test(entry.text)));
 
 reset();
@@ -59,12 +63,12 @@ setResponder((text) => {
 check(
   "bulk status normalizes duplicate ids",
   await setGameListServiceStatus([5, 7, 5], false),
-  { gameIds: [5, 7], enabled: false, isNew: false }
+  { gameIds: [5, 7], enabled: false }
 );
 check(
   "bulk status writes one upsert per selected game",
   log.filter((entry) => /INSERT INTO gamelist_service_status/.test(entry.text)).map((entry) => entry.params),
-  [[5, false, false], [7, false, false]]
+  [[5, false], [7, false]]
 );
 ok("bulk status locks selected game rows", log.some((entry) => /FOR UPDATE/.test(entry.text)));
 ok("bulk status commits atomically", log.some((entry) => entry.text.trim() === "COMMIT"));
@@ -89,20 +93,25 @@ check(
 );
 
 reset();
+await deleteGameListRow(7);
+ok("delete commits all game cleanup atomically", log.some((entry) => entry.text.trim() === "COMMIT"));
+ok("delete removes pack audit history", log.some((entry) => /DELETE FROM gamelist_pack_audit_logs/.test(entry.text)));
+ok("delete removes pack view presets", log.some((entry) => /DELETE FROM gamelist_pack_view_presets/.test(entry.text)));
+
+reset();
 setResponder((text) => {
-  if (/SELECT id FROM game_list/.test(text)) return { rows: [{ id: 7 }] };
+  if (/DELETE FROM gamelist_images/.test(text)) throw new Error("cleanup failed");
   return null;
 });
-check(
-  "new status always keeps the game enabled",
-  await setGameListServiceStatus([7], false, true),
-  { gameIds: [7], enabled: true, isNew: true }
-);
-check(
-  "new status is persisted in the service side table",
-  log.find((entry) => /INSERT INTO gamelist_service_status/.test(entry.text))?.params,
-  [7, true, true]
-);
+let deleteError = null;
+try {
+  await deleteGameListRow(7);
+} catch (error) {
+  deleteError = error;
+}
+ok("delete surfaces cleanup failures", deleteError);
+ok("delete rolls back cleanup failures", log.some((entry) => entry.text.trim() === "ROLLBACK"));
+ok("delete does not remove game_list after failed cleanup", !log.some((entry) => /DELETE FROM game_list WHERE/.test(entry.text)));
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);

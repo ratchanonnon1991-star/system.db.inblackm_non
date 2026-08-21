@@ -30,6 +30,8 @@ import {
   Plus,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
+import { gameinfoGameHref, gameinfoPacksHref } from "@/lib/gameinfo-data-mode";
 import GameinfoMemoryInput from "./gameinfo-memory-input";
 import GameinfoNameInput from "./gameinfo-name-input";
 import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
@@ -89,6 +91,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
   // (see GameinfoNameInput) — blocks "บันทึก" until resolved.
   const [duplicateIds, setDuplicateIds] = useState(new Set());
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [savedAt, setSavedAt] = useState(null);
   const [savedVisible, setSavedVisible] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -147,7 +150,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
     setGameSelected(gameId, selectionDragRef.current.selecting);
   }
 
-  async function setSelectedGamesStatus(enabled, explicitIds = null, isNew = false) {
+  async function setSelectedGamesStatus(enabled, explicitIds = null) {
     const gameIds = explicitIds || [...selectedGameIds];
     if (gameIds.length === 0 || updatingStatus) return;
     setUpdatingStatus(true);
@@ -156,15 +159,14 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
       await apiJson("/api/gameinfo/gamelist/status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ gameIds, enabled, isNew }),
+        body: JSON.stringify({ gameIds, enabled }),
       });
       const idSet = new Set(gameIds);
       const applyStatus = (row) => idSet.has(row.id)
         ? {
             ...row,
             serviceEnabled: enabled,
-            serviceNew: isNew,
-            serviceStatus: isNew ? "new" : enabled ? (row.packDisabledCount > 0 ? "partial" : "online") : "offline",
+            serviceStatus: enabled ? (row.packDisabledCount > 0 ? "partial" : "online") : "offline",
           }
         : row;
       setRows((current) => current.map(applyStatus));
@@ -276,12 +278,21 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
     setPage(Math.floor(targetIndex / pageSize));
   }
 
-  function onDelete(id, name) {
+  async function onDelete(id, name) {
     const isDraft = isTempId(id);
     const message = isDraft
       ? `ลบเกมฉบับร่าง "${name || "ไม่มีชื่อ"}" ใช่ไหม?`
       : `ลบเกม "${name}" ออกจากฐานข้อมูลจริง (game_list) ใช่ไหม?\nข้อมูลนี้ใช้ร่วมกับ Topup Panel — ลบแล้วกู้คืนไม่ได้`;
     if (!window.confirm(message)) return;
+    if (!isDraft) {
+      setStatusError("");
+      try {
+        await apiJson(`/api/gameinfo/gamelist/${id}`, { method: "DELETE" });
+      } catch (error) {
+        setStatusError(error instanceof Error ? error.message : "ลบเกมไม่สำเร็จ");
+        return;
+      }
+    }
     setRows((prev) => prev.filter((r) => r.id !== id));
     setSelectedGameIds((current) => {
       if (!current.has(id)) return current;
@@ -302,11 +313,6 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
       next.delete(id);
       return next;
     });
-    if (!isDraft) {
-      startTransition(() => {
-        apiJson(`/api/gameinfo/gamelist/${id}`, { method: "DELETE" }).catch(() => {});
-      });
-    }
   }
 
   // Field edits only update the local draft — no request until "บันทึก".
@@ -343,6 +349,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
   async function saveAll() {
     if (duplicateIds.size > 0) return; // belt-and-suspenders — the button is already disabled
     setSaving(true);
+    setSaveError("");
     try {
       const dirtyRows = rows.filter((r) => dirtyIds.has(r.id));
       const draftRows = dirtyRows.filter((r) => isTempId(r.id));
@@ -393,6 +400,8 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
       setDirtyIds(new Set());
       setOrderDirty(false);
       setSavedAt(Date.now());
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "บันทึกข้อมูลเกมไม่สำเร็จ");
     } finally {
       setSaving(false);
     }
@@ -400,6 +409,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
 
   function cancelAll() {
     setRows(savedRows);
+    setSaveError("");
     setDirtyIds(new Set());
     setOrderDirty(false);
     setDuplicateIds(new Set());
@@ -441,7 +451,6 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
       packCount: 0,
       image: "",
       serviceEnabled: true,
-      serviceNew: false,
       serviceStatus: "online",
       packDisabledCount: 0,
       hasTutorial: false,
@@ -465,6 +474,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
   }
 
   const dirty = dirtyIds.size > 0 || orderDirty;
+  useGameinfoUnsavedChanges(dirty);
 
   const isEditing = (rowId, field) => editing?.id === rowId && editing.field === field;
 
@@ -490,9 +500,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
     beginGameSelection,
     enterGameSelection,
     onSetGameStatus: (gameId, status) => {
-      if (status === "offline") return setSelectedGamesStatus(true, [gameId], true);
-      if (status === "new") return setSelectedGamesStatus(true, [gameId], false);
-      return setSelectedGamesStatus(false, [gameId], false);
+      return setSelectedGamesStatus(status === "offline", [gameId]);
     },
   };
 
@@ -662,12 +670,6 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
               disabled={updatingStatus}
               className="rounded-md px-2 py-1 text-linear-ink-muted hover:bg-linear-surface-2"
             >ปิดบริการ</button>
-            <button
-              type="button"
-              onClick={() => setSelectedGamesStatus(true, null, true)}
-              disabled={updatingStatus}
-              className="rounded-md px-2 py-1 text-red-400 hover:bg-red-500/10"
-            >ใหม่</button>
           </div>
         ) : null}
       </div>
@@ -675,6 +677,12 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
       {statusError ? (
         <div role="alert" className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
           {statusError}
+        </div>
+      ) : null}
+      {saveError ? (
+        <div role="alert" className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+          <span>{saveError} ข้อมูลบางส่วนอาจถูกบันทึกแล้ว</span>
+          <button type="button" onClick={() => window.location.reload()} className="shrink-0 underline">โหลดข้อมูลล่าสุด</button>
         </div>
       ) : null}
 
@@ -886,7 +894,7 @@ function StaticRow({ row, ...rest }) {
   // anyway. RowActionsMenu still stops its own clicks from bubbling here.
   return (
     <div
-      onClick={() => router.push(`/gameinfo/${rest.lang}/${row.id}${rest.dataMode === "idpass" ? "?mode=idpass" : ""}`)}
+      onClick={() => router.push(gameinfoGameHref(rest.lang, row.id, rest.dataMode))}
       className={`grid ${GRID_COLS} cursor-pointer items-center gap-2 border-b border-linear-hairline px-3 py-2 text-sm last:border-b-0 hover:bg-linear-surface-2`}
     >
       <span></span>
@@ -1025,7 +1033,7 @@ function RowCells({
 
       {/* isRepeatable checkbox: not shown — hidden per request, row.isRepeatable still exists */}
 
-      <span className="flex h-9 items-center px-2" onClick={(event) => event.stopPropagation()}>
+      <span className="flex h-9 items-center px-2">
         <GameinfoGameLinksButton
           gameId={row.id}
           gameName={row.game}
@@ -1041,7 +1049,7 @@ function RowCells({
 
       {/* Always rendered regardless of editable — role "user" (and the
           "หน้าเว็บ" preview) can still open it, just read-only inside. */}
-      <span className="flex justify-start gap-1" onClick={(e) => e.stopPropagation()}>
+      <span className="flex justify-start gap-1">
         <GameinfoTutorialButton
           gameId={row.id}
           gameName={row.game}
@@ -1065,7 +1073,7 @@ function RowCells({
         <RowActionsMenu row={row} lang={lang} dataMode={dataMode} editable={editable} onDelete={onDelete} />
       ) : (
         <Link
-          href={`/gameinfo/${lang}/${row.id}${dataMode === "idpass" ? "?mode=idpass" : ""}`}
+          href={gameinfoGameHref(lang, row.id, dataMode)}
           onClick={(event) => event.stopPropagation()}
           className="flex h-7 items-center justify-center rounded border border-linear-hairline px-2 text-xs font-medium text-linear-primary hover:bg-linear-surface-2"
         >
@@ -1138,7 +1146,7 @@ function RowActionsMenu({ row, lang, dataMode, editable, onDelete }) {
             className="fixed z-50 w-32 overflow-hidden rounded-md border border-linear-hairline bg-linear-surface-1 py-1 shadow-lg"
           >
             <Link
-              href={`/gameinfo/${lang}/${row.id}${dataMode === "idpass" ? "?mode=idpass" : ""}`}
+              href={gameinfoGameHref(lang, row.id, dataMode)}
               onClick={() => setOpen(false)}
               className="block px-3 py-1.5 text-xs text-linear-ink hover:bg-linear-surface-2"
             >
@@ -1146,7 +1154,7 @@ function RowActionsMenu({ row, lang, dataMode, editable, onDelete }) {
             </Link>
             {editable && (
               <Link
-                href={`/gameinfo/${lang}/${row.id}/packs${dataMode === "idpass" ? "?mode=idpass" : ""}`}
+                href={gameinfoPacksHref(lang, row.id, dataMode)}
                 onClick={() => setOpen(false)}
                 className="block px-3 py-1.5 text-xs text-linear-ink hover:bg-linear-surface-2"
               >
@@ -1178,9 +1186,7 @@ function RowActionsMenu({ row, lang, dataMode, editable, onDelete }) {
 // is only meaningful on VPN-required packs, see the pack editor's vpnOn-gated
 // country field); otherwise "NO". Edit it via the pack editor, not here.
 function ServiceStatusLight({ status, editable, onToggle }) {
-  const config = status === "new"
-    ? { color: "bg-red-500", label: "เกมใหม่" }
-    : status === "offline"
+  const config = status === "offline"
     ? { color: "bg-zinc-500", label: "ปิดให้บริการ" }
     : status === "partial"
       ? { color: "bg-amber-400", label: "เปิดเกม แต่มีบาง pack ปิด" }
@@ -1188,7 +1194,7 @@ function ServiceStatusLight({ status, editable, onToggle }) {
   const content = (
     <>
       <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${config.color}`} />
-      <span className="truncate">{status === "new" ? "ใหม่" : status === "partial" ? "บางส่วน" : status === "offline" ? "ปิด" : "ปกติ"}</span>
+      <span className="truncate">{status === "partial" ? "บางส่วน" : status === "offline" ? "ปิด" : "ปกติ"}</span>
     </>
   );
 
@@ -1207,7 +1213,7 @@ function ServiceStatusLight({ status, editable, onToggle }) {
         event.stopPropagation();
         onToggle?.();
       }}
-      title={`${config.label} — กดเพื่อเปลี่ยนสถานะ ปกติ → ปิด → ใหม่`}
+      title={`${config.label} — กดเพื่อสลับสถานะ ปกติ/ปิด`}
       aria-label={config.label}
       className="flex items-center gap-1.5 text-[10px] text-linear-ink-tertiary"
     >

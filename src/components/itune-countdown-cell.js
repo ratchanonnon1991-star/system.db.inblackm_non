@@ -25,7 +25,7 @@ function formatHm(ms) {
 // be read/written during render) via an effect that only reacts to `frozen`/
 // `permanent` flipping, not every `now` tick — deliberately outside
 // exhaustive-deps for that reason.
-export default function ItuneCountdownCell({ addedAt, now, frozen, permanent }) {
+export default function ItuneCountdownCell({ addedAt, now, frozen, permanent, mode = "combined" }) {
   const startMs = addedAt ? new Date(addedAt).getTime() : NaN;
   const liveElapsed = Number.isFinite(startMs) ? now - startMs : null;
 
@@ -45,13 +45,54 @@ export default function ItuneCountdownCell({ addedAt, now, frozen, permanent }) 
   // Same th-TH date convention used elsewhere in the app (e.g.
   // query-panel.js, admin-modals.js) — the date it was added, with the
   // countdown alongside it in parentheses (except when permanent).
-  const dateLabel = new Date(startMs).toLocaleDateString("th-TH");
+  const date = new Date(startMs);
+  const dateLabel = date.toLocaleDateString("th-TH");
+
+  if (mode === "dateTime") {
+    return (
+      <span className="flex min-w-0 flex-col items-start gap-1" title={date.toLocaleString("th-TH")}>
+        <span className="text-[12px] font-medium text-ll-ink">
+          {date.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" })}
+        </span>
+        <span className="rounded-full bg-ll-surface-3 px-2 py-0.5 font-mono text-[11px] text-ll-ink-muted">
+          {date.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", hour12: false })} น.
+        </span>
+      </span>
+    );
+  }
+
+  const elapsed = frozen && frozenElapsed !== null ? frozenElapsed : liveElapsed;
+
+  if (mode === "remaining") {
+    const overdue = !permanent && elapsed > DAY_MS;
+    const timeLabel = permanent
+      ? "เมลถาวร"
+      : overdue
+        ? `เกิน ${formatHm(elapsed - DAY_MS)} ชม.`
+        : `เหลือ ${formatHm(DAY_MS - elapsed)} ชม.`;
+    return (
+      <span className="flex min-w-0 flex-col items-start gap-1" title={date.toLocaleString("th-TH")}>
+        <span
+          className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+            overdue
+              ? "bg-ll-primary-subtle-bg text-ll-primary-subtle-text"
+              : "bg-ll-surface-3 text-ll-ink"
+          }`}
+        >
+          {timeLabel}
+        </span>
+        <span className="text-[10px] text-ll-ink-tertiary">
+          {date.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" })}
+          {" · "}
+          {date.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", hour12: false })}
+        </span>
+      </span>
+    );
+  }
 
   if (permanent) {
     return <span className="text-sky-500">{dateLabel}</span>;
   }
-
-  const elapsed = frozen && frozenElapsed !== null ? frozenElapsed : liveElapsed;
 
   if (elapsed <= DAY_MS) {
     return (

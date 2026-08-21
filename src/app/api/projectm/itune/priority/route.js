@@ -27,7 +27,7 @@ export async function GET(request) {
 // what it shows rather than a diff.
 export async function POST(request) {
   try {
-    await requireProjectmAdmin(request);
+    const actor = await requireProjectmAdmin(request);
     const body = await request.json();
     if (!Array.isArray(body.orderedIds)) {
       return jsonError("ลำดับไม่ถูกต้อง", 400);
@@ -36,7 +36,7 @@ export async function POST(request) {
     if (orderedIds.some((id) => !Number.isInteger(id) || id <= 0)) {
       return jsonError("ลำดับไม่ถูกต้อง", 400);
     }
-    await reorderItunePriority(orderedIds);
+    await reorderItunePriority(orderedIds, actor);
     const entries = await listItunePriorityQueue();
     return jsonOk({ entries });
   } catch (err) {

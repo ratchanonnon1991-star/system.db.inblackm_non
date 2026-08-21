@@ -1,19 +1,39 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireAdmin } from "@/server/auth";
+import { requireProjectmTopup } from "@/server/auth";
 import { findItuneEntryById, releaseItuneEntry } from "@/server/itune-entries-repository";
 
-// "คืนเมล" — releases a claim back to the pool. releaseItuneEntry itself
-// enforces that only the claimant (or a projectm-admin) may do this.
+const MAX_IMAGE_URL_LENGTH = 6_000_000;
+
 export async function DELETE(request, { params }) {
   try {
-    const actor = await requireAdmin(request);
+    const actor = await requireProjectmTopup(request);
     const { id } = await params;
     const target = await findItuneEntryById(id);
     if (!target) return jsonError("ไม่พบรายการนี้", 404);
 
-    const entry = await releaseItuneEntry(id, actor);
+    const raw = await request.text();
+    let details = null;
+    if (raw) {
+      try {
+        details = JSON.parse(raw);
+      } catch {
+        return jsonError("รูปแบบข้อมูลไม่ถูกต้อง", 400);
+      }
+      const image = String(details?.image || "").trim();
+      if (image.length > MAX_IMAGE_URL_LENGTH) {
+        return jsonError("รูปภาพมีขนาดใหญ่เกินไป", 400);
+      }
+      details = {
+        outcome: String(details?.outcome || ""),
+        amount: details?.amount,
+        image,
+        note: String(details?.note || "").trim(),
+      };
+    }
+
+    const entry = await releaseItuneEntry(id, actor, details);
     return jsonOk({ entry });
   } catch (err) {
-    return handleApiError(err, "คืนเมลไม่สำเร็จ");
+    return handleApiError(err, "บันทึกผลและคืนเมลไม่สำเร็จ");
   }
 }

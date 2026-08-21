@@ -1,6 +1,10 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireProjectmAdmin } from "@/server/auth";
-import { insertItuneEntry, listItuneEntries } from "@/server/itune-entries-repository";
+import {
+  deleteItuneEntries,
+  insertItuneEntry,
+  listItuneEntries,
+} from "@/server/itune-entries-repository";
 
 function parseAmount(value) {
   if (value === undefined || value === null || value === "") return 0;
@@ -43,6 +47,11 @@ export async function POST(request) {
       return jsonError("Amount ต้องเป็นตัวเลขไม่ติดลบ", 400);
     }
 
+    const amountConfirmImage = String(body.amountConfirmImage || "").trim();
+    if (!amountConfirmImage) {
+      return jsonError("กรุณาแนบรูปยืนยันยอดเริ่มต้น", 400);
+    }
+
     const entry = await insertItuneEntry({
       createdByUserId: actor.id,
       addedAt: parseAddedAt(body.addedAt),
@@ -51,12 +60,24 @@ export async function POST(request) {
       currency: String(body.currency || "").trim(),
       supplier: String(body.supplier || "").trim(),
       amount,
-      amountConfirmImage: String(body.amountConfirmImage || "").trim(),
+      amountConfirmImage,
       linkSms: String(body.linkSms || "").trim(),
       qna: String(body.qna || "").trim(),
-    });
+    }, actor);
     return jsonOk({ entry }, 201);
   } catch (err) {
     return handleApiError(err, "เพิ่มรายการไม่สำเร็จ");
+  }
+}
+
+export async function DELETE(request) {
+  try {
+    const actor = await requireProjectmAdmin(request);
+    const body = await request.json();
+    if (!Array.isArray(body.ids)) return jsonError("ไม่ได้ระบุรายการที่จะลบ", 400);
+    const deleted = await deleteItuneEntries(body.ids, actor);
+    return jsonOk({ deleted });
+  } catch (err) {
+    return handleApiError(err, "ลบรายการไม่สำเร็จ");
   }
 }

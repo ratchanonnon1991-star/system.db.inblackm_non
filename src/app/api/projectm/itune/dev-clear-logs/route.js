@@ -9,9 +9,10 @@ import { clearItuneLogs } from "@/server/itune-entries-repository";
 // action — irreversible.
 export async function POST(request) {
   try {
-    await requireProjectmAdmin(request);
-    await clearItuneLogs();
-    return jsonOk({ ok: true });
+    const actor = await requireProjectmAdmin(request);
+    const body = await request.json();
+    const counts = await clearItuneLogs(actor, body.reason);
+    return jsonOk({ ok: true, counts });
   } catch (err) {
     return handleApiError(err, "ลบ Log ไม่สำเร็จ");
   }

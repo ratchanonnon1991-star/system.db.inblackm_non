@@ -1,10 +1,10 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireAdmin } from "@/server/auth";
+import { requireGameinfoAccess } from "@/server/auth";
 import { getGameinfoExchangeRates, normalizeGameinfoRatePair } from "@/server/gameinfo-exchange-rates";
 
 export async function GET(request) {
   try {
-    await requireAdmin(request);
+    await requireGameinfoAccess(request);
     const rawPairs = request.nextUrl.searchParams.get("pairs") || "USDTTHB,USDCNY";
     const requested = rawPairs.split(",");
     const unsupported = requested.filter((pair) => !normalizeGameinfoRatePair(pair));
