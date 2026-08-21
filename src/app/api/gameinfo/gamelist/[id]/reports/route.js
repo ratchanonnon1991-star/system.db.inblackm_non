@@ -1,5 +1,5 @@
 import { handleApiError, jsonOk } from "@/lib/http";
-import { requireGameinfoAccess, requireGameinfoEditor } from "@/server/auth";
+import { requireGameinfoAccess, requireGameinfoEditor, requireGameinfoReporter } from "@/server/auth";
 import {
   createGamelistReport,
   listGamelistReports,
@@ -22,7 +22,7 @@ export async function GET(request, { params }) {
 
 export async function POST(request, { params }) {
   try {
-    const user = await requireGameinfoAccess(request);
+    const user = await requireGameinfoReporter(request);
     const { id } = await params;
     const body = await request.json();
     const report = await createGamelistReport(Number(id), {

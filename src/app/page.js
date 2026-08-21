@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
   Database,
@@ -23,6 +23,7 @@ import TurnstileWidget from "@/components/turnstile-widget";
 import { UsersModal } from "@/components/gamedb-modals";
 import LLThemeToggle from "@/components/ll-theme-toggle";
 import { useLLTheme } from "@/lib/ll-theme";
+import { hasPermission } from "@/lib/permissions";
 
 // Linear Light/Dark Mode type (see ~/.claude/skills/linear-light-dark-mode):
 // Inter at weight 400-700 substitutes for the proprietary Linear
@@ -57,12 +58,18 @@ export default function GamedbPage() {
   const [me, setMe] = useState(null);
   const [checkingMe, setCheckingMe] = useState(true);
 
-  useEffect(() => {
+  const loadMe = useCallback(() =>
     apiJson("/api/me", { fallbackError: "ตรวจสอบสิทธิ์ไม่สำเร็จ" })
       .then((data) => setMe(data.user))
-      .catch(() => setMe(null))
-      .finally(() => setCheckingMe(false));
-  }, []);
+      .catch((error) => setMe((current) => error.status === 401 ? null : current))
+      .finally(() => setCheckingMe(false)), []);
+
+  useEffect(() => {
+    loadMe();
+    const refresh = () => loadMe();
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, [loadMe]);
 
   if (checkingMe) {
     return (
@@ -78,7 +85,7 @@ export default function GamedbPage() {
     return <LoginScreen onLoggedIn={setMe} />;
   }
 
-  return <SystemHub me={me} onLoggedOut={() => setMe(null)} />;
+  return <SystemHub me={me} onLoggedOut={() => setMe(null)} onPermissionsChanged={loadMe} />;
 }
 
 // Both are their own route now (System DB used to be a client-state toggle on
@@ -108,7 +115,7 @@ const SYSTEMS = [
   },
 ];
 
-function SystemHub({ me, onLoggedOut }) {
+function SystemHub({ me, onLoggedOut, onPermissionsChanged }) {
   const isSuperAdmin = me.role === "admin";
   const isTemplateUser = me.role === "user";
   const [usersModal, setUsersModal] = useState(false);
@@ -139,8 +146,8 @@ function SystemHub({ me, onLoggedOut }) {
   const roleLabel = isSuperAdmin ? "Admin" : isTemplateUser ? "User" : "Staff";
   const initial = (me.displayName || me.username || "?").trim().slice(0, 1).toUpperCase();
   const accessibleSystems = SYSTEMS.filter((system) => {
-    if (system.key === "projectm") return Boolean(me.projectmRole);
-    if (system.key === "gameinfo") return Boolean(me.gameinfoRole);
+    if (system.key === "projectm") return hasPermission(me, "projectm.access");
+    if (system.key === "gameinfo") return hasPermission(me, "gameinfo.access");
     return !isTemplateUser;
   });
 
@@ -319,7 +326,7 @@ function SystemHub({ me, onLoggedOut }) {
         )}
       </main>
 
-      {usersModal && <UsersModal me={me} onClose={() => setUsersModal(false)} />}
+      {usersModal && <UsersModal me={me} onClose={() => setUsersModal(false)} onChanged={onPermissionsChanged} />}
     </div>
   );
 }

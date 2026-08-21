@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { LayoutGrid, ShieldCheck, Wallet } from "lucide-react";
 import { getSessionUser } from "@/server/session-user";
+import { hasPermission } from "@/lib/permissions";
 
 const ALL_SECTIONS = [
   {
@@ -22,10 +23,9 @@ export default async function ItuneLangPage({ params }) {
   const { lang } = await params;
   const user = await getSessionUser();
   if (!user) redirect("/");
-  const isProjectmAdmin = user.projectmRole === "admin";
-  const SECTIONS = isProjectmAdmin
-    ? ALL_SECTIONS
-    : ALL_SECTIONS.filter((section) => section.key === "topup");
+  const SECTIONS = ALL_SECTIONS.filter((section) =>
+    hasPermission(user, section.key === "admin" ? "projectm.admin" : "projectm.claim")
+  );
 
   return (
     <div className="flex min-h-screen flex-col items-center gap-8 px-4 pb-14 pt-10">

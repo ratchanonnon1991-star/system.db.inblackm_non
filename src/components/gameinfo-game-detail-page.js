@@ -32,6 +32,7 @@ import { listGamelistReports } from "@/server/gameinfo-gamelist-reports";
 import GameinfoReportPanel from "@/components/gameinfo-report-panel";
 import GameinfoPackEditor from "@/components/gameinfo-pack-editor";
 import { buildPackSuggestions } from "@/lib/gameinfo-suggestions";
+import { hasPermission } from "@/lib/permissions";
 
 export default async function GameinfoGameDetailPage({ params, searchParams, manage = false }) {
   const { lang, id } = await params;
@@ -40,6 +41,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   const user = await getSessionUser();
   if (!user) redirect("/");
   const editableRole = canManageGameinfo(user);
+  const canReport = hasPermission(user, "gameinfo.report");
   if (manage && !editableRole) redirect(gameinfoGameHref(lang, id, dataMode));
   const manageMode = manage && editableRole;
 
@@ -175,7 +177,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         </div>
       </div>
       {manageMode ? <GameinfoGameManager row={row} existingNames={existingNames} tagSuggestions={tagSuggestions} publisherSuggestions={publisherSuggestions} dataMode={dataMode} /> : null}
-      {manageMode ? <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage /> : null}
+      {manageMode ? <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage canReport /> : null}
       {manageMode ? (
         <section className="mt-8 border-t border-linear-hairline pt-6" aria-labelledby="pack-editor-title">
           <h2 id="pack-editor-title" className="mb-4 text-lg font-semibold tracking-[-0.2px] text-linear-ink">แก้ไข Pack</h2>
@@ -204,7 +206,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
             userId={user.id}
             dataMode={dataMode}
           />
-          <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage={editableRole} />
+          <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage={editableRole} canReport={canReport} />
         </>
       )}
     </div>

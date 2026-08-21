@@ -1,5 +1,5 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireProjectmAccess } from "@/server/auth";
+import { requireProjectmTopup } from "@/server/auth";
 import { findItuneEntryById, updateItuneEntryAmount } from "@/server/itune-entries-repository";
 
 // Same backstop as [id]/image/route.js's MAX_IMAGE_URL_LENGTH.
@@ -16,7 +16,7 @@ function parseAmount(value) {
 // logs the old→new change to projectm_itune_amount_log.
 export async function PUT(request, { params }) {
   try {
-    const actor = await requireProjectmAccess(request);
+    const actor = await requireProjectmTopup(request);
     const { id } = await params;
     const target = await findItuneEntryById(id);
     if (!target) return jsonError("ไม่พบรายการนี้", 404);

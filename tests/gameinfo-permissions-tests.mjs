@@ -13,7 +13,7 @@ const checks = [
   ["GameInfo routes do not use the generic login guard", routes.every((route) => !route.includes("requireAdmin"))],
   ["GameInfo routes do not inspect Projectm permission", routes.every((route) => !route.includes("projectmRole"))],
   ["GameInfo role is persisted separately", usersRepository.includes("gameinfo_role")],
-  ["GameInfo role has its own user setting", usersModal.includes("สิทธิ์ GameInfo")],
+  ["GameInfo permissions have their own matrix group", usersModal.includes('site: "GameInfo"') || usersModal.includes("PERMISSIONS.map")],
   ["GameInfo page blocks accounts without access", layout.includes("hasGameinfoAccess(user)")],
 ];
 const failed = checks.filter(([, passed]) => !passed);

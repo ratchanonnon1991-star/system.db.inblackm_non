@@ -99,14 +99,9 @@ export async function POST(request) {
       username: user.username,
       role: user.role,
     });
-    const response = jsonOk({
-      user: {
-        id: user.id,
-        username: user.username,
-        displayName: user.displayName,
-        role: user.role,
-      },
-    });
+    const publicUser = { ...user };
+    delete publicUser.passwordHash;
+    const response = jsonOk({ user: publicUser });
     response.cookies.set(SESSION_COOKIE, token, getSessionCookieOptions());
     return response;
   } catch (err) {

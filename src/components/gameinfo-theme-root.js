@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 const STORAGE_KEY = "gameinfo-theme";
 const GameinfoThemeContext = createContext(null);
@@ -29,6 +30,7 @@ const GameinfoThemeContext = createContext(null);
 // stuck on the dark defaults forever if only this div carried the attribute.
 export default function GameinfoThemeRoot({ className, style, children }) {
   const [theme, setTheme] = useState("light");
+  const router = useRouter();
 
   useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY);
@@ -41,6 +43,12 @@ export default function GameinfoThemeRoot({ className, style, children }) {
     document.documentElement.setAttribute("data-theme", theme);
     return () => document.documentElement.removeAttribute("data-theme");
   }, [theme]);
+
+  useEffect(() => {
+    const refreshPermissions = () => router.refresh();
+    window.addEventListener("focus", refreshPermissions);
+    return () => window.removeEventListener("focus", refreshPermissions);
+  }, [router]);
 
   function toggle() {
     setTheme((prev) => {

@@ -40,7 +40,7 @@ const STATUS_STYLE = {
   offline: { label: "ปิดใช้งาน", dot: "bg-linear-ink-tertiary", badge: "bg-linear-surface-3 text-linear-ink-subtle" },
 };
 
-export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, editable = false, lang, dataMode = "uid" }) {
+export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, editable = false, canReport = false, lang, dataMode = "uid" }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [tag, setTag] = useState("");
@@ -344,7 +344,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
         {pageRows.length ? (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {pageRows.map((row) => (
-              <GameCard key={row.id} row={row} editable={editable} lang={lang} dataMode={dataMode} favoriteBusy={favoriteBusy === row.id} onToggleFavorite={toggleFavorite} onReport={() => {
+              <GameCard key={row.id} row={row} editable={editable} canReport={canReport} lang={lang} dataMode={dataMode} favoriteBusy={favoriteBusy === row.id} onToggleFavorite={toggleFavorite} onReport={() => {
                 setActionError("");
                 setReportGame(row);
                 setReportMessage("");
@@ -409,7 +409,7 @@ function StatCard({ label, count, icon: Icon, active, onClick, tone }) {
   );
 }
 
-function GameCard({ row, editable, lang, dataMode, favoriteBusy, onToggleFavorite, onReport }) {
+function GameCard({ row, editable, canReport, lang, dataMode, favoriteBusy, onToggleFavorite, onReport }) {
   const status = STATUS_STYLE[row.serviceStatus] || STATUS_STYLE.online;
   const href = gameinfoGameHref(lang, row.id, dataMode);
   const packsHref = gameinfoPacksHref(lang, row.id, dataMode);
@@ -425,9 +425,9 @@ function GameCard({ row, editable, lang, dataMode, favoriteBusy, onToggleFavorit
             <Star size={15} className={row.isFavorite ? "fill-current text-linear-ink" : ""} />
             {row.isFavorite ? "เอาออกจากรายการโปรด" : "เพิ่มในรายการโปรด"}
           </button>
-          <button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); onReport(); }} className="flex h-10 w-full items-center gap-2 px-3 text-left text-xs text-linear-ink-muted hover:bg-linear-surface-2">
+          {canReport ? <button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); onReport(); }} className="flex h-10 w-full items-center gap-2 px-3 text-left text-xs text-linear-ink-muted hover:bg-linear-surface-2">
             <Flag size={15} /> รายงานปัญหา
-          </button>
+          </button> : null}
           {editable ? <Link href={packsHref} className="flex h-10 items-center gap-2 px-3 text-xs text-linear-ink-muted hover:bg-linear-surface-2"><Settings size={15} /> แก้ไข Pack</Link> : null}
         </div>
       </details>

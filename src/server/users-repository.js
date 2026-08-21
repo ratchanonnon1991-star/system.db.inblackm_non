@@ -1,10 +1,17 @@
 import { getPool } from "@/lib/db";
+import { legacyPermissions, normalizePermissions, permissionRole } from "@/lib/permissions";
 import { hashPassword } from "@/server/passwords";
 
 let schemaReady;
 
 function mapRow(row) {
   if (!row) return null;
+  const permissions = normalizePermissions(row.permissions || legacyPermissions({
+    canWriteData: row.can_write_data,
+    canUpdateData: row.can_update_data,
+    projectmRole: row.projectm_role,
+    gameinfoRole: row.gameinfo_role,
+  }));
   return {
     id: row.id,
     username: row.username,
@@ -15,11 +22,12 @@ function mapRow(row) {
     // capability these gate, and "user" is template-locked regardless of
     // what got stored here (see requireDataWriter/requireDataUpdater in
     // server/auth.js, which check role first).
-    canWriteData: Boolean(row.can_write_data),
-    canUpdateData: Boolean(row.can_update_data),
+    canWriteData: permissions.includes("systemdb.data.insert_delete"),
+    canUpdateData: permissions.includes("systemdb.data.update"),
     // Independent of the GameDB role above: admin, topup, or no access.
-    projectmRole: row.projectm_role || null,
-    gameinfoRole: row.gameinfo_role || null,
+    projectmRole: permissionRole(permissions, "projectm"),
+    gameinfoRole: permissionRole(permissions, "gameinfo"),
+    permissions,
     createdAt: row.created_at,
   };
 }
@@ -114,6 +122,53 @@ async function ensureSchema() {
         CHECK (gameinfo_role IS NULL OR gameinfo_role IN ('admin', 'topup'))
       `);
 
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS gamedb_user_permissions (
+          user_id        INTEGER NOT NULL,
+          permission_key VARCHAR(96) NOT NULL,
+          updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (user_id, permission_key)
+        )
+      `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS gamedb_permission_migrations (
+          key        VARCHAR(64) PRIMARY KEY,
+          applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await client.query("BEGIN");
+      try {
+        const migration = await client.query(`
+          INSERT INTO gamedb_permission_migrations (key)
+          VALUES ('legacy-permissions-v1')
+          ON CONFLICT (key) DO NOTHING
+          RETURNING key
+        `);
+        if (migration.rowCount) {
+          await client.query(`
+            INSERT INTO gamedb_user_permissions (user_id, permission_key)
+            SELECT user_id, permission_key
+            FROM gamedb_user_preferences
+            CROSS JOIN LATERAL (VALUES
+              (CASE WHEN can_write_data THEN 'systemdb.data.insert_delete' END),
+              (CASE WHEN can_update_data THEN 'systemdb.data.update' END),
+              (CASE WHEN projectm_role IS NOT NULL THEN 'projectm.access' END),
+              (CASE WHEN projectm_role IS NOT NULL THEN 'projectm.claim' END),
+              (CASE WHEN projectm_role = 'admin' THEN 'projectm.admin' END),
+              (CASE WHEN gameinfo_role IS NOT NULL THEN 'gameinfo.access' END),
+              (CASE WHEN gameinfo_role IS NOT NULL THEN 'gameinfo.report' END),
+              (CASE WHEN gameinfo_role = 'admin' THEN 'gameinfo.admin' END)
+            ) AS grants(permission_key)
+            WHERE permission_key IS NOT NULL
+            ON CONFLICT DO NOTHING
+          `);
+        }
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      }
+
       // First-run seed: create the initial admin from env so no password
       // ever lives in the codebase. Only runs when the table is empty.
       const existing = await client.query(
@@ -146,7 +201,9 @@ export async function findUserByUsername(username) {
     `SELECT u.id, u.username, u.display_name, u.password_hash,
             COALESCE(p.role_override, u.role) AS role,
             p.default_view_id, p.can_write_data, p.can_update_data,
-            p.projectm_role, p.gameinfo_role, u.created_at
+            p.projectm_role, p.gameinfo_role, u.created_at,
+            COALESCE((SELECT array_agg(g.permission_key ORDER BY g.permission_key)
+                      FROM gamedb_user_permissions g WHERE g.user_id = u.id), ARRAY[]::varchar[]) AS permissions
      FROM gamedb_users u
      LEFT JOIN gamedb_user_preferences p ON p.user_id = u.id
      WHERE LOWER(u.username) = LOWER($1)`,
@@ -165,7 +222,9 @@ export async function findUserById(id) {
     `SELECT u.id, u.username, u.display_name,
             COALESCE(p.role_override, u.role) AS role,
             p.default_view_id, p.can_write_data, p.can_update_data,
-            p.projectm_role, p.gameinfo_role, u.created_at
+            p.projectm_role, p.gameinfo_role, u.created_at,
+            COALESCE((SELECT array_agg(g.permission_key ORDER BY g.permission_key)
+                      FROM gamedb_user_permissions g WHERE g.user_id = u.id), ARRAY[]::varchar[]) AS permissions
      FROM gamedb_users u
      LEFT JOIN gamedb_user_preferences p ON p.user_id = u.id
      WHERE u.id = $1`,
@@ -180,7 +239,9 @@ export async function listUsers() {
     `SELECT u.id, u.username, u.display_name,
             COALESCE(p.role_override, u.role) AS role,
             p.default_view_id, p.can_write_data, p.can_update_data,
-            p.projectm_role, p.gameinfo_role, u.created_at
+            p.projectm_role, p.gameinfo_role, u.created_at,
+            COALESCE((SELECT array_agg(g.permission_key ORDER BY g.permission_key)
+                      FROM gamedb_user_permissions g WHERE g.user_id = u.id), ARRAY[]::varchar[]) AS permissions
      FROM gamedb_users u
      LEFT JOIN gamedb_user_preferences p ON p.user_id = u.id
      ORDER BY u.id ASC`
@@ -196,6 +257,19 @@ export async function countAdmins() {
   return result.rows[0]?.count || 0;
 }
 
+async function replaceUserPermissions(client, userId, values) {
+  const permissions = normalizePermissions(values);
+  await client.query(`DELETE FROM gamedb_user_permissions WHERE user_id = $1`, [userId]);
+  if (permissions.length) {
+    await client.query(
+      `INSERT INTO gamedb_user_permissions (user_id, permission_key)
+       SELECT $1, unnest($2::varchar[])`,
+      [userId, permissions]
+    );
+  }
+  return permissions;
+}
+
 export async function insertUser({
   username,
   displayName,
@@ -206,6 +280,7 @@ export async function insertUser({
   canUpdateData = false,
   projectmRole = null,
   gameinfoRole = null,
+  permissions,
 }) {
   await ensureSchema();
   const client = await getPool().connect();
@@ -228,9 +303,17 @@ export async function insertUser({
     // check role first, so storing true for another role is inert, but there
     // is no reason to store it either. System roles are independent of the
     // GameDB role and apply whatever that role is.
-    const writeGrant = role === "staff" && Boolean(canWriteData);
-    const updateGrant = role === "staff" && Boolean(canUpdateData);
-    if (defaultViewId || role === "user" || writeGrant || updateGrant || projectmRole || gameinfoRole) {
+    const grants = normalizePermissions(permissions ?? legacyPermissions({
+      canWriteData,
+      canUpdateData,
+      projectmRole,
+      gameinfoRole,
+    }));
+    const writeGrant = role === "staff" && grants.includes("systemdb.data.insert_delete");
+    const updateGrant = role === "staff" && grants.includes("systemdb.data.update");
+    const nextProjectmRole = permissionRole(grants, "projectm");
+    const nextGameinfoRole = permissionRole(grants, "gameinfo");
+    if (defaultViewId || role === "user" || writeGrant || updateGrant || nextProjectmRole || nextGameinfoRole) {
       await client.query(
         `INSERT INTO gamedb_user_preferences
            (user_id, default_view_id, role_override, can_write_data, can_update_data,
@@ -250,11 +333,12 @@ export async function insertUser({
           role === "user" ? "user" : null,
           writeGrant,
           updateGrant,
-          projectmRole || null,
-          gameinfoRole || null,
+          nextProjectmRole,
+          nextGameinfoRole,
         ]
       );
     }
+    await replaceUserPermissions(client, userId, grants);
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
@@ -291,8 +375,9 @@ export async function updateUser(id, fields) {
     fields.canUpdateData !== undefined ||
     fields.projectmRole !== undefined ||
     fields.gameinfoRole !== undefined;
+  const touchesPermissions = fields.permissions !== undefined;
 
-  if (!sets.length && !touchesPreferences) {
+  if (!sets.length && !touchesPreferences && !touchesPermissions) {
     return findUserById(id);
   }
 
@@ -384,6 +469,27 @@ export async function updateUser(id, fields) {
         );
       }
     }
+    if (touchesPermissions) {
+      const grants = await replaceUserPermissions(client, id, fields.permissions);
+      await client.query(
+        `INSERT INTO gamedb_user_preferences
+           (user_id, can_write_data, can_update_data, projectm_role, gameinfo_role)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (user_id) DO UPDATE
+         SET can_write_data = EXCLUDED.can_write_data,
+             can_update_data = EXCLUDED.can_update_data,
+             projectm_role = EXCLUDED.projectm_role,
+             gameinfo_role = EXCLUDED.gameinfo_role,
+             updated_at = NOW()`,
+        [
+          id,
+          grants.includes("systemdb.data.insert_delete"),
+          grants.includes("systemdb.data.update"),
+          permissionRole(grants, "projectm"),
+          permissionRole(grants, "gameinfo"),
+        ]
+      );
+    }
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
@@ -403,6 +509,7 @@ export async function deleteUser(id) {
       `DELETE FROM gamedb_user_preferences WHERE user_id = $1`,
       [id]
     );
+    await client.query(`DELETE FROM gamedb_user_permissions WHERE user_id = $1`, [id]);
     await client.query(`DELETE FROM gamedb_users WHERE id = $1`, [id]);
     await client.query("COMMIT");
   } catch (error) {

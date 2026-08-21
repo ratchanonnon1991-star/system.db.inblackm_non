@@ -1,11 +1,11 @@
 import { handleApiError, jsonOk } from "@/lib/http";
-import { requireProjectmAccess } from "@/server/auth";
+import { requireProjectmTopup } from "@/server/auth";
 import { claimItuneEntry, listClaimedItuneEntriesForUser } from "@/server/itune-entries-repository";
 
 // claimItuneEntry enforces the per-user cap and picks the lowest-id available row.
 export async function POST(request) {
   try {
-    const actor = await requireProjectmAccess(request);
+    const actor = await requireProjectmTopup(request);
     const entry = await claimItuneEntry(actor);
     return jsonOk({ entry }, 201);
   } catch (err) {
@@ -20,7 +20,7 @@ export async function POST(request) {
 // declineItuneReject) without the user having to reload.
 export async function GET(request) {
   try {
-    const actor = await requireProjectmAccess(request);
+    const actor = await requireProjectmTopup(request);
     const entries = await listClaimedItuneEntriesForUser(actor.id);
     return jsonOk({ entries });
   } catch (err) {

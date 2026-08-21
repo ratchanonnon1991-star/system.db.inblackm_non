@@ -6,6 +6,7 @@
 // and usernames are resolved with a second lookup against the primary pool
 // instead of a JOIN.
 import { getPool, getPoolForConnection } from "@/lib/db";
+import { hasPermission } from "@/lib/permissions";
 import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
 import {
   DEFAULT_ITUNE_PRIORITY_AMOUNT_THRESHOLD,
@@ -1567,7 +1568,7 @@ export async function setItuneEntryPermanent(id, isPermanent, actor) {
 // Checked inline here rather than via a passed-in flag so every caller gets
 // the same rule for free.
 function isProjectmAdminActor(actor) {
-  return actor?.projectmRole === "admin";
+  return hasPermission(actor, "projectm.admin");
 }
 
 const MAX_CLAIMS_PER_USER = 2;

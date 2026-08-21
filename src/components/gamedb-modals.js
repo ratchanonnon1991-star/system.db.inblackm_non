@@ -42,6 +42,7 @@ import {
   usesCrossJoin,
 } from "@/lib/gamedb-sql-sources";
 import { buildVisualLayout, buildVisualSelect, VISUAL_FILTER_PARAM_OPS } from "@/lib/gamedb-visual-query";
+import { normalizePermissions, PERMISSIONS, togglePermission } from "@/lib/permissions";
 
 const BUILDER_FILTER_LABELS = {
   eq: "เท่ากับ",
@@ -1587,10 +1588,6 @@ const EMPTY_USER_FORM = {
   password: "",
   role: "staff",
   defaultViewId: "",
-  canWriteData: false,
-  canUpdateData: false,
-  projectmRole: "",
-  gameinfoRole: "",
 };
 
 function roleLabel(role) {
@@ -1599,67 +1596,28 @@ function roleLabel(role) {
   return "Staff";
 }
 
-export function UsersModal({ me, onClose }) {
+export function UsersModal({ me, onClose, onChanged }) {
   const [users, setUsers] = useState([]);
   const [views, setViews] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState(EMPTY_USER_FORM);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [ssoMappings, setSsoMappings] = useState([]);
+  const [drafts, setDrafts] = useState({});
+  const [dirtyIds, setDirtyIds] = useState(new Set());
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
-  const [page, setPage] = useState(1);
-  const PAGE_SIZE = 12;
-  const { width: modalWidth, startResize, resizing } = useResizableModalWidth(768);
-
-  // "เชื่อมบัญชี experience" used to be its own top-level modal, but a mapping
-  // is really just another property of one gamedb account -- keeping it here,
-  // next to the account it points at, means there is one place to look for
-  // everything about that account instead of two.
-  const [ssoMappings, setSsoMappings] = useState([]);
-  const [ssoLoading, setSsoLoading] = useState(true);
+  const [editingId, setEditingId] = useState(undefined);
+  const [form, setForm] = useState(EMPTY_USER_FORM);
   const [ssoEmail, setSsoEmail] = useState("");
-  const [ssoSaving, setSsoSaving] = useState(false);
-  const [ssoError, setSsoError] = useState("");
-
-  // A flat scroll of a couple hundred rows is where "find the one account"
-  // stops being findable by eye -- search + role narrow it back down.
-  const filteredUsers = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    return users.filter((user) => {
-      if (roleFilter !== "all" && user.role !== roleFilter) return false;
-      if (!needle) return true;
-      return `${user.username} ${user.displayName}`.toLowerCase().includes(needle);
-    });
-  }, [users, search, roleFilter]);
-
-  // A page of 12 stays put whether there are 20 accounts or 2000 -- an
-  // unbounded scroll region grows forever and still pushes the add/edit form
-  // off screen once it gets tall enough.
-  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const pageUsers = filteredUsers.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
-
-  // Changing what's being searched for lands back on page 1 in the same
-  // handler that changes the filter -- otherwise "page 4" from the old
-  // results could silently show as empty.
-  const updateSearch = (value) => {
-    setSearch(value);
-    setPage(1);
-  };
-  const updateRoleFilter = (value) => {
-    setRoleFilter(value);
-    setPage(1);
-  };
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiJson("/api/users", {
-        fallbackError: "โหลดรายชื่อผู้ใช้ไม่สำเร็จ",
-      });
+      const data = await apiJson("/api/users", { fallbackError: "โหลดรายชื่อผู้ใช้ไม่สำเร็จ" });
       setUsers(data.users || []);
+      setDrafts(Object.fromEntries((data.users || []).map((user) => [user.id, normalizePermissions(user.permissions)])));
+      setDirtyIds(new Set());
     } catch (err) {
       setError(err.message);
     } finally {
@@ -1668,42 +1626,24 @@ export function UsersModal({ me, onClose }) {
   }, []);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- setState runs after the fetch resolves
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- state changes after the request resolves
     loadUsers();
+    apiJson("/api/views").then((data) => setViews(data.views || [])).catch(() => setViews([]));
+    apiJson("/api/sso-map").then((data) => setSsoMappings(data.mappings || [])).catch(() => setSsoMappings([]));
   }, [loadUsers]);
 
-  useEffect(() => {
-    apiJson("/api/views", { fallbackError: "โหลด Template ไม่สำเร็จ" })
-      .then((data) => setViews(data.views || []))
-      .catch(() => setViews([]));
-  }, []);
+  const filteredUsers = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return users.filter((user) =>
+      (roleFilter === "all" || user.role === roleFilter) &&
+      (!needle || `${user.username} ${user.displayName}`.toLowerCase().includes(needle))
+    );
+  }, [users, search, roleFilter]);
 
-  const loadSsoMappings = useCallback(async () => {
-    setSsoLoading(true);
-    try {
-      const data = await apiJson("/api/sso-map", { fallbackError: "โหลดรายการเชื่อมบัญชี experience ไม่สำเร็จ" });
-      setSsoMappings(data.mappings || []);
-    } catch {
-      setSsoMappings([]);
-    } finally {
-      setSsoLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- state changes after the fetch resolves
-    loadSsoMappings();
-  }, [loadSsoMappings]);
-
-  const setField = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
-
-  const startCreate = () => {
-    setEditingId(null);
-    setForm(EMPTY_USER_FORM);
-    setError("");
-    setSsoEmail("");
-    setSsoError("");
-  };
+  const groups = useMemo(() => Object.entries(PERMISSIONS.reduce((all, permission) => {
+    (all[permission.site] ||= []).push(permission);
+    return all;
+  }, {})), []);
 
   const startEdit = (user) => {
     setEditingId(user.id);
@@ -1713,89 +1653,38 @@ export function UsersModal({ me, onClose }) {
       password: "",
       role: user.role,
       defaultViewId: user.defaultViewId ? String(user.defaultViewId) : "",
-      canWriteData: Boolean(user.canWriteData),
-      canUpdateData: Boolean(user.canUpdateData),
-      projectmRole: user.projectmRole || "",
-      gameinfoRole: user.gameinfoRole || "",
     });
-    setError("");
     setSsoEmail("");
-    setSsoError("");
+    setError("");
   };
 
-  const mappingsForEditingUser = editingId
-    ? ssoMappings.filter((m) => m.gamedbUsername === form.username)
-    : [];
-
-  const addSsoMapping = async (event) => {
-    event.preventDefault();
-    if (!editingId) return;
-    setSsoSaving(true);
-    setSsoError("");
-    try {
-      const data = await apiJson("/api/sso-map", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ hiringEmail: ssoEmail, gamedbUsername: form.username }),
-        fallbackError: "เชื่อมบัญชีไม่สำเร็จ",
-      });
-      setSsoMappings((prev) => [
-        ...prev.filter((item) => item.hiringEmail !== data.mapping.hiringEmail),
-        data.mapping,
-      ]);
-      setSsoEmail("");
-    } catch (err) {
-      setSsoError(err.message);
-    } finally {
-      setSsoSaving(false);
-    }
+  const startCreate = () => {
+    setEditingId(null);
+    setForm(EMPTY_USER_FORM);
+    setSsoEmail("");
+    setError("");
   };
 
-  const removeSsoMapping = async (id) => {
-    if (!window.confirm("เลิกเชื่อมบัญชี experience นี้?")) return;
-    setSsoError("");
-    try {
-      await apiJson(`/api/sso-map/${id}`, { method: "DELETE", fallbackError: "เลิกเชื่อมบัญชีไม่สำเร็จ" });
-      setSsoMappings((prev) => prev.filter((item) => item.id !== id));
-    } catch (err) {
-      setSsoError(err.message);
-    }
+  const changePermission = (user, key, checked) => {
+    setDrafts((current) => ({
+      ...current,
+      [user.id]: togglePermission(current[user.id] || user.permissions, key, checked),
+    }));
+    setDirtyIds((current) => new Set(current).add(user.id));
   };
 
-  const save = async () => {
+  const savePermissions = async () => {
     setSaving(true);
     setError("");
     try {
-      if (editingId) {
-        await apiJson(`/api/users/${editingId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            displayName: form.displayName,
-            role: form.role,
-            defaultViewId: form.role === "user" ? form.defaultViewId || null : null,
-            canWriteData: form.role === "staff" && form.canWriteData,
-            canUpdateData: form.role === "staff" && form.canUpdateData,
-            password: form.password || undefined,
-            projectmRole: form.projectmRole,
-            gameinfoRole: form.gameinfoRole,
-          }),
-          fallbackError: "บันทึกผู้ใช้ไม่สำเร็จ",
-        });
-      } else {
-        await apiJson("/api/users", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...form,
-            canWriteData: form.role === "staff" && form.canWriteData,
-            canUpdateData: form.role === "staff" && form.canUpdateData,
-          }),
-          fallbackError: "เพิ่มผู้ใช้ไม่สำเร็จ",
-        });
-      }
+      await Promise.all([...dirtyIds].map((id) => apiJson(`/api/users/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ permissions: drafts[id] || [] }),
+        fallbackError: "บันทึกสิทธิ์ไม่สำเร็จ",
+      })));
       await loadUsers();
-      startCreate();
+      await onChanged?.();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -1803,402 +1692,181 @@ export function UsersModal({ me, onClose }) {
     }
   };
 
-  const remove = async (user) => {
-    if (!window.confirm(`ลบผู้ใช้ "${user.username}" ?`)) return;
+  const saveAccount = async () => {
+    setSaving(true);
     setError("");
     try {
-      await apiJson(`/api/users/${user.id}`, {
-        method: "DELETE",
-        fallbackError: "ลบผู้ใช้ไม่สำเร็จ",
-      });
+      const body = {
+        displayName: form.displayName,
+        role: form.role,
+        defaultViewId: form.role === "user" ? form.defaultViewId || null : null,
+        password: form.password || undefined,
+      };
+      if (editingId) {
+        await apiJson(`/api/users/${editingId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          fallbackError: "บันทึกผู้ใช้ไม่สำเร็จ",
+        });
+      } else {
+        await apiJson("/api/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...body, username: form.username, permissions: [] }),
+          fallbackError: "เพิ่มผู้ใช้ไม่สำเร็จ",
+        });
+      }
+      setEditingId(undefined);
       await loadUsers();
-      if (editingId === user.id) startCreate();
+      await onChanged?.();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async () => {
+    const user = users.find(({ id }) => id === editingId);
+    if (!user || !window.confirm(`ลบผู้ใช้ "${user.username}" ?`)) return;
+    try {
+      await apiJson(`/api/users/${user.id}`, { method: "DELETE", fallbackError: "ลบผู้ใช้ไม่สำเร็จ" });
+      setEditingId(undefined);
+      await loadUsers();
     } catch (err) {
       setError(err.message);
     }
   };
 
-  const inputClass =
-    "h-10 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-3 text-xs font-semibold outline-none focus:border-red-600 focus:bg-white";
+  const mappings = editingId ? ssoMappings.filter((item) => item.gamedbUsername === form.username) : [];
+  const addSsoMapping = async (event) => {
+    event.preventDefault();
+    try {
+      const data = await apiJson("/api/sso-map", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hiringEmail: ssoEmail, gamedbUsername: form.username }),
+        fallbackError: "เชื่อมบัญชีไม่สำเร็จ",
+      });
+      setSsoMappings((current) => [...current.filter((item) => item.hiringEmail !== data.mapping.hiringEmail), data.mapping]);
+      setSsoEmail("");
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const removeSsoMapping = async (id) => {
+    try {
+      await apiJson(`/api/sso-map/${id}`, { method: "DELETE", fallbackError: "เลิกเชื่อมบัญชีไม่สำเร็จ" });
+      setSsoMappings((current) => current.filter((item) => item.id !== id));
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const inputClass = "h-10 rounded-md border border-ll-hairline-strong bg-ll-surface-1 px-3 text-sm text-ll-ink outline-none focus:border-ll-primary focus:ring-2 focus:ring-ll-primary/20";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
-      <div
-        className="relative flex max-h-[90vh] w-full flex-col rounded-sm bg-white p-5 shadow-xl"
-        style={{ maxWidth: modalWidth }}
-      >
-        <ModalResizeHandle onPointerDown={startResize} active={resizing} />
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-sm font-black">
-            <Users size={15} className="text-red-600" /> จัดการผู้ใช้
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-sm border border-zinc-200 p-1.5 text-zinc-500 transition hover:bg-zinc-50"
-            aria-label="ปิด"
-          >
-            <X size={14} />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 backdrop-blur-sm">
+      <div className="flex max-h-[94vh] w-full max-w-[1440px] flex-col overflow-hidden rounded-xl border border-ll-hairline bg-ll-surface-1 text-ll-ink shadow-[var(--ll-shadow-modal)]">
+        <header className="flex items-center justify-between border-b border-ll-hairline px-5 py-4">
+          <div>
+            <h2 className="flex items-center gap-2 text-lg font-semibold tracking-[-0.2px]"><Users size={18} /> จัดสิทธิ์ผู้ใช้</h2>
+            <p className="mt-0.5 text-xs text-ll-ink-subtle">ติ๊กสิทธิ์ตามเว็บและ path แล้วบันทึกพร้อมกัน</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-md border border-ll-hairline-strong p-2 text-ll-ink-subtle hover:bg-ll-surface-2" aria-label="ปิด"><X size={16} /></button>
+        </header>
+
+        <div className="flex flex-wrap items-center gap-2 border-b border-ll-hairline px-5 py-3">
+          <div className="relative min-w-56 flex-1">
+            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ll-ink-tertiary" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาผู้ใช้" className={`${inputClass} w-full pl-9`} />
+          </div>
+          <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className={inputClass}>
+            <option value="all">ทุก Role</option><option value="admin">Admin</option><option value="staff">Staff</option><option value="user">User</option>
+          </select>
+          <button type="button" onClick={startCreate} className="flex h-10 items-center gap-1.5 rounded-md border border-ll-hairline-strong px-3 text-sm font-medium hover:bg-ll-surface-2"><Plus size={14} /> เพิ่มผู้ใช้</button>
+          <button type="button" onClick={savePermissions} disabled={!dirtyIds.size || saving} className="flex h-10 items-center gap-1.5 rounded-md bg-ll-emphasis-bg px-4 text-sm font-medium text-ll-emphasis-text disabled:opacity-40">
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} บันทึกสิทธิ์{dirtyIds.size ? ` (${dirtyIds.size})` : ""}
           </button>
         </div>
 
-        <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[1fr_1.2fr]">
-          <div className="flex min-h-0 flex-col">
-            <div className="mb-2 shrink-0 space-y-1.5">
-              <div className="flex items-center gap-1.5">
-                <div className="relative flex-1">
-                  <Search size={12} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
-                  <input
-                    type="search"
-                    value={search}
-                    onChange={(e) => updateSearch(e.target.value)}
-                    placeholder="ค้นหาชื่อผู้ใช้หรือชื่อที่แสดง"
-                    className="h-9 w-full rounded-sm border border-zinc-200 bg-zinc-50 pl-8 pr-3 text-[11px] font-semibold outline-none focus:border-red-600 focus:bg-white"
-                  />
-                </div>
-                <select
-                  value={roleFilter}
-                  onChange={(e) => updateRoleFilter(e.target.value)}
-                  className="h-9 shrink-0 rounded-sm border border-zinc-200 bg-zinc-50 px-2 text-[10px] font-bold outline-none focus:border-red-600"
-                >
-                  <option value="all">ทุก Role</option>
-                  <option value="admin">Admin</option>
-                  <option value="staff">Staff</option>
-                  <option value="user">User</option>
-                </select>
-              </div>
-              {!loading && (
-                <p className="text-[10px] font-semibold text-zinc-400">
-                  {search.trim() || roleFilter !== "all"
-                    ? `พบ ${filteredUsers.length} จากทั้งหมด ${users.length} คน`
-                    : `ทั้งหมด ${users.length} คน`}
-                </p>
-              )}
-            </div>
-            <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
-            {loading ? (
-              <p className="flex items-center gap-2 px-2 py-4 text-xs font-semibold text-zinc-400">
-                <Loader2 size={14} className="animate-spin" /> กำลังโหลด...
-              </p>
-            ) : filteredUsers.length === 0 ? (
-              <p className="rounded-sm border border-dashed border-zinc-300 px-3 py-6 text-center text-[11px] font-semibold text-zinc-400">
-                ไม่พบผู้ใช้ตามคำค้นหาหรือตัวกรอง
-              </p>
-            ) : (
-              pageUsers.map((user) => (
-                <div
-                  key={user.id}
-                  className={`group flex items-center gap-2 rounded-sm border px-3 py-2.5 transition ${
-                    editingId === user.id
-                      ? "border-red-600 bg-red-50"
-                      : "border-zinc-200 hover:bg-zinc-50"
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => startEdit(user)}
-                    className="min-w-0 flex-1 text-left"
-                  >
-                    <p className="truncate text-xs font-black text-zinc-700">
-                      {user.username}
-                      {user.id === me.id ? (
-                        <span className="ml-1.5 rounded bg-zinc-100 px-1.5 py-0.5 text-[9px] font-black text-zinc-500">
-                          คุณ
-                        </span>
-                      ) : null}
-                    </p>
-                    <p className="truncate text-[10px] font-semibold text-zinc-400">
-                      {user.displayName} · {roleLabel(user.role)}
-                      {user.role === "staff" && (user.canWriteData || user.canUpdateData) && (
-                        <>
-                          {" · "}
-                          {[
-                            user.canWriteData && "เพิ่ม/ลบแถว",
-                            user.canUpdateData && "แก้ไขค่า",
-                          ]
-                            .filter(Boolean)
-                            .join(", ")}
-                        </>
-                      )}
-                      {user.projectmRole
-                        ? ` · Projectm ${user.projectmRole === "admin" ? "Admin" : "Topup"}`
-                        : ""}
-                      {user.gameinfoRole
-                        ? ` · GameInfo ${user.gameinfoRole === "admin" ? "Admin" : "Topup"}`
-                        : ""}
-                    </p>
-                  </button>
-                  {user.id !== me.id && (
-                    <button
-                      type="button"
-                      onClick={() => remove(user)}
-                      className="shrink-0 rounded-sm p-1 text-zinc-400 opacity-0 transition hover:bg-zinc-200 hover:text-red-600 group-hover:opacity-100"
-                      title="ลบผู้ใช้"
-                    >
-                      <Trash2 size={12} />
+        {error && <p className="border-b border-ll-hairline bg-ll-primary-subtle-bg px-5 py-2 text-sm text-ll-primary-subtle-text">{error}</p>}
+
+        <div className="min-h-0 flex-1 overflow-auto">
+          <table className="w-full min-w-[1100px] border-separate border-spacing-0 text-sm">
+            <thead className="sticky top-0 z-20 bg-ll-surface-2">
+              <tr>
+                <th rowSpan={2} className="sticky left-0 z-30 min-w-56 border-b border-r border-ll-hairline bg-ll-surface-2 px-4 py-3 text-left font-medium">ผู้ใช้</th>
+                <th rowSpan={2} className="min-w-24 border-b border-r border-ll-hairline px-3 py-3 text-left font-medium">Role</th>
+                {groups.map(([site, permissions]) => <th key={site} colSpan={permissions.length} className="border-b border-r border-ll-hairline px-3 py-2 text-center font-semibold">{site}</th>)}
+              </tr>
+              <tr>
+                {PERMISSIONS.map((permission) => (
+                  <th key={permission.key} title={permission.path} className="min-w-28 border-b border-r border-ll-hairline px-2 py-2 text-center font-medium">
+                    <span className="block">{permission.label}</span><code className="mt-0.5 block text-[9px] font-normal text-ll-ink-tertiary">{permission.path}</code>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={PERMISSIONS.length + 2} className="px-4 py-10 text-center text-ll-ink-subtle"><Loader2 size={16} className="mr-2 inline animate-spin" />กำลังโหลด...</td></tr>
+              ) : filteredUsers.map((user) => (
+                <tr key={user.id} className="hover:bg-ll-surface-2">
+                  <td className="sticky left-0 z-10 border-b border-r border-ll-hairline bg-ll-surface-1 px-4 py-3">
+                    <button type="button" onClick={() => startEdit(user)} className="block max-w-52 text-left">
+                      <span className="block truncate font-medium">{user.displayName || user.username}{user.id === me.id ? " (คุณ)" : ""}</span>
+                      <span className="block truncate text-xs text-ll-ink-tertiary">{user.username}</span>
                     </button>
-                  )}
-                </div>
-              ))
-            )}
-            </div>
-            {totalPages > 1 && (
-              <div className="mt-1.5 flex shrink-0 items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={safePage <= 1}
-                  className="rounded-sm border border-zinc-200 px-2.5 py-1 text-[10px] font-black text-zinc-500 transition hover:bg-zinc-50 disabled:opacity-40"
-                >
-                  ก่อนหน้า
-                </button>
-                <span className="text-[10px] font-bold text-zinc-400">
-                  หน้า {safePage} / {totalPages}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={safePage >= totalPages}
-                  className="rounded-sm border border-zinc-200 px-2.5 py-1 text-[10px] font-black text-zinc-500 transition hover:bg-zinc-50 disabled:opacity-40"
-                >
-                  ถัดไป
-                </button>
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={startCreate}
-              className={`mt-1.5 flex w-full shrink-0 items-center justify-center gap-1.5 rounded-sm border border-dashed px-3 py-2.5 text-[11px] font-black transition ${
-                editingId === null
-                  ? "border-red-600 text-red-600"
-                  : "border-zinc-300 text-zinc-400 hover:border-zinc-400 hover:text-zinc-600"
-              }`}
-            >
-              <Plus size={12} /> เพิ่มผู้ใช้ใหม่
-            </button>
-          </div>
-
-          <div className="min-h-0 space-y-2.5 overflow-y-auto pr-1">
-            <p className="text-[10px] font-black text-zinc-500">
-              {editingId ? `แก้ไขผู้ใช้: ${form.username}` : "เพิ่มผู้ใช้ใหม่"}
-            </p>
-            {!editingId && (
-              <input
-                type="text"
-                value={form.username}
-                onChange={(e) => setField("username", e.target.value)}
-                placeholder="username (a-z, 0-9, _ . - ยาว 3-32 ตัว)"
-                autoComplete="off"
-                className={inputClass}
-              />
-            )}
-            <input
-              type="text"
-              value={form.displayName}
-              onChange={(e) => setField("displayName", e.target.value)}
-              placeholder="ชื่อที่แสดง (ไม่บังคับ)"
-              className={inputClass}
-            />
-            <input
-              type="password"
-              value={form.password}
-              onChange={(e) => setField("password", e.target.value)}
-              placeholder={
-                editingId
-                  ? "รหัสผ่านใหม่ (เว้นว่าง = ไม่เปลี่ยน)"
-                  : "รหัสผ่าน (อย่างน้อย 6 ตัวอักษร)"
-              }
-              autoComplete="new-password"
-              className={inputClass}
-            />
-            <select
-              value={form.role}
-              onChange={(e) => setField("role", e.target.value)}
-              className={inputClass}
-            >
-              <option value="user">User — ดู/รัน query, ใช้ layout จากเทมเพลตเท่านั้น</option>
-              <option value="staff">Staff — ดู/รัน query, จัด layout</option>
-              <option value="admin">Admin — จัดการทุกอย่างรวมถึง SQL และผู้ใช้</option>
-            </select>
-            {form.role === "user" && (
-              <div>
-                <label className="mb-1 block text-[10px] font-black text-zinc-500">
-                  เทมเพลตหลักเมื่อเข้าสู่ระบบ
-                </label>
-                <select
-                  value={form.defaultViewId}
-                  onChange={(e) => setField("defaultViewId", e.target.value)}
-                  className={inputClass}
-                >
-                  <option value="">ใช้เทมเพลตเริ่มต้นของระบบ</option>
-                  {views.map((view) => (
-                    <option key={view.id} value={view.id}>
-                      {view.name}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1 text-[9px] font-semibold text-zinc-400">
-                  User จะเปิดหน้านี้อัตโนมัติและไม่สามารถย้ายหรือย่อขยายกล่องได้
-                </p>
-              </div>
-            )}
-            {form.role === "staff" && (
-              <div className="space-y-2 rounded-sm border border-zinc-200 p-3">
-                <p className="text-[10px] font-black text-zinc-500">
-                  สิทธิ์แก้ไขข้อมูลในตารางที่เปิด &quot;แก้ไขข้อมูล&quot; ไว้ (นอกเหนือจาก
-                  ดู/รัน query และจัด layout ที่ Staff ทำได้อยู่แล้ว)
-                </p>
-                <label className="flex items-center gap-2 text-[11px] font-bold text-zinc-600">
-                  <input
-                    type="checkbox"
-                    checked={form.canWriteData}
-                    onChange={(e) => setField("canWriteData", e.target.checked)}
-                    className="h-3.5 w-3.5 accent-red-600"
-                  />
-                  เพิ่ม / ลบแถวในตาราง
-                </label>
-                <label className="flex items-center gap-2 text-[11px] font-bold text-zinc-600">
-                  <input
-                    type="checkbox"
-                    checked={form.canUpdateData}
-                    onChange={(e) => setField("canUpdateData", e.target.checked)}
-                    className="h-3.5 w-3.5 accent-red-600"
-                  />
-                  แก้ไขค่าในแถวที่มีอยู่ (ดับเบิลคลิก / วางจาก Excel)
-                </label>
-                <p className="text-[9px] font-semibold text-zinc-400">
-                  ไม่รวมการเขียน SQL, ตั้งค่าคอลัมน์ที่แก้ไขได้, หรือจัดการผู้ใช้ — ยังเป็น
-                  Admin เท่านั้น
-                </p>
-              </div>
-            )}
-
-            {editingId && (
-              <div className="space-y-2 rounded-sm border border-zinc-200 p-3">
-                <p className="flex items-center gap-1.5 text-[10px] font-black text-zinc-500">
-                  <Link2 size={11} className="text-red-600" /> บัญชี experience ที่เชื่อมไว้
-                </p>
-                <p className="text-[9px] font-semibold text-zinc-400">
-                  คนที่ login experience ด้วยอีเมลนี้แล้วกดปุ่ม &ldquo;เข้าสู่ระบบด้วยบัญชี
-                  experience&rdquo; จะได้เข้า gamedb เป็นบัญชีนี้ทันที ไม่ต้องพิมพ์ username/password
-                </p>
-                {ssoLoading ? (
-                  <p className="flex items-center gap-1.5 py-1 text-[10px] font-semibold text-zinc-400">
-                    <Loader2 size={12} className="animate-spin" /> กำลังโหลด...
-                  </p>
-                ) : mappingsForEditingUser.length > 0 ? (
-                  <div className="space-y-1">
-                    {mappingsForEditingUser.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex items-center justify-between gap-2 rounded-sm bg-zinc-50 px-2 py-1.5"
-                      >
-                        <span className="min-w-0 truncate text-[10px] font-bold text-zinc-600">
-                          {item.hiringEmail}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => removeSsoMapping(item.id)}
-                          className="shrink-0 rounded-sm p-1 text-zinc-400 transition hover:bg-zinc-200 hover:text-red-600"
-                          aria-label={`เลิกเชื่อม ${item.hiringEmail}`}
-                        >
-                          <Trash2 size={11} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-[10px] font-semibold text-zinc-400">
-                    ยังไม่มีบัญชี experience ที่เชื่อมไว้กับบัญชีนี้
-                  </p>
-                )}
-                <form onSubmit={addSsoMapping} className="flex items-center gap-1.5">
-                  <input
-                    type="email"
-                    required
-                    value={ssoEmail}
-                    onChange={(e) => setSsoEmail(e.target.value)}
-                    placeholder="อีเมล Admin ของ experience"
-                    className="h-8 flex-1 rounded-sm border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-semibold outline-none focus:border-red-600 focus:bg-white"
-                  />
-                  <button
-                    type="submit"
-                    disabled={ssoSaving || !ssoEmail.trim()}
-                    className="flex h-8 shrink-0 items-center justify-center gap-1 rounded-sm bg-red-600 px-2.5 text-[10px] font-black text-white transition hover:bg-red-700 disabled:opacity-50"
-                  >
-                    {ssoSaving ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
-                    เชื่อม
-                  </button>
-                </form>
-                {ssoError && (
-                  <p className="text-[10px] font-bold text-red-600">{ssoError}</p>
-                )}
-              </div>
-            )}
-
-            <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400">
-              สิทธิ์ Projectm
-              <select
-                value={form.projectmRole}
-                onChange={(e) => setField("projectmRole", e.target.value)}
-                className="mt-1 h-9 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold normal-case text-zinc-700 outline-none focus:border-red-600 focus:bg-white"
-              >
-                <option value="">ไม่มีสิทธิ์</option>
-                <option value="topup">Topup — เข้าหน้าคนเติม</option>
-                <option value="admin">Admin — เข้าได้ทั้ง Admin และ Topup</option>
-              </select>
-            </label>
-
-            <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400">
-              สิทธิ์ GameInfo
-              <select
-                value={form.gameinfoRole}
-                onChange={(e) => setField("gameinfoRole", e.target.value)}
-                className="mt-1 h-9 w-full rounded-sm border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold normal-case text-zinc-700 outline-none focus:border-red-600 focus:bg-white"
-              >
-                <option value="">ไม่มีสิทธิ์</option>
-                <option value="topup">Topup — ดูเกมและรายงานปัญหา</option>
-                <option value="admin">Admin — จัดการได้ทั้งหมด</option>
-              </select>
-            </label>
-
-            {error && (
-              <div className="rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600">
-                {error}
-              </div>
-            )}
-
-            <MissingNotice
-              items={
-                editingId
-                  ? []
-                  : [
-                      !form.username.trim() && "ชื่อผู้ใช้",
-                      form.password.length < 6 && "รหัสผ่านอย่างน้อย 6 ตัว",
-                    ].filter(Boolean)
-              }
-            />
-
-            <div className="flex justify-end pt-1">
-              <button
-                type="button"
-                onClick={save}
-                disabled={
-                  saving ||
-                  (!editingId && (!form.username.trim() || form.password.length < 6))
-                }
-                className="flex items-center gap-1.5 rounded-sm bg-red-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
-              >
-                {saving ? (
-                  <Loader2 size={13} className="animate-spin" />
-                ) : (
-                  <Save size={13} />
-                )}
-                {editingId ? "บันทึกการแก้ไข" : "เพิ่มผู้ใช้"}
-              </button>
-            </div>
-          </div>
+                  </td>
+                  <td className="border-b border-r border-ll-hairline px-3 py-3 text-xs text-ll-ink-subtle">{roleLabel(user.role)}</td>
+                  {PERMISSIONS.map((permission) => {
+                    const implicitAdmin = user.role === "admin" && permission.key.startsWith("systemdb.");
+                    const disabled = permission.key.startsWith("systemdb.") && user.role !== "staff";
+                    const checked = implicitAdmin || (drafts[user.id] || []).includes(permission.key);
+                    return (
+                      <td key={permission.key} className="border-b border-r border-ll-hairline px-3 py-3 text-center">
+                        <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => changePermission(user, permission.key, event.target.checked)} className="h-4 w-4 accent-[#05141D] disabled:opacity-40" aria-label={`${user.username}: ${permission.label}`} />
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
+
+        {editingId !== undefined && (
+          <section className="border-t border-ll-hairline bg-ll-surface-2 px-5 py-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="font-medium">{editingId ? `ข้อมูลบัญชี: ${form.username}` : "เพิ่มผู้ใช้"}</h3>
+              <button type="button" onClick={() => setEditingId(undefined)} className="text-xs text-ll-ink-subtle">ซ่อน</button>
+            </div>
+            <div className="grid gap-2 md:grid-cols-4">
+              {!editingId && <input value={form.username} onChange={(event) => setForm((current) => ({ ...current, username: event.target.value }))} placeholder="username" className={inputClass} />}
+              <input value={form.displayName} onChange={(event) => setForm((current) => ({ ...current, displayName: event.target.value }))} placeholder="ชื่อที่แสดง" className={inputClass} />
+              <input type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} placeholder={editingId ? "รหัสผ่านใหม่ (ไม่บังคับ)" : "รหัสผ่านอย่างน้อย 6 ตัว"} className={inputClass} />
+              <select value={form.role} onChange={(event) => setForm((current) => ({ ...current, role: event.target.value }))} className={inputClass}>
+                <option value="user">User</option><option value="staff">Staff</option><option value="admin">Admin</option>
+              </select>
+              {form.role === "user" && <select value={form.defaultViewId} onChange={(event) => setForm((current) => ({ ...current, defaultViewId: event.target.value }))} className={inputClass}><option value="">Template เริ่มต้น</option>{views.map((view) => <option key={view.id} value={view.id}>{view.name}</option>)}</select>}
+            </div>
+            {editingId && (
+              <form onSubmit={addSsoMapping} className="mt-3 flex flex-wrap items-center gap-2 text-xs text-ll-ink-subtle">
+                <Link2 size={13} /><span>Experience:</span>
+                {mappings.map((item) => <span key={item.id} className="rounded-full border border-ll-hairline px-2 py-1">{item.hiringEmail}<button type="button" onClick={() => removeSsoMapping(item.id)} className="ml-1 text-ll-ink-tertiary" aria-label={`เลิกเชื่อม ${item.hiringEmail}`}>×</button></span>)}
+                <input type="email" value={ssoEmail} onChange={(event) => setSsoEmail(event.target.value)} placeholder="เพิ่มอีเมล" className={`${inputClass} h-8`} />
+                <button type="submit" disabled={!ssoEmail.trim()} className="h-8 rounded-md border border-ll-hairline-strong px-3 font-medium text-ll-ink disabled:opacity-40">เชื่อม</button>
+              </form>
+            )}
+            <div className="mt-3 flex justify-end gap-2">
+              {editingId && editingId !== me.id && <button type="button" onClick={remove} className="rounded-md border border-ll-hairline-strong px-3 py-2 text-sm text-ll-primary-subtle-text"><Trash2 size={13} className="mr-1 inline" />ลบผู้ใช้</button>}
+              <button type="button" onClick={saveAccount} disabled={saving || (!editingId && (!form.username.trim() || form.password.length < 6))} className="rounded-md bg-ll-emphasis-bg px-4 py-2 text-sm font-medium text-ll-emphasis-text disabled:opacity-40">บันทึกบัญชี</button>
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );

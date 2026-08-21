@@ -1,7 +1,8 @@
 "use client";
 
 import { Inter } from "next/font/google";
-import { usePathname } from "next/navigation";
+import { useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import LLThemeToggle from "@/components/ll-theme-toggle";
 import { ProjectmThemeProvider } from "@/components/projectm-theme-context";
 import { useLLTheme } from "@/lib/ll-theme";
@@ -15,7 +16,14 @@ const linearSans = Inter({
 export default function ProjectmThemeRoot({ children }) {
   const [theme, toggleTheme] = useLLTheme();
   const pathname = usePathname();
+  const router = useRouter();
   const hasAdminThemeControl = /\/itune\/admin(?:\/|$)/.test(pathname);
+
+  useEffect(() => {
+    const refreshPermissions = () => router.refresh();
+    window.addEventListener("focus", refreshPermissions);
+    return () => window.removeEventListener("focus", refreshPermissions);
+  }, [router]);
 
   return (
     <ProjectmThemeProvider theme={theme} toggleTheme={toggleTheme}>

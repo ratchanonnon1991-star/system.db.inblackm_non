@@ -1,6 +1,7 @@
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
 import { findUserById } from "@/server/users-repository";
 import { findViewById, roleCanWriteView, viewContainsQuery } from "@/server/gamedb-views-repository";
+import { hasPermission } from "@/lib/permissions";
 
 function createHttpError(message, status) {
   const err = new Error(message);
@@ -68,7 +69,10 @@ async function requireDataAccess(request, accountFlag, deniedMessage, { queryId,
     if (candidate && viewContainsQuery(candidate, queryId)) view = candidate;
   }
 
-  if (user.role === "staff" && user[accountFlag] && (!view || roleCanWriteView(view, "staff"))) {
+  const permission = accountFlag === "canWriteData"
+    ? "systemdb.data.insert_delete"
+    : "systemdb.data.update";
+  if (user.role === "staff" && hasPermission(user, permission) && (!view || roleCanWriteView(view, "staff"))) {
     return user;
   }
   if (user.role === "user" && view && roleCanWriteView(view, "user")) {
@@ -86,7 +90,7 @@ export async function requireDataUpdater(request, ctx) {
 }
 
 export function hasProjectmAccess(user) {
-  return user?.projectmRole === "admin" || user?.projectmRole === "topup";
+  return hasPermission(user, "projectm.access");
 }
 
 export async function requireProjectmAccess(request) {
@@ -97,8 +101,16 @@ export async function requireProjectmAccess(request) {
   return user;
 }
 
+export async function requireProjectmTopup(request) {
+  const user = await requireProjectmAccess(request);
+  if (!hasPermission(user, "projectm.claim")) {
+    throw createHttpError("บัญชีนี้ไม่มีสิทธิ์ใช้งานหน้า Topup", 403);
+  }
+  return user;
+}
+
 export function hasGameinfoAccess(user) {
-  return user?.gameinfoRole === "admin" || user?.gameinfoRole === "topup";
+  return hasPermission(user, "gameinfo.access");
 }
 
 export async function requireGameinfoAccess(request) {
@@ -110,7 +122,7 @@ export async function requireGameinfoAccess(request) {
 }
 
 export function canManageGameinfo(user) {
-  return user?.gameinfoRole === "admin";
+  return hasPermission(user, "gameinfo.admin");
 }
 
 export async function requireGameinfoEditor(request) {
@@ -121,9 +133,17 @@ export async function requireGameinfoEditor(request) {
   return user;
 }
 
+export async function requireGameinfoReporter(request) {
+  const user = await requireGameinfoAccess(request);
+  if (!hasPermission(user, "gameinfo.report")) {
+    throw createHttpError("บัญชีนี้ไม่มีสิทธิ์รายงานปัญหา", 403);
+  }
+  return user;
+}
+
 export async function requireProjectmAdmin(request) {
   const user = await requireProjectmAccess(request);
-  if (user.projectmRole !== "admin") {
+  if (!hasPermission(user, "projectm.admin")) {
     throw createHttpError("ต้องมีสิทธิ์ Admin ระบบ Projectm เท่านั้น", 403);
   }
   return user;

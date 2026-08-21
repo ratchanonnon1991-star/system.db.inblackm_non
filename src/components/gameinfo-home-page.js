@@ -31,6 +31,7 @@ import {
 } from "@/server/gameinfo-gamelist-tags";
 import { listOpenGamelistReports } from "@/server/gameinfo-gamelist-reports";
 import { listGamelistFavoriteIds } from "@/server/gameinfo-gamelist-favorites";
+import { hasPermission } from "@/lib/permissions";
 
 // Everyone lands on the card dashboard. Topup and role "user" stay read-only.
 export default async function GameinfoHomePage({ params, searchParams, manage = false }) {
@@ -40,6 +41,7 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
   const user = await getSessionUser();
   if (!user) redirect("/");
   const editableRole = canManageGameinfo(user);
+  const canReport = hasPermission(user, "gameinfo.report");
   if (manage && !editableRole) redirect(gameinfoListHref(lang, dataMode));
   const manageMode = manage && editableRole;
 
@@ -122,7 +124,7 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
   }
 
   if (!manageMode && !loadError) {
-    return <GameinfoGamelistCards initial={rows} initialReports={reports} tagImages={tagImages} publisherImages={publisherImages} editable={editableRole} lang={lang} dataMode={dataMode} />;
+    return <GameinfoGamelistCards initial={rows} initialReports={reports} tagImages={tagImages} publisherImages={publisherImages} editable={editableRole} canReport={canReport} lang={lang} dataMode={dataMode} />;
   }
 
   return (

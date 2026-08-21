@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowLeft, ShieldCheck } from "lucide-react";
 import { getSessionUser } from "@/server/session-user";
+import { hasPermission } from "@/lib/permissions";
 import {
   listClaimedItuneEntriesForUser,
   getItuneReleaseThreshold,
@@ -12,7 +13,8 @@ export default async function ItuneTopupPage({ params }) {
   const { lang } = await params;
   const user = await getSessionUser();
   if (!user) redirect("/");
-  const isProjectmAdmin = user.projectmRole === "admin";
+  if (!hasPermission(user, "projectm.claim")) redirect(`/projectm/${lang}/itune`);
+  const isProjectmAdmin = hasPermission(user, "projectm.admin");
 
   // Same "topup_inblackm" connection as itune/admin/page.js — show a notice
   // instead of a hard 500 if it hasn't been configured yet (see that page's

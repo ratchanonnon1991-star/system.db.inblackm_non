@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 
-export default function GameinfoReportPanel({ gameId, initialReports, canManage }) {
+export default function GameinfoReportPanel({ gameId, initialReports, canManage, canReport }) {
   const [reports, setReports] = useState(initialReports);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -57,7 +57,7 @@ export default function GameinfoReportPanel({ gameId, initialReports, canManage 
         </div>
       </div>
 
-      <form onSubmit={submit} className="mt-4 flex flex-col gap-2 sm:flex-row">
+      {canReport ? <form onSubmit={submit} className="mt-4 flex flex-col gap-2 sm:flex-row">
         <label className="flex-1">
           <span className="sr-only">รายละเอียดปัญหา</span>
           <textarea
@@ -73,7 +73,7 @@ export default function GameinfoReportPanel({ gameId, initialReports, canManage 
         <button type="submit" disabled={busy || !message.trim()} className="h-10 rounded-lg bg-linear-ink px-4 text-sm font-medium text-linear-canvas disabled:opacity-40">
           ส่งรายงาน
         </button>
-      </form>
+      </form> : null}
       {error ? <p role="alert" className="mt-2 text-xs text-linear-primary">{error}</p> : null}
 
       {reports.length ? (
