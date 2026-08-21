@@ -491,16 +491,16 @@ function GameCard({ row, editable, lang, dataMode, favoriteBusy, onToggleFavorit
             <p className="mt-3 flex items-center gap-2 text-xs text-linear-ink-subtle">
               <span className={`h-2 w-2 rounded-full ${status.dot}`} />{status.label}
             </p>
+            <p className={`mt-2 inline-flex rounded-md px-2 py-1 text-[11px] font-medium ${isGameinfoBotAuto(row.botManual) ? "bg-emerald-500/10 text-emerald-700" : "bg-linear-surface-2 text-linear-ink-muted"}`}>
+              {row.botManual || "Manual"}
+            </p>
             {row.reportCount > 0 ? <p className="mt-2 text-[11px] font-medium text-linear-primary">ต้องตรวจสอบ {row.reportCount}</p> : null}
           </div>
         </div>
-        <dl className="mt-4 grid grid-cols-[repeat(3,minmax(0,1fr))_auto] gap-2 text-xs">
+        <dl className="mt-4 grid grid-cols-3 gap-2 text-xs">
           <Meta label="Region" value={row.region} />
           <Meta label="Platform" value={row.platform} />
           <Meta label="Server" value={row.server} />
-          <div className={`flex items-end rounded-lg px-2 py-2 text-[11px] font-medium ${isGameinfoBotAuto(row.botManual) ? "bg-emerald-500/10 text-emerald-700" : "bg-linear-surface-2 text-linear-ink-muted"}`}>
-            <span className="truncate">{row.botManual || "Manual"}</span>
-          </div>
         </dl>
       </Link>
       <div className="flex items-center gap-2 border-t border-linear-hairline p-3">
@@ -516,9 +516,13 @@ function GameCard({ row, editable, lang, dataMode, favoriteBusy, onToggleFavorit
 
 function Meta({ label, value }) {
   return (
-    <div className="rounded-lg bg-linear-surface-2 px-2 py-2">
-      <dt className="text-[10px] uppercase text-linear-ink-tertiary">{label}</dt>
-      <dd className="mt-0.5 truncate text-linear-ink-muted" title={value || "-"}>{value || "-"}</dd>
+    <div className="overflow-hidden rounded-xl border border-linear-hairline bg-linear-surface-1">
+      <dt className="bg-linear-surface-2 px-2 py-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-linear-ink-subtle">
+        {label}
+      </dt>
+      <dd className="truncate border-t border-linear-hairline px-2 py-2 text-sm font-medium text-linear-ink" title={value || "-"}>
+        {value || "-"}
+      </dd>
     </div>
   );
 }
