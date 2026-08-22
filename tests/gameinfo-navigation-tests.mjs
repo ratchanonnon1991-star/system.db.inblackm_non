@@ -10,6 +10,7 @@ const detailPage = read("../src/components/gameinfo-game-detail-page.js");
 const backLink = read("../src/components/gameinfo-back-link.js");
 const packEditor = read("../src/components/gameinfo-pack-editor.js");
 const gamelistCards = read("../src/components/gameinfo-gamelist-cards.js");
+const modeToggle = read("../src/components/gameinfo-mode-toggle.js");
 
 const checks = [
   homeRoute.includes('query.manage === "1"') && homeRoute.includes("gameinfoListHref(lang, dataMode, true)"),
@@ -22,6 +23,14 @@ const checks = [
   gamelistCards.includes('aria-controls="gameinfo-filter-sidebar"') &&
     gamelistCards.includes('sidebarOpen ? "visible translate-x-0" : "invisible -translate-x-full"') &&
     gamelistCards.includes('event.key === "Escape"'),
+  homePage.includes('rawView === "topup"') && homePage.includes("editableRole && !topupView"),
+  modeToggle.includes("มุมมอง Topup") && modeToggle.includes("มุมมอง Admin"),
+  gamelistCards.includes('aria-label={`ดูข้อมูล ${row.game}`}') &&
+    gamelistCards.includes('{editable ? "เปิดจัดการ" : "เปิดดู"}') &&
+    gamelistCards.includes("bg-linear-primary px-3"),
+  detailPage.includes('rawView === "topup"') &&
+    detailPage.includes("editableRole && !topupView") &&
+    detailPage.includes("gameinfoListHref(lang, dataMode, false, topupView)"),
 ];
 const failed = checks.filter((passed) => !passed).length;
 

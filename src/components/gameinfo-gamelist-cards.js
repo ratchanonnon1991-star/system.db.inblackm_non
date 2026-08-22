@@ -13,6 +13,7 @@ import {
   CircleOff,
   Flag,
   Gamepad2,
+  Eye,
   Menu,
   MoreVertical,
   Search,
@@ -43,7 +44,7 @@ const STATUS_STYLE = {
   offline: { label: "ปิดใช้งาน", dot: "bg-linear-ink-tertiary", badge: "bg-linear-surface-3 text-linear-ink-subtle" },
 };
 
-export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, editable = false, canReport = false, lang, dataMode = "uid" }) {
+export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, editable = false, topupView = false, canReport = false, lang, dataMode = "uid" }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [tag, setTag] = useState("");
@@ -470,7 +471,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
         {pageRows.length ? (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {pageRows.map((row) => (
-              <GameCard key={row.id} row={row} editable={editable} canReport={canReport} lang={lang} dataMode={dataMode} favoriteBusy={favoriteBusy === row.id} onToggleFavorite={toggleFavorite} onReport={() => {
+              <GameCard key={row.id} row={row} editable={editable} topupView={topupView} canReport={canReport} lang={lang} dataMode={dataMode} favoriteBusy={favoriteBusy === row.id} onToggleFavorite={toggleFavorite} onReport={() => {
                 setActionError("");
                 setReportGame(row);
                 setReportMessage("");
@@ -540,11 +541,11 @@ function StatCard({ label, count, icon: Icon, active, onClick, tone }) {
   );
 }
 
-function GameCard({ row, editable, canReport, lang, dataMode, favoriteBusy, onToggleFavorite, onReport }) {
+function GameCard({ row, editable, topupView, canReport, lang, dataMode, favoriteBusy, onToggleFavorite, onReport }) {
   const status = STATUS_STYLE[row.serviceStatus] || STATUS_STYLE.online;
-  const href = gameinfoGameHref(lang, row.id, dataMode);
+  const href = gameinfoGameHref(lang, row.id, dataMode, false, topupView);
   const packsHref = gameinfoPacksHref(lang, row.id, dataMode);
-  const actionHref = gameinfoGameHref(lang, row.id, dataMode, editable);
+  const actionHref = editable ? gameinfoGameHref(lang, row.id, dataMode, true) : href;
   return (
     <article className="relative overflow-hidden rounded-2xl border border-linear-hairline bg-linear-surface-1" style={{ boxShadow: "var(--ll-shadow-card)" }}>
       <details className="group absolute right-3 top-3 z-20">
@@ -589,7 +590,18 @@ function GameCard({ row, editable, canReport, lang, dataMode, favoriteBusy, onTo
         </dl>
       </Link>
       <div className="flex items-center gap-2 border-t border-linear-hairline p-3">
-        <Link href={actionHref} className={`inline-flex h-10 min-w-0 flex-1 items-center justify-center rounded-lg px-3 text-xs font-medium text-white ${editable ? "bg-linear-primary hover:bg-linear-primary-hover" : "bg-linear-ink"}`}>
+        {editable ? (
+          <Link
+            href={href}
+            aria-label={`ดูข้อมูล ${row.game}`}
+            title="ดูข้อมูล"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-linear-hairline-strong text-linear-ink-muted hover:bg-linear-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-linear-primary"
+          >
+            <Eye size={16} aria-hidden="true" />
+          </Link>
+        ) : null}
+        <Link href={actionHref} className="inline-flex h-10 min-w-0 flex-1 items-center justify-center rounded-lg bg-linear-primary px-3 text-xs font-medium text-white hover:bg-linear-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-linear-primary">
+          {!editable ? <Eye size={15} className="mr-2" aria-hidden="true" /> : null}
           {editable ? "เปิดจัดการ" : "เปิดดู"}
         </Link>
         <GameinfoDetailsButton gameId={row.id} gameName={row.game} editable={false} hasTutorial={row.hasTutorial} hasVpnNote={row.hasVpnNote} dataMode={dataMode} compact />

@@ -36,7 +36,7 @@ import { hasPermission } from "@/lib/permissions";
 // Everyone lands on the card dashboard. Topup and role "user" stay read-only.
 export default async function GameinfoHomePage({ params, searchParams, manage = false }) {
   const { lang } = await params;
-  const { mode: rawMode } = await searchParams;
+  const { mode: rawMode, view: rawView } = await searchParams;
   const dataMode = normalizeGameinfoDataMode(rawMode);
   const user = await getSessionUser();
   if (!user) redirect("/");
@@ -44,6 +44,7 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
   const canReport = hasPermission(user, "gameinfo.report");
   if (manage && !editableRole) redirect(gameinfoListHref(lang, dataMode));
   const manageMode = manage && editableRole;
+  const topupView = !manageMode && rawView === "topup";
 
   let rows = null;
   let reports = [];
@@ -124,14 +125,14 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
   }
 
   if (!manageMode && !loadError) {
-    return <GameinfoGamelistCards initial={rows} initialReports={reports} tagImages={tagImages} publisherImages={publisherImages} editable={editableRole} canReport={canReport} lang={lang} dataMode={dataMode} />;
+    return <GameinfoGamelistCards initial={rows} initialReports={reports} tagImages={tagImages} publisherImages={publisherImages} editable={editableRole && !topupView} topupView={topupView} canReport={canReport} lang={lang} dataMode={dataMode} />;
   }
 
   return (
     <div className="px-4 py-8">
       <div className="mb-6 flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-linear-ink">GameInfo</h1>
-        <GameinfoDatasetToggle basePath={gameinfoListHref(lang, "uid", manageMode)} />
+        <GameinfoDatasetToggle basePath={gameinfoListHref(lang, "uid", manageMode, topupView)} />
       </div>
       {loadError ? (
         <GameinfoErrorNotice message={loadError} />

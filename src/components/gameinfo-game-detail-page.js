@@ -35,7 +35,7 @@ import { hasPermission } from "@/lib/permissions";
 
 export default async function GameinfoGameDetailPage({ params, searchParams, manage = false }) {
   const { lang, id } = await params;
-  const { mode: rawMode } = await searchParams;
+  const { mode: rawMode, view: rawView } = await searchParams;
   const dataMode = normalizeGameinfoDataMode(rawMode);
   const user = await getSessionUser();
   if (!user) redirect("/");
@@ -43,6 +43,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   const canReport = hasPermission(user, "gameinfo.report");
   if (manage && !editableRole) redirect(gameinfoGameHref(lang, id, dataMode));
   const manageMode = manage && editableRole;
+  const topupView = !manageMode && rawView === "topup";
 
   // A non-numeric segment here (e.g. a stale /admin bookmark from before that
   // path was removed) would otherwise reach getGameListRow() as NaN and blow
@@ -145,7 +146,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   }
   if (!row) notFound();
 
-  const viewHref = gameinfoGameHref(lang, row.id, dataMode);
+  const viewHref = gameinfoGameHref(lang, row.id, dataMode, false, topupView);
   const manageHref = gameinfoGameHref(lang, row.id, dataMode, true);
   const packGame = {
     id: row.id,
@@ -165,16 +166,16 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <GameinfoBackLink
           className="flex items-center gap-1 text-sm text-linear-primary hover:underline"
-          href={manageMode ? viewHref : gameinfoListHref(lang, dataMode)}
+          href={manageMode ? viewHref : gameinfoListHref(lang, dataMode, false, topupView)}
         />
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {editableRole ? (
+          {editableRole && !topupView ? (
             <Link href={manageMode ? viewHref : manageHref} className="rounded-md border border-linear-hairline-strong px-3 py-1.5 text-xs font-medium text-linear-ink-muted hover:bg-linear-surface-2">
               {manageMode ? "ดูหน้าผู้ใช้" : "จัดการเกม"}
             </Link>
           ) : null}
           {manageMode ? <GameinfoModeCloneButton gameId={row.id} currentMode={dataMode} /> : null}
-          <GameinfoDatasetToggle basePath={gameinfoGameHref(lang, row.id, "uid", manageMode)} />
+          <GameinfoDatasetToggle basePath={gameinfoGameHref(lang, row.id, "uid", manageMode, topupView)} />
         </div>
       </div>
       {manageMode ? <GameinfoGameManager row={row} existingNames={existingNames} tagSuggestions={tagSuggestions} publisherSuggestions={publisherSuggestions} dataMode={dataMode} /> : null}

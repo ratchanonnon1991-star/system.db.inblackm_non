@@ -24,7 +24,9 @@ function ok(name, value) { check(name, Boolean(value), true); }
 check("mode defaults to UID", normalizeGameinfoDataMode("unknown"), "uid");
 check("IDPASS mode is case-insensitive", normalizeGameinfoDataMode("IDPASS"), "idpass");
 check("list routes use a manage path", gameinfoListHref("th", "uid", true), "/gameinfo/th/manage");
+check("Topup view preserves IDPASS mode", gameinfoListHref("th", "idpass", false, true), "/gameinfo/th?mode=idpass&view=topup");
 check("game manage routes preserve IDPASS", gameinfoGameHref("th", 7, "idpass", true), "/gameinfo/th/7/manage?mode=idpass");
+check("game Topup routes preserve IDPASS", gameinfoGameHref("th", 7, "idpass", false, true), "/gameinfo/th/7?mode=idpass&view=topup");
 check("pack routes preserve IDPASS", gameinfoPacksHref("th", 7, "idpass"), "/gameinfo/th/7/packs?mode=idpass");
 
 reset();
