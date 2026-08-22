@@ -43,7 +43,11 @@ function sanitizeData(raw) {
     },
     links: normalizeGamelistLinks(Array.isArray(source.links) ? source.links : []),
     tutorial: { categories: normalizeGamelistTutorialCategories(source.tutorial) },
-    warning: { categories: normalizeGamelistTutorialCategories(source.warning), autoOpen: Boolean(source.warning?.autoOpen) },
+    warning: {
+      categories: normalizeGamelistTutorialCategories(source.warning),
+      autoOpen: source.warning?.autoOpen === undefined ? true : Boolean(source.warning.autoOpen),
+      revision: String(source.warning?.revision || "legacy"),
+    },
     packs: {
       currencies: sanitizeCurrencies(source.packs?.currencies),
       computedColumns: Array.isArray(source.packs?.computedColumns) ? source.packs.computedColumns : [],

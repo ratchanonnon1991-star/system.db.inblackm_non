@@ -178,7 +178,11 @@ export async function getGamelistWarning(gameId) {
       [gameId]
     );
     const raw = result.rows[0]?.warning_data;
-    return { categories: normalizeCategories(raw), autoOpen: Boolean(raw?.autoOpen) };
+    return {
+      categories: normalizeCategories(raw),
+      autoOpen: raw?.autoOpen === undefined ? true : Boolean(raw.autoOpen),
+      revision: String(raw?.revision || "legacy"),
+    };
   } finally {
     client.release();
   }
@@ -190,23 +194,25 @@ export async function saveGamelistWarning(gameId, categories, transactionClient 
   try {
     if (!transactionClient) await client.query("BEGIN");
     const normalized = normalizeCategories({ categories });
+    const autoOpen = options.autoOpen === undefined ? true : Boolean(options.autoOpen);
+    const revision = new Date().toISOString();
     const previous = await client.query(`SELECT warning_data FROM gamelist_tutorials WHERE game_id = $1`, [gameId]);
     await client.query(
       `INSERT INTO gamelist_tutorials (game_id, data, warning_data, updated_at)
        VALUES ($1, '{"categories":[]}'::jsonb, $2, NOW())
        ON CONFLICT (game_id) DO UPDATE SET warning_data = $2, updated_at = NOW()`,
-      [gameId, JSON.stringify({ categories: normalized, autoOpen: Boolean(options.autoOpen) })]
+      [gameId, JSON.stringify({ categories: normalized, autoOpen, revision })]
     );
     await recordGameinfoAudit({
       gameId,
       area: "warning",
       actor,
       before: previous.rows[0]?.warning_data ?? null,
-      after: { categories: normalized, autoOpen: Boolean(options.autoOpen) },
+      after: { categories: normalized, autoOpen, revision },
       client,
     });
     if (!transactionClient) await client.query("COMMIT");
-    return { categories: normalized, autoOpen: Boolean(options.autoOpen) };
+    return { categories: normalized, autoOpen, revision };
   } catch (error) {
     if (!transactionClient) await client.query("ROLLBACK");
     throw error;

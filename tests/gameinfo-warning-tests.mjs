@@ -37,12 +37,15 @@ setResponder((text) => {
 });
 const warning = await getGamelistWarning(5);
 check("warning content loads independently from tutorial data", warning.categories[0].name, "ก่อนเติม");
-check("legacy warning data defaults to no automatic popup", warning.autoOpen, false);
+check("legacy warning data preserves automatic popup behavior", warning.autoOpen, true);
+check("legacy warning data receives a stable revision", warning.revision, "legacy");
 ok("warning schema is added compatibly to the existing tutorial table", log.some((entry) => /ADD COLUMN IF NOT EXISTS warning_data/.test(entry.text)));
 
 reset();
 const saved = await saveGamelistWarning(5, warning.categories);
 check("warning save returns normalized content", saved.categories[0].steps[0].description, "ตรวจ UID");
+check("warning save preserves the legacy auto-open default", saved.autoOpen, true);
+ok("warning save creates a content revision", Boolean(saved.revision));
 const warningWrite = log.find((entry) => /INSERT INTO gamelist_tutorials \(game_id, data, warning_data/.test(entry.text));
 check("warning save binds the game id separately", warningWrite?.params?.[0], 5);
 ok("warning save writes warning_data without replacing tutorial data on conflict", /DO UPDATE SET warning_data/.test(warningWrite?.text || ""));
@@ -58,6 +61,7 @@ check("warning presence supports list-page buttons", await listGamelistWarningPr
 
 const modalSource = readFileSync(new URL("../src/components/gameinfo-tutorial-modal.js", import.meta.url), "utf8");
 ok("quick warnings support optional images", modalSource.includes("เพิ่มรูป") && modalSource.includes("updateImage(category.id"));
+ok("quick warnings preserve legacy details and videos", modalSource.includes("renderStepText(step.description)") && modalSource.includes("ดูวิดีโอประกอบ"));
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);

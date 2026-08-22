@@ -139,6 +139,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
               hasData={row.hasWarning}
               variant="warning"
               autoOpen={row.warningAutoOpen}
+              autoOpenRevision={row.warningRevision}
               dataMode={dataMode}
             />
           </div>

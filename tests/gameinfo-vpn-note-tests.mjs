@@ -29,5 +29,6 @@ assert.ok(table.includes("<GameinfoDetailsButton") && table.includes("hasVpnNote
 assert.ok(manager.includes('value={draft.vpn}') && manager.includes("<GameinfoDetailsButton"), "detail manager separates VPN status from grouped game details");
 assert.ok(modal.includes('isVpn ? "โน้ต VPN"'), "VPN note has its own button label");
 assert.ok(modal.includes('label: "วิธีเติม"') && modal.includes('label: "VPN"'), "game details modal exposes tutorial and VPN tabs");
+assert.ok(modal.includes("autoOpenRevision"), "warning auto-open keys include a content revision");
 
-console.log("7 passed");
+console.log("8 passed");

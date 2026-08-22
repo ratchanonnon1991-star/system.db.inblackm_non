@@ -95,6 +95,7 @@ export default function GameinfoTutorialButton({
   disabled,
   variant = "tutorial",
   autoOpen = false,
+  autoOpenRevision = "legacy",
   dataMode = "uid",
   compact = false,
 }) {
@@ -102,7 +103,7 @@ export default function GameinfoTutorialButton({
   const isVpn = variant === "vpn";
   const [open, setOpen] = useState(false);
   const buttonLabel = isWarning ? "ข้อควรระวัง" : isVpn ? "โน้ต VPN" : "Tutorial";
-  const autoOpenKey = `gameinfo-warning-seen:${dataMode}:${gameId}`;
+  const autoOpenKey = `gameinfo-warning-seen:${dataMode}:${gameId}:${autoOpenRevision}`;
 
   useEffect(() => {
     if (!isWarning || !autoOpen || !hasData) return;
@@ -564,17 +565,32 @@ function QuickWarningList({ categories, editable, autoOpen, onAutoOpenChange, on
         <ul className="space-y-2">
           {items.map(({ category, step, stepIndex }, index) => (
             <li key={`${category.id}-${step.id}`} className="flex items-start gap-3 rounded-lg border border-linear-hairline bg-linear-surface-2 p-3">
-              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-500/10 text-[11px] font-semibold text-red-500">{index + 1}</span>
+              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-linear-surface-3 text-[11px] font-semibold text-linear-ink-tertiary">{index + 1}</span>
               <div className="min-w-0 flex-1">
                 {editable ? (
-                  <input
-                    value={step.title || step.description}
-                    onChange={(event) => updateItem(category.id, stepIndex, { title: event.target.value })}
-                    placeholder="เช่น ห้ามเปิด VPN ระหว่างชำระเงิน"
-                    className="h-9 w-full rounded-md border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm text-linear-ink outline-none focus:border-linear-primary"
-                  />
+                  <div className="space-y-2">
+                    <input
+                      value={step.title}
+                      onChange={(event) => updateItem(category.id, stepIndex, { title: event.target.value })}
+                      placeholder="ข้อความสั้น เช่น ห้ามเปิด VPN ระหว่างชำระเงิน"
+                      className="h-9 w-full rounded-md border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm text-linear-ink outline-none focus:border-linear-primary"
+                    />
+                    {step.description ? (
+                      <textarea
+                        value={step.description}
+                        onChange={(event) => updateItem(category.id, stepIndex, { description: event.target.value })}
+                        placeholder="รายละเอียดเพิ่มเติมจากข้อมูลเดิม"
+                        rows={3}
+                        className="w-full resize-y rounded-md border border-linear-hairline-strong bg-linear-surface-1 px-3 py-2 text-sm text-linear-ink outline-none focus:border-linear-primary"
+                      />
+                    ) : null}
+                  </div>
                 ) : (
-                  <p className="text-sm text-linear-ink-muted">{step.title || step.description || "-"}</p>
+                  <div>
+                    {step.title ? <p className="text-sm font-medium text-linear-ink">{step.title}</p> : null}
+                    {step.description ? <div className={step.title ? "mt-1" : ""}>{renderStepText(step.description)}</div> : null}
+                    {!step.title && !step.description ? <p className="text-sm text-linear-ink-tertiary">-</p> : null}
+                  </div>
                 )}
 
                 {editable ? (
@@ -603,6 +619,12 @@ function QuickWarningList({ categories, editable, autoOpen, onAutoOpenChange, on
                     <button type="button" onClick={() => addImage(category.id, stepIndex)} className="flex h-8 items-center gap-1.5 rounded-md px-2 text-xs text-linear-primary hover:bg-linear-surface-3">
                       <Plus size={13} /> เพิ่มรูป
                     </button>
+                    <input
+                      value={step.videoUrl}
+                      onChange={(event) => updateItem(category.id, stepIndex, { videoUrl: event.target.value })}
+                      placeholder="URL วิดีโอ (ไม่บังคับ)"
+                      className="h-9 w-full rounded-md border border-linear-hairline-strong bg-linear-surface-1 px-3 text-xs text-linear-ink outline-none focus:border-linear-primary"
+                    />
                   </div>
                 ) : step.imageUrls.length > 0 ? (
                   <div className="mt-2 flex flex-wrap gap-2">
@@ -613,6 +635,11 @@ function QuickWarningList({ categories, editable, autoOpen, onAutoOpenChange, on
                       </GameinfoImagePreview>
                     ))}
                   </div>
+                ) : null}
+                {!editable && step.videoUrl ? (
+                  <a href={step.videoUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex h-9 items-center rounded-md border border-linear-hairline-strong px-3 text-xs font-medium text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink">
+                    ดูวิดีโอประกอบ
+                  </a>
                 ) : null}
               </div>
               {editable ? (

@@ -34,7 +34,11 @@ export async function PUT(request, { params }) {
     if (normalizeGameinfoDataMode(request.nextUrl.searchParams.get("mode")) === "idpass") {
       const data = await updateGameinfoModeData(Number(id), "idpass", (current) => ({
         ...current,
-        warning: { categories: body.categories, autoOpen: Boolean(body.autoOpen) },
+        warning: {
+          categories: body.categories,
+          autoOpen: body.autoOpen === undefined ? true : Boolean(body.autoOpen),
+          revision: new Date().toISOString(),
+        },
       }), { area: "warning", actor: auditActor(user) });
       return jsonOk({ warning: data.warning });
     }
