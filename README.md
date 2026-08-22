@@ -115,7 +115,106 @@ Admin จัดหน้าจอไว้ (เปิดตารางไหน
 - **มีระบบ login ของตัวเอง** — ตาราง `gamedb_users` + cookie `gamedb_session` แยกขาดจาก inblackm, รหัสผ่านแฮชด้วย scrypt, กัน brute force 8 ครั้ง/10 นาที
 - **ต่อหลายฐานข้อมูลได้** — Admin เพิ่ม connection PostgreSQL อื่นผ่านปุ่ม "ฐานข้อมูล" แล้วเลือกได้ต่อ query (รหัสผ่านถูกเข้ารหัส AES-256-GCM ด้วย `GAMEDB_ENC_KEY` ก่อนเก็บ)
 
+## รันแบบ local ด้วย Docker (ติดตั้งครั้งแรก)
+
+ทำตามลำดับนี้ตั้งแต่ต้นจนจบ จะได้ระบบที่ล็อกอินได้และมีข้อมูลเกมพร้อมใช้
+
+### 1. เตรียม `.env`
+
+```bash
+cp .env.example .env
+```
+
+แล้วแก้ 5 ค่านี้ก่อน — **ยังไม่แก้แล้วจะรันไม่ผ่าน**
+
+| ตัวแปร | ตั้งเป็นอะไร | ถ้าไม่แก้จะเจออะไร |
+|---|---|---|
+| `PG_PASSWORD` | รหัสอะไรก็ได้ เช่น `devpass` | `.env.example` เว้นว่างไว้ แต่ `docker-compose.yml` ใช้ `${PG_PASSWORD:-postgres}` — ค่าว่างจะถูกแทนด้วย `postgres` ทำให้ container ตั้งรหัสเป็น `postgres` ส่วนแอปส่งรหัสว่างไป → ต่อ DB ไม่ได้ |
+| `TURNSTILE_ENABLED` | `false` สำหรับ local | ค่าเริ่มต้นในไฟล์คือ `true` แต่ Site Key/Secret Key ว่าง ระบบจะปฏิเสธ login แบบ fail-closed ตอบ 503 `ระบบตรวจสอบความปลอดภัยยังไม่พร้อม` |
+| `SESSION_SECRET` | string ยาว ๆ อะไรก็ได้ | local ยังรันได้ แต่ production แอปจะไม่ยอมบูต |
+| `GAMEDB_ENC_KEY` | string ยาว ๆ อะไรก็ได้ | ใช้เข้ารหัสรหัสผ่าน connection — **ตั้งแล้วห้ามเปลี่ยน** ไม่งั้น connection ที่เพิ่มไว้แล้วถอดรหัสไม่ได้ |
+| `GAMEDB_ADMIN_PASSWORD` | รหัสสำหรับ admin คนแรก | ใช้ล็อกอินครั้งแรก จะถูก seed ให้อัตโนมัติตอนตาราง `gamedb_users` ยังว่าง |
+
+### 2. เปิดฐานข้อมูล
+
+```bash
+docker compose up -d
+```
+
+รอบแรกที่ volume ยังว่าง สคริปต์ใน `db-init/` จะรันให้อัตโนมัติตามลำดับ และสร้างครบทั้ง 3 ฐาน
+
+| ฐาน | ตาราง | ใช้ทำอะไร |
+|---|---|---|
+| `inblackm_system` | 15 | ตาราง `gamedb_*` ของ GameDB เอง — user, query, connection, layout |
+| `topup_inblackm` | 34 | ข้อมูล gameinfo (`game_list`, `gamelist_*`) และคิว itune (`projectm_itune_*`) |
+| `gameinfo` | 0 | ฐานเปล่า สร้างไว้เผื่ออนาคต — **ไม่ใช่**ฐานที่ saved connection ชื่อ `gameinfo` ชี้ไป (ดูขั้นที่ 5) |
+
+โครงสร้างทั้งหมดอ้างอิงจาก [`docs/database-erd.md`](docs/database-erd.md)
+
+> สคริปต์ใน `db-init/` รัน**เฉพาะตอน volume ว่างเปล่า**เท่านั้น ถ้าเคย `docker compose up` ไปแล้วก่อนหน้านี้ สคริปต์ที่เพิ่มใหม่จะไม่ถูกรัน ต้องล้าง volume ก่อน: `docker compose down -v` แล้ว `docker compose up -d` ใหม่ (**ลบข้อมูลทั้งหมด**)
+
+### 3. โหลดข้อมูลเกมตั้งต้น
+
+`db-init/` สร้างแค่โครงสร้าง ตารางยังว่าง ต้อง restore dump ที่อยู่ใน repo เพิ่ม
+
+```bash
+docker exec -i gamedb-postgres psql -U postgres -d topup_inblackm < db_topup_inblackm_20260731_114503_pgsql_data.sql
+```
+
+ได้ `game_list` 216 แถว และ `pack_list` 22 แถว
+
+จะเห็น error 2 แบบระหว่างรัน **ข้ามได้ ไม่กระทบข้อมูล**
+
+- `role "topup_inblackm" does not exist` — คำสั่ง `OWNER TO` จาก server เดิม
+- `unrecognized configuration parameter "transaction_timeout"` — dump มาจาก PostgreSQL 17 ส่วน container เป็น 16
+
+dump มี `DROP TABLE` อยู่ข้างใน จึงรันซ้ำได้โดยข้อมูลไม่ซ้ำซ้อน แต่หมายความว่า**การรันซ้ำจะล้าง `game_list` กับ `pack_list` ที่แก้ไว้ทิ้งด้วย**
+
+### 4. รันแอป
+
+```bash
+npm install
+npm run dev            # http://localhost:4183
+```
+
+ล็อกอินด้วย `GAMEDB_ADMIN_USERNAME` / `GAMEDB_ADMIN_PASSWORD` ที่ตั้งไว้ในขั้นที่ 1
+
+### 5. เพิ่ม saved connection ชื่อ `gameinfo`
+
+ขั้นตอนนี้**ห้ามข้าม** ถ้าจะใช้หน้า gameinfo หรือ itune — ไม่มี connection นี้แล้วทุก API จะตอบ 503 `ยังไม่ได้ตั้งค่าฐานข้อมูล "gameinfo"`
+
+ล็อกอินเป็น admin → ปุ่ม **🖥 ฐานข้อมูล** บนแถบด้านบน → กรอกฟอร์ม
+
+| ช่อง | ค่า |
+|---|---|
+| ชื่อ | `gameinfo` — ต้องตรงเป๊ะ โค้ดจับด้วยชื่อนี้ตรง ๆ |
+| Host | `localhost` |
+| Port | ตาม`PG_PORT` ใน `.env` (ค่าเริ่มต้น `5432`) |
+| Database | `topup_inblackm` — **ไม่ใช่** `gameinfo` |
+| Username | `postgres` |
+| Password | ค่า `PG_PASSWORD` ใน `.env` |
+| SSL | ปิด |
+
+กด **ทดสอบการเชื่อมต่อ** ให้ขึ้น `เชื่อมต่อได้: topup_inblackm ...` ก่อนแล้วค่อย **บันทึก**
+
+ต้องเพิ่มผ่านหน้าเว็บเท่านั้น **INSERT ลงตาราง `gamedb_connections` ตรง ๆ ไม่ได้** เพราะรหัสผ่านต้องถูกเข้ารหัส AES-256-GCM ด้วย `GAMEDB_ENC_KEY` ก่อนเก็บ
+
+ถ้าต้องการแก้ข้อมูลผ่านตาราง ให้เปิด **"อนุญาตให้แก้ไขข้อมูล"** ของ connection นี้ด้วย (ปิดไว้เป็นค่าเริ่มต้นทุกตัว)
+
+### แก้ปัญหาที่เจอบ่อย
+
+| อาการ | สาเหตุ |
+|---|---|
+| login แล้วได้ 503 `ระบบตรวจสอบความปลอดภัยยังไม่พร้อม` | `TURNSTILE_ENABLED=true` แต่ key ว่าง — ตั้งเป็น `false` (ขั้นที่ 1) |
+| `password authentication failed for user "postgres"` | `PG_PASSWORD` ว่างใน `.env` (ขั้นที่ 1) |
+| หน้า gameinfo ว่าง ไม่มีเกม | ยังไม่ได้ restore dump (ขั้นที่ 3) |
+| 503 `ยังไม่ได้ตั้งค่าฐานข้อมูล "gameinfo"` | ยังไม่ได้เพิ่ม saved connection หรือใส่ชื่อไม่ตรง (ขั้นที่ 5) |
+| `relation "gamelist_..." does not exist` | volume เก่าที่สร้างก่อนมีไฟล์ `db-init/003`, `004` — ต้อง `docker compose down -v` แล้วขึ้นใหม่ |
+| ตารางมีอยู่แต่ INSERT ฟ้อง `violates not-null constraint` | ตารางถูกสร้างจาก DDL เวอร์ชันเก่าที่ default ไม่ครบ — ล้าง volume แล้วขึ้นใหม่ |
+
 ## เริ่มใช้งาน (dev)
+
+ถ้ายังไม่มี PostgreSQL อยู่แล้ว ให้ทำตาม [รันแบบ local ด้วย Docker](#รันแบบ-local-ด้วย-docker-ติดตั้งครั้งแรก) ด้านบนแทน — หัวข้อนี้สรุปเฉพาะค่าใน `.env`
 
 ```bash
 npm install
