@@ -190,9 +190,19 @@ function ensureSchema(connection) {
           name        VARCHAR(80) NOT NULL,
           layout      JSONB NOT NULL DEFAULT '{"order": [], "hidden": []}'::jsonb,
           created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          UNIQUE (game_id, user_id, surface, name)
+          updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
+      `);
+      await client.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS gamelist_pack_view_presets_game_user_surface_name
+        ON gamelist_pack_view_presets (game_id, user_id, surface, name)
+      `);
+      await client.query(`
+        DROP INDEX IF EXISTS gamelist_pack_view_presets_game_user_name
+      `);
+      await client.query(`
+        ALTER TABLE gamelist_pack_view_presets
+        DROP CONSTRAINT IF EXISTS gamelist_pack_view_presets_game_id_user_id_surface_name_key
       `);
       await client.query(`
         CREATE INDEX IF NOT EXISTS gamelist_pack_view_presets_owner_idx

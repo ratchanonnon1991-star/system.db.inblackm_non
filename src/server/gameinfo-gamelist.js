@@ -250,12 +250,12 @@ export async function createGameListRow(fields, actor = null) {
 
 /** CSV batch insert: validation happens before this call and the transaction
  * guarantees an all-or-nothing result if any row fails at the database. */
-export async function createGameListRows(fieldsList, actor = null) {
-  const pool = await getReadyPool();
-  const client = await pool.connect();
+export async function createGameListRows(fieldsList, actor = null, transactionClient = null) {
+  const pool = transactionClient ? null : await getReadyPool();
+  const client = transactionClient || await pool.connect();
   const created = [];
   try {
-    await client.query("BEGIN");
+    if (!transactionClient) await client.query("BEGIN");
     for (const fields of fieldsList) {
       const result = await client.query(
         `INSERT INTO game_list (game, region, platform, server, vpn, channel, rank_stars, bot_manual, is_repeatable, link, remark)
@@ -287,13 +287,13 @@ export async function createGameListRows(fieldsList, actor = null) {
         client,
       });
     }
-    await client.query("COMMIT");
+    if (!transactionClient) await client.query("COMMIT");
     return created;
   } catch (error) {
-    await client.query("ROLLBACK");
+    if (!transactionClient) await client.query("ROLLBACK");
     throw error;
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
 }
 

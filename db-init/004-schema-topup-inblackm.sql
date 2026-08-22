@@ -162,9 +162,11 @@ CREATE TABLE IF NOT EXISTS gamelist_pack_view_presets (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
--- Live unique index is (game_id, user_id, name) -- surface is NOT part of it.
-CREATE UNIQUE INDEX IF NOT EXISTS gamelist_pack_view_presets_game_user_name
-  ON gamelist_pack_view_presets (game_id, user_id, name);
+CREATE UNIQUE INDEX IF NOT EXISTS gamelist_pack_view_presets_game_user_surface_name
+  ON gamelist_pack_view_presets (game_id, user_id, surface, name);
+DROP INDEX IF EXISTS gamelist_pack_view_presets_game_user_name;
+ALTER TABLE gamelist_pack_view_presets
+  DROP CONSTRAINT IF EXISTS gamelist_pack_view_presets_game_id_user_id_surface_name_key;
 
 CREATE TABLE IF NOT EXISTS gamelist_publisher_catalog (
   publisher_key text PRIMARY KEY,
