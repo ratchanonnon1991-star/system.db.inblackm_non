@@ -43,7 +43,7 @@ function sanitizeData(raw) {
     },
     links: normalizeGamelistLinks(Array.isArray(source.links) ? source.links : []),
     tutorial: { categories: normalizeGamelistTutorialCategories(source.tutorial) },
-    warning: { categories: normalizeGamelistTutorialCategories(source.warning) },
+    warning: { categories: normalizeGamelistTutorialCategories(source.warning), autoOpen: Boolean(source.warning?.autoOpen) },
     packs: {
       currencies: sanitizeCurrencies(source.packs?.currencies),
       computedColumns: Array.isArray(source.packs?.computedColumns) ? source.packs.computedColumns : [],

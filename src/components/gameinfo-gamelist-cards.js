@@ -20,7 +20,7 @@ import {
   X,
 } from "lucide-react";
 import GameinfoDatasetToggle from "./gameinfo-dataset-toggle";
-import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
+import GameinfoTutorialButton, { GameinfoDetailsButton } from "./gameinfo-tutorial-modal";
 import {
   GAMEINFO_STATUSES,
   filterGameinfoRows,
@@ -588,7 +588,7 @@ function GameCard({ row, editable, canReport, lang, dataMode, favoriteBusy, onTo
         <Link href={actionHref} className={`inline-flex h-10 min-w-0 flex-1 items-center justify-center rounded-lg px-3 text-xs font-medium text-white ${editable ? "bg-linear-primary hover:bg-linear-primary-hover" : "bg-linear-ink"}`}>
           {editable ? "เปิดจัดการ" : "เปิดดู"}
         </Link>
-        <GameinfoTutorialButton gameId={row.id} gameName={row.game} editable={false} hasData={row.hasTutorial} dataMode={dataMode} compact />
+        <GameinfoDetailsButton gameId={row.id} gameName={row.game} editable={false} hasTutorial={row.hasTutorial} hasVpnNote={row.hasVpnNote} dataMode={dataMode} compact />
         <GameinfoTutorialButton gameId={row.id} gameName={row.game} editable={false} hasData={row.hasWarning} variant="warning" dataMode={dataMode} compact />
       </div>
     </article>

@@ -177,13 +177,14 @@ export async function getGamelistWarning(gameId) {
       `SELECT warning_data FROM gamelist_tutorials WHERE game_id = $1`,
       [gameId]
     );
-    return { categories: normalizeCategories(result.rows[0]?.warning_data) };
+    const raw = result.rows[0]?.warning_data;
+    return { categories: normalizeCategories(raw), autoOpen: Boolean(raw?.autoOpen) };
   } finally {
     client.release();
   }
 }
 
-export async function saveGamelistWarning(gameId, categories, transactionClient = null, actor = null) {
+export async function saveGamelistWarning(gameId, categories, transactionClient = null, actor = null, options = {}) {
   const pool = await getReadyPool();
   const client = transactionClient || await pool.connect();
   try {
@@ -194,18 +195,18 @@ export async function saveGamelistWarning(gameId, categories, transactionClient 
       `INSERT INTO gamelist_tutorials (game_id, data, warning_data, updated_at)
        VALUES ($1, '{"categories":[]}'::jsonb, $2, NOW())
        ON CONFLICT (game_id) DO UPDATE SET warning_data = $2, updated_at = NOW()`,
-      [gameId, JSON.stringify({ categories: normalized })]
+      [gameId, JSON.stringify({ categories: normalized, autoOpen: Boolean(options.autoOpen) })]
     );
     await recordGameinfoAudit({
       gameId,
       area: "warning",
       actor,
       before: previous.rows[0]?.warning_data ?? null,
-      after: { categories: normalized },
+      after: { categories: normalized, autoOpen: Boolean(options.autoOpen) },
       client,
     });
     if (!transactionClient) await client.query("COMMIT");
-    return { categories: normalized };
+    return { categories: normalized, autoOpen: Boolean(options.autoOpen) };
   } catch (error) {
     if (!transactionClient) await client.query("ROLLBACK");
     throw error;
@@ -214,9 +215,7 @@ export async function saveGamelistWarning(gameId, categories, transactionClient 
   }
 }
 
-/** VPN usage note for the same game — opened once, right when staff flips
- * the VPN toggle from NO to YES (see the VpnBadge onToggle handler in
- * gameinfo-gamelist-table.js). Shares the tutorial row only as storage;
+/** Optional VPN usage note for the same game. Shares the tutorial row only as storage;
  * vpn_data is loaded, saved, and displayed independently, same idea as
  * warning_data above. */
 export async function getGamelistVpnNote(gameId) {
@@ -374,6 +373,25 @@ export async function listGamelistWarningPresence() {
       SELECT game_id FROM gamelist_tutorials
       WHERE EXISTS (
         SELECT 1 FROM jsonb_array_elements(COALESCE(warning_data->'categories', '[]'::jsonb)) c
+        WHERE jsonb_array_length(COALESCE(c->'steps', '[]'::jsonb)) > 0
+      )
+    `);
+    const out = {};
+    for (const row of result.rows) out[row.game_id] = true;
+    return out;
+  } finally {
+    client.release();
+  }
+}
+
+export async function listGamelistVpnNotePresence() {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT game_id FROM gamelist_tutorials
+      WHERE EXISTS (
+        SELECT 1 FROM jsonb_array_elements(COALESCE(vpn_data->'categories', '[]'::jsonb)) c
         WHERE jsonb_array_length(COALESCE(c->'steps', '[]'::jsonb)) > 0
       )
     `);

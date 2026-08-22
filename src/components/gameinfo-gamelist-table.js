@@ -35,7 +35,7 @@ import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
 import { gameinfoGameHref, gameinfoPacksHref } from "@/lib/gameinfo-data-mode";
 import GameinfoMemoryInput from "./gameinfo-memory-input";
 import GameinfoNameInput from "./gameinfo-name-input";
-import GameinfoTutorialButton, { TutorialModal } from "./gameinfo-tutorial-modal";
+import GameinfoTutorialButton, { GameinfoDetailsButton } from "./gameinfo-tutorial-modal";
 import GameinfoImagePickerModal from "./gameinfo-image-picker-modal";
 import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoCsvImportActions from "./gameinfo-csv-import-actions";
@@ -99,10 +99,6 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
   const [selectedGameIds, setSelectedGameIds] = useState(new Set());
   const [statusError, setStatusError] = useState("");
   const [updatingStatus, setUpdatingStatus] = useState(false);
-  // Auto-opened once, right when a row's VPN toggle flips NO -> YES (see
-  // onVpnToggledOn below) — there is no separate button for this, so it's a
-  // single shared modal instance keyed by game id rather than one per row.
-  const [vpnNoteGameId, setVpnNoteGameId] = useState(null);
   const selectionDragRef = useRef({ active: false, selecting: true });
 
   // "บันทึกแล้ว" text auto-collapses 3s after each save — see the matching
@@ -505,7 +501,6 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
     onSetGameStatus: (gameId, status) => {
       return setSelectedGamesStatus(status === "offline", [gameId]);
     },
-    onVpnToggledOn: setVpnNoteGameId,
   };
 
   const rangeStart = filteredRows.length === 0 ? 0 : clampedPage * pageSize + 1;
@@ -853,18 +848,6 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
         </div>
       )}
 
-      {vpnNoteGameId != null &&
-        typeof document !== "undefined" &&
-        createPortal(
-          <TutorialModal
-            gameId={vpnNoteGameId}
-            gameName={rows.find((r) => r.id === vpnNoteGameId)?.game || ""}
-            editable={editable}
-            variant="vpn"
-            onClose={() => setVpnNoteGameId(null)}
-          />,
-          document.body
-        )}
     </>
   );
 }
@@ -940,7 +923,6 @@ function RowCells({
   onReorderByNumber,
   onSetGameStatus,
   onLinksSaved,
-  onVpnToggledOn,
 }) {
   const editingName = isEditing(row.id, "game");
   return (
@@ -1035,7 +1017,6 @@ function RowCells({
         onToggle={() => {
           const next = row.vpn === "YES" ? "NO" : "YES";
           updateField(row.id, "vpn", next);
-          if (next === "YES" && !isTempId(row.id)) onVpnToggledOn(row.id);
         }}
       />
 
@@ -1078,11 +1059,12 @@ function RowCells({
       {/* Always rendered regardless of editable — role "user" (and the
           "หน้าเว็บ" preview) can still open it, just read-only inside. */}
       <span className="flex justify-start gap-1">
-        <GameinfoTutorialButton
+        <GameinfoDetailsButton
           gameId={row.id}
           gameName={row.game}
           editable={editable}
-          hasData={row.hasTutorial}
+          hasTutorial={row.hasTutorial}
+          hasVpnNote={row.hasVpnNote}
           disabled={isTempId(row.id)}
           dataMode={dataMode}
         />

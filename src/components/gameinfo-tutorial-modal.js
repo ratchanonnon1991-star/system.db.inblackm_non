@@ -99,8 +99,22 @@ export default function GameinfoTutorialButton({
   compact = false,
 }) {
   const isWarning = variant === "warning";
-  const [open, setOpen] = useState(Boolean(autoOpen && hasData));
-  const buttonLabel = isWarning ? "ข้อควรระวัง" : "Tutorial";
+  const isVpn = variant === "vpn";
+  const [open, setOpen] = useState(false);
+  const buttonLabel = isWarning ? "ข้อควรระวัง" : isVpn ? "โน้ต VPN" : "Tutorial";
+  const autoOpenKey = `gameinfo-warning-seen:${dataMode}:${gameId}`;
+
+  useEffect(() => {
+    if (!isWarning || !autoOpen || !hasData) return;
+    try {
+      if (window.sessionStorage.getItem(autoOpenKey)) return;
+      window.sessionStorage.setItem(autoOpenKey, "1");
+    } catch {
+      // Storage can be unavailable in strict privacy modes; opening still works.
+    }
+    const timer = window.setTimeout(() => setOpen(true), 0);
+    return () => window.clearTimeout(timer);
+  }, [autoOpen, autoOpenKey, hasData, isWarning]);
 
   // View-only (role "user") gets nothing to click if there's no tutorial to
   // show — editable users always keep the button so they can add one.
@@ -113,10 +127,13 @@ export default function GameinfoTutorialButton({
         onClick={(e) => {
           e.stopPropagation();
           if (disabled) return;
+          if (isWarning) {
+            try { window.sessionStorage.setItem(autoOpenKey, "1"); } catch {}
+          }
           setOpen(true);
         }}
         disabled={disabled}
-        aria-label={isWarning ? "ข้อควรระวังของเกม" : undefined}
+        aria-label={isWarning ? "ข้อควรระวังของเกม" : isVpn ? "โน้ต VPN ของเกม" : undefined}
         className={`border text-xs font-medium disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent ${compact
           ? isWarning
             ? "flex h-10 w-12 items-center justify-center rounded-lg border-linear-primary text-linear-primary hover:bg-linear-primary/10"
@@ -125,7 +142,7 @@ export default function GameinfoTutorialButton({
             ? "rounded-md border-red-600 bg-red-600 px-2 py-1 text-white hover:bg-red-700"
             : "rounded-md border-linear-hairline-strong px-2 py-1 text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink"
         }`}
-        title={disabled ? `บันทึกเกมนี้ก่อนถึงจะใส่${buttonLabel}ได้` : isWarning ? "ข้อควรระวังของเกม" : "วิธีเติมเกม"}
+        title={disabled ? `บันทึกเกมนี้ก่อนถึงจะใส่${buttonLabel}ได้` : isWarning ? "ข้อควรระวังของเกม" : isVpn ? "โน้ตเกี่ยวกับการใช้ VPN" : "วิธีเติมเกม"}
       >
         {compact && isWarning ? <TriangleAlert size={17} /> : buttonLabel}
       </button>
@@ -146,22 +163,71 @@ export default function GameinfoTutorialButton({
   );
 }
 
+export function GameinfoDetailsButton({
+  gameId,
+  gameName,
+  editable,
+  hasTutorial,
+  hasVpnNote,
+  disabled,
+  dataMode = "uid",
+  compact = false,
+}) {
+  const [open, setOpen] = useState(false);
+  if (!editable && !hasTutorial && !hasVpnNote) return null;
+  const tabs = [
+    { variant: "tutorial", label: "วิธีเติม", hasData: hasTutorial },
+    { variant: "vpn", label: "VPN", hasData: hasVpnNote },
+  ];
+  const visibleTabs = editable ? tabs : tabs.filter((tab) => tab.hasData);
+  const initialVariant = visibleTabs[0]?.variant || "tutorial";
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          if (!disabled) setOpen(true);
+        }}
+        disabled={disabled}
+        className={`border border-linear-hairline-strong text-xs font-medium text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink disabled:cursor-not-allowed disabled:opacity-60 ${compact
+          ? "flex h-10 min-w-20 items-center justify-center rounded-lg px-3"
+          : "rounded-md px-2 py-1"
+        }`}
+        title={disabled ? "บันทึกเกมนี้ก่อนเพิ่มข้อมูล" : "วิธีเติมและข้อมูลเกม"}
+      >
+        ข้อมูลเกม
+      </button>
+      {open && typeof document !== "undefined" && createPortal(
+        <TutorialModal
+          gameId={gameId}
+          gameName={gameName}
+          editable={editable}
+          variant={initialVariant}
+          contentVariants={visibleTabs}
+          dataMode={dataMode}
+          onClose={() => setOpen(false)}
+        />,
+        document.body
+      )}
+    </>
+  );
+}
+
 const TUTORIAL_MODAL_VARIANTS = {
   tutorial: { endpoint: "tutorial", dataKey: "tutorial", contentLabel: "tutorial", title: "Tutorial", noun: " tutorial" },
   warning: { endpoint: "warning", dataKey: "warning", contentLabel: "ข้อควรระวัง", title: "ข้อควรระวัง", noun: "ข้อควรระวัง" },
-  // Opened once, right when staff flips the VPN toggle from NO to YES — see
-  // the onVpnToggledOn callback in gameinfo-gamelist-table.js. No trigger
-  // button of its own (unlike tutorial/warning): re-toggling NO then YES is
-  // the only way back in if it's closed unfilled.
   vpn: { endpoint: "vpn-note", dataKey: "vpnNote", contentLabel: "รายละเอียด VPN", title: "รายละเอียด VPN", noun: "รายละเอียด VPN" },
 };
 
-export function TutorialModal({ gameId, gameName, editable, variant, dataMode = "uid", onClose }) {
+export function TutorialModal({ gameId, gameName, editable, variant, contentVariants = null, dataMode = "uid", onClose }) {
   // Category delete-confirm / empty-state copy and the endpoint/response key
   // to talk to — tutorial and warning keep their exact original strings
   // (including tutorial's leading-space " tutorial"), vpn is the only new
   // branch.
-  const meta = TUTORIAL_MODAL_VARIANTS[variant] || TUTORIAL_MODAL_VARIANTS.tutorial;
+  const [activeVariant, setActiveVariant] = useState(variant);
+  const meta = TUTORIAL_MODAL_VARIANTS[activeVariant] || TUTORIAL_MODAL_VARIANTS.tutorial;
   const endpoint = `/api/gameinfo/gamelist/${gameId}/${meta.endpoint}${dataMode === "idpass" ? "?mode=idpass" : ""}`;
   const dataKey = meta.dataKey;
   const contentLabel = meta.contentLabel;
@@ -172,6 +238,7 @@ export function TutorialModal({ gameId, gameName, editable, variant, dataMode = 
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
+  const [warningAutoOpen, setWarningAutoOpen] = useState(false);
   const closeTimerRef = useRef(null);
   // Snapshot of the last loaded/saved categories, to detect unsaved edits
   // when the user tries to close — kept as a JSON string ref (not state) so
@@ -189,7 +256,9 @@ export function TutorialModal({ gameId, gameName, editable, variant, dataMode = 
           setCategories(data[dataKey].categories);
           setCategoryNames(data.categoryNames || []);
           setActiveCatId(data[dataKey].categories[0]?.id ?? null);
-          savedSnapshotRef.current = JSON.stringify(data[dataKey].categories);
+          const nextAutoOpen = activeVariant === "warning" && Boolean(data[dataKey].autoOpen);
+          setWarningAutoOpen(nextAutoOpen);
+          savedSnapshotRef.current = JSON.stringify({ categories: data[dataKey].categories, autoOpen: nextAutoOpen });
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : `โหลด${contentLabel}ไม่สำเร็จ`);
@@ -200,12 +269,28 @@ export function TutorialModal({ gameId, gameName, editable, variant, dataMode = 
     return () => {
       cancelled = true;
     };
-  }, [contentLabel, dataKey, endpoint]);
+  }, [activeVariant, contentLabel, dataKey, endpoint]);
+
+  function isDirty() {
+    return editable && savedSnapshotRef.current !== null && JSON.stringify({ categories, autoOpen: activeVariant === "warning" && warningAutoOpen }) !== savedSnapshotRef.current;
+  }
 
   function requestClose() {
-    const dirty = editable && savedSnapshotRef.current !== null && JSON.stringify(categories) !== savedSnapshotRef.current;
-    if (dirty && !window.confirm("ยังไม่ได้บันทึกการแก้ไข ต้องการปิดโดยไม่บันทึกหรือไม่?")) return;
+    if (isDirty() && !window.confirm("ยังไม่ได้บันทึกการแก้ไข ต้องการปิดโดยไม่บันทึกหรือไม่?")) return;
     onClose();
+  }
+
+  function switchContentVariant(nextVariant) {
+    if (nextVariant === activeVariant) return;
+    if (isDirty() && !window.confirm("ยังไม่ได้บันทึกการแก้ไข ต้องการเปลี่ยนแท็บโดยไม่บันทึกหรือไม่?")) return;
+    setActiveVariant(nextVariant);
+    setLoading(true);
+    setCategories([]);
+    setCategoryNames([]);
+    setActiveCatId(null);
+    setError("");
+    setSavedAt(null);
+    savedSnapshotRef.current = null;
   }
 
   const { dialogRef, titleId, onBackdropMouseDown } = useGameinfoDialog({ onRequestClose: requestClose });
@@ -262,11 +347,13 @@ export function TutorialModal({ gameId, gameName, editable, variant, dataMode = 
       const data = await apiJson(endpoint, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ categories }),
+        body: JSON.stringify({ categories, ...(activeVariant === "warning" ? { autoOpen: warningAutoOpen } : {}) }),
         fallbackError: `บันทึก${contentLabel}ไม่สำเร็จ`,
       });
       setCategories(data[dataKey].categories);
-      savedSnapshotRef.current = JSON.stringify(data[dataKey].categories);
+      const nextAutoOpen = activeVariant === "warning" && Boolean(data[dataKey].autoOpen);
+      setWarningAutoOpen(nextAutoOpen);
+      savedSnapshotRef.current = JSON.stringify({ categories: data[dataKey].categories, autoOpen: nextAutoOpen });
       setSavedAt(Date.now());
       closeTimerRef.current = window.setTimeout(onClose, 900);
     } catch (e) {
@@ -290,7 +377,7 @@ export function TutorialModal({ gameId, gameName, editable, variant, dataMode = 
       >
         <div className="flex items-center justify-between border-b border-linear-hairline px-5 py-3">
           <h2 id={titleId} className="text-sm font-semibold text-linear-ink">
-            {meta.title}: {gameName}
+            {contentVariants ? "วิธีเติมและข้อมูลเกม" : meta.title}: {gameName}
           </h2>
           <button
             type="button"
@@ -302,7 +389,27 @@ export function TutorialModal({ gameId, gameName, editable, variant, dataMode = 
           </button>
         </div>
 
-        {!loading && (
+        {contentVariants?.length > 1 ? (
+          <div className="flex gap-1 border-b border-linear-hairline bg-linear-surface-2 px-3 pt-2" role="tablist" aria-label="ประเภทข้อมูลเกม">
+            {contentVariants.map((tab) => (
+              <button
+                key={tab.variant}
+                type="button"
+                role="tab"
+                aria-selected={activeVariant === tab.variant}
+                onClick={() => switchContentVariant(tab.variant)}
+                className={`rounded-t-md border border-b-0 px-4 py-2 text-xs font-medium ${activeVariant === tab.variant
+                  ? "border-linear-hairline-strong bg-linear-surface-1 text-linear-ink"
+                  : "border-transparent text-linear-ink-tertiary hover:bg-linear-surface-3"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {!loading && activeVariant !== "warning" && (
           <CategoryTabs
             categories={categories}
             activeCatId={activeCatId}
@@ -316,6 +423,14 @@ export function TutorialModal({ gameId, gameName, editable, variant, dataMode = 
         <div className="flex-1 overflow-y-auto px-5 py-4">
           {loading ? (
             <p className="py-8 text-center text-sm text-linear-ink-tertiary">กำลังโหลด...</p>
+          ) : activeVariant === "warning" ? (
+            <QuickWarningList
+              categories={categories}
+              editable={editable}
+              autoOpen={warningAutoOpen}
+              onAutoOpenChange={setWarningAutoOpen}
+              onCategoriesChange={setCategories}
+            />
           ) : categories.length === 0 ? (
             <p className="rounded-lg border border-dashed border-linear-hairline-strong p-8 text-center text-sm text-linear-ink-tertiary">
               {editable
@@ -367,6 +482,154 @@ export function TutorialModal({ gameId, gameName, editable, variant, dataMode = 
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function QuickWarningList({ categories, editable, autoOpen, onAutoOpenChange, onCategoriesChange }) {
+  const items = categories.flatMap((category) =>
+    category.steps.map((step, stepIndex) => ({ category, step, stepIndex }))
+  );
+
+  function addItem() {
+    const next = emptyStep();
+    if (categories.length === 0) {
+      onCategoriesChange([{ id: genId("warning"), name: "ข้อควรระวัง", steps: [next] }]);
+      return;
+    }
+    onCategoriesChange(categories.map((category, index) => index === 0
+      ? { ...category, steps: [...category.steps, next] }
+      : category
+    ));
+  }
+
+  function updateItem(categoryId, stepIndex, patch) {
+    onCategoriesChange(categories.map((category) => category.id === categoryId
+      ? { ...category, steps: category.steps.map((step, index) => index === stepIndex ? { ...step, ...patch } : step) }
+      : category
+    ));
+  }
+
+  function updateImage(categoryId, stepIndex, imageIndex, imageUrl) {
+    const item = categories.find((category) => category.id === categoryId)?.steps[stepIndex];
+    if (!item) return;
+    const imageUrls = [...item.imageUrls];
+    imageUrls[imageIndex] = imageUrl;
+    updateItem(categoryId, stepIndex, { imageUrls });
+  }
+
+  function addImage(categoryId, stepIndex) {
+    const item = categories.find((category) => category.id === categoryId)?.steps[stepIndex];
+    if (!item) return;
+    updateItem(categoryId, stepIndex, { imageUrls: [...item.imageUrls, ""] });
+  }
+
+  function removeImage(categoryId, stepIndex, imageIndex) {
+    const item = categories.find((category) => category.id === categoryId)?.steps[stepIndex];
+    if (!item) return;
+    updateItem(categoryId, stepIndex, { imageUrls: item.imageUrls.filter((_, index) => index !== imageIndex) });
+  }
+
+  function removeItem(categoryId, stepIndex) {
+    if (!window.confirm("ลบข้อความเตือนนี้ใช่ไหม?")) return;
+    onCategoriesChange(categories
+      .map((category) => category.id === categoryId
+        ? { ...category, steps: category.steps.filter((_, index) => index !== stepIndex) }
+        : category
+      )
+      .filter((category) => category.steps.length > 0)
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-3xl">
+      {editable ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-linear-hairline bg-linear-surface-2 p-3">
+          <div>
+            <p className="text-sm font-medium text-linear-ink">ข้อความเตือนแบบสั้น</p>
+            <p className="text-xs text-linear-ink-tertiary">ใช้ข้อความที่อ่านจบได้ทันที ไม่ต้องใส่ขั้นตอนหรือรูปภาพ</p>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-linear-ink-muted">
+            <input type="checkbox" checked={autoOpen} onChange={(event) => onAutoOpenChange(event.target.checked)} className="accent-linear-primary" />
+            เด้งเมื่อเปิดหน้าเกม
+          </label>
+        </div>
+      ) : null}
+
+      {items.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-linear-hairline-strong p-8 text-center text-sm text-linear-ink-tertiary">
+          {editable ? "ยังไม่มีข้อความเตือน" : "ไม่มีข้อควรระวังสำหรับเกมนี้"}
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {items.map(({ category, step, stepIndex }, index) => (
+            <li key={`${category.id}-${step.id}`} className="flex items-start gap-3 rounded-lg border border-linear-hairline bg-linear-surface-2 p-3">
+              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-500/10 text-[11px] font-semibold text-red-500">{index + 1}</span>
+              <div className="min-w-0 flex-1">
+                {editable ? (
+                  <input
+                    value={step.title || step.description}
+                    onChange={(event) => updateItem(category.id, stepIndex, { title: event.target.value })}
+                    placeholder="เช่น ห้ามเปิด VPN ระหว่างชำระเงิน"
+                    className="h-9 w-full rounded-md border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm text-linear-ink outline-none focus:border-linear-primary"
+                  />
+                ) : (
+                  <p className="text-sm text-linear-ink-muted">{step.title || step.description || "-"}</p>
+                )}
+
+                {editable ? (
+                  <div className="mt-2 space-y-2">
+                    {step.imageUrls.map((imageUrl, imageIndex) => (
+                      <div key={imageIndex} className="flex items-center gap-2">
+                        {imageUrl ? (
+                          <GameinfoImagePreview src={imageUrl} alt="">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={imageUrl} alt="" className="h-9 w-9 shrink-0 rounded-md object-cover" />
+                          </GameinfoImagePreview>
+                        ) : (
+                          <span className="h-9 w-9 shrink-0 rounded-md border border-dashed border-linear-hairline-strong" />
+                        )}
+                        <input
+                          value={imageUrl}
+                          onChange={(event) => updateImage(category.id, stepIndex, imageIndex, event.target.value)}
+                          placeholder="URL รูปภาพ"
+                          className="h-9 min-w-0 flex-1 rounded-md border border-linear-hairline-strong bg-linear-surface-1 px-3 text-xs text-linear-ink outline-none focus:border-linear-primary"
+                        />
+                        <button type="button" onClick={() => removeImage(category.id, stepIndex, imageIndex)} aria-label="ลบรูป" title="ลบรูป" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-linear-ink-tertiary hover:bg-red-500/10 hover:text-red-500">
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                    <button type="button" onClick={() => addImage(category.id, stepIndex)} className="flex h-8 items-center gap-1.5 rounded-md px-2 text-xs text-linear-primary hover:bg-linear-surface-3">
+                      <Plus size={13} /> เพิ่มรูป
+                    </button>
+                  </div>
+                ) : step.imageUrls.length > 0 ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {step.imageUrls.map((imageUrl, imageIndex) => (
+                      <GameinfoImagePreview key={`${imageUrl}-${imageIndex}`} src={imageUrl} alt="">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={imageUrl} alt="" className="h-16 w-16 rounded-md object-cover" />
+                      </GameinfoImagePreview>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+              {editable ? (
+                <button type="button" onClick={() => removeItem(category.id, stepIndex)} aria-label="ลบข้อความเตือน" title="ลบข้อความเตือน" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-linear-ink-tertiary hover:bg-red-500/10 hover:text-red-500">
+                  <Trash2 size={14} />
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {editable ? (
+        <button type="button" onClick={addItem} className="mt-3 flex h-9 items-center gap-2 rounded-md border border-linear-hairline-strong px-3 text-xs font-medium text-linear-primary hover:bg-linear-surface-2">
+          <Plus size={14} /> เพิ่มข้อความเตือน
+        </button>
+      ) : null}
     </div>
   );
 }

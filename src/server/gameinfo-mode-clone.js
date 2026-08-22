@@ -37,7 +37,7 @@ async function writeUid(gameId, data, scope, actor, client) {
     await updateGameListRow(gameId, data.fields, client, actor);
     await saveGamelistLinks(gameId, data.links, client, actor);
     await saveGamelistTutorial(gameId, data.tutorial.categories, client, actor);
-    await saveGamelistWarning(gameId, data.warning.categories, client, actor);
+    await saveGamelistWarning(gameId, data.warning.categories, client, actor, { autoOpen: data.warning.autoOpen });
   }
   await saveGamelistPacks(gameId, {
     ...data.packs,

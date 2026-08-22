@@ -12,7 +12,7 @@ import {
 } from "@/lib/gameinfo-game-manager";
 import GameinfoNameInput from "./gameinfo-name-input";
 import GameinfoImagePickerModal from "./gameinfo-image-picker-modal";
-import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
+import GameinfoTutorialButton, { GameinfoDetailsButton } from "./gameinfo-tutorial-modal";
 import { GameinfoGameLinksButton } from "./gameinfo-game-links";
 import GameinfoTagsInput from "./gameinfo-tags-input";
 import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
@@ -24,6 +24,7 @@ function fieldsFromRow(row) {
     platform: row.platform || "",
     server: row.server || "",
     botManual: row.botManual || "",
+    vpn: row.vpn === "YES" ? "YES" : "NO",
   };
 }
 
@@ -102,12 +103,21 @@ export default function GameinfoGameManager({ row, existingNames, tagSuggestions
     setNotice("");
     const modeQuery = dataMode === "idpass" ? "?mode=idpass" : "";
     try {
-      if (JSON.stringify(draft) !== JSON.stringify(saved)) {
+      const gameUpdate = buildGameinfoUpdate(draft, dataMode);
+      if (JSON.stringify(gameUpdate) !== JSON.stringify(buildGameinfoUpdate(saved, dataMode))) {
         await apiJson(`/api/gameinfo/gamelist/${row.id}${modeQuery}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(buildGameinfoUpdate(draft, dataMode)),
+          body: JSON.stringify(gameUpdate),
           fallbackError: "บันทึกข้อมูลเกมไม่สำเร็จ",
+        });
+      }
+      if (dataMode === "idpass" && draft.vpn !== saved.vpn) {
+        await apiJson(`/api/gameinfo/gamelist/${row.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ vpn: draft.vpn }),
+          fallbackError: "บันทึกสถานะ VPN ไม่สำเร็จ",
         });
       }
       if (status !== savedStatus) {
@@ -210,6 +220,12 @@ export default function GameinfoGameManager({ row, existingNames, tagSuggestions
           <Field label="Region"><input value={draft.region} onChange={(event) => update("region", event.target.value)} className={inputClass} /></Field>
           <Field label="Platform"><input value={draft.platform} onChange={(event) => update("platform", event.target.value)} className={inputClass} /></Field>
           <Field label="Server"><input value={draft.server} onChange={(event) => update("server", event.target.value)} className={inputClass} /></Field>
+          <Field label="VPN">
+            <select value={draft.vpn} onChange={(event) => update("vpn", event.target.value)} className={inputClass}>
+              <option value="NO">ไม่ใช้ VPN</option>
+              <option value="YES">ใช้ VPN</option>
+            </select>
+          </Field>
           <Field label="Bot / Manual"><input value={draft.botManual} onChange={(event) => update("botManual", event.target.value)} className={inputClass} /></Field>
           <Field label="หมวดหมู่">
             <GameinfoTagsInput
@@ -239,7 +255,7 @@ export default function GameinfoGameManager({ row, existingNames, tagSuggestions
           <div className="flex flex-wrap items-center gap-2 sm:col-span-2 xl:col-span-5">
             <span className="mr-1 text-xs font-medium text-linear-ink-tertiary">เนื้อหาและลิงก์</span>
             <GameinfoGameLinksButton gameId={row.id} gameName={draft.game} links={links} editable dataMode={dataMode} onSaved={setLinks} />
-            <GameinfoTutorialButton gameId={row.id} gameName={draft.game} editable hasData={row.hasTutorial} dataMode={dataMode} />
+            <GameinfoDetailsButton gameId={row.id} gameName={draft.game} editable hasTutorial={row.hasTutorial} hasVpnNote={row.hasVpnNote} dataMode={dataMode} />
             <GameinfoTutorialButton gameId={row.id} gameName={draft.game} editable hasData={row.hasWarning} variant="warning" dataMode={dataMode} />
             <span className="text-xs text-linear-ink-tertiary">ส่วนนี้บันทึกทันทีในหน้าต่างของตัวเอง</span>
           </div>

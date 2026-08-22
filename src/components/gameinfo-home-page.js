@@ -9,6 +9,7 @@ import {
 } from "@/server/gameinfo-gamelist-packs";
 import {
   listGamelistTutorialPresence,
+  listGamelistVpnNotePresence,
   listGamelistWarningPresence,
 } from "@/server/gameinfo-gamelist-tutorial";
 import { listGamelistImageByGame } from "@/server/gameinfo-gamelist-image";
@@ -50,7 +51,7 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
   let publisherImages = {};
   let loadError = null;
   try {
-    const [gameListRows, channelsByGame, packCountByGame, packServiceByGame, tutorialPresence, warningPresence, imageByGame, linksByGame, tagsByGame, publishersByGame, loadedTagImages, loadedPublisherImages, openReports, favoriteIds] =
+    const [gameListRows, channelsByGame, packCountByGame, packServiceByGame, tutorialPresence, warningPresence, vpnNotePresence, imageByGame, linksByGame, tagsByGame, publishersByGame, loadedTagImages, loadedPublisherImages, openReports, favoriteIds] =
       await Promise.all([
         listGameListRows(),
         listGamelistChannelsByGame(),
@@ -58,6 +59,7 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
         listGamelistPackServiceByGame(),
         listGamelistTutorialPresence(),
         listGamelistWarningPresence(),
+        listGamelistVpnNotePresence(),
         listGamelistImageByGame(),
         listGamelistLinksByGame(),
         listGamelistTagsByGame(),
@@ -106,6 +108,7 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
           : "online",
       hasTutorial: dataMode === "idpass" ? Boolean(modeData?.tutorial?.categories?.some((category) => category.steps?.length)) : Boolean(tutorialPresence[r.id]),
       hasWarning: dataMode === "idpass" ? Boolean(modeData?.warning?.categories?.some((category) => category.steps?.length)) : Boolean(warningPresence[r.id]),
+      hasVpnNote: Boolean(vpnNotePresence[r.id]),
       image: imageByGame[r.id] || "",
       links: dataMode === "idpass" ? modeData?.links || [] : Object.prototype.hasOwnProperty.call(linksByGame, r.id)
         ? linksByGame[r.id]

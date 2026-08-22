@@ -3,6 +3,7 @@ import {
   listGamelistWarningPresence,
   saveGamelistWarning,
 } from "@/server/gameinfo-gamelist-tutorial.js";
+import { readFileSync } from "node:fs";
 import { log, reset, setResponder } from "@/lib/db.js";
 
 let pass = 0;
@@ -36,6 +37,7 @@ setResponder((text) => {
 });
 const warning = await getGamelistWarning(5);
 check("warning content loads independently from tutorial data", warning.categories[0].name, "ก่อนเติม");
+check("legacy warning data defaults to no automatic popup", warning.autoOpen, false);
 ok("warning schema is added compatibly to the existing tutorial table", log.some((entry) => /ADD COLUMN IF NOT EXISTS warning_data/.test(entry.text)));
 
 reset();
@@ -53,6 +55,9 @@ setResponder((text) => {
   return null;
 });
 check("warning presence supports list-page buttons", await listGamelistWarningPresence(), { 5: true, 9: true });
+
+const modalSource = readFileSync(new URL("../src/components/gameinfo-tutorial-modal.js", import.meta.url), "utf8");
+ok("quick warnings support optional images", modalSource.includes("เพิ่มรูป") && modalSource.includes("updateImage(category.id"));
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);

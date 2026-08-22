@@ -21,7 +21,7 @@ import { evaluateGameinfoComputedColumn } from "@/lib/gameinfo-computed-evaluato
 import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
 import GameinfoRatePanel, { useGameinfoRates } from "./gameinfo-rate-panel";
 import GameinfoImagePreview from "./gameinfo-image-preview";
-import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
+import GameinfoTutorialButton, { GameinfoDetailsButton } from "./gameinfo-tutorial-modal";
 import { GameinfoGameLinkButtons } from "./gameinfo-game-links";
 import {
   GameinfoPackColumnControls,
@@ -124,11 +124,12 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
             {/* Always view-only here regardless of role — editing the
                 tutorial happens from the "⋮" menu / list table, not this
                 page (see gameinfo-gamelist-table.js). */}
-            <GameinfoTutorialButton
+            <GameinfoDetailsButton
               gameId={row.id}
               gameName={row.game}
               editable={false}
-              hasData={row.hasTutorial}
+              hasTutorial={row.hasTutorial}
+              hasVpnNote={row.hasVpnNote}
               dataMode={dataMode}
             />
             <GameinfoTutorialButton
@@ -137,7 +138,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
               editable={false}
               hasData={row.hasWarning}
               variant="warning"
-              autoOpen
+              autoOpen={row.warningAutoOpen}
               dataMode={dataMode}
             />
           </div>

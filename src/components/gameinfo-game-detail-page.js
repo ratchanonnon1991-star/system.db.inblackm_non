@@ -9,7 +9,7 @@ import {
   listGamelistChannelsByGame,
   listGamelistPackLanguages,
 } from "@/server/gameinfo-gamelist-packs";
-import { getGamelistTutorial, getGamelistWarning } from "@/server/gameinfo-gamelist-tutorial";
+import { getGamelistTutorial, getGamelistVpnNote, getGamelistWarning } from "@/server/gameinfo-gamelist-tutorial";
 import { getGamelistImage } from "@/server/gameinfo-gamelist-image";
 import { getGamelistLinks, legacyGamelistLinks } from "@/server/gameinfo-gamelist-links";
 import { getGameinfoFormulaVariables } from "@/server/gameinfo-formula-variables";
@@ -86,11 +86,12 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         main: [...new Set(flatModePacks.flatMap((pack) => pack.channelsMain || []))],
         secondary: [...new Set(flatModePacks.flatMap((pack) => pack.channelsSecondary || []))],
       };
-      const [channelsByGame, allRows, tutorial, warning, image, storedLinks, variableData, tagsByGame, publishersByGame, loadedReports, sharedChannels, languages, loadedTagImages, loadedPublisherImages] = await Promise.all([
+      const [channelsByGame, allRows, tutorial, warning, vpnNote, image, storedLinks, variableData, tagsByGame, publishersByGame, loadedReports, sharedChannels, languages, loadedTagImages, loadedPublisherImages] = await Promise.all([
         listGamelistChannelsByGame(),
         listGameListRows(),
         dataMode === "idpass" ? Promise.resolve(modeData.tutorial) : getGamelistTutorial(row.id),
         dataMode === "idpass" ? Promise.resolve(modeData.warning) : getGamelistWarning(row.id),
+        getGamelistVpnNote(row.id),
         getGamelistImage(row.id),
         dataMode === "idpass" ? Promise.resolve({ exists: true, links: modeData.links }) : getGamelistLinks(row.id),
         getGameinfoFormulaVariables(row.id),
@@ -120,6 +121,8 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         orderPosition: orderPosition > 0 ? orderPosition : null,
         hasTutorial: tutorial.categories.some((c) => c.steps.length > 0),
         hasWarning: warning.categories.some((c) => c.steps.length > 0),
+        warningAutoOpen: Boolean(warning.autoOpen),
+        hasVpnNote: vpnNote.categories.some((c) => c.steps.length > 0),
         image: image.imageUrl,
         links: storedLinks.exists ? storedLinks.links : legacyGamelistLinks(row.link),
         packDisabledCount,

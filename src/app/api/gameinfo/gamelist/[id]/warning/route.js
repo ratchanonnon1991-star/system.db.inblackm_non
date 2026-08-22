@@ -34,11 +34,11 @@ export async function PUT(request, { params }) {
     if (normalizeGameinfoDataMode(request.nextUrl.searchParams.get("mode")) === "idpass") {
       const data = await updateGameinfoModeData(Number(id), "idpass", (current) => ({
         ...current,
-        warning: { categories: body.categories },
+        warning: { categories: body.categories, autoOpen: Boolean(body.autoOpen) },
       }), { area: "warning", actor: auditActor(user) });
       return jsonOk({ warning: data.warning });
     }
-    const warning = await saveGamelistWarning(Number(id), body.categories, null, auditActor(user));
+    const warning = await saveGamelistWarning(Number(id), body.categories, null, auditActor(user), { autoOpen: body.autoOpen });
     return jsonOk({ warning });
   } catch (error) {
     return handleApiError(error, "บันทึกข้อควรระวังไม่สำเร็จ");
