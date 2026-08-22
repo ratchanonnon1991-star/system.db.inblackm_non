@@ -48,6 +48,10 @@ function ensureSchema(connection) {
         ALTER TABLE gamelist_tutorials
         ADD COLUMN IF NOT EXISTS warning_data JSONB NOT NULL DEFAULT '{"categories":[]}'::jsonb
       `);
+      await client.query(`
+        ALTER TABLE gamelist_tutorials
+        ADD COLUMN IF NOT EXISTS vpn_data JSONB NOT NULL DEFAULT '{"categories":[]}'::jsonb
+      `);
     } finally {
       client.release();
     }
@@ -207,6 +211,77 @@ export async function saveGamelistWarning(gameId, categories, transactionClient 
     throw error;
   } finally {
     if (!transactionClient) client.release();
+  }
+}
+
+/** VPN usage note for the same game — opened once, right when staff flips
+ * the VPN toggle from NO to YES (see the VpnBadge onToggle handler in
+ * gameinfo-gamelist-table.js). Shares the tutorial row only as storage;
+ * vpn_data is loaded, saved, and displayed independently, same idea as
+ * warning_data above. */
+export async function getGamelistVpnNote(gameId) {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `SELECT vpn_data FROM gamelist_tutorials WHERE game_id = $1`,
+      [gameId]
+    );
+    return { categories: normalizeCategories(result.rows[0]?.vpn_data) };
+  } finally {
+    client.release();
+  }
+}
+
+export async function saveGamelistVpnNote(gameId, categories, transactionClient = null, actor = null) {
+  const pool = await getReadyPool();
+  const client = transactionClient || await pool.connect();
+  try {
+    if (!transactionClient) await client.query("BEGIN");
+    const normalized = normalizeCategories({ categories });
+    const previous = await client.query(`SELECT vpn_data FROM gamelist_tutorials WHERE game_id = $1`, [gameId]);
+    await client.query(
+      `INSERT INTO gamelist_tutorials (game_id, data, vpn_data, updated_at)
+       VALUES ($1, '{"categories":[]}'::jsonb, $2, NOW())
+       ON CONFLICT (game_id) DO UPDATE SET vpn_data = $2, updated_at = NOW()`,
+      [gameId, JSON.stringify({ categories: normalized })]
+    );
+    await recordGameinfoAudit({
+      gameId,
+      area: "vpn_note",
+      actor,
+      before: previous.rows[0]?.vpn_data ?? null,
+      after: { categories: normalized },
+      client,
+    });
+    if (!transactionClient) await client.query("COMMIT");
+    return { categories: normalized };
+  } catch (error) {
+    if (!transactionClient) await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    if (!transactionClient) client.release();
+  }
+}
+
+/** Every distinct category name used across every game's VPN note — same
+ * "type it once, reuse everywhere" idea as
+ * listAllGamelistWarningCategories() above. */
+export async function listAllGamelistVpnNoteCategories() {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`SELECT vpn_data FROM gamelist_tutorials`);
+    const all = new Set();
+    for (const row of result.rows) {
+      for (const category of row.vpn_data?.categories ?? []) {
+        const name = String(category?.name ?? "").trim();
+        if (name) all.add(name);
+      }
+    }
+    return [...all].sort((a, b) => a.localeCompare(b, "th"));
+  } finally {
+    client.release();
   }
 }
 

@@ -6,7 +6,6 @@ import {
   listGamelistChannelsByGame,
   listGamelistPackCountByGame,
   listGamelistPackServiceByGame,
-  listGamelistVpnByGame,
 } from "@/server/gameinfo-gamelist-packs";
 import {
   listGamelistTutorialPresence,
@@ -51,11 +50,10 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
   let publisherImages = {};
   let loadError = null;
   try {
-    const [gameListRows, channelsByGame, vpnByGame, packCountByGame, packServiceByGame, tutorialPresence, warningPresence, imageByGame, linksByGame, tagsByGame, publishersByGame, loadedTagImages, loadedPublisherImages, openReports, favoriteIds] =
+    const [gameListRows, channelsByGame, packCountByGame, packServiceByGame, tutorialPresence, warningPresence, imageByGame, linksByGame, tagsByGame, publishersByGame, loadedTagImages, loadedPublisherImages, openReports, favoriteIds] =
       await Promise.all([
         listGameListRows(),
         listGamelistChannelsByGame(),
-        listGamelistVpnByGame(),
         listGamelistPackCountByGame(),
         listGamelistPackServiceByGame(),
         listGamelistTutorialPresence(),
@@ -99,7 +97,6 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
       ...r,
       ...(dataMode === "idpass" ? modeFields : {}),
       channels: dataMode === "idpass" ? modeChannels : channelsByGame[r.id] || { main: [], secondary: [] },
-      vpnComputed: dataMode === "idpass" ? (flatModePacks.some((pack) => pack.country) ? "YES" : "NO") : vpnByGame[r.id] ? "YES" : "NO",
       packCount: dataMode === "idpass" ? flatModePacks.length : packCountByGame[r.id] || 0,
       packDisabledCount: disabledPackCount,
       serviceStatus: !r.serviceEnabled

@@ -66,8 +66,8 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
     <div>
       {/* Compact view card — icon, bold title, one-line Region/Platform/
           Server/VPN summary, pill button to the game's top-up website. */}
-      <div className="mb-8 flex items-center gap-4 rounded-xl border border-linear-hairline bg-linear-surface-1 p-4">
-        <div className="flex h-[126px] w-[126px] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-linear-primary/10">
+      <div className="mb-8 flex flex-col items-start gap-4 rounded-xl border border-linear-hairline bg-linear-surface-1 p-4 sm:flex-row sm:items-center">
+        <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-linear-primary/10 sm:h-[126px] sm:w-[126px]">
           {row.image ? (
             <GameinfoImagePreview src={row.image} alt="" wrapperClassName="block h-full w-full">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -104,7 +104,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
             <span>Region: {row.region || "-"}</span>
             <span>Platform: {row.platform || "-"}</span>
             <span>Server: {row.server || "-"}</span>
-            <span>VPN: {row.vpnComputed || "NO"}</span>
+            <span>VPN: {row.vpn}</span>
             <span>Bot/Manual: {row.botManual || "-"}</span>
           </p>
           <ChannelSummary channels={row.channels} className="mt-1.5" />
@@ -153,7 +153,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
         />
       </div>
 
-      <div className="mb-3 flex items-center justify-between gap-2">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-semibold text-linear-ink">แพ็ก</h2>
         <div className="flex items-center gap-2">
           <GameinfoFormulaModeToggle

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Copy, Download, Image as ImageIcon, Languages, Pencil, Plus, Trash2, X } from "lucide-react";
+import { CheckCircle2, ChevronDown, Copy, Download, Image as ImageIcon, Languages, Pencil, Plus, Trash2, X } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -106,7 +106,6 @@ export default function GameinfoPackEditor({
   // each time, restarting this effect.
   useEffect(() => {
     if (!savedAt) return;
-    setSavedVisible(true);
     const hideTimer = setTimeout(() => setSavedVisible(false), 3000);
     return () => clearTimeout(hideTimer);
   }, [savedAt]);
@@ -365,6 +364,7 @@ export default function GameinfoPackEditor({
           if (!(p.price ?? "").trim()) invalid.add(`${p.id}:price`);
           if (!(p.amountChargedFee ?? "").trim()) invalid.add(`${p.id}:amountChargedFee`);
           if (p.channelsMain.length === 0) invalid.add(`${p.id}:channelsMain`);
+          if (!(p.country ?? "").trim()) invalid.add(`${p.id}:country`);
         }
       }
     }
@@ -374,11 +374,12 @@ export default function GameinfoPackEditor({
   function save() {
     setError("");
     setSavedAt(null);
+    setSavedVisible(false);
     const invalid = validatePacks();
     if (invalid.size > 0) {
       setInvalidFields(invalid);
       setError(
-        "กรุณากรอกข้อมูลให้ครบก่อนบันทึก: ชื่อ pack, ราคา, ยอดที่กด + fee, ช่องทางหลัก (ช่องที่ไฮไลต์สีแดง)"
+        "กรุณากรอกข้อมูลให้ครบก่อนบันทึก: ชื่อ pack, ราคา, ยอดที่กด + fee, ช่องทางหลัก, ประเทศ (ช่องที่ไฮไลต์สีแดง)"
       );
       // The floating บันทึก/ยกเลิก bar is fixed to the bottom of the
       // viewport, so if the user is scrolled up while a pack further down
@@ -419,6 +420,7 @@ export default function GameinfoPackEditor({
         setCostProfiles(nextCostProfiles);
         setSavedCostProfiles(nextCostProfiles);
         setAuditSource("editor");
+        setSavedVisible(true);
         setSavedAt(Date.now());
         router.refresh();
       } catch (e) {
@@ -435,6 +437,7 @@ export default function GameinfoPackEditor({
     setInvalidFields(new Set());
     setError("");
     setSavedAt(null);
+    setSavedVisible(false);
     setAuditSource("editor");
   }
 
@@ -558,7 +561,7 @@ export default function GameinfoPackEditor({
                     ["amount_charged_fee", "ยอดที่กดรวม fee", "ใช่"],
                     ["channel_main", "ช่องทางหลัก", "ใช่"],
                     ["channel_secondary", "ช่องทางรอง", "ไม่"],
-                    ["country", "ประเทศสำหรับ pack ที่ต้องใช้ VPN", "ไม่"],
+                    ["country", "ประเทศของ pack", "ใช่"],
                   ].map(([column, description, required]) => (
                     <tr key={column} className="border-t border-linear-hairline">
                       <td className="py-1 pr-3"><code>{column}</code></td>
@@ -887,9 +890,8 @@ export default function GameinfoPackEditor({
       </section>
 
       {/* Same floating pill pattern as the game list table's ยกเลิก/เพิ่มเกม/
-          บันทึก bar (see gameinfo-gamelist-table.js) — ยกเลิก/บันทึก sit as
-          plain text in fixed-width side slots so the pill stays symmetric,
-          "กลับไปหน้าแก้" is the solid capsule popping out of the middle. Extra
+          บันทึก bar (see gameinfo-gamelist-table.js). Save becomes the solid
+          primary action only while changes exist; navigation stays neutral. Extra
           bottom padding on the page (see packs/page.js) keeps this from
           covering the last rows of a long pack table. The error/success
           message is mirrored here (not just left in the page's normal
@@ -899,7 +901,7 @@ export default function GameinfoPackEditor({
           save button just silently did nothing. */}
       <div className="fixed bottom-6 left-1/2 z-30 flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 flex-col items-center gap-2">
         {error && (
-          <p className="max-w-full rounded-full border border-red-500/40 bg-linear-surface-1 px-3 py-1.5 text-center text-xs text-red-400 shadow-lg">
+          <p role="alert" className="max-w-full rounded-full border border-linear-danger/40 bg-linear-surface-1 px-3 py-1.5 text-center text-xs text-linear-danger shadow-lg">
             {error}
           </p>
         )}
@@ -909,7 +911,9 @@ export default function GameinfoPackEditor({
               savedVisible ? "max-h-8 opacity-100" : "max-h-0 opacity-0"
             }`}
           >
-            <span className="text-xs text-linear-ink">บันทึกแล้ว</span>
+            <span className="flex items-center gap-1.5 text-xs text-linear-success" role="status">
+              <CheckCircle2 size={15} aria-hidden="true" /> บันทึกเรียบร้อย
+            </span>
           </div>
         )}
         <div className="flex h-11 items-center rounded-full border border-linear-hairline bg-linear-surface-1 shadow-lg">
@@ -934,7 +938,7 @@ export default function GameinfoPackEditor({
               if (!confirmGameinfoNavigation()) return;
               router.replace(backHref);
             }}
-            className="-my-0.5 flex h-10 items-center whitespace-nowrap rounded-full bg-linear-primary px-4 text-sm font-medium text-white shadow-md hover:bg-linear-primary-hover"
+            className="-my-0.5 flex h-10 items-center whitespace-nowrap rounded-full border border-linear-hairline-strong bg-linear-surface-1 px-4 text-sm font-medium text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink"
           >
             ย้อนกลับ
           </button>
@@ -948,7 +952,7 @@ export default function GameinfoPackEditor({
               type="button"
               onClick={save}
               disabled={pending || !dirty}
-              className="w-full whitespace-nowrap py-2 text-center text-sm font-medium text-linear-primary hover:text-linear-primary-hover disabled:opacity-50"
+              className="h-9 w-[86px] whitespace-nowrap rounded-full bg-linear-primary px-3 text-center text-sm font-medium text-white hover:bg-linear-primary-hover disabled:opacity-50"
             >
               {pending ? "กำลังบันทึก..." : "บันทึก"}
             </button>
@@ -1179,6 +1183,7 @@ function CategoryBlock({
                   price: invalidFields.has(`${pack.id}:price`),
                   amountChargedFee: invalidFields.has(`${pack.id}:amountChargedFee`),
                   channelsMain: invalidFields.has(`${pack.id}:channelsMain`),
+                  country: invalidFields.has(`${pack.id}:country`),
                 }}
                 onUpdate={(patch) => onUpdatePack(pkIdx, patch)}
                 onDuplicate={() => onDuplicatePack(pkIdx)}
@@ -1349,7 +1354,8 @@ function PackEditorColumn({
       <PackCell
         editing={editing}
         value={pack.country ?? ""}
-        placeholder="ประเทศ (กรณี VPN)"
+        placeholder="ประเทศ"
+        invalid={invalid.country}
         onStartEdit={onStartEdit}
         onCommit={onCommit}
       >

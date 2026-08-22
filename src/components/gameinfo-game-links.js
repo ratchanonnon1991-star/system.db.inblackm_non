@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { ExternalLink, Plus, Trash2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import { useGameinfoDialog } from "@/lib/use-gameinfo-dialog";
 
 function newLink() {
   return {
@@ -26,6 +27,7 @@ export function GameinfoGameLinksButton({
   const [draft, setDraft] = useState(links);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const { dialogRef, titleId, onBackdropMouseDown } = useGameinfoDialog({ open, onRequestClose: requestClose });
 
   function show() {
     if (disabled) return;
@@ -77,16 +79,17 @@ export function GameinfoGameLinksButton({
         {editable ? `จัดการลิงก์${links.length ? ` (${links.length})` : ""}` : `เลือกลิงก์ (${links.length})`}
       </button>
       {open && typeof document !== "undefined" && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onMouseDown={requestClose}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onMouseDown={onBackdropMouseDown}>
           <div
+            ref={dialogRef}
             role="dialog"
             aria-modal="true"
-            aria-label={`ลิงก์ของ ${gameName}`}
-            onMouseDown={(event) => event.stopPropagation()}
+            aria-labelledby={titleId}
+            tabIndex={-1}
             className="w-full max-w-xl rounded-lg border border-linear-hairline bg-linear-surface-1 text-linear-ink shadow-2xl"
           >
             <div className="flex items-center justify-between border-b border-linear-hairline px-4 py-3">
-              <h2 className="text-sm font-semibold text-linear-ink">ลิงก์เว็บ: {gameName}</h2>
+              <h2 id={titleId} className="text-sm font-semibold text-linear-ink">ลิงก์เว็บ: {gameName}</h2>
               <button type="button" onClick={requestClose} className="text-xs text-linear-ink-tertiary hover:text-linear-ink">ปิด</button>
             </div>
             <div className="max-h-[65vh] space-y-2 overflow-y-auto p-4">
@@ -127,7 +130,7 @@ export function GameinfoGameLinksButton({
               {(editable ? draft : links).length === 0 ? (
                 <p className="py-6 text-center text-sm text-linear-ink-tertiary">ยังไม่มีลิงก์สำหรับเกมนี้</p>
               ) : null}
-              {error ? <p role="alert" className="text-xs text-red-400">{error}</p> : null}
+              {error ? <p role="alert" className="text-xs text-linear-danger">{error}</p> : null}
             </div>
             {editable ? (
               <div className="flex items-center gap-2 border-t border-linear-hairline px-4 py-3">

@@ -111,7 +111,8 @@ CREATE TABLE IF NOT EXISTS gamelist_tutorials (
   data         jsonb       NOT NULL DEFAULT '{"steps": []}'::jsonb,
   created_at   timestamptz NOT NULL DEFAULT now(),
   updated_at   timestamptz NOT NULL DEFAULT now(),
-  warning_data jsonb       NOT NULL DEFAULT '{"categories": []}'::jsonb
+  warning_data jsonb       NOT NULL DEFAULT '{"categories": []}'::jsonb,
+  vpn_data     jsonb       NOT NULL DEFAULT '{"categories": []}'::jsonb
 );
 
 -- ---------------------------------------------------------------------------

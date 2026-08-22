@@ -925,28 +925,6 @@ export async function listAllGamelistChannels() {
   }
 }
 
-/** { [gameId]: true } for games where at least one pack has a `country`
- * value set — `country` is only meaningful on VPN-required packs (see the
- * pack editor's vpnOn-gated country field), so its presence is used as the
- * source of truth for a "VPN" column instead of game_list's own free-text
- * `vpn` field (which this replaces). Absent from the map = "NO". */
-export async function listGamelistVpnByGame() {
-  const pool = await getReadyPool();
-  const client = await pool.connect();
-  try {
-    const result = await client.query(
-      `SELECT DISTINCT game_id FROM gamelist_packs
-       WHERE pack_id != $1 AND NULLIF(TRIM(data->>'country'), '') IS NOT NULL`,
-      [COMPUTED_SENTINEL]
-    );
-    const out = {};
-    for (const row of result.rows) out[row.game_id] = true;
-    return out;
-  } finally {
-    client.release();
-  }
-}
-
 /** Cleanup hook for deleteGameListRow() — game_list isn't ours to put an FK
  * CASCADE on, so this has to be called explicitly. */
 export async function deleteGamelistPacksForGame(gameId, transactionClient = null) {

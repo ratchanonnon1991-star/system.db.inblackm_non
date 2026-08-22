@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Image as ImageIcon } from "lucide-react";
+import { CheckCircle2, Image as ImageIcon } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import {
   buildGameinfoStatusUpdate,
@@ -153,7 +153,7 @@ export default function GameinfoGameManager({ row, existingNames, tagSuggestions
       setSavedImage(image);
       setSavedTagImages(tagImages);
       setSavedPublisherImages(publisherImages);
-      setNotice("บันทึกแล้ว");
+      setNotice("บันทึกเรียบร้อย");
       router.refresh();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "บันทึกข้อมูลเกมไม่สำเร็จ");
@@ -172,9 +172,13 @@ export default function GameinfoGameManager({ row, existingNames, tagSuggestions
           <h1 className="text-xl font-semibold tracking-[-0.3px] text-linear-ink">จัดการข้อมูลเกม</h1>
         </div>
         <div className="flex items-center gap-2">
-          {notice ? <span className="text-xs text-emerald-700">{notice}</span> : null}
+          {notice ? (
+            <span className="flex items-center gap-1.5 text-xs text-linear-success" role="status">
+              <CheckCircle2 size={15} aria-hidden="true" /> {notice}
+            </span>
+          ) : null}
           <button type="button" onClick={cancel} disabled={!dirty || saving} className="h-10 rounded-lg border border-linear-hairline-strong px-4 text-sm text-linear-ink-muted disabled:opacity-40">ยกเลิก</button>
-          <button type="submit" form="gameinfo-manage-form" disabled={!dirty || duplicate || saving} className="h-10 rounded-lg bg-linear-ink px-4 text-sm font-medium text-linear-canvas disabled:opacity-40">{saving ? "กำลังบันทึก…" : "บันทึก"}</button>
+          <button type="submit" form="gameinfo-manage-form" disabled={!dirty || duplicate || saving} className="h-10 rounded-lg bg-linear-primary px-4 text-sm font-medium text-white hover:bg-linear-primary-hover disabled:opacity-40">{saving ? "กำลังบันทึก…" : "บันทึก"}</button>
         </div>
       </div>
 
@@ -242,8 +246,8 @@ export default function GameinfoGameManager({ row, existingNames, tagSuggestions
         </div>
       </form>
 
-      {duplicate ? <p role="alert" className="mt-3 text-xs text-linear-primary">มีเกมชื่อนี้อยู่แล้ว กรุณาใช้ชื่ออื่น</p> : null}
-      {error ? <p role="alert" className="mt-3 text-xs text-linear-primary">{error}</p> : null}
+      {duplicate ? <p role="alert" className="mt-3 text-xs text-linear-danger">มีเกมชื่อนี้อยู่แล้ว กรุณาใช้ชื่ออื่น</p> : null}
+      {error ? <p role="alert" className="mt-3 text-xs text-linear-danger">{error}</p> : null}
 
       {pickerOpen ? <GameinfoImagePickerModal value={image} onChange={setImage} onClose={() => setPickerOpen(false)} /> : null}
     </section>

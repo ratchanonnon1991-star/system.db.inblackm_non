@@ -59,7 +59,7 @@ export default function GameinfoRatePanel({ rates, loading, error, onRefresh }) 
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
         </button>
       </div>
-      {error ? <p className="mb-2 text-xs text-red-400">{error}</p> : null}
+      {error ? <p role="alert" className="mb-2 text-xs text-linear-danger">{error}</p> : null}
       <div className="grid gap-2 sm:grid-cols-2">
         {rates.length === 0 ? (
           <p className="text-xs text-linear-ink-tertiary">{loading ? "กำลังโหลดค่าเงิน..." : "ยังไม่มีข้อมูลค่าเงิน"}</p>
@@ -94,7 +94,7 @@ function RateCard({ rate }) {
       <div className="border-t border-linear-hairline bg-linear-surface-2 px-3 pb-2 pt-1">
         <RateSparkline history={rate.history || []} />
         <p className="mt-1 text-[10px] text-linear-ink-tertiary">{rate.source || "ไม่ทราบแหล่งข้อมูล"} · {fetchedAt}</p>
-        {rate.error ? <p className="mt-1 text-[10px] text-amber-300">{rate.error}</p> : null}
+        {rate.error ? <p className="mt-1 text-[10px] text-linear-warning">{rate.error}</p> : null}
       </div>
     </details>
   );

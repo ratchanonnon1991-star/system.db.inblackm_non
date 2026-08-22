@@ -17,6 +17,20 @@ import { deleteGameinfoModeData } from "@/server/gameinfo-mode-data";
 
 const CONNECTION_NAME = "gameinfo";
 
+// `vpn` is a plain varchar in Topup Panel's table and years of free-text entry
+// left it holding "NO VPN", "NO_VPN", "OFF", "VPN" and a handful of values that
+// belong to another field entirely ("UID", "ITUNES", "Google", "IOS - Stock").
+// The field is now a two-state toggle, so every read and write funnels through
+// here: only an explicit VPN-on marker becomes "YES", anything else is "NO".
+// Normalizing on read means the legacy rows render correctly with no migration
+// and no ALTER TABLE (which this service could not run anyway).
+const VPN_ON = new Set(["VPN", "YES", "ON", "TRUE", "1"]);
+
+export function normalizeVpn(value) {
+  const token = String(value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return VPN_ON.has(token) ? "YES" : "NO";
+}
+
 function createHttpError(message, status) {
   const err = new Error(message);
   err.status = status;
@@ -90,7 +104,7 @@ function mapRow(row) {
     region: row.region,
     platform: row.platform || "",
     server: row.server || "",
-    vpn: row.vpn,
+    vpn: normalizeVpn(row.vpn),
     channel: row.channel,
     rankStars: row.rank_stars,
     botManual: row.bot_manual,
@@ -118,6 +132,7 @@ const FIELD_COLUMNS = {
 
 function normalizeFieldValue(field, value) {
   if (field === "isRepeatable") return Boolean(value);
+  if (field === "vpn") return normalizeVpn(value);
   if (field === "rankStars") {
     const n = Number(value);
     return Number.isFinite(n) ? Math.max(0, Math.min(5, Math.round(n))) : 0;
@@ -212,7 +227,7 @@ export async function createGameListRow(fields, actor = null) {
         normalizeFieldValue("region", fields.region),
         fields.platform ? String(fields.platform) : null,
         fields.server ? String(fields.server) : null,
-        normalizeFieldValue("vpn", fields.vpn || "NO VPN"),
+        normalizeFieldValue("vpn", fields.vpn),
         normalizeFieldValue("channel", fields.channel),
         normalizeFieldValue("rankStars", fields.rankStars),
         normalizeFieldValue("botManual", fields.botManual),
@@ -251,7 +266,7 @@ export async function createGameListRows(fieldsList, actor = null) {
           normalizeFieldValue("region", fields.region),
           fields.platform ? String(fields.platform) : null,
           fields.server ? String(fields.server) : null,
-          normalizeFieldValue("vpn", "NO VPN"),
+          normalizeFieldValue("vpn", "NO"),
           "",
           0,
           normalizeFieldValue("botManual", fields.botManual),

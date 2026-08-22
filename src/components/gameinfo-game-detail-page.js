@@ -8,7 +8,6 @@ import {
   listAllGamelistChannels,
   listGamelistChannelsByGame,
   listGamelistPackLanguages,
-  listGamelistVpnByGame,
 } from "@/server/gameinfo-gamelist-packs";
 import { getGamelistTutorial, getGamelistWarning } from "@/server/gameinfo-gamelist-tutorial";
 import { getGamelistImage } from "@/server/gameinfo-gamelist-image";
@@ -87,8 +86,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         main: [...new Set(flatModePacks.flatMap((pack) => pack.channelsMain || []))],
         secondary: [...new Set(flatModePacks.flatMap((pack) => pack.channelsSecondary || []))],
       };
-      const [vpnByGame, channelsByGame, allRows, tutorial, warning, image, storedLinks, variableData, tagsByGame, publishersByGame, loadedReports, sharedChannels, languages, loadedTagImages, loadedPublisherImages] = await Promise.all([
-        listGamelistVpnByGame(),
+      const [channelsByGame, allRows, tutorial, warning, image, storedLinks, variableData, tagsByGame, publishersByGame, loadedReports, sharedChannels, languages, loadedTagImages, loadedPublisherImages] = await Promise.all([
         listGamelistChannelsByGame(),
         listGameListRows(),
         dataMode === "idpass" ? Promise.resolve(modeData.tutorial) : getGamelistTutorial(row.id),
@@ -118,7 +116,6 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
       row = {
         ...row,
         ...(modeData?.fields || {}),
-        vpnComputed: dataMode === "idpass" ? (flatModePacks.some((pack) => pack.country) ? "YES" : "NO") : vpnByGame[row.id] ? "YES" : "NO",
         channels: dataMode === "idpass" ? modeChannels : channelsByGame[row.id] || { main: [], secondary: [] },
         orderPosition: orderPosition > 0 ? orderPosition : null,
         hasTutorial: tutorial.categories.some((c) => c.steps.length > 0),
@@ -161,12 +158,12 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
 
   return (
     <div className={`${manageMode ? "" : "mx-auto max-w-7xl"} px-4 py-8`}>
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <GameinfoBackLink
           className="flex items-center gap-1 text-sm text-linear-primary hover:underline"
           href={manageMode ? viewHref : gameinfoListHref(lang, dataMode)}
         />
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {editableRole ? (
             <Link href={manageMode ? viewHref : manageHref} className="rounded-md border border-linear-hairline-strong px-3 py-1.5 text-xs font-medium text-linear-ink-muted hover:bg-linear-surface-2">
               {manageMode ? "ดูหน้าผู้ใช้" : "จัดการเกม"}

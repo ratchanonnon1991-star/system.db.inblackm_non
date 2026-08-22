@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bold, ChevronLeft, ChevronRight, Link as LinkIcon, Plus, Trash2, TriangleAlert, Type, X } from "lucide-react";
+import { Bold, CheckCircle2, ChevronLeft, ChevronRight, Link as LinkIcon, Plus, Trash2, TriangleAlert, Type, X } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import { useGameinfoDialog } from "@/lib/use-gameinfo-dialog";
 import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoMemoryInput from "./gameinfo-memory-input";
 
@@ -145,11 +146,25 @@ export default function GameinfoTutorialButton({
   );
 }
 
-function TutorialModal({ gameId, gameName, editable, variant, dataMode = "uid", onClose }) {
-  const isWarning = variant === "warning";
-  const endpoint = `/api/gameinfo/gamelist/${gameId}/${isWarning ? "warning" : "tutorial"}${dataMode === "idpass" ? "?mode=idpass" : ""}`;
-  const dataKey = isWarning ? "warning" : "tutorial";
-  const contentLabel = isWarning ? "ข้อควรระวัง" : "tutorial";
+const TUTORIAL_MODAL_VARIANTS = {
+  tutorial: { endpoint: "tutorial", dataKey: "tutorial", contentLabel: "tutorial", title: "Tutorial", noun: " tutorial" },
+  warning: { endpoint: "warning", dataKey: "warning", contentLabel: "ข้อควรระวัง", title: "ข้อควรระวัง", noun: "ข้อควรระวัง" },
+  // Opened once, right when staff flips the VPN toggle from NO to YES — see
+  // the onVpnToggledOn callback in gameinfo-gamelist-table.js. No trigger
+  // button of its own (unlike tutorial/warning): re-toggling NO then YES is
+  // the only way back in if it's closed unfilled.
+  vpn: { endpoint: "vpn-note", dataKey: "vpnNote", contentLabel: "รายละเอียด VPN", title: "รายละเอียด VPN", noun: "รายละเอียด VPN" },
+};
+
+export function TutorialModal({ gameId, gameName, editable, variant, dataMode = "uid", onClose }) {
+  // Category delete-confirm / empty-state copy and the endpoint/response key
+  // to talk to — tutorial and warning keep their exact original strings
+  // (including tutorial's leading-space " tutorial"), vpn is the only new
+  // branch.
+  const meta = TUTORIAL_MODAL_VARIANTS[variant] || TUTORIAL_MODAL_VARIANTS.tutorial;
+  const endpoint = `/api/gameinfo/gamelist/${gameId}/${meta.endpoint}${dataMode === "idpass" ? "?mode=idpass" : ""}`;
+  const dataKey = meta.dataKey;
+  const contentLabel = meta.contentLabel;
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState([]);
   const [categoryNames, setCategoryNames] = useState([]);
@@ -157,7 +172,7 @@ function TutorialModal({ gameId, gameName, editable, variant, dataMode = "uid", 
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
-  const dialogRef = useRef(null);
+  const closeTimerRef = useRef(null);
   // Snapshot of the last loaded/saved categories, to detect unsaved edits
   // when the user tries to close — kept as a JSON string ref (not state) so
   // updating it never triggers a re-render on its own.
@@ -193,14 +208,9 @@ function TutorialModal({ gameId, gameName, editable, variant, dataMode = "uid", 
     onClose();
   }
 
-  useEffect(() => {
-    function onKey(e) {
-      if (e.key === "Escape") requestClose();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categories, editable]);
+  const { dialogRef, titleId, onBackdropMouseDown } = useGameinfoDialog({ onRequestClose: requestClose });
+
+  useEffect(() => () => window.clearTimeout(closeTimerRef.current), []);
 
   function updateCategory(catId, patch) {
     setCategories((prev) => prev.map((c) => (c.id === catId ? { ...c, ...patch } : c)));
@@ -212,7 +222,7 @@ function TutorialModal({ gameId, gameName, editable, variant, dataMode = "uid", 
   }
   function removeCategory(catId) {
     const category = categories.find((item) => item.id === catId);
-    if (!window.confirm(`ลบหมวดหมู่${isWarning ? "ข้อควรระวัง" : " tutorial"} "${category?.name || "ไม่มีชื่อ"}" พร้อมขั้นตอนทั้งหมด ใช่ไหม?`)) return;
+    if (!window.confirm(`ลบหมวดหมู่${meta.noun} "${category?.name || "ไม่มีชื่อ"}" พร้อมขั้นตอนทั้งหมด ใช่ไหม?`)) return;
     setCategories((prev) => prev.filter((c) => c.id !== catId));
     if (activeCatId === catId) {
       const idx = categories.findIndex((c) => c.id === catId);
@@ -258,6 +268,7 @@ function TutorialModal({ gameId, gameName, editable, variant, dataMode = "uid", 
       setCategories(data[dataKey].categories);
       savedSnapshotRef.current = JSON.stringify(data[dataKey].categories);
       setSavedAt(Date.now());
+      closeTimerRef.current = window.setTimeout(onClose, 900);
     } catch (e) {
       setError(e instanceof Error ? e.message : `บันทึก${contentLabel}ไม่สำเร็จ`);
     } finally {
@@ -268,14 +279,18 @@ function TutorialModal({ gameId, gameName, editable, variant, dataMode = "uid", 
   const activeCategory = categories.find((c) => c.id === activeCatId) || null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onMouseDown={onBackdropMouseDown}>
       <div
         ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
         className="flex h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-linear-hairline bg-linear-surface-1 shadow-2xl"
       >
         <div className="flex items-center justify-between border-b border-linear-hairline px-5 py-3">
-          <h2 className="text-sm font-semibold text-linear-ink">
-            {isWarning ? "ข้อควรระวัง" : "Tutorial"}: {gameName}
+          <h2 id={titleId} className="text-sm font-semibold text-linear-ink">
+            {meta.title}: {gameName}
           </h2>
           <button
             type="button"
@@ -305,7 +320,7 @@ function TutorialModal({ gameId, gameName, editable, variant, dataMode = "uid", 
             <p className="rounded-lg border border-dashed border-linear-hairline-strong p-8 text-center text-sm text-linear-ink-tertiary">
               {editable
                 ? 'ยังไม่มีหมวดหมู่ กด "เพิ่มหมวดหมู่" ที่แถบแท็บด้านบนเพื่อเริ่ม'
-                : `ยังไม่มี${isWarning ? "ข้อควรระวัง" : " tutorial"}สำหรับเกมนี้`}
+                : `ยังไม่มี${meta.noun}สำหรับเกมนี้`}
             </p>
           ) : editable ? (
             <EditableCategory
@@ -321,12 +336,17 @@ function TutorialModal({ gameId, gameName, editable, variant, dataMode = "uid", 
           ) : (
             <ReadOnlyCategory category={activeCategory} />
           )}
-          {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
+          {error && <p role="alert" className="mt-3 text-xs text-linear-danger">{error}</p>}
         </div>
 
         {editable && !loading && (
           <div className="flex items-center gap-3 border-t border-linear-hairline px-5 py-3">
-            {savedAt && !saving && <span className="text-xs text-emerald-400">บันทึกแล้ว</span>}
+            {savedAt && !saving && (
+              <span className="flex items-center gap-1.5 text-xs text-linear-success" role="status">
+                <CheckCircle2 size={15} aria-hidden="true" />
+                บันทึกเรียบร้อย
+              </span>
+            )}
             <div className="flex-1" />
             <button
               type="button"
@@ -339,10 +359,10 @@ function TutorialModal({ gameId, gameName, editable, variant, dataMode = "uid", 
             <button
               type="button"
               onClick={save}
-              disabled={saving}
+              disabled={saving || Boolean(savedAt)}
               className="rounded-md bg-linear-primary px-4 py-1.5 text-xs font-medium text-white hover:bg-linear-primary-hover disabled:opacity-50"
             >
-              {saving ? "กำลังบันทึก..." : "บันทึก"}
+              {saving ? "กำลังบันทึก..." : savedAt ? "บันทึกแล้ว" : "บันทึก"}
             </button>
           </div>
         )}

@@ -41,7 +41,11 @@ export default function GameinfoThemeRoot({ className, style, children }) {
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
-    return () => document.documentElement.removeAttribute("data-theme");
+    document.documentElement.setAttribute("data-gameinfo-root", "");
+    return () => {
+      document.documentElement.removeAttribute("data-theme");
+      document.documentElement.removeAttribute("data-gameinfo-root");
+    };
   }, [theme]);
 
   useEffect(() => {
@@ -60,7 +64,7 @@ export default function GameinfoThemeRoot({ className, style, children }) {
 
   return (
     <GameinfoThemeContext.Provider value={{ theme, toggle }}>
-      <div data-theme={theme} className={className} style={style}>
+      <div data-theme={theme} data-gameinfo-root className={className} style={style}>
         {children}
       </div>
     </GameinfoThemeContext.Provider>

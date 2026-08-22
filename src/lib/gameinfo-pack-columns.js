@@ -25,7 +25,7 @@ export const GAMEINFO_PACK_BASE_COLUMNS = [
     field: "channelsSecondary",
     track: "minmax(90px, 1fr)",
   },
-  { id: "country", label: "ประเทศ", field: "country", track: "minmax(80px, 0.8fr)" },
+  { id: "country", label: "ประเทศ", field: "country", track: "minmax(80px, 0.8fr)", required: true },
 ];
 
 export const GAMEINFO_PACK_SYMBOLS = ["", "$", "฿", "%"];

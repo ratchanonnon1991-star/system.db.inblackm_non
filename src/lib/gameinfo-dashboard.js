@@ -55,7 +55,7 @@ export function filterGameinfoRows(rows, { query = "", status = "all", tag = "",
     if (tag && !(row.tags || []).some((value) => value.toLocaleLowerCase("th") === tag.toLocaleLowerCase("th"))) return false;
     if (publisher && !(row.publishers || []).some((value) => value.toLocaleLowerCase("th") === publisher.toLocaleLowerCase("th"))) return false;
     if (!needle) return true;
-    return [row.game, row.id, row.region, row.platform, row.server, row.vpnComputed, ...(row.tags || []), ...(row.publishers || [])]
+    return [row.game, row.id, row.region, row.platform, row.server, row.vpn, ...(row.tags || []), ...(row.publishers || [])]
       .some((value) => String(value ?? "").toLocaleLowerCase("th").includes(needle));
   });
   if (sort === "name") return [...filtered].sort((a, b) => String(a.game).localeCompare(String(b.game), "th"));

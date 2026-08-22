@@ -24,6 +24,7 @@ import {
   ArrowRight,
   ChevronsLeft,
   ChevronsRight,
+  CheckCircle2,
   GripVertical,
   Image as ImageIcon,
   MoreVertical,
@@ -34,7 +35,7 @@ import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
 import { gameinfoGameHref, gameinfoPacksHref } from "@/lib/gameinfo-data-mode";
 import GameinfoMemoryInput from "./gameinfo-memory-input";
 import GameinfoNameInput from "./gameinfo-name-input";
-import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
+import GameinfoTutorialButton, { TutorialModal } from "./gameinfo-tutorial-modal";
 import GameinfoImagePickerModal from "./gameinfo-image-picker-modal";
 import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoCsvImportActions from "./gameinfo-csv-import-actions";
@@ -98,6 +99,10 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
   const [selectedGameIds, setSelectedGameIds] = useState(new Set());
   const [statusError, setStatusError] = useState("");
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  // Auto-opened once, right when a row's VPN toggle flips NO -> YES (see
+  // onVpnToggledOn below) — there is no separate button for this, so it's a
+  // single shared modal instance keyed by game id rather than one per row.
+  const [vpnNoteGameId, setVpnNoteGameId] = useState(null);
   const selectionDragRef = useRef({ active: false, selecting: true });
 
   // "บันทึกแล้ว" text auto-collapses 3s after each save — see the matching
@@ -105,7 +110,6 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
   // savedAt gets a fresh timestamp each time.
   useEffect(() => {
     if (!savedAt) return;
-    setSavedVisible(true);
     const hideTimer = setTimeout(() => setSavedVisible(false), 3000);
     return () => clearTimeout(hideTimer);
   }, [savedAt]);
@@ -203,7 +207,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
       if (filterRegion && r.region !== filterRegion) return false;
       if (filterPlatform && r.platform !== filterPlatform) return false;
       if (filterServer && r.server !== filterServer) return false;
-      if (filterVpn && (r.vpnComputed || "NO") !== filterVpn) return false;
+      if (filterVpn && r.vpn !== filterVpn) return false;
       return true;
     });
   }, [rows, search, filterRegion, filterPlatform, filterServer, filterVpn]);
@@ -245,7 +249,6 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
       regions: uniq(savedRows.map((r) => r.region)),
       platforms: uniq(savedRows.map((r) => r.platform)),
       servers: uniq(savedRows.map((r) => r.server)),
-      // vpns: not used — VPN is now a read-only column computed from packs.
       // channels: not used — Channel column is hidden from the table.
       botManuals: uniq(savedRows.map((r) => r.botManual)),
       links: uniq(savedRows.map((r) => r.link)),
@@ -399,6 +402,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
       setSavedRows(nextRows);
       setDirtyIds(new Set());
       setOrderDirty(false);
+      setSavedVisible(true);
       setSavedAt(Date.now());
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "บันทึกข้อมูลเกมไม่สำเร็จ");
@@ -439,8 +443,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
       region: "",
       platform: "",
       server: "",
-      vpn: "NO VPN",
-      vpnComputed: "NO",
+      vpn: "NO",
       channel: "",
       channels: [],
       rankStars: 0,
@@ -502,6 +505,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
     onSetGameStatus: (gameId, status) => {
       return setSelectedGamesStatus(status === "offline", [gameId]);
     },
+    onVpnToggledOn: setVpnNoteGameId,
   };
 
   const rangeStart = filteredRows.length === 0 ? 0 : clampedPage * pageSize + 1;
@@ -662,7 +666,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
               type="button"
               onClick={() => setSelectedGamesStatus(true)}
               disabled={updatingStatus}
-              className="rounded-md px-2 py-1 text-emerald-400 hover:bg-emerald-500/10"
+              className="rounded-md px-2 py-1 text-linear-success hover:bg-linear-success-bg"
             >เปิดบริการ</button>
             <button
               type="button"
@@ -675,12 +679,12 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
       </div>
 
       {statusError ? (
-        <div role="alert" className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+        <div role="alert" className="mb-3 rounded-lg border border-linear-danger/30 bg-linear-danger-bg px-3 py-2 text-sm text-linear-danger">
           {statusError}
         </div>
       ) : null}
       {saveError ? (
-        <div role="alert" className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+        <div role="alert" className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-linear-danger/30 bg-linear-danger-bg px-3 py-2 text-sm text-linear-danger">
           <span>{saveError} ข้อมูลบางส่วนอาจถูกบันทึกแล้ว</span>
           <button type="button" onClick={() => window.location.reload()} className="shrink-0 underline">โหลดข้อมูลล่าสุด</button>
         </div>
@@ -770,7 +774,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
       {editable && (
         <div className="fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 flex-col items-center gap-2">
           {duplicateIds.size > 0 && (
-            <span className="flex items-center gap-1 rounded-full border border-red-500/40 bg-red-500/10 px-3 py-1 text-xs text-red-400 shadow-lg">
+            <span role="alert" className="flex items-center gap-1 rounded-full border border-linear-danger/40 bg-linear-danger-bg px-3 py-1 text-xs text-linear-danger shadow-lg">
               <AlertTriangle size={13} /> มีชื่อเกมซ้ำกัน {duplicateIds.size} แถว — แก้ชื่อก่อนถึงจะบันทึกได้
             </span>
           )}
@@ -780,7 +784,9 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
                 savedVisible ? "max-h-8 opacity-100" : "max-h-0 opacity-0"
               }`}
             >
-              <span className="text-xs text-linear-ink">บันทึกแล้ว</span>
+              <span className="flex items-center gap-1.5 text-xs text-linear-success" role="status">
+                <CheckCircle2 size={15} aria-hidden="true" /> บันทึกเรียบร้อย
+              </span>
             </div>
           )}
           {/* One continuous pill (not three separate floating buttons) —
@@ -846,6 +852,19 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
           </div>
         </div>
       )}
+
+      {vpnNoteGameId != null &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <TutorialModal
+            gameId={vpnNoteGameId}
+            gameName={rows.find((r) => r.id === vpnNoteGameId)?.game || ""}
+            editable={editable}
+            variant="vpn"
+            onClose={() => setVpnNoteGameId(null)}
+          />,
+          document.body
+        )}
     </>
   );
 }
@@ -921,6 +940,7 @@ function RowCells({
   onReorderByNumber,
   onSetGameStatus,
   onLinksSaved,
+  onVpnToggledOn,
 }) {
   const editingName = isEditing(row.id, "game");
   return (
@@ -1009,7 +1029,15 @@ function RowCells({
         />
       </TextCell>
 
-      <VpnBadge value={row.vpnComputed} />
+      <VpnBadge
+        value={row.vpn}
+        editable={editable}
+        onToggle={() => {
+          const next = row.vpn === "YES" ? "NO" : "YES";
+          updateField(row.id, "vpn", next);
+          if (next === "YES" && !isTempId(row.id)) onVpnToggledOn(row.id);
+        }}
+      />
 
       <ChannelTags values={row.channels} />
 
@@ -1181,10 +1209,6 @@ function RowActionsMenu({ row, lang, dataMode, editable, onDelete }) {
   );
 }
 
-// Read-only — replaces game_list's own free-text `vpn` field entirely.
-// "YES" means at least one of this game's packs has a `country` set (country
-// is only meaningful on VPN-required packs, see the pack editor's vpnOn-gated
-// country field); otherwise "NO". Edit it via the pack editor, not here.
 function ServiceStatusLight({ status, editable, onToggle }) {
   const config = status === "offline"
     ? { color: "bg-zinc-500", label: "ปิดให้บริการ" }
@@ -1222,16 +1246,32 @@ function ServiceStatusLight({ status, editable, onToggle }) {
   );
 }
 
-function VpnBadge({ value }) {
+// Two-state toggle on game_list's own `vpn` column. It used to be a read-only
+// badge derived from "does any pack have a country", but country is required
+// on every pack now, so that rule would mark every game YES. Click to flip —
+// there is no text entry, which is what kept the column full of one-off values
+// like "UID" and "IOS - Stock" before.
+function VpnBadge({ value, editable, onToggle }) {
   const isYes = value === "YES";
+  const className = `inline-block w-fit rounded px-1.5 py-0.5 text-[11px] font-medium ${
+    isYes ? "bg-rose-500/15 text-rose-300" : "bg-linear-surface-3 text-linear-ink-tertiary"
+  }`;
+
+  if (!editable) return <span className={className}>{isYes ? "YES" : "NO"}</span>;
+
   return (
-    <span
-      className={`inline-block w-fit rounded px-1.5 py-0.5 text-[11px] font-medium ${
-        isYes ? "bg-rose-500/15 text-rose-300" : "bg-linear-surface-3 text-linear-ink-tertiary"
-      }`}
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle?.();
+      }}
+      title={`${isYes ? "ต้องใช้ VPN" : "ไม่ต้องใช้ VPN"} — กดเพื่อสลับ`}
+      aria-pressed={isYes}
+      className={`${className} transition hover:brightness-110`}
     >
-      {value || "NO"}
-    </span>
+      {isYes ? "YES" : "NO"}
+    </button>
   );
 }
 

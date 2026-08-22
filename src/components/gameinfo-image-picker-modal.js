@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Image as ImageIcon, Link as LinkIcon, Upload, X } from "lucide-react";
+import { useGameinfoDialog } from "@/lib/use-gameinfo-dialog";
 
 // data: URLs go straight into the pack row's JSONB, keep it modest.
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
@@ -20,6 +21,7 @@ export default function GameinfoImagePickerModal({ value, onChange, onClose }) {
   const [url, setUrl] = useState(value || "");
   const [error, setError] = useState("");
   const fileRef = useRef(null);
+  const { dialogRef, titleId, onBackdropMouseDown } = useGameinfoDialog({ onRequestClose: onClose });
 
   function commitUrl() {
     onChange(url.trim());
@@ -78,13 +80,11 @@ export default function GameinfoImagePickerModal({ value, onChange, onClose }) {
   return createPortal(
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+      onMouseDown={onBackdropMouseDown}
     >
-      <div className="w-full max-w-2xl overflow-hidden rounded-lg border border-linear-hairline bg-linear-surface-1 shadow-2xl">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="w-full max-w-2xl overflow-hidden rounded-lg border border-linear-hairline bg-linear-surface-1 shadow-2xl">
         <div className="flex items-center justify-between border-b border-linear-hairline px-4 py-2.5">
-          <h2 className="text-sm font-semibold text-linear-ink">ใส่รูปภาพ</h2>
+          <h2 id={titleId} className="text-sm font-semibold text-linear-ink">ใส่รูปภาพ</h2>
           <button
             type="button"
             onClick={onClose}
@@ -169,7 +169,7 @@ export default function GameinfoImagePickerModal({ value, onChange, onClose }) {
           <p className="mt-2 text-center text-[11px] text-linear-ink-tertiary">
             หรือกด Ctrl+V เพื่อวางรูปจากคลิปบอร์ดได้เลย
           </p>
-          {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+          {error && <p role="alert" className="mt-2 text-xs text-linear-danger">{error}</p>}
         </div>
       </div>
     </div>,
