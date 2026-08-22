@@ -80,7 +80,7 @@ function ItuneFinishClaimModal({ entry, threshold, onConfirm, onClose, submittin
             <h2 className="text-sm font-semibold text-ll-ink">บันทึกผลและคืนเมล</h2>
             <p className="mt-0.5 truncate text-[11px] text-ll-ink-subtle">{entry.email}</p>
           </div>
-          <button type="button" onClick={onClose} disabled={submitting} aria-label="ปิด" className="flex h-7 w-7 items-center justify-center rounded text-ll-ink-tertiary hover:bg-ll-surface-2">
+          <button type="button" onClick={onClose} disabled={submitting} aria-label="ปิด" className="flex h-10 w-10 items-center justify-center rounded text-ll-ink-tertiary hover:bg-ll-surface-2">
             <X size={14} />
           </button>
         </div>
@@ -361,7 +361,7 @@ export default function ItuneTopupCard({ entry, now, releaseThreshold, onRelease
                   own comment). */}
               {adjustmentImage ? (
                 <ItuneImagePreview src={adjustmentImage} onClick={() => setAdjustmentPickerOpen(true)}>
-                  <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-md border border-ll-hairline-strong bg-ll-surface-1">
+                  <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-md border border-ll-hairline-strong bg-ll-surface-1">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={adjustmentImage} alt="" className="h-full w-full object-cover" />
                   </div>
@@ -371,7 +371,7 @@ export default function ItuneTopupCard({ entry, now, releaseThreshold, onRelease
                   type="button"
                   onClick={() => setAdjustmentPickerOpen(true)}
                   title="แนบรูปยืนยันสำหรับยอดรอบนี้"
-                  className="flex h-9 w-9 items-center justify-center rounded-md border border-dashed border-ll-hairline-strong text-ll-ink-tertiary hover:bg-ll-surface-1"
+                  className="flex h-10 w-10 items-center justify-center rounded-md border border-dashed border-ll-hairline-strong text-ll-ink-tertiary hover:bg-ll-surface-1"
                 >
                   <ImageIcon size={16} />
                 </button>

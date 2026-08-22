@@ -542,7 +542,7 @@ function RowActionsMenu({
         ref={triggerRef}
         type="button"
         onClick={toggleOpen}
-        className="flex h-7 w-7 items-center justify-center rounded-full text-ll-ink-tertiary hover:bg-ll-surface-2 hover:text-ll-ink"
+        className="flex h-10 w-10 items-center justify-center rounded-full text-ll-ink-tertiary hover:bg-ll-surface-2 hover:text-ll-ink"
         aria-label="เมนู"
         title="เมนู"
       >
@@ -860,7 +860,7 @@ function ItuneDateFilterModal({ value, loading, error, onApply, onClose }) {
       <div className="w-full max-w-sm rounded-lg border border-ll-hairline bg-ll-surface-1 p-4 shadow-[var(--ll-shadow-modal)]">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-ll-ink">กรองตามวันที่เพิ่มเมล</h2>
-          <button type="button" onClick={onClose} disabled={loading} aria-label="ปิด" className="flex h-7 w-7 items-center justify-center rounded text-ll-ink-tertiary hover:bg-ll-surface-2">
+          <button type="button" onClick={onClose} disabled={loading} aria-label="ปิด" className="flex h-10 w-10 items-center justify-center rounded text-ll-ink-tertiary hover:bg-ll-surface-2">
             <X size={14} />
           </button>
         </div>
@@ -1123,37 +1123,27 @@ export default function ItuneAdminTable({ initialEntries }) {
     setSaving(true);
     setSaveError("");
     try {
-      const idMap = {};
       const creates = rows.filter((r) => isTempId(r.id) && dirtyIds.has(r.id));
       const updates = rows.filter((r) => !isTempId(r.id) && dirtyIds.has(r.id));
-
-      await Promise.all(
-        creates.map(async (row) => {
-          const payload = {
+      const data = await apiJson("/api/projectm/itune", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          creates: creates.map((row) => ({
+            clientId: row.id,
             ...Object.fromEntries(EDITABLE_FIELDS.map((f) => [f, row[f]])),
             addedAt: row.addedAt,
             amountConfirmImage: row.amountConfirmImage,
-          };
-          const data = await apiJson("/api/projectm/itune", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-            fallbackError: "เพิ่มรายการไม่สำเร็จ",
-          });
-          idMap[row.id] = data.entry;
-        })
-      );
-
-      await Promise.all(
-        updates.map(async (row) => {
-          const payload = Object.fromEntries(EDITABLE_FIELDS.map((f) => [f, row[f]]));
-          await apiJson(`/api/projectm/itune/${row.id}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-            fallbackError: "บันทึกรายการไม่สำเร็จ",
-          });
-        })
+          })),
+          updates: updates.map((row) => ({
+            id: row.id,
+            ...Object.fromEntries(EDITABLE_FIELDS.map((f) => [f, row[f]])),
+          })),
+        }),
+        fallbackError: "บันทึกรายการไม่สำเร็จ",
+      });
+      const idMap = Object.fromEntries(
+        (data.created || []).map(({ clientId, entry }) => [clientId, entry])
       );
 
       setRows((prev) => prev.map((r) => (idMap[r.id] ? idMap[r.id] : r)));
@@ -1500,7 +1490,7 @@ export default function ItuneAdminTable({ initialEntries }) {
             ["ถัดไป", () => setPage(Math.min(pageCount, currentPage + 1)), currentPage >= pageCount, ArrowRight],
             ["หน้าสุดท้าย", () => setPage(pageCount), currentPage >= pageCount, ChevronsRight],
           ].map(([label, onClick, disabled, Icon]) => (
-            <button key={label} type="button" onClick={onClick} disabled={disabled} title={label} aria-label={label} className="flex h-8 w-8 items-center justify-center rounded-lg border border-ll-hairline-strong text-ll-ink-muted hover:bg-ll-surface-2 disabled:opacity-40">
+            <button key={label} type="button" onClick={onClick} disabled={disabled} title={label} aria-label={label} className="flex h-10 w-10 items-center justify-center rounded-lg border border-ll-hairline-strong text-ll-ink-muted hover:bg-ll-surface-2 disabled:opacity-40">
               <Icon size={14} />
             </button>
           ))}
@@ -1609,7 +1599,7 @@ export default function ItuneAdminTable({ initialEntries }) {
                 <button
                   type="button"
                   onClick={deleteSelectedFilter}
-                  className="flex h-8 w-8 items-center justify-center rounded-md text-ll-ink-tertiary hover:bg-ll-primary-subtle-bg hover:text-ll-primary"
+                  className="flex h-10 w-10 items-center justify-center rounded-md text-ll-ink-tertiary hover:bg-ll-primary-subtle-bg hover:text-ll-primary"
                   title="ลบชุดตัวกรองที่เลือก"
                   aria-label="ลบชุดตัวกรองที่เลือก"
                 >

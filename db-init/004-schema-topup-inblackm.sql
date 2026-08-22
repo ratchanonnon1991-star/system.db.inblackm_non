@@ -251,7 +251,7 @@ CREATE TABLE IF NOT EXISTS projectm_itune_claim_sessions (
   start_amount numeric(14,2) NOT NULL,
   end_amount   numeric(14,2),
   amount_used  numeric(14,2),
-  outcome      text CHECK (outcome IN ('depleted', 'partial_release', 'unusable')),
+  outcome      text CHECK (outcome IN ('depleted', 'partial_release', 'unusable', 'rejected')),
   proof_image  text,
   note         text,
   created_at   timestamptz NOT NULL DEFAULT now()
