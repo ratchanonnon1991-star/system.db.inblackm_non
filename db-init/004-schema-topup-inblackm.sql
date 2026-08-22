@@ -27,9 +27,9 @@ CREATE TABLE IF NOT EXISTS game_list (
 CREATE TABLE IF NOT EXISTS gameinfo_exchange_rates (
   pair         varchar(16) NOT NULL,
   fetched_hour timestamptz NOT NULL,
-  rate         numeric     NOT NULL,
+  rate         numeric     NOT NULL CHECK (rate > 0),
   provider     varchar(80) NOT NULL,
-  fetched_at   timestamptz NOT NULL DEFAULT now(),
+  fetched_at   timestamptz NOT NULL,
   provider_at  timestamptz,
   expires_at   timestamptz NOT NULL,
   PRIMARY KEY (pair, fetched_hour)
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS gameinfo_exchange_rates (
 
 CREATE TABLE IF NOT EXISTS gameinfo_mode_data (
   game_id    integer     NOT NULL,           -- LOGICAL -> game_list.id
-  data_mode  varchar(16) NOT NULL,
+  data_mode  varchar(16) NOT NULL CHECK (data_mode = 'idpass'),
   data       jsonb       NOT NULL DEFAULT '{}'::jsonb,
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (game_id, data_mode)
@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS gamelist_favorites (
 
 CREATE TABLE IF NOT EXISTS gamelist_formula_variables (
   game_id    integer PRIMARY KEY,            -- LOGICAL -> game_list.id; 0 is global
-  data       jsonb       NOT NULL DEFAULT '{}'::jsonb,
+  data       jsonb       NOT NULL DEFAULT '{"variables": []}'::jsonb,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -69,31 +69,31 @@ CREATE TABLE IF NOT EXISTS gamelist_formula_variable_logs (
 
 CREATE TABLE IF NOT EXISTS gamelist_images (
   game_id    integer PRIMARY KEY,            -- LOGICAL -> game_list.id
-  image_url  text        NOT NULL,
+  image_url  text        NOT NULL DEFAULT '',
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS gamelist_links (
   game_id    integer PRIMARY KEY,            -- LOGICAL -> game_list.id
-  data       jsonb       NOT NULL DEFAULT '{}'::jsonb,
+  data       jsonb       NOT NULL DEFAULT '{"links": []}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS gamelist_order (
   game_id    integer PRIMARY KEY,            -- LOGICAL -> game_list.id
-  sort_order integer     NOT NULL DEFAULT 0,
+  sort_order integer     NOT NULL,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS gamelist_reports (
   id          bigserial PRIMARY KEY,
   game_id     integer NOT NULL,              -- LOGICAL -> game_list.id
-  source      text    NOT NULL,
+  source      text    NOT NULL CHECK (source IN ('topup', 'admin')),
   message     text    NOT NULL,
-  status      text    NOT NULL,
-  created_by  text    NOT NULL,
+  status      text    NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
+  created_by  text    NOT NULL DEFAULT '',
   created_at  timestamptz NOT NULL DEFAULT now(),
   resolved_by text,
   resolved_at timestamptz
@@ -108,10 +108,10 @@ CREATE TABLE IF NOT EXISTS gamelist_service_status (
 
 CREATE TABLE IF NOT EXISTS gamelist_tutorials (
   game_id      integer PRIMARY KEY,          -- LOGICAL -> game_list.id
-  data         jsonb       NOT NULL DEFAULT '{}'::jsonb,
+  data         jsonb       NOT NULL DEFAULT '{"steps": []}'::jsonb,
   created_at   timestamptz NOT NULL DEFAULT now(),
   updated_at   timestamptz NOT NULL DEFAULT now(),
-  warning_data jsonb       NOT NULL DEFAULT '{}'::jsonb
+  warning_data jsonb       NOT NULL DEFAULT '{"categories": []}'::jsonb
 );
 
 -- ---------------------------------------------------------------------------
@@ -132,12 +132,12 @@ CREATE TABLE IF NOT EXISTS gamelist_pack_audit_logs (
   game_id     integer      NOT NULL,         -- LOGICAL -> gamelist_packs.game_id
   pack_id     text,                          -- LOGICAL -> gamelist_packs.pack_id
   actor_id    integer,                       -- LOGICAL -> gamedb_users.id (cross-database)
-  actor_name  varchar(255) NOT NULL,
+  actor_name  varchar(255) NOT NULL DEFAULT '',
   action      varchar(32)  NOT NULL,
   before_data jsonb,
   after_data  jsonb,
   created_at  timestamptz  NOT NULL DEFAULT now(),
-  source      varchar(32)  NOT NULL,
+  source      varchar(32)  NOT NULL DEFAULT 'editor',
   area        varchar(32)  NOT NULL,
   data_mode   varchar(16)  NOT NULL
 );
@@ -154,9 +154,9 @@ CREATE TABLE IF NOT EXISTS gamelist_pack_view_presets (
   id         bigserial PRIMARY KEY,
   game_id    integer     NOT NULL,           -- LOGICAL -> game_list.id
   user_id    integer     NOT NULL,           -- LOGICAL -> gamedb_users.id (cross-database)
-  surface    varchar(12) NOT NULL,
+  surface    varchar(12) NOT NULL CHECK (surface IN ('edit', 'view')),
   name       varchar(80) NOT NULL,
-  layout     jsonb       NOT NULL DEFAULT '{}'::jsonb,
+  layout     jsonb       NOT NULL DEFAULT '{"order": [], "hidden": []}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -168,14 +168,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS gamelist_pack_view_presets_game_user_name
 CREATE TABLE IF NOT EXISTS gamelist_publisher_catalog (
   publisher_key text PRIMARY KEY,
   name          text NOT NULL,
-  image_url     text NOT NULL,
+  image_url     text NOT NULL DEFAULT '',
   created_at    timestamptz NOT NULL DEFAULT now(),
   updated_at    timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS gamelist_publishers (
   game_id    integer PRIMARY KEY,            -- LOGICAL -> game_list.id
-  data       jsonb   NOT NULL DEFAULT '{}'::jsonb,  -- publisher keys -> gamelist_publisher_catalog
+  data       jsonb   NOT NULL DEFAULT '{"publishers": []}'::jsonb,  -- -> gamelist_publisher_catalog
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -183,14 +183,14 @@ CREATE TABLE IF NOT EXISTS gamelist_publishers (
 CREATE TABLE IF NOT EXISTS gamelist_tag_catalog (
   tag_key    text PRIMARY KEY,
   name       text NOT NULL,
-  image_url  text NOT NULL,
+  image_url  text NOT NULL DEFAULT '',
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS gamelist_tags (
   game_id    integer PRIMARY KEY,            -- LOGICAL -> game_list.id
-  data       jsonb   NOT NULL DEFAULT '{}'::jsonb,  -- tag keys -> gamelist_tag_catalog
+  data       jsonb   NOT NULL DEFAULT '{"tags": []}'::jsonb,  -- tag keys -> gamelist_tag_catalog
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -209,7 +209,7 @@ CREATE TABLE IF NOT EXISTS projectm_itune_roles (
 CREATE TABLE IF NOT EXISTS projectm_itune_entries (
   id                      serial PRIMARY KEY,
   added_at                timestamptz NOT NULL DEFAULT now(),
-  sms_expiry              date        NOT NULL,
+  sms_expiry              date        NOT NULL DEFAULT CURRENT_DATE,
   status                  text,
   support                 text,
   email                   text,
@@ -245,10 +245,10 @@ CREATE TABLE IF NOT EXISTS projectm_itune_claim_sessions (
   username     text,
   claimed_at   timestamptz NOT NULL DEFAULT now(),
   released_at  timestamptz,
-  start_amount numeric(14,2) NOT NULL DEFAULT 0,
+  start_amount numeric(14,2) NOT NULL,
   end_amount   numeric(14,2),
   amount_used  numeric(14,2),
-  outcome      text,
+  outcome      text CHECK (outcome IN ('depleted', 'partial_release', 'unusable')),
   proof_image  text,
   note         text,
   created_at   timestamptz NOT NULL DEFAULT now()
@@ -281,7 +281,8 @@ CREATE TABLE IF NOT EXISTS projectm_itune_claim_log (
   id           serial PRIMARY KEY,
   entry_id     integer NOT NULL,             -- LOGICAL -> projectm_itune_entries.id
   entry_email  text,
-  action       text NOT NULL,
+  action       text NOT NULL
+                 CHECK (action IN ('claim', 'release', 'reject', 'reject_confirm', 'reject_decline', 'cancel_reject')),
   user_id      integer,
   username     text,
   created_at   timestamptz NOT NULL DEFAULT now(),
@@ -304,7 +305,7 @@ CREATE TABLE IF NOT EXISTS projectm_itune_entry_log (
   id                  bigserial PRIMARY KEY,
   entry_id            integer NOT NULL,      -- LOGICAL -> projectm_itune_entries.id
   entry_email         text,
-  action              text  NOT NULL,
+  action              text  NOT NULL CHECK (action IN ('create', 'update', 'delete', 'bulk_delete')),
   changes             jsonb NOT NULL DEFAULT '{}'::jsonb,
   user_id             integer,
   username            text,
@@ -320,11 +321,11 @@ CREATE TABLE IF NOT EXISTS projectm_itune_admin_log (
   id             bigserial PRIMARY KEY,
   action         text  NOT NULL,
   target_id      integer,
-  details        jsonb NOT NULL DEFAULT '{}'::jsonb,
+  details        jsonb,
   user_id        integer,
   username       text,
   created_at     timestamptz NOT NULL DEFAULT now(),
-  category       text NOT NULL,
+  category       text NOT NULL CHECK (category IN ('system', 'admin')),
   entry_id       integer,                    -- LOGICAL -> projectm_itune_entries.id
   entry_email    text,
   old_values     jsonb,
@@ -360,8 +361,9 @@ CREATE TABLE IF NOT EXISTS projectm_itune_secret_access_log (
 
 -- Singleton-style settings tables.
 CREATE TABLE IF NOT EXISTS projectm_itune_release_settings (
-  id                        serial PRIMARY KEY,
-  max_amount                numeric(14,2) NOT NULL DEFAULT 0,
+  -- singleton table: exactly one row, always id = 1
+  id                        integer PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  max_amount                numeric(14,2) NOT NULL,
   updated_at                timestamptz   NOT NULL DEFAULT now(),
   updated_by_user_id        integer,
   updated_by_username       text,
