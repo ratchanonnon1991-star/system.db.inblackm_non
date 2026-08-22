@@ -8,6 +8,8 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   CircleOff,
   Flag,
   Gamepad2,
@@ -487,10 +489,12 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
         )}
 
         {pageCount > 1 ? (
-          <div className="mt-6 flex items-center justify-end gap-2 text-sm text-linear-ink-subtle">
-            <span className="mr-2">หน้า {currentPage + 1} / {pageCount}</span>
-            <button type="button" onClick={() => setPage((value) => Math.max(0, value - 1))} disabled={currentPage === 0} aria-label="หน้าก่อน" className="flex h-10 w-10 items-center justify-center rounded-lg border border-linear-hairline-strong hover:bg-linear-surface-2 disabled:opacity-40"><ChevronLeft size={16} /></button>
-            <button type="button" onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))} disabled={currentPage === pageCount - 1} aria-label="หน้าถัดไป" className="flex h-10 w-10 items-center justify-center rounded-lg border border-linear-hairline-strong hover:bg-linear-surface-2 disabled:opacity-40"><ChevronRight size={16} /></button>
+          <div className="mt-6 flex items-center justify-end gap-1 text-sm text-linear-ink-subtle">
+            <span className="mr-1 whitespace-nowrap">หน้า {currentPage + 1} / {pageCount}</span>
+            <button type="button" onClick={() => setPage(0)} disabled={currentPage === 0} title="หน้าแรก" aria-label="หน้าแรก" className="flex h-10 w-10 items-center justify-center rounded-lg border border-linear-hairline-strong hover:bg-linear-surface-2 disabled:opacity-40"><ChevronsLeft size={16} /></button>
+            <button type="button" onClick={() => setPage((value) => Math.max(0, value - 1))} disabled={currentPage === 0} title="หน้าก่อน" aria-label="หน้าก่อน" className="flex h-10 w-10 items-center justify-center rounded-lg border border-linear-hairline-strong hover:bg-linear-surface-2 disabled:opacity-40"><ChevronLeft size={16} /></button>
+            <button type="button" onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))} disabled={currentPage === pageCount - 1} title="หน้าถัดไป" aria-label="หน้าถัดไป" className="flex h-10 w-10 items-center justify-center rounded-lg border border-linear-hairline-strong hover:bg-linear-surface-2 disabled:opacity-40"><ChevronRight size={16} /></button>
+            <button type="button" onClick={() => setPage(pageCount - 1)} disabled={currentPage === pageCount - 1} title="หน้าสุดท้าย" aria-label="หน้าสุดท้าย" className="flex h-10 w-10 items-center justify-center rounded-lg border border-linear-hairline-strong hover:bg-linear-surface-2 disabled:opacity-40"><ChevronsRight size={16} /></button>
           </div>
         ) : null}
       </main>
