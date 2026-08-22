@@ -190,13 +190,16 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
           type="button"
           aria-label="ปิดเมนูตัวกรอง"
           onClick={() => setSidebarOpen(false)}
-          className="fixed inset-0 z-40 bg-linear-ink/35 lg:hidden"
+          className="fixed inset-x-0 bottom-0 top-16 z-30 bg-linear-ink/35 lg:hidden"
         />
       ) : null}
 
+      {/* The layout header is `sticky top-0 z-40` and 4rem tall, so the drawer
+          starts below it (top-16) and stays under it (z-30) instead of sliding
+          over the navbar. lg:static drops all of this back out on desktop. */}
       <aside
         id="gameinfo-filter-sidebar"
-        className={`fixed inset-y-0 left-0 z-50 w-[280px] overflow-y-auto border-r border-linear-hairline bg-linear-surface-2 p-4 transition-transform duration-200 ${
+        className={`fixed bottom-0 left-0 top-16 z-30 w-[280px] overflow-y-auto border-r border-linear-hairline bg-linear-surface-2 p-4 transition-transform duration-200 ${
           sidebarOpen ? "visible translate-x-0" : "invisible -translate-x-full"
         } lg:visible lg:static lg:w-auto lg:translate-x-0 lg:border-b-0`}
       >
