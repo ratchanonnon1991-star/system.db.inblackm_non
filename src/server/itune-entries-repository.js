@@ -731,13 +731,32 @@ export async function listItuneEntries({ from = null, to = null, all = false } =
   return result.rows.map((row) => mapRow(row, usernamesById));
 }
 
-export async function insertItuneEntry({ createdByUserId, addedAt, ...fields }, actor) {
-  const pool = await getReadyPool();
-  // ID (col 1) always picks up right after the current highest id, not
-  // whatever the table's own SERIAL sequence has drifted to — rows deleted
-  // during testing/use otherwise leave the sequence way ahead of the real
-  // row count. LOCK TABLE serializes this against any other concurrent
-  // insert so two admins adding at once can't compute the same "next id".
+async function lockItuneAdminWrites(client) {
+  await client.query(
+    `SELECT pg_advisory_xact_lock(hashtext($1))`,
+    [`${CONNECTION_NAME}:projectm_itune_entries:admin-write`]
+  );
+}
+
+async function assertLinkSmsAvailable(client, linkSms, excludeId = null) {
+  if (!linkSms) return;
+  const dup = await client.query(
+    `SELECT id FROM projectm_itune_entries
+     WHERE link_sms = $1 AND ($2::int IS NULL OR id <> $2)
+     LIMIT 1`,
+    [linkSms, excludeId]
+  );
+  if (dup.rows.length > 0) {
+    throw createHttpError(`Link_SMS นี้ถูกใช้แล้วที่ ID ${dup.rows[0].id}`, 409);
+  }
+}
+
+async function insertItuneEntryWithClient(
+  client,
+  { createdByUserId, addedAt, ...fields },
+  actor,
+  { validateLink = true } = {}
+) {
   const columns = ["id", "created_by_user_id"];
   const placeholders = [
     "(SELECT COALESCE(MAX(id), 0) + 1 FROM projectm_itune_entries)",
@@ -764,41 +783,35 @@ export async function insertItuneEntry({ createdByUserId, addedAt, ...fields }, 
     values.push(fields[key]);
   }
 
+  if (validateLink) await assertLinkSmsAvailable(client, fields.linkSms);
+  const result = await client.query(
+    `INSERT INTO projectm_itune_entries (${columns.join(", ")})
+     VALUES (${placeholders.join(", ")})
+     RETURNING *`,
+    values
+  );
+  const inserted = result.rows[0];
+  await insertEntryLog(client, {
+    row: inserted,
+    action: "create",
+    actor,
+    newValues: entryAuditValues(inserted),
+  });
+  return inserted;
+}
+
+export async function insertItuneEntry({ createdByUserId, addedAt, ...fields }, actor) {
+  const pool = await getReadyPool();
   const client = await pool.connect();
-  let insertedId;
+  let inserted;
   try {
     await client.query("BEGIN");
-    await client.query(
-      "LOCK TABLE projectm_itune_entries IN SHARE ROW EXCLUSIVE MODE"
+    await lockItuneAdminWrites(client);
+    inserted = await insertItuneEntryWithClient(
+      client,
+      { createdByUserId, addedAt, ...fields },
+      actor
     );
-    // Link_SMS must be unique across all entries (blank is exempt — plenty of
-    // rows have no SMS link yet). Checked here, inside the same
-    // transaction/table-lock the id-assignment logic above already takes, so
-    // two concurrent inserts can't both pass the check for the same value —
-    // the lock serializes them.
-    if (fields.linkSms) {
-      const dup = await client.query(
-        `SELECT id FROM projectm_itune_entries WHERE link_sms = $1 LIMIT 1`,
-        [fields.linkSms]
-      );
-      if (dup.rows.length > 0) {
-        throw createHttpError(`Link_SMS นี้ถูกใช้แล้วที่ ID ${dup.rows[0].id}`, 409);
-      }
-    }
-    const result = await client.query(
-      `INSERT INTO projectm_itune_entries (${columns.join(", ")})
-       VALUES (${placeholders.join(", ")})
-       RETURNING *`,
-      values
-    );
-    const inserted = result.rows[0];
-    insertedId = inserted.id;
-    await insertEntryLog(client, {
-      row: inserted,
-      action: "create",
-      actor,
-      newValues: entryAuditValues(inserted),
-    });
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
@@ -807,9 +820,8 @@ export async function insertItuneEntry({ createdByUserId, addedAt, ...fields }, 
     client.release();
   }
 
-  const entry = await findItuneEntryById(insertedId);
   publishItuneQueueChanged();
-  return entry;
+  return mapRow(inserted);
 }
 
 export async function findItuneEntryById(id) {
@@ -826,60 +838,65 @@ export async function findItuneEntryById(id) {
   return mapRow(row, usernamesById);
 }
 
-export async function updateItuneEntry(id, fields, actor) {
-  const pool = await getReadyPool();
-  const client = await pool.connect();
-  let changed = false;
-  try {
-    await client.query("BEGIN");
+async function updateItuneEntryWithClient(
+  client,
+  id,
+  fields,
+  actor,
+  { current: suppliedCurrent = null, validateLink = true } = {}
+) {
+  let current = suppliedCurrent;
+  if (!current) {
     const currentResult = await client.query(
       `SELECT * FROM projectm_itune_entries WHERE id = $1 FOR UPDATE`,
       [id]
     );
-    const current = currentResult.rows[0];
+    current = currentResult.rows[0];
     if (!current) throw createHttpError("ไม่พบรายการนี้ (อาจถูกลบไปแล้ว)", 404);
+  }
 
-    if (fields.linkSms) {
-      const dup = await client.query(
-        `SELECT id FROM projectm_itune_entries WHERE link_sms = $1 AND id <> $2 LIMIT 1`,
-        [fields.linkSms, id]
-      );
-      if (dup.rows.length > 0) {
-        throw createHttpError(`Link_SMS นี้ถูกใช้แล้วที่ ID ${dup.rows[0].id}`, 409);
-      }
-    }
+  if (validateLink) await assertLinkSmsAvailable(client, fields.linkSms, id);
 
-    const sets = [];
-    const values = [];
-    const oldValues = {};
-    const newValues = {};
-    let i = 1;
-    for (const key of EDITABLE_FIELDS) {
-      if (fields[key] === undefined) continue;
-      const before = current[FIELD_COLUMNS[key]];
-      if (valuesMatch(key, before, fields[key])) continue;
-      sets.push(`${FIELD_COLUMNS[key]} = $${i++}`);
-      values.push(fields[key]);
-      oldValues[key] = auditValue(key, before);
-      newValues[key] = auditValue(key, fields[key]);
-    }
+  const sets = [];
+  const values = [];
+  const oldValues = {};
+  const newValues = {};
+  let i = 1;
+  for (const key of EDITABLE_FIELDS) {
+    if (fields[key] === undefined) continue;
+    const before = current[FIELD_COLUMNS[key]];
+    if (valuesMatch(key, before, fields[key])) continue;
+    sets.push(`${FIELD_COLUMNS[key]} = $${i++}`);
+    values.push(fields[key]);
+    oldValues[key] = auditValue(key, before);
+    newValues[key] = auditValue(key, fields[key]);
+  }
 
-    if (sets.length) {
-      sets.push("updated_at = NOW()");
-      values.push(id);
-      await client.query(
-        `UPDATE projectm_itune_entries SET ${sets.join(", ")} WHERE id = $${i}`,
-        values
-      );
-      await insertEntryLog(client, {
-        row: current,
-        action: "update",
-        actor,
-        oldValues,
-        newValues,
-      });
-      changed = true;
-    }
+  if (!sets.length) return { row: current, changed: false };
+  sets.push("updated_at = NOW()");
+  values.push(id);
+  const result = await client.query(
+    `UPDATE projectm_itune_entries SET ${sets.join(", ")} WHERE id = $${i} RETURNING *`,
+    values
+  );
+  await insertEntryLog(client, {
+    row: current,
+    action: "update",
+    actor,
+    oldValues,
+    newValues,
+  });
+  return { row: result.rows[0], changed: true };
+}
+
+export async function updateItuneEntry(id, fields, actor) {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  let updated;
+  try {
+    await client.query("BEGIN");
+    await lockItuneAdminWrites(client);
+    updated = await updateItuneEntryWithClient(client, id, fields, actor);
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
@@ -887,9 +904,8 @@ export async function updateItuneEntry(id, fields, actor) {
   } finally {
     client.release();
   }
-  const entry = await findItuneEntryById(id);
-  if (changed) publishItuneQueueChanged();
-  return entry;
+  if (updated.changed) publishItuneQueueChanged();
+  return mapRow(updated.row);
 }
 
 export async function saveItuneEntries({ creates = [], updates = [] }, actor) {
@@ -911,19 +927,22 @@ export async function saveItuneEntries({ creates = [], updates = [] }, actor) {
   let changed = false;
   try {
     await client.query("BEGIN");
-    await client.query("LOCK TABLE projectm_itune_entries IN SHARE ROW EXCLUSIVE MODE");
+    await lockItuneAdminWrites(client);
 
-    const currentResult = await client.query(
-      `SELECT * FROM projectm_itune_entries ORDER BY id FOR UPDATE`
-    );
+    const currentResult = updateIds.length
+      ? await client.query(
+          `SELECT * FROM projectm_itune_entries
+           WHERE id = ANY($1::int[])
+           ORDER BY id FOR UPDATE`,
+          [updateIds]
+        )
+      : { rows: [] };
     const currentById = new Map(currentResult.rows.map((row) => [Number(row.id), row]));
     if (updateIds.some((id) => !currentById.has(id))) {
       throw createHttpError("มีบางรายการไม่อยู่แล้ว กรุณาโหลดหน้าใหม่", 409);
     }
 
-    const finalLinks = new Map(
-      currentResult.rows.map((row) => [Number(row.id), String(row.link_sms || "").trim()])
-    );
+    const finalLinks = new Map();
     for (const item of updates) {
       if (item.fields?.linkSms !== undefined) {
         finalLinks.set(Number(item.id), String(item.fields.linkSms || "").trim());
@@ -944,75 +963,48 @@ export async function saveItuneEntries({ creates = [], updates = [] }, actor) {
       ownerByLink.set(link, id);
     }
 
-    for (const item of creates) {
-      const fields = item.fields || {};
-      const columns = ["id", "created_by_user_id"];
-      const placeholders = [
-        "(SELECT COALESCE(MAX(id), 0) + 1 FROM projectm_itune_entries)",
-        "$1",
-      ];
-      const values = [actor?.id ?? null];
-      let i = 2;
-      if (item.addedAt) {
-        columns.push("added_at");
-        placeholders.push(`$${i++}`);
-        values.push(item.addedAt);
-      }
-      for (const key of EDITABLE_FIELDS) {
-        if (fields[key] === undefined) continue;
-        columns.push(FIELD_COLUMNS[key]);
-        placeholders.push(`$${i++}`);
-        values.push(fields[key]);
-      }
-      const result = await client.query(
-        `INSERT INTO projectm_itune_entries (${columns.join(", ")})
-         VALUES (${placeholders.join(", ")}) RETURNING *`,
-        values
+    const desiredLinks = [...new Set([...finalLinks.values()].filter(Boolean))];
+    if (desiredLinks.length > 0) {
+      const existingLinks = await client.query(
+        `SELECT id, link_sms FROM projectm_itune_entries
+         WHERE link_sms = ANY($1::text[])
+         ORDER BY id FOR UPDATE`,
+        [desiredLinks]
       );
-      const row = result.rows[0];
-      await insertEntryLog(client, {
-        row,
-        action: "create",
+      for (const row of existingLinks.rows) {
+        const id = Number(row.id);
+        const finalLink = finalLinks.get(id);
+        if (finalLink === row.link_sms) continue;
+        if (finalLink !== undefined && finalLink !== row.link_sms) continue;
+        throw createHttpError(`Link_SMS นี้ถูกใช้แล้วที่ ID ${id}`, 409);
+      }
+    }
+
+    for (const item of creates) {
+      const row = await insertItuneEntryWithClient(
+        client,
+        {
+          createdByUserId: actor?.id ?? null,
+          addedAt: item.addedAt,
+          ...(item.fields || {}),
+        },
         actor,
-        newValues: entryAuditValues(row),
-      });
-      created.push({ clientId: item.clientId, id: Number(row.id) });
+        { validateLink: false }
+      );
+      created.push({ clientId: item.clientId, row });
       changed = true;
     }
 
     for (const item of updates) {
       const id = Number(item.id);
-      const fields = item.fields || {};
-      const current = currentById.get(id);
-      const sets = [];
-      const values = [];
-      const oldValues = {};
-      const newValues = {};
-      let i = 1;
-      for (const key of EDITABLE_FIELDS) {
-        if (fields[key] === undefined) continue;
-        const before = current[FIELD_COLUMNS[key]];
-        if (valuesMatch(key, before, fields[key])) continue;
-        sets.push(`${FIELD_COLUMNS[key]} = $${i++}`);
-        values.push(fields[key]);
-        oldValues[key] = auditValue(key, before);
-        newValues[key] = auditValue(key, fields[key]);
-      }
-      if (!sets.length) continue;
-      sets.push("updated_at = NOW()");
-      values.push(id);
-      await client.query(
-        `UPDATE projectm_itune_entries SET ${sets.join(", ")} WHERE id = $${i}`,
-        values
-      );
-      await insertEntryLog(client, {
-        row: current,
-        action: "update",
+      const updated = await updateItuneEntryWithClient(
+        client,
+        id,
+        item.fields || {},
         actor,
-        oldValues,
-        newValues,
-      });
-      changed = true;
+        { current: currentById.get(id), validateLink: false }
+      );
+      changed = updated.changed || changed;
     }
 
     await client.query("COMMIT");
@@ -1023,9 +1015,12 @@ export async function saveItuneEntries({ creates = [], updates = [] }, actor) {
     client.release();
   }
 
-  const createdEntries = await Promise.all(
-    created.map(async ({ clientId, id }) => ({ clientId, entry: await findItuneEntryById(id) }))
-  );
+  const actorName = actor?.displayName || actor?.username || null;
+  const usernamesById = actor?.id ? { [actor.id]: actorName } : {};
+  const createdEntries = created.map(({ clientId, row }) => ({
+    clientId,
+    entry: mapRow(row, usernamesById),
+  }));
   if (changed) publishItuneQueueChanged();
   return { created: createdEntries };
 }

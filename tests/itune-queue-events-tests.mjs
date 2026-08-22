@@ -8,6 +8,16 @@ publishItuneQueueChanged();
 unsubscribe();
 publishItuneQueueChanged();
 
+let healthyListenerCalled = false;
+subscribeToItuneQueue(() => {
+  throw new Error("closed stream");
+});
+subscribeToItuneQueue(() => {
+  healthyListenerCalled = true;
+});
+publishItuneQueueChanged();
+
 assert.equal(revisions.length, 2);
 assert.equal(revisions[1], revisions[0] + 1);
-console.log("2 passed");
+assert.equal(healthyListenerCalled, true);
+console.log("3 passed");

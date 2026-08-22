@@ -10,7 +10,13 @@ function getEventBus() {
 export function publishItuneQueueChanged() {
   const bus = getEventBus();
   bus.revision += 1;
-  for (const listener of bus.listeners) listener(bus.revision);
+  for (const listener of bus.listeners) {
+    try {
+      listener(bus.revision);
+    } catch {
+      bus.listeners.delete(listener);
+    }
+  }
 }
 
 export function subscribeToItuneQueue(listener) {
