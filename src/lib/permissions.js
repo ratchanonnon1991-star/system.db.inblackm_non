@@ -7,6 +7,8 @@ export const PERMISSIONS = [
   { key: "gameinfo.access", site: "GameInfo", label: "ดูข้อมูล", path: "/gameinfo/[lang]" },
   { key: "gameinfo.report", site: "GameInfo", label: "รายงานปัญหา", path: "/gameinfo/[lang]/[id]" },
   { key: "gameinfo.admin", site: "GameInfo", label: "Admin", path: "/gameinfo/[lang]" },
+  { key: "profit.access", site: "Profit", label: "ดูข้อมูล", path: "/profit" },
+  { key: "profit.admin", site: "Profit", label: "แก้ไขข้อมูล", path: "/profit" },
 ];
 
 export const PERMISSION_KEYS = new Set(PERMISSIONS.map(({ key }) => key));
@@ -16,6 +18,7 @@ export const PERMISSION_PRESETS = {
   projectmAdmin: ["projectm.access", "projectm.claim", "projectm.admin"],
   gameinfoTopup: ["gameinfo.access", "gameinfo.report"],
   gameinfoAdmin: ["gameinfo.access", "gameinfo.report", "gameinfo.admin"],
+  profitAdmin: ["profit.access", "profit.admin"],
 };
 
 export function normalizePermissions(values = []) {
@@ -24,6 +27,7 @@ export function normalizePermissions(values = []) {
   if (permissions.has("projectm.claim")) permissions.add("projectm.access");
   if (permissions.has("gameinfo.admin")) PERMISSION_PRESETS.gameinfoAdmin.forEach((key) => permissions.add(key));
   if (permissions.has("gameinfo.report")) permissions.add("gameinfo.access");
+  if (permissions.has("profit.admin")) PERMISSION_PRESETS.profitAdmin.forEach((key) => permissions.add(key));
   return [...permissions].sort();
 }
 
@@ -36,6 +40,7 @@ export function togglePermission(values, key, checked) {
     if (key === "projectm.claim") permissions.delete("projectm.admin");
     if (key === "gameinfo.access") ["gameinfo.report", "gameinfo.admin"].forEach((item) => permissions.delete(item));
     if (key === "gameinfo.report") permissions.delete("gameinfo.admin");
+    if (key === "profit.access") permissions.delete("profit.admin");
   }
   return normalizePermissions([...permissions]);
 }

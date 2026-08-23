@@ -148,3 +148,27 @@ export async function requireProjectmAdmin(request) {
   }
   return user;
 }
+
+export function hasProfitAccess(user) {
+  return hasPermission(user, "profit.access");
+}
+
+export async function requireProfitAccess(request) {
+  const user = await requireAdmin(request);
+  if (!hasProfitAccess(user)) {
+    throw createHttpError("บัญชีนี้ไม่มีสิทธิ์เข้า Profit", 403);
+  }
+  return user;
+}
+
+export function canManageProfit(user) {
+  return hasPermission(user, "profit.admin");
+}
+
+export async function requireProfitEditor(request) {
+  const user = await requireProfitAccess(request);
+  if (!canManageProfit(user)) {
+    throw createHttpError("บัญชีนี้ไม่มีสิทธิ์แก้ไขข้อมูล Profit", 403);
+  }
+  return user;
+}
