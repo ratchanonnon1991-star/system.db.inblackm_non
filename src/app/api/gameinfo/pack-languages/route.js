@@ -4,6 +4,7 @@ import {
   createGamelistPackLanguage,
   listGamelistPackLanguages,
 } from "@/server/gameinfo-gamelist-packs";
+import { auditActor, recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
 
 export async function GET(request) {
   try {
@@ -19,6 +20,7 @@ export async function POST(request) {
     const user = await requireGameinfoEditor(request);
     const body = await request.json();
     const language = await createGamelistPackLanguage(body.name, user.id);
+    await recordGameinfoAudit({ gameId: 0, area: "settings", action: "create", actor: auditActor(user), after: { language: language.name } });
     return jsonOk({ language }, 201);
   } catch (error) {
     return handleApiError(error, "เพิ่มภาษาไม่สำเร็จ");

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { cloneGameinfoDataMode } from "@/server/gameinfo-mode-clone.js";
+import { createGameListRows } from "@/server/gameinfo-gamelist.js";
 import { log, reset, setResponder } from "@/lib/db.js";
 
 const modeData = {
@@ -34,4 +35,25 @@ const importRoute = readFileSync(new URL("../src/app/api/gameinfo/import/apply/r
 assert.ok(importRoute.includes("withGameinfoTransaction(async (client)"));
 assert.ok(importRoute.includes('saveGameinfoModeData(game.gameId, "idpass", {'));
 
-console.log("4 passed");
+const gameListImportRoute = readFileSync(new URL("../src/app/api/gameinfo/gamelist/import/route.js", import.meta.url), "utf8");
+assert.ok(gameListImportRoute.includes("withGameinfoTransaction(async (client)"));
+assert.ok(gameListImportRoute.includes("createGameListRows(parsed.rows, actor, client)"));
+assert.ok(gameListImportRoute.includes("}, client)"));
+
+const transactionLog = [];
+const transactionClient = {
+  async query(text) {
+    transactionLog.push(text.trim());
+    if (/^INSERT INTO game_list/.test(text.trim())) {
+      return { rows: [{ id: 8, game: "Test", vpn: "NO" }] };
+    }
+    return { rows: [] };
+  },
+};
+await createGameListRows([{ game: "Test" }], null, transactionClient);
+assert.ok(transactionLog.some((text) => /^INSERT INTO game_list/.test(text)));
+assert.ok(!transactionLog.includes("BEGIN"));
+assert.ok(!transactionLog.includes("COMMIT"));
+assert.ok(!transactionLog.includes("ROLLBACK"));
+
+console.log("11 passed");

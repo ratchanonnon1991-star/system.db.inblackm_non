@@ -3,7 +3,7 @@ import { requireGameinfoEditor } from "@/server/auth";
 import { parseCsv } from "@/lib/gameinfo-csv";
 import { mergeCurrencies, PACK_HEADERS, parsePacks, validatePackRows } from "@/lib/gameinfo-import";
 import { listGameListRows, withGameinfoTransaction } from "@/server/gameinfo-gamelist";
-import { importGamelistPacks } from "@/server/gameinfo-gamelist-packs";
+import { auditActor, importGamelistPacks, recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { getGameinfoModeData, saveGameinfoModeData } from "@/server/gameinfo-mode-data";
 
@@ -46,6 +46,17 @@ export async function PUT(request) {
             ...current,
             packs: { ...current.packs, currencies },
           }, client);
+          await recordGameinfoAudit({
+            gameId: game.gameId,
+            area: "import",
+            dataMode: "idpass",
+            action: mode === "add" ? "import_append" : "import_replace",
+            source: mode === "add" ? "csv_append" : "csv_replace",
+            actor: auditActor(user),
+            before: current.packs,
+            after: { ...current.packs, currencies },
+            client,
+          });
         }
         return count;
       });

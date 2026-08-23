@@ -6,7 +6,7 @@
 // created_at, updated_at.
 import { getPoolForConnection } from "@/lib/db";
 import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
-import { deleteGamelistPacksForGame } from "@/server/gameinfo-gamelist-packs";
+import { deleteGamelistPacksForGame, recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
 import { deleteGamelistTutorialForGame } from "@/server/gameinfo-gamelist-tutorial";
 import { deleteGamelistImageForGame } from "@/server/gameinfo-gamelist-image";
 import { deleteGamelistLinksForGame } from "@/server/gameinfo-gamelist-links";
@@ -16,6 +16,20 @@ import { deleteGamelistFavoritesForGame } from "@/server/gameinfo-gamelist-favor
 import { deleteGameinfoModeData } from "@/server/gameinfo-mode-data";
 
 const CONNECTION_NAME = "gameinfo";
+
+// `vpn` is a plain varchar in Topup Panel's table and years of free-text entry
+// left it holding "NO VPN", "NO_VPN", "OFF", "VPN" and a handful of values that
+// belong to another field entirely ("UID", "ITUNES", "Google", "IOS - Stock").
+// The field is now a two-state toggle, so every read and write funnels through
+// here: only an explicit VPN-on marker becomes "YES", anything else is "NO".
+// Normalizing on read means the legacy rows render correctly with no migration
+// and no ALTER TABLE (which this service could not run anyway).
+const VPN_ON = new Set(["VPN", "YES", "ON", "TRUE", "1"]);
+
+export function normalizeVpn(value) {
+  const token = String(value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return VPN_ON.has(token) ? "YES" : "NO";
+}
 
 function createHttpError(message, status) {
   const err = new Error(message);
@@ -90,7 +104,7 @@ function mapRow(row) {
     region: row.region,
     platform: row.platform || "",
     server: row.server || "",
-    vpn: row.vpn,
+    vpn: normalizeVpn(row.vpn),
     channel: row.channel,
     rankStars: row.rank_stars,
     botManual: row.bot_manual,
@@ -118,6 +132,7 @@ const FIELD_COLUMNS = {
 
 function normalizeFieldValue(field, value) {
   if (field === "isRepeatable") return Boolean(value);
+  if (field === "vpn") return normalizeVpn(value);
   if (field === "rankStars") {
     const n = Number(value);
     return Number.isFinite(n) ? Math.max(0, Math.min(5, Math.round(n))) : 0;
@@ -145,11 +160,15 @@ export async function listGameListRows() {
 
 /** Persists the dragged order — one row per game in `gamelist_order`,
  * upserted so games reordered for the first time get a row created. */
-export async function reorderGameListRows(orderedIds) {
+export async function reorderGameListRows(orderedIds, actor = null) {
   const pool = await getReadyPool();
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const previous = await client.query(
+      `SELECT game_id, sort_order FROM gamelist_order WHERE game_id = ANY($1::int[]) ORDER BY sort_order, game_id`,
+      [orderedIds]
+    );
     for (let index = 0; index < orderedIds.length; index += 1) {
       await client.query(
         `INSERT INTO gamelist_order (game_id, sort_order, updated_at)
@@ -158,6 +177,14 @@ export async function reorderGameListRows(orderedIds) {
         [orderedIds[index], index]
       );
     }
+    await recordGameinfoAudit({
+      gameId: 0,
+      area: "order",
+      actor,
+      before: previous.rows,
+      after: orderedIds,
+      client,
+    });
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
@@ -186,10 +213,11 @@ export async function getGameListRow(id) {
   }
 }
 
-export async function createGameListRow(fields) {
+export async function createGameListRow(fields, actor = null) {
   const pool = await getReadyPool();
   const client = await pool.connect();
   try {
+    await client.query("BEGIN");
     const result = await client.query(
       `INSERT INTO game_list (game, region, platform, server, vpn, channel, rank_stars, bot_manual, is_repeatable, link, remark)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -199,7 +227,7 @@ export async function createGameListRow(fields) {
         normalizeFieldValue("region", fields.region),
         fields.platform ? String(fields.platform) : null,
         fields.server ? String(fields.server) : null,
-        normalizeFieldValue("vpn", fields.vpn || "NO VPN"),
+        normalizeFieldValue("vpn", fields.vpn),
         normalizeFieldValue("channel", fields.channel),
         normalizeFieldValue("rankStars", fields.rankStars),
         normalizeFieldValue("botManual", fields.botManual),
@@ -208,7 +236,13 @@ export async function createGameListRow(fields) {
         fields.remark ? String(fields.remark) : null,
       ]
     );
-    return mapRow(result.rows[0]);
+    const row = mapRow(result.rows[0]);
+    await recordGameinfoAudit({ gameId: row.id, area: "game", action: "create", actor, after: row, client });
+    await client.query("COMMIT");
+    return row;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
   } finally {
     client.release();
   }
@@ -216,12 +250,12 @@ export async function createGameListRow(fields) {
 
 /** CSV batch insert: validation happens before this call and the transaction
  * guarantees an all-or-nothing result if any row fails at the database. */
-export async function createGameListRows(fieldsList) {
-  const pool = await getReadyPool();
-  const client = await pool.connect();
+export async function createGameListRows(fieldsList, actor = null, transactionClient = null) {
+  const pool = transactionClient ? null : await getReadyPool();
+  const client = transactionClient || await pool.connect();
   const created = [];
   try {
-    await client.query("BEGIN");
+    if (!transactionClient) await client.query("BEGIN");
     for (const fields of fieldsList) {
       const result = await client.query(
         `INSERT INTO game_list (game, region, platform, server, vpn, channel, rank_stars, bot_manual, is_repeatable, link, remark)
@@ -232,7 +266,7 @@ export async function createGameListRows(fieldsList) {
           normalizeFieldValue("region", fields.region),
           fields.platform ? String(fields.platform) : null,
           fields.server ? String(fields.server) : null,
-          normalizeFieldValue("vpn", "NO VPN"),
+          normalizeFieldValue("vpn", "NO"),
           "",
           0,
           normalizeFieldValue("botManual", fields.botManual),
@@ -241,19 +275,29 @@ export async function createGameListRows(fieldsList) {
           null,
         ]
       );
-      created.push(mapRow(result.rows[0]));
+      const row = mapRow(result.rows[0]);
+      created.push(row);
+      await recordGameinfoAudit({
+        gameId: row.id,
+        area: "import",
+        action: "create",
+        source: "import",
+        actor,
+        after: row,
+        client,
+      });
     }
-    await client.query("COMMIT");
+    if (!transactionClient) await client.query("COMMIT");
     return created;
   } catch (error) {
-    await client.query("ROLLBACK");
+    if (!transactionClient) await client.query("ROLLBACK");
     throw error;
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
 }
 
-export async function updateGameListRow(id, fields, transactionClient = null) {
+export async function updateGameListRow(id, fields, transactionClient = null, actor = null) {
   const pool = await getReadyPool();
   const sets = [];
   const values = [];
@@ -270,17 +314,34 @@ export async function updateGameListRow(id, fields, transactionClient = null) {
 
   const client = transactionClient || await pool.connect();
   try {
+    if (!transactionClient) await client.query("BEGIN");
+    const previous = await client.query(`SELECT * FROM game_list WHERE id = $1 FOR UPDATE`, [id]);
     const result = await client.query(
       `UPDATE game_list SET ${sets.join(", ")} WHERE id = $${i} RETURNING *`,
       values
     );
-    return result.rows[0] ? mapRow(result.rows[0]) : null;
+    const updated = result.rows[0] ? mapRow(result.rows[0]) : null;
+    if (updated) {
+      await recordGameinfoAudit({
+        gameId: id,
+        area: "game",
+        actor,
+        before: previous.rows[0] ? mapRow(previous.rows[0]) : null,
+        after: updated,
+        client,
+      });
+    }
+    if (!transactionClient) await client.query("COMMIT");
+    return updated;
+  } catch (error) {
+    if (!transactionClient) await client.query("ROLLBACK");
+    throw error;
   } finally {
     if (!transactionClient) client.release();
   }
 }
 
-export async function setGameListServiceStatus(gameIds, enabled) {
+export async function setGameListServiceStatus(gameIds, enabled, actor = null) {
   const ids = [...new Set((gameIds || []).map(Number).filter((id) => Number.isInteger(id) && id > 0))];
   if (ids.length === 0) throw createHttpError("กรุณาเลือกเกม", 400);
   const normalizedEnabled = enabled === true;
@@ -290,6 +351,11 @@ export async function setGameListServiceStatus(gameIds, enabled) {
     await client.query("BEGIN");
     const existing = await client.query(`SELECT id FROM game_list WHERE id = ANY($1::int[]) FOR UPDATE`, [ids]);
     if (existing.rows.length !== ids.length) throw createHttpError("มีเกมที่เลือกไม่อยู่ในระบบ", 404);
+    const previous = await client.query(
+      `SELECT game_id, enabled FROM gamelist_service_status WHERE game_id = ANY($1::int[])`,
+      [ids]
+    );
+    const beforeById = new Map(previous.rows.map((row) => [Number(row.game_id), { enabled: row.enabled }]));
     for (const gameId of ids) {
       await client.query(
         `INSERT INTO gamelist_service_status (game_id, enabled, updated_at)
@@ -298,6 +364,14 @@ export async function setGameListServiceStatus(gameIds, enabled) {
          SET enabled = EXCLUDED.enabled, updated_at = NOW()`,
         [gameId, normalizedEnabled]
       );
+      await recordGameinfoAudit({
+        gameId,
+        area: "status",
+        actor,
+        before: beforeById.get(gameId) || { enabled: true },
+        after: { enabled: normalizedEnabled },
+        client,
+      });
     }
     await client.query("COMMIT");
   } catch (error) {
@@ -309,11 +383,22 @@ export async function setGameListServiceStatus(gameIds, enabled) {
   return { gameIds: ids, enabled: normalizedEnabled };
 }
 
-export async function deleteGameListRow(id) {
+export async function deleteGameListRow(id, actor = null) {
   const pool = await getReadyPool();
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const existing = await client.query(`SELECT * FROM game_list WHERE id = $1 FOR UPDATE`, [id]);
+    if (existing.rows[0]) {
+      await recordGameinfoAudit({
+        gameId: id,
+        area: "game",
+        action: "delete",
+        actor,
+        before: mapRow(existing.rows[0]),
+        client,
+      });
+    }
     await deleteGamelistPacksForGame(id, client);
     await deleteGamelistTutorialForGame(id, client);
     await deleteGamelistImageForGame(id, client);

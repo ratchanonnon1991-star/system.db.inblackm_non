@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { gameinfoListHref, normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
+import { Eye, Settings } from "lucide-react";
+import { gameinfoGameHref, gameinfoListHref, normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 
 // Everyone lands on the card dashboard. Admin/staff can open /manage;
 // role "user" only gets the dashboard link.
@@ -10,6 +11,7 @@ export default function GameinfoModeToggle({ lang, editableRole }) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const dataMode = normalizeGameinfoDataMode(searchParams.get("mode"));
+  const topupView = searchParams.get("view") === "topup";
 
   if (!editableRole) {
     return (
@@ -21,22 +23,45 @@ export default function GameinfoModeToggle({ lang, editableRole }) {
 
   const isManageMode = pathname.split("/").includes("manage");
   const href = gameinfoListHref(lang, dataMode, !isManageMode);
+  const gameId = pathname.split("/")[3];
+  const isGamePage = /^\d+$/.test(gameId || "");
+  const topupHref = isGamePage
+    ? gameinfoGameHref(lang, gameId, dataMode, false, !topupView)
+    : gameinfoListHref(lang, dataMode, false, !topupView);
+  const adminHref = isGamePage
+    ? gameinfoGameHref(lang, gameId, dataMode, true)
+    : gameinfoListHref(lang, dataMode);
+
+  if (topupView) {
+    return (
+      <Link
+        href={adminHref}
+        className="flex h-10 items-center gap-2 rounded-lg border border-linear-ink bg-linear-ink px-3 text-xs font-medium text-linear-canvas hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-linear-primary"
+      >
+        <Settings size={14} aria-hidden="true" /> มุมมอง Admin
+      </Link>
+    );
+  }
 
   return (
-    <Link
-      href={href}
-      className={`rounded-lg border px-3 py-2 text-xs font-medium ${
-        isManageMode
-          ? "border-linear-hairline-strong text-linear-ink-muted hover:bg-linear-surface-2"
-          : "border-linear-ink bg-linear-ink text-linear-canvas hover:opacity-90"
-      }`}
-      title={
-        isManageMode
-          ? "กลับหน้ารวมเกม"
-          : "เปิดตารางจัดการข้อมูลเกม"
-      }
-    >
-      {isManageMode ? "กลับหน้ารวมเกม" : "จัดการข้อมูล"}
-    </Link>
+    <>
+      <Link
+        href={topupHref}
+        className="flex h-10 items-center gap-2 rounded-lg border border-linear-hairline-strong px-3 text-xs font-medium text-linear-ink-muted hover:bg-linear-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-linear-primary"
+      >
+        <Eye size={14} aria-hidden="true" /> มุมมอง Topup
+      </Link>
+      <Link
+        href={href}
+        className={`flex h-10 items-center rounded-lg border px-3 text-xs font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-linear-primary ${
+          isManageMode
+            ? "border-linear-hairline-strong text-linear-ink-muted hover:bg-linear-surface-2"
+            : "border-linear-ink bg-linear-ink text-linear-canvas hover:opacity-90"
+        }`}
+        title={isManageMode ? "กลับหน้ารวมเกม" : "เปิดตารางจัดการข้อมูลเกม"}
+      >
+        {isManageMode ? "กลับหน้ารวมเกม" : "จัดการข้อมูล"}
+      </Link>
+    </>
   );
 }

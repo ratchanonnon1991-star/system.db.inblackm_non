@@ -74,7 +74,7 @@ export default function GameinfoReportPanel({ gameId, initialReports, canManage,
           ส่งรายงาน
         </button>
       </form> : null}
-      {error ? <p role="alert" className="mt-2 text-xs text-linear-primary">{error}</p> : null}
+      {error ? <p role="alert" className="mt-2 text-xs text-linear-danger">{error}</p> : null}
 
       {reports.length ? (
         <div className="mt-4 divide-y divide-linear-hairline border-t border-linear-hairline">
@@ -83,7 +83,7 @@ export default function GameinfoReportPanel({ gameId, initialReports, canManage,
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <span className={report.status === "open" ? "font-medium text-linear-primary" : "text-emerald-700"}>
+                    <span className={report.status === "open" ? "font-medium text-linear-danger" : "text-linear-success"}>
                       {report.status === "open" ? "ต้องตรวจสอบ" : "ตรวจสอบแล้ว"}
                     </span>
                     <span className="rounded-full bg-linear-surface-3 px-2 py-0.5 text-linear-ink-muted">

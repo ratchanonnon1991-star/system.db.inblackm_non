@@ -8,9 +8,8 @@ import {
   listAllGamelistChannels,
   listGamelistChannelsByGame,
   listGamelistPackLanguages,
-  listGamelistVpnByGame,
 } from "@/server/gameinfo-gamelist-packs";
-import { getGamelistTutorial, getGamelistWarning } from "@/server/gameinfo-gamelist-tutorial";
+import { getGamelistTutorial, getGamelistVpnNote, getGamelistWarning } from "@/server/gameinfo-gamelist-tutorial";
 import { getGamelistImage } from "@/server/gameinfo-gamelist-image";
 import { getGamelistLinks, legacyGamelistLinks } from "@/server/gameinfo-gamelist-links";
 import { getGameinfoFormulaVariables } from "@/server/gameinfo-formula-variables";
@@ -36,7 +35,7 @@ import { hasPermission } from "@/lib/permissions";
 
 export default async function GameinfoGameDetailPage({ params, searchParams, manage = false }) {
   const { lang, id } = await params;
-  const { mode: rawMode } = await searchParams;
+  const { mode: rawMode, view: rawView } = await searchParams;
   const dataMode = normalizeGameinfoDataMode(rawMode);
   const user = await getSessionUser();
   if (!user) redirect("/");
@@ -44,6 +43,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   const canReport = hasPermission(user, "gameinfo.report");
   if (manage && !editableRole) redirect(gameinfoGameHref(lang, id, dataMode));
   const manageMode = manage && editableRole;
+  const topupView = !manageMode && rawView === "topup";
 
   // A non-numeric segment here (e.g. a stale /admin bookmark from before that
   // path was removed) would otherwise reach getGameListRow() as NaN and blow
@@ -87,12 +87,12 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         main: [...new Set(flatModePacks.flatMap((pack) => pack.channelsMain || []))],
         secondary: [...new Set(flatModePacks.flatMap((pack) => pack.channelsSecondary || []))],
       };
-      const [vpnByGame, channelsByGame, allRows, tutorial, warning, image, storedLinks, variableData, tagsByGame, publishersByGame, loadedReports, sharedChannels, languages, loadedTagImages, loadedPublisherImages] = await Promise.all([
-        listGamelistVpnByGame(),
+      const [channelsByGame, allRows, tutorial, warning, vpnNote, image, storedLinks, variableData, tagsByGame, publishersByGame, loadedReports, sharedChannels, languages, loadedTagImages, loadedPublisherImages] = await Promise.all([
         listGamelistChannelsByGame(),
         listGameListRows(),
         dataMode === "idpass" ? Promise.resolve(modeData.tutorial) : getGamelistTutorial(row.id),
         dataMode === "idpass" ? Promise.resolve(modeData.warning) : getGamelistWarning(row.id),
+        getGamelistVpnNote(row.id),
         getGamelistImage(row.id),
         dataMode === "idpass" ? Promise.resolve({ exists: true, links: modeData.links }) : getGamelistLinks(row.id),
         getGameinfoFormulaVariables(row.id),
@@ -118,11 +118,13 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
       row = {
         ...row,
         ...(modeData?.fields || {}),
-        vpnComputed: dataMode === "idpass" ? (flatModePacks.some((pack) => pack.country) ? "YES" : "NO") : vpnByGame[row.id] ? "YES" : "NO",
         channels: dataMode === "idpass" ? modeChannels : channelsByGame[row.id] || { main: [], secondary: [] },
         orderPosition: orderPosition > 0 ? orderPosition : null,
         hasTutorial: tutorial.categories.some((c) => c.steps.length > 0),
         hasWarning: warning.categories.some((c) => c.steps.length > 0),
+        warningAutoOpen: Boolean(warning.autoOpen),
+        warningRevision: warning.revision || "legacy",
+        hasVpnNote: vpnNote.categories.some((c) => c.steps.length > 0),
         image: image.imageUrl,
         links: storedLinks.exists ? storedLinks.links : legacyGamelistLinks(row.link),
         packDisabledCount,
@@ -144,7 +146,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   }
   if (!row) notFound();
 
-  const viewHref = gameinfoGameHref(lang, row.id, dataMode);
+  const viewHref = gameinfoGameHref(lang, row.id, dataMode, false, topupView);
   const manageHref = gameinfoGameHref(lang, row.id, dataMode, true);
   const packGame = {
     id: row.id,
@@ -161,19 +163,19 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
 
   return (
     <div className={`${manageMode ? "" : "mx-auto max-w-7xl"} px-4 py-8`}>
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <GameinfoBackLink
           className="flex items-center gap-1 text-sm text-linear-primary hover:underline"
-          href={manageMode ? viewHref : gameinfoListHref(lang, dataMode)}
+          href={manageMode ? viewHref : gameinfoListHref(lang, dataMode, false, topupView)}
         />
-        <div className="flex items-center gap-2">
-          {editableRole ? (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {editableRole && !topupView ? (
             <Link href={manageMode ? viewHref : manageHref} className="rounded-md border border-linear-hairline-strong px-3 py-1.5 text-xs font-medium text-linear-ink-muted hover:bg-linear-surface-2">
               {manageMode ? "ดูหน้าผู้ใช้" : "จัดการเกม"}
             </Link>
           ) : null}
           {manageMode ? <GameinfoModeCloneButton gameId={row.id} currentMode={dataMode} /> : null}
-          <GameinfoDatasetToggle basePath={gameinfoGameHref(lang, row.id, "uid", manageMode)} />
+          <GameinfoDatasetToggle basePath={gameinfoGameHref(lang, row.id, "uid", manageMode, topupView)} />
         </div>
       </div>
       {manageMode ? <GameinfoGameManager row={row} existingNames={existingNames} tagSuggestions={tagSuggestions} publisherSuggestions={publisherSuggestions} dataMode={dataMode} /> : null}

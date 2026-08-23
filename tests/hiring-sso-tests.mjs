@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { getGamedbBaseUrl, getHiringBaseUrl, getSsoSecret } from "@/lib/hiring-sso.js";
 
 let passed = 0;
@@ -61,5 +62,10 @@ assert.throws(
   "no configured URL at all is a hard error, not a guess from the request"
 );
 passed += 1;
+
+const mockRoute = fs.readFileSync(new URL("../src/app/api/sso/mock/route.js", import.meta.url), "utf8");
+assert.match(mockRoute, /NODE_ENV === "production"[\s\S]*status: 404/, "mock SSO must be unreachable in production");
+assert.match(mockRoute, /PERMISSION_PRESETS\.projectmTopup/, "mock account should be usable in Projectm Topup");
+passed += 2;
 
 console.log(`${passed} passed`);

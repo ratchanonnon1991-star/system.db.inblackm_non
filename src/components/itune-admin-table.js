@@ -6,8 +6,16 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  ArrowUpDown,
   BookmarkPlus,
+  CalendarDays,
   Check,
+  ChevronsLeft,
+  ChevronsRight,
   Copy,
   Filter,
   History,
@@ -27,6 +35,7 @@ import {
 import { useItuneSettings } from "@/lib/itune-settings";
 import { useMinuteTicker } from "@/lib/itune-ticker";
 import { readImageFileAsDataUrl } from "@/lib/itune-image";
+import { nextItuneTableSort, sortItuneTableRows } from "@/lib/itune-table-sort";
 import ItuneComboInput from "@/components/itune-combo-input";
 import ItuneCountdownCell from "@/components/itune-countdown-cell";
 import ItuneImagePickerModal from "@/components/itune-image-picker-modal";
@@ -71,6 +80,29 @@ const SEARCH_COLUMNS = [
   { key: "linkSms", label: "Link_SMS" },
   { key: "qna", label: "QNA" },
 ];
+
+const PAGE_SIZES = [10, 25, 50, 100, 200];
+
+function bangkokDate(offsetDays = 0) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en", {
+      timeZone: "Asia/Bangkok",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    })
+      .formatToParts(new Date())
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value])
+  );
+  return new Date(Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day) + offsetDays))
+    .toISOString()
+    .slice(0, 10);
+}
+
+function defaultDateRange() {
+  return { from: bangkokDate(-1), to: bangkokDate() };
+}
 
 // Text to match a column's value against — mirrors what the cell actually
 // displays (formatted date, derived status label, 2-decimal amount) rather
@@ -117,6 +149,27 @@ const STATUS_TONE_CLASS = {
   success: "bg-ll-success-bg text-ll-success",
   danger: "bg-ll-primary-subtle-bg text-ll-primary-subtle-text",
 };
+
+function SortHeader({ column, sort, onSort, className = "" }) {
+  const direction = sort?.key === column.key ? sort.direction : null;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(column.key)}
+      title="คลิกเพื่อเรียง: น้อยไปมาก → มากไปน้อย → ลำดับเดิม"
+      className={`flex min-w-0 items-center gap-1 truncate px-3 py-2 text-left hover:text-ll-ink ${className}`}
+    >
+      <span className="truncate">{column.label}</span>
+      {direction === "asc" ? (
+        <ArrowUp size={11} className="shrink-0" />
+      ) : direction === "desc" ? (
+        <ArrowDown size={11} className="shrink-0" />
+      ) : (
+        <ArrowUpDown size={11} className="shrink-0 opacity-40" />
+      )}
+    </button>
+  );
+}
 
 // Portal-rendered tooltip, positioned off the trigger's own bounding rect —
 // same technique RowActionsMenu uses for its dropdown. A native `title`
@@ -489,7 +542,7 @@ function RowActionsMenu({
         ref={triggerRef}
         type="button"
         onClick={toggleOpen}
-        className="flex h-7 w-7 items-center justify-center rounded-full text-ll-ink-tertiary hover:bg-ll-surface-2 hover:text-ll-ink"
+        className="flex h-10 w-10 items-center justify-center rounded-full text-ll-ink-tertiary hover:bg-ll-surface-2 hover:text-ll-ink"
         aria-label="เมนู"
         title="เมนู"
       >
@@ -788,6 +841,58 @@ function ItuneAdminFilterModal({ excluded, onChangeExcluded, onClose }) {
   );
 }
 
+function ItuneDateFilterModal({ value, loading, error, onApply, onClose }) {
+  const [from, setFrom] = useState(value.from || "");
+  const [to, setTo] = useState(value.to || "");
+  const empty = !from && !to;
+  const invalid = !empty && (!from || !to || from > to);
+
+  useEffect(() => {
+    function onKeyDown(event) {
+      if (event.key === "Escape" && !loading) onClose();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [loading, onClose]);
+
+  return createPortal(
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
+      <div className="w-full max-w-sm rounded-lg border border-ll-hairline bg-ll-surface-1 p-4 shadow-[var(--ll-shadow-modal)]">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-ll-ink">กรองตามวันที่เพิ่มเมล</h2>
+          <button type="button" onClick={onClose} disabled={loading} aria-label="ปิด" className="flex h-10 w-10 items-center justify-center rounded text-ll-ink-tertiary hover:bg-ll-surface-2">
+            <X size={14} />
+          </button>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <label className="text-xs font-medium text-ll-ink-subtle">
+            จากวันที่
+            <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="mt-1 h-9 w-full rounded-md border border-ll-hairline-strong bg-ll-surface-1 px-2 text-sm text-ll-ink outline-none focus:border-ll-primary" />
+          </label>
+          <label className="text-xs font-medium text-ll-ink-subtle">
+            ถึงวันที่
+            <input type="date" value={to} onChange={(event) => setTo(event.target.value)} className="mt-1 h-9 w-full rounded-md border border-ll-hairline-strong bg-ll-surface-1 px-2 text-sm text-ll-ink outline-none focus:border-ll-primary" />
+          </label>
+        </div>
+        {invalid && <p className="mt-2 text-xs text-ll-primary-subtle-text">กรุณาเลือกช่วงวันที่ให้ถูกต้อง</p>}
+        {error && <p className="mt-2 text-xs text-ll-primary-subtle-text">{error}</p>}
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" disabled={loading} onClick={() => onApply({ all: "1" })} className="rounded-md px-3 py-2 text-xs text-ll-ink-subtle hover:bg-ll-surface-2">
+            แสดงทั้งหมด
+          </button>
+          <button type="button" disabled={loading} onClick={() => onApply(defaultDateRange())} className="rounded-md px-3 py-2 text-xs text-ll-ink-subtle hover:bg-ll-surface-2">
+            วันนี้และเมื่อวาน
+          </button>
+          <button type="button" disabled={loading || empty || invalid} onClick={() => onApply({ from, to })} className="rounded-md bg-ll-emphasis-bg px-3 py-2 text-xs font-medium text-ll-emphasis-text disabled:opacity-40">
+            {loading ? "กำลังโหลด..." : "โหลดรายการ"}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 export default function ItuneAdminTable({ initialEntries }) {
   const pathname = usePathname();
   const [rows, setRows] = useState(initialEntries);
@@ -805,9 +910,15 @@ export default function ItuneAdminTable({ initialEntries }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [selectedFilterId, setSelectedFilterId] = useState("");
   // The table keeps only its search-column filter locally.
-  const [openPanel, setOpenPanel] = useState(null); // null | "filter"
+  const [openPanel, setOpenPanel] = useState(null); // null | "filter" | "date"
+  const [dateRange, setDateRange] = useState(defaultDateRange);
+  const [loadingDates, setLoadingDates] = useState(false);
+  const [dateError, setDateError] = useState("");
   const [imagePickerFor, setImagePickerFor] = useState(null);
   const [imageError, setImageError] = useState({});
   const [reportFor, setReportFor] = useState(null);
@@ -911,7 +1022,12 @@ export default function ItuneAdminTable({ initialEntries }) {
       activeColumns.some((c) => searchValueFor(row, c.key).toLowerCase().includes(q))
     );
   }, [rows, search, searchExcludedColumns]);
-  const selectableFilteredIds = filteredRows.filter((row) => !isTempId(row.id)).map((row) => row.id);
+  const sortedRows = useMemo(() => sortItuneTableRows(filteredRows, sort), [filteredRows, sort]);
+  const pageCount = Math.max(1, Math.ceil(sortedRows.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * pageSize;
+  const visibleRows = sortedRows.slice(pageStart, pageStart + pageSize);
+  const selectableFilteredIds = visibleRows.filter((row) => !isTempId(row.id)).map((row) => row.id);
   const allFilteredSelected =
     selectableFilteredIds.length > 0 && selectableFilteredIds.every((id) => selectedIds.has(id));
 
@@ -934,6 +1050,7 @@ export default function ItuneAdminTable({ initialEntries }) {
     if (!filter) return;
     setSearch(filter.search || "");
     setSetting("searchExcludedColumns", filter.excludedColumns || []);
+    setPage(1);
   }
 
   function deleteSelectedFilter() {
@@ -975,6 +1092,9 @@ export default function ItuneAdminTable({ initialEntries }) {
     const entry = makeEmptyEntry(tempId);
     setRows((prev) => [...prev, entry]);
     setDirtyIds((prev) => new Set(prev).add(tempId));
+    setSearch("");
+    setSort(null);
+    setPage(Math.ceil((rows.length + 1) / pageSize));
     setEditing({ id: tempId, field: EDITABLE_FIELDS[0] });
   }
 
@@ -1003,37 +1123,27 @@ export default function ItuneAdminTable({ initialEntries }) {
     setSaving(true);
     setSaveError("");
     try {
-      const idMap = {};
       const creates = rows.filter((r) => isTempId(r.id) && dirtyIds.has(r.id));
       const updates = rows.filter((r) => !isTempId(r.id) && dirtyIds.has(r.id));
-
-      await Promise.all(
-        creates.map(async (row) => {
-          const payload = {
+      const data = await apiJson("/api/projectm/itune", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          creates: creates.map((row) => ({
+            clientId: row.id,
             ...Object.fromEntries(EDITABLE_FIELDS.map((f) => [f, row[f]])),
             addedAt: row.addedAt,
             amountConfirmImage: row.amountConfirmImage,
-          };
-          const data = await apiJson("/api/projectm/itune", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-            fallbackError: "เพิ่มรายการไม่สำเร็จ",
-          });
-          idMap[row.id] = data.entry;
-        })
-      );
-
-      await Promise.all(
-        updates.map(async (row) => {
-          const payload = Object.fromEntries(EDITABLE_FIELDS.map((f) => [f, row[f]]));
-          await apiJson(`/api/projectm/itune/${row.id}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-            fallbackError: "บันทึกรายการไม่สำเร็จ",
-          });
-        })
+          })),
+          updates: updates.map((row) => ({
+            id: row.id,
+            ...Object.fromEntries(EDITABLE_FIELDS.map((f) => [f, row[f]])),
+          })),
+        }),
+        fallbackError: "บันทึกรายการไม่สำเร็จ",
+      });
+      const idMap = Object.fromEntries(
+        (data.created || []).map(({ clientId, entry }) => [clientId, entry])
       );
 
       setRows((prev) => prev.map((r) => (idMap[r.id] ? idMap[r.id] : r)));
@@ -1055,6 +1165,30 @@ export default function ItuneAdminTable({ initialEntries }) {
       setSaveError(err.message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function loadDateRange(nextRange) {
+    if (dirty && !window.confirm("มีรายการที่ยังไม่ได้บันทึก ต้องการละทิ้งและเปลี่ยนช่วงวันที่หรือไม่?")) return;
+    setLoadingDates(true);
+    setDateError("");
+    try {
+      const params = new URLSearchParams(nextRange);
+      const data = await apiJson(`/api/projectm/itune?${params}`, {
+        fallbackError: "โหลดรายการตามวันที่ไม่สำเร็จ",
+      });
+      setRows(data.entries || []);
+      setSavedRows(data.entries || []);
+      setDirtyIds(new Set());
+      setSelectedIds(new Set());
+      setEditing(null);
+      setDateRange(nextRange.all ? {} : nextRange);
+      setPage(1);
+      setOpenPanel(null);
+    } catch (err) {
+      setDateError(err.message);
+    } finally {
+      setLoadingDates(false);
     }
   }
 
@@ -1330,6 +1464,41 @@ export default function ItuneAdminTable({ initialEntries }) {
     );
   }
 
+  const rangeStart = filteredRows.length === 0 ? 0 : pageStart + 1;
+  const rangeEnd = Math.min(filteredRows.length, pageStart + pageSize);
+  const paginationBar = filteredRows.length > 0 && (
+    <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+      <label className="flex items-center gap-2 text-xs font-medium text-ll-ink-muted">
+        แสดงต่อหน้า
+        <select
+          value={pageSize}
+          onChange={(event) => {
+            setPageSize(Number(event.target.value));
+            setPage(1);
+          }}
+          className="h-8 rounded-lg border border-ll-hairline-strong bg-ll-surface-1 px-2.5 text-xs text-ll-ink outline-none"
+        >
+          {PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}
+        </select>
+      </label>
+      <div className="flex items-center gap-3">
+        <span className="text-xs text-ll-ink-tertiary">{rangeStart}-{rangeEnd} จาก {filteredRows.length}</span>
+        <div className="flex items-center gap-1">
+          {[
+            ["หน้าแรก", () => setPage(1), currentPage === 1, ChevronsLeft],
+            ["ก่อนหน้า", () => setPage(Math.max(1, currentPage - 1)), currentPage === 1, ArrowLeft],
+            ["ถัดไป", () => setPage(Math.min(pageCount, currentPage + 1)), currentPage >= pageCount, ArrowRight],
+            ["หน้าสุดท้าย", () => setPage(pageCount), currentPage >= pageCount, ChevronsRight],
+          ].map(([label, onClick, disabled, Icon]) => (
+            <button key={label} type="button" onClick={onClick} disabled={disabled} title={label} aria-label={label} className="flex h-10 w-10 items-center justify-center rounded-lg border border-ll-hairline-strong text-ll-ink-muted hover:bg-ll-surface-2 disabled:opacity-40">
+              <Icon size={14} />
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-3 pb-24">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1343,14 +1512,20 @@ export default function ItuneAdminTable({ initialEntries }) {
             <input
               type="text"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
               placeholder="ค้นหา..."
               className="h-9 w-56 rounded-md border border-ll-hairline-strong bg-ll-surface-1 pl-8 pr-8 text-sm text-ll-ink outline-none focus:border-ll-primary"
             />
             {search && (
               <button
                 type="button"
-                onClick={() => setSearch("")}
+                onClick={() => {
+                  setSearch("");
+                  setPage(1);
+                }}
                 className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-ll-ink-tertiary hover:bg-ll-surface-2 hover:text-ll-ink"
                 aria-label="ล้างคำค้นหา"
                 title="ล้างคำค้นหา"
@@ -1378,10 +1553,30 @@ export default function ItuneAdminTable({ initialEntries }) {
             >
               <BookmarkPlus size={14} /> บันทึกชุดกรอง
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDateError("");
+                setOpenPanel("date");
+              }}
+              className="flex h-9 items-center gap-2 rounded-md border border-ll-hairline-strong px-2.5 text-xs text-ll-ink-subtle hover:bg-ll-surface-2"
+              title="โหลดรายการตามวันที่"
+            >
+              <CalendarDays size={15} /> {dateRange.from ? `${dateRange.from} – ${dateRange.to}` : "ทั้งหมด"}
+            </button>
             {openPanel === "filter" && (
               <ItuneAdminFilterModal
                 excluded={searchExcludedColumns}
                 onChangeExcluded={(next) => setSetting("searchExcludedColumns", next)}
+                onClose={() => setOpenPanel(null)}
+              />
+            )}
+            {openPanel === "date" && (
+              <ItuneDateFilterModal
+                value={dateRange}
+                loading={loadingDates}
+                error={dateError}
+                onApply={loadDateRange}
                 onClose={() => setOpenPanel(null)}
               />
             )}
@@ -1404,7 +1599,7 @@ export default function ItuneAdminTable({ initialEntries }) {
                 <button
                   type="button"
                   onClick={deleteSelectedFilter}
-                  className="flex h-8 w-8 items-center justify-center rounded-md text-ll-ink-tertiary hover:bg-ll-primary-subtle-bg hover:text-ll-primary"
+                  className="flex h-10 w-10 items-center justify-center rounded-md text-ll-ink-tertiary hover:bg-ll-primary-subtle-bg hover:text-ll-primary"
                   title="ลบชุดตัวกรองที่เลือก"
                   aria-label="ลบชุดตัวกรองที่เลือก"
                 >
@@ -1434,6 +1629,8 @@ export default function ItuneAdminTable({ initialEntries }) {
         </div>
       </div>
 
+      {paginationBar}
+
       <div className="overflow-x-auto rounded-lg border border-ll-hairline bg-ll-surface-1 shadow-[var(--ll-shadow-card)]">
         <div className="w-full text-sm" style={{ minWidth: GRID_MIN_WIDTH }}>
           <div
@@ -1454,9 +1651,9 @@ export default function ItuneAdminTable({ initialEntries }) {
                 aria-label="เลือกทุกรายการที่แสดง"
               />
             </div>
-            <div className="truncate px-3 py-2 text-center">ID</div>
-            <div className="flex items-center justify-between gap-2 px-3 py-1.5">
-              <span>เวลา</span>
+            <SortHeader column={SEARCH_COLUMNS[0]} sort={sort} onSort={(key) => { setSort((current) => nextItuneTableSort(current, key)); setPage(1); }} className="justify-center" />
+            <div className="flex items-center justify-between gap-1">
+              <SortHeader column={SEARCH_COLUMNS[1]} sort={sort} onSort={(key) => { setSort((current) => nextItuneTableSort(current, key)); setPage(1); }} />
               <span className="flex rounded-full border border-ll-hairline bg-ll-surface-1 p-0.5 normal-case tracking-normal">
                 {[["remaining", "คงเหลือ"], ["dateTime", "วันเวลา"]].map(([mode, label]) => (
                   <button
@@ -1475,21 +1672,22 @@ export default function ItuneAdminTable({ initialEntries }) {
                 ))}
               </span>
             </div>
-            <div className="truncate px-3 py-2">Email</div>
-            <div className="truncate px-3 py-2">Password</div>
-            <div className="truncate px-3 py-2">Status</div>
-            <div className="truncate px-3 py-2">เพิ่มโดย</div>
-            <div className="truncate px-3 py-2">รับไปโดย</div>
-            <div className="truncate px-3 py-2">สกุลเงิน</div>
-            <div className="truncate px-3 py-2">Supplier</div>
-            <div className="truncate px-3 py-2 text-right">Amount</div>
-            <div className="truncate px-3 py-2 text-center">รูปยืนยัน</div>
-            <div className="truncate px-3 py-2">Link_SMS</div>
-            <div className="truncate px-3 py-2">QNA</div>
+            {SEARCH_COLUMNS.slice(2).map((column) => (
+              <SortHeader
+                key={column.key}
+                column={column}
+                sort={sort}
+                onSort={(key) => {
+                  setSort((current) => nextItuneTableSort(current, key));
+                  setPage(1);
+                }}
+                className={column.key === "amount" ? "justify-end" : column.key === "amountConfirmImage" ? "justify-center" : ""}
+              />
+            ))}
             <div className="sticky right-0 z-10 bg-ll-surface-2 px-3 py-2" />
           </div>
 
-          {filteredRows.map((row) => (
+          {visibleRows.map((row) => (
             <div
               key={row.id}
               className={`group/row grid ${GRID_COLS} items-center border-b border-ll-hairline last:border-0 hover:bg-ll-surface-2/50`}

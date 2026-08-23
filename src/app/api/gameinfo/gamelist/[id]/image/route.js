@@ -3,6 +3,7 @@ import { requireGameinfoAccess, requireGameinfoEditor } from "@/server/auth";
 import { getGamelistImage, saveGamelistImage } from "@/server/gameinfo-gamelist-image";
 import { recordEdit } from "@/server/gamedb-edit-log";
 import { requestMeta } from "@/lib/request-meta";
+import { auditActor, recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
 
 export async function GET(request, { params }) {
   try {
@@ -22,6 +23,13 @@ export async function PUT(request, { params }) {
     const body = await request.json();
     const before = await getGamelistImage(Number(id));
     const image = await saveGamelistImage(Number(id), body.imageUrl);
+    await recordGameinfoAudit({
+      gameId: Number(id),
+      area: "image",
+      actor: auditActor(admin),
+      before: { image: Boolean(before.imageUrl) },
+      after: { image: Boolean(image.imageUrl) },
+    });
     if (before.imageUrl !== image.imageUrl) {
       await recordEdit({
         queryId: null,

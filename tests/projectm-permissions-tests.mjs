@@ -3,7 +3,8 @@ import { canManageGameinfo, hasGameinfoAccess, hasProjectmAccess } from "../src/
 const cases = [
   ["admin เข้าได้", { projectmRole: "admin" }, true],
   ["topup เข้าได้", { projectmRole: "topup" }, true],
-  ["ไม่มีสิทธิ์เข้าไม่ได้", { projectmRole: null }, false],
+  ["ผู้ใช้ทั่วไปเข้า Projectm ได้", { projectmRole: null }, true],
+  ["ผู้ที่ยังไม่ login เข้าไม่ได้", null, false],
 ];
 const failed = cases.filter(([, user, expected]) => hasProjectmAccess(user) !== expected);
 

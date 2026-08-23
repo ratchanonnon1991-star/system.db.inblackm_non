@@ -95,7 +95,7 @@ check(
 reset();
 await deleteGameListRow(7);
 ok("delete commits all game cleanup atomically", log.some((entry) => entry.text.trim() === "COMMIT"));
-ok("delete removes pack audit history", log.some((entry) => /DELETE FROM gamelist_pack_audit_logs/.test(entry.text)));
+ok("delete preserves audit history", !log.some((entry) => /DELETE FROM gamelist_pack_audit_logs/.test(entry.text)));
 ok("delete removes pack view presets", log.some((entry) => /DELETE FROM gamelist_pack_view_presets/.test(entry.text)));
 
 reset();

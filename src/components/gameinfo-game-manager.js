@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Image as ImageIcon } from "lucide-react";
+import { CheckCircle2, Image as ImageIcon } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import {
   buildGameinfoStatusUpdate,
@@ -12,7 +12,7 @@ import {
 } from "@/lib/gameinfo-game-manager";
 import GameinfoNameInput from "./gameinfo-name-input";
 import GameinfoImagePickerModal from "./gameinfo-image-picker-modal";
-import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
+import GameinfoTutorialButton, { GameinfoDetailsButton } from "./gameinfo-tutorial-modal";
 import { GameinfoGameLinksButton } from "./gameinfo-game-links";
 import GameinfoTagsInput from "./gameinfo-tags-input";
 import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
@@ -24,6 +24,7 @@ function fieldsFromRow(row) {
     platform: row.platform || "",
     server: row.server || "",
     botManual: row.botManual || "",
+    vpn: row.vpn === "YES" ? "YES" : "NO",
   };
 }
 
@@ -102,12 +103,21 @@ export default function GameinfoGameManager({ row, existingNames, tagSuggestions
     setNotice("");
     const modeQuery = dataMode === "idpass" ? "?mode=idpass" : "";
     try {
-      if (JSON.stringify(draft) !== JSON.stringify(saved)) {
+      const gameUpdate = buildGameinfoUpdate(draft, dataMode);
+      if (JSON.stringify(gameUpdate) !== JSON.stringify(buildGameinfoUpdate(saved, dataMode))) {
         await apiJson(`/api/gameinfo/gamelist/${row.id}${modeQuery}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(buildGameinfoUpdate(draft, dataMode)),
+          body: JSON.stringify(gameUpdate),
           fallbackError: "บันทึกข้อมูลเกมไม่สำเร็จ",
+        });
+      }
+      if (dataMode === "idpass" && draft.vpn !== saved.vpn) {
+        await apiJson(`/api/gameinfo/gamelist/${row.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ vpn: draft.vpn }),
+          fallbackError: "บันทึกสถานะ VPN ไม่สำเร็จ",
         });
       }
       if (status !== savedStatus) {
@@ -153,7 +163,7 @@ export default function GameinfoGameManager({ row, existingNames, tagSuggestions
       setSavedImage(image);
       setSavedTagImages(tagImages);
       setSavedPublisherImages(publisherImages);
-      setNotice("บันทึกแล้ว");
+      setNotice("บันทึกเรียบร้อย");
       router.refresh();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "บันทึกข้อมูลเกมไม่สำเร็จ");
@@ -172,9 +182,13 @@ export default function GameinfoGameManager({ row, existingNames, tagSuggestions
           <h1 className="text-xl font-semibold tracking-[-0.3px] text-linear-ink">จัดการข้อมูลเกม</h1>
         </div>
         <div className="flex items-center gap-2">
-          {notice ? <span className="text-xs text-emerald-700">{notice}</span> : null}
+          {notice ? (
+            <span className="flex items-center gap-1.5 text-xs text-linear-success" role="status">
+              <CheckCircle2 size={15} aria-hidden="true" /> {notice}
+            </span>
+          ) : null}
           <button type="button" onClick={cancel} disabled={!dirty || saving} className="h-10 rounded-lg border border-linear-hairline-strong px-4 text-sm text-linear-ink-muted disabled:opacity-40">ยกเลิก</button>
-          <button type="submit" form="gameinfo-manage-form" disabled={!dirty || duplicate || saving} className="h-10 rounded-lg bg-linear-ink px-4 text-sm font-medium text-linear-canvas disabled:opacity-40">{saving ? "กำลังบันทึก…" : "บันทึก"}</button>
+          <button type="submit" form="gameinfo-manage-form" disabled={!dirty || duplicate || saving} className="h-10 rounded-lg bg-linear-primary px-4 text-sm font-medium text-white hover:bg-linear-primary-hover disabled:opacity-40">{saving ? "กำลังบันทึก…" : "บันทึก"}</button>
         </div>
       </div>
 
@@ -206,6 +220,12 @@ export default function GameinfoGameManager({ row, existingNames, tagSuggestions
           <Field label="Region"><input value={draft.region} onChange={(event) => update("region", event.target.value)} className={inputClass} /></Field>
           <Field label="Platform"><input value={draft.platform} onChange={(event) => update("platform", event.target.value)} className={inputClass} /></Field>
           <Field label="Server"><input value={draft.server} onChange={(event) => update("server", event.target.value)} className={inputClass} /></Field>
+          <Field label="VPN">
+            <select value={draft.vpn} onChange={(event) => update("vpn", event.target.value)} className={inputClass}>
+              <option value="NO">ไม่ใช้ VPN</option>
+              <option value="YES">ใช้ VPN</option>
+            </select>
+          </Field>
           <Field label="Bot / Manual"><input value={draft.botManual} onChange={(event) => update("botManual", event.target.value)} className={inputClass} /></Field>
           <Field label="หมวดหมู่">
             <GameinfoTagsInput
@@ -235,15 +255,15 @@ export default function GameinfoGameManager({ row, existingNames, tagSuggestions
           <div className="flex flex-wrap items-center gap-2 sm:col-span-2 xl:col-span-5">
             <span className="mr-1 text-xs font-medium text-linear-ink-tertiary">เนื้อหาและลิงก์</span>
             <GameinfoGameLinksButton gameId={row.id} gameName={draft.game} links={links} editable dataMode={dataMode} onSaved={setLinks} />
-            <GameinfoTutorialButton gameId={row.id} gameName={draft.game} editable hasData={row.hasTutorial} dataMode={dataMode} />
+            <GameinfoDetailsButton gameId={row.id} gameName={draft.game} editable hasTutorial={row.hasTutorial} hasVpnNote={row.hasVpnNote} dataMode={dataMode} />
             <GameinfoTutorialButton gameId={row.id} gameName={draft.game} editable hasData={row.hasWarning} variant="warning" dataMode={dataMode} />
             <span className="text-xs text-linear-ink-tertiary">ส่วนนี้บันทึกทันทีในหน้าต่างของตัวเอง</span>
           </div>
         </div>
       </form>
 
-      {duplicate ? <p role="alert" className="mt-3 text-xs text-linear-primary">มีเกมชื่อนี้อยู่แล้ว กรุณาใช้ชื่ออื่น</p> : null}
-      {error ? <p role="alert" className="mt-3 text-xs text-linear-primary">{error}</p> : null}
+      {duplicate ? <p role="alert" className="mt-3 text-xs text-linear-danger">มีเกมชื่อนี้อยู่แล้ว กรุณาใช้ชื่ออื่น</p> : null}
+      {error ? <p role="alert" className="mt-3 text-xs text-linear-danger">{error}</p> : null}
 
       {pickerOpen ? <GameinfoImagePickerModal value={image} onChange={setImage} onClose={() => setPickerOpen(false)} /> : null}
     </section>

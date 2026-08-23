@@ -5,7 +5,10 @@ export function buildGameinfoUpdate(draft, dataMode = "uid") {
     server: draft.server,
     botManual: draft.botManual,
   };
-  if (dataMode !== "idpass") fields.game = draft.game;
+  if (dataMode !== "idpass") {
+    fields.game = draft.game;
+    if (draft.vpn !== undefined) fields.vpn = draft.vpn;
+  }
   return fields;
 }
 

@@ -21,7 +21,7 @@ import { evaluateGameinfoComputedColumn } from "@/lib/gameinfo-computed-evaluato
 import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
 import GameinfoRatePanel, { useGameinfoRates } from "./gameinfo-rate-panel";
 import GameinfoImagePreview from "./gameinfo-image-preview";
-import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
+import GameinfoTutorialButton, { GameinfoDetailsButton } from "./gameinfo-tutorial-modal";
 import { GameinfoGameLinkButtons } from "./gameinfo-game-links";
 import {
   GameinfoPackColumnControls,
@@ -66,8 +66,8 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
     <div>
       {/* Compact view card — icon, bold title, one-line Region/Platform/
           Server/VPN summary, pill button to the game's top-up website. */}
-      <div className="mb-8 flex items-center gap-4 rounded-xl border border-linear-hairline bg-linear-surface-1 p-4">
-        <div className="flex h-[126px] w-[126px] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-linear-primary/10">
+      <div className="mb-8 flex flex-col items-start gap-4 rounded-xl border border-linear-hairline bg-linear-surface-1 p-4 sm:flex-row sm:items-center">
+        <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-linear-primary/10 sm:h-[126px] sm:w-[126px]">
           {row.image ? (
             <GameinfoImagePreview src={row.image} alt="" wrapperClassName="block h-full w-full">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -104,7 +104,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
             <span>Region: {row.region || "-"}</span>
             <span>Platform: {row.platform || "-"}</span>
             <span>Server: {row.server || "-"}</span>
-            <span>VPN: {row.vpnComputed || "NO"}</span>
+            <span>VPN: {row.vpn}</span>
             <span>Bot/Manual: {row.botManual || "-"}</span>
           </p>
           <ChannelSummary channels={row.channels} className="mt-1.5" />
@@ -124,11 +124,12 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
             {/* Always view-only here regardless of role — editing the
                 tutorial happens from the "⋮" menu / list table, not this
                 page (see gameinfo-gamelist-table.js). */}
-            <GameinfoTutorialButton
+            <GameinfoDetailsButton
               gameId={row.id}
               gameName={row.game}
               editable={false}
-              hasData={row.hasTutorial}
+              hasTutorial={row.hasTutorial}
+              hasVpnNote={row.hasVpnNote}
               dataMode={dataMode}
             />
             <GameinfoTutorialButton
@@ -137,7 +138,8 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
               editable={false}
               hasData={row.hasWarning}
               variant="warning"
-              autoOpen
+              autoOpen={row.warningAutoOpen}
+              autoOpenRevision={row.warningRevision}
               dataMode={dataMode}
             />
           </div>
@@ -153,7 +155,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
         />
       </div>
 
-      <div className="mb-3 flex items-center justify-between gap-2">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-semibold text-linear-ink">แพ็ก</h2>
         <div className="flex items-center gap-2">
           <GameinfoFormulaModeToggle

@@ -575,11 +575,20 @@ function ensureSchema(connection) {
           start_amount NUMERIC(14,2) NOT NULL,
           end_amount NUMERIC(14,2),
           amount_used NUMERIC(14,2),
-          outcome TEXT CHECK (outcome IN ('depleted', 'partial_release', 'unusable')),
+          outcome TEXT CHECK (outcome IN ('depleted', 'partial_release', 'unusable', 'rejected')),
           proof_image TEXT,
           note TEXT,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
+      `);
+      await client.query(`
+        ALTER TABLE projectm_itune_claim_sessions
+        DROP CONSTRAINT IF EXISTS projectm_itune_claim_sessions_outcome_check
+      `);
+      await client.query(`
+        ALTER TABLE projectm_itune_claim_sessions
+        ADD CONSTRAINT projectm_itune_claim_sessions_outcome_check
+        CHECK (outcome IN ('depleted', 'partial_release', 'unusable', 'rejected'))
       `);
       await client.query(`
         CREATE INDEX IF NOT EXISTS projectm_itune_claim_sessions_entry_idx
@@ -696,10 +705,25 @@ async function getReadyPool() {
   return getPoolForConnection(connection);
 }
 
-export async function listItuneEntries() {
+export async function listItuneEntries({ from = null, to = null, all = false } = {}) {
   const pool = await getReadyPool();
   const result = await pool.query(
-    `SELECT e.*, ${HAS_PENDING_REJECT_SQL} FROM projectm_itune_entries e ORDER BY id ASC`
+    `SELECT e.*, ${HAS_PENDING_REJECT_SQL}
+     FROM projectm_itune_entries e
+     WHERE $3::boolean OR (
+       e.added_at >= COALESCE(
+         $1::date::timestamp AT TIME ZONE 'Asia/Bangkok',
+         (date_trunc('day', NOW() AT TIME ZONE 'Asia/Bangkok') - INTERVAL '1 day')
+           AT TIME ZONE 'Asia/Bangkok'
+       )
+       AND e.added_at < COALESCE(
+         (($2::date + 1)::timestamp) AT TIME ZONE 'Asia/Bangkok',
+         (date_trunc('day', NOW() AT TIME ZONE 'Asia/Bangkok') + INTERVAL '1 day')
+           AT TIME ZONE 'Asia/Bangkok'
+       )
+     )
+     ORDER BY id ASC`,
+    [from, to, all]
   );
   const usernamesById = await fetchUsernamesById(
     result.rows.flatMap((r) => [r.created_by_user_id, r.claimed_by_user_id])
@@ -707,13 +731,32 @@ export async function listItuneEntries() {
   return result.rows.map((row) => mapRow(row, usernamesById));
 }
 
-export async function insertItuneEntry({ createdByUserId, addedAt, ...fields }, actor) {
-  const pool = await getReadyPool();
-  // ID (col 1) always picks up right after the current highest id, not
-  // whatever the table's own SERIAL sequence has drifted to — rows deleted
-  // during testing/use otherwise leave the sequence way ahead of the real
-  // row count. LOCK TABLE serializes this against any other concurrent
-  // insert so two admins adding at once can't compute the same "next id".
+async function lockItuneAdminWrites(client) {
+  await client.query(
+    `SELECT pg_advisory_xact_lock(hashtext($1))`,
+    [`${CONNECTION_NAME}:projectm_itune_entries:admin-write`]
+  );
+}
+
+async function assertLinkSmsAvailable(client, linkSms, excludeId = null) {
+  if (!linkSms) return;
+  const dup = await client.query(
+    `SELECT id FROM projectm_itune_entries
+     WHERE link_sms = $1 AND ($2::int IS NULL OR id <> $2)
+     LIMIT 1`,
+    [linkSms, excludeId]
+  );
+  if (dup.rows.length > 0) {
+    throw createHttpError(`Link_SMS นี้ถูกใช้แล้วที่ ID ${dup.rows[0].id}`, 409);
+  }
+}
+
+async function insertItuneEntryWithClient(
+  client,
+  { createdByUserId, addedAt, ...fields },
+  actor,
+  { validateLink = true } = {}
+) {
   const columns = ["id", "created_by_user_id"];
   const placeholders = [
     "(SELECT COALESCE(MAX(id), 0) + 1 FROM projectm_itune_entries)",
@@ -740,41 +783,35 @@ export async function insertItuneEntry({ createdByUserId, addedAt, ...fields }, 
     values.push(fields[key]);
   }
 
+  if (validateLink) await assertLinkSmsAvailable(client, fields.linkSms);
+  const result = await client.query(
+    `INSERT INTO projectm_itune_entries (${columns.join(", ")})
+     VALUES (${placeholders.join(", ")})
+     RETURNING *`,
+    values
+  );
+  const inserted = result.rows[0];
+  await insertEntryLog(client, {
+    row: inserted,
+    action: "create",
+    actor,
+    newValues: entryAuditValues(inserted),
+  });
+  return inserted;
+}
+
+export async function insertItuneEntry({ createdByUserId, addedAt, ...fields }, actor) {
+  const pool = await getReadyPool();
   const client = await pool.connect();
-  let insertedId;
+  let inserted;
   try {
     await client.query("BEGIN");
-    await client.query(
-      "LOCK TABLE projectm_itune_entries IN SHARE ROW EXCLUSIVE MODE"
+    await lockItuneAdminWrites(client);
+    inserted = await insertItuneEntryWithClient(
+      client,
+      { createdByUserId, addedAt, ...fields },
+      actor
     );
-    // Link_SMS must be unique across all entries (blank is exempt — plenty of
-    // rows have no SMS link yet). Checked here, inside the same
-    // transaction/table-lock the id-assignment logic above already takes, so
-    // two concurrent inserts can't both pass the check for the same value —
-    // the lock serializes them.
-    if (fields.linkSms) {
-      const dup = await client.query(
-        `SELECT id FROM projectm_itune_entries WHERE link_sms = $1 LIMIT 1`,
-        [fields.linkSms]
-      );
-      if (dup.rows.length > 0) {
-        throw createHttpError(`Link_SMS นี้ถูกใช้แล้วที่ ID ${dup.rows[0].id}`, 409);
-      }
-    }
-    const result = await client.query(
-      `INSERT INTO projectm_itune_entries (${columns.join(", ")})
-       VALUES (${placeholders.join(", ")})
-       RETURNING *`,
-      values
-    );
-    const inserted = result.rows[0];
-    insertedId = inserted.id;
-    await insertEntryLog(client, {
-      row: inserted,
-      action: "create",
-      actor,
-      newValues: entryAuditValues(inserted),
-    });
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
@@ -783,9 +820,8 @@ export async function insertItuneEntry({ createdByUserId, addedAt, ...fields }, 
     client.release();
   }
 
-  const entry = await findItuneEntryById(insertedId);
   publishItuneQueueChanged();
-  return entry;
+  return mapRow(inserted);
 }
 
 export async function findItuneEntryById(id) {
@@ -802,60 +838,65 @@ export async function findItuneEntryById(id) {
   return mapRow(row, usernamesById);
 }
 
-export async function updateItuneEntry(id, fields, actor) {
-  const pool = await getReadyPool();
-  const client = await pool.connect();
-  let changed = false;
-  try {
-    await client.query("BEGIN");
+async function updateItuneEntryWithClient(
+  client,
+  id,
+  fields,
+  actor,
+  { current: suppliedCurrent = null, validateLink = true } = {}
+) {
+  let current = suppliedCurrent;
+  if (!current) {
     const currentResult = await client.query(
       `SELECT * FROM projectm_itune_entries WHERE id = $1 FOR UPDATE`,
       [id]
     );
-    const current = currentResult.rows[0];
+    current = currentResult.rows[0];
     if (!current) throw createHttpError("ไม่พบรายการนี้ (อาจถูกลบไปแล้ว)", 404);
+  }
 
-    if (fields.linkSms) {
-      const dup = await client.query(
-        `SELECT id FROM projectm_itune_entries WHERE link_sms = $1 AND id <> $2 LIMIT 1`,
-        [fields.linkSms, id]
-      );
-      if (dup.rows.length > 0) {
-        throw createHttpError(`Link_SMS นี้ถูกใช้แล้วที่ ID ${dup.rows[0].id}`, 409);
-      }
-    }
+  if (validateLink) await assertLinkSmsAvailable(client, fields.linkSms, id);
 
-    const sets = [];
-    const values = [];
-    const oldValues = {};
-    const newValues = {};
-    let i = 1;
-    for (const key of EDITABLE_FIELDS) {
-      if (fields[key] === undefined) continue;
-      const before = current[FIELD_COLUMNS[key]];
-      if (valuesMatch(key, before, fields[key])) continue;
-      sets.push(`${FIELD_COLUMNS[key]} = $${i++}`);
-      values.push(fields[key]);
-      oldValues[key] = auditValue(key, before);
-      newValues[key] = auditValue(key, fields[key]);
-    }
+  const sets = [];
+  const values = [];
+  const oldValues = {};
+  const newValues = {};
+  let i = 1;
+  for (const key of EDITABLE_FIELDS) {
+    if (fields[key] === undefined) continue;
+    const before = current[FIELD_COLUMNS[key]];
+    if (valuesMatch(key, before, fields[key])) continue;
+    sets.push(`${FIELD_COLUMNS[key]} = $${i++}`);
+    values.push(fields[key]);
+    oldValues[key] = auditValue(key, before);
+    newValues[key] = auditValue(key, fields[key]);
+  }
 
-    if (sets.length) {
-      sets.push("updated_at = NOW()");
-      values.push(id);
-      await client.query(
-        `UPDATE projectm_itune_entries SET ${sets.join(", ")} WHERE id = $${i}`,
-        values
-      );
-      await insertEntryLog(client, {
-        row: current,
-        action: "update",
-        actor,
-        oldValues,
-        newValues,
-      });
-      changed = true;
-    }
+  if (!sets.length) return { row: current, changed: false };
+  sets.push("updated_at = NOW()");
+  values.push(id);
+  const result = await client.query(
+    `UPDATE projectm_itune_entries SET ${sets.join(", ")} WHERE id = $${i} RETURNING *`,
+    values
+  );
+  await insertEntryLog(client, {
+    row: current,
+    action: "update",
+    actor,
+    oldValues,
+    newValues,
+  });
+  return { row: result.rows[0], changed: true };
+}
+
+export async function updateItuneEntry(id, fields, actor) {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  let updated;
+  try {
+    await client.query("BEGIN");
+    await lockItuneAdminWrites(client);
+    updated = await updateItuneEntryWithClient(client, id, fields, actor);
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
@@ -863,9 +904,125 @@ export async function updateItuneEntry(id, fields, actor) {
   } finally {
     client.release();
   }
-  const entry = await findItuneEntryById(id);
+  if (updated.changed) publishItuneQueueChanged();
+  return mapRow(updated.row);
+}
+
+export async function saveItuneEntries({ creates = [], updates = [] }, actor) {
+  if (!Array.isArray(creates) || !Array.isArray(updates) || creates.length + updates.length === 0) {
+    throw createHttpError("ไม่มีรายการที่ต้องบันทึก", 400);
+  }
+  if (creates.length + updates.length > 200) {
+    throw createHttpError("บันทึกได้ครั้งละไม่เกิน 200 รายการ", 400);
+  }
+
+  const updateIds = updates.map((item) => Number(item.id));
+  if (updateIds.some((id) => !Number.isInteger(id) || id <= 0) || new Set(updateIds).size !== updateIds.length) {
+    throw createHttpError("รายการที่แก้ไขไม่ถูกต้อง", 400);
+  }
+
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  const created = [];
+  let changed = false;
+  try {
+    await client.query("BEGIN");
+    await lockItuneAdminWrites(client);
+
+    const currentResult = updateIds.length
+      ? await client.query(
+          `SELECT * FROM projectm_itune_entries
+           WHERE id = ANY($1::int[])
+           ORDER BY id FOR UPDATE`,
+          [updateIds]
+        )
+      : { rows: [] };
+    const currentById = new Map(currentResult.rows.map((row) => [Number(row.id), row]));
+    if (updateIds.some((id) => !currentById.has(id))) {
+      throw createHttpError("มีบางรายการไม่อยู่แล้ว กรุณาโหลดหน้าใหม่", 409);
+    }
+
+    const finalLinks = new Map();
+    for (const item of updates) {
+      if (item.fields?.linkSms !== undefined) {
+        finalLinks.set(Number(item.id), String(item.fields.linkSms || "").trim());
+      }
+    }
+    let nextTemporaryId = -1;
+    for (const item of creates) {
+      finalLinks.set(nextTemporaryId--, String(item.fields?.linkSms || "").trim());
+    }
+    const ownerByLink = new Map();
+    for (const [id, link] of finalLinks) {
+      if (!link) continue;
+      if (ownerByLink.has(link)) {
+        const owner = ownerByLink.get(link);
+        const ownerLabel = owner > 0 ? `ID ${owner}` : "รายการใหม่อีกแถว";
+        throw createHttpError(`Link_SMS นี้ซ้ำกับ ${ownerLabel}`, 409);
+      }
+      ownerByLink.set(link, id);
+    }
+
+    const desiredLinks = [...new Set([...finalLinks.values()].filter(Boolean))];
+    if (desiredLinks.length > 0) {
+      const existingLinks = await client.query(
+        `SELECT id, link_sms FROM projectm_itune_entries
+         WHERE link_sms = ANY($1::text[])
+         ORDER BY id FOR UPDATE`,
+        [desiredLinks]
+      );
+      for (const row of existingLinks.rows) {
+        const id = Number(row.id);
+        const finalLink = finalLinks.get(id);
+        if (finalLink === row.link_sms) continue;
+        if (finalLink !== undefined && finalLink !== row.link_sms) continue;
+        throw createHttpError(`Link_SMS นี้ถูกใช้แล้วที่ ID ${id}`, 409);
+      }
+    }
+
+    for (const item of creates) {
+      const row = await insertItuneEntryWithClient(
+        client,
+        {
+          createdByUserId: actor?.id ?? null,
+          addedAt: item.addedAt,
+          ...(item.fields || {}),
+        },
+        actor,
+        { validateLink: false }
+      );
+      created.push({ clientId: item.clientId, row });
+      changed = true;
+    }
+
+    for (const item of updates) {
+      const id = Number(item.id);
+      const updated = await updateItuneEntryWithClient(
+        client,
+        id,
+        item.fields || {},
+        actor,
+        { current: currentById.get(id), validateLink: false }
+      );
+      changed = updated.changed || changed;
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  const actorName = actor?.displayName || actor?.username || null;
+  const usernamesById = actor?.id ? { [actor.id]: actorName } : {};
+  const createdEntries = created.map(({ clientId, row }) => ({
+    clientId,
+    entry: mapRow(row, usernamesById),
+  }));
   if (changed) publishItuneQueueChanged();
-  return entry;
+  return { created: createdEntries };
 }
 
 // "แจ้งปัญหา" (report issue) — same shape as saveItuneEntryImage: a
@@ -1083,12 +1240,29 @@ export async function confirmItuneReject(claimLogId, actor) {
     if (issueRow.reject_confirmed_at) {
       throw createHttpError("คำขอนี้ถูกยืนยันไปแล้ว", 400);
     }
-    await client.query(
-      `UPDATE projectm_itune_entries
-       SET claimed_by_user_id = NULL, claimed_at = NULL, updated_at = NOW()
-       WHERE id = $1 AND claimed_by_user_id = $2`,
+    const released = await client.query(
+      `WITH target AS (
+         SELECT id, active_claim_session_id
+         FROM projectm_itune_entries
+         WHERE id = $1 AND claimed_by_user_id = $2
+         FOR UPDATE
+       )
+       UPDATE projectm_itune_entries e
+       SET claimed_by_user_id = NULL, claimed_at = NULL,
+           active_claim_session_id = NULL, updated_at = NOW()
+       FROM target
+       WHERE e.id = target.id
+       RETURNING target.active_claim_session_id`,
       [issueRow.entry_id, issueRow.reported_by_user_id]
     );
+    if (released.rows.length > 0 && released.rows[0].active_claim_session_id) {
+      await client.query(
+        `UPDATE projectm_itune_claim_sessions
+         SET released_at = NOW(), outcome = 'rejected', note = COALESCE(note, $1)
+         WHERE id = $2 AND user_id = $3 AND released_at IS NULL`,
+        ["Admin ยืนยัน Reject", released.rows[0].active_claim_session_id, issueRow.reported_by_user_id]
+      );
+    }
     await client.query(
       `UPDATE projectm_itune_issue_log
        SET reject_confirmed_at = NOW(), reject_confirmed_by_user_id = $1, reject_confirmed_by_username = $2
@@ -1290,6 +1464,7 @@ export async function deleteItuneEntries(ids, actor) {
     await client.query("BEGIN");
     const result = await client.query(
       `SELECT id, email, currency, supplier, amount, link_sms, qna,
+              claimed_by_user_id,
               CASE WHEN password IS NULL OR password = '' THEN '' ELSE '[redacted]' END AS password,
               CASE WHEN amount_confirm_image IS NULL OR amount_confirm_image = ''
                    THEN '' ELSE '[image]' END AS amount_confirm_image
@@ -1298,6 +1473,13 @@ export async function deleteItuneEntries(ids, actor) {
     );
     if (result.rows.length !== numericIds.length) {
       throw createHttpError("มีบางรายการไม่อยู่แล้ว กรุณาโหลดหน้าใหม่", 409);
+    }
+    const claimedRows = result.rows.filter((row) => row.claimed_by_user_id != null);
+    if (claimedRows.length > 0) {
+      throw createHttpError(
+        `ลบไม่ได้ เนื่องจาก ID ${claimedRows.map((row) => row.id).join(", ")} กำลังถูกถืออยู่ กรุณาคืนเมลก่อนลบ`,
+        409
+      );
     }
     const action = numericIds.length > 1 ? "bulk_delete" : "delete";
     // ponytail: one audit insert per row; batch it if 500-row deletes become slow.
@@ -1384,11 +1566,11 @@ export async function listItuneHistory({ category, query, from, to, page = 1, pa
   }
   if (from) {
     if (!Number.isFinite(Date.parse(from))) throw createHttpError("วันที่เริ่มต้นไม่ถูกต้อง", 400);
-    conditions.push(`occurred_at >= ${addValue(from)}::date`);
+    conditions.push(`occurred_at >= (${addValue(from)}::date::timestamp AT TIME ZONE 'Asia/Bangkok')`);
   }
   if (to) {
     if (!Number.isFinite(Date.parse(to))) throw createHttpError("วันที่สิ้นสุดไม่ถูกต้อง", 400);
-    conditions.push(`occurred_at < (${addValue(to)}::date + INTERVAL '1 day')`);
+    conditions.push(`occurred_at < (((${addValue(to)}::date + 1)::timestamp) AT TIME ZONE 'Asia/Bangkok')`);
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -2474,7 +2656,9 @@ export async function getItuneStats({ days = 30 } = {}) {
   const [overviewResult, sessionResult, dailyResult, userResult, bandResult] = await Promise.all([
     pool.query(
       `SELECT
-         COUNT(*) FILTER (WHERE added_at >= CURRENT_DATE) AS emails_added_today,
+         COUNT(*) FILTER (
+           WHERE added_at >= ((NOW() AT TIME ZONE 'Asia/Bangkok')::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+         ) AS emails_added_today,
          COALESCE(SUM(amount) FILTER (
            WHERE (status IS NULL OR status <> $1)
              AND amount >= $2
@@ -2492,11 +2676,11 @@ export async function getItuneStats({ days = 30 } = {}) {
     ),
     pool.query(
       `SELECT
-         COUNT(*) FILTER (WHERE released_at >= CURRENT_DATE) AS sessions_today,
-         COALESCE(SUM(amount_used) FILTER (WHERE released_at >= CURRENT_DATE), 0) AS used_today,
-         COUNT(*) FILTER (WHERE released_at >= CURRENT_DATE AND outcome = 'depleted') AS depleted_today,
-         COUNT(*) FILTER (WHERE released_at >= CURRENT_DATE AND outcome = 'partial_release') AS partial_today,
-         COUNT(*) FILTER (WHERE released_at >= CURRENT_DATE AND outcome = 'unusable') AS unusable_today,
+         COUNT(*) FILTER (WHERE (released_at AT TIME ZONE 'Asia/Bangkok')::date >= (NOW() AT TIME ZONE 'Asia/Bangkok')::date) AS sessions_today,
+         COALESCE(SUM(amount_used) FILTER (WHERE (released_at AT TIME ZONE 'Asia/Bangkok')::date >= (NOW() AT TIME ZONE 'Asia/Bangkok')::date), 0) AS used_today,
+         COUNT(*) FILTER (WHERE (released_at AT TIME ZONE 'Asia/Bangkok')::date >= (NOW() AT TIME ZONE 'Asia/Bangkok')::date AND outcome = 'depleted') AS depleted_today,
+         COUNT(*) FILTER (WHERE (released_at AT TIME ZONE 'Asia/Bangkok')::date >= (NOW() AT TIME ZONE 'Asia/Bangkok')::date AND outcome = 'partial_release') AS partial_today,
+         COUNT(*) FILTER (WHERE (released_at AT TIME ZONE 'Asia/Bangkok')::date >= (NOW() AT TIME ZONE 'Asia/Bangkok')::date AND outcome = 'unusable') AS unusable_today,
          percentile_cont(0.5) WITHIN GROUP (
            ORDER BY EXTRACT(EPOCH FROM (released_at - claimed_at)) / 3600
          ) FILTER (WHERE released_at IS NOT NULL) AS hold_p50,
@@ -2509,12 +2693,12 @@ export async function getItuneStats({ days = 30 } = {}) {
        FROM projectm_itune_claim_sessions`
     ),
     pool.query(
-      `SELECT released_at::date AS day, COUNT(*) AS sessions,
+      `SELECT (released_at AT TIME ZONE 'Asia/Bangkok')::date AS day, COUNT(*) AS sessions,
               COALESCE(SUM(amount_used), 0) AS amount_used,
               AVG(EXTRACT(EPOCH FROM (released_at - claimed_at)) / 3600) AS avg_hold_hours
        FROM projectm_itune_claim_sessions
-       WHERE released_at >= CURRENT_DATE - ($1::int - 1)
-       GROUP BY released_at::date ORDER BY day ASC`,
+       WHERE (released_at AT TIME ZONE 'Asia/Bangkok')::date >= (NOW() AT TIME ZONE 'Asia/Bangkok')::date - ($1::int - 1)
+       GROUP BY (released_at AT TIME ZONE 'Asia/Bangkok')::date ORDER BY day ASC`,
       [safeDays]
     ),
     pool.query(
@@ -2523,7 +2707,7 @@ export async function getItuneStats({ days = 30 } = {}) {
               AVG(EXTRACT(EPOCH FROM (released_at - claimed_at)) / 3600) AS avg_hold_hours,
               COUNT(*) FILTER (WHERE outcome = 'partial_release') AS partial_count
        FROM projectm_itune_claim_sessions
-       WHERE released_at >= CURRENT_DATE - ($1::int - 1)
+       WHERE (released_at AT TIME ZONE 'Asia/Bangkok')::date >= (NOW() AT TIME ZONE 'Asia/Bangkok')::date - ($1::int - 1)
        GROUP BY COALESCE(username, 'ไม่ทราบชื่อ')
        ORDER BY amount_used DESC LIMIT 20`,
       [safeDays]
@@ -2538,7 +2722,7 @@ export async function getItuneStats({ days = 30 } = {}) {
               AVG(EXTRACT(EPOCH FROM (released_at - claimed_at)) / 3600) AS avg_hold_hours,
               COUNT(*) FILTER (WHERE outcome = 'depleted') AS depleted_count
        FROM projectm_itune_claim_sessions
-       WHERE released_at >= CURRENT_DATE - ($1::int - 1)
+       WHERE (released_at AT TIME ZONE 'Asia/Bangkok')::date >= (NOW() AT TIME ZONE 'Asia/Bangkok')::date - ($1::int - 1)
        GROUP BY 1 ORDER BY MIN(start_amount)`,
       [safeDays]
     ),

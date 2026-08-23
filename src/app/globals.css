@@ -17,6 +17,12 @@
   --color-linear-ink-muted: #3e4a52;
   --color-linear-ink-subtle: #6b7378;
   --color-linear-ink-tertiary: #9ba1a4;
+  --color-linear-success: #167647;
+  --color-linear-success-bg: #e6f4ea;
+  --color-linear-warning: #9a4d08;
+  --color-linear-warning-bg: #fef3c7;
+  --color-linear-danger: #b10a11;
+  --color-linear-danger-bg: #fce8e8;
 }
 
 /* Dark mode keeps Linear's original near-black surface ladder. */
@@ -36,6 +42,28 @@
   --color-linear-ink-muted: #d0d6e0;
   --color-linear-ink-subtle: #8a8f98;
   --color-linear-ink-tertiary: #62666d;
+  --color-linear-success: #62d394;
+  --color-linear-success-bg: #123522;
+  --color-linear-warning: #f4b860;
+  --color-linear-warning-bg: #3d2a0b;
+  --color-linear-danger: #ff9096;
+  --color-linear-danger-bg: #3a1416;
+}
+
+[data-gameinfo-root] :where(a, button, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--color-linear-primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-gameinfo-root] *,
+  [data-gameinfo-root] *::before,
+  [data-gameinfo-root] *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 /* Linear Light/Dark Mode palette (see

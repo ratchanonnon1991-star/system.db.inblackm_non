@@ -6,10 +6,10 @@ import {
   listGamelistChannelsByGame,
   listGamelistPackCountByGame,
   listGamelistPackServiceByGame,
-  listGamelistVpnByGame,
 } from "@/server/gameinfo-gamelist-packs";
 import {
   listGamelistTutorialPresence,
+  listGamelistVpnNotePresence,
   listGamelistWarningPresence,
 } from "@/server/gameinfo-gamelist-tutorial";
 import { listGamelistImageByGame } from "@/server/gameinfo-gamelist-image";
@@ -36,7 +36,7 @@ import { hasPermission } from "@/lib/permissions";
 // Everyone lands on the card dashboard. Topup and role "user" stay read-only.
 export default async function GameinfoHomePage({ params, searchParams, manage = false }) {
   const { lang } = await params;
-  const { mode: rawMode } = await searchParams;
+  const { mode: rawMode, view: rawView } = await searchParams;
   const dataMode = normalizeGameinfoDataMode(rawMode);
   const user = await getSessionUser();
   if (!user) redirect("/");
@@ -44,6 +44,7 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
   const canReport = hasPermission(user, "gameinfo.report");
   if (manage && !editableRole) redirect(gameinfoListHref(lang, dataMode));
   const manageMode = manage && editableRole;
+  const topupView = !manageMode && rawView === "topup";
 
   let rows = null;
   let reports = [];
@@ -51,15 +52,15 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
   let publisherImages = {};
   let loadError = null;
   try {
-    const [gameListRows, channelsByGame, vpnByGame, packCountByGame, packServiceByGame, tutorialPresence, warningPresence, imageByGame, linksByGame, tagsByGame, publishersByGame, loadedTagImages, loadedPublisherImages, openReports, favoriteIds] =
+    const [gameListRows, channelsByGame, packCountByGame, packServiceByGame, tutorialPresence, warningPresence, vpnNotePresence, imageByGame, linksByGame, tagsByGame, publishersByGame, loadedTagImages, loadedPublisherImages, openReports, favoriteIds] =
       await Promise.all([
         listGameListRows(),
         listGamelistChannelsByGame(),
-        listGamelistVpnByGame(),
         listGamelistPackCountByGame(),
         listGamelistPackServiceByGame(),
         listGamelistTutorialPresence(),
         listGamelistWarningPresence(),
+        listGamelistVpnNotePresence(),
         listGamelistImageByGame(),
         listGamelistLinksByGame(),
         listGamelistTagsByGame(),
@@ -99,7 +100,6 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
       ...r,
       ...(dataMode === "idpass" ? modeFields : {}),
       channels: dataMode === "idpass" ? modeChannels : channelsByGame[r.id] || { main: [], secondary: [] },
-      vpnComputed: dataMode === "idpass" ? (flatModePacks.some((pack) => pack.country) ? "YES" : "NO") : vpnByGame[r.id] ? "YES" : "NO",
       packCount: dataMode === "idpass" ? flatModePacks.length : packCountByGame[r.id] || 0,
       packDisabledCount: disabledPackCount,
       serviceStatus: !r.serviceEnabled
@@ -109,6 +109,7 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
           : "online",
       hasTutorial: dataMode === "idpass" ? Boolean(modeData?.tutorial?.categories?.some((category) => category.steps?.length)) : Boolean(tutorialPresence[r.id]),
       hasWarning: dataMode === "idpass" ? Boolean(modeData?.warning?.categories?.some((category) => category.steps?.length)) : Boolean(warningPresence[r.id]),
+      hasVpnNote: Boolean(vpnNotePresence[r.id]),
       image: imageByGame[r.id] || "",
       links: dataMode === "idpass" ? modeData?.links || [] : Object.prototype.hasOwnProperty.call(linksByGame, r.id)
         ? linksByGame[r.id]
@@ -124,14 +125,14 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
   }
 
   if (!manageMode && !loadError) {
-    return <GameinfoGamelistCards initial={rows} initialReports={reports} tagImages={tagImages} publisherImages={publisherImages} editable={editableRole} canReport={canReport} lang={lang} dataMode={dataMode} />;
+    return <GameinfoGamelistCards initial={rows} initialReports={reports} tagImages={tagImages} publisherImages={publisherImages} editable={editableRole && !topupView} topupView={topupView} canReport={canReport} lang={lang} dataMode={dataMode} />;
   }
 
   return (
     <div className="px-4 py-8">
       <div className="mb-6 flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-linear-ink">GameInfo</h1>
-        <GameinfoDatasetToggle basePath={gameinfoListHref(lang, "uid", manageMode)} />
+        <GameinfoDatasetToggle basePath={gameinfoListHref(lang, "uid", manageMode, topupView)} />
       </div>
       {loadError ? (
         <GameinfoErrorNotice message={loadError} />

@@ -24,7 +24,7 @@ function mapRow(row) {
     // server/auth.js, which check role first).
     canWriteData: permissions.includes("systemdb.data.insert_delete"),
     canUpdateData: permissions.includes("systemdb.data.update"),
-    // Independent of the GameDB role above: admin, topup, or no access.
+    // Independent of the GameDB role above: admin, topup, or neither.
     projectmRole: permissionRole(permissions, "projectm"),
     gameinfoRole: permissionRole(permissions, "gameinfo"),
     permissions,
@@ -85,7 +85,7 @@ async function ensureSchema() {
         ALTER TABLE gamedb_user_preferences
         ADD COLUMN IF NOT EXISTS can_update_data BOOLEAN NOT NULL DEFAULT FALSE
       `);
-      // Separate from the GameDB role entirely. NULL means no Projectm access.
+      // Separate from the GameDB role entirely. NULL means no Topup/Admin role.
       await client.query(`
         ALTER TABLE gamedb_user_preferences
         ADD COLUMN IF NOT EXISTS projectm_role VARCHAR(16)
@@ -152,7 +152,6 @@ async function ensureSchema() {
             CROSS JOIN LATERAL (VALUES
               (CASE WHEN can_write_data THEN 'systemdb.data.insert_delete' END),
               (CASE WHEN can_update_data THEN 'systemdb.data.update' END),
-              (CASE WHEN projectm_role IS NOT NULL THEN 'projectm.access' END),
               (CASE WHEN projectm_role IS NOT NULL THEN 'projectm.claim' END),
               (CASE WHEN projectm_role = 'admin' THEN 'projectm.admin' END),
               (CASE WHEN gameinfo_role IS NOT NULL THEN 'gameinfo.access' END),

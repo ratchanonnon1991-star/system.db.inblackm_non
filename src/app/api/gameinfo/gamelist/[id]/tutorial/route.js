@@ -9,6 +9,7 @@ import { recordEdit } from "@/server/gamedb-edit-log";
 import { requestMeta } from "@/lib/request-meta";
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { getGameinfoModeData, updateGameinfoModeData } from "@/server/gameinfo-mode-data";
+import { auditActor } from "@/server/gameinfo-gamelist-packs";
 
 export async function GET(request, { params }) {
   try {
@@ -36,11 +37,11 @@ export async function PUT(request, { params }) {
       const data = await updateGameinfoModeData(Number(id), "idpass", (current) => ({
         ...current,
         tutorial: { categories: body.categories },
-      }));
+      }), { area: "tutorial", actor: auditActor(admin) });
       return jsonOk({ tutorial: data.tutorial });
     }
     const before = await getGamelistTutorial(Number(id));
-    const tutorial = await saveGamelistTutorial(Number(id), body.categories);
+    const tutorial = await saveGamelistTutorial(Number(id), body.categories, null, auditActor(admin));
     await recordEdit({
       queryId: null,
       actor: admin.username || admin.displayName || "",

@@ -8,10 +8,13 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   CircleOff,
-  Eye,
   Flag,
   Gamepad2,
+  Eye,
+  Menu,
   MoreVertical,
   Search,
   Send,
@@ -20,7 +23,7 @@ import {
   X,
 } from "lucide-react";
 import GameinfoDatasetToggle from "./gameinfo-dataset-toggle";
-import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
+import GameinfoTutorialButton, { GameinfoDetailsButton } from "./gameinfo-tutorial-modal";
 import {
   GAMEINFO_STATUSES,
   filterGameinfoRows,
@@ -30,6 +33,7 @@ import {
   isGameinfoBotAuto,
 } from "@/lib/gameinfo-dashboard";
 import { gameinfoGameHref, gameinfoListHref, gameinfoPacksHref } from "@/lib/gameinfo-data-mode";
+import { useGameinfoDialog } from "@/lib/use-gameinfo-dialog";
 
 const PAGE_SIZE = 12;
 
@@ -40,7 +44,7 @@ const STATUS_STYLE = {
   offline: { label: "ปิดใช้งาน", dot: "bg-linear-ink-tertiary", badge: "bg-linear-surface-3 text-linear-ink-subtle" },
 };
 
-export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, editable = false, canReport = false, lang, dataMode = "uid" }) {
+export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, editable = false, topupView = false, canReport = false, lang, dataMode = "uid" }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [tag, setTag] = useState("");
@@ -55,6 +59,25 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const [actionError, setActionError] = useState("");
   const [reportRefreshError, setReportRefreshError] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const {
+    dialogRef: reportDialogRef,
+    titleId: reportDialogTitleId,
+    onBackdropMouseDown: onReportBackdropMouseDown,
+  } = useGameinfoDialog({
+    open: Boolean(reportGame),
+    onRequestClose: () => {
+      if (!reportSubmitting) setReportGame(null);
+    },
+  });
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setSidebarOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [sidebarOpen]);
   useEffect(() => {
     if (!editable) return;
     const refreshReports = async () => {
@@ -90,20 +113,47 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
   const pageRows = rows.slice(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE);
+  const activeFilters = useMemo(() => {
+    const items = [];
+    if (query) items.push({ id: "query", label: `ค้นหา: ${query}` });
+    if (status !== "all") items.push({ id: "status", label: STATUS_STYLE[status]?.label || status });
+    if (tag) items.push({ id: "tag", label: `หมวดหมู่: ${tag}` });
+    if (publisher) items.push({ id: "publisher", label: `ค่ายเกม: ${publisher}` });
+    return items;
+  }, [publisher, query, status, tag]);
+
+  function clearFilters() {
+    setQuery("");
+    setStatus("all");
+    setTag("");
+    setPublisher("");
+    setPage(0);
+  }
+
+  function clearFilter(id) {
+    if (id === "query") setQuery("");
+    if (id === "status") setStatus("all");
+    if (id === "tag") setTag("");
+    if (id === "publisher") setPublisher("");
+    setPage(0);
+  }
 
   function chooseStatus(nextStatus) {
     setStatus(nextStatus);
     setPage(0);
+    setSidebarOpen(false);
   }
 
   function chooseTag(nextTag) {
     setTag(nextTag);
     setPage(0);
+    setSidebarOpen(false);
   }
 
   function choosePublisher(nextPublisher) {
     setPublisher(nextPublisher);
     setPage(0);
+    setSidebarOpen(false);
   }
 
   async function toggleFavorite(row) {
@@ -158,14 +208,60 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
 
   return (
     <div className="grid min-h-[calc(100vh-65px)] lg:grid-cols-[240px_minmax(0,1fr)]">
-      <aside className="border-b border-linear-hairline bg-linear-surface-2 p-4 lg:border-b-0 lg:border-r">
+      <div className="flex h-14 items-center border-b border-linear-hairline bg-linear-surface-2 px-4 lg:hidden">
+        <button
+          type="button"
+          onClick={() => setSidebarOpen(true)}
+          aria-label="เปิดเมนูตัวกรอง"
+          aria-controls="gameinfo-filter-sidebar"
+          aria-expanded={sidebarOpen}
+          className="flex h-10 w-10 items-center justify-center rounded-lg border border-linear-hairline-strong bg-linear-surface-1 text-linear-ink transition hover:bg-linear-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-linear-primary/30"
+        >
+          <Menu size={20} />
+        </button>
+        <span className="ml-3 text-sm font-medium text-linear-ink">เมนูตัวกรอง</span>
+        {activeFilters.length ? (
+          <span className="ml-2 rounded-full bg-linear-primary px-2 py-0.5 text-[11px] font-semibold text-white" aria-label={`ใช้ตัวกรอง ${activeFilters.length} รายการ`}>
+            {activeFilters.length}
+          </span>
+        ) : null}
+      </div>
+
+      {sidebarOpen ? (
+        <button
+          type="button"
+          aria-label="ปิดเมนูตัวกรอง"
+          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-x-0 bottom-0 top-16 z-30 bg-linear-ink/35 lg:hidden"
+        />
+      ) : null}
+
+      {/* The layout header is `sticky top-0 z-40` and 4rem tall, so the drawer
+          starts below it (top-16) and stays under it (z-30) instead of sliding
+          over the navbar. lg:static drops all of this back out on desktop. */}
+      <aside
+        id="gameinfo-filter-sidebar"
+        className={`fixed bottom-0 left-0 top-16 z-30 w-[280px] overflow-y-auto border-r border-linear-hairline bg-linear-surface-2 p-4 transition-transform duration-200 ${
+          sidebarOpen ? "visible translate-x-0" : "invisible -translate-x-full"
+        } lg:visible lg:static lg:w-auto lg:translate-x-0 lg:border-b-0`}
+      >
+        <div className="mb-3 flex items-center justify-between lg:hidden">
+          <span className="text-sm font-semibold text-linear-ink">ตัวกรองเกม</span>
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="ปิดเมนูตัวกรอง"
+            className="flex h-10 w-10 items-center justify-center rounded-lg text-linear-ink-subtle hover:bg-linear-surface-3 hover:text-linear-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-linear-primary/30"
+          >
+            <X size={20} />
+          </button>
+        </div>
         <nav aria-label="ตัวกรองเกม" className="lg:sticky lg:top-20">
           <button
             type="button"
             onClick={() => {
-              chooseStatus("all");
-              chooseTag("");
-              choosePublisher("");
+              clearFilters();
+              setSidebarOpen(false);
             }}
             className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${
               status === "all" && !tag && !publisher
@@ -302,8 +398,8 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
           </div>
           <GameinfoDatasetToggle basePath={`/gameinfo/${lang}`} />
         </div>
-        {actionError ? <p role="alert" className="mb-4 text-sm text-linear-primary">{actionError}</p> : null}
-        {reportRefreshError ? <p role="status" className="mb-4 text-sm text-amber-700">{reportRefreshError}</p> : null}
+        {actionError ? <p role="alert" className="mb-4 text-sm text-linear-danger">{actionError}</p> : null}
+        {reportRefreshError ? <p role="status" className="mb-4 text-sm text-linear-warning">{reportRefreshError}</p> : null}
 
         <section aria-label="สรุปสถานะเกม" className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard label="เกมทั้งหมด" count={counts.all} icon={Gamepad2} active={status === "all"} onClick={() => chooseStatus("all")} />
@@ -313,19 +409,30 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
         </section>
 
         <div className="mb-4 flex flex-wrap items-center gap-3">
-          <label className="relative min-w-[240px] flex-1 sm:max-w-xl">
+          <div className="relative min-w-[240px] flex-1 sm:max-w-xl">
             <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-linear-ink-tertiary" />
-            <span className="sr-only">ค้นหาเกม</span>
+            <label htmlFor="gameinfo-game-search" className="sr-only">ค้นหาเกม</label>
             <input
+              id="gameinfo-game-search"
               value={query}
               onChange={(event) => {
                 setQuery(event.target.value);
                 setPage(0);
               }}
               placeholder="ค้นหาชื่อเกม, ID, Server, VPN..."
-              className="h-10 w-full rounded-lg border border-linear-hairline-strong bg-linear-surface-1 pl-9 pr-3 text-sm text-linear-ink outline-none placeholder:text-linear-ink-tertiary focus:border-linear-primary focus:ring-2 focus:ring-linear-primary/20"
+              className="h-10 w-full rounded-lg border border-linear-hairline-strong bg-linear-surface-1 pl-9 pr-10 text-sm text-linear-ink outline-none placeholder:text-linear-ink-tertiary focus:border-linear-primary focus:ring-2 focus:ring-linear-primary/20"
             />
-          </label>
+            {query ? (
+              <button
+                type="button"
+                onClick={() => clearFilter("query")}
+                aria-label="ล้างคำค้นหา"
+                className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-linear-ink-tertiary hover:bg-linear-surface-2 hover:text-linear-ink"
+              >
+                <X size={15} />
+              </button>
+            ) : null}
+          </div>
           <select
             value={sort}
             onChange={(event) => {
@@ -341,10 +448,30 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
           </select>
         </div>
 
+        <div className="mb-4 flex min-h-7 flex-wrap items-center gap-2" aria-live="polite">
+          <span className="mr-1 text-xs text-linear-ink-tertiary">พบ {rows.length} จาก {rowsWithState.length} เกม</span>
+          {activeFilters.map((filter) => (
+            <button
+              key={filter.id}
+              type="button"
+              onClick={() => clearFilter(filter.id)}
+              className="inline-flex min-h-7 items-center gap-1 rounded-full border border-linear-hairline-strong bg-linear-surface-1 px-2.5 text-[11px] text-linear-ink-muted hover:border-linear-primary/40 hover:text-linear-ink"
+              aria-label={`ยกเลิกตัวกรอง ${filter.label}`}
+            >
+              {filter.label}<X size={12} />
+            </button>
+          ))}
+          {activeFilters.length > 1 ? (
+            <button type="button" onClick={clearFilters} className="min-h-7 px-1 text-[11px] font-medium text-linear-primary hover:underline">
+              ล้างทั้งหมด
+            </button>
+          ) : null}
+        </div>
+
         {pageRows.length ? (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {pageRows.map((row) => (
-              <GameCard key={row.id} row={row} editable={editable} canReport={canReport} lang={lang} dataMode={dataMode} favoriteBusy={favoriteBusy === row.id} onToggleFavorite={toggleFavorite} onReport={() => {
+              <GameCard key={row.id} row={row} editable={editable} topupView={topupView} canReport={canReport} lang={lang} dataMode={dataMode} favoriteBusy={favoriteBusy === row.id} onToggleFavorite={toggleFavorite} onReport={() => {
                 setActionError("");
                 setReportGame(row);
                 setReportMessage("");
@@ -352,33 +479,38 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             ))}
           </div>
         ) : (
-          <div className="rounded-2xl border border-dashed border-linear-hairline-strong py-16 text-center text-sm text-linear-ink-tertiary">
-            {status === "review" ? "ไม่มี Report ที่ต้องตรวจสอบ" : "ไม่พบเกมที่ตรงกับตัวกรอง"}
+          <div className="rounded-2xl border border-dashed border-linear-hairline-strong px-4 py-16 text-center text-sm text-linear-ink-tertiary">
+            <p>{status === "review" ? "ไม่มี Report ที่ต้องตรวจสอบ" : "ไม่พบเกมที่ตรงกับตัวกรอง"}</p>
+            {activeFilters.length ? (
+              <button type="button" onClick={clearFilters} className="mt-3 h-9 rounded-lg border border-linear-hairline-strong bg-linear-surface-1 px-3 text-xs font-medium text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink">
+                ล้างตัวกรองทั้งหมด
+              </button>
+            ) : null}
           </div>
         )}
 
         {pageCount > 1 ? (
-          <div className="mt-6 flex items-center justify-end gap-2 text-sm text-linear-ink-subtle">
-            <span className="mr-2">หน้า {currentPage + 1} / {pageCount}</span>
-            <button type="button" onClick={() => setPage((value) => Math.max(0, value - 1))} disabled={currentPage === 0} aria-label="หน้าก่อน" className="flex h-10 w-10 items-center justify-center rounded-lg border border-linear-hairline-strong hover:bg-linear-surface-2 disabled:opacity-40"><ChevronLeft size={16} /></button>
-            <button type="button" onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))} disabled={currentPage === pageCount - 1} aria-label="หน้าถัดไป" className="flex h-10 w-10 items-center justify-center rounded-lg border border-linear-hairline-strong hover:bg-linear-surface-2 disabled:opacity-40"><ChevronRight size={16} /></button>
+          <div className="mt-6 flex items-center justify-end gap-1 text-sm text-linear-ink-subtle">
+            <span className="mr-1 whitespace-nowrap">หน้า {currentPage + 1} / {pageCount}</span>
+            <button type="button" onClick={() => setPage(0)} disabled={currentPage === 0} title="หน้าแรก" aria-label="หน้าแรก" className="flex h-10 w-10 items-center justify-center rounded-lg border border-linear-hairline-strong hover:bg-linear-surface-2 disabled:opacity-40"><ChevronsLeft size={16} /></button>
+            <button type="button" onClick={() => setPage((value) => Math.max(0, value - 1))} disabled={currentPage === 0} title="หน้าก่อน" aria-label="หน้าก่อน" className="flex h-10 w-10 items-center justify-center rounded-lg border border-linear-hairline-strong hover:bg-linear-surface-2 disabled:opacity-40"><ChevronLeft size={16} /></button>
+            <button type="button" onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))} disabled={currentPage === pageCount - 1} title="หน้าถัดไป" aria-label="หน้าถัดไป" className="flex h-10 w-10 items-center justify-center rounded-lg border border-linear-hairline-strong hover:bg-linear-surface-2 disabled:opacity-40"><ChevronRight size={16} /></button>
+            <button type="button" onClick={() => setPage(pageCount - 1)} disabled={currentPage === pageCount - 1} title="หน้าสุดท้าย" aria-label="หน้าสุดท้าย" className="flex h-10 w-10 items-center justify-center rounded-lg border border-linear-hairline-strong hover:bg-linear-surface-2 disabled:opacity-40"><ChevronsRight size={16} /></button>
           </div>
         ) : null}
       </main>
       {reportGame ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="presentation" onMouseDown={(event) => {
-          if (event.target === event.currentTarget && !reportSubmitting) setReportGame(null);
-        }}>
-          <form onSubmit={submitReport} role="dialog" aria-modal="true" aria-labelledby="report-dialog-title" className="w-full max-w-md rounded-2xl border border-linear-hairline bg-linear-surface-1 p-5" style={{ boxShadow: "var(--ll-shadow-modal)" }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="presentation" onMouseDown={onReportBackdropMouseDown}>
+          <form ref={reportDialogRef} tabIndex={-1} onSubmit={submitReport} role="dialog" aria-modal="true" aria-labelledby={reportDialogTitleId} className="w-full max-w-md rounded-2xl border border-linear-hairline bg-linear-surface-1 p-5" style={{ boxShadow: "var(--ll-shadow-modal)" }}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 id="report-dialog-title" className="text-lg font-semibold tracking-[-0.2px] text-linear-ink">รายงานปัญหา</h2>
+                <h2 id={reportDialogTitleId} className="text-lg font-semibold tracking-[-0.2px] text-linear-ink">รายงานปัญหา</h2>
                 <p className="mt-1 text-xs text-linear-ink-tertiary">{reportGame.game} · ID {reportGame.id}</p>
               </div>
               <button type="button" disabled={reportSubmitting} onClick={() => setReportGame(null)} aria-label="ปิด" className="flex h-10 w-10 items-center justify-center rounded-lg text-linear-ink-tertiary hover:bg-linear-surface-2 disabled:opacity-40"><X size={18} /></button>
             </div>
             <textarea autoFocus required maxLength={1000} rows={4} value={reportMessage} onChange={(event) => setReportMessage(event.target.value)} placeholder="แจ้งข้อมูลที่ผิดหรือปัญหาที่พบ..." className="mt-4 min-h-28 w-full resize-y rounded-lg border border-linear-hairline-strong bg-linear-canvas px-3 py-2 text-sm text-linear-ink outline-none placeholder:text-linear-ink-tertiary focus:border-linear-primary focus:ring-2 focus:ring-linear-primary/20" />
-            {actionError ? <p role="alert" className="mt-2 text-xs text-linear-primary">{actionError}</p> : null}
+            {actionError ? <p role="alert" className="mt-2 text-xs text-linear-danger">{actionError}</p> : null}
             <button type="submit" disabled={reportSubmitting || !reportMessage.trim()} className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-linear-ink px-4 text-sm font-medium text-linear-canvas disabled:opacity-40"><Send size={15} /> {reportSubmitting ? "กำลังส่ง..." : "ส่งรายงาน"}</button>
           </form>
         </div>
@@ -389,11 +521,11 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
 
 function StatCard({ label, count, icon: Icon, active, onClick, tone }) {
   const iconClass = tone === "success"
-    ? "bg-emerald-500/10 text-emerald-700"
+    ? "bg-linear-success-bg text-linear-success"
     : tone === "danger"
-      ? "bg-linear-primary/10 text-linear-primary"
+      ? "bg-linear-danger-bg text-linear-danger"
     : tone === "warning"
-      ? "bg-amber-500/10 text-amber-700"
+      ? "bg-linear-warning-bg text-linear-warning"
       : "bg-linear-surface-3 text-linear-ink-subtle";
   return (
     <button
@@ -409,11 +541,11 @@ function StatCard({ label, count, icon: Icon, active, onClick, tone }) {
   );
 }
 
-function GameCard({ row, editable, canReport, lang, dataMode, favoriteBusy, onToggleFavorite, onReport }) {
+function GameCard({ row, editable, topupView, canReport, lang, dataMode, favoriteBusy, onToggleFavorite, onReport }) {
   const status = STATUS_STYLE[row.serviceStatus] || STATUS_STYLE.online;
-  const href = gameinfoGameHref(lang, row.id, dataMode);
+  const href = gameinfoGameHref(lang, row.id, dataMode, false, topupView);
   const packsHref = gameinfoPacksHref(lang, row.id, dataMode);
-  const actionHref = gameinfoGameHref(lang, row.id, dataMode, editable);
+  const actionHref = editable ? gameinfoGameHref(lang, row.id, dataMode, true) : href;
   return (
     <article className="relative overflow-hidden rounded-2xl border border-linear-hairline bg-linear-surface-1" style={{ boxShadow: "var(--ll-shadow-card)" }}>
       <details className="group absolute right-3 top-3 z-20">
@@ -461,17 +593,18 @@ function GameCard({ row, editable, canReport, lang, dataMode, favoriteBusy, onTo
         {editable ? (
           <Link
             href={href}
-            aria-label={`ดู ${row.game}`}
-            title="ดู"
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-linear-hairline-strong text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink"
+            aria-label={`ดูข้อมูล ${row.game}`}
+            title="ดูข้อมูล"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-linear-hairline-strong text-linear-ink-muted hover:bg-linear-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-linear-primary"
           >
-            <Eye size={17} />
+            <Eye size={16} aria-hidden="true" />
           </Link>
         ) : null}
-        <Link href={actionHref} className={`inline-flex h-10 min-w-0 flex-1 items-center justify-center rounded-lg px-3 text-xs font-medium text-white ${editable ? "bg-linear-primary hover:bg-linear-primary-hover" : "bg-linear-ink"}`}>
+        <Link href={actionHref} className="inline-flex h-10 min-w-0 flex-1 items-center justify-center rounded-lg bg-linear-primary px-3 text-xs font-medium text-white hover:bg-linear-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-linear-primary">
+          {!editable ? <Eye size={15} className="mr-2" aria-hidden="true" /> : null}
           {editable ? "เปิดจัดการ" : "เปิดดู"}
         </Link>
-        <GameinfoTutorialButton gameId={row.id} gameName={row.game} editable={false} hasData={row.hasTutorial} dataMode={dataMode} compact />
+        <GameinfoDetailsButton gameId={row.id} gameName={row.game} editable={false} hasTutorial={row.hasTutorial} hasVpnNote={row.hasVpnNote} dataMode={dataMode} compact />
         <GameinfoTutorialButton gameId={row.id} gameName={row.game} editable={false} hasData={row.hasWarning} variant="warning" dataMode={dataMode} compact />
       </div>
     </article>

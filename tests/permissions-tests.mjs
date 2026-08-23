@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import {
+  PERMISSIONS,
   hasPermission,
   normalizePermissions,
   togglePermission,
@@ -9,9 +10,9 @@ const checks = [];
 const ok = (name, passed) => checks.push([name, Boolean(passed)]);
 
 const projectmAdmin = normalizePermissions(["projectm.admin"]);
-ok("Projectm Admin includes access", projectmAdmin.includes("projectm.access"));
+ok("Projectm has no access checkbox", !PERMISSIONS.some(({ key }) => key === "projectm.access"));
 ok("Projectm Admin includes Topup", projectmAdmin.includes("projectm.claim"));
-ok("removing Projectm access clears descendants", togglePermission(projectmAdmin, "projectm.access", false).every((key) => !key.startsWith("projectm.")));
+ok("removing Projectm Topup also clears Admin", !togglePermission(projectmAdmin, "projectm.claim", false).includes("projectm.admin"));
 
 const gameinfoAdmin = normalizePermissions(["gameinfo.admin"]);
 ok("GameInfo Admin includes reporting", gameinfoAdmin.includes("gameinfo.report"));
