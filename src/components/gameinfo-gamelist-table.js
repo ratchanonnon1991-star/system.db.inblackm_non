@@ -29,6 +29,7 @@ import {
   Image as ImageIcon,
   MoreVertical,
   Plus,
+  Trash2,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
@@ -59,7 +60,7 @@ import GameinfoModeCloneButton from "./gameinfo-mode-clone-button";
 // pack count ported from the old admin games-table, see
 // listGamelistPackCountByGame().
 const GRID_COLS =
-  "grid-cols-[28px_28px_70px_60px_50px_44px_minmax(160px,1.4fr)_110px_110px_110px_130px_minmax(140px,1fr)_130px_minmax(140px,1fr)_190px_44px]";
+  "grid-cols-[28px_28px_70px_60px_50px_44px_minmax(160px,1.4fr)_110px_110px_110px_130px_minmax(140px,1fr)_130px_minmax(140px,1fr)_190px_76px]";
 
 function uniq(arr) {
   return Array.from(new Set(arr.filter(Boolean))).sort((a, b) => a.localeCompare(b, "th"));
@@ -1080,7 +1081,18 @@ function RowCells({
       </span>
 
       {editable ? (
-        <RowActionsMenu row={row} lang={lang} dataMode={dataMode} editable={editable} onDelete={onDelete} />
+        <span className="flex items-center justify-end gap-1">
+          <button
+            type="button"
+            onClick={() => onDelete(row.id, row.game)}
+            aria-label={`ลบเกม ${row.game || "ไม่มีชื่อ"}`}
+            title="ลบเกม"
+            className="flex h-7 w-7 items-center justify-center rounded text-linear-ink-tertiary hover:bg-linear-danger-bg hover:text-linear-danger"
+          >
+            <Trash2 size={14} />
+          </button>
+          <RowActionsMenu row={row} lang={lang} dataMode={dataMode} editable={editable} onDelete={onDelete} />
+        </span>
       ) : (
         <Link
           href={gameinfoGameHref(lang, row.id, dataMode)}

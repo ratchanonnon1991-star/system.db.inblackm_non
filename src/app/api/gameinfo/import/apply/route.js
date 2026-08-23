@@ -6,6 +6,7 @@ import { listGameListRows, withGameinfoTransaction } from "@/server/gameinfo-gam
 import { auditActor, importGamelistPacks, recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { getGameinfoModeData, saveGameinfoModeData } from "@/server/gameinfo-mode-data";
+import { findDuplicateGameinfoPackPrices } from "@/lib/gameinfo-pack-validation";
 
 export async function PUT(request) {
   try {
@@ -28,6 +29,11 @@ export async function PUT(request) {
       ...parsed.errors.filter((message) => !message.startsWith("พบคอลัมน์ amount_charged")),
       ...validatePackRows(rows),
     ];
+    for (const game of parsed.perGame) {
+      if (findDuplicateGameinfoPackPrices(game.currencies).size > 0) {
+        errors.push(`game_id ${game.gameId}: ราคา Pack ต้องไม่ซ้ำกัน`);
+      }
+    }
     const existingIds = new Set((await listGameListRows()).map((game) => Number(game.id)));
     const missing = parsed.perGame.filter((game) => !existingIds.has(game.gameId)).map((game) => game.gameId);
     if (missing.length) errors.push(`ไม่พบ game_id ในระบบ: ${missing.join(", ")}`);
@@ -41,6 +47,11 @@ export async function PUT(request) {
           const currencies = mode === "add"
             ? mergeCurrencies(current.packs.currencies, game.currencies)
             : game.currencies;
+          if (findDuplicateGameinfoPackPrices(currencies).size > 0) {
+            const error = new Error(`game_id ${game.gameId}: ราคา Pack ต้องไม่ซ้ำกัน`);
+            error.status = 400;
+            throw error;
+          }
           count += game.currencies.flatMap((currency) => currency.categories.flatMap((category) => category.packs)).length;
           await saveGameinfoModeData(game.gameId, "idpass", {
             ...current,

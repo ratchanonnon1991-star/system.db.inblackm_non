@@ -136,6 +136,9 @@ export default function GameinfoTagsInput({
               setOpen(true);
             }}
             onFocus={() => setOpen(true)}
+            onBlur={() => {
+              if (text.trim()) add(text);
+            }}
             // Adding a tag keeps the input focused (its onMouseDown calls
             // preventDefault) — a later click to reopen the dropdown
             // wouldn't re-fire onFocus since focus never changed.

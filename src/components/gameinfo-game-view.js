@@ -19,7 +19,7 @@ import {
 import { getGameinfoFormulaDisplay } from "@/lib/gameinfo-formula-overrides";
 import { evaluateGameinfoComputedColumn } from "@/lib/gameinfo-computed-evaluator";
 import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
-import GameinfoRatePanel, { useGameinfoRates } from "./gameinfo-rate-panel";
+import { useGameinfoRates } from "./gameinfo-rate-panel";
 import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoTutorialButton, { GameinfoDetailsButton } from "./gameinfo-tutorial-modal";
 import { GameinfoGameLinkButtons } from "./gameinfo-game-links";
@@ -144,15 +144,6 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
             />
           </div>
         </div>
-      </div>
-
-      <div className="mb-4">
-        <GameinfoRatePanel
-          rates={rateState.rates}
-          loading={rateState.loading}
-          error={rateState.error}
-          onRefresh={rateState.refresh}
-        />
       </div>
 
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">

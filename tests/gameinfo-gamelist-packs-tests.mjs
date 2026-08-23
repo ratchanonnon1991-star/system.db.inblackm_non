@@ -58,7 +58,7 @@ const ORIGINAL_TREE = [
             serviceStatus: "",
             costProfileId: "",
             channelsMain: ["Wave"],
-            channelsSecondary: [],
+            channelsSecondary: ["Razer"],
             country: "",
             localizedNames: { 7: "English Pack A", 8: "日本語パックA" },
           },
@@ -154,9 +154,20 @@ async function run() {
     ["c1", "cat1"]
   );
   check("save: data keeps this pack's position for reconstruction", firstPackData.packOrder, 0);
+  check("save: persists secondary channels", firstPackData.channelsSecondary, ["Razer"]);
   check("save: persists localized pack names", firstPackData.localizedNames, { 7: "English Pack A", 8: "日本語パックA" });
   ok("save: legacy amountCharged is not persisted", !("amountCharged" in firstPackData));
   check("save: the second pack keeps its own position", JSON.parse(packInserts[1].params[2]).packOrder, 1);
+
+  const duplicatePriceTree = structuredClone(ORIGINAL_TREE);
+  duplicatePriceTree[0].categories[0].packs[1].price = "010.00";
+  let duplicatePriceError = null;
+  try {
+    await saveGamelistPacks(5, { currencies: duplicatePriceTree, computedColumns: [] });
+  } catch (error) {
+    duplicatePriceError = error;
+  }
+  check("save: rejects duplicate numeric prices server-side", [duplicatePriceError?.status, duplicatePriceError?.message], [400, "ราคา Pack ต้องไม่ซ้ำกัน"]);
 
   const sentinelInsert = log.find(
     (e) => /^INSERT INTO gamelist_packs/.test(e.text) && e.params?.[1] === "__computed__"

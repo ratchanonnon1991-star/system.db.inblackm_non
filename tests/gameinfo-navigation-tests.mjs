@@ -17,8 +17,8 @@ const checks = [
   gameRoute.includes('query.manage === "1"') && gameRoute.includes("gameinfoGameHref(lang, id, dataMode, true)"),
   homeManageRoute.includes("manage />") && gameManageRoute.includes("manage />"),
   homePage.includes("manage && !editableRole") && detailPage.includes("manage && !editableRole"),
-  backLink.includes("confirmGameinfoNavigation()") && backLink.includes("router.replace(href)"),
-  packEditor.includes("router.replace(backHref)"),
+  backLink.includes("requestGameinfoBack(href)"),
+  packEditor.includes("requestGameinfoBack(backHref)"),
   !backLink.includes("router.back()") && !packEditor.includes("router.back()"),
   gamelistCards.includes('aria-controls="gameinfo-filter-sidebar"') &&
     gamelistCards.includes('sidebarOpen ? "visible translate-x-0" : "invisible -translate-x-full"') &&

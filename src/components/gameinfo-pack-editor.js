@@ -27,6 +27,7 @@ import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
 import GameinfoFormulaVariablesButton, { GameinfoFormulaVariableSummary } from "./gameinfo-formula-variables";
 import GameinfoRatePanel, { useGameinfoRates } from "./gameinfo-rate-panel";
 import GameinfoPackHistory from "./gameinfo-pack-history";
+import GameinfoConfirmDialog from "./gameinfo-confirm-dialog";
 import {
   GameinfoPackColumnControls,
   useGameinfoPackColumnLayout,
@@ -35,7 +36,12 @@ import { apiJson } from "@/lib/api-json";
 import { evaluateFormula, extractFormulaRefs, parseFormula } from "@/lib/gamedb-formula";
 import { GAMEINFO_FIELD_NAMES, resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
 import { mergeCurrencies } from "@/lib/gameinfo-import";
-import { confirmGameinfoNavigation, useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
+import { requestGameinfoBack, useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
+import {
+  cleanGameinfoNumericInput,
+  findDuplicateGameinfoPackPrices,
+  normalizeGameinfoNumericInput,
+} from "@/lib/gameinfo-pack-validation";
 import {
   buildGameinfoPackColumns,
   formatGameinfoPackColumnValue,
@@ -57,10 +63,6 @@ import { evaluateGameinfoComputedColumn } from "@/lib/gameinfo-computed-evaluato
 import { normalizeSpaces } from "@/lib/text-normalize";
 
 const REQUIRED_PACK_FIELDS = ["name", "price", "amountChargedFee", "channelsMain"];
-
-function numericOnly(s) {
-  return s.replace(/[^0-9.]/g, "");
-}
 
 function genId(prefix) {
   return `${prefix}_${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-4)}`;
@@ -129,6 +131,7 @@ export default function GameinfoPackEditor({
   const [savedComputedColumns, setSavedComputedColumns] = useState(game.computedColumns ?? []);
   const [savedCostProfiles, setSavedCostProfiles] = useState(game.costProfiles ?? []);
   const [invalidFields, setInvalidFields] = useState(new Set());
+  const [confirmRequest, setConfirmRequest] = useState(null);
 
   const [importing, setImporting] = useState(false);
   const [importErrors, setImportErrors] = useState([]);
@@ -265,9 +268,13 @@ export default function GameinfoPackEditor({
     });
   }
   function removeCurrency(cIdx) {
-    if (!confirm("ลบสกุลเงินนี้พร้อมหมวดหมู่และแพ็กทั้งหมด?")) return;
-    updateCurrencies((draft) => {
-      draft.splice(cIdx, 1);
+    setConfirmRequest({
+      title: "ลบสกุลเงิน",
+      message: "สกุลเงินนี้ รวมถึงหมวดหมู่และแพ็กทั้งหมดภายในจะถูกลบเมื่อกดบันทึก",
+      confirmLabel: "ลบสกุลเงิน",
+      onConfirm: () => updateCurrencies((draft) => {
+        draft.splice(cIdx, 1);
+      }),
     });
   }
 
@@ -277,9 +284,13 @@ export default function GameinfoPackEditor({
     });
   }
   function removeCategory(cIdx, catIdx) {
-    if (!confirm("ลบหมวดหมู่นี้พร้อมแพ็กทั้งหมด?")) return;
-    updateCurrencies((draft) => {
-      draft[cIdx].categories.splice(catIdx, 1);
+    setConfirmRequest({
+      title: "ลบหมวดหมู่",
+      message: "หมวดหมู่นี้และแพ็กทั้งหมดภายในจะถูกลบเมื่อกดบันทึก",
+      confirmLabel: "ลบหมวดหมู่",
+      onConfirm: () => updateCurrencies((draft) => {
+        draft[cIdx].categories.splice(catIdx, 1);
+      }),
     });
   }
 
@@ -300,20 +311,26 @@ export default function GameinfoPackEditor({
   }
   function removePack(cIdx, catIdx, pkIdx) {
     const pack = currencies[cIdx]?.categories[catIdx]?.packs[pkIdx];
-    if (!window.confirm(`ลบ pack "${pack?.name || "ไม่มีชื่อ"}" ใช่ไหม?`)) return;
     const packId = pack?.id;
-    updateCurrencies((draft) => {
-      draft[cIdx].categories[catIdx].packs.splice(pkIdx, 1);
+    setConfirmRequest({
+      title: "ลบ Pack",
+      message: `Pack "${pack?.name || "ไม่มีชื่อ"}" จะถูกลบเมื่อกดบันทึก`,
+      confirmLabel: "ลบ Pack",
+      onConfirm: () => {
+        updateCurrencies((draft) => {
+          draft[cIdx].categories[catIdx].packs.splice(pkIdx, 1);
+        });
+        if (packId) {
+          setComputedColumns((prev) => removeGameinfoFormulaOverridesForPack(prev, packId));
+          setInvalidFields((prev) => {
+            if (prev.size === 0) return prev;
+            const next = new Set(prev);
+            for (const f of [...REQUIRED_PACK_FIELDS, "country"]) next.delete(`${packId}:${f}`);
+            return next;
+          });
+        }
+      },
     });
-    if (packId) {
-      setComputedColumns((prev) => removeGameinfoFormulaOverridesForPack(prev, packId));
-      setInvalidFields((prev) => {
-        if (prev.size === 0) return prev;
-        const next = new Set(prev);
-        for (const f of REQUIRED_PACK_FIELDS) next.delete(`${packId}:${f}`);
-        return next;
-      });
-    }
   }
   function updatePack(cIdx, catIdx, pkIdx, patch) {
     updateCurrencies((draft) => {
@@ -340,8 +357,12 @@ export default function GameinfoPackEditor({
   }
   function removeComputedColumn(key) {
     const column = computedColumns.find((item) => item.key === key);
-    if (!window.confirm(`ลบคอลัมน์สูตร "${column?.label || key}" ใช่ไหม?`)) return;
-    setComputedColumns((prev) => prev.filter((c) => c.key !== key));
+    setConfirmRequest({
+      title: "ลบคอลัมน์สูตร",
+      message: `คอลัมน์ "${column?.label || key}" และสูตรเฉพาะแถวที่เกี่ยวข้องจะถูกลบเมื่อกดบันทึก`,
+      confirmLabel: "ลบคอลัมน์",
+      onConfirm: () => setComputedColumns((prev) => prev.filter((c) => c.key !== key)),
+    });
   }
   function updateComputedColumn(nextColumn, { resetOverrides }) {
     setComputedColumns((prev) =>
@@ -368,19 +389,21 @@ export default function GameinfoPackEditor({
         }
       }
     }
-    return invalid;
+    const duplicatePriceIds = findDuplicateGameinfoPackPrices(currencies);
+    for (const packId of duplicatePriceIds) invalid.add(`${packId}:price`);
+    return { invalid, duplicatePriceIds };
   }
 
   function save() {
     setError("");
     setSavedAt(null);
     setSavedVisible(false);
-    const invalid = validatePacks();
+    const { invalid, duplicatePriceIds } = validatePacks();
     if (invalid.size > 0) {
       setInvalidFields(invalid);
-      setError(
-        "กรุณากรอกข้อมูลให้ครบก่อนบันทึก: ชื่อ pack, ราคา, ยอดที่กด + fee, ช่องทางหลัก, ประเทศ (ช่องที่ไฮไลต์สีแดง)"
-      );
+      setError(duplicatePriceIds.size > 0
+        ? "ราคา Pack ต้องไม่ซ้ำกัน กรุณาแก้ช่องราคาที่ไฮไลต์สีแดง"
+        : "กรุณากรอกข้อมูลให้ครบก่อนบันทึก: ชื่อ pack, ราคา, ยอดที่กด + fee, ช่องทางหลัก, ประเทศ (ช่องที่ไฮไลต์สีแดง)");
       // The floating บันทึก/ยกเลิก bar is fixed to the bottom of the
       // viewport, so if the user is scrolled up while a pack further down
       // fails validation, nothing near their cursor visibly changes — it
@@ -430,15 +453,21 @@ export default function GameinfoPackEditor({
   }
 
   function cancel() {
-    if (!window.confirm("ยกเลิกการแก้ไข? ข้อมูลที่ยังไม่บันทึกจะหายไป")) return;
-    setCurrencies(savedCurrencies);
-    setComputedColumns(savedComputedColumns);
-    setCostProfiles(savedCostProfiles);
-    setInvalidFields(new Set());
-    setError("");
-    setSavedAt(null);
-    setSavedVisible(false);
-    setAuditSource("editor");
+    setConfirmRequest({
+      title: "ยกเลิกการแก้ไข",
+      message: "ข้อมูลที่ยังไม่บันทึกทั้งหมดจะถูกยกเลิก",
+      confirmLabel: "ยกเลิกการแก้ไข",
+      onConfirm: () => {
+        setCurrencies(savedCurrencies);
+        setComputedColumns(savedComputedColumns);
+        setCostProfiles(savedCostProfiles);
+        setInvalidFields(new Set());
+        setError("");
+        setSavedAt(null);
+        setSavedVisible(false);
+        setAuditSource("editor");
+      },
+    });
   }
 
   // CSV import for this one game — file's game_id column is ignored server
@@ -935,8 +964,7 @@ export default function GameinfoPackEditor({
           <button
             type="button"
             onClick={() => {
-              if (!confirmGameinfoNavigation()) return;
-              router.replace(backHref);
+              requestGameinfoBack(backHref);
             }}
             className="-my-0.5 flex h-10 items-center whitespace-nowrap rounded-full border border-linear-hairline-strong bg-linear-surface-1 px-4 text-sm font-medium text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink"
           >
@@ -960,6 +988,20 @@ export default function GameinfoPackEditor({
         </div>
       </div>
 
+      {confirmRequest ? (
+        <GameinfoConfirmDialog
+          open
+          title={confirmRequest.title}
+          message={confirmRequest.message}
+          confirmLabel={confirmRequest.confirmLabel}
+          destructive
+          onClose={() => setConfirmRequest(null)}
+          onConfirm={() => {
+            confirmRequest.onConfirm();
+            setConfirmRequest(null);
+          }}
+        />
+      ) : null}
       {modalOpen && (
         <GameinfoComputedEditor
           sampleRow={sampleRow}
@@ -1473,7 +1515,7 @@ function PackEditorColumn({
         onChange={(event) =>
           isName
             ? updateName(event.target.value)
-            : onUpdate({ [column.field]: numericOnly(event.target.value) })
+            : onUpdate({ [column.field]: cleanGameinfoNumericInput(event.target.value) })
         }
         onBlur={
           isName
@@ -1481,7 +1523,10 @@ function PackEditorColumn({
                 const normalized = normalizeSpaces(event.target.value);
                 if (normalized !== event.target.value) updateName(normalized);
               }
-            : undefined
+            : (event) => {
+                const normalized = normalizeGameinfoNumericInput(event.target.value);
+                if (normalized !== event.target.value) onUpdate({ [column.field]: normalized });
+              }
         }
         placeholder={placeholder}
         className="h-9 w-full rounded border border-linear-primary/40 px-2 text-sm outline-none"
