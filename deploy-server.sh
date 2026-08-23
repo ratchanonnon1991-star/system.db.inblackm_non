@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Install this file as /deploy-server.sh on the system.db.inblackm server. The
-# matching deploy-server.service intentionally runs only when explicitly started.
+# Run this file directly from the repository on the system.db.inblackm server.
+
+DEPLOY_ENV_FILE="${DEPLOY_ENV_FILE:-/etc/default/deploy-server}"
+if [ -r "$DEPLOY_ENV_FILE" ]; then
+  set -a
+  # The file is root-managed and uses shell-compatible KEY=value entries.
+  # shellcheck source=/dev/null
+  . "$DEPLOY_ENV_FILE"
+  set +a
+fi
 
 APP_DIR="${DEPLOY_APP_DIR:-/www/wwwroot/system.db.inblackm}"
 BRANCH="${DEPLOY_BRANCH:-main}"
@@ -26,7 +34,7 @@ Options:
   --dry-run       Print and validate configuration without changing the checkout.
   -h, --help      Show this help.
 
-The service can also read overrides from /etc/default/deploy-server.
+Overrides are loaded automatically from /etc/default/deploy-server.
 EOF
 }
 
