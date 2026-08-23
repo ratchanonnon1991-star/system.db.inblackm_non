@@ -127,8 +127,13 @@ if [ -f "${HOME:-/root}/.npmrc" ] &&
   exit 1
 fi
 
+# Some aaPanel NVM releases reference optional variables such as ALIAS while
+# selecting an already-installed runtime. Keep strict mode everywhere else,
+# but do not let NVM internals abort the deployment on an unset optional value.
+set +u
 nvm install "$NODE_VERSION"
 nvm use "$NODE_VERSION"
+set -u
 
 PM2="$(npm prefix -g)/bin/pm2"
 if [ ! -x "$PM2" ]; then
