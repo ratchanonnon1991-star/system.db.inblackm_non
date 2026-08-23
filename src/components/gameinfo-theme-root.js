@@ -1,7 +1,9 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import GameinfoUnsavedNavigationDialog from "./gameinfo-unsaved-navigation-dialog";
+import { rememberGameinfoLocation } from "@/lib/gameinfo-unsaved-changes";
 
 const STORAGE_KEY = "gameinfo-theme";
 const GameinfoThemeContext = createContext(null);
@@ -31,6 +33,9 @@ const GameinfoThemeContext = createContext(null);
 export default function GameinfoThemeRoot({ className, style, children }) {
   const [theme, setTheme] = useState("light");
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const query = searchParams.toString();
 
   useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY);
@@ -54,6 +59,10 @@ export default function GameinfoThemeRoot({ className, style, children }) {
     return () => window.removeEventListener("focus", refreshPermissions);
   }, [router]);
 
+  useEffect(() => {
+    rememberGameinfoLocation(`${pathname}${query ? `?${query}` : ""}`);
+  }, [pathname, query]);
+
   function toggle() {
     setTheme((prev) => {
       const next = prev === "dark" ? "light" : "dark";
@@ -66,6 +75,7 @@ export default function GameinfoThemeRoot({ className, style, children }) {
     <GameinfoThemeContext.Provider value={{ theme, toggle }}>
       <div data-theme={theme} data-gameinfo-root className={className} style={style}>
         {children}
+        <GameinfoUnsavedNavigationDialog />
       </div>
     </GameinfoThemeContext.Provider>
   );
