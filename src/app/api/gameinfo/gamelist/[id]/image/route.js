@@ -1,12 +1,13 @@
 import { handleApiError, jsonOk } from "@/lib/http";
-import { requireAdmin, requireLayoutEditor } from "@/server/auth";
+import { requireGameinfoAccess, requireGameinfoEditor } from "@/server/auth";
 import { getGamelistImage, saveGamelistImage } from "@/server/gameinfo-gamelist-image";
 import { recordEdit } from "@/server/gamedb-edit-log";
 import { requestMeta } from "@/lib/request-meta";
+import { auditActor, recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
 
 export async function GET(request, { params }) {
   try {
-    await requireAdmin(request); // any logged-in role — read-only for "user"
+    await requireGameinfoAccess(request);
     const { id } = await params;
     const image = await getGamelistImage(Number(id));
     return jsonOk(image);
@@ -17,11 +18,18 @@ export async function GET(request, { params }) {
 
 export async function PUT(request, { params }) {
   try {
-    const admin = await requireLayoutEditor(request);
+    const admin = await requireGameinfoEditor(request);
     const { id } = await params;
     const body = await request.json();
     const before = await getGamelistImage(Number(id));
     const image = await saveGamelistImage(Number(id), body.imageUrl);
+    await recordGameinfoAudit({
+      gameId: Number(id),
+      area: "image",
+      actor: auditActor(admin),
+      before: { image: Boolean(before.imageUrl) },
+      after: { image: Boolean(image.imageUrl) },
+    });
     if (before.imageUrl !== image.imageUrl) {
       await recordEdit({
         queryId: null,

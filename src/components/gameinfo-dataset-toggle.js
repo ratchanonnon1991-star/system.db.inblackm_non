@@ -7,11 +7,12 @@ export default function GameinfoDatasetToggle({ basePath }) {
   const searchParams = useSearchParams();
   const mode = searchParams.get("mode") === "idpass" ? "idpass" : "uid";
   function href(nextMode) {
-    const params = new URLSearchParams(searchParams.toString());
+    const [path, rawQuery = ""] = basePath.split("?");
+    const params = new URLSearchParams(rawQuery);
     if (nextMode === "idpass") params.set("mode", "idpass");
     else params.delete("mode");
     const query = params.toString();
-    return `${basePath}${query ? `?${query}` : ""}`;
+    return `${path}${query ? `?${query}` : ""}`;
   }
   return (
     <div className="inline-flex rounded-lg border border-linear-hairline-strong bg-linear-surface-1 p-1 text-xs">

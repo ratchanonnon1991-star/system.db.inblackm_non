@@ -4,6 +4,7 @@ import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { normalizeGamelistLinks } from "@/server/gameinfo-gamelist-links";
 import { normalizeGamelistTutorialCategories } from "@/server/gameinfo-gamelist-tutorial";
 import { sanitizeGameinfoPack } from "@/lib/gameinfo-pack-model";
+import { recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
 
 function sanitizeCurrencies(currencies) {
   return (Array.isArray(currencies) ? currencies : []).map((currency, currencyIndex) => ({
@@ -42,7 +43,11 @@ function sanitizeData(raw) {
     },
     links: normalizeGamelistLinks(Array.isArray(source.links) ? source.links : []),
     tutorial: { categories: normalizeGamelistTutorialCategories(source.tutorial) },
-    warning: { categories: normalizeGamelistTutorialCategories(source.warning) },
+    warning: {
+      categories: normalizeGamelistTutorialCategories(source.warning),
+      autoOpen: source.warning?.autoOpen === undefined ? true : Boolean(source.warning.autoOpen),
+      revision: String(source.warning?.revision || "legacy"),
+    },
     packs: {
       currencies: sanitizeCurrencies(source.packs?.currencies),
       computedColumns: Array.isArray(source.packs?.computedColumns) ? source.packs.computedColumns : [],
@@ -91,10 +96,10 @@ async function readyPool() {
   return getPoolForConnection(selected);
 }
 
-export async function getGameinfoModeData(gameId, mode) {
+export async function getGameinfoModeData(gameId, mode, transactionClient = null) {
   if (normalizeGameinfoDataMode(mode) !== "idpass") return emptyData();
   const pool = await readyPool();
-  const client = await pool.connect();
+  const client = transactionClient || await pool.connect();
   try {
     const result = await client.query(
       `SELECT data FROM gameinfo_mode_data WHERE game_id = $1 AND data_mode = 'idpass'`,
@@ -102,7 +107,7 @@ export async function getGameinfoModeData(gameId, mode) {
     );
     return sanitizeData(result.rows[0]?.data);
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
 }
 
@@ -118,11 +123,11 @@ export async function listGameinfoModeData(mode) {
   }
 }
 
-export async function saveGameinfoModeData(gameId, mode, nextData) {
+export async function saveGameinfoModeData(gameId, mode, nextData, transactionClient = null) {
   if (normalizeGameinfoDataMode(mode) !== "idpass") throw new Error("ใช้ mode storage ได้เฉพาะ IDPASS");
   const data = sanitizeData(nextData);
   const pool = await readyPool();
-  const client = await pool.connect();
+  const client = transactionClient || await pool.connect();
   try {
     await client.query(
       `INSERT INTO gameinfo_mode_data (game_id, data_mode, data, updated_at)
@@ -131,12 +136,12 @@ export async function saveGameinfoModeData(gameId, mode, nextData) {
       [gameId, JSON.stringify(data)]
     );
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
   return data;
 }
 
-export async function updateGameinfoModeData(gameId, mode, updater) {
+export async function updateGameinfoModeData(gameId, mode, updater, { area = null, actor = null } = {}) {
   if (normalizeGameinfoDataMode(mode) !== "idpass") throw new Error("ใช้ mode storage ได้เฉพาะ IDPASS");
   const pool = await readyPool();
   const client = await pool.connect();
@@ -160,6 +165,25 @@ export async function updateGameinfoModeData(gameId, mode, updater) {
        ON CONFLICT (game_id, data_mode) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
       [gameId, JSON.stringify(next)]
     );
+    if (area) {
+      const slice = (data) => {
+        if (area === "game") return data.fields;
+        if (area === "pack") return data.packs;
+        if (area === "tutorial") return data.tutorial;
+        if (area === "warning") return data.warning;
+        if (area === "links") return data.links;
+        return data;
+      };
+      await recordGameinfoAudit({
+        gameId,
+        area,
+        dataMode: "idpass",
+        actor,
+        before: slice(current),
+        after: slice(next),
+        client,
+      });
+    }
     await client.query("COMMIT");
     return next;
   } catch (error) {
@@ -170,12 +194,12 @@ export async function updateGameinfoModeData(gameId, mode, updater) {
   }
 }
 
-export async function deleteGameinfoModeData(gameId) {
+export async function deleteGameinfoModeData(gameId, transactionClient = null) {
   const pool = await readyPool();
-  const client = await pool.connect();
+  const client = transactionClient || await pool.connect();
   try {
     await client.query(`DELETE FROM gameinfo_mode_data WHERE game_id = $1`, [gameId]);
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
 }

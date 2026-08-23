@@ -1,5 +1,5 @@
 import { handleApiError } from "@/lib/http";
-import { requireAdmin } from "@/server/auth";
+import { requireGameinfoEditor } from "@/server/auth";
 import { toCsv } from "@/lib/gameinfo-csv";
 import { PACK_HEADERS, PACK_SAMPLE } from "@/lib/gameinfo-import";
 
@@ -8,7 +8,7 @@ import { PACK_HEADERS, PACK_SAMPLE } from "@/lib/gameinfo-import";
 // opens the Thai sample text correctly.
 export async function GET(request) {
   try {
-    await requireAdmin(request);
+    await requireGameinfoEditor(request);
     const csv = "﻿" + toCsv(PACK_HEADERS, PACK_SAMPLE);
     return new Response(csv, {
       status: 200,

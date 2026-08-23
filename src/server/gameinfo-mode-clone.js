@@ -1,5 +1,5 @@
-import { getGameListRow, updateGameListRow } from "@/server/gameinfo-gamelist";
-import { getGamelistPacks, saveGamelistPacks } from "@/server/gameinfo-gamelist-packs";
+import { getGameListRow, updateGameListRow, withGameinfoTransaction } from "@/server/gameinfo-gamelist";
+import { getGamelistPacks, recordGameinfoAudit, saveGamelistPacks } from "@/server/gameinfo-gamelist-packs";
 import { getGamelistTutorial, getGamelistWarning, saveGamelistTutorial, saveGamelistWarning } from "@/server/gameinfo-gamelist-tutorial";
 import { getGamelistLinks, legacyGamelistLinks, saveGamelistLinks } from "@/server/gameinfo-gamelist-links";
 import { getGameinfoModeData, saveGameinfoModeData } from "@/server/gameinfo-mode-data";
@@ -32,18 +32,18 @@ async function readUid(gameId) {
   };
 }
 
-async function writeUid(gameId, data, scope, actor) {
+async function writeUid(gameId, data, scope, actor, client) {
   if (scope === "all") {
-    await updateGameListRow(gameId, data.fields);
-    await saveGamelistLinks(gameId, data.links);
-    await saveGamelistTutorial(gameId, data.tutorial.categories);
-    await saveGamelistWarning(gameId, data.warning.categories);
+    await updateGameListRow(gameId, data.fields, client, actor);
+    await saveGamelistLinks(gameId, data.links, client, actor);
+    await saveGamelistTutorial(gameId, data.tutorial.categories, client, actor);
+    await saveGamelistWarning(gameId, data.warning.categories, client, actor, { autoOpen: data.warning.autoOpen });
   }
   await saveGamelistPacks(gameId, {
     ...data.packs,
     actor,
     source: "mode_clone",
-  });
+  }, client);
 }
 
 export async function cloneGameinfoDataMode({ gameId, sourceMode, targetMode, scope = "all", actor }) {
@@ -56,10 +56,24 @@ export async function cloneGameinfoDataMode({ gameId, sourceMode, targetMode, sc
   }
   const sourceData = source === "uid" ? await readUid(gameId) : await getGameinfoModeData(gameId, source);
   if (target === "uid") {
-    await writeUid(gameId, sourceData, scope, actor);
+    await withGameinfoTransaction((client) => writeUid(gameId, sourceData, scope, actor, client));
   } else {
-    const current = await getGameinfoModeData(gameId, target);
-    await saveGameinfoModeData(gameId, target, scope === "packs" ? { ...current, packs: sourceData.packs } : sourceData);
+    await withGameinfoTransaction(async (client) => {
+      const current = await getGameinfoModeData(gameId, target, client);
+      const next = scope === "packs" ? { ...current, packs: sourceData.packs } : sourceData;
+      await saveGameinfoModeData(gameId, target, next, client);
+      await recordGameinfoAudit({
+        gameId,
+        area: "clone",
+        dataMode: "idpass",
+        action: "update",
+        source: "mode_clone",
+        actor,
+        before: current,
+        after: next,
+        client,
+      });
+    });
   }
   return { sourceMode: source, targetMode: target, scope };
 }

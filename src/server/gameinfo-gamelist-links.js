@@ -1,5 +1,6 @@
 import { getPoolForConnection } from "@/lib/db";
 import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
+import { recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
 
 const CONNECTION_NAME = "gameinfo";
 const schemaReadyByConnection = new Map();
@@ -110,36 +111,45 @@ export async function listGamelistLinksByGame() {
   }
 }
 
-export async function saveGamelistLinks(gameId, links) {
+export async function saveGamelistLinks(gameId, links, transactionClient = null, actor = null) {
   const normalized = normalizeGamelistLinks(links);
   const pool = await getReadyPool();
-  const client = await pool.connect();
+  const client = transactionClient || await pool.connect();
   try {
-    await client.query("BEGIN");
+    if (!transactionClient) await client.query("BEGIN");
     const game = await client.query(`SELECT id FROM game_list WHERE id = $1 FOR UPDATE`, [gameId]);
     if (game.rows.length !== 1) throw createHttpError("ไม่พบเกมที่ต้องการบันทึกลิงก์", 404);
+    const existing = await client.query(`SELECT data FROM gamelist_links WHERE game_id = $1`, [gameId]);
     await client.query(
       `INSERT INTO gamelist_links (game_id, data, updated_at)
        VALUES ($1, $2, NOW())
        ON CONFLICT (game_id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
       [gameId, JSON.stringify({ links: normalized })]
     );
-    await client.query("COMMIT");
+    await recordGameinfoAudit({
+      gameId,
+      area: "links",
+      actor,
+      before: existing.rows[0]?.data ?? null,
+      after: { links: normalized },
+      client,
+    });
+    if (!transactionClient) await client.query("COMMIT");
     return normalized;
   } catch (error) {
-    await client.query("ROLLBACK");
+    if (!transactionClient) await client.query("ROLLBACK");
     throw error;
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
 }
 
-export async function deleteGamelistLinksForGame(gameId) {
+export async function deleteGamelistLinksForGame(gameId, transactionClient = null) {
   const pool = await getReadyPool();
-  const client = await pool.connect();
+  const client = transactionClient || await pool.connect();
   try {
     await client.query(`DELETE FROM gamelist_links WHERE game_id = $1`, [gameId]);
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
 }

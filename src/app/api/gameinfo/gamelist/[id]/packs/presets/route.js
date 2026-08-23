@@ -1,5 +1,5 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireAdmin } from "@/server/auth";
+import { requireGameinfoAccess } from "@/server/auth";
 import {
   listGamelistPackViewPresets,
   saveGamelistPackViewPreset,
@@ -16,12 +16,10 @@ async function readGameId(params) {
   return Number.isInteger(gameId) && gameId > 0 ? gameId : null;
 }
 
-// A read-only GameInfo "user" still owns their own visual preference, so
-// this intentionally uses requireAdmin (authenticated user) rather than
-// requireLayoutEditor (which controls pack-data mutations).
+// A read-only GameInfo Topup still owns their own visual preference.
 export async function GET(request, { params }) {
   try {
-    const user = await requireAdmin(request);
+    const user = await requireGameinfoAccess(request);
     const gameId = await readGameId(params);
     const surface = readSurface(request);
     if (!gameId) return jsonError("gameId ไม่ถูกต้อง", 400);
@@ -35,7 +33,7 @@ export async function GET(request, { params }) {
 
 export async function POST(request, { params }) {
   try {
-    const user = await requireAdmin(request);
+    const user = await requireGameinfoAccess(request);
     const gameId = await readGameId(params);
     const surface = readSurface(request);
     if (!gameId) return jsonError("gameId ไม่ถูกต้อง", 400);

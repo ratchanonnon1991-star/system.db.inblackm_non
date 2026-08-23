@@ -12,6 +12,8 @@ import {
 import ItuneCountdownCell from "@/components/itune-countdown-cell";
 import ItuneImagePickerModal from "@/components/itune-image-picker-modal";
 import ItuneImagePreview from "@/components/itune-image-preview";
+import ItuneAmountLogImage from "@/components/itune-amount-log-image";
+import ItunePasswordValue from "@/components/itune-password-value";
 
 // Same tone→class mapping as itune-admin-table.js's StatusBadge — kept as a
 // small local copy (see itune-issue-history.js for the same convention)
@@ -39,79 +41,111 @@ function DetailField({ label, children }) {
   );
 }
 
-// Own popup for the "Reject" request (see rejectItuneEntry in
-// itune-entries-repository.js) — same shape as ItuneReportIssueModal in
-// itune-admin-table.js, but this app's convention is a local copy per call
-// site rather than a shared component (see STATUS_TONE_CLASS's comment
-// above for the same reasoning). Requires a reason so admin has something
-// to go on when deciding whether to confirm or decline the request.
-function ItuneRejectRequestModal({ onConfirm, onClose, submitting, error }) {
-  const [reason, setReason] = useState("");
+// Final balance and proof are submitted together so the entry update,
+// session close and queue transition can be one transaction.
+function ItuneFinishClaimModal({ entry, threshold, onConfirm, onClose, submitting, error }) {
+  const [outcome, setOutcome] = useState(
+    Number(entry.amount) < threshold ? "depleted" : "partial_release"
+  );
+  const [amountInput, setAmountInput] = useState(String(entry.amount));
+  const [image, setImage] = useState("");
+  const [note, setNote] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   useEffect(() => {
     function onKeyDown(e) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && !pickerOpen) onClose();
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [onClose, pickerOpen]);
+
+  const amount = Number(amountInput);
+  const amountValid = amountInput.trim() !== "" && Number.isFinite(amount) && amount >= 0;
+  const stillUsable = amountValid && amount >= threshold;
+  const outcomeMismatch =
+    (outcome === "depleted" && stillUsable) ||
+    (outcome === "partial_release" && amountValid && !stillUsable);
+  const valid =
+    amountValid &&
+    Boolean(image) &&
+    !outcomeMismatch &&
+    (outcome !== "unusable" || Boolean(note.trim()));
 
   return createPortal(
-    <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="w-full max-w-sm overflow-hidden rounded-lg border border-ll-hairline bg-ll-surface-1 shadow-[var(--ll-shadow-modal)]">
-        <div className="flex items-center justify-between border-b border-ll-hairline px-4 py-2.5">
-          <h2 className="text-sm font-semibold text-ll-ink">ขอ Reject</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-6 w-6 items-center justify-center rounded text-ll-ink-tertiary hover:bg-ll-surface-2 hover:text-ll-ink"
-            aria-label="ปิด"
-          >
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
+      <div className="w-full max-w-md overflow-hidden rounded-lg border border-ll-hairline bg-ll-surface-1 shadow-[var(--ll-shadow-modal)]">
+        <div className="flex items-center justify-between border-b border-ll-hairline px-4 py-3">
+          <div>
+            <h2 className="text-sm font-semibold text-ll-ink">บันทึกผลและคืนเมล</h2>
+            <p className="mt-0.5 truncate text-[11px] text-ll-ink-subtle">{entry.email}</p>
+          </div>
+          <button type="button" onClick={onClose} disabled={submitting} aria-label="ปิด" className="flex h-10 w-10 items-center justify-center rounded text-ll-ink-tertiary hover:bg-ll-surface-2">
             <X size={14} />
           </button>
         </div>
 
-        <div className="p-4">
-          <label className="block text-[13px] font-medium text-ll-ink">
-            เหตุผลที่ขอ Reject
-            <textarea
-              autoFocus
-              rows={4}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="อธิบายว่าทำไมถึงขอ Reject เมลนี้..."
-              className="mt-1.5 w-full resize-none rounded-md border border-ll-hairline-strong bg-ll-surface-2 px-3 py-2 text-sm text-ll-ink outline-none focus:border-ll-primary"
-            />
-          </label>
-          <p className="mt-1.5 text-[11px] text-ll-ink-subtle">
-            เมลนี้จะยังอยู่กับคุณจนกว่าแอดมินจะยืนยัน — เมื่อยืนยันแล้วคุณจะไม่ได้รับเมลนี้อีก
-          </p>
-          {error && <p className="mt-2 text-[12px] text-ll-primary">{error}</p>}
+        <div className="space-y-4 p-4">
+          <fieldset>
+            <legend className="text-[12px] font-medium text-ll-ink">ผลการใช้งาน</legend>
+            <div className="mt-2 grid gap-2 sm:grid-cols-3">
+              {[
+                ["depleted", "ใช้หมดแล้ว"],
+                ["partial_release", "คืนเข้าคิว"],
+                ["unusable", "เมลใช้ไม่ได้"],
+              ].map(([value, label]) => (
+                <label key={value} className={`cursor-pointer rounded-md border px-3 py-2 text-[12px] ${outcome === value ? "border-ll-primary bg-ll-primary-subtle-bg text-ll-primary-subtle-text" : "border-ll-hairline-strong text-ll-ink-subtle"}`}>
+                  <input type="radio" name="claim-outcome" value={value} checked={outcome === value} onChange={() => setOutcome(value)} className="sr-only" />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </fieldset>
 
-          <div className="mt-4 flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="rounded-md px-3 py-1.5 text-[13px] font-medium text-ll-ink-subtle hover:bg-ll-surface-2 disabled:opacity-50"
-            >
-              ยกเลิก
+          <label className="block text-[12px] font-medium text-ll-ink">
+            ยอดคงเหลือล่าสุด
+            <input type="number" min="0" step="0.01" value={amountInput} onChange={(e) => setAmountInput(e.target.value)} className="mt-1 h-10 w-full rounded-md border border-ll-hairline-strong bg-ll-surface-2 px-3 text-sm text-ll-ink outline-none focus:border-ll-primary" />
+          </label>
+
+          {outcome === "depleted" && stillUsable && (
+            <p className="rounded-md border border-ll-warning/35 bg-ll-warning-bg px-3 py-2 text-[12px] text-ll-warning">
+              ยอดยังไม่ต่ำกว่า {threshold.toFixed(2)} จึงถือว่ายังใช้ต่อได้ กรุณาเลือก “คืนเข้าคิว”
+            </p>
+          )}
+          {outcome === "partial_release" && amountValid && !stillUsable && (
+            <p className="rounded-md border border-ll-warning/35 bg-ll-warning-bg px-3 py-2 text-[12px] text-ll-warning">
+              ยอดต่ำกว่า {threshold.toFixed(2)} แล้ว กรุณาเลือก “ใช้หมดแล้ว”
+            </p>
+          )}
+
+          <div>
+            <p className="text-[12px] font-medium text-ll-ink">รูปหลักฐานยอดล่าสุด</p>
+            <button type="button" onClick={() => setPickerOpen(true)} className="mt-1 flex h-20 w-20 items-center justify-center overflow-hidden rounded-md border border-dashed border-ll-hairline-strong bg-ll-surface-2 text-ll-ink-tertiary">
+              {image ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={image} alt="หลักฐานยอดล่าสุด" className="h-full w-full object-cover" />
+                </>
+              ) : <ImageIcon size={18} />}
             </button>
-            <button
-              type="button"
-              onClick={() => onConfirm(reason.trim())}
-              disabled={submitting || !reason.trim()}
-              className="rounded-md bg-ll-primary px-3 py-1.5 text-[13px] font-medium text-ll-on-primary hover:bg-ll-primary-hover disabled:opacity-50"
-            >
-              {submitting ? "กำลังส่งคำขอ..." : "ส่งคำขอ"}
+          </div>
+
+          {outcome === "unusable" && (
+            <label className="block text-[12px] font-medium text-ll-ink">
+              ปัญหาที่พบ
+              <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} className="mt-1 w-full resize-none rounded-md border border-ll-hairline-strong bg-ll-surface-2 px-3 py-2 text-sm text-ll-ink outline-none focus:border-ll-primary" />
+            </label>
+          )}
+
+          {error && <p className="text-[12px] text-ll-primary-subtle-text">{error}</p>}
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={onClose} disabled={submitting} className="rounded-md px-3 py-2 text-[12px] text-ll-ink-subtle hover:bg-ll-surface-2">ยกเลิก</button>
+            <button type="button" disabled={submitting || !valid} onClick={() => onConfirm({ outcome, amount, image, note: note.trim() })} className="rounded-md bg-ll-primary px-3 py-2 text-[12px] font-medium text-ll-on-primary disabled:opacity-40">
+              {submitting ? "กำลังบันทึก..." : "ยืนยันและคืนเมล"}
             </button>
           </div>
         </div>
+        {pickerOpen && <ItuneImagePickerModal value={image} onChange={setImage} onClose={() => setPickerOpen(false)} />}
       </div>
     </div>,
     document.body
@@ -137,20 +171,12 @@ export default function ItuneTopupCard({ entry, now, releaseThreshold, onRelease
   const [adjustmentPickerOpen, setAdjustmentPickerOpen] = useState(false);
   const [savingAmount, setSavingAmount] = useState(false);
   const [amountError, setAmountError] = useState("");
-  const [releasing, setReleasing] = useState(false);
-  const [releaseError, setReleaseError] = useState("");
-  const [rejectModalOpen, setRejectModalOpen] = useState(false);
-  const [rejecting, setRejecting] = useState(false);
-  const [rejectError, setRejectError] = useState("");
+  const [finishModalOpen, setFinishModalOpen] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  const [finishError, setFinishError] = useState("");
 
-  const { label: statusLabel, tone: statusTone } = computeEffectiveItuneStatus(entry);
-  // Server also enforces both of these (see releaseItuneEntry) — checked
-  // here too just to save a doomed round trip and tell the user why up
-  // front, instead of them finding out only after clicking "คืนเมล".
   const threshold = releaseThreshold ?? DEFAULT_ITUNE_RELEASE_THRESHOLD;
-  const belowReleaseThreshold = Number(entry.amount) < threshold;
-  const hasConfirmImage = Boolean(entry.amountConfirmImage);
-  const canRelease = belowReleaseThreshold && hasConfirmImage;
+  const { label: statusLabel, tone: statusTone } = computeEffectiveItuneStatus(entry, threshold);
 
   function toggleExpanded() {
     const next = !expanded;
@@ -199,6 +225,7 @@ export default function ItuneTopupCard({ entry, now, releaseThreshold, onRelease
           oldAmount: entry.amount,
           newAmount: data.entry.amount,
           image: adjustmentImage,
+          hasImage: Boolean(adjustmentImage),
           changedByUsername: "",
           changedAt: new Date().toISOString(),
         },
@@ -212,59 +239,45 @@ export default function ItuneTopupCard({ entry, now, releaseThreshold, onRelease
     }
   }
 
-  async function release() {
-    if (!window.confirm(`คืนเมล ${entry.email || `ID ${entry.id}`} กลับเข้าพูล?`)) return;
-    setReleasing(true);
-    setReleaseError("");
+  async function finishClaim(details) {
+    setFinishing(true);
+    setFinishError("");
     try {
       await apiJson(`/api/projectm/itune/${entry.id}/claim`, {
         method: "DELETE",
-        fallbackError: "คืนเมลไม่สำเร็จ",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(details),
+        fallbackError: "บันทึกผลและคืนเมลไม่สำเร็จ",
       });
+      setFinishModalOpen(false);
       onReleased();
     } catch (err) {
-      setReleaseError(err.message);
-      setReleasing(false);
-    }
-  }
-
-  // "Reject" — no Amount/image requirement (unlike "คืนเมล"), but doesn't
-  // release the entry itself: it just files a request (see rejectItuneEntry,
-  // ItuneRejectRequestModal above) that sits pending until an admin confirms
-  // or declines it. The entry stays claimed by this user the whole time
-  // it's pending (still counts against the 2-claim cap), so this only
-  // updates the card in place — no onReleased() here, unlike release().
-  async function reject(reason) {
-    setRejecting(true);
-    setRejectError("");
-    try {
-      const data = await apiJson(`/api/projectm/itune/${entry.id}/reject`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason }),
-        fallbackError: "ส่งคำขอ Reject ไม่สำเร็จ",
-      });
-      onUpdated(data.entry);
-      setRejectModalOpen(false);
-    } catch (err) {
-      setRejectError(err.message);
+      setFinishError(err.message);
     } finally {
-      setRejecting(false);
+      setFinishing(false);
     }
   }
 
   return (
     <div className="overflow-hidden rounded-lg border border-ll-hairline bg-ll-surface-1 shadow-[var(--ll-shadow-card)]">
-      <button
-        type="button"
+      <div
         onClick={toggleExpanded}
         className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-ll-surface-2/50"
       >
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="truncate text-sm font-medium text-ll-ink">{entry.email || "-"}</span>
-          <span className="truncate text-xs text-ll-ink-subtle">{entry.password || "-"}</span>
+          <ItunePasswordValue value={entry.password} className="text-xs text-ll-ink-subtle" />
         </div>
-        <div className="flex shrink-0 items-center gap-3 text-xs">
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            toggleExpanded();
+          }}
+          aria-expanded={expanded}
+          aria-label={expanded ? "Collapse details" : "Expand details"}
+          className="flex shrink-0 items-center gap-3 rounded text-xs"
+        >
           <ItuneCountdownCell
             addedAt={entry.addedAt}
             now={now}
@@ -275,8 +288,8 @@ export default function ItuneTopupCard({ entry, now, releaseThreshold, onRelease
             size={16}
             className={`text-ll-ink-tertiary transition-transform ${expanded ? "rotate-180" : ""}`}
           />
-        </div>
-      </button>
+        </button>
+      </div>
 
       {expanded && (
         <div className="flex flex-col gap-5 border-t border-ll-hairline p-4">
@@ -348,7 +361,7 @@ export default function ItuneTopupCard({ entry, now, releaseThreshold, onRelease
                   own comment). */}
               {adjustmentImage ? (
                 <ItuneImagePreview src={adjustmentImage} onClick={() => setAdjustmentPickerOpen(true)}>
-                  <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-md border border-ll-hairline-strong bg-ll-surface-1">
+                  <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-md border border-ll-hairline-strong bg-ll-surface-1">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={adjustmentImage} alt="" className="h-full w-full object-cover" />
                   </div>
@@ -358,7 +371,7 @@ export default function ItuneTopupCard({ entry, now, releaseThreshold, onRelease
                   type="button"
                   onClick={() => setAdjustmentPickerOpen(true)}
                   title="แนบรูปยืนยันสำหรับยอดรอบนี้"
-                  className="flex h-9 w-9 items-center justify-center rounded-md border border-dashed border-ll-hairline-strong text-ll-ink-tertiary hover:bg-ll-surface-1"
+                  className="flex h-10 w-10 items-center justify-center rounded-md border border-dashed border-ll-hairline-strong text-ll-ink-tertiary hover:bg-ll-surface-1"
                 >
                   <ImageIcon size={16} />
                 </button>
@@ -396,16 +409,12 @@ export default function ItuneTopupCard({ entry, now, releaseThreshold, onRelease
                 <ul className="mt-1 flex flex-col gap-1.5">
                   {amountLog.map((log) => (
                     <li key={log.id} className="flex items-center gap-2 text-[11px] text-ll-ink-subtle">
-                      {log.image ? (
-                        <ItuneImagePreview src={log.image}>
-                          <div className="h-6 w-6 shrink-0 overflow-hidden rounded border border-ll-hairline-strong">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={log.image} alt="" className="h-full w-full object-cover" />
-                          </div>
-                        </ItuneImagePreview>
-                      ) : (
-                        <span className="h-6 w-6 shrink-0 rounded border border-dashed border-ll-hairline-strong" />
-                      )}
+                      <ItuneAmountLogImage
+                        logId={log.id}
+                        hasImage={log.hasImage}
+                        src={log.image}
+                        sizeClassName="h-6 w-6"
+                      />
                       <span>
                         {Number(log.oldAmount) === Number(log.newAmount)
                           ? `ยอดเริ่มต้น: ${Number(log.newAmount).toFixed(2)}`
@@ -420,57 +429,36 @@ export default function ItuneTopupCard({ entry, now, releaseThreshold, onRelease
             </div>
           </div>
 
-          <div className="flex flex-wrap items-start gap-2">
-            <div>
-              <button
-                type="button"
-                onClick={release}
-                disabled={releasing || rejecting || !canRelease}
-                className="rounded-md border border-ll-hairline-strong px-3 py-2 text-xs font-medium text-ll-ink-subtle hover:bg-ll-surface-2 disabled:opacity-50"
-              >
-                {releasing ? "กำลังคืน..." : "คืนเมล"}
-              </button>
-              {!canRelease && (
-                <p className="mt-1.5 text-[11px] text-ll-ink-tertiary">
-                  {!belowReleaseThreshold &&
-                    `ยอดคงเหลือต้องต่ำกว่า ${threshold} ก่อนถึงจะคืนเมลได้ (ตอนนี้เหลือ ${Number(
-                      entry.amount
-                    ).toFixed(2)})`}
-                  {!belowReleaseThreshold && !hasConfirmImage && " และ"}
-                  {!hasConfirmImage && "ต้องแนบรูปยืนยันยอดก่อนถึงจะคืนเมลได้"}
-                </p>
-              )}
-              {releaseError && <p className="mt-1.5 text-[11px] text-ll-primary">{releaseError}</p>}
-            </div>
-
-            <div>
-              <button
-                type="button"
-                onClick={() => setRejectModalOpen(true)}
-                disabled={releasing || rejecting || entry.hasPendingReject}
-                title="ส่งคำขอ Reject โดยไม่ต้องรอยอด/รูป — เมลยังอยู่กับคุณจนกว่าแอดมินจะยืนยัน แล้วคุณจะไม่ได้รับเมลนี้อีก"
-                className="rounded-md border border-ll-hairline-strong px-3 py-2 text-xs font-medium text-ll-primary-subtle-text hover:bg-ll-primary-subtle-bg disabled:opacity-50"
-              >
-                {rejecting
-                  ? "กำลังส่งคำขอ..."
-                  : entry.hasPendingReject
-                    ? "รอแอดมินยืนยัน Reject"
-                    : "Reject"}
-              </button>
-              {rejectError && <p className="mt-1.5 text-[11px] text-ll-primary">{rejectError}</p>}
-              {rejectModalOpen && (
-                <ItuneRejectRequestModal
-                  submitting={rejecting}
-                  error={rejectError}
-                  onConfirm={reject}
-                  onClose={() => {
-                    if (rejecting) return;
-                    setRejectModalOpen(false);
-                    setRejectError("");
-                  }}
-                />
-              )}
-            </div>
+          <div>
+            <button
+              type="button"
+              onClick={() => {
+                setFinishError("");
+                setFinishModalOpen(true);
+              }}
+              disabled={finishing}
+              className="rounded-md bg-ll-primary px-3 py-2 text-xs font-medium text-ll-on-primary hover:bg-ll-primary-hover disabled:opacity-50"
+            >
+              บันทึกผลและคืนเมล
+            </button>
+            <p className="mt-1.5 text-[11px] text-ll-ink-tertiary">
+              ต้องกรอกยอดล่าสุดและแนบรูปทุกครั้ง · ยอดตั้งแต่ {threshold.toFixed(2)} ขึ้นไปจะกลับเข้าคิว
+            </p>
+            {finishError && <p className="mt-1.5 text-[11px] text-ll-primary">{finishError}</p>}
+            {finishModalOpen && (
+              <ItuneFinishClaimModal
+                entry={entry}
+                threshold={threshold}
+                submitting={finishing}
+                error={finishError}
+                onConfirm={finishClaim}
+                onClose={() => {
+                  if (finishing) return;
+                  setFinishModalOpen(false);
+                  setFinishError("");
+                }}
+              />
+            )}
           </div>
         </div>
       )}

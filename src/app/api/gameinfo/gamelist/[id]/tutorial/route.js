@@ -1,5 +1,5 @@
 import { handleApiError, jsonOk } from "@/lib/http";
-import { requireAdmin, requireLayoutEditor } from "@/server/auth";
+import { requireGameinfoAccess, requireGameinfoEditor } from "@/server/auth";
 import {
   getGamelistTutorial,
   listAllGamelistTutorialCategories,
@@ -9,10 +9,11 @@ import { recordEdit } from "@/server/gamedb-edit-log";
 import { requestMeta } from "@/lib/request-meta";
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { getGameinfoModeData, updateGameinfoModeData } from "@/server/gameinfo-mode-data";
+import { auditActor } from "@/server/gameinfo-gamelist-packs";
 
 export async function GET(request, { params }) {
   try {
-    await requireAdmin(request); // any logged-in role — read-only view for "user"
+    await requireGameinfoAccess(request);
     const { id } = await params;
     const mode = normalizeGameinfoDataMode(request.nextUrl.searchParams.get("mode"));
     const [tutorial, categoryNames] = await Promise.all([
@@ -29,18 +30,18 @@ export async function GET(request, { params }) {
 
 export async function PUT(request, { params }) {
   try {
-    const admin = await requireLayoutEditor(request);
+    const admin = await requireGameinfoEditor(request);
     const { id } = await params;
     const body = await request.json();
     if (normalizeGameinfoDataMode(request.nextUrl.searchParams.get("mode")) === "idpass") {
       const data = await updateGameinfoModeData(Number(id), "idpass", (current) => ({
         ...current,
         tutorial: { categories: body.categories },
-      }));
+      }), { area: "tutorial", actor: auditActor(admin) });
       return jsonOk({ tutorial: data.tutorial });
     }
     const before = await getGamelistTutorial(Number(id));
-    const tutorial = await saveGamelistTutorial(Number(id), body.categories);
+    const tutorial = await saveGamelistTutorial(Number(id), body.categories, null, auditActor(admin));
     await recordEdit({
       queryId: null,
       actor: admin.username || admin.displayName || "",

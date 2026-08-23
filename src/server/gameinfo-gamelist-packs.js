@@ -173,6 +173,15 @@ function ensureSchema(connection) {
         ADD COLUMN IF NOT EXISTS source VARCHAR(32) NOT NULL DEFAULT 'editor'
       `);
       await client.query(`
+        ALTER TABLE gamelist_pack_audit_logs
+        ADD COLUMN IF NOT EXISTS area VARCHAR(32) NOT NULL DEFAULT 'pack',
+        ADD COLUMN IF NOT EXISTS data_mode VARCHAR(16) NOT NULL DEFAULT 'uid'
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS gamelist_pack_audit_area_time_idx
+        ON gamelist_pack_audit_logs (area, created_at DESC, id DESC)
+      `);
+      await client.query(`
         CREATE TABLE IF NOT EXISTS gamelist_pack_view_presets (
           id          BIGSERIAL PRIMARY KEY,
           game_id     INTEGER NOT NULL,
@@ -181,9 +190,19 @@ function ensureSchema(connection) {
           name        VARCHAR(80) NOT NULL,
           layout      JSONB NOT NULL DEFAULT '{"order": [], "hidden": []}'::jsonb,
           created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          UNIQUE (game_id, user_id, surface, name)
+          updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
+      `);
+      await client.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS gamelist_pack_view_presets_game_user_surface_name
+        ON gamelist_pack_view_presets (game_id, user_id, surface, name)
+      `);
+      await client.query(`
+        DROP INDEX IF EXISTS gamelist_pack_view_presets_game_user_name
+      `);
+      await client.query(`
+        ALTER TABLE gamelist_pack_view_presets
+        DROP CONSTRAINT IF EXISTS gamelist_pack_view_presets_game_id_user_id_surface_name_key
       `);
       await client.query(`
         CREATE INDEX IF NOT EXISTS gamelist_pack_view_presets_owner_idx
@@ -245,12 +264,14 @@ export async function getGamelistPacks(gameId) {
  * row for this game and reinsert, including the computed-columns sentinel. */
 export async function saveGamelistPacks(
   gameId,
-  { currencies, computedColumns, costProfiles, actor = null, source = "editor" }
+  { currencies, computedColumns, costProfiles, actor = null, source = "editor" },
+  transactionClient = null
 ) {
   const pool = await getReadyPool();
-  const client = await pool.connect();
+  const client = transactionClient || await pool.connect();
+  let transactionResult;
   try {
-    await client.query("BEGIN");
+    if (!transactionClient) await client.query("BEGIN");
     const previousResult = await client.query(
       `SELECT game_id, pack_id, data FROM gamelist_packs WHERE game_id = $1`,
       [gameId]
@@ -313,13 +334,15 @@ export async function saveGamelistPacks(
     for (const event of auditEvents) {
       await insertPackAudit(client, gameId, actor, event, source);
     }
-    await client.query("COMMIT");
+    transactionResult = { currencies, computedColumns: nextComputed, costProfiles: nextCostProfiles };
+    if (!transactionClient) await client.query("COMMIT");
   } catch (error) {
-    await client.query("ROLLBACK");
+    if (!transactionClient) await client.query("ROLLBACK");
     throw error;
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
+  if (transactionClient) return transactionResult;
   return getGamelistPacks(gameId);
 }
 
@@ -466,6 +489,7 @@ function buildAuditEvents({
     const old = before.get(packId);
     if (old) {
       if (!sameJson(old, data)) {
+        if (onlyGroupLabelChanged(old, data)) continue;
         events.push({
           packId,
           action: onlyPositionChanged(old, data) ? "reorder" : "update",
@@ -484,6 +508,10 @@ function buildAuditEvents({
         : null,
       after: data,
     });
+  }
+
+  for (const renamed of groupRenames(previousRows, nextRows)) {
+    events.push({ packId: null, area: "group", action: "group_rename", ...renamed });
   }
 
   if (!sameJson(previousComputed, nextComputed) || !sameJson(previousCostProfiles, nextCostProfiles)) {
@@ -539,81 +567,154 @@ function onlyPositionChanged(before, after) {
   return sameJson(withoutPosition(before), withoutPosition(after));
 }
 
-async function insertPackAudit(client, gameId, actor, event, source) {
+const AUDIT_SOURCES = new Set(["editor", "csv_append", "csv_replace", "mode_clone", "import"]);
+export const GAMEINFO_AUDIT_AREAS = new Set([
+  "pack", "group", "game", "tutorial", "warning", "links", "variables",
+  "status", "import", "clone", "image", "tags", "publishers", "order", "settings",
+]);
+
+async function insertPackAudit(client, gameId, actor, event, source, dataMode = "uid") {
   const actorId = Number(actor?.id);
   const safeActorId = Number.isInteger(actorId) && actorId > 0 ? actorId : null;
   const actorName = String(actor?.name || "").slice(0, 255);
   await client.query(
     `INSERT INTO gamelist_pack_audit_logs
-       (game_id, pack_id, actor_id, actor_name, action, source, before_data, after_data)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb)`,
+       (game_id, pack_id, actor_id, actor_name, action, source, area, data_mode,
+        before_data, after_data)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb)`,
     [
       gameId,
       event.packId,
       safeActorId,
       actorName,
       event.action,
-      source === "csv_append" || source === "csv_replace" ? source : "editor",
+      AUDIT_SOURCES.has(source) ? source : "editor",
+      GAMEINFO_AUDIT_AREAS.has(event.area) ? event.area : "pack",
+      dataMode === "idpass" ? "idpass" : "uid",
       event.before == null ? null : JSON.stringify(event.before),
       event.after == null ? null : JSON.stringify(event.after),
     ]
   );
 }
 
-export async function listGamelistPackAudit(gameId, limit = 100) {
+function onlyGroupLabelChanged(before, after) {
+  const withoutGroupLabels = (value) => {
+    const { currencyName, currencyImage, categoryName, ...rest } = value || {};
+    return rest;
+  };
+  return sameJson(withoutGroupLabels(before), withoutGroupLabels(after));
+}
+
+function groupRenames(previousRows, nextRows) {
+  const labelsById = (rows, idKey, nameKey) => {
+    const map = new Map();
+    for (const row of rows) {
+      const data = row.data || {};
+      const id = data[idKey];
+      if (id == null || map.has(String(id))) continue;
+      map.set(String(id), data[nameKey] || "");
+    }
+    return map;
+  };
+  const renames = [];
+  for (const [kind, idKey, nameKey] of [
+    ["currency", "currencyId", "currencyName"],
+    ["category", "categoryId", "categoryName"],
+  ]) {
+    const before = labelsById(previousRows, idKey, nameKey);
+    const after = labelsById(nextRows, idKey, nameKey);
+    for (const [id, name] of after) {
+      if (!before.has(id) || before.get(id) === name) continue;
+      renames.push({ before: { kind, id, name: before.get(id) }, after: { kind, id, name } });
+    }
+  }
+  return renames;
+}
+
+export async function recordGameinfoAudit({
+  gameId,
+  area,
+  packId = null,
+  dataMode = "uid",
+  actor = null,
+  action = "update",
+  source = "editor",
+  before = null,
+  after = null,
+  client: transactionClient = null,
+}) {
+  const numericGameId = Number(gameId);
+  if (!Number.isInteger(numericGameId) || numericGameId < 0 || sameJson(before ?? null, after ?? null)) return;
   const pool = await getReadyPool();
-  const client = await pool.connect();
+  const client = transactionClient || await pool.connect();
   try {
-    const safeLimit = Math.min(500, Math.max(1, Number(limit) || 100));
-    const result = await client.query(
-      `SELECT id, game_id, pack_id, actor_id, actor_name, action, source,
-              before_data, after_data, created_at
-       FROM gamelist_pack_audit_logs
-       WHERE game_id = $1
-       ORDER BY created_at DESC, id DESC
-       LIMIT $2`,
-      [gameId, safeLimit]
+    await insertPackAudit(
+      client,
+      numericGameId,
+      actor,
+      { packId, action, area, before, after },
+      source,
+      dataMode
     );
-    return result.rows.map((row) => ({
-      id: row.id,
-      gameId: row.game_id,
-      packId: row.pack_id,
-      actorId: row.actor_id,
-      actorName: row.actor_name,
-      action: row.action,
-      source: row.source || "editor",
-      before: row.before_data,
-      after: row.after_data,
-      createdAt: row.created_at,
-    }));
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
 }
 
-export async function listAllGamelistPackAudit(limit = 1000) {
+export function auditActor(user) {
+  return user ? { id: user.id, name: user.displayName || user.username || "" } : null;
+}
+
+export async function listGamelistPackAudit(gameId, limit = 100, { dataMode = null } = {}) {
+  return listAllGamelistPackAudit(Math.min(500, Math.max(1, Number(limit) || 100)), {
+    gameId,
+    dataMode,
+  });
+}
+
+export async function listAllGamelistPackAudit(limit = 1000, { area = null, gameId = null, dataMode = null } = {}) {
   const pool = await getReadyPool();
   const client = await pool.connect();
   try {
     const safeLimit = Math.min(2000, Math.max(1, Number(limit) || 1000));
+    const params = [];
+    const where = [];
+    if (GAMEINFO_AUDIT_AREAS.has(area)) {
+      params.push(area);
+      where.push(`a.area = $${params.length}`);
+    }
+    const numericGameId = gameId === null || gameId === "" ? NaN : Number(gameId);
+    if (Number.isInteger(numericGameId) && numericGameId >= 0) {
+      params.push(numericGameId);
+      where.push(`a.game_id = $${params.length}`);
+    }
+    if (dataMode === "uid" || dataMode === "idpass") {
+      params.push(dataMode);
+      where.push(`a.data_mode = $${params.length}`);
+    }
+    params.push(safeLimit);
     const result = await client.query(
       `SELECT a.id, a.game_id, g.game, a.pack_id, a.actor_id, a.actor_name,
-              a.action, a.source, a.before_data, a.after_data, a.created_at
+              a.action, a.source, a.area, a.data_mode, a.before_data,
+              a.after_data, a.created_at
        FROM gamelist_pack_audit_logs a
        LEFT JOIN game_list g ON g.id = a.game_id
+       ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
        ORDER BY a.created_at DESC, a.id DESC
-       LIMIT $1`,
-      [safeLimit]
+       LIMIT $${params.length}`,
+      params
     );
     return result.rows.map((row) => ({
       id: row.id,
       gameId: row.game_id,
-      gameName: row.game || `Game ID ${row.game_id}`,
+      gameName: row.game || (Number(row.game_id) === 0 ? "ตั้งค่าส่วนกลาง" : `Game ID ${row.game_id}`),
       packId: row.pack_id,
       actorId: row.actor_id,
       actorName: row.actor_name,
       action: row.action,
       source: row.source || "editor",
+      area: row.area || "pack",
+      dataMode: row.data_mode || "uid",
       before: row.before_data,
       after: row.after_data,
       createdAt: row.created_at,
@@ -834,37 +935,16 @@ export async function listAllGamelistChannels() {
   }
 }
 
-/** { [gameId]: true } for games where at least one pack has a `country`
- * value set — `country` is only meaningful on VPN-required packs (see the
- * pack editor's vpnOn-gated country field), so its presence is used as the
- * source of truth for a "VPN" column instead of game_list's own free-text
- * `vpn` field (which this replaces). Absent from the map = "NO". */
-export async function listGamelistVpnByGame() {
-  const pool = await getReadyPool();
-  const client = await pool.connect();
-  try {
-    const result = await client.query(
-      `SELECT DISTINCT game_id FROM gamelist_packs
-       WHERE pack_id != $1 AND NULLIF(TRIM(data->>'country'), '') IS NOT NULL`,
-      [COMPUTED_SENTINEL]
-    );
-    const out = {};
-    for (const row of result.rows) out[row.game_id] = true;
-    return out;
-  } finally {
-    client.release();
-  }
-}
-
 /** Cleanup hook for deleteGameListRow() — game_list isn't ours to put an FK
  * CASCADE on, so this has to be called explicitly. */
-export async function deleteGamelistPacksForGame(gameId) {
+export async function deleteGamelistPacksForGame(gameId, transactionClient = null) {
   const pool = await getReadyPool();
-  const client = await pool.connect();
+  const client = transactionClient || await pool.connect();
   try {
     await client.query(`DELETE FROM gamelist_packs WHERE game_id = $1`, [gameId]);
+    await client.query(`DELETE FROM gamelist_pack_view_presets WHERE game_id = $1`, [gameId]);
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
 }
 

@@ -6,13 +6,13 @@ import { findItuneEntryById, setItuneEntryPermanent } from "@/server/itune-entri
 // itune-admin-table.js) — admin-only, same gate as report/resolve.
 export async function PUT(request, { params }) {
   try {
-    await requireProjectmAdmin(request);
+    const actor = await requireProjectmAdmin(request);
     const { id } = await params;
     const target = await findItuneEntryById(id);
     if (!target) return jsonError("ไม่พบรายการนี้", 404);
 
     const body = await request.json();
-    const entry = await setItuneEntryPermanent(id, Boolean(body.isPermanent));
+    const entry = await setItuneEntryPermanent(id, Boolean(body.isPermanent), actor);
     return jsonOk({ entry });
   } catch (err) {
     return handleApiError(err, "เปลี่ยนสถานะไม่สำเร็จ");

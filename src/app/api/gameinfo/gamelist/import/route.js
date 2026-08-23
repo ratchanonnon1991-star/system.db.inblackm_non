@@ -1,15 +1,16 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireLayoutEditor } from "@/server/auth";
+import { requireGameinfoEditor } from "@/server/auth";
 import { parseCsv, toCsv } from "@/lib/gameinfo-csv";
 import {
   GAMELIST_HEADERS,
   GAMELIST_SAMPLE,
   parseGameListCsvRows,
 } from "@/lib/gameinfo-gamelist-csv";
-import { createGameListRows, listGameListRows } from "@/server/gameinfo-gamelist";
+import { createGameListRows, listGameListRows, withGameinfoTransaction } from "@/server/gameinfo-gamelist";
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { saveGameinfoModeData } from "@/server/gameinfo-mode-data";
 import { legacyGamelistLinks } from "@/server/gameinfo-gamelist-links";
+import { auditActor } from "@/server/gameinfo-gamelist-packs";
 
 async function parseUpload(request) {
   const form = await request.formData();
@@ -27,7 +28,7 @@ async function parseUpload(request) {
 
 export async function GET(request) {
   try {
-    await requireLayoutEditor(request);
+    await requireGameinfoEditor(request);
     return new Response("﻿" + toCsv(GAMELIST_HEADERS, GAMELIST_SAMPLE), {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
@@ -41,7 +42,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    await requireLayoutEditor(request);
+    await requireGameinfoEditor(request);
     const parsed = await parseUpload(request);
     return parsed.error ? jsonError(parsed.error, 400) : jsonOk(parsed);
   } catch (error) {
@@ -51,23 +52,30 @@ export async function POST(request) {
 
 export async function PUT(request) {
   try {
-    await requireLayoutEditor(request);
+    const user = await requireGameinfoEditor(request);
     const parsed = await parseUpload(request);
     if (parsed.error) return jsonError(parsed.error, 400);
     if (parsed.errors.length) return jsonError(parsed.errors.join("\n"), 400);
     if (!parsed.rows.length) return jsonError("ไม่พบเกมที่นำเข้าได้", 400);
-    const rows = await createGameListRows(parsed.rows);
-    if (normalizeGameinfoDataMode(request.nextUrl.searchParams.get("mode")) === "idpass") {
-      await Promise.all(rows.map((row, index) => saveGameinfoModeData(row.id, "idpass", {
-        fields: {
-          region: parsed.rows[index].region,
-          platform: parsed.rows[index].platform,
-          server: parsed.rows[index].server,
-          botManual: parsed.rows[index].botManual,
-        },
-        links: legacyGamelistLinks(parsed.rows[index].link),
-      })));
-    }
+    const actor = auditActor(user);
+    const isIdpass = normalizeGameinfoDataMode(request.nextUrl.searchParams.get("mode")) === "idpass";
+    const rows = isIdpass
+      ? await withGameinfoTransaction(async (client) => {
+          const created = await createGameListRows(parsed.rows, actor, client);
+          for (const [index, row] of created.entries()) {
+            await saveGameinfoModeData(row.id, "idpass", {
+              fields: {
+                region: parsed.rows[index].region,
+                platform: parsed.rows[index].platform,
+                server: parsed.rows[index].server,
+                botManual: parsed.rows[index].botManual,
+              },
+              links: legacyGamelistLinks(parsed.rows[index].link),
+            }, client);
+          }
+          return created;
+        })
+      : await createGameListRows(parsed.rows, actor);
     return jsonOk({ rows, createdCount: rows.length }, 201);
   } catch (error) {
     return handleApiError(error, "เพิ่มเกมจาก CSV ไม่สำเร็จ");

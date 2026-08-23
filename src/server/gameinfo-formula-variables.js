@@ -1,5 +1,6 @@
 import { getPoolForConnection } from "@/lib/db";
 import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
+import { recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
 import { GAMEINFO_FIELD_NAMES } from "@/lib/gameinfo-formula-fields";
 import {
   sanitizeGameinfoFormulaVariables,
@@ -128,7 +129,7 @@ export async function getGameinfoFormulaVariables(_gameId, { includeLogs = false
   }
 }
 
-export async function saveGameinfoFormulaVariables(_gameId, rawVariables, actor) {
+export async function saveGameinfoFormulaVariables(gameId, rawVariables, actor) {
   if (!Array.isArray(rawVariables)) throw httpError("รูปแบบตัวแปรผสมไม่ถูกต้อง", 400);
   if (rawVariables.length > 100) throw httpError("เพิ่มตัวแปรผสมได้สูงสุด 100 ตัว", 400);
   const submitted = sanitizeGameinfoFormulaVariables(rawVariables);
@@ -171,6 +172,14 @@ export async function saveGameinfoFormulaVariables(_gameId, rawVariables, actor)
          VALUES ($1, $2, $3, $4, $5, NOW())`,
         [GLOBAL_SCOPE_ID, Number(actor?.id) || null, actorName, JSON.stringify(beforeDefinitions), JSON.stringify(afterDefinitions)]
       );
+      await recordGameinfoAudit({
+        gameId,
+        area: "variables",
+        actor,
+        before: { scope: "global", variables: beforeDefinitions },
+        after: { scope: "global", variables: afterDefinitions },
+        client,
+      });
     }
     await client.query("COMMIT");
     return variables;

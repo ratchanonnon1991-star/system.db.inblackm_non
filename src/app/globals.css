@@ -1,9 +1,32 @@
 @import "tailwindcss";
 
-/* Linear-inspired palette (see ~/.claude/skills/linear-design) — used only by
-   the /gameinfo module. Additive tokens only; nothing here touches the
-   zinc/indigo classes the rest of the app already uses. */
+/* GameInfo's Linear-inspired light-first palette. */
 @theme {
+  --color-linear-canvas: #ffffff;
+  --color-linear-surface-1: #ffffff;
+  --color-linear-surface-2: #fafafa;
+  --color-linear-surface-3: #f5f5f5;
+  --color-linear-surface-4: #05141d;
+  --color-linear-hairline: #e5e5e5;
+  --color-linear-hairline-strong: #d4d4d4;
+  --color-linear-hairline-tertiary: #9ba1a4;
+  --color-linear-primary: #e20e17;
+  --color-linear-primary-hover: #f23a42;
+  --color-linear-primary-focus: #b10a11;
+  --color-linear-ink: #05141d;
+  --color-linear-ink-muted: #3e4a52;
+  --color-linear-ink-subtle: #6b7378;
+  --color-linear-ink-tertiary: #9ba1a4;
+  --color-linear-success: #167647;
+  --color-linear-success-bg: #e6f4ea;
+  --color-linear-warning: #9a4d08;
+  --color-linear-warning-bg: #fef3c7;
+  --color-linear-danger: #b10a11;
+  --color-linear-danger-bg: #fce8e8;
+}
+
+/* Dark mode keeps Linear's original near-black surface ladder. */
+[data-theme="dark"] {
   --color-linear-canvas: #010102;
   --color-linear-surface-1: #0f1011;
   --color-linear-surface-2: #141516;
@@ -12,39 +35,35 @@
   --color-linear-hairline: #23252a;
   --color-linear-hairline-strong: #34343a;
   --color-linear-hairline-tertiary: #3e3e44;
-  --color-linear-primary: #5e6ad2;
-  --color-linear-primary-hover: #828fff;
-  --color-linear-primary-focus: #5e69d1;
+  --color-linear-primary: #e20e17;
+  --color-linear-primary-hover: #ff3b42;
+  --color-linear-primary-focus: #b10a11;
   --color-linear-ink: #f7f8f8;
   --color-linear-ink-muted: #d0d6e0;
   --color-linear-ink-subtle: #8a8f98;
   --color-linear-ink-tertiary: #62666d;
+  --color-linear-success: #62d394;
+  --color-linear-success-bg: #123522;
+  --color-linear-warning: #f4b860;
+  --color-linear-warning-bg: #3d2a0b;
+  --color-linear-danger: #ff9096;
+  --color-linear-danger-bg: #3a1416;
 }
 
-/* Light theme override for the /gameinfo module — the slate/indigo palette
-   gameinfo actually used before the Linear dark redesign (see the pre-redesign
-   gameinfo-pack-editor.js: bg-white cards, border-slate-200, text-slate-700,
-   indigo-600 accent). Every gameinfo component still just uses its existing
-   linear-prefixed background, text and border utility classes — toggling
-   data-theme="light" on the module's root element (see
-   gameinfo-theme-root.js) swaps what those custom properties resolve to, no
-   component classNames change. */
-[data-theme="light"] {
-  --color-linear-canvas: #ffffff;
-  --color-linear-surface-1: #ffffff;
-  --color-linear-surface-2: #f8fafc;
-  --color-linear-surface-3: #f1f5f9;
-  --color-linear-surface-4: #e2e8f0;
-  --color-linear-hairline: #e2e8f0;
-  --color-linear-hairline-strong: #cbd5e1;
-  --color-linear-hairline-tertiary: #94a3b8;
-  --color-linear-primary: #4f46e5;
-  --color-linear-primary-hover: #4338ca;
-  --color-linear-primary-focus: #4338ca;
-  --color-linear-ink: #334155;
-  --color-linear-ink-muted: #475569;
-  --color-linear-ink-subtle: #64748b;
-  --color-linear-ink-tertiary: #94a3b8;
+[data-gameinfo-root] :where(a, button, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--color-linear-primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-gameinfo-root] *,
+  [data-gameinfo-root] *::before,
+  [data-gameinfo-root] *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 /* Linear Light/Dark Mode palette (see

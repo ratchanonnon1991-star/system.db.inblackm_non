@@ -1,7 +1,7 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireLayoutEditor } from "@/server/auth";
+import { requireGameinfoEditor } from "@/server/auth";
 import { sanitizeComputedColumns } from "@/server/gamedb-layout-sanitizer";
-import { getGamelistPacks, saveGamelistPacks } from "@/server/gameinfo-gamelist-packs";
+import { auditActor, getGamelistPacks, saveGamelistPacks } from "@/server/gameinfo-gamelist-packs";
 import { recordEdit } from "@/server/gamedb-edit-log";
 import { requestMeta } from "@/lib/request-meta";
 import { pruneGameinfoFormulaOverrides } from "@/lib/gameinfo-formula-overrides";
@@ -13,7 +13,7 @@ import { updateGameinfoModeData } from "@/server/gameinfo-mode-data";
 
 export async function PUT(request, { params }) {
   try {
-    const user = await requireLayoutEditor(request);
+    const user = await requireGameinfoEditor(request);
     const { id } = await params;
     const gameId = Number(id);
     if (!Number.isInteger(gameId) || gameId <= 0) return jsonError("gameId ไม่ถูกต้อง", 400);
@@ -47,7 +47,7 @@ export async function PUT(request, { params }) {
       const data = await updateGameinfoModeData(gameId, mode, (current) => ({
         ...current,
         packs: packInput,
-      }));
+      }), { area: "pack", actor: auditActor(user) });
       return jsonOk({ game: { id: gameId, ...data.packs } });
     }
     // Read before writing, so the edit log can say what this replaced. The

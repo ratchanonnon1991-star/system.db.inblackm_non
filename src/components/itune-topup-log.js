@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { apiJson } from "@/lib/api-json";
 
 const ACTION_LABEL = {
@@ -22,8 +23,7 @@ const ACTION_TONE_CLASS = {
 };
 
 const TABS = [
-  { key: "live", label: "ปัจจุบัน" },
-  { key: "history", label: "ประวัติ" },
+  { key: "live", label: "กำลังถืออยู่" },
 ];
 
 // How often to silently re-sync whichever tab is currently visible, so a
@@ -67,14 +67,25 @@ function groupByUser(entries) {
 // one merged view since ปัจจุบัน/ประวัติ answer different questions and want
 // different shapes (grouped-by-person vs. a flat timeline).
 export default function ItuneTopupLog() {
-  const [tab, setTab] = useState("live");
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const tab = searchParams.get("tab") === "history" ? "history" : "live";
   const [liveEntries, setLiveEntries] = useState(null);
   const [liveError, setLiveError] = useState("");
   const [logs, setLogs] = useState(null);
   const [logError, setLogError] = useState("");
   const [actingId, setActingId] = useState(null);
   const [actionError, setActionError] = useState("");
-  const [clearingLogs, setClearingLogs] = useState(false);
+
+  useEffect(() => {
+    function onLogsCleared() {
+      setLogs([]);
+      setActionError("");
+    }
+    window.addEventListener("itune:logs-cleared", onLogsCleared);
+    return () => window.removeEventListener("itune:logs-cleared", onLogsCleared);
+  }, []);
 
   useEffect(() => {
     if (tab !== "live" || liveEntries !== null) return;
@@ -148,33 +159,6 @@ export default function ItuneTopupLog() {
     setLogError("");
   }
 
-  // Dev utility — wipes every itune log/history table (see clearItuneLogs).
-  // Only ประวัติ actually reads from those tables (ปัจจุบัน comes straight
-  // off the entries table's own claimed_by_user_id, unaffected by this), so
-  // clearing to [] there is enough — no need to touch liveEntries.
-  async function clearAllLogs() {
-    if (
-      !window.confirm(
-        "ลบ Log ทั้งหมด (แจ้งปัญหา/Reject, ยอด, รับ-คืนเมล) ถาวร? ข้อมูลรายการเมลเองจะไม่หาย มีแค่ประวัติที่จะหายไป — กู้คืนไม่ได้"
-      )
-    ) {
-      return;
-    }
-    setClearingLogs(true);
-    setActionError("");
-    try {
-      await apiJson("/api/projectm/itune/dev-clear-logs", {
-        method: "POST",
-        fallbackError: "ลบ Log ไม่สำเร็จ",
-      });
-      setLogs([]);
-    } catch (err) {
-      setActionError(err.message);
-    } finally {
-      setClearingLogs(false);
-    }
-  }
-
   // Confirming/declining/cancelling a reject can change who's allowed to
   // claim what, so both tabs' cached data go stale — reset both to null so
   // whichever is visible refetches immediately and the other picks up fresh
@@ -222,6 +206,12 @@ export default function ItuneTopupLog() {
 
   const liveGroups = liveEntries ? groupByUser(liveEntries) : null;
 
+  function selectTab(nextTab) {
+    const next = new URLSearchParams(searchParams.toString());
+    next.set("tab", nextTab);
+    router.replace(`${pathname}?${next.toString()}`, { scroll: false });
+  }
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
@@ -230,7 +220,8 @@ export default function ItuneTopupLog() {
             <button
               key={t.key}
               type="button"
-              onClick={() => setTab(t.key)}
+              onClick={() => selectTab(t.key)}
+              aria-pressed={tab === t.key}
               className={`rounded-full px-3 py-1 text-[12px] font-medium ${
                 tab === t.key
                   ? "bg-ll-primary text-ll-on-primary"
@@ -242,15 +233,6 @@ export default function ItuneTopupLog() {
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={clearAllLogs}
-            disabled={clearingLogs}
-            title="ลบ Log/ประวัติทั้งหมดถาวร (ไม่กระทบรายการเมลเอง) — สำหรับ dev เท่านั้น"
-            className="rounded-md border border-ll-hairline-strong px-3 py-1.5 text-[12px] font-medium text-ll-primary-subtle-text hover:bg-ll-primary-subtle-bg disabled:opacity-50"
-          >
-            {clearingLogs ? "กำลังลบ..." : "ลบ Log ทั้งหมด (Dev)"}
-          </button>
           <button
             type="button"
             onClick={tab === "live" ? refreshLive : refreshHistory}

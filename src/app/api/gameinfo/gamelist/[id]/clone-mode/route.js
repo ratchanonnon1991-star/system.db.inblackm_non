@@ -1,10 +1,10 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireLayoutEditor } from "@/server/auth";
+import { requireGameinfoEditor } from "@/server/auth";
 import { cloneGameinfoDataMode } from "@/server/gameinfo-mode-clone";
 
 export async function POST(request, { params }) {
   try {
-    const user = await requireLayoutEditor(request);
+    const user = await requireGameinfoEditor(request);
     const { id } = await params;
     const gameId = Number(id);
     if (!Number.isInteger(gameId) || gameId <= 0) return jsonError("gameId ไม่ถูกต้อง", 400);

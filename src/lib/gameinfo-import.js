@@ -276,6 +276,7 @@ export function validatePackRows(rows) {
     if (!norm(row.price)) missing.push("price");
     if (!norm(row.amount_charged_fee)) missing.push("amount_charged_fee");
     if (!splitList(row.channel_main).length) missing.push("channel_main");
+    if (!norm(row.country)) missing.push("country");
     if (missing.length) errors.push(`แถวที่ ${index + 2}: ข้อมูลไม่ครบ (${missing.join(", ")})`);
   });
   return errors;

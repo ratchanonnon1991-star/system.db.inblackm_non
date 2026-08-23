@@ -1,5 +1,5 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireLayoutEditor } from "@/server/auth";
+import { requireGameinfoEditor } from "@/server/auth";
 import {
   getGameinfoFormulaVariables,
   saveGameinfoFormulaVariables,
@@ -27,7 +27,7 @@ function firstPack(currencies) {
 
 export async function GET(request) {
   try {
-    await requireLayoutEditor(request);
+    await requireGameinfoEditor(request);
     const [data, games, packCounts, rates] = await Promise.all([
       getGameinfoFormulaVariables(0, { includeLogs: true }),
       listGameListRows(),
@@ -63,7 +63,7 @@ export async function GET(request) {
 
 export async function PUT(request) {
   try {
-    const user = await requireLayoutEditor(request);
+    const user = await requireGameinfoEditor(request);
     const body = await request.json();
     const candidateVariables = sanitizeGameinfoFormulaVariables(body.variables);
     const [uidConfigs, idpassByGame] = await Promise.all([

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
   Database,
@@ -23,6 +23,7 @@ import TurnstileWidget from "@/components/turnstile-widget";
 import { UsersModal } from "@/components/gamedb-modals";
 import LLThemeToggle from "@/components/ll-theme-toggle";
 import { useLLTheme } from "@/lib/ll-theme";
+import { hasPermission } from "@/lib/permissions";
 
 // Linear Light/Dark Mode type (see ~/.claude/skills/linear-light-dark-mode):
 // Inter at weight 400-700 substitutes for the proprietary Linear
@@ -40,6 +41,7 @@ const linearSans = Inter({
 // Public by design: it is only where the "เข้าสู่ระบบด้วยบัญชี experience" button
 // points the browser, never anything the server trusts on its own.
 const HIRING_BASE_URL = (process.env.NEXT_PUBLIC_HIRING_BASE_URL || "").replace(/\/+$/, "");
+const MOCK_SSO_ENABLED = process.env.NODE_ENV !== "production";
 
 // Keyed by the ?ssoError= codes /api/sso/from-hiring redirects back with
 // (see src/lib/hiring-sso.js and src/app/api/sso/from-hiring/route.js for
@@ -57,12 +59,18 @@ export default function GamedbPage() {
   const [me, setMe] = useState(null);
   const [checkingMe, setCheckingMe] = useState(true);
 
-  useEffect(() => {
+  const loadMe = useCallback(() =>
     apiJson("/api/me", { fallbackError: "ตรวจสอบสิทธิ์ไม่สำเร็จ" })
       .then((data) => setMe(data.user))
-      .catch(() => setMe(null))
-      .finally(() => setCheckingMe(false));
-  }, []);
+      .catch((error) => setMe((current) => error.status === 401 ? null : current))
+      .finally(() => setCheckingMe(false)), []);
+
+  useEffect(() => {
+    loadMe();
+    const refresh = () => loadMe();
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, [loadMe]);
 
   if (checkingMe) {
     return (
@@ -78,7 +86,7 @@ export default function GamedbPage() {
     return <LoginScreen onLoggedIn={setMe} />;
   }
 
-  return <SystemHub me={me} onLoggedOut={() => setMe(null)} />;
+  return <SystemHub me={me} onLoggedOut={() => setMe(null)} onPermissionsChanged={loadMe} />;
 }
 
 // Both are their own route now (System DB used to be a client-state toggle on
@@ -108,7 +116,7 @@ const SYSTEMS = [
   },
 ];
 
-function SystemHub({ me, onLoggedOut }) {
+function SystemHub({ me, onLoggedOut, onPermissionsChanged }) {
   const isSuperAdmin = me.role === "admin";
   const isTemplateUser = me.role === "user";
   const [usersModal, setUsersModal] = useState(false);
@@ -138,6 +146,11 @@ function SystemHub({ me, onLoggedOut }) {
 
   const roleLabel = isSuperAdmin ? "Admin" : isTemplateUser ? "User" : "Staff";
   const initial = (me.displayName || me.username || "?").trim().slice(0, 1).toUpperCase();
+  const accessibleSystems = SYSTEMS.filter((system) => {
+    if (system.key === "projectm") return true;
+    if (system.key === "gameinfo") return hasPermission(me, "gameinfo.access");
+    return !isTemplateUser;
+  });
 
   return (
     <div
@@ -215,13 +228,9 @@ function SystemHub({ me, onLoggedOut }) {
           </p>
         </div>
 
-        {/* A "user" (template-only) account has nothing else on this hub --
-            System DB and GameInfo are both ad-hoc query surfaces it has no
-            access to, so showing the tiles only to invite a 403 click was
-            worse than just leaving them out. */}
-        {!isTemplateUser && (
+        {accessibleSystems.length > 0 && (
           <div className="grid gap-4 sm:grid-cols-2">
-            {SYSTEMS.map((system) => {
+            {accessibleSystems.map((system) => {
               const Icon = system.icon;
               const accent =
                 system.key === "systemdb"
@@ -255,9 +264,8 @@ function SystemHub({ me, onLoggedOut }) {
             its own the way GameInfo is, and this section is styled to read as
             "shortcuts into System DB" (its own card, a lighter row style, an
             explicit "เทมเพลต" tag) rather than a peer entry a user could
-            confuse for a third top-level system. For a "user" account this
-            list is the entire hub, not a shortcut past it -- there is no
-            System DB tile behind it to shortcut into.
+            confuse for a third top-level system. For a "user" account these
+            are its assigned screens; Projectm remains separate when granted.
             An empty list still renders for a "user" account (unlike everyone
             else, where nothing here just means "no templates yet, nothing
             worth mentioning") since a User with nothing assigned has no other
@@ -319,7 +327,7 @@ function SystemHub({ me, onLoggedOut }) {
         )}
       </main>
 
-      {usersModal && <UsersModal me={me} onClose={() => setUsersModal(false)} />}
+      {usersModal && <UsersModal me={me} onClose={() => setUsersModal(false)} onChanged={onPermissionsChanged} />}
     </div>
   );
 }
@@ -513,7 +521,7 @@ function LoginScreen({ onLoggedIn }) {
           เข้าสู่ระบบ
         </button>
 
-        {hiringSsoUrl && (
+        {(hiringSsoUrl || MOCK_SSO_ENABLED) && (
           <>
             <div className="my-4 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-ll-ink-tertiary">
               <span className="h-px flex-1 bg-ll-hairline" />
@@ -521,10 +529,10 @@ function LoginScreen({ onLoggedIn }) {
               <span className="h-px flex-1 bg-ll-hairline" />
             </div>
             <a
-              href={hiringSsoUrl}
+              href={hiringSsoUrl || "/api/sso/mock"}
               className="flex h-10 w-full items-center justify-center gap-1.5 rounded-md border border-ll-hairline-strong text-[14px] font-medium text-ll-ink transition hover:bg-ll-surface-2"
             >
-              เข้าสู่ระบบด้วยบัญชี experience
+              เข้าสู่ระบบด้วยบัญชี experience{hiringSsoUrl ? "" : " (Mock)"}
             </a>
           </>
         )}

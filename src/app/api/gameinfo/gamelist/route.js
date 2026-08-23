@@ -1,12 +1,13 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireAdmin, requireLayoutEditor } from "@/server/auth";
+import { requireGameinfoAccess, requireGameinfoEditor } from "@/server/auth";
 import { createGameListRow, listGameListRows } from "@/server/gameinfo-gamelist";
 import { recordEdit } from "@/server/gamedb-edit-log";
 import { requestMeta } from "@/lib/request-meta";
+import { auditActor } from "@/server/gameinfo-gamelist-packs";
 
 export async function GET(request) {
   try {
-    await requireAdmin(request);
+    await requireGameinfoAccess(request);
     const rows = await listGameListRows();
     return jsonOk({ rows });
   } catch (err) {
@@ -16,11 +17,11 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const admin = await requireLayoutEditor(request);
+    const admin = await requireGameinfoEditor(request);
     const body = await request.json();
     const game = String(body.game || "").trim();
     if (!game) return jsonError("กรุณากรอกชื่อเกม", 400);
-    const row = await createGameListRow({ ...body, game });
+    const row = await createGameListRow({ ...body, game }, auditActor(admin));
     // GameInfo has no "Query" of its own for the log's queryId to point at --
     // every entry from here carries queryId: null, which is also what tells
     // the /log revert button not to offer reverting it (see canRevert there).

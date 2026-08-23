@@ -14,14 +14,23 @@ const FAKE_CONNECTION = {
   updatedAt: "v1",
 };
 
+const FAKE_TOPUP_CONNECTION = {
+  ...FAKE_CONNECTION,
+  id: 2,
+  name: "topup_inblackm",
+  database: "topup_inblackm",
+};
+
+const FAKE_CONNECTIONS = [FAKE_CONNECTION, FAKE_TOPUP_CONNECTION];
+
 export async function listConnections() {
-  return [FAKE_CONNECTION];
+  return FAKE_CONNECTIONS;
 }
 
 export async function findConnectionById(id) {
-  return id === FAKE_CONNECTION.id ? FAKE_CONNECTION : null;
+  return FAKE_CONNECTIONS.find((connection) => connection.id === id) || null;
 }
 
 export async function findConnectionWithSecret(id) {
-  return id === FAKE_CONNECTION.id ? FAKE_CONNECTION : null;
+  return FAKE_CONNECTIONS.find((connection) => connection.id === id) || null;
 }

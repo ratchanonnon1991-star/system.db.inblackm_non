@@ -4,6 +4,7 @@ export const log = [];
 export let nextRows = [];
 export let failWith = null;
 export let responder = null;
+let nextClientId = 1;
 
 /** (text, params) => {rows} to answer a specific statement, or null to fall through. */
 export function setResponder(fn) {
@@ -15,15 +16,17 @@ export function reset({ rows = [], fail = null } = {}) {
   nextRows = rows;
   failWith = fail;
   responder = null;
+  nextClientId = 1;
 }
 
 function client() {
+  const clientId = nextClientId++;
   return {
     async query(text, params) {
       log.push({ text, params: params ?? null });
       if (failWith && /^\s*(SELECT|INSERT|UPDATE|DELETE)/i.test(text)) throw new Error(failWith);
       if (responder) {
-        const answer = responder(text, params ?? null);
+        const answer = await responder(text, params ?? null, { clientId });
         if (answer) return { rows: answer.rows, rowCount: answer.rows.length };
       }
       if (/^SELECT/i.test(text.trim())) {
@@ -47,7 +50,10 @@ function client() {
 }
 
 export function getPoolForConnection() {
-  return { connect: async () => client() };
+  return {
+    connect: async () => client(),
+    query: async (text, params) => client().query(text, params),
+  };
 }
 
 // Routed through the same log/responder/nextRows machinery as

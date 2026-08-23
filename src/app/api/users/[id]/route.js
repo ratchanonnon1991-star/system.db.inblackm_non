@@ -7,9 +7,11 @@ import {
   updateUser,
 } from "@/server/users-repository";
 import { findViewById } from "@/server/gamedb-views-repository";
+import { normalizePermissions, PERMISSION_KEYS, PERMISSION_PRESETS, togglePermission } from "@/lib/permissions";
 
 const MIN_PASSWORD_LENGTH = 6;
 const USER_ROLES = new Set(["admin", "staff", "user"]);
+const SYSTEM_ROLES = new Set(["admin", "topup"]);
 
 function parseDefaultViewId(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -52,9 +54,24 @@ export async function PATCH(request, { params }) {
       fields.role = role;
     }
     if (body.projectmRole !== undefined) {
-      // Independent of the GameDB role — decides Admin+Topup vs Topup-only
-      // visibility inside /projectm/itune.
-      fields.projectmRole = body.projectmRole ? "admin" : null;
+      const projectmRole = body.projectmRole || null;
+      if (projectmRole !== null && !SYSTEM_ROLES.has(projectmRole)) {
+        return jsonError("สิทธิ์ Projectm ไม่ถูกต้อง", 400);
+      }
+      fields.projectmRole = projectmRole;
+    }
+    if (body.gameinfoRole !== undefined) {
+      const gameinfoRole = body.gameinfoRole || null;
+      if (gameinfoRole !== null && !SYSTEM_ROLES.has(gameinfoRole)) {
+        return jsonError("สิทธิ์ GameInfo ไม่ถูกต้อง", 400);
+      }
+      fields.gameinfoRole = gameinfoRole;
+    }
+    if (body.permissions !== undefined) {
+      if (!Array.isArray(body.permissions) || body.permissions.some((key) => !PERMISSION_KEYS.has(key))) {
+        return jsonError("รายการสิทธิ์ไม่ถูกต้อง", 400);
+      }
+      fields.permissions = normalizePermissions(body.permissions);
     }
     if (body.defaultViewId !== undefined) {
       const defaultViewId = parseDefaultViewId(body.defaultViewId);
@@ -71,6 +88,23 @@ export async function PATCH(request, { params }) {
     }
     if (body.canWriteData !== undefined) fields.canWriteData = Boolean(body.canWriteData);
     if (body.canUpdateData !== undefined) fields.canUpdateData = Boolean(body.canUpdateData);
+    if (body.permissions === undefined && (
+      body.canWriteData !== undefined || body.canUpdateData !== undefined ||
+      body.projectmRole !== undefined || body.gameinfoRole !== undefined
+    )) {
+      let grants = target.permissions || [];
+      if (body.canWriteData !== undefined) grants = togglePermission(grants, "systemdb.data.insert_delete", Boolean(body.canWriteData));
+      if (body.canUpdateData !== undefined) grants = togglePermission(grants, "systemdb.data.update", Boolean(body.canUpdateData));
+      if (body.projectmRole !== undefined) {
+        grants = grants.filter((key) => !key.startsWith("projectm."));
+        grants.push(...(body.projectmRole === "admin" ? PERMISSION_PRESETS.projectmAdmin : body.projectmRole === "topup" ? PERMISSION_PRESETS.projectmTopup : []));
+      }
+      if (body.gameinfoRole !== undefined) {
+        grants = grants.filter((key) => !key.startsWith("gameinfo."));
+        grants.push(...(body.gameinfoRole === "admin" ? PERMISSION_PRESETS.gameinfoAdmin : body.gameinfoRole === "topup" ? PERMISSION_PRESETS.gameinfoTopup : []));
+      }
+      fields.permissions = normalizePermissions(grants);
+    }
 
     const user = await updateUser(id, fields);
     return jsonOk({ user });
