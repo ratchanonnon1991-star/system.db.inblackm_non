@@ -14,6 +14,7 @@ import {
   Table2,
   User,
   Users,
+  Wallet,
   X,
 } from "lucide-react";
 import NextLink from "next/link";
@@ -114,6 +115,13 @@ const SYSTEMS = [
     icon: Folders,
     href: "/projectm/th",
   },
+  {
+    key: "profit",
+    label: "Profit",
+    desc: "เช็คยอดขาย/ต้นทุน/กำไรบัตรเติมเงิน",
+    icon: Wallet,
+    href: "/profit",
+  },
 ];
 
 function SystemHub({ me, onLoggedOut, onPermissionsChanged }) {
@@ -149,6 +157,7 @@ function SystemHub({ me, onLoggedOut, onPermissionsChanged }) {
   const accessibleSystems = SYSTEMS.filter((system) => {
     if (system.key === "projectm") return true;
     if (system.key === "gameinfo") return hasPermission(me, "gameinfo.access");
+    if (system.key === "profit") return hasPermission(me, "profit.access");
     return !isTemplateUser;
   });
 

@@ -20,6 +20,11 @@ ok("removing reporting also clears Admin", !togglePermission(gameinfoAdmin, "gam
 ok("legacy roles remain readable during migration", hasPermission({ projectmRole: "topup" }, "projectm.claim"));
 ok("explicit permission grants are checked", hasPermission({ permissions: ["gameinfo.access"] }, "gameinfo.access"));
 
+const profitAdmin = normalizePermissions(["profit.admin"]);
+ok("Profit Admin includes view access", profitAdmin.includes("profit.access"));
+ok("removing Profit access clears Admin too", !togglePermission(profitAdmin, "profit.access", false).includes("profit.admin"));
+ok("Profit view-only grant does not imply edit", !normalizePermissions(["profit.access"]).includes("profit.admin"));
+
 const loginRoute = readFileSync(new URL("../src/app/api/auth/login/route.js", import.meta.url), "utf8");
 const home = readFileSync(new URL("../src/app/page.js", import.meta.url), "utf8");
 ok("login returns the complete public user", loginRoute.includes("publicUser"));
