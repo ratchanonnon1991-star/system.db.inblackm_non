@@ -2,12 +2,47 @@
 
 import { fmtDate } from "@/lib/profit-format";
 
+// Plain, non-interactive count -- used everywhere except the GoCash cards
+// table (dashboard category rows, manual/Oxide tables), which don't track a
+// review mark for their duplicates.
 export function DupBadge({ n }) {
   return n > 0 ? (
     <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600">{n}</span>
   ) : (
     <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-600">0</span>
   );
+}
+
+// Known sources get a fixed, distinct color each so "ใช้บัตร" columns
+// (pack-costs, sale-prices) don't render every source in the same blue and
+// read as if they're the same thing. Anything not in this map (a future
+// source) falls back to a color from a separate palette, picked by a stable
+// hash of the source key -- keeps it out of the known colors above and
+// consistent across renders without needing to track "already used" colors.
+const KNOWN_SOURCE_COLORS = {
+  gocash: { bg: "bg-sky-50", text: "text-sky-600" },
+  oxide: { bg: "bg-violet-50", text: "text-violet-600" },
+};
+const FALLBACK_SOURCE_PALETTE = [
+  { bg: "bg-amber-50", text: "text-amber-600" },
+  { bg: "bg-pink-50", text: "text-pink-600" },
+  { bg: "bg-teal-50", text: "text-teal-600" },
+  { bg: "bg-indigo-50", text: "text-indigo-600" },
+  { bg: "bg-fuchsia-50", text: "text-fuchsia-600" },
+  { bg: "bg-lime-50", text: "text-lime-700" },
+];
+
+function sourceBadgeColors(source) {
+  if (KNOWN_SOURCE_COLORS[source]) return KNOWN_SOURCE_COLORS[source];
+  const key = String(source || "");
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+  return FALLBACK_SOURCE_PALETTE[hash % FALLBACK_SOURCE_PALETTE.length];
+}
+
+export function SourceBadge({ source, label }) {
+  const { bg, text } = sourceBadgeColors(source);
+  return <span className={`rounded-full ${bg} px-2 py-0.5 text-[11px] font-semibold ${text}`}>{label ?? source}</span>;
 }
 
 export function GroupBadge({ group }) {

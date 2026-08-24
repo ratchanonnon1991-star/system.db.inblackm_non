@@ -14,14 +14,31 @@ export const DUST_THRESHOLD = 1;
 const CACHE_MS = 5_000;
 let cache = { at: 0, rows: null };
 
+// codashop_orders.source only tags ~30% of orders directly (kaleoz, PAGE,
+// inblackm_web, russia_reseller) -- the rest come in through the Telegram
+// bot queue instead, whose task record (telegram_orders_dev, joined via
+// codashop_orders.telegram_task_request_id) carries its own source column
+// for those. Together the two cover every sky_gocash_history row (confirmed:
+// 100% join coverage on order_id -> codashop_orders.id, timestamps line up
+// within ~1 minute of each other). The Telegram queue calls the same Russia
+// reseller channel "russia" instead of "russia_reseller" -- normalizePlatform
+// collapses that so it isn't tracked as two separate platforms downstream.
+const PLATFORM_ALIASES = { russia: "russia_reseller" };
+function normalizePlatform(raw) {
+  if (!raw) return null;
+  return PLATFORM_ALIASES[raw] || raw;
+}
+
 export async function getAllRows() {
   const now = Date.now();
   if (cache.rows && now - cache.at < CACHE_MS) return cache.rows;
   const rows = await selectQuery(
-    `SELECT id, card_serial, slot_index, old_balance, deducted, new_balance,
-            order_id, pack_name, created_at
-     FROM sky_gocash_history
-     ORDER BY created_at ASC`
+    `SELECT h.id, h.card_serial, h.slot_index, h.old_balance, h.deducted, h.new_balance,
+            h.order_id, h.pack_name, h.created_at, COALESCE(c.source, t.source) AS platform
+     FROM sky_gocash_history h
+     LEFT JOIN codashop_orders c ON c.id = h.order_id
+     LEFT JOIN telegram_orders_dev t ON t.task_request_id = c.telegram_task_request_id
+     ORDER BY h.created_at ASC`
   );
   const shaped = rows.map((r) => ({
     id: r.id,
@@ -33,6 +50,7 @@ export async function getAllRows() {
     orderId: r.order_id,
     packName: r.pack_name,
     createdAt: r.created_at,
+    platform: normalizePlatform(r.platform),
   }));
   cache = { at: now, rows: shaped };
   return shaped;

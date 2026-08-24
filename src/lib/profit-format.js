@@ -1,4 +1,4 @@
-export const fmtMoney = (n) => (Number(n) || 0).toLocaleString("th-TH", { maximumFractionDigits: 2 });
+export const fmtMoney = (n) => `฿${(Number(n) || 0).toLocaleString("th-TH", { maximumFractionDigits: 2 })}`;
 
 export const fmtUsd = (n) => {
   const v = Number(n);

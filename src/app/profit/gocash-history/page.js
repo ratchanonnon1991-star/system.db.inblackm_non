@@ -7,6 +7,7 @@ import { ChevronRight, Loader2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { fmtDate, fmtMoney, fmtPct, fmtUsd } from "@/lib/profit-format";
 import { useProfitCanEdit } from "@/components/profit-capabilities-context";
+import PlatformSelect, { platformLabel } from "@/components/profit-platform-select";
 
 function matchesQuery(q, parts) {
   if (!q) return true;
@@ -19,6 +20,15 @@ function toLocalInput(d) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// "ราคาขาย" displays the fee-adjusted number for platforms with a cut (e.g.
+// Kaleoz) since that's the figure actually used for the profit math. Staff
+// still type in the full/gross price though -- committing a new value always
+// writes it as-is (gross), the same convention as every other platform.
+function netSaleDisplay(h) {
+  const sale = h.saleAmount || 0;
+  return h.platformFeePct > 0 ? Math.round(sale * (1 - h.platformFeePct / 100) * 100) / 100 : sale;
+}
+
 export default function ProfitGocashHistoryPage() {
   const router = useRouter();
   const canEdit = useProfitCanEdit();
@@ -28,9 +38,11 @@ export default function ProfitGocashHistoryPage() {
   const [orderId, setOrderId] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [platformFilter, setPlatformFilter] = useState("");
   const [sortDir, setSortDir] = useState("desc");
   const [pageSize, setPageSize] = useState(20);
   const [page, setPage] = useState(1);
+  const [platforms, setPlatforms] = useState([]);
 
   const load = useCallback(() => {
     apiJson("/api/profit/gocash/history", { fallbackError: "โหลดประวัติ GoCash ไม่สำเร็จ" })
@@ -41,6 +53,14 @@ export default function ProfitGocashHistoryPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Platform names for the filter + per-row dropdown -- non-critical, so a
+  // failed fetch just leaves the filter/dropdown showing only "-".
+  useEffect(() => {
+    apiJson("/api/profit/sale-prices/summary", { fallbackError: "โหลดรายชื่อแพลตฟอร์มไม่สำเร็จ" })
+      .then((res) => setPlatforms((res.platforms || []).map((p) => p.platform)))
+      .catch(() => {});
+  }, []);
 
   const applyPreset = (days) => {
     const toDate = new Date();
@@ -57,6 +77,7 @@ export default function ProfitGocashHistoryPage() {
     setOrderId("");
     setFrom("");
     setTo("");
+    setPlatformFilter("");
     setPage(1);
   };
 
@@ -71,7 +92,8 @@ export default function ProfitGocashHistoryPage() {
       if (fromTs && t < fromTs) return false;
       if (toTs && t > toTs) return false;
       if (oid && !String(h.orderId || "").toLowerCase().includes(oid) && !String(h.txid || "").toLowerCase().includes(oid)) return false;
-      if (!matchesQuery(query, [h.txid, h.orderId, h.packName, h.cardName, h.cardSerial, h.slotIndex])) return false;
+      if (platformFilter === "__none__" ? h.platform : platformFilter && h.platform !== platformFilter) return false;
+      if (!matchesQuery(query, [h.txid, h.orderId, h.packName, h.game, h.cardName, h.cardSerial, h.slotIndex])) return false;
       return true;
     });
     list.sort((a, b) => {
@@ -79,7 +101,16 @@ export default function ProfitGocashHistoryPage() {
       return sortDir === "asc" ? d : -d;
     });
     return list;
-  }, [rows, q, orderId, from, to, sortDir]);
+  }, [rows, q, orderId, from, to, platformFilter, sortDir]);
+
+  // Every platform actually seen in the data (mostly auto-tagged from
+  // codashop_orders.source) unioned with the reference-price platforms --
+  // covers platforms nobody has set up a price sheet for yet too.
+  const filterPlatforms = useMemo(() => {
+    const set = new Set(platforms);
+    for (const h of rows || []) if (h.platform) set.add(h.platform);
+    return [...set].sort();
+  }, [rows, platforms]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -93,6 +124,34 @@ export default function ProfitGocashHistoryPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cost: Number(value) || 0 }),
         fallbackError: "แก้ไขต้นทุนไม่สำเร็จ",
+      });
+      load();
+    } catch (err) {
+      window.alert(err.message);
+    }
+  };
+
+  const editPlatform = async (historyId, value) => {
+    try {
+      await apiJson(`/api/profit/gocash/history/${historyId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform: value }),
+        fallbackError: "แก้ไขแพลตฟอร์มไม่สำเร็จ",
+      });
+      load();
+    } catch (err) {
+      window.alert(err.message);
+    }
+  };
+
+  const editSale = async (historyId, value) => {
+    try {
+      await apiJson(`/api/profit/gocash/history/${historyId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ saleAmount: Number(value) || 0 }),
+        fallbackError: "แก้ไขราคาขายไม่สำเร็จ",
       });
       load();
     } catch (err) {
@@ -145,6 +204,14 @@ export default function ProfitGocashHistoryPage() {
           Order ID
           <input type="search" value={orderId} onChange={(e) => { setOrderId(e.target.value); setPage(1); }} placeholder="เช่น 181210" className={inputClass} />
         </label>
+        <label className="flex flex-col gap-1 text-[11px] text-ll-ink-subtle">
+          แพลตฟอร์ม
+          <select value={platformFilter} onChange={(e) => { setPlatformFilter(e.target.value); setPage(1); }} className={inputClass}>
+            <option value="">ทั้งหมด</option>
+            <option value="__none__">ยังไม่ได้แท็ก</option>
+            {filterPlatforms.map((p) => <option key={p} value={p}>{platformLabel(p)}</option>)}
+          </select>
+        </label>
         <button type="button" onClick={clearFilters} className="h-9 rounded-md border border-ll-hairline-strong px-3 text-[12px] font-medium text-ll-ink hover:bg-ll-surface-2">ล้างตัวกรอง</button>
         <button type="button" onClick={() => applyPreset(1)} className="h-9 rounded-md border border-ll-hairline-strong px-3 text-[12px] font-medium text-ll-ink hover:bg-ll-surface-2">วันนี้</button>
         <button type="button" onClick={() => applyPreset(7)} className="h-9 rounded-md border border-ll-hairline-strong px-3 text-[12px] font-medium text-ll-ink hover:bg-ll-surface-2">7 วัน</button>
@@ -174,12 +241,15 @@ export default function ProfitGocashHistoryPage() {
             <thead>
               <tr className="border-b border-ll-hairline text-left text-[11px] text-ll-ink-subtle">
                 <th className="px-4 py-2 font-medium">QUEUE #</th>
+                <th className="px-3 py-2 font-medium">เกม</th>
                 <th className="px-3 py-2 font-medium">สินค้า</th>
+                <th className="px-3 py-2 font-medium">แพลตฟอร์ม</th>
                 <th className="px-3 py-2 font-medium">บัตร</th>
                 <th className="px-3 py-2 font-medium">เวลา</th>
                 <th className="px-3 py-2 text-right font-medium">ก่อนตัด</th>
                 <th className="px-3 py-2 text-right font-medium">คงเหลือ</th>
                 <th className="px-3 py-2 text-right font-medium">ยอดตัด</th>
+                <th className="px-3 py-2 text-right font-medium">ราคาขาย</th>
                 <th className="px-3 py-2 text-right font-medium">ต้นทุน</th>
                 <th className="px-3 py-2 text-right font-medium">กำไร (THB)</th>
                 <th className="px-3 py-2 text-right font-medium">กำไร %</th>
@@ -189,28 +259,77 @@ export default function ProfitGocashHistoryPage() {
             <tbody>
               {pageRows.length ? (
                 pageRows.map((h) => (
-                  <tr
-                    key={h.id}
-                    onClick={() => h.cardId && router.push(`/profit/category/gocash/card/${encodeURIComponent(h.cardId)}`)}
-                    className={`border-b border-ll-hairline last:border-0 ${h.cardId ? "cursor-pointer hover:bg-ll-surface-2" : ""}`}
-                  >
+                  <tr key={h.id} className="border-b border-ll-hairline last:border-0">
                     <td className="px-4 py-2.5">
                       <div className="text-ll-ink">{h.txid}</div>
-                      <div className="text-[11px] text-ll-ink-tertiary">slot {h.slotIndex == null ? "-" : h.slotIndex}</div>
                     </td>
+                    <td className="px-3 py-2.5 text-ll-ink-subtle">{h.game || "-"}</td>
                     <td className="px-3 py-2.5">
                       <div className="text-ll-ink">{h.packName || "-"}</div>
                       <div className="text-[11px] text-ll-ink-tertiary">via GoCash USD</div>
                     </td>
-                    <td className="px-3 py-2.5 text-ll-ink-subtle">{h.cardName || "-"}</td>
+                    <td className="px-3 py-2.5">
+                      <PlatformSelect
+                        value={h.platform}
+                        fromDb={h.platformFromDb}
+                        platforms={platforms}
+                        disabled={!canEdit}
+                        onCommit={(v) => editPlatform(h.historyId, v)}
+                      />
+                    </td>
+                    <td className="px-3 py-2.5 text-ll-ink-subtle">
+                      {h.cardId ? (
+                        <button
+                          type="button"
+                          onClick={() => router.push(`/profit/category/gocash/card/${encodeURIComponent(h.cardId)}`)}
+                          className="hover:text-ll-ink hover:underline"
+                        >
+                          {h.cardName || "-"}
+                        </button>
+                      ) : (
+                        h.cardName || "-"
+                      )}
+                    </td>
                     <td className="px-3 py-2.5 text-ll-ink-subtle">{fmtDate(h.createdAt)}</td>
                     <td className="px-3 py-2.5 text-right">{fmtUsd(h.oldBalance)}</td>
                     <td className="px-3 py-2.5 text-right">{fmtUsd(h.newBalance)}</td>
                     <td className="px-3 py-2.5 text-right">{fmtUsd(h.deducted)}</td>
-                    <td className="px-3 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
-                      <HistoryCostInput value={h.cost || 0} disabled={!canEdit} title={h.costFromPack ? "ค่านี้มาจากต้นทุนเริ่มต้นของแพ็ก — แก้ตรงนี้จะ override เฉพาะออเดอร์นี้" : undefined} onCommit={(v) => editCost(h.historyId, v)} />
+                    <td className="px-3 py-2.5 text-right">
+                      <HistoryCostInput
+                        value={netSaleDisplay(h)}
+                        disabled={!canEdit}
+                        title={
+                          h.platformFeePct > 0
+                            ? `หักค่าธรรมเนียม ${h.platformFeePct}% ของ ${platformLabel(h.platform)} จากราคาเต็ม ${fmtMoney(h.saleAmount || 0)} แล้ว — แก้ตรงนี้ให้กรอกราคาเต็มใหม่ ระบบจะหักให้อัตโนมัติ`
+                            : h.saleFromPlatform
+                              ? "ค่านี้ดึงจากราคาขายตามแพ็กของแพลตฟอร์มนี้ — แก้ตรงนี้จะ override เฉพาะออเดอร์นี้"
+                              : h.saleMissingPlatformPrice
+                                ? `ยังไม่มีราคาอ้างอิงของ ${platformLabel(h.platform)} สำหรับแพ็กนี้ — ตั้งได้ที่หน้า "ตั้งราคาขายตามแพ็ก"`
+                                : undefined
+                        }
+                        onCommit={(v) => editSale(h.historyId, v)}
+                      />
                     </td>
-                    <td className={`px-3 py-2.5 text-right ${(h.profit || 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>{fmtMoney(h.profit)}</td>
+                    <td className="px-3 py-2.5 text-right">
+                      <HistoryCostInput
+                        value={h.cost || 0}
+                        disabled={!canEdit}
+                        title={
+                          h.costFromPack
+                            ? "ค่านี้มาจากต้นทุนเริ่มต้นของแพ็ก — แก้ตรงนี้จะ override เฉพาะออเดอร์นี้"
+                            : h.costFromRate
+                              ? "ค่านี้คำนวณจากยอดตัด (USD) × USD:THB × เรท GoCash — แก้ตรงนี้จะ override เฉพาะออเดอร์นี้"
+                              : undefined
+                        }
+                        onCommit={(v) => editCost(h.historyId, v)}
+                      />
+                    </td>
+                    <td
+                      className={`px-3 py-2.5 text-right ${(h.profit || 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}
+                      title={h.platformFeePct > 0 ? `หักค่าธรรมเนียม ${h.platformFeePct}% ของ ${platformLabel(h.platform)} จากราคาขายก่อนคิดกำไรแล้ว` : undefined}
+                    >
+                      {fmtMoney(h.profit)}
+                    </td>
                     <td className="px-3 py-2.5 text-right">{fmtPct(h.profitPct)}</td>
                     <td className="px-3 py-2.5">
                       {h.isDuplicate ? (
@@ -222,7 +341,7 @@ export default function ProfitGocashHistoryPage() {
                   </tr>
                 ))
               ) : (
-                <tr><td colSpan={11} className="px-4 py-8 text-center text-ll-ink-subtle">ไม่พบรายการตามตัวกรอง</td></tr>
+                <tr><td colSpan={14} className="px-4 py-8 text-center text-ll-ink-subtle">ไม่พบรายการตามตัวกรอง</td></tr>
               )}
             </tbody>
           </table>

@@ -2,13 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   History,
   LayoutGrid,
   Loader2,
   Moon,
-  RotateCcw,
   Settings2,
   Sun,
   Tag,
@@ -23,12 +22,10 @@ const GROUP_LABELS = { bot: "BOT (AUTO)", human: "HUMAN (MANUAL)" };
 export default function ProfitShell({ displayName, canEdit, children }) {
   const { theme, toggleTheme } = useProfitTheme();
   const pathname = usePathname();
-  const router = useRouter();
   const isDark = theme === "dark";
 
   const [categories, setCategories] = useState(null);
   const [error, setError] = useState("");
-  const [resetting, setResetting] = useState(false);
 
   const loadCategories = useCallback(() => {
     apiJson("/api/profit/categories", { fallbackError: "โหลดเมนูไม่สำเร็จ" })
@@ -39,20 +36,6 @@ export default function ProfitShell({ displayName, canEdit, children }) {
   useEffect(() => {
     loadCategories();
   }, [loadCategories, pathname]);
-
-  const resetCosts = async () => {
-    if (!window.confirm("ล้างค่าต้นทุนทั้งหมดทุกบัตรทุกออเดอร์เป็น 0 ใช่ไหม?")) return;
-    setResetting(true);
-    try {
-      await apiJson("/api/profit/costs/reset", { method: "POST", fallbackError: "ล้างค่าต้นทุนไม่สำเร็จ" });
-      loadCategories();
-      router.refresh();
-    } catch (err) {
-      window.alert(err.message);
-    } finally {
-      setResetting(false);
-    }
-  };
 
   const isDashboard = pathname === "/profit";
   const isPackCosts = pathname === "/profit/pack-costs";
@@ -165,18 +148,6 @@ export default function ProfitShell({ displayName, canEdit, children }) {
               ))}
             </div>
           ))}
-
-          {canEdit && (
-            <button
-              type="button"
-              onClick={resetCosts}
-              disabled={resetting}
-              className="mt-auto flex items-center justify-center gap-1.5 rounded-md border border-ll-hairline-strong px-3 py-2 text-[12px] font-medium text-ll-ink-subtle transition hover:bg-ll-surface-2 disabled:opacity-50"
-            >
-              {resetting ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
-              ล้างค่าต้นทุนทั้งหมด
-            </button>
-          )}
         </aside>
 
         <main className="min-w-0 flex-1 px-4 py-6 sm:px-6">

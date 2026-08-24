@@ -3,17 +3,27 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ChevronRight, Droplets, Loader2, Pencil, Plus, Trash2, User } from "lucide-react";
+import { ChevronRight, Copy, Droplets, Loader2, Pencil, Plus, Trash2, User } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { fmtDate, fmtMoney, fmtPct, fmtPoints, fmtUsd } from "@/lib/profit-format";
 import ProfitSummaryGrid from "@/components/profit-summary-grid";
 import { useProfitCanEdit } from "@/components/profit-capabilities-context";
 import ProfitModal, { ProfitField, profitInputClass } from "@/components/profit-modal";
+import PlatformSelect, { platformLabel } from "@/components/profit-platform-select";
 
 function matchesQuery(q, parts) {
   if (!q) return true;
   const hay = parts.filter((p) => p != null && p !== "").join(" ").toLowerCase();
   return hay.includes(q);
+}
+
+// "ราคาขาย" displays the fee-adjusted number for platforms with a cut (e.g.
+// Kaleoz) since that's the figure actually used for the profit math. Staff
+// still type in the full/gross price though -- committing a new value always
+// writes it as-is (gross), the same convention as every other platform.
+function netSaleDisplay(o) {
+  const sale = o.saleAmount || 0;
+  return o.platformFeePct > 0 ? Math.round(sale * (1 - o.platformFeePct / 100) * 100) / 100 : sale;
 }
 
 export default function ProfitCardPage() {
@@ -31,6 +41,7 @@ function ProfitCardPageContent({ categoryId, cardId }) {
   const [q, setQ] = useState("");
   const [editOpen, setEditOpen] = useState(false);
   const [addOrderOpen, setAddOrderOpen] = useState(false);
+  const [platforms, setPlatforms] = useState([]);
 
   const load = useCallback(() => {
     apiJson(`/api/profit/categories/${categoryId}/cards/${cardId}`, { fallbackError: "โหลดรายละเอียดบัตรไม่สำเร็จ" })
@@ -41,6 +52,14 @@ function ProfitCardPageContent({ categoryId, cardId }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Platform names for the "แพลตฟอร์ม" dropdown -- non-critical, so a failed
+  // fetch just leaves the dropdown showing only whatever's already tagged.
+  useEffect(() => {
+    apiJson("/api/profit/sale-prices/summary", { fallbackError: "โหลดรายชื่อแพลตฟอร์มไม่สำเร็จ" })
+      .then((res) => setPlatforms((res.platforms || []).map((p) => p.platform)))
+      .catch(() => {});
+  }, []);
 
   const editOrder = async (orderId, field, value) => {
     try {
@@ -88,6 +107,20 @@ function ProfitCardPageContent({ categoryId, cardId }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cleared }),
         fallbackError: "อัปเดตสถานะเคลียเศษไม่สำเร็จ",
+      });
+      load();
+    } catch (err) {
+      window.alert(err.message);
+    }
+  };
+
+  const toggleDuplicateReviewed = async (reviewed) => {
+    try {
+      await apiJson(`/api/profit/gocash/cards/${cardId}/duplicate-review`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reviewed }),
+        fallbackError: "อัปเดตสถานะตรวจสอบบัตรตัดซ้ำไม่สำเร็จ",
       });
       load();
     } catch (err) {
@@ -189,6 +222,10 @@ function ProfitCardPageContent({ categoryId, cardId }) {
         <DustPanel card={card} canEdit={canEdit} onToggle={toggleDustCleared} />
       )}
 
+      {isLive && (card.duplicateCount > 0 || (card.duplicateReviewLog || []).length > 0) && (
+        <DuplicateReviewPanel card={card} canEdit={canEdit} onToggle={toggleDuplicateReviewed} />
+      )}
+
       {isLive && (
         <div className="flex items-center justify-between">
           <input
@@ -210,7 +247,9 @@ function ProfitCardPageContent({ categoryId, cardId }) {
             <thead>
               <tr className="border-b border-ll-hairline text-left text-[11px] text-ll-ink-subtle">
                 <th className="px-4 py-2 font-medium">ออเดอร์</th>
+                {isLive && <th className="px-3 py-2 font-medium">เกม</th>}
                 {isLive && <th className="px-3 py-2 font-medium">แพ็ก</th>}
+                {isLive && <th className="px-3 py-2 font-medium">แพลตฟอร์ม</th>}
                 <th className="px-3 py-2 text-right font-medium">ราคาขาย</th>
                 <th className="px-3 py-2 text-right font-medium">ต้นทุน</th>
                 <th className="px-3 py-2 text-right font-medium">กำไร</th>
@@ -230,19 +269,55 @@ function ProfitCardPageContent({ categoryId, cardId }) {
                   return (
                     <tr key={o.id} className="border-b border-ll-hairline last:border-0 hover:bg-ll-surface-2">
                       <td className="px-4 py-2.5 text-ll-ink">{o.txid}</td>
+                      {isLive && <td className="px-3 py-2.5 text-ll-ink-subtle">{o.game || "-"}</td>}
                       {isLive && <td className="px-3 py-2.5 text-ll-ink-subtle">{o.packName || "-"}</td>}
+                      {isLive && (
+                        <td className="px-3 py-2.5">
+                          <PlatformSelect
+                            value={o.platform}
+                            fromDb={o.platformFromDb}
+                            platforms={platforms}
+                            disabled={!canEdit}
+                            onCommit={(v) => editOrder(o.id, "platform", v)}
+                          />
+                        </td>
+                      )}
                       <td className="px-3 py-2.5 text-right">
-                        <EditableCell value={o.saleAmount} disabled={!canEdit} onCommit={(v) => editOrder(o.id, "saleAmount", v)} />
+                        <EditableCell
+                          value={netSaleDisplay(o)}
+                          disabled={!canEdit}
+                          title={
+                            o.platformFeePct > 0
+                              ? `หักค่าธรรมเนียม ${o.platformFeePct}% ของ ${platformLabel(o.platform)} จากราคาเต็ม ${fmtMoney(o.saleAmount || 0)} แล้ว — แก้ตรงนี้ให้กรอกราคาเต็มใหม่ ระบบจะหักให้อัตโนมัติ`
+                              : o.saleFromPlatform
+                                ? "ค่านี้ดึงจากราคาขายตามแพ็กของแพลตฟอร์มนี้ — แก้ตรงนี้จะ override เฉพาะออเดอร์นี้"
+                                : o.saleMissingPlatformPrice
+                                  ? `ยังไม่มีราคาอ้างอิงของ ${platformLabel(o.platform)} สำหรับแพ็กนี้ — ตั้งได้ที่หน้า "ตั้งราคาขายตามแพ็ก"`
+                                  : undefined
+                          }
+                          onCommit={(v) => editOrder(o.id, "saleAmount", v)}
+                        />
                       </td>
                       <td className="px-3 py-2.5 text-right">
                         <EditableCell
                           value={o.cost}
                           disabled={!canEdit}
-                          title={o.costFromPack ? "ค่านี้มาจากต้นทุนเริ่มต้นของแพ็ก — แก้ตรงนี้จะ override เฉพาะออเดอร์นี้" : undefined}
+                          title={
+                            o.costFromPack
+                              ? "ค่านี้มาจากต้นทุนเริ่มต้นของแพ็ก — แก้ตรงนี้จะ override เฉพาะออเดอร์นี้"
+                              : o.costFromRate
+                                ? "ค่านี้คำนวณจากยอดตัด (USD) × USD:THB × เรท GoCash — แก้ตรงนี้จะ override เฉพาะออเดอร์นี้"
+                                : undefined
+                          }
                           onCommit={(v) => editOrder(o.id, "cost", v)}
                         />
                       </td>
-                      <td className={`px-3 py-2.5 text-right ${o.profit >= 0 ? "text-emerald-600" : "text-red-600"}`}>{fmtMoney(o.profit)}</td>
+                      <td
+                        className={`px-3 py-2.5 text-right ${o.profit >= 0 ? "text-emerald-600" : "text-red-600"}`}
+                        title={o.platformFeePct > 0 ? `หักค่าธรรมเนียม ${o.platformFeePct}% ของ ${platformLabel(o.platform)} จากราคาขายก่อนคิดกำไรแล้ว` : undefined}
+                      >
+                        {fmtMoney(o.profit)}
+                      </td>
                       <td className="px-3 py-2.5 text-right">{fmtPct(o.profitPct)}</td>
                       <td className="px-3 py-2.5 text-right">{l.in == null ? "-" : money(l.in)}</td>
                       <td className="px-3 py-2.5 text-right">{l.out == null ? "-" : money(l.out)}</td>
@@ -268,7 +343,7 @@ function ProfitCardPageContent({ categoryId, cardId }) {
                   );
                 })
               ) : (
-                <tr><td colSpan={11} className="px-4 py-8 text-center text-ll-ink-subtle">{q ? "ไม่พบเลขที่ค้นหา" : "ยังไม่มีออเดอร์"}</td></tr>
+                <tr><td colSpan={isLive ? 13 : 11} className="px-4 py-8 text-center text-ll-ink-subtle">{q ? "ไม่พบเลขที่ค้นหา" : "ยังไม่มีออเดอร์"}</td></tr>
               )}
             </tbody>
           </table>
@@ -285,7 +360,14 @@ function ProfitCardPageContent({ categoryId, cardId }) {
   );
 }
 
+const DUST_LOG_COLLAPSED_COUNT = 3;
+
 function DustPanel({ card, canEdit, onToggle }) {
+  const [logExpanded, setLogExpanded] = useState(false);
+  const log = card.dustClearLog || [];
+  const visibleLog = logExpanded ? log : log.slice(0, DUST_LOG_COLLAPSED_COUNT);
+  const hiddenCount = log.length - visibleLog.length;
+
   return (
     <section className="rounded-lg border border-ll-hairline bg-ll-surface-1 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -326,18 +408,117 @@ function DustPanel({ card, canEdit, onToggle }) {
         )}
       </div>
 
-      {card.dustClearLog?.length > 0 && (
+      {log.length > 0 && (
         <div className="mt-3 border-t border-ll-hairline pt-3">
           <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-ll-ink-tertiary">ประวัติคนเคลียร์เศษบัตรนี้</p>
           <ul className="flex flex-col gap-1">
-            {card.dustClearLog.map((entry, i) => (
+            {visibleLog.map((entry, i) => (
               <li key={i} className="flex items-center gap-1.5 text-[12px] text-ll-ink-subtle">
                 <User size={11} className="text-ll-ink-tertiary" />
                 <span className="font-medium text-ll-ink">{entry.userName}</span>
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                    entry.action === "uncleared" ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600"
+                  }`}
+                >
+                  {entry.action === "uncleared" ? "ยกเลิก" : "เคลียร์"}
+                </span>
                 <span>· {fmtDate(entry.clearedAt)}</span>
               </li>
             ))}
           </ul>
+          {(hiddenCount > 0 || logExpanded) && log.length > DUST_LOG_COLLAPSED_COUNT && (
+            <button
+              type="button"
+              onClick={() => setLogExpanded((v) => !v)}
+              className="mt-1.5 text-[11px] font-medium text-ll-primary-subtle-text hover:underline"
+            >
+              {logExpanded ? "ย่อรายการ" : `ดูเพิ่มเติมอีก ${hiddenCount} รายการ`}
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+const REVIEW_LOG_COLLAPSED_COUNT = 3;
+
+function DuplicateReviewPanel({ card, canEdit, onToggle }) {
+  const [logExpanded, setLogExpanded] = useState(false);
+  const log = card.duplicateReviewLog || [];
+  const visibleLog = logExpanded ? log : log.slice(0, REVIEW_LOG_COLLAPSED_COUNT);
+  const hiddenCount = log.length - visibleLog.length;
+  const reviewed = !card.needsDuplicateReview;
+
+  return (
+    <section className="rounded-lg border border-ll-hairline bg-ll-surface-1 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${card.needsDuplicateReview ? "bg-red-50 text-red-600" : "bg-ll-surface-2 text-ll-ink-subtle"}`}>
+            <Copy size={16} />
+          </span>
+          <div>
+            <p className="text-[13px] font-medium text-ll-ink">
+              {card.needsDuplicateReview ? `พบยอดตัดซ้ำ ${card.duplicateCount} รายการ — ยังไม่ตรวจสอบ` : "ตรวจสอบแล้ว"}
+            </p>
+            {reviewed && card.duplicateReviewedByName && (
+              <p className="text-[12px] text-ll-ink-subtle">โดย {card.duplicateReviewedByName}</p>
+            )}
+            {reviewed && (
+              <p className="text-[12px] text-ll-ink-subtle">เมื่อ {fmtDate(card.duplicateReviewedAt)}</p>
+            )}
+          </div>
+        </div>
+        {canEdit && (
+          <button
+            type="button"
+            onClick={() => {
+              const message = reviewed
+                ? "ยืนยันว่าต้องการยกเลิกมาร์กตรวจสอบยอดตัดซ้ำของบัตรนี้ใช่ไหม?"
+                : `ยืนยันว่าตรวจสอบยอดตัดซ้ำ ${card.duplicateCount} รายการของบัตรนี้แล้ว และไม่มีปัญหาใช่ไหม?`;
+              if (!window.confirm(message)) return;
+              onToggle(!reviewed);
+            }}
+            className={`rounded-md px-3 py-2 text-[12px] font-medium ${
+              reviewed
+                ? "border border-ll-hairline-strong text-ll-ink hover:bg-ll-surface-2"
+                : "bg-ll-primary text-ll-on-primary hover:bg-ll-primary-hover"
+            }`}
+          >
+            {reviewed ? "ยกเลิกมาร์กตรวจสอบแล้ว" : "มาร์กว่าตรวจสอบแล้ว"}
+          </button>
+        )}
+      </div>
+
+      {log.length > 0 && (
+        <div className="mt-3 border-t border-ll-hairline pt-3">
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-ll-ink-tertiary">ประวัติคนตรวจสอบยอดตัดซ้ำบัตรนี้</p>
+          <ul className="flex flex-col gap-1">
+            {visibleLog.map((entry, i) => (
+              <li key={i} className="flex items-center gap-1.5 text-[12px] text-ll-ink-subtle">
+                <User size={11} className="text-ll-ink-tertiary" />
+                <span className="font-medium text-ll-ink">{entry.userName}</span>
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                    entry.action === "unreviewed" ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600"
+                  }`}
+                >
+                  {entry.action === "unreviewed" ? "ยกเลิก" : "ตรวจสอบ"}
+                </span>
+                <span>· {fmtDate(entry.reviewedAt)}</span>
+              </li>
+            ))}
+          </ul>
+          {(hiddenCount > 0 || logExpanded) && log.length > REVIEW_LOG_COLLAPSED_COUNT && (
+            <button
+              type="button"
+              onClick={() => setLogExpanded((v) => !v)}
+              className="mt-1.5 text-[11px] font-medium text-ll-primary-subtle-text hover:underline"
+            >
+              {logExpanded ? "ย่อรายการ" : `ดูเพิ่มเติมอีก ${hiddenCount} รายการ`}
+            </button>
+          )}
         </div>
       )}
     </section>

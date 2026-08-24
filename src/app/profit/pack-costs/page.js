@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronRight, Layers, Loader2 } from "lucide-react";
+import { ChevronRight, Layers, Loader2, RotateCcw } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { useProfitCanEdit } from "@/components/profit-capabilities-context";
 import ProfitSummaryGrid from "@/components/profit-summary-grid";
+import { SourceBadge } from "@/components/profit-badges";
 import ProfitModal, { ProfitField, profitInputClass } from "@/components/profit-modal";
 
 const SOURCE_LABELS = { gocash: "GoCash", oxide: "Oxide" };
@@ -24,12 +25,26 @@ export default function ProfitPackCostsPage() {
   const [source, setSource] = useState("");
   const [game, setGame] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   const load = useCallback(() => {
     apiJson("/api/profit/pack-costs", { fallbackError: "โหลดต้นทุนตามแพ็กไม่สำเร็จ" })
       .then((res) => setPacks(res.packs || []))
       .catch((err) => setError(err.message));
   }, []);
+
+  const resetCosts = async () => {
+    if (!window.confirm("ล้างค่าต้นทุนทั้งหมดทุกบัตรทุกออเดอร์เป็น 0 ใช่ไหม?")) return;
+    setResetting(true);
+    try {
+      await apiJson("/api/profit/costs/reset", { method: "POST", fallbackError: "ล้างค่าต้นทุนไม่สำเร็จ" });
+      load();
+    } catch (err) {
+      window.alert(err.message);
+    } finally {
+      setResetting(false);
+    }
+  };
 
   useEffect(() => {
     load();
@@ -93,13 +108,24 @@ export default function ProfitPackCostsPage() {
           </p>
         </div>
         {canEdit && (
-          <button
-            type="button"
-            onClick={() => setBulkOpen(true)}
-            className="flex shrink-0 items-center gap-1.5 rounded-md bg-ll-primary px-3 py-2 text-[12px] font-medium text-ll-on-primary hover:bg-ll-primary-hover"
-          >
-            <Layers size={13} /> ตั้งต้นทุนแบบกลุ่ม
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={resetCosts}
+              disabled={resetting}
+              className="flex items-center gap-1.5 rounded-md border border-ll-hairline-strong px-3 py-2 text-[12px] font-medium text-ll-ink-subtle transition hover:bg-ll-surface-2 disabled:opacity-50"
+            >
+              {resetting ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+              รีเซ็ตต้นทุนทั้งหมด
+            </button>
+            <button
+              type="button"
+              onClick={() => setBulkOpen(true)}
+              className="flex items-center gap-1.5 rounded-md bg-ll-primary px-3 py-2 text-[12px] font-medium text-ll-on-primary hover:bg-ll-primary-hover"
+            >
+              <Layers size={13} /> ตั้งต้นทุนแบบกลุ่ม
+            </button>
+          </div>
         )}
       </div>
 
@@ -157,9 +183,7 @@ export default function ProfitPackCostsPage() {
                     <td className="px-4 py-2.5 text-ll-ink">{p.game}</td>
                     <td className="px-3 py-2.5 text-ll-ink">{p.packName}</td>
                     <td className="px-3 py-2.5">
-                      <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-600">
-                        {SOURCE_LABELS[p.source] || p.source}
-                      </span>
+                      <SourceBadge source={p.source} label={SOURCE_LABELS[p.source] || p.source} />
                     </td>
                     <td className="px-3 py-2.5 text-right">{p.orderCount}</td>
                     <td className="px-3 py-2.5 text-right">

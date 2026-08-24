@@ -9,6 +9,10 @@ export const CATEGORIES = [
   { id: "oxide", name: "Oxide", group: "bot", source: "oxide", excludeFromTotals: true },
   { id: "codashop", name: "Codashop", group: "bot", source: "manual" },
   { id: "unipin", name: "UniPin", group: "bot", source: "manual" },
+  // One card pool shared across several games (e.g. lovedeep, harry magic,
+  // the division) -- see the "เกม" picker on its category page, addable via
+  // the "+ เพิ่มเกม" button instead of needing a new channel per game.
+  { id: "wavepay", name: "Wavepay", group: "bot", source: "manual" },
   // Filtered view of the same live GoCash data (cards with unusable dust
   // balance) — a manual clearing worklist for humans, not bot-driven data,
   // so it lives under HUMAN (MANUAL) rather than nested under GoCash.

@@ -5,6 +5,56 @@ import * as repo from "@/server/profit-repository";
 import * as gocash from "@/server/profit-gocash";
 import * as oxide from "@/server/profit-oxide";
 import { CATEGORIES, getCategory } from "@/server/profit-categories";
+import { fetchUsdThbRate } from "@/server/exchangerate-api";
+
+// The free tier of exchangerate-api.com only refreshes once every 24h, so
+// re-fetching more often than this would just repeat the same number.
+const USD_THB_RATE_STALE_MS = 12 * 60 * 60 * 1000;
+// Dedupes concurrent refreshes the same way gameinfo-exchange-rates.js's
+// refreshFlights map does, so a burst of page loads while the cached rate is
+// stale doesn't fire the API once per request.
+let usdThbRateRefresh = null;
+
+// Keeps the USD->THB rate fresh from exchangerate-api.com without hitting it
+// on every request -- only refetches when the cached value is missing/stale
+// *and* was itself sourced from the API; a manual override is left alone
+// until staff explicitly re-syncs (see syncUsdThbRateFromApi).
+export async function ensureUsdThbRate() {
+  const info = await repo.getUsdThbRateInfo();
+  const stale = !info.updatedAt || Date.now() - new Date(info.updatedAt).getTime() > USD_THB_RATE_STALE_MS;
+  if (!stale || info.source === "manual") return info;
+  if (!usdThbRateRefresh) {
+    usdThbRateRefresh = (async () => {
+      try {
+        const { rate } = await fetchUsdThbRate();
+        await repo.setUsdThbRateFromApi(rate);
+        return repo.getUsdThbRateInfo();
+      } catch (error) {
+        return { ...info, error: error instanceof Error ? error.message : "ดึงอัตราแลกเปลี่ยนไม่สำเร็จ" };
+      }
+    })().finally(() => {
+      usdThbRateRefresh = null;
+    });
+  }
+  return usdThbRateRefresh;
+}
+
+// Forces a fresh pull regardless of staleness -- the "ซิงค์จาก API" button.
+export async function syncUsdThbRateFromApi() {
+  const { rate } = await fetchUsdThbRate();
+  await repo.setUsdThbRateFromApi(rate);
+  return repo.getUsdThbRateInfo();
+}
+
+// cost (THB) = deducted(USD) * usdThbRate * gocashRate -- see the settings
+// comment in profit-repository.js for what each factor means.
+async function gocashEffectiveRate() {
+  const [usdThb, gocashRate] = await Promise.all([
+    ensureUsdThbRate().then((info) => info.rate),
+    repo.getGocashRate(),
+  ]);
+  return usdThb * gocashRate;
+}
 
 function profitPct(sale, cost) {
   const profit = sale - cost;
@@ -41,27 +91,68 @@ function localOrderView(order) {
   };
 }
 
-// packCosts/overrides: bulk-fetched once per request (see computeGocashCards /
-// cardDetail / gocashHistoryFeed) and passed down so a page rendering
-// hundreds of GoCash rows only ever hits Postgres once for each, not once per
-// row.
-function gocashOrderView(row, packCosts, overrides) {
+// Cost priority: a per-order override always wins; failing that, a per-pack
+// default set on the "ตั้งค่าต้นทุนตามแพ็ก" page; failing that, the rate
+// formula (deducted(USD) * effectiveRate, where effectiveRate = usdThbRate *
+// gocashRate -- see gocashEffectiveRate below).
+//
+// Platform: codashop_orders.source (joined in via profit-gocash.js) already
+// records which resale platform (kaleoz, russia_reseller, ...) the order
+// sold through, when the team tagged it there -- that's authoritative, so it
+// always wins over a manually-typed tag. Most historical rows were never
+// tagged upstream, though, so a manual tag (profit_gocash_overrides.platform)
+// fills the gap for those.
+//
+// Sale priority: same shape as cost -- a per-order override (a real,
+// explicitly-entered amount) wins; failing that, the effective platform's
+// reference price for this pack (from "ตั้งราคาขายตามแพ็ก"); failing that, 0.
+//
+// packCosts/platformPrices/platformFees/overrides are bulk-fetched once per
+// request (see computeGocashCards / cardDetail / gocashHistoryFeed) and
+// passed down so a page rendering hundreds of GoCash rows only ever hits
+// Postgres once per lookup, not once per row.
+//
+// platformFees: some resale platforms (e.g. Kaleoz) take a cut of the listed
+// sale price before the money actually lands. Per team convention, whatever's
+// typed into "ตั้งราคาขายตามแพ็ก" for that platform is the full/gross listed
+// price -- the system deducts the fee automatically before computing profit,
+// so staff never have to do that math by hand. saleAmount itself stays the
+// gross figure (what was actually typed in); only cost/profit math uses the
+// fee-adjusted net.
+function gocashOrderView(row, effectiveRate, packCosts, platformPrices, platformFees, overrides) {
   const override = overrides[row.id] || null;
-  const sale = override?.saleAmount || 0;
+  const platform = row.platform || override?.platform || null;
+  const hasSaleOverride = override != null && override.saleAmount > 0;
+  const packKey = row.packName != null ? `gocash:${row.packName}` : null;
+  const platformPrice = platform && packKey != null ? platformPrices[platform]?.[packKey] : undefined;
+  const sale = hasSaleOverride ? override.saleAmount : platformPrice ?? 0;
+  const feePct = (platform && platformFees[platform]) || 0;
+  const netSale = sale * (1 - feePct / 100);
   const hasCostOverride = override != null && override.cost !== undefined && override.cost !== null;
-  const packCost = row.packName != null ? packCosts[`gocash:${row.packName}`] : undefined;
-  const cost = hasCostOverride ? override.cost : (packCost ?? 0);
+  const packCost = packKey != null ? packCosts[packKey] : undefined;
+  const rateCost = row.deducted != null ? row.deducted * effectiveRate : 0;
+  const cost = hasCostOverride ? override.cost : packCost ?? rateCost;
+  const profit = netSale - cost;
   return {
     id: `gocash:${row.id}`,
     historyId: row.id,
     txid: row.orderId ? `#${row.orderId}` : `hist-${row.id}`,
     orderId: row.orderId,
     packName: row.packName,
+    platform,
+    platformFromDb: Boolean(row.platform),
     saleAmount: sale,
+    platformFeePct: feePct,
+    saleFromPlatform: !hasSaleOverride && platformPrice != null,
+    // Platform is known but nobody has priced this pack for it yet on
+    // "ตั้งราคาขายตามแพ็ก" -- surfaced so staff know *why* sale shows 0
+    // instead of assuming the auto-fill is broken.
+    saleMissingPlatformPrice: !hasSaleOverride && platform != null && platformPrice == null,
     cost,
     costFromPack: !hasCostOverride && packCost != null,
-    profit: sale - cost,
-    profitPct: profitPct(sale, cost),
+    costFromRate: !hasCostOverride && packCost == null,
+    profit,
+    profitPct: sale > 0 ? (profit / sale) * 100 : 0,
     note: "",
     createdAt: row.createdAt,
     source: "gocash",
@@ -70,19 +161,42 @@ function gocashOrderView(row, packCosts, overrides) {
   };
 }
 
+// profitTotal sums each order's own .profit rather than saleTotal - costTotal
+// -- with a platform fee in play (see gocashOrderView) those no longer
+// agree, since profit is computed off the fee-adjusted net sale while
+// saleTotal stays the gross figure.
 function summarizeOrders(orders) {
   const saleTotal = orders.reduce((s, o) => s + o.saleAmount, 0);
   const costTotal = orders.reduce((s, o) => s + o.cost, 0);
-  const profitTotal = saleTotal - costTotal;
+  const profitTotal = orders.reduce((s, o) => s + (o.profit ?? o.saleAmount - o.cost), 0);
   const duplicateCount = orders.filter((o) => o.isDuplicate).length;
   return {
     orderCount: orders.length,
     saleTotal,
     costTotal,
     profitTotal,
-    profitPct: profitPct(saleTotal, costTotal),
+    profitPct: saleTotal > 0 ? (profitTotal / saleTotal) * 100 : 0,
     duplicateCount,
   };
+}
+
+// Which game a GoCash card belongs to: an explicit per-card tag (see
+// profit_gocash_card_games) wins; if the "gocash" channel has exactly one
+// game defined -- true today ("sky"), and true for as long as this channel
+// keeps servicing a single game -- every untagged card defaults to it
+// automatically so nobody has to hand-tag 200+ existing cards. With zero or
+// 2+ games and no tag, the card is left unassigned rather than silently
+// guessing wrong.
+function resolveGocashGame(cardId, cardGameTags, channelGames) {
+  const taggedId = cardGameTags[cardId] || null;
+  if (taggedId) {
+    const game = channelGames.find((g) => g.id === taggedId);
+    if (game) return { gameId: game.id, gameName: game.name, gameAuto: false };
+  }
+  if (channelGames.length === 1) {
+    return { gameId: channelGames[0].id, gameName: channelGames[0].name, gameAuto: true };
+  }
+  return { gameId: null, gameName: null, gameAuto: false };
 }
 
 // Full GoCash card+order aggregation — the expensive part (joins every
@@ -90,15 +204,21 @@ function summarizeOrders(orders) {
 // so categorySummaries() can compute it once per request and hand the same
 // result to both 'gocash' and 'gocash-dust' instead of doing it twice.
 async function computeGocashCards(categoryId) {
-  const [cardRows, packCosts, overrides, dustCleared] = await Promise.all([
+  const [cardRows, effectiveRate, packCosts, platformPrices, platformFees, overrides, dustCleared, duplicateReviewed, channelGames, cardGameTags] = await Promise.all([
     gocash.listCards(),
+    gocashEffectiveRate(),
     repo.getPackCosts(),
+    repo.getAllPlatformPrices(),
+    repo.getAllPlatformFees(),
     repo.listGocashOverrides(),
     repo.listDustCleared(),
+    repo.listDuplicateReviewed(),
+    repo.listChannelGames("gocash"),
+    repo.listGocashCardGames(),
   ]);
   return cardRows.map((row) => {
     const orders = markDuplicates(
-      row.rows.map((r) => gocashOrderView(r, packCosts, overrides)),
+      row.rows.map((r) => gocashOrderView(r, effectiveRate, packCosts, platformPrices, platformFees, overrides)),
       (o) => o.orderId
     );
     const summary = summarizeOrders(orders);
@@ -109,6 +229,13 @@ async function computeGocashCards(categoryId) {
     // new activity means the dust situation needs a fresh look.
     const dustClearedFlag = Boolean(mark?.clearedAt)
       && (!row.lastOrderAt || new Date(row.lastOrderAt) <= new Date(mark.clearedAt));
+    // Same "counts only until new activity" rule for duplicate-order review --
+    // a new order after the mark could be a fresh duplicate, so it needs a
+    // fresh look instead of staying dismissed forever.
+    const reviewMark = duplicateReviewed[id] || null;
+    const duplicateReviewedFlag = Boolean(reviewMark?.reviewedAt)
+      && (!row.lastOrderAt || new Date(row.lastOrderAt) <= new Date(reviewMark.reviewedAt));
+    const { gameId, gameName, gameAuto } = resolveGocashGame(id, cardGameTags, channelGames);
     return {
       id,
       categoryId,
@@ -119,6 +246,9 @@ async function computeGocashCards(categoryId) {
       status: "active",
       source: "gocash",
       editable: false,
+      gameId,
+      gameName,
+      gameAuto,
       ...summary,
       deductedTotal: row.deductedTotal,
       remaining: row.remaining,
@@ -128,6 +258,10 @@ async function computeGocashCards(categoryId) {
       needsDustClear: isDust && !dustClearedFlag,
       dustClearedAt: dustClearedFlag ? mark.clearedAt : null,
       dustClearedByName: dustClearedFlag ? mark.clearedByName : null,
+      duplicateReviewed: duplicateReviewedFlag,
+      needsDuplicateReview: summary.duplicateCount > 0 && !duplicateReviewedFlag,
+      duplicateReviewedAt: duplicateReviewedFlag ? reviewMark.reviewedAt : null,
+      duplicateReviewedByName: duplicateReviewedFlag ? reviewMark.reviewedByName : null,
       lastOrderAt: row.lastOrderAt,
       orderIds: [...new Set(orders.map((o) => o.orderId).filter(Boolean))],
     };
@@ -194,7 +328,8 @@ export async function cardsForCategory(categoryId) {
     return deriveDustCards(await computeGocashCards("gocash"), categoryId);
   }
 
-  const cards = await repo.listCards(categoryId);
+  const [cards, games] = await Promise.all([repo.listCards(categoryId), repo.listChannelGames(categoryId)]);
+  const gameNameById = new Map(games.map((g) => [g.id, g.name]));
   return Promise.all(
     cards.map(async (card) => {
       const orders = markDuplicates(
@@ -211,6 +346,8 @@ export async function cardsForCategory(categoryId) {
         source: "manual",
         editable: true,
         openingBalance: card.openingBalance,
+        gameId: card.gameId,
+        gameName: card.gameId ? gameNameById.get(card.gameId) || null : null,
         ...summary,
         deductedTotal: card.deductedOverride ?? summary.saleTotal,
         lastOrderAt: orders.length ? orders[orders.length - 1].createdAt : null,
@@ -228,12 +365,18 @@ export async function cardDetail(categoryId, cardId) {
   let orders;
   if (card.source === "gocash") {
     const cardKey = cardId.split(":").slice(1).join(":");
-    const [rows, packCosts, overrides] = await Promise.all([
+    const [rows, effectiveRate, packCosts, platformPrices, platformFees, overrides] = await Promise.all([
       gocash.listHistoryForCard(cardKey),
+      gocashEffectiveRate(),
       repo.getPackCosts(),
+      repo.getAllPlatformPrices(),
+      repo.getAllPlatformFees(),
       repo.listGocashOverrides(),
     ]);
-    orders = markDuplicates(rows.map((r) => gocashOrderView(r, packCosts, overrides)), (o) => o.orderId);
+    orders = markDuplicates(
+      rows.map((r) => ({ ...gocashOrderView(r, effectiveRate, packCosts, platformPrices, platformFees, overrides), game: card.gameName })),
+      (o) => o.orderId
+    );
   } else if (card.source === "oxide") {
     const rows = await oxide.listOrdersForSerials([card.cardSerial]);
     orders = rows.map((r) => ({
@@ -259,7 +402,8 @@ export async function cardDetail(categoryId, cardId) {
   }
   orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const dustClearLog = card.source === "gocash" ? await repo.listDustClearLog(cardId) : [];
-  return { ...card, orders, dustClearLog };
+  const duplicateReviewLog = card.source === "gocash" ? await repo.listDuplicateReviewLog(cardId) : [];
+  return { ...card, orders, dustClearLog, duplicateReviewLog };
 }
 
 // ── Category summaries + dashboard totals ────────────────────────────────
@@ -279,7 +423,9 @@ export async function categorySummaries() {
     } else {
       cards = await cardsForCategory(category.id);
     }
-    const cardSummary = summarizeOrders(cards.map((c) => ({ saleAmount: c.saleTotal, cost: c.costTotal, isDuplicate: false })));
+    const cardSummary = summarizeOrders(
+      cards.map((c) => ({ saleAmount: c.saleTotal, cost: c.costTotal, profit: c.profitTotal, isDuplicate: false }))
+    );
     out.push({
       ...category,
       cardCount: cards.length,
@@ -289,7 +435,7 @@ export async function categorySummaries() {
       profitPct: cardSummary.profitPct,
       deductedTotal: cards.reduce((s, c) => s + c.deductedTotal, 0),
       remainingTotal: cards.reduce((s, c) => s + (c.remaining ?? 0), 0),
-      duplicateCardCount: cards.filter((c) => c.duplicateCount > 0).length,
+      duplicateCardCount: cards.filter((c) => c.duplicateCount > 0 && !c.duplicateReviewed).length,
     });
   }
   return out;
@@ -307,16 +453,20 @@ export async function dashboardSummary() {
   const human = rollupCategories.filter((c) => c.group === "human");
   const bot = rollupCategories.filter((c) => c.group === "bot");
 
-  const rollup = (list) => ({
-    cardCount: totalOf(list, "cardCount"),
-    saleTotal: totalOf(list, "saleTotal"),
-    costTotal: totalOf(list, "costTotal"),
-    profitTotal: totalOf(list, "profitTotal"),
-    profitPct: profitPct(totalOf(list, "saleTotal"), totalOf(list, "costTotal")),
-    deductedTotal: totalOf(list, "deductedTotal"),
-    remainingTotal: totalOf(list, "remainingTotal"),
-    duplicateCardCount: totalOf(list, "duplicateCardCount"),
-  });
+  const rollup = (list) => {
+    const saleTotal = totalOf(list, "saleTotal");
+    const profitTotal = totalOf(list, "profitTotal");
+    return {
+      cardCount: totalOf(list, "cardCount"),
+      saleTotal,
+      costTotal: totalOf(list, "costTotal"),
+      profitTotal,
+      profitPct: saleTotal > 0 ? (profitTotal / saleTotal) * 100 : 0,
+      deductedTotal: totalOf(list, "deductedTotal"),
+      remainingTotal: totalOf(list, "remainingTotal"),
+      duplicateCardCount: totalOf(list, "duplicateCardCount"),
+    };
+  };
 
   return {
     totals: rollup(rollupCategories),
@@ -328,10 +478,13 @@ export async function dashboardSummary() {
 
 // Flat GoCash history (newest first) so the category page can list every DB row.
 export async function gocashHistoryFeed(cards = null) {
-  const [rows, cardList, packCosts, overrides] = await Promise.all([
+  const [rows, cardList, effectiveRate, packCosts, platformPrices, platformFees, overrides] = await Promise.all([
     gocash.getAllRows(),
     cards ? Promise.resolve(cards) : cardsForCategory("gocash"),
+    gocashEffectiveRate(),
     repo.getPackCosts(),
+    repo.getAllPlatformPrices(),
+    repo.getAllPlatformFees(),
     repo.listGocashOverrides(),
   ]);
   const byCard = new Map(cardList.map((c) => [c.id, c]));
@@ -345,9 +498,10 @@ export async function gocashHistoryFeed(cards = null) {
   const newestFirst = [...rows].reverse();
   return newestFirst.map((row) => {
     const card = byCard.get(`gocash:${gocash.cardKey(row.cardSerial, row.slotIndex)}`);
-    const view = gocashOrderView(row, packCosts, overrides);
+    const view = gocashOrderView(row, effectiveRate, packCosts, platformPrices, platformFees, overrides);
     return {
       ...view,
+      game: card?.gameName || null,
       cardId: card?.id || null,
       cardName: card?.name || (row.slotIndex == null ? "-" : `Slot ${row.slotIndex}`),
       slotIndex: row.slotIndex,
@@ -389,7 +543,9 @@ async function listKnownPacks() {
 }
 
 // Lets the team set a cost once per pack instead of touching every
-// individual order.
+// individual order. For GoCash this is a fallback below the per-order
+// override but above the rate formula -- see gocashOrderView's cost
+// priority comment.
 export async function packCostSummary() {
   const [known, packCosts] = await Promise.all([listKnownPacks(), repo.getPackCosts()]);
   return known
@@ -397,25 +553,57 @@ export async function packCostSummary() {
     .sort((a, b) => b.orderCount - a.orderCount);
 }
 
-// Reference price list for one resale platform (Kaleoz, USDT Russia, ...) —
-// staff read this while typing the sale price into an actual order by hand;
-// nothing here writes back into orders automatically, since no order record
-// says which platform it was sold through.
+// Reference price list for one resale platform (Kaleoz, USDT Russia, ...).
+// For GoCash orders this also feeds the sale-price fallback in
+// gocashOrderView -- once an order's platform is known (from codashop_orders
+// or a manual tag), its sale price is pulled straight from here instead of
+// always being typed in by hand.
+//
+// orderCount here is scoped to *this* platform (how many orders actually
+// sold through it), not the pack's total across every source -- otherwise
+// every platform's page would show the same number and there'd be no way to
+// tell how much each platform actually sold. Oxide has no platform tagging
+// yet, so its packs always show 0 here (accurate: there's no data saying
+// which platform they went through), unlike packCostSummary's orderCount
+// which stays the untagged grand total since cost isn't platform-specific.
 export async function platformPackPrices(platform) {
-  const [known, prices] = await Promise.all([listKnownPacks(), repo.getPlatformPrices(platform)]);
+  const [known, prices, gocashRows] = await Promise.all([listKnownPacks(), repo.getPlatformPrices(platform), gocash.getAllRows()]);
+  const orderCountByPack = {};
+  for (const r of gocashRows) {
+    if (r.platform !== platform || !r.packName) continue;
+    const key = `gocash:${r.packName}`;
+    orderCountByPack[key] = (orderCountByPack[key] || 0) + 1;
+  }
   return known
-    .map((p) => ({ ...p, price: prices[`${p.source}:${p.packName}`] ?? null }))
+    .map((p) => {
+      const key = `${p.source}:${p.packName}`;
+      return { ...p, orderCount: orderCountByPack[key] || 0, price: prices[key] ?? null };
+    })
     .sort((a, b) => b.orderCount - a.orderCount);
 }
 
 // Small overview across every platform at once -- how many of the known
 // packs each one has priced, so the team can tell at a glance which
-// platform (Kaleoz, USDT Russia, ...) still needs filling in.
+// platform (Kaleoz, USDT Russia, ...) still needs filling in. Also surfaces
+// platforms nobody has priced a single pack for yet, as long as
+// codashop_orders.source has actually tagged a real GoCash order with them --
+// staff can still add any other name by hand from the sale-prices page too.
 export async function platformSummary() {
-  const [known, counts] = await Promise.all([listKnownPacks(), repo.getPlatformPriceCounts()]);
+  const [known, counts, gocashRows] = await Promise.all([listKnownPacks(), repo.getPlatformPriceCounts(), gocash.getAllRows()]);
   const totalPacks = known.length;
-  return {
-    totalPacks,
-    platforms: counts.map((p) => ({ ...p, missingCount: totalPacks - p.pricedCount })),
-  };
+  const pricedCountByPlatform = new Map(counts.map((p) => [p.platform, p.pricedCount]));
+  for (const row of gocashRows) {
+    if (row.platform && !pricedCountByPlatform.has(row.platform)) pricedCountByPlatform.set(row.platform, 0);
+  }
+  const detected = new Set(gocashRows.map((r) => r.platform).filter(Boolean));
+  const platforms = [...pricedCountByPlatform.entries()]
+    .map(([platform, pricedCount]) => ({
+      platform,
+      pricedCount,
+      missingCount: totalPacks - pricedCount,
+      autoDetected: detected.has(platform),
+    }))
+    .sort((a, b) => a.platform.localeCompare(b.platform));
+  return { totalPacks, platforms };
 }
+

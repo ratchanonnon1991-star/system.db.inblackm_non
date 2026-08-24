@@ -2,6 +2,10 @@ import { handleApiError, jsonOk } from "@/lib/http";
 import { requireProfitEditor } from "@/server/auth";
 import { setGocashOverride } from "@/server/profit-repository";
 
+// Manual platform tag is only relevant when codashop_orders.source has none
+// for this order (see gocashOrderView in profit-aggregate.js) -- the sale
+// price then falls back live to that platform's reference price on every
+// read, so there's no separate "pull the price now" step needed here.
 export async function PATCH(request, { params }) {
   try {
     await requireProfitEditor(request);

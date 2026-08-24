@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, Plus, Tag } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { useProfitCanEdit } from "@/components/profit-capabilities-context";
+import { platformLabel } from "@/components/profit-platform-select";
 
 // Landing view for "ตั้งราคาขายตามแพ็ก": just the platform cards (same
 // tile-grid look as the hub's System DB / GameInfo / Projectm / Profit
@@ -79,7 +80,17 @@ export default function ProfitSalePricesPage() {
               <Tag size={19} />
             </span>
             <span className="min-w-0">
-              <span className="block truncate text-[15px] font-medium text-ll-ink">{p.platform}</span>
+              <span className="flex items-center gap-1.5">
+                <span className="block truncate text-[15px] font-medium text-ll-ink">{platformLabel(p.platform)}</span>
+                {p.autoDetected && (
+                  <span
+                    title="ตรวจพบจากออเดอร์ GoCash จริง (codashop_orders.source) อัตโนมัติ"
+                    className="shrink-0 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600"
+                  >
+                    จาก DB
+                  </span>
+                )}
+              </span>
               <span className="mt-0.5 block text-[12px] text-ll-ink-subtle">
                 ตั้งราคาแล้ว {p.pricedCount}/{summary.totalPacks} แพ็ก
               </span>
