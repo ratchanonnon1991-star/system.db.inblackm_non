@@ -177,7 +177,8 @@ export default function GameinfoPackEditor({
     surface: "edit",
     lockRequired: true,
   });
-  useGameinfoUnsavedChanges(dirty || packLayout.dirty);
+  const languageDraftDirty = Boolean(languageDraft.trim());
+  useGameinfoUnsavedChanges(dirty || packLayout.dirty || languageDraftDirty);
 
   const sampleRow = useMemo(() => {
     const pack = firstPack(currencies);
@@ -473,6 +474,9 @@ export default function GameinfoPackEditor({
         setSavedAt(null);
         setSavedVisible(false);
         setAuditSource("editor");
+        setLanguageDraft("");
+        setAddingLanguage(false);
+        setLanguageError("");
       },
     });
   }

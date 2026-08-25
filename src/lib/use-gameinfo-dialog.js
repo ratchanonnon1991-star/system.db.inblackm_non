@@ -11,6 +11,23 @@ const FOCUSABLE = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(",");
 
+let bodyScrollLockCount = 0;
+let bodyOverflowBeforeLock = "";
+const openDialogs = [];
+
+function lockBodyScroll() {
+  if (bodyScrollLockCount === 0) bodyOverflowBeforeLock = document.body.style.overflow;
+  bodyScrollLockCount += 1;
+  document.body.style.overflow = "hidden";
+}
+
+function unlockBodyScroll() {
+  bodyScrollLockCount = Math.max(0, bodyScrollLockCount - 1);
+  if (bodyScrollLockCount > 0) return;
+  document.body.style.overflow = bodyOverflowBeforeLock;
+  bodyOverflowBeforeLock = "";
+}
+
 export function useGameinfoDialog({ open = true, onRequestClose }) {
   const dialogRef = useRef(null);
   const closeRef = useRef(onRequestClose);
@@ -23,8 +40,9 @@ export function useGameinfoDialog({ open = true, onRequestClose }) {
   useEffect(() => {
     if (!open) return;
     const previousFocus = document.activeElement;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const dialogToken = Symbol();
+    openDialogs.push(dialogToken);
+    lockBodyScroll();
 
     const focusTimer = window.setTimeout(() => {
       const dialog = dialogRef.current;
@@ -33,6 +51,7 @@ export function useGameinfoDialog({ open = true, onRequestClose }) {
     }, 0);
 
     function onKeyDown(event) {
+      if (openDialogs[openDialogs.length - 1] !== dialogToken) return;
       if (event.key === "Escape") {
         event.preventDefault();
         closeRef.current?.();
@@ -59,10 +78,15 @@ export function useGameinfoDialog({ open = true, onRequestClose }) {
 
     document.addEventListener("keydown", onKeyDown);
     return () => {
+      const wasTopDialog = openDialogs[openDialogs.length - 1] === dialogToken;
+      const dialogIndex = openDialogs.lastIndexOf(dialogToken);
+      if (dialogIndex >= 0) openDialogs.splice(dialogIndex, 1);
       window.clearTimeout(focusTimer);
       document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = previousOverflow;
-      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus({ preventScroll: true });
+      unlockBodyScroll();
+      if (wasTopDialog && previousFocus instanceof HTMLElement && previousFocus.isConnected) {
+        previousFocus.focus({ preventScroll: true });
+      }
     };
   }, [open]);
 

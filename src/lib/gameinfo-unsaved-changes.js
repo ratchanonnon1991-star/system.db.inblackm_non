@@ -58,6 +58,10 @@ export function requestGameinfoReload() {
   dispatchNavigationRequest({ kind: "reload" });
 }
 
+export function hasGameinfoUnsavedChanges() {
+  return dirtySources.size > 0;
+}
+
 function readGameinfoHistory() {
   try {
     return normalizeGameinfoHistoryStack(JSON.parse(window.sessionStorage.getItem(GAMEINFO_HISTORY_KEY) || "[]"));

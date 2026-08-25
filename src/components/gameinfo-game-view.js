@@ -18,6 +18,7 @@ import {
 } from "@/lib/gameinfo-pack-columns";
 import { getGameinfoFormulaDisplay } from "@/lib/gameinfo-formula-overrides";
 import { evaluateGameinfoComputedColumn } from "@/lib/gameinfo-computed-evaluator";
+import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
 import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
 import { useGameinfoRates } from "./gameinfo-rate-panel";
 import GameinfoImagePreview from "./gameinfo-image-preview";
@@ -61,6 +62,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
     gameId: row.id,
     surface: "view",
   });
+  useGameinfoUnsavedChanges(packLayout.dirty);
 
   return (
     <div>
