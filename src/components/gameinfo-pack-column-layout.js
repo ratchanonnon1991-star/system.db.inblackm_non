@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Columns3, Copy, LoaderCircle, Plus, RotateCcw, Save, Trash2, X } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import { requestGameinfoDiscard } from "@/lib/gameinfo-unsaved-changes";
 import {
   gameinfoPackLayoutStorageKey,
   normalizeGameinfoPackLayout,
@@ -68,7 +69,6 @@ export function useGameinfoPackColumnLayout({
     [baselineLayout, columns, lockRequired]
   );
   const dirty =
-    legacyDraft ||
     presetName !== baselineName ||
     !sameLayout(normalizedLayout, normalizedBaseline);
 
@@ -177,15 +177,26 @@ export function useGameinfoPackColumnLayout({
   function selectPreset(presetId) {
     const selected = presets.find((preset) => String(preset.id) === String(presetId));
     if (!selected || String(selected.id) === selectedPresetId) return;
-    if (dirty && !window.confirm("เปลี่ยน preset? การตั้งค่าคอลัมน์ที่ยังไม่บันทึกจะหายไป")) return;
-    setLayout(selected.layout);
-    setBaselineLayout(selected.layout);
-    setSelectedPresetId(String(selected.id));
-    setPresetName(selected.name || "");
-    setBaselineName(selected.name || "");
-    setLegacyDraft(false);
-    setError("");
-    setNotice("");
+    const applySelectedPreset = () => {
+      setLayout(selected.layout);
+      setBaselineLayout(selected.layout);
+      setSelectedPresetId(String(selected.id));
+      setPresetName(selected.name || "");
+      setBaselineName(selected.name || "");
+      setLegacyDraft(false);
+      setError("");
+      setNotice("");
+    };
+    if (dirty) {
+      requestGameinfoDiscard({
+        title: "เปลี่ยน preset?",
+        message: "การตั้งค่าคอลัมน์ที่ยังไม่บันทึกจะหายไป",
+        confirmLabel: "เปลี่ยน preset",
+        onConfirm: applySelectedPreset,
+      });
+      return;
+    }
+    applySelectedPreset();
   }
 
   async function savePreset({ asNew = false } = {}) {

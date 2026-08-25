@@ -15,22 +15,33 @@ export function normalizeGameinfoNumericInput(value) {
   return fraction == null || fraction === "" ? whole : `${whole}.${fraction}`;
 }
 
-export function findDuplicateGameinfoPackPrices(currencies) {
-  const byPrice = new Map();
+function gameinfoPackPriceKey(value) {
+  const price = normalizeGameinfoNumericInput(value);
+  if (!price) return "";
+  const [whole, rawFraction = ""] = price.split(".");
+  const fraction = rawFraction.replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}` : whole;
+}
+
+function gameinfoPackNameKey(value) {
+  return String(value ?? "").trim().normalize("NFKC").toLocaleLowerCase();
+}
+
+export function findDuplicateGameinfoPackNamePrices(currencies) {
+  const byNameAndPrice = new Map();
   for (const currency of currencies || []) {
     for (const category of currency.categories || []) {
       for (const pack of category.packs || []) {
-        const price = normalizeGameinfoNumericInput(pack.price);
-        if (!price) continue;
-        const [whole, rawFraction = ""] = price.split(".");
-        const fraction = rawFraction.replace(/0+$/, "");
-        const numericKey = fraction ? `${whole}.${fraction}` : whole;
-        if (!byPrice.has(numericKey)) byPrice.set(numericKey, []);
-        byPrice.get(numericKey).push(pack.id);
+        const nameKey = gameinfoPackNameKey(pack.name);
+        const priceKey = gameinfoPackPriceKey(pack.price);
+        if (!nameKey || !priceKey) continue;
+        const key = JSON.stringify([nameKey, priceKey]);
+        if (!byNameAndPrice.has(key)) byNameAndPrice.set(key, []);
+        byNameAndPrice.get(key).push(pack.id);
       }
     }
   }
   return new Set(
-    [...byPrice.values()].filter((packIds) => packIds.length > 1).flat()
+    [...byNameAndPrice.values()].filter((packIds) => packIds.length > 1).flat()
   );
 }

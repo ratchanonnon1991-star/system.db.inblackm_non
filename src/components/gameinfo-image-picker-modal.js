@@ -4,6 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Image as ImageIcon, Link as LinkIcon, Upload, X } from "lucide-react";
 import { useGameinfoDialog } from "@/lib/use-gameinfo-dialog";
+import {
+  requestGameinfoDiscard,
+  useGameinfoUnsavedChanges,
+} from "@/lib/gameinfo-unsaved-changes";
 
 // data: URLs go straight into the pack row's JSONB, keep it modest.
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
@@ -21,7 +25,22 @@ export default function GameinfoImagePickerModal({ value, onChange, onClose }) {
   const [url, setUrl] = useState(value || "");
   const [error, setError] = useState("");
   const fileRef = useRef(null);
-  const { dialogRef, titleId, onBackdropMouseDown } = useGameinfoDialog({ onRequestClose: onClose });
+  const dirty = url.trim() !== String(value || "").trim();
+  useGameinfoUnsavedChanges(dirty);
+
+  function requestClose() {
+    if (dirty) {
+      requestGameinfoDiscard({
+        message: "URL รูปภาพที่ยังไม่บันทึกจะหายไป",
+        confirmLabel: "ปิดโดยไม่บันทึก",
+        onConfirm: onClose,
+      });
+      return;
+    }
+    onClose();
+  }
+
+  const { dialogRef, titleId, onBackdropMouseDown } = useGameinfoDialog({ onRequestClose: requestClose });
 
   function commitUrl() {
     onChange(url.trim());
@@ -87,7 +106,7 @@ export default function GameinfoImagePickerModal({ value, onChange, onClose }) {
           <h2 id={titleId} className="text-sm font-semibold text-linear-ink">ใส่รูปภาพ</h2>
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             className="flex h-6 w-6 items-center justify-center rounded text-linear-ink-tertiary hover:bg-linear-surface-2 hover:text-linear-ink"
             aria-label="ปิด"
           >

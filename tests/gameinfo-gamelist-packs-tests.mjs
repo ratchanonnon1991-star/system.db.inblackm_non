@@ -159,15 +159,20 @@ async function run() {
   ok("save: legacy amountCharged is not persisted", !("amountCharged" in firstPackData));
   check("save: the second pack keeps its own position", JSON.parse(packInserts[1].params[2]).packOrder, 1);
 
-  const duplicatePriceTree = structuredClone(ORIGINAL_TREE);
-  duplicatePriceTree[0].categories[0].packs[1].price = "010.00";
-  let duplicatePriceError = null;
+  const duplicateNamePriceTree = structuredClone(ORIGINAL_TREE);
+  duplicateNamePriceTree[0].categories[0].packs[1].name = " pack a ";
+  duplicateNamePriceTree[0].categories[0].packs[1].price = "010.00";
+  let duplicateNamePriceError = null;
   try {
-    await saveGamelistPacks(5, { currencies: duplicatePriceTree, computedColumns: [] });
+    await saveGamelistPacks(5, { currencies: duplicateNamePriceTree, computedColumns: [] });
   } catch (error) {
-    duplicatePriceError = error;
+    duplicateNamePriceError = error;
   }
-  check("save: rejects duplicate numeric prices server-side", [duplicatePriceError?.status, duplicatePriceError?.message], [400, "ราคา Pack ต้องไม่ซ้ำกัน"]);
+  check(
+    "save: rejects duplicate name and numeric price pairs server-side",
+    [duplicateNamePriceError?.status, duplicateNamePriceError?.message],
+    [400, "ชื่อ Pack และราคาห้ามซ้ำกันพร้อมกัน"]
+  );
 
   const sentinelInsert = log.find(
     (e) => /^INSERT INTO gamelist_packs/.test(e.text) && e.params?.[1] === "__computed__"

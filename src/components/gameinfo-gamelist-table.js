@@ -32,7 +32,10 @@ import {
   Trash2,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
-import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
+import {
+  requestGameinfoReload,
+  useGameinfoUnsavedChanges,
+} from "@/lib/gameinfo-unsaved-changes";
 import { gameinfoGameHref, gameinfoPacksHref } from "@/lib/gameinfo-data-mode";
 import GameinfoMemoryInput from "./gameinfo-memory-input";
 import GameinfoNameInput from "./gameinfo-name-input";
@@ -682,7 +685,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
       {saveError ? (
         <div role="alert" className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-linear-danger/30 bg-linear-danger-bg px-3 py-2 text-sm text-linear-danger">
           <span>{saveError} ข้อมูลบางส่วนอาจถูกบันทึกแล้ว</span>
-          <button type="button" onClick={() => window.location.reload()} className="shrink-0 underline">โหลดข้อมูลล่าสุด</button>
+          <button type="button" onClick={requestGameinfoReload} className="shrink-0 underline">โหลดข้อมูลล่าสุด</button>
         </div>
       ) : null}
 

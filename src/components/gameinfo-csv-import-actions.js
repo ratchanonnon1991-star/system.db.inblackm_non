@@ -12,6 +12,10 @@ import {
   X,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import {
+  allowGameinfoNavigation,
+  requestGameinfoDiscard,
+} from "@/lib/gameinfo-unsaved-changes";
 
 const CONFIG = {
   games: {
@@ -73,7 +77,10 @@ export default function GameinfoCsvImportActions({ hasUnsavedChanges = false, da
 
   function close() {
     if (busy) return;
-    if (success) window.location.reload();
+    if (success) {
+      allowGameinfoNavigation();
+      window.location.reload();
+    }
     else setKind(null);
   }
 
@@ -99,9 +106,8 @@ export default function GameinfoCsvImportActions({ hasUnsavedChanges = false, da
     }
   }
 
-  async function applyImport() {
+  async function performImport() {
     if (!file || !preview) return;
-    if (hasUnsavedChanges && !window.confirm("มีข้อมูลในตารางที่ยังไม่บันทึก การนำเข้าแล้วโหลดหน้าใหม่จะทิ้งข้อมูลนั้น ดำเนินการต่อหรือไม่?")) return;
     setBusy(true);
     setError("");
     try {
@@ -124,6 +130,19 @@ export default function GameinfoCsvImportActions({ hasUnsavedChanges = false, da
     } finally {
       setBusy(false);
     }
+  }
+
+  function applyImport() {
+    if (!file || !preview) return;
+    if (hasUnsavedChanges) {
+      requestGameinfoDiscard({
+        message: "มีข้อมูลในตารางที่ยังไม่บันทึก การนำเข้าแล้วโหลดหน้าใหม่จะทิ้งข้อมูลนั้น",
+        confirmLabel: "นำเข้าต่อ",
+        onConfirm: () => { void performImport(); },
+      });
+      return;
+    }
+    void performImport();
   }
 
   const errors = preview?.errors || [];

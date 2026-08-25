@@ -11,7 +11,7 @@
 // shape the whole way through.
 import { getPoolForConnection } from "@/lib/db";
 import { sanitizeGameinfoPack } from "@/lib/gameinfo-pack-model";
-import { findDuplicateGameinfoPackPrices } from "@/lib/gameinfo-pack-validation";
+import { findDuplicateGameinfoPackNamePrices } from "@/lib/gameinfo-pack-validation";
 import {
   sanitizeGameinfoCostProfiles,
   validateGameinfoCostProfiles,
@@ -28,9 +28,9 @@ function createHttpError(message, status) {
   return err;
 }
 
-function assertUniquePackPrices(currencies) {
-  if (findDuplicateGameinfoPackPrices(currencies).size === 0) return;
-  throw createHttpError("ราคา Pack ต้องไม่ซ้ำกัน", 400);
+function assertUniquePackNamePrices(currencies) {
+  if (findDuplicateGameinfoPackNamePrices(currencies).size === 0) return;
+  throw createHttpError("ชื่อ Pack และราคาห้ามซ้ำกันพร้อมกัน", 400);
 }
 
 // --- currencies[] (UI shape) <-> gamelist_packs rows (storage shape) -----
@@ -273,7 +273,7 @@ export async function saveGamelistPacks(
   { currencies, computedColumns, costProfiles, actor = null, source = "editor" },
   transactionClient = null
 ) {
-  assertUniquePackPrices(currencies);
+  assertUniquePackNamePrices(currencies);
   const pool = await getReadyPool();
   const client = transactionClient || await pool.connect();
   let transactionResult;
@@ -433,7 +433,7 @@ export async function importGamelistPacks(games, mode = "replace", actor = null)
       const previousRows = previousResult.rows.filter((row) => row.pack_id !== COMPUTED_SENTINEL);
       let currencies = Array.isArray(game.currencies) ? game.currencies : [];
       if (mode === "add") currencies = mergeCurrencies(reconstructCurrencies(previousRows), currencies);
-      assertUniquePackPrices(currencies);
+      assertUniquePackNamePrices(currencies);
       const nextRows = flattenCurrencies(game.gameId, currencies);
       const computedColumns = Array.isArray(previousComputed?.data?.columns)
         ? previousComputed.data.columns

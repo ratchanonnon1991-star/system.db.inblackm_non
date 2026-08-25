@@ -10,7 +10,7 @@ import { validateGameinfoComputedDependencies } from "@/lib/gameinfo-computed-ev
 import { getGameinfoFormulaVariables } from "@/server/gameinfo-formula-variables";
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { updateGameinfoModeData } from "@/server/gameinfo-mode-data";
-import { findDuplicateGameinfoPackPrices } from "@/lib/gameinfo-pack-validation";
+import { findDuplicateGameinfoPackNamePrices } from "@/lib/gameinfo-pack-validation";
 
 export async function PUT(request, { params }) {
   try {
@@ -24,8 +24,8 @@ export async function PUT(request, { params }) {
       ? body.auditSource
       : "editor";
     const currencies = Array.isArray(body.currencies) ? body.currencies : [];
-    if (findDuplicateGameinfoPackPrices(currencies).size > 0) {
-      return jsonError("ราคา Pack ต้องไม่ซ้ำกัน", 400);
+    if (findDuplicateGameinfoPackNamePrices(currencies).size > 0) {
+      return jsonError("ชื่อ Pack และราคาห้ามซ้ำกันพร้อมกัน", 400);
     }
     const packIds = currencies.flatMap((currency) =>
       (currency?.categories || []).flatMap((category) =>

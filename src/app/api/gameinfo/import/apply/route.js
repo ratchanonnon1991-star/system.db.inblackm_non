@@ -6,7 +6,7 @@ import { listGameListRows, withGameinfoTransaction } from "@/server/gameinfo-gam
 import { auditActor, importGamelistPacks, recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { getGameinfoModeData, saveGameinfoModeData } from "@/server/gameinfo-mode-data";
-import { findDuplicateGameinfoPackPrices } from "@/lib/gameinfo-pack-validation";
+import { findDuplicateGameinfoPackNamePrices } from "@/lib/gameinfo-pack-validation";
 
 export async function PUT(request) {
   try {
@@ -30,8 +30,8 @@ export async function PUT(request) {
       ...validatePackRows(rows),
     ];
     for (const game of parsed.perGame) {
-      if (findDuplicateGameinfoPackPrices(game.currencies).size > 0) {
-        errors.push(`game_id ${game.gameId}: ราคา Pack ต้องไม่ซ้ำกัน`);
+      if (findDuplicateGameinfoPackNamePrices(game.currencies).size > 0) {
+        errors.push(`game_id ${game.gameId}: ชื่อ Pack และราคาห้ามซ้ำกันพร้อมกัน`);
       }
     }
     const existingIds = new Set((await listGameListRows()).map((game) => Number(game.id)));
@@ -47,8 +47,8 @@ export async function PUT(request) {
           const currencies = mode === "add"
             ? mergeCurrencies(current.packs.currencies, game.currencies)
             : game.currencies;
-          if (findDuplicateGameinfoPackPrices(currencies).size > 0) {
-            const error = new Error(`game_id ${game.gameId}: ราคา Pack ต้องไม่ซ้ำกัน`);
+          if (findDuplicateGameinfoPackNamePrices(currencies).size > 0) {
+            const error = new Error(`game_id ${game.gameId}: ชื่อ Pack และราคาห้ามซ้ำกันพร้อมกัน`);
             error.status = 400;
             throw error;
           }

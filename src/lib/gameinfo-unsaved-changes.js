@@ -23,6 +23,41 @@ export function allowGameinfoNavigation() {
   }, 1000);
 }
 
+export function isGameinfoNavigationLeaving(currentHref, destinationHref) {
+  try {
+    const fallbackOrigin = "http://gameinfo.local";
+    const current = new URL(currentHref, fallbackOrigin);
+    const destination = new URL(destinationHref, current.href);
+    return current.origin !== destination.origin ||
+      current.pathname !== destination.pathname ||
+      current.search !== destination.search;
+  } catch {
+    return true;
+  }
+}
+
+function dispatchNavigationRequest(detail) {
+  window.dispatchEvent(new CustomEvent(GAMEINFO_NAVIGATION_REQUEST, { detail }));
+}
+
+export function requestGameinfoDiscard({
+  title = "มีข้อมูลที่ยังไม่บันทึก",
+  message = "หากดำเนินการต่อ การแก้ไขล่าสุดจะหายไป",
+  confirmLabel = "ละทิ้งการแก้ไข",
+  onConfirm,
+}) {
+  dispatchNavigationRequest({ kind: "discard", title, message, confirmLabel, onConfirm });
+}
+
+export function requestGameinfoReload() {
+  if (dirtySources.size === 0) {
+    allowGameinfoNavigation();
+    window.location.reload();
+    return;
+  }
+  dispatchNavigationRequest({ kind: "reload" });
+}
+
 function readGameinfoHistory() {
   try {
     return normalizeGameinfoHistoryStack(JSON.parse(window.sessionStorage.getItem(GAMEINFO_HISTORY_KEY) || "[]"));
@@ -61,9 +96,7 @@ export function requestGameinfoBack(fallbackHref) {
     performGameinfoBack(fallbackHref);
     return;
   }
-  window.dispatchEvent(new CustomEvent(GAMEINFO_NAVIGATION_REQUEST, {
-    detail: { action: "back", fallbackHref },
-  }));
+  dispatchNavigationRequest({ kind: "back", fallbackHref });
 }
 
 export function requestGameinfoNavigation(href) {
@@ -72,7 +105,7 @@ export function requestGameinfoNavigation(href) {
     window.location.assign(href);
     return;
   }
-  window.dispatchEvent(new CustomEvent(GAMEINFO_NAVIGATION_REQUEST, { detail: { href } }));
+  dispatchNavigationRequest({ kind: "navigate", href });
 }
 
 function listen() {
@@ -87,17 +120,19 @@ function listen() {
     if (dirtySources.size === 0 || !event.cancelable || allowingNavigation) return;
     const href = event.destination?.url;
     if (!href) return;
+    if (!isGameinfoNavigationLeaving(window.location.href, href)) return;
     event.preventDefault();
-    window.dispatchEvent(new CustomEvent(GAMEINFO_NAVIGATION_REQUEST, { detail: { href } }));
+    dispatchNavigationRequest({ kind: "navigate", href });
   });
   document.addEventListener("click", (event) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const link = event.target.closest?.("a[href]");
     if (!link || link.target === "_blank" || link.hasAttribute("download") || link.getAttribute("href")?.startsWith("#")) return;
     if (dirtySources.size === 0) return;
+    if (!isGameinfoNavigationLeaving(window.location.href, link.href)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    window.dispatchEvent(new CustomEvent(GAMEINFO_NAVIGATION_REQUEST, { detail: { href: link.href } }));
+    dispatchNavigationRequest({ kind: "navigate", href: link.href });
   }, true);
 }
 

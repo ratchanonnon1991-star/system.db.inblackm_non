@@ -13,6 +13,10 @@ import { GAMEINFO_FORMULA_FUNCTION_HELP } from "@/lib/gameinfo-formula-help";
 import { formatGameinfoPackColumnValue, GAMEINFO_PACK_SYMBOLS } from "@/lib/gameinfo-pack-columns";
 import { validateGameinfoComputedDependencies } from "@/lib/gameinfo-computed-evaluator";
 import { useGameinfoDialog } from "@/lib/use-gameinfo-dialog";
+import {
+  requestGameinfoDiscard,
+  useGameinfoUnsavedChanges,
+} from "@/lib/gameinfo-unsaved-changes";
 
 // Same parser, validation and function library as the systemdb-side formula
 // editor (gamedb-modals.js's ComputedColumnModal) — this one is a full
@@ -49,7 +53,27 @@ export default function GameinfoComputedEditor({
   const [typeChoice, setTypeChoice] = useState(initialColumn?.type || "");
   const [symbol, setSymbol] = useState(initialColumn?.symbol || "");
   const [resetOverrides, setResetOverrides] = useState(false);
-  const { dialogRef, titleId, onBackdropMouseDown } = useGameinfoDialog({ onRequestClose: onClose });
+  const dirty =
+    label.trim() !== String(initialColumn?.label || "").trim() ||
+    formula.trim() !== String(initialColumn?.formula || "").trim() ||
+    typeChoice !== (initialColumn?.type || "") ||
+    symbol !== (initialColumn?.symbol || "") ||
+    resetOverrides;
+  useGameinfoUnsavedChanges(dirty);
+
+  function requestClose() {
+    if (dirty) {
+      requestGameinfoDiscard({
+        message: "สูตรที่ยังไม่บันทึกจะหายไป",
+        confirmLabel: "ปิดโดยไม่บันทึก",
+        onConfirm: onClose,
+      });
+      return;
+    }
+    onClose();
+  }
+
+  const { dialogRef, titleId, onBackdropMouseDown } = useGameinfoDialog({ onRequestClose: requestClose });
 
   const validation = useMemo(() => {
     if (!formula.trim()) return { ok: false, message: "", type: "number" };
@@ -120,7 +144,7 @@ export default function GameinfoComputedEditor({
           </h2>
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             className="flex h-7 w-7 items-center justify-center rounded text-linear-ink-tertiary hover:bg-linear-surface-2 hover:text-linear-ink"
             aria-label="ปิด"
           >

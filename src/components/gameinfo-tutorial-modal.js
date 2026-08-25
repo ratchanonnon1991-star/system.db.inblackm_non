@@ -5,6 +5,10 @@ import { createPortal } from "react-dom";
 import { Bold, CheckCircle2, ChevronLeft, ChevronRight, Link as LinkIcon, Plus, Trash2, TriangleAlert, Type, X } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { useGameinfoDialog } from "@/lib/use-gameinfo-dialog";
+import {
+  requestGameinfoDiscard,
+  useGameinfoUnsavedChanges,
+} from "@/lib/gameinfo-unsaved-changes";
 import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoMemoryInput from "./gameinfo-memory-input";
 
@@ -241,10 +245,9 @@ export function TutorialModal({ gameId, gameName, editable, variant, contentVari
   const [savedAt, setSavedAt] = useState(null);
   const [warningAutoOpen, setWarningAutoOpen] = useState(false);
   const closeTimerRef = useRef(null);
-  // Snapshot of the last loaded/saved categories, to detect unsaved edits
-  // when the user tries to close — kept as a JSON string ref (not state) so
-  // updating it never triggers a re-render on its own.
-  const savedSnapshotRef = useRef(null);
+  // Snapshot of the last loaded/saved categories, used by both the modal's
+  // close confirmation and the page-level unsaved-navigation guard.
+  const [savedSnapshot, setSavedSnapshot] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -259,7 +262,7 @@ export function TutorialModal({ gameId, gameName, editable, variant, contentVari
           setActiveCatId(data[dataKey].categories[0]?.id ?? null);
           const nextAutoOpen = activeVariant === "warning" && Boolean(data[dataKey].autoOpen);
           setWarningAutoOpen(nextAutoOpen);
-          savedSnapshotRef.current = JSON.stringify({ categories: data[dataKey].categories, autoOpen: nextAutoOpen });
+          setSavedSnapshot(JSON.stringify({ categories: data[dataKey].categories, autoOpen: nextAutoOpen }));
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : `โหลด${contentLabel}ไม่สำเร็จ`);
@@ -272,26 +275,45 @@ export function TutorialModal({ gameId, gameName, editable, variant, contentVari
     };
   }, [activeVariant, contentLabel, dataKey, endpoint]);
 
-  function isDirty() {
-    return editable && savedSnapshotRef.current !== null && JSON.stringify({ categories, autoOpen: activeVariant === "warning" && warningAutoOpen }) !== savedSnapshotRef.current;
-  }
+  const dirty = editable && savedSnapshot !== null && JSON.stringify({
+    categories,
+    autoOpen: activeVariant === "warning" && warningAutoOpen,
+  }) !== savedSnapshot;
+  useGameinfoUnsavedChanges(dirty);
 
   function requestClose() {
-    if (isDirty() && !window.confirm("ยังไม่ได้บันทึกการแก้ไข ต้องการปิดโดยไม่บันทึกหรือไม่?")) return;
+    if (dirty) {
+      requestGameinfoDiscard({
+        message: `${contentLabel}ที่ยังไม่บันทึกจะหายไป`,
+        confirmLabel: "ปิดโดยไม่บันทึก",
+        onConfirm: onClose,
+      });
+      return;
+    }
     onClose();
   }
 
   function switchContentVariant(nextVariant) {
     if (nextVariant === activeVariant) return;
-    if (isDirty() && !window.confirm("ยังไม่ได้บันทึกการแก้ไข ต้องการเปลี่ยนแท็บโดยไม่บันทึกหรือไม่?")) return;
-    setActiveVariant(nextVariant);
-    setLoading(true);
-    setCategories([]);
-    setCategoryNames([]);
-    setActiveCatId(null);
-    setError("");
-    setSavedAt(null);
-    savedSnapshotRef.current = null;
+    const switchVariant = () => {
+      setActiveVariant(nextVariant);
+      setLoading(true);
+      setCategories([]);
+      setCategoryNames([]);
+      setActiveCatId(null);
+      setError("");
+      setSavedAt(null);
+      setSavedSnapshot(null);
+    };
+    if (dirty) {
+      requestGameinfoDiscard({
+        message: `${contentLabel}ที่ยังไม่บันทึกจะหายไปเมื่อเปลี่ยนแท็บ`,
+        confirmLabel: "เปลี่ยนแท็บ",
+        onConfirm: switchVariant,
+      });
+      return;
+    }
+    switchVariant();
   }
 
   const { dialogRef, titleId, onBackdropMouseDown } = useGameinfoDialog({ onRequestClose: requestClose });
@@ -354,7 +376,7 @@ export function TutorialModal({ gameId, gameName, editable, variant, contentVari
       setCategories(data[dataKey].categories);
       const nextAutoOpen = activeVariant === "warning" && Boolean(data[dataKey].autoOpen);
       setWarningAutoOpen(nextAutoOpen);
-      savedSnapshotRef.current = JSON.stringify({ categories: data[dataKey].categories, autoOpen: nextAutoOpen });
+      setSavedSnapshot(JSON.stringify({ categories: data[dataKey].categories, autoOpen: nextAutoOpen }));
       setSavedAt(Date.now());
       closeTimerRef.current = window.setTimeout(onClose, 900);
     } catch (e) {

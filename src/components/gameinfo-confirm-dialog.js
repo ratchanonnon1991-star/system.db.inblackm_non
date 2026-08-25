@@ -7,7 +7,7 @@ export default function GameinfoConfirmDialog({ open, title, message, confirmLab
   const { dialogRef, titleId, onBackdropMouseDown } = useGameinfoDialog({ open, onRequestClose: onClose });
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 p-4" onMouseDown={onBackdropMouseDown}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/55 p-4" onMouseDown={onBackdropMouseDown}>
       <div ref={dialogRef} role="alertdialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="w-full max-w-md rounded-2xl border border-linear-hairline bg-linear-surface-1 p-6 text-linear-ink" style={{ boxShadow: "var(--ll-shadow-modal)" }}>
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3">

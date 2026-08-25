@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, ChevronDown, Copy, Download, Image as ImageIcon, Languages, Pencil, Plus, Trash2, X } from "lucide-react";
 import {
@@ -36,10 +36,14 @@ import { apiJson } from "@/lib/api-json";
 import { evaluateFormula, extractFormulaRefs, parseFormula } from "@/lib/gamedb-formula";
 import { GAMEINFO_FIELD_NAMES, resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
 import { mergeCurrencies } from "@/lib/gameinfo-import";
-import { requestGameinfoBack, useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
+import {
+  requestGameinfoBack,
+  requestGameinfoDiscard,
+  useGameinfoUnsavedChanges,
+} from "@/lib/gameinfo-unsaved-changes";
 import {
   cleanGameinfoNumericInput,
-  findDuplicateGameinfoPackPrices,
+  findDuplicateGameinfoPackNamePrices,
   normalizeGameinfoNumericInput,
 } from "@/lib/gameinfo-pack-validation";
 import {
@@ -389,20 +393,23 @@ export default function GameinfoPackEditor({
         }
       }
     }
-    const duplicatePriceIds = findDuplicateGameinfoPackPrices(currencies);
-    for (const packId of duplicatePriceIds) invalid.add(`${packId}:price`);
-    return { invalid, duplicatePriceIds };
+    const duplicateNamePriceIds = findDuplicateGameinfoPackNamePrices(currencies);
+    for (const packId of duplicateNamePriceIds) {
+      invalid.add(`${packId}:name`);
+      invalid.add(`${packId}:price`);
+    }
+    return { invalid, duplicateNamePriceIds };
   }
 
   function save() {
     setError("");
     setSavedAt(null);
     setSavedVisible(false);
-    const { invalid, duplicatePriceIds } = validatePacks();
+    const { invalid, duplicateNamePriceIds } = validatePacks();
     if (invalid.size > 0) {
       setInvalidFields(invalid);
-      setError(duplicatePriceIds.size > 0
-        ? "ราคา Pack ต้องไม่ซ้ำกัน กรุณาแก้ช่องราคาที่ไฮไลต์สีแดง"
+      setError(duplicateNamePriceIds.size > 0
+        ? "ชื่อ Pack และราคาห้ามซ้ำกันพร้อมกัน กรุณาแก้ช่องที่ไฮไลต์สีแดง"
         : "กรุณากรอกข้อมูลให้ครบก่อนบันทึก: ชื่อ pack, ราคา, ยอดที่กด + fee, ช่องทางหลัก, ประเทศ (ช่องที่ไฮไลต์สีแดง)");
       // The floating บันทึก/ยกเลิก bar is fixed to the bottom of the
       // viewport, so if the user is scrolled up while a pack further down
@@ -1548,14 +1555,28 @@ function GameinfoFormulaOverrideEditor({
 }) {
   const existing = column.rowOverrides?.[pack.id] || "";
   const [formula, setFormula] = useState(existing);
+  const dirty = formula !== existing;
+  useGameinfoUnsavedChanges(dirty);
+
+  const requestClose = useCallback(() => {
+    if (dirty) {
+      requestGameinfoDiscard({
+        message: "สูตรเฉพาะ Pack ที่ยังไม่บันทึกจะหายไป",
+        confirmLabel: "ปิดโดยไม่บันทึก",
+        onConfirm: onClose,
+      });
+      return;
+    }
+    onClose();
+  }, [dirty, onClose]);
 
   useEffect(() => {
     function handleKey(event) {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") requestClose();
     }
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
-  }, [onClose]);
+  }, [requestClose]);
 
   const validation = useMemo(() => {
     if (!formula.trim()) return { ok: true, message: "เว้นว่างเพื่อใช้สูตรของคอลัมน์", value: null };
@@ -1594,7 +1615,7 @@ function GameinfoFormulaOverrideEditor({
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) requestClose();
       }}
     >
       <div className="w-full max-w-lg rounded-lg border border-linear-hairline bg-linear-surface-1 shadow-2xl">
@@ -1603,7 +1624,7 @@ function GameinfoFormulaOverrideEditor({
             <h2 className="text-sm font-semibold text-linear-ink">สูตรเฉพาะ pack — {column.label}</h2>
             <p className="mt-0.5 text-xs text-linear-ink-tertiary">{pack.name || pack.id}</p>
           </div>
-          <button type="button" onClick={onClose} aria-label="ปิด" className="rounded p-1 text-linear-ink-tertiary hover:bg-linear-surface-2">
+          <button type="button" onClick={requestClose} aria-label="ปิด" className="rounded p-1 text-linear-ink-tertiary hover:bg-linear-surface-2">
             <X size={16} />
           </button>
         </div>

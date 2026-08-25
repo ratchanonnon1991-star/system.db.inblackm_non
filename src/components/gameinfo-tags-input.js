@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Image as ImageIcon, X } from "lucide-react";
 import GameinfoImagePickerModal from "./gameinfo-image-picker-modal";
+import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
 
 // Multi-value chip input with the same "remembers past values" dropdown as
 // GameinfoMemoryInput — used for pack payment channels. Ported from
@@ -27,6 +28,7 @@ export default function GameinfoTagsInput({
   const [pos, setPos] = useState(null);
   const ref = useRef(null);
   const atMax = typeof max === "number" && values.length >= max;
+  useGameinfoUnsavedChanges(Boolean(text.trim()));
 
   useEffect(() => {
     function onDoc(e) {

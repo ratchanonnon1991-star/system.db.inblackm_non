@@ -34,6 +34,10 @@ import {
 } from "@/lib/gameinfo-dashboard";
 import { gameinfoGameHref, gameinfoListHref, gameinfoPacksHref } from "@/lib/gameinfo-data-mode";
 import { useGameinfoDialog } from "@/lib/use-gameinfo-dialog";
+import {
+  requestGameinfoDiscard,
+  useGameinfoUnsavedChanges,
+} from "@/lib/gameinfo-unsaved-changes";
 
 const PAGE_SIZE = 12;
 
@@ -60,15 +64,32 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
   const [actionError, setActionError] = useState("");
   const [reportRefreshError, setReportRefreshError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const reportDirty = Boolean(reportGame && reportMessage.trim());
+  useGameinfoUnsavedChanges(reportDirty);
+
+  function closeReport() {
+    if (reportSubmitting) return;
+    if (reportDirty) {
+      requestGameinfoDiscard({
+        message: "ข้อความ Report ที่ยังไม่ได้ส่งจะหายไป",
+        confirmLabel: "ปิด Report",
+        onConfirm: () => {
+          setReportGame(null);
+          setReportMessage("");
+        },
+      });
+      return;
+    }
+    setReportGame(null);
+    setReportMessage("");
+  }
   const {
     dialogRef: reportDialogRef,
     titleId: reportDialogTitleId,
     onBackdropMouseDown: onReportBackdropMouseDown,
   } = useGameinfoDialog({
     open: Boolean(reportGame),
-    onRequestClose: () => {
-      if (!reportSubmitting) setReportGame(null);
-    },
+    onRequestClose: closeReport,
   });
   useEffect(() => {
     if (!sidebarOpen) return;
@@ -507,7 +528,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
                 <h2 id={reportDialogTitleId} className="text-lg font-semibold tracking-[-0.2px] text-linear-ink">รายงานปัญหา</h2>
                 <p className="mt-1 text-xs text-linear-ink-tertiary">{reportGame.game} · ID {reportGame.id}</p>
               </div>
-              <button type="button" disabled={reportSubmitting} onClick={() => setReportGame(null)} aria-label="ปิด" className="flex h-10 w-10 items-center justify-center rounded-lg text-linear-ink-tertiary hover:bg-linear-surface-2 disabled:opacity-40"><X size={18} /></button>
+              <button type="button" disabled={reportSubmitting} onClick={closeReport} aria-label="ปิด" className="flex h-10 w-10 items-center justify-center rounded-lg text-linear-ink-tertiary hover:bg-linear-surface-2 disabled:opacity-40"><X size={18} /></button>
             </div>
             <textarea autoFocus required maxLength={1000} rows={4} value={reportMessage} onChange={(event) => setReportMessage(event.target.value)} placeholder="แจ้งข้อมูลที่ผิดหรือปัญหาที่พบ..." className="mt-4 min-h-28 w-full resize-y rounded-lg border border-linear-hairline-strong bg-linear-canvas px-3 py-2 text-sm text-linear-ink outline-none placeholder:text-linear-ink-tertiary focus:border-linear-primary focus:ring-2 focus:ring-linear-primary/20" />
             {actionError ? <p role="alert" className="mt-2 text-xs text-linear-danger">{actionError}</p> : null}

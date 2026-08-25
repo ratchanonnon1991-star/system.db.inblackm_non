@@ -7,6 +7,10 @@ import { apiJson } from "@/lib/api-json";
 import { evaluateGameinfoFormulaVariable } from "@/lib/gameinfo-formula-variables";
 import { GAMEINFO_FIELD_NAMES } from "@/lib/gameinfo-formula-fields";
 import { GAMEINFO_FORMULA_FUNCTION_HELP } from "@/lib/gameinfo-formula-help";
+import {
+  requestGameinfoDiscard,
+  useGameinfoUnsavedChanges,
+} from "@/lib/gameinfo-unsaved-changes";
 
 function blankVariable() {
   return {
@@ -89,6 +93,8 @@ export default function GameinfoFormulaVariablesButton({ gameId, initialVariable
   const [showHistory, setShowHistory] = useState(false);
   const [loadedPreviewValues, setLoadedPreviewValues] = useState(null);
   const [activeVariableId, setActiveVariableId] = useState("");
+  const dirty = open && JSON.stringify(variables) !== JSON.stringify(baseline);
+  useGameinfoUnsavedChanges(dirty);
 
   const groups = useMemo(() => {
     const grouped = new Map();
@@ -122,7 +128,14 @@ export default function GameinfoFormulaVariablesButton({ gameId, initialVariable
   }
 
   function requestClose() {
-    if (JSON.stringify(variables) !== JSON.stringify(baseline) && !window.confirm("ยังไม่ได้บันทึกตัวแปรผสม ต้องการปิดหรือไม่?")) return;
+    if (dirty) {
+      requestGameinfoDiscard({
+        message: "ตัวแปรผสมที่ยังไม่บันทึกจะหายไป",
+        confirmLabel: "ปิดโดยไม่บันทึก",
+        onConfirm: () => setOpen(false),
+      });
+      return;
+    }
     setOpen(false);
   }
 
