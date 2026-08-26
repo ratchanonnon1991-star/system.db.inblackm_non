@@ -13,6 +13,7 @@ import {
   CircleOff,
   Flag,
   Gamepad2,
+  GitBranch,
   Eye,
   Menu,
   MoreVertical,
@@ -399,6 +400,13 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
               <span className="flex items-center gap-2"><Bot size={16} /> Bot Auto</span>
               <span className="text-xs opacity-70">{counts.botAuto}</span>
             </button>
+            <Link
+              href={`/gameinfo/${lang}/game-bot-auto${topupView ? "?view=topup" : ""}`}
+              onClick={() => setSidebarOpen(false)}
+              className="mt-1 flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-sm text-linear-ink-subtle hover:bg-linear-surface-3"
+            >
+              <GitBranch size={16} /> Game Bot Auto
+            </Link>
             {editable ? (
               <Link
                 href={gameinfoListHref(lang, dataMode, true)}

@@ -43,6 +43,46 @@ CREATE TABLE IF NOT EXISTS gameinfo_mode_data (
   PRIMARY KEY (game_id, data_mode)
 );
 
+CREATE TABLE IF NOT EXISTS gameinfo_bot_channels (
+  id           bigserial PRIMARY KEY,
+  category     varchar(3) NOT NULL CHECK (category IN ('BOT', 'API')),
+  channel_name text NOT NULL CHECK (btrim(channel_name) <> ''),
+  image_url    text NOT NULL DEFAULT '',
+  currencies   jsonb NOT NULL DEFAULT '[]'::jsonb,
+  sort_order   integer NOT NULL DEFAULT 0,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  updated_at   timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE gameinfo_bot_channels
+  ADD COLUMN IF NOT EXISTS image_url text NOT NULL DEFAULT '';
+
+CREATE TABLE IF NOT EXISTS gameinfo_bot_category_images (
+  category   varchar(3) PRIMARY KEY CHECK (category IN ('BOT', 'API')),
+  image_url  text NOT NULL DEFAULT '',
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS gameinfo_bot_channels_category_name
+  ON gameinfo_bot_channels (category, lower(channel_name));
+
+INSERT INTO gameinfo_bot_channels (category, channel_name, currencies, sort_order)
+SELECT seed.category, seed.channel_name, seed.currencies::jsonb, seed.sort_order
+FROM (VALUES
+  ('API', 'Codashop Reseller', '[{"name":"","games":["Zepeto","MLBB","AFK Journey","PGR","Magic GoGo","RB6","Farlight","Free Fire ID"]}]', 0),
+  ('API', 'Ronshop', '[{"name":"","games":["Dragon Nest","Marvel Rivals","PUBG Mobile","SuperSUS","One Punch Man","Hatsune Miku","Speed Drifters","Blood Strike"]}]', 1),
+  ('API', 'Acorn 2H', '[{"name":"","games":["ZZZ","Genshin","Watcher of Realms"]}]', 2),
+  ('API', 'Game Point', '[{"name":"","games":["MLBB JBR","HoK","Be the King","Racing Master","Crossfire","Eggy Party","LifeAfter SEA"]}]', 3),
+  ('API', 'PLS Buy', '[{"name":"","games":["Stella Sora","Azur Lane","Tales of Survive","Gangstar Mirage"]}]', 4),
+  ('BOT', 'GoCash', '[{"name":"","games":["Sky","MLA"]}]', 5),
+  ('BOT', 'Multi Game Card', '[{"name":"","games":["Oxide","Avakin"]}]', 6),
+  ('BOT', 'Razer', '[{"name":"CAD","games":["Avatar: Realms Collide","Infinite Magicraid","Cats: Crash Arena Turbo Stars","Crusader Mobile","Black Post","UNDAWN","Arena Breakout"]},{"name":"SGD","games":["Tokyo Ghoul","Magic Man","Samkok: New Force","Legend of Angel","ROO","Ace of Em","Kuroko Basketball","Mungil: Star Dive","Legend of Mushroom","Drag Racing"]}]', 7),
+  ('BOT', 'Codashop', '[{"name":"MMK","games":["Love Deep","Honkai Impact 3","Harry Potter: Magic Awakened","Auto Chess","Path to Nowhere","Shining Nikki","Dummy Land","Heaven Burns Red","8 Ball Pool"]},{"name":"PHP","games":["Top Eleven","Honkai: Star Rail","Stumble Guys"]},{"name":"LAK","games":["Dragon City","Growtopia","Tom and Jerry","Nico"]},{"name":"THB","games":["World War Heroes"]}]', 8),
+  ('BOT', 'NetEase', '[{"name":"","games":["Where Winds Meet","Sword of Justice","Identity V","Once Human","Destiny: Rising"]}]', 9)
+) AS seed(category, channel_name, currencies, sort_order)
+WHERE NOT EXISTS (SELECT 1 FROM gameinfo_bot_channels)
+ON CONFLICT DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS gamelist_favorites (
   -- user_id is a cross-database LOGICAL link to inblackm_system.gamedb_users
   user_id    text        NOT NULL,
