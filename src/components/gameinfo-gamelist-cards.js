@@ -313,7 +313,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
                   type="button"
                   onClick={() => chooseStatus(item.id)}
                   className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${
-                    status === item.id
+                    !botCatalogActive && status === item.id
                       ? "bg-linear-ink text-linear-canvas"
                       : "text-linear-ink-subtle hover:bg-linear-surface-3"
                   }`}
@@ -339,7 +339,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
                     key={item.name}
                     type="button"
                     onClick={() => chooseTag(tag === item.name ? "" : item.name)}
-                    className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${tag === item.name ? "bg-linear-ink text-linear-canvas" : "text-linear-ink-subtle hover:bg-linear-surface-3"}`}
+                    className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${!botCatalogActive && tag === item.name ? "bg-linear-ink text-linear-canvas" : "text-linear-ink-subtle hover:bg-linear-surface-3"}`}
                   >
                     <span className="flex min-w-0 items-center gap-2">
                       {tagImages[item.name] ? (
@@ -366,7 +366,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
                     key={item.name}
                     type="button"
                     onClick={() => choosePublisher(publisher === item.name ? "" : item.name)}
-                    className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${publisher === item.name ? "bg-linear-ink text-linear-canvas" : "text-linear-ink-subtle hover:bg-linear-surface-3"}`}
+                    className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${!botCatalogActive && publisher === item.name ? "bg-linear-ink text-linear-canvas" : "text-linear-ink-subtle hover:bg-linear-surface-3"}`}
                   >
                     <span className="flex min-w-0 items-center gap-2">
                       {publisherImages[item.name] ? (
@@ -387,7 +387,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
               type="button"
               onClick={() => chooseStatus("favorite")}
               className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${
-                status === "favorite"
+                !botCatalogActive && status === "favorite"
                   ? "bg-linear-ink text-linear-canvas"
                   : "text-linear-ink-subtle hover:bg-linear-surface-3"
               }`}
@@ -399,7 +399,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
               type="button"
               onClick={() => chooseStatus("bot-auto")}
               className={`mt-1 flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${
-                status === "bot-auto"
+                !botCatalogActive && status === "bot-auto"
                   ? "bg-linear-ink text-linear-canvas"
                   : "text-linear-ink-subtle hover:bg-linear-surface-3"
               }`}

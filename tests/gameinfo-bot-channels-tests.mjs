@@ -102,6 +102,11 @@ check("Game Bot Auto stays inside the GameInfo dashboard shell", () => {
   assert.doesNotMatch(layout, /GameinfoSectionTabs/);
   assert.match(cards, /Bot Auto[\s\S]*Game Bot Auto/);
   assert.match(cards, /botCatalogActive[\s\S]*GameinfoBotCatalog/);
+  assert.match(cards, /!botCatalogActive && status === item\.id/);
+  assert.match(cards, /!botCatalogActive && tag === item\.name/);
+  assert.match(cards, /!botCatalogActive && publisher === item\.name/);
+  assert.match(cards, /!botCatalogActive && status === "favorite"/);
+  assert.match(cards, /!botCatalogActive && status === "bot-auto"/);
   assert.match(page, /section=game-bot-auto/);
 });
 
