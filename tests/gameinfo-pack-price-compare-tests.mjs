@@ -48,6 +48,7 @@ assert.match(compare, /isCheapest[\s\S]*text-linear-primary/);
 assert.match(compare, /SELLER_ORDER_KEY/);
 assert.match(compare, /DndContext[\s\S]*SortableSellerHeader/);
 assert.match(compare, /Seller ตัวตั้ง[\s\S]*SellerPriceCell/);
+assert.match(compare, /Seller ตัวตั้ง[\s\S]*type="checkbox"[\s\S]*selectBaselineSeller/);
 assert.match(compare, /ArrowDown[\s\S]*ถูกกว่า[\s\S]*ArrowUp[\s\S]*แพงกว่า/);
 assert.match(compare, /หน่วยเงินในเกม[\s\S]*Coins[\s\S]*Premium/);
 assert.match(compare, /HIDDEN_COLUMNS_KEY/);

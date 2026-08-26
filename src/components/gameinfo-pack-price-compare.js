@@ -208,6 +208,28 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
                     <p className="mt-2 border-t border-linear-hairline pt-2 text-[11px] text-linear-ink-tertiary">ชื่อ Pack แสดงตลอด</p>
                   </div>
                 </details>
+                <details className="relative">
+                  <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 rounded-lg border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm font-medium text-linear-ink hover:bg-linear-surface-3 [&::-webkit-details-marker]:hidden">
+                    Seller ตัวตั้ง: <span className="max-w-32 truncate">{activeBaselineSeller || "—"}</span>
+                  </summary>
+                  <div className="absolute right-0 top-12 z-30 w-64 rounded-xl border border-linear-hairline bg-linear-surface-1 p-3 shadow-[var(--ll-shadow-modal)]">
+                    <p className="mb-2 text-xs font-semibold text-linear-ink">เลือก Seller ตัวตั้ง</p>
+                    <div className="max-h-64 space-y-1 overflow-y-auto">
+                      {sellers.map((seller) => (
+                        <label key={seller} className="flex min-h-10 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm text-linear-ink hover:bg-linear-surface-2">
+                          <input
+                            type="checkbox"
+                            checked={seller === activeBaselineSeller}
+                            onChange={(event) => { if (event.target.checked) selectBaselineSeller(seller); }}
+                            className="h-4 w-4 accent-linear-ink"
+                          />
+                          <span className="truncate">{seller}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <p className="mt-2 border-t border-linear-hairline pt-2 text-[11px] text-linear-ink-tertiary">เลือกได้ 1 Seller · แดง = ถูกกว่า · เขียว = แพงกว่า</p>
+                  </div>
+                </details>
                 <button type="button" onClick={refreshPrices} disabled={refreshing} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm font-medium text-linear-ink hover:bg-linear-surface-3 disabled:cursor-wait disabled:opacity-60">
                   <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} /> {refreshing ? "กำลังรี..." : "รีข้อมูลตอนนี้"}
                 </button>
@@ -215,21 +237,6 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
               </div>
             </div>
             {refreshError ? <p role="alert" className="border-b border-linear-hairline bg-linear-danger-bg px-4 py-2 text-xs text-linear-danger">{refreshError}</p> : null}
-            <div className="flex flex-wrap items-center gap-2 border-b border-linear-hairline bg-linear-surface-2 px-4 py-3">
-              <span className="mr-1 text-xs font-medium text-linear-ink-subtle">Seller ตัวตั้ง</span>
-              {sellers.map((seller) => (
-                <button
-                  key={seller}
-                  type="button"
-                  aria-pressed={seller === activeBaselineSeller}
-                  onClick={() => selectBaselineSeller(seller)}
-                  className={`min-h-10 rounded-lg border px-3 text-xs font-medium ${seller === activeBaselineSeller ? "border-linear-ink bg-linear-ink text-linear-canvas" : "border-linear-hairline-strong bg-linear-surface-1 text-linear-ink hover:bg-linear-surface-3"}`}
-                >
-                  {seller}
-                </button>
-              ))}
-              <span className="ml-auto text-xs text-linear-ink-tertiary">↓ แดง = ถูกกว่าตัวตั้ง · ↑ เขียว = แพงกว่าตัวตั้ง</span>
-            </div>
 
             <div className="scroll-x">
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSellerDragEnd}>
