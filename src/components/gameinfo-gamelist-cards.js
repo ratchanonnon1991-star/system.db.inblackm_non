@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
+  ArrowLeftRight,
   Bot,
   CheckCircle2,
   ChevronLeft,
@@ -26,6 +27,7 @@ import {
 } from "lucide-react";
 import GameinfoDatasetToggle from "./gameinfo-dataset-toggle";
 import GameinfoBotCatalog from "./gameinfo-bot-catalog";
+import GameinfoPackPriceCompare from "./gameinfo-pack-price-compare";
 import GameinfoTutorialButton, { GameinfoDetailsButton } from "./gameinfo-tutorial-modal";
 import {
   GAMEINFO_STATUSES,
@@ -51,7 +53,7 @@ const STATUS_STYLE = {
   offline: { label: "ปิดใช้งาน", dot: "bg-linear-ink-tertiary", badge: "bg-linear-surface-3 text-linear-ink-subtle" },
 };
 
-export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, botChannels = [], botCategoryImages = {}, botCatalogActive = false, editable = false, topupView = false, canReport = false, lang, dataMode = "uid" }) {
+export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, botChannels = [], botCategoryImages = {}, kaleozPage = null, botCatalogActive = false, priceComparisonActive = false, editable = false, topupView = false, canReport = false, lang, dataMode = "uid" }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
@@ -164,21 +166,21 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
   }
 
   function chooseStatus(nextStatus) {
-    if (botCatalogActive) router.push(gameinfoListHref(lang, dataMode, false, topupView));
+    if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false, topupView));
     setStatus(nextStatus);
     setPage(0);
     setSidebarOpen(false);
   }
 
   function chooseTag(nextTag) {
-    if (botCatalogActive) router.push(gameinfoListHref(lang, dataMode, false, topupView));
+    if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false, topupView));
     setTag(nextTag);
     setPage(0);
     setSidebarOpen(false);
   }
 
   function choosePublisher(nextPublisher) {
-    if (botCatalogActive) router.push(gameinfoListHref(lang, dataMode, false, topupView));
+    if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false, topupView));
     setPublisher(nextPublisher);
     setPage(0);
     setSidebarOpen(false);
@@ -290,10 +292,10 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             onClick={() => {
               clearFilters();
               setSidebarOpen(false);
-              if (botCatalogActive) router.push(gameinfoListHref(lang, dataMode, false, topupView));
+              if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false, topupView));
             }}
             className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${
-              !botCatalogActive && status === "all" && !tag && !publisher
+              !botCatalogActive && status === "all" && !tag && !publisher && !priceComparisonActive
                 ? "bg-linear-ink text-linear-canvas"
                 : "text-linear-ink-subtle hover:bg-linear-surface-3"
             }`}
@@ -313,7 +315,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
                   type="button"
                   onClick={() => chooseStatus(item.id)}
                   className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${
-                    !botCatalogActive && status === item.id
+                    !botCatalogActive && status === item.id && !priceComparisonActive
                       ? "bg-linear-ink text-linear-canvas"
                       : "text-linear-ink-subtle hover:bg-linear-surface-3"
                   }`}
@@ -339,7 +341,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
                     key={item.name}
                     type="button"
                     onClick={() => chooseTag(tag === item.name ? "" : item.name)}
-                    className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${!botCatalogActive && tag === item.name ? "bg-linear-ink text-linear-canvas" : "text-linear-ink-subtle hover:bg-linear-surface-3"}`}
+                    className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${!botCatalogActive && tag === item.name && !priceComparisonActive ? "bg-linear-ink text-linear-canvas" : "text-linear-ink-subtle hover:bg-linear-surface-3"}`}
                   >
                     <span className="flex min-w-0 items-center gap-2">
                       {tagImages[item.name] ? (
@@ -366,7 +368,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
                     key={item.name}
                     type="button"
                     onClick={() => choosePublisher(publisher === item.name ? "" : item.name)}
-                    className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${!botCatalogActive && publisher === item.name ? "bg-linear-ink text-linear-canvas" : "text-linear-ink-subtle hover:bg-linear-surface-3"}`}
+                    className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${!botCatalogActive && publisher === item.name && !priceComparisonActive ? "bg-linear-ink text-linear-canvas" : "text-linear-ink-subtle hover:bg-linear-surface-3"}`}
                   >
                     <span className="flex min-w-0 items-center gap-2">
                       {publisherImages[item.name] ? (
@@ -387,7 +389,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
               type="button"
               onClick={() => chooseStatus("favorite")}
               className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${
-                !botCatalogActive && status === "favorite"
+                !botCatalogActive && status === "favorite" && !priceComparisonActive
                   ? "bg-linear-ink text-linear-canvas"
                   : "text-linear-ink-subtle hover:bg-linear-surface-3"
               }`}
@@ -399,7 +401,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
               type="button"
               onClick={() => chooseStatus("bot-auto")}
               className={`mt-1 flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${
-                !botCatalogActive && status === "bot-auto"
+                !botCatalogActive && status === "bot-auto" && !priceComparisonActive
                   ? "bg-linear-ink text-linear-canvas"
                   : "text-linear-ink-subtle hover:bg-linear-surface-3"
               }`}
@@ -418,6 +420,17 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             >
               <GitBranch size={16} /> Game Bot Auto
             </Link>
+            <Link
+              href={`/gameinfo/${lang}?section=pack-price-compare${dataMode === "uid" ? "" : `&mode=${dataMode}`}${topupView ? "&view=topup" : ""}`}
+              onClick={() => setSidebarOpen(false)}
+              className={`mt-1 flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-sm ${
+                priceComparisonActive
+                  ? "bg-linear-ink text-linear-canvas"
+                  : "text-linear-ink-subtle hover:bg-linear-surface-3"
+              }`}
+            >
+              <ArrowLeftRight size={16} /> เทียบราคาแพ็ค
+            </Link>
             {editable ? (
               <Link
                 href={gameinfoListHref(lang, dataMode, true)}
@@ -433,6 +446,8 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
       <main className="min-w-0 px-4 py-6 sm:px-6 lg:px-8">
         {botCatalogActive ? (
           <GameinfoBotCatalog channels={botChannels} categoryImages={botCategoryImages} editable={editable} lang={lang} />
+        ) : priceComparisonActive ? (
+          <GameinfoPackPriceCompare page={kaleozPage} />
         ) : (
           <>
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
