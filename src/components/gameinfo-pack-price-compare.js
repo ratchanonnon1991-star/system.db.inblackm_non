@@ -8,9 +8,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useGameinfoDialog } from "@/lib/use-gameinfo-dialog";
 
-const SELLER_ORDER_KEY = "gameinfo:kaleoz-seller-order";
-const BASELINE_SELLER_KEY = "gameinfo:kaleoz-baseline-seller";
-const HIDDEN_COLUMNS_KEY = "gameinfo:kaleoz-hidden-columns";
+const storageKey = (name, game) => `gameinfo:kaleoz-${name}:${game || "zepeto"}`;
 const AUTO_REFRESH_MS = 60 * 60 * 1000;
 
 function money(value, currency) {
@@ -38,7 +36,8 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
   const [refreshedPage, setRefreshedPage] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
-  const page = refreshedPage?.productType === serverPage?.productType ? refreshedPage : serverPage;
+  const page = refreshedPage?.game === serverPage?.game && refreshedPage?.productType === serverPage?.productType ? refreshedPage : serverPage;
+  const currentGame = page?.game || "zepeto";
   const currentProductType = page?.productType;
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -73,7 +72,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
     setRefreshing(true);
     setRefreshError("");
     try {
-      const response = await fetch(`/api/gameinfo/kaleoz-prices?unit=${encodeURIComponent(currentProductType)}&refresh=1`, { cache: "no-store" });
+      const response = await fetch(`/api/gameinfo/kaleoz-prices?game=${encodeURIComponent(currentGame)}&unit=${encodeURIComponent(currentProductType)}&refresh=1`, { cache: "no-store" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "รีข้อมูลไม่สำเร็จ");
       setRefreshedPage(data.page);
@@ -82,22 +81,25 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
     } finally {
       setRefreshing(false);
     }
-  }, [currentProductType]);
+  }, [currentGame, currentProductType]);
 
   useEffect(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem(SELLER_ORDER_KEY) || "[]");
-      // Restore the browser-specific order only after hydration.
+      // Restore browser-specific preferences after hydration and whenever the game changes.
       // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSellerOrder([]);
+      setBaselineSeller("InblackmTH");
+      setHiddenColumns([]);
+      const saved = JSON.parse(localStorage.getItem(storageKey("seller-order", currentGame)) || "[]");
       if (Array.isArray(saved)) setSellerOrder(saved.filter((seller) => typeof seller === "string"));
-      const savedBaseline = localStorage.getItem(BASELINE_SELLER_KEY);
+      const savedBaseline = localStorage.getItem(storageKey("baseline-seller", currentGame));
       if (savedBaseline) setBaselineSeller(savedBaseline);
-      const savedHiddenColumns = JSON.parse(localStorage.getItem(HIDDEN_COLUMNS_KEY) || "[]");
+      const savedHiddenColumns = JSON.parse(localStorage.getItem(storageKey("hidden-columns", currentGame)) || "[]");
       if (Array.isArray(savedHiddenColumns)) setHiddenColumns(savedHiddenColumns.filter((column) => typeof column === "string"));
     } catch {
-      localStorage.removeItem(SELLER_ORDER_KEY);
+      localStorage.removeItem(storageKey("seller-order", currentGame));
     }
-  }, []);
+  }, [currentGame]);
 
   useEffect(() => {
     const timer = window.setInterval(refreshPrices, AUTO_REFRESH_MS);
@@ -113,44 +115,61 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
     let visibleIndex = 0;
     const next = sellers.map((seller) => visibleSellers.includes(seller) ? reorderedVisible[visibleIndex++] : seller);
     setSellerOrder(next);
-    localStorage.setItem(SELLER_ORDER_KEY, JSON.stringify(next));
+    localStorage.setItem(storageKey("seller-order", currentGame), JSON.stringify(next));
   }
 
   function selectBaselineSeller(seller) {
     setBaselineSeller(seller);
-    localStorage.setItem(BASELINE_SELLER_KEY, seller);
+    localStorage.setItem(storageKey("baseline-seller", currentGame), seller);
+  }
+
+  function selectGame(value) {
+    const next = new URLSearchParams(searchParams.toString());
+    next.set("game", value);
+    next.delete("unit");
+    setRefreshedPage(null);
+    router.push(`${pathname}?${next.toString()}`);
   }
 
   function selectProductType(value) {
     const next = new URLSearchParams(searchParams.toString());
     next.set("unit", value);
+    setRefreshedPage(null);
     router.push(`${pathname}?${next.toString()}`);
   }
 
   function toggleColumn(column) {
     setHiddenColumns((current) => {
       const next = current.includes(column) ? current.filter((item) => item !== column) : [...current, column];
-      localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify(next));
+      localStorage.setItem(storageKey("hidden-columns", currentGame), JSON.stringify(next));
       return next;
     });
   }
 
   function showAllColumns() {
     setHiddenColumns([]);
-    localStorage.removeItem(HIDDEN_COLUMNS_KEY);
+    localStorage.removeItem(storageKey("hidden-columns", currentGame));
   }
 
   return (
     <div>
       <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-xs font-medium tracking-[0.4px] text-linear-ink-tertiary">KALEOZ · ZEPETO · CATEGORY FILTER</p>
-          <h1 className="text-[28px] font-semibold tracking-[-0.6px] text-linear-ink">รายการราคา Zepeto · {page?.productTypeLabel || "ZEMs"}</h1>
+          <p className="text-xs font-medium tracking-[0.4px] text-linear-ink-tertiary">KALEOZ · {page?.gameLabel || "ZEPETO"} · PROPERTIES FILTER</p>
+          <h1 className="text-[28px] font-semibold tracking-[-0.6px] text-linear-ink">Compare Product · เทียบราคา Kaleoz</h1>
           <p className="mt-1 text-sm text-linear-ink-subtle">รวมรายการที่มีตัวเลขแรกนอกวงเล็บตรงกัน และเปิดดูชื่อจริงเพื่อตรวจการจับคู่ได้</p>
         </div>
-        <a href={page?.sourceUrl || "https://www.kaleoz.com/buy/zepeto?page=1"} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-linear-ink px-4 text-sm font-medium text-linear-canvas">
-          เปิดหน้าต้นทาง <ExternalLink size={15} />
-        </a>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-linear-ink-subtle">เกม</span>
+            <select value={currentGame} onChange={(event) => selectGame(event.target.value)} className="min-h-10 min-w-52 rounded-lg border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm font-medium text-linear-ink">
+              {(page?.games || []).map((game) => <option key={game.value} value={game.value} disabled={!game.available}>{game.label}{!game.available ? " (ยังไม่พบหน้า)" : ""}</option>)}
+            </select>
+          </label>
+          <a href={page?.sourceUrl || "https://www.kaleoz.com/buy/zepeto?page=1"} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-linear-ink px-4 text-sm font-medium text-linear-canvas">
+            เปิดหน้าต้นทาง <ExternalLink size={15} />
+          </a>
+        </div>
       </div>
 
       {page?.error ? (
@@ -179,8 +198,8 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
               <div className="flex flex-wrap items-end gap-3">
                 <label className="block">
                   <span className="mb-1 block text-xs font-medium text-linear-ink-subtle">หน่วยเงินในเกม</span>
-                  <select value={page?.productType || "zems"} onChange={(event) => selectProductType(event.target.value)} className="min-h-10 min-w-40 rounded-lg border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm font-medium text-linear-ink">
-                    {(page?.productTypes || [{ value: "zems", label: "ZEMs" }, { value: "coins", label: "Coins" }, { value: "premium", label: "Premium" }]).map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+                  <select value={page?.productType || ""} onChange={(event) => selectProductType(event.target.value)} disabled={!page?.productTypes?.length} className="min-h-10 min-w-40 rounded-lg border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm font-medium text-linear-ink disabled:opacity-60">
+                    {(page?.productTypes || []).map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
                   </select>
                 </label>
                 <details className="relative">
@@ -210,10 +229,10 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
                 </details>
                 <details className="relative">
                   <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 rounded-lg border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm font-medium text-linear-ink hover:bg-linear-surface-3 [&::-webkit-details-marker]:hidden">
-                    Seller ตัวตั้ง: <span className="max-w-32 truncate">{activeBaselineSeller || "—"}</span>
+                    Seller เปรียบเทียบ: <span className="max-w-32 truncate">{activeBaselineSeller || "—"}</span>
                   </summary>
                   <div className="absolute right-0 top-12 z-30 w-64 rounded-xl border border-linear-hairline bg-linear-surface-1 p-3 shadow-[var(--ll-shadow-modal)]">
-                    <p className="mb-2 text-xs font-semibold text-linear-ink">เลือก Seller ตัวตั้ง</p>
+                    <p className="mb-2 text-xs font-semibold text-linear-ink">เลือก Seller สำหรับเปรียบเทียบ</p>
                     <div className="max-h-64 space-y-1 overflow-y-auto">
                       {sellers.map((seller) => (
                         <label key={seller} className="flex min-h-10 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm text-linear-ink hover:bg-linear-surface-2">
@@ -317,15 +336,27 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
 }
 
 function SellerPriceCell({ offer, baselineOffer, isBaseline, isCheapest }) {
-  if (!offer) return <td className="px-4 py-3 text-right text-linear-ink-tertiary">—</td>;
+  if (!offer) return <td className="bg-linear-surface-2 px-4 py-3 text-right text-linear-ink-tertiary">—</td>;
   const difference = baselineOffer ? offer.price - baselineOffer.price : null;
+  const cellTone = isCheapest || difference < 0
+    ? "bg-linear-danger-bg"
+    : difference > 0
+      ? "bg-linear-success-bg"
+      : difference === 0 || isBaseline
+        ? "bg-linear-surface-3"
+        : "bg-linear-surface-2";
+  const priceTone = isCheapest || difference < 0
+    ? "font-semibold text-linear-primary"
+    : difference > 0
+      ? "font-semibold text-linear-success"
+      : difference == null
+        ? "font-medium text-linear-ink-muted"
+        : "font-medium text-linear-ink";
   return (
-    <td className={`px-4 py-3 text-right tabular-nums ${isCheapest ? "bg-linear-primary/5" : ""}`}>
-      <p className={isCheapest ? "font-semibold text-linear-primary" : "text-linear-ink-muted"}>{money(offer.price, offer.currency)}</p>
-      {isBaseline ? (
-        <span className="mt-1 block text-[11px] text-linear-ink-tertiary">ตัวตั้ง</span>
-      ) : difference == null ? (
-        <span className="mt-1 block text-[11px] text-linear-ink-tertiary">เทียบไม่ได้</span>
+    <td className={`px-4 py-3 text-right tabular-nums ${cellTone}`}>
+      <p className={priceTone}>{money(offer.price, offer.currency)}</p>
+      {isBaseline ? null : difference == null ? (
+        <span className="mt-1 block text-[11px] text-linear-ink-tertiary">ไม่มีราคาอ้างอิง</span>
       ) : difference < 0 ? (
         <span className="mt-1 inline-flex items-center justify-end gap-0.5 text-[11px] font-medium text-linear-danger"><ArrowDown size={12} />ถูกกว่า {money(Math.abs(difference), offer.currency)}</span>
       ) : difference > 0 ? (
@@ -345,10 +376,10 @@ function SortableSellerHeader({ seller, isBaseline }) {
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.55 : 1 }}
       {...attributes}
       {...listeners}
-      className="min-w-40 cursor-grab touch-none px-4 py-3 active:cursor-grabbing"
+      className={`min-w-40 cursor-grab touch-none px-4 py-3 active:cursor-grabbing ${isBaseline ? "bg-linear-ink text-linear-canvas" : ""}`}
       title="กดค้างแล้วลากเพื่อเปลี่ยนลำดับคอลัมน์"
     >
-      <span className="flex items-center justify-end gap-1.5"><GripVertical size={14} aria-hidden="true" />{seller}{isBaseline ? <span className="rounded-full bg-linear-ink px-2 py-0.5 text-[10px] text-linear-canvas">ตัวตั้ง</span> : null}</span>
+      <span className="flex items-center justify-end gap-1.5"><GripVertical size={14} aria-hidden="true" />{seller}</span>
     </th>
   );
 }

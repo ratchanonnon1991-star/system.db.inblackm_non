@@ -36,12 +36,14 @@ import {
   listGameinfoBotCategoryImages,
   listGameinfoBotChannels,
 } from "@/server/gameinfo-bot-channels";
-import { fetchKaleozZepetoPage, normalizeKaleozProductType } from "@/server/kaleoz-zepeto";
+import { KALEOZ_GAMES, fetchKaleozPage, normalizeKaleozGame, normalizeKaleozProductType } from "@/server/kaleoz-zepeto";
 
 // Everyone lands on the card dashboard. Topup and role "user" stay read-only.
 export default async function GameinfoHomePage({ params, searchParams, manage = false }) {
   const { lang } = await params;
-  const { mode: rawMode, view: rawView, section, unit } = await searchParams;
+  const { mode: rawMode, view: rawView, section, game, unit } = await searchParams;
+  const kaleozGame = normalizeKaleozGame(game);
+  const kaleozGameConfig = KALEOZ_GAMES.find((item) => item.value === kaleozGame);
   const kaleozProductType = normalizeKaleozProductType(unit);
   const dataMode = normalizeGameinfoDataMode(rawMode);
   const user = await getSessionUser();
@@ -81,7 +83,16 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
         section === "game-bot-auto" ? listGameinfoBotChannels() : [],
         section === "game-bot-auto" ? listGameinfoBotCategoryImages() : {},
         section === "pack-price-compare"
-          ? fetchKaleozZepetoPage(kaleozProductType).catch((error) => ({ error: error.message || "โหลด Kaleoz ไม่สำเร็จ", groups: [], offers: [], productType: kaleozProductType }))
+          ? fetchKaleozPage(kaleozGame, kaleozProductType).catch((error) => ({
+            error: error.message || "โหลด Kaleoz ไม่สำเร็จ",
+            groups: [],
+            offers: [],
+            game: kaleozGame,
+            gameLabel: kaleozGameConfig?.label,
+            sourceUrl: `https://www.kaleoz.com/buy/${kaleozGameConfig?.slug || "zepeto"}?page=1`,
+            games: KALEOZ_GAMES.map(({ value, label, available = true }) => ({ value, label, available })),
+            productType: kaleozProductType,
+          }))
           : null,
       ]);
     tagImages = loadedTagImages;
