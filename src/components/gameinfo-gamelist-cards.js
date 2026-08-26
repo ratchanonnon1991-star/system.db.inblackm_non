@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Bot,
@@ -24,6 +25,7 @@ import {
   X,
 } from "lucide-react";
 import GameinfoDatasetToggle from "./gameinfo-dataset-toggle";
+import GameinfoBotCatalog from "./gameinfo-bot-catalog";
 import GameinfoTutorialButton, { GameinfoDetailsButton } from "./gameinfo-tutorial-modal";
 import {
   GAMEINFO_STATUSES,
@@ -49,7 +51,8 @@ const STATUS_STYLE = {
   offline: { label: "ปิดใช้งาน", dot: "bg-linear-ink-tertiary", badge: "bg-linear-surface-3 text-linear-ink-subtle" },
 };
 
-export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, editable = false, topupView = false, canReport = false, lang, dataMode = "uid" }) {
+export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, botChannels = [], botCategoryImages = {}, botCatalogActive = false, editable = false, topupView = false, canReport = false, lang, dataMode = "uid" }) {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [tag, setTag] = useState("");
@@ -161,18 +164,21 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
   }
 
   function chooseStatus(nextStatus) {
+    if (botCatalogActive) router.push(gameinfoListHref(lang, dataMode, false, topupView));
     setStatus(nextStatus);
     setPage(0);
     setSidebarOpen(false);
   }
 
   function chooseTag(nextTag) {
+    if (botCatalogActive) router.push(gameinfoListHref(lang, dataMode, false, topupView));
     setTag(nextTag);
     setPage(0);
     setSidebarOpen(false);
   }
 
   function choosePublisher(nextPublisher) {
+    if (botCatalogActive) router.push(gameinfoListHref(lang, dataMode, false, topupView));
     setPublisher(nextPublisher);
     setPage(0);
     setSidebarOpen(false);
@@ -284,9 +290,10 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             onClick={() => {
               clearFilters();
               setSidebarOpen(false);
+              if (botCatalogActive) router.push(gameinfoListHref(lang, dataMode, false, topupView));
             }}
             className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${
-              status === "all" && !tag && !publisher
+              !botCatalogActive && status === "all" && !tag && !publisher
                 ? "bg-linear-ink text-linear-canvas"
                 : "text-linear-ink-subtle hover:bg-linear-surface-3"
             }`}
@@ -401,9 +408,13 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
               <span className="text-xs opacity-70">{counts.botAuto}</span>
             </button>
             <Link
-              href={`/gameinfo/${lang}/game-bot-auto${topupView ? "?view=topup" : ""}`}
+              href={`/gameinfo/${lang}?section=game-bot-auto${dataMode === "uid" ? "" : `&mode=${dataMode}`}${topupView ? "&view=topup" : ""}`}
               onClick={() => setSidebarOpen(false)}
-              className="mt-1 flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-sm text-linear-ink-subtle hover:bg-linear-surface-3"
+              className={`mt-1 flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-sm ${
+                botCatalogActive
+                  ? "bg-linear-ink text-linear-canvas"
+                  : "text-linear-ink-subtle hover:bg-linear-surface-3"
+              }`}
             >
               <GitBranch size={16} /> Game Bot Auto
             </Link>
@@ -420,6 +431,10 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
       </aside>
 
       <main className="min-w-0 px-4 py-6 sm:px-6 lg:px-8">
+        {botCatalogActive ? (
+          <GameinfoBotCatalog channels={botChannels} categoryImages={botCategoryImages} editable={editable} lang={lang} />
+        ) : (
+          <>
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs font-medium text-linear-ink-tertiary">GAME DATABASE</p>
@@ -527,6 +542,8 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             <button type="button" onClick={() => setPage(pageCount - 1)} disabled={currentPage === pageCount - 1} title="หน้าสุดท้าย" aria-label="หน้าสุดท้าย" className="flex h-10 w-10 items-center justify-center rounded-lg border border-linear-hairline-strong hover:bg-linear-surface-2 disabled:opacity-40"><ChevronsRight size={16} /></button>
           </div>
         ) : null}
+          </>
+        )}
       </main>
       {reportGame ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="presentation" onMouseDown={onReportBackdropMouseDown}>

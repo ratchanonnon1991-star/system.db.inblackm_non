@@ -12,6 +12,7 @@ export default function GameinfoModeToggle({ lang, editableRole }) {
   const pathname = usePathname();
   const dataMode = normalizeGameinfoDataMode(searchParams.get("mode"));
   const topupView = searchParams.get("view") === "topup";
+  const botAutoSection = searchParams.get("section") === "game-bot-auto";
 
   if (!editableRole) {
     return (
@@ -22,17 +23,18 @@ export default function GameinfoModeToggle({ lang, editableRole }) {
   }
 
   const isManageMode = pathname.split("/").includes("manage");
-  const isBotAutoPage = pathname.split("/").includes("game-bot-auto");
+  const isBotAutoPage = pathname.split("/").includes("game-bot-auto") || botAutoSection;
+  const botAutoMode = dataMode === "uid" ? "" : `&mode=${dataMode}`;
   const href = gameinfoListHref(lang, dataMode, !isManageMode);
   const gameId = pathname.split("/")[3];
   const isGamePage = /^\d+$/.test(gameId || "");
   const topupHref = isBotAutoPage
-    ? `/gameinfo/${lang}/game-bot-auto?view=topup`
+    ? `/gameinfo/${lang}?section=game-bot-auto${botAutoMode}&view=topup`
     : isGamePage
     ? gameinfoGameHref(lang, gameId, dataMode, false, !topupView)
     : gameinfoListHref(lang, dataMode, false, !topupView);
   const adminHref = isBotAutoPage
-    ? `/gameinfo/${lang}/game-bot-auto`
+    ? `/gameinfo/${lang}?section=game-bot-auto${botAutoMode}`
     : isGamePage
     ? gameinfoGameHref(lang, gameId, dataMode, true)
     : gameinfoListHref(lang, dataMode);

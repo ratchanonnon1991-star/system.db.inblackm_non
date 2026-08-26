@@ -7,7 +7,7 @@ export const metadata = { title: "GameDB — เพิ่มช่องทา�
 
 export default async function NewGameinfoBotChannelPage({ params }) {
   const { lang } = await params;
-  if (!canManageGameinfo(await getSessionUser())) redirect(`/gameinfo/${lang}/game-bot-auto`);
+  if (!canManageGameinfo(await getSessionUser())) redirect(`/gameinfo/${lang}?section=game-bot-auto`);
   return (
     <div className="px-4 py-8 sm:px-6">
       <div className="mx-auto mb-6 max-w-3xl">

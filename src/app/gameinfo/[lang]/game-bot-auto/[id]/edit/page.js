@@ -8,7 +8,7 @@ export const metadata = { title: "GameDB — แก้ไขช่องทา�
 
 export default async function EditGameinfoBotChannelPage({ params }) {
   const { lang, id } = await params;
-  if (!canManageGameinfo(await getSessionUser())) redirect(`/gameinfo/${lang}/game-bot-auto`);
+  if (!canManageGameinfo(await getSessionUser())) redirect(`/gameinfo/${lang}?section=game-bot-auto`);
   const channel = await getGameinfoBotChannel(Number(id));
   if (!channel) notFound();
   return (

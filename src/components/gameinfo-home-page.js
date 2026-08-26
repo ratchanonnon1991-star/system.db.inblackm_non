@@ -32,11 +32,15 @@ import {
 import { listOpenGamelistReports } from "@/server/gameinfo-gamelist-reports";
 import { listGamelistFavoriteIds } from "@/server/gameinfo-gamelist-favorites";
 import { hasPermission } from "@/lib/permissions";
+import {
+  listGameinfoBotCategoryImages,
+  listGameinfoBotChannels,
+} from "@/server/gameinfo-bot-channels";
 
 // Everyone lands on the card dashboard. Topup and role "user" stay read-only.
 export default async function GameinfoHomePage({ params, searchParams, manage = false }) {
   const { lang } = await params;
-  const { mode: rawMode, view: rawView } = await searchParams;
+  const { mode: rawMode, view: rawView, section } = await searchParams;
   const dataMode = normalizeGameinfoDataMode(rawMode);
   const user = await getSessionUser();
   if (!user) redirect("/");
@@ -50,9 +54,11 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
   let reports = [];
   let tagImages = {};
   let publisherImages = {};
+  let botChannels = [];
+  let botCategoryImages = {};
   let loadError = null;
   try {
-    const [gameListRows, channelsByGame, packCountByGame, packServiceByGame, tutorialPresence, warningPresence, vpnNotePresence, imageByGame, linksByGame, tagsByGame, publishersByGame, loadedTagImages, loadedPublisherImages, openReports, favoriteIds] =
+    const [gameListRows, channelsByGame, packCountByGame, packServiceByGame, tutorialPresence, warningPresence, vpnNotePresence, imageByGame, linksByGame, tagsByGame, publishersByGame, loadedTagImages, loadedPublisherImages, openReports, favoriteIds, loadedBotChannels, loadedBotCategoryImages] =
       await Promise.all([
         listGameListRows(),
         listGamelistChannelsByGame(),
@@ -69,9 +75,13 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
         listGamelistPublisherImages(),
         listOpenGamelistReports(),
         listGamelistFavoriteIds(user.id),
+        section === "game-bot-auto" ? listGameinfoBotChannels() : [],
+        section === "game-bot-auto" ? listGameinfoBotCategoryImages() : {},
       ]);
     tagImages = loadedTagImages;
     publisherImages = loadedPublisherImages;
+    botChannels = loadedBotChannels;
+    botCategoryImages = loadedBotCategoryImages;
     const favoriteIdSet = new Set(favoriteIds);
     const reportCountByGame = openReports.reduce((counts, report) => {
       counts[report.gameId] = (counts[report.gameId] || 0) + 1;
@@ -125,7 +135,7 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
   }
 
   if (!manageMode && !loadError) {
-    return <GameinfoGamelistCards initial={rows} initialReports={reports} tagImages={tagImages} publisherImages={publisherImages} editable={editableRole && !topupView} topupView={topupView} canReport={canReport} lang={lang} dataMode={dataMode} />;
+    return <GameinfoGamelistCards initial={rows} initialReports={reports} tagImages={tagImages} publisherImages={publisherImages} botChannels={botChannels} botCategoryImages={botCategoryImages} botCatalogActive={section === "game-bot-auto"} editable={editableRole && !topupView} topupView={topupView} canReport={canReport} lang={lang} dataMode={dataMode} />;
   }
 
   return (

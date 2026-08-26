@@ -95,10 +95,14 @@ await assert.rejects(
 );
 pass += 1;
 
-check("navigation link is directly below Bot Auto", () => {
-  const source = readFileSync(new URL("../src/components/gameinfo-gamelist-cards.js", import.meta.url), "utf8");
-  assert.match(source, /Bot Auto[\s\S]{0,700}game-bot-auto/);
-  assert.match(source, /topupView \? "\?view=topup"/);
+check("Game Bot Auto stays inside the GameInfo dashboard shell", () => {
+  const layout = readFileSync(new URL("../src/app/gameinfo/[lang]/layout.js", import.meta.url), "utf8");
+  const cards = readFileSync(new URL("../src/components/gameinfo-gamelist-cards.js", import.meta.url), "utf8");
+  const page = readFileSync(new URL("../src/app/gameinfo/[lang]/game-bot-auto/page.js", import.meta.url), "utf8");
+  assert.doesNotMatch(layout, /GameinfoSectionTabs/);
+  assert.match(cards, /Bot Auto[\s\S]*Game Bot Auto/);
+  assert.match(cards, /botCatalogActive[\s\S]*GameinfoBotCatalog/);
+  assert.match(page, /section=game-bot-auto/);
 });
 
 check("bootstrap schema includes the separate table", () => {
@@ -119,10 +123,10 @@ check("API reads require GameInfo access and writes require admin access", () =>
 
 check("Topup view stays inside Game Bot Auto and hides editor controls", () => {
   const toggle = readFileSync(new URL("../src/components/gameinfo-mode-toggle.js", import.meta.url), "utf8");
-  const page = readFileSync(new URL("../src/app/gameinfo/[lang]/game-bot-auto/page.js", import.meta.url), "utf8");
-  assert.match(toggle, /game-bot-auto\?view=topup/);
+  const home = readFileSync(new URL("../src/components/gameinfo-home-page.js", import.meta.url), "utf8");
+  assert.match(toggle, /section=game-bot-auto\$\{botAutoMode\}&view=topup/);
   assert.match(toggle, /if \(isBotAutoPage\) return topupButton/);
-  assert.match(page, /query\.view !== "topup"/);
+  assert.match(home, /editableRole && !topupView/);
 });
 
 console.log(`\n${pass} passed`);

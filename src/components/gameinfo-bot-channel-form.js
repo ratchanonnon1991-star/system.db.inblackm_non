@@ -24,7 +24,7 @@ export default function GameinfoBotChannelForm({ lang, initial = null }) {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [imagePickerOpen, setImagePickerOpen] = useState(false);
-  const listHref = `/gameinfo/${lang}/game-bot-auto`;
+  const listHref = `/gameinfo/${lang}?section=game-bot-auto`;
   const dirty = !saved && JSON.stringify(form) !== JSON.stringify(initial || blankChannel);
   useGameinfoUnsavedChanges(dirty);
 
