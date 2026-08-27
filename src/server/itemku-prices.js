@@ -1,3 +1,4 @@
+import { settlePricePage } from "@/lib/gameinfo-price-diff";
 import { DEFAULT_ITEMKU_GAMES, listItemkuGames } from "@/server/itemku-games-repository";
 
 const ITEMKU_ORIGIN = "https://www.itemku.com";
@@ -463,7 +464,7 @@ export async function fetchItemkuPage(requestedGame = "zepeto", requestedGroup, 
   const promise = loadItemkuPage(game, group, games, fetchHtml, fetchJson);
   itemkuCache.set(cacheKey, { ...cached, promise });
   try {
-    const value = await promise;
+    const value = settlePricePage(cached?.value, await promise);
     itemkuCache.set(cacheKey, { value, expiresAt: Date.now() + ITEMKU_CACHE_TTL_MS });
     return value;
   } catch (error) {

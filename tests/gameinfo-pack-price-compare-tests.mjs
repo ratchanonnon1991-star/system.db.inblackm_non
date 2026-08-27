@@ -106,7 +106,7 @@ assert.match(compare, /storageKey\("hidden-columns"/);
 assert.match(compare, /เลือกคอลัมน์/);
 assert.match(compare, /DropdownMenu[\s\S]*DropdownMenuCheckboxItem[\s\S]*showAllColumns/);
 assert.match(compare, /visibleSellers[\s\S]*showCheapest[\s\S]*showMostExpensive[\s\S]*showDetails/);
-assert.match(compare, /AUTO_REFRESH_MS[\s\S]*setInterval[\s\S]*อัปเดต[\s\S]*รีเฟรชราคา/);
+assert.match(compare, /msUntilNextDailyRefresh[\s\S]*อัปเดต[\s\S]*รีเฟรชราคา/);
 assert.match(compare, /page\?\.games[\s\S]*selectGame[\s\S]*>เกม</);
 assert.match(compare, /storageKey[\s\S]*currentGame/);
 assert.match(compare, /cellTone[\s\S]*bg-destructive\/5[\s\S]*bg-muted\/60[\s\S]*bg-muted\/20/);

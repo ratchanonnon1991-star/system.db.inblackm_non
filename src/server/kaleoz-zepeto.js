@@ -1,3 +1,4 @@
+import { settlePricePage } from "@/lib/gameinfo-price-diff";
 import { DEFAULT_KALEOZ_GAMES, listKaleozGames, saveKaleozGameLabel } from "@/server/kaleoz-games-repository";
 
 const KALEOZ_ORIGIN = "https://www.kaleoz.com";
@@ -354,7 +355,7 @@ export async function fetchKaleozPage(requestedGame = "zepeto", requestedType, {
   const promise = loadKaleozPage(game, requestedType, games, force);
   kaleozCache.set(cacheKey, { ...cached, promise });
   try {
-    const value = normalizeKaleozCategoryLabels(await promise);
+    const value = settlePricePage(cached?.value, normalizeKaleozCategoryLabels(await promise));
     kaleozCache.set(cacheKey, { value, expiresAt: Date.now() + KALEOZ_CACHE_TTL_MS });
     return value;
   } catch (error) {

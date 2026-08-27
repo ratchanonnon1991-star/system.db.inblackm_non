@@ -15,3 +15,15 @@ export function cappedSellerColumns(sellers, coverage, limit, baselineSeller) {
   const kept = new Set([baselineSeller, ...ranked.slice(0, limit)].filter(Boolean));
   return sellers.filter((seller) => !kept.has(seller)).map((seller) => `seller:${seller}`);
 }
+
+// The price refresh runs once a day at 09:00 Thailand time. ICT has no DST and
+// no offset history to worry about, so 02:00 UTC pins it for every viewer
+// regardless of the timezone their browser is in.
+export const DAILY_REFRESH_UTC_HOUR = 2;
+
+export function msUntilNextDailyRefresh(now = Date.now()) {
+  const next = new Date(now);
+  next.setUTCHours(DAILY_REFRESH_UTC_HOUR, 0, 0, 0);
+  if (next.getTime() <= now) next.setUTCDate(next.getUTCDate() + 1);
+  return next.getTime() - now;
+}

@@ -20,15 +20,17 @@ import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { cappedSellerColumns, packCompareStorageKey, togglePackCompareColumn } from "@/lib/gameinfo-pack-market";
+import { cappedSellerColumns, msUntilNextDailyRefresh, packCompareStorageKey, togglePackCompareColumn } from "@/lib/gameinfo-pack-market";
+import { diffPricePages } from "@/lib/gameinfo-price-diff";
 import { cn } from "@/lib/utils";
 
 const storageKey = packCompareStorageKey;
-const AUTO_REFRESH_MS = 60 * 60 * 1000;
 // itemku returns every shop on the marketplace, so the table (one column per
 // seller) and the column menu both need a default cap or they lock the page up.
 const DEFAULT_SELLER_COLUMNS = 12;
 const SELLER_MENU_LIMIT = 50;
+// How long a cell stays marked after a refresh moved it, matching the query panel.
+const CHANGED_HIGHLIGHT_MS = 8000;
 const ITEMKU_GAME_URL = (slug) => `https://www.itemku.com/en/g/${slug}/top-up`;
 
 // Behaviour contract: refreshPrices fetches fresh market data; selectGame and
@@ -108,6 +110,10 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
   const [refreshedPage, setRefreshedPage] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
+  const [refreshNotice, setRefreshNotice] = useState("");
+  // Only a manual refresh asks first; the daily 09:00 run fires on its own.
+  const [refreshPrompt, setRefreshPrompt] = useState(null);
+  const [changedCells, setChangedCells] = useState(() => new Set());
   const [manageOpen, setManageOpen] = useState(false);
   const [gameUrl, setGameUrl] = useState("");
   const [savedGames, setSavedGames] = useState(null);
@@ -131,6 +137,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
+  const pageRef = useRef(page);
   const groups = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("th");
     if (!needle) return page?.groups || [];
@@ -218,6 +225,15 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
       const response = await fetch(`/api/gameinfo/${provider}-prices?game=${encodeURIComponent(currentGame)}&unit=${encodeURIComponent(currentProductType)}&refresh=1`, { cache: "no-store" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "รีเฟรชข้อมูลไม่สำเร็จ");
+      // The server hands back the previous page untouched when the prices match,
+      // so an unchanged refresh must not replace what is on screen.
+      const checkedLabel = data.page?.checkedAt ? new Date(data.page.checkedAt).toLocaleTimeString("th-TH") : "";
+      if (data.page?.unchanged) {
+        setRefreshNotice(`ข้อมูลไม่เปลี่ยน · เช็คเมื่อ ${checkedLabel || "เมื่อสักครู่"}`);
+        return;
+      }
+      setChangedCells(diffPricePages(pageRef.current, data.page));
+      setRefreshNotice("");
       setRefreshedPage(data.page);
     } catch (error) {
       setRefreshError(error.message || "รีเฟรชข้อมูลไม่สำเร็จ");
@@ -236,6 +252,8 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
       setColumnsPicked(false);
       setSellerQuery("");
       setPriceFilter("all");
+      setChangedCells(new Set());
+      setRefreshNotice("");
       setSavedGames(null);
       const saved = JSON.parse(localStorage.getItem(storageKey("seller-order", provider, currentGame)) || "[]");
       if (Array.isArray(saved)) setSellerOrder(saved.filter((seller) => typeof seller === "string"));
@@ -249,6 +267,18 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
       localStorage.removeItem(storageKey("seller-order", provider, currentGame));
     }
   }, [currentGame, savedBaselineSeller, provider]);
+
+  // Kept in a ref so refreshPrices can diff against what is on screen without
+  // being rebuilt (and restarting the hourly timer) on every page change.
+  useEffect(() => {
+    pageRef.current = page;
+  }, [page]);
+
+  useEffect(() => {
+    if (!changedCells.size) return undefined;
+    const timer = window.setTimeout(() => setChangedCells(new Set()), CHANGED_HIGHLIGHT_MS);
+    return () => window.clearTimeout(timer);
+  }, [changedCells]);
 
   useEffect(() => {
     function endPaint() {
@@ -270,10 +300,20 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
     if (GAME_SORTS.some((sort) => sort.value === savedSort)) setGameSort(savedSort);
   }, []);
 
+  // Once a day at 09:00 Thailand time, no prompt. Re-armed after each run rather
+  // than on an interval so it cannot drift off the hour.
   useEffect(() => {
-    const timer = window.setInterval(refreshPrices, AUTO_REFRESH_MS);
-    return () => window.clearInterval(timer);
+    let timer = window.setTimeout(function run() {
+      refreshPrices();
+      timer = window.setTimeout(run, msUntilNextDailyRefresh());
+    }, msUntilNextDailyRefresh());
+    return () => window.clearTimeout(timer);
   }, [refreshPrices]);
+
+  function confirmRefresh() {
+    setRefreshPrompt(null);
+    refreshPrices();
+  }
 
   function handleSellerDragEnd({ active, over }) {
     if (!over || active.id === over.id) return;
@@ -478,8 +518,12 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
                 <CardTitle>ตัวกรองตลาด</CardTitle>
                 <CardDescription>เลือกเกม หน่วยเงิน และ Seller ที่ใช้เป็นราคาอ้างอิง</CardDescription>
                 <CardAction className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-muted-foreground">อัปเดต {page?.fetchedAt ? new Date(page.fetchedAt).toLocaleString("th-TH") : "—"}</span>
-                  <Button type="button" variant="outline" onClick={refreshPrices} disabled={refreshing || !currentProductType}>
+                  <span className="text-xs text-muted-foreground">
+                    อัปเดต {page?.fetchedAt ? new Date(page.fetchedAt).toLocaleString("th-TH") : "—"}
+                    {refreshNotice ? <span className="ml-2 text-foreground">{refreshNotice}</span> : null}
+                    {changedCells.size ? <span className="ml-2 text-foreground">เปลี่ยน {number(changedCells.size)} ช่อง</span> : null}
+                  </span>
+                  <Button type="button" variant="outline" onClick={() => setRefreshPrompt("manual")} disabled={refreshing || !currentProductType}>
                     {refreshing ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
                     {refreshing ? "กำลังรีเฟรช" : "รีเฟรชราคา"}
                   </Button>
@@ -611,7 +655,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
                               <TableCell className="sticky left-0 truncate bg-card px-3 font-medium" title={packName(group)}>{packName(group)}</TableCell>
                               {visibleSellers.map((seller) => {
                                 const offer = offersBySeller.get(seller);
-                                return <SellerPriceCell key={seller} offer={offer} baselineOffer={baselineOffer} isBaseline={seller === activeBaselineSeller} isCheapest={Boolean(offer && offer.price === cheapest?.price)} />;
+                                return <SellerPriceCell key={seller} offer={offer} baselineOffer={baselineOffer} isBaseline={seller === activeBaselineSeller} isCheapest={Boolean(offer && offer.price === cheapest?.price)} isChanged={changedCells.has(`${group.key}:${seller}`)} />;
                               })}
                               {showCheapest ? <TableCell className="px-3 text-right font-semibold tabular-nums text-destructive">{money(cheapest?.price, cheapest?.currency)}</TableCell> : null}
                               {showMostExpensive ? <TableCell className="px-3 text-right font-medium tabular-nums">{money(mostExpensive?.price, mostExpensive?.currency)}</TableCell> : null}
@@ -646,6 +690,22 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
             </Dialog>
           </>
         )}
+
+        <Dialog open={Boolean(refreshPrompt)} onOpenChange={(open) => { if (!open) setRefreshPrompt(null); }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>ยืนยันการรีเฟรชราคา</DialogTitle>
+              <DialogDescription>จะดึงราคาใหม่จาก {marketLabel} ทันที ข้ามแคชที่เก็บไว้ (รอบอัตโนมัติทำงานเองทุกวัน 09:00 น.)</DialogDescription>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">ถ้าราคาไม่เปลี่ยน ตารางจะคงเดิมและขึ้นข้อความบอกไว้เท่านั้น</p>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setRefreshPrompt(null)}>ยกเลิก</Button>
+              <Button type="button" onClick={confirmRefresh} disabled={refreshing}>
+                {refreshing ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}รีเฟรชราคา
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={manageOpen} onOpenChange={(open) => { setManageOpen(open); if (!open) setGameError(""); }}>
           <DialogContent data-shadcn-focus className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
@@ -707,7 +767,7 @@ function MetricCard({ value, label, description, icon: Icon, tone = "blue" }) {
   return <Card size="sm"><CardHeader><CardTitle className="text-2xl tabular-nums">{number(value)}</CardTitle><CardDescription>{label}</CardDescription>{description ? <p className="text-xs text-muted-foreground">{description}</p> : null}<CardAction><Icon className={cn("size-6", METRIC_TONES[tone])} /></CardAction></CardHeader></Card>;
 }
 
-function SellerPriceCell({ offer, baselineOffer, isBaseline, isCheapest }) {
+function SellerPriceCell({ offer, baselineOffer, isBaseline, isCheapest, isChanged }) {
   if (!offer) return <TableCell className="bg-muted/40 px-3 text-right text-muted-foreground">—</TableCell>;
   const difference = Number.isFinite(offer.price) && Number.isFinite(baselineOffer?.price)
     ? offer.price - baselineOffer.price
@@ -715,7 +775,7 @@ function SellerPriceCell({ offer, baselineOffer, isBaseline, isCheapest }) {
   // Cheaper than the reference stays red; more expensive reads green.
   const cellTone = isCheapest || difference < 0 ? "bg-destructive/5" : difference > 0 ? "bg-emerald-500/5" : difference === 0 || isBaseline ? "bg-muted/60" : "bg-muted/20";
   return (
-    <TableCell className={cn("px-3 py-2.5 text-right tabular-nums", cellTone)}>
+    <TableCell className={cn("px-3 py-2.5 text-right tabular-nums", cellTone, isChanged && "ring-2 ring-primary/60 ring-inset")}>
       <Tooltip>
         <TooltipTrigger render={<button type="button" className="inline-flex flex-col items-end gap-1 rounded-md text-right outline-none focus-visible:ring-3 focus-visible:ring-ring/50" />}>
           <span className={cn("text-[0.9375rem] font-medium", (isCheapest || difference < 0) && "font-semibold text-destructive", difference > 0 && "font-semibold text-emerald-600 dark:text-emerald-400")}>{money(offer.price, offer.currency)}</span>
