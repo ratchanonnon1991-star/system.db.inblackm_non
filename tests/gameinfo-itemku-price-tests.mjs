@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { packCompareStorageKey, togglePackCompareColumn } from "@/lib/gameinfo-pack-market.js";
+import { cappedSellerColumns, packCompareStorageKey, togglePackCompareColumn } from "@/lib/gameinfo-pack-market.js";
+import { slugFromItemkuUrl } from "@/server/itemku-games-repository.js";
 import {
   ITEMKU_GAMES,
   clearItemkuCache,
@@ -11,7 +12,9 @@ import {
   itemkuGameUrl,
   normalizeItemkuGame,
   normalizeItemkuGroup,
+  inspectItemkuGame,
   parseItemkuCatalogHtml,
+  parseItemkuGameLabel,
   parseItemkuDenominationHtml,
   parseItemkuReaderJson,
 } from "@/server/itemku-prices.js";
@@ -110,11 +113,101 @@ const compare = readFileSync(new URL("../src/components/gameinfo-pack-price-comp
 assert.match(compare, /TabsTrigger value="kaleoz"[\s\S]*TabsTrigger value="itemku"/);
 assert.match(compare, /next\.set\("market", value\)[\s\S]*next\.delete\("game"\)[\s\S]*next\.delete\("unit"\)/);
 assert.match(compare, /storageKey\("seller-order", provider, currentGame\)/);
-assert.match(compare, /editable && provider === "kaleoz"/);
+assert.match(compare, /await submitGameList\(`\/api\/gameinfo\/\$\{provider\}-games`/);
+assert.match(compare, /await submitGameList\(`\/api\/gameinfo\/\$\{provider\}-games\?game=\$\{encodeURIComponent\(game\.value\)\}`/);
+assert.match(compare, /const marketGameUrl = provider === "itemku" \? ITEMKU_GAME_URL : KALEOZ_GAME_URL;/);
 assert.match(compare, /provider === "itemku" \? `Sold:/);
+
+// itemku hands back hundreds of shops, so the table opens with a capped set of
+// seller columns instead of one per shop.
+const coverage = new Map([["a", 9], ["b", 8], ["c", 7], ["d", 1], ["e", 0]]);
+assert.deepEqual(cappedSellerColumns(["a", "b", "c"], coverage, 3, "a"), []);
+assert.deepEqual(cappedSellerColumns(["a", "b", "c", "d", "e"], coverage, 3, "a"), ["seller:d", "seller:e"]);
+// The reference seller is kept even when its coverage puts it outside the cap.
+assert.deepEqual(cappedSellerColumns(["a", "b", "c", "d", "e"], coverage, 3, "e"), ["seller:d"]);
+// Hidden keys keep the order the columns are in, not the ranking order.
+assert.deepEqual(cappedSellerColumns(["e", "d", "c", "b", "a"], coverage, 2, ""), ["seller:e", "seller:d", "seller:c"]);
+
+// Picking a reference seller moves it to the front without locking the drag order.
+assert.match(compare, /const nextOrder = \[seller, \.\.\.sellers\.filter\(\(item\) => item !== seller\)\];/);
+// dnd-kit's counter-based aria-describedby tears hydration down if it ships.
+assert.match(compare, /"aria-describedby": describedBy, \.\.\.dragAttributes \} = attributes/);
+// itemku games are added by link, the same way Kaleoz games are.
+assert.equal(slugFromItemkuUrl("https://www.itemku.com/en/g/honkai-star-rail/top-up"), "honkai-star-rail");
+assert.equal(slugFromItemkuUrl("https://www.itemku.com/g/zepeto"), "zepeto");
+assert.equal(slugFromItemkuUrl("Mobile-Legends"), "mobile-legends");
+assert.throws(() => slugFromItemkuUrl("https://www.kaleoz.com/buy/zepeto"), /ลิงก์ไม่ถูกต้อง/);
+assert.throws(() => slugFromItemkuUrl(""), /กรุณาวางลิงก์/);
+
+// The name comes from the Flight payload, then the title, then the slug.
+assert.equal(parseItemkuGameLabel(flight({ ...catalogData, game: { slug: "zepeto", name: "ZEPETO" } }), "zepeto"), "ZEPETO");
+assert.equal(parseItemkuGameLabel("<html><head><title>Top Up Honkai Star Rail | itemku</title></head></html>", "honkai-star-rail"), "Honkai Star Rail");
+assert.equal(parseItemkuGameLabel("<html></html>", "love-and-deepspace"), "LOVE AND DEEPSPACE");
+
+const inspected = await inspectItemkuGame("zepeto", { fetchHtml: async () => flight({ ...catalogData, game: { slug: "zepeto", name: "ZEPETO" } }) });
+assert.deepEqual(inspected, { slug: "zepeto", label: "ZEPETO" });
+// A page with no Top Up section is rejected before it can be saved.
+await assert.rejects(inspectItemkuGame("nope", { fetchHtml: async () => "<html></html>" }), /Flight payload/);
+
+const itemkuGamesRoute = readFileSync(new URL("../src/app/api/gameinfo/itemku-games/route.js", import.meta.url), "utf8");
+assert.match(itemkuGamesRoute, /requireGameinfoEditor/);
+assert.match(itemkuGamesRoute, /slugFromItemkuUrl\(body\.url\)/);
+assert.match(itemkuGamesRoute, /inspectItemkuGame\(slug\)/);
+assert.match(itemkuGamesRoute, /export async function DELETE/);
+
+const itemkuGamesRepo = readFileSync(new URL("../src/server/itemku-games-repository.js", import.meta.url), "utf8");
+assert.match(itemkuGamesRepo, /CREATE TABLE IF NOT EXISTS itemku_games/);
+assert.match(itemkuGamesRepo, /INSERT INTO itemku_games \(value, slug, label, sort_order\)/);
+
+// Seller columns are fixed boxes, and the table sizes to them so a short set of
+// columns packs to the left instead of stretching across the card.
+assert.match(compare, /<Table className="w-auto table-fixed"/);
+assert.match(compare, /cn\("h-12 w-48 px-3 cursor-grab touch-none text-right active:cursor-grabbing"/);
+assert.doesNotMatch(compare, /min-w-\[980px\]/);
+
+// Portalled popups escape the page wrapper, so they opt out of the legacy red
+// focus outline themselves or it stacks on top of the shadcn ring.
+const dropdownMenuUi = readFileSync(new URL("../src/components/ui/dropdown-menu.jsx", import.meta.url), "utf8");
+const selectUi = readFileSync(new URL("../src/components/ui/select.jsx", import.meta.url), "utf8");
+const dialogUi = readFileSync(new URL("../src/components/ui/dialog.jsx", import.meta.url), "utf8");
+const tooltipUi = readFileSync(new URL("../src/components/ui/tooltip.jsx", import.meta.url), "utf8");
+assert.match(dropdownMenuUi, /data-slot="dropdown-menu-content"\s+data-shadcn-focus/);
+assert.match(selectUi, /data-slot="select-content"[\s\S]{0,80}?data-shadcn-focus/);
+assert.match(dialogUi, /data-slot="dialog-content"\s+data-shadcn-focus/);
+assert.match(tooltipUi, /data-slot="tooltip-content"\s+data-shadcn-focus/);
+
+// The bulk actions sit at the top of the menu, and "clear" touches sellers only.
+assert.match(compare, /<DropdownMenuContent[^>]*>\s*<div className="flex gap-1 p-1">\s*<Button[^>]*onClick=\{showAllColumns\}>แสดงทุกคอลัมน์<\/Button>\s*<Button[^>]*onClick=\{clearSellerColumns\}>ล้าง Seller<\/Button>/);
+assert.match(compare, /effectiveHiddenColumns\.filter\(\(column\) => !column\.startsWith\("seller:"\)\),\s*\.\.\.sellers\.map\(\(seller\) => `seller:\$\{seller\}`\),/);
+// Nothing pins a shop as the reference any more, for either market.
+assert.doesNotMatch(compare, /defaultBaselineSeller/);
+assert.match(compare, /await saveBaselinePreference\("DELETE", "", "ล้าง Seller อ้างอิงไม่สำเร็จ"\)/);
+
+const preferenceRoute = readFileSync(new URL("../src/app/api/gameinfo/market-preference/route.js", import.meta.url), "utf8");
+assert.match(preferenceRoute, /export async function DELETE\(request\)/);
+assert.match(preferenceRoute, /clearGameinfoBaselineSeller\(user\.id, body\.provider, body\.game\)/);
+
+const preferences = readFileSync(new URL("../src/server/gameinfo-market-preferences.js", import.meta.url), "utf8");
+assert.match(preferences, /DELETE FROM gameinfo_market_preferences WHERE user_id = \$1 AND provider = \$2 AND game = \$3/);
+
+// Drag-to-select paints rows on pointerenter and drops the click that ends the drag.
+assert.match(compare, /onPointerDown=\{\(\) => startColumnPaint\(`seller:\$\{seller\}`\)\}/);
+assert.match(compare, /onPointerEnter=\{\(event\) => paintColumn\(`seller:\$\{seller\}`, event\)\}/);
+assert.match(compare, /if \(paintHiddenRef\.current === null \|\| !event\.buttons\) return;/);
+assert.match(compare, /if \(skipNextCheckedChangeRef\.current\) \{\s*skipNextCheckedChangeRef\.current = false;\s*return;/);
+// The price filter narrows the seller columns but always keeps the reference one.
+assert.match(compare, /if \(priceFilter === "all" \|\| seller === activeBaselineSeller\) return true;/);
+assert.match(compare, /sellerPriceSides\.get\(seller\)\?\.\[priceFilter\] \|\| 0\) > 0/);
+assert.match(compare, /<TabsTrigger value="expensive">แพงกว่า<\/TabsTrigger>\s*<TabsTrigger value="cheaper">ถูกกว่า<\/TabsTrigger>/);
+// More expensive than the reference reads green, cheaper stays red.
+assert.match(compare, /difference > 0 && "font-semibold text-emerald-600 dark:text-emerald-400"/);
+assert.match(compare, /\(isCheapest \|\| difference < 0\) && "font-semibold text-destructive"/);
+// base-ui throws when a GroupLabel renders outside a Group.
+assert.doesNotMatch(compare, /<DropdownMenuContent[^>]*>\s*<DropdownMenuLabel>/);
+assert.match(compare, /<DropdownMenuGroup>\s*<DropdownMenuLabel>คอลัมน์สรุป<\/DropdownMenuLabel>/);
 
 const runner = readFileSync(new URL("../src/server/itemku-prices.js", import.meta.url), "utf8");
 assert.match(runner, /response\.status === 403[\s\S]*itemkuReaderUrl\(url\)[\s\S]*x-return-format/);
 assert.match(runner, /searchParams\.append\("country_codes\[\]", "TH"\)/);
 
-console.log("\n45 passed");
+console.log("\n89 passed");

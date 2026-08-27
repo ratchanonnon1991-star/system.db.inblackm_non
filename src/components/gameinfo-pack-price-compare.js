@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, CheckCircle2, Columns3, ExternalLink, GripVertical, Image as ImageIcon, Minus, PackageSearch, Plus, RefreshCw, Search, Settings2, Store, Trash2, X } from "lucide-react";
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, arrayMove, horizontalListSortingStrategy, sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable";
@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
@@ -20,11 +20,16 @@ import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { packCompareStorageKey, togglePackCompareColumn } from "@/lib/gameinfo-pack-market";
+import { cappedSellerColumns, packCompareStorageKey, togglePackCompareColumn } from "@/lib/gameinfo-pack-market";
 import { cn } from "@/lib/utils";
 
 const storageKey = packCompareStorageKey;
 const AUTO_REFRESH_MS = 60 * 60 * 1000;
+// itemku returns every shop on the marketplace, so the table (one column per
+// seller) and the column menu both need a default cap or they lock the page up.
+const DEFAULT_SELLER_COLUMNS = 12;
+const SELLER_MENU_LIMIT = 50;
+const ITEMKU_GAME_URL = (slug) => `https://www.itemku.com/en/g/${slug}/top-up`;
 
 // Behaviour contract: refreshPrices fetches fresh market data; selectGame and
 // selectProductType preserve URL filters; seller/column preferences persist per
@@ -90,9 +95,16 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
   const [query, setQuery] = useState("");
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [sellerOrder, setSellerOrder] = useState([]);
-  const [baselineSeller, setBaselineSeller] = useState("");
+  const [baselineSeller, setBaselineSeller] = useState(serverPage?.baselineSeller || "");
   const [baselineSaveError, setBaselineSaveError] = useState("");
   const [hiddenColumns, setHiddenColumns] = useState([]);
+  const [columnsPicked, setColumnsPicked] = useState(false);
+  const [sellerQuery, setSellerQuery] = useState("");
+  const [priceFilter, setPriceFilter] = useState("all");
+  // Drag-to-select: pointerdown paints the first row, pointerenter paints the
+  // rest, and the click that follows the drag must not undo the first row.
+  const paintHiddenRef = useRef(null);
+  const skipNextCheckedChangeRef = useRef(false);
   const [refreshedPage, setRefreshedPage] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
@@ -106,9 +118,14 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
   const page = refreshedPage?.provider === provider && refreshedPage?.game === serverPage?.game && refreshedPage?.productType === serverPage?.productType ? refreshedPage : serverPage;
   const currentGame = page?.game || "zepeto";
   const currentProductType = page?.productType;
-  const defaultBaselineSeller = serverPage?.baselineSeller || page?.defaultBaselineSeller || (provider === "kaleoz" ? "InblackmTH" : "");
+  // Only an explicit pick is remembered; otherwise the first seller found wins.
+  const savedBaselineSeller = serverPage?.baselineSeller || "";
   const gameList = savedGames || page?.games;
-  const games = useMemo(() => provider === "kaleoz" ? sortGames(gameItems(gameList), gameSort) : gameItems(gameList), [gameList, gameSort, provider]);
+  const games = useMemo(() => sortGames(gameItems(gameList), gameSort), [gameList, gameSort]);
+  const marketLabel = page?.providerLabel || (provider === "itemku" ? "itemku" : "Kaleoz");
+  const marketGameUrl = provider === "itemku" ? ITEMKU_GAME_URL : KALEOZ_GAME_URL;
+  const marketUrlExample = provider === "itemku" ? "https://www.itemku.com/en/g/honkai-star-rail/top-up" : "https://www.kaleoz.com/buy/honkai-star-rail";
+  const marketUrlPlaceholder = provider === "itemku" ? "https://www.itemku.com/en/g/<ชื่อเกม>/top-up" : "https://www.kaleoz.com/buy/<ชื่อเกม>";
   const productTypes = selectItems(page?.productTypes).map((type, index) => index === 0 ? { ...type, label: "ทุกหมวดหมู่" } : type);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -119,21 +136,57 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
     if (!needle) return page?.groups || [];
     return (page?.groups || []).filter((group) => packName(group).toLocaleLowerCase("th").includes(needle));
   }, [page, query]);
-  const availableSellers = useMemo(() => {
-    const found = [...new Set((page?.offers || []).map((offer) => offer.seller).filter(Boolean))];
-    if (provider === "itemku") return found;
-    return found.sort((a, b) => (a === defaultBaselineSeller ? -1 : b === defaultBaselineSeller ? 1 : a.localeCompare(b)));
-  }, [defaultBaselineSeller, page, provider]);
+  const availableSellers = useMemo(() => [...new Set((page?.offers || []).map((offer) => offer.seller).filter(Boolean))], [page]);
   const sellers = useMemo(() => [
     ...sellerOrder.filter((seller) => availableSellers.includes(seller)),
     ...availableSellers.filter((seller) => !sellerOrder.includes(seller)),
   ], [availableSellers, sellerOrder]);
   const sellerItems = sellers.map((seller) => ({ label: seller, value: seller }));
   const activeBaselineSeller = availableSellers.includes(baselineSeller) ? baselineSeller : availableSellers[0];
-  const visibleSellers = sellers.filter((seller) => !hiddenColumns.includes(`seller:${seller}`));
-  const showCheapest = !hiddenColumns.includes("summary:cheapest");
-  const showMostExpensive = !hiddenColumns.includes("summary:most-expensive");
-  const showDetails = !hiddenColumns.includes("summary:details");
+  // Sellers that cover the most pack groups are the useful ones to show first.
+  const sellerCoverage = useMemo(() => {
+    const coverage = new Map();
+    for (const group of page?.groups || []) {
+      for (const seller of group.sellers || []) coverage.set(seller, (coverage.get(seller) || 0) + 1);
+    }
+    return coverage;
+  }, [page]);
+  const cappedColumns = useMemo(
+    () => cappedSellerColumns(sellers, sellerCoverage, DEFAULT_SELLER_COLUMNS, activeBaselineSeller),
+    [activeBaselineSeller, sellerCoverage, sellers]
+  );
+  // Until the user opens the menu and picks, the cap stands in for their choice.
+  const effectiveHiddenColumns = columnsPicked ? hiddenColumns : [...hiddenColumns, ...cappedColumns];
+  const cappedSellerCount = columnsPicked ? 0 : cappedColumns.length;
+  // A seller qualifies for the filter when at least one of its packs sits on that
+  // side of the reference price.
+  const sellerPriceSides = useMemo(() => {
+    const sides = new Map();
+    for (const group of page?.groups || []) {
+      const baselinePrice = group.offers.find((offer) => offer.seller === activeBaselineSeller)?.price;
+      if (!Number.isFinite(baselinePrice)) continue;
+      for (const offer of group.offers) {
+        if (offer.seller === activeBaselineSeller || !Number.isFinite(offer.price)) continue;
+        const side = sides.get(offer.seller) || { expensive: 0, cheaper: 0 };
+        if (offer.price > baselinePrice) side.expensive += 1;
+        else if (offer.price < baselinePrice) side.cheaper += 1;
+        sides.set(offer.seller, side);
+      }
+    }
+    return sides;
+  }, [activeBaselineSeller, page]);
+  const matchesPriceFilter = useCallback((seller) => {
+    if (priceFilter === "all" || seller === activeBaselineSeller) return true;
+    return (sellerPriceSides.get(seller)?.[priceFilter] || 0) > 0;
+  }, [activeBaselineSeller, priceFilter, sellerPriceSides]);
+  const menuSellers = useMemo(() => {
+    const needle = sellerQuery.trim().toLocaleLowerCase("th");
+    return needle ? sellers.filter((seller) => seller.toLocaleLowerCase("th").includes(needle)) : sellers;
+  }, [sellerQuery, sellers]);
+  const visibleSellers = sellers.filter((seller) => !effectiveHiddenColumns.includes(`seller:${seller}`) && matchesPriceFilter(seller));
+  const showCheapest = !effectiveHiddenColumns.includes("summary:cheapest");
+  const showMostExpensive = !effectiveHiddenColumns.includes("summary:most-expensive");
+  const showDetails = !effectiveHiddenColumns.includes("summary:details");
   const visibleColumnCount = visibleSellers.length + 1 + Number(showCheapest) + Number(showMostExpensive) + Number(showDetails);
   const competitorComparison = useMemo(() => {
     let moreExpensive = 0;
@@ -177,18 +230,39 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
     try {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setSellerOrder([]);
-      setBaselineSeller(defaultBaselineSeller);
+      setBaselineSeller(savedBaselineSeller);
       setBaselineSaveError("");
       setHiddenColumns([]);
+      setColumnsPicked(false);
+      setSellerQuery("");
+      setPriceFilter("all");
       setSavedGames(null);
       const saved = JSON.parse(localStorage.getItem(storageKey("seller-order", provider, currentGame)) || "[]");
       if (Array.isArray(saved)) setSellerOrder(saved.filter((seller) => typeof seller === "string"));
-      const savedHiddenColumns = JSON.parse(localStorage.getItem(storageKey("hidden-columns", provider, currentGame)) || "[]");
-      if (Array.isArray(savedHiddenColumns)) setHiddenColumns(savedHiddenColumns.filter((column) => typeof column === "string"));
+      const rawHiddenColumns = localStorage.getItem(storageKey("hidden-columns", provider, currentGame));
+      const savedHiddenColumns = rawHiddenColumns == null ? null : JSON.parse(rawHiddenColumns);
+      if (Array.isArray(savedHiddenColumns)) {
+        setHiddenColumns(savedHiddenColumns.filter((column) => typeof column === "string"));
+        setColumnsPicked(true);
+      }
     } catch {
       localStorage.removeItem(storageKey("seller-order", provider, currentGame));
     }
-  }, [currentGame, defaultBaselineSeller, provider]);
+  }, [currentGame, savedBaselineSeller, provider]);
+
+  useEffect(() => {
+    function endPaint() {
+      paintHiddenRef.current = null;
+      // The click that closes a drag fires before timers, so clear the guard after it.
+      setTimeout(() => { skipNextCheckedChangeRef.current = false; }, 0);
+    }
+    window.addEventListener("pointerup", endPaint);
+    window.addEventListener("pointercancel", endPaint);
+    return () => {
+      window.removeEventListener("pointerup", endPaint);
+      window.removeEventListener("pointercancel", endPaint);
+    };
+  }, []);
 
   useEffect(() => {
     const savedSort = localStorage.getItem(GAME_SORT_STORAGE_KEY);
@@ -213,21 +287,38 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
     localStorage.setItem(storageKey("seller-order", provider, currentGame), JSON.stringify(next));
   }
 
-  async function selectBaselineSeller(seller) {
-    if (!seller) return;
-    setBaselineSeller(seller);
+  async function saveBaselinePreference(method, seller, fallbackMessage) {
     setBaselineSaveError("");
     try {
       const response = await fetch("/api/gameinfo/market-preference", {
-        method: "PUT",
+        method,
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ provider, game: currentGame, seller }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "บันทึก Seller อ้างอิงไม่สำเร็จ");
+      if (!response.ok) throw new Error(data.error || fallbackMessage);
     } catch (error) {
-      setBaselineSaveError(error.message || "บันทึก Seller อ้างอิงไม่สำเร็จ");
+      setBaselineSaveError(error.message || fallbackMessage);
     }
+  }
+
+  async function selectBaselineSeller(seller) {
+    if (!seller) return;
+    setBaselineSeller(seller);
+    // The reference seller jumps to the front, but stays draggable from there.
+    const nextOrder = [seller, ...sellers.filter((item) => item !== seller)];
+    setSellerOrder(nextOrder);
+    localStorage.setItem(storageKey("seller-order", provider, currentGame), JSON.stringify(nextOrder));
+    if (effectiveHiddenColumns.includes(`seller:${seller}`)) toggleColumn(`seller:${seller}`);
+    await saveBaselinePreference("PUT", seller, "บันทึก Seller อ้างอิงไม่สำเร็จ");
+  }
+
+  // Drops the saved pick so the reference goes back to the first seller found.
+  async function clearBaselineSeller() {
+    setBaselineSeller("");
+    setSellerOrder([]);
+    localStorage.removeItem(storageKey("seller-order", provider, currentGame));
+    await saveBaselinePreference("DELETE", "", "ล้าง Seller อ้างอิงไม่สำเร็จ");
   }
 
   async function submitGameList(url, request, fallbackMessage) {
@@ -249,7 +340,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
 
   async function addGame(event) {
     event.preventDefault();
-    const nextGames = await submitGameList("/api/gameinfo/kaleoz-games", {
+    const nextGames = await submitGameList(`/api/gameinfo/${provider}-games`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ url: gameUrl }),
@@ -260,7 +351,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
   }
 
   async function removeGame(game) {
-    const nextGames = await submitGameList(`/api/gameinfo/kaleoz-games?game=${encodeURIComponent(game.value)}`, { method: "DELETE" }, "ลบเกมไม่สำเร็จ");
+    const nextGames = await submitGameList(`/api/gameinfo/${provider}-games?game=${encodeURIComponent(game.value)}`, { method: "DELETE" }, "ลบเกมไม่สำเร็จ");
     if (!nextGames) return;
     if (game.value === currentGame) selectGame(nextGames[0]?.value);
     else router.refresh();
@@ -303,17 +394,50 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
     router.push(`${pathname}?${next.toString()}`);
   }
 
+  function commitHiddenColumns(next) {
+    setHiddenColumns(next);
+    setColumnsPicked(true);
+    localStorage.setItem(storageKey("hidden-columns", provider, currentGame), JSON.stringify(next));
+  }
+
   function toggleColumn(column) {
-    setHiddenColumns((current) => {
-      const next = togglePackCompareColumn(current, column);
-      localStorage.setItem(storageKey("hidden-columns", provider, currentGame), JSON.stringify(next));
-      return next;
-    });
+    commitHiddenColumns(togglePackCompareColumn(effectiveHiddenColumns, column));
+  }
+
+  function setColumnHidden(column, hidden) {
+    if (effectiveHiddenColumns.includes(column) !== hidden) toggleColumn(column);
+  }
+
+  function startColumnPaint(column) {
+    paintHiddenRef.current = !effectiveHiddenColumns.includes(column);
+    skipNextCheckedChangeRef.current = true;
+    setColumnHidden(column, paintHiddenRef.current);
+  }
+
+  function paintColumn(column, event) {
+    if (paintHiddenRef.current === null || !event.buttons) return;
+    setColumnHidden(column, paintHiddenRef.current);
+  }
+
+  // Keyboard toggles never go through pointerdown, so they still land here.
+  function toggleColumnFromCheckbox(column) {
+    if (skipNextCheckedChangeRef.current) {
+      skipNextCheckedChangeRef.current = false;
+      return;
+    }
+    toggleColumn(column);
   }
 
   function showAllColumns() {
-    setHiddenColumns([]);
-    localStorage.removeItem(storageKey("hidden-columns", provider, currentGame));
+    commitHiddenColumns([]);
+  }
+
+  // Clears the seller ticks only; the summary columns keep whatever they are on.
+  function clearSellerColumns() {
+    commitHiddenColumns([
+      ...effectiveHiddenColumns.filter((column) => !column.startsWith("seller:")),
+      ...sellers.map((seller) => `seller:${seller}`),
+    ]);
   }
 
   return (
@@ -334,7 +458,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
             </div>
           </div>
           <div className="flex w-fit flex-wrap items-center gap-2">
-            {editable && provider === "kaleoz" ? (
+            {editable ? (
               <Button type="button" variant="outline" size="lg" onClick={() => setManageOpen(true)}>
                 <Settings2 data-icon="inline-start" /> จัดการเกม
               </Button>
@@ -353,7 +477,8 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
               <CardHeader>
                 <CardTitle>ตัวกรองตลาด</CardTitle>
                 <CardDescription>เลือกเกม หน่วยเงิน และ Seller ที่ใช้เป็นราคาอ้างอิง</CardDescription>
-                <CardAction>
+                <CardAction className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-muted-foreground">อัปเดต {page?.fetchedAt ? new Date(page.fetchedAt).toLocaleString("th-TH") : "—"}</span>
                   <Button type="button" variant="outline" onClick={refreshPrices} disabled={refreshing || !currentProductType}>
                     {refreshing ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
                     {refreshing ? "กำลังรีเฟรช" : "รีเฟรชราคา"}
@@ -378,10 +503,14 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
                   </Field>
                   <Field>
                     <FieldLabel htmlFor="compare-seller">Seller อ้างอิง</FieldLabel>
-                    <Select items={sellerItems} value={activeBaselineSeller || null} onValueChange={selectBaselineSeller} disabled={!sellerItems.length}>
-                      <SelectTrigger id="compare-seller" className="w-full"><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectGroup>{sellerItems.map((seller) => <SelectItem key={seller.value} value={seller.value}>{seller.label}</SelectItem>)}</SelectGroup></SelectContent>
-                    </Select>
+                    <div className="flex items-center gap-2">
+                      <Select items={sellerItems} value={activeBaselineSeller || null} onValueChange={selectBaselineSeller} disabled={!sellerItems.length}>
+                        <SelectTrigger id="compare-seller" className="w-full"><SelectValue /></SelectTrigger>
+                        <SelectContent><SelectGroup>{sellerItems.map((seller) => <SelectItem key={seller.value} value={seller.value}>{seller.label}</SelectItem>)}</SelectGroup></SelectContent>
+                      </Select>
+                      {baselineSeller ? <Button type="button" variant="outline" size="icon" aria-label="ล้าง Seller อ้างอิงที่จำไว้" title="ล้างค่าที่จำไว้ แล้วกลับไปใช้ Seller ตัวแรกที่เจอ" onClick={clearBaselineSeller}><X /></Button> : null}
+                    </div>
+                    <FieldDescription>{baselineSeller ? "จำค่าที่เลือกไว้" : "ใช้ Seller ตัวแรกที่เจอ"}</FieldDescription>
                   </Field>
                 </FieldGroup>
               </CardContent>
@@ -391,18 +520,17 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
             {baselineSaveError ? <Alert variant="destructive"><Store /><AlertTitle>บันทึก Seller อ้างอิงไม่สำเร็จ</AlertTitle><AlertDescription>{baselineSaveError}</AlertDescription></Alert> : null}
 
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-              <MetricCard value={page?.groups?.length || 0} label="กลุ่มแพ็คที่จับคู่" icon={PackageSearch} />
-              <MetricCard value={page?.offers?.length || 0} label={`รายการที่ใช้ · จากทั้งหมด ${number(page?.totalListings)}`} icon={CheckCircle2} />
-              <MetricCard value={sellers.length} label="Seller ที่พบ" icon={Store} />
-              <MetricCard value={competitorComparison.moreExpensive} label="แพงกว่าคู่แข่ง" description={`จาก ${number(competitorComparison.comparable)} แพ็คที่เทียบได้`} icon={ArrowUp} />
-              <MetricCard value={competitorComparison.cheaper} label="ถูกกว่าคู่แข่ง" description={`จาก ${number(competitorComparison.comparable)} แพ็คที่เทียบได้`} icon={ArrowDown} />
+              <MetricCard value={page?.groups?.length || 0} label="กลุ่มแพ็คที่จับคู่" icon={PackageSearch} tone="blue" />
+              <MetricCard value={page?.offers?.length || 0} label={`รายการที่ใช้ · จากทั้งหมด ${number(page?.totalListings)}`} icon={CheckCircle2} tone="amber" />
+              <MetricCard value={sellers.length} label="Seller ที่พบ" icon={Store} tone="violet" />
+              <MetricCard value={competitorComparison.moreExpensive} label="แพงกว่าคู่แข่ง" description={`จาก ${number(competitorComparison.comparable)} แพ็คที่เทียบได้`} icon={ArrowUp} tone="emerald" />
+              <MetricCard value={competitorComparison.cheaper} label="ถูกกว่าคู่แข่ง" description={`จาก ${number(competitorComparison.comparable)} แพ็คที่เทียบได้`} icon={ArrowDown} tone="rose" />
             </div>
 
             <Card>
               <CardHeader className="border-b">
                 <CardTitle>ตารางเปรียบเทียบราคา</CardTitle>
                 <CardDescription>ลากหัวคอลัมน์เพื่อสลับลำดับ</CardDescription>
-                <CardAction className="text-xs text-muted-foreground">อัปเดต {page?.fetchedAt ? new Date(page.fetchedAt).toLocaleString("th-TH") : "—"}</CardAction>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -415,31 +543,61 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
                     </InputGroup>
                     {query ? <FieldDescription>พบ {number(groups.length)} จาก {number(page?.groups?.length || 0)} กลุ่มแพ็ค</FieldDescription> : null}
                   </Field>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger render={<Button variant="outline" />}><Columns3 data-icon="inline-start" /> เลือกคอลัมน์</DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-64">
-                      <DropdownMenuLabel>คอลัมน์ที่แสดง</DropdownMenuLabel>
-                      <DropdownMenuGroup>
-                        {sellers.map((seller) => <DropdownMenuCheckboxItem key={seller} checked={!hiddenColumns.includes(`seller:${seller}`)} onCheckedChange={() => toggleColumn(`seller:${seller}`)}>{seller}</DropdownMenuCheckboxItem>)}
-                        <DropdownMenuCheckboxItem checked={showCheapest} onCheckedChange={() => toggleColumn("summary:cheapest")}>ราคาต่ำสุด</DropdownMenuCheckboxItem>
-                        <DropdownMenuCheckboxItem checked={showMostExpensive} onCheckedChange={() => toggleColumn("summary:most-expensive")}>ราคาแพงสุด</DropdownMenuCheckboxItem>
-                        <DropdownMenuCheckboxItem checked={showDetails} onCheckedChange={() => toggleColumn("summary:details")}>ตรวจชื่อรายการ</DropdownMenuCheckboxItem>
-                      </DropdownMenuGroup>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuGroup><DropdownMenuItem onClick={showAllColumns}>แสดงทุกคอลัมน์</DropdownMenuItem></DropdownMenuGroup>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Tabs value={priceFilter} onValueChange={setPriceFilter}>
+                      <TabsList aria-label="กรอง Seller ตามราคาเทียบกับราคาอ้างอิง">
+                        <TabsTrigger value="all">ทุกร้าน</TabsTrigger>
+                        <TabsTrigger value="expensive">แพงกว่า</TabsTrigger>
+                        <TabsTrigger value="cheaper">ถูกกว่า</TabsTrigger>
+                      </TabsList>
+                    </Tabs>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger render={<Button variant="outline" />}><Columns3 data-icon="inline-start" /> เลือกคอลัมน์ {cappedSellerCount ? `(ซ่อน ${number(cappedSellerCount)} Seller)` : ""}</DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-72">
+                        <div className="flex gap-1 p-1">
+                          <Button type="button" variant="outline" size="sm" className="flex-1" onClick={showAllColumns}>แสดงทุกคอลัมน์</Button>
+                          <Button type="button" variant="outline" size="sm" className="flex-1" onClick={clearSellerColumns}>ล้าง Seller</Button>
+                        </div>
+                        <DropdownMenuSeparator />
+                        <div className="p-1">
+                          <InputGroup>
+                            <InputGroupAddon><Search /></InputGroupAddon>
+                            <InputGroupInput type="search" value={sellerQuery} onChange={(event) => setSellerQuery(event.target.value)} onKeyDown={(event) => event.stopPropagation()} placeholder="ค้นหา Seller" aria-label="ค้นหา Seller" />
+                          </InputGroup>
+                        </div>
+                        <DropdownMenuGroup>
+                          <DropdownMenuLabel>Seller ที่แสดง · {number(visibleSellers.length)} จาก {number(sellers.length)} · กดค้างแล้วลากเพื่อเลือกหลายรายการ</DropdownMenuLabel>
+                          {menuSellers.slice(0, SELLER_MENU_LIMIT).map((seller) => <DropdownMenuCheckboxItem key={seller} checked={!effectiveHiddenColumns.includes(`seller:${seller}`)} onCheckedChange={() => toggleColumnFromCheckbox(`seller:${seller}`)} onPointerDown={() => startColumnPaint(`seller:${seller}`)} onPointerEnter={(event) => paintColumn(`seller:${seller}`, event)} closeOnClick={false}>{seller}</DropdownMenuCheckboxItem>)}
+                          {!menuSellers.length ? <DropdownMenuLabel>ไม่พบ Seller ที่ตรงกับคำค้นหา</DropdownMenuLabel> : null}
+                          {menuSellers.length > SELLER_MENU_LIMIT ? <DropdownMenuLabel>อีก {number(menuSellers.length - SELLER_MENU_LIMIT)} Seller · พิมพ์ค้นหาเพื่อดูเพิ่ม</DropdownMenuLabel> : null}
+                        </DropdownMenuGroup>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuGroup>
+                          <DropdownMenuLabel>คอลัมน์สรุป</DropdownMenuLabel>
+                          <DropdownMenuCheckboxItem checked={showCheapest} onCheckedChange={() => toggleColumn("summary:cheapest")} closeOnClick={false}>ราคาต่ำสุด</DropdownMenuCheckboxItem>
+                          <DropdownMenuCheckboxItem checked={showMostExpensive} onCheckedChange={() => toggleColumn("summary:most-expensive")} closeOnClick={false}>ราคาแพงสุด</DropdownMenuCheckboxItem>
+                          <DropdownMenuCheckboxItem checked={showDetails} onCheckedChange={() => toggleColumn("summary:details")} closeOnClick={false}>ตรวจชื่อรายการ</DropdownMenuCheckboxItem>
+                        </DropdownMenuGroup>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
+
+                {priceFilter === "all" ? null : (
+                  <p className="text-xs text-muted-foreground">
+                    แสดงเฉพาะร้านที่มีอย่างน้อย 1 แพ็ค{priceFilter === "expensive" ? "แพงกว่า" : "ถูกกว่า"}ราคาอ้างอิง · เหลือ {number(visibleSellers.filter((seller) => seller !== activeBaselineSeller).length)} ร้าน (ไม่นับ {activeBaselineSeller || "ราคาอ้างอิง"})
+                  </p>
+                )}
 
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSellerDragEnd}>
                   <SortableContext items={visibleSellers} strategy={horizontalListSortingStrategy}>
-                    <Table className="min-w-[980px]" containerClassName="max-h-[37.5rem] overflow-auto rounded-md border">
+                    <Table className="w-auto table-fixed" containerClassName="max-h-[37.5rem] overflow-auto rounded-md border">
                       <TableHeader><TableRow>
-                        <TableHead className="sticky left-0 min-w-36 bg-card">ชื่อ Pack</TableHead>
+                        <TableHead className="sticky left-0 h-12 w-80 bg-card px-3">ชื่อ Pack</TableHead>
                         {visibleSellers.map((seller) => <SortableSellerHeader key={seller} seller={seller} isBaseline={seller === activeBaselineSeller} />)}
-                        {showCheapest ? <TableHead className="text-right">ราคาต่ำสุด</TableHead> : null}
-                        {showMostExpensive ? <TableHead className="text-right">ราคาแพงสุด</TableHead> : null}
-                        {showDetails ? <TableHead className="w-32">ตรวจชื่อ</TableHead> : null}
+                        {showCheapest ? <TableHead className="h-12 w-40 px-3 text-right">ราคาต่ำสุด</TableHead> : null}
+                        {showMostExpensive ? <TableHead className="h-12 w-40 px-3 text-right">ราคาแพงสุด</TableHead> : null}
+                        {showDetails ? <TableHead className="h-12 w-36 px-3">ตรวจชื่อ</TableHead> : null}
                       </TableRow></TableHeader>
                       <TableBody>
                         {groups.map((group) => {
@@ -449,15 +607,15 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
                           group.offers.forEach((offer) => { if (!offersBySeller.has(offer.seller)) offersBySeller.set(offer.seller, offer); });
                           const baselineOffer = offersBySeller.get(activeBaselineSeller);
                           return (
-                            <TableRow key={group.key} className="h-14">
-                              <TableCell className="sticky left-0 bg-card font-medium">{packName(group)}</TableCell>
+                            <TableRow key={group.key} className="h-[4.5rem]">
+                              <TableCell className="sticky left-0 truncate bg-card px-3 font-medium" title={packName(group)}>{packName(group)}</TableCell>
                               {visibleSellers.map((seller) => {
                                 const offer = offersBySeller.get(seller);
                                 return <SellerPriceCell key={seller} offer={offer} baselineOffer={baselineOffer} isBaseline={seller === activeBaselineSeller} isCheapest={Boolean(offer && offer.price === cheapest?.price)} />;
                               })}
-                              {showCheapest ? <TableCell className="text-right font-semibold tabular-nums text-destructive">{money(cheapest?.price, cheapest?.currency)}</TableCell> : null}
-                              {showMostExpensive ? <TableCell className="text-right font-medium tabular-nums">{money(mostExpensive?.price, mostExpensive?.currency)}</TableCell> : null}
-                              {showDetails ? <TableCell><Button type="button" variant="outline" size="sm" onClick={() => setSelectedGroup(group)}>ดูรายการ</Button></TableCell> : null}
+                              {showCheapest ? <TableCell className="px-3 text-right font-semibold tabular-nums text-destructive">{money(cheapest?.price, cheapest?.currency)}</TableCell> : null}
+                              {showMostExpensive ? <TableCell className="px-3 text-right font-medium tabular-nums">{money(mostExpensive?.price, mostExpensive?.currency)}</TableCell> : null}
+                              {showDetails ? <TableCell className="px-3"><Button type="button" variant="outline" size="sm" onClick={() => setSelectedGroup(group)}>ดูรายการ</Button></TableCell> : null}
                             </TableRow>
                           );
                         })}
@@ -489,14 +647,14 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
           </>
         )}
 
-        {provider === "kaleoz" ? <Dialog open={manageOpen} onOpenChange={(open) => { setManageOpen(open); if (!open) setGameError(""); }}>
+        <Dialog open={manageOpen} onOpenChange={(open) => { setManageOpen(open); if (!open) setGameError(""); }}>
           <DialogContent data-shadcn-focus className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-            <DialogHeader><DialogTitle>จัดการเกมที่เทียบราคา</DialogTitle><DialogDescription>วางลิงก์หน้าเกมของ Kaleoz แล้วระบบจะดึงชื่อเกมมาให้เอง เช่น https://www.kaleoz.com/buy/honkai-star-rail</DialogDescription></DialogHeader>
+            <DialogHeader><DialogTitle>จัดการเกมที่เทียบราคา</DialogTitle><DialogDescription>วางลิงก์หน้าเกมของ {marketLabel} แล้วระบบจะดึงชื่อเกมมาให้เอง เช่น {marketUrlExample}</DialogDescription></DialogHeader>
             <form onSubmit={addGame} className="flex flex-col gap-3">
               <Field>
-                <FieldLabel htmlFor="kaleoz-game-url">ลิงก์หน้าเกม Kaleoz</FieldLabel>
+                <FieldLabel htmlFor="market-game-url">ลิงก์หน้าเกม {marketLabel}</FieldLabel>
                 <div className="flex flex-col gap-2 sm:flex-row">
-                  <InputGroup className="flex-1"><InputGroupAddon><ExternalLink /></InputGroupAddon><InputGroupInput id="kaleoz-game-url" type="text" value={gameUrl} onChange={(event) => setGameUrl(event.target.value)} placeholder="https://www.kaleoz.com/buy/<ชื่อเกม>" /></InputGroup>
+                  <InputGroup className="flex-1"><InputGroupAddon><ExternalLink /></InputGroupAddon><InputGroupInput id="market-game-url" type="text" value={gameUrl} onChange={(event) => setGameUrl(event.target.value)} placeholder={marketUrlPlaceholder} /></InputGroup>
                   <Button type="submit" disabled={gameBusy || !gameUrl.trim()}>{gameBusy ? <Spinner data-icon="inline-start" /> : <Plus data-icon="inline-start" />}เพิ่มเกม</Button>
                 </div>
               </Field>
@@ -517,8 +675,8 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
                     <p className="truncate text-xs text-muted-foreground">{game.slug}{game.createdAt ? ` · เพิ่มเมื่อ ${new Date(game.createdAt).toLocaleDateString("th-TH")}` : ""}</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    <a href={KALEOZ_GAME_URL(game.slug)} target="_blank" rel="noreferrer" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
-                      ดูบน Kaleoz <ExternalLink data-icon="inline-end" />
+                    <a href={marketGameUrl(game.slug)} target="_blank" rel="noreferrer" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+                      ดูบน {marketLabel} <ExternalLink data-icon="inline-end" />
                     </a>
                     <Button type="button" variant="outline" size="sm" disabled={gameBusy || games.length < 2} onClick={() => removeGame(game)} title={games.length < 2 ? "ต้องเหลืออย่างน้อย 1 เกม" : "ลบเกมนี้"}>
                       <Trash2 data-icon="inline-start" /> ลบ
@@ -526,31 +684,42 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
                   </div>
                 </div>
               ))}
-              {!games.length ? <Empty><EmptyHeader><EmptyMedia variant="icon"><PackageSearch /></EmptyMedia><EmptyTitle>ยังไม่มีเกมในรายการ</EmptyTitle><EmptyDescription>วางลิงก์หน้าเกมของ Kaleoz ด้านบนเพื่อเพิ่มเกมแรก</EmptyDescription></EmptyHeader></Empty> : null}
+              {!games.length ? <Empty><EmptyHeader><EmptyMedia variant="icon"><PackageSearch /></EmptyMedia><EmptyTitle>ยังไม่มีเกมในรายการ</EmptyTitle><EmptyDescription>วางลิงก์หน้าเกมของ {marketLabel} ด้านบนเพื่อเพิ่มเกมแรก</EmptyDescription></EmptyHeader></Empty> : null}
             </div>
           </DialogContent>
-        </Dialog> : null}
+        </Dialog>
       </div>
     </TooltipProvider>
   );
 }
 
-function MetricCard({ value, label, description, icon: Icon }) {
-  return <Card size="sm"><CardHeader><CardTitle className="text-2xl tabular-nums">{number(value)}</CardTitle><CardDescription>{label}</CardDescription>{description ? <p className="text-xs text-muted-foreground">{description}</p> : null}<CardAction><Icon className="text-muted-foreground" /></CardAction></CardHeader></Card>;
+// Soft, desaturated tones rather than the flat vivid tiles: the icon carries the
+// colour on its own, with no filled square behind it.
+const METRIC_TONES = {
+  blue: "text-sky-500/75 dark:text-sky-300/75",
+  amber: "text-amber-500/75 dark:text-amber-300/75",
+  violet: "text-violet-500/75 dark:text-violet-300/75",
+  emerald: "text-emerald-500/75 dark:text-emerald-300/75",
+  rose: "text-rose-500/75 dark:text-rose-300/75",
+};
+
+function MetricCard({ value, label, description, icon: Icon, tone = "blue" }) {
+  return <Card size="sm"><CardHeader><CardTitle className="text-2xl tabular-nums">{number(value)}</CardTitle><CardDescription>{label}</CardDescription>{description ? <p className="text-xs text-muted-foreground">{description}</p> : null}<CardAction><Icon className={cn("size-6", METRIC_TONES[tone])} /></CardAction></CardHeader></Card>;
 }
 
 function SellerPriceCell({ offer, baselineOffer, isBaseline, isCheapest }) {
-  if (!offer) return <TableCell className="bg-muted/40 text-right text-muted-foreground">—</TableCell>;
+  if (!offer) return <TableCell className="bg-muted/40 px-3 text-right text-muted-foreground">—</TableCell>;
   const difference = Number.isFinite(offer.price) && Number.isFinite(baselineOffer?.price)
     ? offer.price - baselineOffer.price
     : null;
-  const cellTone = isCheapest || difference < 0 ? "bg-destructive/5" : difference === 0 || isBaseline ? "bg-muted/60" : "bg-muted/20";
+  // Cheaper than the reference stays red; more expensive reads green.
+  const cellTone = isCheapest || difference < 0 ? "bg-destructive/5" : difference > 0 ? "bg-emerald-500/5" : difference === 0 || isBaseline ? "bg-muted/60" : "bg-muted/20";
   return (
-    <TableCell className={cn("text-right tabular-nums", cellTone)}>
+    <TableCell className={cn("px-3 py-2.5 text-right tabular-nums", cellTone)}>
       <Tooltip>
-        <TooltipTrigger render={<button type="button" className="inline-flex flex-col items-end rounded-md text-right outline-none focus-visible:ring-3 focus-visible:ring-ring/50" />}>
-          <span className={cn("font-medium", (isCheapest || difference < 0) && "font-semibold text-destructive")}>{money(offer.price, offer.currency)}</span>
-          {isBaseline ? <Badge variant="outline" className="mt-1">ราคาอ้างอิง</Badge> : difference == null ? <span className="mt-1 text-xs text-muted-foreground">ไม่มีราคาอ้างอิง</span> : difference < 0 ? <Badge variant="destructive" className="mt-1"><ArrowDown />ถูกกว่า {money(Math.abs(difference), offer.currency)}</Badge> : difference > 0 ? <Badge variant="secondary" className="mt-1"><ArrowUp />แพงกว่า {money(difference, offer.currency)}</Badge> : <Badge variant="outline" className="mt-1"><Minus />เท่ากัน</Badge>}
+        <TooltipTrigger render={<button type="button" className="inline-flex flex-col items-end gap-1 rounded-md text-right outline-none focus-visible:ring-3 focus-visible:ring-ring/50" />}>
+          <span className={cn("text-[0.9375rem] font-medium", (isCheapest || difference < 0) && "font-semibold text-destructive", difference > 0 && "font-semibold text-emerald-600 dark:text-emerald-400")}>{money(offer.price, offer.currency)}</span>
+          {isBaseline ? <Badge variant="outline" >ราคาอ้างอิง</Badge> : difference == null ? <span className="text-xs text-muted-foreground">ไม่มีราคาอ้างอิง</span> : difference < 0 ? <Badge variant="destructive"><ArrowDown />ถูกกว่า {money(Math.abs(difference), offer.currency)}</Badge> : difference > 0 ? <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"><ArrowUp />แพงกว่า {money(difference, offer.currency)}</Badge> : <Badge variant="outline"><Minus />เท่ากัน</Badge>}
         </TooltipTrigger>
         <TooltipContent><div className="flex flex-col gap-1">{offer.currency === "USD" ? <><p>Sold: {number(offer.sold)}</p><p>Rating: {offer.rating == null ? "—" : number(offer.rating)}</p><p>Delivery: {offer.delivery || "—"}</p></> : <><p className="font-medium tabular-nums">{offer.unitPrice || "—"}</p><p>Stock: {offer.stockText || number(offer.stock)}</p><p>Trading volume: {number(offer.tradingVolume)}</p></>}</div></TooltipContent>
       </Tooltip>
@@ -560,8 +729,11 @@ function SellerPriceCell({ offer, baselineOffer, isBaseline, isCheapest }) {
 
 function SortableSellerHeader({ seller, isBaseline }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: seller });
+  // dnd-kit numbers aria-describedby from a module counter, so the server and the
+  // client disagree and hydration tears the whole table down. Drop it.
+  const { "aria-describedby": describedBy, ...dragAttributes } = attributes;
   return (
-    <TableHead ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.55 : 1 }} {...attributes} {...listeners} className={cn("min-w-40 cursor-grab touch-none text-right active:cursor-grabbing", isBaseline && "bg-primary text-primary-foreground")} title="กดค้างแล้วลากเพื่อเปลี่ยนลำดับคอลัมน์">
+    <TableHead ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.55 : 1 }} {...dragAttributes} {...listeners} className={cn("h-12 w-48 px-3 cursor-grab touch-none text-right active:cursor-grabbing", isBaseline && "bg-primary text-primary-foreground")} title="กดค้างแล้วลากเพื่อเปลี่ยนลำดับคอลัมน์">
       <span className="flex items-center justify-end gap-1.5"><GripVertical />{seller}</span>
     </TableHead>
   );

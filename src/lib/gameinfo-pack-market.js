@@ -5,3 +5,13 @@ export function packCompareStorageKey(name, provider, game) {
 export function togglePackCompareColumn(columns, column) {
   return columns.includes(column) ? columns.filter((item) => item !== column) : [...columns, column];
 }
+
+// itemku lists every shop on the marketplace, so the table caps how many seller
+// columns it opens with. Sellers covering the most pack groups are kept, plus
+// the reference seller, and the rest come back from the column menu.
+export function cappedSellerColumns(sellers, coverage, limit, baselineSeller) {
+  if (sellers.length <= limit) return [];
+  const ranked = [...sellers].sort((a, b) => (coverage.get(b) || 0) - (coverage.get(a) || 0));
+  const kept = new Set([baselineSeller, ...ranked.slice(0, limit)].filter(Boolean));
+  return sellers.filter((seller) => !kept.has(seller)).map((seller) => `seller:${seller}`);
+}

@@ -37,7 +37,7 @@ import {
   listGameinfoBotChannels,
 } from "@/server/gameinfo-bot-channels";
 import { fetchKaleozPage, kaleozGameUrl, loadKaleozGames, normalizeKaleozGame, normalizeKaleozProductType } from "@/server/kaleoz-zepeto";
-import { ITEMKU_GAMES, fetchItemkuPage, itemkuGameUrl, normalizeItemkuGame, normalizeItemkuGroup } from "@/server/itemku-prices";
+import { fetchItemkuPage, itemkuGameUrl, loadItemkuGames, normalizeItemkuGame, normalizeItemkuGroup } from "@/server/itemku-prices";
 import { getGameinfoBaselineSeller } from "@/server/gameinfo-market-preferences";
 
 // Everyone lands on the card dashboard. Topup and role "user" stay read-only.
@@ -47,8 +47,9 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
   const priceComparison = section === "pack-price-compare";
   const provider = market === "itemku" ? "itemku" : "kaleoz";
   const kaleozGames = priceComparison && provider === "kaleoz" ? await loadKaleozGames() : [];
+  const itemkuGames = priceComparison && provider === "itemku" ? await loadItemkuGames() : [];
   const kaleozGameConfig = priceComparison && provider === "kaleoz" ? normalizeKaleozGame(game, kaleozGames) : null;
-  const itemkuGameConfig = priceComparison && provider === "itemku" ? normalizeItemkuGame(game) : null;
+  const itemkuGameConfig = priceComparison && provider === "itemku" ? normalizeItemkuGame(game, itemkuGames) : null;
   const productType = provider === "itemku" ? normalizeItemkuGroup(unit) : normalizeKaleozProductType(unit);
   const dataMode = normalizeGameinfoDataMode(rawMode);
   const user = await getSessionUser();
@@ -93,14 +94,13 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
             : fetchKaleozPage(kaleozGameConfig?.value, productType)).catch((error) => ({
             provider,
             providerLabel: provider === "itemku" ? "itemku" : "Kaleoz",
-            defaultBaselineSeller: provider === "kaleoz" ? "InblackmTH" : "",
             error: error.message || `โหลด ${provider === "itemku" ? "itemku" : "Kaleoz"} ไม่สำเร็จ`,
             groups: [],
             offers: [],
             game: provider === "itemku" ? itemkuGameConfig?.value : kaleozGameConfig?.value,
             gameLabel: provider === "itemku" ? itemkuGameConfig?.label : kaleozGameConfig?.label,
             sourceUrl: provider === "itemku" ? itemkuGameUrl(itemkuGameConfig?.slug || "zepeto") : kaleozGameUrl(kaleozGameConfig?.slug || "zepeto"),
-            games: provider === "itemku" ? ITEMKU_GAMES : kaleozGames,
+            games: provider === "itemku" ? itemkuGames : kaleozGames,
             productType,
           }))
           : null,

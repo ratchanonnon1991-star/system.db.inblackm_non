@@ -322,7 +322,6 @@ async function loadKaleozPage(game, requestedType, games, force) {
   return {
     provider: "kaleoz",
     providerLabel: "Kaleoz",
-    defaultBaselineSeller: "InblackmTH",
     detailLabels: { volume: "Trading volume", stock: "Stock", server: "Server" },
     sourceUrl: catalog.sourceUrl,
     totalListings: sweep ? sweep.totalListings : results.reduce((sum, result) => sum + result.totalListings, 0),

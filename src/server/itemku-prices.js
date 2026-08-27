@@ -1,14 +1,13 @@
+import { DEFAULT_ITEMKU_GAMES, listItemkuGames } from "@/server/itemku-games-repository";
+
 const ITEMKU_ORIGIN = "https://www.itemku.com";
 const JINA_READER_ORIGIN = "https://r.jina.ai";
 export const ITEMKU_CACHE_TTL_MS = 60 * 60 * 1000;
 export const ITEMKU_ALL_GROUPS = "all";
 
-export const ITEMKU_GAMES = [
-  { value: "zepeto", slug: "zepeto", label: "ZEPETO" },
-  { value: "honkai-impact-3", slug: "honkai-impact-3", label: "HONKAI IMPACT" },
-  { value: "love-and-deepspace", slug: "love-and-deepspace", label: "LOVE AND DEEPSPACE" },
-  { value: "harry-potter-magic-awakened", slug: "harry-potter-magic-awakened", label: "HARRY MAGIC" },
-];
+// Kept as the offline fallback for when the gameinfo database is unreachable;
+// the live list lives in itemku_games and is managed from the compare page.
+export const ITEMKU_GAMES = DEFAULT_ITEMKU_GAMES;
 
 const itemkuCache = globalThis.__gameinfoItemkuCache || new Map();
 globalThis.__gameinfoItemkuCache = itemkuCache;
@@ -17,8 +16,20 @@ export function itemkuGameUrl(slug) {
   return `${ITEMKU_ORIGIN}/en/g/${slug}/top-up`;
 }
 
-export function normalizeItemkuGame(value) {
-  return ITEMKU_GAMES.find((game) => game.value === value) || ITEMKU_GAMES[0];
+export function normalizeItemkuGame(value, games = ITEMKU_GAMES) {
+  const list = games?.length ? games : ITEMKU_GAMES;
+  return list.find((game) => game.value === value) || list[0];
+}
+
+// The saved game list is the source of truth; the seed list only keeps the page
+// usable when the gameinfo database is unreachable.
+export async function loadItemkuGames() {
+  try {
+    const games = await listItemkuGames();
+    return games.length ? games : DEFAULT_ITEMKU_GAMES;
+  } catch {
+    return DEFAULT_ITEMKU_GAMES;
+  }
 }
 
 export function normalizeItemkuGroup(value) {
@@ -203,6 +214,29 @@ function normalizeProduct(product, denomination, rates, fallbackUrl) {
   };
 }
 
+// itemku has no single markup slot for the game name, so try the Flight payload
+// first, then the page title, and fall back to the slug itself.
+export function parseItemkuGameLabel(html, slug) {
+  try {
+    const flightText = extractItemkuFlightText(html);
+    for (const object of extractJsonObjects(flightText, "productListData")) {
+      const game = firstObjectWith(object, (value) => value.slug === slug && typeof value.name === "string" && value.name.trim())
+        || firstObjectWith(object, (value) => value.game_id != null && typeof value.game_name === "string" && value.game_name.trim());
+      const name = String(game?.name || game?.game_name || "").trim();
+      if (name) return name;
+    }
+  } catch {
+    // Fall through to the title/slug fallbacks below.
+  }
+  const title = decodeHtml(/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] || "")
+    .replace(/\s*[|·-]\s*itemku.*$/i, "")
+    .replace(/^\s*(?:top\s*up|beli|jual)\s+/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (title) return title.slice(0, 120);
+  return String(slug || "").split("-").filter(Boolean).join(" ").toLocaleUpperCase("en");
+}
+
 export function parseItemkuCatalogHtml(html) {
   const flightText = extractItemkuFlightText(html);
   const objects = extractJsonObjects(flightText, "productListData");
@@ -381,7 +415,7 @@ async function mapLimit(items, limit, mapper) {
   return results;
 }
 
-async function loadItemkuPage(game, requestedGroup, fetchHtml, fetchJson) {
+async function loadItemkuPage(game, requestedGroup, games, fetchHtml, fetchJson) {
   const sourceUrl = itemkuGameUrl(game.slug);
   const catalog = parseItemkuCatalogHtml(await fetchHtml(sourceUrl));
   const selectedGroup = requestedGroup === ITEMKU_ALL_GROUPS
@@ -404,7 +438,7 @@ async function loadItemkuPage(game, requestedGroup, fetchHtml, fetchJson) {
     groups: groupItemkuOffers(unique),
     game: game.value,
     gameLabel: game.label,
-    games: ITEMKU_GAMES,
+    games,
     productType: selectedGroup.value,
     productTypeLabel: selectedGroup.label,
     productTypes: [
@@ -418,13 +452,15 @@ async function loadItemkuPage(game, requestedGroup, fetchHtml, fetchJson) {
 }
 
 export async function fetchItemkuPage(requestedGame = "zepeto", requestedGroup, { force = false, fetchHtml = itemkuFetch, fetchJson = itemkuApiFetch } = {}) {
-  const game = normalizeItemkuGame(requestedGame);
+  const games = await loadItemkuGames();
+  const game = normalizeItemkuGame(requestedGame, games);
+  if (!game) throw new Error("ยังไม่มีเกมในรายการเทียบราคา");
   const group = normalizeItemkuGroup(requestedGroup);
   const cacheKey = `${game.value}:${group}`;
   const cached = itemkuCache.get(cacheKey);
   if (!force && cached?.value && cached.expiresAt > Date.now()) return cached.value;
   if (!force && cached?.promise) return cached.promise;
-  const promise = loadItemkuPage(game, group, fetchHtml, fetchJson);
+  const promise = loadItemkuPage(game, group, games, fetchHtml, fetchJson);
   itemkuCache.set(cacheKey, { ...cached, promise });
   try {
     const value = await promise;
@@ -442,4 +478,12 @@ export async function fetchItemkuPage(requestedGame = "zepeto", requestedGroup, 
 
 export function clearItemkuCache() {
   itemkuCache.clear();
+}
+
+// Proves the pasted link really is an itemku Top Up page before it is saved, and
+// brings back the name to store alongside the slug.
+export async function inspectItemkuGame(slug, { fetchHtml = itemkuFetch } = {}) {
+  const html = await fetchHtml(itemkuGameUrl(slug));
+  parseItemkuCatalogHtml(html);
+  return { slug, label: parseItemkuGameLabel(html, slug) };
 }

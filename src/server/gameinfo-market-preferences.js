@@ -72,3 +72,13 @@ export async function saveGameinfoBaselineSeller(userId, provider, game, seller)
   );
   return result.rows[0].baseline_seller;
 }
+
+// Clearing the row drops the pin so the reference falls back to the first seller
+// found in the market data.
+export async function clearGameinfoBaselineSeller(userId, provider, game) {
+  await (await getReadyPool()).query(
+    `DELETE FROM gameinfo_market_preferences WHERE user_id = $1 AND provider = $2 AND game = $3`,
+    [normalize(userId, "บัญชีผู้ใช้", 200), normalizeProvider(provider), normalize(game, "เกม", 160)]
+  );
+  return "";
+}

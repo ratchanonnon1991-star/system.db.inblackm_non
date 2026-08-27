@@ -61,7 +61,11 @@
 
 /* Areas built entirely from shadcn components already draw their own
    focus-visible ring; the legacy outline above would stack a second box on top
-   of it. Opt those subtrees out and let the shadcn ring stand alone. */
+   of it. Opt those subtrees out and let the shadcn ring stand alone.
+   [data-gameinfo-root] also sits on <html>, so popups that portal into <body>
+   (dropdown menu, select, dialog, tooltip) land outside the page wrapper and
+   would pick the red outline back up — they each carry the attribute
+   themselves in src/components/ui/. */
 [data-gameinfo-root] [data-shadcn-focus] :where(a, button, input, select, textarea, summary):focus-visible {
   outline: none;
 }
