@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, CheckCircle2, Columns3, ExternalLink, GripVertical, Image as ImageIcon, Minus, PackageSearch, Plus, RefreshCw, Search, Settings2, Store, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, CheckCircle2, Columns3, ExternalLink, GripVertical, Image as ImageIcon, Minus, PackageSearch, Plus, RefreshCw, Search, Settings2, Store, Trash2, X } from "lucide-react";
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, arrayMove, horizontalListSortingStrategy, sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -13,8 +13,8 @@ import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle }
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -38,6 +38,12 @@ function money(value, currency) {
 
 function number(value) {
   return Number(value || 0).toLocaleString("th-TH", { maximumFractionDigits: 2 });
+}
+
+// Search matches the pack name exactly as the first column renders it, so what
+// is typed is compared against what is on screen and nothing else.
+function packName(group) {
+  return group.packLabel || (group.quantity == null ? "ไม่พบตัวเลข" : `แพ็ค ${number(group.quantity)}`);
 }
 
 function selectItems(items = []) {
@@ -98,7 +104,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
   const groups = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("th");
     if (!needle) return page?.groups || [];
-    return (page?.groups || []).filter((group) => group.offers.some((offer) => `${group.quantity ?? ""} ${offer.title} ${offer.seller}`.toLocaleLowerCase("th").includes(needle)));
+    return (page?.groups || []).filter((group) => packName(group).toLocaleLowerCase("th").includes(needle));
   }, [page, query]);
   const availableSellers = useMemo(() => [...new Set((page?.offers || []).map((offer) => offer.seller).filter(Boolean))]
     .sort((a, b) => (a === "InblackmTH" ? -1 : b === "InblackmTH" ? 1 : a.localeCompare(b))), [page]);
@@ -244,6 +250,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
     const next = new URLSearchParams(searchParams.toString());
     next.set("game", value);
     next.delete("unit");
+    setQuery("");
     setRefreshedPage(null);
     router.push(`${pathname}?${next.toString()}`);
   }
@@ -252,6 +259,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
     if (!value) return;
     const next = new URLSearchParams(searchParams.toString());
     next.set("unit", value);
+    setQuery("");
     setRefreshedPage(null);
     router.push(`${pathname}?${next.toString()}`);
   }
@@ -353,8 +361,13 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
               <CardContent className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <Field className="w-full max-w-md">
-                    <FieldLabel htmlFor="compare-search" className="sr-only">ค้นหาแพ็คหรือ Seller</FieldLabel>
-                    <InputGroup><InputGroupAddon><Search /></InputGroupAddon><InputGroupInput id="compare-search" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหาเลขแพ็ค ชื่อ หรือ Seller" /></InputGroup>
+                    <FieldLabel htmlFor="compare-search" className="sr-only">ค้นหาชื่อแพ็ค</FieldLabel>
+                    <InputGroup>
+                      <InputGroupAddon><Search /></InputGroupAddon>
+                      <InputGroupInput id="compare-search" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหาชื่อแพ็ค" />
+                      {query ? <InputGroupAddon align="inline-end"><InputGroupButton type="button" variant="ghost" size="icon-xs" aria-label="ล้างคำค้นหา" onClick={() => setQuery("")}><X /></InputGroupButton></InputGroupAddon> : null}
+                    </InputGroup>
+                    {query ? <FieldDescription>พบ {number(groups.length)} จาก {number(page?.groups?.length || 0)} กลุ่มแพ็ค</FieldDescription> : null}
                   </Field>
                   <DropdownMenu>
                     <DropdownMenuTrigger render={<Button variant="outline" />}><Columns3 data-icon="inline-start" /> เลือกคอลัมน์</DropdownMenuTrigger>
@@ -391,7 +404,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
                           const baselineOffer = offersBySeller.get(activeBaselineSeller);
                           return (
                             <TableRow key={group.key} className="h-14">
-                              <TableCell className="sticky left-0 bg-card font-medium">{group.packLabel || (group.quantity == null ? "ไม่พบตัวเลข" : `แพ็ค ${number(group.quantity)}`)}</TableCell>
+                              <TableCell className="sticky left-0 bg-card font-medium">{packName(group)}</TableCell>
                               {visibleSellers.map((seller) => {
                                 const offer = offersBySeller.get(seller);
                                 return <SellerPriceCell key={seller} offer={offer} baselineOffer={baselineOffer} isBaseline={seller === activeBaselineSeller} isCheapest={Boolean(offer && offer.price === cheapest?.price)} />;
@@ -402,7 +415,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
                             </TableRow>
                           );
                         })}
-                        {!groups.length ? <TableRow><TableCell colSpan={visibleColumnCount}><Empty><EmptyHeader><EmptyMedia variant="icon"><PackageSearch /></EmptyMedia><EmptyTitle>ไม่พบแพ็คที่ตรงกับคำค้นหา</EmptyTitle><EmptyDescription>ลองค้นหาด้วยเลขแพ็ค ชื่อสินค้า หรือชื่อ Seller</EmptyDescription></EmptyHeader></Empty></TableCell></TableRow> : null}
+                        {!groups.length ? <TableRow><TableCell colSpan={visibleColumnCount}><Empty><EmptyHeader><EmptyMedia variant="icon"><PackageSearch /></EmptyMedia><EmptyTitle>ไม่พบแพ็คที่ตรงกับคำค้นหา</EmptyTitle><EmptyDescription>ค้นหาเทียบกับชื่อแพ็คในคอลัมน์แรกเท่านั้น</EmptyDescription></EmptyHeader>{query ? <Button type="button" variant="outline" size="sm" onClick={() => setQuery("")}><X data-icon="inline-start" /> ล้างคำค้นหา</Button> : null}</Empty></TableCell></TableRow> : null}
                       </TableBody>
                     </Table>
                   </SortableContext>

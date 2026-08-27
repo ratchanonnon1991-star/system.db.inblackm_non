@@ -7,6 +7,7 @@ import {
   normalizeKaleozGame,
   normalizeKaleozProductType,
   parseKaleozGameCatalogHtml,
+  parseKaleozGameLabel,
   parseKaleozZepetoHtml,
 } from "@/server/kaleoz-zepeto.js";
 
@@ -132,4 +133,50 @@ assert.match(compare, /sortGames\(selectItems\(gameList\), gameSort\)/);
 assert.match(compare, /kaleoz-game-sort[\s\S]*selectGameSort/);
 assert.match(compare, /setItem\(GAME_SORT_STORAGE_KEY, value\)/);
 
-console.log("\n55 passed");
+assert.match(compare, /aria-label="ล้างคำค้นหา"[\s\S]*setQuery\(""\)/);
+assert.match(compare, /พบ \{number\(groups\.length\)\} จาก \{number\(page\?\.groups\?\.length \|\| 0\)\}/);
+
+assert.match(compare, /function packName\(group\)[\s\S]*group\.packLabel \|\| \(group\.quantity == null/);
+assert.match(compare, /const needle = query\.trim\(\)[\s\S]*packName\(group\)\.toLocaleLowerCase\("th"\)\.includes\(needle\)/);
+assert.doesNotMatch(compare, /offer\.seller, offer\.server|needles/);
+
+const runner = readFileSync(new URL("../src/server/kaleoz-zepeto.js", import.meta.url), "utf8");
+assert.match(runner, /context\.options\.filter\(\(option\) => option\.value !== "0"\)/);
+assert.match(runner, /const allCategories = \{[\s\S]*categories\.flatMap\(\(type\) => type\.packs\)[\s\S]*label: KALEOZ_UNCATEGORIZED_LABEL, path: \[\]/);
+assert.match(runner, /productTypes: \[allCategories, \.\.\.categories\]/);
+assert.match(runner, /KALEOZ_ALL_CATEGORIES_LABEL = "ทุกหมวดหมู่"/);
+assert.match(runner, /label: context\.options\.find\(\(option\) => option\.value === "0"\)\?\.label \|\| KALEOZ_ALL_CATEGORIES_LABEL/);
+assert.match(runner, /async function getGameCatalog\(game, force = false\) \{\s*if \(force\) kaleozCatalogCache\.delete\(game\.value\);/);
+assert.match(runner, /loadKaleozPage\(game, requestedType, games, force\)/);
+assert.match(runner, /if \(!offersByItemId\.has\(offer\.itemId\)\) offersByItemId\.set\(offer\.itemId, offer\)/);
+assert.match(runner, /totalListings: sweep \? sweep\.totalListings : results\.reduce/);
+assert.doesNotMatch(runner, /definition\.aggregate/);
+
+const gameHeader = `<section id="subnav"><div id="game_cover"></div><div id="game_info"> <h1 data-gname data-gid="310">Auto Chess</h1> <ul> <li><span>Global</span></li> <li><span>Mobile</span></li> <li><span class="publisher">Dragonest Game</span></li> </ul> </div></section>`;
+assert.equal(parseKaleozGameLabel(gameHeader), "Auto Chess · Global · Mobile");
+assert.equal(parseKaleozGameLabel(`<div id="game_info"><h1>ZEPETO</h1><ul><li><span>Global</span></li><li><span>Mobile</span></li></ul></div>`), "ZEPETO · Global · Mobile");
+assert.equal(parseKaleozGameLabel(`<div id="game_info"><h1>Solo &amp; Co (SEA)</h1></div>`), "Solo & Co (SEA)");
+assert.equal(parseKaleozGameLabel("<p>no header</p>"), "");
+assert.match(runner, /const stale = games\.filter\(\(game\) => !game\.labelRefreshedAt && !labelRefreshAttempted\.has\(game\.value\)\)/);
+assert.match(runner, /saveKaleozGameLabel\(game\.value, label\)/);
+const gamesRepo = readFileSync(new URL("../src/server/kaleoz-games-repository.js", import.meta.url), "utf8");
+assert.match(gamesRepo, /ALTER TABLE kaleoz_games ADD COLUMN IF NOT EXISTS label_refreshed_at TIMESTAMPTZ/);
+assert.match(gamesRepo, /UPDATE kaleoz_games SET label = \$2, label_refreshed_at = NOW\(\)/);
+assert.match(gamesRepo, /INSERT INTO kaleoz_games \(value, slug, label, sort_order, label_refreshed_at, label_revision\)[\s\S]*NOW\(\), \$\{KALEOZ_LABEL_REVISION\}\)/);
+
+assert.match(gamesRepo, /export const KALEOZ_LABEL_REVISION = 2;/);
+assert.match(gamesRepo, /ALTER TABLE kaleoz_games ADD COLUMN IF NOT EXISTS label_revision INTEGER NOT NULL DEFAULT 0/);
+assert.match(gamesRepo, /UPDATE kaleoz_games SET label_refreshed_at = NULL WHERE label_revision < \$1/);
+assert.match(gamesRepo, /SET label = \$2, label_refreshed_at = NOW\(\), label_revision = \$3/);
+
+// A title containing ">" must not truncate the attribute run it sits in.
+const angleTitle = parseKaleozZepetoHtml(`<div data-item-count="1"></div><div class="unit" data-stock="5" data-item-promotion="1"><div class="cell tit" eventlabel="ZEPETO &gt; 9700 Coins | Via UID" itemId="276664" price="70.88" currency="THB" sellerName="Meimeing"><img class="ItemPic" alt="ZEPETO &gt; 9700 Coins | Via UID" data-original="https://img/x.jpg"></div></div>`, { slug: "zepeto" });
+assert.equal(angleTitle.offers.length, 1);
+assert.equal(angleTitle.offers[0].itemId, "276664");
+assert.equal(angleTitle.offers[0].price, 70.88);
+assert.equal(angleTitle.offers[0].seller, "Meimeing");
+assert.equal(angleTitle.offers[0].imageUrl, "https://img/x.jpg");
+assert.equal(angleTitle.offers[0].productUrl, "https://www.kaleoz.com/buy/zepeto/276664");
+assert.match(runner, /const TAG_ATTRS = \/\(\?:"\[\^"\]\*"\|/);
+
+console.log("\n93 passed");
