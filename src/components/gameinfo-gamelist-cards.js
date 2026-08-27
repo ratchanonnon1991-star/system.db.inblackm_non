@@ -447,7 +447,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
         {botCatalogActive ? (
           <GameinfoBotCatalog channels={botChannels} categoryImages={botCategoryImages} editable={editable} lang={lang} />
         ) : priceComparisonActive ? (
-          <GameinfoPackPriceCompare page={kaleozPage} />
+          <GameinfoPackPriceCompare page={kaleozPage} editable={editable} />
         ) : (
           <>
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">

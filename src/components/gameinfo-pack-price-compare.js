@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, CheckCircle2, Columns3, ExternalLink, GripVertical, Image as ImageIcon, Minus, PackageSearch, RefreshCw, Search, Store } from "lucide-react";
+import { ArrowDown, ArrowUp, CheckCircle2, Columns3, ExternalLink, GripVertical, Image as ImageIcon, Minus, PackageSearch, Plus, RefreshCw, Search, Settings2, Store, Trash2 } from "lucide-react";
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, arrayMove, horizontalListSortingStrategy, sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -44,7 +44,30 @@ function selectItems(items = []) {
   return items.map((item) => ({ ...item, label: item.label, value: item.value }));
 }
 
-export default function GameinfoPackPriceCompare({ page: serverPage }) {
+const KALEOZ_GAME_URL = (slug) => `https://www.kaleoz.com/buy/${slug}?page=1`;
+const GAME_SORT_STORAGE_KEY = "gameinfo:kaleoz-game-sort";
+const GAME_SORTS = [
+  { value: "custom", label: "ลำดับที่ตั้งไว้" },
+  { value: "name-asc", label: "ชื่อเกม A-Z" },
+  { value: "name-desc", label: "ชื่อเกม Z-A" },
+  { value: "newest", label: "เพิ่มล่าสุดก่อน" },
+  { value: "oldest", label: "เพิ่มเก่าสุดก่อน" },
+];
+
+// "custom" is the saved order from the database, so it is the identity sort.
+// Every other mode sorts a copy, which keeps that saved order as the tie-break.
+function sortGames(games, sort) {
+  const added = (game) => Date.parse(game.createdAt || "") || 0;
+  switch (sort) {
+    case "name-asc": return [...games].sort((a, b) => a.label.localeCompare(b.label, "en"));
+    case "name-desc": return [...games].sort((a, b) => b.label.localeCompare(a.label, "en"));
+    case "newest": return [...games].sort((a, b) => added(b) - added(a));
+    case "oldest": return [...games].sort((a, b) => added(a) - added(b));
+    default: return games;
+  }
+}
+
+export default function GameinfoPackPriceCompare({ page: serverPage, editable = false }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -56,10 +79,17 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
   const [refreshedPage, setRefreshedPage] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
+  const [manageOpen, setManageOpen] = useState(false);
+  const [gameUrl, setGameUrl] = useState("");
+  const [savedGames, setSavedGames] = useState(null);
+  const [gameBusy, setGameBusy] = useState(false);
+  const [gameError, setGameError] = useState("");
+  const [gameSort, setGameSort] = useState("custom");
   const page = refreshedPage?.game === serverPage?.game && refreshedPage?.productType === serverPage?.productType ? refreshedPage : serverPage;
   const currentGame = page?.game || "zepeto";
   const currentProductType = page?.productType;
-  const games = selectItems(page?.games);
+  const gameList = savedGames || page?.games;
+  const games = useMemo(() => sortGames(selectItems(gameList), gameSort), [gameList, gameSort]);
   const productTypes = selectItems(page?.productTypes);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -139,6 +169,12 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
   }, [currentGame]);
 
   useEffect(() => {
+    const savedSort = localStorage.getItem(GAME_SORT_STORAGE_KEY);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (GAME_SORTS.some((sort) => sort.value === savedSort)) setGameSort(savedSort);
+  }, []);
+
+  useEffect(() => {
     const timer = window.setInterval(refreshPrices, AUTO_REFRESH_MS);
     return () => window.clearInterval(timer);
   }, [refreshPrices]);
@@ -159,6 +195,48 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
     if (!seller) return;
     setBaselineSeller(seller);
     localStorage.setItem(storageKey("baseline-seller", currentGame), seller);
+  }
+
+  async function submitGameList(url, request, fallbackMessage) {
+    setGameBusy(true);
+    setGameError("");
+    try {
+      const response = await fetch(url, { ...request, cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || fallbackMessage);
+      setSavedGames(data.games);
+      return data.games;
+    } catch (error) {
+      setGameError(error.message || fallbackMessage);
+      return null;
+    } finally {
+      setGameBusy(false);
+    }
+  }
+
+  async function addGame(event) {
+    event.preventDefault();
+    const nextGames = await submitGameList("/api/gameinfo/kaleoz-games", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: gameUrl }),
+    }, "เพิ่มเกมไม่สำเร็จ");
+    if (!nextGames) return;
+    setGameUrl("");
+    router.refresh();
+  }
+
+  async function removeGame(game) {
+    const nextGames = await submitGameList(`/api/gameinfo/kaleoz-games?game=${encodeURIComponent(game.value)}`, { method: "DELETE" }, "ลบเกมไม่สำเร็จ");
+    if (!nextGames) return;
+    if (game.value === currentGame) selectGame(nextGames[0]?.value);
+    else router.refresh();
+  }
+
+  function selectGameSort(value) {
+    if (!value) return;
+    setGameSort(value);
+    localStorage.setItem(GAME_SORT_STORAGE_KEY, value);
   }
 
   function selectGame(value) {
@@ -193,7 +271,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
 
   return (
     <TooltipProvider>
-      <div className="flex flex-col gap-5">
+      <div data-shadcn-focus className="flex flex-col gap-5">
         <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="flex max-w-2xl flex-col gap-2">
             <Badge variant="secondary" className="w-fit">KALEOZ MARKET</Badge>
@@ -202,9 +280,16 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
               <p className="mt-1 text-sm text-muted-foreground">เห็นราคาของทุก Seller ในตารางเดียว เลือกราคาอ้างอิงแล้วดูส่วนต่างได้ทันที</p>
             </div>
           </div>
-          <a href={page?.sourceUrl || "https://www.kaleoz.com/buy/zepeto?page=1"} target="_blank" rel="noreferrer" className={cn(buttonVariants({ variant: "outline", size: "lg" }), "w-fit")}>
-            เปิดตลาด Kaleoz <ExternalLink data-icon="inline-end" />
-          </a>
+          <div className="flex w-fit flex-wrap items-center gap-2">
+            {editable ? (
+              <Button type="button" variant="outline" size="lg" onClick={() => setManageOpen(true)}>
+                <Settings2 data-icon="inline-start" /> จัดการเกม
+              </Button>
+            ) : null}
+            <a href={page?.sourceUrl || KALEOZ_GAME_URL("zepeto")} target="_blank" rel="noreferrer" className={cn(buttonVariants({ variant: "outline", size: "lg" }), "w-fit")}>
+              เปิด Kaleoz: {page?.gameLabel || "ZEPETO"} <ExternalLink data-icon="inline-end" />
+            </a>
+          </div>
         </header>
 
         {page?.error ? (
@@ -228,11 +313,11 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
                     <FieldLabel htmlFor="compare-game">เกม</FieldLabel>
                     <Select items={games} value={currentGame} onValueChange={selectGame}>
                       <SelectTrigger id="compare-game" className="w-full"><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectGroup>{games.map((game) => <SelectItem key={game.value} value={game.value} disabled={game.available === false}>{game.label}{game.available === false ? " (ยังไม่พบหน้า)" : ""}</SelectItem>)}</SelectGroup></SelectContent>
+                      <SelectContent><SelectGroup>{games.map((game) => <SelectItem key={game.value} value={game.value}>{game.label}</SelectItem>)}</SelectGroup></SelectContent>
                     </Select>
                   </Field>
                   <Field>
-                    <FieldLabel htmlFor="compare-unit">หน่วยเงินในเกม</FieldLabel>
+                    <FieldLabel htmlFor="compare-unit">หมวดหมู่</FieldLabel>
                     <Select items={productTypes} value={currentProductType || null} onValueChange={selectProductType} disabled={!productTypes.length}>
                       <SelectTrigger id="compare-unit" className="w-full"><SelectValue /></SelectTrigger>
                       <SelectContent><SelectGroup>{productTypes.map((type) => <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>)}</SelectGroup></SelectContent>
@@ -326,7 +411,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
             </Card>
 
             <Dialog open={Boolean(selectedGroup)} onOpenChange={(open) => { if (!open) setSelectedGroup(null); }}>
-              <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
+              <DialogContent data-shadcn-focus className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
                 <DialogHeader><DialogTitle>{selectedGroup?.packLabel || `แพ็ค ${number(selectedGroup?.quantity)}`}</DialogTitle><DialogDescription>รายการจริงที่ระบบจัดอยู่ในกลุ่มเดียวกัน ใช้ตรวจสอบชื่อ ราคา และ Seller</DialogDescription></DialogHeader>
                 <div className="flex flex-col gap-3">
                   {(selectedGroup?.offers || []).map((offer) => (
@@ -335,7 +420,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={offer.imageUrl} alt="" className="size-16 rounded-lg border object-contain" />
                       ) : <span className="flex size-16 items-center justify-center rounded-lg bg-muted text-muted-foreground"><ImageIcon /></span>}
-                      <div className="min-w-0"><a href={offer.productUrl} target="_blank" rel="noreferrer" className="font-medium hover:underline">{offer.title}</a><p className="mt-1 text-xs text-muted-foreground">Server: {offer.server || "—"} · Stock: {offer.stockText || number(offer.stock)} · Trading volume: {number(offer.tradingVolume)}</p><div className="mt-2 flex flex-wrap gap-1.5"><Badge variant="outline">{offer.seller}</Badge>{offer.promo ? <Badge variant="secondary">PROMO</Badge> : null}</div></div>
+                      <div className="min-w-0"><a href={offer.productUrl} target="_blank" rel="noreferrer" className="rounded-sm font-medium outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50">{offer.title}</a><p className="mt-1 text-xs text-muted-foreground">Server: {offer.server || "—"} · Stock: {offer.stockText || number(offer.stock)} · Trading volume: {number(offer.tradingVolume)}</p><div className="mt-2 flex flex-wrap gap-1.5"><Badge variant="outline">{offer.seller}</Badge>{offer.promo ? <Badge variant="secondary">PROMO</Badge> : null}</div></div>
                       <div className="sm:text-right"><p className="font-semibold tabular-nums">{money(offer.price, offer.currency)}</p><p className="mt-1 text-xs text-muted-foreground">{offer.unitPrice || "—"}</p></div>
                     </CardContent></Card>
                   ))}
@@ -344,6 +429,48 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
             </Dialog>
           </>
         )}
+
+        <Dialog open={manageOpen} onOpenChange={(open) => { setManageOpen(open); if (!open) setGameError(""); }}>
+          <DialogContent data-shadcn-focus className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+            <DialogHeader><DialogTitle>จัดการเกมที่เทียบราคา</DialogTitle><DialogDescription>วางลิงก์หน้าเกมของ Kaleoz แล้วระบบจะดึงชื่อเกมมาให้เอง เช่น https://www.kaleoz.com/buy/honkai-star-rail</DialogDescription></DialogHeader>
+            <form onSubmit={addGame} className="flex flex-col gap-3">
+              <Field>
+                <FieldLabel htmlFor="kaleoz-game-url">ลิงก์หน้าเกม Kaleoz</FieldLabel>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <InputGroup className="flex-1"><InputGroupAddon><ExternalLink /></InputGroupAddon><InputGroupInput id="kaleoz-game-url" type="text" value={gameUrl} onChange={(event) => setGameUrl(event.target.value)} placeholder="https://www.kaleoz.com/buy/<ชื่อเกม>" /></InputGroup>
+                  <Button type="submit" disabled={gameBusy || !gameUrl.trim()}>{gameBusy ? <Spinner data-icon="inline-start" /> : <Plus data-icon="inline-start" />}เพิ่มเกม</Button>
+                </div>
+              </Field>
+              {gameError ? <Alert variant="destructive"><PackageSearch /><AlertTitle>ทำรายการไม่สำเร็จ</AlertTitle><AlertDescription>{gameError}</AlertDescription></Alert> : null}
+            </form>
+            <Field>
+              <FieldLabel htmlFor="kaleoz-game-sort">เรียงลำดับเกมใน dropdown</FieldLabel>
+              <Select items={GAME_SORTS} value={gameSort} onValueChange={selectGameSort}>
+                <SelectTrigger id="kaleoz-game-sort" className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectGroup>{GAME_SORTS.map((sort) => <SelectItem key={sort.value} value={sort.value}>{sort.label}</SelectItem>)}</SelectGroup></SelectContent>
+              </Select>
+            </Field>
+            <div className="flex flex-col gap-2">
+              {games.map((game) => (
+                <div key={game.value} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{game.label}</p>
+                    <p className="truncate text-xs text-muted-foreground">{game.slug}{game.createdAt ? ` · เพิ่มเมื่อ ${new Date(game.createdAt).toLocaleDateString("th-TH")}` : ""}</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <a href={KALEOZ_GAME_URL(game.slug)} target="_blank" rel="noreferrer" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+                      ดูบน Kaleoz <ExternalLink data-icon="inline-end" />
+                    </a>
+                    <Button type="button" variant="outline" size="sm" disabled={gameBusy || games.length < 2} onClick={() => removeGame(game)} title={games.length < 2 ? "ต้องเหลืออย่างน้อย 1 เกม" : "ลบเกมนี้"}>
+                      <Trash2 data-icon="inline-start" /> ลบ
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              {!games.length ? <Empty><EmptyHeader><EmptyMedia variant="icon"><PackageSearch /></EmptyMedia><EmptyTitle>ยังไม่มีเกมในรายการ</EmptyTitle><EmptyDescription>วางลิงก์หน้าเกมของ Kaleoz ด้านบนเพื่อเพิ่มเกมแรก</EmptyDescription></EmptyHeader></Empty> : null}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </TooltipProvider>
   );

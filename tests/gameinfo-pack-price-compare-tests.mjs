@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import {
   extractZepetoPackQuantity,
   groupKaleozZepetoOffers,
+  kaleozGameUrl,
   normalizeKaleozGame,
   normalizeKaleozProductType,
   parseKaleozGameCatalogHtml,
@@ -14,11 +15,17 @@ assert.equal(extractZepetoPackQuantity("Zepeto(Global) - 1k ZEMS"), 1000);
 assert.equal(normalizeKaleozProductType("coins"), "coins");
 assert.equal(normalizeKaleozProductType("invalid"), "invalid");
 assert.equal(normalizeKaleozProductType(null), undefined);
-assert.equal(normalizeKaleozGame("honkai-star-rail"), "honkai-star-rail");
-assert.equal(normalizeKaleozGame("world-war-heroes"), "zepeto");
+const savedGames = [
+  { value: "zepeto", slug: "zepeto", label: "ZEPETO" },
+  { value: "honkai-star-rail", slug: "honkai-star-rail", label: "Honkai: Star Rail" },
+];
+assert.equal(normalizeKaleozGame("honkai-star-rail", savedGames).slug, "honkai-star-rail");
+assert.equal(normalizeKaleozGame("world-war-heroes", savedGames).value, "zepeto");
+assert.equal(kaleozGameUrl("mobile-legends"), "https://www.kaleoz.com/buy/mobile-legends?page=1");
 
 const catalog = parseKaleozGameCatalogHtml(`<div id="item_property"><div class="property"><h3>Category</h3><select name="prop[776]"><option value="0">All Properties</option><option value="8774">Oneiric Shards</option><option value="8775">Supply Pass</option></select></div></div></div></div><script>window.clientData = {"game_id":779,"category_id":1182};</script>`);
 assert.deepEqual(catalog, {
+  gameLabel: "",
   gameId: "779",
   categoryId: "1182",
   propertyName: "prop[776]",
@@ -71,7 +78,7 @@ assert.match(compare, /TooltipContent[\s\S]*offer\.unitPrice[\s\S]*Stock:[\s\S]*
 assert.match(compare, /TooltipProvider[\s\S]*TooltipTrigger[\s\S]*TooltipContent/);
 assert.match(compare, /Select items=\{sellerItems\}[\s\S]*selectBaselineSeller/);
 assert.match(compare, /ArrowDown[\s\S]*ถูกกว่า[\s\S]*ArrowUp[\s\S]*แพงกว่า/);
-assert.match(compare, /page\?\.productTypes[\s\S]*หน่วยเงินในเกม/);
+assert.match(compare, /page\?\.productTypes[\s\S]*หมวดหมู่/);
 assert.match(compare, /storageKey\("hidden-columns"/);
 assert.match(compare, /เลือกคอลัมน์/);
 assert.match(compare, /DropdownMenu[\s\S]*DropdownMenuCheckboxItem[\s\S]*showAllColumns/);
@@ -91,10 +98,38 @@ assert.doesNotMatch(compare, /กด Space ค้างแล้วลาก|<Ba
 assert.match(compare, /competitorComparison[\s\S]*lowestCompetitorPrice[\s\S]*moreExpensive[\s\S]*cheaper/);
 assert.match(compare, /label="แพงกว่าคู่แข่ง"[\s\S]*label="ถูกกว่าคู่แข่ง"/);
 assert.match(compare, /sm:grid-cols-2 xl:grid-cols-5/);
-assert.match(compare, /\.\.\.item[\s\S]*disabled=\{game\.available === false\}[\s\S]*ยังไม่พบหน้า/);
+assert.doesNotMatch(compare, /game\.available === false|ยังไม่พบหน้า/);
+assert.match(compare, /editable \? \([\s\S]*setManageOpen\(true\)[\s\S]*จัดการเกม/);
+assert.match(compare, /addGame[\s\S]*\/api\/gameinfo\/kaleoz-games[\s\S]*method: "POST"[\s\S]*JSON\.stringify\(\{ url: gameUrl \}\)/);
+assert.match(compare, /removeGame[\s\S]*kaleoz-games\?game=\$\{encodeURIComponent\(game\.value\)\}[\s\S]*method: "DELETE"/);
+assert.match(compare, /KALEOZ_GAME_URL\(game\.slug\)[\s\S]*ดูบน Kaleoz/);
+assert.match(compare, /disabled=\{gameBusy \|\| games\.length < 2\}/);
+assert.match(compare, /เปิด Kaleoz: \{page\?\.gameLabel/);
 assert.match(compare, /!Number\.isFinite\(baselineOffer\.price\)/);
 assert.match(compare, /Number\.isFinite\(offer\.price\) && Number\.isFinite\(baselineOffer\?\.price\)/);
 assert.match(globals, /@custom-variant dark \(&:is\(\.dark \*, \[data-gameinfo-root\]\[data-theme="dark"\] \*\)\)/);
 assert.match(globals, /\.dark,\s*\[data-gameinfo-root\]\[data-theme="dark"\] \{[\s\S]*--background: oklch\(0\.145 0 0\)/);
 
-console.log("\n38 passed");
+
+const { slugFromKaleozUrl } = await import("@/server/kaleoz-games-repository.js");
+assert.equal(slugFromKaleozUrl("https://www.kaleoz.com/buy/honkai-star-rail?page=1"), "honkai-star-rail");
+assert.equal(slugFromKaleozUrl("https://www.kaleoz.com/th/buy/Mobile-Legends"), "mobile-legends");
+assert.equal(slugFromKaleozUrl("  zepeto  "), "zepeto");
+assert.throws(() => slugFromKaleozUrl(""), /วางลิงก์/);
+assert.throws(() => slugFromKaleozUrl("https://example.com/buy/zepeto"), /ลิงก์ไม่ถูกต้อง/);
+
+const gamesRoute = readFileSync(new URL("../src/app/api/gameinfo/kaleoz-games/route.js", import.meta.url), "utf8");
+assert.match(gamesRoute, /export async function GET[\s\S]*requireGameinfoAccess/);
+assert.match(gamesRoute, /export async function POST[\s\S]*requireGameinfoEditor[\s\S]*slugFromKaleozUrl[\s\S]*inspectKaleozGame[\s\S]*addKaleozGame[\s\S]*clearKaleozGameCache/);
+assert.match(gamesRoute, /export async function DELETE[\s\S]*requireGameinfoEditor[\s\S]*deleteKaleozGame[\s\S]*clearKaleozGameCache/);
+assert.match(gamesRoute, /recordGameinfoAudit/);
+
+assert.match(globals, /\[data-gameinfo-root\] \[data-shadcn-focus\] :where\(a, button, input, select, textarea, summary\):focus-visible \{\s*outline: none;/);
+assert.match(compare, /<div data-shadcn-focus className="flex flex-col gap-5">/);
+
+assert.match(compare, /GAME_SORTS = \[[\s\S]*"custom"[\s\S]*"name-asc"[\s\S]*"name-desc"[\s\S]*"newest"[\s\S]*"oldest"/);
+assert.match(compare, /sortGames\(selectItems\(gameList\), gameSort\)/);
+assert.match(compare, /kaleoz-game-sort[\s\S]*selectGameSort/);
+assert.match(compare, /setItem\(GAME_SORT_STORAGE_KEY, value\)/);
+
+console.log("\n55 passed");

@@ -36,14 +36,15 @@ import {
   listGameinfoBotCategoryImages,
   listGameinfoBotChannels,
 } from "@/server/gameinfo-bot-channels";
-import { KALEOZ_GAMES, fetchKaleozPage, normalizeKaleozGame, normalizeKaleozProductType } from "@/server/kaleoz-zepeto";
+import { fetchKaleozPage, kaleozGameUrl, loadKaleozGames, normalizeKaleozGame, normalizeKaleozProductType } from "@/server/kaleoz-zepeto";
 
 // Everyone lands on the card dashboard. Topup and role "user" stay read-only.
 export default async function GameinfoHomePage({ params, searchParams, manage = false }) {
   const { lang } = await params;
   const { mode: rawMode, view: rawView, section, game, unit } = await searchParams;
-  const kaleozGame = normalizeKaleozGame(game);
-  const kaleozGameConfig = KALEOZ_GAMES.find((item) => item.value === kaleozGame);
+  const priceComparison = section === "pack-price-compare";
+  const kaleozGames = priceComparison ? await loadKaleozGames() : [];
+  const kaleozGameConfig = priceComparison ? normalizeKaleozGame(game, kaleozGames) : null;
   const kaleozProductType = normalizeKaleozProductType(unit);
   const dataMode = normalizeGameinfoDataMode(rawMode);
   const user = await getSessionUser();
@@ -82,15 +83,15 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
         listGamelistFavoriteIds(user.id),
         section === "game-bot-auto" ? listGameinfoBotChannels() : [],
         section === "game-bot-auto" ? listGameinfoBotCategoryImages() : {},
-        section === "pack-price-compare"
-          ? fetchKaleozPage(kaleozGame, kaleozProductType).catch((error) => ({
+        priceComparison
+          ? fetchKaleozPage(kaleozGameConfig?.value, kaleozProductType).catch((error) => ({
             error: error.message || "โหลด Kaleoz ไม่สำเร็จ",
             groups: [],
             offers: [],
-            game: kaleozGame,
+            game: kaleozGameConfig?.value,
             gameLabel: kaleozGameConfig?.label,
-            sourceUrl: `https://www.kaleoz.com/buy/${kaleozGameConfig?.slug || "zepeto"}?page=1`,
-            games: KALEOZ_GAMES.map(({ value, label, available = true }) => ({ value, label, available })),
+            sourceUrl: kaleozGameUrl(kaleozGameConfig?.slug || "zepeto"),
+            games: kaleozGames,
             productType: kaleozProductType,
           }))
           : null,
@@ -153,7 +154,7 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
   }
 
   if (!manageMode && !loadError) {
-    return <GameinfoGamelistCards initial={rows} initialReports={reports} tagImages={tagImages} publisherImages={publisherImages} botChannels={botChannels} botCategoryImages={botCategoryImages} kaleozPage={kaleozPage} botCatalogActive={section === "game-bot-auto"} priceComparisonActive={section === "pack-price-compare"} editable={editableRole && !topupView} topupView={topupView} canReport={canReport} lang={lang} dataMode={dataMode} />;
+    return <GameinfoGamelistCards initial={rows} initialReports={reports} tagImages={tagImages} publisherImages={publisherImages} botChannels={botChannels} botCategoryImages={botCategoryImages} kaleozPage={kaleozPage} botCatalogActive={section === "game-bot-auto"} priceComparisonActive={priceComparison} editable={editableRole && !topupView} topupView={topupView} canReport={canReport} lang={lang} dataMode={dataMode} />;
   }
 
   return (

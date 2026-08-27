@@ -1,32 +1,32 @@
+import { DEFAULT_KALEOZ_GAMES, listKaleozGames } from "@/server/kaleoz-games-repository";
+
 const KALEOZ_ORIGIN = "https://www.kaleoz.com";
 const KALEOZ_ITEM_LIST_URL = `${KALEOZ_ORIGIN}/ajax/item-list`;
 const KALEOZ_ITEM_CATEGORY_URL = `${KALEOZ_ORIGIN}/ajax/item-category`;
 export const KALEOZ_CACHE_TTL_MS = 60 * 60 * 1000;
-
-export const KALEOZ_GAMES = [
-  { value: "zepeto", label: "ZEPETO", slug: "zepeto" },
-  { value: "honkai-impact", label: "HONKAI IMPACT", slug: "honkai-impact-3-asia" },
-  { value: "love-and-deepspace", label: "LOVE AND DEEPSPACE", slug: "love-and-deepspace" },
-  { value: "harry-magic", label: "HARRY MAGIC", slug: "harry-potter-ma-netease" },
-  { value: "the-division-resurgence", label: "The Division Resurgence", slug: "the-division-resurgence" },
-  { value: "auto-chess", label: "AUTO CHESS", slug: "auto-chess-mobile-global" },
-  { value: "world-war-heroes", label: "WORLD WAR HEROES / WWH", available: false },
-  { value: "gangstar-mirage-city", label: "Gangstar Mirage City", slug: "gangstar-mirage-city" },
-  { value: "honkai-star-rail", label: "HONKAI STAR RAIL", slug: "honkai-star-rail" },
-  { value: "zenless-zone-zero", label: "ZENLESS ZONE ZERO", slug: "zenless-zone-zero" },
-  { value: "destiny-rising", label: "DESTINY:RISING", slug: "destiny-rising" },
-  { value: "mobile-legends", label: "MOBILE LEGENDS", slug: "mobile-legends" },
-  { value: "punishing-gray-raven", label: "PUNISHING GRAY RAVEN", slug: "punishing-gray-raven-global" },
-];
 
 const kaleozCache = globalThis.__gameinfoKaleozCache || new Map();
 const kaleozCatalogCache = globalThis.__gameinfoKaleozCatalogCache || new Map();
 globalThis.__gameinfoKaleozCache = kaleozCache;
 globalThis.__gameinfoKaleozCatalogCache = kaleozCatalogCache;
 
-export function normalizeKaleozGame(value) {
-  const game = KALEOZ_GAMES.find((item) => item.value === value && item.available !== false);
-  return game?.value || "zepeto";
+export function kaleozGameUrl(slug) {
+  return `${KALEOZ_ORIGIN}/buy/${slug}?page=1`;
+}
+
+// The saved game list is the source of truth; the seed list only keeps the page
+// usable when the gameinfo database is unreachable.
+export async function loadKaleozGames() {
+  try {
+    const games = await listKaleozGames();
+    return games.length ? games : DEFAULT_KALEOZ_GAMES;
+  } catch {
+    return DEFAULT_KALEOZ_GAMES;
+  }
+}
+
+export function normalizeKaleozGame(value, games) {
+  return games.find((item) => item.value === value) || games[0];
 }
 
 function decodeHtml(value = "") {
@@ -79,6 +79,7 @@ export function parseKaleozGameCatalogHtml(html) {
   const property = parseSelect(propertyHtml, { includeAllProperties: true });
   if (!property?.name || !property.options.length) throw new Error("เกมนี้ยังไม่มี Properties สำหรับเทียบราคา");
   return {
+    gameLabel: text(html, /<h1[^>]*>([\s\S]*?)<\/h1>/i),
     gameId: String(clientData.game_id),
     categoryId: String(clientData.category_id),
     propertyName: property.name,
@@ -161,7 +162,7 @@ async function kaleozFetch(url, options = {}) {
 }
 
 async function discoverGameCatalog(game) {
-  const sourceUrl = `${KALEOZ_ORIGIN}/buy/${game.slug}?page=1`;
+  const sourceUrl = kaleozGameUrl(game.slug);
   const context = parseKaleozGameCatalogHtml(await kaleozFetch(sourceUrl));
   const discovered = await Promise.all(context.options.map(async (option) => {
     if (option.value === "0") {
@@ -233,7 +234,7 @@ async function fetchFilteredPack(catalog, game, definition, packOrder) {
   };
 }
 
-async function loadKaleozPage(game, requestedType) {
+async function loadKaleozPage(game, requestedType, games) {
   const catalog = await getGameCatalog(game);
   const productType = catalog.productTypes.find((type) => type.value === requestedType) || catalog.productTypes[0];
   if (!productType) throw new Error("ไม่พบหมวดสินค้าของเกมนี้");
@@ -248,7 +249,7 @@ async function loadKaleozPage(game, requestedType) {
     groups: groupKaleozZepetoOffers(offers),
     game: game.value,
     gameLabel: game.label,
-    games: KALEOZ_GAMES.map(({ value, label, available = true }) => ({ value, label, available })),
+    games,
     productType: productType.value,
     productTypeLabel: productType.label,
     productTypes: catalog.productTypes.map(({ value, label }) => ({ value, label })),
@@ -259,13 +260,14 @@ async function loadKaleozPage(game, requestedType) {
 }
 
 export async function fetchKaleozPage(requestedGame = "zepeto", requestedType, { force = false } = {}) {
-  const gameKey = normalizeKaleozGame(requestedGame);
-  const game = KALEOZ_GAMES.find((item) => item.value === gameKey);
-  const cacheKey = `${gameKey}:${requestedType || "default"}`;
+  const games = await loadKaleozGames();
+  const game = normalizeKaleozGame(requestedGame, games);
+  if (!game) throw new Error("ยังไม่มีเกมในรายการเทียบราคา");
+  const cacheKey = `${game.value}:${requestedType || "default"}`;
   const cached = kaleozCache.get(cacheKey);
   if (!force && cached?.value && cached.expiresAt > Date.now()) return cached.value;
   if (!force && cached?.promise) return cached.promise;
-  const promise = loadKaleozPage(game, requestedType);
+  const promise = loadKaleozPage(game, requestedType, games);
   kaleozCache.set(cacheKey, { ...cached, promise });
   try {
     const value = await promise;
@@ -276,6 +278,20 @@ export async function fetchKaleozPage(requestedGame = "zepeto", requestedType, {
     else kaleozCache.delete(cacheKey);
     throw error;
   }
+}
+
+export function clearKaleozGameCache(value) {
+  kaleozCatalogCache.delete(value);
+  for (const key of kaleozCache.keys()) {
+    if (key.startsWith(`${value}:`)) kaleozCache.delete(key);
+  }
+}
+
+// Used before saving a new game: proves the slug really has a Kaleoz page we can
+// parse, and takes the display name straight off that page.
+export async function inspectKaleozGame(slug) {
+  const catalog = parseKaleozGameCatalogHtml(await kaleozFetch(kaleozGameUrl(slug)));
+  return { slug, label: catalog.gameLabel || slug };
 }
 
 export async function fetchKaleozZepetoPage(requestedType, options) {

@@ -59,6 +59,13 @@
   outline-offset: 2px;
 }
 
+/* Areas built entirely from shadcn components already draw their own
+   focus-visible ring; the legacy outline above would stack a second box on top
+   of it. Opt those subtrees out and let the shadcn ring stand alone. */
+[data-gameinfo-root] [data-shadcn-focus] :where(a, button, input, select, textarea, summary):focus-visible {
+  outline: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-gameinfo-root] *,
   [data-gameinfo-root] *::before,
