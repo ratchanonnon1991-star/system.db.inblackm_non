@@ -77,6 +77,7 @@ assert.match(compare, /DndContext[\s\S]*SortableSellerHeader/);
 assert.match(compare, /Seller อ้างอิง[\s\S]*SellerPriceCell/);
 assert.match(compare, /TooltipContent[\s\S]*offer\.unitPrice[\s\S]*Stock:[\s\S]*Trading volume:/);
 assert.match(compare, /TooltipProvider[\s\S]*TooltipTrigger[\s\S]*TooltipContent/);
+assert.match(compare, /function gameLabel\(value\)[\s\S]*replaceAll\("South East Asia", "SEA"\)[\s\S]*gameItems\(gameList\)/);
 assert.match(compare, /Select items=\{sellerItems\}[\s\S]*selectBaselineSeller/);
 assert.match(compare, /ArrowDown[\s\S]*ถูกกว่า[\s\S]*ArrowUp[\s\S]*แพงกว่า/);
 assert.match(compare, /page\?\.productTypes[\s\S]*หมวดหมู่/);
@@ -105,7 +106,7 @@ assert.match(compare, /addGame[\s\S]*\/api\/gameinfo\/kaleoz-games[\s\S]*method:
 assert.match(compare, /removeGame[\s\S]*kaleoz-games\?game=\$\{encodeURIComponent\(game\.value\)\}[\s\S]*method: "DELETE"/);
 assert.match(compare, /KALEOZ_GAME_URL\(game\.slug\)[\s\S]*ดูบน Kaleoz/);
 assert.match(compare, /disabled=\{gameBusy \|\| games\.length < 2\}/);
-assert.match(compare, /เปิด Kaleoz: \{page\?\.gameLabel/);
+assert.match(compare, /เปิด Kaleoz: \{gameLabel\(page\?\.gameLabel/);
 assert.match(compare, /!Number\.isFinite\(baselineOffer\.price\)/);
 assert.match(compare, /Number\.isFinite\(offer\.price\) && Number\.isFinite\(baselineOffer\?\.price\)/);
 assert.match(globals, /@custom-variant dark \(&:is\(\.dark \*, \[data-gameinfo-root\]\[data-theme="dark"\] \*\)\)/);
@@ -129,7 +130,7 @@ assert.match(globals, /\[data-gameinfo-root\] \[data-shadcn-focus\] :where\(a, b
 assert.match(compare, /<div data-shadcn-focus className="flex flex-col gap-5">/);
 
 assert.match(compare, /GAME_SORTS = \[[\s\S]*"custom"[\s\S]*"name-asc"[\s\S]*"name-desc"[\s\S]*"newest"[\s\S]*"oldest"/);
-assert.match(compare, /sortGames\(selectItems\(gameList\), gameSort\)/);
+assert.match(compare, /sortGames\(gameItems\(gameList\), gameSort\)/);
 assert.match(compare, /kaleoz-game-sort[\s\S]*selectGameSort/);
 assert.match(compare, /setItem\(GAME_SORT_STORAGE_KEY, value\)/);
 

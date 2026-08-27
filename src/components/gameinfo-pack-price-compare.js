@@ -50,6 +50,14 @@ function selectItems(items = []) {
   return items.map((item) => ({ ...item, label: item.label, value: item.value }));
 }
 
+function gameLabel(value) {
+  return String(value || "").replaceAll("South East Asia", "SEA");
+}
+
+function gameItems(items = []) {
+  return selectItems(items).map((item) => ({ ...item, label: gameLabel(item.label) }));
+}
+
 const KALEOZ_GAME_URL = (slug) => `https://www.kaleoz.com/buy/${slug}?page=1`;
 const GAME_SORT_STORAGE_KEY = "gameinfo:kaleoz-game-sort";
 const GAME_SORTS = [
@@ -95,7 +103,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
   const currentGame = page?.game || "zepeto";
   const currentProductType = page?.productType;
   const gameList = savedGames || page?.games;
-  const games = useMemo(() => sortGames(selectItems(gameList), gameSort), [gameList, gameSort]);
+  const games = useMemo(() => sortGames(gameItems(gameList), gameSort), [gameList, gameSort]);
   const productTypes = selectItems(page?.productTypes);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -295,7 +303,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
               </Button>
             ) : null}
             <a href={page?.sourceUrl || KALEOZ_GAME_URL("zepeto")} target="_blank" rel="noreferrer" className={cn(buttonVariants({ variant: "outline", size: "lg" }), "w-fit")}>
-              เปิด Kaleoz: {page?.gameLabel || "ZEPETO"} <ExternalLink data-icon="inline-end" />
+              เปิด Kaleoz: {gameLabel(page?.gameLabel || "ZEPETO")} <ExternalLink data-icon="inline-end" />
             </a>
           </div>
         </header>
