@@ -60,6 +60,7 @@ assert.equal(groups[0].stock, 18076);
 
 const cards = readFileSync(new URL("../src/components/gameinfo-gamelist-cards.js", import.meta.url), "utf8");
 const compare = readFileSync(new URL("../src/components/gameinfo-pack-price-compare.js", import.meta.url), "utf8");
+const globals = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
 assert.match(cards, /Game Bot Auto[\s\S]*เทียบราคาแพ็ค/);
 assert.match(compare, /ชื่อ Pack[\s\S]*visibleSellers\.map[\s\S]*ราคาต่ำสุด[\s\S]*ราคาแพงสุด[\s\S]*ดูรายการ/);
 assert.match(compare, /isCheapest[\s\S]*text-destructive/);
@@ -90,5 +91,10 @@ assert.doesNotMatch(compare, /กด Space ค้างแล้วลาก|<Ba
 assert.match(compare, /competitorComparison[\s\S]*lowestCompetitorPrice[\s\S]*moreExpensive[\s\S]*cheaper/);
 assert.match(compare, /label="แพงกว่าคู่แข่ง"[\s\S]*label="ถูกกว่าคู่แข่ง"/);
 assert.match(compare, /sm:grid-cols-2 xl:grid-cols-5/);
+assert.match(compare, /\.\.\.item[\s\S]*disabled=\{game\.available === false\}[\s\S]*ยังไม่พบหน้า/);
+assert.match(compare, /!Number\.isFinite\(baselineOffer\.price\)/);
+assert.match(compare, /Number\.isFinite\(offer\.price\) && Number\.isFinite\(baselineOffer\?\.price\)/);
+assert.match(globals, /@custom-variant dark \(&:is\(\.dark \*, \[data-gameinfo-root\]\[data-theme="dark"\] \*\)\)/);
+assert.match(globals, /\.dark,\s*\[data-gameinfo-root\]\[data-theme="dark"\] \{[\s\S]*--background: oklch\(0\.145 0 0\)/);
 
-console.log("\n33 passed");
+console.log("\n38 passed");

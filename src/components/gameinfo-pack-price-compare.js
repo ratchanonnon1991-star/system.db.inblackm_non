@@ -41,7 +41,7 @@ function number(value) {
 }
 
 function selectItems(items = []) {
-  return items.map((item) => ({ label: item.label, value: item.value }));
+  return items.map((item) => ({ ...item, label: item.label, value: item.value }));
 }
 
 export default function GameinfoPackPriceCompare({ page: serverPage }) {
@@ -94,7 +94,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
         .filter((offer) => offer.seller !== activeBaselineSeller)
         .map((offer) => offer.price)
         .filter(Number.isFinite);
-      if (!baselineOffer || !competitorPrices.length) continue;
+      if (!baselineOffer || !Number.isFinite(baselineOffer.price) || !competitorPrices.length) continue;
 
       comparable += 1;
       const lowestCompetitorPrice = Math.min(...competitorPrices);
@@ -228,7 +228,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
                     <FieldLabel htmlFor="compare-game">เกม</FieldLabel>
                     <Select items={games} value={currentGame} onValueChange={selectGame}>
                       <SelectTrigger id="compare-game" className="w-full"><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectGroup>{games.map((game) => <SelectItem key={game.value} value={game.value}>{game.label}</SelectItem>)}</SelectGroup></SelectContent>
+                      <SelectContent><SelectGroup>{games.map((game) => <SelectItem key={game.value} value={game.value} disabled={game.available === false}>{game.label}{game.available === false ? " (ยังไม่พบหน้า)" : ""}</SelectItem>)}</SelectGroup></SelectContent>
                     </Select>
                   </Field>
                   <Field>
@@ -355,7 +355,9 @@ function MetricCard({ value, label, description, icon: Icon }) {
 
 function SellerPriceCell({ offer, baselineOffer, isBaseline, isCheapest }) {
   if (!offer) return <TableCell className="bg-muted/40 text-right text-muted-foreground">—</TableCell>;
-  const difference = baselineOffer ? offer.price - baselineOffer.price : null;
+  const difference = Number.isFinite(offer.price) && Number.isFinite(baselineOffer?.price)
+    ? offer.price - baselineOffer.price
+    : null;
   const cellTone = isCheapest || difference < 0 ? "bg-destructive/5" : difference === 0 || isBaseline ? "bg-muted/60" : "bg-muted/20";
   return (
     <TableCell className={cn("text-right tabular-nums", cellTone)}>

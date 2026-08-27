@@ -2,7 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is(.dark *, [data-gameinfo-root][data-theme="dark"] *));
 
 /* GameInfo's Linear-inspired light-first palette. */
 @theme {
@@ -400,7 +400,8 @@ body {
   --sidebar-ring: oklch(0.708 0 0);
 }
 
-.dark {
+.dark,
+[data-gameinfo-root][data-theme="dark"] {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
