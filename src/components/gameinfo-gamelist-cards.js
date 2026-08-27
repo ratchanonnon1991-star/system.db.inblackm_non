@@ -53,7 +53,7 @@ const STATUS_STYLE = {
   offline: { label: "ปิดใช้งาน", dot: "bg-linear-ink-tertiary", badge: "bg-linear-surface-3 text-linear-ink-subtle" },
 };
 
-export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, botChannels = [], botCategoryImages = {}, kaleozPage = null, botCatalogActive = false, priceComparisonActive = false, editable = false, topupView = false, canReport = false, lang, dataMode = "uid" }) {
+export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, botChannels = [], botCategoryImages = {}, marketPage = null, botCatalogActive = false, priceComparisonActive = false, editable = false, topupView = false, canReport = false, lang, dataMode = "uid" }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
@@ -447,7 +447,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
         {botCatalogActive ? (
           <GameinfoBotCatalog channels={botChannels} categoryImages={botCategoryImages} editable={editable} lang={lang} />
         ) : priceComparisonActive ? (
-          <GameinfoPackPriceCompare page={kaleozPage} editable={editable} />
+          <GameinfoPackPriceCompare page={marketPage} editable={editable} />
         ) : (
           <>
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">

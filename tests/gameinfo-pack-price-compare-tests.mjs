@@ -5,6 +5,7 @@ import {
   groupKaleozZepetoOffers,
   kaleozGameUrl,
   normalizeKaleozGame,
+  normalizeKaleozCategoryLabels,
   normalizeKaleozProductType,
   parseKaleozGameCatalogHtml,
   parseKaleozGameLabel,
@@ -23,6 +24,20 @@ const savedGames = [
 assert.equal(normalizeKaleozGame("honkai-star-rail", savedGames).slug, "honkai-star-rail");
 assert.equal(normalizeKaleozGame("world-war-heroes", savedGames).value, "zepeto");
 assert.equal(kaleozGameUrl("mobile-legends"), "https://www.kaleoz.com/buy/mobile-legends?page=1");
+
+const normalizedCachedPage = normalizeKaleozCategoryLabels({
+  productType: "all",
+  productTypeLabel: "All Properties",
+  productTypes: [
+    { value: "all", label: "All Properties" },
+    { value: "coins", label: "Coins" },
+  ],
+});
+assert.equal(normalizedCachedPage.productTypeLabel, "ทุกหมวดหมู่");
+assert.deepEqual(normalizedCachedPage.productTypes, [
+  { value: "all", label: "ทุกหมวดหมู่" },
+  { value: "coins", label: "Coins" },
+]);
 
 const catalog = parseKaleozGameCatalogHtml(`<div id="item_property"><div class="property"><h3>Category</h3><select name="prop[776]"><option value="0">All Properties</option><option value="8774">Oneiric Shards</option><option value="8775">Supply Pass</option></select></div></div></div></div><script>window.clientData = {"game_id":779,"category_id":1182};</script>`);
 assert.deepEqual(catalog, {
@@ -79,8 +94,13 @@ assert.match(compare, /TooltipContent[\s\S]*offer\.unitPrice[\s\S]*Stock:[\s\S]*
 assert.match(compare, /TooltipProvider[\s\S]*TooltipTrigger[\s\S]*TooltipContent/);
 assert.match(compare, /function gameLabel\(value\)[\s\S]*replaceAll\("South East Asia", "SEA"\)[\s\S]*gameItems\(gameList\)/);
 assert.match(compare, /Select items=\{sellerItems\}[\s\S]*selectBaselineSeller/);
+assert.doesNotMatch(compare, /Topup_youthshop/);
+assert.doesNotMatch(compare, /storageKey\("baseline-seller"/);
+assert.match(compare, /availableSellers\.includes\(baselineSeller\) \? baselineSeller : availableSellers\[0\]/);
+assert.match(compare, /\/api\/gameinfo\/market-preference[\s\S]*method: "PUT"[\s\S]*provider, game: currentGame, seller/);
 assert.match(compare, /ArrowDown[\s\S]*ถูกกว่า[\s\S]*ArrowUp[\s\S]*แพงกว่า/);
 assert.match(compare, /page\?\.productTypes[\s\S]*หมวดหมู่/);
+assert.match(compare, /selectItems\(page\?\.productTypes\)\.map\(\(type, index\) => index === 0 \? \{ \.\.\.type, label: "ทุกหมวดหมู่" \}/);
 assert.match(compare, /storageKey\("hidden-columns"/);
 assert.match(compare, /เลือกคอลัมน์/);
 assert.match(compare, /DropdownMenu[\s\S]*DropdownMenuCheckboxItem[\s\S]*showAllColumns/);
@@ -101,12 +121,12 @@ assert.match(compare, /competitorComparison[\s\S]*lowestCompetitorPrice[\s\S]*mo
 assert.match(compare, /label="แพงกว่าคู่แข่ง"[\s\S]*label="ถูกกว่าคู่แข่ง"/);
 assert.match(compare, /sm:grid-cols-2 xl:grid-cols-5/);
 assert.doesNotMatch(compare, /game\.available === false|ยังไม่พบหน้า/);
-assert.match(compare, /editable \? \([\s\S]*setManageOpen\(true\)[\s\S]*จัดการเกม/);
+assert.match(compare, /editable && provider === "kaleoz" \? \([\s\S]*setManageOpen\(true\)[\s\S]*จัดการเกม/);
 assert.match(compare, /addGame[\s\S]*\/api\/gameinfo\/kaleoz-games[\s\S]*method: "POST"[\s\S]*JSON\.stringify\(\{ url: gameUrl \}\)/);
 assert.match(compare, /removeGame[\s\S]*kaleoz-games\?game=\$\{encodeURIComponent\(game\.value\)\}[\s\S]*method: "DELETE"/);
 assert.match(compare, /KALEOZ_GAME_URL\(game\.slug\)[\s\S]*ดูบน Kaleoz/);
 assert.match(compare, /disabled=\{gameBusy \|\| games\.length < 2\}/);
-assert.match(compare, /เปิด Kaleoz: \{gameLabel\(page\?\.gameLabel/);
+assert.match(compare, /เปิด \{page\?\.providerLabel \|\| "Kaleoz"\}: \{gameLabel\(page\?\.gameLabel/);
 assert.match(compare, /!Number\.isFinite\(baselineOffer\.price\)/);
 assert.match(compare, /Number\.isFinite\(offer\.price\) && Number\.isFinite\(baselineOffer\?\.price\)/);
 assert.match(globals, /@custom-variant dark \(&:is\(\.dark \*, \[data-gameinfo-root\]\[data-theme="dark"\] \*\)\)/);
@@ -125,6 +145,12 @@ assert.match(gamesRoute, /export async function GET[\s\S]*requireGameinfoAccess/
 assert.match(gamesRoute, /export async function POST[\s\S]*requireGameinfoEditor[\s\S]*slugFromKaleozUrl[\s\S]*inspectKaleozGame[\s\S]*addKaleozGame[\s\S]*clearKaleozGameCache/);
 assert.match(gamesRoute, /export async function DELETE[\s\S]*requireGameinfoEditor[\s\S]*deleteKaleozGame[\s\S]*clearKaleozGameCache/);
 assert.match(gamesRoute, /recordGameinfoAudit/);
+
+const marketPreferenceRepo = readFileSync(new URL("../src/server/gameinfo-market-preferences.js", import.meta.url), "utf8");
+const marketPreferenceRoute = readFileSync(new URL("../src/app/api/gameinfo/market-preference/route.js", import.meta.url), "utf8");
+assert.match(marketPreferenceRepo, /PRIMARY KEY \(user_id, provider, game\)/);
+assert.match(marketPreferenceRepo, /ON CONFLICT \(user_id, provider, game\)[\s\S]*DO UPDATE SET baseline_seller/);
+assert.match(marketPreferenceRoute, /export async function PUT[\s\S]*requireGameinfoAccess[\s\S]*saveGameinfoBaselineSeller/);
 
 assert.match(globals, /\[data-gameinfo-root\] \[data-shadcn-focus\] :where\(a, button, input, select, textarea, summary\):focus-visible \{\s*outline: none;/);
 assert.match(compare, /<div data-shadcn-focus className="flex flex-col gap-5">/);
@@ -146,7 +172,7 @@ assert.match(runner, /context\.options\.filter\(\(option\) => option\.value !== 
 assert.match(runner, /const allCategories = \{[\s\S]*categories\.flatMap\(\(type\) => type\.packs\)[\s\S]*label: KALEOZ_UNCATEGORIZED_LABEL, path: \[\]/);
 assert.match(runner, /productTypes: \[allCategories, \.\.\.categories\]/);
 assert.match(runner, /KALEOZ_ALL_CATEGORIES_LABEL = "ทุกหมวดหมู่"/);
-assert.match(runner, /label: context\.options\.find\(\(option\) => option\.value === "0"\)\?\.label \|\| KALEOZ_ALL_CATEGORIES_LABEL/);
+assert.match(runner, /label: KALEOZ_ALL_CATEGORIES_LABEL/);
 assert.match(runner, /async function getGameCatalog\(game, force = false\) \{\s*if \(force\) kaleozCatalogCache\.delete\(game\.value\);/);
 assert.match(runner, /loadKaleozPage\(game, requestedType, games, force\)/);
 assert.match(runner, /if \(!offersByItemId\.has\(offer\.itemId\)\) offersByItemId\.set\(offer\.itemId, offer\)/);

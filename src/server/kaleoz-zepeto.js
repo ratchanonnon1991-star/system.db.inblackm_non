@@ -12,6 +12,16 @@ const kaleozCatalogCache = globalThis.__gameinfoKaleozCatalogCache || new Map();
 globalThis.__gameinfoKaleozCache = kaleozCache;
 globalThis.__gameinfoKaleozCatalogCache = kaleozCatalogCache;
 
+export function normalizeKaleozCategoryLabels(page) {
+  if (!page?.productTypes?.length) return page;
+  const [allCategories, ...categories] = page.productTypes;
+  return {
+    ...page,
+    productTypeLabel: page.productType === allCategories.value ? KALEOZ_ALL_CATEGORIES_LABEL : page.productTypeLabel,
+    productTypes: [{ ...allCategories, label: KALEOZ_ALL_CATEGORIES_LABEL }, ...categories],
+  };
+}
+
 export function kaleozGameUrl(slug) {
   return `${KALEOZ_ORIGIN}/buy/${slug}?page=1`;
 }
@@ -232,7 +242,7 @@ async function discoverGameCatalog(game) {
   const categories = uniqueValues(discovered);
   const allCategories = {
     value: categories.some((type) => type.value === "all") ? "all-categories" : "all",
-    label: context.options.find((option) => option.value === "0")?.label || KALEOZ_ALL_CATEGORIES_LABEL,
+    label: KALEOZ_ALL_CATEGORIES_LABEL,
     packs: [
       ...categories.flatMap((type) => type.packs),
       { label: KALEOZ_UNCATEGORIZED_LABEL, path: [] },
@@ -310,6 +320,10 @@ async function loadKaleozPage(game, requestedType, games, force) {
   const sweep = results.find((result) => result.unfiltered);
   const fetchedAt = new Date().toISOString();
   return {
+    provider: "kaleoz",
+    providerLabel: "Kaleoz",
+    defaultBaselineSeller: "InblackmTH",
+    detailLabels: { volume: "Trading volume", stock: "Stock", server: "Server" },
     sourceUrl: catalog.sourceUrl,
     totalListings: sweep ? sweep.totalListings : results.reduce((sum, result) => sum + result.totalListings, 0),
     offers,
@@ -332,12 +346,16 @@ export async function fetchKaleozPage(requestedGame = "zepeto", requestedType, {
   if (!game) throw new Error("ยังไม่มีเกมในรายการเทียบราคา");
   const cacheKey = `${game.value}:${requestedType || "default"}`;
   const cached = kaleozCache.get(cacheKey);
-  if (!force && cached?.value && cached.expiresAt > Date.now()) return cached.value;
+  if (!force && cached?.value && cached.expiresAt > Date.now()) {
+    const value = normalizeKaleozCategoryLabels(cached.value);
+    kaleozCache.set(cacheKey, { ...cached, value });
+    return value;
+  }
   if (!force && cached?.promise) return cached.promise;
   const promise = loadKaleozPage(game, requestedType, games, force);
   kaleozCache.set(cacheKey, { ...cached, promise });
   try {
-    const value = await promise;
+    const value = normalizeKaleozCategoryLabels(await promise);
     kaleozCache.set(cacheKey, { value, expiresAt: Date.now() + KALEOZ_CACHE_TTL_MS });
     return value;
   } catch (error) {

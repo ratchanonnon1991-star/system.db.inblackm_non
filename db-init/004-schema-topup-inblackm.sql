@@ -91,6 +91,16 @@ CREATE TABLE IF NOT EXISTS gamelist_favorites (
   PRIMARY KEY (user_id, game_id)
 );
 
+CREATE TABLE IF NOT EXISTS gameinfo_market_preferences (
+  -- user_id is a cross-database LOGICAL link to inblackm_system.gamedb_users
+  user_id         text        NOT NULL,
+  provider        varchar(16) NOT NULL CHECK (provider IN ('kaleoz', 'itemku')),
+  game            varchar(160) NOT NULL,
+  baseline_seller text        NOT NULL,
+  updated_at      timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, provider, game)
+);
+
 CREATE TABLE IF NOT EXISTS gamelist_formula_variables (
   game_id    integer PRIMARY KEY,            -- LOGICAL -> game_list.id; 0 is global
   data       jsonb       NOT NULL DEFAULT '{"variables": []}'::jsonb,
