@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { isGameinfoNavigationLeaving } from "../src/lib/gameinfo-unsaved-changes.js";
 
-const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
-const guard = read("../src/lib/gameinfo-unsaved-changes.js").replace(/\r\n/g, "\n");
+const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8").replace(/\r\n/g, "\n");
+const guard = read("../src/lib/gameinfo-unsaved-changes.js");
 const dialog = read("../src/components/gameinfo-unsaved-navigation-dialog.js");
 const sharedDialog = read("../src/lib/use-gameinfo-dialog.js");
 const layout = read("../src/components/gameinfo-pack-column-layout.js");
