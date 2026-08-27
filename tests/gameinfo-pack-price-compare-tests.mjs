@@ -23,7 +23,11 @@ assert.deepEqual(catalog, {
   categoryId: "1182",
   propertyName: "prop[776]",
   propertyLabel: "Category",
-  options: [{ value: "8774", label: "Oneiric Shards" }, { value: "8775", label: "Supply Pass" }],
+  options: [
+    { value: "0", label: "All Properties" },
+    { value: "8774", label: "Oneiric Shards" },
+    { value: "8775", label: "Supply Pass" },
+  ],
 });
 
 const html = `<div class="item_list" data-item-count="199">
@@ -62,11 +66,14 @@ assert.match(compare, /isCheapest[\s\S]*text-linear-primary/);
 assert.match(compare, /storageKey\("seller-order"/);
 assert.match(compare, /DndContext[\s\S]*SortableSellerHeader/);
 assert.match(compare, /Seller เปรียบเทียบ[\s\S]*SellerPriceCell/);
+assert.match(compare, /role="tooltip"[\s\S]*offer\.unitPrice[\s\S]*Stock:[\s\S]*Trading volume:/);
+assert.match(compare, /createPortal[\s\S]*window\.innerHeight[\s\S]*window\.innerWidth[\s\S]*fixed z-\[100\]/);
 assert.match(compare, /เลือก Seller สำหรับเปรียบเทียบ[\s\S]*type="checkbox"[\s\S]*selectBaselineSeller/);
 assert.match(compare, /ArrowDown[\s\S]*ถูกกว่า[\s\S]*ArrowUp[\s\S]*แพงกว่า/);
 assert.match(compare, /หน่วยเงินในเกม[\s\S]*page\?\.productTypes/);
 assert.match(compare, /storageKey\("hidden-columns"/);
 assert.match(compare, /เลือกคอลัมน์/);
+assert.match(compare, /openMenu[\s\S]*Escape[\s\S]*pointerdown[\s\S]*data-compare-menu/);
 assert.match(compare, /visibleSellers[\s\S]*showCheapest[\s\S]*showMostExpensive[\s\S]*showDetails/);
 assert.match(compare, /AUTO_REFRESH_MS[\s\S]*setInterval[\s\S]*รีข้อมูลตอนนี้[\s\S]*อัปเดตล่าสุด/);
 assert.match(compare, />เกม<[\s\S]*selectGame[\s\S]*page\?\.games/);
@@ -77,4 +84,4 @@ assert.match(compare, /<h1[^>]*>Compare Product · เทียบราคา K
 assert.match(compare, /isBaseline \? "bg-linear-ink text-linear-canvas"/);
 assert.doesNotMatch(compare, /ตัวตั้ง/);
 
-console.log("\n22 passed");
+console.log("\n25 passed");

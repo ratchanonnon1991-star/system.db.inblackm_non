@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ArrowDown, ArrowUp, Columns3, ExternalLink, GripVertical, Image as ImageIcon, Minus, RefreshCw, Search } from "lucide-react";
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, arrayMove, horizontalListSortingStrategy, sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable";
@@ -33,6 +34,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
   const [sellerOrder, setSellerOrder] = useState([]);
   const [baselineSeller, setBaselineSeller] = useState("InblackmTH");
   const [hiddenColumns, setHiddenColumns] = useState([]);
+  const [openMenu, setOpenMenu] = useState(null);
   const [refreshedPage, setRefreshedPage] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
@@ -105,6 +107,24 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
     const timer = window.setInterval(refreshPrices, AUTO_REFRESH_MS);
     return () => window.clearInterval(timer);
   }, [refreshPrices]);
+
+  useEffect(() => {
+    function closeMenu(event) {
+      if (event.type === "keydown" && event.key !== "Escape") return;
+      if (event.type === "pointerdown" && event.target.closest("[data-compare-menu]")) return;
+      setOpenMenu(null);
+    }
+    document.addEventListener("pointerdown", closeMenu);
+    document.addEventListener("keydown", closeMenu);
+    return () => {
+      document.removeEventListener("pointerdown", closeMenu);
+      document.removeEventListener("keydown", closeMenu);
+    };
+  }, []);
+
+  function handleMenuToggle(menu, isOpen) {
+    setOpenMenu((current) => isOpen ? menu : current === menu ? null : current);
+  }
 
   function handleSellerDragEnd({ active, over }) {
     if (!over || active.id === over.id) return;
@@ -202,7 +222,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
                     {(page?.productTypes || []).map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
                   </select>
                 </label>
-                <details className="relative">
+                <details data-compare-menu open={openMenu === "columns"} onToggle={(event) => handleMenuToggle("columns", event.currentTarget.open)} className="relative">
                   <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 rounded-lg border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm font-medium text-linear-ink hover:bg-linear-surface-3 [&::-webkit-details-marker]:hidden">
                     <Columns3 size={16} /> เลือกคอลัมน์
                   </summary>
@@ -227,7 +247,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
                     <p className="mt-2 border-t border-linear-hairline pt-2 text-[11px] text-linear-ink-tertiary">ชื่อ Pack แสดงตลอด</p>
                   </div>
                 </details>
-                <details className="relative">
+                <details data-compare-menu open={openMenu === "baseline"} onToggle={(event) => handleMenuToggle("baseline", event.currentTarget.open)} className="relative">
                   <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 rounded-lg border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm font-medium text-linear-ink hover:bg-linear-surface-3 [&::-webkit-details-marker]:hidden">
                     Seller เปรียบเทียบ: <span className="max-w-32 truncate">{activeBaselineSeller || "—"}</span>
                   </summary>
@@ -337,6 +357,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage }) {
 
 function SellerPriceCell({ offer, baselineOffer, isBaseline, isCheapest }) {
   if (!offer) return <td className="bg-linear-surface-2 px-4 py-3 text-right text-linear-ink-tertiary">—</td>;
+  const detailId = `offer-detail-${offer.itemId}`;
   const difference = baselineOffer ? offer.price - baselineOffer.price : null;
   const cellTone = isCheapest || difference < 0
     ? "bg-linear-danger-bg"
@@ -354,17 +375,82 @@ function SellerPriceCell({ offer, baselineOffer, isBaseline, isCheapest }) {
         : "font-medium text-linear-ink";
   return (
     <td className={`px-4 py-3 text-right tabular-nums ${cellTone}`}>
-      <p className={priceTone}>{money(offer.price, offer.currency)}</p>
-      {isBaseline ? null : difference == null ? (
-        <span className="mt-1 block text-[11px] text-linear-ink-tertiary">ไม่มีราคาอ้างอิง</span>
-      ) : difference < 0 ? (
-        <span className="mt-1 inline-flex items-center justify-end gap-0.5 text-[11px] font-medium text-linear-danger"><ArrowDown size={12} />ถูกกว่า {money(Math.abs(difference), offer.currency)}</span>
-      ) : difference > 0 ? (
-        <span className="mt-1 inline-flex items-center justify-end gap-0.5 text-[11px] font-medium text-linear-success"><ArrowUp size={12} />แพงกว่า {money(difference, offer.currency)}</span>
-      ) : (
-        <span className="mt-1 inline-flex items-center justify-end gap-0.5 text-[11px] text-linear-ink-tertiary"><Minus size={12} />เท่ากัน</span>
-      )}
+      <OfferDetailTooltip offer={offer} detailId={detailId}>
+        <div className="rounded-sm">
+          <p className={priceTone}>{money(offer.price, offer.currency)}</p>
+          {isBaseline ? null : difference == null ? (
+            <span className="mt-1 block text-[11px] text-linear-ink-tertiary">ไม่มีราคาอ้างอิง</span>
+          ) : difference < 0 ? (
+            <span className="mt-1 inline-flex items-center justify-end gap-0.5 text-[11px] font-medium text-linear-danger"><ArrowDown size={12} />ถูกกว่า {money(Math.abs(difference), offer.currency)}</span>
+          ) : difference > 0 ? (
+            <span className="mt-1 inline-flex items-center justify-end gap-0.5 text-[11px] font-medium text-linear-success"><ArrowUp size={12} />แพงกว่า {money(difference, offer.currency)}</span>
+          ) : (
+            <span className="mt-1 inline-flex items-center justify-end gap-0.5 text-[11px] text-linear-ink-tertiary"><Minus size={12} />เท่ากัน</span>
+          )}
+        </div>
+      </OfferDetailTooltip>
     </td>
+  );
+}
+
+function OfferDetailTooltip({ offer, detailId, children }) {
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef(null);
+  const tooltipRef = useRef(null);
+
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+    function positionTooltip() {
+      const anchor = anchorRef.current;
+      const tooltip = tooltipRef.current;
+      if (!anchor || !tooltip) return;
+      const gap = 8;
+      const edge = 8;
+      const anchorRect = anchor.getBoundingClientRect();
+      const tooltipRect = tooltip.getBoundingClientRect();
+      let top = anchorRect.top - tooltipRect.height - gap;
+      if (top < edge) top = anchorRect.bottom + gap;
+      top = Math.min(Math.max(top, edge), Math.max(edge, window.innerHeight - tooltipRect.height - edge));
+      const left = Math.min(
+        Math.max(anchorRect.right - tooltipRect.width, edge),
+        Math.max(edge, window.innerWidth - tooltipRect.width - edge)
+      );
+      tooltip.style.top = `${top}px`;
+      tooltip.style.left = `${left}px`;
+      tooltip.style.visibility = "visible";
+    }
+    positionTooltip();
+    window.addEventListener("resize", positionTooltip);
+    document.addEventListener("scroll", positionTooltip, true);
+    return () => {
+      window.removeEventListener("resize", positionTooltip);
+      document.removeEventListener("scroll", positionTooltip, true);
+    };
+  }, [open]);
+
+  return (
+    <div
+      ref={anchorRef}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+      onFocus={() => setOpen(true)}
+      onBlur={() => setOpen(false)}
+      tabIndex={0}
+      aria-describedby={open ? detailId : undefined}
+      className="relative inline-block rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-linear-hairline-strong"
+    >
+      {children}
+      {open ? createPortal(
+        <div ref={tooltipRef} id={detailId} role="tooltip" style={{ top: 0, left: 0, visibility: "hidden" }} className="pointer-events-none fixed z-[100] min-w-48 rounded-xl border border-linear-hairline bg-linear-surface-1 p-3 text-left text-xs font-normal leading-5 text-linear-ink shadow-[var(--ll-shadow-modal)]">
+          <p className="font-medium tabular-nums">{offer.unitPrice || "—"}</p>
+          <div className="mt-2 border-t border-linear-hairline pt-2 text-linear-ink-subtle">
+            <p>Stock: {offer.stockText || number(offer.stock)}</p>
+            <p>Trading volume: {number(offer.tradingVolume)}</p>
+          </div>
+        </div>,
+        document.body
+      ) : null}
+    </div>
   );
 }
 

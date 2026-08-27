@@ -62,12 +62,12 @@ function uniqueValues(items) {
   });
 }
 
-function parseSelect(html) {
+function parseSelect(html, { includeAllProperties = false } = {}) {
   const select = /<select\b([^>]*)>([\s\S]*?)<\/select>/i.exec(html);
   if (!select) return null;
   const options = [...select[2].matchAll(/<option\b([^>]*)>([\s\S]*?)<\/option>/gi)]
     .map((match) => ({ value: attr(match[1], "value"), label: decodeHtml(match[2]).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() }))
-    .filter((option) => option.value && option.value !== "0" && option.label);
+    .filter((option) => option.value && (includeAllProperties || option.value !== "0") && option.label);
   return { name: attr(select[1], "name"), options };
 }
 
@@ -76,7 +76,7 @@ export function parseKaleozGameCatalogHtml(html) {
   if (!clientDataText) throw new Error("ไม่พบข้อมูลเกมจาก Kaleoz");
   const clientData = JSON.parse(clientDataText);
   const propertyHtml = /<div\s+id=["']item_property["'][^>]*>([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/i.exec(html)?.[1] || "";
-  const property = parseSelect(propertyHtml);
+  const property = parseSelect(propertyHtml, { includeAllProperties: true });
   if (!property?.name || !property.options.length) throw new Error("เกมนี้ยังไม่มี Properties สำหรับเทียบราคา");
   return {
     gameId: String(clientData.game_id),
@@ -164,6 +164,9 @@ async function discoverGameCatalog(game) {
   const sourceUrl = `${KALEOZ_ORIGIN}/buy/${game.slug}?page=1`;
   const context = parseKaleozGameCatalogHtml(await kaleozFetch(sourceUrl));
   const discovered = await Promise.all(context.options.map(async (option) => {
+    if (option.value === "0") {
+      return { label: option.label, packs: [{ label: option.label, path: [], aggregate: true }] };
+    }
     const body = new URLSearchParams({ name: context.propertyName, prop_id: option.value });
     const child = parseSelect(await kaleozFetch(KALEOZ_ITEM_CATEGORY_URL, {
       method: "POST",
@@ -224,7 +227,9 @@ async function fetchFilteredPack(catalog, game, definition, packOrder) {
   return {
     label: definition.label,
     totalListings: first.totalListings,
-    offers: [first, ...remaining].flatMap((result) => result.offers).map((offer) => ({ ...offer, packLabel: definition.label, packOrder })),
+    offers: [first, ...remaining].flatMap((result) => result.offers).map((offer) => definition.aggregate
+      ? offer
+      : { ...offer, packLabel: definition.label, packOrder }),
   };
 }
 
