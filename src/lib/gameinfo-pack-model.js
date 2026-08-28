@@ -1,6 +1,8 @@
 // Canonical UID-pack shape shared by the editor, CSV importer, and storage
 // adapter. Keep this allowlist aligned with fields the pack edit/view pages
 // actually expose; unknown/legacy database fields must not be written back.
+import { normalizeGameinfoNumericInput } from "@/lib/gameinfo-pack-validation";
+import { normalizeGameinfoCountry } from "@/lib/gameinfo-countries";
 
 function text(value) {
   return value == null ? "" : String(value);
@@ -34,14 +36,14 @@ export function sanitizeGameinfoPack(pack) {
     id: text(source.id),
     name: text(source.name),
     image: text(source.image),
-    price: text(source.price),
-    amountChargedFee: text(source.amountChargedFee),
+    price: normalizeGameinfoNumericInput(source.price),
+    amountChargedFee: normalizeGameinfoNumericInput(source.amountChargedFee),
     serviceEnabled: source.serviceEnabled !== false,
     serviceStatus: source.serviceStatus === "new" ? "new" : "",
     costProfileId: text(source.costProfileId),
     channelsMain: stringList(source.channelsMain),
     channelsSecondary: stringList(source.channelsSecondary),
-    country: text(source.country),
+    country: normalizeGameinfoCountry(source.country).value,
   };
   const localizedNames = sanitizeGameinfoPackLocalizedNames(source.localizedNames);
   if (Object.keys(localizedNames).length) result.localizedNames = localizedNames;

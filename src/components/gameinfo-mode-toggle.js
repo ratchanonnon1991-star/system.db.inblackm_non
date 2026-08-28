@@ -12,6 +12,7 @@ export default function GameinfoModeToggle({ lang, editableRole }) {
   const pathname = usePathname();
   const dataMode = normalizeGameinfoDataMode(searchParams.get("mode"));
   const topupView = searchParams.get("view") === "topup";
+  const botAutoSection = searchParams.get("section") === "game-bot-auto";
 
   if (!editableRole) {
     return (
@@ -22,13 +23,19 @@ export default function GameinfoModeToggle({ lang, editableRole }) {
   }
 
   const isManageMode = pathname.split("/").includes("manage");
+  const isBotAutoPage = pathname.split("/").includes("game-bot-auto") || botAutoSection;
+  const botAutoMode = dataMode === "uid" ? "" : `&mode=${dataMode}`;
   const href = gameinfoListHref(lang, dataMode, !isManageMode);
   const gameId = pathname.split("/")[3];
   const isGamePage = /^\d+$/.test(gameId || "");
-  const topupHref = isGamePage
+  const topupHref = isBotAutoPage
+    ? `/gameinfo/${lang}?section=game-bot-auto${botAutoMode}&view=topup`
+    : isGamePage
     ? gameinfoGameHref(lang, gameId, dataMode, false, !topupView)
     : gameinfoListHref(lang, dataMode, false, !topupView);
-  const adminHref = isGamePage
+  const adminHref = isBotAutoPage
+    ? `/gameinfo/${lang}?section=game-bot-auto${botAutoMode}`
+    : isGamePage
     ? gameinfoGameHref(lang, gameId, dataMode, true)
     : gameinfoListHref(lang, dataMode);
 
@@ -43,14 +50,19 @@ export default function GameinfoModeToggle({ lang, editableRole }) {
     );
   }
 
+  const topupButton = (
+    <Link
+      href={topupHref}
+      className="flex h-10 items-center gap-2 rounded-lg border border-linear-hairline-strong px-3 text-xs font-medium text-linear-ink-muted hover:bg-linear-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-linear-primary"
+    >
+      <Eye size={14} aria-hidden="true" /> มุมมอง Topup
+    </Link>
+  );
+  if (isBotAutoPage) return topupButton;
+
   return (
     <>
-      <Link
-        href={topupHref}
-        className="flex h-10 items-center gap-2 rounded-lg border border-linear-hairline-strong px-3 text-xs font-medium text-linear-ink-muted hover:bg-linear-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-linear-primary"
-      >
-        <Eye size={14} aria-hidden="true" /> มุมมอง Topup
-      </Link>
+      {topupButton}
       <Link
         href={href}
         className={`flex h-10 items-center rounded-lg border px-3 text-xs font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-linear-primary ${

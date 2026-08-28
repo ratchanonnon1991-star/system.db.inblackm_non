@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
+  ArrowLeftRight,
   Bot,
   CheckCircle2,
   ChevronLeft,
@@ -13,6 +15,7 @@ import {
   CircleOff,
   Flag,
   Gamepad2,
+  GitBranch,
   Eye,
   Menu,
   MoreVertical,
@@ -23,6 +26,8 @@ import {
   X,
 } from "lucide-react";
 import GameinfoDatasetToggle from "./gameinfo-dataset-toggle";
+import GameinfoBotCatalog from "./gameinfo-bot-catalog";
+import GameinfoPackPriceCompare from "./gameinfo-pack-price-compare";
 import GameinfoTutorialButton, { GameinfoDetailsButton } from "./gameinfo-tutorial-modal";
 import {
   GAMEINFO_STATUSES,
@@ -34,6 +39,10 @@ import {
 } from "@/lib/gameinfo-dashboard";
 import { gameinfoGameHref, gameinfoListHref, gameinfoPacksHref } from "@/lib/gameinfo-data-mode";
 import { useGameinfoDialog } from "@/lib/use-gameinfo-dialog";
+import {
+  requestGameinfoDiscard,
+  useGameinfoUnsavedChanges,
+} from "@/lib/gameinfo-unsaved-changes";
 
 const PAGE_SIZE = 12;
 
@@ -44,7 +53,8 @@ const STATUS_STYLE = {
   offline: { label: "ปิดใช้งาน", dot: "bg-linear-ink-tertiary", badge: "bg-linear-surface-3 text-linear-ink-subtle" },
 };
 
-export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, editable = false, topupView = false, canReport = false, lang, dataMode = "uid" }) {
+export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, botChannels = [], botCategoryImages = {}, marketPage = null, botCatalogActive = false, priceComparisonActive = false, editable = false, topupView = false, canReport = false, lang, dataMode = "uid" }) {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [tag, setTag] = useState("");
@@ -60,15 +70,32 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
   const [actionError, setActionError] = useState("");
   const [reportRefreshError, setReportRefreshError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const reportDirty = Boolean(reportGame && reportMessage.trim());
+  useGameinfoUnsavedChanges(reportDirty);
+
+  function closeReport() {
+    if (reportSubmitting) return;
+    if (reportDirty) {
+      requestGameinfoDiscard({
+        message: "ข้อความ Report ที่ยังไม่ได้ส่งจะหายไป",
+        confirmLabel: "ปิด Report",
+        onConfirm: () => {
+          setReportGame(null);
+          setReportMessage("");
+        },
+      });
+      return;
+    }
+    setReportGame(null);
+    setReportMessage("");
+  }
   const {
     dialogRef: reportDialogRef,
     titleId: reportDialogTitleId,
     onBackdropMouseDown: onReportBackdropMouseDown,
   } = useGameinfoDialog({
     open: Boolean(reportGame),
-    onRequestClose: () => {
-      if (!reportSubmitting) setReportGame(null);
-    },
+    onRequestClose: closeReport,
   });
   useEffect(() => {
     if (!sidebarOpen) return;
@@ -139,18 +166,21 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
   }
 
   function chooseStatus(nextStatus) {
+    if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false, topupView));
     setStatus(nextStatus);
     setPage(0);
     setSidebarOpen(false);
   }
 
   function chooseTag(nextTag) {
+    if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false, topupView));
     setTag(nextTag);
     setPage(0);
     setSidebarOpen(false);
   }
 
   function choosePublisher(nextPublisher) {
+    if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false, topupView));
     setPublisher(nextPublisher);
     setPage(0);
     setSidebarOpen(false);
@@ -262,9 +292,10 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             onClick={() => {
               clearFilters();
               setSidebarOpen(false);
+              if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false, topupView));
             }}
             className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${
-              status === "all" && !tag && !publisher
+              !botCatalogActive && status === "all" && !tag && !publisher && !priceComparisonActive
                 ? "bg-linear-ink text-linear-canvas"
                 : "text-linear-ink-subtle hover:bg-linear-surface-3"
             }`}
@@ -284,7 +315,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
                   type="button"
                   onClick={() => chooseStatus(item.id)}
                   className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${
-                    status === item.id
+                    !botCatalogActive && status === item.id && !priceComparisonActive
                       ? "bg-linear-ink text-linear-canvas"
                       : "text-linear-ink-subtle hover:bg-linear-surface-3"
                   }`}
@@ -310,7 +341,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
                     key={item.name}
                     type="button"
                     onClick={() => chooseTag(tag === item.name ? "" : item.name)}
-                    className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${tag === item.name ? "bg-linear-ink text-linear-canvas" : "text-linear-ink-subtle hover:bg-linear-surface-3"}`}
+                    className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${!botCatalogActive && tag === item.name && !priceComparisonActive ? "bg-linear-ink text-linear-canvas" : "text-linear-ink-subtle hover:bg-linear-surface-3"}`}
                   >
                     <span className="flex min-w-0 items-center gap-2">
                       {tagImages[item.name] ? (
@@ -337,7 +368,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
                     key={item.name}
                     type="button"
                     onClick={() => choosePublisher(publisher === item.name ? "" : item.name)}
-                    className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${publisher === item.name ? "bg-linear-ink text-linear-canvas" : "text-linear-ink-subtle hover:bg-linear-surface-3"}`}
+                    className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${!botCatalogActive && publisher === item.name && !priceComparisonActive ? "bg-linear-ink text-linear-canvas" : "text-linear-ink-subtle hover:bg-linear-surface-3"}`}
                   >
                     <span className="flex min-w-0 items-center gap-2">
                       {publisherImages[item.name] ? (
@@ -358,7 +389,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
               type="button"
               onClick={() => chooseStatus("favorite")}
               className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${
-                status === "favorite"
+                !botCatalogActive && status === "favorite" && !priceComparisonActive
                   ? "bg-linear-ink text-linear-canvas"
                   : "text-linear-ink-subtle hover:bg-linear-surface-3"
               }`}
@@ -370,7 +401,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
               type="button"
               onClick={() => chooseStatus("bot-auto")}
               className={`mt-1 flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm ${
-                status === "bot-auto"
+                !botCatalogActive && status === "bot-auto" && !priceComparisonActive
                   ? "bg-linear-ink text-linear-canvas"
                   : "text-linear-ink-subtle hover:bg-linear-surface-3"
               }`}
@@ -378,6 +409,28 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
               <span className="flex items-center gap-2"><Bot size={16} /> Bot Auto</span>
               <span className="text-xs opacity-70">{counts.botAuto}</span>
             </button>
+            <Link
+              href={`/gameinfo/${lang}?section=game-bot-auto${dataMode === "uid" ? "" : `&mode=${dataMode}`}${topupView ? "&view=topup" : ""}`}
+              onClick={() => setSidebarOpen(false)}
+              className={`mt-1 flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-sm ${
+                botCatalogActive
+                  ? "bg-linear-ink text-linear-canvas"
+                  : "text-linear-ink-subtle hover:bg-linear-surface-3"
+              }`}
+            >
+              <GitBranch size={16} /> Game Bot Auto
+            </Link>
+            <Link
+              href={`/gameinfo/${lang}?section=pack-price-compare${dataMode === "uid" ? "" : `&mode=${dataMode}`}${topupView ? "&view=topup" : ""}`}
+              onClick={() => setSidebarOpen(false)}
+              className={`mt-1 flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-sm ${
+                priceComparisonActive
+                  ? "bg-linear-ink text-linear-canvas"
+                  : "text-linear-ink-subtle hover:bg-linear-surface-3"
+              }`}
+            >
+              <ArrowLeftRight size={16} /> เทียบราคาแพ็ค
+            </Link>
             {editable ? (
               <Link
                 href={gameinfoListHref(lang, dataMode, true)}
@@ -391,6 +444,12 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
       </aside>
 
       <main className="min-w-0 px-4 py-6 sm:px-6 lg:px-8">
+        {botCatalogActive ? (
+          <GameinfoBotCatalog channels={botChannels} categoryImages={botCategoryImages} editable={editable} lang={lang} />
+        ) : priceComparisonActive ? (
+          <GameinfoPackPriceCompare page={marketPage} editable={editable} />
+        ) : (
+          <>
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs font-medium text-linear-ink-tertiary">GAME DATABASE</p>
@@ -498,6 +557,8 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             <button type="button" onClick={() => setPage(pageCount - 1)} disabled={currentPage === pageCount - 1} title="หน้าสุดท้าย" aria-label="หน้าสุดท้าย" className="flex h-10 w-10 items-center justify-center rounded-lg border border-linear-hairline-strong hover:bg-linear-surface-2 disabled:opacity-40"><ChevronsRight size={16} /></button>
           </div>
         ) : null}
+          </>
+        )}
       </main>
       {reportGame ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="presentation" onMouseDown={onReportBackdropMouseDown}>
@@ -507,7 +568,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
                 <h2 id={reportDialogTitleId} className="text-lg font-semibold tracking-[-0.2px] text-linear-ink">รายงานปัญหา</h2>
                 <p className="mt-1 text-xs text-linear-ink-tertiary">{reportGame.game} · ID {reportGame.id}</p>
               </div>
-              <button type="button" disabled={reportSubmitting} onClick={() => setReportGame(null)} aria-label="ปิด" className="flex h-10 w-10 items-center justify-center rounded-lg text-linear-ink-tertiary hover:bg-linear-surface-2 disabled:opacity-40"><X size={18} /></button>
+              <button type="button" disabled={reportSubmitting} onClick={closeReport} aria-label="ปิด" className="flex h-10 w-10 items-center justify-center rounded-lg text-linear-ink-tertiary hover:bg-linear-surface-2 disabled:opacity-40"><X size={18} /></button>
             </div>
             <textarea autoFocus required maxLength={1000} rows={4} value={reportMessage} onChange={(event) => setReportMessage(event.target.value)} placeholder="แจ้งข้อมูลที่ผิดหรือปัญหาที่พบ..." className="mt-4 min-h-28 w-full resize-y rounded-lg border border-linear-hairline-strong bg-linear-canvas px-3 py-2 text-sm text-linear-ink outline-none placeholder:text-linear-ink-tertiary focus:border-linear-primary focus:ring-2 focus:ring-linear-primary/20" />
             {actionError ? <p role="alert" className="mt-2 text-xs text-linear-danger">{actionError}</p> : null}

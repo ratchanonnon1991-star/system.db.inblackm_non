@@ -29,9 +29,13 @@ import {
   Image as ImageIcon,
   MoreVertical,
   Plus,
+  Trash2,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
-import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
+import {
+  requestGameinfoReload,
+  useGameinfoUnsavedChanges,
+} from "@/lib/gameinfo-unsaved-changes";
 import { gameinfoGameHref, gameinfoPacksHref } from "@/lib/gameinfo-data-mode";
 import GameinfoMemoryInput from "./gameinfo-memory-input";
 import GameinfoNameInput from "./gameinfo-name-input";
@@ -59,7 +63,7 @@ import GameinfoModeCloneButton from "./gameinfo-mode-clone-button";
 // pack count ported from the old admin games-table, see
 // listGamelistPackCountByGame().
 const GRID_COLS =
-  "grid-cols-[28px_28px_70px_60px_50px_44px_minmax(160px,1.4fr)_110px_110px_110px_130px_minmax(140px,1fr)_130px_minmax(140px,1fr)_190px_44px]";
+  "grid-cols-[28px_28px_70px_60px_50px_44px_minmax(160px,1.4fr)_110px_110px_110px_130px_minmax(140px,1fr)_130px_minmax(140px,1fr)_190px_76px]";
 
 function uniq(arr) {
   return Array.from(new Set(arr.filter(Boolean))).sort((a, b) => a.localeCompare(b, "th"));
@@ -681,7 +685,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
       {saveError ? (
         <div role="alert" className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-linear-danger/30 bg-linear-danger-bg px-3 py-2 text-sm text-linear-danger">
           <span>{saveError} ข้อมูลบางส่วนอาจถูกบันทึกแล้ว</span>
-          <button type="button" onClick={() => window.location.reload()} className="shrink-0 underline">โหลดข้อมูลล่าสุด</button>
+          <button type="button" onClick={requestGameinfoReload} className="shrink-0 underline">โหลดข้อมูลล่าสุด</button>
         </div>
       ) : null}
 
@@ -1080,7 +1084,18 @@ function RowCells({
       </span>
 
       {editable ? (
-        <RowActionsMenu row={row} lang={lang} dataMode={dataMode} editable={editable} onDelete={onDelete} />
+        <span className="flex items-center justify-end gap-1">
+          <button
+            type="button"
+            onClick={() => onDelete(row.id, row.game)}
+            aria-label={`ลบเกม ${row.game || "ไม่มีชื่อ"}`}
+            title="ลบเกม"
+            className="flex h-7 w-7 items-center justify-center rounded text-linear-ink-tertiary hover:bg-linear-danger-bg hover:text-linear-danger"
+          >
+            <Trash2 size={14} />
+          </button>
+          <RowActionsMenu row={row} lang={lang} dataMode={dataMode} editable={editable} onDelete={onDelete} />
+        </span>
       ) : (
         <Link
           href={gameinfoGameHref(lang, row.id, dataMode)}

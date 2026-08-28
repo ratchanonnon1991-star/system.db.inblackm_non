@@ -15,6 +15,7 @@ export default function GameinfoMemoryInput({
   className,
   id,
   autoFocus,
+  suggestionSearchText,
 }) {
   const [open, setOpen] = useState(autoFocus ?? false);
   const [pos, setPos] = useState(null);
@@ -61,7 +62,10 @@ export default function GameinfoMemoryInput({
   const q = value.trim().toLowerCase();
   const pool = suggestions || [];
   const filtered = hasTyped
-    ? pool.filter((s) => s.toLowerCase().includes(q)).filter((s) => s.toLowerCase() !== q).slice(0, 50)
+    ? pool
+        .filter((s) => String(suggestionSearchText?.(s) ?? s).toLowerCase().includes(q))
+        .filter((s) => s.toLowerCase() !== q)
+        .slice(0, 50)
     : pool.slice(0, 50);
 
   return (

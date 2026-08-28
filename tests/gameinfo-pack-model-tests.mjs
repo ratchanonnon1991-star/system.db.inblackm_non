@@ -45,10 +45,15 @@ check("sanitize keeps fields currently displayed by the UID pack UI", sanitized,
   costProfileId: "cost_razer",
   channelsMain: ["Wavepay"],
   channelsSecondary: ["Razer"],
-  country: "TH",
+  country: "Thailand",
 });
 ok("sanitize drops the legacy amountCharged field", !("amountCharged" in sanitized));
 ok("sanitize drops unknown fields", !("unexpectedDatabaseField" in sanitized));
+check(
+  "sanitize removes leading zeros from stored numeric fields",
+  sanitizeGameinfoPack({ ...source, price: "00100", amountChargedFee: "000.50" }),
+  { ...sanitized, price: "100", amountChargedFee: "0.50" }
+);
 
 const duplicate = duplicateGameinfoPack(source, "pk_copy");
 check("duplicate receives the requested fresh id", duplicate.id, "pk_copy");

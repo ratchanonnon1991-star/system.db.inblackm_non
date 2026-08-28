@@ -1,20 +1,36 @@
-export function getEffectiveGameinfoFormula(column, packId) {
+export function getEffectiveGameinfoFormula(column, packId, categoryId) {
   const override = column?.rowOverrides?.[String(packId)];
   if (typeof override === "string" && override.trim()) {
-    return { formula: override, overridden: true };
+    return { formula: override, overridden: true, source: "override" };
   }
-  return { formula: typeof column?.formula === "string" ? column.formula : "", overridden: false };
+  const categoryFormula = column?.categoryFormulas?.[String(categoryId)];
+  if (
+    column?.scopeMode === "category" &&
+    typeof categoryFormula === "string" &&
+    categoryFormula.trim()
+  ) {
+    return { formula: categoryFormula, overridden: true, source: "category" };
+  }
+  return {
+    formula: typeof column?.formula === "string" ? column.formula : "",
+    overridden: false,
+    source: "main",
+  };
 }
 
 // Task 8's formula-display mode needs the exact same effective formula as
 // the evaluator plus a stable source label. Keeping this here prevents the
 // editor and read-only view from disagreeing about inherited vs overridden.
-export function getGameinfoFormulaDisplay(column, packId) {
-  const effective = getEffectiveGameinfoFormula(column, packId);
+export function getGameinfoFormulaDisplay(column, packId, categoryId) {
+  const effective = getEffectiveGameinfoFormula(column, packId, categoryId);
   return {
     ...effective,
-    source: effective.overridden ? "override" : "main",
-    sourceLabel: effective.overridden ? "สูตรเฉพาะ pack" : "สูตรหลัก",
+    sourceLabel:
+      effective.source === "override"
+        ? "สูตรเฉพาะ pack"
+        : effective.source === "category"
+          ? "สูตรเฉพาะหมวด"
+          : "สูตรหลัก",
   };
 }
 
@@ -27,6 +43,18 @@ export function setGameinfoFormulaOverride(columns, columnKey, packId, formula) 
     if (cleanFormula) rowOverrides[id] = cleanFormula;
     else delete rowOverrides[id];
     return { ...column, rowOverrides };
+  });
+}
+
+export function setGameinfoCategoryFormula(columns, columnKey, categoryId, formula) {
+  const cleanFormula = typeof formula === "string" ? formula.trim() : "";
+  const id = String(categoryId);
+  return (columns || []).map((column) => {
+    if (column.key !== columnKey) return column;
+    const categoryFormulas = { ...(column.categoryFormulas || {}) };
+    if (cleanFormula) categoryFormulas[id] = cleanFormula;
+    else delete categoryFormulas[id];
+    return { ...column, categoryFormulas };
   });
 }
 
@@ -64,6 +92,17 @@ export function pruneGameinfoFormulaOverrides(columns, packIds) {
   });
 }
 
+export function pruneGameinfoCategoryFormulas(columns, categoryIds) {
+  const known = new Set((categoryIds || []).map(String));
+  return (columns || []).map((column) => {
+    const categoryFormulas = {};
+    for (const [categoryId, formula] of Object.entries(column?.categoryFormulas || {})) {
+      if (known.has(categoryId)) categoryFormulas[categoryId] = formula;
+    }
+    return { ...column, categoryFormulas };
+  });
+}
+
 export function updateGameinfoComputedColumn(columns, nextColumn, { resetOverrides = false } = {}) {
   if (!nextColumn?.key) return columns || [];
   return (columns || []).map((column) => {
@@ -74,6 +113,8 @@ export function updateGameinfoComputedColumn(columns, nextColumn, { resetOverrid
       formula: nextColumn.formula,
       type: nextColumn.type,
       symbol: nextColumn.symbol,
+      scopeMode: nextColumn.scopeMode === "category" ? "category" : "global",
+      categoryFormulas: resetOverrides ? {} : { ...(column.categoryFormulas || {}) },
       rowOverrides: resetOverrides ? {} : { ...(column.rowOverrides || {}) },
     };
   });

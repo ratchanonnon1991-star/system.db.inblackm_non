@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Columns3, Copy, LoaderCircle, Plus, RotateCcw, Save, Trash2, X } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { Popover } from "@base-ui/react/popover";
+import { Columns3, Copy, LoaderCircle, Lock, Pencil, Plus, RotateCcw, Save, Trash2, X } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import { requestGameinfoDiscard } from "@/lib/gameinfo-unsaved-changes";
 import {
   gameinfoPackLayoutStorageKey,
   normalizeGameinfoPackLayout,
@@ -68,9 +70,10 @@ export function useGameinfoPackColumnLayout({
     [baselineLayout, columns, lockRequired]
   );
   const dirty =
-    legacyDraft ||
     presetName !== baselineName ||
     !sameLayout(normalizedLayout, normalizedBaseline);
+  const selectedPreset = presets.find((preset) => String(preset.id) === selectedPresetId) || null;
+  const presetLocked = surface === "view" && Boolean(selectedPreset?.locked);
 
   useEffect(() => {
     let cancelled = false;
@@ -177,23 +180,38 @@ export function useGameinfoPackColumnLayout({
   function selectPreset(presetId) {
     const selected = presets.find((preset) => String(preset.id) === String(presetId));
     if (!selected || String(selected.id) === selectedPresetId) return;
-    if (dirty && !window.confirm("เปลี่ยน preset? การตั้งค่าคอลัมน์ที่ยังไม่บันทึกจะหายไป")) return;
-    setLayout(selected.layout);
-    setBaselineLayout(selected.layout);
-    setSelectedPresetId(String(selected.id));
-    setPresetName(selected.name || "");
-    setBaselineName(selected.name || "");
-    setLegacyDraft(false);
-    setError("");
-    setNotice("");
+    const applySelectedPreset = () => {
+      setLayout(selected.layout);
+      setBaselineLayout(selected.layout);
+      setSelectedPresetId(String(selected.id));
+      setPresetName(selected.name || "");
+      setBaselineName(selected.name || "");
+      setLegacyDraft(false);
+      setError("");
+      setNotice("");
+    };
+    if (dirty) {
+      requestGameinfoDiscard({
+        title: "เปลี่ยน preset?",
+        message: "การตั้งค่าคอลัมน์ที่ยังไม่บันทึกจะหายไป",
+        confirmLabel: "เปลี่ยน preset",
+        onConfirm: applySelectedPreset,
+      });
+      return;
+    }
+    applySelectedPreset();
   }
 
   async function savePreset({ asNew = false } = {}) {
-    if (saving) return;
+    if (saving) return false;
     const name = presetName.trim().replace(/\s+/g, " ");
     if (!name) {
       setError("กรุณาตั้งชื่อ preset ก่อนบันทึก");
-      return;
+      return false;
+    }
+    if (!asNew && presetLocked) {
+      setError("preset นี้ถูกล็อกจากหน้าแก้ไข — ตั้งชื่อใหม่เพื่อเก็บเป็นของคุณเอง");
+      return false;
     }
     setSaving(true);
     setError("");
@@ -222,12 +240,14 @@ export function useGameinfoPackColumnLayout({
       setBaselineName(saved.name || name);
       setLegacyDraft(false);
       setNotice(asNew ? "สร้าง preset ใหม่แล้ว" : "บันทึก preset แล้ว");
+      return true;
     } catch (saveError) {
       setError(
         saveError instanceof Error
           ? saveError.message
           : "บันทึก preset การแสดงคอลัมน์ไม่สำเร็จ"
       );
+      return false;
     } finally {
       setSaving(false);
     }
@@ -246,6 +266,8 @@ export function useGameinfoPackColumnLayout({
     error,
     notice,
     legacyDraft,
+    presetLocked,
+    surface,
     setVisible,
     setFilters,
     reorder,
@@ -279,70 +301,180 @@ export function GameinfoPackColumnControls({
   onPresetNameChange,
   onSavePreset,
   lockRequired = false,
+  presetLocked = false,
 }) {
   const [open, setOpen] = useState(false);
-  const saveDisabled = loading || saving || !presetName.trim() || (!dirty && Boolean(selectedPresetId));
-  const saveAsNewDisabled = loading || saving || !presetName.trim();
+  const popoverId = useId();
+  const triggerRef = useRef(null);
+  const closeButtonRef = useRef(null);
+  const [managing, setManaging] = useState(false);
+  const selectedPreset =
+    presets.find((preset) => String(preset.id) === String(selectedPresetId)) || null;
+  const trimmedName = presetName.trim().replace(/\s+/g, " ");
+  const nameMatch = presets.find((preset) => preset.name === trimmedName) || null;
+  const nameIsSelected = nameMatch != null && String(nameMatch.id) === String(selectedPresetId);
+  const action = (() => {
+    if (!trimmedName) return { label: "สร้าง", disabled: true };
+    if (!nameMatch) return { label: "สร้าง", asNew: true, disabled: loading || saving };
+    if (nameIsSelected) {
+      return {
+        label: "บันทึก",
+        asNew: false,
+        disabled: loading || saving || presetLocked || !dirty,
+        hint: presetLocked
+          ? "preset นี้ถูกล็อกจากหน้าแก้ไข — ตั้งชื่อใหม่เพื่อเก็บเป็นของคุณเอง"
+          : dirty
+            ? ""
+            : "ยังไม่มีการเปลี่ยนแปลงให้บันทึก",
+      };
+    }
+    return { label: "บันทึก", disabled: true, hint: "มีชื่อนี้อยู่แล้ว — ตั้งชื่ออื่น" };
+  })();
+
+  function openManage(nextName) {
+    onPresetNameChange(nextName);
+    setManaging(true);
+  }
+
+  function closeManage() {
+    setManaging(false);
+    onPresetNameChange(selectedPreset?.name || "");
+  }
 
   return (
-    <div className="relative">
-      <button
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger
+        ref={triggerRef}
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        aria-controls={popoverId}
         className="inline-flex items-center gap-1.5 rounded-md border border-linear-hairline-strong px-3 py-1.5 text-xs text-linear-ink-muted hover:bg-linear-surface-2"
       >
         <Columns3 size={14} /> คอลัมน์/ตัวกรอง{dirty ? <span className="text-linear-primary">•</span> : null}
-      </button>
-      {open && (
-        <div className="absolute right-0 z-40 mt-2 w-80 rounded-lg border border-linear-hairline bg-linear-surface-1 p-3 shadow-2xl">
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Positioner
+          positionMethod="fixed"
+          side="bottom"
+          align="end"
+          sideOffset={8}
+          collisionPadding={8}
+          collisionAvoidance={{ side: "flip", align: "shift", fallbackAxisSide: "none" }}
+          className="isolate z-50"
+        >
+        <Popover.Popup
+          id={popoverId}
+          initialFocus={closeButtonRef}
+          finalFocus={triggerRef}
+          className="max-h-[calc(100dvh-1rem)] w-[min(20rem,calc(100vw-1rem))] overflow-y-auto rounded-lg border border-linear-hairline bg-linear-surface-1 p-3 outline-none"
+          style={{ boxShadow: "var(--ll-shadow-modal)" }}
+        >
           <div className="mb-3 flex items-center justify-between gap-2">
             <div>
-              <p className="text-sm font-medium text-linear-ink">preset การแสดงคอลัมน์</p>
+              <Popover.Title className="text-sm font-medium text-linear-ink">preset การแสดงคอลัมน์</Popover.Title>
               <p className="text-[10px] text-linear-ink-tertiary">
-                แยกเฉพาะเกม หน้านี้ และบัญชีของคุณ
+                เก็บคอลัมน์ที่แสดงและลำดับตำแหน่ง · ใช้ร่วมกันทั้งหน้าแก้ไขและหน้าดู
               </p>
             </div>
-            <button
+            <Popover.Close
+              ref={closeButtonRef}
               type="button"
-              onClick={() => setOpen(false)}
               aria-label="ปิดการตั้งค่าคอลัมน์"
               className="rounded p-1 text-linear-ink-tertiary hover:bg-linear-surface-3"
             >
               <X size={14} />
-            </button>
+            </Popover.Close>
           </div>
 
-          <label className="mb-2 block text-[10px] font-medium uppercase tracking-wide text-linear-ink-tertiary">
+          <div className="mb-2 text-[10px] font-medium uppercase tracking-wide text-linear-ink-tertiary">
             preset ที่บันทึกไว้
-            <select
-              value={selectedPresetId}
-              disabled={loading || saving || presets.length === 0}
-              onChange={(event) => onSelectPreset(event.target.value)}
-              className="mt-1 block w-full rounded-md border border-linear-hairline-strong bg-linear-surface-2 px-2 py-1.5 text-xs font-normal normal-case tracking-normal text-linear-ink outline-none focus:border-linear-primary"
-            >
-              {presets.length === 0 ? (
-                <option value="">ยังไม่มี preset ที่บันทึกไว้</option>
-              ) : (
-                presets.map((preset) => (
-                  <option key={preset.id} value={String(preset.id)}>
-                    {preset.name}
-                  </option>
-                ))
-              )}
-            </select>
-          </label>
+            <div className="mt-1 flex items-center gap-1.5">
+              <select
+                value={selectedPresetId}
+                disabled={loading || saving || presets.length === 0}
+                onChange={(event) => onSelectPreset(event.target.value)}
+                aria-label="preset ที่บันทึกไว้"
+                className="min-w-0 flex-1 rounded-md border border-linear-hairline-strong bg-linear-surface-2 px-2 py-1.5 text-xs font-normal normal-case tracking-normal text-linear-ink outline-none focus:border-linear-primary"
+              >
+                {presets.length === 0 ? (
+                  <option value="">ยังไม่มี preset ที่บันทึกไว้</option>
+                ) : (
+                  presets.map((preset) => (
+                    <option key={preset.id} value={String(preset.id)}>
+                      {preset.name}{preset.locked ? " (อ่านอย่างเดียว)" : ""}
+                    </option>
+                  ))
+                )}
+              </select>
+              <button
+                type="button"
+                onClick={() => openManage(selectedPreset?.name || "")}
+                disabled={loading || saving || !selectedPresetId}
+                title="เปลี่ยนชื่อหรือบันทึกทับ preset นี้"
+                aria-label="แก้ไข preset ที่เลือก"
+                className="shrink-0 rounded-md border border-linear-hairline-strong p-1.5 text-linear-ink-tertiary hover:bg-linear-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Pencil size={13} />
+              </button>
+              <button
+                type="button"
+                onClick={() => openManage("")}
+                disabled={loading || saving}
+                title="สร้าง preset ใหม่จากการตั้งค่าปัจจุบัน"
+                aria-label="สร้าง preset ใหม่"
+                className="shrink-0 rounded-md border border-linear-hairline-strong p-1.5 text-linear-ink-tertiary hover:bg-linear-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Plus size={13} />
+              </button>
+            </div>
+          </div>
 
-          <label className="mb-3 block text-[10px] font-medium uppercase tracking-wide text-linear-ink-tertiary">
-            ชื่อ preset
-            <input
-              value={presetName}
-              maxLength={80}
-              disabled={loading || saving}
-              onChange={(event) => onPresetNameChange(event.target.value)}
-              placeholder="เช่น เฉพาะราคา"
-              className="mt-1 block w-full rounded-md border border-linear-hairline-strong bg-linear-surface-2 px-2 py-1.5 text-xs font-normal normal-case tracking-normal text-linear-ink outline-none placeholder:text-linear-ink-tertiary focus:border-linear-primary"
-            />
-          </label>
+          {presetLocked && !managing ? (
+            <p className="mb-3 flex items-start gap-1.5 rounded-md border border-linear-hairline bg-linear-surface-2 px-2 py-1.5 text-[10px] text-linear-ink-tertiary">
+              <Lock size={11} className="mt-px shrink-0" />
+              <span>preset นี้มาจากหน้าแก้ไข จึงใช้ได้แต่บันทึกทับจากหน้านี้ไม่ได้ กด + เพื่อสร้างสำเนา</span>
+            </p>
+          ) : null}
+
+          {managing ? (
+            <div className="mb-3 rounded-md border border-linear-hairline bg-linear-surface-2 p-2">
+              <label className="block text-[10px] font-medium uppercase tracking-wide text-linear-ink-tertiary">
+                ชื่อ preset
+                <input
+                  value={presetName}
+                  maxLength={80}
+                  autoFocus
+                  disabled={loading || saving}
+                  onChange={(event) => onPresetNameChange(event.target.value)}
+                  placeholder="เช่น เฉพาะราคา"
+                  className="mt-1 block w-full rounded-md border border-linear-hairline-strong bg-linear-surface-1 px-2 py-1.5 text-xs font-normal normal-case tracking-normal text-linear-ink outline-none placeholder:text-linear-ink-tertiary focus:border-linear-primary"
+                />
+              </label>
+              {action.hint ? <p className="mt-1.5 text-[10px] text-linear-ink-tertiary">{action.hint}</p> : null}
+              <div className="mt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeManage}
+                  disabled={saving}
+                  className="rounded-md px-2.5 py-1.5 text-xs text-linear-ink-tertiary hover:bg-linear-surface-3 disabled:opacity-50"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const saved = await onSavePreset({ asNew: Boolean(action.asNew) });
+                    if (saved) setManaging(false);
+                  }}
+                  disabled={action.disabled}
+                  className="inline-flex items-center gap-1 rounded-md bg-linear-primary px-2.5 py-1.5 text-xs font-medium text-white hover:bg-linear-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {saving ? <LoaderCircle size={12} className="animate-spin" /> : action.asNew ? <Copy size={12} /> : <Save size={12} />}
+                  {action.label}
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           <div className="mb-2 flex items-center justify-between gap-2">
             <p className="text-xs font-medium text-linear-ink">คอลัมน์ที่แสดง</p>
@@ -423,7 +555,7 @@ export function GameinfoPackColumnControls({
                     <button
                       type="button"
                       onClick={() => onFiltersChange(filters.filter((_, itemIndex) => itemIndex !== index))}
-                      className="rounded p-1 text-red-400 hover:bg-red-500/10"
+                      className="rounded p-1 text-linear-danger hover:bg-linear-danger-bg"
                       aria-label="ลบตัวกรอง"
                     ><Trash2 size={12} /></button>
                     {filter.operator === "contains" || filter.operator === "equals" ? (
@@ -453,31 +585,24 @@ export function GameinfoPackColumnControls({
           {dirty && !legacyDraft ? (
             <p className="mt-1 text-[10px] text-linear-primary">มีการเปลี่ยนแปลงที่ยังไม่บันทึก</p>
           ) : null}
-          {error ? <p className="mt-2 text-xs text-red-400">{error}</p> : null}
-          {notice ? <p className="mt-2 text-xs text-emerald-400">{notice}</p> : null}
+          {error ? <p className="mt-2 text-xs text-linear-danger">{error}</p> : null}
+          {notice ? <p className="mt-2 text-xs text-linear-success">{notice}</p> : null}
 
-          <div className="mt-3 flex items-center justify-end gap-2 border-t border-linear-hairline pt-3">
-            <button
-              type="button"
-              onClick={() => onSavePreset({ asNew: true })}
-              disabled={saveAsNewDisabled}
-              className="inline-flex items-center gap-1 rounded-md border border-linear-hairline-strong px-2.5 py-1.5 text-xs text-linear-ink-muted hover:bg-linear-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {saving ? <LoaderCircle size={12} className="animate-spin" /> : <Copy size={12} />}
-              บันทึกเป็นใหม่
-            </button>
-            <button
-              type="button"
-              onClick={() => onSavePreset()}
-              disabled={saveDisabled}
-              className="inline-flex items-center gap-1 rounded-md bg-linear-primary px-2.5 py-1.5 text-xs font-medium text-white hover:bg-linear-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {saving ? <LoaderCircle size={12} className="animate-spin" /> : <Save size={12} />}
-              บันทึก
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
+          {dirty && !managing ? (
+            <div className="mt-3 flex justify-end border-t border-linear-hairline pt-3">
+              <button
+                type="button"
+                onClick={() => openManage(selectedPreset?.name || "")}
+                disabled={loading || saving}
+                className="inline-flex items-center gap-1 rounded-md bg-linear-primary px-2.5 py-1.5 text-xs font-medium text-white hover:bg-linear-primary-hover disabled:opacity-50"
+              >
+                <Save size={12} /> บันทึก preset
+              </button>
+            </div>
+          ) : null}
+        </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }

@@ -17,9 +17,11 @@ assert.ok(cards.includes('aria-label="หน้าแรก"') && cards.includes
 assert.ok(cards.includes('aria-label="หน้าสุดท้าย"') && cards.includes("setPage(pageCount - 1)"), "pagination can jump to the last page");
 assert.ok(dialog.includes('event.key === "Escape"') && dialog.includes('event.key !== "Tab"'), "shared dialog behavior handles Escape and traps Tab focus");
 assert.ok(dialog.includes('document.body.style.overflow = "hidden"'), "shared dialog behavior locks background scrolling");
+assert.ok(dialog.includes("bodyScrollLockCount") && dialog.includes("unlockBodyScroll()"), "nested dialogs share a reference-counted scroll lock");
+assert.ok(dialog.includes("openDialogs[openDialogs.length - 1]"), "only the top nested dialog handles keyboard input");
 assert.ok(dialog.includes("previousFocus.isConnected"), "shared dialog behavior restores focus safely");
 assert.ok(theme.includes("--color-linear-success") && theme.includes("--color-linear-warning") && theme.includes("--color-linear-danger"), "semantic status tokens are defined");
 assert.ok(theme.includes("prefers-reduced-motion") && theme.includes(":focus-visible"), "GameInfo respects reduced motion and keyboard focus");
 assert.ok(manager.includes("บันทึกเรียบร้อย") && packEditor.includes("บันทึกเรียบร้อย"), "admin save feedback uses consistent copy");
 
-console.log("13 passed");
+console.log("15 passed");

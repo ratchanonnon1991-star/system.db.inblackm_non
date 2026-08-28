@@ -79,9 +79,14 @@ async function readyPool() {
             game_id INTEGER NOT NULL,
             data_mode VARCHAR(16) NOT NULL CHECK (data_mode IN ('idpass')),
             data JSONB NOT NULL DEFAULT '{}'::jsonb,
+            version BIGINT NOT NULL DEFAULT 1,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             PRIMARY KEY (game_id, data_mode)
           )
+        `);
+        await client.query(`
+          ALTER TABLE gameinfo_mode_data
+          ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1
         `);
       } finally {
         client.release();
@@ -102,10 +107,10 @@ export async function getGameinfoModeData(gameId, mode, transactionClient = null
   const client = transactionClient || await pool.connect();
   try {
     const result = await client.query(
-      `SELECT data FROM gameinfo_mode_data WHERE game_id = $1 AND data_mode = 'idpass'`,
+      `SELECT data, version FROM gameinfo_mode_data WHERE game_id = $1 AND data_mode = 'idpass'`,
       [gameId]
     );
-    return sanitizeData(result.rows[0]?.data);
+    return { ...sanitizeData(result.rows[0]?.data), version: Number(result.rows[0]?.version) || 1 };
   } finally {
     if (!transactionClient) client.release();
   }
@@ -116,8 +121,11 @@ export async function listGameinfoModeData(mode) {
   const pool = await readyPool();
   const client = await pool.connect();
   try {
-    const result = await client.query(`SELECT game_id, data FROM gameinfo_mode_data WHERE data_mode = 'idpass'`);
-    return Object.fromEntries(result.rows.map((row) => [row.game_id, sanitizeData(row.data)]));
+    const result = await client.query(`SELECT game_id, data, version FROM gameinfo_mode_data WHERE data_mode = 'idpass'`);
+    return Object.fromEntries(result.rows.map((row) => [row.game_id, {
+      ...sanitizeData(row.data),
+      version: Number(row.version) || 1,
+    }]));
   } finally {
     client.release();
   }
@@ -130,9 +138,10 @@ export async function saveGameinfoModeData(gameId, mode, nextData, transactionCl
   const client = transactionClient || await pool.connect();
   try {
     await client.query(
-      `INSERT INTO gameinfo_mode_data (game_id, data_mode, data, updated_at)
-       VALUES ($1, 'idpass', $2, NOW())
-       ON CONFLICT (game_id, data_mode) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
+      `INSERT INTO gameinfo_mode_data (game_id, data_mode, data, version, updated_at)
+       VALUES ($1, 'idpass', $2, 2, NOW())
+       ON CONFLICT (game_id, data_mode) DO UPDATE
+       SET data = EXCLUDED.data, version = gameinfo_mode_data.version + 1, updated_at = NOW()`,
       [gameId, JSON.stringify(data)]
     );
   } finally {
@@ -141,7 +150,12 @@ export async function saveGameinfoModeData(gameId, mode, nextData, transactionCl
   return data;
 }
 
-export async function updateGameinfoModeData(gameId, mode, updater, { area = null, actor = null } = {}) {
+export async function updateGameinfoModeData(
+  gameId,
+  mode,
+  updater,
+  { area = null, actor = null, expectedVersion } = {}
+) {
   if (normalizeGameinfoDataMode(mode) !== "idpass") throw new Error("ใช้ mode storage ได้เฉพาะ IDPASS");
   const pool = await readyPool();
   const client = await pool.connect();
@@ -154,16 +168,28 @@ export async function updateGameinfoModeData(gameId, mode, updater, { area = nul
       throw error;
     }
     const currentResult = await client.query(
-      `SELECT data FROM gameinfo_mode_data WHERE game_id = $1 AND data_mode = 'idpass' FOR UPDATE`,
+      `SELECT data, version FROM gameinfo_mode_data WHERE game_id = $1 AND data_mode = 'idpass' FOR UPDATE`,
       [gameId]
     );
+    const currentVersion = Number(currentResult.rows[0]?.version) || 1;
+    if (expectedVersion !== undefined && (
+      !Number.isSafeInteger(Number(expectedVersion)) || Number(expectedVersion) !== currentVersion
+    )) {
+      const conflict = new Error(
+        "ข้อมูลถูกแก้โดยผู้ใช้อื่น การบันทึกครั้งนี้ยังไม่ถูกนำไปเขียนทับ กรุณาโหลดข้อมูลล่าสุดก่อนแก้และบันทึกใหม่"
+      );
+      conflict.status = 409;
+      throw conflict;
+    }
     const current = sanitizeData(currentResult.rows[0]?.data);
     const next = sanitizeData(await updater(structuredClone(current)));
+    const nextVersion = currentVersion + 1;
     await client.query(
-      `INSERT INTO gameinfo_mode_data (game_id, data_mode, data, updated_at)
-       VALUES ($1, 'idpass', $2, NOW())
-       ON CONFLICT (game_id, data_mode) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
-      [gameId, JSON.stringify(next)]
+      `INSERT INTO gameinfo_mode_data (game_id, data_mode, data, version, updated_at)
+       VALUES ($1, 'idpass', $2, $3, NOW())
+       ON CONFLICT (game_id, data_mode) DO UPDATE
+       SET data = EXCLUDED.data, version = EXCLUDED.version, updated_at = NOW()`,
+      [gameId, JSON.stringify(next), nextVersion]
     );
     if (area) {
       const slice = (data) => {
@@ -185,7 +211,7 @@ export async function updateGameinfoModeData(gameId, mode, updater, { area = nul
       });
     }
     await client.query("COMMIT");
-    return next;
+    return { ...next, version: nextVersion };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

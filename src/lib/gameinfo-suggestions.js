@@ -24,6 +24,7 @@ export function buildPackSuggestions(game) {
     currencyNames: uniq(currencyNames),
     categoryNames: uniq(categoryNames),
     channels: uniq(channels),
-    countries: uniq(countries),
+    countries: uniq([...GAMEINFO_COUNTRY_NAMES, ...countries]),
   };
 }
+import { GAMEINFO_COUNTRY_NAMES } from "./gameinfo-countries.js";

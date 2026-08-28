@@ -1,12 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import { Boxes, History, Plus, Trash2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { evaluateGameinfoFormulaVariable } from "@/lib/gameinfo-formula-variables";
-import { GAMEINFO_FIELD_NAMES } from "@/lib/gameinfo-formula-fields";
-import { GAMEINFO_FORMULA_FUNCTION_HELP } from "@/lib/gameinfo-formula-help";
+import { GAMEINFO_NUMERIC_FIELD_NAMES } from "@/lib/gameinfo-formula-fields";
+import GameinfoFormulaHelpPanel from "@/components/gameinfo-formula-help-panel";
+import {
+  requestGameinfoDiscard,
+  useGameinfoUnsavedChanges,
+} from "@/lib/gameinfo-unsaved-changes";
 
 function blankVariable() {
   return {
@@ -82,6 +86,7 @@ export default function GameinfoFormulaVariablesButton({ gameId, initialVariable
   const [open, setOpen] = useState(false);
   const [variables, setVariables] = useState(initialVariables || []);
   const [baseline, setBaseline] = useState(initialVariables || []);
+  const [version, setVersion] = useState(1);
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -89,16 +94,8 @@ export default function GameinfoFormulaVariablesButton({ gameId, initialVariable
   const [showHistory, setShowHistory] = useState(false);
   const [loadedPreviewValues, setLoadedPreviewValues] = useState(null);
   const [activeVariableId, setActiveVariableId] = useState("");
-
-  const groups = useMemo(() => {
-    const grouped = new Map();
-    for (const variable of variables) {
-      const key = variable.category || "";
-      if (!grouped.has(key)) grouped.set(key, []);
-      grouped.get(key).push(variable);
-    }
-    return [...grouped.entries()];
-  }, [variables]);
+  const dirty = open && JSON.stringify(variables) !== JSON.stringify(baseline);
+  useGameinfoUnsavedChanges(dirty);
 
   async function show() {
     if (disabled) return;
@@ -114,6 +111,7 @@ export default function GameinfoFormulaVariablesButton({ gameId, initialVariable
       setBaseline(data.variables || []);
       setLogs(data.logs || []);
       setLoadedPreviewValues(data.previewValues || null);
+      setVersion(Number(data.version) || 1);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "โหลดตัวแปรผสมไม่สำเร็จ");
     } finally {
@@ -122,7 +120,14 @@ export default function GameinfoFormulaVariablesButton({ gameId, initialVariable
   }
 
   function requestClose() {
-    if (JSON.stringify(variables) !== JSON.stringify(baseline) && !window.confirm("ยังไม่ได้บันทึกตัวแปรผสม ต้องการปิดหรือไม่?")) return;
+    if (dirty) {
+      requestGameinfoDiscard({
+        message: "ตัวแปรผสมที่ยังไม่บันทึกจะหายไป",
+        confirmLabel: "ปิดโดยไม่บันทึก",
+        onConfirm: () => setOpen(false),
+      });
+      return;
+    }
     setOpen(false);
   }
 
@@ -150,11 +155,12 @@ export default function GameinfoFormulaVariablesButton({ gameId, initialVariable
       const data = await apiJson(endpoint || `/api/gameinfo/gamelist/${gameId}/variables`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ variables }),
+        body: JSON.stringify({ variables, version }),
         fallbackError: "บันทึกตัวแปรผสมไม่สำเร็จ",
       });
       setVariables(data.variables);
       setBaseline(data.variables);
+      setVersion(Number(data.version) || version + 1);
       onSaved?.(data.variables);
       setOpen(false);
     } catch (saveError) {
@@ -202,24 +208,14 @@ export default function GameinfoFormulaVariablesButton({ gameId, initialVariable
               ) : null}
               {!loading && !showHistory ? (
                 <div className="space-y-5">
-                  <section className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
-                    <p className="mb-1.5 text-xs font-medium text-linear-ink-muted">ฟังก์ชันที่ใช้ได้</p>
-                    <dl className="space-y-1">
-                      {GAMEINFO_FORMULA_FUNCTION_HELP.map(([group, list]) => (
-                        <div key={group} className="flex gap-2 text-xs leading-relaxed">
-                          <dt className="w-12 shrink-0 text-linear-ink-tertiary">{group}</dt>
-                          <dd className="min-w-0 font-mono text-linear-ink-subtle">{list}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </section>
+                  <GameinfoFormulaHelpPanel />
                   <section className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
                     <p className="mb-2 text-[11px] text-linear-ink-tertiary">
                       ตัวแปรที่ใช้ได้ (กดเพื่อแทรกในช่องสูตรที่เลือก):
                     </p>
                     <div className="flex flex-wrap gap-1.5">
                       {[...new Set([
-                        ...GAMEINFO_FIELD_NAMES,
+                        ...GAMEINFO_NUMERIC_FIELD_NAMES,
                         ...variables.map((variable) => variable.name).filter(Boolean),
                       ])].map((name) => (
                         <button
@@ -241,14 +237,11 @@ export default function GameinfoFormulaVariablesButton({ gameId, initialVariable
                       </p>
                     ) : null}
                   </section>
-                  {groups.map(([category, items]) => (
-                    <section key={category || "__floating__"}>
-                      <h3 className="mb-2 text-xs font-semibold text-linear-ink-muted">{category || "ไม่อยู่ในหมวดหมู่"}</h3>
-                      <div className="grid gap-3 lg:grid-cols-2">
-                        {items.map((variable) => (
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    {variables.map((variable) => (
                           <div key={variable.id} className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
                             <div className="mb-2 flex items-start gap-2">
-                              <div className="grid flex-1 grid-cols-2 gap-2">
+                              <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-2">
                                 <VariableInput label="ชื่อตัวแปร" value={variable.name} placeholder="เช่น ราคาขายสุทธิ" onChange={(name) => update(variable.id, { name })} />
                                 <VariableInput label="หมวดหมู่ (ไม่บังคับ)" value={variable.category} placeholder="เช่น ราคา, ต้นทุน" onChange={(categoryValue) => update(variable.id, { category: categoryValue })} />
                               </div>
@@ -256,7 +249,7 @@ export default function GameinfoFormulaVariablesButton({ gameId, initialVariable
                                 <Trash2 size={14} />
                               </button>
                             </div>
-                            <div className="grid grid-cols-[0.7fr_1.3fr] gap-2">
+                            <div className="grid gap-2 sm:grid-cols-[0.7fr_1.3fr]">
                               <VariableInput label="ค่าคงที่" value={variable.value} placeholder="เช่น 35.5" onChange={(value) => update(variable.id, { value })} />
                               <VariableInput
                                 label="สูตร (ถ้ามีจะใช้แทนค่าคงที่)"
@@ -275,10 +268,8 @@ export default function GameinfoFormulaVariablesButton({ gameId, initialVariable
                             />
                             <p className="mt-2 text-[10px] text-linear-ink-tertiary">แก้ล่าสุด: {dateText(variable.updatedAt)}{variable.updatedBy ? ` โดย ${variable.updatedBy}` : ""}</p>
                           </div>
-                        ))}
-                      </div>
-                    </section>
-                  ))}
+                    ))}
+                  </div>
                   {variables.length === 0 ? <p className="rounded-md border border-dashed border-linear-hairline-strong p-8 text-center text-sm text-linear-ink-tertiary">ยังไม่มีตัวแปรผสม</p> : null}
                 </div>
               ) : null}

@@ -9,10 +9,15 @@ import {
   parseFormula,
 } from "@/lib/gamedb-formula";
 import { GAMEINFO_FIELD_NAMES } from "@/lib/gameinfo-formula-fields";
-import { GAMEINFO_FORMULA_FUNCTION_HELP } from "@/lib/gameinfo-formula-help";
+import GameinfoFormulaHelpPanel from "@/components/gameinfo-formula-help-panel";
 import { formatGameinfoPackColumnValue, GAMEINFO_PACK_SYMBOLS } from "@/lib/gameinfo-pack-columns";
 import { validateGameinfoComputedDependencies } from "@/lib/gameinfo-computed-evaluator";
 import { useGameinfoDialog } from "@/lib/use-gameinfo-dialog";
+import {
+  requestGameinfoDiscard,
+  useGameinfoUnsavedChanges,
+} from "@/lib/gameinfo-unsaved-changes";
+import GameinfoFormulaMemory from "./gameinfo-formula-memory";
 
 // Same parser, validation and function library as the systemdb-side formula
 // editor (gamedb-modals.js's ComputedColumnModal) — this one is a full
@@ -48,8 +53,32 @@ export default function GameinfoComputedEditor({
   // still writing it and stops the moment they choose one themselves.
   const [typeChoice, setTypeChoice] = useState(initialColumn?.type || "");
   const [symbol, setSymbol] = useState(initialColumn?.symbol || "");
+  const [scopeMode, setScopeMode] = useState(
+    initialColumn?.scopeMode === "category" ? "category" : "global"
+  );
   const [resetOverrides, setResetOverrides] = useState(false);
-  const { dialogRef, titleId, onBackdropMouseDown } = useGameinfoDialog({ onRequestClose: onClose });
+  const dirty =
+    label.trim() !== String(initialColumn?.label || "").trim() ||
+    formula.trim() !== String(initialColumn?.formula || "").trim() ||
+    typeChoice !== (initialColumn?.type || "") ||
+    symbol !== (initialColumn?.symbol || "") ||
+    scopeMode !== (initialColumn?.scopeMode === "category" ? "category" : "global") ||
+    resetOverrides;
+  useGameinfoUnsavedChanges(dirty);
+
+  function requestClose() {
+    if (dirty) {
+      requestGameinfoDiscard({
+        message: "สูตรที่ยังไม่บันทึกจะหายไป",
+        confirmLabel: "ปิดโดยไม่บันทึก",
+        onConfirm: onClose,
+      });
+      return;
+    }
+    onClose();
+  }
+
+  const { dialogRef, titleId, onBackdropMouseDown } = useGameinfoDialog({ onRequestClose: requestClose });
 
   const validation = useMemo(() => {
     if (!formula.trim()) return { ok: false, message: "", type: "number" };
@@ -103,9 +132,42 @@ export default function GameinfoComputedEditor({
       formula: formula.trim(),
       type,
       symbol: type === "number" ? symbol : "",
+      scopeMode,
     };
     if (editingMainFormula) onSave?.(nextColumn, { resetOverrides });
     else onAdd(nextColumn);
+  }
+
+  function applyMemoryPreset(preset) {
+    try {
+      const ast = parseFormula(preset.formula);
+      const refs = [...extractFormulaRefs(ast)];
+      const availableNames = [
+        ...GAMEINFO_FIELD_NAMES,
+        ...extraFieldNames,
+        ...otherColumns.map((column) => column.label),
+      ];
+      const unknown = refs.filter(
+        (name) => !availableNames.includes(name) && name !== label.trim()
+      );
+      if (unknown.length) return `เกมนี้ไม่มีคอลัมน์: ${unknown.join(", ")}`;
+      const candidate = {
+        key: initialColumn?.key || "__draft__",
+        label: label.trim() || "__draft__",
+        formula: preset.formula,
+      };
+      const dependencyErrors = validateGameinfoComputedDependencies(
+        [...otherColumns.filter((column) => column.key !== candidate.key), candidate],
+        extraFieldNames
+      );
+      if (dependencyErrors.length) return dependencyErrors[0];
+      setFormula(preset.formula);
+      setTypeChoice(preset.type || "number");
+      setSymbol(preset.type === "number" ? preset.symbol || "" : "");
+      return "";
+    } catch (error) {
+      return error instanceof Error ? error.message : "สูตรไม่ถูกต้อง";
+    }
   }
 
   return (
@@ -113,14 +175,14 @@ export default function GameinfoComputedEditor({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       onMouseDown={onBackdropMouseDown}
     >
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-linear-hairline bg-linear-surface-1 shadow-2xl">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="flex max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-linear-hairline bg-linear-surface-1 shadow-2xl">
         <div className="flex items-center justify-between border-b border-linear-hairline px-5 py-3">
           <h2 id={titleId} className="flex items-center gap-2 text-sm font-semibold text-linear-ink">
             <Calculator size={15} className="text-linear-primary" /> {editingMainFormula ? "แก้ไขสูตรหลัก" : "เพิ่มคอลัมน์/สูตร"}
           </h2>
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             className="flex h-7 w-7 items-center justify-center rounded text-linear-ink-tertiary hover:bg-linear-surface-2 hover:text-linear-ink"
             aria-label="ปิด"
           >
@@ -128,7 +190,8 @@ export default function GameinfoComputedEditor({
           </button>
         </div>
 
-        <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+        <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="flex flex-col gap-3 overflow-y-auto px-5 py-4">
           <div>
             <label className="mb-1 block text-xs text-linear-ink-tertiary">ชื่อคอลัมน์</label>
             <input
@@ -160,6 +223,24 @@ export default function GameinfoComputedEditor({
           </div>
 
           <div>
+            <label htmlFor="gameinfo-computed-scope" className="mb-1 block text-xs text-linear-ink-tertiary">
+              ขอบเขตการใช้สูตร
+            </label>
+            <select
+              id="gameinfo-computed-scope"
+              value={scopeMode}
+              onChange={(event) => setScopeMode(event.target.value)}
+              className="h-9 w-full rounded border border-linear-hairline-strong bg-linear-surface-2 px-2 text-sm text-linear-ink outline-none focus:border-linear-primary"
+            >
+              <option value="global">ใช้สูตรหลักทั้งคอลัมน์</option>
+              <option value="category">แยกสูตรตามหมวด</option>
+            </select>
+            <p className="mt-1 text-[11px] text-linear-ink-tertiary">
+              หมวดที่ยังไม่มีสูตรเฉพาะจะใช้สูตรหลักด้านบนเสมอ ชื่อหมวดไม่มีผลต่อสูตร
+            </p>
+          </div>
+
+          <div>
             <label htmlFor="gameinfo-computed-type" className="mb-1 block text-xs text-linear-ink-tertiary">
               ผลลัพธ์เป็น {typeChoice ? "(เลือกเอง)" : "(เดาจากสูตร)"}
             </label>
@@ -177,8 +258,11 @@ export default function GameinfoComputedEditor({
             </select>
           </div>
 
-          {editingMainFormula && Object.keys(initialColumn?.rowOverrides || {}).length > 0 ? (
-            <label className="flex cursor-pointer items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+          {editingMainFormula && (
+            Object.keys(initialColumn?.rowOverrides || {}).length > 0 ||
+            Object.keys(initialColumn?.categoryFormulas || {}).length > 0
+          ) ? (
+            <label className="flex cursor-pointer items-start gap-2 rounded-md border border-linear-warning/40 bg-linear-warning-bg p-3 text-xs text-linear-warning">
               <input
                 type="checkbox"
                 checked={resetOverrides}
@@ -186,7 +270,7 @@ export default function GameinfoComputedEditor({
                 className="mt-0.5 accent-linear-primary"
               />
               <span>
-                ใช้สูตรหลักนี้กับทุก pack และล้างสูตรเฉพาะแถวทั้งหมด ({Object.keys(initialColumn.rowOverrides).length} แถว)
+                ใช้สูตรหลักนี้กับทุก pack และล้างสูตรเฉพาะหมวด/เฉพาะ pack ทั้งหมด
               </span>
             </label>
           ) : null}
@@ -216,17 +300,7 @@ export default function GameinfoComputedEditor({
             </p>
           </div>
 
-          <div className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
-            <p className="mb-1.5 text-xs font-medium text-linear-ink-muted">ฟังก์ชันที่ใช้ได้</p>
-            <dl className="space-y-1">
-              {GAMEINFO_FORMULA_FUNCTION_HELP.map(([group, list]) => (
-                <div key={group} className="flex gap-2 text-xs leading-relaxed">
-                  <dt className="w-12 shrink-0 text-linear-ink-tertiary">{group}</dt>
-                  <dd className="min-w-0 font-mono text-linear-ink-subtle">{list}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
+          <GameinfoFormulaHelpPanel />
 
           <div>
             <p className="mb-1.5 text-xs text-linear-ink-tertiary">คอลัมน์ที่ใช้ได้ (กดเพื่อแทรก):</p>
@@ -245,10 +319,19 @@ export default function GameinfoComputedEditor({
           </div>
 
           {missing.length > 0 && (
-            <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+            <div className="rounded-md border border-linear-warning/40 bg-linear-warning-bg px-3 py-2 text-xs font-medium text-linear-warning">
               ยังบันทึกไม่ได้ — ต้องกรอก: {missing.join(" · ")}
             </div>
           )}
+          </div>
+
+          <GameinfoFormulaMemory
+            formula={formula}
+            type={type}
+            symbol={symbol}
+            onApply={applyMemoryPreset}
+            className="overflow-y-auto border-t border-linear-hairline bg-linear-surface-2 p-4 lg:border-l lg:border-t-0"
+          />
         </div>
 
         <div className="flex items-center justify-end border-t border-linear-hairline px-5 py-3">

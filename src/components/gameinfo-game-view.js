@@ -18,8 +18,9 @@ import {
 } from "@/lib/gameinfo-pack-columns";
 import { getGameinfoFormulaDisplay } from "@/lib/gameinfo-formula-overrides";
 import { evaluateGameinfoComputedColumn } from "@/lib/gameinfo-computed-evaluator";
+import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
 import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
-import GameinfoRatePanel, { useGameinfoRates } from "./gameinfo-rate-panel";
+import { useGameinfoRates } from "./gameinfo-rate-panel";
 import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoTutorialButton, { GameinfoDetailsButton } from "./gameinfo-tutorial-modal";
 import { GameinfoGameLinkButtons } from "./gameinfo-game-links";
@@ -61,6 +62,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
     gameId: row.id,
     surface: "view",
   });
+  useGameinfoUnsavedChanges(packLayout.dirty);
 
   return (
     <div>
@@ -146,15 +148,6 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
         </div>
       </div>
 
-      <div className="mb-4">
-        <GameinfoRatePanel
-          rates={rateState.rates}
-          loading={rateState.loading}
-          error={rateState.error}
-          onRefresh={rateState.refresh}
-        />
-      </div>
-
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-semibold text-linear-ink">แพ็ก</h2>
         <div className="flex items-center gap-2">
@@ -171,6 +164,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
             selectedPresetId={packLayout.selectedPresetId}
             presetName={packLayout.presetName}
             dirty={packLayout.dirty}
+            presetLocked={packLayout.presetLocked}
             loading={packLayout.loading}
             saving={packLayout.saving}
             error={packLayout.error}
@@ -305,7 +299,7 @@ function PackCategory({
           allColumns.filter((item) => item.kind === "computed").map((item) => item.computed),
           targetPack,
           game,
-          { costProfiles, formulaVariables, externalValues }
+          { costProfiles, formulaVariables, externalValues, categoryId: category.id }
         );
       } catch {
         return "";
@@ -357,6 +351,7 @@ function PackCategory({
                             key={column.id}
                             column={column}
                             pack={pack}
+                            categoryId={category.id}
                             game={game}
                             formulaMode={formulaMode}
                             costProfiles={costProfiles}
@@ -403,6 +398,7 @@ function SortableViewHeader({ column }) {
 function PackViewCell({
   column,
   pack,
+  categoryId,
   game,
   formulaMode,
   costProfiles,
@@ -431,7 +427,7 @@ function PackViewCell({
   }
   if (column.kind === "computed") {
     const formula = column.computed;
-    const effective = getGameinfoFormulaDisplay(formula, pack.id);
+    const effective = getGameinfoFormulaDisplay(formula, pack.id, categoryId);
     let value = null;
     let formulaError = false;
     try {
@@ -440,7 +436,7 @@ function PackViewCell({
         computedColumns,
         pack,
         game,
-        { costProfiles, formulaVariables, externalValues }
+        { costProfiles, formulaVariables, externalValues, categoryId }
       );
     } catch {
       formulaError = true;
@@ -471,7 +467,7 @@ function PackViewCell({
         className={`max-w-[160px] truncate px-3 py-2 ${
           formulaError ? "text-red-400" : "text-linear-ink-muted"
         }`}
-        title={effective.overridden ? "ใช้สูตรเฉพาะ pack" : "ใช้สูตรหลักของคอลัมน์"}
+        title={effective.sourceLabel}
       >
         {formulaError ? "สูตรผิด" : formatGameinfoPackColumnValue(value, column)}
       </td>

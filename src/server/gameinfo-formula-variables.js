@@ -35,8 +35,13 @@ function ensureSchema(connection) {
         CREATE TABLE IF NOT EXISTS gamelist_formula_variables (
           game_id INTEGER PRIMARY KEY,
           data JSONB NOT NULL DEFAULT '{"variables":[]}'::jsonb,
+          version BIGINT NOT NULL DEFAULT 1,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
+      `);
+      await client.query(`
+        ALTER TABLE gamelist_formula_variables
+        ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1
       `);
       await client.query(`
         CREATE TABLE IF NOT EXISTS gamelist_formula_variable_logs (
@@ -102,7 +107,10 @@ export async function getGameinfoFormulaVariables(_gameId, { includeLogs = false
   const readyPool = await pool();
   const client = await readyPool.connect();
   try {
-    const result = await client.query(`SELECT data FROM gamelist_formula_variables WHERE game_id = $1`, [GLOBAL_SCOPE_ID]);
+    const result = await client.query(
+      `SELECT data, version FROM gamelist_formula_variables WHERE game_id = $1`,
+      [GLOBAL_SCOPE_ID]
+    );
     const variables = sanitizeGameinfoFormulaVariables(result.rows[0]?.data?.variables);
     let logs = [];
     if (includeLogs) {
@@ -123,13 +131,13 @@ export async function getGameinfoFormulaVariables(_gameId, { includeLogs = false
         createdAt: row.created_at,
       }));
     }
-    return { variables, logs };
+    return { variables, logs, version: Number(result.rows[0]?.version) || 1 };
   } finally {
     client.release();
   }
 }
 
-export async function saveGameinfoFormulaVariables(gameId, rawVariables, actor) {
+export async function saveGameinfoFormulaVariables(gameId, rawVariables, actor, expectedVersion) {
   if (!Array.isArray(rawVariables)) throw httpError("รูปแบบตัวแปรผสมไม่ถูกต้อง", 400);
   if (rawVariables.length > 100) throw httpError("เพิ่มตัวแปรผสมได้สูงสุด 100 ตัว", 400);
   const submitted = sanitizeGameinfoFormulaVariables(rawVariables);
@@ -144,9 +152,15 @@ export async function saveGameinfoFormulaVariables(gameId, rawVariables, actor) 
     await client.query("BEGIN");
     await client.query(`SELECT pg_advisory_xact_lock($1)`, [220022]);
     const previousResult = await client.query(
-      `SELECT data FROM gamelist_formula_variables WHERE game_id = $1 FOR UPDATE`,
+      `SELECT data, version FROM gamelist_formula_variables WHERE game_id = $1 FOR UPDATE`,
       [GLOBAL_SCOPE_ID]
     );
+    const currentVersion = Number(previousResult.rows[0]?.version) || 1;
+    if (expectedVersion !== undefined && (
+      !Number.isSafeInteger(Number(expectedVersion)) || Number(expectedVersion) !== currentVersion
+    )) {
+      throw httpError("ตัวแปรผสมถูกแก้โดยผู้ใช้อื่น กรุณาโหลดข้อมูลล่าสุดก่อนแก้และบันทึกใหม่", 409);
+    }
     const previous = sanitizeGameinfoFormulaVariables(previousResult.rows[0]?.data?.variables);
     const changedAt = new Date().toISOString();
     const actorName = String(actor?.name || "ไม่ทราบชื่อ").slice(0, 120);
@@ -160,10 +174,11 @@ export async function saveGameinfoFormulaVariables(gameId, rawVariables, actor) 
     const beforeDefinitions = previous.map(variableDefinition);
     const afterDefinitions = variables.map(variableDefinition);
     await client.query(
-      `INSERT INTO gamelist_formula_variables (game_id, data, updated_at)
-       VALUES ($1, $2, NOW())
-       ON CONFLICT (game_id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
-      [GLOBAL_SCOPE_ID, JSON.stringify({ variables })]
+      `INSERT INTO gamelist_formula_variables (game_id, data, version, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (game_id) DO UPDATE
+       SET data = EXCLUDED.data, version = EXCLUDED.version, updated_at = NOW()`,
+      [GLOBAL_SCOPE_ID, JSON.stringify({ variables }), currentVersion + 1]
     );
     if (JSON.stringify(beforeDefinitions) !== JSON.stringify(afterDefinitions)) {
       await client.query(
@@ -182,7 +197,7 @@ export async function saveGameinfoFormulaVariables(gameId, rawVariables, actor) 
       });
     }
     await client.query("COMMIT");
-    return variables;
+    return { variables, version: currentVersion + 1 };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

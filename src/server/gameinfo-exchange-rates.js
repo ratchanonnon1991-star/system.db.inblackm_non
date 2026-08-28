@@ -1,8 +1,8 @@
 import { getPoolForConnection } from "@/lib/db";
+import { GAMEINFO_RATE_CACHE_MS } from "@/lib/gameinfo-rate-schedule";
 import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
 
 const CONNECTION_NAME = "gameinfo";
-const CACHE_MS = 60 * 60 * 1000;
 const HISTORY_LIMIT = 48;
 const PAIRS = {
   "USDT/THB": { provider: "CoinGecko", kind: "crypto" },
@@ -132,7 +132,7 @@ async function refreshPair(pool, pair, now, fetchImpl) {
   if (refreshFlights.has(pair)) return refreshFlights.get(pair);
   const flight = (async () => {
     const fetched = await fetchGameinfoRate(pair, { fetchImpl });
-    const expiresAt = new Date(now.getTime() + CACHE_MS);
+    const expiresAt = new Date(now.getTime() + GAMEINFO_RATE_CACHE_MS[pair]);
     await pool.query(
       `INSERT INTO gameinfo_exchange_rates
          (pair, fetched_hour, rate, provider, fetched_at, provider_at, expires_at)
@@ -173,7 +173,7 @@ async function loadHistory(client, pair) {
 
 export async function getGameinfoExchangeRates(
   requestedPairs,
-  { now = new Date(), fetchImpl = fetch } = {}
+  { now = new Date(), fetchImpl = fetch, force = false } = {}
 ) {
   const pairs = [...new Set((requestedPairs || []).map(normalizeGameinfoRatePair).filter(Boolean))];
   if (pairs.length === 0) throw createHttpError("กรุณาระบุคู่สกุลเงินที่รองรับ", 400);
@@ -189,7 +189,7 @@ export async function getGameinfoExchangeRates(
         client.release();
       }
       let current = mapRateRow(latest, now);
-      if (current.stale) {
+      if (force || current.stale) {
         try {
           current = await refreshPair(pool, pair, now, fetchImpl);
         } catch (error) {

@@ -86,11 +86,11 @@ export async function PUT(request) {
         return jsonError(`ยังบันทึกตัวแปรไม่ได้: เกม ID ${config.gameId} — ${dependencyErrors[0]}`, 400);
       }
     }
-    const variables = await saveGameinfoFormulaVariables(0, body.variables, {
+    const saved = await saveGameinfoFormulaVariables(0, body.variables, {
       id: user.id,
       name: user.displayName || user.username,
-    });
-    return jsonOk({ variables });
+    }, body.version);
+    return jsonOk(saved);
   } catch (error) {
     return handleApiError(error, "บันทึกตัวแปรผสมไม่สำเร็จ");
   }

@@ -21,10 +21,8 @@ export async function GET(request, { params }) {
   try {
     const user = await requireGameinfoAccess(request);
     const gameId = await readGameId(params);
-    const surface = readSurface(request);
     if (!gameId) return jsonError("gameId ไม่ถูกต้อง", 400);
-    if (!surface) return jsonError("surface ต้องเป็น edit หรือ view", 400);
-    const presets = await listGamelistPackViewPresets({ gameId, userId: user.id, surface });
+    const presets = await listGamelistPackViewPresets({ gameId, userId: user.id });
     return jsonOk({ presets });
   } catch (err) {
     return handleApiError(err, "โหลด preset การแสดงคอลัมน์ไม่สำเร็จ");

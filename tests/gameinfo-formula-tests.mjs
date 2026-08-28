@@ -2,9 +2,11 @@
 // confirms every advertised label actually resolves, and that pack fields
 // win over game fields when both exist.
 import { evaluateFormula, parseFormula } from "@/lib/gamedb-formula.js";
+import { readFileSync } from "node:fs";
 import {
   GAMEINFO_FIELDS,
   GAMEINFO_FIELD_NAMES,
+  GAMEINFO_NUMERIC_FIELD_NAMES,
   resolveGameinfoField,
 } from "@/lib/gameinfo-formula-fields.js";
 import {
@@ -28,6 +30,28 @@ function check(name, actual, expected) {
 function ok(name, value) {
   check(name, Boolean(value), true);
 }
+
+const computedEditorSource = readFileSync(new URL("../src/components/gameinfo-computed-editor.js", import.meta.url), "utf8");
+const variableEditorSource = readFileSync(new URL("../src/components/gameinfo-formula-variables.js", import.meta.url), "utf8");
+const roundingHelpSource = readFileSync(new URL("../src/lib/gameinfo-formula-help.js", import.meta.url), "utf8");
+const formulaHelpPanelSource = readFileSync(new URL("../src/components/gameinfo-formula-help-panel.js", import.meta.url), "utf8");
+const formulaMemorySource = readFileSync(new URL("../src/components/gameinfo-formula-memory.js", import.meta.url), "utf8");
+const bulkFormulaSource = readFileSync(new URL("../src/components/gameinfo-bulk-formula-toolbar.js", import.meta.url), "utf8");
+ok("computed formula editor includes shared formula help", computedEditorSource.includes("GameinfoFormulaHelpPanel"));
+ok("mixed-variable editor includes shared formula help", variableEditorSource.includes("GameinfoFormulaHelpPanel"));
+ok("shared formula help starts as collapsible sections", (formulaHelpPanelSource.match(/<details/g) || []).length === 2);
+ok("rounding help documents decimal and step families", roundingHelpSource.includes("ROUNDDOWN") && roundingHelpSource.includes("CEILING") && roundingHelpSource.includes("MROUND"));
+check("numeric picker excludes descriptive fields", GAMEINFO_NUMERIC_FIELD_NAMES, [
+  "ราคา",
+  "ยอดที่กด + fee",
+  "USDT/THB",
+  "USDCNY",
+]);
+ok("variable editor uses the numeric field picker", variableEditorSource.includes("GAMEINFO_NUMERIC_FIELD_NAMES"));
+ok("formula memory is a separate side panel", computedEditorSource.includes("lg:grid-cols-[minmax(0,1fr)_20rem]"));
+ok("formula memory shows ready-to-use cards with formulas", formulaMemorySource.includes("<Card") && formulaMemorySource.includes("{preset.formula}"));
+ok("formula memory management is optional and collapsed", formulaMemorySource.includes("<details") && formulaMemorySource.includes("จัดการคลังสูตร"));
+ok("bulk formula editor labels the empty computed-column state", bulkFormulaSource.includes("ไม่มีคอลัมน์สูตร"));
 
 const game = { gameName: "Mobile Legends", region: "Global", platform: "Android/iOS", server: "Asia" };
 const pack = { name: "86 Diamonds", price: "100", amountChargedFee: "90", country: "" };
@@ -63,19 +87,6 @@ check(
   0.5
 );
 check(
-  "selected cost profile exposes charge times multiplier as cost",
-  resolveGameinfoField(packWithCost, game, "ต้นทุน", { costProfiles }),
-  45
-);
-check(
-  "cost can be used by a normal computed formula",
-  evaluateFormula(
-    parseFormula("([ราคา] - [ต้นทุน]) / [ราคา] * 100"),
-    (label) => resolveGameinfoField(packWithCost, game, label, { costProfiles })
-  ),
-  55.00000000000001
-);
-check(
   "cost profile formula can reference its stable baseValue token",
   evaluateGameinfoPackCost(pack, { ...costProfiles[0], rateFormula: "[baseValue] * 2" }).cost,
   90
@@ -103,6 +114,48 @@ check(
   evaluateGameinfoComputedColumn(dependentColumns[1], dependentColumns, pack, game),
   55
 );
+const scopedColumns = [
+  {
+    key: "cost",
+    label: "ต้นทุนคำนวณ",
+    formula: "[ราคา] * 0.5",
+    scopeMode: "category",
+    categoryFormulas: { cat_special: "[ราคา] * 0.25" },
+  },
+  {
+    key: "profit",
+    label: "กำไร",
+    formula: "[ราคา] - [ต้นทุนคำนวณ]",
+    scopeMode: "category",
+    categoryFormulas: {},
+    rowOverrides: { pk_special: "[ราคา] * 0.9" },
+  },
+];
+check(
+  "category formula is used by dependent computed columns",
+  evaluateGameinfoComputedColumn(scopedColumns[1], scopedColumns, pack, game, {
+    categoryId: "cat_special",
+  }),
+  75
+);
+check(
+  "missing category formula falls back to the global formula",
+  evaluateGameinfoComputedColumn(scopedColumns[1], scopedColumns, pack, game, {
+    categoryId: "cat_normal",
+  }),
+  50
+);
+check(
+  "pack formula wins over category and global formulas",
+  evaluateGameinfoComputedColumn(
+    scopedColumns[1],
+    scopedColumns,
+    { ...pack, id: "pk_special" },
+    game,
+    { categoryId: "cat_special" }
+  ),
+  90
+);
 check("valid computed dependency graph has no errors", validateGameinfoComputedDependencies(dependentColumns), []);
 check(
   "computed dependency cycle is rejected",
@@ -118,6 +171,39 @@ check(
     { key: "a", label: "ซ้ำ", formula: "1" },
     { key: "b", label: "ซ้ำ", formula: "2" },
   ]).some((message) => message.includes("ชื่อคอลัมน์สูตรซ้ำ")),
+  true
+);
+check(
+  "invalid stored category formulas are rejected even while global mode is active",
+  validateGameinfoComputedDependencies([
+    {
+      key: "a",
+      label: "A",
+      formula: "1",
+      scopeMode: "global",
+      categoryFormulas: { cat_hidden: "[ไม่มีจริง] + 1" },
+    },
+  ]).some((message) => message.includes("สูตรหมวด cat_hidden")),
+  true
+);
+check(
+  "category-specific dependency cycles are rejected",
+  validateGameinfoComputedDependencies([
+    {
+      key: "a",
+      label: "A",
+      formula: "1",
+      scopeMode: "category",
+      categoryFormulas: { cat_special: "[B]" },
+    },
+    {
+      key: "b",
+      label: "B",
+      formula: "2",
+      scopeMode: "category",
+      categoryFormulas: { cat_special: "[A]" },
+    },
+  ]).some((message) => message.includes("วนซ้ำ")),
   true
 );
 

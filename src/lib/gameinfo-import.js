@@ -206,6 +206,24 @@ export function parsePacksForGame(rows, gameId, fallbackGameName) {
   const dataRows = rows.filter((row) => Object.values(row).some((v) => norm(v) !== ""));
   const tree = buildPackTree(dataRows);
   const gameNameFromFile = dataRows.map((r) => norm(r["game_name"])).find((n) => n);
+  const countryIssues = [];
+  for (const currency of tree.currencies) {
+    for (const category of currency.categories) {
+      for (const pack of category.packs) {
+        const normalized = normalizeGameinfoCountry(pack.country);
+        if (normalized.matched) {
+          pack.country = normalized.value;
+        } else if (pack.country) {
+          countryIssues.push({
+            packId: pack.id,
+            packName: pack.name,
+            input: pack.country,
+            suggestions: suggestGameinfoCountries(pack.country),
+          });
+        }
+      }
+    }
+  }
   return {
     game: {
       gameId,
@@ -214,6 +232,7 @@ export function parsePacksForGame(rows, gameId, fallbackGameName) {
       packCount: tree.packCount,
     },
     errors: legacyAmountWarnings(rows),
+    countryIssues,
   };
 }
 
@@ -288,3 +307,7 @@ function legacyAmountWarnings(rows) {
     ? [`พบคอลัมน์ amount_charged ${count} แถว — ระบบเลิกใช้แล้วและจะไม่นำเข้าค่านี้`]
     : [];
 }
+import {
+  normalizeGameinfoCountry,
+  suggestGameinfoCountries,
+} from "./gameinfo-countries.js";

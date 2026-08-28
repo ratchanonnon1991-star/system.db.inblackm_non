@@ -3,6 +3,11 @@ import {
   normalizeGameinfoRatePair,
   validateGameinfoRateValue,
 } from "@/server/gameinfo-exchange-rates.js";
+import {
+  GAMEINFO_RATE_CACHE_MS,
+  nextCoinGeckoRefreshAt,
+  nextFrankfurterRefreshAt,
+} from "@/lib/gameinfo-rate-schedule.js";
 
 let pass = 0;
 const failures = [];
@@ -27,6 +32,23 @@ check("normalizes USD/CNY pair token", normalizeGameinfoRatePair("USD/CNY"), "US
 check("rejects unsupported pair", normalizeGameinfoRatePair("USD/THB"), null);
 check("accepts positive finite rate", validateGameinfoRateValue("34.25"), 34.25);
 await rejects("rejects zero rate", () => Promise.resolve(validateGameinfoRateValue(0)));
+check("CoinGecko cache lasts one hour", GAMEINFO_RATE_CACHE_MS["USDT/THB"], 60 * 60 * 1000);
+check("Frankfurter cache lasts twelve hours", GAMEINFO_RATE_CACHE_MS.USDCNY, 12 * 60 * 60 * 1000);
+check(
+  "CoinGecko schedules the next top of hour",
+  nextCoinGeckoRefreshAt(new Date("2026-08-28T03:42:18.000Z")).toISOString(),
+  "2026-08-28T04:00:00.000Z"
+);
+check(
+  "Frankfurter schedules 11:05 Thailand time",
+  nextFrankfurterRefreshAt(new Date("2026-08-28T03:42:18.000Z")).toISOString(),
+  "2026-08-28T04:05:00.000Z"
+);
+check(
+  "Frankfurter schedules 23:05 Thailand time",
+  nextFrankfurterRefreshAt(new Date("2026-08-28T08:00:00.000Z")).toISOString(),
+  "2026-08-28T16:05:00.000Z"
+);
 
 const cryptoCalls = [];
 const crypto = await fetchGameinfoRate("USDT/THB", {

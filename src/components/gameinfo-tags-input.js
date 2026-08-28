@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Image as ImageIcon, X } from "lucide-react";
 import GameinfoImagePickerModal from "./gameinfo-image-picker-modal";
+import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
+import { gameinfoStableColorStyle } from "@/lib/gameinfo-stable-color";
 
 // Multi-value chip input with the same "remembers past values" dropdown as
 // GameinfoMemoryInput — used for pack payment channels. Ported from
@@ -19,6 +21,7 @@ export default function GameinfoTagsInput({
   tagImages,
   onTagImageChange,
   imageLabel = "หมวดหมู่",
+  stableColors = false,
 }) {
   const [text, setText] = useState("");
   const [open, setOpen] = useState(false);
@@ -27,6 +30,7 @@ export default function GameinfoTagsInput({
   const [pos, setPos] = useState(null);
   const ref = useRef(null);
   const atMax = typeof max === "number" && values.length >= max;
+  useGameinfoUnsavedChanges(Boolean(text.trim()));
 
   useEffect(() => {
     function onDoc(e) {
@@ -105,7 +109,8 @@ export default function GameinfoTagsInput({
         {values.map((v, i) => (
           <span
             key={`${v}-${i}`}
-            className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs ${neutral ? "bg-linear-surface-3 text-linear-ink-muted" : "bg-linear-primary/15 text-linear-primary"}`}
+            style={stableColors ? gameinfoStableColorStyle(v) : undefined}
+            className={`inline-flex items-center gap-1 rounded border border-transparent px-2 py-0.5 text-xs ${stableColors ? "gameinfo-stable-tag" : neutral ? "bg-linear-surface-3 text-linear-ink-muted" : "bg-linear-primary/15 text-linear-primary"}`}
           >
             {onTagImageChange ? (
               <button type="button" onClick={() => editImage(v)} className="flex items-center" aria-label={`ใส่รูป ${v}`} title={`ใส่รูป${imageLabel}`}>
@@ -119,7 +124,7 @@ export default function GameinfoTagsInput({
             <button
               type="button"
               onClick={() => remove(i)}
-              className={neutral ? "flex items-center text-linear-ink-tertiary hover:text-linear-ink" : "flex items-center text-linear-primary"}
+              className={stableColors ? "flex items-center opacity-70 hover:opacity-100" : neutral ? "flex items-center text-linear-ink-tertiary hover:text-linear-ink" : "flex items-center text-linear-primary"}
               aria-label="ลบ"
             >
               <X size={12} />
@@ -136,6 +141,9 @@ export default function GameinfoTagsInput({
               setOpen(true);
             }}
             onFocus={() => setOpen(true)}
+            onBlur={() => {
+              if (text.trim()) add(text);
+            }}
             // Adding a tag keeps the input focused (its onMouseDown calls
             // preventDefault) — a later click to reopen the dropdown
             // wouldn't re-fire onFocus since focus never changed.

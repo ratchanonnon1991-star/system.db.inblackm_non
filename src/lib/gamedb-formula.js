@@ -44,6 +44,12 @@ export const FUNCTIONS = {
   CONTAINS: [2, 2, "boolean"],
 
   ROUND: [1, 2, "number"],
+  ROUNDDOWN: [1, 2, "number"],
+  ROUNDUP: [1, 2, "number"],
+  INT: [1, 1, "number"],
+  FLOOR: [1, 2, "number"],
+  CEILING: [1, 2, "number"],
+  MROUND: [2, 2, "number"],
   ABS: [1, 1, "number"],
   MIN: [1, 20, "number"],
   MAX: [1, 20, "number"],
@@ -312,6 +318,33 @@ function numericArgs(values) {
   return numbers.some((num) => num === null) ? null : numbers;
 }
 
+function shiftDecimal(num, digits) {
+  if (!Number.isFinite(num) || digits === 0) return num;
+  const [mantissa, exponent = "0"] = String(num).split("e");
+  const shifted = Number(`${mantissa}e${Number(exponent) + digits}`);
+  return Number.isFinite(shifted) ? shifted : num * 10 ** digits;
+}
+
+function roundToDigits(values, mode) {
+  const num = toNumber(values[0]);
+  if (num === null) return null;
+  const digits = values.length > 1 ? toNumber(values[1]) : 0;
+  if (digits === null) return null;
+  const places = Math.trunc(digits);
+  return shiftDecimal(mode(shiftDecimal(num, places)), -places);
+}
+
+function roundToMultiple(values, mode) {
+  const num = toNumber(values[0]);
+  if (num === null) return null;
+  const step = values.length > 1 ? toNumber(values[1]) : 1;
+  if (step === null) return null;
+  const size = Math.abs(step);
+  if (!(size > 0)) return null;
+  const quotient = Number((num / size).toPrecision(12));
+  return Number((mode(quotient) * size).toPrecision(12));
+}
+
 function callFunction(name, args, evalArg) {
   // These decide for themselves which arguments to evaluate.
   if (name === "IF") return truthy(evalArg(0)) ? evalArg(1) : evalArg(2);
@@ -390,14 +423,22 @@ function callFunction(name, args, evalArg) {
     case "CONTAINS":
       return asText(first).toLowerCase().includes(asText(values[1]).toLowerCase());
 
-    case "ROUND": {
+    case "ROUND":
+      return roundToDigits(values, Math.round);
+    case "ROUNDDOWN":
+      return roundToDigits(values, Math.trunc);
+    case "ROUNDUP":
+      return roundToDigits(values, (num) => (num < 0 ? Math.floor(num) : Math.ceil(num)));
+    case "INT": {
       const num = toNumber(first);
-      if (num === null) return null;
-      const digits = values.length > 1 ? toNumber(values[1]) : 0;
-      if (digits === null) return null;
-      const factor = 10 ** Math.trunc(digits);
-      return Math.round(num * factor) / factor;
+      return num === null ? null : Math.floor(num);
     }
+    case "FLOOR":
+      return roundToMultiple(values, Math.floor);
+    case "CEILING":
+      return roundToMultiple(values, Math.ceil);
+    case "MROUND":
+      return roundToMultiple(values, Math.round);
     case "ABS": {
       const num = toNumber(first);
       return num === null ? null : Math.abs(num);

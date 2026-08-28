@@ -5,6 +5,10 @@ import { createPortal } from "react-dom";
 import { ExternalLink, Plus, Trash2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { useGameinfoDialog } from "@/lib/use-gameinfo-dialog";
+import {
+  requestGameinfoDiscard,
+  useGameinfoUnsavedChanges,
+} from "@/lib/gameinfo-unsaved-changes";
 
 function newLink() {
   return {
@@ -27,6 +31,8 @@ export function GameinfoGameLinksButton({
   const [draft, setDraft] = useState(links);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const dirty = open && editable && JSON.stringify(draft) !== JSON.stringify(links);
+  useGameinfoUnsavedChanges(dirty);
   const { dialogRef, titleId, onBackdropMouseDown } = useGameinfoDialog({ open, onRequestClose: requestClose });
 
   function show() {
@@ -37,8 +43,14 @@ export function GameinfoGameLinksButton({
   }
 
   function requestClose() {
-    const dirty = editable && JSON.stringify(draft) !== JSON.stringify(links);
-    if (dirty && !window.confirm("ยังไม่ได้บันทึกรายการลิงก์ ต้องการปิดโดยไม่บันทึกหรือไม่?")) return;
+    if (dirty) {
+      requestGameinfoDiscard({
+        message: "รายการลิงก์ที่ยังไม่บันทึกจะหายไป",
+        confirmLabel: "ปิดโดยไม่บันทึก",
+        onConfirm: () => setOpen(false),
+      });
+      return;
+    }
     setOpen(false);
   }
 

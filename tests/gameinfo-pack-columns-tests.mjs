@@ -10,8 +10,10 @@ import {
   duplicateGameinfoFormulaOverrides,
   getEffectiveGameinfoFormula,
   getGameinfoFormulaDisplay,
+  pruneGameinfoCategoryFormulas,
   pruneGameinfoFormulaOverrides,
   removeGameinfoFormulaOverridesForPack,
+  setGameinfoCategoryFormula,
   setGameinfoFormulaOverride,
   updateGameinfoComputedColumn,
 } from "@/lib/gameinfo-formula-overrides.js";
@@ -166,6 +168,30 @@ check("computed sanitizer keeps only non-empty string row overrides", sanitizedO
   pk_special: "[ราคา] * 0.5",
 });
 
+const sanitizedCategoryColumn = sanitizeComputedColumns([
+  {
+    key: "profit",
+    label: "กำไร",
+    formula: "[ราคา] * 0.1",
+    type: "number",
+    scopeMode: "category",
+    categoryFormulas: {
+      cat_diamond: "[ราคา] * 0.2",
+      empty: "   ",
+      hostile: 123,
+    },
+  },
+])[0];
+check("computed sanitizer preserves category scope", sanitizedCategoryColumn.scopeMode, "category");
+check("computed sanitizer keeps only valid category formulas", sanitizedCategoryColumn.categoryFormulas, {
+  cat_diamond: "[ราคา] * 0.2",
+});
+check(
+  "legacy computed columns default to global scope",
+  sanitizeComputedColumns([{ key: "old", label: "เดิม", formula: "1" }])[0].scopeMode,
+  "global"
+);
+
 const formulaColumn = {
   key: "profit",
   formula: "[ราคา] - [ยอดที่กด + fee]",
@@ -174,10 +200,12 @@ const formulaColumn = {
 check("effective formula falls back to the column formula", getEffectiveGameinfoFormula(formulaColumn, "pk_normal"), {
   formula: "[ราคา] - [ยอดที่กด + fee]",
   overridden: false,
+  source: "main",
 });
 check("effective formula uses a pack override", getEffectiveGameinfoFormula(formulaColumn, "pk_special"), {
   formula: "[ราคา] * 0.5",
   overridden: true,
+  source: "override",
 });
 check("formula display identifies an inherited main formula", getGameinfoFormulaDisplay(formulaColumn, "pk_normal"), {
   formula: "[ราคา] - [ยอดที่กด + fee]",
@@ -191,6 +219,48 @@ check("formula display identifies a pack override", getGameinfoFormulaDisplay(fo
   source: "override",
   sourceLabel: "สูตรเฉพาะ pack",
 });
+
+const categoryColumn = {
+  ...formulaColumn,
+  scopeMode: "category",
+  categoryFormulas: { cat_diamond: "[ราคา] * 0.2" },
+};
+check(
+  "category mode uses a formula keyed by category id",
+  getGameinfoFormulaDisplay(categoryColumn, "pk_normal", "cat_diamond"),
+  {
+    formula: "[ราคา] * 0.2",
+    overridden: true,
+    source: "category",
+    sourceLabel: "สูตรเฉพาะหมวด",
+  }
+);
+check(
+  "a category without its own formula falls back to the main formula",
+  getGameinfoFormulaDisplay(categoryColumn, "pk_normal", "cat_coin").source,
+  "main"
+);
+check(
+  "a pack override wins over its category formula",
+  getGameinfoFormulaDisplay(categoryColumn, "pk_special", "cat_diamond").source,
+  "override"
+);
+
+const changedCategory = setGameinfoCategoryFormula(
+  [categoryColumn],
+  "profit",
+  "cat_coin",
+  "[ราคา] * 0.3"
+);
+check("setting a category formula does not change other categories", changedCategory[0].categoryFormulas, {
+  cat_diamond: "[ราคา] * 0.2",
+  cat_coin: "[ราคา] * 0.3",
+});
+check(
+  "saving prunes formulas for categories that no longer exist",
+  pruneGameinfoCategoryFormulas(changedCategory, ["cat_coin"])[0].categoryFormulas,
+  { cat_coin: "[ราคา] * 0.3" }
+);
 
 const changed = setGameinfoFormulaOverride([formulaColumn], "profit", "pk_special", "");
 check("clearing an override restores inheritance", changed[0].rowOverrides, {});
@@ -222,6 +292,8 @@ check("editing a main formula keeps explicit row overrides by default", updatedM
   label: "กำไรใหม่",
   type: "number",
   symbol: "฿",
+  scopeMode: "global",
+  categoryFormulas: {},
 });
 check(
   "editing main formula can deliberately apply it to every pack by clearing overrides",

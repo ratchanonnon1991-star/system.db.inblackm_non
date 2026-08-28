@@ -35,8 +35,8 @@ export async function POST(request) {
     if (gameIdRaw) {
       const row = await getGameListRow(Number(gameIdRaw));
       if (!row) return jsonError("ไม่พบเกมนี้", 404);
-      const { game: parsed, errors } = parsePacksForGame(rows, row.id, row.game);
-      return jsonOk({ kind: "packs-single", game: parsed, errors });
+      const { game: parsed, errors, countryIssues } = parsePacksForGame(rows, row.id, row.game);
+      return jsonOk({ kind: "packs-single", game: parsed, errors, countryIssues });
     }
     if (!headers.includes("game_id")) return jsonError("ไม่พบคอลัมน์ game_id", 400);
     const parsed = parsePacks(rows);

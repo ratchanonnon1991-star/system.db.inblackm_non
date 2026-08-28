@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
 
 export default function GameinfoReportPanel({ gameId, initialReports, canManage, canReport }) {
   const [reports, setReports] = useState(initialReports);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  useGameinfoUnsavedChanges(Boolean(message.trim()));
 
   async function request(body, method) {
     setBusy(true);
