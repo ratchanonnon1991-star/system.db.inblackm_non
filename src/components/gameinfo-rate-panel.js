@@ -1,8 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const RATE_URL = "/api/gameinfo/rates?pairs=USDTTHB,USDCNY";
 
@@ -60,11 +66,13 @@ export default function GameinfoRatePanel({ rates, loading, error, onRefresh }) 
         </button>
       </div>
       {error ? <p role="alert" className="mb-2 text-xs text-linear-danger">{error}</p> : null}
-      <div className="grid gap-2 sm:grid-cols-2">
-        {rates.length === 0 ? (
-          <p className="text-xs text-linear-ink-tertiary">{loading ? "กำลังโหลดค่าเงิน..." : "ยังไม่มีข้อมูลค่าเงิน"}</p>
-        ) : rates.map((rate) => <RateCard key={rate.pair} rate={rate} />)}
-      </div>
+      <TooltipProvider delay={150}>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {rates.length === 0 ? (
+            <p className="text-xs text-linear-ink-tertiary">{loading ? "กำลังโหลดค่าเงิน..." : "ยังไม่มีข้อมูลค่าเงิน"}</p>
+          ) : rates.map((rate) => <RateCard key={rate.pair} rate={rate} />)}
+        </div>
+      </TooltipProvider>
     </section>
   );
 }
@@ -78,25 +86,29 @@ function RateCard({ rate }) {
       }).format(new Date(rate.fetchedAt))
     : "ยังไม่เคยดึงสำเร็จ";
   return (
-    <details className="group rounded-md border border-linear-hairline bg-linear-surface-1">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 [&::-webkit-details-marker]:hidden">
+    <Tooltip>
+      <TooltipTrigger
+        aria-label={`ดูกราฟอัตราแลกเปลี่ยน ${rate.pair}`}
+        className="flex w-full items-center justify-between gap-3 rounded-md border border-linear-hairline bg-linear-surface-1 px-3 py-2 text-left outline-none hover:bg-linear-surface-2 focus-visible:ring-2 focus-visible:ring-linear-primary"
+      >
         <div>
           <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-linear-ink-tertiary">{rate.pair}</p>
           <p className="text-lg font-semibold tabular-nums text-linear-ink">
             {rate.available ? Number(rate.rate).toLocaleString("th-TH", { maximumFractionDigits: 6 }) : "—"}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <span className={`h-2 w-2 rounded-full ${rate.stale ? "bg-amber-500" : "bg-emerald-500"}`} title={rate.stale ? "ใช้ค่าล่าสุดที่มี" : "ข้อมูลล่าสุด"} />
-          <ChevronDown size={14} className="text-linear-ink-tertiary transition-transform group-open:rotate-180" />
-        </div>
-      </summary>
-      <div className="border-t border-linear-hairline bg-linear-surface-2 px-3 pb-2 pt-1">
+        <span className={`size-2 rounded-full ${rate.stale ? "bg-amber-500" : "bg-emerald-500"}`} title={rate.stale ? "ใช้ค่าล่าสุดที่มี" : "ข้อมูลล่าสุด"} />
+      </TooltipTrigger>
+      <TooltipContent
+        side="top"
+        className="block w-64 max-w-[calc(100vw-1rem)] border border-linear-hairline bg-linear-surface-1 p-3 text-linear-ink shadow-none"
+        style={{ boxShadow: "var(--ll-shadow-modal)" }}
+      >
         <RateSparkline history={rate.history || []} />
         <p className="mt-1 text-[10px] text-linear-ink-tertiary">{rate.source || "ไม่ทราบแหล่งข้อมูล"} · {fetchedAt}</p>
         {rate.error ? <p className="mt-1 text-[10px] text-linear-warning">{rate.error}</p> : null}
-      </div>
-    </details>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

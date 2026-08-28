@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import { Boxes, History, Plus, Trash2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
@@ -95,16 +95,6 @@ export default function GameinfoFormulaVariablesButton({ gameId, initialVariable
   const [activeVariableId, setActiveVariableId] = useState("");
   const dirty = open && JSON.stringify(variables) !== JSON.stringify(baseline);
   useGameinfoUnsavedChanges(dirty);
-
-  const groups = useMemo(() => {
-    const grouped = new Map();
-    for (const variable of variables) {
-      const key = variable.category || "";
-      if (!grouped.has(key)) grouped.set(key, []);
-      grouped.get(key).push(variable);
-    }
-    return [...grouped.entries()];
-  }, [variables]);
 
   async function show() {
     if (disabled) return;
@@ -254,14 +244,11 @@ export default function GameinfoFormulaVariablesButton({ gameId, initialVariable
                       </p>
                     ) : null}
                   </section>
-                  {groups.map(([category, items]) => (
-                    <section key={category || "__floating__"}>
-                      <h3 className="mb-2 text-xs font-semibold text-linear-ink-muted">{category || "ไม่อยู่ในหมวดหมู่"}</h3>
-                      <div className="grid gap-3 lg:grid-cols-2">
-                        {items.map((variable) => (
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    {variables.map((variable) => (
                           <div key={variable.id} className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
                             <div className="mb-2 flex items-start gap-2">
-                              <div className="grid flex-1 grid-cols-2 gap-2">
+                              <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-2">
                                 <VariableInput label="ชื่อตัวแปร" value={variable.name} placeholder="เช่น ราคาขายสุทธิ" onChange={(name) => update(variable.id, { name })} />
                                 <VariableInput label="หมวดหมู่ (ไม่บังคับ)" value={variable.category} placeholder="เช่น ราคา, ต้นทุน" onChange={(categoryValue) => update(variable.id, { category: categoryValue })} />
                               </div>
@@ -269,7 +256,7 @@ export default function GameinfoFormulaVariablesButton({ gameId, initialVariable
                                 <Trash2 size={14} />
                               </button>
                             </div>
-                            <div className="grid grid-cols-[0.7fr_1.3fr] gap-2">
+                            <div className="grid gap-2 sm:grid-cols-[0.7fr_1.3fr]">
                               <VariableInput label="ค่าคงที่" value={variable.value} placeholder="เช่น 35.5" onChange={(value) => update(variable.id, { value })} />
                               <VariableInput
                                 label="สูตร (ถ้ามีจะใช้แทนค่าคงที่)"
@@ -288,10 +275,8 @@ export default function GameinfoFormulaVariablesButton({ gameId, initialVariable
                             />
                             <p className="mt-2 text-[10px] text-linear-ink-tertiary">แก้ล่าสุด: {dateText(variable.updatedAt)}{variable.updatedBy ? ` โดย ${variable.updatedBy}` : ""}</p>
                           </div>
-                        ))}
-                      </div>
-                    </section>
-                  ))}
+                    ))}
+                  </div>
                   {variables.length === 0 ? <p className="rounded-md border border-dashed border-linear-hairline-strong p-8 text-center text-sm text-linear-ink-tertiary">ยังไม่มีตัวแปรผสม</p> : null}
                 </div>
               ) : null}

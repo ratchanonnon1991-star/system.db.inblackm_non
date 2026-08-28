@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { Popover } from "@base-ui/react/popover";
 import { Columns3, Copy, LoaderCircle, Plus, RotateCcw, Save, Trash2, X } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { requestGameinfoDiscard } from "@/lib/gameinfo-unsaved-changes";
@@ -292,35 +293,55 @@ export function GameinfoPackColumnControls({
   lockRequired = false,
 }) {
   const [open, setOpen] = useState(false);
+  const popoverId = useId();
+  const triggerRef = useRef(null);
+  const closeButtonRef = useRef(null);
   const saveDisabled = loading || saving || !presetName.trim() || (!dirty && Boolean(selectedPresetId));
   const saveAsNewDisabled = loading || saving || !presetName.trim();
 
   return (
-    <div className="relative">
-      <button
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger
+        ref={triggerRef}
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        aria-controls={popoverId}
         className="inline-flex items-center gap-1.5 rounded-md border border-linear-hairline-strong px-3 py-1.5 text-xs text-linear-ink-muted hover:bg-linear-surface-2"
       >
         <Columns3 size={14} /> คอลัมน์/ตัวกรอง{dirty ? <span className="text-linear-primary">•</span> : null}
-      </button>
-      {open && (
-        <div className="absolute right-0 z-40 mt-2 w-80 rounded-lg border border-linear-hairline bg-linear-surface-1 p-3 shadow-2xl">
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Positioner
+          positionMethod="fixed"
+          side="bottom"
+          align="end"
+          sideOffset={8}
+          collisionPadding={8}
+          collisionAvoidance={{ side: "flip", align: "shift", fallbackAxisSide: "none" }}
+          className="isolate z-50"
+        >
+        <Popover.Popup
+          id={popoverId}
+          initialFocus={closeButtonRef}
+          finalFocus={triggerRef}
+          className="max-h-[calc(100dvh-1rem)] w-[min(20rem,calc(100vw-1rem))] overflow-y-auto rounded-lg border border-linear-hairline bg-linear-surface-1 p-3 outline-none"
+          style={{ boxShadow: "var(--ll-shadow-modal)" }}
+        >
           <div className="mb-3 flex items-center justify-between gap-2">
             <div>
-              <p className="text-sm font-medium text-linear-ink">preset การแสดงคอลัมน์</p>
+              <Popover.Title className="text-sm font-medium text-linear-ink">preset การแสดงคอลัมน์</Popover.Title>
               <p className="text-[10px] text-linear-ink-tertiary">
                 แยกเฉพาะเกม หน้านี้ และบัญชีของคุณ
               </p>
             </div>
-            <button
+            <Popover.Close
+              ref={closeButtonRef}
               type="button"
-              onClick={() => setOpen(false)}
               aria-label="ปิดการตั้งค่าคอลัมน์"
               className="rounded p-1 text-linear-ink-tertiary hover:bg-linear-surface-3"
             >
               <X size={14} />
-            </button>
+            </Popover.Close>
           </div>
 
           <label className="mb-2 block text-[10px] font-medium uppercase tracking-wide text-linear-ink-tertiary">
@@ -434,7 +455,7 @@ export function GameinfoPackColumnControls({
                     <button
                       type="button"
                       onClick={() => onFiltersChange(filters.filter((_, itemIndex) => itemIndex !== index))}
-                      className="rounded p-1 text-red-400 hover:bg-red-500/10"
+                      className="rounded p-1 text-linear-danger hover:bg-linear-danger-bg"
                       aria-label="ลบตัวกรอง"
                     ><Trash2 size={12} /></button>
                     {filter.operator === "contains" || filter.operator === "equals" ? (
@@ -464,8 +485,8 @@ export function GameinfoPackColumnControls({
           {dirty && !legacyDraft ? (
             <p className="mt-1 text-[10px] text-linear-primary">มีการเปลี่ยนแปลงที่ยังไม่บันทึก</p>
           ) : null}
-          {error ? <p className="mt-2 text-xs text-red-400">{error}</p> : null}
-          {notice ? <p className="mt-2 text-xs text-emerald-400">{notice}</p> : null}
+          {error ? <p className="mt-2 text-xs text-linear-danger">{error}</p> : null}
+          {notice ? <p className="mt-2 text-xs text-linear-success">{notice}</p> : null}
 
           <div className="mt-3 flex items-center justify-end gap-2 border-t border-linear-hairline pt-3">
             <button
@@ -487,8 +508,9 @@ export function GameinfoPackColumnControls({
               บันทึก
             </button>
           </div>
-        </div>
-      )}
-    </div>
+        </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }

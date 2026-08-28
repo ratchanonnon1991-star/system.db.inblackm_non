@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, ChevronDown, Copy, Download, Image as ImageIcon, Languages, Pencil, Plus, Trash2, X } from "lucide-react";
+import { CheckCircle2, ChevronDown, Copy, Download, FileUp, Image as ImageIcon, Languages, Pencil, Plus, Trash2, X } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -65,6 +65,7 @@ import {
 } from "@/lib/gameinfo-pack-model";
 import { evaluateGameinfoComputedColumn } from "@/lib/gameinfo-computed-evaluator";
 import { normalizeSpaces } from "@/lib/text-normalize";
+import { Button } from "@/components/ui/button";
 
 const REQUIRED_PACK_FIELDS = ["name", "price", "amountChargedFee", "channelsMain"];
 
@@ -142,6 +143,7 @@ export default function GameinfoPackEditor({
   const [importMsg, setImportMsg] = useState("");
   const [pendingImport, setPendingImport] = useState(null); // { currencies, packCount }
   const [auditSource, setAuditSource] = useState("editor");
+  const csvInputId = useId();
 
   // Drives the same "collapse ยกเลิก/บันทึก to w-0 around the middle pill"
   // animation as the game list table's floating bar (see
@@ -535,13 +537,13 @@ export default function GameinfoPackEditor({
 
   return (
     <div className="space-y-6">
-      <details className="group rounded-xl border border-linear-hairline bg-linear-surface-1">
+      <details className="group/pack-tools rounded-xl border border-linear-hairline bg-linear-surface-1">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
           <div>
             <p className="text-sm font-medium text-linear-ink">เครื่องมือข้อมูล Pack</p>
             <p className="mt-0.5 text-xs text-linear-ink-tertiary">ตัวแปรสูตร · อัตราแลกเปลี่ยน · นำเข้า CSV</p>
           </div>
-          <ChevronDown size={16} className="text-linear-ink-tertiary transition-transform group-open:rotate-180" />
+          <ChevronDown size={16} className="text-linear-ink-tertiary transition-transform group-open/pack-tools:rotate-180" />
         </summary>
         <div className="space-y-4 border-t border-linear-hairline bg-linear-surface-2 p-4">
       <section className="rounded-lg border border-linear-hairline bg-linear-surface-1 p-4">
@@ -617,7 +619,18 @@ export default function GameinfoPackEditor({
             </p>
           </div>
         </details>
+        <Button
+          render={<label htmlFor={csvInputId} />}
+          nativeButton={false}
+          variant="outline"
+          size="lg"
+          disabled={importing}
+        >
+          <FileUp data-icon="inline-start" />
+          {importing ? "กำลังอ่านไฟล์..." : "เลือกไฟล์ CSV"}
+        </Button>
         <input
+          id={csvInputId}
           type="file"
           accept=".csv"
           disabled={importing}
@@ -626,9 +639,8 @@ export default function GameinfoPackEditor({
             if (f) handleImportFile(f);
             e.target.value = "";
           }}
-          className="text-sm"
+          className="sr-only"
         />
-        {importing && <p className="mt-2 text-sm text-linear-ink-subtle">กำลังอ่านไฟล์...</p>}
         {importMsg && <p className="mt-2 text-sm text-emerald-400">{importMsg}</p>}
         {importErrors.length > 0 && (
           <div className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300">

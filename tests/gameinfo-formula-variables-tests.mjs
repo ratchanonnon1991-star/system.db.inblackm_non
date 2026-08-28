@@ -3,6 +3,7 @@ import {
   sanitizeGameinfoFormulaVariables,
   validateGameinfoFormulaVariables,
 } from "@/lib/gameinfo-formula-variables.js";
+import { readFileSync } from "node:fs";
 import {
   getGameinfoFormulaVariables,
   saveGameinfoFormulaVariables,
@@ -21,6 +22,11 @@ function check(name, actual, expected) {
 function ok(name, value) {
   check(name, Boolean(value), true);
 }
+
+const editorSource = readFileSync(new URL("../src/components/gameinfo-formula-variables.js", import.meta.url), "utf8");
+ok("variable editor uses one stable card grid while categories are typed", editorSource.includes('{variables.map((variable) => ('));
+check("category edits do not remount cards under category-derived section keys", editorSource.includes('groups.map(([category, items])'), false);
+ok("variable fields stack only at narrow viewport widths", editorSource.includes('grid min-w-0 flex-1 gap-2 sm:grid-cols-2'));
 
 const variables = sanitizeGameinfoFormulaVariables([
   { id: "base", name: "เรทขาย", category: "ราคา", value: "1.5" },
