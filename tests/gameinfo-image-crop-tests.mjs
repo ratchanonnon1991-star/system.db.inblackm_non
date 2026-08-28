@@ -57,10 +57,11 @@ ok("the crop rect stays inside the image", edge.sx + edge.size <= 1000 && edge.s
 
 check("output stays a square", CROP_OUTPUT_SIZE > 0, true);
 
-// The modal must stage a pasted image for cropping rather than committing it,
-// while the upload tab keeps its direct path.
+// Both file sources must stage the image for cropping rather than committing it.
 const modal = readFileSync(new URL("../src/components/gameinfo-image-picker-modal.js", import.meta.url), "utf8");
 ok("Ctrl+V routes into the crop step", modal.includes("if (file) stageFileForCrop(file);"));
+ok("the upload tab routes into the crop step", /onFileChange[\s\S]{0,120}stageFileForCrop/.test(modal));
+check("no file path commits without cropping", modal.includes("processFile"), false);
 ok("the pasted image only reaches onChange from the crop step", modal.includes("onDone={(dataUrl) => {"));
 ok("a pending crop counts as unsaved work", modal.includes("const dirty = Boolean(cropSource)"));
 

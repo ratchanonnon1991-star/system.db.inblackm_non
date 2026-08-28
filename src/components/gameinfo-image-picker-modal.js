@@ -25,10 +25,11 @@ const MAX_ZOOM = 4;
 // between pasting a URL, uploading a file from disk, or Ctrl+V-pasting an
 // image straight from the clipboard (screenshot, copied image, etc. — same
 // file path as the file picker, just a different source). There's no
-// upload-to-storage backend in this app, so a picked/pasted file is read as
-// a base64 data: URL and stored directly as the field's value, same as a
-// pasted https:// URL — the CSP's img-src already allows both (see
-// next.config.mjs).
+// upload-to-storage backend in this app, so a picked/pasted file is cropped to
+// 1:1, re-encoded, and stored as a base64 data: URL — the field's value, same
+// as a pasted https:// URL (the CSP's img-src already allows both, see
+// next.config.mjs). Only the URL tab skips the crop step, since there is no
+// file to re-encode.
 export default function GameinfoImagePickerModal({ value, onChange, onClose }) {
   const [mode, setMode] = useState("url");
   const [url, setUrl] = useState(value || "");
@@ -59,32 +60,13 @@ export default function GameinfoImagePickerModal({ value, onChange, onClose }) {
     onClose();
   }
 
-  function processFile(file) {
-    if (!file.type.startsWith("image/")) {
-      setError("เลือกไฟล์รูปภาพเท่านั้น");
-      return;
-    }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setError("ไฟล์ใหญ่เกินไป (สูงสุด 4MB)");
-      return;
-    }
-    setError("");
-    const reader = new FileReader();
-    reader.onload = () => {
-      onChange(String(reader.result));
-      onClose();
-    };
-    reader.onerror = () => setError("อ่านไฟล์ไม่สำเร็จ");
-    reader.readAsDataURL(file);
-  }
-
   function onFileChange(e) {
     const file = e.target.files?.[0];
-    if (file) processFile(file);
+    if (file) stageFileForCrop(file);
   }
 
-  // Ctrl+V goes through the 1:1 crop step first; the upload tab keeps
-  // committing the file as-is.
+  // Every file that comes from disk or the clipboard goes through the 1:1 crop
+  // step; only the URL tab writes a value straight through.
   function stageFileForCrop(file) {
     if (!file.type.startsWith("image/")) {
       setError("เลือกไฟล์รูปภาพเท่านั้น");
