@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ChevronRight, Copy, Droplets, Loader2, Pencil, Plus, Trash2, User } from "lucide-react";
+import { ChevronRight, Copy, Droplets, Loader2, Merge, Pencil, Plus, Trash2, User } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
-import { fmtDate, fmtMoney, fmtPct, fmtPoints, fmtUsd } from "@/lib/profit-format";
+import { fmtDate, fmtKyat, fmtMoney, fmtPct, fmtPoints, fmtUsd } from "@/lib/profit-format";
+import { commitOverrideEdit } from "@/lib/profit-conflict";
 import ProfitSummaryGrid from "@/components/profit-summary-grid";
 import { useProfitCanEdit } from "@/components/profit-capabilities-context";
 import ProfitModal, { ProfitField, profitInputClass } from "@/components/profit-modal";
@@ -61,28 +62,66 @@ function ProfitCardPageContent({ categoryId, cardId }) {
       .catch(() => {});
   }, []);
 
-  const editOrder = async (orderId, field, value) => {
-    try {
-      if (orderId.startsWith("gocash:")) {
-        const historyId = orderId.split(":")[1];
-        await apiJson(`/api/profit/gocash/history/${historyId}`, {
+  // Which raw override field (see gocashOrderView/oxideOrderView) backs each
+  // editable column -- the baseline sent as `expected` so the server can
+  // tell if someone else already changed this exact field since this order
+  // was loaded (see commitOverrideEdit / assertOverrideUnchanged).
+  const OVERRIDE_BASELINE_FIELD = { platform: "overridePlatform", saleAmount: "overrideSaleAmount", cost: "overrideCost" };
+
+  const editOrder = (o, field, value) => {
+    if (o.id.startsWith("gocash:")) {
+      const historyId = o.id.split(":")[1];
+      return commitOverrideEdit({
+        save: (includeExpected) => apiJson(`/api/profit/gocash/history/${historyId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ [field]: value }),
+          body: JSON.stringify({
+            [field]: value,
+            ...(includeExpected ? { expected: { [field]: o[OVERRIDE_BASELINE_FIELD[field]] } } : {}),
+          }),
           fallbackError: "แก้ไขยอดไม่สำเร็จ",
-        });
-      } else {
-        await apiJson(`/api/profit/orders/${orderId}`, {
+        }),
+        reload: load,
+      });
+    }
+    if (o.id.startsWith("oxide-order:")) {
+      const oxideOrderId = o.id.split(":")[1];
+      return commitOverrideEdit({
+        save: (includeExpected) => apiJson(`/api/profit/oxide/orders/${oxideOrderId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ [field]: value }),
-          fallbackError: "แก้ไขออเดอร์ไม่สำเร็จ",
-        });
-      }
-      load();
-    } catch (err) {
-      window.alert(err.message);
+          body: JSON.stringify({
+            [field]: value,
+            ...(includeExpected ? { expected: { [field]: o[OVERRIDE_BASELINE_FIELD[field]] } } : {}),
+          }),
+          fallbackError: "แก้ไขยอดไม่สำเร็จ",
+        }),
+        reload: load,
+      });
     }
+    if (o.id.startsWith("wavepay-order:")) {
+      const wavepayOrderId = o.id.split(":")[1];
+      return commitOverrideEdit({
+        save: (includeExpected) => apiJson(`/api/profit/wavepay/orders/${wavepayOrderId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            [field]: value,
+            ...(includeExpected ? { expected: { [field]: o[OVERRIDE_BASELINE_FIELD[field]] } } : {}),
+          }),
+          fallbackError: "แก้ไขยอดไม่สำเร็จ",
+        }),
+        reload: load,
+      });
+    }
+    return apiJson(`/api/profit/orders/${o.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [field]: value }),
+      fallbackError: "แก้ไขออเดอร์ไม่สำเร็จ",
+    })
+      .then(load)
+      .catch((err) => window.alert(err.message));
   };
 
   const removeOrder = async (orderId) => {
@@ -107,6 +146,21 @@ function ProfitCardPageContent({ categoryId, cardId }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cleared }),
         fallbackError: "อัปเดตสถานะเคลียเศษไม่สำเร็จ",
+      });
+      load();
+    } catch (err) {
+      window.alert(err.message);
+    }
+  };
+
+  const toggleMergeCleared = async (cleared) => {
+    try {
+      // Same raw-cardId convention as toggleDustCleared above.
+      await apiJson(`/api/profit/oxide/cards/${cardId}/merge-clear`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cleared }),
+        fallbackError: "อัปเดตสถานะรวมบัตรไม่สำเร็จ",
       });
       load();
     } catch (err) {
@@ -143,7 +197,7 @@ function ProfitCardPageContent({ categoryId, cardId }) {
     const { card } = data;
     if (card.source !== "gocash") return card.orders;
     const query = q.trim().toLowerCase();
-    return card.orders.filter((o) => matchesQuery(query, [o.txid, o.orderId, o.packName]));
+    return card.orders.filter((o) => matchesQuery(query, [o.txid, o.orderId, o.saleOrderId, o.packName]));
   }, [data, q]);
 
   if (error) {
@@ -160,7 +214,30 @@ function ProfitCardPageContent({ categoryId, cardId }) {
   const { category, card } = data;
 
   if (card.source === "oxide") {
-    return <OxideCardDetail categoryId={categoryId} category={category} card={card} />;
+    return (
+      <OxideCardDetail
+        categoryId={categoryId}
+        category={category}
+        card={card}
+        canEdit={canEdit}
+        platforms={platforms}
+        onEditOrder={editOrder}
+        onToggleMergeCleared={toggleMergeCleared}
+      />
+    );
+  }
+
+  if (card.source === "wavepay") {
+    return (
+      <WavepayCardDetail
+        categoryId={categoryId}
+        category={category}
+        card={card}
+        canEdit={canEdit}
+        platforms={platforms}
+        onEditOrder={editOrder}
+      />
+    );
   }
 
   const isLive = card.source === "gocash";
@@ -246,7 +323,8 @@ function ProfitCardPageContent({ categoryId, cardId }) {
           <table className="w-full min-w-[900px] text-[13px] text-ll-ink">
             <thead>
               <tr className="border-b border-ll-hairline text-left text-[11px] text-ll-ink-subtle">
-                <th className="px-4 py-2 font-medium">ออเดอร์</th>
+                <th className="px-4 py-2 font-medium">{isLive ? "QUEUE #" : "ออเดอร์"}</th>
+                {isLive && <th className="px-3 py-2 font-medium">ORDER ID</th>}
                 {isLive && <th className="px-3 py-2 font-medium">เกม</th>}
                 {isLive && <th className="px-3 py-2 font-medium">แพ็ก</th>}
                 {isLive && <th className="px-3 py-2 font-medium">แพลตฟอร์ม</th>}
@@ -268,7 +346,8 @@ function ProfitCardPageContent({ categoryId, cardId }) {
                   const l = o.ledger || {};
                   return (
                     <tr key={o.id} className="border-b border-ll-hairline last:border-0 hover:bg-ll-surface-2">
-                      <td className="px-4 py-2.5 text-ll-ink">{o.txid}</td>
+                      <td className="px-4 py-2.5 font-medium text-ll-ink">{o.txid}</td>
+                      {isLive && <td className="px-3 py-2.5 text-ll-ink">{o.saleOrderId || "-"}</td>}
                       {isLive && <td className="px-3 py-2.5 text-ll-ink-subtle">{o.game || "-"}</td>}
                       {isLive && <td className="px-3 py-2.5 text-ll-ink-subtle">{o.packName || "-"}</td>}
                       {isLive && (
@@ -278,7 +357,7 @@ function ProfitCardPageContent({ categoryId, cardId }) {
                             fromDb={o.platformFromDb}
                             platforms={platforms}
                             disabled={!canEdit}
-                            onCommit={(v) => editOrder(o.id, "platform", v)}
+                            onCommit={(v) => editOrder(o,"platform", v)}
                           />
                         </td>
                       )}
@@ -295,7 +374,7 @@ function ProfitCardPageContent({ categoryId, cardId }) {
                                   ? `ยังไม่มีราคาอ้างอิงของ ${platformLabel(o.platform)} สำหรับแพ็กนี้ — ตั้งได้ที่หน้า "ตั้งราคาขายตามแพ็ก"`
                                   : undefined
                           }
-                          onCommit={(v) => editOrder(o.id, "saleAmount", v)}
+                          onCommit={(v) => editOrder(o,"saleAmount", v)}
                         />
                       </td>
                       <td className="px-3 py-2.5 text-right">
@@ -309,7 +388,7 @@ function ProfitCardPageContent({ categoryId, cardId }) {
                                 ? "ค่านี้คำนวณจากยอดตัด (USD) × USD:THB × เรท GoCash — แก้ตรงนี้จะ override เฉพาะออเดอร์นี้"
                                 : undefined
                           }
-                          onCommit={(v) => editOrder(o.id, "cost", v)}
+                          onCommit={(v) => editOrder(o,"cost", v)}
                         />
                       </td>
                       <td
@@ -343,7 +422,7 @@ function ProfitCardPageContent({ categoryId, cardId }) {
                   );
                 })
               ) : (
-                <tr><td colSpan={isLive ? 13 : 11} className="px-4 py-8 text-center text-ll-ink-subtle">{q ? "ไม่พบเลขที่ค้นหา" : "ยังไม่มีออเดอร์"}</td></tr>
+                <tr><td colSpan={isLive ? 14 : 11} className="px-4 py-8 text-center text-ll-ink-subtle">{q ? "ไม่พบเลขที่ค้นหา" : "ยังไม่มีออเดอร์"}</td></tr>
               )}
             </tbody>
           </table>
@@ -428,6 +507,90 @@ function DustPanel({ card, canEdit, onToggle }) {
             ))}
           </ul>
           {(hiddenCount > 0 || logExpanded) && log.length > DUST_LOG_COLLAPSED_COUNT && (
+            <button
+              type="button"
+              onClick={() => setLogExpanded((v) => !v)}
+              className="mt-1.5 text-[11px] font-medium text-ll-primary-subtle-text hover:underline"
+            >
+              {logExpanded ? "ย่อรายการ" : `ดูเพิ่มเติมอีก ${hiddenCount} รายการ`}
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+const MERGE_LOG_COLLAPSED_COUNT = 3;
+
+// Same shape as DustPanel above, for Multi Game Card's "ต้องรวมบัตร" mark
+// (idle 12h+ with a leftover balance -- see isIdle in profit-aggregate.js).
+function MergePanel({ card, canEdit, onToggle }) {
+  const [logExpanded, setLogExpanded] = useState(false);
+  const log = card.mergeClearLog || [];
+  const visibleLog = logExpanded ? log : log.slice(0, MERGE_LOG_COLLAPSED_COUNT);
+  const hiddenCount = log.length - visibleLog.length;
+
+  return (
+    <section className="rounded-lg border border-ll-hairline bg-ll-surface-1 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${card.needsMerge ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600"}`}>
+            <Merge size={16} />
+          </span>
+          <div>
+            <p className="text-[13px] font-medium text-ll-ink">
+              {card.needsMerge ? "ไม่มีออเดอร์เกิน 12 ชม. ยังมี points เหลือ — ควรรวมบัตร" : "รวมแล้ว"}
+            </p>
+            {card.mergeCleared && card.mergeClearedByName && (
+              <p className="text-[12px] text-ll-ink-subtle">โดย {card.mergeClearedByName}</p>
+            )}
+            {card.mergeCleared && (
+              <p className="text-[12px] text-ll-ink-subtle">เมื่อ {fmtDate(card.mergeClearedAt)}</p>
+            )}
+          </div>
+        </div>
+        {canEdit && (
+          <button
+            type="button"
+            onClick={() => {
+              const message = card.mergeCleared
+                ? "ยืนยันว่าต้องการยกเลิกมาร์กรวมบัตรนี้ใช่ไหม?"
+                : "ยืนยันว่ารวมยอดของบัตรนี้ไปบัตรอื่นเรียบร้อยแล้วใช่ไหม?";
+              if (!window.confirm(message)) return;
+              onToggle(!card.mergeCleared);
+            }}
+            className={`rounded-md px-3 py-2 text-[12px] font-medium ${
+              card.mergeCleared
+                ? "border border-ll-hairline-strong text-ll-ink hover:bg-ll-surface-2"
+                : "bg-ll-primary text-ll-on-primary hover:bg-ll-primary-hover"
+            }`}
+          >
+            {card.mergeCleared ? "ยกเลิกมาร์กรวมแล้ว" : "มาร์กว่ารวมบัตรแล้ว"}
+          </button>
+        )}
+      </div>
+
+      {log.length > 0 && (
+        <div className="mt-3 border-t border-ll-hairline pt-3">
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-ll-ink-tertiary">ประวัติคนรวมบัตรนี้</p>
+          <ul className="flex flex-col gap-1">
+            {visibleLog.map((entry, i) => (
+              <li key={i} className="flex items-center gap-1.5 text-[12px] text-ll-ink-subtle">
+                <User size={11} className="text-ll-ink-tertiary" />
+                <span className="font-medium text-ll-ink">{entry.userName}</span>
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                    entry.action === "uncleared" ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600"
+                  }`}
+                >
+                  {entry.action === "uncleared" ? "ยกเลิก" : "รวมแล้ว"}
+                </span>
+                <span>· {fmtDate(entry.clearedAt)}</span>
+              </li>
+            ))}
+          </ul>
+          {(hiddenCount > 0 || logExpanded) && log.length > MERGE_LOG_COLLAPSED_COUNT && (
             <button
               type="button"
               onClick={() => setLogExpanded((v) => !v)}
@@ -661,7 +824,7 @@ function AddOrderModal({ cardId, onClose, onSaved }) {
   );
 }
 
-function OxideCardDetail({ categoryId, category, card }) {
+function WavepayCardDetail({ categoryId, category, card, canEdit, platforms, onEditOrder }) {
   return (
     <div className="flex flex-col gap-5">
       <nav className="flex items-center gap-1.5 text-[12px] text-ll-ink-subtle">
@@ -675,15 +838,21 @@ function OxideCardDetail({ categoryId, category, card }) {
       <div>
         <h1 className="text-xl font-semibold text-ll-ink">{card.name}</h1>
         <p className="mt-0.5 text-[13px] text-ll-ink-subtle">
-          {category.name} · บัตร MOL MultiGameCard · ประวัติออเดอร์ดึงจาก codashop_orders (เฉพาะออเดอร์ที่สำเร็จ)
+          {category.name} · บัญชี Wavepay (เติมได้หลายเกม) · ประวัติออเดอร์ดึงจาก codashop_orders (เฉพาะออเดอร์ที่สำเร็จ) ·
+          ก่อนตัด/ยอดตัด/คงเหลือ เป็น Kyat (Ks) อ่านจากยอดคงเหลือกระเป๋าจริงต่อออเดอร์ ·
+          กรอกต้นทุน/ราคาขายได้ที่ช่องในตาราง (หรือตั้งค่าครั้งเดียวต่อแพ็กที่หน้า &quot;ตั้งค่าต้นทุน/ราคาขายตามแพ็ก&quot;)
         </p>
       </div>
 
       <ProfitSummaryGrid
         items={[
-          { k: "สถานะ", v: card.status === "active" ? "เปิดใช้งาน" : "ปิดใช้งาน", tone: card.status === "active" ? undefined : "neg" },
-          { k: "คงเหลือ", v: fmtPoints(card.balancePoints) },
+          { k: "คงเหลือ (ประมาณ)", v: card.balanceKs != null ? fmtKyat(card.balanceKs) : "-" },
           { k: "ออเดอร์ (ที่สำเร็จ)", v: card.orderCount },
+          { k: "ยอดขายรวม", v: fmtMoney(card.saleTotal) },
+          { k: "ต้นทุนรวม", v: fmtMoney(card.costTotal) },
+          { k: "กำไรรวม", v: fmtMoney(card.profitTotal), tone: card.profitTotal >= 0 ? "pos" : "neg" },
+          { k: "ออเดอร์ซ้ำ", v: card.duplicateCount, tone: card.duplicateCount > 0 ? "neg" : undefined },
+          { k: "ยอดตัดรวม (Ks)", v: fmtKyat(card.deductedKsTotal) },
           { k: "ตัดล่าสุด", v: fmtDate(card.lastOrderAt) },
         ]}
       />
@@ -694,27 +863,254 @@ function OxideCardDetail({ categoryId, category, card }) {
           <span className="text-[12px] text-ll-ink-subtle">{card.orders.length} รายการ</span>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] text-[13px] text-ll-ink">
+          <table className="w-full min-w-[1200px] text-[13px] text-ll-ink">
             <thead>
               <tr className="border-b border-ll-hairline text-left text-[11px] text-ll-ink-subtle">
-                <th className="px-4 py-2 font-medium">ออเดอร์</th>
+                <th className="px-4 py-2 font-medium">QUEUE #</th>
+                <th className="px-3 py-2 font-medium">ORDER ID</th>
+                <th className="px-3 py-2 font-medium">เกม</th>
                 <th className="px-3 py-2 font-medium">แพ็ก</th>
-                <th className="px-3 py-2 text-right font-medium">ยอด (ประมาณ)</th>
+                <th className="px-3 py-2 font-medium">แพลตฟอร์ม</th>
+                <th className="px-3 py-2 text-right font-medium">ราคาขาย</th>
+                <th className="px-3 py-2 text-right font-medium">ต้นทุน</th>
+                <th className="px-3 py-2 text-right font-medium">กำไร</th>
+                <th className="px-3 py-2 text-right font-medium">%กำไร</th>
+                <th className="px-3 py-2 text-right font-medium">ก่อนตัด (Ks)</th>
+                <th className="px-3 py-2 text-right font-medium">ยอดตัด (Ks)</th>
+                <th className="px-3 py-2 text-right font-medium">คงเหลือ (Ks)</th>
                 <th className="px-3 py-2 font-medium">เวลา</th>
+                <th className="px-3 py-2 font-medium">สถานะ</th>
               </tr>
             </thead>
             <tbody>
               {card.orders.length ? (
                 card.orders.map((o) => (
                   <tr key={o.id} className="border-b border-ll-hairline last:border-0">
-                    <td className="px-4 py-2.5 text-ll-ink">{o.txid}</td>
-                    <td className="px-3 py-2.5 text-ll-ink-subtle">{o.packName || "-"}</td>
-                    <td className="px-3 py-2.5 text-right">{o.priceUsdApprox == null ? "-" : fmtUsd(o.priceUsdApprox)}</td>
+                    <td className="px-4 py-2.5 font-medium text-ll-ink">{o.txid}</td>
+                    <td className="px-3 py-2.5 text-ll-ink">{o.saleOrderId || "-"}</td>
+                    <td className="px-3 py-2.5 text-ll-ink-subtle">{o.gameName || "-"}</td>
+                    <td className="px-3 py-2.5 text-ll-ink">{o.packName || "-"}</td>
+                    <td className="px-3 py-2.5">
+                      <PlatformSelect
+                        value={o.platform}
+                        fromDb={o.platformFromDb}
+                        platforms={platforms}
+                        disabled={!canEdit}
+                        onCommit={(v) => onEditOrder(o,"platform", v)}
+                      />
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      <EditableCell
+                        value={netSaleDisplay(o)}
+                        disabled={!canEdit}
+                        title={
+                          o.platformFeePct > 0
+                            ? `หักค่าธรรมเนียม ${o.platformFeePct}% ของ ${platformLabel(o.platform)} จากราคาเต็ม ${fmtMoney(o.saleAmount || 0)} แล้ว — แก้ตรงนี้ให้กรอกราคาเต็มใหม่ ระบบจะหักให้อัตโนมัติ`
+                            : o.saleFromPlatform
+                              ? "ค่านี้ดึงจากราคาขายตามแพ็กของแพลตฟอร์มนี้ — แก้ตรงนี้จะ override เฉพาะออเดอร์นี้"
+                              : o.saleMissingPlatformPrice
+                                ? `ยังไม่มีราคาอ้างอิงของ ${platformLabel(o.platform)} สำหรับแพ็กนี้ — ตั้งได้ที่หน้า "ตั้งราคาขายตามแพ็ก"`
+                                : undefined
+                        }
+                        onCommit={(v) => onEditOrder(o,"saleAmount", v)}
+                      />
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      <EditableCell
+                        value={o.cost}
+                        disabled={!canEdit}
+                        title={
+                          o.costFromPack
+                            ? "ค่านี้มาจากต้นทุนเริ่มต้นของแพ็ก — แก้ตรงนี้จะ override เฉพาะออเดอร์นี้"
+                            : o.costMissing
+                              ? 'ยังไม่มีต้นทุนของแพ็กนี้เลย — ตั้งได้ที่หน้า "ตั้งค่าต้นทุนตามแพ็ก" หรือกรอกตรงนี้เฉพาะออเดอร์นี้'
+                              : undefined
+                        }
+                        onCommit={(v) => onEditOrder(o,"cost", v)}
+                      />
+                    </td>
+                    <td
+                      className={`px-3 py-2.5 text-right ${o.profit >= 0 ? "text-emerald-600" : "text-red-600"}`}
+                      title={o.platformFeePct > 0 ? `หักค่าธรรมเนียม ${o.platformFeePct}% ของ ${platformLabel(o.platform)} จากราคาขายก่อนคิดกำไรแล้ว` : undefined}
+                    >
+                      {fmtMoney(o.profit)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right">{fmtPct(o.profitPct)}</td>
+                    <td className="px-3 py-2.5 text-right text-ll-ink-subtle" title="อ่านจากยอดคงเหลือกระเป๋า Wavepay จริงตอนตัดเงิน (provider_response.balances) — ไม่ใช่ยอดบาท">
+                      {o.oldBalanceKs != null ? fmtKyat(o.oldBalanceKs) : "-"}
+                    </td>
+                    <td className="px-3 py-2.5 text-right text-ll-ink-subtle">
+                      {o.deductedKs != null ? fmtKyat(o.deductedKs) : "-"}
+                    </td>
+                    <td className="px-3 py-2.5 text-right text-ll-ink-subtle">
+                      {o.newBalanceKs != null ? fmtKyat(o.newBalanceKs) : "-"}
+                    </td>
                     <td className="px-3 py-2.5 text-ll-ink-subtle">{fmtDate(o.createdAt)}</td>
+                    <td className="px-3 py-2.5">
+                      {o.isDuplicate ? (
+                        <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600">ตัดซ้ำ</span>
+                      ) : (
+                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-600">ปกติ</span>
+                      )}
+                    </td>
                   </tr>
                 ))
               ) : (
-                <tr><td colSpan={4} className="px-4 py-8 text-center text-ll-ink-subtle">ยังไม่มีออเดอร์ที่สำเร็จบนบัตรนี้</td></tr>
+                <tr><td colSpan={14} className="px-4 py-8 text-center text-ll-ink-subtle">ยังไม่มีออเดอร์ที่สำเร็จบนบัญชีนี้</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function OxideCardDetail({ categoryId, category, card, canEdit, platforms, onEditOrder, onToggleMergeCleared }) {
+  return (
+    <div className="flex flex-col gap-5">
+      <nav className="flex items-center gap-1.5 text-[12px] text-ll-ink-subtle">
+        <Link href="/profit" className="hover:underline">ภาพรวม</Link>
+        <ChevronRight size={12} />
+        <Link href={`/profit/category/${categoryId}`} className="hover:underline">{category.name}</Link>
+        <ChevronRight size={12} />
+        <span className="text-ll-ink">{card.name}</span>
+      </nav>
+
+      <div>
+        <h1 className="text-xl font-semibold text-ll-ink">{card.name}</h1>
+        <p className="mt-0.5 text-[13px] text-ll-ink-subtle">
+          {category.name} · บัตร MOL MultiGameCard · ประวัติออเดอร์ดึงจาก codashop_orders (เฉพาะออเดอร์ที่สำเร็จ) ·
+          ก่อนตัด/ยอดตัด/คงเหลือ เป็นแต้ม (pts) อ่านจากประวัติการไถ่บัตรจริงต่อออเดอร์ ·
+          กรอกต้นทุน/ราคาขายได้ที่ช่องในตาราง (หรือตั้งค่าครั้งเดียวต่อแพ็กที่หน้า &quot;ตั้งค่าต้นทุน/ราคาขายตามแพ็ก&quot;)
+        </p>
+      </div>
+
+      <ProfitSummaryGrid
+        items={[
+          { k: "สถานะ", v: card.status === "active" ? "เปิดใช้งาน" : "ปิดใช้งาน", tone: card.status === "active" ? undefined : "neg" },
+          { k: "คงเหลือ", v: fmtPoints(card.balancePoints) },
+          { k: "ออเดอร์ (ที่สำเร็จ)", v: card.orderCount },
+          { k: "ยอดขายรวม", v: fmtMoney(card.saleTotal) },
+          { k: "ต้นทุนรวม", v: fmtMoney(card.costTotal) },
+          { k: "กำไรรวม", v: fmtMoney(card.profitTotal), tone: card.profitTotal >= 0 ? "pos" : "neg" },
+          { k: "ออเดอร์ซ้ำ", v: card.duplicateCount, tone: card.duplicateCount > 0 ? "neg" : undefined },
+          { k: "ยอดตัดรวม (pts)", v: fmtPoints(card.deductedPointsTotal) },
+          { k: "ตัดล่าสุด", v: fmtDate(card.lastOrderAt) },
+        ]}
+      />
+
+      {card.isIdle && (
+        <MergePanel card={card} canEdit={canEdit} onToggle={onToggleMergeCleared} />
+      )}
+
+      <section className="rounded-lg border border-ll-hairline bg-ll-surface-1">
+        <div className="flex items-center justify-between border-b border-ll-hairline px-4 py-3">
+          <h2 className="text-sm font-semibold text-ll-ink">ออเดอร์</h2>
+          <span className="text-[12px] text-ll-ink-subtle">{card.orders.length} รายการ</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1200px] text-[13px] text-ll-ink">
+            <thead>
+              <tr className="border-b border-ll-hairline text-left text-[11px] text-ll-ink-subtle">
+                <th className="px-4 py-2 font-medium">QUEUE #</th>
+                <th className="px-3 py-2 font-medium">ORDER ID</th>
+                <th className="px-3 py-2 font-medium">เกม</th>
+                <th className="px-3 py-2 font-medium">แพ็ก</th>
+                <th className="px-3 py-2 font-medium">แพลตฟอร์ม</th>
+                <th className="px-3 py-2 text-right font-medium">ราคาขาย</th>
+                <th className="px-3 py-2 text-right font-medium">ต้นทุน</th>
+                <th className="px-3 py-2 text-right font-medium">กำไร</th>
+                <th className="px-3 py-2 text-right font-medium">%กำไร</th>
+                <th className="px-3 py-2 text-right font-medium">ก่อนตัด (pts)</th>
+                <th className="px-3 py-2 text-right font-medium">ยอดตัด (pts)</th>
+                <th className="px-3 py-2 text-right font-medium">คงเหลือ (pts)</th>
+                <th className="px-3 py-2 font-medium">เวลา</th>
+                <th className="px-3 py-2 font-medium">สถานะ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {card.orders.length ? (
+                card.orders.map((o) => (
+                  <tr key={o.id} className="border-b border-ll-hairline last:border-0">
+                    <td className="px-4 py-2.5 font-medium text-ll-ink">{o.txid}</td>
+                    <td className="px-3 py-2.5 text-ll-ink">{o.saleOrderId || "-"}</td>
+                    <td className="px-3 py-2.5 text-ll-ink-subtle">{o.gameName || "-"}</td>
+                    <td className="px-3 py-2.5">
+                      <div className="text-ll-ink">{o.packName || "-"}</div>
+                      {o.priceUsdApprox != null && (
+                        <div className="text-[11px] text-ll-ink-tertiary">≈ {fmtUsd(o.priceUsdApprox)} (codashop)</div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <PlatformSelect
+                        value={o.platform}
+                        fromDb={o.platformFromDb}
+                        platforms={platforms}
+                        disabled={!canEdit}
+                        onCommit={(v) => onEditOrder(o,"platform", v)}
+                      />
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      <EditableCell
+                        value={netSaleDisplay(o)}
+                        disabled={!canEdit}
+                        title={
+                          o.platformFeePct > 0
+                            ? `หักค่าธรรมเนียม ${o.platformFeePct}% ของ ${platformLabel(o.platform)} จากราคาเต็ม ${fmtMoney(o.saleAmount || 0)} แล้ว — แก้ตรงนี้ให้กรอกราคาเต็มใหม่ ระบบจะหักให้อัตโนมัติ`
+                            : o.saleFromPlatform
+                              ? "ค่านี้ดึงจากราคาขายตามแพ็กของแพลตฟอร์มนี้ — แก้ตรงนี้จะ override เฉพาะออเดอร์นี้"
+                              : o.saleMissingPlatformPrice
+                                ? `ยังไม่มีราคาอ้างอิงของ ${platformLabel(o.platform)} สำหรับแพ็กนี้ — ตั้งได้ที่หน้า "ตั้งราคาขายตามแพ็ก"`
+                                : undefined
+                        }
+                        onCommit={(v) => onEditOrder(o,"saleAmount", v)}
+                      />
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      <EditableCell
+                        value={o.cost}
+                        disabled={!canEdit}
+                        title={
+                          o.costFromPack
+                            ? "ค่านี้มาจากต้นทุนเริ่มต้นของแพ็ก — แก้ตรงนี้จะ override เฉพาะออเดอร์นี้"
+                            : o.costFromTelegram
+                              ? `ค่านี้ดึงจากราคาจริงที่ระบบส่งเข้าคิว Telegram ตอนเติม (${o.telegramSource === "russia" ? "แปลงจาก USD" : "THB"}) — แก้ตรงนี้จะ override เฉพาะออเดอร์นี้`
+                              : o.costMissing
+                                ? 'ยังไม่มีต้นทุนของแพ็กนี้เลย — ตั้งได้ที่หน้า "ตั้งค่าต้นทุนตามแพ็ก" หรือกรอกตรงนี้เฉพาะออเดอร์นี้'
+                                : undefined
+                        }
+                        onCommit={(v) => onEditOrder(o,"cost", v)}
+                      />
+                    </td>
+                    <td
+                      className={`px-3 py-2.5 text-right ${o.profit >= 0 ? "text-emerald-600" : "text-red-600"}`}
+                      title={o.platformFeePct > 0 ? `หักค่าธรรมเนียม ${o.platformFeePct}% ของ ${platformLabel(o.platform)} จากราคาขายก่อนคิดกำไรแล้ว` : undefined}
+                    >
+                      {fmtMoney(o.profit)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right">{fmtPct(o.profitPct)}</td>
+                    <td className="px-3 py-2.5 text-right text-ll-ink-subtle" title="อ่านจากประวัติการตัดบัตรจริงตอนไถ่บัตร (provider_response) — ไม่ใช่ยอด USD/THB">
+                      {o.oldBalancePoints != null ? fmtPoints(o.oldBalancePoints) : "-"}
+                    </td>
+                    <td className="px-3 py-2.5 text-right text-ll-ink-subtle">
+                      {o.deductedPoints != null ? fmtPoints(o.deductedPoints) : "-"}
+                    </td>
+                    <td className="px-3 py-2.5 text-right text-ll-ink-subtle">
+                      {o.newBalancePoints != null ? fmtPoints(o.newBalancePoints) : "-"}
+                    </td>
+                    <td className="px-3 py-2.5 text-ll-ink-subtle">{fmtDate(o.createdAt)}</td>
+                    <td className="px-3 py-2.5">
+                      {o.isDuplicate ? (
+                        <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600">ตัดซ้ำ</span>
+                      ) : (
+                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-600">ปกติ</span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr><td colSpan={14} className="px-4 py-8 text-center text-ll-ink-subtle">ยังไม่มีออเดอร์ที่สำเร็จบนบัตรนี้</td></tr>
               )}
             </tbody>
           </table>

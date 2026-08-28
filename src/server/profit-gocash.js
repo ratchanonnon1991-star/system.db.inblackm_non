@@ -34,7 +34,8 @@ export async function getAllRows() {
   if (cache.rows && now - cache.at < CACHE_MS) return cache.rows;
   const rows = await selectQuery(
     `SELECT h.id, h.card_serial, h.slot_index, h.old_balance, h.deducted, h.new_balance,
-            h.order_id, h.pack_name, h.created_at, COALESCE(c.source, t.source) AS platform
+            h.order_id, t.order_id AS sale_order_id, h.pack_name, h.created_at,
+            COALESCE(c.source, t.source) AS platform
      FROM sky_gocash_history h
      LEFT JOIN codashop_orders c ON c.id = h.order_id
      LEFT JOIN telegram_orders_dev t ON t.task_request_id = c.telegram_task_request_id
@@ -47,7 +48,11 @@ export async function getAllRows() {
     oldBalance: parseFloat(r.old_balance),
     deducted: parseFloat(r.deducted),
     newBalance: parseFloat(r.new_balance),
+    // sky_gocash_history.order_id = codashop_orders.id -- the internal queue
+    // number shown as QUEUE #. The customer-facing ORDER ID lives on the
+    // Telegram task instead (telegram_orders_dev.order_id).
     orderId: r.order_id,
+    saleOrderId: r.sale_order_id || null,
     packName: r.pack_name,
     createdAt: r.created_at,
     platform: normalizePlatform(r.platform),
