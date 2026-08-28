@@ -41,6 +41,8 @@ export default function ProfitShell({ displayName, canEdit, children }) {
   const isPackCosts = pathname === "/profit/pack-costs";
   const isSalePrices = pathname.startsWith("/profit/sale-prices");
   const isGocashHistory = pathname === "/profit/gocash-history";
+  const isOxideHistory = pathname === "/profit/oxide-history";
+  const isWavepayHistory = pathname === "/profit/wavepay-history";
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -142,6 +144,30 @@ export default function ProfitShell({ displayName, canEdit, children }) {
                       }`}
                     >
                       <History size={12} aria-hidden="true" /> ประวัติ GoCash
+                    </Link>
+                  )}
+                  {cat.id === "oxide" && (
+                    <Link
+                      href="/profit/oxide-history"
+                      className={`ml-3 flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] transition ${
+                        isOxideHistory
+                          ? "bg-ll-primary-subtle-bg text-ll-primary-subtle-text"
+                          : "text-ll-ink-subtle hover:bg-ll-surface-2"
+                      }`}
+                    >
+                      <History size={12} aria-hidden="true" /> ประวัติ Multi Game Card
+                    </Link>
+                  )}
+                  {cat.id === "wavepay" && (
+                    <Link
+                      href="/profit/wavepay-history"
+                      className={`ml-3 flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] transition ${
+                        isWavepayHistory
+                          ? "bg-ll-primary-subtle-bg text-ll-primary-subtle-text"
+                          : "text-ll-ink-subtle hover:bg-ll-surface-2"
+                      }`}
+                    >
+                      <History size={12} aria-hidden="true" /> ประวัติ Wavepay
                     </Link>
                   )}
                 </div>

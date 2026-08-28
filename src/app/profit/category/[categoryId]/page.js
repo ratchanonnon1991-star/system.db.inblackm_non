@@ -5,9 +5,9 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ChevronRight, History, Layers, Loader2, Plus, RefreshCw, X } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
-import { fmtDate, fmtMoney, fmtPct, fmtPoints, fmtUsd } from "@/lib/profit-format";
+import { fmtDate, fmtKyat, fmtMoney, fmtPct, fmtPoints, fmtUsd } from "@/lib/profit-format";
 import ProfitSummaryGrid from "@/components/profit-summary-grid";
-import { ClearedByCell, DupBadge, DustBadge, StatusBadge } from "@/components/profit-badges";
+import { ClearedByCell, DupBadge, DustBadge, MergeBadge, MergeClearedByCell, StatusBadge } from "@/components/profit-badges";
 import ProfitModal, { ProfitField, profitInputClass } from "@/components/profit-modal";
 import { useProfitCanEdit } from "@/components/profit-capabilities-context";
 
@@ -155,6 +155,20 @@ function ProfitCategoryPageContent({ categoryId }) {
     }
   };
 
+  const toggleMergeCleared = async (cardId, cleared) => {
+    try {
+      await apiJson(`/api/profit/oxide/cards/${encodeURIComponent(cardId)}/merge-clear`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cleared }),
+        fallbackError: "อัปเดตสถานะรวมบัตรไม่สำเร็จ",
+      });
+      load();
+    } catch (err) {
+      window.alert(err.message);
+    }
+  };
+
   const setCardGame = async (cardId, gameId) => {
     try {
       await apiJson(`/api/profit/gocash/cards/${encodeURIComponent(cardId)}/game`, {
@@ -196,8 +210,10 @@ function ProfitCategoryPageContent({ categoryId }) {
     if (query) {
       if (data.category.source === "gocash" || data.category.source === "gocash-dust") {
         list = list.filter((c) => matchesQuery(query, [c.name, c.gameName, c.cardSerial, c.slotIndex, ...(c.orderIds || [])]));
-      } else if (data.category.source === "oxide") {
-        list = list.filter((c) => matchesQuery(query, [c.name, c.cardSerial]));
+      } else if (data.category.source === "oxide" || data.category.source === "oxide-merge") {
+        list = list.filter((c) => matchesQuery(query, [c.name, c.cardSerial, ...(c.gameNames || [])]));
+      } else if (data.category.source === "wavepay") {
+        list = list.filter((c) => matchesQuery(query, [c.name, c.cardSerial, ...(c.gameNames || [])]));
       } else if (data.category.source === "manual") {
         list = list.filter((c) => matchesQuery(query, [c.name, c.gameName]));
       }
@@ -205,6 +221,10 @@ function ProfitCategoryPageContent({ categoryId }) {
 
     if (data.category.id === "gocash-dust" && statusFilter !== "all") {
       list = list.filter((c) => (statusFilter === "cleared" ? c.dustCleared : c.needsDustClear));
+    }
+
+    if (data.category.id === "oxide-merge" && statusFilter !== "all") {
+      list = list.filter((c) => (statusFilter === "cleared" ? c.mergeCleared : c.needsMerge));
     }
 
     if (dupFilter === "needs") {
@@ -221,6 +241,17 @@ function ProfitCategoryPageContent({ categoryId }) {
       list = list.filter((c) => c.gameId === gameFilter);
     }
 
+    // A Multi Game Card isn't dedicated to one game -- it carries the set of
+    // games it's actually been used for (c.gameNames, from codashop_orders),
+    // so filtering checks membership instead of equality. Wavepay accounts
+    // work the same way (one account funds several games).
+    if (
+      (data.category.source === "oxide" || data.category.source === "oxide-merge" || data.category.source === "wavepay")
+      && gameFilter && gameFilter !== "__all__"
+    ) {
+      list = list.filter((c) => (c.gameNames || []).includes(gameFilter));
+    }
+
     return list;
   }, [data, q, statusFilter, dupFilter, gameFilter]);
 
@@ -228,7 +259,12 @@ function ProfitCategoryPageContent({ categoryId }) {
     const map = new Map();
     if (!data) return map;
     for (const c of data.cards) {
-      if (c.gameId) map.set(c.gameId, (map.get(c.gameId) || 0) + 1);
+      if (Array.isArray(c.gameNames)) {
+        // Multi Game Card: one card can count toward several games' tiles.
+        for (const g of c.gameNames) map.set(g, (map.get(g) || 0) + 1);
+      } else if (c.gameId) {
+        map.set(c.gameId, (map.get(c.gameId) || 0) + 1);
+      }
     }
     return map;
   }, [data]);
@@ -263,8 +299,10 @@ function ProfitCategoryPageContent({ categoryId }) {
 
   const { category, cards } = data;
   const isDustPage = category.id === "gocash-dust";
+  const isMergePage = category.id === "oxide-merge";
   const isGocash = category.source === "gocash" || category.source === "gocash-dust";
-  const isOxide = category.source === "oxide";
+  const isOxide = category.source === "oxide" || category.source === "oxide-merge";
+  const isWavepay = category.source === "wavepay";
   const isManual = category.source === "manual";
 
   const totalPages = Math.max(1, Math.ceil(sortedCards.length / pageSize));
@@ -279,7 +317,12 @@ function ProfitCategoryPageContent({ categoryId }) {
   // gets this too -- its cards resolve a real gameId server-side (auto to the
   // channel's one game today, tagged manually once a second game exists), so
   // each tile's count and filter are real, not a decorative full-list link.
-  const canBrowseGames = isManual || (isGocash && !isDustPage);
+  // Oxide (Multi Game Card) also gets this, its games list is derived
+  // straight from codashop_orders.game_name (see games route.js) rather than
+  // a manual tag, so it isn't editable here (see the editable game grid
+  // below). Its "ต้องรวมบัตร" worklist skips the picker too, same as GoCash's
+  // dust page -- it's a small flat list, not worth splitting by game.
+  const canBrowseGames = isManual || (isGocash && !isDustPage) || (isOxide && !isMergePage) || isWavepay;
   const showGameBrowser = canBrowseGames && games.length > 0 && gameFilter === null;
 
   return (
@@ -287,20 +330,24 @@ function ProfitCategoryPageContent({ categoryId }) {
       <nav className="flex items-center gap-1.5 text-[12px] text-ll-ink-subtle">
         <Link href="/profit" className="hover:underline">ภาพรวม</Link>
         <ChevronRight size={12} />
-        <span className="text-ll-ink">{category.name}{isDustPage ? " · เคลียเศษ" : ""}</span>
+        <span className="text-ll-ink">{category.name}{isDustPage ? " · เคลียเศษ" : isMergePage ? " · รวมบัตร" : ""}</span>
       </nav>
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-ll-ink">{category.name}{isDustPage ? " · เคลียเศษ" : ""}</h1>
+          <h1 className="text-xl font-semibold text-ll-ink">{category.name}{isDustPage ? " · เคลียเศษ" : isMergePage ? " · รวมบัตร" : ""}</h1>
           <p className="mt-0.5 text-[13px] text-ll-ink-subtle">
             {isDustPage
               ? "บัตรที่เหลือเศษต่ำกว่า $1.00 ตัดแพ็กต่อไม่ได้แล้ว ต้องเคลียร์"
-              : isGocash
-                ? "บัตรใบละ $100 · ยอดตัด = 100 − คงเหลือล่าสุด (ไม่บวกประวัติเก่าทั้งก้อน)"
-                : isOxide
-                  ? "บัตร MOL MultiGameCard ของบอท Oxide (หน่วย points, ~1000 pts = $1)"
-                  : "บัตรในหมวดนี้ คลิกแถวเพื่อดูออเดอร์"}
+              : isMergePage
+                ? "บัตรที่มี points เหลือแต่ไม่มีออเดอร์เกิน 12 ชม. — ควรรวมยอดไปบัตรที่ใช้งานอยู่"
+                : isGocash
+                  ? "บัตรใบละ $100 · ยอดตัด = 100 − คงเหลือล่าสุด (ไม่บวกประวัติเก่าทั้งก้อน)"
+                  : isOxide
+                    ? "บัตร MOL MultiGameCard ของบอท Oxide (หน่วย points, ~1000 pts = $1)"
+                    : isWavepay
+                      ? "บัญชี Wavepay 1 บัญชีเติมได้หลายเกม (หน่วย Kyat/Ks) — ยอดขาย/ต้นทุน/กำไรคิดเป็นบาท"
+                      : "บัตรในหมวดนี้ คลิกแถวเพื่อดูออเดอร์"}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -323,9 +370,17 @@ function ProfitCategoryPageContent({ categoryId }) {
               เคลียเศษ
             </Link>
           )}
-          {isGocash && (
+          {category.id === "oxide" && (
             <Link
-              href="/profit/gocash-history"
+              href="/profit/category/oxide-merge"
+              className="rounded-md border border-ll-hairline-strong px-3 py-2 text-[12px] font-medium text-ll-ink hover:bg-ll-surface-2"
+            >
+              รวมบัตร
+            </Link>
+          )}
+          {(isGocash || isOxide || isWavepay) && (
+            <Link
+              href={isGocash ? "/profit/gocash-history" : isOxide ? "/profit/oxide-history" : "/profit/wavepay-history"}
               className="flex items-center gap-1.5 rounded-md border border-ll-hairline-strong px-3 py-2 text-[12px] font-medium text-ll-ink hover:bg-ll-surface-2"
             >
               <History size={13} /> ดูประวัติทั้งหมด
@@ -362,11 +417,7 @@ function ProfitCategoryPageContent({ categoryId }) {
         }}
       />
 
-      {!isDustPage && isOxide && (
-        <GamesBar games={games} canEdit={canEdit} onAddGame={() => setAddGameOpen(true)} onRemoveGame={removeGame} />
-      )}
-
-      {canBrowseGames && games.length === 0 && canEdit && (
+      {canBrowseGames && games.length === 0 && canEdit && !isOxide && !isWavepay && (
         <button
           type="button"
           onClick={() => setAddGameOpen(true)}
@@ -394,24 +445,24 @@ function ProfitCategoryPageContent({ categoryId }) {
           games={games}
           cardCountByGame={cardCountByGame}
           totalCardCount={cards.length}
-          canEdit={canEdit}
+          canEdit={canEdit && !isOxide && !isWavepay}
           onSelectGame={(id) => { setGameFilter(id); setPage(1); }}
           onAddGame={() => setAddGameOpen(true)}
           onRemoveGame={removeGame}
         />
       )}
 
-      {(isGocash || isOxide || isManual) && !showGameBrowser && (
+      {(isGocash || isOxide || isWavepay || isManual) && !showGameBrowser && (
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="flex flex-wrap items-end gap-2.5">
             <input
               type="search"
               value={q}
               onChange={(e) => { setQ(e.target.value); setPage(1); }}
-              placeholder={isOxide ? "ค้นหาเลขบัตร, serial..." : isManual ? "ค้นหาชื่อบัตร..." : "ค้นหาเลขบัตร, serial, ออเดอร์..."}
+              placeholder={isOxide ? "ค้นหาเลขบัตร, serial..." : isWavepay ? "ค้นหาเลขบัญชี..." : isManual ? "ค้นหาชื่อบัตร..." : "ค้นหาเลขบัตร, serial, ออเดอร์..."}
               className="h-9 w-72 max-w-full rounded-md border border-ll-hairline-strong bg-ll-surface-2 px-3 text-[13px] text-ll-ink outline-none focus:border-ll-primary focus:bg-ll-surface-1"
             />
-            {isGocash && (
+            {(isGocash || isOxide || isWavepay) && (
               <label className="flex flex-col gap-1 text-[11px] text-ll-ink-subtle">
                 กรอง
                 <select
@@ -420,12 +471,15 @@ function ProfitCategoryPageContent({ categoryId }) {
                   className="h-9 rounded-md border border-ll-hairline-strong bg-ll-surface-2 px-2.5 text-[13px] text-ll-ink outline-none focus:border-ll-primary focus:bg-ll-surface-1"
                 >
                   <option value="all">ทั้งหมด</option>
-                  <option value="needs">พบยอดซ้ำ (ยังไม่ตรวจ)</option>
-                  <option value="reviewed">ตรวจสอบแล้ว</option>
+                  {/* Oxide has no "mark reviewed" workflow, just a plain
+                      duplicate flag -- so it skips the "ตรวจสอบแล้ว" tri-state
+                      GoCash has (see profit_gocash_duplicate_reviewed). */}
+                  <option value="needs">{isGocash ? "พบยอดซ้ำ (ยังไม่ตรวจ)" : "พบยอดซ้ำ"}</option>
+                  {isGocash && <option value="reviewed">ตรวจสอบแล้ว</option>}
                 </select>
               </label>
             )}
-            {isDustPage && (
+            {(isDustPage || isMergePage) && (
               <label className="flex flex-col gap-1 text-[11px] text-ll-ink-subtle">
                 สถานะ
                 <select
@@ -434,8 +488,8 @@ function ProfitCategoryPageContent({ categoryId }) {
                   className="h-9 rounded-md border border-ll-hairline-strong bg-ll-surface-2 px-2.5 text-[13px] text-ll-ink outline-none focus:border-ll-primary focus:bg-ll-surface-1"
                 >
                   <option value="all">ทั้งหมด</option>
-                  <option value="needs">ต้องเคลียร์</option>
-                  <option value="cleared">เคลียร์แล้ว</option>
+                  <option value="needs">{isMergePage ? "ต้องรวม" : "ต้องเคลียร์"}</option>
+                  <option value="cleared">{isMergePage ? "รวมแล้ว" : "เคลียร์แล้ว"}</option>
                 </select>
               </label>
             )}
@@ -485,7 +539,19 @@ function ProfitCategoryPageContent({ categoryId }) {
             onSetCardGame={setCardGame}
           />
         )}
-        {isOxide && <OxideCardsTable categoryId={categoryId} cards={filteredCards} q={q} />}
+        {isOxide && (
+          <OxideCardsTable
+            categoryId={categoryId}
+            cards={filteredCards}
+            q={q}
+            isMergePage={isMergePage}
+            canEdit={canEdit}
+            onToggleMergeCleared={toggleMergeCleared}
+          />
+        )}
+        {isWavepay && (
+          <WavepayCardsTable categoryId={categoryId} cards={filteredCards} q={q} />
+        )}
         {(isGocash || isManual) && sortedCards.length > 0 && (
           <div className="flex items-center justify-between border-t border-ll-hairline px-4 py-3 text-[12px] text-ll-ink-subtle">
             <button
@@ -626,55 +692,17 @@ function GocashRateInput({ rate, disabled, onCommit }) {
   );
 }
 
-// Reference-only chip row for Oxide -- lets staff note which games a bot
-// channel currently handles and add more as it grows, but the chips aren't
-// clickable filters since that live data has no per-order game field to
-// actually filter on yet (see GameBrowseGrid for the manual-channel and
-// GoCash version, which does land on a proper picker).
-function GamesBar({ games, canEdit, onAddGame, onRemoveGame }) {
-  if (!games.length && !canEdit) return null;
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <span className="text-[11px] text-ll-ink-subtle">เกม (อ้างอิง):</span>
-      {games.map((g) => (
-        <span
-          key={g.id}
-          className="flex items-center gap-1 rounded-full border border-ll-hairline-strong py-1 pl-2.5 pr-1.5 text-[11px] font-medium text-ll-ink-subtle"
-        >
-          {g.name}
-          {canEdit && (
-            <button
-              type="button"
-              title="ลบเกมนี้"
-              onClick={() => onRemoveGame(g)}
-              className="rounded-full p-0.5 text-ll-ink-tertiary hover:bg-ll-surface-2 hover:text-red-600"
-            >
-              <X size={11} />
-            </button>
-          )}
-        </span>
-      ))}
-      {canEdit && (
-        <button
-          type="button"
-          onClick={onAddGame}
-          className="flex items-center gap-1 rounded-full border border-dashed border-ll-hairline-strong px-2.5 py-1 text-[11px] font-medium text-ll-ink-subtle hover:border-ll-primary hover:text-ll-primary-subtle-text"
-        >
-          <Plus size={11} /> เพิ่มเกม
-        </button>
-      )}
-    </div>
-  );
-}
-
 // Landing view for a channel that has games defined -- e.g. a "Wavepay"
 // channel topping up lovedeep / harry magic / the division shows each as its
 // own tile here; clicking one drills into that game's card list (same table
 // as before, just scoped). "ทั้งหมด" opts out of the split and shows every
-// card unsplit, same as a channel with no games defined at all. GoCash uses
-// this same picker once it has a game added (e.g. "Sky") -- its tiles all
-// lead to the same full list since its cards don't carry a per-order game
-// field yet (see cardCountByGame in the parent).
+// card unsplit, same as a channel with no games defined at all. GoCash and
+// Multi Game Card (oxide) use this same picker -- both resolve a real game
+// per card server-side (GoCash: resolveGocashGame; oxide: order.gameName
+// from codashop_orders), so each tile's count and filter are real. Oxide's
+// games aren't hand-tagged though, so it's passed canEdit=false here -- no
+// add/remove controls for it (see the parent's canBrowseGames/GameBrowseGrid
+// call site).
 function GameBrowseGrid({ games, cardCountByGame, totalCardCount, canEdit, onSelectGame, onAddGame, onRemoveGame }) {
   return (
     <div className="flex flex-col gap-3">
@@ -815,11 +843,20 @@ function CategorySummary({ category, cards, dupFilter, onToggleDupOnly }) {
     );
   }
 
-  if (category.source === "oxide") {
+  if (category.source === "oxide" || category.source === "oxide-merge") {
     const t = cards.reduce(
-      (a, c) => ({ balance: a.balance + (c.balancePoints || 0), enabled: a.enabled + (c.status === "active" ? 1 : 0) }),
-      { balance: 0, enabled: 0 }
+      (a, c) => ({
+        balance: a.balance + (c.balancePoints || 0),
+        enabled: a.enabled + (c.status === "active" ? 1 : 0),
+        sale: a.sale + c.saleTotal,
+        cost: a.cost + c.costTotal,
+        profit: a.profit + c.profitTotal,
+        orders: a.orders + c.orderCount,
+        dup: a.dup + (c.duplicateCount > 0 ? 1 : 0),
+      }),
+      { balance: 0, enabled: 0, sale: 0, cost: 0, profit: 0, orders: 0, dup: 0 }
     );
+    const pct = t.sale > 0 ? (t.profit / t.sale) * 100 : 0;
     return (
       <ProfitSummaryGrid
         items={[
@@ -827,6 +864,53 @@ function CategorySummary({ category, cards, dupFilter, onToggleDupOnly }) {
           { k: "เปิดใช้งาน", v: t.enabled },
           { k: "ปิดใช้งาน", v: cards.length - t.enabled, tone: cards.length - t.enabled > 0 ? "neg" : undefined },
           { k: "คงเหลือรวม", v: fmtPoints(t.balance) },
+          { k: "ออเดอร์", v: t.orders },
+          { k: "ยอดขายรวม", v: fmtMoney(t.sale) },
+          { k: "ต้นทุนรวม", v: fmtMoney(t.cost) },
+          { k: "กำไรรวม", v: fmtMoney(t.profit), tone: t.profit >= 0 ? "pos" : "neg" },
+          { k: "%กำไร", v: fmtPct(pct) },
+          {
+            k: "บัตรที่พบยอดซ้ำ",
+            v: t.dup,
+            tone: t.dup > 0 ? "neg" : undefined,
+            onClick: t.dup > 0 ? onToggleDupOnly : undefined,
+            active: dupFilter === "needs",
+          },
+        ]}
+      />
+    );
+  }
+
+  if (category.source === "wavepay") {
+    const t = cards.reduce(
+      (a, c) => ({
+        balanceKs: a.balanceKs + (c.balanceKs || 0),
+        sale: a.sale + c.saleTotal,
+        cost: a.cost + c.costTotal,
+        profit: a.profit + c.profitTotal,
+        orders: a.orders + c.orderCount,
+        dup: a.dup + (c.duplicateCount > 0 ? 1 : 0),
+      }),
+      { balanceKs: 0, sale: 0, cost: 0, profit: 0, orders: 0, dup: 0 }
+    );
+    const pct = t.sale > 0 ? (t.profit / t.sale) * 100 : 0;
+    return (
+      <ProfitSummaryGrid
+        items={[
+          { k: "จำนวนบัญชี", v: cards.length },
+          { k: "คงเหลือรวม (ประมาณ)", v: fmtKyat(t.balanceKs) },
+          { k: "ออเดอร์", v: t.orders },
+          { k: "ยอดขายรวม", v: fmtMoney(t.sale) },
+          { k: "ต้นทุนรวม", v: fmtMoney(t.cost) },
+          { k: "กำไรรวม", v: fmtMoney(t.profit), tone: t.profit >= 0 ? "pos" : "neg" },
+          { k: "%กำไร", v: fmtPct(pct) },
+          {
+            k: "บัญชีที่พบยอดซ้ำ",
+            v: t.dup,
+            tone: t.dup > 0 ? "neg" : undefined,
+            onClick: t.dup > 0 ? onToggleDupOnly : undefined,
+            active: dupFilter === "needs",
+          },
         ]}
       />
     );
@@ -988,18 +1072,22 @@ function GocashCardsTable({ cards, games, isDustPage, canEdit, onToggleDustClear
   );
 }
 
-function OxideCardsTable({ categoryId, cards, q }) {
+function WavepayCardsTable({ categoryId, cards, q }) {
   const router = useRouter();
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[640px] text-[13px] text-ll-ink">
         <thead>
           <tr className="border-b border-ll-hairline text-left text-[11px] text-ll-ink-subtle">
-            <th className="px-4 py-2 font-medium">บัตร</th>
-            <th className="px-3 py-2 font-medium">สถานะ</th>
+            <th className="px-4 py-2 font-medium">บัญชี Wavepay</th>
+            <th className="px-3 py-2 font-medium">เกม</th>
             <th className="px-3 py-2 text-right font-medium">ออเดอร์</th>
-            <th className="px-3 py-2 text-right font-medium">คงเหลือ</th>
-            <th className="px-3 py-2 font-medium">ตัดล่าสุด</th>
+            <th className="px-3 py-2 text-right font-medium">ยอดขาย</th>
+            <th className="px-3 py-2 text-right font-medium">ต้นทุน</th>
+            <th className="px-3 py-2 text-right font-medium">กำไร</th>
+            <th className="px-3 py-2 text-right font-medium">คงเหลือ (Ks)</th>
+            <th className="px-3 py-2 font-medium">ตัดซ้ำ</th>
+            <th className="px-3 py-2 font-medium">ล่าสุด</th>
           </tr>
         </thead>
         <tbody>
@@ -1011,14 +1099,85 @@ function OxideCardsTable({ categoryId, cards, q }) {
                 className="cursor-pointer border-b border-ll-hairline last:border-0 hover:bg-ll-surface-2"
               >
                 <td className="px-4 py-2.5 font-medium text-ll-ink">{c.name}</td>
-                <td className="px-3 py-2.5"><StatusBadge enabled={c.status === "active"} /></td>
+                <td className="px-3 py-2.5 text-ll-ink-subtle">{(c.gameNames || []).join(", ") || "-"}</td>
                 <td className="px-3 py-2.5 text-right">{c.orderCount}</td>
-                <td className="px-3 py-2.5 text-right">{fmtPoints(c.balancePoints)}</td>
+                <td className="px-3 py-2.5 text-right">{fmtMoney(c.saleTotal)}</td>
+                <td className="px-3 py-2.5 text-right">{fmtMoney(c.costTotal)}</td>
+                <td className={`px-3 py-2.5 text-right ${c.profitTotal >= 0 ? "text-emerald-600" : "text-red-600"}`}>{fmtMoney(c.profitTotal)}</td>
+                <td className="px-3 py-2.5 text-right" title="ยอดคงเหลือล่าสุดที่อ่านได้จากออเดอร์ล่าสุดของบัญชีนี้ — ไม่ใช่ยอดเรียลไทม์จริง (ดูหมายเหตุในหน้ารายละเอียดบัญชี)">
+                  {c.balanceKs != null ? fmtKyat(c.balanceKs) : "-"}
+                </td>
+                <td className="px-3 py-2.5"><DupBadge n={c.duplicateCount} /></td>
                 <td className="px-3 py-2.5 text-ll-ink-subtle">{fmtDate(c.lastOrderAt)}</td>
               </tr>
             ))
           ) : (
-            <tr><td colSpan={5} className="px-4 py-8 text-center text-ll-ink-subtle">{q ? "ไม่พบเลขที่ค้นหา" : "ยังไม่มีข้อมูลจาก DB"}</td></tr>
+            <tr><td colSpan={9} className="px-4 py-8 text-center text-ll-ink-subtle">
+              {q ? "ไม่พบเลขที่ค้นหา" : "ยังไม่มีข้อมูลจาก DB"}
+            </td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function OxideCardsTable({ categoryId, cards, q, isMergePage, canEdit, onToggleMergeCleared }) {
+  const router = useRouter();
+  const colCount = 10 + (isMergePage ? 2 : 0);
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[640px] text-[13px] text-ll-ink">
+        <thead>
+          <tr className="border-b border-ll-hairline text-left text-[11px] text-ll-ink-subtle">
+            <th className="px-4 py-2 font-medium">บัตร</th>
+            <th className="px-3 py-2 font-medium">เกม</th>
+            <th className="px-3 py-2 font-medium">สถานะ</th>
+            <th className="px-3 py-2 text-right font-medium">ออเดอร์</th>
+            <th className="px-3 py-2 text-right font-medium">ยอดขาย</th>
+            <th className="px-3 py-2 text-right font-medium">ต้นทุน</th>
+            <th className="px-3 py-2 text-right font-medium">กำไร</th>
+            <th className="px-3 py-2 text-right font-medium">คงเหลือ</th>
+            <th className="px-3 py-2 font-medium">ตัดซ้ำ</th>
+            <th className="px-3 py-2 font-medium">ตัดล่าสุด</th>
+            {isMergePage && <th className="px-3 py-2 font-medium">รวมบัตร</th>}
+            {isMergePage && <th className="px-3 py-2 font-medium">รวมโดย</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {cards.length ? (
+            cards.map((c) => (
+              <tr
+                key={c.id}
+                onClick={() => router.push(`/profit/category/${categoryId}/card/${encodeURIComponent(c.id)}`)}
+                className="cursor-pointer border-b border-ll-hairline last:border-0 hover:bg-ll-surface-2"
+              >
+                <td className="px-4 py-2.5 font-medium text-ll-ink">{c.name}</td>
+                <td className="px-3 py-2.5 text-ll-ink-subtle">{(c.gameNames || []).join(", ") || "-"}</td>
+                <td className="px-3 py-2.5"><StatusBadge enabled={c.status === "active"} /></td>
+                <td className="px-3 py-2.5 text-right">{c.orderCount}</td>
+                <td className="px-3 py-2.5 text-right">{fmtMoney(c.saleTotal)}</td>
+                <td className="px-3 py-2.5 text-right">{fmtMoney(c.costTotal)}</td>
+                <td className={`px-3 py-2.5 text-right ${c.profitTotal >= 0 ? "text-emerald-600" : "text-red-600"}`}>{fmtMoney(c.profitTotal)}</td>
+                <td className="px-3 py-2.5 text-right">{fmtPoints(c.balancePoints)}</td>
+                <td className="px-3 py-2.5"><DupBadge n={c.duplicateCount} /></td>
+                <td className="px-3 py-2.5 text-ll-ink-subtle">{fmtDate(c.lastOrderAt)}</td>
+                {isMergePage && (
+                  <td className="px-3 py-2.5">
+                    <MergeBadge card={c} disabled={!canEdit} onToggle={onToggleMergeCleared} />
+                  </td>
+                )}
+                {isMergePage && (
+                  <td className="px-3 py-2.5">
+                    <MergeClearedByCell card={c} />
+                  </td>
+                )}
+              </tr>
+            ))
+          ) : (
+            <tr><td colSpan={colCount} className="px-4 py-8 text-center text-ll-ink-subtle">
+              {q ? "ไม่พบเลขที่ค้นหา" : isMergePage ? "ไม่มีบัตรที่ต้องรวม" : "ยังไม่มีข้อมูลจาก DB"}
+            </td></tr>
           )}
         </tbody>
       </table>

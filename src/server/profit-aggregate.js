@@ -1,15 +1,21 @@
-// Unifies local (Postgres-backed) cards/orders with the live GoCash/Oxide
-// slots into one shape the API/frontend can render without caring where the
-// data came from.
+// Unifies local (Postgres-backed) cards/orders with the live GoCash/Oxide/
+// Wavepay slots into one shape the API/frontend can render without caring
+// where the data came from.
 import * as repo from "@/server/profit-repository";
 import * as gocash from "@/server/profit-gocash";
 import * as oxide from "@/server/profit-oxide";
+import * as wavepay from "@/server/profit-wavepay";
 import { CATEGORIES, getCategory } from "@/server/profit-categories";
 import { fetchUsdThbRate } from "@/server/exchangerate-api";
 
 // The free tier of exchangerate-api.com only refreshes once every 24h, so
 // re-fetching more often than this would just repeat the same number.
 const USD_THB_RATE_STALE_MS = 12 * 60 * 60 * 1000;
+
+// A Multi Game Card sitting on a balance with no order in this long is
+// "idle" -- flagged onto the "ต้องรวมบัตร" worklist so staff can consolidate
+// its leftover points onto an active card instead of it sitting unused.
+const OXIDE_IDLE_MS = 12 * 60 * 60 * 1000;
 // Dedupes concurrent refreshes the same way gameinfo-exchange-rates.js's
 // refreshFlights map does, so a burst of page loads while the cached rate is
 // stale doesn't fire the API once per request.
@@ -138,6 +144,7 @@ function gocashOrderView(row, effectiveRate, packCosts, platformPrices, platform
     historyId: row.id,
     txid: row.orderId ? `#${row.orderId}` : `hist-${row.id}`,
     orderId: row.orderId,
+    saleOrderId: row.saleOrderId || null,
     packName: row.packName,
     platform,
     platformFromDb: Boolean(row.platform),
@@ -158,6 +165,150 @@ function gocashOrderView(row, effectiveRate, packCosts, platformPrices, platform
     source: "gocash",
     editable: true,
     ledger: { in: row.oldBalance, out: row.deducted, remaining: row.newBalance },
+    // Raw override baseline (not the blended/fallback value above) -- the
+    // client echoes this back as `expected` when saving so the server can
+    // tell whether someone else changed this exact field since this row was
+    // loaded (see assertOverrideUnchanged in profit-repository.js).
+    overrideSaleAmount: override ? override.saleAmount : null,
+    overrideCost: override ? override.cost : null,
+    overridePlatform: override ? override.platform : null,
+  };
+}
+
+// Real per-order fulfillment cost -- telegram_orders_dev.price, joined in by
+// profit-oxide.js. Two currencies mixed into that one column depending on
+// which queue filled the order (confirmed against the team's own reference
+// sheet): telegram_source "russia" quotes in USD, converted here with the
+// plain USD:THB spot rate (same one GoCash's USD:THB display uses, no
+// GoCash-specific deal markup); anything else (the "playerok-<id>" queue,
+// telegram_source null) is already THB.
+function oxideTelegramCostThb(order, usdThbRate) {
+  if (order.telegramPrice == null) return null;
+  return order.telegramSource === "russia" ? order.telegramPrice * usdThbRate : order.telegramPrice;
+}
+
+// Same cost/sale/platform priority as gocashOrderView above, for Multi Game
+// Card (oxide) orders -- reuses the same per-pack cost / per-platform sale
+// price tables (namespaced "oxide:<packName>" -- see listKnownPacks) and the
+// same override-then-fallback shape. Cost priority: per-order override, then
+// the per-pack default ("ตั้งค่าต้นทุนตามแพ็ก"), then the real fulfillment
+// cost above (oxideTelegramCostThb) -- unlike GoCash's rate-based fallback
+// (which needs a balance ledger this source doesn't have), this is real
+// per-order data, not a formula. Only with none of those does cost fall to 0.
+function oxideOrderView(order, packCosts, platformPrices, platformFees, overrides, usdThbRate) {
+  const override = overrides[order.id] || null;
+  const platform = order.platform || override?.platform || null;
+  const hasSaleOverride = override != null && override.saleAmount > 0;
+  const packKey = order.packName != null ? `oxide:${order.packName}` : null;
+  const platformPrice = platform && packKey != null ? platformPrices[platform]?.[packKey] : undefined;
+  const sale = hasSaleOverride ? override.saleAmount : platformPrice ?? 0;
+  const feePct = (platform && platformFees[platform]) || 0;
+  const netSale = sale * (1 - feePct / 100);
+  const hasCostOverride = override != null && override.cost !== undefined && override.cost !== null;
+  const packCost = packKey != null ? packCosts[packKey] : undefined;
+  const telegramCost = oxideTelegramCostThb(order, usdThbRate);
+  const cost = hasCostOverride ? override.cost : packCost ?? telegramCost ?? 0;
+  const profit = netSale - cost;
+  return {
+    id: `oxide-order:${order.id}`,
+    orderId: order.id,
+    txid: `#${order.id}`,
+    saleOrderId: order.saleOrderId || null,
+    gameName: order.gameName,
+    packName: order.packName,
+    platform,
+    platformFromDb: Boolean(order.platform),
+    saleAmount: sale,
+    platformFeePct: feePct,
+    saleFromPlatform: !hasSaleOverride && platformPrice != null,
+    saleMissingPlatformPrice: !hasSaleOverride && platform != null && platformPrice == null,
+    cost,
+    costFromPack: !hasCostOverride && packCost != null,
+    costFromTelegram: !hasCostOverride && packCost == null && telegramCost != null,
+    costMissing: !hasCostOverride && packCost == null && telegramCost == null,
+    profit,
+    profitPct: sale > 0 ? (profit / sale) * 100 : 0,
+    priceUsdApprox: order.priceUsdApprox,
+    invoiceTxnId: order.invoiceTxnId,
+    telegramSource: order.telegramSource,
+    createdAt: order.createdAt,
+    cardSerial: order.cardSerial,
+    // Points ledger for this specific order -- see the big comment on
+    // profit-oxide.js's listOrdersForSerials for what this is and its one
+    // caveat (concurrent redemptions on the same physical card). Null when
+    // this particular order's provider_response didn't carry a molGameCard
+    // reading (very rare -- confirmed 100% coverage on every currently
+    // active card, but old/replaced cards' history was never back-audited).
+    oldBalancePoints: order.oldBalancePoints,
+    deductedPoints: order.deductedPoints,
+    newBalancePoints: order.newBalancePoints,
+    source: "oxide",
+    editable: true,
+    // Raw override baseline -- see the matching comment in gocashOrderView.
+    overrideSaleAmount: override ? override.saleAmount : null,
+    overrideCost: override ? override.cost : null,
+    overridePlatform: override ? override.platform : null,
+  };
+}
+
+// Same cost/sale/platform priority as gocashOrderView/oxideOrderView above,
+// for WavePay orders -- reuses the same per-pack cost / per-platform sale
+// price tables (namespaced "wavepay:<packName>" -- see listKnownPacks).
+// Cost priority: per-order override, then the per-pack default
+// ("ตั้งค่าต้นทุนตามแพ็ก"), then 0 -- unlike Oxide there's no real per-order
+// THB fulfillment cost to fall back on (WavePay's own ledger is in Kyat,
+// and there's no verified Kyat:THB rate in this system to convert it with),
+// so an unpriced pack shows costMissing instead of a guessed number.
+function wavepayOrderView(order, packCosts, platformPrices, platformFees, overrides) {
+  const override = overrides[order.id] || null;
+  const platform = order.platform || override?.platform || null;
+  const hasSaleOverride = override != null && override.saleAmount > 0;
+  const packKey = order.packName != null ? `wavepay:${order.packName}` : null;
+  const platformPrice = platform && packKey != null ? platformPrices[platform]?.[packKey] : undefined;
+  const sale = hasSaleOverride ? override.saleAmount : platformPrice ?? 0;
+  const feePct = (platform && platformFees[platform]) || 0;
+  const netSale = sale * (1 - feePct / 100);
+  const hasCostOverride = override != null && override.cost !== undefined && override.cost !== null;
+  const packCost = packKey != null ? packCosts[packKey] : undefined;
+  const cost = hasCostOverride ? override.cost : packCost ?? 0;
+  const profit = netSale - cost;
+  return {
+    id: `wavepay-order:${order.id}`,
+    orderId: order.id,
+    txid: `#${order.id}`,
+    saleOrderId: order.saleOrderId || null,
+    gameName: order.gameName,
+    packName: order.packName,
+    platform,
+    platformFromDb: Boolean(order.platform),
+    saleAmount: sale,
+    platformFeePct: feePct,
+    saleFromPlatform: !hasSaleOverride && platformPrice != null,
+    saleMissingPlatformPrice: !hasSaleOverride && platform != null && platformPrice == null,
+    cost,
+    costFromPack: !hasCostOverride && packCost != null,
+    costMissing: !hasCostOverride && packCost == null,
+    profit,
+    profitPct: sale > 0 ? (profit / sale) * 100 : 0,
+    invoiceTxnId: order.invoiceTxnId,
+    createdAt: order.createdAt,
+    account: order.account,
+    // Real per-order Kyat ledger straight off the wallet API's own
+    // response -- see profit-wavepay.js's getAllRows for what this is and
+    // its one caveat (several games' bots share the same WavePay account,
+    // so cross-order chaining can occasionally break -- ~11% of the time on
+    // the busiest account, confirmed live). Kept separate from the THB
+    // sale/cost/profit above -- Kyat isn't THB, so it's never summed into
+    // those.
+    oldBalanceKs: order.oldBalance,
+    deductedKs: order.deducted,
+    newBalanceKs: order.newBalance,
+    packPriceKs: order.packPriceKs,
+    source: "wavepay",
+    editable: true,
+    overrideSaleAmount: override ? override.saleAmount : null,
+    overrideCost: override ? override.cost : null,
+    overridePlatform: override ? override.platform : null,
   };
 }
 
@@ -279,6 +430,142 @@ function deriveDustCards(gocashCards, categoryId) {
     });
 }
 
+// Full Multi Game Card (oxide) card+order aggregation, mirroring
+// computeGocashCards above -- fetches the shared cost/sale tables once per
+// request instead of once per card.
+async function computeOxideCards(categoryId) {
+  const [cards, packCosts, platformPrices, platformFees, overrides, usdThbRate, mergeCleared] = await Promise.all([
+    oxide.listCards(),
+    repo.getPackCosts(),
+    repo.getAllPlatformPrices(),
+    repo.getAllPlatformFees(),
+    repo.listOxideOverrides(),
+    ensureUsdThbRate().then((info) => info.rate),
+    repo.listOxideMergeCleared(),
+  ]);
+  const rawOrders = await oxide.listOrdersForSerials(cards.map((c) => c.cardSerial));
+  const bySerial = new Map();
+  for (const o of rawOrders) {
+    if (!bySerial.has(o.cardSerial)) bySerial.set(o.cardSerial, []);
+    bySerial.get(o.cardSerial).push(o);
+  }
+  return cards.map((c) => {
+    const cardOrders = markDuplicates(
+      (bySerial.get(c.cardSerial) || []).map((o) => oxideOrderView(o, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+      (o) => o.invoiceTxnId
+    );
+    // A MultiGameCard isn't dedicated to one game -- it tops up whichever
+    // games it was used for, per order.gameName (real DB data).
+    const gameNames = [...new Set(cardOrders.map((o) => o.gameName).filter(Boolean))].sort();
+    const summary = summarizeOrders(cardOrders);
+    // Sum of each order's own real points ledger (see oxideOrderView) --
+    // kept separate from the money-based deductedTotal/remaining fields
+    // below (which stay 0 for oxide -- those feed the dashboard's shared USD
+    // rollups, and points aren't USD) so this never gets summed into that.
+    const deductedPointsTotal = cardOrders.reduce((s, o) => s + (o.deductedPoints || 0), 0);
+    const id = `oxide:${c.index}`;
+    const lastOrderAt = cardOrders.length ? cardOrders[cardOrders.length - 1].createdAt : null;
+    // Idle = holding a balance with no order in the last 12h (or never
+    // ordered at all) -- a card with 0 points has nothing worth
+    // consolidating even if it's been sitting untouched.
+    const isIdle = (c.balancePoints || 0) > 0
+      && (!lastOrderAt || Date.now() - new Date(lastOrderAt).getTime() > OXIDE_IDLE_MS);
+    const mark = mergeCleared[id] || null;
+    // Same "counts only until new activity" rule as GoCash's dust-cleared —
+    // a mark only holds until the card takes another order.
+    const mergeClearedFlag = Boolean(mark?.clearedAt)
+      && (!lastOrderAt || new Date(lastOrderAt) <= new Date(mark.clearedAt));
+    return {
+      id,
+      categoryId,
+      slotIndex: c.slotIndex,
+      cardSerial: c.cardSerial,
+      cardPinMasked: c.cardPinMasked,
+      name: c.cardSerial || `บัตร #${c.index + 1}`,
+      note: "",
+      status: c.enabled ? "active" : "closed",
+      source: "oxide",
+      editable: false,
+      gameNames,
+      ...summary,
+      deductedTotal: 0,
+      remaining: 0,
+      deductedPointsTotal,
+      balancePoints: c.balancePoints,
+      balanceUpdatedAt: c.balanceUpdatedAt,
+      isIdle,
+      mergeCleared: mergeClearedFlag,
+      needsMerge: isIdle && !mergeClearedFlag,
+      mergeClearedAt: mergeClearedFlag ? mark.clearedAt : null,
+      mergeClearedByName: mergeClearedFlag ? mark.clearedByName : null,
+      lastOrderAt,
+    };
+  });
+}
+
+// Filters a computed Multi Game Card list down to the "ต้องรวมบัตร"
+// consolidation worklist -- same idea as deriveDustCards above.
+function deriveOxideMergeCards(oxideCards, categoryId) {
+  return oxideCards
+    .filter((c) => c.isIdle)
+    .map((c) => ({ ...c, categoryId }))
+    .sort((a, b) => {
+      if (a.needsMerge !== b.needsMerge) return a.needsMerge ? -1 : 1;
+      return new Date(a.lastOrderAt || 0) - new Date(b.lastOrderAt || 0);
+    });
+}
+
+// Full WavePay card+order aggregation, mirroring computeOxideCards above --
+// "card" here is one WavePay wallet account, shared across whichever games'
+// bots draw from it (see profit-wavepay.js).
+async function computeWavepayCards(categoryId) {
+  const [accounts, packCosts, platformPrices, platformFees, overrides] = await Promise.all([
+    wavepay.listAccounts(),
+    repo.getPackCosts(),
+    repo.getAllPlatformPrices(),
+    repo.getAllPlatformFees(),
+    repo.listWavepayOverrides(),
+  ]);
+  const rawOrders = await wavepay.listOrdersForAccounts(accounts.map((a) => a.account));
+  const byAccount = new Map();
+  for (const o of rawOrders) {
+    if (!byAccount.has(o.account)) byAccount.set(o.account, []);
+    byAccount.get(o.account).push(o);
+  }
+  return accounts.map((a) => {
+    const cardOrders = markDuplicates(
+      (byAccount.get(a.account) || []).map((o) => wavepayOrderView(o, packCosts, platformPrices, platformFees, overrides)),
+      (o) => o.invoiceTxnId
+    );
+    // Not dedicated to one game -- see profit-wavepay.js's comment on why
+    // one account funds several games at once.
+    const gameNames = [...new Set(cardOrders.map((o) => o.gameName).filter(Boolean))].sort();
+    const summary = summarizeOrders(cardOrders);
+    // Sum of each order's own real Kyat ledger -- kept separate from the
+    // money-based deductedTotal/remaining fields below (which stay 0 for
+    // WavePay, same reasoning as Oxide's points: Kyat isn't THB, so this
+    // never gets summed into the dashboard's THB rollups).
+    const deductedKsTotal = cardOrders.reduce((s, o) => s + (o.deductedKs || 0), 0);
+    return {
+      id: `wavepay:${a.account}`,
+      categoryId,
+      cardSerial: a.account,
+      name: a.account,
+      note: "",
+      status: "active",
+      source: "wavepay",
+      editable: false,
+      gameNames,
+      ...summary,
+      deductedTotal: 0,
+      remaining: 0,
+      deductedKsTotal,
+      balanceKs: a.lastBalanceKs,
+      lastOrderAt: a.lastOrderAt,
+    };
+  });
+}
+
 // ── Cards within one category ────────────────────────────────────────────
 export async function cardsForCategory(categoryId) {
   const category = getCategory(categoryId);
@@ -289,43 +576,19 @@ export async function cardsForCategory(categoryId) {
   }
 
   if (category.source === "oxide") {
-    const cards = await oxide.listCards();
-    const orders = await oxide.listOrdersForSerials(cards.map((c) => c.cardSerial));
-    const bySerial = new Map();
-    for (const o of orders) {
-      if (!bySerial.has(o.cardSerial)) bySerial.set(o.cardSerial, []);
-      bySerial.get(o.cardSerial).push(o);
-    }
-    return cards.map((c) => {
-      const cardOrders = bySerial.get(c.cardSerial) || [];
-      return {
-        id: `oxide:${c.index}`,
-        categoryId,
-        slotIndex: c.slotIndex,
-        cardSerial: c.cardSerial,
-        cardPinMasked: c.cardPinMasked,
-        name: c.cardSerial || `บัตร #${c.index + 1}`,
-        note: "",
-        status: c.enabled ? "active" : "closed",
-        source: "oxide",
-        editable: false,
-        orderCount: cardOrders.length,
-        saleTotal: 0,
-        costTotal: 0,
-        profitTotal: 0,
-        profitPct: 0,
-        deductedTotal: 0,
-        duplicateCount: 0,
-        remaining: 0,
-        balancePoints: c.balancePoints,
-        balanceUpdatedAt: c.balanceUpdatedAt,
-        lastOrderAt: cardOrders.length ? cardOrders[cardOrders.length - 1].createdAt : null,
-      };
-    });
+    return computeOxideCards(categoryId);
   }
 
   if (category.source === "gocash-dust") {
     return deriveDustCards(await computeGocashCards("gocash"), categoryId);
+  }
+
+  if (category.source === "oxide-merge") {
+    return deriveOxideMergeCards(await computeOxideCards("oxide"), categoryId);
+  }
+
+  if (category.source === "wavepay") {
+    return computeWavepayCards(categoryId);
   }
 
   const [cards, games] = await Promise.all([repo.listCards(categoryId), repo.listChannelGames(categoryId)]);
@@ -378,15 +641,30 @@ export async function cardDetail(categoryId, cardId) {
       (o) => o.orderId
     );
   } else if (card.source === "oxide") {
-    const rows = await oxide.listOrdersForSerials([card.cardSerial]);
-    orders = rows.map((r) => ({
-      id: `oxide-order:${r.id}`,
-      txid: `#${r.id}`,
-      packName: r.packName,
-      priceUsdApprox: r.priceUsdApprox,
-      createdAt: r.createdAt,
-      source: "oxide",
-    }));
+    const [rows, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+      oxide.listOrdersForSerials([card.cardSerial]),
+      repo.getPackCosts(),
+      repo.getAllPlatformPrices(),
+      repo.getAllPlatformFees(),
+      repo.listOxideOverrides(),
+      ensureUsdThbRate().then((info) => info.rate),
+    ]);
+    orders = markDuplicates(
+      rows.map((r) => oxideOrderView(r, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+      (o) => o.invoiceTxnId
+    );
+  } else if (card.source === "wavepay") {
+    const [rows, packCosts, platformPrices, platformFees, overrides] = await Promise.all([
+      wavepay.listOrdersForAccounts([card.cardSerial]),
+      repo.getPackCosts(),
+      repo.getAllPlatformPrices(),
+      repo.getAllPlatformFees(),
+      repo.listWavepayOverrides(),
+    ]);
+    orders = markDuplicates(
+      rows.map((r) => wavepayOrderView(r, packCosts, platformPrices, platformFees, overrides)),
+      (o) => o.invoiceTxnId
+    );
   } else {
     const raw = await repo.listOrders(cardId); // already sorted ascending by createdAt
     let running = card.openingBalance || 0;
@@ -403,15 +681,18 @@ export async function cardDetail(categoryId, cardId) {
   orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const dustClearLog = card.source === "gocash" ? await repo.listDustClearLog(cardId) : [];
   const duplicateReviewLog = card.source === "gocash" ? await repo.listDuplicateReviewLog(cardId) : [];
-  return { ...card, orders, dustClearLog, duplicateReviewLog };
+  const mergeClearLog = card.source === "oxide" ? await repo.listOxideMergeClearLog(cardId) : [];
+  return { ...card, orders, dustClearLog, duplicateReviewLog, mergeClearLog };
 }
 
 // ── Category summaries + dashboard totals ────────────────────────────────
 export async function categorySummaries() {
   const out = [];
-  // Computed once and reused for 'gocash-dust' below — it's just a filtered
-  // view of these same cards, so this halves the sidebar's per-request cost.
+  // Computed once and reused for 'gocash-dust'/'oxide-merge' below — each is
+  // just a filtered view of these same cards, so this halves the sidebar's
+  // per-request cost.
   let gocashCardsThisPass = null;
+  let oxideCardsThisPass = null;
   for (const category of CATEGORIES) {
     let cards;
     if (category.source === "gocash") {
@@ -420,6 +701,12 @@ export async function categorySummaries() {
     } else if (category.source === "gocash-dust") {
       gocashCardsThisPass = gocashCardsThisPass || await computeGocashCards("gocash");
       cards = deriveDustCards(gocashCardsThisPass, category.id);
+    } else if (category.source === "oxide") {
+      oxideCardsThisPass = oxideCardsThisPass || await computeOxideCards(category.id);
+      cards = oxideCardsThisPass;
+    } else if (category.source === "oxide-merge") {
+      oxideCardsThisPass = oxideCardsThisPass || await computeOxideCards("oxide");
+      cards = deriveOxideMergeCards(oxideCardsThisPass, category.id);
     } else {
       cards = await cardsForCategory(category.id);
     }
@@ -514,6 +801,60 @@ export async function gocashHistoryFeed(cards = null) {
   });
 }
 
+// Flat Multi Game Card (oxide) history (newest first) -- same idea as
+// gocashHistoryFeed above, sale/cost computed the same way (see
+// oxideOrderView), just with the flat feed's own card lookup joined in.
+export async function oxideHistoryFeed() {
+  const [cards, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+    oxide.listCards(),
+    repo.getPackCosts(),
+    repo.getAllPlatformPrices(),
+    repo.getAllPlatformFees(),
+    repo.listOxideOverrides(),
+    ensureUsdThbRate().then((info) => info.rate),
+  ]);
+  const bySerial = new Map(cards.map((c) => [c.cardSerial, c]));
+  const orders = await oxide.listOrdersForSerials(cards.map((c) => c.cardSerial));
+  const views = markDuplicates(
+    orders.map((o) => oxideOrderView(o, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+    (o) => o.invoiceTxnId
+  );
+  return views
+    .map((view) => {
+      const card = bySerial.get(view.cardSerial);
+      return {
+        ...view,
+        cardId: card ? `oxide:${card.index}` : null,
+        cardName: view.cardSerial || (card?.slotIndex != null ? `Slot ${card.slotIndex}` : "-"),
+      };
+    })
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+// Flat WavePay history (newest first) -- same idea as oxideHistoryFeed
+// above, sale/cost computed the same way (see wavepayOrderView).
+export async function wavepayHistoryFeed() {
+  const [accounts, packCosts, platformPrices, platformFees, overrides] = await Promise.all([
+    wavepay.listAccounts(),
+    repo.getPackCosts(),
+    repo.getAllPlatformPrices(),
+    repo.getAllPlatformFees(),
+    repo.listWavepayOverrides(),
+  ]);
+  const orders = await wavepay.listOrdersForAccounts(accounts.map((a) => a.account));
+  const views = markDuplicates(
+    orders.map((o) => wavepayOrderView(o, packCosts, platformPrices, platformFees, overrides)),
+    (o) => o.invoiceTxnId
+  );
+  return views
+    .map((view) => ({
+      ...view,
+      cardId: `wavepay:${view.account}`,
+      cardName: view.account,
+    }))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
 // GoCash's cards are 100% dedicated to this one game — sky_gocash_history
 // carries no game column of its own, so this is a fixed label, not a guess.
 const GOCASH_GAME_NAME = "Sky: Children of the Light";
@@ -538,6 +879,9 @@ async function listKnownPacks() {
   const oxideCards = await oxide.listCards();
   const oxideOrders = await oxide.listOrdersForSerials(oxideCards.map((c) => c.cardSerial));
   for (const o of oxideOrders) bump("oxide", o.gameName || "Oxide", o.packName);
+
+  const wavepayOrders = await wavepay.getAllRows();
+  for (const o of wavepayOrders) bump("wavepay", o.gameName || "Wavepay", o.packName);
 
   return [...byKey.values()];
 }

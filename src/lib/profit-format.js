@@ -20,3 +20,5 @@ export const fmtDate = (iso) => {
 };
 
 export const fmtPoints = (n) => `${(Number(n) || 0).toLocaleString("en-US")} pts`;
+
+export const fmtKyat = (n) => `Ks${(Number(n) || 0).toLocaleString("en-US")}`;

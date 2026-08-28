@@ -106,6 +106,56 @@ export function ClearedByCell({ card }) {
   );
 }
 
+// Same click-to-toggle shape as DustBadge, for Multi Game Card's
+// "ต้องรวมบัตร" worklist (idle cards with a leftover balance).
+export function MergeBadge({ card, onToggle, disabled }) {
+  if (card.needsMerge) {
+    return (
+      <button
+        type="button"
+        disabled={disabled}
+        title="คลิกเพื่อมาร์กว่ารวมบัตรแล้ว"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (!window.confirm("ยืนยันว่ารวมยอดของบัตรนี้ไปบัตรอื่นเรียบร้อยแล้วใช่ไหม?")) return;
+          onToggle(card.id, true);
+        }}
+        className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600 hover:bg-red-100 disabled:opacity-50"
+      >
+        ต้องรวม
+      </button>
+    );
+  }
+  if (card.mergeCleared) {
+    return (
+      <button
+        type="button"
+        disabled={disabled}
+        title={`รวมโดย ${card.mergeClearedByName || "ไม่ทราบชื่อ"} — คลิกเพื่อยกเลิกมาร์ก`}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (!window.confirm("ยืนยันว่าต้องการยกเลิกมาร์กรวมบัตรนี้ใช่ไหม?")) return;
+          onToggle(card.id, false);
+        }}
+        className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-600 hover:bg-emerald-100 disabled:opacity-50"
+      >
+        รวมแล้ว
+      </button>
+    );
+  }
+  return <span className="text-ll-ink-tertiary">-</span>;
+}
+
+export function MergeClearedByCell({ card }) {
+  if (!card.mergeCleared) return <span className="text-ll-ink-tertiary">-</span>;
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="font-medium text-ll-ink">{card.mergeClearedByName || "ไม่ทราบชื่อ"}</span>
+      {card.mergeClearedAt && <span className="text-[11px] text-ll-ink-tertiary">{fmtDate(card.mergeClearedAt)}</span>}
+    </div>
+  );
+}
+
 export function StatusBadge({ enabled }) {
   return enabled ? (
     <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-600">เปิดใช้งาน</span>

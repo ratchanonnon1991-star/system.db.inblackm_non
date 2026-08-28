@@ -14,9 +14,9 @@ export async function GET(request) {
 
 export async function PATCH(request) {
   try {
-    await requireProfitEditor(request);
+    const user = await requireProfitEditor(request);
     const body = await request.json();
-    const cost = await setPackCost(body.source, body.packName, body.cost);
+    const cost = await setPackCost(body.source, body.packName, body.cost, body.expected, user);
     return jsonOk({ source: body.source, packName: body.packName, cost });
   } catch (err) {
     return handleApiError(err, "ตั้งต้นทุนไม่สำเร็จ");

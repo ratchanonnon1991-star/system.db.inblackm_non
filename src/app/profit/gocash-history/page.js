@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { fmtDate, fmtMoney, fmtPct, fmtUsd } from "@/lib/profit-format";
+import { commitOverrideEdit } from "@/lib/profit-conflict";
 import { useProfitCanEdit } from "@/components/profit-capabilities-context";
 import PlatformSelect, { platformLabel } from "@/components/profit-platform-select";
 
@@ -91,9 +92,9 @@ export default function ProfitGocashHistoryPage() {
       const t = new Date(h.createdAt).getTime();
       if (fromTs && t < fromTs) return false;
       if (toTs && t > toTs) return false;
-      if (oid && !String(h.orderId || "").toLowerCase().includes(oid) && !String(h.txid || "").toLowerCase().includes(oid)) return false;
+      if (oid && !String(h.saleOrderId || "").toLowerCase().includes(oid) && !String(h.orderId || "").toLowerCase().includes(oid) && !String(h.txid || "").toLowerCase().includes(oid)) return false;
       if (platformFilter === "__none__" ? h.platform : platformFilter && h.platform !== platformFilter) return false;
-      if (!matchesQuery(query, [h.txid, h.orderId, h.packName, h.game, h.cardName, h.cardSerial, h.slotIndex])) return false;
+      if (!matchesQuery(query, [h.txid, h.orderId, h.saleOrderId, h.packName, h.game, h.cardName, h.cardSerial, h.slotIndex])) return false;
       return true;
     });
     list.sort((a, b) => {
@@ -117,46 +118,47 @@ export default function ProfitGocashHistoryPage() {
   const start = (safePage - 1) * pageSize;
   const pageRows = filtered.slice(start, start + pageSize);
 
-  const editCost = async (historyId, value) => {
-    try {
-      await apiJson(`/api/profit/gocash/history/${historyId}`, {
+  // Each `save` sends the row's raw override baseline (overrideCost etc. --
+  // see gocashOrderView) as `expected` on the first attempt; the server
+  // rejects with 409 if someone else already changed that same field since
+  // this row was loaded, and commitOverrideEdit asks whether to overwrite
+  // anyway (retried with expected omitted) or reload to see the winner.
+  const editCost = (h, value) => {
+    const cost = Number(value) || 0;
+    return commitOverrideEdit({
+      save: (includeExpected) => apiJson(`/api/profit/gocash/history/${h.historyId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cost: Number(value) || 0 }),
+        body: JSON.stringify({ cost, ...(includeExpected ? { expected: { cost: h.overrideCost } } : {}) }),
         fallbackError: "แก้ไขต้นทุนไม่สำเร็จ",
-      });
-      load();
-    } catch (err) {
-      window.alert(err.message);
-    }
+      }),
+      reload: load,
+    });
   };
 
-  const editPlatform = async (historyId, value) => {
-    try {
-      await apiJson(`/api/profit/gocash/history/${historyId}`, {
+  const editPlatform = (h, value) => {
+    return commitOverrideEdit({
+      save: (includeExpected) => apiJson(`/api/profit/gocash/history/${h.historyId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform: value }),
+        body: JSON.stringify({ platform: value, ...(includeExpected ? { expected: { platform: h.overridePlatform } } : {}) }),
         fallbackError: "แก้ไขแพลตฟอร์มไม่สำเร็จ",
-      });
-      load();
-    } catch (err) {
-      window.alert(err.message);
-    }
+      }),
+      reload: load,
+    });
   };
 
-  const editSale = async (historyId, value) => {
-    try {
-      await apiJson(`/api/profit/gocash/history/${historyId}`, {
+  const editSale = (h, value) => {
+    const saleAmount = Number(value) || 0;
+    return commitOverrideEdit({
+      save: (includeExpected) => apiJson(`/api/profit/gocash/history/${h.historyId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ saleAmount: Number(value) || 0 }),
+        body: JSON.stringify({ saleAmount, ...(includeExpected ? { expected: { saleAmount: h.overrideSaleAmount } } : {}) }),
         fallbackError: "แก้ไขราคาขายไม่สำเร็จ",
-      });
-      load();
-    } catch (err) {
-      window.alert(err.message);
-    }
+      }),
+      reload: load,
+    });
   };
 
   if (error) {
@@ -241,6 +243,7 @@ export default function ProfitGocashHistoryPage() {
             <thead>
               <tr className="border-b border-ll-hairline text-left text-[11px] text-ll-ink-subtle">
                 <th className="px-4 py-2 font-medium">QUEUE #</th>
+                <th className="px-3 py-2 font-medium">ORDER ID</th>
                 <th className="px-3 py-2 font-medium">เกม</th>
                 <th className="px-3 py-2 font-medium">สินค้า</th>
                 <th className="px-3 py-2 font-medium">แพลตฟอร์ม</th>
@@ -261,8 +264,9 @@ export default function ProfitGocashHistoryPage() {
                 pageRows.map((h) => (
                   <tr key={h.id} className="border-b border-ll-hairline last:border-0">
                     <td className="px-4 py-2.5">
-                      <div className="text-ll-ink">{h.txid}</div>
+                      <div className="font-medium text-ll-ink">{h.txid}</div>
                     </td>
+                    <td className="px-3 py-2.5 text-ll-ink">{h.saleOrderId || "-"}</td>
                     <td className="px-3 py-2.5 text-ll-ink-subtle">{h.game || "-"}</td>
                     <td className="px-3 py-2.5">
                       <div className="text-ll-ink">{h.packName || "-"}</div>
@@ -274,7 +278,7 @@ export default function ProfitGocashHistoryPage() {
                         fromDb={h.platformFromDb}
                         platforms={platforms}
                         disabled={!canEdit}
-                        onCommit={(v) => editPlatform(h.historyId, v)}
+                        onCommit={(v) => editPlatform(h, v)}
                       />
                     </td>
                     <td className="px-3 py-2.5 text-ll-ink-subtle">
@@ -307,7 +311,7 @@ export default function ProfitGocashHistoryPage() {
                                 ? `ยังไม่มีราคาอ้างอิงของ ${platformLabel(h.platform)} สำหรับแพ็กนี้ — ตั้งได้ที่หน้า "ตั้งราคาขายตามแพ็ก"`
                                 : undefined
                         }
-                        onCommit={(v) => editSale(h.historyId, v)}
+                        onCommit={(v) => editSale(h, v)}
                       />
                     </td>
                     <td className="px-3 py-2.5 text-right">
@@ -321,7 +325,7 @@ export default function ProfitGocashHistoryPage() {
                               ? "ค่านี้คำนวณจากยอดตัด (USD) × USD:THB × เรท GoCash — แก้ตรงนี้จะ override เฉพาะออเดอร์นี้"
                               : undefined
                         }
-                        onCommit={(v) => editCost(h.historyId, v)}
+                        onCommit={(v) => editCost(h, v)}
                       />
                     </td>
                     <td
@@ -341,7 +345,7 @@ export default function ProfitGocashHistoryPage() {
                   </tr>
                 ))
               ) : (
-                <tr><td colSpan={14} className="px-4 py-8 text-center text-ll-ink-subtle">ไม่พบรายการตามตัวกรอง</td></tr>
+                <tr><td colSpan={15} className="px-4 py-8 text-center text-ll-ink-subtle">ไม่พบรายการตามตัวกรอง</td></tr>
               )}
             </tbody>
           </table>

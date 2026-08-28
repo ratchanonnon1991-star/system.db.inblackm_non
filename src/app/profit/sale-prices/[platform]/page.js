@@ -5,13 +5,14 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ArrowLeft, Layers, Loader2, RotateCcw } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import { commitBulkOverrideEdit, commitOverrideEdit } from "@/lib/profit-conflict";
 import { useProfitCanEdit } from "@/components/profit-capabilities-context";
 import ProfitSummaryGrid from "@/components/profit-summary-grid";
 import { SourceBadge } from "@/components/profit-badges";
 import ProfitModal, { ProfitField, profitInputClass } from "@/components/profit-modal";
 import { platformLabel } from "@/components/profit-platform-select";
 
-const SOURCE_LABELS = { gocash: "GoCash", oxide: "Oxide" };
+const SOURCE_LABELS = { gocash: "GoCash", oxide: "Multi Game Card", wavepay: "Wavepay" };
 
 function matchesQuery(q, parts) {
   if (!q) return true;
@@ -81,18 +82,27 @@ function ProfitSalePricePlatformContent({ platform }) {
 
   const setCount = (packs || []).filter((p) => p.price != null).length;
 
-  const editPrice = async (source, packName, value) => {
-    try {
-      await apiJson("/api/profit/sale-prices", {
+  // `expected` is the pack's own current price as shown on screen (see
+  // platformPackPrices -- it's the raw stored value) -- the server rejects
+  // with 409 if someone else already changed it since this row loaded (see
+  // assertScalarUnchanged in profit-repository.js).
+  const editPrice = (pack, value) => {
+    const price = Number(value) || 0;
+    return commitOverrideEdit({
+      save: (includeExpected) => apiJson("/api/profit/sale-prices", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform, source, packName, price: Number(value) || 0 }),
+        body: JSON.stringify({
+          platform,
+          source: pack.source,
+          packName: pack.packName,
+          price,
+          ...(includeExpected ? { expected: pack.price } : {}),
+        }),
         fallbackError: "ตั้งราคาขายไม่สำเร็จ",
-      });
-      loadPacks();
-    } catch (err) {
-      window.alert(err.message);
-    }
+      }),
+      reload: loadPacks,
+    });
   };
 
   const resetPrices = async () => {
@@ -235,7 +245,7 @@ function ProfitSalePricePlatformContent({ platform }) {
                     </td>
                     <td className="px-3 py-2.5 text-right">{p.orderCount}</td>
                     <td className="px-3 py-2.5 text-right">
-                      <PriceInput value={p.price ?? 0} disabled={!canEdit} onCommit={(v) => editPrice(p.source, p.packName, v)} />
+                      <PriceInput value={p.price ?? 0} disabled={!canEdit} onCommit={(v) => editPrice(p, v)} />
                     </td>
                     {feePct > 0 && (
                       <td className="px-3 py-2.5 text-right text-ll-ink-subtle">
@@ -309,16 +319,27 @@ function BulkPriceModal({ platform, packs, onClose, onApplied }) {
     if (!window.confirm(`ตั้งราคาขาย ${n} (${platformLabel(platform)}) ให้ ${targets.length} แพ็ก (${label}) ใช่ไหม?`)) return;
     setSubmitting(true);
     try {
-      await Promise.all(
-        targets.map((p) =>
+      // Each target's own current price (as loaded on this page) goes along
+      // as its baseline -- if someone else already changed that specific
+      // pack since then, it's flagged as a conflict instead of silently
+      // overwritten, same protection the inline row edit above has.
+      await commitBulkOverrideEdit({
+        targets,
+        save: (p, includeExpected) =>
           apiJson("/api/profit/sale-prices", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ platform, source: p.source, packName: p.packName, price: n }),
+            body: JSON.stringify({
+              platform,
+              source: p.source,
+              packName: p.packName,
+              price: n,
+              ...(includeExpected ? { expected: p.price } : {}),
+            }),
             fallbackError: "ตั้งราคาขายไม่สำเร็จ",
-          })
-        )
-      );
+          }),
+        describe: (p) => p.packName,
+      });
       onApplied();
     } catch (err) {
       window.alert(err.message);

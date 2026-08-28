@@ -28,14 +28,15 @@ async function ensureSchema() {
       await client.query(`
         CREATE INDEX IF NOT EXISTS profit_cards_category_id_idx ON profit_cards (category_id)
       `);
-      // A channel (category id -- 'gocash', 'oxide', 'codashop', 'unipin',
-      // ...) can top up more than one game; staff add game names here as
-      // needed instead of that list being fixed in code. Manual channels'
-      // cards get tagged with one (see profit_cards.game_id below) so the
-      // card list can actually be filtered by it; bot channels (GoCash/
-      // Oxide) only get a reference list here for now -- their card data is
-      // read live from an external DB that doesn't carry a per-order game
-      // field yet, so there's nothing to tag/filter on there.
+      // A channel (category id -- 'gocash', 'codashop', 'unipin', ...) can
+      // top up more than one game; staff add game names here as needed
+      // instead of that list being fixed in code. Manual channels' cards get
+      // tagged with one (see profit_cards.game_id below) so the card list can
+      // actually be filtered by it; GoCash cards get tagged per-card too (see
+      // profit_gocash_card_games / resolveGocashGame). Oxide (Multi Game
+      // Card) doesn't use this table at all -- its games come straight from
+      // codashop_orders.game_name, real per-order data with nothing to
+      // hand-tag (see profit-oxide.js's listGameNames).
       await client.query(`
         CREATE TABLE IF NOT EXISTS profit_channel_games (
           id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -82,6 +83,82 @@ async function ensureSchema() {
       // typed in by hand. Null means "not tagged yet".
       await client.query(`
         ALTER TABLE profit_gocash_overrides ADD COLUMN IF NOT EXISTS platform TEXT
+      `);
+      // Who most recently wrote this override -- surfaced in the 409
+      // conflict message (assertOverrideUnchanged) so "someone else already
+      // changed this" can name them instead of staying anonymous.
+      await client.query(`
+        ALTER TABLE profit_gocash_overrides ADD COLUMN IF NOT EXISTS updated_by_id INTEGER
+      `);
+      await client.query(`
+        ALTER TABLE profit_gocash_overrides ADD COLUMN IF NOT EXISTS updated_by_name TEXT
+      `);
+      // Same idea as profit_gocash_overrides, but keyed by codashop_orders.id
+      // directly (Multi Game Card / oxide has no separate history-row id --
+      // the order row itself is the only record). No rate-based cost fallback
+      // exists for this source (no balance ledger -- see profit-oxide.js), so
+      // cost only ever comes from here or the per-pack default.
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS profit_oxide_overrides (
+          order_id    BIGINT PRIMARY KEY,
+          sale_amount NUMERIC NOT NULL DEFAULT 0,
+          cost        NUMERIC,
+          platform    TEXT
+        )
+      `);
+      // Same "who wrote this" trail as profit_gocash_overrides above.
+      await client.query(`
+        ALTER TABLE profit_oxide_overrides ADD COLUMN IF NOT EXISTS updated_by_id INTEGER
+      `);
+      await client.query(`
+        ALTER TABLE profit_oxide_overrides ADD COLUMN IF NOT EXISTS updated_by_name TEXT
+      `);
+      // Same shape/purpose as profit_oxide_overrides above, keyed by
+      // codashop_orders.id too (WavePay orders live in the same table, just
+      // tagged payment_method = 'WavePay' -- see profit-wavepay.js). No
+      // rate-based cost fallback here either -- WavePay's own balance
+      // ledger is in Kyat, not THB, so there's no reliable conversion to
+      // fall back on; cost only ever comes from here or the per-pack
+      // default.
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS profit_wavepay_overrides (
+          order_id      BIGINT PRIMARY KEY,
+          sale_amount   NUMERIC NOT NULL DEFAULT 0,
+          cost          NUMERIC,
+          platform      TEXT,
+          updated_by_id INTEGER,
+          updated_by_name TEXT
+        )
+      `);
+      // Manual "someone consolidated this idle Multi Game Card's leftover
+      // points onto another card" mark -- same shape/purpose as the GoCash
+      // dust-cleared mark below, just for the "ต้องรวมบัตร" worklist (cards
+      // with a balance that haven't taken an order in 12h+, see isIdle in
+      // profit-aggregate.js). Keyed by the same "oxide:<index>" id
+      // cardsForCategory uses.
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS profit_oxide_merge_cleared (
+          card_id         TEXT PRIMARY KEY,
+          cleared_at      TIMESTAMPTZ NOT NULL,
+          cleared_by_id   INTEGER,
+          cleared_by_name TEXT
+        )
+      `);
+      // Append-only history of every "marked merged" / "unmarked" click,
+      // same purpose as profit_gocash_dust_clear_log below.
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS profit_oxide_merge_clear_log (
+          id         SERIAL PRIMARY KEY,
+          card_id    TEXT NOT NULL,
+          user_id    INTEGER,
+          user_name  TEXT NOT NULL,
+          action     TEXT NOT NULL DEFAULT 'cleared',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS profit_oxide_merge_clear_log_card_id_idx
+        ON profit_oxide_merge_clear_log (card_id)
       `);
       // Manual "someone cleared the leftover dust on this card" mark, keyed
       // by the same "gocash:<cardKey>" id the aggregate layer uses. Holds
@@ -172,6 +249,15 @@ async function ensureSchema() {
           cost     NUMERIC NOT NULL
         )
       `);
+      // Who most recently set this pack's cost -- surfaced in the 409
+      // conflict message (assertScalarUnchanged) so "someone else already
+      // changed this" can name them instead of staying anonymous.
+      await client.query(`
+        ALTER TABLE profit_pack_costs ADD COLUMN IF NOT EXISTS updated_by_id INTEGER
+      `);
+      await client.query(`
+        ALTER TABLE profit_pack_costs ADD COLUMN IF NOT EXISTS updated_by_name TEXT
+      `);
       // Single manually-entered value: baht per 1 USD of GoCash deduction.
       // GoCash's cost is `deducted (USD) * rate` (see gocashOrderView in
       // profit-aggregate.js) instead of the per-pack cost table other
@@ -195,6 +281,13 @@ async function ensureSchema() {
           price    NUMERIC NOT NULL,
           PRIMARY KEY (platform, pack_key)
         )
+      `);
+      // Same "who wrote this" trail as profit_pack_costs above.
+      await client.query(`
+        ALTER TABLE profit_platform_pack_prices ADD COLUMN IF NOT EXISTS updated_by_id INTEGER
+      `);
+      await client.query(`
+        ALTER TABLE profit_platform_pack_prices ADD COLUMN IF NOT EXISTS updated_by_name TEXT
       `);
 
       // Marketplace commission some platforms take off the listed sale price
@@ -441,6 +534,57 @@ export async function deleteOrder(orderId) {
   await getPool().query(`DELETE FROM profit_orders WHERE id = $1`, [orderId]);
 }
 
+// ── Optimistic conflict guard for order overrides ────────────────────────
+// Same idea as gamedb-cell-writer.js's updateCell: before writing, lock the
+// row (or its absence -- see the advisory lock below) and compare what's
+// actually stored right now against the value the client had on screen when
+// it started editing. Mismatch -> reject (409) instead of silently
+// overwriting someone else's more recent edit; the client then offers
+// "reload" or "save over it anyway" (retry with expected omitted), the same
+// UX query-panel.js uses for cell edits.
+//
+// A plain `SELECT ... FOR UPDATE` can't catch two people racing to set the
+// *first ever* override on the same order (there's no row yet to lock), so
+// this also takes a session-scoped advisory lock keyed by (table, row id) --
+// same idiom itune-entries-repository.js uses for claim acquisition.
+const GOCASH_OVERRIDE_LOCK_NS = 90001;
+const OXIDE_OVERRIDE_LOCK_NS = 90002;
+const PACK_COST_LOCK_NS = 90003;
+const PLATFORM_PRICE_LOCK_NS = 90004;
+const WAVEPAY_OVERRIDE_LOCK_NS = 90005;
+
+function assertOverrideUnchanged(before, expected, updatedByName) {
+  if (!expected) return; // no baseline sent -- caller is forcing an overwrite
+  const b = before || { saleAmount: null, cost: null, platform: null };
+  const changed =
+    (expected.saleAmount !== undefined && String(b.saleAmount ?? "") !== String(expected.saleAmount ?? "")) ||
+    (expected.cost !== undefined && String(b.cost ?? "") !== String(expected.cost ?? "")) ||
+    (expected.platform !== undefined && String(b.platform ?? "") !== String(expected.platform ?? ""));
+  if (changed) {
+    const who = updatedByName ? `โดย ${updatedByName}` : "โดยคนอื่น";
+    const error = new Error(`ค่านี้ถูกแก้ไขไปแล้ว${who}หลังจากที่คุณเปิดดู — โหลดข้อมูลใหม่แล้วลองอีกครั้ง หรือจะบันทึกทับก็ได้`);
+    error.status = 409;
+    throw error;
+  }
+}
+
+// Single-value variant of the same guard, for the shared pack-cost /
+// platform-price tables -- their "current value" shown on screen already
+// *is* the raw stored number (packCostSummary/platformPackPrices return it
+// straight from profit_pack_costs/profit_platform_pack_prices with no
+// blending), so there's just one field to compare instead of a
+// {saleAmount, cost, platform} triple.
+function assertScalarUnchanged(before, expected, label, updatedByName) {
+  if (expected === undefined) return; // no baseline sent -- caller is forcing an overwrite
+  if (String(before ?? "") === String(expected ?? "")) return;
+  const who = updatedByName ? `โดย ${updatedByName}` : "โดยคนอื่น";
+  const error = new Error(
+    `${label}ของแพ็กนี้ถูกแก้ไขไปแล้ว${who} (ค่าปัจจุบัน: ${before ?? "ยังไม่ได้ตั้ง"}) — โหลดข้อมูลใหม่แล้วลองอีกครั้ง หรือจะบันทึกทับก็ได้`
+  );
+  error.status = 409;
+  throw error;
+}
+
 // ── GoCash cost overrides ────────────────────────────────────────────────
 // Fetched in bulk (not per history-row) so the aggregate layer doesn't pay
 // for one round trip per GoCash row when it renders a card or the full feed.
@@ -458,32 +602,298 @@ export async function listGocashOverrides() {
   return byId;
 }
 
-export async function setGocashOverride(historyId, { saleAmount, cost, platform }) {
+export async function setGocashOverride(historyId, { saleAmount, cost, platform, expected }, actor) {
+  await ensureSchema();
+  const actorName = actor?.displayName || actor?.username || "ไม่ทราบชื่อ";
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL statement_timeout = 8000");
+    await client.query("SELECT pg_advisory_xact_lock($1, $2)", [GOCASH_OVERRIDE_LOCK_NS, Number(historyId)]);
+
+    const { rows: beforeRows } = await client.query(
+      `SELECT sale_amount, cost, platform, updated_by_name FROM profit_gocash_overrides WHERE history_id = $1`,
+      [historyId]
+    );
+    const before = beforeRows[0]
+      ? {
+          saleAmount: Number(beforeRows[0].sale_amount),
+          cost: beforeRows[0].cost == null ? null : Number(beforeRows[0].cost),
+          platform: beforeRows[0].platform,
+        }
+      : null;
+    assertOverrideUnchanged(before, expected, beforeRows[0]?.updated_by_name);
+
+    const { rows } = await client.query(
+      `INSERT INTO profit_gocash_overrides (history_id, sale_amount, cost, platform, updated_by_id, updated_by_name)
+       VALUES ($1, $2, $3, $4, $8, $9)
+       ON CONFLICT (history_id) DO UPDATE SET
+         sale_amount = CASE WHEN $5 THEN EXCLUDED.sale_amount ELSE profit_gocash_overrides.sale_amount END,
+         cost = CASE WHEN $6 THEN EXCLUDED.cost ELSE profit_gocash_overrides.cost END,
+         platform = CASE WHEN $7 THEN EXCLUDED.platform ELSE profit_gocash_overrides.platform END,
+         updated_by_id = $8,
+         updated_by_name = $9
+       RETURNING sale_amount, cost, platform`,
+      [
+        historyId,
+        saleAmount !== undefined ? Number(saleAmount) || 0 : 0,
+        cost !== undefined ? Number(cost) || 0 : null,
+        platform !== undefined ? String(platform || "").trim() || null : null,
+        saleAmount !== undefined,
+        cost !== undefined,
+        platform !== undefined,
+        actor?.id ?? null,
+        actorName,
+      ]
+    );
+    await client.query("COMMIT");
+    const row = rows[0];
+    return {
+      saleAmount: Number(row.sale_amount),
+      cost: row.cost == null ? null : Number(row.cost),
+      platform: row.platform || null,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// ── Multi Game Card (oxide) cost/sale overrides ──────────────────────────
+// Same shape/purpose as the GoCash overrides above, keyed by
+// codashop_orders.id instead of a history-row id.
+export async function listOxideOverrides() {
+  await ensureSchema();
+  const { rows } = await getPool().query(`SELECT order_id, sale_amount, cost, platform FROM profit_oxide_overrides`);
+  const byId = {};
+  for (const row of rows) {
+    byId[row.order_id] = {
+      saleAmount: Number(row.sale_amount),
+      cost: row.cost == null ? null : Number(row.cost),
+      platform: row.platform || null,
+    };
+  }
+  return byId;
+}
+
+export async function setOxideOverride(orderId, { saleAmount, cost, platform, expected }, actor) {
+  await ensureSchema();
+  const actorName = actor?.displayName || actor?.username || "ไม่ทราบชื่อ";
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL statement_timeout = 8000");
+    await client.query("SELECT pg_advisory_xact_lock($1, $2)", [OXIDE_OVERRIDE_LOCK_NS, Number(orderId)]);
+
+    const { rows: beforeRows } = await client.query(
+      `SELECT sale_amount, cost, platform, updated_by_name FROM profit_oxide_overrides WHERE order_id = $1`,
+      [orderId]
+    );
+    const before = beforeRows[0]
+      ? {
+          saleAmount: Number(beforeRows[0].sale_amount),
+          cost: beforeRows[0].cost == null ? null : Number(beforeRows[0].cost),
+          platform: beforeRows[0].platform,
+        }
+      : null;
+    assertOverrideUnchanged(before, expected, beforeRows[0]?.updated_by_name);
+
+    const { rows } = await client.query(
+      `INSERT INTO profit_oxide_overrides (order_id, sale_amount, cost, platform, updated_by_id, updated_by_name)
+       VALUES ($1, $2, $3, $4, $8, $9)
+       ON CONFLICT (order_id) DO UPDATE SET
+         sale_amount = CASE WHEN $5 THEN EXCLUDED.sale_amount ELSE profit_oxide_overrides.sale_amount END,
+         cost = CASE WHEN $6 THEN EXCLUDED.cost ELSE profit_oxide_overrides.cost END,
+         platform = CASE WHEN $7 THEN EXCLUDED.platform ELSE profit_oxide_overrides.platform END,
+         updated_by_id = $8,
+         updated_by_name = $9
+       RETURNING sale_amount, cost, platform`,
+      [
+        orderId,
+        saleAmount !== undefined ? Number(saleAmount) || 0 : 0,
+        cost !== undefined ? Number(cost) || 0 : null,
+        platform !== undefined ? String(platform || "").trim() || null : null,
+        saleAmount !== undefined,
+        cost !== undefined,
+        platform !== undefined,
+        actor?.id ?? null,
+        actorName,
+      ]
+    );
+    await client.query("COMMIT");
+    const row = rows[0];
+    return {
+      saleAmount: Number(row.sale_amount),
+      cost: row.cost == null ? null : Number(row.cost),
+      platform: row.platform || null,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// ── WavePay cost/sale overrides ──────────────────────────────────────────
+// Same shape/purpose as the Multi Game Card (oxide) overrides above, keyed
+// by codashop_orders.id too.
+export async function listWavepayOverrides() {
+  await ensureSchema();
+  const { rows } = await getPool().query(`SELECT order_id, sale_amount, cost, platform FROM profit_wavepay_overrides`);
+  const byId = {};
+  for (const row of rows) {
+    byId[row.order_id] = {
+      saleAmount: Number(row.sale_amount),
+      cost: row.cost == null ? null : Number(row.cost),
+      platform: row.platform || null,
+    };
+  }
+  return byId;
+}
+
+export async function setWavepayOverride(orderId, { saleAmount, cost, platform, expected }, actor) {
+  await ensureSchema();
+  const actorName = actor?.displayName || actor?.username || "ไม่ทราบชื่อ";
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL statement_timeout = 8000");
+    await client.query("SELECT pg_advisory_xact_lock($1, $2)", [WAVEPAY_OVERRIDE_LOCK_NS, Number(orderId)]);
+
+    const { rows: beforeRows } = await client.query(
+      `SELECT sale_amount, cost, platform, updated_by_name FROM profit_wavepay_overrides WHERE order_id = $1`,
+      [orderId]
+    );
+    const before = beforeRows[0]
+      ? {
+          saleAmount: Number(beforeRows[0].sale_amount),
+          cost: beforeRows[0].cost == null ? null : Number(beforeRows[0].cost),
+          platform: beforeRows[0].platform,
+        }
+      : null;
+    assertOverrideUnchanged(before, expected, beforeRows[0]?.updated_by_name);
+
+    const { rows } = await client.query(
+      `INSERT INTO profit_wavepay_overrides (order_id, sale_amount, cost, platform, updated_by_id, updated_by_name)
+       VALUES ($1, $2, $3, $4, $8, $9)
+       ON CONFLICT (order_id) DO UPDATE SET
+         sale_amount = CASE WHEN $5 THEN EXCLUDED.sale_amount ELSE profit_wavepay_overrides.sale_amount END,
+         cost = CASE WHEN $6 THEN EXCLUDED.cost ELSE profit_wavepay_overrides.cost END,
+         platform = CASE WHEN $7 THEN EXCLUDED.platform ELSE profit_wavepay_overrides.platform END,
+         updated_by_id = $8,
+         updated_by_name = $9
+       RETURNING sale_amount, cost, platform`,
+      [
+        orderId,
+        saleAmount !== undefined ? Number(saleAmount) || 0 : 0,
+        cost !== undefined ? Number(cost) || 0 : null,
+        platform !== undefined ? String(platform || "").trim() || null : null,
+        saleAmount !== undefined,
+        cost !== undefined,
+        platform !== undefined,
+        actor?.id ?? null,
+        actorName,
+      ]
+    );
+    await client.query("COMMIT");
+    const row = rows[0];
+    return {
+      saleAmount: Number(row.sale_amount),
+      cost: row.cost == null ? null : Number(row.cost),
+      platform: row.platform || null,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// ── Multi Game Card (oxide) merge-cleared marks ──────────────────────────
+// Same shape/purpose as the GoCash dust-cleared marks below, for the
+// "ต้องรวมบัตร" worklist (idle cards -- see isIdle in profit-aggregate.js).
+export async function listOxideMergeCleared() {
   await ensureSchema();
   const { rows } = await getPool().query(
-    `INSERT INTO profit_gocash_overrides (history_id, sale_amount, cost, platform)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT (history_id) DO UPDATE SET
-       sale_amount = CASE WHEN $5 THEN EXCLUDED.sale_amount ELSE profit_gocash_overrides.sale_amount END,
-       cost = CASE WHEN $6 THEN EXCLUDED.cost ELSE profit_gocash_overrides.cost END,
-       platform = CASE WHEN $7 THEN EXCLUDED.platform ELSE profit_gocash_overrides.platform END
-     RETURNING sale_amount, cost, platform`,
-    [
-      historyId,
-      saleAmount !== undefined ? Number(saleAmount) || 0 : 0,
-      cost !== undefined ? Number(cost) || 0 : null,
-      platform !== undefined ? String(platform || "").trim() || null : null,
-      saleAmount !== undefined,
-      cost !== undefined,
-      platform !== undefined,
-    ]
+    `SELECT card_id, cleared_at, cleared_by_id, cleared_by_name FROM profit_oxide_merge_cleared`
   );
-  const row = rows[0];
-  return {
-    saleAmount: Number(row.sale_amount),
-    cost: row.cost == null ? null : Number(row.cost),
-    platform: row.platform || null,
-  };
+  const byId = {};
+  for (const row of rows) {
+    byId[row.card_id] = {
+      clearedAt: row.cleared_at,
+      clearedById: row.cleared_by_id,
+      clearedByName: row.cleared_by_name,
+    };
+  }
+  return byId;
+}
+
+export async function setOxideMergeCleared(cardId, cleared, actor) {
+  await ensureSchema();
+  const actorName = actor?.displayName || actor?.username || "ไม่ทราบชื่อ";
+  if (cleared) {
+    const client = await getPool().connect();
+    try {
+      await client.query("BEGIN");
+      const { rows } = await client.query(
+        `INSERT INTO profit_oxide_merge_cleared (card_id, cleared_at, cleared_by_id, cleared_by_name)
+         VALUES ($1, NOW(), $2, $3)
+         ON CONFLICT (card_id) DO UPDATE SET
+           cleared_at = EXCLUDED.cleared_at,
+           cleared_by_id = EXCLUDED.cleared_by_id,
+           cleared_by_name = EXCLUDED.cleared_by_name
+         RETURNING cleared_at, cleared_by_id, cleared_by_name`,
+        [cardId, actor?.id ?? null, actorName]
+      );
+      await client.query(
+        `INSERT INTO profit_oxide_merge_clear_log (card_id, user_id, user_name, action) VALUES ($1, $2, $3, 'cleared')`,
+        [cardId, actor?.id ?? null, actorName]
+      );
+      await client.query("COMMIT");
+      const row = rows[0];
+      return { clearedAt: row.cleared_at, clearedById: row.cleared_by_id, clearedByName: row.cleared_by_name };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(`DELETE FROM profit_oxide_merge_cleared WHERE card_id = $1`, [cardId]);
+    await client.query(
+      `INSERT INTO profit_oxide_merge_clear_log (card_id, user_id, user_name, action) VALUES ($1, $2, $3, 'uncleared')`,
+      [cardId, actor?.id ?? null, actorName]
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+  return null;
+}
+
+export async function listOxideMergeClearLog(cardId) {
+  await ensureSchema();
+  const { rows } = await getPool().query(
+    `SELECT user_id, user_name, action, created_at FROM profit_oxide_merge_clear_log
+     WHERE card_id = $1 ORDER BY created_at DESC`,
+    [cardId]
+  );
+  return rows.map((row) => ({
+    userId: row.user_id,
+    userName: row.user_name,
+    action: row.action,
+    clearedAt: row.created_at,
+  }));
 }
 
 // ── GoCash dust-cleared marks ─────────────────────────────────────────────
@@ -667,7 +1077,7 @@ export async function getPackCosts() {
   return byKey;
 }
 
-export async function setPackCost(source, packName, cost) {
+export async function setPackCost(source, packName, cost, expected, actor) {
   await ensureSchema();
   const src = String(source || "").trim();
   const name = String(packName || "").trim();
@@ -675,12 +1085,31 @@ export async function setPackCost(source, packName, cost) {
   const n = Number(cost);
   if (!Number.isFinite(n)) throw new Error("invalid cost");
   const key = `${src}:${name}`;
-  await getPool().query(
-    `INSERT INTO profit_pack_costs (pack_key, cost) VALUES ($1, $2)
-     ON CONFLICT (pack_key) DO UPDATE SET cost = EXCLUDED.cost`,
-    [key, n]
-  );
-  return n;
+  const actorName = actor?.displayName || actor?.username || "ไม่ทราบชื่อ";
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL statement_timeout = 8000");
+    await client.query("SELECT pg_advisory_xact_lock($1, hashtext($2))", [PACK_COST_LOCK_NS, key]);
+
+    const { rows } = await client.query(`SELECT cost, updated_by_name FROM profit_pack_costs WHERE pack_key = $1`, [key]);
+    const before = rows[0] ? Number(rows[0].cost) : null;
+    assertScalarUnchanged(before, expected, "ต้นทุน", rows[0]?.updated_by_name);
+
+    await client.query(
+      `INSERT INTO profit_pack_costs (pack_key, cost, updated_by_id, updated_by_name)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (pack_key) DO UPDATE SET cost = EXCLUDED.cost, updated_by_id = EXCLUDED.updated_by_id, updated_by_name = EXCLUDED.updated_by_name`,
+      [key, n, actor?.id ?? null, actorName]
+    );
+    await client.query("COMMIT");
+    return n;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 // ── GoCash cost conversion (baht per 1 USD deducted) ──────────────────────
@@ -812,7 +1241,7 @@ export async function getAllPlatformPrices() {
   return byPlatform;
 }
 
-export async function setPlatformPrice(platform, source, packName, price) {
+export async function setPlatformPrice(platform, source, packName, price, expected, actor) {
   await ensureSchema();
   const plat = String(platform || "").trim();
   const src = String(source || "").trim();
@@ -821,12 +1250,34 @@ export async function setPlatformPrice(platform, source, packName, price) {
   const n = Number(price);
   if (!Number.isFinite(n)) throw new Error("invalid price");
   const key = `${src}:${name}`;
-  await getPool().query(
-    `INSERT INTO profit_platform_pack_prices (platform, pack_key, price) VALUES ($1, $2, $3)
-     ON CONFLICT (platform, pack_key) DO UPDATE SET price = EXCLUDED.price`,
-    [plat, key, n]
-  );
-  return n;
+  const actorName = actor?.displayName || actor?.username || "ไม่ทราบชื่อ";
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL statement_timeout = 8000");
+    await client.query("SELECT pg_advisory_xact_lock($1, hashtext($2))", [PLATFORM_PRICE_LOCK_NS, `${plat}:${key}`]);
+
+    const { rows } = await client.query(
+      `SELECT price, updated_by_name FROM profit_platform_pack_prices WHERE platform = $1 AND pack_key = $2`,
+      [plat, key]
+    );
+    const before = rows[0] ? Number(rows[0].price) : null;
+    assertScalarUnchanged(before, expected, "ราคาขาย", rows[0]?.updated_by_name);
+
+    await client.query(
+      `INSERT INTO profit_platform_pack_prices (platform, pack_key, price, updated_by_id, updated_by_name)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (platform, pack_key) DO UPDATE SET price = EXCLUDED.price, updated_by_id = EXCLUDED.updated_by_id, updated_by_name = EXCLUDED.updated_by_name`,
+      [plat, key, n, actor?.id ?? null, actorName]
+    );
+    await client.query("COMMIT");
+    return n;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 // Clears every price entry for one platform -- back to "ยังไม่ได้ตั้ง" for

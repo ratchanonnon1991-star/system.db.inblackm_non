@@ -7,6 +7,8 @@ const PLATFORM_LABELS = {
   russia_reseller: "USDT Russia",
   PAGE: "เพจ Facebook",
   inblackm_web: "เว็บ inblackm",
+  playerok: "PlayerOK",
+  itemku: "Itemku",
 };
 
 export function platformLabel(value) {
