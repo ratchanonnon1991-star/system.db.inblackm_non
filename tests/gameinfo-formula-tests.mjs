@@ -2,6 +2,7 @@
 // confirms every advertised label actually resolves, and that pack fields
 // win over game fields when both exist.
 import { evaluateFormula, parseFormula } from "@/lib/gamedb-formula.js";
+import { readFileSync } from "node:fs";
 import {
   GAMEINFO_FIELDS,
   GAMEINFO_FIELD_NAMES,
@@ -28,6 +29,15 @@ function check(name, actual, expected) {
 function ok(name, value) {
   check(name, Boolean(value), true);
 }
+
+const computedEditorSource = readFileSync(new URL("../src/components/gameinfo-computed-editor.js", import.meta.url), "utf8");
+const variableEditorSource = readFileSync(new URL("../src/components/gameinfo-formula-variables.js", import.meta.url), "utf8");
+const roundingHelpSource = readFileSync(new URL("../src/lib/gameinfo-formula-help.js", import.meta.url), "utf8");
+const formulaHelpPanelSource = readFileSync(new URL("../src/components/gameinfo-formula-help-panel.js", import.meta.url), "utf8");
+ok("computed formula editor includes shared formula help", computedEditorSource.includes("GameinfoFormulaHelpPanel"));
+ok("mixed-variable editor includes shared formula help", variableEditorSource.includes("GameinfoFormulaHelpPanel"));
+ok("shared formula help starts as collapsible sections", (formulaHelpPanelSource.match(/<details/g) || []).length === 2);
+ok("rounding help documents decimal and step families", roundingHelpSource.includes("ROUNDDOWN") && roundingHelpSource.includes("CEILING") && roundingHelpSource.includes("MROUND"));
 
 const game = { gameName: "Mobile Legends", region: "Global", platform: "Android/iOS", server: "Asia" };
 const pack = { name: "86 Diamonds", price: "100", amountChargedFee: "90", country: "" };

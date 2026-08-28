@@ -40,7 +40,8 @@ export async function DELETE(request, { params }) {
     await requireGameinfoEditor(request);
     const presetId = await readPresetId(params);
     if (!presetId) return jsonError("Formula Memory ID ไม่ถูกต้อง", 400);
-    return jsonOk({ deleted: await deleteGameinfoFormulaPreset(presetId) });
+    const version = Number(request.nextUrl.searchParams.get("version"));
+    return jsonOk({ deleted: await deleteGameinfoFormulaPreset(presetId, version) });
   } catch (error) {
     return handleApiError(error, "ลบ Formula Memory ไม่สำเร็จ");
   }

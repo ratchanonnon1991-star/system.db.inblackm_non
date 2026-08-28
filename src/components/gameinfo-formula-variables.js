@@ -6,7 +6,7 @@ import { Boxes, History, Plus, Trash2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { evaluateGameinfoFormulaVariable } from "@/lib/gameinfo-formula-variables";
 import { GAMEINFO_FIELD_NAMES } from "@/lib/gameinfo-formula-fields";
-import { GAMEINFO_FORMULA_FUNCTION_HELP } from "@/lib/gameinfo-formula-help";
+import GameinfoFormulaHelpPanel from "@/components/gameinfo-formula-help-panel";
 import {
   requestGameinfoDiscard,
   useGameinfoUnsavedChanges,
@@ -86,6 +86,7 @@ export default function GameinfoFormulaVariablesButton({ gameId, initialVariable
   const [open, setOpen] = useState(false);
   const [variables, setVariables] = useState(initialVariables || []);
   const [baseline, setBaseline] = useState(initialVariables || []);
+  const [version, setVersion] = useState(1);
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -110,6 +111,7 @@ export default function GameinfoFormulaVariablesButton({ gameId, initialVariable
       setBaseline(data.variables || []);
       setLogs(data.logs || []);
       setLoadedPreviewValues(data.previewValues || null);
+      setVersion(Number(data.version) || 1);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "โหลดตัวแปรผสมไม่สำเร็จ");
     } finally {
@@ -153,11 +155,12 @@ export default function GameinfoFormulaVariablesButton({ gameId, initialVariable
       const data = await apiJson(endpoint || `/api/gameinfo/gamelist/${gameId}/variables`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ variables }),
+        body: JSON.stringify({ variables, version }),
         fallbackError: "บันทึกตัวแปรผสมไม่สำเร็จ",
       });
       setVariables(data.variables);
       setBaseline(data.variables);
+      setVersion(Number(data.version) || version + 1);
       onSaved?.(data.variables);
       setOpen(false);
     } catch (saveError) {
@@ -205,17 +208,7 @@ export default function GameinfoFormulaVariablesButton({ gameId, initialVariable
               ) : null}
               {!loading && !showHistory ? (
                 <div className="space-y-5">
-                  <section className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
-                    <p className="mb-1.5 text-xs font-medium text-linear-ink-muted">ฟังก์ชันที่ใช้ได้</p>
-                    <dl className="space-y-1">
-                      {GAMEINFO_FORMULA_FUNCTION_HELP.map(([group, list]) => (
-                        <div key={group} className="flex gap-2 text-xs leading-relaxed">
-                          <dt className="w-12 shrink-0 text-linear-ink-tertiary">{group}</dt>
-                          <dd className="min-w-0 font-mono text-linear-ink-subtle">{list}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </section>
+                  <GameinfoFormulaHelpPanel />
                   <section className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
                     <p className="mb-2 text-[11px] text-linear-ink-tertiary">
                       ตัวแปรที่ใช้ได้ (กดเพื่อแทรกในช่องสูตรที่เลือก):

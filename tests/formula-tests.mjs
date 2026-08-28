@@ -126,6 +126,24 @@ check(
 // --- numbers -------------------------------------------------------------
 check("ROUND to whole", run("ROUND(3.7)"), 4);
 check("ROUND to digits", run("ROUND(3.14159, 2)"), 3.14);
+check("ROUND avoids binary floating-point drift", run("ROUND(1.005, 2)"), 1.01);
+check("ROUND handles a repeating product", run("ROUND(1.0049999, 2)"), 1);
+check("ROUNDDOWN cuts the remainder", run("ROUNDDOWN(10.567, 2)"), 10.56);
+check("ROUNDDOWN keeps whole numbers", run("ROUNDDOWN(10.9)"), 10);
+check("ROUNDUP lifts any remainder", run("ROUNDUP(10.561, 2)"), 10.57);
+check("ROUNDUP leaves exact values alone", run("ROUNDUP(10.56, 2)"), 10.56);
+check("ROUNDDOWN goes toward zero", run("ROUNDDOWN(-10.5)"), -10);
+check("INT rounds negative values down", run("INT(-10.5)"), -11);
+check("ROUNDUP goes away from zero", run("ROUNDUP(-10.1)"), -11);
+check("FLOOR snaps down to a step", run("FLOOR(127, 10)"), 120);
+check("CEILING snaps up to a step", run("CEILING(121, 10)"), 130);
+check("MROUND picks the nearer step", run("MROUND(127, 10)"), 130);
+check("MROUND rounds down when nearer", run("MROUND(122, 10)"), 120);
+check("step defaults to 1", run("CEILING(10.2)"), 11);
+check("fractional steps survive float division", run("FLOOR(1.2, 0.1)"), 1.2);
+check("half steps work", run("MROUND(2.3, 0.5)"), 2.5);
+check("a zero step has no answer", run("FLOOR(10, 0)"), null);
+check("rounding a blank stays blank", run("ROUNDDOWN([Missing], 2)"), null);
 check("ABS", run("ABS(0 - 5)"), 5);
 check("MIN", run("MIN([ราคาขาย], [ต้นทุน], 120)"), 100);
 check("MAX", run("MAX([ราคาขาย], [ต้นทุน], 120)"), 150);

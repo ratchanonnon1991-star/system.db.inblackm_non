@@ -65,11 +65,13 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   let reports = [];
   let allChannels = [];
   let packLanguages = [];
+  let packVersion = 1;
   try {
     row = await getGameListRow(numericId);
     if (row) {
       const modeData = dataMode === "idpass" ? await getGameinfoModeData(row.id, dataMode) : null;
       const packs = modeData?.packs || await getGamelistPacks(row.id);
+      packVersion = Number(modeData?.version ?? packs.version) || 1;
       currencies = packs.currencies;
       computedColumns = packs.computedColumns;
       costProfiles = packs.costProfiles;
@@ -159,6 +161,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
     costProfiles,
     formulaVariables,
     packLanguages,
+    version: packVersion,
   };
 
   return (

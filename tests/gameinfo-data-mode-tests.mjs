@@ -31,7 +31,7 @@ check("pack routes preserve IDPASS", gameinfoPacksHref("th", 7, "idpass"), "/gam
 
 reset();
 setResponder((text) => {
-  if (/SELECT data FROM gameinfo_mode_data/.test(text)) {
+  if (/SELECT data, version FROM gameinfo_mode_data/.test(text)) {
     return { rows: [{ data: {
       fields: { region: "CN", platform: "PC", server: "S1", botManual: "Manual" },
       links: [],
@@ -39,7 +39,7 @@ setResponder((text) => {
       warning: { categories: [] },
       packs: { currencies: [{ id: "c", name: "Crystal", categories: [{ id: "cat", name: "Pack", packs: [{ id: "p", name: "60 Crystals", localizedNames: { 7: "English Pack", invalid: "ignored" }, price: "10", amountChargedFee: "9", channelsMain: ["Web"], channelsSecondary: ["Backup"] }] }] }], computedColumns: [], costProfiles: [] },
       formulaVariables: [{ name: "must not be copied" }],
-    } }] };
+    }, version: 3 }] };
   }
   return null;
 });
@@ -49,6 +49,7 @@ check("IDPASS packs are sanitized independently", loaded.packs.currencies[0].cat
 check("IDPASS preserves localized pack names", loaded.packs.currencies[0].categories[0].packs[0].localizedNames, { 7: "English Pack" });
 check("IDPASS preserves secondary channels", loaded.packs.currencies[0].categories[0].packs[0].channelsSecondary, ["Backup"]);
 check("shared formula variables are not stored inside a mode", Object.hasOwn(loaded, "formulaVariables"), false);
+check("IDPASS load exposes its optimistic version", loaded.version, 3);
 
 reset();
 await saveGameinfoModeData(7, "idpass", loaded);
@@ -59,7 +60,7 @@ ok("saved document contains packs and metadata together", Boolean(JSON.parse(sav
 reset();
 setResponder((text) => {
   if (/SELECT id FROM game_list/.test(text)) return { rows: [{ id: 7 }] };
-  if (/SELECT data FROM gameinfo_mode_data/.test(text)) return { rows: [{ data: loaded }] };
+  if (/SELECT data, version FROM gameinfo_mode_data/.test(text)) return { rows: [{ data: loaded, version: 3 }] };
   return null;
 });
 const updated = await updateGameinfoModeData(7, "idpass", (current) => ({
@@ -67,6 +68,7 @@ const updated = await updateGameinfoModeData(7, "idpass", (current) => ({
   fields: { ...current.fields, server: "S2" },
 }));
 check("partial IDPASS edit preserves other sections", [updated.fields.server, updated.packs.currencies.length], ["S2", 1]);
+check("partial IDPASS edit increments its version", updated.version, 4);
 ok("partial mode edit locks the parent game and commits", log.some((entry) => /FOR UPDATE/.test(entry.text)) && log.some((entry) => entry.text === "COMMIT"));
 
 console.log(`\n${pass} passed, ${failures.length} failed`);

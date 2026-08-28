@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS gameinfo_mode_data (
   game_id    integer     NOT NULL,           -- LOGICAL -> game_list.id
   data_mode  varchar(16) NOT NULL CHECK (data_mode = 'idpass'),
   data       jsonb       NOT NULL DEFAULT '{}'::jsonb,
+  version    bigint      NOT NULL DEFAULT 1,
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (game_id, data_mode)
 );
@@ -104,8 +105,12 @@ CREATE TABLE IF NOT EXISTS gameinfo_market_preferences (
 CREATE TABLE IF NOT EXISTS gamelist_formula_variables (
   game_id    integer PRIMARY KEY,            -- LOGICAL -> game_list.id; 0 is global
   data       jsonb       NOT NULL DEFAULT '{"variables": []}'::jsonb,
+  version    bigint      NOT NULL DEFAULT 1,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE gamelist_formula_variables
+  ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 1;
 
 CREATE TABLE IF NOT EXISTS gamelist_formula_variable_logs (
   id          bigserial PRIMARY KEY,
@@ -212,8 +217,21 @@ CREATE TABLE IF NOT EXISTS gameinfo_formula_presets (
   created_by_name text        NOT NULL DEFAULT '',
   updated_by      integer,                   -- LOGICAL -> gamedb_users.id (cross-database)
   updated_by_name text        NOT NULL DEFAULT '',
+  version         bigint      NOT NULL DEFAULT 1,
   created_at      timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE gameinfo_mode_data
+  ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 1;
+
+ALTER TABLE gameinfo_formula_presets
+  ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 1;
+
+CREATE TABLE IF NOT EXISTS gamelist_pack_revisions (
+  game_id    integer PRIMARY KEY,           -- LOGICAL -> game_list.id
+  version    bigint      NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS gameinfo_formula_presets_updated_idx
@@ -230,11 +248,23 @@ CREATE TABLE IF NOT EXISTS gamelist_pack_view_presets (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS gamelist_pack_view_presets_game_user_surface_name
-  ON gamelist_pack_view_presets (game_id, user_id, surface, name);
+DELETE FROM gamelist_pack_view_presets v
+WHERE v.surface = 'view'
+  AND EXISTS (
+    SELECT 1 FROM gamelist_pack_view_presets e
+    WHERE e.surface = 'edit'
+      AND e.game_id = v.game_id
+      AND e.user_id = v.user_id
+      AND e.name = v.name
+  );
+
+DROP INDEX IF EXISTS gamelist_pack_view_presets_game_user_surface_name;
 DROP INDEX IF EXISTS gamelist_pack_view_presets_game_user_name;
 ALTER TABLE gamelist_pack_view_presets
   DROP CONSTRAINT IF EXISTS gamelist_pack_view_presets_game_id_user_id_surface_name_key;
+
+CREATE UNIQUE INDEX IF NOT EXISTS gamelist_pack_view_presets_owner_name_key
+  ON gamelist_pack_view_presets (game_id, user_id, name);
 
 CREATE TABLE IF NOT EXISTS gamelist_publisher_catalog (
   publisher_key text PRIMARY KEY,

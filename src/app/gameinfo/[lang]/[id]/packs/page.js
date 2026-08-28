@@ -41,6 +41,7 @@ export default async function GameinfoGamelistPacksPage({ params, searchParams }
   let formulaVariables = [];
   let packLanguages = [];
   let modeFields = null;
+  let modeVersion = null;
   try {
     row = await getGameListRow(numericId);
     if (row) {
@@ -52,6 +53,7 @@ export default async function GameinfoGamelistPacksPage({ params, searchParams }
       ]);
       packs = modeData?.packs || await getGamelistPacks(row.id);
       modeFields = modeData?.fields || null;
+      modeVersion = modeData?.version || null;
       allChannels = channels;
       formulaVariables = variableData.variables;
       packLanguages = languages;
@@ -76,6 +78,7 @@ export default async function GameinfoGamelistPacksPage({ params, searchParams }
     costProfiles: packs.costProfiles,
     formulaVariables,
     packLanguages,
+    version: dataMode === "idpass" ? modeVersion : packs.version,
   };
 
   return (

@@ -319,7 +319,25 @@ async function run() {
     computedColumns: [],
     costProfiles: [],
     schemaVersion: 1,
+    version: 1,
   });
+
+  reset();
+  setResponder((text) => /SELECT version FROM gamelist_pack_revisions/.test(text)
+    ? { rows: [{ version: 2 }] }
+    : null);
+  let stalePackError = null;
+  try {
+    await saveGamelistPacks(5, {
+      currencies: ORIGINAL_TREE,
+      computedColumns,
+      expectedVersion: 1,
+    });
+  } catch (error) {
+    stalePackError = error;
+  }
+  check("concurrency: stale pack save returns conflict", stalePackError?.status, 409);
+  check("concurrency: stale pack save cannot delete current rows", Boolean(find(/^DELETE FROM gamelist_packs/)), false);
 
   // --- listGamelistPackCountByGame: excludes the __computed__ sentinel ------
   reset();
@@ -464,11 +482,13 @@ async function run() {
           updated_by_name: "Admin",
           created_at: "2026-08-28T01:00:00.000Z",
           updated_at: "2026-08-28T01:00:00.000Z",
+          version: "4",
         }],
       }
     : null);
   const formulaPresets = await listGameinfoFormulaPresets();
   check("formula memory: lists shared presets without a game or user filter", formulaPresets[0].id, 51);
+  check("formula memory: list exposes each preset version", formulaPresets[0].version, 4);
   check("formula memory: list query has no scope parameters", find(/FROM gameinfo_formula_presets/)?.params, null);
 
   reset();
@@ -523,21 +543,41 @@ async function run() {
           updated_by_name: "Editor",
           created_at: "2026-08-28T02:00:00.000Z",
           updated_at: "2026-08-28T03:00:00.000Z",
+          version: "2",
         }],
       }
     : null);
   const updatedFormulaPreset = await updateGameinfoFormulaPreset(
     52,
-    { name: "กำไรใหม่", formula: "[ราคา] * 0.3", type: "number", symbol: "฿" },
+    { name: "กำไรใหม่", formula: "[ราคา] * 0.3", type: "number", symbol: "฿", version: 1 },
     { id: 10, name: "Editor" }
   );
   check("formula memory: any editor can update the shared preset", updatedFormulaPreset.updatedByName, "Editor");
+  check("formula memory: update increments the preset version", updatedFormulaPreset.version, 2);
+
+  reset();
+  setResponder((text) => {
+    if (/^UPDATE gameinfo_formula_presets/.test(text)) return { rows: [] };
+    if (/^SELECT 1 FROM gameinfo_formula_presets/.test(text)) return { rows: [{ exists: 1 }] };
+    return null;
+  });
+  let stalePresetError = null;
+  try {
+    await updateGameinfoFormulaPreset(
+      52,
+      { name: "สูตรเก่า", formula: "[ราคา]", type: "number", version: 1 },
+      { id: 11, name: "Stale editor" }
+    );
+  } catch (error) {
+    stalePresetError = error;
+  }
+  check("formula memory: stale update returns conflict", stalePresetError?.status, 409);
 
   reset();
   setResponder((text) => /^DELETE FROM gameinfo_formula_presets/.test(text)
     ? { rows: [{ id: "52" }] }
     : null);
-  check("formula memory: delete does not touch copied pack formulas", await deleteGameinfoFormulaPreset(52), { id: 52 });
+  check("formula memory: delete does not touch copied pack formulas", await deleteGameinfoFormulaPreset(52, 2), { id: 52 });
 
   // --- personal column presets (Tasks 15 + 16) ------------------------
   check(
@@ -577,21 +617,22 @@ async function run() {
     }
     return null;
   });
-  const presets = await listGamelistPackViewPresets({ gameId: 5, userId: 9, surface: "view" });
-  check("preset list: scopes rows to game, user and surface", presets[0], {
+  const presets = await listGamelistPackViewPresets({ gameId: 5, userId: 9 });
+  check("preset list: scopes rows to game and user", presets[0], {
     id: 42,
     gameId: 5,
     userId: 9,
     surface: "view",
+    locked: false,
     name: "เฉพาะราคา",
     layout: { order: ["price", "name"], hidden: ["country"] },
     createdAt: "2026-08-17T10:00:00.000Z",
     updatedAt: "2026-08-17T11:00:00.000Z",
   });
   check(
-    "preset list: binds game, user and surface instead of interpolating them",
+    "preset list: binds game and user instead of interpolating them",
     find(/FROM gamelist_pack_view_presets/)?.params,
-    [5, 9, "view"]
+    [5, 9]
   );
 
   reset();
@@ -626,6 +667,7 @@ async function run() {
     gameId: 5,
     userId: 9,
     surface: "edit",
+    locked: true,
     name: "แก้ไขแบบย่อ",
     layout: { order: ["name", "price"], hidden: ["image"] },
     createdAt: "2026-08-17T12:00:00.000Z",
@@ -638,26 +680,33 @@ async function run() {
     [[5, 9, "edit", "แก้ไขแบบย่อ"], { order: ["name", "price"], hidden: ["image"] }]
   );
 
+  function respondToPresetUpdate(existingSurface) {
+    return (text) => {
+      if (/^SELECT surface FROM gamelist_pack_view_presets/.test(text)) {
+        return { rows: [{ surface: existingSurface }] };
+      }
+      if (/^UPDATE gamelist_pack_view_presets/.test(text)) {
+        return {
+          rows: [
+            {
+              id: 43,
+              game_id: 5,
+              user_id: 9,
+              surface: existingSurface,
+              name: "แก้ไขแบบเต็ม",
+              layout: { order: ["price", "name"], hidden: [] },
+              created_at: "2026-08-17T12:00:00.000Z",
+              updated_at: "2026-08-17T13:00:00.000Z",
+            },
+          ],
+        };
+      }
+      return null;
+    };
+  }
+
   reset();
-  setResponder((text) => {
-    if (/^UPDATE gamelist_pack_view_presets/.test(text)) {
-      return {
-        rows: [
-          {
-            id: 43,
-            game_id: 5,
-            user_id: 9,
-            surface: "edit",
-            name: "แก้ไขแบบเต็ม",
-            layout: { order: ["price", "name"], hidden: [] },
-            created_at: "2026-08-17T12:00:00.000Z",
-            updated_at: "2026-08-17T13:00:00.000Z",
-          },
-        ],
-      };
-    }
-    return null;
-  });
+  setResponder(respondToPresetUpdate("edit"));
   const updatedPreset = await saveGamelistPackViewPreset({
     gameId: 5,
     userId: 9,
@@ -669,10 +718,43 @@ async function run() {
   check("preset update: returns the revised preset", updatedPreset.name, "แก้ไขแบบเต็ม");
   const presetUpdate = find(/^UPDATE gamelist_pack_view_presets/);
   check(
-    "preset update: limits the write to the selected user, game and surface",
-    presetUpdate?.params?.slice(0, 5),
-    [43, 5, 9, "edit", "แก้ไขแบบเต็ม"]
+    "preset update: limits the write to the selected user and game",
+    presetUpdate?.params?.slice(0, 4),
+    [43, 5, 9, "แก้ไขแบบเต็ม"]
   );
+  check("preset update: no longer scopes the write by surface", /AND surface = /.test(presetUpdate?.text || ""), false);
+
+  reset();
+  setResponder(respondToPresetUpdate("edit"));
+  let lockedError = null;
+  try {
+    await saveGamelistPackViewPreset({
+      gameId: 5,
+      userId: 9,
+      surface: "view",
+      presetId: 43,
+      name: "แก้ไขแบบเต็ม",
+      layout: { order: ["price", "name"], hidden: [] },
+    });
+  } catch (error) {
+    lockedError = error;
+  }
+  check("preset lock: the view cannot overwrite an editor preset", lockedError?.status, 403);
+  check("preset lock: refuses before writing", find(/^UPDATE gamelist_pack_view_presets/), undefined);
+
+  reset();
+  setResponder(respondToPresetUpdate("view"));
+  const viewOwned = await saveGamelistPackViewPreset({
+    gameId: 5,
+    userId: 9,
+    surface: "view",
+    presetId: 43,
+    name: "แก้ไขแบบเต็ม",
+    layout: { order: ["price", "name"], hidden: [] },
+  });
+  check("preset lock: the view may overwrite its own preset", viewOwned.name, "แก้ไขแบบเต็ม");
+  check("preset lock: an editor preset reports itself as locked", updatedPreset.locked, true);
+  check("preset lock: a view preset is not locked", viewOwned.locked, false);
 
   console.log(`\n${pass} passed, ${failures.length} failed`);
   for (const failure of failures) console.log(`  FAIL ${failure}`);

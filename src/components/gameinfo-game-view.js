@@ -164,6 +164,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
             selectedPresetId={packLayout.selectedPresetId}
             presetName={packLayout.presetName}
             dirty={packLayout.dirty}
+            presetLocked={packLayout.presetLocked}
             loading={packLayout.loading}
             saving={packLayout.saving}
             error={packLayout.error}

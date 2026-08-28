@@ -9,7 +9,7 @@ import {
   parseFormula,
 } from "@/lib/gamedb-formula";
 import { GAMEINFO_FIELD_NAMES } from "@/lib/gameinfo-formula-fields";
-import { GAMEINFO_FORMULA_FUNCTION_HELP } from "@/lib/gameinfo-formula-help";
+import GameinfoFormulaHelpPanel from "@/components/gameinfo-formula-help-panel";
 import { formatGameinfoPackColumnValue, GAMEINFO_PACK_SYMBOLS } from "@/lib/gameinfo-pack-columns";
 import { validateGameinfoComputedDependencies } from "@/lib/gameinfo-computed-evaluator";
 import { useGameinfoDialog } from "@/lib/use-gameinfo-dialog";
@@ -306,17 +306,7 @@ export default function GameinfoComputedEditor({
             </p>
           </div>
 
-          <div className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
-            <p className="mb-1.5 text-xs font-medium text-linear-ink-muted">ฟังก์ชันที่ใช้ได้</p>
-            <dl className="space-y-1">
-              {GAMEINFO_FORMULA_FUNCTION_HELP.map(([group, list]) => (
-                <div key={group} className="flex gap-2 text-xs leading-relaxed">
-                  <dt className="w-12 shrink-0 text-linear-ink-tertiary">{group}</dt>
-                  <dd className="min-w-0 font-mono text-linear-ink-subtle">{list}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
+          <GameinfoFormulaHelpPanel />
 
           <div>
             <p className="mb-1.5 text-xs text-linear-ink-tertiary">คอลัมน์ที่ใช้ได้ (กดเพื่อแทรก):</p>

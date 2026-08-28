@@ -58,11 +58,12 @@ check("computed pack formulas accept saved game variables", validateGameinfoComp
 
 reset();
 setResponder((text) => {
-  if (/SELECT data FROM gamelist_formula_variables/.test(text)) return { rows: [] };
+  if (/SELECT data, version FROM gamelist_formula_variables/.test(text)) return { rows: [] };
   return null;
 });
 const saved = await saveGameinfoFormulaVariables(9, variables, { id: 4, name: "Tester" });
-check("saving stamps each changed variable with actor", saved.map((item) => item.updatedBy), ["Tester", "Tester", "Tester"]);
+check("saving stamps each changed variable with actor", saved.variables.map((item) => item.updatedBy), ["Tester", "Tester", "Tester"]);
+check("saving increments the shared document version", saved.version, 2);
 ok("global variable save uses one transaction-wide lock", log.some((entry) => /pg_advisory_xact_lock/.test(entry.text)));
 ok("variable config is written as one JSON document", log.some((entry) => /INSERT INTO gamelist_formula_variables/.test(entry.text)));
 const auditWrite = log.find((entry) => /INSERT INTO gamelist_formula_variable_logs/.test(entry.text) && entry.params?.length === 5);
@@ -71,29 +72,46 @@ ok("config and audit commit atomically", log.some((entry) => entry.text === "COM
 
 reset();
 setResponder((text) => {
-  if (/SELECT data FROM gamelist_formula_variables/.test(text)) {
-    return { rows: [{ data: { variables: saved } }] };
+  if (/SELECT data, version FROM gamelist_formula_variables/.test(text)) {
+    return { rows: [{ data: { variables: saved.variables }, version: 2 }] };
   }
   return null;
 });
-const unchanged = await saveGameinfoFormulaVariables(9, saved, { id: 8, name: "Another editor" });
-check("an unchanged definition keeps its original update actor", unchanged.map((item) => item.updatedBy), ["Tester", "Tester", "Tester"]);
+let staleVariableError = null;
+try {
+  await saveGameinfoFormulaVariables(9, variables, { id: 8, name: "Stale editor" }, 1);
+} catch (error) {
+  staleVariableError = error;
+}
+check("a stale variable editor receives conflict", staleVariableError?.status, 409);
+check("a stale variable editor cannot overwrite the saved document", log.some((entry) => /INSERT INTO gamelist_formula_variables/.test(entry.text) && entry.params?.length === 3), false);
+
+reset();
+setResponder((text) => {
+  if (/SELECT data, version FROM gamelist_formula_variables/.test(text)) {
+    return { rows: [{ data: { variables: saved.variables }, version: 2 }] };
+  }
+  return null;
+});
+const unchanged = await saveGameinfoFormulaVariables(9, saved.variables, { id: 8, name: "Another editor" });
+check("an unchanged definition keeps its original update actor", unchanged.variables.map((item) => item.updatedBy), ["Tester", "Tester", "Tester"]);
 check("an unchanged definition does not create a duplicate audit row", log.some((entry) => /INSERT INTO gamelist_formula_variable_logs/.test(entry.text) && entry.params?.length === 5), false);
 
 reset();
 setResponder((text) => {
-  if (/SELECT data FROM gamelist_formula_variables WHERE/.test(text)) {
-    return { rows: [{ data: { variables: saved } }] };
+  if (/SELECT data, version FROM gamelist_formula_variables WHERE/.test(text)) {
+    return { rows: [{ data: { variables: saved.variables }, version: 3 }] };
   }
   if (/FROM gamelist_formula_variable_logs/.test(text)) {
-    return { rows: [{ id: 11, actor_id: 4, actor_name: "Tester", before_data: [], after_data: saved, created_at: "2026-08-17T00:00:00.000Z" }] };
+    return { rows: [{ id: 11, actor_id: 4, actor_name: "Tester", before_data: [], after_data: saved.variables, created_at: "2026-08-17T00:00:00.000Z" }] };
   }
   return null;
 });
 const loaded = await getGameinfoFormulaVariables(9, { includeLogs: true });
 check("variable cards retain their saved update dates", loaded.variables.every((item) => Boolean(item.updatedAt)), true);
 check("history is loaded from its dedicated log table", loaded.logs[0]?.actorName, "Tester");
-check("reads always use the one global scope instead of the requested game", log.find((entry) => /SELECT data FROM gamelist_formula_variables WHERE/.test(entry.text))?.params, [0]);
+check("reads expose the current shared document version", loaded.version, 3);
+check("reads always use the one global scope instead of the requested game", log.find((entry) => /SELECT data, version FROM gamelist_formula_variables WHERE/.test(entry.text))?.params, [0]);
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);

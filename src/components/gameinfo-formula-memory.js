@@ -85,7 +85,7 @@ export default function GameinfoFormulaMemory({ formula, type, symbol, onApply }
         {
           method: presetId == null ? "POST" : "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, formula, type, symbol }),
+          body: JSON.stringify({ name, formula, type, symbol, version: presetId == null ? undefined : selected?.version }),
           fallbackError: "บันทึก Formula Memory ไม่สำเร็จ",
         }
       );
@@ -107,7 +107,7 @@ export default function GameinfoFormulaMemory({ formula, type, symbol, onApply }
     setError("");
     setNotice("");
     try {
-      await apiJson(`${PRESETS_URL}/${selected.id}`, {
+      await apiJson(`${PRESETS_URL}/${selected.id}?version=${encodeURIComponent(selected.version)}`, {
         method: "DELETE",
         fallbackError: "ลบ Formula Memory ไม่สำเร็จ",
       });

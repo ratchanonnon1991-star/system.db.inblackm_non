@@ -67,8 +67,8 @@ export async function PUT(request, { params }) {
       const data = await updateGameinfoModeData(gameId, mode, (current) => ({
         ...current,
         packs: packInput,
-      }), { area: "pack", actor: auditActor(user) });
-      return jsonOk({ game: { id: gameId, ...data.packs } });
+      }), { area: "pack", actor: auditActor(user), expectedVersion: body.version });
+      return jsonOk({ game: { id: gameId, ...data.packs, version: data.version } });
     }
     // Read before writing, so the edit log can say what this replaced. The
     // packs module keeps its own audit trail of who and from where; this is
@@ -78,6 +78,7 @@ export async function PUT(request, { params }) {
       ...packInput,
       actor: { id: user.id, name: user.displayName || user.username },
       source,
+      expectedVersion: body.version,
     });
     await recordEdit({
       queryId: null,

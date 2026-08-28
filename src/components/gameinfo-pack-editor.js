@@ -145,6 +145,7 @@ export default function GameinfoPackEditor({
   const [savedCurrencies, setSavedCurrencies] = useState(game.currencies);
   const [savedComputedColumns, setSavedComputedColumns] = useState(game.computedColumns ?? []);
   const [savedCostProfiles, setSavedCostProfiles] = useState(game.costProfiles ?? []);
+  const [version, setVersion] = useState(game.version ?? 1);
   const [invalidFields, setInvalidFields] = useState(new Set());
   const [confirmRequest, setConfirmRequest] = useState(null);
   const [selectedPackIds, setSelectedPackIds] = useState(() => new Set());
@@ -549,7 +550,7 @@ export default function GameinfoPackEditor({
         const data = await apiJson(savePacksUrl, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ currencies, computedColumns, costProfiles, auditSource }),
+          body: JSON.stringify({ currencies, computedColumns, costProfiles, auditSource, version }),
         });
         const savedGame = data.game || {};
         const nextCurrencies = Array.isArray(savedGame.currencies) ? savedGame.currencies : currencies;
@@ -565,6 +566,7 @@ export default function GameinfoPackEditor({
         setSavedComputedColumns(nextComputedColumns);
         setCostProfiles(nextCostProfiles);
         setSavedCostProfiles(nextCostProfiles);
+        setVersion(Number(savedGame.version) || version + 1);
         setAuditSource("editor");
         setSavedVisible(true);
         setSavedAt(Date.now());
@@ -1017,6 +1019,7 @@ export default function GameinfoPackEditor({
           selectedPresetId={packLayout.selectedPresetId}
           presetName={packLayout.presetName}
           dirty={packLayout.dirty}
+          presetLocked={packLayout.presetLocked}
           loading={packLayout.loading}
           saving={packLayout.saving}
           error={packLayout.error}
