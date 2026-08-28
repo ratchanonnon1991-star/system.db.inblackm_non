@@ -19,6 +19,7 @@ import {
 import { getGameinfoFormulaDisplay } from "@/lib/gameinfo-formula-overrides";
 import { evaluateGameinfoComputedColumn } from "@/lib/gameinfo-computed-evaluator";
 import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
+import { gameinfoStableColorStyle } from "@/lib/gameinfo-stable-color";
 import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
 import { useGameinfoRates } from "./gameinfo-rate-panel";
 import GameinfoImagePreview from "./gameinfo-image-preview";
@@ -481,12 +482,46 @@ function PackViewCell({
       </td>
     );
   }
+  // Country and channels carry the same name-derived colour as the pack editor
+  // (gameinfo-stable-color.js), so the same channel reads as the same colour
+  // whichever screen it is on. Channels are one tag per entry rather than a
+  // joined string — a pack with several channels should show several colours.
+  if (column.id === "country" || column.id === "channelsMain" || column.id === "channelsSecondary") {
+    const raw = pack[column.field];
+    const values = (Array.isArray(raw) ? raw : [raw]).filter((item) => String(item || "").trim());
+    return (
+      <td className="max-w-[220px] px-3 py-2 text-linear-ink-muted">
+        {values.length === 0 ? (
+          "-"
+        ) : (
+          <span className="flex flex-wrap items-center gap-1">
+            {values.map((item) => (
+              <StableTag key={item} value={item} />
+            ))}
+          </span>
+        )}
+      </td>
+    );
+  }
+
   const raw = pack[column.field];
   const value = Array.isArray(raw) ? (raw.length ? raw.join(", ") : "-") : raw || "-";
   return (
     <td className="max-w-[220px] truncate px-3 py-2 text-linear-ink-muted">
       {value}
     </td>
+  );
+}
+
+function StableTag({ value, className = "text-xs" }) {
+  return (
+    <span
+      style={gameinfoStableColorStyle(value)}
+      className={`gameinfo-stable-tag inline-flex max-w-full truncate rounded border px-2 py-0.5 ${className}`}
+      title={value}
+    >
+      {value}
+    </span>
   );
 }
 
@@ -512,12 +547,7 @@ function ChannelSummaryRow({ label, tags }) {
         <span className="text-linear-ink-tertiary">ไม่มี</span>
       ) : (
         tags.map((v) => (
-          <span
-            key={v}
-            className="truncate rounded bg-linear-surface-3 px-1.5 py-0.5 text-[11px] text-linear-ink-muted"
-          >
-            {v}
-          </span>
+          <StableTag key={v} value={v} className="text-[11px]" />
         ))
       )}
     </div>
