@@ -26,11 +26,13 @@ export function useGameinfoRates() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const refresh = useCallback(async () => {
+  // force skips the server cache and calls the providers now; the interval and
+  // first load pass nothing so background traffic never triggers a provider hit.
+  const refresh = useCallback(async (force = false) => {
     setLoading(true);
     setError("");
     try {
-      const data = await apiJson(RATE_URL, { cache: "no-store" });
+      const data = await apiJson(force ? `${RATE_URL}&refresh=1` : RATE_URL, { cache: "no-store" });
       setRates(Array.isArray(data.rates) ? data.rates : []);
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : "โหลดค่าเงินไม่สำเร็จ");
@@ -40,8 +42,8 @@ export function useGameinfoRates() {
   }, []);
 
   useEffect(() => {
-    const initialTimer = window.setTimeout(refresh, 0);
-    const timer = window.setInterval(refresh, 60 * 60 * 1000);
+    const initialTimer = window.setTimeout(() => refresh(), 0);
+    const timer = window.setInterval(() => refresh(), 60 * 60 * 1000);
     return () => {
       window.clearTimeout(initialTimer);
       window.clearInterval(timer);
@@ -56,6 +58,15 @@ export function useGameinfoRates() {
 }
 
 export default function GameinfoRatePanel({ rates, loading, error, onRefresh }) {
+  // Only a manual refresh asks first; the scheduler and the hourly reload run on
+  // their own, matching the price compare panel.
+  const [refreshPrompt, setRefreshPrompt] = useState(false);
+
+  function confirmRefresh() {
+    setRefreshPrompt(false);
+    onRefresh(true);
+  }
+
   return (
     <section className="rounded-lg border border-linear-hairline bg-linear-surface-1 p-3">
       <div className="mb-2 flex items-center justify-between gap-3">
@@ -69,10 +80,10 @@ export default function GameinfoRatePanel({ rates, loading, error, onRefresh }) 
             type="button"
             variant="ghost"
             size="icon"
-            onClick={onRefresh}
+            onClick={() => setRefreshPrompt(true)}
             disabled={loading}
-            aria-label="โหลดอัตราแลกเปลี่ยนล่าสุด"
-            title="โหลดค่าล่าสุด"
+            aria-label="รีเฟรชอัตราแลกเปลี่ยน"
+            title="รีเฟรช"
           >
             <RefreshCw className={loading ? "animate-spin" : ""} />
           </Button>
@@ -86,6 +97,32 @@ export default function GameinfoRatePanel({ rates, loading, error, onRefresh }) 
           ) : rates.map((rate) => <RateCard key={rate.pair} rate={rate} />)}
         </div>
       </TooltipProvider>
+
+      <Dialog open={refreshPrompt} onOpenChange={setRefreshPrompt}>
+        <DialogContent
+          className="border border-linear-hairline bg-linear-surface-1 text-linear-ink sm:max-w-md"
+          style={{ boxShadow: "var(--ll-shadow-modal)" }}
+        >
+          <DialogHeader>
+            <DialogTitle>ยืนยันการรีเฟรชอัตราแลกเปลี่ยน</DialogTitle>
+            <DialogDescription className="text-linear-ink-subtle">
+              จะดึงค่าใหม่จาก CoinGecko และ Frankfurter/ECB ทันที ข้ามแคชที่เก็บไว้ (รอบอัตโนมัติทำงานเองอยู่แล้ว)
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-linear-ink-tertiary">
+            ถ้าผู้ให้บริการล้ม ระบบจะคงค่าล่าสุดที่สำเร็จไว้และขึ้นสถานะ stale ให้เห็น
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setRefreshPrompt(false)}>
+              ยกเลิก
+            </Button>
+            <Button type="button" onClick={confirmRefresh} disabled={loading}>
+              <RefreshCw data-icon="inline-start" className={loading ? "animate-spin" : ""} />
+              รีเฟรช
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
@@ -122,7 +159,7 @@ function RateRefreshDetails() {
           />
         </div>
         <p className="text-xs leading-5 text-linear-ink-tertiary">
-          ปุ่มรีเฟรชด้านบนใช้โหลดค่าล่าสุดจาก Server และไม่บังคับยิงผู้ให้บริการก่อนรอบถัดไป
+          ปุ่มรีเฟรชด้านบนจะถามยืนยันก่อน แล้วดึงค่าใหม่จากผู้ให้บริการทันทีโดยข้ามแคช
         </p>
       </DialogContent>
     </Dialog>

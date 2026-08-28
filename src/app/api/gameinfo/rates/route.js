@@ -9,7 +9,8 @@ export async function GET(request) {
     const requested = rawPairs.split(",");
     const unsupported = requested.filter((pair) => !normalizeGameinfoRatePair(pair));
     if (unsupported.length) return jsonError(`ไม่รองรับคู่สกุลเงิน: ${unsupported.join(", ")}`, 400);
-    return jsonOk({ rates: await getGameinfoExchangeRates(requested) });
+    const force = request.nextUrl.searchParams.get("refresh") === "1";
+    return jsonOk({ rates: await getGameinfoExchangeRates(requested, { force }) });
   } catch (error) {
     return handleApiError(error, "โหลดอัตราแลกเปลี่ยนไม่สำเร็จ");
   }
