@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { Boxes, History, Plus, Trash2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { evaluateGameinfoFormulaVariable } from "@/lib/gameinfo-formula-variables";
-import { GAMEINFO_FIELD_NAMES } from "@/lib/gameinfo-formula-fields";
+import { GAMEINFO_NUMERIC_FIELD_NAMES } from "@/lib/gameinfo-formula-fields";
 import GameinfoFormulaHelpPanel from "@/components/gameinfo-formula-help-panel";
 import {
   requestGameinfoDiscard,
@@ -215,7 +215,7 @@ export default function GameinfoFormulaVariablesButton({ gameId, initialVariable
                     </p>
                     <div className="flex flex-wrap gap-1.5">
                       {[...new Set([
-                        ...GAMEINFO_FIELD_NAMES,
+                        ...GAMEINFO_NUMERIC_FIELD_NAMES,
                         ...variables.map((variable) => variable.name).filter(Boolean),
                       ])].map((name) => (
                         <button

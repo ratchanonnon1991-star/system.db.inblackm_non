@@ -15,13 +15,23 @@ export const GAMEINFO_FIELDS = {
   "ภูมิภาค": "region",
   "แพลตฟอร์ม": "platform",
   "เซิร์ฟเวอร์": "server",
-  "ต้นทุน": "__cost",
   "อัตราต้นทุน": "__costRate",
   "USDT/THB": "__externalRate",
   USDCNY: "__externalRate",
 };
 
 export const GAMEINFO_FIELD_NAMES = Object.keys(GAMEINFO_FIELDS);
+
+// Formula-variable definitions are numeric inputs, so their picker should not
+// suggest descriptive text fields. Keep every field resolvable for existing
+// saved formulas; this narrower list only controls what the picker advertises.
+export const GAMEINFO_NUMERIC_FIELD_NAMES = [
+  "ราคา",
+  "ยอดที่กด + fee",
+  "อัตราต้นทุน",
+  "USDT/THB",
+  "USDCNY",
+];
 
 export function resolveGameinfoField(pack, game, label, context = {}) {
   // Existing saved formulas may still contain the removed label. Resolve it
@@ -35,16 +45,16 @@ export function resolveGameinfoField(pack, game, label, context = {}) {
   const key = GAMEINFO_FIELDS[label];
   if (!key) return undefined;
   if (key === "__externalRate") return context.externalValues?.[label];
-  if (key === "__cost" || key === "__costRate") {
+  if (key === "__costRate") {
     const profile = getGameinfoCostProfile(context.costProfiles, pack?.costProfileId);
     const result = evaluateGameinfoPackCost(pack, profile, (nestedLabel) => {
-      if (nestedLabel === "ต้นทุน" || nestedLabel === "อัตราต้นทุน") return undefined;
+      if (nestedLabel === "อัตราต้นทุน") return undefined;
       if (context.externalValues && nestedLabel in context.externalValues) {
         return context.externalValues[nestedLabel];
       }
       return resolveGameinfoField(pack, game, nestedLabel, { ...context, costProfiles: [] });
     });
-    return key === "__cost" ? result.cost : result.rate;
+    return result.rate;
   }
   if (pack && key in pack) return pack[key];
   return game ? game[key] : undefined;

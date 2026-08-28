@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import {
   GAMEINFO_FIELDS,
   GAMEINFO_FIELD_NAMES,
+  GAMEINFO_NUMERIC_FIELD_NAMES,
   resolveGameinfoField,
 } from "@/lib/gameinfo-formula-fields.js";
 import {
@@ -38,6 +39,14 @@ ok("computed formula editor includes shared formula help", computedEditorSource.
 ok("mixed-variable editor includes shared formula help", variableEditorSource.includes("GameinfoFormulaHelpPanel"));
 ok("shared formula help starts as collapsible sections", (formulaHelpPanelSource.match(/<details/g) || []).length === 2);
 ok("rounding help documents decimal and step families", roundingHelpSource.includes("ROUNDDOWN") && roundingHelpSource.includes("CEILING") && roundingHelpSource.includes("MROUND"));
+check("numeric picker excludes descriptive fields", GAMEINFO_NUMERIC_FIELD_NAMES, [
+  "ราคา",
+  "ยอดที่กด + fee",
+  "อัตราต้นทุน",
+  "USDT/THB",
+  "USDCNY",
+]);
+ok("variable editor uses the numeric field picker", variableEditorSource.includes("GAMEINFO_NUMERIC_FIELD_NAMES"));
 
 const game = { gameName: "Mobile Legends", region: "Global", platform: "Android/iOS", server: "Asia" };
 const pack = { name: "86 Diamonds", price: "100", amountChargedFee: "90", country: "" };
@@ -71,19 +80,6 @@ check(
   "selected cost profile exposes its multiplier",
   resolveGameinfoField(packWithCost, game, "อัตราต้นทุน", { costProfiles }),
   0.5
-);
-check(
-  "selected cost profile exposes charge times multiplier as cost",
-  resolveGameinfoField(packWithCost, game, "ต้นทุน", { costProfiles }),
-  45
-);
-check(
-  "cost can be used by a normal computed formula",
-  evaluateFormula(
-    parseFormula("([ราคา] - [ต้นทุน]) / [ราคา] * 100"),
-    (label) => resolveGameinfoField(packWithCost, game, label, { costProfiles })
-  ),
-  55.00000000000001
 );
 check(
   "cost profile formula can reference its stable baseValue token",

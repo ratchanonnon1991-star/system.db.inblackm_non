@@ -54,8 +54,7 @@ export function validateGameinfoCostProfiles(profiles) {
   return errors;
 }
 
-// A profile calculates a cost multiplier. The selected pack's charge+fee is
-// multiplied by that rate to expose [ต้นทุน] to normal computed formulas.
+// A profile calculates a cost multiplier and its resulting amount for previews.
 export function evaluateGameinfoPackCost(pack, profile, resolveReference = () => undefined) {
   if (!profile) return { rate: null, cost: null, error: "ไม่พบโปรไฟล์ต้นทุน" };
   const baseValue = Number(profile.baseValue);
