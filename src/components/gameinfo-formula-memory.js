@@ -1,23 +1,31 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
-import { Save, Trash2 } from "lucide-react";
+import { useEffect, useId, useState } from "react";
+import { BookOpen, Save, Trash2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 const PRESETS_URL = "/api/gameinfo/formula-presets";
 
-export default function GameinfoFormulaMemory({ formula, type, symbol, onApply }) {
+const TYPE_LABELS = {
+  number: "ตัวเลข",
+  text: "ข้อความ",
+  date: "วันที่",
+  boolean: "ใช่ / ไม่ใช่",
+};
+
+export default function GameinfoFormulaMemory({ formula, type, symbol, onApply, className }) {
   const [presets, setPresets] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [name, setName] = useState("");
@@ -45,33 +53,17 @@ export default function GameinfoFormulaMemory({ formula, type, symbol, onApply }
   }, []);
 
   const selected = presets.find((preset) => String(preset.id) === selectedId) || null;
-  const items = useMemo(
-    () => [
-      { label: loading ? "กำลังโหลด..." : "เลือกชุดสูตร", value: null },
-      ...presets.map((preset) => ({ label: preset.name, value: String(preset.id) })),
-    ],
-    [loading, presets]
-  );
-
-  function selectPreset(value) {
-    const nextId = value == null ? null : String(value);
-    setSelectedId(nextId);
-    const next = presets.find((preset) => String(preset.id) === nextId);
-    if (next) setName(next.name);
-    setError("");
-    setNotice("");
-  }
-
-  function applySelected() {
-    if (!selected) return;
-    const applyError = onApply?.(selected);
+  function applyPreset(preset) {
+    setSelectedId(String(preset.id));
+    setName(preset.name);
+    const applyError = onApply?.(preset);
     if (applyError) {
       setError(applyError);
       setNotice("");
       return;
     }
     setError("");
-    setNotice(`นำสูตร “${selected.name}” มาใช้แล้ว`);
+    setNotice(`นำสูตร “${preset.name}” มาใช้แล้ว`);
   }
 
   async function savePreset(presetId = null) {
@@ -123,62 +115,99 @@ export default function GameinfoFormulaMemory({ formula, type, symbol, onApply }
   }
 
   return (
-    <FieldGroup className="gap-3">
-      <Field>
-        <FieldLabel>Formula Memory</FieldLabel>
-        <div className="flex gap-2">
-          <Select items={items} value={selectedId} onValueChange={selectPreset} disabled={loading || saving}>
-            <SelectTrigger className="min-w-0 flex-1">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent alignItemWithTrigger={false}>
-              <SelectGroup>
-                {items.map((item) => (
-                  <SelectItem key={item.value ?? "empty"} value={item.value}>
-                    {item.label}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-          <Button type="button" variant="outline" onClick={applySelected} disabled={!selected || saving}>
-            ใช้สูตร
-          </Button>
-        </div>
-        {selected ? (
-          <FieldDescription>
-            แก้ล่าสุดโดย {selected.updatedByName || selected.createdByName || "ไม่ทราบชื่อ"}
-          </FieldDescription>
-        ) : null}
-      </Field>
+    <aside className={cn("flex flex-col gap-3", className)} aria-label="คลัง Formula Memory">
+      <div>
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-linear-ink">
+          <BookOpen data-icon="inline-start" /> Formula Memory
+        </h3>
+        <p className="mt-1 text-xs leading-relaxed text-linear-ink-tertiary">
+          ไม่จำเป็นต้องตั้งค่า เลือกการ์ดเพื่อใช้สูตรที่บันทึกไว้ได้ทันที
+        </p>
+      </div>
 
-      <Field data-invalid={Boolean(error)}>
-        <FieldLabel htmlFor={nameId}>ชื่อชุดสูตร</FieldLabel>
-        <Input
-          id={nameId}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          maxLength={80}
-          placeholder="เช่น กำไรมาตรฐาน"
-          aria-invalid={Boolean(error)}
-          disabled={saving}
-        />
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" onClick={() => savePreset()} disabled={saving || !name.trim() || !formula.trim()}>
-            <Save data-icon="inline-start" />
-            บันทึกใหม่
-          </Button>
-          <Button type="button" variant="secondary" onClick={() => savePreset(selected.id)} disabled={saving || !selected || !name.trim() || !formula.trim()}>
-            อัปเดตที่เลือก
-          </Button>
-          <Button type="button" variant="destructive" onClick={deleteSelected} disabled={saving || !selected}>
-            <Trash2 data-icon="inline-start" />
-            ลบ
-          </Button>
-        </div>
-        <FieldError>{error}</FieldError>
-        {notice ? <p role="status" className="text-xs text-linear-success">{notice}</p> : null}
-      </Field>
-    </FieldGroup>
+      <div className="flex max-h-80 flex-col gap-2 overflow-y-auto pr-1">
+        {loading ? (
+          <p className="rounded-lg border border-linear-hairline bg-linear-surface-2 px-3 py-4 text-center text-xs text-linear-ink-tertiary">
+            กำลังโหลดคลังสูตร...
+          </p>
+        ) : presets.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-linear-hairline-strong px-3 py-4 text-center text-xs text-linear-ink-tertiary">
+            ยังไม่มีสูตรที่บันทึกไว้
+          </p>
+        ) : presets.map((preset) => (
+          <Card
+            key={preset.id}
+            size="sm"
+            className={cn(
+              "shrink-0 ring-inset",
+              String(preset.id) === selectedId && "ring-linear-primary/50"
+            )}
+          >
+            <CardHeader>
+              <CardTitle>{preset.name}</CardTitle>
+              <CardDescription>
+                {TYPE_LABELS[preset.type] || "สูตร"}{preset.symbol ? ` · ${preset.symbol}` : ""}
+              </CardDescription>
+              <CardAction>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  onClick={() => applyPreset(preset)}
+                  disabled={saving}
+                >
+                  ใช้สูตร
+                </Button>
+              </CardAction>
+            </CardHeader>
+            <CardContent>
+              <code className="block break-words rounded-md bg-linear-surface-2 px-2 py-1.5 text-[11px] leading-relaxed text-linear-ink-subtle">
+                {preset.formula}
+              </code>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {error ? <p role="alert" className="text-xs text-linear-danger">{error}</p> : null}
+      {notice ? <p role="status" className="text-xs text-linear-success">{notice}</p> : null}
+
+      <details className="rounded-lg border border-linear-hairline bg-linear-surface-2 p-3">
+        <summary className="cursor-pointer text-xs font-medium text-linear-ink-muted">
+          จัดการคลังสูตร
+        </summary>
+        <FieldGroup className="mt-3 gap-3">
+          <Field data-invalid={Boolean(error)}>
+            <FieldLabel htmlFor={nameId}>ชื่อชุดสูตร</FieldLabel>
+            <Input
+              id={nameId}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              maxLength={80}
+              placeholder="เช่น กำไรมาตรฐาน"
+              aria-invalid={Boolean(error)}
+              disabled={saving}
+            />
+            <FieldDescription>
+              บันทึกสูตรที่อยู่ในช่องหลักตอนนี้ หรือเลือกการ์ดก่อนเพื่อแก้ไขชุดเดิม
+            </FieldDescription>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" onClick={() => savePreset()} disabled={saving || !name.trim() || !formula.trim()}>
+                <Save data-icon="inline-start" />
+                บันทึกใหม่
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => savePreset(selected.id)} disabled={saving || !selected || !name.trim() || !formula.trim()}>
+                อัปเดตที่เลือก
+              </Button>
+              <Button type="button" variant="destructive" onClick={deleteSelected} disabled={saving || !selected}>
+                <Trash2 data-icon="inline-start" />
+                ลบ
+              </Button>
+            </div>
+            <FieldError>{error}</FieldError>
+          </Field>
+        </FieldGroup>
+      </details>
+    </aside>
   );
 }

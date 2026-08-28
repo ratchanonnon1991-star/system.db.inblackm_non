@@ -35,6 +35,8 @@ const computedEditorSource = readFileSync(new URL("../src/components/gameinfo-co
 const variableEditorSource = readFileSync(new URL("../src/components/gameinfo-formula-variables.js", import.meta.url), "utf8");
 const roundingHelpSource = readFileSync(new URL("../src/lib/gameinfo-formula-help.js", import.meta.url), "utf8");
 const formulaHelpPanelSource = readFileSync(new URL("../src/components/gameinfo-formula-help-panel.js", import.meta.url), "utf8");
+const formulaMemorySource = readFileSync(new URL("../src/components/gameinfo-formula-memory.js", import.meta.url), "utf8");
+const bulkFormulaSource = readFileSync(new URL("../src/components/gameinfo-bulk-formula-toolbar.js", import.meta.url), "utf8");
 ok("computed formula editor includes shared formula help", computedEditorSource.includes("GameinfoFormulaHelpPanel"));
 ok("mixed-variable editor includes shared formula help", variableEditorSource.includes("GameinfoFormulaHelpPanel"));
 ok("shared formula help starts as collapsible sections", (formulaHelpPanelSource.match(/<details/g) || []).length === 2);
@@ -46,6 +48,10 @@ check("numeric picker excludes descriptive fields", GAMEINFO_NUMERIC_FIELD_NAMES
   "USDCNY",
 ]);
 ok("variable editor uses the numeric field picker", variableEditorSource.includes("GAMEINFO_NUMERIC_FIELD_NAMES"));
+ok("formula memory is a separate side panel", computedEditorSource.includes("lg:grid-cols-[minmax(0,1fr)_20rem]"));
+ok("formula memory shows ready-to-use cards with formulas", formulaMemorySource.includes("<Card") && formulaMemorySource.includes("{preset.formula}"));
+ok("formula memory management is optional and collapsed", formulaMemorySource.includes("<details") && formulaMemorySource.includes("จัดการคลังสูตร"));
+ok("bulk formula editor labels the empty computed-column state", bulkFormulaSource.includes("ไม่มีคอลัมน์สูตร"));
 
 const game = { gameName: "Mobile Legends", region: "Global", platform: "Android/iOS", server: "Asia" };
 const pack = { name: "86 Diamonds", price: "100", amountChargedFee: "90", country: "" };

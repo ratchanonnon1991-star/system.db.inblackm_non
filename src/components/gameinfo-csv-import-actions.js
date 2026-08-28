@@ -226,7 +226,7 @@ function Preview({ kind, preview, errors, mode, setMode }) {
         )}
       </div>
       {errors.length ? <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400"><p className="mb-1 flex items-center gap-1 font-medium"><AlertTriangle size={14} /> ต้องแก้ไฟล์ก่อนนำเข้า</p>{errors.map((message, index) => <p key={`${message}-${index}`}>{message}</p>)}</div> : null}
-      {preview.warnings?.length ? <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300">{preview.warnings.map((message, index) => <p key={`${message}-${index}`}>{message}</p>)}</div> : null}
+      {preview.warnings?.length ? <div className="rounded-xl border border-linear-warning/40 bg-linear-warning-bg p-3 text-sm font-medium text-linear-warning">{preview.warnings.map((message, index) => <p key={`${message}-${index}`}>{message}</p>)}</div> : null}
       {kind === "packs" && !errors.length ? <div className="flex flex-wrap gap-4 text-sm text-linear-ink-muted"><label className="flex gap-2"><input type="radio" checked={mode === "replace"} onChange={() => setMode("replace")} />แทนที่ packs เดิมของเกมในไฟล์</label><label className="flex gap-2"><input type="radio" checked={mode === "add"} onChange={() => setMode("add")} />เพิ่มต่อจาก packs เดิม</label></div> : null}
     </div>
   );
@@ -237,6 +237,6 @@ function MenuLink({ label, href }) { return <a href={href} className="flex w-ful
 function Divider() { return <div className="my-1 border-t border-linear-hairline" />; }
 
 function CsvGuide() {
-  return <div className="mt-5 space-y-4 text-sm text-linear-ink-muted"><Guide title="CSV เพิ่มเกม" fields="game* · region · platform · server · bot_manual · link" /><Guide title="CSV Packs หลายเกม" fields="game_id* · game_name · currency_name · currency_image · category_name · pack_name* · pack_image · price* · amount_charged_fee* · channel_main* · channel_secondary · country" /><p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-amber-300">ใช้ game_id จากเมนู “โหลดรายการเกมล่าสุด” เครื่องหมาย * คือข้อมูลจำเป็น ระบบไม่รับคอลัมน์ฐานข้อมูลที่หน้า GameInfo ไม่ได้ใช้</p></div>;
+  return <div className="mt-5 space-y-4 text-sm text-linear-ink-muted"><Guide title="CSV เพิ่มเกม" fields="game* · region · platform · server · bot_manual · link" /><Guide title="CSV Packs หลายเกม" fields="game_id* · game_name · currency_name · currency_image · category_name · pack_name* · pack_image · price* · amount_charged_fee* · channel_main* · channel_secondary · country" /><p className="rounded-xl border border-linear-warning/40 bg-linear-warning-bg p-3 font-medium text-linear-warning">ใช้ game_id จากเมนู “โหลดรายการเกมล่าสุด” เครื่องหมาย * คือข้อมูลจำเป็น ระบบไม่รับคอลัมน์ฐานข้อมูลที่หน้า GameInfo ไม่ได้ใช้</p></div>;
 }
 function Guide({ title, fields }) { return <section className="rounded-xl border border-linear-hairline p-4"><h3 className="font-semibold text-linear-ink">{title}</h3><code className="mt-2 block whitespace-normal text-xs text-linear-primary">{fields}</code></section>; }

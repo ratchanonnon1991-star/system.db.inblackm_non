@@ -122,20 +122,24 @@ export default function GameinfoBulkFormulaToolbar({
       </div>
 
       <FieldGroup className="gap-3">
-        <Field>
+        <Field data-disabled={columnItems.length === 0}>
           <FieldLabel>คอลัมน์สูตรเป้าหมาย</FieldLabel>
-          <Select items={columnItems} value={columnKey} onValueChange={setColumnKey}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent alignItemWithTrigger={false}>
-              <SelectGroup>
-                {columnItems.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+          {columnItems.length > 0 ? (
+            <Select items={columnItems} value={columnKey} onValueChange={setColumnKey}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                <SelectGroup>
+                  {columnItems.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input value="ไม่มีคอลัมน์สูตร" disabled readOnly />
+          )}
         </Field>
 
         <Field data-invalid={Boolean(formula.trim()) && !validation.ok}>

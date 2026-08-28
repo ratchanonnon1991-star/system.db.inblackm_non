@@ -802,7 +802,7 @@ export default function GameinfoPackEditor({
         />
         {importMsg && <p className="mt-2 text-sm text-emerald-400">{importMsg}</p>}
         {importErrors.length > 0 && (
-          <div className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300">
+          <div className="mt-2 rounded-md border border-linear-warning/40 bg-linear-warning-bg p-3 text-sm font-medium text-linear-warning">
             <ul className="ml-4 list-disc">
               {importErrors.map((e, i) => (
                 <li key={i}>{e}</li>
@@ -816,8 +816,8 @@ export default function GameinfoPackEditor({
               พบ {pendingImport.packCount} แพ็กในไฟล์
             </p>
             {pendingImport.countryIssues.length > 0 ? (
-              <div className="mb-3 space-y-2 rounded-md border border-amber-500/30 bg-linear-surface-1 p-3">
-                <p className="text-sm font-medium text-amber-300">
+              <div className="mb-3 space-y-2 rounded-md border border-linear-warning/40 bg-linear-warning-bg p-3">
+                <p className="text-sm font-medium text-linear-warning">
                   แก้ชื่อประเทศที่ไม่ตรงกับรายการกลางอีก {pendingImport.countryIssues.length} รายการก่อนนำเข้า
                 </p>
                 {pendingImport.countryIssues.map((issue) => (
