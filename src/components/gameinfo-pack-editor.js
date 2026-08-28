@@ -1596,7 +1596,7 @@ function PackRow({
       id={`pack-row-${pack.id}`}
       style={{ gridTemplateColumns: gridTemplate }}
       className={`grid items-center gap-2 border-b border-linear-hairline px-2 py-2 text-sm last:border-b-0 ${
-        selected ? "bg-linear-surface-3" : rowIndex % 2 === 0 ? "bg-linear-surface-1" : "bg-linear-surface-2"
+        selected ? "bg-linear-hairline" : rowIndex % 2 === 0 ? "bg-linear-surface-1" : "bg-linear-surface-3"
       }`}
     >
       <span className="flex items-center justify-center">
