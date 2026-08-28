@@ -19,9 +19,9 @@ export async function GET(request) {
 
 export async function PATCH(request) {
   try {
-    await requireProfitEditor(request);
+    const user = await requireProfitEditor(request);
     const body = await request.json();
-    const price = await setPlatformPrice(body.platform, body.source, body.packName, body.price);
+    const price = await setPlatformPrice(body.platform, body.source, body.packName, body.price, body.expected, user);
     return jsonOk({ platform: body.platform, source: body.source, packName: body.packName, price });
   } catch (err) {
     return handleApiError(err, "ตั้งราคาขายไม่สำเร็จ");

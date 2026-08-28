@@ -8,10 +8,10 @@ import { setGocashOverride } from "@/server/profit-repository";
 // read, so there's no separate "pull the price now" step needed here.
 export async function PATCH(request, { params }) {
   try {
-    await requireProfitEditor(request);
+    const user = await requireProfitEditor(request);
     const { historyId } = await params;
     const body = await request.json();
-    const override = await setGocashOverride(historyId, body);
+    const override = await setGocashOverride(historyId, body, user);
     return jsonOk({ override });
   } catch (err) {
     return handleApiError(err, "แก้ไขยอดขาย/ต้นทุนไม่สำเร็จ");

@@ -4,12 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronRight, Layers, Loader2, RotateCcw } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import { commitBulkOverrideEdit, commitOverrideEdit } from "@/lib/profit-conflict";
 import { useProfitCanEdit } from "@/components/profit-capabilities-context";
 import ProfitSummaryGrid from "@/components/profit-summary-grid";
 import { SourceBadge } from "@/components/profit-badges";
 import ProfitModal, { ProfitField, profitInputClass } from "@/components/profit-modal";
 
-const SOURCE_LABELS = { gocash: "GoCash", oxide: "Oxide" };
+const SOURCE_LABELS = { gocash: "GoCash", oxide: "Multi Game Card", wavepay: "Wavepay" };
 
 function matchesQuery(q, parts) {
   if (!q) return true;
@@ -66,18 +67,26 @@ export default function ProfitPackCostsPage() {
 
   const setCount = (packs || []).filter((p) => p.cost != null).length;
 
-  const editCost = async (source, packName, value) => {
-    try {
-      await apiJson("/api/profit/pack-costs", {
+  // `expected` is the pack's own current cost as shown on screen (see
+  // packCostSummary -- it's the raw stored value, not a blended one) -- the
+  // server rejects with 409 if someone else already changed it since this
+  // row loaded (see assertScalarUnchanged in profit-repository.js).
+  const editCost = (pack, value) => {
+    const cost = Number(value) || 0;
+    return commitOverrideEdit({
+      save: (includeExpected) => apiJson("/api/profit/pack-costs", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source, packName, cost: Number(value) || 0 }),
+        body: JSON.stringify({
+          source: pack.source,
+          packName: pack.packName,
+          cost,
+          ...(includeExpected ? { expected: pack.cost } : {}),
+        }),
         fallbackError: "ตั้งต้นทุนไม่สำเร็จ",
-      });
-      load();
-    } catch (err) {
-      window.alert(err.message);
-    }
+      }),
+      reload: load,
+    });
   };
 
   if (error) {
@@ -103,7 +112,7 @@ export default function ProfitPackCostsPage() {
         <div>
           <h1 className="text-xl font-semibold text-ll-ink">ตั้งค่าต้นทุนตามแพ็ก</h1>
           <p className="mt-1 max-w-2xl text-[13px] text-ll-ink-subtle">
-            รวมแพ็กจากทุกระบบ (GoCash, Oxide ฯลฯ) ไว้ที่เดียว — ตั้งต้นทุนต่อแพ็กครั้งเดียว มีผลกับทุกออเดอร์ที่ใช้แพ็กนี้ทันที
+            รวมแพ็กจากทุกระบบ (GoCash, Multi Game Card ฯลฯ) ไว้ที่เดียว — ตั้งต้นทุนต่อแพ็กครั้งเดียว มีผลกับทุกออเดอร์ที่ใช้แพ็กนี้ทันที
             (ทั้งเก่าและใหม่) · ออเดอร์ไหนเคยแก้ต้นทุนเองในตารางไว้แล้ว จะยึดค่าที่แก้เองก่อนเสมอ
           </p>
         </div>
@@ -187,7 +196,7 @@ export default function ProfitPackCostsPage() {
                     </td>
                     <td className="px-3 py-2.5 text-right">{p.orderCount}</td>
                     <td className="px-3 py-2.5 text-right">
-                      <PackCostInput value={p.cost ?? 0} disabled={!canEdit} onCommit={(v) => editCost(p.source, p.packName, v)} />
+                      <PackCostInput value={p.cost ?? 0} disabled={!canEdit} onCommit={(v) => editCost(p, v)} />
                     </td>
                   </tr>
                 ))
@@ -227,8 +236,15 @@ function BulkCostModal({ packs, onClose, onApplied }) {
   }, [packs]);
   const allGames = useMemo(() => [...packsByGame.keys()].sort(), [packsByGame]);
 
-  const [packKey, setPackKey] = useState(packs[0] ? `${packs[0].source}:${packs[0].packName}` : "");
   const [selectedGame, setSelectedGame] = useState(allGames[0] || "");
+  const gamePacks = packsByGame.get(selectedGame) || [];
+  // Tracks only an explicit pick -- when it doesn't belong to the currently
+  // selected game (most commonly right after switching games), falls back
+  // to that game's first pack instead, with no effect needed to keep it synced.
+  const [manualPackKey, setManualPackKey] = useState(null);
+  const packKey = manualPackKey && gamePacks.some((p) => `${p.source}:${p.packName}` === manualPackKey)
+    ? manualPackKey
+    : gamePacks[0] ? `${gamePacks[0].source}:${gamePacks[0].packName}` : "";
 
   const targets = mode === "pack"
     ? packs.filter((p) => `${p.source}:${p.packName}` === packKey)
@@ -248,16 +264,26 @@ function BulkCostModal({ packs, onClose, onApplied }) {
     if (!window.confirm(`ตั้งต้นทุน ${n} ให้ ${targets.length} แพ็ก (${label}) ใช่ไหม?`)) return;
     setSubmitting(true);
     try {
-      await Promise.all(
-        targets.map((p) =>
+      // Each target's own current cost (as loaded on this page) goes along
+      // as its baseline -- if someone else already changed that specific
+      // pack since then, it's flagged as a conflict instead of silently
+      // overwritten, same protection the inline row edit above has.
+      await commitBulkOverrideEdit({
+        targets,
+        save: (p, includeExpected) =>
           apiJson("/api/profit/pack-costs", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ source: p.source, packName: p.packName, cost: n }),
+            body: JSON.stringify({
+              source: p.source,
+              packName: p.packName,
+              cost: n,
+              ...(includeExpected ? { expected: p.cost } : {}),
+            }),
             fallbackError: "ตั้งต้นทุนไม่สำเร็จ",
-          })
-        )
-      );
+          }),
+        describe: (p) => p.packName,
+      });
       onApplied();
     } catch (err) {
       window.alert(err.message);
@@ -311,25 +337,21 @@ function BulkCostModal({ packs, onClose, onApplied }) {
         </button>
       </div>
 
-      {mode === "pack" ? (
+      <ProfitField label="เลือกเกม">
+        <select value={selectedGame} onChange={(e) => setSelectedGame(e.target.value)} className={profitInputClass}>
+          {allGames.map((g) => (
+            <option key={g} value={g}>{g} ({packsByGame.get(g)?.length || 0} แพ็ก)</option>
+          ))}
+        </select>
+      </ProfitField>
+
+      {mode === "pack" && (
         <ProfitField label="เลือกแพ็ก">
-          <select value={packKey} onChange={(e) => setPackKey(e.target.value)} className={profitInputClass}>
-            {[...packsByGame.entries()].map(([g, list]) => (
-              <optgroup key={g} label={g}>
-                {list.map((p) => (
-                  <option key={`${p.source}:${p.packName}`} value={`${p.source}:${p.packName}`}>
-                    {p.packName} ({SOURCE_LABELS[p.source] || p.source})
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-        </ProfitField>
-      ) : (
-        <ProfitField label="เลือกเกม">
-          <select value={selectedGame} onChange={(e) => setSelectedGame(e.target.value)} className={profitInputClass}>
-            {allGames.map((g) => (
-              <option key={g} value={g}>{g} ({packsByGame.get(g)?.length || 0} แพ็ก)</option>
+          <select value={packKey} onChange={(e) => setManualPackKey(e.target.value)} className={profitInputClass}>
+            {gamePacks.map((p) => (
+              <option key={`${p.source}:${p.packName}`} value={`${p.source}:${p.packName}`}>
+                {p.packName} ({SOURCE_LABELS[p.source] || p.source})
+              </option>
             ))}
           </select>
         </ProfitField>
