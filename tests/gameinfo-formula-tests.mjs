@@ -42,7 +42,6 @@ ok("rounding help documents decimal and step families", roundingHelpSource.inclu
 check("numeric picker excludes descriptive fields", GAMEINFO_NUMERIC_FIELD_NAMES, [
   "ราคา",
   "ยอดที่กด + fee",
-  "อัตราต้นทุน",
   "USDT/THB",
   "USDCNY",
 ]);

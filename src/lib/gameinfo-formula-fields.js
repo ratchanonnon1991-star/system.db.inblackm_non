@@ -28,7 +28,6 @@ export const GAMEINFO_FIELD_NAMES = Object.keys(GAMEINFO_FIELDS);
 export const GAMEINFO_NUMERIC_FIELD_NAMES = [
   "ราคา",
   "ยอดที่กด + fee",
-  "อัตราต้นทุน",
   "USDT/THB",
   "USDCNY",
 ];
