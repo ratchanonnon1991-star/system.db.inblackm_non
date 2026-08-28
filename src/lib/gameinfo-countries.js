@@ -5,9 +5,10 @@ const englishNames = new Intl.DisplayNames(["en"], { type: "region" });
 
 export const GAMEINFO_COUNTRIES = ISO_COUNTRY_CODES.map((code) => ({
   code,
-  name: thaiNames.of(code),
+  name: englishNames.of(code),
   englishName: englishNames.of(code),
-})).sort((a, b) => a.name.localeCompare(b.name, "th"));
+  thaiName: thaiNames.of(code),
+})).sort((a, b) => a.name.localeCompare(b.name, "en"));
 
 export const GAMEINFO_COUNTRY_NAMES = GAMEINFO_COUNTRIES.map((country) => country.name);
 
@@ -20,21 +21,28 @@ function countryKey(value) {
 
 const aliases = new Map();
 for (const country of GAMEINFO_COUNTRIES) {
-  for (const alias of [country.code, country.name, country.englishName]) {
+  for (const alias of [country.code, country.name, country.thaiName]) {
     aliases.set(countryKey(alias), country.name);
   }
 }
-aliases.set(countryKey("ไทย"), thaiNames.of("TH"));
-aliases.set(countryKey("USA"), thaiNames.of("US"));
-aliases.set(countryKey("UK"), thaiNames.of("GB"));
-aliases.set(countryKey("เกาหลีใต้"), thaiNames.of("KR"));
-aliases.set(countryKey("เกาหลีเหนือ"), thaiNames.of("KP"));
+aliases.set(countryKey("USA"), englishNames.of("US"));
+aliases.set(countryKey("UK"), englishNames.of("GB"));
+aliases.set(countryKey("เกาหลีใต้"), englishNames.of("KR"));
+aliases.set(countryKey("เกาหลีเหนือ"), englishNames.of("KP"));
 
 export function normalizeGameinfoCountry(value) {
   const clean = String(value || "").trim();
   if (!clean) return { value: "", matched: false };
   const canonical = aliases.get(countryKey(clean));
   return { value: canonical || clean, matched: Boolean(canonical) };
+}
+
+export function gameinfoCountrySearchText(value) {
+  const canonical = aliases.get(countryKey(value)) || String(value || "").trim();
+  const country = GAMEINFO_COUNTRIES.find((item) => item.name === canonical);
+  return country
+    ? `${country.name} ${country.thaiName} ${country.code}`
+    : canonical;
 }
 
 function editDistance(left, right) {
@@ -59,9 +67,9 @@ export function suggestGameinfoCountries(value, limit = 3) {
   return GAMEINFO_COUNTRIES
     .map((country) => ({
       name: country.name,
-      distance: Math.min(editDistance(clean, country.name), editDistance(clean, country.englishName)),
+      distance: Math.min(editDistance(clean, country.name), editDistance(clean, country.thaiName)),
     }))
-    .sort((a, b) => a.distance - b.distance || a.name.localeCompare(b.name, "th"))
+    .sort((a, b) => a.distance - b.distance || a.name.localeCompare(b.name, "en"))
     .slice(0, limit)
     .map((item) => item.name);
 }

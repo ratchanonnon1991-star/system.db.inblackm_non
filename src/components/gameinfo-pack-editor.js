@@ -40,6 +40,7 @@ import { GAMEINFO_FIELD_NAMES, resolveGameinfoField } from "@/lib/gameinfo-formu
 import { mergeCurrencies } from "@/lib/gameinfo-import";
 import {
   GAMEINFO_COUNTRY_NAMES,
+  gameinfoCountrySearchText,
   normalizeGameinfoCountry,
   suggestGameinfoCountries,
 } from "@/lib/gameinfo-countries";
@@ -830,6 +831,7 @@ export default function GameinfoPackEditor({
                         value={issue.input}
                         onChange={(value) => updatePendingCountry(issue.packId, value)}
                         suggestions={GAMEINFO_COUNTRY_NAMES}
+                        suggestionSearchText={gameinfoCountrySearchText}
                         placeholder="ค้นหาชื่อประเทศ"
                       />
                       {issue.suggestions.length > 0 ? (
@@ -1751,6 +1753,7 @@ function PackEditorColumn({
           value={pack.country ?? ""}
           onChange={(value) => onUpdate({ country: value })}
           suggestions={suggestions?.countries || []}
+          suggestionSearchText={gameinfoCountrySearchText}
           placeholder="เลือก/พิมพ์ชื่อประเทศ"
           className="h-9 w-full rounded border border-linear-primary/40 px-2 text-sm outline-none"
           autoFocus

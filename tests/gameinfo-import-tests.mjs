@@ -12,6 +12,7 @@ import {
 } from "@/lib/gameinfo-import.js";
 import {
   GAMEINFO_COUNTRY_NAMES,
+  gameinfoCountrySearchText,
   normalizeGameinfoCountry,
 } from "@/lib/gameinfo-countries.js";
 
@@ -51,9 +52,14 @@ check("splitList drops empty pieces", splitList("A,,B, "), ["A", "B"]);
 check("splitList of blank is empty", splitList(""), []);
 ok("country master includes every ISO region", GAMEINFO_COUNTRY_NAMES.length >= 249);
 check("country master normalizes English names", normalizeGameinfoCountry("Thailand"), {
-  value: "ไทย",
+  value: "Thailand",
   matched: true,
 });
+check("country master normalizes Thai names to English", normalizeGameinfoCountry("ไทย"), {
+  value: "Thailand",
+  matched: true,
+});
+ok("country search text includes Thai and English", gameinfoCountrySearchText("Thailand").includes("ไทย"));
 check("country master keeps unknown CSV values for correction", normalizeGameinfoCountry("Thailnd"), {
   value: "Thailnd",
   matched: false,
@@ -161,7 +167,7 @@ check(
   "parsePacksForGame canonicalizes a recognized country",
   parsePacksForGame([packRow({ country: "Thailand" })], 5, "Fallback").game.currencies[0]
     .categories[0].packs[0].country,
-  "ไทย"
+  "Thailand"
 );
 check(
   "parsePacksForGame flags an unknown country for correction",

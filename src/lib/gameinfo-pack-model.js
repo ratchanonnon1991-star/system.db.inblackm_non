@@ -2,6 +2,7 @@
 // adapter. Keep this allowlist aligned with fields the pack edit/view pages
 // actually expose; unknown/legacy database fields must not be written back.
 import { normalizeGameinfoNumericInput } from "@/lib/gameinfo-pack-validation";
+import { normalizeGameinfoCountry } from "@/lib/gameinfo-countries";
 
 function text(value) {
   return value == null ? "" : String(value);
@@ -42,7 +43,7 @@ export function sanitizeGameinfoPack(pack) {
     costProfileId: text(source.costProfileId),
     channelsMain: stringList(source.channelsMain),
     channelsSecondary: stringList(source.channelsSecondary),
-    country: text(source.country),
+    country: normalizeGameinfoCountry(source.country).value,
   };
   const localizedNames = sanitizeGameinfoPackLocalizedNames(source.localizedNames);
   if (Object.keys(localizedNames).length) result.localizedNames = localizedNames;
