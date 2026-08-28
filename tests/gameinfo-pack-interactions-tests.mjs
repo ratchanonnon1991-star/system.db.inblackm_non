@@ -36,6 +36,7 @@ assert.ok(
   "country and both channel columns render as coloured tags"
 );
 assert.ok(view.includes("values.map((item) => ("), "each channel becomes its own tag");
-assert.ok(view.includes("function StableTag({ value, className"), "one tag component serves the table and the header summary");
+assert.ok(view.includes("function StableTag({ value, label = value, className"), "one tag component serves the table and the header summary");
+assert.ok(view.includes("gameinfoCountryDisplayName(item)"), "the view shows the same trimmed country name as the editor");
 
-console.log("23 passed");
+console.log("24 passed");

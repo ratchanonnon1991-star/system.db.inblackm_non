@@ -20,6 +20,7 @@ import { getGameinfoFormulaDisplay } from "@/lib/gameinfo-formula-overrides";
 import { evaluateGameinfoComputedColumn } from "@/lib/gameinfo-computed-evaluator";
 import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
 import { gameinfoStableColorStyle } from "@/lib/gameinfo-stable-color";
+import { gameinfoCountryDisplayName } from "@/lib/gameinfo-countries";
 import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
 import { useGameinfoRates } from "./gameinfo-rate-panel";
 import GameinfoImagePreview from "./gameinfo-image-preview";
@@ -496,7 +497,13 @@ function PackViewCell({
         ) : (
           <span className="flex flex-wrap items-center gap-1">
             {values.map((item) => (
-              <StableTag key={item} value={item} />
+              <StableTag
+                key={item}
+                value={item}
+                // Same trimmed country name the editor shows; the colour still
+                // hashes the stored value, so both screens match either way.
+                label={column.id === "country" ? gameinfoCountryDisplayName(item) : item}
+              />
             ))}
           </span>
         )}
@@ -513,14 +520,14 @@ function PackViewCell({
   );
 }
 
-function StableTag({ value, className = "text-xs" }) {
+function StableTag({ value, label = value, className = "text-xs" }) {
   return (
     <span
       style={gameinfoStableColorStyle(value)}
       className={`gameinfo-stable-tag inline-flex max-w-full truncate rounded border px-2 py-0.5 ${className}`}
-      title={value}
+      title={label}
     >
-      {value}
+      {label}
     </span>
   );
 }
