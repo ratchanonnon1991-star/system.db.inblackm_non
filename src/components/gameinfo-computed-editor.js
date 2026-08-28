@@ -17,6 +17,7 @@ import {
   requestGameinfoDiscard,
   useGameinfoUnsavedChanges,
 } from "@/lib/gameinfo-unsaved-changes";
+import GameinfoFormulaMemory from "./gameinfo-formula-memory";
 
 // Same parser, validation and function library as the systemdb-side formula
 // editor (gamedb-modals.js's ComputedColumnModal) — this one is a full
@@ -52,12 +53,16 @@ export default function GameinfoComputedEditor({
   // still writing it and stops the moment they choose one themselves.
   const [typeChoice, setTypeChoice] = useState(initialColumn?.type || "");
   const [symbol, setSymbol] = useState(initialColumn?.symbol || "");
+  const [scopeMode, setScopeMode] = useState(
+    initialColumn?.scopeMode === "category" ? "category" : "global"
+  );
   const [resetOverrides, setResetOverrides] = useState(false);
   const dirty =
     label.trim() !== String(initialColumn?.label || "").trim() ||
     formula.trim() !== String(initialColumn?.formula || "").trim() ||
     typeChoice !== (initialColumn?.type || "") ||
     symbol !== (initialColumn?.symbol || "") ||
+    scopeMode !== (initialColumn?.scopeMode === "category" ? "category" : "global") ||
     resetOverrides;
   useGameinfoUnsavedChanges(dirty);
 
@@ -127,9 +132,42 @@ export default function GameinfoComputedEditor({
       formula: formula.trim(),
       type,
       symbol: type === "number" ? symbol : "",
+      scopeMode,
     };
     if (editingMainFormula) onSave?.(nextColumn, { resetOverrides });
     else onAdd(nextColumn);
+  }
+
+  function applyMemoryPreset(preset) {
+    try {
+      const ast = parseFormula(preset.formula);
+      const refs = [...extractFormulaRefs(ast)];
+      const availableNames = [
+        ...GAMEINFO_FIELD_NAMES,
+        ...extraFieldNames,
+        ...otherColumns.map((column) => column.label),
+      ];
+      const unknown = refs.filter(
+        (name) => !availableNames.includes(name) && name !== label.trim()
+      );
+      if (unknown.length) return `เกมนี้ไม่มีคอลัมน์: ${unknown.join(", ")}`;
+      const candidate = {
+        key: initialColumn?.key || "__draft__",
+        label: label.trim() || "__draft__",
+        formula: preset.formula,
+      };
+      const dependencyErrors = validateGameinfoComputedDependencies(
+        [...otherColumns.filter((column) => column.key !== candidate.key), candidate],
+        extraFieldNames
+      );
+      if (dependencyErrors.length) return dependencyErrors[0];
+      setFormula(preset.formula);
+      setTypeChoice(preset.type || "number");
+      setSymbol(preset.type === "number" ? preset.symbol || "" : "");
+      return "";
+    } catch (error) {
+      return error instanceof Error ? error.message : "สูตรไม่ถูกต้อง";
+    }
   }
 
   return (
@@ -183,6 +221,31 @@ export default function GameinfoComputedEditor({
             )}
           </div>
 
+          <GameinfoFormulaMemory
+            formula={formula}
+            type={type}
+            symbol={symbol}
+            onApply={applyMemoryPreset}
+          />
+
+          <div>
+            <label htmlFor="gameinfo-computed-scope" className="mb-1 block text-xs text-linear-ink-tertiary">
+              ขอบเขตการใช้สูตร
+            </label>
+            <select
+              id="gameinfo-computed-scope"
+              value={scopeMode}
+              onChange={(event) => setScopeMode(event.target.value)}
+              className="h-9 w-full rounded border border-linear-hairline-strong bg-linear-surface-2 px-2 text-sm text-linear-ink outline-none focus:border-linear-primary"
+            >
+              <option value="global">ใช้สูตรหลักทั้งคอลัมน์</option>
+              <option value="category">แยกสูตรตามหมวด</option>
+            </select>
+            <p className="mt-1 text-[11px] text-linear-ink-tertiary">
+              หมวดที่ยังไม่มีสูตรเฉพาะจะใช้สูตรหลักด้านบนเสมอ ชื่อหมวดไม่มีผลต่อสูตร
+            </p>
+          </div>
+
           <div>
             <label htmlFor="gameinfo-computed-type" className="mb-1 block text-xs text-linear-ink-tertiary">
               ผลลัพธ์เป็น {typeChoice ? "(เลือกเอง)" : "(เดาจากสูตร)"}
@@ -201,7 +264,10 @@ export default function GameinfoComputedEditor({
             </select>
           </div>
 
-          {editingMainFormula && Object.keys(initialColumn?.rowOverrides || {}).length > 0 ? (
+          {editingMainFormula && (
+            Object.keys(initialColumn?.rowOverrides || {}).length > 0 ||
+            Object.keys(initialColumn?.categoryFormulas || {}).length > 0
+          ) ? (
             <label className="flex cursor-pointer items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
               <input
                 type="checkbox"
@@ -210,7 +276,7 @@ export default function GameinfoComputedEditor({
                 className="mt-0.5 accent-linear-primary"
               />
               <span>
-                ใช้สูตรหลักนี้กับทุก pack และล้างสูตรเฉพาะแถวทั้งหมด ({Object.keys(initialColumn.rowOverrides).length} แถว)
+                ใช้สูตรหลักนี้กับทุก pack และล้างสูตรเฉพาะหมวด/เฉพาะ pack ทั้งหมด
               </span>
             </label>
           ) : null}

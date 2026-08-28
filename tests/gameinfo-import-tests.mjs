@@ -10,6 +10,10 @@ import {
   parsePacksForGame,
   splitList,
 } from "@/lib/gameinfo-import.js";
+import {
+  GAMEINFO_COUNTRY_NAMES,
+  normalizeGameinfoCountry,
+} from "@/lib/gameinfo-countries.js";
 
 let pass = 0;
 const failures = [];
@@ -45,6 +49,15 @@ check("splitList splits on comma", splitList("A, B"), ["A", "B"]);
 check("splitList splits on ; | and newline too", splitList("A;B|C\nD"), ["A", "B", "C", "D"]);
 check("splitList drops empty pieces", splitList("A,,B, "), ["A", "B"]);
 check("splitList of blank is empty", splitList(""), []);
+ok("country master includes every ISO region", GAMEINFO_COUNTRY_NAMES.length >= 249);
+check("country master normalizes English names", normalizeGameinfoCountry("Thailand"), {
+  value: "ไทย",
+  matched: true,
+});
+check("country master keeps unknown CSV values for correction", normalizeGameinfoCountry("Thailnd"), {
+  value: "Thailnd",
+  matched: false,
+});
 
 // --- buildPackTree -------------------------------------------------------
 const tree = buildPackTree([
@@ -143,6 +156,17 @@ check(
   "parsePacksForGame falls back to the passed name when the file has none",
   parsePacksForGame([packRow({ game_name: "" })], 5, "Fallback").game.gameName,
   "Fallback"
+);
+check(
+  "parsePacksForGame canonicalizes a recognized country",
+  parsePacksForGame([packRow({ country: "Thailand" })], 5, "Fallback").game.currencies[0]
+    .categories[0].packs[0].country,
+  "ไทย"
+);
+check(
+  "parsePacksForGame flags an unknown country for correction",
+  parsePacksForGame([packRow({ country: "Thailnd" })], 5, "Fallback").countryIssues[0].input,
+  "Thailnd"
 );
 
 // --- mergeCurrencies (add mode) ------------------------------------------

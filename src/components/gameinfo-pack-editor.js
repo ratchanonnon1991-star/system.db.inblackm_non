@@ -24,6 +24,8 @@ import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoImagePickerModal from "./gameinfo-image-picker-modal";
 import GameinfoComputedEditor from "./gameinfo-computed-editor";
 import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
+import GameinfoFormulaMemory from "./gameinfo-formula-memory";
+import GameinfoBulkFormulaToolbar from "./gameinfo-bulk-formula-toolbar";
 import GameinfoFormulaVariablesButton, { GameinfoFormulaVariableSummary } from "./gameinfo-formula-variables";
 import GameinfoRatePanel, { useGameinfoRates } from "./gameinfo-rate-panel";
 import GameinfoPackHistory from "./gameinfo-pack-history";
@@ -36,6 +38,12 @@ import { apiJson } from "@/lib/api-json";
 import { evaluateFormula, extractFormulaRefs, parseFormula } from "@/lib/gamedb-formula";
 import { GAMEINFO_FIELD_NAMES, resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
 import { mergeCurrencies } from "@/lib/gameinfo-import";
+import {
+  GAMEINFO_COUNTRY_NAMES,
+  normalizeGameinfoCountry,
+  suggestGameinfoCountries,
+} from "@/lib/gameinfo-countries";
+import { gameinfoStableColorStyle } from "@/lib/gameinfo-stable-color";
 import {
   requestGameinfoBack,
   requestGameinfoDiscard,
@@ -55,6 +63,7 @@ import {
   duplicateGameinfoFormulaOverrides,
   getGameinfoFormulaDisplay,
   removeGameinfoFormulaOverridesForPack,
+  setGameinfoCategoryFormula,
   setGameinfoFormulaOverride,
   updateGameinfoComputedColumn,
 } from "@/lib/gameinfo-formula-overrides";
@@ -66,6 +75,7 @@ import {
 import { evaluateGameinfoComputedColumn } from "@/lib/gameinfo-computed-evaluator";
 import { normalizeSpaces } from "@/lib/text-normalize";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const REQUIRED_PACK_FIELDS = ["name", "price", "amountChargedFee", "channelsMain"];
 
@@ -137,6 +147,8 @@ export default function GameinfoPackEditor({
   const [savedCostProfiles, setSavedCostProfiles] = useState(game.costProfiles ?? []);
   const [invalidFields, setInvalidFields] = useState(new Set());
   const [confirmRequest, setConfirmRequest] = useState(null);
+  const [selectedPackIds, setSelectedPackIds] = useState(() => new Set());
+  const [visiblePackIdsByCategory, setVisiblePackIdsByCategory] = useState({});
 
   const [importing, setImporting] = useState(false);
   const [importErrors, setImportErrors] = useState([]);
@@ -159,6 +171,88 @@ export default function GameinfoPackEditor({
     () => ({ costProfiles, formulaVariables, externalValues: rateState.externalValues }),
     [costProfiles, formulaVariables, rateState.externalValues]
   );
+
+  const currentCategoryIds = useMemo(
+    () => new Set(currencies.flatMap((currency) => currency.categories.map((category) => String(category.id)))),
+    [currencies]
+  );
+  const visiblePackIds = useMemo(
+    () => [
+      ...new Set(
+        Object.entries(visiblePackIdsByCategory)
+          .filter(([categoryId]) => currentCategoryIds.has(categoryId))
+          .flatMap(([, packIds]) => packIds)
+      ),
+    ],
+    [currentCategoryIds, visiblePackIdsByCategory]
+  );
+  const selectedPacks = useMemo(() => {
+    const entries = [];
+    for (const currency of currencies) {
+      for (const category of currency.categories) {
+        for (const pack of category.packs) {
+          if (selectedPackIds.has(String(pack.id))) {
+            entries.push({ pack, categoryId: category.id });
+          }
+        }
+      }
+    }
+    return entries;
+  }, [currencies, selectedPackIds]);
+
+  const reportVisiblePacks = useCallback((categoryId, packIds, categoryPackIds) => {
+    const key = String(categoryId);
+    const nextIds = packIds.map(String);
+    setVisiblePackIdsByCategory((current) => {
+      if (JSON.stringify(current[key] || []) === JSON.stringify(nextIds)) return current;
+      return { ...current, [key]: nextIds };
+    });
+    const visible = new Set(nextIds);
+    const categoryIds = new Set(categoryPackIds.map(String));
+    setSelectedPackIds((current) => {
+      const next = new Set(
+        [...current].filter((packId) => !categoryIds.has(packId) || visible.has(packId))
+      );
+      return next.size === current.size ? current : next;
+    });
+  }, []);
+
+  function togglePackSelection(packId, selected) {
+    setSelectedPackIds((current) => {
+      const next = new Set(current);
+      if (selected) next.add(String(packId));
+      else next.delete(String(packId));
+      return next;
+    });
+  }
+
+  function toggleVisibleSelection(selected) {
+    setSelectedPackIds((current) => {
+      const next = new Set(current);
+      for (const packId of visiblePackIds) {
+        if (selected) next.add(String(packId));
+        else next.delete(String(packId));
+      }
+      return next;
+    });
+  }
+
+  function applyBulkFormula(columnKey, formula) {
+    setComputedColumns((current) => {
+      let next = current;
+      for (const { pack } of selectedPacks) {
+        next = setGameinfoFormulaOverride(next, columnKey, pack.id, formula);
+      }
+      return next;
+    });
+    setSelectedPackIds(new Set());
+    setAuditSource("editor");
+  }
+
+  function clearBulkFormula(columnKey) {
+    if (!columnKey) return;
+    applyBulkFormula(columnKey, "");
+  }
 
   const parsedColumns = useMemo(
     () =>
@@ -279,9 +373,12 @@ export default function GameinfoPackEditor({
       title: "ลบสกุลเงิน",
       message: "สกุลเงินนี้ รวมถึงหมวดหมู่และแพ็กทั้งหมดภายในจะถูกลบเมื่อกดบันทึก",
       confirmLabel: "ลบสกุลเงิน",
-      onConfirm: () => updateCurrencies((draft) => {
-        draft.splice(cIdx, 1);
-      }),
+      onConfirm: () => {
+        updateCurrencies((draft) => {
+          draft.splice(cIdx, 1);
+        });
+        setSelectedPackIds(new Set());
+      },
     });
   }
 
@@ -295,9 +392,12 @@ export default function GameinfoPackEditor({
       title: "ลบหมวดหมู่",
       message: "หมวดหมู่นี้และแพ็กทั้งหมดภายในจะถูกลบเมื่อกดบันทึก",
       confirmLabel: "ลบหมวดหมู่",
-      onConfirm: () => updateCurrencies((draft) => {
-        draft[cIdx].categories.splice(catIdx, 1);
-      }),
+      onConfirm: () => {
+        updateCurrencies((draft) => {
+          draft[cIdx].categories.splice(catIdx, 1);
+        });
+        setSelectedPackIds(new Set());
+      },
     });
   }
 
@@ -328,6 +428,11 @@ export default function GameinfoPackEditor({
           draft[cIdx].categories[catIdx].packs.splice(pkIdx, 1);
         });
         if (packId) {
+          setSelectedPackIds((current) => {
+            const next = new Set(current);
+            next.delete(String(packId));
+            return next;
+          });
           setComputedColumns((prev) => removeGameinfoFormulaOverridesForPack(prev, packId));
           setInvalidFields((prev) => {
             if (prev.size === 0) return prev;
@@ -358,8 +463,11 @@ export default function GameinfoPackEditor({
     }
   }
 
-  function addComputedColumn({ key, label, formula, type, symbol }) {
-    setComputedColumns((prev) => [...prev, { key, label, formula, type, symbol }]);
+  function addComputedColumn({ key, label, formula, type, symbol, scopeMode }) {
+    setComputedColumns((prev) => [
+      ...prev,
+      { key, label, formula, type, symbol, scopeMode, categoryFormulas: {}, rowOverrides: {} },
+    ]);
     setModalOpen(false);
   }
   function removeComputedColumn(key) {
@@ -380,6 +488,11 @@ export default function GameinfoPackEditor({
   function setFormulaOverride(columnKey, packId, formula) {
     setComputedColumns((prev) =>
       setGameinfoFormulaOverride(prev, columnKey, packId, formula)
+    );
+  }
+  function setCategoryFormula(columnKey, categoryId, formula) {
+    setComputedColumns((prev) =>
+      setGameinfoCategoryFormula(prev, columnKey, categoryId, formula)
     );
   }
 
@@ -455,6 +568,7 @@ export default function GameinfoPackEditor({
         setAuditSource("editor");
         setSavedVisible(true);
         setSavedAt(Date.now());
+        setSelectedPackIds(new Set());
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
@@ -479,6 +593,7 @@ export default function GameinfoPackEditor({
         setLanguageDraft("");
         setAddingLanguage(false);
         setLanguageError("");
+        setSelectedPackIds(new Set());
       },
     });
   }
@@ -500,7 +615,8 @@ export default function GameinfoPackEditor({
         fallbackError: "อ่านไฟล์ไม่สำเร็จ",
       });
       const errors = data.errors ?? [];
-      if (currencies.length === 0) {
+      const countryIssues = data.countryIssues ?? [];
+      if (currencies.length === 0 && countryIssues.length === 0) {
         setCurrencies(data.game.currencies);
         setAuditSource("csv_replace");
         setImportErrors(errors);
@@ -508,7 +624,12 @@ export default function GameinfoPackEditor({
           `นำเข้าแล้ว ${data.game.packCount} แพ็ก — ตรวจสอบด้านล่างแล้วกด "บันทึกตารางแพ็ก"`
         );
       } else {
-        setPendingImport({ currencies: data.game.currencies, packCount: data.game.packCount });
+        setPendingImport({
+          currencies: data.game.currencies,
+          packCount: data.game.packCount,
+          countryIssues,
+          hadExistingData: currencies.length > 0,
+        });
         setImportErrors(errors);
       }
     } catch (e) {
@@ -519,7 +640,7 @@ export default function GameinfoPackEditor({
   }
 
   function applyPendingImport(mode) {
-    if (!pendingImport) return;
+    if (!pendingImport || pendingImport.countryIssues.length > 0) return;
     if (mode === "replace") {
       setCurrencies(pendingImport.currencies);
       setAuditSource("csv_replace");
@@ -534,6 +655,41 @@ export default function GameinfoPackEditor({
     );
     setPendingImport(null);
   }
+
+  function updatePendingCountry(packId, value) {
+    const normalized = normalizeGameinfoCountry(value);
+    setPendingImport((current) => {
+      if (!current) return current;
+      const currenciesNext = current.currencies.map((currency) => ({
+        ...currency,
+        categories: currency.categories.map((category) => ({
+          ...category,
+          packs: category.packs.map((pack) =>
+            String(pack.id) === String(packId)
+              ? { ...pack, country: normalized.matched ? normalized.value : value }
+              : pack
+          ),
+        })),
+      }));
+      return {
+        ...current,
+        currencies: currenciesNext,
+        countryIssues: normalized.matched
+          ? current.countryIssues.filter((issue) => String(issue.packId) !== String(packId))
+          : current.countryIssues.map((issue) =>
+              String(issue.packId) === String(packId)
+                ? { ...issue, input: value, suggestions: suggestGameinfoCountries(value) }
+                : issue
+            ),
+      };
+    });
+  }
+
+  const visibleSelectedCount = visiblePackIds.filter((packId) =>
+    selectedPackIds.has(String(packId))
+  ).length;
+  const allVisibleSelected = visiblePackIds.length > 0 && visibleSelectedCount === visiblePackIds.length;
+  const someVisibleSelected = visibleSelectedCount > 0 && !allVisibleSelected;
 
   return (
     <div className="space-y-6">
@@ -654,23 +810,75 @@ export default function GameinfoPackEditor({
         {pendingImport && (
           <div className="mt-3 rounded-md border border-linear-primary/30 bg-linear-primary/10 p-3">
             <p className="mb-2 text-sm text-linear-primary">
-              พบ {pendingImport.packCount} แพ็กในไฟล์ — เลือกวิธีนำเข้า (มีข้อมูลแพ็กอยู่แล้ว)
+              พบ {pendingImport.packCount} แพ็กในไฟล์
             </p>
+            {pendingImport.countryIssues.length > 0 ? (
+              <div className="mb-3 space-y-2 rounded-md border border-amber-500/30 bg-linear-surface-1 p-3">
+                <p className="text-sm font-medium text-amber-300">
+                  แก้ชื่อประเทศที่ไม่ตรงกับรายการกลางอีก {pendingImport.countryIssues.length} รายการก่อนนำเข้า
+                </p>
+                {pendingImport.countryIssues.map((issue) => (
+                  <div key={issue.packId} className="grid gap-2 border-t border-linear-hairline pt-2 sm:grid-cols-[minmax(0,1fr)_minmax(220px,1fr)] sm:items-center">
+                    <div className="min-w-0 text-xs text-linear-ink-muted">
+                      <p className="truncate font-medium text-linear-ink">{issue.packName || "Pack ไม่มีชื่อ"}</p>
+                      <p className="truncate">ค่าใน CSV: {issue.input || "(ว่าง)"}</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <GameinfoMemoryInput
+                        value={issue.input}
+                        onChange={(value) => updatePendingCountry(issue.packId, value)}
+                        suggestions={GAMEINFO_COUNTRY_NAMES}
+                        placeholder="ค้นหาชื่อประเทศ"
+                      />
+                      {issue.suggestions.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {issue.suggestions.map((country) => (
+                            <button
+                              key={country}
+                              type="button"
+                              onClick={() => updatePendingCountry(issue.packId, country)}
+                              className="rounded border border-linear-hairline-strong px-2 py-0.5 text-xs text-linear-ink-muted hover:border-linear-primary hover:text-linear-primary"
+                            >
+                              ใช้ {country}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => applyPendingImport("replace")}
-                className="rounded-md border border-red-500/40 bg-linear-surface-1 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10"
-              >
-                แทนที่ทั้งชุด
-              </button>
-              <button
-                type="button"
-                onClick={() => applyPendingImport("add")}
-                className="rounded-md border border-linear-primary/40 bg-linear-surface-1 px-3 py-1.5 text-sm text-linear-primary hover:bg-linear-primary/15"
-              >
-                เพิ่มเข้าไป
-              </button>
+              {pendingImport.hadExistingData ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={pendingImport.countryIssues.length > 0}
+                    onClick={() => applyPendingImport("replace")}
+                    className="rounded-md border border-red-500/40 bg-linear-surface-1 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    แทนที่ทั้งชุด
+                  </button>
+                  <button
+                    type="button"
+                    disabled={pendingImport.countryIssues.length > 0}
+                    onClick={() => applyPendingImport("add")}
+                    className="rounded-md border border-linear-primary/40 bg-linear-surface-1 px-3 py-1.5 text-sm text-linear-primary hover:bg-linear-primary/15 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    เพิ่มเข้าไป
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  disabled={pendingImport.countryIssues.length > 0}
+                  onClick={() => applyPendingImport("replace")}
+                  className="rounded-md border border-linear-primary/40 bg-linear-surface-1 px-3 py-1.5 text-sm text-linear-primary hover:bg-linear-primary/15 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  นำเข้าข้อมูล
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setPendingImport(null)}
@@ -786,6 +994,16 @@ export default function GameinfoPackEditor({
         </span>
         {languageError ? <span className="w-full text-xs text-red-400">{languageError}</span> : null}
       <div className="ml-auto flex shrink-0 items-center gap-2">
+        <label className="flex items-center gap-2 text-xs text-linear-ink-muted">
+          <Checkbox
+            checked={allVisibleSelected}
+            indeterminate={someVisibleSelected}
+            onCheckedChange={(checked) => toggleVisibleSelection(Boolean(checked))}
+            disabled={visiblePackIds.length === 0}
+            aria-label="เลือก Pack ที่มองเห็นทั้งหมด"
+          />
+          เลือกที่เห็นทั้งหมด ({visiblePackIds.length})
+        </label>
         <GameinfoFormulaModeToggle
           mode={formulaMode}
           onChange={setFormulaMode}
@@ -815,6 +1033,19 @@ export default function GameinfoPackEditor({
         <GameinfoPackHistory gameId={game.id} historyUrl={historyUrl} />
       </div>
       </section>
+
+      {selectedPacks.length > 0 ? (
+        <GameinfoBulkFormulaToolbar
+          computedColumns={computedColumns}
+          selectedPacks={selectedPacks}
+          formulaVariables={formulaVariables}
+          game={game}
+          formulaContext={formulaContext}
+          onApply={applyBulkFormula}
+          onClear={clearBulkFormula}
+          onCancel={() => setSelectedPackIds(new Set())}
+        />
+      ) : null}
 
       <section>
         <div className="mb-3 flex items-center justify-between">
@@ -923,6 +1154,10 @@ export default function GameinfoPackEditor({
                     onEditColumn={setEditingComputedColumn}
                     onReorderColumns={packLayout.reorder}
                     onSetFormulaOverride={setFormulaOverride}
+                    onSetCategoryFormula={setCategoryFormula}
+                    selectedPackIds={selectedPackIds}
+                    onTogglePackSelection={togglePackSelection}
+                    onVisiblePacksChange={reportVisiblePacks}
                     onRenameCategory={(name) =>
                       updateCurrencies((d) => {
                         d[cIdx].categories[catIdx].name = name;
@@ -1067,6 +1302,10 @@ function CategoryBlock({
   onEditColumn,
   onReorderColumns,
   onSetFormulaOverride,
+  onSetCategoryFormula,
+  selectedPackIds,
+  onTogglePackSelection,
+  onVisiblePacksChange,
   onRenameCategory,
   onRemoveCategory,
   onAddPack,
@@ -1075,6 +1314,7 @@ function CategoryBlock({
   onRemovePack,
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [categoryFormulaColumn, setCategoryFormulaColumn] = useState(null);
   const grid = packGridTemplate(columns);
   const hasPacks = category.packs.length > 0;
   const allPacksEnabled = hasPacks && category.packs.every(
@@ -1102,13 +1342,26 @@ function CategoryBlock({
             allColumns.filter((item) => item.kind === "computed").map((item) => item.computed),
             targetPack,
             game,
-            { costProfiles, formulaVariables, externalValues }
+            { costProfiles, formulaVariables, externalValues, categoryId: category.id }
           );
         } catch {
           return "";
         }
       })
     );
+  const categoryPackIdsKey = category.packs.map((pack) => String(pack.id)).join("\u0000");
+  const visiblePackIdsKey = visiblePacks.map(({ pack }) => String(pack.id)).join("\u0000");
+  const selectablePackIds = collapsed ? [] : visiblePacks.map(({ pack }) => String(pack.id));
+  const selectedVisibleCount = selectablePackIds.filter((packId) => selectedPackIds.has(packId)).length;
+  const allVisibleSelected = selectablePackIds.length > 0 && selectedVisibleCount === selectablePackIds.length;
+
+  useEffect(() => {
+    onVisiblePacksChange(
+      category.id,
+      collapsed ? [] : visiblePackIdsKey ? visiblePackIdsKey.split("\u0000") : [],
+      categoryPackIdsKey ? categoryPackIdsKey.split("\u0000") : []
+    );
+  }, [category.id, categoryPackIdsKey, collapsed, onVisiblePacksChange, visiblePackIdsKey]);
 
   function handleColumnDragEnd(e) {
     const { active, over } = e;
@@ -1199,6 +1452,18 @@ function CategoryBlock({
               style={{ gridTemplateColumns: grid.template }}
               className="grid gap-2 border-b border-linear-hairline bg-linear-surface-2 px-2 py-1.5 text-[10px] text-linear-ink-tertiary"
             >
+              <span className="flex items-center justify-center">
+                <Checkbox
+                  checked={allVisibleSelected}
+                  indeterminate={selectedVisibleCount > 0 && !allVisibleSelected}
+                  onCheckedChange={(checked) => {
+                    for (const packId of selectablePackIds) {
+                      onTogglePackSelection(packId, Boolean(checked));
+                    }
+                  }}
+                  aria-label={`เลือก Pack ที่มองเห็นในหมวด ${category.name || category.id}`}
+                />
+              </span>
               <DndContext
                 sensors={columnSensors}
                 collisionDetection={closestCenter}
@@ -1223,16 +1488,25 @@ function CategoryBlock({
                           ? () => onEditColumn(column.computed)
                           : undefined
                       }
+                      onEditCategory={
+                        column.kind === "computed" && column.computed.scopeMode === "category"
+                          ? () => setCategoryFormulaColumn(column.computed)
+                          : undefined
+                      }
                     />
                   ))}
                 </SortableContext>
               </DndContext>
               <span></span>
             </div>
-            {visiblePacks.map(({ pack, pkIdx }) => (
+            {visiblePacks.map(({ pack, pkIdx }, visibleIndex) => (
               <PackRow
                 key={pack.id}
                 pack={pack}
+                categoryId={category.id}
+                selected={selectedPackIds.has(String(pack.id))}
+                rowIndex={visibleIndex}
+                onToggleSelected={(checked) => onTogglePackSelection(pack.id, checked)}
                 game={game}
                 costProfiles={costProfiles}
                 formulaVariables={formulaVariables}
@@ -1257,17 +1531,38 @@ function CategoryBlock({
                   onSetFormulaOverride(columnKey, pack.id, formula)
                 }
                 onEditMainFormula={onEditColumn}
+                onEditCategoryFormula={(column) => setCategoryFormulaColumn(column)}
               />
             ))}
           </div>
         </div>
       )}
+      {categoryFormulaColumn ? (
+        <GameinfoFormulaOverrideEditor
+          column={categoryFormulaColumn}
+          category={category}
+          game={game}
+          costProfiles={costProfiles}
+          formulaVariables={formulaVariables}
+          externalValues={externalValues}
+          computedColumns={allColumns.filter((item) => item.kind === "computed").map((item) => item.computed)}
+          onClose={() => setCategoryFormulaColumn(null)}
+          onSave={(formula) => {
+            onSetCategoryFormula(categoryFormulaColumn.key, category.id, formula);
+            setCategoryFormulaColumn(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
 
 function PackRow({
   pack,
+  categoryId,
+  selected,
+  rowIndex,
+  onToggleSelected,
   game,
   costProfiles,
   formulaVariables,
@@ -1284,6 +1579,7 @@ function PackRow({
   onRemove,
   onSetFormulaOverride,
   onEditMainFormula,
+  onEditCategoryFormula,
 }) {
   const [editing, setEditing] = useState(null);
   const [overrideColumn, setOverrideColumn] = useState(null);
@@ -1293,13 +1589,23 @@ function PackRow({
     <div
       id={`pack-row-${pack.id}`}
       style={{ gridTemplateColumns: gridTemplate }}
-      className="grid items-center gap-2 border-b border-linear-hairline px-2 py-2 text-sm last:border-b-0"
+      className={`grid items-center gap-2 border-b border-linear-hairline px-2 py-2 text-sm last:border-b-0 ${
+        selected ? "bg-linear-surface-3" : rowIndex % 2 === 0 ? "bg-linear-surface-1" : "bg-linear-surface-2"
+      }`}
     >
+      <span className="flex items-center justify-center">
+        <Checkbox
+          checked={selected}
+          onCheckedChange={(checked) => onToggleSelected(Boolean(checked))}
+          aria-label={`เลือก Pack ${pack.name || pack.id}`}
+        />
+      </span>
       {columns.map((column) => (
         <PackEditorColumn
           key={column.id}
           column={column}
           pack={pack}
+          categoryId={categoryId}
           game={game}
           costProfiles={costProfiles}
           formulaVariables={formulaVariables}
@@ -1315,6 +1621,7 @@ function PackRow({
           onUpdate={onUpdate}
           onEditFormula={() => setOverrideColumn(column)}
           onEditMainFormula={() => onEditMainFormula(column.computed)}
+          onEditCategoryFormula={() => onEditCategoryFormula(column.computed)}
         />
       ))}
 
@@ -1342,6 +1649,7 @@ function PackRow({
         <GameinfoFormulaOverrideEditor
           column={overrideColumn.computed}
           pack={pack}
+          categoryId={categoryId}
           game={game}
           costProfiles={costProfiles}
           formulaVariables={formulaVariables}
@@ -1361,6 +1669,7 @@ function PackRow({
 function PackEditorColumn({
   column,
   pack,
+  categoryId,
   game,
   costProfiles,
   formulaVariables,
@@ -1376,6 +1685,7 @@ function PackEditorColumn({
   onUpdate,
   onEditFormula,
   onEditMainFormula,
+  onEditCategoryFormula,
 }) {
   if (column.id === "serviceEnabled") {
     const enabled = pack.serviceEnabled !== false;
@@ -1411,6 +1721,7 @@ function PackEditorColumn({
         suggestions={suggestions?.channels || []}
         placeholder="พิมพ์แล้ว Enter"
         invalid={main && invalid.channelsMain}
+        stableColors
       />
     );
   }
@@ -1418,7 +1729,16 @@ function PackEditorColumn({
     return (
       <PackCell
         editing={editing}
-        value={pack.country ?? ""}
+        value={
+          pack.country ? (
+            <span
+              style={gameinfoStableColorStyle(pack.country)}
+              className="gameinfo-stable-tag inline-flex max-w-full truncate rounded border px-2 py-0.5 text-xs"
+            >
+              {pack.country}
+            </span>
+          ) : ""
+        }
         placeholder="ประเทศ"
         invalid={invalid.country}
         onStartEdit={onStartEdit}
@@ -1454,7 +1774,7 @@ function PackEditorColumn({
   }
   if (column.kind === "computed") {
     const formula = column.computed;
-    const effective = getGameinfoFormulaDisplay(formula, pack.id);
+    const effective = getGameinfoFormulaDisplay(formula, pack.id, categoryId);
     let value = null;
     let formulaError = false;
     try {
@@ -1463,7 +1783,7 @@ function PackEditorColumn({
         computedColumns,
         pack,
         game,
-        { costProfiles, formulaVariables, externalValues }
+        { costProfiles, formulaVariables, externalValues, categoryId }
       );
     } catch {
       formulaError = true;
@@ -1472,7 +1792,13 @@ function PackEditorColumn({
       return (
         <button
           type="button"
-          onClick={effective.overridden ? onEditFormula : onEditMainFormula}
+          onClick={
+            effective.source === "override"
+              ? onEditFormula
+              : effective.source === "category"
+                ? onEditCategoryFormula
+                : onEditMainFormula
+          }
           className={`min-w-0 rounded px-2 py-1.5 text-left hover:bg-linear-surface-2 ${
             formulaError ? "text-red-400" : "text-linear-ink-muted"
           }`}
@@ -1483,7 +1809,7 @@ function PackEditorColumn({
           </span>
           <span
             className={`mt-0.5 inline-block text-[9px] ${
-              effective.overridden ? "text-linear-primary" : "text-linear-ink-tertiary"
+              effective.source === "override" ? "text-linear-primary" : "text-linear-ink-tertiary"
             }`}
           >
             {formulaError ? `สูตรผิด · ${effective.sourceLabel}` : effective.sourceLabel}
@@ -1494,14 +1820,26 @@ function PackEditorColumn({
     return (
       <button
         type="button"
-        onClick={formulaError && !effective.overridden ? onEditMainFormula : onEditFormula}
+        onClick={
+          formulaError
+            ? effective.source === "override"
+              ? onEditFormula
+              : effective.source === "category"
+                ? onEditCategoryFormula
+                : onEditMainFormula
+            : onEditFormula
+        }
         className={`truncate rounded px-2 py-2 text-left hover:bg-linear-surface-2 ${
           formulaError ? "text-red-400" : "text-linear-ink-muted"
         }`}
-        title={effective.overridden ? "สูตรเฉพาะ pack — กดเพื่อแก้" : "ใช้สูตรหลัก — กดเพื่อกำหนดสูตรเฉพาะ pack"}
+        title={`${effective.sourceLabel} — กดเพื่อกำหนดสูตรเฉพาะ pack`}
       >
         {formulaError ? "สูตรผิด" : formatGameinfoPackColumnValue(value, column)}
-        {effective.overridden ? <span className="ml-1 text-[9px] text-linear-primary">เฉพาะแถว</span> : null}
+        {effective.source === "override" ? (
+          <span className="ml-1 text-[9px] text-linear-primary">เฉพาะแถว</span>
+        ) : effective.source === "category" ? (
+          <span className="ml-1 text-[9px] text-linear-ink-tertiary">เฉพาะหมวด</span>
+        ) : null}
       </button>
     );
   }
@@ -1561,6 +1899,8 @@ function PackEditorColumn({
 function GameinfoFormulaOverrideEditor({
   column,
   pack,
+  category,
+  categoryId: packCategoryId,
   game,
   costProfiles,
   formulaVariables,
@@ -1569,7 +1909,18 @@ function GameinfoFormulaOverrideEditor({
   onClose,
   onSave,
 }) {
-  const existing = column.rowOverrides?.[pack.id] || "";
+  const categoryMode = Boolean(category);
+  const categoryId = categoryMode ? category.id : packCategoryId;
+  const samplePack = useMemo(() => pack || category?.packs?.[0] || {}, [category, pack]);
+  const existing = categoryMode
+    ? column.categoryFormulas?.[categoryId] || ""
+    : column.rowOverrides?.[samplePack.id] || "";
+  const targetLabel = categoryMode
+    ? category.name || category.id
+    : samplePack.name || samplePack.id;
+  const fallback = categoryMode
+    ? column.formula
+    : getGameinfoFormulaDisplay(column, undefined, categoryId).formula;
   const [formula, setFormula] = useState(existing);
   const dirty = formula !== existing;
   useGameinfoUnsavedChanges(dirty);
@@ -1577,14 +1928,14 @@ function GameinfoFormulaOverrideEditor({
   const requestClose = useCallback(() => {
     if (dirty) {
       requestGameinfoDiscard({
-        message: "สูตรเฉพาะ Pack ที่ยังไม่บันทึกจะหายไป",
+        message: `สูตรเฉพาะ${categoryMode ? "หมวด" : " Pack"}ที่ยังไม่บันทึกจะหายไป`,
         confirmLabel: "ปิดโดยไม่บันทึก",
         onConfirm: onClose,
       });
       return;
     }
     onClose();
-  }, [dirty, onClose]);
+  }, [categoryMode, dirty, onClose]);
 
   useEffect(() => {
     function handleKey(event) {
@@ -1610,22 +1961,42 @@ function GameinfoFormulaOverrideEditor({
       const value = evaluateFormula(ast, (label) => {
         const dependency = computedColumns.find((computed) => computed.label === label);
         return dependency
-          ? evaluateGameinfoComputedColumn(dependency, computedColumns, pack, game, {
+          ? evaluateGameinfoComputedColumn(dependency, computedColumns, samplePack, game, {
               costProfiles,
               formulaVariables,
               externalValues,
+              categoryId,
             })
-          : resolveGameinfoField(pack, game, label, { costProfiles, formulaVariables, externalValues });
+          : resolveGameinfoField(samplePack, game, label, { costProfiles, formulaVariables, externalValues });
       });
       return {
         ok: true,
-        message: `สูตรถูกต้อง · ผลลัพธ์แถวนี้ ${formatGameinfoPackColumnValue(value, column)}`,
+        message: samplePack.id
+          ? `สูตรถูกต้อง · ผลลัพธ์ตัวอย่าง ${formatGameinfoPackColumnValue(value, column)}`
+          : "สูตรถูกต้อง",
         value,
       };
     } catch (error) {
       return { ok: false, message: error.message, value: null };
     }
-  }, [column, computedColumns, costProfiles, externalValues, formula, formulaVariables, game, pack]);
+  }, [categoryId, column, computedColumns, costProfiles, externalValues, formula, formulaVariables, game, samplePack]);
+
+  function applyMemoryPreset(preset) {
+    try {
+      const ast = parseFormula(preset.formula);
+      const unknown = [...extractFormulaRefs(ast)].filter(
+        (name) =>
+          !GAMEINFO_FIELD_NAMES.includes(name) &&
+          !formulaVariables.some((variable) => variable.name === name) &&
+          !computedColumns.some((computed) => computed.label === name)
+      );
+      if (unknown.length) return `เกมนี้ไม่มีคอลัมน์: ${unknown.join(", ")}`;
+      setFormula(preset.formula);
+      return "";
+    } catch (error) {
+      return error instanceof Error ? error.message : "สูตรไม่ถูกต้อง";
+    }
+  }
 
   return (
     <div
@@ -1637,8 +2008,10 @@ function GameinfoFormulaOverrideEditor({
       <div className="w-full max-w-lg rounded-lg border border-linear-hairline bg-linear-surface-1 shadow-2xl">
         <div className="flex items-center justify-between border-b border-linear-hairline px-5 py-3">
           <div>
-            <h2 className="text-sm font-semibold text-linear-ink">สูตรเฉพาะ pack — {column.label}</h2>
-            <p className="mt-0.5 text-xs text-linear-ink-tertiary">{pack.name || pack.id}</p>
+            <h2 className="text-sm font-semibold text-linear-ink">
+              สูตรเฉพาะ{categoryMode ? "หมวด" : " pack"} — {column.label}
+            </h2>
+            <p className="mt-0.5 text-xs text-linear-ink-tertiary">{targetLabel}</p>
           </div>
           <button type="button" onClick={requestClose} aria-label="ปิด" className="rounded p-1 text-linear-ink-tertiary hover:bg-linear-surface-2">
             <X size={16} />
@@ -1646,18 +2019,26 @@ function GameinfoFormulaOverrideEditor({
         </div>
         <div className="space-y-3 px-5 py-4">
           <div>
-            <p className="mb-1 text-xs text-linear-ink-tertiary">สูตรหลักของคอลัมน์</p>
+            <p className="mb-1 text-xs text-linear-ink-tertiary">สูตร fallback</p>
             <code className="block rounded bg-linear-surface-2 px-3 py-2 text-xs text-linear-ink-subtle">
-              {column.formula}
+              {fallback}
             </code>
           </div>
+          <GameinfoFormulaMemory
+            formula={formula}
+            type={column.type || "number"}
+            symbol={column.symbol || ""}
+            onApply={applyMemoryPreset}
+          />
           <div>
-            <label className="mb-1 block text-xs text-linear-ink-tertiary">สูตรเฉพาะ pack</label>
+            <label className="mb-1 block text-xs text-linear-ink-tertiary">
+              สูตรเฉพาะ{categoryMode ? "หมวด" : " pack"}
+            </label>
             <input
               autoFocus
               value={formula}
               onChange={(event) => setFormula(event.target.value)}
-              placeholder="เว้นว่างเพื่อใช้สูตรหลัก"
+              placeholder="เว้นว่างเพื่อใช้สูตร fallback"
               className="h-10 w-full rounded border border-linear-hairline-strong bg-linear-surface-2 px-3 font-mono text-xs text-linear-ink outline-none focus:border-linear-primary"
             />
             <p className={`mt-1 text-xs ${validation.ok ? "text-emerald-400" : "text-red-400"}`}>
@@ -1684,7 +2065,7 @@ function GameinfoFormulaOverrideEditor({
             disabled={!existing}
             className="text-xs text-linear-primary hover:underline disabled:opacity-40"
           >
-            กลับไปใช้สูตรหลัก
+            กลับไปใช้สูตร fallback
           </button>
           <button
             type="button"
@@ -1692,7 +2073,7 @@ function GameinfoFormulaOverrideEditor({
             disabled={!validation.ok}
             className="rounded-md bg-linear-primary px-4 py-2 text-sm font-medium text-white hover:bg-linear-primary-hover disabled:opacity-50"
           >
-            บันทึกสูตรแถวนี้
+            บันทึกสูตร{categoryMode ? "หมวดนี้" : "แถวนี้"}
           </button>
         </div>
       </div>
@@ -1703,7 +2084,7 @@ function GameinfoFormulaOverrideEditor({
 // Computed-column header cell: press-and-hold anywhere on it and drag to
 // reorder (the whole cell is the drag handle, not a separate grip icon). The
 // remove button stops propagation so it doesn't also start a drag.
-function SortableColumnHeader({ column, index, onRemove, onEdit }) {
+function SortableColumnHeader({ column, index, onRemove, onEdit, onEditCategory }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: column.id,
   });
@@ -1725,6 +2106,21 @@ function SortableColumnHeader({ column, index, onRemove, onEdit }) {
       title="กดค้างแล้วลากเพื่อเปลี่ยนลำดับ"
     >
       <span className="truncate">{column.label || `สูตร ${index + 1}`}</span>
+      {onEditCategory ? (
+        <button
+          type="button"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onEditCategory();
+          }}
+          className="shrink-0 rounded bg-linear-surface-3 px-1.5 py-0.5 text-[9px] font-medium text-linear-ink-muted hover:bg-linear-surface-4"
+          title="กำหนดสูตรเฉพาะหมวดนี้"
+          aria-label={`กำหนดสูตรเฉพาะหมวดสำหรับ ${column.label || `สูตร ${index + 1}`}`}
+        >
+          หมวด
+        </button>
+      ) : null}
       {onEdit ? (
         <button
           type="button"
@@ -1841,6 +2237,6 @@ function ImageUrlField({ value, onChange, compact }) {
 // small width, everything else is minmax(min, fr) so it shrinks to fit the
 // available width instead of forcing the row wider than its container.
 function packGridTemplate(columns) {
-  const tracks = [...columns.map((column) => column.track), "72px"];
+  const tracks = ["36px", ...columns.map((column) => column.track), "72px"];
   return { template: tracks.join(" ") };
 }

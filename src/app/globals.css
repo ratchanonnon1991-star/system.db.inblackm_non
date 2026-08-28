@@ -4,6 +4,19 @@
 
 @custom-variant dark (&:is(.dark *, [data-gameinfo-root][data-theme="dark"] *));
 
+.gameinfo-stable-tag {
+  border-color: hsl(var(--gameinfo-tag-hue) 62% 44% / 0.26);
+  background: hsl(var(--gameinfo-tag-hue) 70% 46% / 0.12);
+  color: hsl(var(--gameinfo-tag-hue) 58% 34%);
+}
+
+.dark .gameinfo-stable-tag,
+[data-gameinfo-root][data-theme="dark"] .gameinfo-stable-tag {
+  border-color: hsl(var(--gameinfo-tag-hue) 65% 60% / 0.32);
+  background: hsl(var(--gameinfo-tag-hue) 72% 58% / 0.15);
+  color: hsl(var(--gameinfo-tag-hue) 72% 72%);
+}
+
 /* GameInfo's Linear-inspired light-first palette. */
 @theme {
   --color-linear-canvas: #ffffff;

@@ -4,7 +4,10 @@ import { sanitizeComputedColumns } from "@/server/gamedb-layout-sanitizer";
 import { auditActor, getGamelistPacks, saveGamelistPacks } from "@/server/gameinfo-gamelist-packs";
 import { recordEdit } from "@/server/gamedb-edit-log";
 import { requestMeta } from "@/lib/request-meta";
-import { pruneGameinfoFormulaOverrides } from "@/lib/gameinfo-formula-overrides";
+import {
+  pruneGameinfoCategoryFormulas,
+  pruneGameinfoFormulaOverrides,
+} from "@/lib/gameinfo-formula-overrides";
 import { sanitizeGameinfoCostProfiles } from "@/lib/gameinfo-cost-profiles";
 import { validateGameinfoComputedDependencies } from "@/lib/gameinfo-computed-evaluator";
 import { getGameinfoFormulaVariables } from "@/server/gameinfo-formula-variables";
@@ -32,14 +35,27 @@ export async function PUT(request, { params }) {
         (category?.packs || []).map((pack) => pack?.id).filter(Boolean)
       )
     );
-    const computedColumns = pruneGameinfoFormulaOverrides(
-      sanitizeComputedColumns(body.computedColumns),
-      packIds
+    const categories = currencies.flatMap((currency) => currency?.categories || []);
+    const categoryIds = categories.map((category) => category?.id).filter(Boolean);
+    const packCategoryIds = Object.fromEntries(
+      categories.flatMap((category) =>
+        (category?.packs || [])
+          .filter((pack) => pack?.id)
+          .map((pack) => [String(pack.id), String(category.id)])
+      )
+    );
+    const computedColumns = pruneGameinfoCategoryFormulas(
+      pruneGameinfoFormulaOverrides(
+        sanitizeComputedColumns(body.computedColumns),
+        packIds
+      ),
+      categoryIds
     );
     const variableData = await getGameinfoFormulaVariables(gameId);
     const formulaErrors = validateGameinfoComputedDependencies(
       computedColumns,
-      variableData.variables.map((variable) => variable.name)
+      variableData.variables.map((variable) => variable.name),
+      { packCategoryIds }
     );
     if (formulaErrors.length) return jsonError(formulaErrors[0], 400);
     const packInput = {

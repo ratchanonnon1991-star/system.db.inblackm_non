@@ -39,6 +39,16 @@ function sanitizeGameinfoRowOverrides(value) {
   return overrides;
 }
 
+function sanitizeGameinfoCategoryFormulas(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const formulas = {};
+  for (const [categoryId, formula] of Object.entries(value).slice(0, 500)) {
+    if (typeof formula !== "string" || !formula.trim()) continue;
+    formulas[String(categoryId).slice(0, 128)] = formula.trim().slice(0, 500);
+  }
+  return formulas;
+}
+
 // Shared with the gameinfo module: a game's computed_column JSONB column
 // holds the same shape, so both surfaces can edit it with this one sanitizer.
 export function sanitizeComputedColumns(raw) {
@@ -64,6 +74,11 @@ export function sanitizeComputedColumns(raw) {
             typeof col.symbol === "string" && col.symbol.trim()
               ? col.symbol.slice(0, 24)
               : "",
+          // Legacy columns have neither field and remain global. Category
+          // formulas stay stored while global mode is active so switching
+          // modes never discards the user's work.
+          scopeMode: col.scopeMode === "category" ? "category" : "global",
+          categoryFormulas: sanitizeGameinfoCategoryFormulas(col.categoryFormulas),
           rowOverrides: sanitizeGameinfoRowOverrides(col.rowOverrides),
         }))
     : [];

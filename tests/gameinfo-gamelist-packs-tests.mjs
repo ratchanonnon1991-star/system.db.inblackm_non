@@ -6,6 +6,8 @@
 // sentinel row, and the list-table pack-count/cross-game-channel aggregate
 // lookups.
 import {
+  createGameinfoFormulaPreset,
+  deleteGameinfoFormulaPreset,
   createGamelistPackLanguage,
   deleteGamelistPacksForGame,
   getGamelistPacks,
@@ -17,9 +19,11 @@ import {
   listGamelistPackLanguages,
   listGamelistPackServiceByGame,
   listGamelistPackViewPresets,
+  listGameinfoFormulaPresets,
   saveGamelistPacks,
   saveGamelistPackViewPreset,
   sanitizeGamelistPackViewPresetLayout,
+  updateGameinfoFormulaPreset,
 } from "@/server/gameinfo-gamelist-packs.js";
 import { log, reset, setResponder } from "@/lib/db.js";
 
@@ -443,6 +447,97 @@ async function run() {
   const allHistory = await listAllGamelistPackAudit(9999);
   check("combined history includes the game name", allHistory[0].gameName, "Game A");
   check("combined history clamps its one bound limit", find(/FROM gamelist_pack_audit_logs a/)?.params, [2000]);
+
+  // --- shared Formula Memory ------------------------------------------
+  reset();
+  setResponder((text) => /FROM gameinfo_formula_presets/.test(text)
+    ? {
+        rows: [{
+          id: "51",
+          name: "กำไรมาตรฐาน",
+          formula: "[ราคา] * 0.1",
+          result_type: "number",
+          symbol: "%",
+          created_by: 9,
+          created_by_name: "Admin",
+          updated_by: 9,
+          updated_by_name: "Admin",
+          created_at: "2026-08-28T01:00:00.000Z",
+          updated_at: "2026-08-28T01:00:00.000Z",
+        }],
+      }
+    : null);
+  const formulaPresets = await listGameinfoFormulaPresets();
+  check("formula memory: lists shared presets without a game or user filter", formulaPresets[0].id, 51);
+  check("formula memory: list query has no scope parameters", find(/FROM gameinfo_formula_presets/)?.params, null);
+
+  reset();
+  setResponder((text) => /^INSERT INTO gameinfo_formula_presets/.test(text)
+    ? {
+        rows: [{
+          id: "52",
+          name: "กำไรทีม",
+          formula: "[ราคา] * 0.2",
+          result_type: "number",
+          symbol: "฿",
+          created_by: 9,
+          created_by_name: "Admin",
+          updated_by: 9,
+          updated_by_name: "Admin",
+          created_at: "2026-08-28T02:00:00.000Z",
+          updated_at: "2026-08-28T02:00:00.000Z",
+        }],
+      }
+    : null);
+  const createdFormulaPreset = await createGameinfoFormulaPreset(
+    { name: "  กำไรทีม  ", formula: " [ราคา] * 0.2 ", type: "number", symbol: "฿" },
+    { id: 9, name: "Admin" }
+  );
+  check("formula memory: creates a normalized shared preset", createdFormulaPreset.name, "กำไรทีม");
+  check(
+    "formula memory: binds normalized name, formula metadata and actor",
+    find(/^INSERT INTO gameinfo_formula_presets/)?.params,
+    [
+      "กำไรทีม",
+      "กำไรทีม".normalize("NFKC").toLocaleLowerCase("en-US"),
+      "[ราคา] * 0.2",
+      "number",
+      "฿",
+      9,
+      "Admin",
+    ]
+  );
+
+  reset();
+  setResponder((text) => /^UPDATE gameinfo_formula_presets/.test(text)
+    ? {
+        rows: [{
+          id: "52",
+          name: "กำไรใหม่",
+          formula: "[ราคา] * 0.3",
+          result_type: "number",
+          symbol: "฿",
+          created_by: 9,
+          created_by_name: "Admin",
+          updated_by: 10,
+          updated_by_name: "Editor",
+          created_at: "2026-08-28T02:00:00.000Z",
+          updated_at: "2026-08-28T03:00:00.000Z",
+        }],
+      }
+    : null);
+  const updatedFormulaPreset = await updateGameinfoFormulaPreset(
+    52,
+    { name: "กำไรใหม่", formula: "[ราคา] * 0.3", type: "number", symbol: "฿" },
+    { id: 10, name: "Editor" }
+  );
+  check("formula memory: any editor can update the shared preset", updatedFormulaPreset.updatedByName, "Editor");
+
+  reset();
+  setResponder((text) => /^DELETE FROM gameinfo_formula_presets/.test(text)
+    ? { rows: [{ id: "52" }] }
+    : null);
+  check("formula memory: delete does not touch copied pack formulas", await deleteGameinfoFormulaPreset(52), { id: 52 });
 
   // --- personal column presets (Tasks 15 + 16) ------------------------
   check(

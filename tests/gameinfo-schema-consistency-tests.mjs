@@ -9,5 +9,9 @@ assert.ok(runtime.includes(expected));
 assert.ok(bootstrap.includes(expected));
 assert.ok(runtime.includes("DROP INDEX IF EXISTS gamelist_pack_view_presets_game_user_name"));
 assert.ok(bootstrap.includes("DROP INDEX IF EXISTS gamelist_pack_view_presets_game_user_name"));
+assert.ok(runtime.includes("CREATE TABLE IF NOT EXISTS gameinfo_formula_presets"));
+assert.ok(bootstrap.includes("CREATE TABLE IF NOT EXISTS gameinfo_formula_presets"));
+assert.ok(runtime.includes("ON gameinfo_formula_presets (updated_at DESC, id DESC)"));
+assert.ok(bootstrap.includes("ON gameinfo_formula_presets (updated_at DESC, id DESC)"));
 
-console.log("4 passed");
+console.log("8 passed");

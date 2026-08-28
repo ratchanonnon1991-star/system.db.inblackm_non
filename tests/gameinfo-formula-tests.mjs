@@ -103,6 +103,48 @@ check(
   evaluateGameinfoComputedColumn(dependentColumns[1], dependentColumns, pack, game),
   55
 );
+const scopedColumns = [
+  {
+    key: "cost",
+    label: "ต้นทุนคำนวณ",
+    formula: "[ราคา] * 0.5",
+    scopeMode: "category",
+    categoryFormulas: { cat_special: "[ราคา] * 0.25" },
+  },
+  {
+    key: "profit",
+    label: "กำไร",
+    formula: "[ราคา] - [ต้นทุนคำนวณ]",
+    scopeMode: "category",
+    categoryFormulas: {},
+    rowOverrides: { pk_special: "[ราคา] * 0.9" },
+  },
+];
+check(
+  "category formula is used by dependent computed columns",
+  evaluateGameinfoComputedColumn(scopedColumns[1], scopedColumns, pack, game, {
+    categoryId: "cat_special",
+  }),
+  75
+);
+check(
+  "missing category formula falls back to the global formula",
+  evaluateGameinfoComputedColumn(scopedColumns[1], scopedColumns, pack, game, {
+    categoryId: "cat_normal",
+  }),
+  50
+);
+check(
+  "pack formula wins over category and global formulas",
+  evaluateGameinfoComputedColumn(
+    scopedColumns[1],
+    scopedColumns,
+    { ...pack, id: "pk_special" },
+    game,
+    { categoryId: "cat_special" }
+  ),
+  90
+);
 check("valid computed dependency graph has no errors", validateGameinfoComputedDependencies(dependentColumns), []);
 check(
   "computed dependency cycle is rejected",
@@ -118,6 +160,39 @@ check(
     { key: "a", label: "ซ้ำ", formula: "1" },
     { key: "b", label: "ซ้ำ", formula: "2" },
   ]).some((message) => message.includes("ชื่อคอลัมน์สูตรซ้ำ")),
+  true
+);
+check(
+  "invalid stored category formulas are rejected even while global mode is active",
+  validateGameinfoComputedDependencies([
+    {
+      key: "a",
+      label: "A",
+      formula: "1",
+      scopeMode: "global",
+      categoryFormulas: { cat_hidden: "[ไม่มีจริง] + 1" },
+    },
+  ]).some((message) => message.includes("สูตรหมวด cat_hidden")),
+  true
+);
+check(
+  "category-specific dependency cycles are rejected",
+  validateGameinfoComputedDependencies([
+    {
+      key: "a",
+      label: "A",
+      formula: "1",
+      scopeMode: "category",
+      categoryFormulas: { cat_special: "[B]" },
+    },
+    {
+      key: "b",
+      label: "B",
+      formula: "2",
+      scopeMode: "category",
+      categoryFormulas: { cat_special: "[A]" },
+    },
+  ]).some((message) => message.includes("วนซ้ำ")),
   true
 );
 

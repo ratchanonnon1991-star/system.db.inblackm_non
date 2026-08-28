@@ -298,7 +298,7 @@ function PackCategory({
           allColumns.filter((item) => item.kind === "computed").map((item) => item.computed),
           targetPack,
           game,
-          { costProfiles, formulaVariables, externalValues }
+          { costProfiles, formulaVariables, externalValues, categoryId: category.id }
         );
       } catch {
         return "";
@@ -350,6 +350,7 @@ function PackCategory({
                             key={column.id}
                             column={column}
                             pack={pack}
+                            categoryId={category.id}
                             game={game}
                             formulaMode={formulaMode}
                             costProfiles={costProfiles}
@@ -396,6 +397,7 @@ function SortableViewHeader({ column }) {
 function PackViewCell({
   column,
   pack,
+  categoryId,
   game,
   formulaMode,
   costProfiles,
@@ -424,7 +426,7 @@ function PackViewCell({
   }
   if (column.kind === "computed") {
     const formula = column.computed;
-    const effective = getGameinfoFormulaDisplay(formula, pack.id);
+    const effective = getGameinfoFormulaDisplay(formula, pack.id, categoryId);
     let value = null;
     let formulaError = false;
     try {
@@ -433,7 +435,7 @@ function PackViewCell({
         computedColumns,
         pack,
         game,
-        { costProfiles, formulaVariables, externalValues }
+        { costProfiles, formulaVariables, externalValues, categoryId }
       );
     } catch {
       formulaError = true;
@@ -464,7 +466,7 @@ function PackViewCell({
         className={`max-w-[160px] truncate px-3 py-2 ${
           formulaError ? "text-red-400" : "text-linear-ink-muted"
         }`}
-        title={effective.overridden ? "ใช้สูตรเฉพาะ pack" : "ใช้สูตรหลักของคอลัมน์"}
+        title={effective.sourceLabel}
       >
         {formulaError ? "สูตรผิด" : formatGameinfoPackColumnValue(value, column)}
       </td>
