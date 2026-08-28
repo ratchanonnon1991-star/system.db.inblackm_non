@@ -40,6 +40,7 @@ import { GAMEINFO_FIELD_NAMES, resolveGameinfoField } from "@/lib/gameinfo-formu
 import { mergeCurrencies } from "@/lib/gameinfo-import";
 import {
   GAMEINFO_COUNTRY_NAMES,
+  gameinfoCountryDisplayName,
   gameinfoCountrySearchText,
   normalizeGameinfoCountry,
   suggestGameinfoCountries,
@@ -1740,7 +1741,7 @@ function PackEditorColumn({
               style={gameinfoStableColorStyle(pack.country)}
               className="gameinfo-stable-tag inline-flex max-w-full truncate rounded border px-2 py-0.5 text-xs"
             >
-              {pack.country}
+              {gameinfoCountryDisplayName(pack.country)}
             </span>
           ) : ""
         }

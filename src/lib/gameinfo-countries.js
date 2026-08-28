@@ -3,10 +3,14 @@ const ISO_COUNTRY_CODES = `AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB
 const thaiNames = new Intl.DisplayNames(["th"], { type: "region" });
 const englishNames = new Intl.DisplayNames(["en"], { type: "region" });
 
+export function gameinfoCountryDisplayName(value) {
+  return String(value || "").replace(/\s+\([^()]+\)$/, "").trim();
+}
+
 export const GAMEINFO_COUNTRIES = ISO_COUNTRY_CODES.map((code) => ({
   code,
-  name: englishNames.of(code),
-  englishName: englishNames.of(code),
+  name: gameinfoCountryDisplayName(englishNames.of(code)),
+  englishName: gameinfoCountryDisplayName(englishNames.of(code)),
   thaiName: thaiNames.of(code),
 })).sort((a, b) => a.name.localeCompare(b.name, "en"));
 
@@ -21,7 +25,7 @@ function countryKey(value) {
 
 const aliases = new Map();
 for (const country of GAMEINFO_COUNTRIES) {
-  for (const alias of [country.code, country.name, country.thaiName]) {
+  for (const alias of [country.code, country.name, englishNames.of(country.code), country.thaiName]) {
     aliases.set(countryKey(alias), country.name);
   }
 }

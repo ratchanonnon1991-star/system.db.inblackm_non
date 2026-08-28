@@ -12,6 +12,7 @@ import {
 } from "@/lib/gameinfo-import.js";
 import {
   GAMEINFO_COUNTRY_NAMES,
+  gameinfoCountryDisplayName,
   gameinfoCountrySearchText,
   normalizeGameinfoCountry,
 } from "@/lib/gameinfo-countries.js";
@@ -51,8 +52,14 @@ check("splitList splits on ; | and newline too", splitList("A;B|C\nD"), ["A", "B
 check("splitList drops empty pieces", splitList("A,,B, "), ["A", "B"]);
 check("splitList of blank is empty", splitList(""), []);
 ok("country master includes every ISO region", GAMEINFO_COUNTRY_NAMES.length >= 249);
+ok("country master removes trailing English parenthetical names", !GAMEINFO_COUNTRY_NAMES.some((name) => /\s+\([^()]+\)$/.test(name)));
+check("country display removes a trailing English parenthetical name", gameinfoCountryDisplayName("Myanmar (Burma)"), "Myanmar");
 check("country master normalizes English names", normalizeGameinfoCountry("Thailand"), {
   value: "Thailand",
+  matched: true,
+});
+check("country master accepts the legacy parenthetical English name", normalizeGameinfoCountry("Myanmar (Burma)"), {
+  value: "Myanmar",
   matched: true,
 });
 check("country master normalizes Thai names to English", normalizeGameinfoCountry("ไทย"), {
