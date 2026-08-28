@@ -1,8 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { Info, RefreshCw } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   Tooltip,
   TooltipContent,
@@ -52,18 +61,22 @@ export default function GameinfoRatePanel({ rates, loading, error, onRefresh }) 
       <div className="mb-2 flex items-center justify-between gap-3">
         <div className="flex items-baseline gap-2">
           <h2 className="text-sm font-semibold text-linear-ink">อัตราแลกเปลี่ยน</h2>
-          <span className="text-[10px] text-linear-ink-tertiary">อัปเดตทุก 1 ชม.</span>
+          <span className="text-[10px] text-linear-ink-tertiary">อัปเดตอัตโนมัติ</span>
         </div>
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={loading}
-          aria-label="รีเฟรชอัตราแลกเปลี่ยน"
-          title="รีเฟรช"
-          className="flex h-8 w-8 items-center justify-center rounded-md text-linear-ink-muted hover:bg-linear-surface-2 disabled:opacity-50"
-        >
-          <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-        </button>
+        <div className="flex items-center gap-1">
+          <RateRefreshDetails />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={onRefresh}
+            disabled={loading}
+            aria-label="โหลดอัตราแลกเปลี่ยนล่าสุด"
+            title="โหลดค่าล่าสุด"
+          >
+            <RefreshCw className={loading ? "animate-spin" : ""} />
+          </Button>
+        </div>
       </div>
       {error ? <p role="alert" className="mb-2 text-xs text-linear-danger">{error}</p> : null}
       <TooltipProvider delay={150}>
@@ -74,6 +87,58 @@ export default function GameinfoRatePanel({ rates, loading, error, onRefresh }) 
         </div>
       </TooltipProvider>
     </section>
+  );
+}
+
+function RateRefreshDetails() {
+  return (
+    <Dialog>
+      <DialogTrigger render={<Button type="button" variant="outline" size="sm" />}>
+        <Info data-icon="inline-start" />
+        Details
+      </DialogTrigger>
+      <DialogContent
+        className="border border-linear-hairline bg-linear-surface-1 text-linear-ink sm:max-w-md"
+        style={{ boxShadow: "var(--ll-shadow-modal)" }}
+      >
+        <DialogHeader>
+          <DialogTitle>รายละเอียดการอัปเดตค่าเงิน</DialogTitle>
+          <DialogDescription className="text-linear-ink-subtle">
+            Server อัปเดตให้อัตโนมัติตามเวลาไทย แม้ไม่มีผู้ใช้เปิดหน้านี้
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-2">
+          <RateScheduleItem
+            pair="USDT/THB"
+            provider="CoinGecko"
+            schedule="ทุกต้นชั่วโมง เวลา xx:00"
+            cache="เก็บค่าไว้ 1 ชั่วโมง"
+          />
+          <RateScheduleItem
+            pair="USD/CNY"
+            provider="Frankfurter / ECB"
+            schedule="ทุกวัน เวลา 11:05 และ 23:05"
+            cache="เก็บค่าไว้ 12 ชั่วโมง"
+          />
+        </div>
+        <p className="text-xs leading-5 text-linear-ink-tertiary">
+          ปุ่มรีเฟรชด้านบนใช้โหลดค่าล่าสุดจาก Server และไม่บังคับยิงผู้ให้บริการก่อนรอบถัดไป
+        </p>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RateScheduleItem({ pair, provider, schedule, cache }) {
+  return (
+    <div className="rounded-lg border border-linear-hairline bg-linear-surface-2 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-linear-ink">{pair}</p>
+        <span className="rounded-full bg-linear-surface-3 px-2 py-0.5 text-xs text-linear-ink-muted">{provider}</span>
+      </div>
+      <p className="mt-2 text-xs text-linear-ink-subtle">{schedule}</p>
+      <p className="mt-1 text-xs text-linear-ink-tertiary">{cache}</p>
+    </div>
   );
 }
 

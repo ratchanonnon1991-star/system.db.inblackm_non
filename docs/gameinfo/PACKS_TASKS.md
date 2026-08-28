@@ -157,8 +157,11 @@ Acceptance criteria ของ Phase 4:
 
 - `USDT/THB` ใช้ CoinGecko Simple Price และรองรับ Demo key ผ่าน `COINGECKO_DEMO_API_KEY` แบบไม่บังคับ
 - `USDCNY` ใช้ Frankfurter โดยระบุ provider เป็น European Central Bank
-- server cache หนึ่งชั่วโมง, single-flight ต่อ pair และเก็บ history แบบ unique `(pair, fetched_hour)`
-- API/UI แสดง source, fetched time, stale/error และกราฟ 48 จุดล่าสุด
+- server cache แยกตาม pair: `USDT/THB` หนึ่งชั่วโมง, `USDCNY` สิบสองชั่วโมง (`GAMEINFO_RATE_CACHE_MS` ใน `src/lib/gameinfo-rate-schedule.js`)
+- single-flight ต่อ pair และเก็บ history แบบ unique `(pair, fetched_hour)`
+- background scheduler (`src/server/gameinfo-rate-scheduler.js` เริ่มจาก `src/instrumentation.js`) ยิง refresh เองตามเวลาไทย: `USDT/THB` ทุกต้นชั่วโมง xx:00, `USDCNY` เวลา 11:05 และ 23:05 — ไม่ต้องมีผู้ใช้เปิดหน้าค้างไว้
+- scheduler ทำงานเฉพาะ production nodejs runtime และกันซ้ำด้วย global key เดียว; PM2 ตั้ง `instances: 1` จึงมีตัวจับเวลาชุดเดียวต่อ deploy
+- API/UI แสดง source, fetched time, stale/error, กราฟ 48 จุดล่าสุด และปุ่ม Details อธิบายรอบอัปเดตของแต่ละ pair
 - formula และตัวแปรผสมใช้ `[USDT/THB]`, `[USDCNY]` จาก snapshot เดียวกันโดยไม่เขียน rate ลง pack JSON
 
 Acceptance criteria:
