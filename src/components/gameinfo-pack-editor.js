@@ -28,6 +28,7 @@ import GameinfoFormulaMemory from "./gameinfo-formula-memory";
 import GameinfoBulkFormulaToolbar from "./gameinfo-bulk-formula-toolbar";
 import GameinfoFormulaVariablesButton, { GameinfoFormulaVariableSummary } from "./gameinfo-formula-variables";
 import GameinfoRatePanel, { useGameinfoRates } from "./gameinfo-rate-panel";
+import GameinfoMarketManager from "./gameinfo-market-manager";
 import GameinfoPackHistory from "./gameinfo-pack-history";
 import GameinfoConfirmDialog from "./gameinfo-confirm-dialog";
 import {
@@ -469,7 +470,7 @@ export default function GameinfoPackEditor({
   function addComputedColumn({ key, label, formula, type, symbol, scopeMode }) {
     setComputedColumns((prev) => [
       ...prev,
-      { key, label, formula, type, symbol, scopeMode, categoryFormulas: {}, rowOverrides: {} },
+      { key, label, formula, type, symbol, scopeMode, kind: "formula", marketKey: "", enabled: true, categoryFormulas: {}, rowOverrides: {} },
     ]);
     setModalOpen(false);
   }
@@ -1057,20 +1058,18 @@ export default function GameinfoPackEditor({
         <div className="mb-3 flex items-center justify-between">
           <h2 className="font-semibold text-linear-ink">สกุลเงิน ({currencies.length})</h2>
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setModalOpen(true)}
-              className="flex items-center gap-1 rounded-md border border-linear-primary/40 px-3 py-1 text-xs text-linear-primary hover:bg-linear-primary/10"
-            >
-              <Plus size={13} /> สูตร
-            </button>
-            <button
-              type="button"
-              onClick={addCurrency}
-              className="flex items-center gap-1 rounded-md border border-linear-primary/40 px-3 py-1 text-xs text-linear-primary hover:bg-linear-primary/10"
-            >
-              <Plus size={13} /> สกุลเงิน
-            </button>
+            <GameinfoMarketManager
+              gameId={game.id}
+              dataMode={dataMode}
+              columns={computedColumns}
+              onColumnsChange={setComputedColumns}
+            />
+            <Button type="button" variant="outline" size="sm" onClick={() => setModalOpen(true)}>
+              <Plus data-icon="inline-start" /> เพิ่มสูตร
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={addCurrency}>
+              <Plus data-icon="inline-start" /> สกุลเงิน
+            </Button>
           </div>
         </div>
 

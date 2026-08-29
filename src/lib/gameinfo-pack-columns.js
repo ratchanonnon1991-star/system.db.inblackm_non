@@ -33,7 +33,7 @@ export const GAMEINFO_PACK_SYMBOLS = ["", "$", "฿", "%"];
 export function buildGameinfoPackColumns(computedColumns = []) {
   return [
     ...GAMEINFO_PACK_BASE_COLUMNS.map((column) => ({ ...column, kind: "base" })),
-    ...(computedColumns || []).map((computed) => ({
+    ...(computedColumns || []).filter((computed) => computed.kind !== "market" || computed.enabled !== false).map((computed) => ({
       id: `computed:${computed.key}`,
       label: computed.label,
       kind: "computed",

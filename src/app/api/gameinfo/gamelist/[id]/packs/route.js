@@ -51,6 +51,17 @@ export async function PUT(request, { params }) {
       ),
       categoryIds
     );
+    const enabledMarketColumns = computedColumns.filter((column) => column.kind === "market" && column.enabled);
+    const marketKeys = enabledMarketColumns.map((column) => column.marketKey);
+    if (new Set(marketKeys).size !== marketKeys.length) {
+      return jsonError("เปิดคอลัมน์ Market เดียวกันได้เพียงหนึ่งคอลัมน์", 400);
+    }
+    for (const column of enabledMarketColumns) {
+      if (column.key !== `market_${column.marketKey}`) return jsonError("Market column key ไม่ถูกต้อง", 400);
+      if (computedColumns.some((other) => other.kind !== "market" && other.label.trim().toLowerCase() === column.label.trim().toLowerCase())) {
+        return jsonError(`มีสูตรเดิมชื่อ ${column.label} กรุณาเปลี่ยนชื่อก่อนเปิด Market`, 400);
+      }
+    }
     const variableData = await getGameinfoFormulaVariables(gameId);
     const formulaErrors = validateGameinfoComputedDependencies(
       computedColumns,

@@ -1,0 +1,98 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { Plus, RefreshCw, Settings2, Store, Trash2 } from "lucide-react";
+import { apiJson } from "@/lib/api-json";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Progress, ProgressLabel, ProgressValue } from "@/components/ui/progress";
+import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Spinner } from "@/components/ui/spinner";
+
+const MARKETS = [{ key: "kaleoz", label: "Kaleoz" }, { key: "itemku", label: "Itemku" }];
+const FINISHED = new Set(["completed", "partial", "failed"]);
+
+export default function GameinfoMarketChecksPage({ initialSellers, initialRuns = [], enabledCounts = {}, canCheck, canManage }) {
+  const [runs, setRuns] = useState(() => Object.fromEntries(initialRuns.map((run) => [run.market, run])));
+  const [error, setError] = useState("");
+  const [sellers, setSellers] = useState(initialSellers);
+  const [drafts, setDrafts] = useState(() => Object.fromEntries(MARKETS.map((market) => [market.key, initialSellers.filter((seller) => seller.market === market.key).map((seller) => seller.sellerName)])));
+  const [saving, setSaving] = useState("");
+
+  useEffect(() => {
+    const active = Object.values(runs).filter((run) => run && !FINISHED.has(run.status));
+    if (!active.length) return;
+    const timer = setInterval(async () => {
+      for (const run of active) {
+        try {
+          const data = await apiJson(`/api/gameinfo/market-checks/${run.id}`);
+          setRuns((current) => ({ ...current, [run.market]: data.run }));
+        } catch (reason) {
+          setError(reason.message || "โหลดสถานะ Check ไม่สำเร็จ");
+        }
+      }
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [runs]);
+
+  async function start(market) {
+    setError("");
+    try {
+      const data = await apiJson(`/api/gameinfo/market-checks/${market}`, { method: "POST" });
+      setRuns((current) => ({ ...current, [market]: data.run }));
+    } catch (reason) {
+      setError(reason.message || "เริ่ม Check ไม่สำเร็จ");
+    }
+  }
+
+  function updateDraft(market, index, value) {
+    setDrafts((current) => ({ ...current, [market]: current[market].map((item, itemIndex) => itemIndex === index ? value : item) }));
+  }
+
+  async function saveSellers(market) {
+    setSaving(market);
+    setError("");
+    try {
+      const data = await apiJson("/api/gameinfo/market-own-sellers", {
+        method: "PUT", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ market, sellers: drafts[market].filter((name) => name.trim()).map((sellerName) => ({ sellerName, enabled: true })) }),
+      });
+      setSellers((current) => [...current.filter((seller) => seller.market !== market), ...data.sellers]);
+    } catch (reason) {
+      setError(reason.message || "บันทึกร้านไม่สำเร็จ");
+    } finally {
+      setSaving("");
+    }
+  }
+
+  const sellerCounts = useMemo(() => Object.fromEntries(MARKETS.map((market) => [market.key, sellers.filter((seller) => seller.market === market.key && seller.enabled).length])), [sellers]);
+
+  return (
+    <>
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-semibold tracking-tight">Market Check</h2><p className="text-sm text-muted-foreground">ดึงข้อมูลทั้ง Market แยก job และตรวจร้านของเรากับราคา GameInfo</p></div>
+        {canManage ? <Sheet><SheetTrigger render={<Button type="button" variant="outline" />}><Settings2 data-icon="inline-start" />ตั้งค่าร้านของเรา</SheetTrigger><SheetContent className="sm:max-w-lg"><SheetHeader><SheetTitle>ร้านของเรา</SheetTitle><SheetDescription>รายการส่วนกลางของทั้งระบบ แยกตาม Market</SheetDescription></SheetHeader><div className="flex flex-col gap-6 overflow-y-auto px-4">
+          {MARKETS.map((market) => <FieldGroup key={market.key}><div className="flex items-center justify-between"><div><FieldLabel>{market.label}</FieldLabel><FieldDescription>ตรวจทุกชื่อร้านในรอบเดียวกัน</FieldDescription></div><Button type="button" size="sm" variant="outline" onClick={() => setDrafts((current) => ({ ...current, [market.key]: [...current[market.key], ""] }))}><Plus data-icon="inline-start" />เพิ่มร้าน</Button></div>
+            {drafts[market.key].map((name, index) => <Field key={`${market.key}-${index}`} orientation="horizontal"><FieldContent><Input value={name} onChange={(event) => updateDraft(market.key, index, event.target.value)} placeholder="ชื่อ Seller ตาม Market" /></FieldContent><Button type="button" variant="ghost" size="icon" aria-label="ลบร้าน" onClick={() => setDrafts((current) => ({ ...current, [market.key]: current[market.key].filter((_, itemIndex) => itemIndex !== index) }))}><Trash2 /></Button></Field>)}
+            <Button type="button" disabled={saving === market.key} onClick={() => saveSellers(market.key)}>{saving === market.key ? <Spinner data-icon="inline-start" /> : <Store data-icon="inline-start" />}บันทึก {market.label}</Button>
+          </FieldGroup>)}
+        </div><SheetFooter><p className="text-xs text-muted-foreground">ชื่อร้านต้องตรงกับ Seller ที่ Catalog โหลดมา</p></SheetFooter></SheetContent></Sheet> : null}
+      </div>
+      {error ? <Alert variant="destructive"><AlertTitle>ดำเนินการไม่สำเร็จ</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
+      {!MARKETS.some((market) => enabledCounts[market.key] > 0) ? <Alert><AlertTitle>ยังไม่มีเกมที่เปิด Market</AlertTitle><AlertDescription>ไปที่หน้า Packs ของเกม เลือก “จัดการ Market” เลือกเกมต้นทาง แล้วเปิด Market ก่อนกด Check ข้อมูลจึงจะถูกโหลดมาให้ Mapping</AlertDescription></Alert> : null}
+      <div className="grid gap-4 md:grid-cols-2">{MARKETS.map((market) => {
+        const run = runs[market.key];
+        const progress = run?.totalGames ? Math.round((run.completedGames + run.failedGames) / run.totalGames * 100) : 0;
+        const running = run && !FINISHED.has(run.status);
+        const enabledGames = enabledCounts[market.key] || 0;
+        return <Card key={market.key}><CardHeader><CardTitle>{market.label}</CardTitle><CardDescription>เปิดใช้งาน {enabledGames} เกม · ร้านของเรา {sellerCounts[market.key] || 0} ร้าน · ไม่มี cooldown</CardDescription><CardAction><Button type="button" disabled={!canCheck || running || !enabledGames} onClick={() => start(market.key)}>{running ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}{running ? "กำลังตรวจ" : "Check ทั้ง Market"}</Button></CardAction></CardHeader><CardContent className="flex flex-col gap-4">
+          {run ? <><div className="flex flex-wrap gap-2"><Badge variant={run.status === "failed" ? "destructive" : "outline"}>{run.status}</Badge><Badge variant="secondary">สำเร็จ {run.completedGames}</Badge>{run.failedGames ? <Badge variant="destructive">ล้มเหลว {run.failedGames}</Badge> : null}<Badge variant="secondary">Alerts {run.alertsOpened}</Badge></div><Progress value={progress}><ProgressLabel>ความคืบหน้า</ProgressLabel><ProgressValue /></Progress><p className="text-xs text-muted-foreground">ล่าสุด {new Date(run.finishedAt || run.startedAt || run.createdAt).toLocaleString("th-TH")}</p>{run.error ? <p className="text-sm text-destructive">{run.error}</p> : null}</> : <p className="text-sm text-muted-foreground">ยังไม่เคย Check รอบอัตโนมัติทำงานเวลา 09:00 ไทย</p>}
+        </CardContent></Card>;
+      })}</div>
+      {!canCheck ? <Alert><AlertTitle>ดูสถานะได้อย่างเดียว</AlertTitle><AlertDescription>ต้องมีสิทธิ์ gameinfo.market_check จึงจะสั่ง Check ได้</AlertDescription></Alert> : null}
+    </>
+  );
+}

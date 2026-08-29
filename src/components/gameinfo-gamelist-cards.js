@@ -421,7 +421,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
               <GitBranch size={16} /> Game Bot Auto
             </Link>
             <Link
-              href={`/gameinfo/${lang}?section=pack-price-compare${dataMode === "uid" ? "" : `&mode=${dataMode}`}${topupView ? "&view=topup" : ""}`}
+              href={`/gameinfo/${lang}/pack-price-compare${dataMode === "uid" ? "" : `?mode=${dataMode}`}`}
               onClick={() => setSidebarOpen(false)}
               className={`mt-1 flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-sm ${
                 priceComparisonActive
