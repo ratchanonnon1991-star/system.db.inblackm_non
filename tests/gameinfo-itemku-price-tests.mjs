@@ -128,8 +128,9 @@ assert.deepEqual(cappedSellerColumns(["a", "b", "c", "d", "e"], coverage, 3, "e"
 // Hidden keys keep the order the columns are in, not the ranking order.
 assert.deepEqual(cappedSellerColumns(["e", "d", "c", "b", "a"], coverage, 2, ""), ["seller:e", "seller:d", "seller:c"]);
 
-// Picking a reference seller moves it to the front without locking the drag order.
-assert.match(compare, /const nextOrder = \[seller, \.\.\.sellers\.filter\(\(item\) => item !== seller\)\];/);
+// Picking a reference seller is preview-only and must not persist or reorder columns.
+assert.match(compare, /function selectBaselineSeller\(seller\)[\s\S]*setBaselineSeller\(seller\)/);
+assert.doesNotMatch(compare, /const nextOrder = \[seller, \.\.\.sellers\.filter\(\(item\) => item !== seller\)\]/);
 // dnd-kit's counter-based aria-describedby tears hydration down if it ships.
 assert.match(compare, /"aria-describedby": describedBy, \.\.\.dragAttributes \} = attributes/);
 // itemku games are added by link, the same way Kaleoz games are.
@@ -162,7 +163,7 @@ assert.match(itemkuGamesRepo, /INSERT INTO itemku_games \(value, slug, label, so
 // Seller columns are fixed boxes, and the table sizes to them so a short set of
 // columns packs to the left instead of stretching across the card.
 assert.match(compare, /<Table className="w-auto table-fixed"/);
-assert.match(compare, /cn\("h-12 w-48 px-3 cursor-grab touch-none text-right active:cursor-grabbing"/);
+assert.match(compare, /cn\("sticky top-0 z-20 h-12 w-48 cursor-grab touch-none bg-card px-3 text-right active:cursor-grabbing"/);
 assert.doesNotMatch(compare, /min-w-\[980px\]/);
 
 // Portalled popups escape the page wrapper, so they opt out of the legacy red
@@ -179,9 +180,10 @@ assert.match(tooltipUi, /data-slot="tooltip-content"\s+data-shadcn-focus/);
 // The bulk actions sit at the top of the menu, and "clear" touches sellers only.
 assert.match(compare, /<DropdownMenuContent[^>]*>\s*<div className="flex gap-1 p-1">\s*<Button[^>]*onClick=\{showAllColumns\}>แสดงทุกคอลัมน์<\/Button>\s*<Button[^>]*onClick=\{clearSellerColumns\}>ล้าง Seller<\/Button>/);
 assert.match(compare, /effectiveHiddenColumns\.filter\(\(column\) => !column\.startsWith\("seller:"\)\),\s*\.\.\.sellers\.map\(\(seller\) => `seller:\$\{seller\}`\),/);
-// Nothing pins a shop as the reference any more, for either market.
+// The configured own shop is the default; changing it on this page is preview-only.
 assert.doesNotMatch(compare, /defaultBaselineSeller/);
-assert.match(compare, /await saveBaselinePreference\("DELETE", "", "ล้าง Seller อ้างอิงไม่สำเร็จ"\)/);
+assert.match(compare, /const savedBaselineSeller = serverPage\?\.baselineSeller \|\| ""/);
+assert.doesNotMatch(compare, /saveBaselinePreference|clearBaselineSeller/);
 
 const preferenceRoute = readFileSync(new URL("../src/app/api/gameinfo/market-preference/route.js", import.meta.url), "utf8");
 assert.match(preferenceRoute, /export async function DELETE\(request\)/);

@@ -7,6 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Progress, ProgressLabel, ProgressValue } from "@/components/ui/progress";
@@ -22,6 +23,8 @@ export default function GameinfoMarketChecksPage({ initialSellers, initialRuns =
   const [sellers, setSellers] = useState(initialSellers);
   const [drafts, setDrafts] = useState(() => Object.fromEntries(MARKETS.map((market) => [market.key, initialSellers.filter((seller) => seller.market === market.key).map((seller) => seller.sellerName)])));
   const [saving, setSaving] = useState("");
+  const [confirmMarket, setConfirmMarket] = useState("");
+  const [starting, setStarting] = useState("");
 
   useEffect(() => {
     const active = Object.values(runs).filter((run) => run && !FINISHED.has(run.status));
@@ -40,12 +43,16 @@ export default function GameinfoMarketChecksPage({ initialSellers, initialRuns =
   }, [runs]);
 
   async function start(market) {
+    setStarting(market);
     setError("");
     try {
       const data = await apiJson(`/api/gameinfo/market-checks/${market}`, { method: "POST" });
       setRuns((current) => ({ ...current, [market]: data.run }));
+      setConfirmMarket("");
     } catch (reason) {
       setError(reason.message || "เริ่ม Check ไม่สำเร็จ");
+    } finally {
+      setStarting("");
     }
   }
 
@@ -70,10 +77,11 @@ export default function GameinfoMarketChecksPage({ initialSellers, initialRuns =
   }
 
   const sellerCounts = useMemo(() => Object.fromEntries(MARKETS.map((market) => [market.key, sellers.filter((seller) => seller.market === market.key && seller.enabled).length])), [sellers]);
+  const confirmMarketConfig = MARKETS.find((market) => market.key === confirmMarket);
 
   return (
     <>
-      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-semibold tracking-tight">Market Check</h2><p className="text-sm text-muted-foreground">ดึงข้อมูลทั้ง Market แยก job และตรวจร้านของเรากับราคา GameInfo</p></div>
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-semibold tracking-tight">Market Check</h2><p className="text-sm text-muted-foreground">ดึงข้อมูลทั้ง Market แยก job และตรวจร้านของเรากับราคา GameInfo · อัตโนมัติทุกวัน 09:00 น. เวลาไทย</p></div>
         {canManage ? <Sheet><SheetTrigger render={<Button type="button" variant="outline" />}><Settings2 data-icon="inline-start" />ตั้งค่าร้านของเรา</SheetTrigger><SheetContent className="sm:max-w-lg"><SheetHeader><SheetTitle>ร้านของเรา</SheetTitle><SheetDescription>รายการส่วนกลางของทั้งระบบ แยกตาม Market</SheetDescription></SheetHeader><div className="flex flex-col gap-6 overflow-y-auto px-4">
           {MARKETS.map((market) => <FieldGroup key={market.key}><div className="flex items-center justify-between"><div><FieldLabel>{market.label}</FieldLabel><FieldDescription>ตรวจทุกชื่อร้านในรอบเดียวกัน</FieldDescription></div><Button type="button" size="sm" variant="outline" onClick={() => setDrafts((current) => ({ ...current, [market.key]: [...current[market.key], ""] }))}><Plus data-icon="inline-start" />เพิ่มร้าน</Button></div>
             {drafts[market.key].map((name, index) => <Field key={`${market.key}-${index}`} orientation="horizontal"><FieldContent><Input value={name} onChange={(event) => updateDraft(market.key, index, event.target.value)} placeholder="ชื่อ Seller ตาม Market" /></FieldContent><Button type="button" variant="ghost" size="icon" aria-label="ลบร้าน" onClick={() => setDrafts((current) => ({ ...current, [market.key]: current[market.key].filter((_, itemIndex) => itemIndex !== index) }))}><Trash2 /></Button></Field>)}
@@ -88,10 +96,11 @@ export default function GameinfoMarketChecksPage({ initialSellers, initialRuns =
         const progress = run?.totalGames ? Math.round((run.completedGames + run.failedGames) / run.totalGames * 100) : 0;
         const running = run && !FINISHED.has(run.status);
         const enabledGames = enabledCounts[market.key] || 0;
-        return <Card key={market.key}><CardHeader><CardTitle>{market.label}</CardTitle><CardDescription>เปิดใช้งาน {enabledGames} เกม · ร้านของเรา {sellerCounts[market.key] || 0} ร้าน · ไม่มี cooldown</CardDescription><CardAction><Button type="button" disabled={!canCheck || running || !enabledGames} onClick={() => start(market.key)}>{running ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}{running ? "กำลังตรวจ" : "Check ทั้ง Market"}</Button></CardAction></CardHeader><CardContent className="flex flex-col gap-4">
+        return <Card key={market.key}><CardHeader><CardTitle>{market.label}</CardTitle><CardDescription>เปิดใช้งาน {enabledGames} เกม · ร้านของเรา {sellerCounts[market.key] || 0} ร้าน · ไม่มี cooldown</CardDescription><CardAction><Button type="button" disabled={!canCheck || running || !enabledGames || Boolean(starting)} onClick={() => setConfirmMarket(market.key)}>{running || starting === market.key ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}{running ? "กำลังตรวจ" : "Check ทั้ง Market"}</Button></CardAction></CardHeader><CardContent className="flex flex-col gap-4">
           {run ? <><div className="flex flex-wrap gap-2"><Badge variant={run.status === "failed" ? "destructive" : "outline"}>{run.status}</Badge><Badge variant="secondary">สำเร็จ {run.completedGames}</Badge>{run.failedGames ? <Badge variant="destructive">ล้มเหลว {run.failedGames}</Badge> : null}<Badge variant="secondary">Alerts {run.alertsOpened}</Badge></div><Progress value={progress}><ProgressLabel>ความคืบหน้า</ProgressLabel><ProgressValue /></Progress><p className="text-xs text-muted-foreground">ล่าสุด {new Date(run.finishedAt || run.startedAt || run.createdAt).toLocaleString("th-TH")}</p>{run.error ? <p className="text-sm text-destructive">{run.error}</p> : null}</> : <p className="text-sm text-muted-foreground">ยังไม่เคย Check รอบอัตโนมัติทำงานเวลา 09:00 ไทย</p>}
         </CardContent></Card>;
       })}</div>
+      <Dialog open={Boolean(confirmMarket)} onOpenChange={(open) => { if (!open && !starting) setConfirmMarket(""); }}><DialogContent><DialogHeader><DialogTitle>ยืนยัน Check ทั้ง {confirmMarketConfig?.label || "Market"}</DialogTitle><DialogDescription>ระบบจะดึงข้อมูลล่าสุดของทุกเกมที่เปิด {confirmMarketConfig?.label || "Market"} แล้วตรวจราคาทุกร้านของเรา งานอาจใช้เวลาสักครู่และ Market เดียวกันรันได้ครั้งละหนึ่งงาน</DialogDescription></DialogHeader><DialogFooter><DialogClose render={<Button type="button" variant="outline" disabled={Boolean(starting)} />}>ยกเลิก</DialogClose><Button type="button" disabled={!confirmMarket || Boolean(starting)} onClick={() => start(confirmMarket)}>{starting ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}{starting ? "กำลังเริ่ม" : "เริ่ม Check"}</Button></DialogFooter></DialogContent></Dialog>
       {!canCheck ? <Alert><AlertTitle>ดูสถานะได้อย่างเดียว</AlertTitle><AlertDescription>ต้องมีสิทธิ์ gameinfo.market_check จึงจะสั่ง Check ได้</AlertDescription></Alert> : null}
     </>
   );

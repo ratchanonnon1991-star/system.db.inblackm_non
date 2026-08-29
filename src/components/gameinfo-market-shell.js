@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, ArrowLeftRight, Gauge, Link2 } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, Gauge, Link2, Store } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 const items = [
   { id: "mapping", label: "Mapping", path: "market-mapping", icon: Link2 },
   { id: "compare", label: "เทียบราคา", path: "pack-price-compare", icon: ArrowLeftRight },
+  { id: "competitors", label: "เทียบร้านอื่น", path: "seller-price-compare", icon: Store },
   { id: "checks", label: "Market Check", path: "market-checks", icon: Gauge },
   { id: "alerts", label: "Alerts", path: "price-alerts", icon: AlertTriangle },
 ];

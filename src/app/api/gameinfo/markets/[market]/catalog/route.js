@@ -1,12 +1,20 @@
 import { handleApiError, jsonOk } from "@/lib/http";
 import { requireGameinfoAccess } from "@/server/auth";
-import { listGameinfoMarketCatalog } from "@/server/gameinfo-market-system";
+import { getGameinfoMarketPackSource, listGameinfoMarketCatalog } from "@/server/gameinfo-market-system";
 
 export async function GET(request, { params }) {
   try {
     await requireGameinfoAccess(request);
     const market = (await params).market;
     const q = request.nextUrl.searchParams;
+    if (q.get("externalPackKey")) {
+      const source = await getGameinfoMarketPackSource({
+        market,
+        externalGameKey: q.get("externalGameKey") || "",
+        externalPackKey: q.get("externalPackKey") || "",
+      });
+      return jsonOk({ source });
+    }
     const catalog = await listGameinfoMarketCatalog({
       market,
       externalGameKey: q.get("externalGameKey") || "",

@@ -11,6 +11,8 @@ export async function GET(request) {
       market: q.get("market") || "kaleoz", page: q.get("page") || 1,
       sellers: q.getAll("seller"),
       allSellers: q.get("allSellers") === "1",
+      includeCompetitors: q.get("competitors") === "1",
+      ownOnly: q.get("ownOnly") === "1",
     });
     return jsonOk({ comparison });
   } catch (error) {
