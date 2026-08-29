@@ -12,12 +12,14 @@ import { GAMEINFO_FIELD_NAMES } from "@/lib/gameinfo-formula-fields";
 import GameinfoFormulaHelpPanel from "@/components/gameinfo-formula-help-panel";
 import { formatGameinfoPackColumnValue, GAMEINFO_PACK_SYMBOLS } from "@/lib/gameinfo-pack-columns";
 import { validateGameinfoComputedDependencies } from "@/lib/gameinfo-computed-evaluator";
-import { useGameinfoDialog } from "@/lib/use-gameinfo-dialog";
 import {
   requestGameinfoDiscard,
   useGameinfoUnsavedChanges,
 } from "@/lib/gameinfo-unsaved-changes";
 import GameinfoFormulaMemory from "./gameinfo-formula-memory";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 
 // Same parser, validation and function library as the systemdb-side formula
 // editor (gamedb-modals.js's ComputedColumnModal) — this one is a full
@@ -77,8 +79,6 @@ export default function GameinfoComputedEditor({
     }
     onClose();
   }
-
-  const { dialogRef, titleId, onBackdropMouseDown } = useGameinfoDialog({ onRequestClose: requestClose });
 
   const validation = useMemo(() => {
     if (!formula.trim()) return { ok: false, message: "", type: "number" };
@@ -171,35 +171,46 @@ export default function GameinfoComputedEditor({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onMouseDown={onBackdropMouseDown}
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) requestClose();
+      }}
     >
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="flex max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-linear-hairline bg-linear-surface-1 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-linear-hairline px-5 py-3">
-          <h2 id={titleId} className="flex items-center gap-2 text-sm font-semibold text-linear-ink">
-            <Calculator size={15} className="text-linear-primary" /> {editingMainFormula ? "แก้ไขสูตรหลัก" : "เพิ่มคอลัมน์/สูตร"}
-          </h2>
-          <button
+      <DialogContent
+        showCloseButton={false}
+        className="max-h-[85vh] gap-0 overflow-hidden p-0 sm:max-w-5xl"
+      >
+        <div className="flex items-center justify-between border-b px-5 py-3">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <DialogTitle className="flex items-center gap-2">
+              <Calculator data-icon="inline-start" />
+              {editingMainFormula ? "แก้ไขสูตรหลัก" : "เพิ่มคอลัมน์/สูตร"}
+            </DialogTitle>
+            <DialogDescription>
+              กำหนดชื่อ สูตร รูปแบบผลลัพธ์ และเลือกใช้สูตรจาก Formula Memory
+            </DialogDescription>
+          </div>
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-sm"
             onClick={requestClose}
-            className="flex h-7 w-7 items-center justify-center rounded text-linear-ink-tertiary hover:bg-linear-surface-2 hover:text-linear-ink"
             aria-label="ปิด"
           >
-            <X size={16} />
-          </button>
+            <X />
+          </Button>
         </div>
 
         <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <div className="flex flex-col gap-3 overflow-y-auto px-5 py-4">
           <div>
             <label className="mb-1 block text-xs text-linear-ink-tertiary">ชื่อคอลัมน์</label>
-            <input
+            <Input
               type="text"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               placeholder="เช่น กำไร"
-              className="h-9 w-full rounded border border-linear-hairline-strong bg-linear-surface-2 px-2 text-sm text-linear-ink outline-none focus:border-linear-primary"
             />
           </div>
 
@@ -208,12 +219,12 @@ export default function GameinfoComputedEditor({
               สูตร — ใช้ + - * / ( ) เทียบด้วย = &lt;&gt; &lt; &gt; ใส่ข้อความในเครื่องหมายคำพูด
               และอ้างคอลัมน์ด้วย [ชื่อคอลัมน์]
             </label>
-            <input
+            <Input
               type="text"
               value={formula}
               onChange={(e) => setFormula(e.target.value)}
               placeholder={'เช่น IF(DAYSUNTIL([วันหมดอายุ]) < 3, "ใกล้หมดอายุ", "ปกติ")'}
-              className="h-9 w-full rounded border border-linear-hairline-strong bg-linear-surface-2 px-2 font-mono text-xs text-linear-ink outline-none focus:border-linear-primary"
+              className="font-mono text-xs"
             />
             {formula.trim() && (
               <p className={`mt-1 text-xs ${validation.ok ? "text-linear-success" : "text-linear-danger"}`}>
@@ -279,7 +290,7 @@ export default function GameinfoComputedEditor({
             <label htmlFor="gameinfo-computed-symbol" className="mb-1 block text-xs text-linear-ink-tertiary">
               สัญลักษณ์ที่แสดง
             </label>
-            <input
+            <Input
               id="gameinfo-computed-symbol"
               type="text"
               value={type === "number" ? symbol : ""}
@@ -288,7 +299,6 @@ export default function GameinfoComputedEditor({
               maxLength={24}
               list="gameinfo-computed-symbol-suggestions"
               placeholder="เช่น ฿, %, USD, Coins"
-              className="h-9 w-full rounded border border-linear-hairline-strong bg-linear-surface-2 px-2 text-sm text-linear-ink outline-none focus:border-linear-primary disabled:opacity-50"
             />
             <datalist id="gameinfo-computed-symbol-suggestions">
               {GAMEINFO_PACK_SYMBOLS.map((value) => (
@@ -306,14 +316,15 @@ export default function GameinfoComputedEditor({
             <p className="mb-1.5 text-xs text-linear-ink-tertiary">คอลัมน์ที่ใช้ได้ (กดเพื่อแทรก):</p>
             <div className="flex flex-wrap gap-1.5">
               {[...new Set([...GAMEINFO_FIELD_NAMES, ...extraFieldNames, ...otherColumns.map((column) => column.label)])].map((name) => (
-                <button
+                <Button
                   key={name}
                   type="button"
+                  variant="secondary"
+                  size="xs"
                   onClick={() => setFormula((prev) => `${prev}[${name}]`)}
-                  className="rounded bg-linear-surface-3 px-2 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-4"
                 >
                   {name}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
@@ -334,17 +345,16 @@ export default function GameinfoComputedEditor({
           />
         </div>
 
-        <div className="flex items-center justify-end border-t border-linear-hairline px-5 py-3">
-          <button
+        <div className="flex items-center justify-end border-t px-5 py-3">
+          <Button
             type="button"
             onClick={submit}
             disabled={!label.trim() || !validation.ok}
-            className="flex items-center gap-1.5 rounded-md bg-linear-primary px-4 py-2 text-sm font-medium text-white hover:bg-linear-primary-hover disabled:opacity-50"
           >
-            <Plus size={14} /> {editingMainFormula ? "บันทึกสูตรหลัก" : "เพิ่มคอลัมน์"}
-          </button>
+            <Plus data-icon="inline-start" /> {editingMainFormula ? "บันทึกสูตรหลัก" : "เพิ่มคอลัมน์"}
+          </Button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

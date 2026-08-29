@@ -39,6 +39,36 @@ export function marketPackIdentity(market, { key, name, category, amount } = {})
   return `${normalizedMarket}:${parts.join("|")}`;
 }
 
+function normalizeMarketOffers(offers) {
+  const bySeller = new Map();
+  for (const offer of offers || []) {
+    if (!offer?.seller || !Number.isFinite(Number(offer.price))) continue;
+    const sellerKey = normalizeMarketIdentityPart(offer.seller);
+    if (!sellerKey) continue;
+    const normalized = {
+      sellerKey,
+      sellerName: String(offer.seller).trim(),
+      listingId: String(offer.itemId || ""),
+      price: Number(offer.price),
+      currency: String(offer.currency || ""),
+      productUrl: String(offer.productUrl || ""),
+      metadata: {
+        unitPrice: offer.unitPrice ?? null,
+        stock: offer.stock ?? null,
+        stockText: offer.stockText ?? null,
+        tradingVolume: offer.tradingVolume ?? null,
+        sold: offer.sold ?? null,
+        rating: offer.rating ?? null,
+        delivery: offer.delivery ?? null,
+        promo: offer.promo ?? null,
+      },
+    };
+    const current = bySeller.get(sellerKey);
+    if (!current || normalized.price < current.price) bySeller.set(sellerKey, normalized);
+  }
+  return [...bySeller.values()];
+}
+
 export function normalizeMarketPage(market, page) {
   const normalizedMarket = normalizeGameinfoMarket(market);
   const identities = (page?.groups || []).map((group, index) => {
@@ -75,26 +105,7 @@ export function normalizeMarketPage(market, page) {
         sourceKey: group?.key == null ? "" : String(group.key),
         quantity: group?.quantity ?? null,
       },
-      offers: (group?.offers || [])
-        .filter((offer) => offer?.seller && Number.isFinite(Number(offer.price)))
-        .map((offer) => ({
-          sellerKey: normalizeMarketIdentityPart(offer.seller),
-          sellerName: String(offer.seller),
-          listingId: String(offer.itemId || ""),
-          price: Number(offer.price),
-          currency: String(offer.currency || ""),
-          productUrl: String(offer.productUrl || ""),
-          metadata: {
-            unitPrice: offer.unitPrice ?? null,
-            stock: offer.stock ?? null,
-            stockText: offer.stockText ?? null,
-            tradingVolume: offer.tradingVolume ?? null,
-            sold: offer.sold ?? null,
-            rating: offer.rating ?? null,
-            delivery: offer.delivery ?? null,
-            promo: offer.promo ?? null,
-          },
-        })),
+      offers: normalizeMarketOffers(group?.offers),
     });
   }
   return {

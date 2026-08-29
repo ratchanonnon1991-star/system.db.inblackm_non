@@ -23,6 +23,20 @@ assert.equal(nextGameinfoMarketRunAt(new Date("2026-08-29T02:00:00Z")).toISOStri
 const rebound = normalizeMarketPage("kaleoz", { game: "zepeto", productType: "coins", groups: [{ packLabel: "128 Zem", quantity: 128, offers: [{ itemId: "new-listing", seller: "Shop", price: 95 }] }] });
 assert.equal(rebound.packs[0].externalPackKey, "kaleoz:128 zem|coins|128");
 assert.equal(rebound.packs[0].listingId, "new-listing");
+const duplicateSeller = normalizeMarketPage("kaleoz", {
+  game: "zepeto",
+  productType: "coins",
+  groups: [{
+    packLabel: "128 Zem",
+    quantity: 128,
+    offers: [
+      { itemId: "listing-expensive", seller: "Shop", price: 100 },
+      { itemId: "listing-cheap", seller: " shop ", price: 95 },
+    ],
+  }],
+});
+assert.equal(duplicateSeller.packs[0].offers.length, 1);
+assert.equal(duplicateSeller.packs[0].offers[0].listingId, "listing-cheap");
 const ambiguous = normalizeMarketPage("kaleoz", { game: "zepeto", productType: "coins", groups: [{ packLabel: "128 Zem", quantity: 128 }, { packLabel: "128 Zem", quantity: 128 }] });
 assert.equal(ambiguous.packs.length, 0);
 assert.equal(ambiguous.ambiguities.length, 1);

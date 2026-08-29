@@ -79,6 +79,9 @@ import { evaluateGameinfoComputedColumn } from "@/lib/gameinfo-computed-evaluato
 import { normalizeSpaces } from "@/lib/text-normalize";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 
 const REQUIRED_PACK_FIELDS = ["name", "price", "amountChargedFee", "channelsMain"];
 
@@ -1943,14 +1946,6 @@ function GameinfoFormulaOverrideEditor({
     onClose();
   }, [categoryMode, dirty, onClose]);
 
-  useEffect(() => {
-    function handleKey(event) {
-      if (event.key === "Escape") requestClose();
-    }
-    document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
-  }, [requestClose]);
-
   const validation = useMemo(() => {
     if (!formula.trim()) return { ok: true, message: "เว้นว่างเพื่อใช้สูตรของคอลัมน์", value: null };
     try {
@@ -2005,85 +2000,105 @@ function GameinfoFormulaOverrideEditor({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) requestClose();
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) requestClose();
       }}
     >
-      <div className="w-full max-w-lg rounded-lg border border-linear-hairline bg-linear-surface-1 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-linear-hairline px-5 py-3">
-          <div>
-            <h2 className="text-sm font-semibold text-linear-ink">
-              สูตรเฉพาะ{categoryMode ? "หมวด" : " pack"} — {column.label}
-            </h2>
-            <p className="mt-0.5 text-xs text-linear-ink-tertiary">{targetLabel}</p>
+      <DialogContent
+        showCloseButton={false}
+        className="max-h-[85vh] gap-0 overflow-hidden p-0 sm:max-w-5xl"
+      >
+        <div className="flex items-center justify-between border-b px-5 py-3">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <DialogTitle>สูตรเฉพาะ{categoryMode ? "หมวด" : "แถว"} · {column.label}</DialogTitle>
+            <DialogDescription className="truncate">
+              {categoryMode ? "หมวด" : "แพ็ค"}: {targetLabel}
+            </DialogDescription>
           </div>
-          <button type="button" onClick={requestClose} aria-label="ปิด" className="rounded p-1 text-linear-ink-tertiary hover:bg-linear-surface-2">
-            <X size={16} />
-          </button>
+          <Button type="button" variant="ghost" size="icon-sm" onClick={requestClose} aria-label="ปิด">
+            <X />
+          </Button>
         </div>
-        <div className="space-y-3 px-5 py-4">
-          <div>
-            <p className="mb-1 text-xs text-linear-ink-tertiary">สูตร fallback</p>
-            <code className="block rounded bg-linear-surface-2 px-3 py-2 text-xs text-linear-ink-subtle">
-              {fallback}
-            </code>
-          </div>
-          <GameinfoFormulaMemory
-            formula={formula}
-            type={column.type || "number"}
-            symbol={column.symbol || ""}
-            onApply={applyMemoryPreset}
-          />
-          <div>
-            <label className="mb-1 block text-xs text-linear-ink-tertiary">
-              สูตรเฉพาะ{categoryMode ? "หมวด" : " pack"}
-            </label>
-            <input
-              autoFocus
-              value={formula}
-              onChange={(event) => setFormula(event.target.value)}
-              placeholder="เว้นว่างเพื่อใช้สูตร fallback"
-              className="h-10 w-full rounded border border-linear-hairline-strong bg-linear-surface-2 px-3 font-mono text-xs text-linear-ink outline-none focus:border-linear-primary"
+
+        <form
+          className="flex min-h-0 flex-1 flex-col overflow-hidden"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (validation.ok) onSave(formula);
+          }}
+        >
+          <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_20rem]">
+            <div className="overflow-y-auto px-5 py-4">
+              <FieldGroup>
+                <Field>
+                  <FieldLabel>สูตร fallback ที่ใช้อยู่</FieldLabel>
+                  <code className="block rounded-lg border bg-muted px-3 py-2 text-xs text-muted-foreground">
+                    {fallback || "ไม่มีสูตร fallback"}
+                  </code>
+                  <FieldDescription>แถวนี้จะกลับมาใช้สูตรนี้เมื่อเว้นสูตรเฉพาะว่างไว้</FieldDescription>
+                </Field>
+
+                <Field data-invalid={!validation.ok}>
+                  <FieldLabel htmlFor={`row-formula-${samplePack.id || categoryId}`}>
+                    สูตรเฉพาะ{categoryMode ? "หมวด" : "แถว"}
+                  </FieldLabel>
+                  <Input
+                    id={`row-formula-${samplePack.id || categoryId}`}
+                    autoFocus
+                    value={formula}
+                    onChange={(event) => setFormula(event.target.value)}
+                    placeholder="เว้นว่างเพื่อใช้สูตร fallback"
+                    className="font-mono text-xs"
+                    aria-invalid={!validation.ok}
+                  />
+                  {validation.ok ? (
+                    <FieldDescription>{validation.message}</FieldDescription>
+                  ) : (
+                    <FieldError>{validation.message}</FieldError>
+                  )}
+                </Field>
+
+                <Field>
+                  <FieldLabel>แทรกตัวแปร</FieldLabel>
+                  <div className="flex flex-wrap gap-1.5">
+                    {GAMEINFO_FIELD_NAMES.map((name) => (
+                      <Button
+                        key={name}
+                        type="button"
+                        variant="secondary"
+                        size="xs"
+                        onClick={() => setFormula((current) => `${current}[${name}]`)}
+                      >
+                        {name}
+                      </Button>
+                    ))}
+                  </div>
+                </Field>
+              </FieldGroup>
+            </div>
+
+            <GameinfoFormulaMemory
+              formula={formula}
+              type={column.type || "number"}
+              symbol={column.symbol || ""}
+              onApply={applyMemoryPreset}
+              className="overflow-y-auto border-t bg-muted/30 p-4 lg:border-l lg:border-t-0"
             />
-            <p className={`mt-1 text-xs ${validation.ok ? "text-emerald-400" : "text-red-400"}`}>
-              {validation.message}
-            </p>
           </div>
-          <div className="flex flex-wrap gap-1.5">
-            {GAMEINFO_FIELD_NAMES.map((name) => (
-              <button
-                key={name}
-                type="button"
-                onClick={() => setFormula((current) => `${current}[${name}]`)}
-                className="rounded bg-linear-surface-3 px-2 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-4"
-              >
-                {name}
-              </button>
-            ))}
+
+          <div className="flex flex-col-reverse gap-2 border-t px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <Button type="button" variant="ghost" onClick={() => onSave("")} disabled={!existing}>
+              กลับไปใช้สูตร fallback
+            </Button>
+            <Button type="submit" disabled={!validation.ok || !dirty}>
+              บันทึกสูตร{categoryMode ? "หมวดนี้" : "แถวนี้"}
+            </Button>
           </div>
-        </div>
-        <div className="flex items-center justify-between border-t border-linear-hairline px-5 py-3">
-          <button
-            type="button"
-            onClick={() => onSave("")}
-            disabled={!existing}
-            className="text-xs text-linear-primary hover:underline disabled:opacity-40"
-          >
-            กลับไปใช้สูตร fallback
-          </button>
-          <button
-            type="button"
-            onClick={() => onSave(formula)}
-            disabled={!validation.ok}
-            className="rounded-md bg-linear-primary px-4 py-2 text-sm font-medium text-white hover:bg-linear-primary-hover disabled:opacity-50"
-          >
-            บันทึกสูตร{categoryMode ? "หมวดนี้" : "แถวนี้"}
-          </button>
-        </div>
-      </div>
-    </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

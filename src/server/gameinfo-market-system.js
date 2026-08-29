@@ -353,9 +353,14 @@ export async function upsertGameinfoMarketCatalog(catalog, client = null) {
       for (const offer of pack.offers) {
         await db.query(
           `INSERT INTO gameinfo_market_offers
-             (market, external_game_key, external_pack_key, seller_key, seller_name, listing_id,
+           (market, external_game_key, external_pack_key, seller_key, seller_name, listing_id,
               price, currency, product_url, metadata, fetched_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+           ON CONFLICT (market, external_game_key, external_pack_key, seller_key) DO UPDATE SET
+             seller_name = EXCLUDED.seller_name, listing_id = EXCLUDED.listing_id,
+             price = EXCLUDED.price, currency = EXCLUDED.currency,
+             product_url = EXCLUDED.product_url, metadata = EXCLUDED.metadata,
+             fetched_at = EXCLUDED.fetched_at`,
           [catalog.market, catalog.externalGameKey, pack.externalPackKey, offer.sellerKey,
             offer.sellerName, offer.listingId, offer.price, offer.currency, offer.productUrl,
             JSON.stringify(offer.metadata), catalog.fetchedAt]
@@ -399,7 +404,7 @@ export async function listGameinfoMarketCatalog({ market, externalGameKey, gameI
   const values = [normalizedMarket, String(externalGameKey || ""), Number(gameId) || 0, normalizedMode, needle ? `%${needle}%` : "", pageSize, (pageNumber - 1) * pageSize];
   const mappedClause = status === "unmapped" ? "AND m.pack_id IS NULL" : status === "mapped" ? "AND m.pack_id IS NOT NULL" : status === "stale" ? "AND m.status = 'stale'" : "";
   const pool = await getGameinfoMarketPool();
-  const result = await pool.query(
+  const [result, summaryResult] = await Promise.all([pool.query(
     `SELECT c.*, m.pack_id, m.status AS mapping_status, COUNT(*) OVER()::int AS total
        FROM gameinfo_market_catalog_packs c
        LEFT JOIN gameinfo_market_mappings m ON m.game_id = $3 AND m.data_mode = $4
@@ -411,7 +416,19 @@ export async function listGameinfoMarketCatalog({ market, externalGameKey, gameI
       ORDER BY c.sort_order, c.name
       LIMIT $6 OFFSET $7`,
     values
-  );
+  ), pool.query(
+    `SELECT COUNT(*)::int AS total,
+            COUNT(*) FILTER (WHERE m.pack_id IS NOT NULL AND m.status = 'active')::int AS mapped,
+            COUNT(*) FILTER (WHERE m.pack_id IS NULL)::int AS unmapped,
+            COUNT(*) FILTER (WHERE m.status = 'stale')::int AS stale
+       FROM gameinfo_market_catalog_packs c
+       LEFT JOIN gameinfo_market_mappings m ON m.game_id = $3 AND m.data_mode = $4
+        AND m.market = c.market AND m.external_game_key = c.external_game_key
+        AND m.external_pack_key = c.external_pack_key
+      WHERE c.market = $1 AND c.external_game_key = $2 AND c.active`,
+    values.slice(0, 4)
+  )]);
+  const summary = summaryResult.rows[0] || {};
   return {
     items: result.rows.map((row) => ({
       externalPackKey: row.external_pack_key, identitySignature: row.identity_signature,
@@ -420,6 +437,12 @@ export async function listGameinfoMarketCatalog({ market, externalGameKey, gameI
       lastSeenAt: row.last_seen_at,
     })),
     page: pageNumber, limit: pageSize, total: Number(result.rows[0]?.total) || 0,
+    summary: {
+      total: Number(summary.total) || 0,
+      mapped: Number(summary.mapped) || 0,
+      unmapped: Number(summary.unmapped) || 0,
+      stale: Number(summary.stale) || 0,
+    },
   };
 }
 
@@ -589,7 +612,7 @@ export async function getGameinfoMappingWorkspace(gameId, dataMode, market, opti
   const config = configs.find((item) => item.market === normalizedMarket);
   const catalog = config?.externalGameKey
     ? await listGameinfoMarketCatalog({ ...options, market: normalizedMarket, externalGameKey: config.externalGameKey, gameId, dataMode: normalizedMode })
-    : { items: [], page: 1, limit: GAMEINFO_COMPARE_PAGE_SIZE, total: 0 };
+    : { items: [], page: 1, limit: GAMEINFO_COMPARE_PAGE_SIZE, total: 0, summary: { total: 0, mapped: 0, unmapped: 0, stale: 0 } };
   const mappingByPack = new Map(mappings.map((mapping) => [mapping.packId, mapping]));
   return {
     game: { id: game.id, name: game.game }, config,

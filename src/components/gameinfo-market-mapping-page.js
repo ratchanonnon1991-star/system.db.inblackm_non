@@ -150,6 +150,7 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
 
         <Card>
           <CardHeader><CardTitle>Catalog {MARKET_LABELS[market]}</CardTitle><CardDescription>แสดงข้อมูลล่าสุดจากฐานข้อมูล ไม่โหลด Market สดในหน้านี้</CardDescription>
+            <div className="flex flex-wrap gap-2"><Badge variant="outline">Market ทั้งหมด {workspace?.catalog?.summary?.total || 0}</Badge><Badge>จับคู่แล้ว {workspace?.catalog?.summary?.mapped || 0}</Badge><Badge variant="secondary">ยังไม่จับคู่ {workspace?.catalog?.summary?.unmapped || 0}</Badge>{workspace?.catalog?.summary?.stale ? <Badge variant="destructive">Stale {workspace.catalog.summary.stale}</Badge> : null}</div>
             <div className="flex flex-wrap gap-2"><Input className="min-w-48 flex-1" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="ค้นหาชื่อ หมวด หรือยอด" /><Button type="button" variant="outline" size="icon" aria-label="โหลดใหม่" onClick={load}><RefreshCw /></Button></div>
             <Tabs value={status} onValueChange={(value) => { setStatus(value); setPage(1); }}><TabsList><TabsTrigger value="all">ทั้งหมด</TabsTrigger><TabsTrigger value="unmapped">ยังไม่จับคู่</TabsTrigger><TabsTrigger value="mapped">จับคู่แล้ว</TabsTrigger><TabsTrigger value="stale">Stale</TabsTrigger></TabsList></Tabs>
           </CardHeader>
