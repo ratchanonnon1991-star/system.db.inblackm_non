@@ -14,6 +14,9 @@ import { fetchNormalizedGameinfoMarketCatalog, listGameinfoMarketGames } from "@
 import { getGamelistPacks } from "@/server/gameinfo-gamelist-packs";
 import { getGameinfoModeData } from "@/server/gameinfo-mode-data";
 import { getGameListRow, listGameListRows } from "@/server/gameinfo-gamelist";
+import { getGameinfoFormulaVariables } from "@/server/gameinfo-formula-variables";
+import { getGameinfoExchangeRates } from "@/server/gameinfo-exchange-rates";
+import { buildGameinfoMarketPackPriceMap, findGameinfoMarketPriceColumn } from "@/lib/gameinfo-market-prices";
 
 const CONNECTION_NAME = "gameinfo";
 const runners = globalThis.__gameinfoMarketRunners || new Map();
@@ -474,7 +477,7 @@ export async function saveGameinfoMarketMapping(input, actor) {
   const packId = String(input?.packId || "").trim().slice(0, 128);
   const externalPackKey = String(input?.externalPackKey || "").trim();
   if (!Number.isInteger(gameId) || gameId <= 0 || !packId || !externalPackKey) throw httpError("ข้อมูล Mapping ไม่ครบ");
-  const pack = (await packPriceMap(gameId, normalizedMode)).get(packId);
+  const pack = (await packPriceMap(gameId, normalizedMode, market)).get(packId);
   if (!pack) throw httpError("ไม่พบ Pack ของ GameInfo", 404);
   const gameinfoPackName = normalizeMarketIdentityPart(pack.name);
   const pool = await getGameinfoMarketPool();
@@ -541,7 +544,7 @@ export async function saveGameinfoMarketMappingsInOrder(input, actor) {
   const market = normalizeGameinfoMarket(input?.market);
   const pairs = Array.isArray(input?.pairs) ? input.pairs.slice(0, 500) : [];
   if (!Number.isInteger(gameId) || gameId <= 0 || !pairs.length) throw httpError("ไม่มีรายการสำหรับ Mapping");
-  const prices = await packPriceMap(gameId, normalizedMode);
+  const prices = await packPriceMap(gameId, normalizedMode, market);
   const clean = pairs.map((pair) => ({
     packId: String(pair?.packId || "").trim().slice(0, 128),
     externalPackKey: String(pair?.externalPackKey || "").trim(),
@@ -701,12 +704,28 @@ export async function saveGameinfoOwnSellers(market, sellers, actor) {
   }
 }
 
-async function packPriceMap(gameId, dataMode) {
+async function packPriceMap(gameId, dataMode, market) {
   const data = dataMode === "idpass" ? await getGameinfoModeData(gameId, dataMode) : await getGamelistPacks(gameId);
-  const currencies = dataMode === "idpass" ? data?.packs?.currencies : data?.currencies;
-  return new Map((currencies || []).flatMap((currency) => (currency.categories || []).flatMap((category) =>
-    (category.packs || []).map((pack) => [String(pack.id), { id: String(pack.id), name: pack.name, price: pack.price }])
-  )));
+  const packs = dataMode === "idpass" ? data?.packs : data;
+  const [gameRow, variableData, rates] = await Promise.all([
+    getGameListRow(gameId),
+    getGameinfoFormulaVariables(gameId),
+    getGameinfoExchangeRates(["USDT/THB", "USDCNY"]).catch(() => []),
+  ]);
+  const fields = dataMode === "idpass" ? data?.fields : null;
+  const game = {
+    ...gameRow,
+    gameName: gameRow?.game,
+    region: fields?.region ?? gameRow?.region,
+    platform: fields?.platform ?? gameRow?.platform,
+    server: fields?.server ?? gameRow?.server,
+  };
+  const prices = buildGameinfoMarketPackPriceMap(packs, game, market, {
+    formulaVariables: variableData.variables,
+    externalValues: Object.fromEntries(rates.filter((rate) => rate.available).map((rate) => [rate.pair, rate.rate])),
+  });
+  prices.priceLabel = findGameinfoMarketPriceColumn(packs?.computedColumns, market)?.label || null;
+  return prices;
 }
 
 async function reconcileGameinfoPackMappings(gameId, dataMode, market, mappings, prices) {
@@ -769,7 +788,7 @@ export async function getGameinfoMappingWorkspace(gameId, dataMode, market, opti
   const normalizedMarket = normalizeGameinfoMarket(market);
   const [game, configs, initialMappings, prices] = await Promise.all([
     getGameListRow(gameId), listGameinfoGameMarkets(gameId, normalizedMode),
-    listGameinfoMarketMappings(gameId, normalizedMode, normalizedMarket), packPriceMap(gameId, normalizedMode),
+    listGameinfoMarketMappings(gameId, normalizedMode, normalizedMarket), packPriceMap(gameId, normalizedMode, normalizedMarket),
   ]);
   if (!game) throw httpError("ไม่พบเกม", 404);
   const mappings = await reconcileGameinfoPackMappings(
@@ -796,7 +815,7 @@ export async function getGameinfoPackPriceComparison({ gameId, dataMode = "uid",
   const normalizedMarket = normalizeGameinfoMarket(market);
   const pageNumber = positiveInt(page);
   const [game, configs, prices, ownSellers] = await Promise.all([
-    getGameListRow(gameId), listGameinfoGameMarkets(gameId, normalizedMode), packPriceMap(gameId, normalizedMode), listGameinfoOwnSellers(normalizedMarket),
+    getGameListRow(gameId), listGameinfoGameMarkets(gameId, normalizedMode), packPriceMap(gameId, normalizedMode, normalizedMarket), listGameinfoOwnSellers(normalizedMarket),
   ]);
   if (!game) throw httpError("ไม่พบเกม", 404);
   const config = configs.find((item) => item.market === normalizedMarket);
@@ -833,6 +852,7 @@ export async function getGameinfoPackPriceComparison({ gameId, dataMode = "uid",
   const sellerList = [...new Map(offerResult.rows.map((row) => [row.seller_key, { value: row.seller_key, label: row.seller_name, own: ownSellers.some((seller) => seller.sellerKey === row.seller_key && seller.enabled) }])).values()];
   return {
     game: { id: game.id, name: game.game }, config, sellers: sellerList,
+    priceLabel: prices.priceLabel || GAMEINFO_MARKETS.find((item) => item.key === normalizedMarket)?.label || normalizedMarket,
     availableSellers: availableResult.rows.map((row) => ({ value: row.seller_key, label: row.seller_name, coverage: Number(row.coverage) })),
     rows: mappings.rows.map((row) => ({
       packId: row.pack_id, packName: prices.get(row.pack_id)?.name || row.pack_id,
@@ -877,7 +897,7 @@ async function upsertAlert(client, { runId, market, gameId, dataMode, packId, se
 
 async function evaluateAlertsForConfig(client, runId, config) {
   const [prices, mappings, sellers, offers] = await Promise.all([
-    packPriceMap(Number(config.game_id), config.data_mode),
+    packPriceMap(Number(config.game_id), config.data_mode, config.market),
     client.query(`SELECT * FROM gameinfo_market_mappings WHERE game_id = $1 AND data_mode = $2 AND market = $3`, [config.game_id, config.data_mode, config.market]),
     client.query(`SELECT * FROM gameinfo_market_own_sellers WHERE market = $1 AND enabled`, [config.market]),
     client.query(`SELECT * FROM gameinfo_market_offers WHERE market = $1 AND external_game_key = $2`, [config.market, config.external_game_key]),
