@@ -6,6 +6,7 @@ import {
   calculateGameinfoPriceDifference,
   buildGameinfoOrderedMappingDraft,
   gameinfoMappingViewModes,
+  gameinfoMarketGameLabel,
   gameinfoMarketPackDisplayName,
   normalizeGameinfoMappingViewMode,
   buildGameinfoOwnSellerReferenceGroups,
@@ -222,5 +223,11 @@ assert.match(marketServer, /LEFT JOIN LATERAL \([\s\S]*gameinfo_market_offers o[
 assert.match(marketServer, /ownPriceClause = filterBySeller \? "AND o\.seller_key = ANY\(\$8::text\[\]\)"/);
 
 assert.match(schema, /product_type text NOT NULL DEFAULT ''/);
+assert.equal(gameinfoMarketGameLabel("Honkai Impact 3 (SEA) · South East Asia · Multi-Platform"), "Honkai Impact 3 (SEA) · SEA · Multi-Platform");
+assert.equal(gameinfoMarketGameLabel(null), "");
+const marketManager = readFileSync(new URL("../src/components/gameinfo-market-manager.js", import.meta.url), "utf8");
+assert.match(marketManager, /<FieldContent className="min-w-0">/);
+assert.match(marketManager, /<SelectTrigger className="w-full min-w-0 overflow-hidden"><SelectValue className="truncate"/);
+assert.match(marketManager, /label: gameinfoMarketGameLabel\(game\.label\)/);
 
-console.log("\n79 passed, 0 failed");
+console.log("\n85 passed, 0 failed");

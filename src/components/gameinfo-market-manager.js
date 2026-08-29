@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Store } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import { gameinfoMarketGameLabel } from "@/lib/gameinfo-market-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/ui/field";
@@ -109,13 +110,13 @@ export default function GameinfoMarketManager({ gameId, dataMode, columns, onCol
             const games = gamesByMarket[market.market] || [];
             return (
               <Field key={market.market} orientation="horizontal" className="rounded-lg border p-3">
-                <FieldContent>
+                <FieldContent className="min-w-0">
                   <div className="flex items-center gap-2">
                     <FieldLabel>{LABELS[market.market]}</FieldLabel>
                     <Badge variant={enabled ? "default" : "secondary"}>{enabled ? "เปิด" : "ปิด"}</Badge>
                   </div>
                   <Select
-                    items={games.map((game) => ({ value: game.value, label: game.label }))}
+                    items={games.map((game) => ({ value: game.value, label: gameinfoMarketGameLabel(game.label) }))}
                     value={market.externalGameKey || null}
                     onOpenChange={(nextOpen) => { if (nextOpen) loadGames(market.market); }}
                     onValueChange={(value) => {
@@ -124,8 +125,8 @@ export default function GameinfoMarketManager({ gameId, dataMode, columns, onCol
                     }}
                     disabled={busy === market.market}
                   >
-                    <SelectTrigger className="w-full"><SelectValue placeholder="เลือกเกมใน Market" /></SelectTrigger>
-                    <SelectContent><SelectGroup>{games.map((game) => <SelectItem key={game.value} value={game.value}>{game.label}</SelectItem>)}</SelectGroup></SelectContent>
+                    <SelectTrigger className="w-full min-w-0 overflow-hidden"><SelectValue className="truncate" placeholder="เลือกเกมใน Market" /></SelectTrigger>
+                    <SelectContent><SelectGroup>{games.map((game) => <SelectItem key={game.value} value={game.value}>{gameinfoMarketGameLabel(game.label)}</SelectItem>)}</SelectGroup></SelectContent>
                   </Select>
                   <FieldDescription>{column ? "มีคอลัมน์และสูตร Market แล้ว" : "เปิดครั้งแรกเพื่อสร้างคอลัมน์สูตร"}</FieldDescription>
                 </FieldContent>

@@ -35,6 +35,12 @@ export function gameinfoMarketPackDisplayName(value) {
   return text || String(value ?? "").trim();
 }
 
+// Market game names are stored exactly as the market spells them, which is far
+// too long for a select trigger, so the UI shows the short region wording.
+export function gameinfoMarketGameLabel(value) {
+  return String(value ?? "").replaceAll("South East Asia", "SEA");
+}
+
 // The mapping page can look at one data mode or at both at once ("all"), since
 // a market pack list usually holds UID and ID/PASS packs side by side.
 export const GAMEINFO_MAPPING_VIEW_MODES = Object.freeze(["all", "uid", "idpass"]);

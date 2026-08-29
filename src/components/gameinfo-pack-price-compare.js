@@ -20,6 +20,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { gameinfoMarketGameLabel } from "@/lib/gameinfo-market-system";
 import { cappedSellerColumns, msUntilNextDailyRefresh, packCompareStorageKey, togglePackCompareColumn } from "@/lib/gameinfo-pack-market";
 import { diffPricePages } from "@/lib/gameinfo-price-diff";
 import { cn } from "@/lib/utils";
@@ -60,7 +61,7 @@ function selectItems(items = []) {
 }
 
 function gameLabel(value) {
-  return String(value || "").replaceAll("South East Asia", "SEA");
+  return gameinfoMarketGameLabel(value);
 }
 
 function gameItems(items = []) {
