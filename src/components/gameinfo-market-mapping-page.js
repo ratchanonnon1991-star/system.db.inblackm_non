@@ -23,6 +23,13 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const MARKET_LABELS = { kaleoz: "Kaleoz", itemku: "Itemku" };
 
+// Price of our own listing on the market, as a buyer sees it there.
+function marketPrice(item) {
+  if (item.price == null) return "—";
+  const amount = Number(item.price).toLocaleString("th-TH", { maximumFractionDigits: 2 });
+  return item.currency ? `${amount} ${item.currency}` : amount;
+}
+
 export default function GameinfoMarketMappingPage({ games, dataMode, editable }) {
   const gameLabels = useMemo(() => games.map((game) => `${game.id} · ${game.game}`), [games]);
   const gameByLabel = useMemo(() => new Map(games.map((game) => [`${game.id} · ${game.game}`, game])), [games]);
@@ -252,8 +259,8 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
             <Tabs value={status} onValueChange={(value) => { setStatus(value); setPage(1); }}><TabsList><TabsTrigger value="all">ทั้งหมด</TabsTrigger><TabsTrigger value="unmapped">ยังไม่จับคู่</TabsTrigger><TabsTrigger value="mapped">จับคู่แล้ว</TabsTrigger><TabsTrigger value="stale">Stale</TabsTrigger></TabsList></Tabs>
           </CardHeader>
           <CardContent className="overflow-x-auto p-0">
-            {(workspace?.catalog?.items || []).length ? <Table><TableHeader><TableRow><TableHead>Pack Market</TableHead><TableHead>หมวด/ยอด</TableHead><TableHead>สถานะ</TableHead><TableHead /></TableRow></TableHeader>
-              <TableBody>{workspace.catalog.items.map((item) => <TableRow key={item.externalPackKey}><TableCell className="max-w-[18rem] truncate font-medium" title={item.name}>{gameinfoMarketPackDisplayName(item.name)}</TableCell><TableCell><div className="flex flex-col text-sm"><span>{item.category || "—"}</span><span className="text-muted-foreground">{item.amount || "—"}</span></div></TableCell><TableCell><Badge variant={item.packId ? "outline" : "secondary"}>{item.packId ? `ใช้กับ ${item.packId}` : "ว่าง"}</Badge></TableCell><TableCell className="text-right"><Button type="button" size="sm" variant="outline" className={item.packId ? "gameinfo-mapping-color" : undefined} style={item.packId ? mappingColorStyles.get(item.externalPackKey) : undefined} disabled={!editable || !selectedPackId || Boolean(item.packId && workspace.packs.find((pack) => pack.id === selectedPackId)?.mapping?.externalPackKey !== item.externalPackKey)} onClick={() => setConfirm(item)}><Link2 data-icon="inline-start" />ใช้อ้างอิง</Button></TableCell></TableRow>)}</TableBody>
+            {(workspace?.catalog?.items || []).length ? <Table><TableHeader><TableRow><TableHead>Pack Market</TableHead><TableHead className="text-right">ราคาขายในเว็บ</TableHead><TableHead>สถานะ</TableHead><TableHead /></TableRow></TableHeader>
+              <TableBody>{workspace.catalog.items.map((item) => <TableRow key={item.externalPackKey}><TableCell className="max-w-[18rem] truncate font-medium" title={item.name}>{gameinfoMarketPackDisplayName(item.name)}</TableCell><TableCell className="text-right tabular-nums">{marketPrice(item)}</TableCell><TableCell><Badge variant={item.packId ? "outline" : "secondary"}>{item.packId ? `ใช้กับ ${item.packId}` : "ว่าง"}</Badge></TableCell><TableCell className="text-right"><Button type="button" size="sm" variant="outline" className={item.packId ? "gameinfo-mapping-color" : undefined} style={item.packId ? mappingColorStyles.get(item.externalPackKey) : undefined} disabled={!editable || !selectedPackId || Boolean(item.packId && workspace.packs.find((pack) => pack.id === selectedPackId)?.mapping?.externalPackKey !== item.externalPackKey)} onClick={() => setConfirm(item)}><Link2 data-icon="inline-start" />ใช้อ้างอิง</Button></TableCell></TableRow>)}</TableBody>
             </Table> : <Empty><EmptyHeader><EmptyMedia variant="icon"><PackageSearch /></EmptyMedia><EmptyTitle>ยังไม่มี Pack ของร้านเรา</EmptyTitle><EmptyDescription>{workspace?.ownSellerCount === 0 ? "ตั้งค่าร้านของเราก่อนเริ่ม Mapping" : "กด Market Check เพื่อโหลด Pack ล่าสุดของร้านเรา"}</EmptyDescription></EmptyHeader></Empty>}
           </CardContent>
           {workspace?.catalog?.total > workspace?.catalog?.limit ? <div className="p-4"><Pagination><PaginationContent><PaginationItem><PaginationPrevious href="#" text="ก่อนหน้า" aria-disabled={page <= 1} onClick={(event) => { event.preventDefault(); if (page > 1) setPage(page - 1); }} /></PaginationItem><PaginationItem><PaginationNext href="#" text="ถัดไป" aria-disabled={page * workspace.catalog.limit >= workspace.catalog.total} onClick={(event) => { event.preventDefault(); if (page * workspace.catalog.limit < workspace.catalog.total) setPage(page + 1); }} /></PaginationItem></PaginationContent></Pagination></div> : null}

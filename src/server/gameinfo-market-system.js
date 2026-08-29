@@ -413,6 +413,9 @@ export async function listGameinfoMarketCatalog({ market, externalGameKey, gameI
   if (filterBySeller) values.push(ownSellerKeys);
   const mappedClause = status === "unmapped" ? "AND m.pack_id IS NULL" : status === "mapped" ? "AND m.status = 'active'" : status === "stale" ? "AND m.status = 'stale'" : "";
   const activeClause = status === "stale" ? "" : "AND c.active";
+  // The listed price comes from our own shop's offer when we know which sellers
+  // are ours, so the mapping table shows the price a buyer sees on the market.
+  const ownPriceClause = filterBySeller ? "AND o.seller_key = ANY($8::text[])" : "";
   const sellerClause = filterBySeller ? `AND EXISTS (
           SELECT 1 FROM gameinfo_market_offers own_offer
            WHERE own_offer.market = c.market
@@ -429,8 +432,17 @@ export async function listGameinfoMarketCatalog({ market, externalGameKey, gameI
         )` : "";
   const pool = await getGameinfoMarketPool();
   const [result, summaryResult] = await Promise.all([pool.query(
-    `SELECT c.*, m.pack_id, m.status AS mapping_status, COUNT(*) OVER()::int AS total
+    `SELECT c.*, m.pack_id, m.status AS mapping_status, own_price.price, own_price.currency,
+            COUNT(*) OVER()::int AS total
        FROM gameinfo_market_catalog_packs c
+       LEFT JOIN LATERAL (
+         SELECT o.price, o.currency
+           FROM gameinfo_market_offers o
+          WHERE o.market = c.market AND o.external_game_key = c.external_game_key
+            AND o.external_pack_key = c.external_pack_key ${ownPriceClause}
+          ORDER BY o.price
+          LIMIT 1
+       ) own_price ON TRUE
        LEFT JOIN gameinfo_market_mappings m ON m.game_id = $3 AND m.data_mode = $4
         AND m.market = c.market AND m.external_game_key = c.external_game_key
         AND m.external_pack_key = c.external_pack_key
@@ -461,6 +473,7 @@ export async function listGameinfoMarketCatalog({ market, externalGameKey, gameI
       externalPackKey: row.external_pack_key, identitySignature: row.identity_signature,
       listingId: row.listing_id, name: row.name, category: row.category, amount: row.amount,
       active: row.active, packId: row.pack_id || "", mappingStatus: row.mapping_status || "unmapped",
+      price: row.price == null ? null : Number(row.price), currency: row.currency || "",
       lastSeenAt: row.last_seen_at,
     })),
     page: pageNumber, limit: pageSize, total: Number(result.rows[0]?.total) || 0,

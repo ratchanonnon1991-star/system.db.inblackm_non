@@ -191,5 +191,8 @@ assert.equal(gameinfoMarketPackDisplayName("[ONLY]"), "[ONLY]");
 assert.equal(gameinfoMarketPackDisplayName(null), "");
 assert.match(mappingPage, /gameinfoMarketPackDisplayName\(item\.name\)/);
 assert.match(mappingPage, /max-w-\[18rem\] truncate/);
+assert.match(mappingPage, /ราคาขายในเว็บ[\s\S]*marketPrice\(item\)/);
+assert.match(marketServer, /LEFT JOIN LATERAL \([\s\S]*gameinfo_market_offers o[\s\S]*ORDER BY o\.price[\s\S]*LIMIT 1[\s\S]*\) own_price ON TRUE/);
+assert.match(marketServer, /ownPriceClause = filterBySeller \? "AND o\.seller_key = ANY\(\$8::text\[\]\)"/);
 
-console.log("\n51 passed, 0 failed");
+console.log("\n54 passed, 0 failed");
