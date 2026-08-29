@@ -47,9 +47,39 @@ export function normalizeMarketIdentityPart(value) {
     .trim()
     .toLocaleLowerCase("en")
     .replace(/[|]+/g, " ")
-    .replace(/[^\p{L}\p{N}.]+/gu, " ")
+    .replace(/[^\p{L}\p{M}\p{N}.]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+export function buildGameinfoOwnSellerReferenceGroups(market, page, sellerNames = []) {
+  if (normalizeGameinfoMarket(market) !== "kaleoz") return page;
+  const ownSellerKeys = new Set((sellerNames || []).map(normalizeMarketIdentityPart).filter(Boolean));
+  if (!ownSellerKeys.size) return page;
+  const allOffers = (page?.groups || []).flatMap((group) => group?.offers || []);
+  const ownPacks = new Map();
+  for (const offer of allOffers) {
+    if (!ownSellerKeys.has(normalizeMarketIdentityPart(offer?.seller))) continue;
+    const name = String(offer?.title || "").trim();
+    const normalizedName = normalizeMarketIdentityPart(name);
+    if (!normalizedName) continue;
+    const current = ownPacks.get(normalizedName);
+    if (!current) ownPacks.set(normalizedName, { name, quantity: offer.quantity, offers: [] });
+  }
+  for (const offer of allOffers) {
+    const pack = ownPacks.get(normalizeMarketIdentityPart(offer?.title));
+    if (pack) pack.offers.push(offer);
+  }
+  return {
+    ...page,
+    groups: [...ownPacks.entries()].map(([normalizedName, pack], packOrder) => ({
+      key: `own-name:${normalizedName}`,
+      packLabel: pack.name,
+      quantity: pack.quantity,
+      offers: pack.offers,
+      packOrder,
+    })),
+  };
 }
 
 export function reconcileGameinfoPackMappingTargets(mappings, packs) {
@@ -121,7 +151,7 @@ export function normalizeMarketPage(market, page) {
   const identities = (page?.groups || []).map((group, index) => {
     const name = String(group?.packLabel || group?.key || `Pack ${index + 1}`).trim();
     return marketPackIdentity(normalizedMarket, {
-      key: normalizedMarket === "itemku" ? group?.key : undefined,
+      key: group?.key,
       name,
       category: String(page?.productTypeLabel || page?.productType || "").trim(),
       amount: group?.quantity == null ? "" : String(group.quantity),

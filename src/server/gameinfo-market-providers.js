@@ -1,6 +1,6 @@
 import { fetchKaleozPage, loadKaleozGames } from "@/server/kaleoz-zepeto";
 import { fetchItemkuPage, loadItemkuGames } from "@/server/itemku-prices";
-import { normalizeGameinfoMarket, normalizeMarketPage } from "@/lib/gameinfo-market-system";
+import { buildGameinfoOwnSellerReferenceGroups, normalizeGameinfoMarket, normalizeMarketPage } from "@/lib/gameinfo-market-system";
 
 const providers = {
   kaleoz: {
@@ -27,8 +27,8 @@ export async function listGameinfoMarketGames(market) {
   }));
 }
 
-export async function fetchNormalizedGameinfoMarketCatalog(market, externalGameKey, productType = "") {
+export async function fetchNormalizedGameinfoMarketCatalog(market, externalGameKey, productType = "", ownSellerNames = []) {
   const normalizedMarket = normalizeGameinfoMarket(market);
   const page = await providers[normalizedMarket].fetchPage(externalGameKey, productType || undefined, { force: true });
-  return normalizeMarketPage(normalizedMarket, page);
+  return normalizeMarketPage(normalizedMarket, buildGameinfoOwnSellerReferenceGroups(normalizedMarket, page, ownSellerNames));
 }

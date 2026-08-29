@@ -5,8 +5,10 @@ import {
   GAMEINFO_COMPARE_SELLER_LIMIT,
   calculateGameinfoPriceDifference,
   buildGameinfoOrderedMappingDraft,
+  buildGameinfoOwnSellerReferenceGroups,
   marketPackIdentity,
   nextGameinfoMarketRunAt,
+  normalizeMarketIdentityPart,
   normalizeMarketPage,
   reconcileGameinfoPackMappingTargets,
   selectGameinfoCompareSellerKeys,
@@ -16,6 +18,7 @@ import { gameinfoDistinctColorStyleMap } from "@/lib/gameinfo-stable-color.js";
 import { buildGameinfoMarketPackPriceMap } from "@/lib/gameinfo-market-prices.js";
 
 assert.equal(marketPackIdentity("kaleoz", { name: "  128 ZEMS ", category: "Coins", amount: 128 }), "kaleoz:128 zems|coins|128");
+assert.equal(marketPackIdentity("kaleoz", { key: "own:123", name: "เปลี่ยนชื่อได้" }), "kaleoz:เปลี่ยนชื่อได้||");
 assert.equal(marketPackIdentity("itemku", { key: "denomination-128", name: "เปลี่ยนชื่อได้" }), "itemku:denomination-128");
 assert.equal(calculateGameinfoPriceDifference(100, 95.01).alert, false);
 assert.equal(calculateGameinfoPriceDifference(100, 95).alert, true);
@@ -63,6 +66,36 @@ const duplicateSeller = normalizeMarketPage("kaleoz", {
 });
 assert.equal(duplicateSeller.packs[0].offers.length, 1);
 assert.equal(duplicateSeller.packs[0].offers[0].listingId, "listing-cheap");
+const ownSellerReferencePage = buildGameinfoOwnSellerReferenceGroups("kaleoz", {
+  groups: [{
+    key: "zem",
+    packLabel: "Zem",
+    quantity: 100,
+    offers: [
+      { itemId: "own-1", title: "100 Zem แบบที่ 1", quantity: 100, seller: "InblackmTH", price: 90 },
+      { itemId: "own-2", title: "100 Zem แบบที่ 2", quantity: 100, seller: " inblackmth ", price: 95 },
+      { itemId: "own-3", title: "100 Zem แบบที่ 3", quantity: 100, seller: "InblackmTH", price: 100 },
+      { itemId: "own-4", title: "100 Zem แบบที่ 3", quantity: 100, seller: "SecondOwnShop", price: 101 },
+      { itemId: "other-1", title: "100 Zem", quantity: 100, seller: "OtherShop", price: 80 },
+    ],
+  }],
+}, ["InblackmTH", "SecondOwnShop"]);
+assert.equal(ownSellerReferencePage.groups.length, 3);
+assert.deepEqual(ownSellerReferencePage.groups.map((group) => group.packLabel), ["100 Zem แบบที่ 1", "100 Zem แบบที่ 2", "100 Zem แบบที่ 3"]);
+assert.deepEqual(ownSellerReferencePage.groups.map((group) => group.key), ["own-name:100 zem แบบที่ 1", "own-name:100 zem แบบที่ 2", "own-name:100 zem แบบที่ 3"]);
+assert.ok(ownSellerReferencePage.groups.every((group) => group.offers.some((offer) => ["inblackmth", "secondownshop"].includes(normalizeMarketIdentityPart(offer.seller)))));
+const ownSellerCatalog = normalizeMarketPage("kaleoz", { game: "zepeto", productTypeLabel: "ทุกหมวดหมู่", ...ownSellerReferencePage });
+assert.equal(ownSellerCatalog.packs.length, 3);
+assert.equal(new Set(ownSellerCatalog.packs.map((pack) => pack.externalPackKey)).size, 3);
+assert.equal(ownSellerCatalog.packs[2].offers.length, 2);
+const renamedOwnSellerCatalog = normalizeMarketPage("kaleoz", {
+  game: "zepeto",
+  productTypeLabel: "ทุกหมวดหมู่",
+  ...buildGameinfoOwnSellerReferenceGroups("kaleoz", {
+    groups: [{ offers: [{ itemId: "own-1", title: "แพ็กใหม่", quantity: 200, seller: "InblackmTH", price: 200 }] }],
+  }, ["InblackmTH"]),
+});
+assert.notEqual(renamedOwnSellerCatalog.packs[0].externalPackKey, ownSellerCatalog.packs[0].externalPackKey);
 const ambiguous = normalizeMarketPage("kaleoz", { game: "zepeto", productType: "coins", groups: [{ packLabel: "128 Zem", quantity: 128 }, { packLabel: "128 Zem", quantity: 128 }] });
 assert.equal(ambiguous.packs.length, 0);
 assert.equal(ambiguous.ambiguities.length, 1);
@@ -132,6 +165,7 @@ assert.match(marketShell, /<main[\s\S]*data-shadcn-focus/);
 assert.match(marketShell, /seller-price-compare/);
 const marketServer = readFileSync(new URL("../src/server/gameinfo-market-system.js", import.meta.url), "utf8");
 assert.match(marketServer, /if \(!totalGames\)[\s\S]*ยังไม่มีเกมที่เปิด/);
+assert.match(marketServer, /SELECT seller_name FROM gameinfo_market_own_sellers[\s\S]*fetchNormalizedGameinfoMarketCatalog\(run\.market, config\.external_game_key, config\.product_type, ownSellerNames\)/);
 assert.match(marketServer, /requestedOrAll = allSellers \|\| includeCompetitors[\s\S]*selectGameinfoCompareSellerKeys/);
 assert.match(marketServer, /ownOnly[\s\S]*own_offer\.seller_key = ANY\(\$6::text\[\]\)/);
 assert.match(marketServer, /sellerKeys[\s\S]*own_offer\.seller_key = ANY\(\$8::text\[\]\)/);
@@ -150,4 +184,4 @@ assert.match(mappingPage, /pack\.price \?\? "—"/);
 assert.match(ownComparePage, /let ignore = false[\s\S]*if \(!ignore\) setComparison[\s\S]*return \(\) => \{ ignore = true; \}/);
 assert.match(ownComparePage, /setComparison\(null\)/);
 
-console.log("\n37 passed, 0 failed");
+console.log("\n45 passed, 0 failed");

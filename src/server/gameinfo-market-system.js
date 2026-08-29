@@ -1042,6 +1042,10 @@ export async function executeGameinfoMarketCheck(runId) {
   const configs = await pool.query(
     `SELECT * FROM gameinfo_game_markets WHERE market = $1 AND enabled AND external_game_key <> '' ORDER BY game_id, data_mode`, [run.market]
   );
+  const ownSellerResult = await pool.query(
+    `SELECT seller_name FROM gameinfo_market_own_sellers WHERE market = $1 AND enabled ORDER BY seller_name`, [run.market]
+  );
+  const ownSellerNames = ownSellerResult.rows.map((seller) => seller.seller_name);
   const catalogCache = new Map();
   let completed = 0;
   let failed = 0;
@@ -1059,7 +1063,7 @@ export async function executeGameinfoMarketCheck(runId) {
       const cacheKey = `${config.external_game_key}:${config.product_type}`;
       let catalog = catalogCache.get(cacheKey);
       if (!catalog) {
-        catalog = await fetchNormalizedGameinfoMarketCatalog(run.market, config.external_game_key, config.product_type);
+        catalog = await fetchNormalizedGameinfoMarketCatalog(run.market, config.external_game_key, config.product_type, ownSellerNames);
         catalogCache.set(cacheKey, catalog);
       }
       await upsertGameinfoMarketCatalog(catalog, client);
