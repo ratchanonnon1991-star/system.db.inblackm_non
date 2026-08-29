@@ -73,5 +73,10 @@ const marketShell = readFileSync(new URL("../src/components/gameinfo-market-shel
 assert.match(marketShell, /<main[\s\S]*data-shadcn-focus/);
 const marketServer = readFileSync(new URL("../src/server/gameinfo-market-system.js", import.meta.url), "utf8");
 assert.match(marketServer, /if \(!totalGames\)[\s\S]*ยังไม่มีเกมที่เปิด/);
+assert.match(marketServer, /export async function deleteAllGameinfoMarketMappings[\s\S]*FOR UPDATE[\s\S]*'delete_all'/);
+const mappingRoute = readFileSync(new URL("../src/app/api/gameinfo/market-mappings/route.js", import.meta.url), "utf8");
+assert.match(mappingRoute, /input\?\.all === true[\s\S]*deleteAllGameinfoMarketMappings/);
+const mappingPage = readFileSync(new URL("../src/components/gameinfo-market-mapping-page.js", import.meta.url), "utf8");
+assert.equal((mappingPage.match(/gameinfo-mapping-color/g) || []).length, 2);
 
-console.log("\n25 passed, 0 failed");
+console.log("\n28 passed, 0 failed");

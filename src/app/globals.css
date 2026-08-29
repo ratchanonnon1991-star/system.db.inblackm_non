@@ -17,6 +17,29 @@
   color: hsl(var(--gameinfo-tag-hue) 88% 78%);
 }
 
+.gameinfo-mapping-color {
+  border-color: hsl(var(--gameinfo-tag-hue) 78% 42% / 0.55);
+  background: hsl(var(--gameinfo-tag-hue) 88% 48% / 0.16);
+  color: hsl(var(--gameinfo-tag-hue) 76% 27%);
+}
+
+.gameinfo-mapping-color:hover {
+  border-color: hsl(var(--gameinfo-tag-hue) 78% 38% / 0.72);
+  background: hsl(var(--gameinfo-tag-hue) 88% 48% / 0.24);
+  color: hsl(var(--gameinfo-tag-hue) 76% 22%);
+}
+
+.gameinfo-mapping-color:disabled {
+  opacity: 1;
+}
+
+.dark .gameinfo-mapping-color,
+[data-gameinfo-root][data-theme="dark"] .gameinfo-mapping-color {
+  border-color: hsl(var(--gameinfo-tag-hue) 82% 64% / 0.56);
+  background: hsl(var(--gameinfo-tag-hue) 86% 56% / 0.2);
+  color: hsl(var(--gameinfo-tag-hue) 88% 78%);
+}
+
 /* GameInfo's Linear-inspired light-first palette. */
 @theme {
   --color-linear-canvas: #ffffff;

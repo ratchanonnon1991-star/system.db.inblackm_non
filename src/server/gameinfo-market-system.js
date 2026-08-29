@@ -628,6 +628,41 @@ export async function deleteGameinfoMarketMapping(input, actor) {
   }
 }
 
+export async function deleteAllGameinfoMarketMappings(input, actor) {
+  const gameId = Number(input?.gameId);
+  const normalizedMode = mode(input?.dataMode);
+  const market = normalizeGameinfoMarket(input?.market);
+  if (!Number.isInteger(gameId) || gameId <= 0) throw httpError("ข้อมูล Mapping ไม่ครบ");
+  const values = [gameId, normalizedMode, market];
+  const pool = await getGameinfoMarketPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const current = await client.query(
+      `SELECT * FROM gameinfo_market_mappings
+       WHERE game_id = $1 AND data_mode = $2 AND market = $3 FOR UPDATE`, values
+    );
+    for (const mapping of current.rows) {
+      await client.query(
+        `INSERT INTO gameinfo_market_mapping_logs
+           (game_id, data_mode, market, pack_id, actor_id, action, before_data)
+         VALUES ($1,$2,$3,$4,$5,'delete_all',$6)`,
+        [...values, mapping.pack_id, actorId(actor), JSON.stringify(mapping)]
+      );
+    }
+    await client.query(
+      `DELETE FROM gameinfo_market_mappings WHERE game_id = $1 AND data_mode = $2 AND market = $3`, values
+    );
+    await client.query("COMMIT");
+    return { deleted: current.rowCount };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function listGameinfoOwnSellers(market = "") {
   const values = [];
   const where = market ? "WHERE market = $1" : "";

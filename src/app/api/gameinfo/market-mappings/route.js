@@ -1,6 +1,7 @@
 import { handleApiError, jsonOk } from "@/lib/http";
 import { requireGameinfoAccess, requireGameinfoEditor } from "@/server/auth";
 import {
+  deleteAllGameinfoMarketMappings,
   deleteGameinfoMarketMapping,
   getGameinfoMappingWorkspace,
   listGameinfoMarketMappings,
@@ -43,7 +44,9 @@ export async function PUT(request) {
 export async function DELETE(request) {
   try {
     const user = await requireGameinfoEditor(request);
-    return jsonOk(await deleteGameinfoMarketMapping(await request.json(), user));
+    const input = await request.json();
+    if (input?.all === true) return jsonOk(await deleteAllGameinfoMarketMappings(input, user));
+    return jsonOk(await deleteGameinfoMarketMapping(input, user));
   } catch (error) {
     return handleApiError(error, "ยกเลิก Mapping ไม่สำเร็จ");
   }
