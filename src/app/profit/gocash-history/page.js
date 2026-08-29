@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
-import { fmtDate, fmtMoney, fmtPct, fmtUsd } from "@/lib/profit-format";
+import { fmtDate, fmtMoney, fmtPct, fmtUsd, netSaleDisplay } from "@/lib/profit-format";
 import { commitOverrideEdit } from "@/lib/profit-conflict";
 import { useProfitCanEdit } from "@/components/profit-capabilities-context";
 import PlatformSelect, { platformLabel } from "@/components/profit-platform-select";
@@ -19,15 +19,6 @@ function matchesQuery(q, parts) {
 function toLocalInput(d) {
   const pad = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-// "ราคาขาย" displays the fee-adjusted number for platforms with a cut (e.g.
-// Kaleoz) since that's the figure actually used for the profit math. Staff
-// still type in the full/gross price though -- committing a new value always
-// writes it as-is (gross), the same convention as every other platform.
-function netSaleDisplay(h) {
-  const sale = h.saleAmount || 0;
-  return h.platformFeePct > 0 ? Math.round(sale * (1 - h.platformFeePct / 100) * 100) / 100 : sale;
 }
 
 export default function ProfitGocashHistoryPage() {
@@ -305,6 +296,8 @@ export default function ProfitGocashHistoryPage() {
                         title={
                           h.platformFeePct > 0
                             ? `หักค่าธรรมเนียม ${h.platformFeePct}% ของ ${platformLabel(h.platform)} จากราคาเต็ม ${fmtMoney(h.saleAmount || 0)} แล้ว — แก้ตรงนี้ให้กรอกราคาเต็มใหม่ ระบบจะหักให้อัตโนมัติ`
+                            : h.saleAmountUsdt != null
+                              ? `แสดง ${h.saleAmountUsdt} USDT ตามที่กรอก · กำไรคูณ USD:THB อัตโนมัติ (= ${fmtMoney(h.saleAmount)}) — แก้ตรงนี้กรอก USDT`
                             : h.saleFromPlatform
                               ? "ค่านี้ดึงจากราคาขายตามแพ็กของแพลตฟอร์มนี้ — แก้ตรงนี้จะ override เฉพาะออเดอร์นี้"
                               : h.saleMissingPlatformPrice

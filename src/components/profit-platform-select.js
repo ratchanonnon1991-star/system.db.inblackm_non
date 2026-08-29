@@ -28,7 +28,7 @@ export default function PlatformSelect({ value, fromDb, platforms, disabled, onC
     return (
       <span
         title="ดึงมาจากระบบต้นทาง (codashop_orders.source) แก้ไม่ได้"
-        className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-600"
+        className="inline-flex max-w-full items-center whitespace-nowrap rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-600"
       >
         {platformLabel(value)}
       </span>

@@ -15,7 +15,9 @@ import { selectQuery } from "@/lib/profit-remote-db";
 // parse the same way.
 function parseKyat(v) {
   if (v == null) return null;
-  const n = Number(String(v).replace(/[^\d.-]/g, ""));
+  const s = String(v).trim();
+  if (!s || /^n\/?a$/i.test(s)) return null;
+  const n = Number(s.replace(/[^\d.-]/g, ""));
   return Number.isFinite(n) ? n : null;
 }
 

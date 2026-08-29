@@ -3,10 +3,28 @@ import { requireProfitAccess, requireProfitEditor } from "@/server/auth";
 import { addChannelGame, listChannelGames, removeChannelGame } from "@/server/profit-repository";
 import { listGameNames as listOxideGameNames } from "@/server/profit-oxide";
 import { listGameNames as listWavepayGameNames } from "@/server/profit-wavepay";
+import { listGameNames as listDonshopGameNames } from "@/server/profit-donshop";
+import { listGameNames as listGamepointGameNames } from "@/server/profit-gamepoint";
+import { listGameNames as listAgenh2hGameNames } from "@/server/profit-agenh2h";
+import { listGameNames as listCodaresellerGameNames } from "@/server/profit-codareseller";
+import { listGameNames as listNeteaseGameNames } from "@/server/profit-netease";
+import { listGameNames as listTruemoneyGameNames } from "@/server/profit-truemoney";
+import { listGameNames as listAtomGameNames } from "@/server/profit-atom";
+import { listGameNames as listSmartsunGameNames } from "@/server/profit-smartsun";
+import { listGameNames as listU9GameNames } from "@/server/profit-u9";
 
 const LIVE_GAME_CHANNELS = {
   oxide: listOxideGameNames,
   wavepay: listWavepayGameNames,
+  donshop: listDonshopGameNames,
+  gamepoint: listGamepointGameNames,
+  agenh2h: listAgenh2hGameNames,
+  codareseller: listCodaresellerGameNames,
+  netease: listNeteaseGameNames,
+  truemoney: listTruemoneyGameNames,
+  atom: listAtomGameNames,
+  smartsun: listSmartsunGameNames,
+  u9: listU9GameNames,
 };
 
 export async function GET(request, { params }) {

@@ -10,7 +10,7 @@ import ProfitSummaryGrid from "@/components/profit-summary-grid";
 import { SourceBadge } from "@/components/profit-badges";
 import ProfitModal, { ProfitField, profitInputClass } from "@/components/profit-modal";
 
-const SOURCE_LABELS = { gocash: "GoCash", oxide: "Multi Game Card", wavepay: "Wavepay" };
+const SOURCE_LABELS = { gocash: "GoCash", oxide: "Multigamecard", wavepay: "Wavepay", u9: "U9", donshop: "Donshop", gamepoint: "Gamepoint", agenh2h: "Agenh2h", codareseller: "Codareseller", netease: "Netease", truemoney: "TrueMoney", atom: "ATOM", smartsun: "Smart-Sun" };
 
 function matchesQuery(q, parts) {
   if (!q) return true;

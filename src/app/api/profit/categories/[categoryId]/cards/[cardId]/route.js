@@ -9,7 +9,7 @@ export async function GET(request, { params }) {
     const { categoryId, cardId } = await params;
     const category = getCategory(categoryId);
     if (!category) return jsonError("ไม่พบหมวดหมู่นี้", 404);
-    const card = await cardDetail(categoryId, cardId);
+    const card = await cardDetail(category.id, cardId);
     if (!card) return jsonError("ไม่พบบัตรนี้", 404);
     return jsonOk({ category, card });
   } catch (err) {

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ChevronRight, History, Layers, Loader2, Plus, RefreshCw, X } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
-import { fmtDate, fmtKyat, fmtMoney, fmtPct, fmtPoints, fmtUsd } from "@/lib/profit-format";
+import { fmtDate, fmtIdr, fmtKyat, fmtMoney, fmtMyr, fmtPct, fmtPhp, fmtPoints, fmtUsd } from "@/lib/profit-format";
 import ProfitSummaryGrid from "@/components/profit-summary-grid";
 import { ClearedByCell, DupBadge, DustBadge, MergeBadge, MergeClearedByCell, StatusBadge } from "@/components/profit-badges";
 import ProfitModal, { ProfitField, profitInputClass } from "@/components/profit-modal";
@@ -214,6 +214,20 @@ function ProfitCategoryPageContent({ categoryId }) {
         list = list.filter((c) => matchesQuery(query, [c.name, c.cardSerial, ...(c.gameNames || [])]));
       } else if (data.category.source === "wavepay") {
         list = list.filter((c) => matchesQuery(query, [c.name, c.cardSerial, ...(c.gameNames || [])]));
+      } else if (data.category.source === "u9") {
+        list = list.filter((c) => matchesQuery(query, [c.name, c.cardSerial, ...(c.gameNames || [])]));
+      } else if (data.category.source === "truemoney" || data.category.source === "atom" || data.category.source === "smartsun") {
+        list = list.filter((c) => matchesQuery(query, [c.name, c.cardSerial, ...(c.gameNames || [])]));
+      } else if (data.category.source === "donshop") {
+        list = list.filter((c) => matchesQuery(query, [c.name, c.cardSerial, ...(c.gameNames || [])]));
+      } else if (data.category.source === "gamepoint") {
+        list = list.filter((c) => matchesQuery(query, [c.name, c.cardSerial, ...(c.gameNames || [])]));
+      } else if (data.category.source === "agenh2h") {
+        list = list.filter((c) => matchesQuery(query, [c.name, c.cardSerial, ...(c.gameNames || [])]));
+      } else if (data.category.source === "codareseller") {
+        list = list.filter((c) => matchesQuery(query, [c.name, c.cardSerial, ...(c.gameNames || [])]));
+      } else if (data.category.source === "netease") {
+        list = list.filter((c) => matchesQuery(query, [c.name, c.cardSerial, ...(c.gameNames || [])]));
       } else if (data.category.source === "manual") {
         list = list.filter((c) => matchesQuery(query, [c.name, c.gameName]));
       }
@@ -246,7 +260,7 @@ function ProfitCategoryPageContent({ categoryId }) {
     // so filtering checks membership instead of equality. Wavepay accounts
     // work the same way (one account funds several games).
     if (
-      (data.category.source === "oxide" || data.category.source === "oxide-merge" || data.category.source === "wavepay")
+      (data.category.source === "oxide" || data.category.source === "oxide-merge" || data.category.source === "wavepay" || data.category.source === "u9" || data.category.source === "truemoney" || data.category.source === "atom" || data.category.source === "smartsun" || data.category.source === "donshop" || data.category.source === "gamepoint" || data.category.source === "agenh2h" || data.category.source === "codareseller" || data.category.source === "netease")
       && gameFilter && gameFilter !== "__all__"
     ) {
       list = list.filter((c) => (c.gameNames || []).includes(gameFilter));
@@ -303,6 +317,15 @@ function ProfitCategoryPageContent({ categoryId }) {
   const isGocash = category.source === "gocash" || category.source === "gocash-dust";
   const isOxide = category.source === "oxide" || category.source === "oxide-merge";
   const isWavepay = category.source === "wavepay";
+  const isU9 = category.source === "u9";
+  const isTruemoney = category.source === "truemoney";
+  const isAtom = category.source === "atom";
+  const isSmartsun = category.source === "smartsun";
+  const isDonshop = category.source === "donshop";
+  const isGamepoint = category.source === "gamepoint";
+  const isAgenh2h = category.source === "agenh2h";
+  const isCodareseller = category.source === "codareseller";
+  const isNetease = category.source === "netease";
   const isManual = category.source === "manual";
 
   const totalPages = Math.max(1, Math.ceil(sortedCards.length / pageSize));
@@ -322,7 +345,7 @@ function ProfitCategoryPageContent({ categoryId }) {
   // a manual tag, so it isn't editable here (see the editable game grid
   // below). Its "ต้องรวมบัตร" worklist skips the picker too, same as GoCash's
   // dust page -- it's a small flat list, not worth splitting by game.
-  const canBrowseGames = isManual || (isGocash && !isDustPage) || (isOxide && !isMergePage) || isWavepay;
+  const canBrowseGames = isManual || (isGocash && !isDustPage) || (isOxide && !isMergePage) || isWavepay || isU9 || isTruemoney || isAtom || isSmartsun || isDonshop || isGamepoint || isAgenh2h || isCodareseller || isNetease;
   const showGameBrowser = canBrowseGames && games.length > 0 && gameFilter === null;
 
   return (
@@ -347,7 +370,25 @@ function ProfitCategoryPageContent({ categoryId }) {
                     ? "บัตร MOL MultiGameCard ของบอท Oxide (หน่วย points, ~1000 pts = $1)"
                     : isWavepay
                       ? "บัญชี Wavepay 1 บัญชีเติมได้หลายเกม (หน่วย Kyat/Ks) — ยอดขาย/ต้นทุน/กำไรคิดเป็นบาท"
-                      : "บัตรในหมวดนี้ คลิกแถวเพื่อดูออเดอร์"}
+                      : isU9
+                        ? "เบอร์ U9 (Ooredoo) 1 เบอร์เติมได้หลายเกม — ยอดตัด MMK (Ks) จาก pack_price · ยอดขาย/ต้นทุน/กำไรคิดเป็นบาท"
+                        : isTruemoney
+                          ? "เบอร์ TrueMoney · ยอดตัดบาทจาก pack_price · ยอดขาย/ต้นทุน/กำไรคิดเป็นบาท (codashop_auto_api)"
+                        : isAtom
+                          ? "เบอร์ ATOM · ยอดตัด MMK (Ks) จาก pack_price · ยอดขาย/ต้นทุน/กำไรคิดเป็นบาท (codashop_auto_api)"
+                        : isSmartsun
+                          ? "เบอร์ Smart/Sun · ยอดตัด PHP จาก pack_price · ยอดขาย/ต้นทุน/กำไรคิดเป็นบาท (codashop_auto_api)"
+                      : isDonshop
+                        ? "เกมที่เติมผ่าน DonShop API (IDR) — จัดกลุ่มตามเกม · ยอดขาย/ต้นทุน/กำไรคิดเป็นบาท · ก่อนตัด/ยอดตัด/คงเหลือ IDR จากกระเป๋า"
+                        : isGamepoint
+                          ? "เกมที่เติมผ่าน Game Point Club (MYR) — จัดกลุ่มตามเกม · ยอดขาย/ต้นทุน/กำไรคิดเป็นบาท · ก่อนตัด/ยอดตัด/คงเหลือ MYR จากกระเป๋า"
+                        : isAgenh2h
+                          ? "เกมที่เติมผ่าน Agen H2H (IDR) — จัดกลุ่มตามเกม · ยอดขาย/ต้นทุน/กำไรคิดเป็นบาท · ก่อนตัด/ยอดตัด/คงเหลือ IDR จากกระเป๋า"
+                        : isCodareseller
+                          ? "เกมที่เติมผ่าน Codashop Reseller (USD) ตามชีท Bot Auto — จัดกลุ่มตามเกม · ยอดขาย/ต้นทุน/กำไรคิดเป็นบาท · ก่อนตัด/ยอดตัด/คงเหลือ USD จาก inventory (เดียวกับ Telegram)"
+                        : isNetease
+                          ? "เกมที่เติมผ่าน Netease bot (USD) — จัดกลุ่มตามเกม · ยอดขาย/ต้นทุน/กำไรคิดเป็นบาท · ก่อนตัด/ยอดตัด/คงเหลือ USD จาก netease_purchase_history"
+                        : "บัตรในหมวดนี้ คลิกแถวเพื่อดูออเดอร์"}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -378,9 +419,22 @@ function ProfitCategoryPageContent({ categoryId }) {
               รวมบัตร
             </Link>
           )}
-          {(isGocash || isOxide || isWavepay) && (
+          {(isGocash || isOxide || isWavepay || isU9 || isTruemoney || isAtom || isSmartsun || isDonshop || isGamepoint || isAgenh2h || isCodareseller || isNetease) && (
             <Link
-              href={isGocash ? "/profit/gocash-history" : isOxide ? "/profit/oxide-history" : "/profit/wavepay-history"}
+              href={
+                isGocash ? "/profit/gocash-history"
+                  : isOxide ? "/profit/oxide-history"
+                    : isWavepay ? "/profit/wavepay-history"
+                      : isU9 ? "/profit/u9-history"
+                      : isTruemoney ? "/profit/truemoney-history"
+                      : isAtom ? "/profit/atom-history"
+                      : isSmartsun ? "/profit/smartsun-history"
+                      : isDonshop ? "/profit/donshop-history"
+                      : isGamepoint ? "/profit/gamepoint-history"
+                      : isAgenh2h ? "/profit/agenh2h-history"
+                      : isCodareseller ? "/profit/codareseller-history"
+                      : "/profit/netease-history"
+              }
               className="flex items-center gap-1.5 rounded-md border border-ll-hairline-strong px-3 py-2 text-[12px] font-medium text-ll-ink hover:bg-ll-surface-2"
             >
               <History size={13} /> ดูประวัติทั้งหมด
@@ -417,7 +471,7 @@ function ProfitCategoryPageContent({ categoryId }) {
         }}
       />
 
-      {canBrowseGames && games.length === 0 && canEdit && !isOxide && !isWavepay && (
+      {canBrowseGames && games.length === 0 && canEdit && !isOxide && !isWavepay && !isU9 && !isTruemoney && !isAtom && !isSmartsun && !isDonshop && !isGamepoint && !isAgenh2h && !isCodareseller && !isNetease && (
         <button
           type="button"
           onClick={() => setAddGameOpen(true)}
@@ -445,24 +499,24 @@ function ProfitCategoryPageContent({ categoryId }) {
           games={games}
           cardCountByGame={cardCountByGame}
           totalCardCount={cards.length}
-          canEdit={canEdit && !isOxide && !isWavepay}
+          canEdit={canEdit && !isOxide && !isWavepay && !isU9 && !isTruemoney && !isAtom && !isSmartsun && !isDonshop && !isGamepoint && !isAgenh2h && !isCodareseller && !isNetease}
           onSelectGame={(id) => { setGameFilter(id); setPage(1); }}
           onAddGame={() => setAddGameOpen(true)}
           onRemoveGame={removeGame}
         />
       )}
 
-      {(isGocash || isOxide || isWavepay || isManual) && !showGameBrowser && (
+      {(isGocash || isOxide || isWavepay || isU9 || isTruemoney || isAtom || isSmartsun || isDonshop || isGamepoint || isAgenh2h || isCodareseller || isNetease || isManual) && !showGameBrowser && (
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="flex flex-wrap items-end gap-2.5">
             <input
               type="search"
               value={q}
               onChange={(e) => { setQ(e.target.value); setPage(1); }}
-              placeholder={isOxide ? "ค้นหาเลขบัตร, serial..." : isWavepay ? "ค้นหาเลขบัญชี..." : isManual ? "ค้นหาชื่อบัตร..." : "ค้นหาเลขบัตร, serial, ออเดอร์..."}
+              placeholder={isOxide ? "ค้นหาเลขบัตร, serial..." : isWavepay || isU9 || isTruemoney || isAtom || isSmartsun ? "ค้นหาเลขบัญชี..." : isDonshop || isGamepoint || isAgenh2h || isCodareseller || isNetease ? "ค้นหาชื่อเกม..." : isManual ? "ค้นหาชื่อบัตร..." : "ค้นหาเลขบัตร, serial, ออเดอร์..."}
               className="h-9 w-72 max-w-full rounded-md border border-ll-hairline-strong bg-ll-surface-2 px-3 text-[13px] text-ll-ink outline-none focus:border-ll-primary focus:bg-ll-surface-1"
             />
-            {(isGocash || isOxide || isWavepay) && (
+            {(isGocash || isOxide || isWavepay || isU9 || isTruemoney || isAtom || isSmartsun || isDonshop || isGamepoint || isAgenh2h || isCodareseller || isNetease) && (
               <label className="flex flex-col gap-1 text-[11px] text-ll-ink-subtle">
                 กรอง
                 <select
@@ -551,6 +605,33 @@ function ProfitCategoryPageContent({ categoryId }) {
         )}
         {isWavepay && (
           <WavepayCardsTable categoryId={categoryId} cards={filteredCards} q={q} />
+        )}
+        {isU9 && (
+          <U9CardsTable categoryId={categoryId} cards={filteredCards} q={q} />
+        )}
+        {isTruemoney && (
+          <PhoneChannelCardsTable categoryId={categoryId} cards={filteredCards} q={q} phoneLabel="เบอร์ TrueMoney" amountTotalKey="deductedThbTotal" fmtAmount={fmtMoney} amountTitle="ผลรวม pack_price (บาท)" />
+        )}
+        {isAtom && (
+          <PhoneChannelCardsTable categoryId={categoryId} cards={filteredCards} q={q} phoneLabel="เบอร์ ATOM" amountTotalKey="deductedKsTotal" fmtAmount={fmtKyat} amountTitle="ผลรวม pack_price (MMK/Ks)" />
+        )}
+        {isSmartsun && (
+          <PhoneChannelCardsTable categoryId={categoryId} cards={filteredCards} q={q} phoneLabel="เบอร์ Smart-Sun" amountTotalKey="deductedPhpTotal" fmtAmount={fmtPhp} amountTitle="ผลรวม pack_price (PHP)" />
+        )}
+        {isDonshop && (
+          <DonshopCardsTable categoryId={categoryId} cards={filteredCards} q={q} />
+        )}
+        {isGamepoint && (
+          <GamepointCardsTable categoryId={categoryId} cards={filteredCards} q={q} />
+        )}
+        {isAgenh2h && (
+          <Agenh2hCardsTable categoryId={categoryId} cards={filteredCards} q={q} />
+        )}
+        {isCodareseller && (
+          <CodaresellerCardsTable categoryId={categoryId} cards={filteredCards} q={q} />
+        )}
+        {isNetease && (
+          <NeteaseCardsTable categoryId={categoryId} cards={filteredCards} q={q} />
         )}
         {(isGocash || isManual) && sortedCards.length > 0 && (
           <div className="flex items-center justify-between border-t border-ll-hairline px-4 py-3 text-[12px] text-ll-ink-subtle">
@@ -916,6 +997,321 @@ function CategorySummary({ category, cards, dupFilter, onToggleDupOnly }) {
     );
   }
 
+  if (category.source === "u9") {
+    const t = cards.reduce(
+      (a, c) => ({
+        deductedKs: a.deductedKs + (c.deductedKsTotal || 0),
+        sale: a.sale + c.saleTotal,
+        cost: a.cost + c.costTotal,
+        profit: a.profit + c.profitTotal,
+        orders: a.orders + c.orderCount,
+        dup: a.dup + (c.duplicateCount > 0 ? 1 : 0),
+      }),
+      { deductedKs: 0, sale: 0, cost: 0, profit: 0, orders: 0, dup: 0 }
+    );
+    const pct = t.sale > 0 ? (t.profit / t.sale) * 100 : 0;
+    return (
+      <ProfitSummaryGrid
+        items={[
+          { k: "จำนวนเบอร์", v: cards.length },
+          { k: "ยอดตัดรวม (Ks)", v: fmtKyat(t.deductedKs) },
+          { k: "ออเดอร์", v: t.orders },
+          { k: "ยอดขายรวม", v: fmtMoney(t.sale) },
+          { k: "ต้นทุนรวม", v: fmtMoney(t.cost) },
+          { k: "กำไรรวม", v: fmtMoney(t.profit), tone: t.profit >= 0 ? "pos" : "neg" },
+          { k: "%กำไร", v: fmtPct(pct) },
+          {
+            k: "เบอร์ที่พบยอดซ้ำ",
+            v: t.dup,
+            tone: t.dup > 0 ? "neg" : undefined,
+            onClick: t.dup > 0 ? onToggleDupOnly : undefined,
+            active: dupFilter === "needs",
+          },
+        ]}
+      />
+    );
+  }
+
+
+  if (category.source === "truemoney") {
+    const t = cards.reduce(
+      (a, c) => ({
+        deducted: a.deducted + (c.deductedThbTotal || 0),
+        sale: a.sale + c.saleTotal,
+        cost: a.cost + c.costTotal,
+        profit: a.profit + c.profitTotal,
+        orders: a.orders + c.orderCount,
+        dup: a.dup + (c.duplicateCount > 0 ? 1 : 0),
+      }),
+      { deducted: 0, sale: 0, cost: 0, profit: 0, orders: 0, dup: 0 }
+    );
+    const pct = t.sale > 0 ? (t.profit / t.sale) * 100 : 0;
+    return (
+      <ProfitSummaryGrid
+        items={[
+          { k: "จำนวนเบอร์", v: cards.length },
+          { k: "ยอดตัดรวม (฿)", v: fmtMoney(t.deducted) },
+          { k: "ออเดอร์", v: t.orders },
+          { k: "ยอดขายรวม", v: fmtMoney(t.sale) },
+          { k: "ต้นทุนรวม", v: fmtMoney(t.cost) },
+          { k: "กำไรรวม", v: fmtMoney(t.profit), tone: t.profit >= 0 ? "pos" : "neg" },
+          { k: "%กำไร", v: fmtPct(pct) },
+          {
+            k: "เบอร์ที่พบยอดซ้ำ",
+            v: t.dup,
+            tone: t.dup > 0 ? "neg" : undefined,
+            onClick: t.dup > 0 ? onToggleDupOnly : undefined,
+            active: dupFilter === "needs",
+          },
+        ]}
+      />
+    );
+  }
+
+  if (category.source === "atom") {
+    const t = cards.reduce(
+      (a, c) => ({
+        deducted: a.deducted + (c.deductedKsTotal || 0),
+        sale: a.sale + c.saleTotal,
+        cost: a.cost + c.costTotal,
+        profit: a.profit + c.profitTotal,
+        orders: a.orders + c.orderCount,
+        dup: a.dup + (c.duplicateCount > 0 ? 1 : 0),
+      }),
+      { deducted: 0, sale: 0, cost: 0, profit: 0, orders: 0, dup: 0 }
+    );
+    const pct = t.sale > 0 ? (t.profit / t.sale) * 100 : 0;
+    return (
+      <ProfitSummaryGrid
+        items={[
+          { k: "จำนวนเบอร์", v: cards.length },
+          { k: "ยอดตัดรวม (Ks)", v: fmtKyat(t.deducted) },
+          { k: "ออเดอร์", v: t.orders },
+          { k: "ยอดขายรวม", v: fmtMoney(t.sale) },
+          { k: "ต้นทุนรวม", v: fmtMoney(t.cost) },
+          { k: "กำไรรวม", v: fmtMoney(t.profit), tone: t.profit >= 0 ? "pos" : "neg" },
+          { k: "%กำไร", v: fmtPct(pct) },
+          {
+            k: "เบอร์ที่พบยอดซ้ำ",
+            v: t.dup,
+            tone: t.dup > 0 ? "neg" : undefined,
+            onClick: t.dup > 0 ? onToggleDupOnly : undefined,
+            active: dupFilter === "needs",
+          },
+        ]}
+      />
+    );
+  }
+
+  if (category.source === "smartsun") {
+    const t = cards.reduce(
+      (a, c) => ({
+        deducted: a.deducted + (c.deductedPhpTotal || 0),
+        sale: a.sale + c.saleTotal,
+        cost: a.cost + c.costTotal,
+        profit: a.profit + c.profitTotal,
+        orders: a.orders + c.orderCount,
+        dup: a.dup + (c.duplicateCount > 0 ? 1 : 0),
+      }),
+      { deducted: 0, sale: 0, cost: 0, profit: 0, orders: 0, dup: 0 }
+    );
+    const pct = t.sale > 0 ? (t.profit / t.sale) * 100 : 0;
+    return (
+      <ProfitSummaryGrid
+        items={[
+          { k: "จำนวนเบอร์", v: cards.length },
+          { k: "ยอดตัดรวม (₱)", v: fmtPhp(t.deducted) },
+          { k: "ออเดอร์", v: t.orders },
+          { k: "ยอดขายรวม", v: fmtMoney(t.sale) },
+          { k: "ต้นทุนรวม", v: fmtMoney(t.cost) },
+          { k: "กำไรรวม", v: fmtMoney(t.profit), tone: t.profit >= 0 ? "pos" : "neg" },
+          { k: "%กำไร", v: fmtPct(pct) },
+          {
+            k: "เบอร์ที่พบยอดซ้ำ",
+            v: t.dup,
+            tone: t.dup > 0 ? "neg" : undefined,
+            onClick: t.dup > 0 ? onToggleDupOnly : undefined,
+            active: dupFilter === "needs",
+          },
+        ]}
+      />
+    );
+  }
+  if (category.source === "donshop") {
+    const t = cards.reduce(
+      (a, c) => ({
+        deductedIdr: a.deductedIdr + (c.deductedIdrTotal || 0),
+        sale: a.sale + c.saleTotal,
+        cost: a.cost + c.costTotal,
+        profit: a.profit + c.profitTotal,
+        orders: a.orders + c.orderCount,
+        dup: a.dup + (c.duplicateCount > 0 ? 1 : 0),
+      }),
+      { deductedIdr: 0, sale: 0, cost: 0, profit: 0, orders: 0, dup: 0 }
+    );
+    const pct = t.sale > 0 ? (t.profit / t.sale) * 100 : 0;
+    return (
+      <ProfitSummaryGrid
+        items={[
+          { k: "จำนวนเกม", v: cards.length },
+          { k: "ออเดอร์", v: t.orders },
+          { k: "ยอดขายรวม", v: fmtMoney(t.sale) },
+          { k: "ต้นทุนรวม", v: fmtMoney(t.cost) },
+          { k: "กำไรรวม", v: fmtMoney(t.profit), tone: t.profit >= 0 ? "pos" : "neg" },
+          { k: "%กำไร", v: fmtPct(pct) },
+          { k: "ยอดตัดรวม (IDR)", v: fmtIdr(t.deductedIdr) },
+          {
+            k: "เกมที่พบยอดซ้ำ",
+            v: t.dup,
+            tone: t.dup > 0 ? "neg" : undefined,
+            onClick: t.dup > 0 ? onToggleDupOnly : undefined,
+            active: dupFilter === "needs",
+          },
+        ]}
+      />
+    );
+  }
+
+  if (category.source === "gamepoint") {
+    const t = cards.reduce(
+      (a, c) => ({
+        deductedMyr: a.deductedMyr + (c.deductedMyrTotal || 0),
+        sale: a.sale + c.saleTotal,
+        cost: a.cost + c.costTotal,
+        profit: a.profit + c.profitTotal,
+        orders: a.orders + c.orderCount,
+        dup: a.dup + (c.duplicateCount > 0 ? 1 : 0),
+      }),
+      { deductedMyr: 0, sale: 0, cost: 0, profit: 0, orders: 0, dup: 0 }
+    );
+    const pct = t.sale > 0 ? (t.profit / t.sale) * 100 : 0;
+    return (
+      <ProfitSummaryGrid
+        items={[
+          { k: "จำนวนเกม", v: cards.length },
+          { k: "ออเดอร์", v: t.orders },
+          { k: "ยอดขายรวม", v: fmtMoney(t.sale) },
+          { k: "ต้นทุนรวม", v: fmtMoney(t.cost) },
+          { k: "กำไรรวม", v: fmtMoney(t.profit), tone: t.profit >= 0 ? "pos" : "neg" },
+          { k: "%กำไร", v: fmtPct(pct) },
+          { k: "ยอดตัดรวม (MYR)", v: fmtMyr(t.deductedMyr) },
+          {
+            k: "เกมที่พบยอดซ้ำ",
+            v: t.dup,
+            tone: t.dup > 0 ? "neg" : undefined,
+            onClick: t.dup > 0 ? onToggleDupOnly : undefined,
+            active: dupFilter === "needs",
+          },
+        ]}
+      />
+    );
+  }
+
+  if (category.source === "agenh2h") {
+    const t = cards.reduce(
+      (a, c) => ({
+        deductedIdr: a.deductedIdr + (c.deductedIdrTotal || 0),
+        sale: a.sale + c.saleTotal,
+        cost: a.cost + c.costTotal,
+        profit: a.profit + c.profitTotal,
+        orders: a.orders + c.orderCount,
+        dup: a.dup + (c.duplicateCount > 0 ? 1 : 0),
+      }),
+      { deductedIdr: 0, sale: 0, cost: 0, profit: 0, orders: 0, dup: 0 }
+    );
+    const pct = t.sale > 0 ? (t.profit / t.sale) * 100 : 0;
+    return (
+      <ProfitSummaryGrid
+        items={[
+          { k: "จำนวนเกม", v: cards.length },
+          { k: "ออเดอร์", v: t.orders },
+          { k: "ยอดขายรวม", v: fmtMoney(t.sale) },
+          { k: "ต้นทุนรวม", v: fmtMoney(t.cost) },
+          { k: "กำไรรวม", v: fmtMoney(t.profit), tone: t.profit >= 0 ? "pos" : "neg" },
+          { k: "%กำไร", v: fmtPct(pct) },
+          { k: "ยอดตัดรวม (IDR)", v: fmtIdr(t.deductedIdr) },
+          {
+            k: "เกมที่พบยอดซ้ำ",
+            v: t.dup,
+            tone: t.dup > 0 ? "neg" : undefined,
+            onClick: t.dup > 0 ? onToggleDupOnly : undefined,
+            active: dupFilter === "needs",
+          },
+        ]}
+      />
+    );
+  }
+
+  if (category.source === "codareseller") {
+    const t = cards.reduce(
+      (a, c) => ({
+        deductedUsd: a.deductedUsd + (c.deductedUsdTotal || 0),
+        sale: a.sale + c.saleTotal,
+        cost: a.cost + c.costTotal,
+        profit: a.profit + c.profitTotal,
+        orders: a.orders + c.orderCount,
+        dup: a.dup + (c.duplicateCount > 0 ? 1 : 0),
+      }),
+      { deductedUsd: 0, sale: 0, cost: 0, profit: 0, orders: 0, dup: 0 }
+    );
+    const pct = t.sale > 0 ? (t.profit / t.sale) * 100 : 0;
+    return (
+      <ProfitSummaryGrid
+        items={[
+          { k: "จำนวนเกม", v: cards.length },
+          { k: "ออเดอร์", v: t.orders },
+          { k: "ยอดขายรวม", v: fmtMoney(t.sale) },
+          { k: "ต้นทุนรวม", v: fmtMoney(t.cost) },
+          { k: "กำไรรวม", v: fmtMoney(t.profit), tone: t.profit >= 0 ? "pos" : "neg" },
+          { k: "%กำไร", v: fmtPct(pct) },
+          { k: "ยอดตัดรวม (USD)", v: fmtUsd(t.deductedUsd) },
+          {
+            k: "เกมที่พบยอดซ้ำ",
+            v: t.dup,
+            tone: t.dup > 0 ? "neg" : undefined,
+            onClick: t.dup > 0 ? onToggleDupOnly : undefined,
+            active: dupFilter === "needs",
+          },
+        ]}
+      />
+    );
+  }
+
+  if (category.source === "netease") {
+    const t = cards.reduce(
+      (a, c) => ({
+        deductedUsd: a.deductedUsd + (c.deductedUsdTotal || 0),
+        sale: a.sale + c.saleTotal,
+        cost: a.cost + c.costTotal,
+        profit: a.profit + c.profitTotal,
+        orders: a.orders + c.orderCount,
+        dup: a.dup + (c.duplicateCount > 0 ? 1 : 0),
+      }),
+      { deductedUsd: 0, sale: 0, cost: 0, profit: 0, orders: 0, dup: 0 }
+    );
+    const pct = t.sale > 0 ? (t.profit / t.sale) * 100 : 0;
+    return (
+      <ProfitSummaryGrid
+        items={[
+          { k: "จำนวนเกม", v: cards.length },
+          { k: "ออเดอร์", v: t.orders },
+          { k: "ยอดขายรวม", v: fmtMoney(t.sale) },
+          { k: "ต้นทุนรวม", v: fmtMoney(t.cost) },
+          { k: "กำไรรวม", v: fmtMoney(t.profit), tone: t.profit >= 0 ? "pos" : "neg" },
+          { k: "%กำไร", v: fmtPct(pct) },
+          { k: "ยอดตัดรวม (USD)", v: fmtUsd(t.deductedUsd) },
+          {
+            k: "เกมที่พบยอดซ้ำ",
+            v: t.dup,
+            tone: t.dup > 0 ? "neg" : undefined,
+            onClick: t.dup > 0 ? onToggleDupOnly : undefined,
+            active: dupFilter === "needs",
+          },
+        ]}
+      />
+    );
+  }
+
   const t = cards.reduce(
     (a, c) => ({
       sale: a.sale + c.saleTotal,
@@ -1113,6 +1509,346 @@ function WavepayCardsTable({ categoryId, cards, q }) {
             ))
           ) : (
             <tr><td colSpan={9} className="px-4 py-8 text-center text-ll-ink-subtle">
+              {q ? "ไม่พบเลขที่ค้นหา" : "ยังไม่มีข้อมูลจาก DB"}
+            </td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PhoneChannelCardsTable({ categoryId, cards, q, phoneLabel, amountTotalKey, fmtAmount, amountTitle }) {
+  const router = useRouter();
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[640px] text-[13px] text-ll-ink">
+        <thead>
+          <tr className="border-b border-ll-hairline text-left text-[11px] text-ll-ink-subtle">
+            <th className="px-4 py-2 font-medium">{phoneLabel}</th>
+            <th className="px-3 py-2 font-medium">เกม</th>
+            <th className="px-3 py-2 text-right font-medium">ออเดอร์</th>
+            <th className="px-3 py-2 text-right font-medium">ยอดขาย</th>
+            <th className="px-3 py-2 text-right font-medium">ต้นทุน</th>
+            <th className="px-3 py-2 text-right font-medium">กำไร</th>
+            <th className="px-3 py-2 text-right font-medium">ยอดตัด</th>
+            <th className="px-3 py-2 font-medium">ตัดซ้ำ</th>
+            <th className="px-3 py-2 font-medium">ล่าสุด</th>
+          </tr>
+        </thead>
+        <tbody>
+          {cards.length ? (
+            cards.map((c) => (
+              <tr
+                key={c.id}
+                onClick={() => router.push(`/profit/category/${categoryId}/card/${encodeURIComponent(c.id)}`)}
+                className="cursor-pointer border-b border-ll-hairline last:border-0 hover:bg-ll-surface-2"
+              >
+                <td className="px-4 py-2.5 font-medium text-ll-ink">{c.name}</td>
+                <td className="px-3 py-2.5 text-ll-ink-subtle">{(c.gameNames || []).join(", ") || "-"}</td>
+                <td className="px-3 py-2.5 text-right">{c.orderCount}</td>
+                <td className="px-3 py-2.5 text-right">{fmtMoney(c.saleTotal)}</td>
+                <td className="px-3 py-2.5 text-right">{fmtMoney(c.costTotal)}</td>
+                <td className={`px-3 py-2.5 text-right ${c.profitTotal >= 0 ? "text-emerald-600" : "text-red-600"}`}>{fmtMoney(c.profitTotal)}</td>
+                <td className="px-3 py-2.5 text-right" title={amountTitle}>
+                  {c[amountTotalKey] != null ? fmtAmount(c[amountTotalKey]) : "-"}
+                </td>
+                <td className="px-3 py-2.5"><DupBadge n={c.duplicateCount} /></td>
+                <td className="px-3 py-2.5 text-ll-ink-subtle">{fmtDate(c.lastOrderAt)}</td>
+              </tr>
+            ))
+          ) : (
+            <tr><td colSpan={9} className="px-4 py-8 text-center text-ll-ink-subtle">
+              {q ? "ไม่พบเลขที่ค้นหา" : "ยังไม่มีข้อมูลจาก DB"}
+            </td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function U9CardsTable({ categoryId, cards, q }) {
+  const router = useRouter();
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[640px] text-[13px] text-ll-ink">
+        <thead>
+          <tr className="border-b border-ll-hairline text-left text-[11px] text-ll-ink-subtle">
+            <th className="px-4 py-2 font-medium">เบอร์ U9</th>
+            <th className="px-3 py-2 font-medium">เกม</th>
+            <th className="px-3 py-2 text-right font-medium">ออเดอร์</th>
+            <th className="px-3 py-2 text-right font-medium">ยอดขาย</th>
+            <th className="px-3 py-2 text-right font-medium">ต้นทุน</th>
+            <th className="px-3 py-2 text-right font-medium">กำไร</th>
+            <th className="px-3 py-2 text-right font-medium">ยอดตัด (Ks)</th>
+            <th className="px-3 py-2 font-medium">ตัดซ้ำ</th>
+            <th className="px-3 py-2 font-medium">ล่าสุด</th>
+          </tr>
+        </thead>
+        <tbody>
+          {cards.length ? (
+            cards.map((c) => (
+              <tr
+                key={c.id}
+                onClick={() => router.push(`/profit/category/${categoryId}/card/${encodeURIComponent(c.id)}`)}
+                className="cursor-pointer border-b border-ll-hairline last:border-0 hover:bg-ll-surface-2"
+              >
+                <td className="px-4 py-2.5 font-medium text-ll-ink">{c.name}</td>
+                <td className="px-3 py-2.5 text-ll-ink-subtle">{(c.gameNames || []).join(", ") || "-"}</td>
+                <td className="px-3 py-2.5 text-right">{c.orderCount}</td>
+                <td className="px-3 py-2.5 text-right">{fmtMoney(c.saleTotal)}</td>
+                <td className="px-3 py-2.5 text-right">{fmtMoney(c.costTotal)}</td>
+                <td className={`px-3 py-2.5 text-right ${c.profitTotal >= 0 ? "text-emerald-600" : "text-red-600"}`}>{fmtMoney(c.profitTotal)}</td>
+                <td className="px-3 py-2.5 text-right" title="ผลรวม pack_price (MMK/Ks) — U9 ไม่มี balances เรียลไทม์ใน DB">
+                  {c.deductedKsTotal != null ? fmtKyat(c.deductedKsTotal) : "-"}
+                </td>
+                <td className="px-3 py-2.5"><DupBadge n={c.duplicateCount} /></td>
+                <td className="px-3 py-2.5 text-ll-ink-subtle">{fmtDate(c.lastOrderAt)}</td>
+              </tr>
+            ))
+          ) : (
+            <tr><td colSpan={9} className="px-4 py-8 text-center text-ll-ink-subtle">
+              {q ? "ไม่พบเลขที่ค้นหา" : "ยังไม่มีข้อมูลจาก DB"}
+            </td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function DonshopCardsTable({ categoryId, cards, q }) {
+  const router = useRouter();
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[640px] text-[13px] text-ll-ink">
+        <thead>
+          <tr className="border-b border-ll-hairline text-left text-[11px] text-ll-ink-subtle">
+            <th className="px-4 py-2 font-medium">เกม</th>
+            <th className="px-3 py-2 text-right font-medium">ออเดอร์</th>
+            <th className="px-3 py-2 text-right font-medium">ยอดขาย</th>
+            <th className="px-3 py-2 text-right font-medium">ต้นทุน</th>
+            <th className="px-3 py-2 text-right font-medium">กำไร</th>
+            <th className="px-3 py-2 text-right font-medium">ยอดตัด (IDR)</th>
+            <th className="px-3 py-2 font-medium">ตัดซ้ำ</th>
+            <th className="px-3 py-2 font-medium">ล่าสุด</th>
+          </tr>
+        </thead>
+        <tbody>
+          {cards.length ? (
+            cards.map((c) => (
+              <tr
+                key={c.id}
+                onClick={() => router.push(`/profit/category/${categoryId}/card/${encodeURIComponent(c.id)}`)}
+                className="cursor-pointer border-b border-ll-hairline last:border-0 hover:bg-ll-surface-2"
+              >
+                <td className="px-4 py-2.5 font-medium text-ll-ink">{c.name}</td>
+                <td className="px-3 py-2.5 text-right">{c.orderCount}</td>
+                <td className="px-3 py-2.5 text-right">{fmtMoney(c.saleTotal)}</td>
+                <td className="px-3 py-2.5 text-right">{fmtMoney(c.costTotal)}</td>
+                <td className={`px-3 py-2.5 text-right ${c.profitTotal >= 0 ? "text-emerald-600" : "text-red-600"}`}>{fmtMoney(c.profitTotal)}</td>
+                <td className="px-3 py-2.5 text-right" title="ผลรวมยอดตัดกระเป๋า DonShop (IDR) — ไม่ใช่ยอดบาท">
+                  {c.deductedIdrTotal != null ? fmtIdr(c.deductedIdrTotal) : "-"}
+                </td>
+                <td className="px-3 py-2.5"><DupBadge n={c.duplicateCount} /></td>
+                <td className="px-3 py-2.5 text-ll-ink-subtle">{fmtDate(c.lastOrderAt)}</td>
+              </tr>
+            ))
+          ) : (
+            <tr><td colSpan={8} className="px-4 py-8 text-center text-ll-ink-subtle">
+              {q ? "ไม่พบเลขที่ค้นหา" : "ยังไม่มีข้อมูลจาก DB"}
+            </td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function GamepointCardsTable({ categoryId, cards, q }) {
+  const router = useRouter();
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[640px] text-[13px] text-ll-ink">
+        <thead>
+          <tr className="border-b border-ll-hairline text-left text-[11px] text-ll-ink-subtle">
+            <th className="px-4 py-2 font-medium">เกม</th>
+            <th className="px-3 py-2 text-right font-medium">ออเดอร์</th>
+            <th className="px-3 py-2 text-right font-medium">ยอดขาย</th>
+            <th className="px-3 py-2 text-right font-medium">ต้นทุน</th>
+            <th className="px-3 py-2 text-right font-medium">กำไร</th>
+            <th className="px-3 py-2 text-right font-medium">ยอดตัด (MYR)</th>
+            <th className="px-3 py-2 font-medium">ตัดซ้ำ</th>
+            <th className="px-3 py-2 font-medium">ล่าสุด</th>
+          </tr>
+        </thead>
+        <tbody>
+          {cards.length ? (
+            cards.map((c) => (
+              <tr
+                key={c.id}
+                onClick={() => router.push(`/profit/category/${categoryId}/card/${encodeURIComponent(c.id)}`)}
+                className="cursor-pointer border-b border-ll-hairline last:border-0 hover:bg-ll-surface-2"
+              >
+                <td className="px-4 py-2.5 font-medium text-ll-ink">{c.name}</td>
+                <td className="px-3 py-2.5 text-right">{c.orderCount}</td>
+                <td className="px-3 py-2.5 text-right">{fmtMoney(c.saleTotal)}</td>
+                <td className="px-3 py-2.5 text-right">{fmtMoney(c.costTotal)}</td>
+                <td className={`px-3 py-2.5 text-right ${c.profitTotal >= 0 ? "text-emerald-600" : "text-red-600"}`}>{fmtMoney(c.profitTotal)}</td>
+                <td className="px-3 py-2.5 text-right" title="ผลรวม amount จากกระเป๋า Game Point Club (MYR) — ไม่ใช่ยอดบาท">
+                  {c.deductedMyrTotal != null ? fmtMyr(c.deductedMyrTotal) : "-"}
+                </td>
+                <td className="px-3 py-2.5"><DupBadge n={c.duplicateCount} /></td>
+                <td className="px-3 py-2.5 text-ll-ink-subtle">{fmtDate(c.lastOrderAt)}</td>
+              </tr>
+            ))
+          ) : (
+            <tr><td colSpan={8} className="px-4 py-8 text-center text-ll-ink-subtle">
+              {q ? "ไม่พบเลขที่ค้นหา" : "ยังไม่มีข้อมูลจาก DB"}
+            </td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Agenh2hCardsTable({ categoryId, cards, q }) {
+  const router = useRouter();
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[640px] text-[13px] text-ll-ink">
+        <thead>
+          <tr className="border-b border-ll-hairline text-left text-[11px] text-ll-ink-subtle">
+            <th className="px-4 py-2 font-medium">เกม</th>
+            <th className="px-3 py-2 text-right font-medium">ออเดอร์</th>
+            <th className="px-3 py-2 text-right font-medium">ยอดขาย</th>
+            <th className="px-3 py-2 text-right font-medium">ต้นทุน</th>
+            <th className="px-3 py-2 text-right font-medium">กำไร</th>
+            <th className="px-3 py-2 text-right font-medium">ยอดตัด (IDR)</th>
+            <th className="px-3 py-2 font-medium">ตัดซ้ำ</th>
+            <th className="px-3 py-2 font-medium">ล่าสุด</th>
+          </tr>
+        </thead>
+        <tbody>
+          {cards.length ? (
+            cards.map((c) => (
+              <tr
+                key={c.id}
+                onClick={() => router.push(`/profit/category/${categoryId}/card/${encodeURIComponent(c.id)}`)}
+                className="cursor-pointer border-b border-ll-hairline last:border-0 hover:bg-ll-surface-2"
+              >
+                <td className="px-4 py-2.5 font-medium text-ll-ink">{c.name}</td>
+                <td className="px-3 py-2.5 text-right">{c.orderCount}</td>
+                <td className="px-3 py-2.5 text-right">{fmtMoney(c.saleTotal)}</td>
+                <td className="px-3 py-2.5 text-right">{fmtMoney(c.costTotal)}</td>
+                <td className={`px-3 py-2.5 text-right ${c.profitTotal >= 0 ? "text-emerald-600" : "text-red-600"}`}>{fmtMoney(c.profitTotal)}</td>
+                <td className="px-3 py-2.5 text-right" title="ผลรวมยอดตัดกระเป๋า Agen H2H (IDR) — ไม่ใช่ยอดบาท">
+                  {c.deductedIdrTotal != null ? fmtIdr(c.deductedIdrTotal) : "-"}
+                </td>
+                <td className="px-3 py-2.5"><DupBadge n={c.duplicateCount} /></td>
+                <td className="px-3 py-2.5 text-ll-ink-subtle">{fmtDate(c.lastOrderAt)}</td>
+              </tr>
+            ))
+          ) : (
+            <tr><td colSpan={8} className="px-4 py-8 text-center text-ll-ink-subtle">
+              {q ? "ไม่พบเลขที่ค้นหา" : "ยังไม่มีข้อมูลจาก DB"}
+            </td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function CodaresellerCardsTable({ categoryId, cards, q }) {
+  const router = useRouter();
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[640px] text-[13px] text-ll-ink">
+        <thead>
+          <tr className="border-b border-ll-hairline text-left text-[11px] text-ll-ink-subtle">
+            <th className="px-4 py-2 font-medium">เกม</th>
+            <th className="px-3 py-2 text-right font-medium">ออเดอร์</th>
+            <th className="px-3 py-2 text-right font-medium">ยอดขาย</th>
+            <th className="px-3 py-2 text-right font-medium">ต้นทุน</th>
+            <th className="px-3 py-2 text-right font-medium">กำไร</th>
+            <th className="px-3 py-2 text-right font-medium">ยอดตัด (USD)</th>
+            <th className="px-3 py-2 font-medium">ตัดซ้ำ</th>
+            <th className="px-3 py-2 font-medium">ล่าสุด</th>
+          </tr>
+        </thead>
+        <tbody>
+          {cards.length ? (
+            cards.map((c) => (
+              <tr
+                key={c.id}
+                onClick={() => router.push(`/profit/category/${categoryId}/card/${encodeURIComponent(c.id)}`)}
+                className="cursor-pointer border-b border-ll-hairline last:border-0 hover:bg-ll-surface-2"
+              >
+                <td className="px-4 py-2.5 font-medium text-ll-ink">{c.name}</td>
+                <td className="px-3 py-2.5 text-right">{c.orderCount}</td>
+                <td className="px-3 py-2.5 text-right">{fmtMoney(c.saleTotal)}</td>
+                <td className="px-3 py-2.5 text-right">{fmtMoney(c.costTotal)}</td>
+                <td className={`px-3 py-2.5 text-right ${c.profitTotal >= 0 ? "text-emerald-600" : "text-red-600"}`}>{fmtMoney(c.profitTotal)}</td>
+                <td className="px-3 py-2.5 text-right" title="ผลรวม pack_price (USD) — ไม่ใช่ยอดบาท">
+                  {c.deductedUsdTotal != null ? fmtUsd(c.deductedUsdTotal) : "-"}
+                </td>
+                <td className="px-3 py-2.5"><DupBadge n={c.duplicateCount} /></td>
+                <td className="px-3 py-2.5 text-ll-ink-subtle">{fmtDate(c.lastOrderAt)}</td>
+              </tr>
+            ))
+          ) : (
+            <tr><td colSpan={8} className="px-4 py-8 text-center text-ll-ink-subtle">
+              {q ? "ไม่พบเลขที่ค้นหา" : "ยังไม่มีข้อมูลจาก DB"}
+            </td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function NeteaseCardsTable({ categoryId, cards, q }) {
+  const router = useRouter();
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[640px] text-[13px] text-ll-ink">
+        <thead>
+          <tr className="border-b border-ll-hairline text-left text-[11px] text-ll-ink-subtle">
+            <th className="px-4 py-2 font-medium">เกม</th>
+            <th className="px-3 py-2 text-right font-medium">ออเดอร์</th>
+            <th className="px-3 py-2 text-right font-medium">ยอดขาย</th>
+            <th className="px-3 py-2 text-right font-medium">ต้นทุน</th>
+            <th className="px-3 py-2 text-right font-medium">กำไร</th>
+            <th className="px-3 py-2 text-right font-medium">ยอดตัด (USD)</th>
+            <th className="px-3 py-2 font-medium">ตัดซ้ำ</th>
+            <th className="px-3 py-2 font-medium">ล่าสุด</th>
+          </tr>
+        </thead>
+        <tbody>
+          {cards.length ? (
+            cards.map((c) => (
+              <tr
+                key={c.id}
+                onClick={() => router.push(`/profit/category/${categoryId}/card/${encodeURIComponent(c.id)}`)}
+                className="cursor-pointer border-b border-ll-hairline last:border-0 hover:bg-ll-surface-2"
+              >
+                <td className="px-4 py-2.5 font-medium text-ll-ink">{c.name}</td>
+                <td className="px-3 py-2.5 text-right">{c.orderCount}</td>
+                <td className="px-3 py-2.5 text-right">{fmtMoney(c.saleTotal)}</td>
+                <td className="px-3 py-2.5 text-right">{fmtMoney(c.costTotal)}</td>
+                <td className={`px-3 py-2.5 text-right ${c.profitTotal >= 0 ? "text-emerald-600" : "text-red-600"}`}>{fmtMoney(c.profitTotal)}</td>
+                <td className="px-3 py-2.5 text-right" title="ผลรวม deducted (USD) จาก netease_purchase_history">
+                  {c.deductedUsdTotal != null ? fmtUsd(c.deductedUsdTotal) : "-"}
+                </td>
+                <td className="px-3 py-2.5"><DupBadge n={c.duplicateCount} /></td>
+                <td className="px-3 py-2.5 text-ll-ink-subtle">{fmtDate(c.lastOrderAt)}</td>
+              </tr>
+            ))
+          ) : (
+            <tr><td colSpan={8} className="px-4 py-8 text-center text-ll-ink-subtle">
               {q ? "ไม่พบเลขที่ค้นหา" : "ยังไม่มีข้อมูลจาก DB"}
             </td></tr>
           )}

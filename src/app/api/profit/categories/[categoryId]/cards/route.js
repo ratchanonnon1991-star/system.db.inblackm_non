@@ -10,7 +10,7 @@ export async function GET(request, { params }) {
     const { categoryId } = await params;
     const category = getCategory(categoryId);
     if (!category) return jsonError("ไม่พบหมวดหมู่นี้", 404);
-    const cards = await cardsForCategory(categoryId);
+    const cards = await cardsForCategory(category.id);
     return jsonOk({ category, cards });
   } catch (err) {
     return handleApiError(err, "โหลดรายการบัตรไม่สำเร็จ");
