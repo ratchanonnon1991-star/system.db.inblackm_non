@@ -10,6 +10,7 @@ import {
   reconcileGameinfoPackMappingTargets,
 } from "@/lib/gameinfo-market-system.js";
 import { sanitizeComputedColumns } from "@/server/gamedb-layout-sanitizer.js";
+import { gameinfoDistinctColorStyleMap } from "@/lib/gameinfo-stable-color.js";
 
 assert.equal(marketPackIdentity("kaleoz", { name: "  128 ZEMS ", category: "Coins", amount: 128 }), "kaleoz:128 zems|coins|128");
 assert.equal(marketPackIdentity("itemku", { key: "denomination-128", name: "เปลี่ยนชื่อได้" }), "itemku:denomination-128");
@@ -20,6 +21,8 @@ assert.equal(calculateGameinfoPriceDifference(0, 10).kind, "data_quality");
 assert.equal(calculateGameinfoPriceDifference(100, null).kind, "missing_price");
 assert.equal(nextGameinfoMarketRunAt(new Date("2026-08-29T01:59:59Z")).toISOString(), "2026-08-29T02:00:00.000Z");
 assert.equal(nextGameinfoMarketRunAt(new Date("2026-08-29T02:00:00Z")).toISOString(), "2026-08-30T02:00:00.000Z");
+const mappingColors = gameinfoDistinctColorStyleMap(Array.from({ length: 500 }, (_, index) => `mapping-${index}`));
+assert.equal(new Set([...mappingColors.values()].map((style) => style["--gameinfo-tag-hue"])).size, 500);
 
 const rebound = normalizeMarketPage("kaleoz", { game: "zepeto", productType: "coins", groups: [{ packLabel: "128 Zem", quantity: 128, offers: [{ itemId: "new-listing", seller: "Shop", price: 95 }] }] });
 assert.equal(rebound.packs[0].externalPackKey, "kaleoz:128 zem|coins|128");
@@ -79,4 +82,4 @@ assert.match(mappingRoute, /input\?\.all === true[\s\S]*deleteAllGameinfoMarketM
 const mappingPage = readFileSync(new URL("../src/components/gameinfo-market-mapping-page.js", import.meta.url), "utf8");
 assert.equal((mappingPage.match(/gameinfo-mapping-color/g) || []).length, 2);
 
-console.log("\n28 passed, 0 failed");
+console.log("\n29 passed, 0 failed");

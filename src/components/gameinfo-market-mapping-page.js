@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link2, ListOrdered, PackageSearch, RefreshCw, Trash2, Unlink } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
-import { gameinfoStableColorStyle } from "@/lib/gameinfo-stable-color";
+import { gameinfoDistinctColorStyleMap } from "@/lib/gameinfo-stable-color";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -75,6 +75,10 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
       stale: packs.filter((pack) => pack.mapping?.status === "stale").length,
     };
   }, [workspace]);
+
+  const mappingColorStyles = useMemo(() => gameinfoDistinctColorStyleMap(
+    (workspace?.packs || []).map((pack) => pack.mapping?.externalPackKey).filter(Boolean)
+  ), [workspace]);
 
   const orderedMappingDraft = useMemo(() => {
     const marketPacks = (workspace?.catalog?.items || []).filter((item) => !item.packId);
@@ -212,7 +216,7 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
                 <TableBody>{(workspace?.packs || []).map((pack) => <TableRow key={pack.id} data-state={selectedPackId === pack.id ? "selected" : undefined}>
                   <TableCell className="font-medium">{pack.name || pack.id}</TableCell><TableCell className="text-right tabular-nums">{pack.price || "—"}</TableCell>
                   <TableCell>{pack.mapping ? <Badge variant={pack.mapping.status === "stale" ? "destructive" : "outline"}>{pack.mapping.status}</Badge> : <Badge variant="secondary">ยังไม่จับคู่</Badge>}</TableCell>
-                  <TableCell className="text-right"><div className="flex justify-end gap-1"><Button type="button" size="sm" variant={selectedPackId === pack.id ? "default" : "outline"} onClick={() => setSelectedPackId(pack.id)}>เลือก</Button>{editable && pack.mapping ? <Button type="button" size="icon-sm" variant="ghost" className="gameinfo-mapping-color" style={gameinfoStableColorStyle(pack.mapping.externalPackKey)} aria-label="ยกเลิก Mapping" onClick={() => unmap(pack)}><Unlink /></Button> : null}</div></TableCell>
+                  <TableCell className="text-right"><div className="flex justify-end gap-1"><Button type="button" size="sm" variant={selectedPackId === pack.id ? "default" : "outline"} onClick={() => setSelectedPackId(pack.id)}>เลือก</Button>{editable && pack.mapping ? <Button type="button" size="icon-sm" variant="ghost" className="gameinfo-mapping-color" style={mappingColorStyles.get(pack.mapping.externalPackKey)} aria-label="ยกเลิก Mapping" onClick={() => unmap(pack)}><Unlink /></Button> : null}</div></TableCell>
                 </TableRow>)}</TableBody>
               </Table>}
           </CardContent>
@@ -227,7 +231,7 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
           </CardHeader>
           <CardContent className="overflow-x-auto p-0">
             {(workspace?.catalog?.items || []).length ? <Table><TableHeader><TableRow><TableHead>Pack Market</TableHead><TableHead>หมวด/ยอด</TableHead><TableHead>สถานะ</TableHead><TableHead /></TableRow></TableHeader>
-              <TableBody>{workspace.catalog.items.map((item) => <TableRow key={item.externalPackKey}><TableCell className="font-medium">{item.name}</TableCell><TableCell><div className="flex flex-col text-sm"><span>{item.category || "—"}</span><span className="text-muted-foreground">{item.amount || "—"}</span></div></TableCell><TableCell><Badge variant={item.packId ? "outline" : "secondary"}>{item.packId ? `ใช้กับ ${item.packId}` : "ว่าง"}</Badge></TableCell><TableCell className="text-right"><Button type="button" size="sm" variant="outline" className={item.packId ? "gameinfo-mapping-color" : undefined} style={item.packId ? gameinfoStableColorStyle(item.externalPackKey) : undefined} disabled={!editable || !selectedPackId || Boolean(item.packId && workspace.packs.find((pack) => pack.id === selectedPackId)?.mapping?.externalPackKey !== item.externalPackKey)} onClick={() => setConfirm(item)}><Link2 data-icon="inline-start" />ใช้อ้างอิง</Button></TableCell></TableRow>)}</TableBody>
+              <TableBody>{workspace.catalog.items.map((item) => <TableRow key={item.externalPackKey}><TableCell className="font-medium">{item.name}</TableCell><TableCell><div className="flex flex-col text-sm"><span>{item.category || "—"}</span><span className="text-muted-foreground">{item.amount || "—"}</span></div></TableCell><TableCell><Badge variant={item.packId ? "outline" : "secondary"}>{item.packId ? `ใช้กับ ${item.packId}` : "ว่าง"}</Badge></TableCell><TableCell className="text-right"><Button type="button" size="sm" variant="outline" className={item.packId ? "gameinfo-mapping-color" : undefined} style={item.packId ? mappingColorStyles.get(item.externalPackKey) : undefined} disabled={!editable || !selectedPackId || Boolean(item.packId && workspace.packs.find((pack) => pack.id === selectedPackId)?.mapping?.externalPackKey !== item.externalPackKey)} onClick={() => setConfirm(item)}><Link2 data-icon="inline-start" />ใช้อ้างอิง</Button></TableCell></TableRow>)}</TableBody>
             </Table> : <Empty><EmptyHeader><EmptyMedia variant="icon"><PackageSearch /></EmptyMedia><EmptyTitle>ยังไม่มี Catalog</EmptyTitle><EmptyDescription>กด Market Check เพื่อโหลดข้อมูลล่าสุดก่อนทำ Mapping</EmptyDescription></EmptyHeader></Empty>}
           </CardContent>
           {workspace?.catalog?.total > workspace?.catalog?.limit ? <div className="p-4"><Pagination><PaginationContent><PaginationItem><PaginationPrevious href="#" text="ก่อนหน้า" aria-disabled={page <= 1} onClick={(event) => { event.preventDefault(); if (page > 1) setPage(page - 1); }} /></PaginationItem><PaginationItem><PaginationNext href="#" text="ถัดไป" aria-disabled={page * workspace.catalog.limit >= workspace.catalog.total} onClick={(event) => { event.preventDefault(); if (page * workspace.catalog.limit < workspace.catalog.total) setPage(page + 1); }} /></PaginationItem></PaginationContent></Pagination></div> : null}
