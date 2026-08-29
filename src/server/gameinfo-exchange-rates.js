@@ -171,9 +171,12 @@ async function loadHistory(client, pair) {
     .reverse();
 }
 
+// Callers that only need today's number — the pack price formulas — can skip
+// both the history query and the upstream refresh, so a stale rate never makes
+// a page wait on the rate provider.
 export async function getGameinfoExchangeRates(
   requestedPairs,
-  { now = new Date(), fetchImpl = fetch, force = false } = {}
+  { now = new Date(), fetchImpl = fetch, force = false, includeHistory = true, refreshStale = true } = {}
 ) {
   const pairs = [...new Set((requestedPairs || []).map(normalizeGameinfoRatePair).filter(Boolean))];
   if (pairs.length === 0) throw createHttpError("กรุณาระบุคู่สกุลเงินที่รองรับ", 400);
@@ -189,13 +192,14 @@ export async function getGameinfoExchangeRates(
         client.release();
       }
       let current = mapRateRow(latest, now);
-      if (force || current.stale) {
+      if (force || (refreshStale && current.stale)) {
         try {
           current = await refreshPair(pool, pair, now, fetchImpl);
         } catch (error) {
           current = mapRateRow(latest, now, error instanceof Error ? error.message : "ดึงราคาไม่สำเร็จ");
         }
       }
+      if (!includeHistory) return { pair, ...current, history: [] };
       const historyClient = await pool.connect();
       try {
         return { pair, ...current, history: await loadHistory(historyClient, pair) };

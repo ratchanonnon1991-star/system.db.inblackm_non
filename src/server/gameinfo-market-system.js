@@ -827,7 +827,7 @@ async function packPriceMap(gameId, dataMode, market) {
   const [gameRow, variableData, rates] = await Promise.all([
     getGameListRow(gameId),
     getGameinfoFormulaVariables(gameId),
-    getGameinfoExchangeRates(["USDT/THB", "USDCNY"]).catch(() => []),
+    getGameinfoExchangeRates(["USDT/THB", "USDCNY"], { includeHistory: false, refreshStale: false }).catch(() => []),
   ]);
   const fields = dataMode === "idpass" ? data?.fields : null;
   const game = {
@@ -953,13 +953,35 @@ export async function getGameinfoPackPriceComparison({ gameId, dataMode = "uid",
   if (!game) throw httpError("ไม่พบเกม", 404);
   const config = configs.find((item) => item.market === normalizedMarket);
   if (!config?.externalGameKey) return { game: { id: game.id, name: game.game }, config, rows: [], sellers: [], total: 0, page: pageNumber, limit: GAMEINFO_COMPARE_PAGE_SIZE };
-  const availableResult = await (await getGameinfoMarketPool()).query(
-    `SELECT seller_key, MIN(seller_name) AS seller_name, COUNT(DISTINCT external_pack_key)::int AS coverage
-       FROM gameinfo_market_offers WHERE market = $1 AND external_game_key = $2
-      GROUP BY seller_key ORDER BY coverage DESC, seller_name LIMIT 200`,
-    [normalizedMarket, config.externalGameKey]
-  );
+  // The seller list and the mapped rows both depend only on the config, so they
+  // go out together instead of one after the other.
+  const comparePool = await getGameinfoMarketPool();
   const ownSellerKeys = ownSellers.filter((seller) => seller.enabled).map((seller) => seller.sellerKey);
+  const mappingValues = [gameId, normalizedMode, normalizedMarket, config.externalGameKey, ownOnly, ownSellerKeys, GAMEINFO_COMPARE_PAGE_SIZE, (pageNumber - 1) * GAMEINFO_COMPARE_PAGE_SIZE];
+  const [availableResult, mappings] = await Promise.all([
+    comparePool.query(
+      `SELECT seller_key, MIN(seller_name) AS seller_name, COUNT(DISTINCT external_pack_key)::int AS coverage
+         FROM gameinfo_market_offers WHERE market = $1 AND external_game_key = $2
+        GROUP BY seller_key ORDER BY coverage DESC, seller_name LIMIT 200`,
+      [normalizedMarket, config.externalGameKey]
+    ),
+    comparePool.query(
+      `SELECT m.*, c.name AS market_pack_name, c.category, c.amount, COUNT(*) OVER()::int AS total
+         FROM gameinfo_market_mappings m
+        JOIN gameinfo_market_catalog_packs c ON c.market = m.market AND c.external_game_key = m.external_game_key AND c.external_pack_key = m.external_pack_key
+        WHERE m.game_id = $1 AND m.data_mode = $2 AND m.market = $3 AND m.external_game_key = $4
+          AND m.status = 'active' AND c.active
+          AND ($5::boolean = FALSE OR EXISTS (
+            SELECT 1 FROM gameinfo_market_offers own_offer
+             WHERE own_offer.market = m.market
+               AND own_offer.external_game_key = m.external_game_key
+               AND own_offer.external_pack_key = m.external_pack_key
+               AND own_offer.seller_key = ANY($6::text[])
+          ))
+        ORDER BY c.sort_order, c.name LIMIT $7 OFFSET $8`,
+      mappingValues
+    ),
+  ]);
   const availableSellers = availableResult.rows.map((row) => ({
     value: row.seller_key,
     label: row.seller_name,
@@ -975,24 +997,8 @@ export async function getGameinfoPackPriceComparison({ gameId, dataMode = "uid",
     ownSellerKeys,
     ownOnly ? ownSellerKeys : requestedOrAll
   );
-  const values = [gameId, normalizedMode, normalizedMarket, config.externalGameKey, ownOnly, ownSellerKeys, GAMEINFO_COMPARE_PAGE_SIZE, (pageNumber - 1) * GAMEINFO_COMPARE_PAGE_SIZE];
-  const mappings = await (await getGameinfoMarketPool()).query(
-    `SELECT m.*, c.name AS market_pack_name, c.category, c.amount, COUNT(*) OVER()::int AS total
-       FROM gameinfo_market_mappings m
-      JOIN gameinfo_market_catalog_packs c ON c.market = m.market AND c.external_game_key = m.external_game_key AND c.external_pack_key = m.external_pack_key
-      WHERE m.game_id = $1 AND m.data_mode = $2 AND m.market = $3 AND m.external_game_key = $4
-        AND m.status = 'active' AND c.active
-        AND ($5::boolean = FALSE OR EXISTS (
-          SELECT 1 FROM gameinfo_market_offers own_offer
-           WHERE own_offer.market = m.market
-             AND own_offer.external_game_key = m.external_game_key
-             AND own_offer.external_pack_key = m.external_pack_key
-             AND own_offer.seller_key = ANY($6::text[])
-        ))
-      ORDER BY c.sort_order, c.name LIMIT $7 OFFSET $8`, values
-  );
   const packKeys = mappings.rows.map((row) => row.external_pack_key);
-  const offerResult = packKeys.length ? await (await getGameinfoMarketPool()).query(
+  const offerResult = packKeys.length ? await comparePool.query(
     `SELECT * FROM gameinfo_market_offers
       WHERE market = $1 AND external_game_key = $2 AND external_pack_key = ANY($3::text[])
         AND seller_key = ANY($4::text[])

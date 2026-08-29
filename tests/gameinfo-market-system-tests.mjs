@@ -232,4 +232,10 @@ assert.match(marketManager, /<FieldContent className="min-w-0">/);
 assert.match(marketManager, /<SelectTrigger className="w-full min-w-0 overflow-hidden"><SelectValue className="truncate"/);
 assert.match(marketManager, /label: gameinfoMarketGameLabel\(game\.label\)/);
 
-console.log("\n86 passed, 0 failed");
+assert.match(marketServer, /getGameinfoExchangeRates\(\["USDT\/THB", "USDCNY"\], \{ includeHistory: false, refreshStale: false \}\)/);
+assert.match(marketServer, /const \[availableResult, mappings\] = await Promise\.all\(/);
+const rateServer = readFileSync(new URL("../src/server/gameinfo-exchange-rates.js", import.meta.url), "utf8");
+assert.match(rateServer, /if \(force \|\| \(refreshStale && current\.stale\)\)/);
+assert.match(rateServer, /if \(!includeHistory\) return \{ pair, \.\.\.current, history: \[\] \};/);
+
+console.log("\n91 passed, 0 failed");
