@@ -5,7 +5,9 @@ import {
   GAMEINFO_COMPARE_SELLER_LIMIT,
   calculateGameinfoPriceDifference,
   buildGameinfoOrderedMappingDraft,
+  gameinfoMappingViewModes,
   gameinfoMarketPackDisplayName,
+  normalizeGameinfoMappingViewMode,
   buildGameinfoOwnSellerReferenceGroups,
   marketPackIdentity,
   nextGameinfoMarketRunAt,
@@ -202,8 +204,23 @@ assert.match(marketServer, /UPDATE gameinfo_market_catalog_packs SET active = FA
 assert.match(marketServer, /DELETE FROM gameinfo_market_offers o[\s\S]*c\.product_type IN \(\$3, ''\)/);
 assert.match(marketServer, /FROM gameinfo_market_mappings om[\s\S]*om\.data_mode <> \$4[\s\S]*\) other_mode ON TRUE/);
 assert.match(mappingPage, /item\.otherModePackId \? <Badge variant="secondary">โหมด \{MODE_LABELS\[item\.otherMode\]/);
+assert.deepEqual(gameinfoMappingViewModes("all"), ["uid", "idpass"]);
+assert.deepEqual(gameinfoMappingViewModes("idpass"), ["idpass"]);
+assert.deepEqual(gameinfoMappingViewModes("nonsense"), ["uid"]);
+assert.equal(normalizeGameinfoMappingViewMode("all"), "all");
+assert.equal(normalizeGameinfoMappingViewMode(""), "uid");
+assert.match(marketServer, /const mappingModeClause = allModes \? "" : "AND mm\.data_mode = \$4"/);
+assert.match(marketServer, /ORDER BY \(mm\.data_mode = \$4\) DESC, mm\.updated_at DESC/);
+assert.match(marketServer, /externalGameKeyConflict: configuredKeys\.length > 1 \? configuredKeys : \[\]/);
+assert.match(marketServer, /packs: perMode\.flatMap\(\(item\) => item\.packs\)/);
+assert.match(mappingPage, /<TabsTrigger value="all">รวม<\/TabsTrigger><TabsTrigger value="uid">UID<\/TabsTrigger><TabsTrigger value="idpass">ID\/PASS<\/TabsTrigger>/);
+assert.match(mappingPage, /dataMode: selectedPack\.dataMode, market, packId: selectedPack\.id/);
+assert.match(mappingPage, /disabled=\{packMode === "all" \|\| !orderedMappingDraft\.packs\.length/);
+assert.doesNotMatch(mappingPage, /selectedPackId/);
 assert.match(mappingPage, /ราคาขายในเว็บ[\s\S]*marketPrice\(item\)/);
 assert.match(marketServer, /LEFT JOIN LATERAL \([\s\S]*gameinfo_market_offers o[\s\S]*ORDER BY o\.price[\s\S]*LIMIT 1[\s\S]*\) own_price ON TRUE/);
 assert.match(marketServer, /ownPriceClause = filterBySeller \? "AND o\.seller_key = ANY\(\$8::text\[\]\)"/);
 
-console.log("\n65 passed, 0 failed");
+assert.match(schema, /product_type text NOT NULL DEFAULT ''/);
+
+console.log("\n79 passed, 0 failed");

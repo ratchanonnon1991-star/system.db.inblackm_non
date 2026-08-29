@@ -22,7 +22,7 @@ export async function GET(request) {
       });
       return jsonOk({ workspace });
     }
-    return jsonOk({ mappings: await listGameinfoMarketMappings(gameId, mode, market) });
+    return jsonOk({ mappings: await listGameinfoMarketMappings(gameId, mode === "all" ? "uid" : mode, market) });
   } catch (error) {
     return handleApiError(error, "โหลด Mapping ไม่สำเร็จ");
   }

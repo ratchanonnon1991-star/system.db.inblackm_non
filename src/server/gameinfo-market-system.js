@@ -3,6 +3,8 @@ import {
   GAMEINFO_COMPARE_PAGE_SIZE,
   GAMEINFO_MARKETS,
   calculateGameinfoPriceDifference,
+  gameinfoMappingViewModes,
+  normalizeGameinfoMappingViewMode,
   normalizeGameinfoMarket,
   normalizeMarketIdentityPart,
   reconcileGameinfoPackMappingTargets,
@@ -414,7 +416,7 @@ export async function upsertGameinfoMarketCatalog(catalog, client = null) {
   }
 }
 
-export async function listGameinfoMarketCatalog({ market, externalGameKey, gameId, dataMode = "uid", query = "", status = "all", page = 1, limit = GAMEINFO_COMPARE_PAGE_SIZE, sellerKeys = null }) {
+export async function listGameinfoMarketCatalog({ market, externalGameKey, gameId, dataMode = "uid", allModes = false, query = "", status = "all", page = 1, limit = GAMEINFO_COMPARE_PAGE_SIZE, sellerKeys = null }) {
   const normalizedMarket = normalizeGameinfoMarket(market);
   const normalizedMode = mode(dataMode);
   const pageNumber = positiveInt(page);
@@ -429,6 +431,29 @@ export async function listGameinfoMarketCatalog({ market, externalGameKey, gameI
   // The listed price comes from our own shop's offer when we know which sellers
   // are ours, so the mapping table shows the price a buyer sees on the market.
   const ownPriceClause = filterBySeller ? "AND o.seller_key = ANY($8::text[])" : "";
+  // In the combined view a market pack may be mapped from either data mode, so
+  // the mapping is looked up across modes with the viewed mode winning ties.
+  const mappingModeClause = allModes ? "" : "AND mm.data_mode = $4";
+  const mappingJoin = `LEFT JOIN LATERAL (
+         SELECT mm.pack_id, mm.status, mm.data_mode
+           FROM gameinfo_market_mappings mm
+          WHERE mm.game_id = $3 AND mm.market = c.market
+            AND mm.external_game_key = c.external_game_key
+            AND mm.external_pack_key = c.external_pack_key ${mappingModeClause}
+          ORDER BY (mm.data_mode = $4) DESC, mm.updated_at DESC
+          LIMIT 1
+       ) m ON TRUE`;
+  const otherModeJoin = allModes
+    ? "LEFT JOIN LATERAL (SELECT NULL::text AS pack_id, NULL::text AS data_mode) other_mode ON TRUE"
+    : `LEFT JOIN LATERAL (
+         SELECT om.pack_id, om.data_mode
+           FROM gameinfo_market_mappings om
+          WHERE om.game_id = $3 AND om.data_mode <> $4 AND om.market = c.market
+            AND om.external_game_key = c.external_game_key
+            AND om.external_pack_key = c.external_pack_key
+          ORDER BY om.updated_at DESC
+          LIMIT 1
+       ) other_mode ON TRUE`;
   const sellerClause = filterBySeller ? `AND EXISTS (
           SELECT 1 FROM gameinfo_market_offers own_offer
            WHERE own_offer.market = c.market
@@ -445,7 +470,8 @@ export async function listGameinfoMarketCatalog({ market, externalGameKey, gameI
         )` : "";
   const pool = await getGameinfoMarketPool();
   const [result, summaryResult] = await Promise.all([pool.query(
-    `SELECT c.*, m.pack_id, m.status AS mapping_status, own_price.price, own_price.currency,
+    `SELECT c.*, m.pack_id, m.status AS mapping_status, m.data_mode AS mapping_mode,
+            own_price.price, own_price.currency,
             other_mode.pack_id AS other_mode_pack_id, other_mode.data_mode AS other_mode,
             COUNT(*) OVER()::int AS total
        FROM gameinfo_market_catalog_packs c
@@ -457,18 +483,8 @@ export async function listGameinfoMarketCatalog({ market, externalGameKey, gameI
           ORDER BY o.price
           LIMIT 1
        ) own_price ON TRUE
-       LEFT JOIN LATERAL (
-         SELECT om.pack_id, om.data_mode
-           FROM gameinfo_market_mappings om
-          WHERE om.game_id = $3 AND om.data_mode <> $4 AND om.market = c.market
-            AND om.external_game_key = c.external_game_key
-            AND om.external_pack_key = c.external_pack_key
-          ORDER BY om.updated_at DESC
-          LIMIT 1
-       ) other_mode ON TRUE
-       LEFT JOIN gameinfo_market_mappings m ON m.game_id = $3 AND m.data_mode = $4
-        AND m.market = c.market AND m.external_game_key = c.external_game_key
-        AND m.external_pack_key = c.external_pack_key
+       ${otherModeJoin}
+       ${mappingJoin}
       WHERE c.market = $1 AND c.external_game_key = $2 ${activeClause}
         AND ($5 = '' OR c.name ILIKE $5 OR c.category ILIKE $5 OR c.amount ILIKE $5)
         ${sellerClause}
@@ -482,9 +498,7 @@ export async function listGameinfoMarketCatalog({ market, externalGameKey, gameI
             COUNT(*) FILTER (WHERE c.active AND m.pack_id IS NULL ${summarySellerClause})::int AS unmapped,
             COUNT(*) FILTER (WHERE m.status = 'stale')::int AS stale
        FROM gameinfo_market_catalog_packs c
-       LEFT JOIN gameinfo_market_mappings m ON m.game_id = $3 AND m.data_mode = $4
-        AND m.market = c.market AND m.external_game_key = c.external_game_key
-        AND m.external_pack_key = c.external_pack_key
+       ${mappingJoin}
       WHERE c.market = $1 AND c.external_game_key = $2`,
     ownSellerKeys
       ? [normalizedMarket, String(externalGameKey || ""), Number(gameId) || 0, normalizedMode, ownSellerKeys]
@@ -496,6 +510,7 @@ export async function listGameinfoMarketCatalog({ market, externalGameKey, gameI
       externalPackKey: row.external_pack_key, identitySignature: row.identity_signature,
       listingId: row.listing_id, name: row.name, category: row.category, amount: row.amount,
       active: row.active, packId: row.pack_id || "", mappingStatus: row.mapping_status || "unmapped",
+      mappingMode: row.mapping_mode || "",
       price: row.price == null ? null : Number(row.price), currency: row.currency || "",
       productType: row.product_type || "",
       otherModePackId: row.other_mode_pack_id || "", otherMode: row.other_mode || "",
@@ -886,31 +901,45 @@ async function reconcileGameinfoPackMappings(gameId, dataMode, market, mappings,
 }
 
 export async function getGameinfoMappingWorkspace(gameId, dataMode, market, options = {}) {
-  const normalizedMode = mode(dataMode);
+  const viewMode = normalizeGameinfoMappingViewMode(dataMode);
+  const viewedModes = gameinfoMappingViewModes(viewMode);
+  const allModes = viewMode === "all";
   const normalizedMarket = normalizeGameinfoMarket(market);
-  const [game, configs, initialMappings, prices, ownSellers] = await Promise.all([
-    getGameListRow(gameId), listGameinfoGameMarkets(gameId, normalizedMode),
-    listGameinfoMarketMappings(gameId, normalizedMode, normalizedMarket), packPriceMap(gameId, normalizedMode, normalizedMarket),
+  const [game, ownSellers, perMode] = await Promise.all([
+    getGameListRow(gameId),
     listGameinfoOwnSellers(normalizedMarket),
+    Promise.all(viewedModes.map(async (viewedMode) => {
+      const [configs, initialMappings, prices] = await Promise.all([
+        listGameinfoGameMarkets(gameId, viewedMode),
+        listGameinfoMarketMappings(gameId, viewedMode, normalizedMarket),
+        packPriceMap(gameId, viewedMode, normalizedMarket),
+      ]);
+      const mappings = await reconcileGameinfoPackMappings(gameId, viewedMode, normalizedMarket, initialMappings, prices);
+      const mappingByPack = new Map(mappings.map((mapping) => [mapping.packId, mapping]));
+      return {
+        dataMode: viewedMode,
+        config: configs.find((item) => item.market === normalizedMarket),
+        packs: [...prices.values()].map((pack) => ({ ...pack, dataMode: viewedMode, mapping: mappingByPack.get(pack.id) || null })),
+      };
+    })),
   ]);
   if (!game) throw httpError("ไม่พบเกม", 404);
-  const mappings = await reconcileGameinfoPackMappings(
-    gameId,
-    normalizedMode,
-    normalizedMarket,
-    initialMappings,
-    prices
-  );
-  const config = configs.find((item) => item.market === normalizedMarket);
   const ownSellerKeys = ownSellers.filter((seller) => seller.enabled).map((seller) => seller.sellerKey);
+  // Both modes usually point at one market game page; when they do not, the
+  // combined view can only show one catalog, so the mismatch is reported.
+  const configuredKeys = [...new Set(perMode.map((item) => item.config?.externalGameKey).filter(Boolean))];
+  const config = perMode.find((item) => item.config?.externalGameKey)?.config || perMode[0]?.config;
   const catalog = config?.externalGameKey
-    ? await listGameinfoMarketCatalog({ ...options, market: normalizedMarket, externalGameKey: config.externalGameKey, gameId, dataMode: normalizedMode, sellerKeys: ownSellerKeys })
+    ? await listGameinfoMarketCatalog({
+      ...options, market: normalizedMarket, externalGameKey: config.externalGameKey, gameId,
+      dataMode: viewedModes[0], allModes, sellerKeys: ownSellerKeys,
+    })
     : { items: [], page: 1, limit: GAMEINFO_COMPARE_PAGE_SIZE, total: 0, summary: { total: 0, mapped: 0, unmapped: 0, stale: 0 } };
-  const mappingByPack = new Map(mappings.map((mapping) => [mapping.packId, mapping]));
   return {
-    game: { id: game.id, name: game.game }, config,
-    packs: [...prices.values()].map((pack) => ({ ...pack, mapping: mappingByPack.get(pack.id) || null })),
+    game: { id: game.id, name: game.game }, config, viewMode,
+    packs: perMode.flatMap((item) => item.packs),
     catalog, ownSellerCount: ownSellerKeys.length,
+    externalGameKeyConflict: configuredKeys.length > 1 ? configuredKeys : [],
   };
 }
 

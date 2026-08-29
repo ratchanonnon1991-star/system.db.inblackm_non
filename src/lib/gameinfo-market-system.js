@@ -35,6 +35,19 @@ export function gameinfoMarketPackDisplayName(value) {
   return text || String(value ?? "").trim();
 }
 
+// The mapping page can look at one data mode or at both at once ("all"), since
+// a market pack list usually holds UID and ID/PASS packs side by side.
+export const GAMEINFO_MAPPING_VIEW_MODES = Object.freeze(["all", "uid", "idpass"]);
+
+export function normalizeGameinfoMappingViewMode(value) {
+  const view = String(value || "").trim().toLowerCase();
+  return GAMEINFO_MAPPING_VIEW_MODES.includes(view) ? view : "uid";
+}
+
+export function gameinfoMappingViewModes(view) {
+  return normalizeGameinfoMappingViewMode(view) === "all" ? ["uid", "idpass"] : [normalizeGameinfoMappingViewMode(view)];
+}
+
 export function buildGameinfoOrderedMappingDraft(packs, marketPacks, skippedPackIds = new Set()) {
   const candidates = (packs || []).filter((pack) => !pack.mapping && !skippedPackIds.has(String(pack.id)));
   return candidates.slice(0, (marketPacks || []).length).map((pack, index) => ({

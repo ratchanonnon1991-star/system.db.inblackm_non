@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS gameinfo_market_catalog_packs (
   normalized_name text NOT NULL,
   category text NOT NULL DEFAULT '',
   amount text NOT NULL DEFAULT '',
+  product_type text NOT NULL DEFAULT '',
   sort_order integer NOT NULL DEFAULT 0,
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   active boolean NOT NULL DEFAULT true,
