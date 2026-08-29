@@ -28,4 +28,15 @@ assert.ok(rates.includes("calc(100vw-1rem)"), "rate tooltip fits narrow viewport
 assert.equal(rates.includes("<details"), false, "rate cards no longer add a nested folding state");
 assert.equal(rates.includes("group-open/rate-card"), false, "rate cards no longer depend on nested details arrows");
 
-console.log("19 passed");
+// The read-only view (used by the topup view) colours country and channels the
+// same way the editor does, and splits channels into one tag per entry.
+assert.ok(view.includes("gameinfoStableColorStyle"), "view tags carry the shared name-derived colour");
+assert.ok(
+  view.includes('column.id === "country" || column.id === "channelsMain" || column.id === "channelsSecondary"'),
+  "country and both channel columns render as coloured tags"
+);
+assert.ok(view.includes("values.map((item) => ("), "each channel becomes its own tag");
+assert.ok(view.includes("function StableTag({ value, label = value, className"), "one tag component serves the table and the header summary");
+assert.ok(view.includes("gameinfoCountryDisplayName(item)"), "the view shows the same trimmed country name as the editor");
+
+console.log("24 passed");
