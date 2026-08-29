@@ -21,6 +21,20 @@ export function selectGameinfoCompareSellerKeys(available, ownSellerKeys, select
   );
 }
 
+// Market listings prefix tags such as "[INSTANT]" or "【AUTO】" onto the pack
+// title, and those tags come and go when a seller swaps packs around. The name
+// is the mapping identity, so only the *display* drops the leading tags — the
+// stored/compared value must stay untouched.
+export function gameinfoMarketPackDisplayName(value) {
+  let text = String(value ?? "").trim();
+  let previous = "";
+  while (text !== previous) {
+    previous = text;
+    text = text.replace(/^[\[({【（][^\])}】）]*[\])}】）]\s*/u, "").trim();
+  }
+  return text || String(value ?? "").trim();
+}
+
 export function buildGameinfoOrderedMappingDraft(packs, marketPacks, skippedPackIds = new Set()) {
   const candidates = (packs || []).filter((pack) => !pack.mapping && !skippedPackIds.has(String(pack.id)));
   return candidates.slice(0, (marketPacks || []).length).map((pack, index) => ({

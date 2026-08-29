@@ -5,6 +5,7 @@ import {
   GAMEINFO_COMPARE_SELLER_LIMIT,
   calculateGameinfoPriceDifference,
   buildGameinfoOrderedMappingDraft,
+  gameinfoMarketPackDisplayName,
   buildGameinfoOwnSellerReferenceGroups,
   marketPackIdentity,
   nextGameinfoMarketRunAt,
@@ -184,4 +185,11 @@ assert.match(mappingPage, /pack\.price \?\? "—"/);
 assert.match(ownComparePage, /let ignore = false[\s\S]*if \(!ignore\) setComparison[\s\S]*return \(\) => \{ ignore = true; \}/);
 assert.match(ownComparePage, /setComparison\(null\)/);
 
-console.log("\n45 passed, 0 failed");
+assert.equal(gameinfoMarketPackDisplayName("[INSTANT] 【AUTO】60 Diamonds (Global)"), "60 Diamonds (Global)");
+assert.equal(gameinfoMarketPackDisplayName("60 Diamonds"), "60 Diamonds");
+assert.equal(gameinfoMarketPackDisplayName("[ONLY]"), "[ONLY]");
+assert.equal(gameinfoMarketPackDisplayName(null), "");
+assert.match(mappingPage, /gameinfoMarketPackDisplayName\(item\.name\)/);
+assert.match(mappingPage, /max-w-\[18rem\] truncate/);
+
+console.log("\n51 passed, 0 failed");
