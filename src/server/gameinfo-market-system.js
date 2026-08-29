@@ -6,6 +6,7 @@ import {
   calculateGameinfoPriceDifference,
   normalizeGameinfoMarket,
   normalizeMarketIdentityPart,
+  reconcileGameinfoPackMappingTargets,
 } from "@/lib/gameinfo-market-system";
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
@@ -93,6 +94,7 @@ async function ensureSchema(pool) {
         data_mode VARCHAR(16) NOT NULL CHECK (data_mode IN ('uid', 'idpass')),
         market VARCHAR(16) NOT NULL CHECK (market IN ('kaleoz', 'itemku', 'playerok', 'g2g')),
         pack_id TEXT NOT NULL,
+        gameinfo_pack_name TEXT NOT NULL DEFAULT '',
         external_game_key TEXT NOT NULL,
         external_pack_key TEXT NOT NULL,
         identity_signature TEXT NOT NULL,
@@ -106,6 +108,7 @@ async function ensureSchema(pool) {
       );
       CREATE INDEX IF NOT EXISTS gameinfo_market_mappings_external_idx
         ON gameinfo_market_mappings (market, external_game_key, external_pack_key);
+      ALTER TABLE gameinfo_market_mappings ADD COLUMN IF NOT EXISTS gameinfo_pack_name TEXT NOT NULL DEFAULT '';
 
       CREATE TABLE IF NOT EXISTS gameinfo_market_mapping_logs (
         id BIGSERIAL PRIMARY KEY,
@@ -450,6 +453,7 @@ function mapMapping(row) {
   return {
     gameId: Number(row.game_id), dataMode: row.data_mode, market: row.market,
     packId: row.pack_id, externalGameKey: row.external_game_key,
+    gameinfoPackName: row.gameinfo_pack_name || "",
     externalPackKey: row.external_pack_key, identitySignature: row.identity_signature,
     status: row.status, version: Number(row.version), updatedAt: row.updated_at,
   };
@@ -470,6 +474,9 @@ export async function saveGameinfoMarketMapping(input, actor) {
   const packId = String(input?.packId || "").trim().slice(0, 128);
   const externalPackKey = String(input?.externalPackKey || "").trim();
   if (!Number.isInteger(gameId) || gameId <= 0 || !packId || !externalPackKey) throw httpError("ข้อมูล Mapping ไม่ครบ");
+  const pack = (await packPriceMap(gameId, normalizedMode)).get(packId);
+  if (!pack) throw httpError("ไม่พบ Pack ของ GameInfo", 404);
+  const gameinfoPackName = normalizeMarketIdentityPart(pack.name);
   const pool = await getGameinfoMarketPool();
   const client = await pool.connect();
   try {
@@ -496,14 +503,15 @@ export async function saveGameinfoMarketMapping(input, actor) {
     try {
       result = await client.query(
         `INSERT INTO gameinfo_market_mappings
-           (game_id, data_mode, market, pack_id, external_game_key, external_pack_key, identity_signature, status, updated_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8)
+           (game_id, data_mode, market, pack_id, gameinfo_pack_name, external_game_key, external_pack_key, identity_signature, status, updated_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active',$9)
          ON CONFLICT (game_id, data_mode, market, pack_id) DO UPDATE SET
+           gameinfo_pack_name = EXCLUDED.gameinfo_pack_name,
            external_game_key = EXCLUDED.external_game_key, external_pack_key = EXCLUDED.external_pack_key,
            identity_signature = EXCLUDED.identity_signature, status = 'active',
            version = gameinfo_market_mappings.version + 1, updated_by = EXCLUDED.updated_by, updated_at = NOW()
          RETURNING *`,
-        [gameId, normalizedMode, market, packId, externalGameKey, externalPackKey,
+        [gameId, normalizedMode, market, packId, gameinfoPackName, externalGameKey, externalPackKey,
           catalog.rows[0].identity_signature, actorId(actor)]
       );
     } catch (error) {
@@ -519,6 +527,71 @@ export async function saveGameinfoMarketMapping(input, actor) {
     );
     await client.query("COMMIT");
     return mapMapping(result.rows[0]);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function saveGameinfoMarketMappingsInOrder(input, actor) {
+  const gameId = Number(input?.gameId);
+  const normalizedMode = mode(input?.dataMode);
+  const market = normalizeGameinfoMarket(input?.market);
+  const pairs = Array.isArray(input?.pairs) ? input.pairs.slice(0, 500) : [];
+  if (!Number.isInteger(gameId) || gameId <= 0 || !pairs.length) throw httpError("ไม่มีรายการสำหรับ Mapping");
+  const prices = await packPriceMap(gameId, normalizedMode);
+  const clean = pairs.map((pair) => ({
+    packId: String(pair?.packId || "").trim().slice(0, 128),
+    externalPackKey: String(pair?.externalPackKey || "").trim(),
+  }));
+  if (clean.some((pair) => !prices.has(pair.packId) || !pair.externalPackKey)) throw httpError("รายการ Pack สำหรับ Mapping ไม่ถูกต้อง");
+  if (new Set(clean.map((pair) => pair.packId)).size !== clean.length || new Set(clean.map((pair) => pair.externalPackKey)).size !== clean.length) throw httpError("รายการ Mapping ซ้ำกัน");
+  const pool = await getGameinfoMarketPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const config = await client.query(
+      `SELECT * FROM gameinfo_game_markets WHERE game_id = $1 AND data_mode = $2 AND market = $3 FOR UPDATE`,
+      [gameId, normalizedMode, market]
+    );
+    const externalGameKey = config.rows[0]?.external_game_key;
+    if (!externalGameKey) throw httpError("ยังไม่ได้เลือกเกมของ Market", 409);
+    const catalog = await client.query(
+      `SELECT external_pack_key, identity_signature FROM gameinfo_market_catalog_packs
+        WHERE market = $1 AND external_game_key = $2 AND external_pack_key = ANY($3::text[]) AND active`,
+      [market, externalGameKey, clean.map((pair) => pair.externalPackKey)]
+    );
+    const catalogByKey = new Map(catalog.rows.map((row) => [row.external_pack_key, row]));
+    if (catalogByKey.size !== clean.length) throw httpError("Pack ของ Market บางรายการไม่พร้อมใช้งาน", 409);
+    for (const pair of clean) {
+      const pack = prices.get(pair.packId);
+      const externalPack = catalogByKey.get(pair.externalPackKey);
+      let result;
+      try {
+        result = await client.query(
+          `INSERT INTO gameinfo_market_mappings
+             (game_id, data_mode, market, pack_id, gameinfo_pack_name, external_game_key,
+              external_pack_key, identity_signature, status, updated_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active',$9)
+           RETURNING *`,
+          [gameId, normalizedMode, market, pair.packId, normalizeMarketIdentityPart(pack.name),
+            externalGameKey, pair.externalPackKey, externalPack.identity_signature, actorId(actor)]
+        );
+      } catch (error) {
+        if (error.code === "23505") throw httpError("มี Pack บางรายการถูก Mapping ไปแล้ว กรุณาโหลดหน้าใหม่", 409);
+        throw error;
+      }
+      await client.query(
+        `INSERT INTO gameinfo_market_mapping_logs
+           (game_id, data_mode, market, pack_id, actor_id, action, after_data)
+         VALUES ($1,$2,$3,$4,$5,'create_ordered',$6)`,
+        [gameId, normalizedMode, market, pair.packId, actorId(actor), JSON.stringify(result.rows[0])]
+      );
+    }
+    await client.query("COMMIT");
+    return { mapped: clean.length };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -601,14 +674,76 @@ async function packPriceMap(gameId, dataMode) {
   )));
 }
 
+async function reconcileGameinfoPackMappings(gameId, dataMode, market, mappings, prices) {
+  const plan = reconcileGameinfoPackMappingTargets(mappings, [...prices.values()]);
+  const pool = await getGameinfoMarketPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const mapping of mappings) {
+      const currentPack = prices.get(mapping.packId);
+      if (!currentPack) continue;
+      const currentName = normalizeMarketIdentityPart(currentPack.name);
+      if (currentName !== mapping.gameinfoPackName) {
+        await client.query(
+          `UPDATE gameinfo_market_mappings SET gameinfo_pack_name = $5, updated_at = NOW()
+            WHERE game_id = $1 AND data_mode = $2 AND market = $3 AND pack_id = $4`,
+          [gameId, dataMode, market, mapping.packId, currentName]
+        );
+      }
+    }
+    for (const { mapping, pack } of plan.reconnect) {
+      await client.query(
+        `UPDATE gameinfo_market_mappings
+            SET pack_id = $5, gameinfo_pack_name = $6, version = version + 1, updated_at = NOW()
+          WHERE game_id = $1 AND data_mode = $2 AND market = $3 AND pack_id = $4`,
+        [gameId, dataMode, market, mapping.packId, String(pack.id), normalizeMarketIdentityPart(pack.name)]
+      );
+      await client.query(
+        `INSERT INTO gameinfo_market_mapping_logs
+           (game_id, data_mode, market, pack_id, action, before_data, after_data)
+         VALUES ($1,$2,$3,$4,'reconnect',$5,$6)`,
+        [gameId, dataMode, market, String(pack.id), JSON.stringify(mapping), JSON.stringify({ ...mapping, packId: String(pack.id), gameinfoPackName: normalizeMarketIdentityPart(pack.name) })]
+      );
+    }
+    for (const mapping of plan.remove) {
+      await client.query(
+        `DELETE FROM gameinfo_market_mappings
+          WHERE game_id = $1 AND data_mode = $2 AND market = $3 AND pack_id = $4`,
+        [gameId, dataMode, market, mapping.packId]
+      );
+      await client.query(
+        `INSERT INTO gameinfo_market_mapping_logs
+           (game_id, data_mode, market, pack_id, action, before_data)
+         VALUES ($1,$2,$3,$4,'auto_unmap',$5)`,
+        [gameId, dataMode, market, mapping.packId, JSON.stringify(mapping)]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+  return listGameinfoMarketMappings(gameId, dataMode, market);
+}
+
 export async function getGameinfoMappingWorkspace(gameId, dataMode, market, options = {}) {
   const normalizedMode = mode(dataMode);
   const normalizedMarket = normalizeGameinfoMarket(market);
-  const [game, configs, mappings, prices] = await Promise.all([
+  const [game, configs, initialMappings, prices] = await Promise.all([
     getGameListRow(gameId), listGameinfoGameMarkets(gameId, normalizedMode),
     listGameinfoMarketMappings(gameId, normalizedMode, normalizedMarket), packPriceMap(gameId, normalizedMode),
   ]);
   if (!game) throw httpError("ไม่พบเกม", 404);
+  const mappings = await reconcileGameinfoPackMappings(
+    gameId,
+    normalizedMode,
+    normalizedMarket,
+    initialMappings,
+    prices
+  );
   const config = configs.find((item) => item.market === normalizedMarket);
   const catalog = config?.externalGameKey
     ? await listGameinfoMarketCatalog({ ...options, market: normalizedMarket, externalGameKey: config.externalGameKey, gameId, dataMode: normalizedMode })

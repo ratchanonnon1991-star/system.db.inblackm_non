@@ -30,6 +30,31 @@ export function normalizeMarketIdentityPart(value) {
     .trim();
 }
 
+export function reconcileGameinfoPackMappingTargets(mappings, packs) {
+  const packById = new Map((packs || []).map((pack) => [String(pack.id), pack]));
+  const packsByName = new Map();
+  for (const pack of packs || []) {
+    const name = normalizeMarketIdentityPart(pack.name);
+    const matches = packsByName.get(name) || [];
+    matches.push(pack);
+    packsByName.set(name, matches);
+  }
+  const claimed = new Set((mappings || []).filter((mapping) => packById.has(String(mapping.packId))).map((mapping) => String(mapping.packId)));
+  const reconnect = [];
+  const remove = [];
+  for (const mapping of mappings || []) {
+    if (packById.has(String(mapping.packId))) continue;
+    const candidates = (packsByName.get(mapping.gameinfoPackName || "") || []).filter((pack) => !claimed.has(String(pack.id)));
+    if (mapping.gameinfoPackName && candidates.length === 1) {
+      reconnect.push({ mapping, pack: candidates[0] });
+      claimed.add(String(candidates[0].id));
+    } else {
+      remove.push(mapping);
+    }
+  }
+  return { reconnect, remove };
+}
+
 export function marketPackIdentity(market, { key, name, category, amount } = {}) {
   const normalizedMarket = normalizeGameinfoMarket(market);
   if (normalizedMarket === "itemku" && key != null && String(key).trim()) {

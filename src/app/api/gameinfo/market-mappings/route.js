@@ -5,6 +5,7 @@ import {
   getGameinfoMappingWorkspace,
   listGameinfoMarketMappings,
   saveGameinfoMarketMapping,
+  saveGameinfoMarketMappingsInOrder,
 } from "@/server/gameinfo-market-system";
 
 export async function GET(request) {
@@ -29,7 +30,11 @@ export async function GET(request) {
 export async function PUT(request) {
   try {
     const user = await requireGameinfoEditor(request);
-    return jsonOk({ mapping: await saveGameinfoMarketMapping(await request.json(), user) });
+    const input = await request.json();
+    if (Array.isArray(input?.pairs)) {
+      return jsonOk(await saveGameinfoMarketMappingsInOrder(input, user));
+    }
+    return jsonOk({ mapping: await saveGameinfoMarketMapping(input, user) });
   } catch (error) {
     return handleApiError(error, "บันทึก Mapping ไม่สำเร็จ");
   }

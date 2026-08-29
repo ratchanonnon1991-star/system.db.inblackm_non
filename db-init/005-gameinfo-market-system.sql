@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS gameinfo_market_mappings (
   data_mode varchar(16) NOT NULL CHECK (data_mode IN ('uid', 'idpass')),
   market varchar(16) NOT NULL CHECK (market IN ('kaleoz', 'itemku', 'playerok', 'g2g')),
   pack_id text NOT NULL,
+  gameinfo_pack_name text NOT NULL DEFAULT '',
   external_game_key text NOT NULL,
   external_pack_key text NOT NULL,
   identity_signature text NOT NULL,

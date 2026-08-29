@@ -7,6 +7,7 @@ import {
   marketPackIdentity,
   nextGameinfoMarketRunAt,
   normalizeMarketPage,
+  reconcileGameinfoPackMappingTargets,
 } from "@/lib/gameinfo-market-system.js";
 import { sanitizeComputedColumns } from "@/server/gamedb-layout-sanitizer.js";
 
@@ -42,6 +43,18 @@ assert.equal(ambiguous.packs.length, 0);
 assert.equal(ambiguous.ambiguities.length, 1);
 assert.equal(GAMEINFO_COMPARE_PAGE_SIZE, 50);
 assert.equal(GAMEINFO_COMPARE_SELLER_LIMIT, 12);
+const reconnectPlan = reconcileGameinfoPackMappingTargets(
+  [{ packId: "deleted", gameinfoPackName: "128 zem" }],
+  [{ id: "new-pack", name: "128 ZEM" }]
+);
+assert.equal(reconnectPlan.reconnect[0].pack.id, "new-pack");
+assert.equal(reconnectPlan.remove.length, 0);
+const ambiguousReconnectPlan = reconcileGameinfoPackMappingTargets(
+  [{ packId: "deleted", gameinfoPackName: "128 zem" }],
+  [{ id: "new-a", name: "128 ZEM" }, { id: "new-b", name: "128 zem" }]
+);
+assert.equal(ambiguousReconnectPlan.reconnect.length, 0);
+assert.equal(ambiguousReconnectPlan.remove.length, 1);
 const marketColumn = sanitizeComputedColumns([{ key: "market_kaleoz", label: "Kaleoz", formula: "[ราคา]", kind: "market", marketKey: "kaleoz", enabled: false }])[0];
 assert.equal(marketColumn.kind, "market");
 assert.equal(marketColumn.enabled, false);
