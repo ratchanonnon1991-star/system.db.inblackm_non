@@ -193,8 +193,12 @@ assert.match(mappingPage, /gameinfoMarketPackDisplayName\(item\.name\)/);
 assert.match(mappingPage, /<TooltipContent className="max-w-80 break-words">\{fullName\}<\/TooltipContent>/);
 assert.doesNotMatch(mappingPage, /title=\{/);
 assert.match(mappingPage, /<PackNameCell className="max-w-\[18rem\] font-medium" fullName=\{item\.name\}>/);
+assert.match(mappingPage, /<CardTitle>จัดการ Mapping ทั้งชุด<\/CardTitle>[\s\S]*ลิงก์ตามลำดับ[\s\S]*ล้าง Mapping[\s\S]*<\/Card>[\s\S]*xl:grid-cols-2/);
+assert.match(mappingPage, /visiblePacks\.map\(\(pack\)/);
+assert.match(mappingPage, /value=\{packQuery\}[\s\S]*value=\{packStatus\}/);
+assert.equal((mappingPage.match(/className="h-16"/g) || []).length, 2);
 assert.match(mappingPage, /ราคาขายในเว็บ[\s\S]*marketPrice\(item\)/);
 assert.match(marketServer, /LEFT JOIN LATERAL \([\s\S]*gameinfo_market_offers o[\s\S]*ORDER BY o\.price[\s\S]*LIMIT 1[\s\S]*\) own_price ON TRUE/);
 assert.match(marketServer, /ownPriceClause = filterBySeller \? "AND o\.seller_key = ANY\(\$8::text\[\]\)"/);
 
-console.log("\n56 passed, 0 failed");
+console.log("\n60 passed, 0 failed");

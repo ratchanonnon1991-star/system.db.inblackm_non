@@ -57,6 +57,8 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
+  const [packQuery, setPackQuery] = useState("");
+  const [packStatus, setPackStatus] = useState("all");
   const [page, setPage] = useState(1);
   const [selectedPackId, setSelectedPackId] = useState("");
   const [confirm, setConfirm] = useState(null);
@@ -76,6 +78,8 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
     setWorkspace(null);
     setError("");
     setSelectedPackId("");
+    setPackQuery("");
+    setPackStatus("all");
     setPage(1);
     setConfirm(null);
     setBulkConfirm(false);
@@ -88,6 +92,8 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
     setWorkspace(null);
     setError("");
     setSelectedPackId("");
+    setPackQuery("");
+    setPackStatus("all");
     setPage(1);
     setConfirm(null);
     setBulkConfirm(false);
@@ -123,6 +129,20 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
       stale: packs.filter((pack) => pack.mapping?.status === "stale").length,
     };
   }, [workspace]);
+
+  // The GameInfo side is filtered in the browser because the workspace already
+  // ships every pack of the game, unlike the paged market catalog.
+  const visiblePacks = useMemo(() => {
+    const needle = packQuery.trim().toLocaleLowerCase("th");
+    return (workspace?.packs || []).filter((pack) => {
+      const mappingStatus = pack.mapping?.status;
+      if (packStatus === "unmapped" && pack.mapping) return false;
+      if (packStatus === "mapped" && mappingStatus !== "active") return false;
+      if (packStatus === "stale" && mappingStatus !== "stale") return false;
+      if (!needle) return true;
+      return `${pack.name || ""} ${pack.id}`.toLocaleLowerCase("th").includes(needle);
+    });
+  }, [packQuery, packStatus, workspace]);
 
   const mappingColorStyles = useMemo(() => gameinfoDistinctColorStyleMap(
     (workspace?.packs || []).map((pack) => pack.mapping?.externalPackKey).filter(Boolean)
@@ -246,35 +266,49 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
       {workspace && workspace.ownSellerCount === 0 ? <Alert><PackageSearch /><AlertTitle>ยังไม่ได้ตั้งค่าร้านของเรา</AlertTitle><AlertDescription>ไปที่ Market Check แล้วตั้งค่าร้านของเรา Catalog สำหรับ Mapping จะแสดงเฉพาะ Pack ที่พบจากร้านเหล่านั้น</AlertDescription></Alert> : null}
       {error ? <Alert variant="destructive"><AlertTitle>ดำเนินการไม่สำเร็จ</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]">
+      {editable ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>จัดการ Mapping ทั้งชุด</CardTitle>
+            <CardDescription>ลิงก์ Pack ที่ยังว่างตามลำดับ หรือล้าง Mapping ของเกมนี้ใน {MARKET_LABELS[market]} ทั้งหมด</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" disabled={!orderedMappingDraft.packs.length || loading} onClick={openOrderedMapping}><ListOrdered data-icon="inline-start" />ลิงก์ตามลำดับ {orderedMappingDraft.packs.length} รายการ</Button>
+            <Button type="button" variant="outline" disabled={!counts.mapped && !counts.stale || loading} onClick={() => setClearConfirm(true)}><Trash2 data-icon="inline-start" />ล้าง Mapping</Button>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <div className="grid items-start gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>Pack ใน GameInfo</CardTitle>
             <CardDescription>เลือก Pack แล้วกดใช้อ้างอิงจาก Catalog ด้านขวา</CardDescription>
-            <div className="flex flex-wrap gap-2"><Badge>จับคู่แล้ว {counts.mapped}</Badge><Badge variant="secondary">ยังไม่จับคู่ {counts.unmapped}</Badge>{counts.stale ? <Badge variant="destructive">Stale {counts.stale}</Badge> : null}</div>
+            <div className="flex flex-wrap gap-2"><Badge variant="outline">Pack ทั้งหมด {(workspace?.packs || []).length}</Badge><Badge>จับคู่แล้ว {counts.mapped}</Badge><Badge variant="secondary">ยังไม่จับคู่ {counts.unmapped}</Badge>{counts.stale ? <Badge variant="destructive">Stale {counts.stale}</Badge> : null}</div>
+            <div className="flex flex-wrap gap-2"><Input className="min-w-48 flex-1" value={packQuery} onChange={(event) => setPackQuery(event.target.value)} placeholder="ค้นหาชื่อ Pack หรือรหัส" /></div>
+            <Tabs value={packStatus} onValueChange={setPackStatus}><TabsList><TabsTrigger value="all">ทั้งหมด</TabsTrigger><TabsTrigger value="unmapped">ยังไม่จับคู่</TabsTrigger><TabsTrigger value="mapped">จับคู่แล้ว</TabsTrigger><TabsTrigger value="stale">Stale</TabsTrigger></TabsList></Tabs>
           </CardHeader>
           <CardContent className="overflow-x-auto p-0">
             {loading && !workspace ? <div className="flex flex-col gap-2 p-4"><Skeleton className="h-10 w-full" /><Skeleton className="h-32 w-full" /></div> :
-              <Table><TableHeader><TableRow><TableHead>Pack</TableHead><TableHead className="text-right">ราคา</TableHead><TableHead>สถานะ</TableHead><TableHead /></TableRow></TableHeader>
-                <TableBody>{(workspace?.packs || []).map((pack) => <TableRow key={pack.id} data-state={selectedPackId === pack.id ? "selected" : undefined}>
+              visiblePacks.length ? <Table><TableHeader><TableRow className="h-12"><TableHead>Pack</TableHead><TableHead className="text-right">ราคา</TableHead><TableHead>สถานะ</TableHead><TableHead /></TableRow></TableHeader>
+                <TableBody>{visiblePacks.map((pack) => <TableRow key={pack.id} className="h-16" data-state={selectedPackId === pack.id ? "selected" : undefined}>
                   <PackNameCell className="max-w-[16rem] font-medium" fullName={pack.name || pack.id} /><TableCell className="text-right tabular-nums">{pack.price ?? "—"}</TableCell>
                   <TableCell>{pack.mapping ? <Badge variant={pack.mapping.status === "stale" ? "destructive" : "outline"}>{pack.mapping.status}</Badge> : <Badge variant="secondary">ยังไม่จับคู่</Badge>}</TableCell>
                   <TableCell className="text-right"><div className="flex justify-end gap-1"><Button type="button" size="sm" variant={selectedPackId === pack.id ? "default" : "outline"} onClick={() => setSelectedPackId(pack.id)}>เลือก</Button>{editable && pack.mapping ? <Button type="button" size="icon-sm" variant="ghost" className="gameinfo-mapping-color" style={mappingColorStyles.get(pack.mapping.externalPackKey)} aria-label="ยกเลิก Mapping" onClick={() => unmap(pack)}><Unlink /></Button> : null}</div></TableCell>
                 </TableRow>)}</TableBody>
-              </Table>}
+              </Table> : <Empty><EmptyHeader><EmptyMedia variant="icon"><PackageSearch /></EmptyMedia><EmptyTitle>ไม่พบ Pack</EmptyTitle><EmptyDescription>{(workspace?.packs || []).length ? "ลองเปลี่ยนคำค้นหาหรือตัวกรองสถานะ" : "เกมนี้ยังไม่มี Pack ในโหมดข้อมูลนี้"}</EmptyDescription></EmptyHeader></Empty>}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader><CardTitle>Pack ร้านเรา · {MARKET_LABELS[market]}</CardTitle><CardDescription>แสดงเฉพาะ Pack ที่พบจากร้านของเราหลัง Market Check ล่าสุด</CardDescription>
             <div className="flex flex-wrap gap-2"><Badge variant="outline">Pack ร้านเราทั้งหมด {workspace?.catalog?.summary?.total || 0}</Badge><Badge>จับคู่แล้ว {workspace?.catalog?.summary?.mapped || 0}</Badge><Badge variant="secondary">ยังไม่จับคู่ {workspace?.catalog?.summary?.unmapped || 0}</Badge>{workspace?.catalog?.summary?.stale ? <Badge variant="destructive">Stale {workspace.catalog.summary.stale}</Badge> : null}</div>
-            {editable ? <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" disabled={!orderedMappingDraft.packs.length || loading} onClick={openOrderedMapping}><ListOrdered data-icon="inline-start" />ลิงก์ตามลำดับ {orderedMappingDraft.packs.length} รายการ</Button><Button type="button" variant="outline" disabled={!counts.mapped && !counts.stale || loading} onClick={() => setClearConfirm(true)}><Trash2 data-icon="inline-start" />ล้าง Mapping</Button></div> : null}
             <div className="flex flex-wrap gap-2"><Input className="min-w-48 flex-1" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="ค้นหาชื่อ หมวด หรือยอด" /><Button type="button" variant="outline" size="icon" aria-label="โหลดใหม่" onClick={() => setReloadToken((value) => value + 1)}><RefreshCw /></Button></div>
             <Tabs value={status} onValueChange={(value) => { setStatus(value); setPage(1); }}><TabsList><TabsTrigger value="all">ทั้งหมด</TabsTrigger><TabsTrigger value="unmapped">ยังไม่จับคู่</TabsTrigger><TabsTrigger value="mapped">จับคู่แล้ว</TabsTrigger><TabsTrigger value="stale">Stale</TabsTrigger></TabsList></Tabs>
           </CardHeader>
           <CardContent className="overflow-x-auto p-0">
-            {(workspace?.catalog?.items || []).length ? <Table><TableHeader><TableRow><TableHead>Pack Market</TableHead><TableHead className="text-right">ราคาขายในเว็บ</TableHead><TableHead>สถานะ</TableHead><TableHead /></TableRow></TableHeader>
-              <TableBody>{workspace.catalog.items.map((item) => <TableRow key={item.externalPackKey}><PackNameCell className="max-w-[18rem] font-medium" fullName={item.name}>{gameinfoMarketPackDisplayName(item.name)}</PackNameCell><TableCell className="text-right tabular-nums">{marketPrice(item)}</TableCell><TableCell><Badge variant={item.packId ? "outline" : "secondary"}>{item.packId ? `ใช้กับ ${item.packId}` : "ว่าง"}</Badge></TableCell><TableCell className="text-right"><Button type="button" size="sm" variant="outline" className={item.packId ? "gameinfo-mapping-color" : undefined} style={item.packId ? mappingColorStyles.get(item.externalPackKey) : undefined} disabled={!editable || !selectedPackId || Boolean(item.packId && workspace.packs.find((pack) => pack.id === selectedPackId)?.mapping?.externalPackKey !== item.externalPackKey)} onClick={() => setConfirm(item)}><Link2 data-icon="inline-start" />ใช้อ้างอิง</Button></TableCell></TableRow>)}</TableBody>
+            {(workspace?.catalog?.items || []).length ? <Table><TableHeader><TableRow className="h-12"><TableHead>Pack Market</TableHead><TableHead className="text-right">ราคาขายในเว็บ</TableHead><TableHead>สถานะ</TableHead><TableHead /></TableRow></TableHeader>
+              <TableBody>{workspace.catalog.items.map((item) => <TableRow key={item.externalPackKey} className="h-16"><PackNameCell className="max-w-[18rem] font-medium" fullName={item.name}>{gameinfoMarketPackDisplayName(item.name)}</PackNameCell><TableCell className="text-right tabular-nums">{marketPrice(item)}</TableCell><TableCell><Badge variant={item.packId ? "outline" : "secondary"}>{item.packId ? `ใช้กับ ${item.packId}` : "ว่าง"}</Badge></TableCell><TableCell className="text-right"><Button type="button" size="sm" variant="outline" className={item.packId ? "gameinfo-mapping-color" : undefined} style={item.packId ? mappingColorStyles.get(item.externalPackKey) : undefined} disabled={!editable || !selectedPackId || Boolean(item.packId && workspace.packs.find((pack) => pack.id === selectedPackId)?.mapping?.externalPackKey !== item.externalPackKey)} onClick={() => setConfirm(item)}><Link2 data-icon="inline-start" />ใช้อ้างอิง</Button></TableCell></TableRow>)}</TableBody>
             </Table> : <Empty><EmptyHeader><EmptyMedia variant="icon"><PackageSearch /></EmptyMedia><EmptyTitle>ยังไม่มี Pack ของร้านเรา</EmptyTitle><EmptyDescription>{workspace?.ownSellerCount === 0 ? "ตั้งค่าร้านของเราก่อนเริ่ม Mapping" : "กด Market Check เพื่อโหลด Pack ล่าสุดของร้านเรา"}</EmptyDescription></EmptyHeader></Empty>}
           </CardContent>
           {workspace?.catalog?.total > workspace?.catalog?.limit ? <div className="p-4"><Pagination><PaginationContent><PaginationItem><PaginationPrevious href="#" text="ก่อนหน้า" aria-disabled={page <= 1} onClick={(event) => { event.preventDefault(); if (page > 1) setPage(page - 1); }} /></PaginationItem><PaginationItem><PaginationNext href="#" text="ถัดไป" aria-disabled={page * workspace.catalog.limit >= workspace.catalog.total} onClick={(event) => { event.preventDefault(); if (page * workspace.catalog.limit < workspace.catalog.total) setPage(page + 1); }} /></PaginationItem></PaginationContent></Pagination></div> : null}
