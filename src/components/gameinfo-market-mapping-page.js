@@ -7,6 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList } from "@/components/ui/combobox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
@@ -37,6 +38,7 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
   const [selectedPackId, setSelectedPackId] = useState("");
   const [confirm, setConfirm] = useState(null);
   const [bulkConfirm, setBulkConfirm] = useState(false);
+  const [skippedOrderedPackIds, setSkippedOrderedPackIds] = useState(() => new Set());
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -72,16 +74,33 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
     };
   }, [workspace]);
 
-  const orderedPairs = useMemo(() => {
-    const packs = (workspace?.packs || []).filter((pack) => !pack.mapping);
+  const orderedMappingDraft = useMemo(() => {
     const marketPacks = (workspace?.catalog?.items || []).filter((item) => !item.packId);
-    return packs.slice(0, marketPacks.length).map((pack, index) => ({
+    const packs = (workspace?.packs || []).filter((pack) => !pack.mapping).slice(0, marketPacks.length);
+    const selectedPacks = packs.filter((pack) => !skippedOrderedPackIds.has(String(pack.id)));
+    const pairs = selectedPacks.map((pack, index) => ({
       packId: pack.id,
       packName: pack.name || pack.id,
       externalPackKey: marketPacks[index].externalPackKey,
       marketPackName: marketPacks[index].name,
     }));
-  }, [workspace]);
+    return { packs, pairs };
+  }, [skippedOrderedPackIds, workspace]);
+  const orderedPairs = orderedMappingDraft.pairs;
+
+  function setOrderedPackSkipped(packId, skipped) {
+    setSkippedOrderedPackIds((current) => {
+      const next = new Set(current);
+      if (skipped) next.add(String(packId));
+      else next.delete(String(packId));
+      return next;
+    });
+  }
+
+  function openOrderedMapping() {
+    setSkippedOrderedPackIds(new Set());
+    setBulkConfirm(true);
+  }
 
   async function saveMapping() {
     if (!confirm || !selectedPackId) return;
@@ -182,7 +201,7 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
         <Card>
           <CardHeader><CardTitle>Catalog {MARKET_LABELS[market]}</CardTitle><CardDescription>แสดงข้อมูลล่าสุดจากฐานข้อมูล ไม่โหลด Market สดในหน้านี้</CardDescription>
             <div className="flex flex-wrap gap-2"><Badge variant="outline">Market ทั้งหมด {workspace?.catalog?.summary?.total || 0}</Badge><Badge>จับคู่แล้ว {workspace?.catalog?.summary?.mapped || 0}</Badge><Badge variant="secondary">ยังไม่จับคู่ {workspace?.catalog?.summary?.unmapped || 0}</Badge>{workspace?.catalog?.summary?.stale ? <Badge variant="destructive">Stale {workspace.catalog.summary.stale}</Badge> : null}</div>
-            {editable ? <Button type="button" variant="outline" className="w-fit" disabled={!orderedPairs.length || loading} onClick={() => setBulkConfirm(true)}><ListOrdered data-icon="inline-start" />ลิงก์ตามลำดับ {orderedPairs.length} รายการ</Button> : null}
+            {editable ? <Button type="button" variant="outline" className="w-fit" disabled={!orderedMappingDraft.packs.length || loading} onClick={openOrderedMapping}><ListOrdered data-icon="inline-start" />ลิงก์ตามลำดับ {orderedMappingDraft.packs.length} รายการ</Button> : null}
             <div className="flex flex-wrap gap-2"><Input className="min-w-48 flex-1" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="ค้นหาชื่อ หมวด หรือยอด" /><Button type="button" variant="outline" size="icon" aria-label="โหลดใหม่" onClick={load}><RefreshCw /></Button></div>
             <Tabs value={status} onValueChange={(value) => { setStatus(value); setPage(1); }}><TabsList><TabsTrigger value="all">ทั้งหมด</TabsTrigger><TabsTrigger value="unmapped">ยังไม่จับคู่</TabsTrigger><TabsTrigger value="mapped">จับคู่แล้ว</TabsTrigger><TabsTrigger value="stale">Stale</TabsTrigger></TabsList></Tabs>
           </CardHeader>
@@ -196,7 +215,11 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
       </div>
 
       <Dialog open={Boolean(confirm)} onOpenChange={(next) => { if (!next) setConfirm(null); }}><DialogContent><DialogHeader><DialogTitle>ยืนยัน Mapping</DialogTitle><DialogDescription>จับคู่ Pack “{workspace?.packs.find((pack) => pack.id === selectedPackId)?.name}” กับ “{confirm?.name}” การเลือกนี้จะถูกจำไว้และใช้ตรวจราคา</DialogDescription></DialogHeader><DialogFooter><Button type="button" variant="outline" onClick={() => setConfirm(null)}>ยกเลิก</Button><Button type="button" disabled={saving} onClick={saveMapping}>{saving ? "กำลังบันทึก" : "ยืนยัน"}</Button></DialogFooter></DialogContent></Dialog>
-      <Dialog open={bulkConfirm} onOpenChange={(next) => { if (!saving) setBulkConfirm(next); }}><DialogContent><DialogHeader><DialogTitle>ยืนยันลิงก์ตามลำดับ</DialogTitle><DialogDescription>ระบบจะข้ามรายการที่จับคู่แล้ว และจับคู่ Pack GameInfo กับ Pack Market ที่ว่างตามลำดับที่แสดงอยู่จำนวน {orderedPairs.length} รายการ</DialogDescription></DialogHeader><div className="max-h-64 overflow-y-auto rounded-lg border"><Table><TableHeader><TableRow><TableHead>GameInfo</TableHead><TableHead>Market</TableHead></TableRow></TableHeader><TableBody>{orderedPairs.map((pair) => <TableRow key={pair.packId}><TableCell>{pair.packName}</TableCell><TableCell>{pair.marketPackName}</TableCell></TableRow>)}</TableBody></Table></div><DialogFooter><Button type="button" variant="outline" disabled={saving} onClick={() => setBulkConfirm(false)}>ยกเลิก</Button><Button type="button" disabled={saving || !orderedPairs.length} onClick={saveOrderedMappings}>{saving ? "กำลังลิงก์" : `ยืนยัน ${orderedPairs.length} รายการ`}</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={bulkConfirm} onOpenChange={(next) => { if (!saving) setBulkConfirm(next); }}><DialogContent><DialogHeader><DialogTitle>ยืนยันลิงก์ตามลำดับ</DialogTitle><DialogDescription>เอาเครื่องหมายออกจาก Pack ที่ไม่ต้องการ ระบบจะข้ามรายการนั้นและเลื่อน Pack Market ขึ้นมาจับคู่รายการถัดไป</DialogDescription></DialogHeader><div className="max-h-64 overflow-y-auto rounded-lg border"><Table><TableHeader><TableRow><TableHead className="w-12">ใช้</TableHead><TableHead>GameInfo</TableHead><TableHead>Market</TableHead></TableRow></TableHeader><TableBody>{orderedMappingDraft.packs.map((pack) => {
+        const skipped = skippedOrderedPackIds.has(String(pack.id));
+        const pair = orderedPairs.find((item) => String(item.packId) === String(pack.id));
+        return <TableRow key={pack.id} className={skipped ? "text-muted-foreground" : undefined}><TableCell><Checkbox checked={!skipped} disabled={saving} aria-label={`ใช้ ${pack.name || pack.id} ในการ Mapping`} onCheckedChange={(checked) => setOrderedPackSkipped(pack.id, !checked)} /></TableCell><TableCell>{pack.name || pack.id}</TableCell><TableCell>{skipped ? <Badge variant="secondary">ข้าม</Badge> : pair?.marketPackName || "—"}</TableCell></TableRow>;
+      })}</TableBody></Table></div><DialogFooter><Button type="button" variant="outline" disabled={saving} onClick={() => setBulkConfirm(false)}>ยกเลิก</Button><Button type="button" disabled={saving || !orderedPairs.length} onClick={saveOrderedMappings}>{saving ? "กำลังลิงก์" : `ยืนยัน ${orderedPairs.length} รายการ`}</Button></DialogFooter></DialogContent></Dialog>
     </>
   );
 }
