@@ -65,6 +65,7 @@ async function ensureSchema(pool) {
         normalized_name TEXT NOT NULL,
         category TEXT NOT NULL DEFAULT '',
         amount TEXT NOT NULL DEFAULT '',
+        product_type TEXT NOT NULL DEFAULT '',
         sort_order INTEGER NOT NULL DEFAULT 0,
         metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
         active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -74,6 +75,7 @@ async function ensureSchema(pool) {
       );
       CREATE INDEX IF NOT EXISTS gameinfo_market_catalog_search_idx
         ON gameinfo_market_catalog_packs (market, external_game_key, active, sort_order);
+      ALTER TABLE gameinfo_market_catalog_packs ADD COLUMN IF NOT EXISTS product_type TEXT NOT NULL DEFAULT '';
 
       CREATE TABLE IF NOT EXISTS gameinfo_market_offers (
         market VARCHAR(16) NOT NULL,
@@ -332,28 +334,39 @@ export async function upsertGameinfoMarketCatalog(catalog, client = null) {
   const db = client || await pool.connect();
   try {
     if (!client) await db.query("BEGIN");
+    // A refresh only owns the product type it just fetched. uid and idpass can
+    // share one external game key with different categories (Kaleoz splits UID
+    // and LOGIN packs that way), so a run must not retire the other mode's
+    // packs. Rows written before product_type existed carry '' and are folded
+    // into the first run that touches them.
+    const productType = String(catalog.productType || "");
     await db.query(
       `UPDATE gameinfo_market_catalog_packs SET active = FALSE
-       WHERE market = $1 AND external_game_key = $2`,
-      [catalog.market, catalog.externalGameKey]
+       WHERE market = $1 AND external_game_key = $2 AND product_type IN ($3, '')`,
+      [catalog.market, catalog.externalGameKey, productType]
     );
     await db.query(
-      `DELETE FROM gameinfo_market_offers WHERE market = $1 AND external_game_key = $2`,
-      [catalog.market, catalog.externalGameKey]
+      `DELETE FROM gameinfo_market_offers o
+       USING gameinfo_market_catalog_packs c
+       WHERE o.market = $1 AND o.external_game_key = $2
+         AND c.market = o.market AND c.external_game_key = o.external_game_key
+         AND c.external_pack_key = o.external_pack_key AND c.product_type IN ($3, '')`,
+      [catalog.market, catalog.externalGameKey, productType]
     );
     for (const pack of catalog.packs) {
       await db.query(
         `INSERT INTO gameinfo_market_catalog_packs
            (market, external_game_key, external_pack_key, identity_signature, listing_id, name,
-            normalized_name, category, amount, sort_order, metadata, active, last_seen_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,TRUE,$12)
+            normalized_name, category, amount, product_type, sort_order, metadata, active, last_seen_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,TRUE,$13)
          ON CONFLICT (market, external_game_key, external_pack_key) DO UPDATE SET
            identity_signature = EXCLUDED.identity_signature, listing_id = EXCLUDED.listing_id,
            name = EXCLUDED.name, normalized_name = EXCLUDED.normalized_name,
-           category = EXCLUDED.category, amount = EXCLUDED.amount, sort_order = EXCLUDED.sort_order,
+           category = EXCLUDED.category, amount = EXCLUDED.amount,
+           product_type = EXCLUDED.product_type, sort_order = EXCLUDED.sort_order,
            metadata = EXCLUDED.metadata, active = TRUE, last_seen_at = EXCLUDED.last_seen_at`,
         [catalog.market, catalog.externalGameKey, pack.externalPackKey, pack.identitySignature,
-          pack.listingId, pack.name, pack.normalizedName, pack.category, pack.amount,
+          pack.listingId, pack.name, pack.normalizedName, pack.category, pack.amount, productType,
           pack.sortOrder, JSON.stringify(pack.metadata), catalog.fetchedAt]
       );
       for (const offer of pack.offers) {
@@ -433,6 +446,7 @@ export async function listGameinfoMarketCatalog({ market, externalGameKey, gameI
   const pool = await getGameinfoMarketPool();
   const [result, summaryResult] = await Promise.all([pool.query(
     `SELECT c.*, m.pack_id, m.status AS mapping_status, own_price.price, own_price.currency,
+            other_mode.pack_id AS other_mode_pack_id, other_mode.data_mode AS other_mode,
             COUNT(*) OVER()::int AS total
        FROM gameinfo_market_catalog_packs c
        LEFT JOIN LATERAL (
@@ -443,6 +457,15 @@ export async function listGameinfoMarketCatalog({ market, externalGameKey, gameI
           ORDER BY o.price
           LIMIT 1
        ) own_price ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT om.pack_id, om.data_mode
+           FROM gameinfo_market_mappings om
+          WHERE om.game_id = $3 AND om.data_mode <> $4 AND om.market = c.market
+            AND om.external_game_key = c.external_game_key
+            AND om.external_pack_key = c.external_pack_key
+          ORDER BY om.updated_at DESC
+          LIMIT 1
+       ) other_mode ON TRUE
        LEFT JOIN gameinfo_market_mappings m ON m.game_id = $3 AND m.data_mode = $4
         AND m.market = c.market AND m.external_game_key = c.external_game_key
         AND m.external_pack_key = c.external_pack_key
@@ -474,6 +497,8 @@ export async function listGameinfoMarketCatalog({ market, externalGameKey, gameI
       listingId: row.listing_id, name: row.name, category: row.category, amount: row.amount,
       active: row.active, packId: row.pack_id || "", mappingStatus: row.mapping_status || "unmapped",
       price: row.price == null ? null : Number(row.price), currency: row.currency || "",
+      productType: row.product_type || "",
+      otherModePackId: row.other_mode_pack_id || "", otherMode: row.other_mode || "",
       lastSeenAt: row.last_seen_at,
     })),
     page: pageNumber, limit: pageSize, total: Number(result.rows[0]?.total) || 0,

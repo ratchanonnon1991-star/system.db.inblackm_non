@@ -197,8 +197,13 @@ assert.match(mappingPage, /<CardTitle>จัดการ Mapping ทั้งช
 assert.match(mappingPage, /visiblePacks\.map\(\(pack\)/);
 assert.match(mappingPage, /value=\{packQuery\}[\s\S]*value=\{packStatus\}/);
 assert.equal((mappingPage.match(/className="h-16"/g) || []).length, 2);
+assert.match(marketServer, /ALTER TABLE gameinfo_market_catalog_packs ADD COLUMN IF NOT EXISTS product_type/);
+assert.match(marketServer, /UPDATE gameinfo_market_catalog_packs SET active = FALSE[\s\S]*AND product_type IN \(\$3, ''\)/);
+assert.match(marketServer, /DELETE FROM gameinfo_market_offers o[\s\S]*c\.product_type IN \(\$3, ''\)/);
+assert.match(marketServer, /FROM gameinfo_market_mappings om[\s\S]*om\.data_mode <> \$4[\s\S]*\) other_mode ON TRUE/);
+assert.match(mappingPage, /item\.otherModePackId \? <Badge variant="secondary">โหมด \{MODE_LABELS\[item\.otherMode\]/);
 assert.match(mappingPage, /ราคาขายในเว็บ[\s\S]*marketPrice\(item\)/);
 assert.match(marketServer, /LEFT JOIN LATERAL \([\s\S]*gameinfo_market_offers o[\s\S]*ORDER BY o\.price[\s\S]*LIMIT 1[\s\S]*\) own_price ON TRUE/);
 assert.match(marketServer, /ownPriceClause = filterBySeller \? "AND o\.seller_key = ANY\(\$8::text\[\]\)"/);
 
-console.log("\n60 passed, 0 failed");
+console.log("\n65 passed, 0 failed");
