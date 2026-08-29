@@ -298,8 +298,10 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
             <CardDescription>เลือก Pack แล้วกดใช้อ้างอิงจาก Catalog ด้านขวา</CardDescription>
             <div className="flex flex-wrap gap-2"><Badge variant="outline">Pack ทั้งหมด {(workspace?.packs || []).length}</Badge><Badge>จับคู่แล้ว {counts.mapped}</Badge><Badge variant="secondary">ยังไม่จับคู่ {counts.unmapped}</Badge>{counts.stale ? <Badge variant="destructive">Stale {counts.stale}</Badge> : null}</div>
             <div className="flex flex-wrap gap-2"><Input className="min-w-48 flex-1" value={packQuery} onChange={(event) => setPackQuery(event.target.value)} placeholder="ค้นหาชื่อ Pack หรือรหัส" /></div>
-            <Tabs value={packMode} onValueChange={(value) => { setPackMode(value); setSelectedPackKey(""); }}><TabsList><TabsTrigger value="all">รวม</TabsTrigger><TabsTrigger value="uid">UID</TabsTrigger><TabsTrigger value="idpass">ID/PASS</TabsTrigger></TabsList></Tabs>
-            <Tabs value={packStatus} onValueChange={setPackStatus}><TabsList><TabsTrigger value="all">ทั้งหมด</TabsTrigger><TabsTrigger value="unmapped">ยังไม่จับคู่</TabsTrigger><TabsTrigger value="mapped">จับคู่แล้ว</TabsTrigger><TabsTrigger value="stale">Stale</TabsTrigger></TabsList></Tabs>
+            <div className="flex flex-wrap items-center gap-2">
+              <Tabs value={packMode} onValueChange={(value) => { setPackMode(value); setSelectedPackKey(""); }}><TabsList><TabsTrigger value="all">รวม</TabsTrigger><TabsTrigger value="uid">UID</TabsTrigger><TabsTrigger value="idpass">ID/PASS</TabsTrigger></TabsList></Tabs>
+              <Tabs value={packStatus} onValueChange={setPackStatus}><TabsList><TabsTrigger value="all">ทั้งหมด</TabsTrigger><TabsTrigger value="unmapped">ยังไม่จับคู่</TabsTrigger><TabsTrigger value="mapped">จับคู่แล้ว</TabsTrigger><TabsTrigger value="stale">Stale</TabsTrigger></TabsList></Tabs>
+            </div>
           </CardHeader>
           <CardContent className="overflow-x-auto p-0">
             {loading && !workspace ? <div className="flex flex-col gap-2 p-4"><Skeleton className="h-10 w-full" /><Skeleton className="h-32 w-full" /></div> :

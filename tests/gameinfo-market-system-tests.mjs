@@ -215,6 +215,8 @@ assert.match(marketServer, /ORDER BY \(mm\.data_mode = \$4\) DESC, mm\.updated_a
 assert.match(marketServer, /externalGameKeyConflict: configuredKeys\.length > 1 \? configuredKeys : \[\]/);
 assert.match(marketServer, /packs: perMode\.flatMap\(\(item\) => item\.packs\)/);
 assert.match(mappingPage, /<TabsTrigger value="all">รวม<\/TabsTrigger><TabsTrigger value="uid">UID<\/TabsTrigger><TabsTrigger value="idpass">ID\/PASS<\/TabsTrigger>/);
+// Both tab groups share one row so the two cards' headers stay the same height.
+assert.match(mappingPage, /<div className="flex flex-wrap items-center gap-2">[\s\S]*value=\{packMode\}[\s\S]*value=\{packStatus\}[\s\S]*<\/div>/);
 assert.match(mappingPage, /dataMode: selectedPack\.dataMode, market, packId: selectedPack\.id/);
 assert.match(mappingPage, /disabled=\{packMode === "all" \|\| !orderedMappingDraft\.packs\.length/);
 assert.doesNotMatch(mappingPage, /selectedPackId/);
@@ -230,4 +232,4 @@ assert.match(marketManager, /<FieldContent className="min-w-0">/);
 assert.match(marketManager, /<SelectTrigger className="w-full min-w-0 overflow-hidden"><SelectValue className="truncate"/);
 assert.match(marketManager, /label: gameinfoMarketGameLabel\(game\.label\)/);
 
-console.log("\n85 passed, 0 failed");
+console.log("\n86 passed, 0 failed");
