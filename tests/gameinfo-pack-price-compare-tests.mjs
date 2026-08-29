@@ -92,7 +92,7 @@ assert.match(compare, /DndContext[\s\S]*SortableSellerHeader/);
 assert.match(compare, /Seller อ้างอิง[\s\S]*SellerPriceCell/);
 assert.match(compare, /TooltipContent[\s\S]*offer\.unitPrice[\s\S]*Stock:[\s\S]*Trading volume:/);
 assert.match(compare, /TooltipProvider[\s\S]*TooltipTrigger[\s\S]*TooltipContent/);
-assert.match(compare, /function gameLabel\(value\)[\s\S]*replaceAll\("South East Asia", "SEA"\)[\s\S]*gameItems\(gameList\)/);
+assert.match(compare, /function gameLabel\(value\)[\s\S]*gameinfoMarketGameLabel\(value\)[\s\S]*gameItems\(gameList\)/);
 assert.match(compare, /Select items=\{sellerItems\}[\s\S]*selectBaselineSeller/);
 assert.doesNotMatch(compare, /Topup_youthshop/);
 assert.doesNotMatch(compare, /storageKey\("baseline-seller"/);
