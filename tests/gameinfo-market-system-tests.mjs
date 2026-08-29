@@ -197,4 +197,4 @@ assert.match(mappingPage, /ราคาขายในเว็บ[\s\S]*marketP
 assert.match(marketServer, /LEFT JOIN LATERAL \([\s\S]*gameinfo_market_offers o[\s\S]*ORDER BY o\.price[\s\S]*LIMIT 1[\s\S]*\) own_price ON TRUE/);
 assert.match(marketServer, /ownPriceClause = filterBySeller \? "AND o\.seller_key = ANY\(\$8::text\[\]\)"/);
 
-console.log("\n54 passed, 0 failed");
+console.log("\n56 passed, 0 failed");
