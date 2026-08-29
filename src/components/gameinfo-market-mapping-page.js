@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link2, ListOrdered, PackageSearch, RefreshCw, Trash2, Unlink } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { gameinfoDistinctColorStyleMap } from "@/lib/gameinfo-stable-color";
+import { buildGameinfoOrderedMappingDraft } from "@/lib/gameinfo-market-system";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -82,14 +83,8 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
 
   const orderedMappingDraft = useMemo(() => {
     const marketPacks = (workspace?.catalog?.items || []).filter((item) => !item.packId);
-    const packs = (workspace?.packs || []).filter((pack) => !pack.mapping).slice(0, marketPacks.length);
-    const selectedPacks = packs.filter((pack) => !skippedOrderedPackIds.has(String(pack.id)));
-    const pairs = selectedPacks.map((pack, index) => ({
-      packId: pack.id,
-      packName: pack.name || pack.id,
-      externalPackKey: marketPacks[index].externalPackKey,
-      marketPackName: marketPacks[index].name,
-    }));
+    const packs = (workspace?.packs || []).filter((pack) => !pack.mapping);
+    const pairs = buildGameinfoOrderedMappingDraft(packs, marketPacks, skippedOrderedPackIds);
     return { packs, pairs };
   }, [skippedOrderedPackIds, workspace]);
   const orderedPairs = orderedMappingDraft.pairs;
@@ -242,7 +237,7 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
       <Dialog open={bulkConfirm} onOpenChange={(next) => { if (!saving) setBulkConfirm(next); }}><DialogContent><DialogHeader><DialogTitle>ยืนยันลิงก์ตามลำดับ</DialogTitle><DialogDescription>เอาเครื่องหมายออกจาก Pack ที่ไม่ต้องการ ระบบจะข้ามรายการนั้นและเลื่อน Pack Market ขึ้นมาจับคู่รายการถัดไป</DialogDescription></DialogHeader><div className="max-h-64 overflow-y-auto rounded-lg border"><Table><TableHeader><TableRow><TableHead className="w-12">ใช้</TableHead><TableHead>GameInfo</TableHead><TableHead>Market</TableHead></TableRow></TableHeader><TableBody>{orderedMappingDraft.packs.map((pack) => {
         const skipped = skippedOrderedPackIds.has(String(pack.id));
         const pair = orderedPairs.find((item) => String(item.packId) === String(pack.id));
-        return <TableRow key={pack.id} className={skipped ? "text-muted-foreground" : undefined}><TableCell><Checkbox checked={!skipped} disabled={saving} aria-label={`ใช้ ${pack.name || pack.id} ในการ Mapping`} onCheckedChange={(checked) => setOrderedPackSkipped(pack.id, !checked)} /></TableCell><TableCell>{pack.name || pack.id}</TableCell><TableCell>{skipped ? <Badge variant="secondary">ข้าม</Badge> : pair?.marketPackName || "—"}</TableCell></TableRow>;
+        return <TableRow key={pack.id} className={skipped ? "text-muted-foreground" : undefined}><TableCell><Checkbox checked={!skipped} disabled={saving} aria-label={`ใช้ ${pack.name || pack.id} ในการ Mapping`} onCheckedChange={(checked) => setOrderedPackSkipped(pack.id, !checked)} /></TableCell><TableCell>{pack.name || pack.id}</TableCell><TableCell>{skipped ? <Badge variant="secondary">ข้าม</Badge> : pair?.marketPackName || <Badge variant="outline">รอ Market</Badge>}</TableCell></TableRow>;
       })}</TableBody></Table></div><DialogFooter><Button type="button" variant="outline" disabled={saving} onClick={() => setBulkConfirm(false)}>ยกเลิก</Button><Button type="button" disabled={saving || !orderedPairs.length} onClick={saveOrderedMappings}>{saving ? "กำลังลิงก์" : `ยืนยัน ${orderedPairs.length} รายการ`}</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={clearConfirm} onOpenChange={(next) => { if (!saving) setClearConfirm(next); }}><DialogContent><DialogHeader><DialogTitle>ล้าง Mapping ทั้งหมด?</DialogTitle><DialogDescription>Mapping ของเกมนี้ใน {MARKET_LABELS[market]} จำนวน {counts.mapped + counts.stale} รายการจะถูกล้าง หลังจากนั้นสามารถ Mapping ใหม่ได้</DialogDescription></DialogHeader><DialogFooter><Button type="button" variant="outline" disabled={saving} onClick={() => setClearConfirm(false)}>ยกเลิก</Button><Button type="button" variant="destructive" disabled={saving} onClick={clearMappings}>{saving ? "กำลังล้าง" : "ล้างทั้งหมด"}</Button></DialogFooter></DialogContent></Dialog>
     </>

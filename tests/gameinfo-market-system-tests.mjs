@@ -4,6 +4,7 @@ import {
   GAMEINFO_COMPARE_PAGE_SIZE,
   GAMEINFO_COMPARE_SELLER_LIMIT,
   calculateGameinfoPriceDifference,
+  buildGameinfoOrderedMappingDraft,
   marketPackIdentity,
   nextGameinfoMarketRunAt,
   normalizeMarketPage,
@@ -21,6 +22,15 @@ assert.equal(calculateGameinfoPriceDifference(0, 10).kind, "data_quality");
 assert.equal(calculateGameinfoPriceDifference(100, null).kind, "missing_price");
 assert.equal(nextGameinfoMarketRunAt(new Date("2026-08-29T01:59:59Z")).toISOString(), "2026-08-29T02:00:00.000Z");
 assert.equal(nextGameinfoMarketRunAt(new Date("2026-08-29T02:00:00Z")).toISOString(), "2026-08-30T02:00:00.000Z");
+const orderedAfterSkip = buildGameinfoOrderedMappingDraft(
+  [{ id: "g1" }, { id: "g2" }, { id: "g3" }, { id: "g4" }],
+  [{ externalPackKey: "m1" }, { externalPackKey: "m2" }],
+  new Set(["g1"])
+);
+assert.deepEqual(orderedAfterSkip, [
+  { packId: "g2", packName: "g2", externalPackKey: "m1", marketPackName: "m1" },
+  { packId: "g3", packName: "g3", externalPackKey: "m2", marketPackName: "m2" },
+]);
 const mappingColors = gameinfoDistinctColorStyleMap(Array.from({ length: 500 }, (_, index) => `mapping-${index}`));
 assert.equal(new Set([...mappingColors.values()].map((style) => style["--gameinfo-tag-hue"])).size, 500);
 
@@ -82,4 +92,4 @@ assert.match(mappingRoute, /input\?\.all === true[\s\S]*deleteAllGameinfoMarketM
 const mappingPage = readFileSync(new URL("../src/components/gameinfo-market-mapping-page.js", import.meta.url), "utf8");
 assert.equal((mappingPage.match(/gameinfo-mapping-color/g) || []).length, 2);
 
-console.log("\n29 passed, 0 failed");
+console.log("\n30 passed, 0 failed");

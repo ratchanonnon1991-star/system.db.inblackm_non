@@ -9,6 +9,16 @@ export const GAMEINFO_PRICE_ALERT_THRESHOLD = 5;
 export const GAMEINFO_COMPARE_PAGE_SIZE = 50;
 export const GAMEINFO_COMPARE_SELLER_LIMIT = 12;
 
+export function buildGameinfoOrderedMappingDraft(packs, marketPacks, skippedPackIds = new Set()) {
+  const candidates = (packs || []).filter((pack) => !pack.mapping && !skippedPackIds.has(String(pack.id)));
+  return candidates.slice(0, (marketPacks || []).length).map((pack, index) => ({
+    packId: pack.id,
+    packName: pack.name || pack.id,
+    externalPackKey: marketPacks[index].externalPackKey,
+    marketPackName: marketPacks[index].name || marketPacks[index].externalPackKey,
+  }));
+}
+
 export function normalizeGameinfoMarket(value) {
   const market = String(value || "").trim().toLowerCase();
   if (!GAMEINFO_MARKET_KEYS.has(market)) {
