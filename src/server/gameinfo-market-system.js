@@ -1,12 +1,12 @@
 import { getPoolForConnection } from "@/lib/db";
 import {
   GAMEINFO_COMPARE_PAGE_SIZE,
-  GAMEINFO_COMPARE_SELLER_LIMIT,
   GAMEINFO_MARKETS,
   calculateGameinfoPriceDifference,
   normalizeGameinfoMarket,
   normalizeMarketIdentityPart,
   reconcileGameinfoPackMappingTargets,
+  selectGameinfoCompareSellerKeys,
 } from "@/lib/gameinfo-market-system";
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
@@ -810,7 +810,7 @@ export async function getGameinfoMappingWorkspace(gameId, dataMode, market, opti
   };
 }
 
-export async function getGameinfoPackPriceComparison({ gameId, dataMode = "uid", market, page = 1, sellers = [] }) {
+export async function getGameinfoPackPriceComparison({ gameId, dataMode = "uid", market, page = 1, sellers = [], allSellers = false }) {
   const normalizedMode = mode(dataMode);
   const normalizedMarket = normalizeGameinfoMarket(market);
   const pageNumber = positiveInt(page);
@@ -820,12 +820,25 @@ export async function getGameinfoPackPriceComparison({ gameId, dataMode = "uid",
   if (!game) throw httpError("ไม่พบเกม", 404);
   const config = configs.find((item) => item.market === normalizedMarket);
   if (!config?.externalGameKey) return { game: { id: game.id, name: game.game }, config, rows: [], sellers: [], total: 0, page: pageNumber, limit: GAMEINFO_COMPARE_PAGE_SIZE };
-  const selectedSellerKeys = [...new Set([...(sellers || []).map(normalizeMarketIdentityPart), ...ownSellers.filter((seller) => seller.enabled).map((seller) => seller.sellerKey)])].filter(Boolean).slice(0, GAMEINFO_COMPARE_SELLER_LIMIT);
   const availableResult = await (await getGameinfoMarketPool()).query(
     `SELECT seller_key, MIN(seller_name) AS seller_name, COUNT(DISTINCT external_pack_key)::int AS coverage
        FROM gameinfo_market_offers WHERE market = $1 AND external_game_key = $2
       GROUP BY seller_key ORDER BY coverage DESC, seller_name LIMIT 200`,
     [normalizedMarket, config.externalGameKey]
+  );
+  const ownSellerKeys = ownSellers.filter((seller) => seller.enabled).map((seller) => seller.sellerKey);
+  const availableSellers = availableResult.rows.map((row) => ({
+    value: row.seller_key,
+    label: row.seller_name,
+    coverage: Number(row.coverage),
+    own: ownSellerKeys.includes(row.seller_key),
+  }));
+  const selectedSellerKeys = selectGameinfoCompareSellerKeys(
+    availableSellers,
+    ownSellerKeys,
+    allSellers
+      ? availableSellers.map((seller) => seller.value)
+      : (sellers || []).map(normalizeMarketIdentityPart).filter(Boolean)
   );
   const values = [gameId, normalizedMode, normalizedMarket, config.externalGameKey, GAMEINFO_COMPARE_PAGE_SIZE, (pageNumber - 1) * GAMEINFO_COMPARE_PAGE_SIZE];
   const mappings = await (await getGameinfoMarketPool()).query(
@@ -849,11 +862,12 @@ export async function getGameinfoPackPriceComparison({ gameId, dataMode = "uid",
     list.push({ sellerKey: offer.seller_key, sellerName: offer.seller_name, price: Number(offer.price), currency: offer.currency, fetchedAt: offer.fetched_at });
     offers.set(offer.external_pack_key, list);
   }
-  const sellerList = [...new Map(offerResult.rows.map((row) => [row.seller_key, { value: row.seller_key, label: row.seller_name, own: ownSellers.some((seller) => seller.sellerKey === row.seller_key && seller.enabled) }])).values()];
+  const availableByKey = new Map(availableSellers.map((seller) => [seller.value, seller]));
+  const sellerList = selectedSellerKeys.map((key) => availableByKey.get(key)).filter(Boolean);
   return {
     game: { id: game.id, name: game.game }, config, sellers: sellerList,
     priceLabel: prices.priceLabel || GAMEINFO_MARKETS.find((item) => item.key === normalizedMarket)?.label || normalizedMarket,
-    availableSellers: availableResult.rows.map((row) => ({ value: row.seller_key, label: row.seller_name, coverage: Number(row.coverage) })),
+    availableSellers,
     rows: mappings.rows.map((row) => ({
       packId: row.pack_id, packName: prices.get(row.pack_id)?.name || row.pack_id,
       price: prices.get(row.pack_id)?.price ?? null, marketPackName: row.market_pack_name,

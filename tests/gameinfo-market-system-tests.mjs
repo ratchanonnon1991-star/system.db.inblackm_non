@@ -9,6 +9,7 @@ import {
   nextGameinfoMarketRunAt,
   normalizeMarketPage,
   reconcileGameinfoPackMappingTargets,
+  selectGameinfoCompareSellerKeys,
 } from "@/lib/gameinfo-market-system.js";
 import { sanitizeComputedColumns } from "@/server/gamedb-layout-sanitizer.js";
 import { gameinfoDistinctColorStyleMap } from "@/lib/gameinfo-stable-color.js";
@@ -66,7 +67,12 @@ const ambiguous = normalizeMarketPage("kaleoz", { game: "zepeto", productType: "
 assert.equal(ambiguous.packs.length, 0);
 assert.equal(ambiguous.ambiguities.length, 1);
 assert.equal(GAMEINFO_COMPARE_PAGE_SIZE, 50);
-assert.equal(GAMEINFO_COMPARE_SELLER_LIMIT, 12);
+assert.equal(GAMEINFO_COMPARE_SELLER_LIMIT, 200);
+const compareSellers = [
+  { value: "a" }, { value: "b" }, { value: "c" }, { value: "d" }, { value: "e" }, { value: "f" },
+];
+assert.deepEqual(selectGameinfoCompareSellerKeys(compareSellers, ["f"], []), ["f", "a", "b", "c", "d"]);
+assert.deepEqual(selectGameinfoCompareSellerKeys(compareSellers, ["f"], ["b", "e"]), ["f", "b", "e"]);
 const reconnectPlan = reconcileGameinfoPackMappingTargets(
   [{ packId: "deleted", gameinfoPackName: "128 zem" }],
   [{ id: "new-pack", name: "128 ZEM" }]
@@ -89,6 +95,10 @@ assert.match(schema, /UNIQUE \(game_id, data_mode, market, external_game_key, ex
 assert.match(schema, /WHERE status IN \('queued', 'running'\)/);
 const compareRoute = readFileSync(new URL("../src/app/api/gameinfo/pack-price-compare/route.js", import.meta.url), "utf8");
 assert.doesNotMatch(compareRoute, /fetchKaleozPage|fetchItemkuPage/);
+assert.match(compareRoute, /allSellers.*=== "1"/);
+const comparePage = readFileSync(new URL("../src/components/gameinfo-market-compare-page.js", import.meta.url), "utf8");
+assert.match(comparePage, /ร้านอ้างอิงชั่วคราว[\s\S]*เปิดทั้งหมด/);
+assert.doesNotMatch(comparePage, /market-preference/);
 const oldHome = readFileSync(new URL("../src/components/gameinfo-home-page.js", import.meta.url), "utf8");
 assert.match(oldHome, /if \(priceComparison\)[\s\S]*redirect\(`\/gameinfo\/\$\{lang\}\/pack-price-compare/);
 const packRoute = readFileSync(new URL("../src/app/api/gameinfo/gamelist/[id]/packs/route.js", import.meta.url), "utf8");
@@ -103,4 +113,4 @@ assert.match(mappingRoute, /input\?\.all === true[\s\S]*deleteAllGameinfoMarketM
 const mappingPage = readFileSync(new URL("../src/components/gameinfo-market-mapping-page.js", import.meta.url), "utf8");
 assert.equal((mappingPage.match(/gameinfo-mapping-color/g) || []).length, 2);
 
-console.log("\n32 passed, 0 failed");
+console.log("\n37 passed, 0 failed");

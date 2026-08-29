@@ -7,7 +7,19 @@ export const GAMEINFO_FUTURE_MARKETS = Object.freeze(["playerok", "g2g"]);
 export const GAMEINFO_MARKET_KEYS = new Set(GAMEINFO_MARKETS.map((market) => market.key));
 export const GAMEINFO_PRICE_ALERT_THRESHOLD = 5;
 export const GAMEINFO_COMPARE_PAGE_SIZE = 50;
-export const GAMEINFO_COMPARE_SELLER_LIMIT = 12;
+export const GAMEINFO_COMPARE_SELLER_LIMIT = 200;
+export const GAMEINFO_COMPARE_DEFAULT_SELLERS = 5;
+
+export function selectGameinfoCompareSellerKeys(available, ownSellerKeys, selectedSellerKeys) {
+  const availableKeys = new Set((available || []).map((seller) => seller.value));
+  const own = (ownSellerKeys || []).filter((key) => availableKeys.has(key));
+  const requested = (selectedSellerKeys || []).filter((key) => availableKeys.has(key));
+  const defaults = requested.length ? requested : (available || []).map((seller) => seller.value);
+  return [...new Set([...own, ...defaults])].slice(
+    0,
+    requested.length ? GAMEINFO_COMPARE_SELLER_LIMIT : GAMEINFO_COMPARE_DEFAULT_SELLERS
+  );
+}
 
 export function buildGameinfoOrderedMappingDraft(packs, marketPacks, skippedPackIds = new Set()) {
   const candidates = (packs || []).filter((pack) => !pack.mapping && !skippedPackIds.has(String(pack.id)));

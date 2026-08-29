@@ -10,6 +10,7 @@ export async function GET(request) {
       gameId: Number(q.get("gameId")), dataMode: q.get("mode") || "uid",
       market: q.get("market") || "kaleoz", page: q.get("page") || 1,
       sellers: q.getAll("seller"),
+      allSellers: q.get("allSellers") === "1",
     });
     return jsonOk({ comparison });
   } catch (error) {
