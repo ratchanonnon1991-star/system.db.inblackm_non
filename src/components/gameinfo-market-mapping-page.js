@@ -20,8 +20,22 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const MARKET_LABELS = { kaleoz: "Kaleoz", itemku: "Itemku" };
+
+// Names are the mapping identity and run long, so cells show a shortened label
+// and the shadcn tooltip carries the exact stored name.
+function PackNameCell({ className, fullName, children }) {
+  return (
+    <TableCell className={className}>
+      <Tooltip>
+        <TooltipTrigger render={<span className="block max-w-full truncate text-left align-middle" />}>{children ?? fullName}</TooltipTrigger>
+        <TooltipContent className="max-w-80 break-words">{fullName}</TooltipContent>
+      </Tooltip>
+    </TableCell>
+  );
+}
 
 // Price of our own listing on the market, as a buyer sees it there.
 function marketPrice(item) {
@@ -207,7 +221,7 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
   }
 
   return (
-    <>
+    <TooltipProvider>
       <Card>
         <CardHeader><CardTitle>เลือกชุด Mapping</CardTitle><CardDescription>เลือกเกม GameInfo และ Market ที่เปิดอยู่ในหน้า Packs</CardDescription></CardHeader>
         <CardContent>
@@ -243,7 +257,7 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
             {loading && !workspace ? <div className="flex flex-col gap-2 p-4"><Skeleton className="h-10 w-full" /><Skeleton className="h-32 w-full" /></div> :
               <Table><TableHeader><TableRow><TableHead>Pack</TableHead><TableHead className="text-right">ราคา</TableHead><TableHead>สถานะ</TableHead><TableHead /></TableRow></TableHeader>
                 <TableBody>{(workspace?.packs || []).map((pack) => <TableRow key={pack.id} data-state={selectedPackId === pack.id ? "selected" : undefined}>
-                  <TableCell className="max-w-[16rem] truncate font-medium" title={pack.name || pack.id}>{pack.name || pack.id}</TableCell><TableCell className="text-right tabular-nums">{pack.price ?? "—"}</TableCell>
+                  <PackNameCell className="max-w-[16rem] font-medium" fullName={pack.name || pack.id} /><TableCell className="text-right tabular-nums">{pack.price ?? "—"}</TableCell>
                   <TableCell>{pack.mapping ? <Badge variant={pack.mapping.status === "stale" ? "destructive" : "outline"}>{pack.mapping.status}</Badge> : <Badge variant="secondary">ยังไม่จับคู่</Badge>}</TableCell>
                   <TableCell className="text-right"><div className="flex justify-end gap-1"><Button type="button" size="sm" variant={selectedPackId === pack.id ? "default" : "outline"} onClick={() => setSelectedPackId(pack.id)}>เลือก</Button>{editable && pack.mapping ? <Button type="button" size="icon-sm" variant="ghost" className="gameinfo-mapping-color" style={mappingColorStyles.get(pack.mapping.externalPackKey)} aria-label="ยกเลิก Mapping" onClick={() => unmap(pack)}><Unlink /></Button> : null}</div></TableCell>
                 </TableRow>)}</TableBody>
@@ -260,7 +274,7 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
           </CardHeader>
           <CardContent className="overflow-x-auto p-0">
             {(workspace?.catalog?.items || []).length ? <Table><TableHeader><TableRow><TableHead>Pack Market</TableHead><TableHead className="text-right">ราคาขายในเว็บ</TableHead><TableHead>สถานะ</TableHead><TableHead /></TableRow></TableHeader>
-              <TableBody>{workspace.catalog.items.map((item) => <TableRow key={item.externalPackKey}><TableCell className="max-w-[18rem] truncate font-medium" title={item.name}>{gameinfoMarketPackDisplayName(item.name)}</TableCell><TableCell className="text-right tabular-nums">{marketPrice(item)}</TableCell><TableCell><Badge variant={item.packId ? "outline" : "secondary"}>{item.packId ? `ใช้กับ ${item.packId}` : "ว่าง"}</Badge></TableCell><TableCell className="text-right"><Button type="button" size="sm" variant="outline" className={item.packId ? "gameinfo-mapping-color" : undefined} style={item.packId ? mappingColorStyles.get(item.externalPackKey) : undefined} disabled={!editable || !selectedPackId || Boolean(item.packId && workspace.packs.find((pack) => pack.id === selectedPackId)?.mapping?.externalPackKey !== item.externalPackKey)} onClick={() => setConfirm(item)}><Link2 data-icon="inline-start" />ใช้อ้างอิง</Button></TableCell></TableRow>)}</TableBody>
+              <TableBody>{workspace.catalog.items.map((item) => <TableRow key={item.externalPackKey}><PackNameCell className="max-w-[18rem] font-medium" fullName={item.name}>{gameinfoMarketPackDisplayName(item.name)}</PackNameCell><TableCell className="text-right tabular-nums">{marketPrice(item)}</TableCell><TableCell><Badge variant={item.packId ? "outline" : "secondary"}>{item.packId ? `ใช้กับ ${item.packId}` : "ว่าง"}</Badge></TableCell><TableCell className="text-right"><Button type="button" size="sm" variant="outline" className={item.packId ? "gameinfo-mapping-color" : undefined} style={item.packId ? mappingColorStyles.get(item.externalPackKey) : undefined} disabled={!editable || !selectedPackId || Boolean(item.packId && workspace.packs.find((pack) => pack.id === selectedPackId)?.mapping?.externalPackKey !== item.externalPackKey)} onClick={() => setConfirm(item)}><Link2 data-icon="inline-start" />ใช้อ้างอิง</Button></TableCell></TableRow>)}</TableBody>
             </Table> : <Empty><EmptyHeader><EmptyMedia variant="icon"><PackageSearch /></EmptyMedia><EmptyTitle>ยังไม่มี Pack ของร้านเรา</EmptyTitle><EmptyDescription>{workspace?.ownSellerCount === 0 ? "ตั้งค่าร้านของเราก่อนเริ่ม Mapping" : "กด Market Check เพื่อโหลด Pack ล่าสุดของร้านเรา"}</EmptyDescription></EmptyHeader></Empty>}
           </CardContent>
           {workspace?.catalog?.total > workspace?.catalog?.limit ? <div className="p-4"><Pagination><PaginationContent><PaginationItem><PaginationPrevious href="#" text="ก่อนหน้า" aria-disabled={page <= 1} onClick={(event) => { event.preventDefault(); if (page > 1) setPage(page - 1); }} /></PaginationItem><PaginationItem><PaginationNext href="#" text="ถัดไป" aria-disabled={page * workspace.catalog.limit >= workspace.catalog.total} onClick={(event) => { event.preventDefault(); if (page * workspace.catalog.limit < workspace.catalog.total) setPage(page + 1); }} /></PaginationItem></PaginationContent></Pagination></div> : null}
@@ -271,9 +285,9 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
       <Dialog open={bulkConfirm} onOpenChange={(next) => { if (!saving) setBulkConfirm(next); }}><DialogContent className="sm:max-w-3xl lg:max-w-4xl"><DialogHeader><DialogTitle>ยืนยันลิงก์ตามลำดับ</DialogTitle><DialogDescription>เอาเครื่องหมายออกจาก Pack ที่ไม่ต้องการ ระบบจะข้ามรายการนั้นและเลื่อน Pack Market ขึ้นมาจับคู่รายการถัดไป</DialogDescription></DialogHeader><div className="max-h-64 overflow-y-auto rounded-lg border"><Table><TableHeader><TableRow><TableHead className="w-12">ใช้</TableHead><TableHead>GameInfo</TableHead><TableHead>Market</TableHead></TableRow></TableHeader><TableBody>{orderedMappingDraft.packs.map((pack) => {
         const skipped = skippedOrderedPackIds.has(String(pack.id));
         const pair = orderedPairs.find((item) => String(item.packId) === String(pack.id));
-        return <TableRow key={pack.id} className={skipped ? "text-muted-foreground" : undefined}><TableCell><Checkbox checked={!skipped} disabled={saving} aria-label={`ใช้ ${pack.name || pack.id} ในการ Mapping`} onCheckedChange={(checked) => setOrderedPackSkipped(pack.id, !checked)} /></TableCell><TableCell className="max-w-[16rem] truncate" title={pack.name || pack.id}>{pack.name || pack.id}</TableCell><TableCell className="max-w-[18rem] truncate" title={pair?.marketPackName || ""}>{skipped ? <Badge variant="secondary">ข้าม</Badge> : (pair?.marketPackName ? gameinfoMarketPackDisplayName(pair.marketPackName) : <Badge variant="outline">รอ Market</Badge>)}</TableCell></TableRow>;
+        return <TableRow key={pack.id} className={skipped ? "text-muted-foreground" : undefined}><TableCell><Checkbox checked={!skipped} disabled={saving} aria-label={`ใช้ ${pack.name || pack.id} ในการ Mapping`} onCheckedChange={(checked) => setOrderedPackSkipped(pack.id, !checked)} /></TableCell><PackNameCell className="max-w-[16rem]" fullName={pack.name || pack.id} />{skipped ? <TableCell><Badge variant="secondary">ข้าม</Badge></TableCell> : pair?.marketPackName ? <PackNameCell className="max-w-[18rem]" fullName={pair.marketPackName}>{gameinfoMarketPackDisplayName(pair.marketPackName)}</PackNameCell> : <TableCell><Badge variant="outline">รอ Market</Badge></TableCell>}</TableRow>;
       })}</TableBody></Table></div><DialogFooter><Button type="button" variant="outline" disabled={saving} onClick={() => setBulkConfirm(false)}>ยกเลิก</Button><Button type="button" disabled={saving || !orderedPairs.length} onClick={saveOrderedMappings}>{saving ? "กำลังลิงก์" : `ยืนยัน ${orderedPairs.length} รายการ`}</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={clearConfirm} onOpenChange={(next) => { if (!saving) setClearConfirm(next); }}><DialogContent><DialogHeader><DialogTitle>ล้าง Mapping ทั้งหมด?</DialogTitle><DialogDescription>Mapping ของเกมนี้ใน {MARKET_LABELS[market]} จำนวน {counts.mapped + counts.stale} รายการจะถูกล้าง หลังจากนั้นสามารถ Mapping ใหม่ได้</DialogDescription></DialogHeader><DialogFooter><Button type="button" variant="outline" disabled={saving} onClick={() => setClearConfirm(false)}>ยกเลิก</Button><Button type="button" variant="destructive" disabled={saving} onClick={clearMappings}>{saving ? "กำลังล้าง" : "ล้างทั้งหมด"}</Button></DialogFooter></DialogContent></Dialog>
-    </>
+    </TooltipProvider>
   );
 }
