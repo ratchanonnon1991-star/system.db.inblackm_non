@@ -135,11 +135,19 @@ assert.match(marketServer, /if \(!totalGames\)[\s\S]*ยังไม่มีเ
 assert.match(marketServer, /requestedOrAll = allSellers \|\| includeCompetitors[\s\S]*selectGameinfoCompareSellerKeys/);
 assert.match(marketServer, /ownOnly[\s\S]*own_offer\.seller_key = ANY\(\$6::text\[\]\)/);
 assert.match(marketServer, /sellerKeys[\s\S]*own_offer\.seller_key = ANY\(\$8::text\[\]\)/);
+assert.match(marketServer, /status === "mapped" \? "AND m\.status = 'active'"/);
+assert.match(marketServer, /status === "stale" \? "" : "AND c\.active"/);
+assert.match(marketServer, /COUNT\(\*\) FILTER \(WHERE m\.status = 'stale'\)/);
+assert.match(marketServer, /WHERE m\.game_id = \$1[\s\S]*AND m\.status = 'active' AND c\.active/);
 assert.match(marketServer, /getGameinfoMarketPackSource[\s\S]*gameinfo_market_offers[\s\S]*ORDER BY price, seller_name/);
 assert.match(marketServer, /export async function deleteAllGameinfoMarketMappings[\s\S]*FOR UPDATE[\s\S]*'delete_all'/);
 const mappingRoute = readFileSync(new URL("../src/app/api/gameinfo/market-mappings/route.js", import.meta.url), "utf8");
 assert.match(mappingRoute, /input\?\.all === true[\s\S]*deleteAllGameinfoMarketMappings/);
 const mappingPage = readFileSync(new URL("../src/components/gameinfo-market-mapping-page.js", import.meta.url), "utf8");
 assert.equal((mappingPage.match(/gameinfo-mapping-color/g) || []).length, 2);
+assert.match(mappingPage, /let ignore = false[\s\S]*if \(!ignore\) setWorkspace[\s\S]*return \(\) => \{ ignore = true; \}/);
+assert.match(mappingPage, /pack\.price \?\? "—"/);
+assert.match(ownComparePage, /let ignore = false[\s\S]*if \(!ignore\) setComparison[\s\S]*return \(\) => \{ ignore = true; \}/);
+assert.match(ownComparePage, /setComparison\(null\)/);
 
 console.log("\n37 passed, 0 failed");

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Database, PackageSearch } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -34,33 +34,50 @@ export default function GameinfoMarketComparePage({ games, dataMode, initialMark
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    if (!enabledMarkets.some((item) => item.market === market)) setMarket(enabledMarkets[0]?.market || "kaleoz");
-    setPage(1);
-  }, [gameLabel]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const load = useCallback(async () => {
-    if (!game || !market) return;
-    setLoading(true);
+  function selectGame(value) {
+    const nextLabel = value || "";
+    const nextGame = gameByLabel.get(nextLabel) || null;
+    const nextMarkets = nextGame?.markets.filter((item) => item.enabled) || [];
+    const nextMarket = nextMarkets.some((item) => item.market === market) ? market : nextMarkets[0]?.market || "kaleoz";
+    setGameLabel(nextLabel);
+    setMarket(nextMarket);
+    setComparison(null);
     setError("");
-    try {
-      const params = new URLSearchParams({ gameId: String(game.id), mode: dataMode, market, page: String(page), ownOnly: "1" });
-      const data = await apiJson(`/api/gameinfo/pack-price-compare?${params}`);
-      setComparison(data.comparison);
-    } catch (reason) {
-      setError(reason.message || "โหลดข้อมูลเทียบราคาไม่สำเร็จ");
-    } finally {
-      setLoading(false);
-    }
-  }, [dataMode, game, market, page]);
+    setPage(1);
+  }
 
-  useEffect(() => { load(); }, [load]);
+  function selectMarket(value) {
+    setMarket(value);
+    setComparison(null);
+    setError("");
+    setPage(1);
+  }
+
+  useEffect(() => {
+    if (!game?.id || !market) return;
+    let ignore = false;
+    async function load() {
+      setLoading(true);
+      setError("");
+      try {
+        const params = new URLSearchParams({ gameId: String(game.id), mode: dataMode, market, page: String(page), ownOnly: "1" });
+        const data = await apiJson(`/api/gameinfo/pack-price-compare?${params}`);
+        if (!ignore) setComparison(data.comparison);
+      } catch (reason) {
+        if (!ignore) setError(reason.message || "โหลดข้อมูลเทียบราคาไม่สำเร็จ");
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    }
+    load();
+    return () => { ignore = true; };
+  }, [dataMode, game?.id, market, page]);
   return (
     <>
       <Card><CardHeader><CardTitle>ราคาแพ็คร้านเรา</CardTitle><CardDescription>แสดงเฉพาะ Pack และราคาที่ดึงได้จากร้านของเราตาม Market ที่ตั้งค่าไว้</CardDescription></CardHeader><CardContent>
         <FieldGroup className="grid gap-4 md:grid-cols-2">
-          <Field><FieldLabel>เกม</FieldLabel><Combobox items={gameLabels} value={gameLabel} onValueChange={(value) => setGameLabel(value || "")}><ComboboxInput placeholder="ค้นหาเกม" /><ComboboxContent><ComboboxEmpty>ไม่พบเกม</ComboboxEmpty><ComboboxList>{(item) => <ComboboxItem key={item} value={item}>{item}</ComboboxItem>}</ComboboxList></ComboboxContent></Combobox></Field>
-          <Field><FieldLabel>Market</FieldLabel><Select items={enabledMarkets.map((item) => ({ value: item.market, label: MARKET_LABELS[item.market] }))} value={market} onValueChange={(value) => { setMarket(value); setPage(1); }} disabled={!enabledMarkets.length}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectGroup>{enabledMarkets.map((item) => <SelectItem key={item.market} value={item.market}>{MARKET_LABELS[item.market]}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
+          <Field><FieldLabel>เกม</FieldLabel><Combobox items={gameLabels} value={gameLabel} onValueChange={selectGame}><ComboboxInput placeholder="ค้นหาเกม" /><ComboboxContent><ComboboxEmpty>ไม่พบเกม</ComboboxEmpty><ComboboxList>{(item) => <ComboboxItem key={item} value={item}>{item}</ComboboxItem>}</ComboboxList></ComboboxContent></Combobox></Field>
+          <Field><FieldLabel>Market</FieldLabel><Select items={enabledMarkets.map((item) => ({ value: item.market, label: MARKET_LABELS[item.market] }))} value={market} onValueChange={selectMarket} disabled={!enabledMarkets.length}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectGroup>{enabledMarkets.map((item) => <SelectItem key={item.market} value={item.market}>{MARKET_LABELS[item.market]}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
         </FieldGroup>
       </CardContent></Card>
       {error ? <Alert variant="destructive"><AlertTitle>โหลดไม่สำเร็จ</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}

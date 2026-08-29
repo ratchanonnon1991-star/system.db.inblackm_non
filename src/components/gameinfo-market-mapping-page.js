@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link2, ListOrdered, PackageSearch, RefreshCw, Trash2, Unlink } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { gameinfoDistinctColorStyleMap } from "@/lib/gameinfo-stable-color";
@@ -43,30 +43,56 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
   const [clearConfirm, setClearConfirm] = useState(false);
   const [skippedOrderedPackIds, setSkippedOrderedPackIds] = useState(() => new Set());
   const [saving, setSaving] = useState(false);
+  const [reloadToken, setReloadToken] = useState(0);
 
-  useEffect(() => {
-    const current = selectedGame?.markets.find((item) => item.market === market && item.enabled);
-    if (!current) setMarket(enabledMarkets[0]?.market || "kaleoz");
+  function selectGame(value) {
+    const nextLabel = value || "";
+    const nextGame = gameByLabel.get(nextLabel) || null;
+    const nextMarkets = nextGame?.markets.filter((item) => item.enabled) || [];
+    const nextMarket = nextMarkets.some((item) => item.market === market) ? market : nextMarkets[0]?.market || "kaleoz";
+    setGameLabel(nextLabel);
+    setMarket(nextMarket);
+    setWorkspace(null);
+    setError("");
     setSelectedPackId("");
     setPage(1);
-  }, [gameLabel]); // eslint-disable-line react-hooks/exhaustive-deps
+    setConfirm(null);
+    setBulkConfirm(false);
+    setClearConfirm(false);
+    setSkippedOrderedPackIds(new Set());
+  }
 
-  const load = useCallback(async () => {
-    if (!selectedGame || !market) return;
-    setLoading(true);
+  function selectMarket(value) {
+    setMarket(value);
+    setWorkspace(null);
     setError("");
-    try {
-      const params = new URLSearchParams({ gameId: String(selectedGame.id), mode: dataMode, market, workspace: "1", query, status, page: String(page) });
-      const data = await apiJson(`/api/gameinfo/market-mappings?${params}`);
-      setWorkspace(data.workspace);
-    } catch (reason) {
-      setError(reason.message || "โหลด Mapping ไม่สำเร็จ");
-    } finally {
-      setLoading(false);
-    }
-  }, [dataMode, market, page, query, selectedGame, status]);
+    setSelectedPackId("");
+    setPage(1);
+    setConfirm(null);
+    setBulkConfirm(false);
+    setClearConfirm(false);
+    setSkippedOrderedPackIds(new Set());
+  }
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (!selectedGame?.id || !market) return;
+    let ignore = false;
+    async function load() {
+      setLoading(true);
+      setError("");
+      try {
+        const params = new URLSearchParams({ gameId: String(selectedGame.id), mode: dataMode, market, workspace: "1", query, status, page: String(page) });
+        const data = await apiJson(`/api/gameinfo/market-mappings?${params}`);
+        if (!ignore) setWorkspace(data.workspace);
+      } catch (reason) {
+        if (!ignore) setError(reason.message || "โหลด Mapping ไม่สำเร็จ");
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    }
+    load();
+    return () => { ignore = true; };
+  }, [dataMode, market, page, query, reloadToken, selectedGame?.id, status]);
 
   const counts = useMemo(() => {
     const packs = workspace?.packs || [];
@@ -114,7 +140,7 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
         body: JSON.stringify({ gameId: selectedGame.id, dataMode, market, packId: selectedPackId, externalPackKey: confirm.externalPackKey, version: pack?.mapping?.version || 0 }),
       });
       setConfirm(null);
-      await load();
+      setReloadToken((value) => value + 1);
     } catch (reason) {
       setError(reason.message || "บันทึก Mapping ไม่สำเร็จ");
     } finally {
@@ -130,7 +156,7 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
         body: JSON.stringify({ gameId: selectedGame.id, dataMode, market, packId: pack.id, version: pack.mapping.version }),
       });
       if (selectedPackId === pack.id) setSelectedPackId("");
-      await load();
+      setReloadToken((value) => value + 1);
     } catch (reason) {
       setError(reason.message || "ยกเลิก Mapping ไม่สำเร็จ");
     }
@@ -147,7 +173,7 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
       });
       setBulkConfirm(false);
       setSelectedPackId("");
-      await load();
+      setReloadToken((value) => value + 1);
     } catch (reason) {
       setError(reason.message || "ลิงก์ Mapping ตามลำดับไม่สำเร็จ");
     } finally {
@@ -165,7 +191,7 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
       });
       setClearConfirm(false);
       setSelectedPackId("");
-      await load();
+      setReloadToken((value) => value + 1);
     } catch (reason) {
       setError(reason.message || "ล้าง Mapping ไม่สำเร็จ");
     } finally {
@@ -180,13 +206,13 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
         <CardContent>
           <FieldGroup className="grid gap-4 md:grid-cols-2">
             <Field><FieldLabel>เกม GameInfo</FieldLabel>
-              <Combobox items={gameLabels} value={gameLabel} onValueChange={(value) => setGameLabel(value || "")}>
+              <Combobox items={gameLabels} value={gameLabel} onValueChange={selectGame}>
                 <ComboboxInput placeholder="ค้นหาเกม" showClear={false} />
                 <ComboboxContent><ComboboxEmpty>ไม่พบเกม</ComboboxEmpty><ComboboxList>{(item) => <ComboboxItem key={item} value={item}>{item}</ComboboxItem>}</ComboboxList></ComboboxContent>
               </Combobox>
             </Field>
             <Field><FieldLabel>Market</FieldLabel>
-              <Select items={enabledMarkets.map((item) => ({ value: item.market, label: MARKET_LABELS[item.market] }))} value={market} onValueChange={(value) => { setMarket(value); setPage(1); }} disabled={!enabledMarkets.length}>
+              <Select items={enabledMarkets.map((item) => ({ value: item.market, label: MARKET_LABELS[item.market] }))} value={market} onValueChange={selectMarket} disabled={!enabledMarkets.length}>
                 <SelectTrigger><SelectValue placeholder="ยังไม่ได้เปิด Market" /></SelectTrigger>
                 <SelectContent><SelectGroup>{enabledMarkets.map((item) => <SelectItem key={item.market} value={item.market}>{MARKET_LABELS[item.market]}</SelectItem>)}</SelectGroup></SelectContent>
               </Select>
@@ -210,7 +236,7 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
             {loading && !workspace ? <div className="flex flex-col gap-2 p-4"><Skeleton className="h-10 w-full" /><Skeleton className="h-32 w-full" /></div> :
               <Table><TableHeader><TableRow><TableHead>Pack</TableHead><TableHead className="text-right">ราคา</TableHead><TableHead>สถานะ</TableHead><TableHead /></TableRow></TableHeader>
                 <TableBody>{(workspace?.packs || []).map((pack) => <TableRow key={pack.id} data-state={selectedPackId === pack.id ? "selected" : undefined}>
-                  <TableCell className="font-medium">{pack.name || pack.id}</TableCell><TableCell className="text-right tabular-nums">{pack.price || "—"}</TableCell>
+                  <TableCell className="font-medium">{pack.name || pack.id}</TableCell><TableCell className="text-right tabular-nums">{pack.price ?? "—"}</TableCell>
                   <TableCell>{pack.mapping ? <Badge variant={pack.mapping.status === "stale" ? "destructive" : "outline"}>{pack.mapping.status}</Badge> : <Badge variant="secondary">ยังไม่จับคู่</Badge>}</TableCell>
                   <TableCell className="text-right"><div className="flex justify-end gap-1"><Button type="button" size="sm" variant={selectedPackId === pack.id ? "default" : "outline"} onClick={() => setSelectedPackId(pack.id)}>เลือก</Button>{editable && pack.mapping ? <Button type="button" size="icon-sm" variant="ghost" className="gameinfo-mapping-color" style={mappingColorStyles.get(pack.mapping.externalPackKey)} aria-label="ยกเลิก Mapping" onClick={() => unmap(pack)}><Unlink /></Button> : null}</div></TableCell>
                 </TableRow>)}</TableBody>
@@ -222,7 +248,7 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
           <CardHeader><CardTitle>Pack ร้านเรา · {MARKET_LABELS[market]}</CardTitle><CardDescription>แสดงเฉพาะ Pack ที่พบจากร้านของเราหลัง Market Check ล่าสุด</CardDescription>
             <div className="flex flex-wrap gap-2"><Badge variant="outline">Pack ร้านเราทั้งหมด {workspace?.catalog?.summary?.total || 0}</Badge><Badge>จับคู่แล้ว {workspace?.catalog?.summary?.mapped || 0}</Badge><Badge variant="secondary">ยังไม่จับคู่ {workspace?.catalog?.summary?.unmapped || 0}</Badge>{workspace?.catalog?.summary?.stale ? <Badge variant="destructive">Stale {workspace.catalog.summary.stale}</Badge> : null}</div>
             {editable ? <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" disabled={!orderedMappingDraft.packs.length || loading} onClick={openOrderedMapping}><ListOrdered data-icon="inline-start" />ลิงก์ตามลำดับ {orderedMappingDraft.packs.length} รายการ</Button><Button type="button" variant="outline" disabled={!counts.mapped && !counts.stale || loading} onClick={() => setClearConfirm(true)}><Trash2 data-icon="inline-start" />ล้าง Mapping</Button></div> : null}
-            <div className="flex flex-wrap gap-2"><Input className="min-w-48 flex-1" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="ค้นหาชื่อ หมวด หรือยอด" /><Button type="button" variant="outline" size="icon" aria-label="โหลดใหม่" onClick={load}><RefreshCw /></Button></div>
+            <div className="flex flex-wrap gap-2"><Input className="min-w-48 flex-1" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="ค้นหาชื่อ หมวด หรือยอด" /><Button type="button" variant="outline" size="icon" aria-label="โหลดใหม่" onClick={() => setReloadToken((value) => value + 1)}><RefreshCw /></Button></div>
             <Tabs value={status} onValueChange={(value) => { setStatus(value); setPage(1); }}><TabsList><TabsTrigger value="all">ทั้งหมด</TabsTrigger><TabsTrigger value="unmapped">ยังไม่จับคู่</TabsTrigger><TabsTrigger value="mapped">จับคู่แล้ว</TabsTrigger><TabsTrigger value="stale">Stale</TabsTrigger></TabsList></Tabs>
           </CardHeader>
           <CardContent className="overflow-x-auto p-0">

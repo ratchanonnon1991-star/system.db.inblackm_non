@@ -409,9 +409,11 @@ export async function listGameinfoMarketCatalog({ market, externalGameKey, gameI
   const needle = String(query || "").trim();
   const ownSellerKeys = Array.isArray(sellerKeys) ? sellerKeys.map(normalizeMarketIdentityPart).filter(Boolean) : null;
   const values = [normalizedMarket, String(externalGameKey || ""), Number(gameId) || 0, normalizedMode, needle ? `%${needle}%` : "", pageSize, (pageNumber - 1) * pageSize];
-  if (ownSellerKeys) values.push(ownSellerKeys);
-  const mappedClause = status === "unmapped" ? "AND m.pack_id IS NULL" : status === "mapped" ? "AND m.pack_id IS NOT NULL" : status === "stale" ? "AND m.status = 'stale'" : "";
-  const sellerClause = ownSellerKeys ? `AND EXISTS (
+  const filterBySeller = ownSellerKeys && status !== "stale";
+  if (filterBySeller) values.push(ownSellerKeys);
+  const mappedClause = status === "unmapped" ? "AND m.pack_id IS NULL" : status === "mapped" ? "AND m.status = 'active'" : status === "stale" ? "AND m.status = 'stale'" : "";
+  const activeClause = status === "stale" ? "" : "AND c.active";
+  const sellerClause = filterBySeller ? `AND EXISTS (
           SELECT 1 FROM gameinfo_market_offers own_offer
            WHERE own_offer.market = c.market
              AND own_offer.external_game_key = c.external_game_key
@@ -432,7 +434,7 @@ export async function listGameinfoMarketCatalog({ market, externalGameKey, gameI
        LEFT JOIN gameinfo_market_mappings m ON m.game_id = $3 AND m.data_mode = $4
         AND m.market = c.market AND m.external_game_key = c.external_game_key
         AND m.external_pack_key = c.external_pack_key
-      WHERE c.market = $1 AND c.external_game_key = $2 AND c.active
+      WHERE c.market = $1 AND c.external_game_key = $2 ${activeClause}
         AND ($5 = '' OR c.name ILIKE $5 OR c.category ILIKE $5 OR c.amount ILIKE $5)
         ${sellerClause}
         ${mappedClause}
@@ -440,16 +442,15 @@ export async function listGameinfoMarketCatalog({ market, externalGameKey, gameI
       LIMIT $6 OFFSET $7`,
     values
   ), pool.query(
-    `SELECT COUNT(*)::int AS total,
-            COUNT(*) FILTER (WHERE m.pack_id IS NOT NULL AND m.status = 'active')::int AS mapped,
-            COUNT(*) FILTER (WHERE m.pack_id IS NULL)::int AS unmapped,
+    `SELECT COUNT(*) FILTER (WHERE c.active ${summarySellerClause})::int AS total,
+            COUNT(*) FILTER (WHERE c.active AND m.status = 'active' ${summarySellerClause})::int AS mapped,
+            COUNT(*) FILTER (WHERE c.active AND m.pack_id IS NULL ${summarySellerClause})::int AS unmapped,
             COUNT(*) FILTER (WHERE m.status = 'stale')::int AS stale
        FROM gameinfo_market_catalog_packs c
        LEFT JOIN gameinfo_market_mappings m ON m.game_id = $3 AND m.data_mode = $4
         AND m.market = c.market AND m.external_game_key = c.external_game_key
         AND m.external_pack_key = c.external_pack_key
-      WHERE c.market = $1 AND c.external_game_key = $2 AND c.active
-        ${summarySellerClause}`,
+      WHERE c.market = $1 AND c.external_game_key = $2`,
     ownSellerKeys
       ? [normalizedMarket, String(externalGameKey || ""), Number(gameId) || 0, normalizedMode, ownSellerKeys]
       : [normalizedMarket, String(externalGameKey || ""), Number(gameId) || 0, normalizedMode]
@@ -913,6 +914,7 @@ export async function getGameinfoPackPriceComparison({ gameId, dataMode = "uid",
        FROM gameinfo_market_mappings m
       JOIN gameinfo_market_catalog_packs c ON c.market = m.market AND c.external_game_key = m.external_game_key AND c.external_pack_key = m.external_pack_key
       WHERE m.game_id = $1 AND m.data_mode = $2 AND m.market = $3 AND m.external_game_key = $4
+        AND m.status = 'active' AND c.active
         AND ($5::boolean = FALSE OR EXISTS (
           SELECT 1 FROM gameinfo_market_offers own_offer
            WHERE own_offer.market = m.market
