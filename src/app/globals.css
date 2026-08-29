@@ -310,24 +310,38 @@ body {
   background-color: #3b1a1c;
 }
 .dark .bg-amber-50,
-.dark .bg-amber-50\/60 {
+.dark .bg-amber-50\/60,
+[data-theme="dark"] .bg-amber-50 {
   background-color: #3d2f0c;
 }
 .dark .bg-emerald-50 {
   background-color: #10312a;
 }
-.dark .bg-sky-50 {
+.dark .bg-sky-50,
+[data-theme="dark"] .bg-sky-50 {
   background-color: #10293b;
 }
+.dark .bg-violet-50,
+[data-theme="dark"] .bg-violet-50 {
+  background-color: #2a1a3b;
+}
 .dark .text-amber-700,
-.dark .text-amber-800 {
+.dark .text-amber-800,
+[data-theme="dark"] .text-amber-700 {
   color: #fbbf24;
 }
 .dark .text-emerald-700 {
   color: #34d399;
 }
-.dark .text-sky-700 {
+.dark .text-sky-600,
+.dark .text-sky-700,
+[data-theme="dark"] .text-sky-600,
+[data-theme="dark"] .text-sky-700 {
   color: #38bdf8;
+}
+.dark .text-violet-600,
+[data-theme="dark"] .text-violet-600 {
+  color: #c4b5fd;
 }
 .dark .text-red-600,
 .dark .text-red-700 {

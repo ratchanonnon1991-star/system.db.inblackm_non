@@ -5,7 +5,16 @@ import * as repo from "@/server/profit-repository";
 import * as gocash from "@/server/profit-gocash";
 import * as oxide from "@/server/profit-oxide";
 import * as wavepay from "@/server/profit-wavepay";
-import { CATEGORIES, getCategory } from "@/server/profit-categories";
+import * as donshop from "@/server/profit-donshop";
+import * as gamepoint from "@/server/profit-gamepoint";
+import * as agenh2h from "@/server/profit-agenh2h";
+import * as codareseller from "@/server/profit-codareseller";
+import * as netease from "@/server/profit-netease";
+import * as truemoney from "@/server/profit-truemoney";
+import * as atom from "@/server/profit-atom";
+import * as smartsun from "@/server/profit-smartsun";
+import * as u9 from "@/server/profit-u9";
+import { CATEGORIES, getCategory, legacyIdsFor } from "@/server/profit-categories";
 import { fetchUsdThbRate } from "@/server/exchangerate-api";
 
 // The free tier of exchangerate-api.com only refreshes once every 24h, so
@@ -59,7 +68,9 @@ async function gocashEffectiveRate() {
     ensureUsdThbRate().then((info) => info.rate),
     repo.getGocashRate(),
   ]);
-  return usdThb * gocashRate;
+  // usdThb is also needed on its own for russia_reseller USDT→THB sale
+  // conversion (must NOT include the GoCash deal markup).
+  return { effective: usdThb * gocashRate, usdThb };
 }
 
 function profitPct(sale, cost) {
@@ -118,6 +129,24 @@ function localOrderView(order) {
 // passed down so a page rendering hundreds of GoCash rows only ever hits
 // Postgres once per lookup, not once per row.
 //
+// Product sheet column "USDT" / platform "USDT Russia" (russia_reseller) is
+// priced in USDT (e.g. ZEPETO 14 ZEMs = 0.61), while every other platform
+// price and all cost/profit math is THB. Convert at read time with the same
+// plain USD:THB spot rate oxide russia costs already use (USDT ≈ USD).
+// Reference sheet AND per-order overrides for this platform are USDT -- the
+// history cell shows the entered USDT figure; profit uses the THB conversion.
+const USDT_SALE_PLATFORMS = new Set(["russia_reseller"]);
+
+function platformSaleThb(platform, rawSale, usdThbRate) {
+  const n = Number(rawSale) || 0;
+  if (!USDT_SALE_PLATFORMS.has(platform) || !(usdThbRate > 0)) {
+    return { saleThb: n, saleUsdt: null };
+  }
+  // Sheet + per-order overrides for this platform are always USDT; convert
+  // for profit, keep saleUsdt so the UI can show the number staff typed.
+  return { saleThb: n * usdThbRate, saleUsdt: n };
+}
+
 // platformFees: some resale platforms (e.g. Kaleoz) take a cut of the listed
 // sale price before the money actually lands. Per team convention, whatever's
 // typed into "ตั้งราคาขายตามแพ็ก" for that platform is the full/gross listed
@@ -125,13 +154,14 @@ function localOrderView(order) {
 // so staff never have to do that math by hand. saleAmount itself stays the
 // gross figure (what was actually typed in); only cost/profit math uses the
 // fee-adjusted net.
-function gocashOrderView(row, effectiveRate, packCosts, platformPrices, platformFees, overrides) {
+function gocashOrderView(row, effectiveRate, packCosts, platformPrices, platformFees, overrides, usdThbRate) {
   const override = overrides[row.id] || null;
   const platform = row.platform || override?.platform || null;
   const hasSaleOverride = override != null && override.saleAmount > 0;
   const packKey = row.packName != null ? `gocash:${row.packName}` : null;
   const platformPrice = platform && packKey != null ? platformPrices[platform]?.[packKey] : undefined;
-  const sale = hasSaleOverride ? override.saleAmount : platformPrice ?? 0;
+  const rawSale = hasSaleOverride ? override.saleAmount : platformPrice ?? 0;
+  const { saleThb: sale, saleUsdt } = platformSaleThb(platform, rawSale, usdThbRate);
   const feePct = (platform && platformFees[platform]) || 0;
   const netSale = sale * (1 - feePct / 100);
   const hasCostOverride = override != null && override.cost !== undefined && override.cost !== null;
@@ -149,6 +179,7 @@ function gocashOrderView(row, effectiveRate, packCosts, platformPrices, platform
     platform,
     platformFromDb: Boolean(row.platform),
     saleAmount: sale,
+    saleAmountUsdt: saleUsdt,
     platformFeePct: feePct,
     saleFromPlatform: !hasSaleOverride && platformPrice != null,
     // Platform is known but nobody has priced this pack for it yet on
@@ -201,7 +232,8 @@ function oxideOrderView(order, packCosts, platformPrices, platformFees, override
   const hasSaleOverride = override != null && override.saleAmount > 0;
   const packKey = order.packName != null ? `oxide:${order.packName}` : null;
   const platformPrice = platform && packKey != null ? platformPrices[platform]?.[packKey] : undefined;
-  const sale = hasSaleOverride ? override.saleAmount : platformPrice ?? 0;
+  const rawSale = hasSaleOverride ? override.saleAmount : platformPrice ?? 0;
+  const { saleThb: sale, saleUsdt } = platformSaleThb(platform, rawSale, usdThbRate);
   const feePct = (platform && platformFees[platform]) || 0;
   const netSale = sale * (1 - feePct / 100);
   const hasCostOverride = override != null && override.cost !== undefined && override.cost !== null;
@@ -219,6 +251,7 @@ function oxideOrderView(order, packCosts, platformPrices, platformFees, override
     platform,
     platformFromDb: Boolean(order.platform),
     saleAmount: sale,
+    saleAmountUsdt: saleUsdt,
     platformFeePct: feePct,
     saleFromPlatform: !hasSaleOverride && platformPrice != null,
     saleMissingPlatformPrice: !hasSaleOverride && platform != null && platformPrice == null,
@@ -259,13 +292,14 @@ function oxideOrderView(order, packCosts, platformPrices, platformFees, override
 // THB fulfillment cost to fall back on (WavePay's own ledger is in Kyat,
 // and there's no verified Kyat:THB rate in this system to convert it with),
 // so an unpriced pack shows costMissing instead of a guessed number.
-function wavepayOrderView(order, packCosts, platformPrices, platformFees, overrides) {
+function wavepayOrderView(order, packCosts, platformPrices, platformFees, overrides, usdThbRate) {
   const override = overrides[order.id] || null;
   const platform = order.platform || override?.platform || null;
   const hasSaleOverride = override != null && override.saleAmount > 0;
   const packKey = order.packName != null ? `wavepay:${order.packName}` : null;
   const platformPrice = platform && packKey != null ? platformPrices[platform]?.[packKey] : undefined;
-  const sale = hasSaleOverride ? override.saleAmount : platformPrice ?? 0;
+  const rawSale = hasSaleOverride ? override.saleAmount : platformPrice ?? 0;
+  const { saleThb: sale, saleUsdt } = platformSaleThb(platform, rawSale, usdThbRate);
   const feePct = (platform && platformFees[platform]) || 0;
   const netSale = sale * (1 - feePct / 100);
   const hasCostOverride = override != null && override.cost !== undefined && override.cost !== null;
@@ -282,6 +316,7 @@ function wavepayOrderView(order, packCosts, platformPrices, platformFees, overri
     platform,
     platformFromDb: Boolean(order.platform),
     saleAmount: sale,
+    saleAmountUsdt: saleUsdt,
     platformFeePct: feePct,
     saleFromPlatform: !hasSaleOverride && platformPrice != null,
     saleMissingPlatformPrice: !hasSaleOverride && platform != null && platformPrice == null,
@@ -305,6 +340,377 @@ function wavepayOrderView(order, packCosts, platformPrices, platformFees, overri
     newBalanceKs: order.newBalance,
     packPriceKs: order.packPriceKs,
     source: "wavepay",
+    editable: true,
+    overrideSaleAmount: override ? override.saleAmount : null,
+    overrideCost: override ? override.cost : null,
+    overridePlatform: override ? override.platform : null,
+  };
+}
+
+// U9 (Ooredoo) — same sale/cost/platform priority as wavepayOrderView,
+// namespaced "u9:<packName>". Kyat amounts come from pack_price (balances
+// are N/A on live U9 rows); never mixed into THB rollups.
+function u9OrderView(order, packCosts, platformPrices, platformFees, overrides, usdThbRate) {
+  const override = overrides[order.id] || null;
+  const platform = order.platform || override?.platform || null;
+  const hasSaleOverride = override != null && override.saleAmount > 0;
+  const packKey = order.packName != null ? `u9:${order.packName}` : null;
+  const platformPrice = platform && packKey != null ? platformPrices[platform]?.[packKey] : undefined;
+  const rawSale = hasSaleOverride ? override.saleAmount : platformPrice ?? 0;
+  const { saleThb: sale, saleUsdt } = platformSaleThb(platform, rawSale, usdThbRate);
+  const feePct = (platform && platformFees[platform]) || 0;
+  const netSale = sale * (1 - feePct / 100);
+  const hasCostOverride = override != null && override.cost !== undefined && override.cost !== null;
+  const packCost = packKey != null ? packCosts[packKey] : undefined;
+  const cost = hasCostOverride ? override.cost : packCost ?? 0;
+  const profit = netSale - cost;
+  return {
+    id: `u9-order:${order.id}`,
+    orderId: order.id,
+    txid: `#${order.id}`,
+    saleOrderId: order.saleOrderId || null,
+    gameName: order.gameName,
+    packName: order.packName,
+    platform,
+    platformFromDb: Boolean(order.platform),
+    saleAmount: sale,
+    saleAmountUsdt: saleUsdt,
+    platformFeePct: feePct,
+    saleFromPlatform: !hasSaleOverride && platformPrice != null,
+    saleMissingPlatformPrice: !hasSaleOverride && platform != null && platformPrice == null,
+    cost,
+    costFromPack: !hasCostOverride && packCost != null,
+    costMissing: !hasCostOverride && packCost == null,
+    profit,
+    profitPct: sale > 0 ? (profit / sale) * 100 : 0,
+    invoiceTxnId: order.invoiceTxnId,
+    createdAt: order.createdAt,
+    account: order.account,
+    oldBalanceKs: order.oldBalance,
+    deductedKs: order.deducted,
+    newBalanceKs: order.newBalance,
+    packPriceKs: order.packPriceKs,
+    source: "u9",
+    editable: true,
+    overrideSaleAmount: override ? override.saleAmount : null,
+    overrideCost: override ? override.cost : null,
+    overridePlatform: override ? override.platform : null,
+  };
+}
+
+// Shared order view for TrueMoney / ATOM / Smart-Sun (phone-account cards).
+function phoneChannelOrderView(source, order, packCosts, platformPrices, platformFees, overrides, usdThbRate, amountKey) {
+  const override = overrides[order.id] || null;
+  const platform = order.platform || override?.platform || null;
+  const hasSaleOverride = override != null && override.saleAmount > 0;
+  const packKey = order.packName != null ? `${source}:${order.packName}` : null;
+  const platformPrice = platform && packKey != null ? platformPrices[platform]?.[packKey] : undefined;
+  const rawSale = hasSaleOverride ? override.saleAmount : platformPrice ?? 0;
+  const { saleThb: sale, saleUsdt } = platformSaleThb(platform, rawSale, usdThbRate);
+  const feePct = (platform && platformFees[platform]) || 0;
+  const netSale = sale * (1 - feePct / 100);
+  const hasCostOverride = override != null && override.cost !== undefined && override.cost !== null;
+  const packCost = packKey != null ? packCosts[packKey] : undefined;
+  const cost = hasCostOverride ? override.cost : packCost ?? 0;
+  const profit = netSale - cost;
+  return {
+    id: `${source}-order:${order.id}`,
+    orderId: order.id,
+    txid: `#${order.id}`,
+    saleOrderId: order.saleOrderId || null,
+    gameName: order.gameName,
+    packName: order.packName,
+    platform,
+    platformFromDb: Boolean(order.platform),
+    saleAmount: sale,
+    saleAmountUsdt: saleUsdt,
+    platformFeePct: feePct,
+    saleFromPlatform: !hasSaleOverride && platformPrice != null,
+    saleMissingPlatformPrice: !hasSaleOverride && platform != null && platformPrice == null,
+    cost,
+    costFromPack: !hasCostOverride && packCost != null,
+    costMissing: !hasCostOverride && packCost == null,
+    profit,
+    profitPct: sale > 0 ? (profit / sale) * 100 : 0,
+    invoiceTxnId: order.invoiceTxnId,
+    createdAt: order.createdAt,
+    account: order.account,
+    [amountKey]: order.deducted,
+    packPriceLocal: order.packPrice,
+    source,
+    editable: true,
+    overrideSaleAmount: override ? override.saleAmount : null,
+    overrideCost: override ? override.cost : null,
+    overridePlatform: override ? override.platform : null,
+  };
+}
+
+function truemoneyOrderView(order, packCosts, platformPrices, platformFees, overrides, usdThbRate) {
+  return phoneChannelOrderView("truemoney", order, packCosts, platformPrices, platformFees, overrides, usdThbRate, "deductedThb");
+}
+
+function atomOrderView(order, packCosts, platformPrices, platformFees, overrides, usdThbRate) {
+  return phoneChannelOrderView("atom", order, packCosts, platformPrices, platformFees, overrides, usdThbRate, "deductedKs");
+}
+
+function smartsunOrderView(order, packCosts, platformPrices, platformFees, overrides, usdThbRate) {
+  return phoneChannelOrderView("smartsun", order, packCosts, platformPrices, platformFees, overrides, usdThbRate, "deductedPhp");
+}
+
+
+// DonShopIDR is an IDR H2H API (no prepaid card). Same sale/platform
+// priority as oxideOrderView (override → pack/platform price), but cost
+// falls back ONLY to the per-pack THB default -- never to
+// telegram_orders_dev.price. Itemku (and some other) queue quotes store
+// marketplace IDR amounts in that column, so treating them as THB inflated
+// totals by ~28M on the live feed. Same choice Wavepay already made
+// (wavepayOrderView). fund_price / pack_price stay in IDR display columns
+// and are never mixed into THB rollups.
+function donshopOrderView(order, packCosts, platformPrices, platformFees, overrides, usdThbRate) {
+  const override = overrides[order.id] || null;
+  const platform = order.platform || override?.platform || null;
+  const hasSaleOverride = override != null && override.saleAmount > 0;
+  const packKey = order.packName != null ? `donshop:${order.packName}` : null;
+  const platformPrice = platform && packKey != null ? platformPrices[platform]?.[packKey] : undefined;
+  const rawSale = hasSaleOverride ? override.saleAmount : platformPrice ?? 0;
+  const { saleThb: sale, saleUsdt } = platformSaleThb(platform, rawSale, usdThbRate);
+  const feePct = (platform && platformFees[platform]) || 0;
+  const netSale = sale * (1 - feePct / 100);
+  const hasCostOverride = override != null && override.cost !== undefined && override.cost !== null;
+  const packCost = packKey != null ? packCosts[packKey] : undefined;
+  const cost = hasCostOverride ? override.cost : packCost ?? 0;
+  const profit = netSale - cost;
+  return {
+    id: `donshop-order:${order.id}`,
+    orderId: order.id,
+    txid: `#${order.id}`,
+    saleOrderId: order.saleOrderId || null,
+    gameName: order.gameName,
+    packName: order.packName,
+    platform,
+    platformFromDb: Boolean(order.platform),
+    saleAmount: sale,
+    saleAmountUsdt: saleUsdt,
+    platformFeePct: feePct,
+    saleFromPlatform: !hasSaleOverride && platformPrice != null,
+    saleMissingPlatformPrice: !hasSaleOverride && platform != null && platformPrice == null,
+    cost,
+    costFromPack: !hasCostOverride && packCost != null,
+    costMissing: !hasCostOverride && packCost == null,
+    profit,
+    profitPct: sale > 0 ? (profit / sale) * 100 : 0,
+    invoiceNumber: order.invoiceNumber,
+    voucher: order.voucher,
+    createdAt: order.createdAt,
+    // IDR wallet ledger from DonShop _worker_meta — not THB.
+    oldBalanceIdr: order.oldBalanceIdr,
+    deductedIdr: order.deductedIdr,
+    newBalanceIdr: order.newBalanceIdr,
+    fundPriceIdr: order.fundPriceIdr,
+    packPriceIdr: order.packPriceIdr,
+    apiPriceIdr: order.apiPriceIdr,
+    source: "donshop",
+    editable: true,
+    overrideSaleAmount: override ? override.saleAmount : null,
+    overrideCost: override ? override.cost : null,
+    overridePlatform: override ? override.platform : null,
+  };
+}
+
+// Game Point Club (MYR H2H API) — same THB sale/cost rules as Donshop; MYR
+// wallet ledger stays in display columns and never mixes into baht rollups.
+function gamepointOrderView(order, packCosts, platformPrices, platformFees, overrides, usdThbRate) {
+  const override = overrides[order.id] || null;
+  const platform = order.platform || override?.platform || null;
+  const hasSaleOverride = override != null && override.saleAmount > 0;
+  const packKey = order.packName != null ? `gamepoint:${order.packName}` : null;
+  const platformPrice = platform && packKey != null ? platformPrices[platform]?.[packKey] : undefined;
+  const rawSale = hasSaleOverride ? override.saleAmount : platformPrice ?? 0;
+  const { saleThb: sale, saleUsdt } = platformSaleThb(platform, rawSale, usdThbRate);
+  const feePct = (platform && platformFees[platform]) || 0;
+  const netSale = sale * (1 - feePct / 100);
+  const hasCostOverride = override != null && override.cost !== undefined && override.cost !== null;
+  const packCost = packKey != null ? packCosts[packKey] : undefined;
+  const cost = hasCostOverride ? override.cost : packCost ?? 0;
+  const profit = netSale - cost;
+  return {
+    id: `gamepoint-order:${order.id}`,
+    orderId: order.id,
+    txid: `#${order.id}`,
+    saleOrderId: order.saleOrderId || null,
+    gameName: order.gameName,
+    packName: order.packName,
+    platform,
+    platformFromDb: Boolean(order.platform),
+    saleAmount: sale,
+    saleAmountUsdt: saleUsdt,
+    platformFeePct: feePct,
+    saleFromPlatform: !hasSaleOverride && platformPrice != null,
+    saleMissingPlatformPrice: !hasSaleOverride && platform != null && platformPrice == null,
+    cost,
+    costFromPack: !hasCostOverride && packCost != null,
+    costMissing: !hasCostOverride && packCost == null,
+    profit,
+    profitPct: sale > 0 ? (profit / sale) * 100 : 0,
+    referenceNo: order.referenceNo,
+    itemLabel: order.itemLabel,
+    createdAt: order.createdAt,
+    oldBalanceMyr: order.oldBalanceMyr,
+    deductedMyr: order.deductedMyr,
+    newBalanceMyr: order.newBalanceMyr,
+    storedCostMyr: order.storedCostMyr,
+    source: "gamepoint",
+    editable: true,
+    overrideSaleAmount: override ? override.saleAmount : null,
+    overrideCost: override ? override.cost : null,
+    overridePlatform: override ? override.platform : null,
+  };
+}
+
+// Agen H2H (IDR API) — same THB sale/cost rules as Donshop; IDR wallet ledger
+// stays in display columns and never mixes into baht rollups.
+function agenh2hOrderView(order, packCosts, platformPrices, platformFees, overrides, usdThbRate) {
+  const override = overrides[order.id] || null;
+  const platform = order.platform || override?.platform || null;
+  const hasSaleOverride = override != null && override.saleAmount > 0;
+  const packKey = order.packName != null ? `agenh2h:${order.packName}` : null;
+  const platformPrice = platform && packKey != null ? platformPrices[platform]?.[packKey] : undefined;
+  const rawSale = hasSaleOverride ? override.saleAmount : platformPrice ?? 0;
+  const { saleThb: sale, saleUsdt } = platformSaleThb(platform, rawSale, usdThbRate);
+  const feePct = (platform && platformFees[platform]) || 0;
+  const netSale = sale * (1 - feePct / 100);
+  const hasCostOverride = override != null && override.cost !== undefined && override.cost !== null;
+  const packCost = packKey != null ? packCosts[packKey] : undefined;
+  const cost = hasCostOverride ? override.cost : packCost ?? 0;
+  const profit = netSale - cost;
+  return {
+    id: `agenh2h-order:${order.id}`,
+    orderId: order.id,
+    txid: `#${order.id}`,
+    saleOrderId: order.saleOrderId || null,
+    gameName: order.gameName,
+    packName: order.packName,
+    platform,
+    platformFromDb: Boolean(order.platform),
+    saleAmount: sale,
+    saleAmountUsdt: saleUsdt,
+    platformFeePct: feePct,
+    saleFromPlatform: !hasSaleOverride && platformPrice != null,
+    saleMissingPlatformPrice: !hasSaleOverride && platform != null && platformPrice == null,
+    cost,
+    costFromPack: !hasCostOverride && packCost != null,
+    costMissing: !hasCostOverride && packCost == null,
+    profit,
+    profitPct: sale > 0 ? (profit / sale) * 100 : 0,
+    invoiceNumber: order.invoiceNumber,
+    refId: order.refId,
+    serialNumber: order.serialNumber,
+    createdAt: order.createdAt,
+    oldBalanceIdr: order.oldBalanceIdr,
+    deductedIdr: order.deductedIdr,
+    newBalanceIdr: order.newBalanceIdr,
+    source: "agenh2h",
+    editable: true,
+    overrideSaleAmount: override ? override.saleAmount : null,
+    overrideCost: override ? override.cost : null,
+    overridePlatform: override ? override.platform : null,
+  };
+}
+
+// Codashop Reseller (USD API) — THB sale/cost like other H2H APIs; pack_price
+// USD is display-only (no wallet balance ledger in provider_response).
+function codaresellerOrderView(order, packCosts, platformPrices, platformFees, overrides, usdThbRate) {
+  const override = overrides[order.id] || null;
+  const platform = order.platform || override?.platform || null;
+  const hasSaleOverride = override != null && override.saleAmount > 0;
+  const packKey = order.packName != null ? `codareseller:${order.packName}` : null;
+  const platformPrice = platform && packKey != null ? platformPrices[platform]?.[packKey] : undefined;
+  const rawSale = hasSaleOverride ? override.saleAmount : platformPrice ?? 0;
+  const { saleThb: sale, saleUsdt } = platformSaleThb(platform, rawSale, usdThbRate);
+  const feePct = (platform && platformFees[platform]) || 0;
+  const netSale = sale * (1 - feePct / 100);
+  const hasCostOverride = override != null && override.cost !== undefined && override.cost !== null;
+  const packCost = packKey != null ? packCosts[packKey] : undefined;
+  const cost = hasCostOverride ? override.cost : packCost ?? 0;
+  const profit = netSale - cost;
+  return {
+    id: `codareseller-order:${order.id}`,
+    orderId: order.id,
+    txid: `#${order.id}`,
+    saleOrderId: order.saleOrderId || null,
+    gameName: order.gameName,
+    packName: order.packName,
+    platform,
+    platformFromDb: Boolean(order.platform),
+    saleAmount: sale,
+    saleAmountUsdt: saleUsdt,
+    platformFeePct: feePct,
+    saleFromPlatform: !hasSaleOverride && platformPrice != null,
+    saleMissingPlatformPrice: !hasSaleOverride && platform != null && platformPrice == null,
+    cost,
+    costFromPack: !hasCostOverride && packCost != null,
+    costMissing: !hasCostOverride && packCost == null,
+    profit,
+    profitPct: sale > 0 ? (profit / sale) * 100 : 0,
+    invoiceNumber: order.invoiceNumber,
+    skuIds: order.skuIds,
+    createdAt: order.createdAt,
+    oldBalanceUsd: order.oldBalanceUsd,
+    deductedUsd: order.deductedUsd,
+    newBalanceUsd: order.newBalanceUsd,
+    packPriceRaw: order.packPriceRaw,
+    source: "codareseller",
+    editable: true,
+    overrideSaleAmount: override ? override.saleAmount : null,
+    overrideCost: override ? override.cost : null,
+    overridePlatform: override ? override.platform : null,
+  };
+}
+
+// Netease bot — THB sale/cost like other feeds; USD wallet ledger from
+// netease_purchase_history stays display-only.
+function neteaseOrderView(order, packCosts, platformPrices, platformFees, overrides, usdThbRate) {
+  const override = overrides[order.id] || null;
+  const platform = order.platform || override?.platform || null;
+  const hasSaleOverride = override != null && override.saleAmount > 0;
+  const packKey = order.packName != null ? `netease:${order.packName}` : null;
+  const platformPrice = platform && packKey != null ? platformPrices[platform]?.[packKey] : undefined;
+  const rawSale = hasSaleOverride ? override.saleAmount : platformPrice ?? 0;
+  const { saleThb: sale, saleUsdt } = platformSaleThb(platform, rawSale, usdThbRate);
+  const feePct = (platform && platformFees[platform]) || 0;
+  const netSale = sale * (1 - feePct / 100);
+  const hasCostOverride = override != null && override.cost !== undefined && override.cost !== null;
+  const packCost = packKey != null ? packCosts[packKey] : undefined;
+  const cost = hasCostOverride ? override.cost : packCost ?? 0;
+  const profit = netSale - cost;
+  return {
+    id: `netease-order:${order.id}`,
+    orderId: order.id,
+    codaOrderId: order.codaOrderId,
+    txid: order.codaOrderId != null ? `#${order.codaOrderId}` : `#N${order.id}`,
+    saleOrderId: order.saleOrderId || null,
+    gameName: order.gameName,
+    packName: order.packName,
+    platform,
+    platformFromDb: Boolean(order.platform),
+    saleAmount: sale,
+    saleAmountUsdt: saleUsdt,
+    platformFeePct: feePct,
+    saleFromPlatform: !hasSaleOverride && platformPrice != null,
+    saleMissingPlatformPrice: !hasSaleOverride && platform != null && platformPrice == null,
+    cost,
+    costFromPack: !hasCostOverride && packCost != null,
+    costMissing: !hasCostOverride && packCost == null,
+    profit,
+    profitPct: sale > 0 ? (profit / sale) * 100 : 0,
+    neteaseOrderNo: order.neteaseOrderNo,
+    purchaseEmail: order.purchaseEmail,
+    receiptUrl: order.receiptUrl,
+    createdAt: order.createdAt,
+    oldBalanceUsd: order.oldBalanceUsd,
+    deductedUsd: order.deductedUsd,
+    newBalanceUsd: order.newBalanceUsd,
+    source: "netease",
     editable: true,
     overrideSaleAmount: override ? override.saleAmount : null,
     overrideCost: override ? override.cost : null,
@@ -355,7 +761,7 @@ function resolveGocashGame(cardId, cardGameTags, channelGames) {
 // so categorySummaries() can compute it once per request and hand the same
 // result to both 'gocash' and 'gocash-dust' instead of doing it twice.
 async function computeGocashCards(categoryId) {
-  const [cardRows, effectiveRate, packCosts, platformPrices, platformFees, overrides, dustCleared, duplicateReviewed, channelGames, cardGameTags] = await Promise.all([
+  const [cardRows, rates, packCosts, platformPrices, platformFees, overrides, dustCleared, duplicateReviewed, channelGames, cardGameTags] = await Promise.all([
     gocash.listCards(),
     gocashEffectiveRate(),
     repo.getPackCosts(),
@@ -367,9 +773,10 @@ async function computeGocashCards(categoryId) {
     repo.listChannelGames("gocash"),
     repo.listGocashCardGames(),
   ]);
+  const { effective: effectiveRate, usdThb: usdThbRate } = rates;
   return cardRows.map((row) => {
     const orders = markDuplicates(
-      row.rows.map((r) => gocashOrderView(r, effectiveRate, packCosts, platformPrices, platformFees, overrides)),
+      row.rows.map((r) => gocashOrderView(r, effectiveRate, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
       (o) => o.orderId
     );
     const summary = summarizeOrders(orders);
@@ -519,12 +926,13 @@ function deriveOxideMergeCards(oxideCards, categoryId) {
 // "card" here is one WavePay wallet account, shared across whichever games'
 // bots draw from it (see profit-wavepay.js).
 async function computeWavepayCards(categoryId) {
-  const [accounts, packCosts, platformPrices, platformFees, overrides] = await Promise.all([
+  const [accounts, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
     wavepay.listAccounts(),
     repo.getPackCosts(),
     repo.getAllPlatformPrices(),
     repo.getAllPlatformFees(),
     repo.listWavepayOverrides(),
+    ensureUsdThbRate().then((info) => info.rate),
   ]);
   const rawOrders = await wavepay.listOrdersForAccounts(accounts.map((a) => a.account));
   const byAccount = new Map();
@@ -534,7 +942,7 @@ async function computeWavepayCards(categoryId) {
   }
   return accounts.map((a) => {
     const cardOrders = markDuplicates(
-      (byAccount.get(a.account) || []).map((o) => wavepayOrderView(o, packCosts, platformPrices, platformFees, overrides)),
+      (byAccount.get(a.account) || []).map((o) => wavepayOrderView(o, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
       (o) => o.invoiceTxnId
     );
     // Not dedicated to one game -- see profit-wavepay.js's comment on why
@@ -566,32 +974,390 @@ async function computeWavepayCards(categoryId) {
   });
 }
 
+async function computeU9Cards(categoryId) {
+  const [accounts, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+    u9.listAccounts(),
+    repo.getPackCosts(),
+    repo.getAllPlatformPrices(),
+    repo.getAllPlatformFees(),
+    repo.listU9Overrides(),
+    ensureUsdThbRate().then((info) => info.rate),
+  ]);
+  const rawOrders = await u9.listOrdersForAccounts(accounts.map((a) => a.account));
+  const byAccount = new Map();
+  for (const o of rawOrders) {
+    if (!byAccount.has(o.account)) byAccount.set(o.account, []);
+    byAccount.get(o.account).push(o);
+  }
+  return accounts.map((a) => {
+    const cardOrders = markDuplicates(
+      (byAccount.get(a.account) || []).map((o) => u9OrderView(o, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+      (o) => o.invoiceTxnId
+    );
+    const gameNames = [...new Set(cardOrders.map((o) => o.gameName).filter(Boolean))].sort();
+    const summary = summarizeOrders(cardOrders);
+    const deductedKsTotal = cardOrders.reduce((s, o) => s + (o.deductedKs || 0), 0);
+    return {
+      id: `u9:${a.account}`,
+      categoryId,
+      cardSerial: a.account,
+      name: a.account,
+      note: "",
+      status: "active",
+      source: "u9",
+      editable: false,
+      gameNames,
+      ...summary,
+      deductedTotal: 0,
+      remaining: 0,
+      deductedKsTotal,
+      balanceKs: a.lastBalanceKs,
+      lastOrderAt: a.lastOrderAt,
+    };
+  });
+}
+
+async function computePhoneChannelCards(categoryId, source, feed, listOverrides, orderView, amountTotalKey) {
+  const [accounts, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+    feed.listAccounts(),
+    repo.getPackCosts(),
+    repo.getAllPlatformPrices(),
+    repo.getAllPlatformFees(),
+    listOverrides(),
+    ensureUsdThbRate().then((info) => info.rate),
+  ]);
+  const rawOrders = await feed.listOrdersForAccounts(accounts.map((a) => a.account));
+  const byAccount = new Map();
+  for (const o of rawOrders) {
+    if (!byAccount.has(o.account)) byAccount.set(o.account, []);
+    byAccount.get(o.account).push(o);
+  }
+  return accounts.map((a) => {
+    const cardOrders = markDuplicates(
+      (byAccount.get(a.account) || []).map((o) => orderView(o, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+      (o) => o.invoiceTxnId
+    );
+    const gameNames = [...new Set(cardOrders.map((o) => o.gameName).filter(Boolean))].sort();
+    const summary = summarizeOrders(cardOrders);
+    const amountField = amountTotalKey.replace(/Total$/, "");
+    const deductedSum = cardOrders.reduce((sum, o) => sum + (o[amountField] || 0), 0);
+    return {
+      id: `${source}:${a.account}`,
+      categoryId,
+      cardSerial: a.account,
+      name: a.account,
+      note: "",
+      status: "active",
+      source,
+      editable: false,
+      gameNames,
+      ...summary,
+      deductedTotal: 0,
+      remaining: 0,
+      [amountTotalKey]: deductedSum,
+      lastOrderAt: a.lastOrderAt,
+    };
+  });
+}
+
+async function computeTruemoneyCards(categoryId) {
+  return computePhoneChannelCards(categoryId, "truemoney", truemoney, repo.listTruemoneyOverrides, truemoneyOrderView, "deductedThbTotal");
+}
+async function computeAtomCards(categoryId) {
+  return computePhoneChannelCards(categoryId, "atom", atom, repo.listAtomOverrides, atomOrderView, "deductedKsTotal");
+}
+async function computeSmartsunCards(categoryId) {
+  return computePhoneChannelCards(categoryId, "smartsun", smartsun, repo.listSmartsunOverrides, smartsunOrderView, "deductedPhpTotal");
+}
+
+
+// Full DonShop card+order aggregation -- "card" here is one game the API
+// has topped up (no prepaid serial / wallet account exists for DonShopIDR).
+async function computeDonshopCards(categoryId) {
+  const [games, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+    donshop.listGames(),
+    repo.getPackCosts(),
+    repo.getAllPlatformPrices(),
+    repo.getAllPlatformFees(),
+    repo.listDonshopOverrides(),
+    ensureUsdThbRate().then((info) => info.rate),
+  ]);
+  const rawOrders = await donshop.listOrdersForGames(games.map((g) => g.gameName));
+  const byGame = new Map();
+  for (const o of rawOrders) {
+    const key = donshop.gameKey(o.gameName);
+    if (!byGame.has(key)) byGame.set(key, []);
+    byGame.get(key).push(o);
+  }
+  return games.map((g) => {
+    const cardOrders = markDuplicates(
+      (byGame.get(g.gameName) || []).map((o) => donshopOrderView(o, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+      (o) => o.saleOrderId || o.invoiceNumber
+    );
+    const summary = summarizeOrders(cardOrders);
+    const deductedIdrTotal = Math.round(cardOrders.reduce((s, o) => s + (o.deductedIdr || 0), 0));
+    return {
+      id: `donshop:${g.gameName}`,
+      categoryId,
+      cardSerial: g.gameName,
+      name: g.gameName,
+      note: "",
+      status: "active",
+      source: "donshop",
+      editable: false,
+      gameNames: [g.gameName],
+      ...summary,
+      deductedTotal: 0,
+      remaining: 0,
+      deductedIdrTotal,
+      lastOrderAt: g.lastOrderAt,
+    };
+  });
+}
+
+// Full Game Point Club card+order aggregation — "card" = one game (no phone /
+// prepaid serial; shared MYR wallet across games).
+async function computeGamepointCards(categoryId) {
+  const [games, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+    gamepoint.listGames(),
+    repo.getPackCosts(),
+    repo.getAllPlatformPrices(),
+    repo.getAllPlatformFees(),
+    repo.listGamepointOverrides(),
+    ensureUsdThbRate().then((info) => info.rate),
+  ]);
+  const rawOrders = await gamepoint.listOrdersForGames(games.map((g) => g.gameName));
+  const byGame = new Map();
+  for (const o of rawOrders) {
+    const key = gamepoint.gameKey(o.gameName);
+    if (!byGame.has(key)) byGame.set(key, []);
+    byGame.get(key).push(o);
+  }
+  return games.map((g) => {
+    const cardOrders = markDuplicates(
+      (byGame.get(g.gameName) || []).map((o) => gamepointOrderView(o, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+      (o) => o.saleOrderId || o.referenceNo
+    );
+    const summary = summarizeOrders(cardOrders);
+    const deductedMyrTotal = Math.round(cardOrders.reduce((s, o) => s + (o.deductedMyr || 0), 0) * 100) / 100;
+    return {
+      id: `gamepoint:${g.gameName}`,
+      categoryId,
+      cardSerial: g.gameName,
+      name: g.gameName,
+      note: "",
+      status: "active",
+      source: "gamepoint",
+      editable: false,
+      gameNames: [g.gameName],
+      ...summary,
+      deductedTotal: 0,
+      remaining: 0,
+      deductedMyrTotal,
+      lastOrderAt: g.lastOrderAt,
+    };
+  });
+}
+
+// Full Agen H2H card+order aggregation — "card" = one game (IDR H2H API).
+async function computeAgenh2hCards(categoryId) {
+  const [games, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+    agenh2h.listGames(),
+    repo.getPackCosts(),
+    repo.getAllPlatformPrices(),
+    repo.getAllPlatformFees(),
+    repo.listAgenh2hOverrides(),
+    ensureUsdThbRate().then((info) => info.rate),
+  ]);
+  const rawOrders = await agenh2h.listOrdersForGames(games.map((g) => g.gameName));
+  const byGame = new Map();
+  for (const o of rawOrders) {
+    const key = agenh2h.gameKey(o.gameName);
+    if (!byGame.has(key)) byGame.set(key, []);
+    byGame.get(key).push(o);
+  }
+  return games.map((g) => {
+    const cardOrders = markDuplicates(
+      (byGame.get(g.gameName) || []).map((o) => agenh2hOrderView(o, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+      (o) => o.saleOrderId || o.invoiceNumber || o.refId
+    );
+    const summary = summarizeOrders(cardOrders);
+    const deductedIdrTotal = Math.round(cardOrders.reduce((s, o) => s + (o.deductedIdr || 0), 0));
+    return {
+      id: `agenh2h:${g.gameName}`,
+      categoryId,
+      cardSerial: g.gameName,
+      name: g.gameName,
+      note: "",
+      status: "active",
+      source: "agenh2h",
+      editable: false,
+      gameNames: [g.gameName],
+      ...summary,
+      deductedTotal: 0,
+      remaining: 0,
+      deductedIdrTotal,
+      lastOrderAt: g.lastOrderAt,
+    };
+  });
+}
+
+// Full Codareseller card+order aggregation — "card" = one game (USD reseller API).
+async function computeCodaresellerCards(categoryId) {
+  const [games, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+    codareseller.listGames(),
+    repo.getPackCosts(),
+    repo.getAllPlatformPrices(),
+    repo.getAllPlatformFees(),
+    repo.listCodaresellerOverrides(),
+    ensureUsdThbRate().then((info) => info.rate),
+  ]);
+  const rawOrders = await codareseller.listOrdersForGames(games.map((g) => g.gameName));
+  const byGame = new Map();
+  for (const o of rawOrders) {
+    const key = codareseller.gameKey(o.gameName);
+    if (!byGame.has(key)) byGame.set(key, []);
+    byGame.get(key).push(o);
+  }
+  return games.map((g) => {
+    const cardOrders = markDuplicates(
+      (byGame.get(g.gameName) || []).map((o) => codaresellerOrderView(o, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+      (o) => o.saleOrderId || o.invoiceNumber
+    );
+    const summary = summarizeOrders(cardOrders);
+    const deductedUsdTotal = Math.round(cardOrders.reduce((s, o) => s + (o.deductedUsd || 0), 0) * 100) / 100;
+    return {
+      id: `codareseller:${g.gameName}`,
+      categoryId,
+      cardSerial: g.gameName,
+      name: g.gameName,
+      note: "",
+      status: "active",
+      source: "codareseller",
+      editable: false,
+      gameNames: [g.gameName],
+      ...summary,
+      deductedTotal: 0,
+      remaining: 0,
+      deductedUsdTotal,
+      lastOrderAt: g.lastOrderAt,
+    };
+  });
+}
+
+// Full Netease card+order aggregation — "card" = one game.
+async function computeNeteaseCards(categoryId) {
+  const [games, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+    netease.listGames(),
+    repo.getPackCosts(),
+    repo.getAllPlatformPrices(),
+    repo.getAllPlatformFees(),
+    repo.listNeteaseOverrides(),
+    ensureUsdThbRate().then((info) => info.rate),
+  ]);
+  const rawOrders = await netease.listOrdersForGames(games.map((g) => g.gameName));
+  const byGame = new Map();
+  for (const o of rawOrders) {
+    const key = netease.gameKey(o.gameName);
+    if (!byGame.has(key)) byGame.set(key, []);
+    byGame.get(key).push(o);
+  }
+  return games.map((g) => {
+    const cardOrders = markDuplicates(
+      (byGame.get(g.gameName) || []).map((o) => neteaseOrderView(o, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+      (o) => o.saleOrderId || o.neteaseOrderNo
+    );
+    const summary = summarizeOrders(cardOrders);
+    const deductedUsdTotal = Math.round(cardOrders.reduce((s, o) => s + (o.deductedUsd || 0), 0) * 100) / 100;
+    return {
+      id: `netease:${g.gameName}`,
+      categoryId,
+      cardSerial: g.gameName,
+      name: g.gameName,
+      note: "",
+      status: "active",
+      source: "netease",
+      editable: false,
+      gameNames: [g.gameName],
+      ...summary,
+      deductedTotal: 0,
+      remaining: 0,
+      deductedUsdTotal,
+      lastOrderAt: g.lastOrderAt,
+    };
+  });
+}
+
 // ── Cards within one category ────────────────────────────────────────────
 export async function cardsForCategory(categoryId) {
   const category = getCategory(categoryId);
   if (!category) return [];
+  const id = category.id;
 
   if (category.source === "gocash") {
-    return computeGocashCards(categoryId);
+    return computeGocashCards(id);
   }
 
   if (category.source === "oxide") {
-    return computeOxideCards(categoryId);
+    return computeOxideCards(id);
   }
 
   if (category.source === "gocash-dust") {
-    return deriveDustCards(await computeGocashCards("gocash"), categoryId);
+    return deriveDustCards(await computeGocashCards("gocash"), id);
   }
 
   if (category.source === "oxide-merge") {
-    return deriveOxideMergeCards(await computeOxideCards("oxide"), categoryId);
+    return deriveOxideMergeCards(await computeOxideCards("oxide"), id);
   }
 
   if (category.source === "wavepay") {
-    return computeWavepayCards(categoryId);
+    return computeWavepayCards(id);
   }
 
-  const [cards, games] = await Promise.all([repo.listCards(categoryId), repo.listChannelGames(categoryId)]);
+  if (category.source === "u9") {
+    return computeU9Cards(id);
+  }
+
+  if (category.source === "truemoney") {
+    return computeTruemoneyCards(id);
+  }
+
+  if (category.source === "atom") {
+    return computeAtomCards(id);
+  }
+
+  if (category.source === "smartsun") {
+    return computeSmartsunCards(id);
+  }
+
+  if (category.source === "donshop") {
+    return computeDonshopCards(id);
+  }
+
+  if (category.source === "gamepoint") {
+    return computeGamepointCards(id);
+  }
+
+  if (category.source === "agenh2h") {
+    return computeAgenh2hCards(id);
+  }
+
+  if (category.source === "codareseller") {
+    return computeCodaresellerCards(id);
+  }
+
+  if (category.source === "netease") {
+    return computeNeteaseCards(id);
+  }
+
+  // Manual channels: also load cards still stored under a renamed legacy id
+  // (e.g. unipin → u9) so old entries don't vanish after the Bot/API regroup.
+  const loadIds = [id, ...legacyIdsFor(id)];
+  const [cardLists, games] = await Promise.all([
+    Promise.all(loadIds.map((cid) => repo.listCards(cid))),
+    repo.listChannelGames(id),
+  ]);
+  const cards = cardLists.flat();
   const gameNameById = new Map(games.map((g) => [g.id, g.name]));
   return Promise.all(
     cards.map(async (card) => {
@@ -602,7 +1368,7 @@ export async function cardsForCategory(categoryId) {
       const summary = summarizeOrders(orders);
       return {
         id: card.id,
-        categoryId,
+        categoryId: id,
         name: card.name,
         note: card.note,
         status: card.status,
@@ -628,7 +1394,7 @@ export async function cardDetail(categoryId, cardId) {
   let orders;
   if (card.source === "gocash") {
     const cardKey = cardId.split(":").slice(1).join(":");
-    const [rows, effectiveRate, packCosts, platformPrices, platformFees, overrides] = await Promise.all([
+    const [rows, rates, packCosts, platformPrices, platformFees, overrides] = await Promise.all([
       gocash.listHistoryForCard(cardKey),
       gocashEffectiveRate(),
       repo.getPackCosts(),
@@ -636,8 +1402,9 @@ export async function cardDetail(categoryId, cardId) {
       repo.getAllPlatformFees(),
       repo.listGocashOverrides(),
     ]);
+    const { effective: effectiveRate, usdThb: usdThbRate } = rates;
     orders = markDuplicates(
-      rows.map((r) => ({ ...gocashOrderView(r, effectiveRate, packCosts, platformPrices, platformFees, overrides), game: card.gameName })),
+      rows.map((r) => ({ ...gocashOrderView(r, effectiveRate, packCosts, platformPrices, platformFees, overrides, usdThbRate), game: card.gameName })),
       (o) => o.orderId
     );
   } else if (card.source === "oxide") {
@@ -654,16 +1421,134 @@ export async function cardDetail(categoryId, cardId) {
       (o) => o.invoiceTxnId
     );
   } else if (card.source === "wavepay") {
-    const [rows, packCosts, platformPrices, platformFees, overrides] = await Promise.all([
+    const [rows, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
       wavepay.listOrdersForAccounts([card.cardSerial]),
       repo.getPackCosts(),
       repo.getAllPlatformPrices(),
       repo.getAllPlatformFees(),
       repo.listWavepayOverrides(),
+      ensureUsdThbRate().then((info) => info.rate),
     ]);
     orders = markDuplicates(
-      rows.map((r) => wavepayOrderView(r, packCosts, platformPrices, platformFees, overrides)),
+      rows.map((r) => wavepayOrderView(r, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
       (o) => o.invoiceTxnId
+    );
+  } else if (card.source === "u9") {
+    const [rows, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+      u9.listOrdersForAccounts([card.cardSerial]),
+      repo.getPackCosts(),
+      repo.getAllPlatformPrices(),
+      repo.getAllPlatformFees(),
+      repo.listU9Overrides(),
+      ensureUsdThbRate().then((info) => info.rate),
+    ]);
+    orders = markDuplicates(
+      rows.map((r) => u9OrderView(r, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+      (o) => o.invoiceTxnId
+    );
+  } else if (card.source === "truemoney") {
+    const [rows, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+      truemoney.listOrdersForAccounts([card.cardSerial]),
+      repo.getPackCosts(),
+      repo.getAllPlatformPrices(),
+      repo.getAllPlatformFees(),
+      repo.listTruemoneyOverrides(),
+      ensureUsdThbRate().then((info) => info.rate),
+    ]);
+    orders = markDuplicates(
+      rows.map((r) => truemoneyOrderView(r, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+      (o) => o.invoiceTxnId
+    );
+  } else if (card.source === "atom") {
+    const [rows, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+      atom.listOrdersForAccounts([card.cardSerial]),
+      repo.getPackCosts(),
+      repo.getAllPlatformPrices(),
+      repo.getAllPlatformFees(),
+      repo.listAtomOverrides(),
+      ensureUsdThbRate().then((info) => info.rate),
+    ]);
+    orders = markDuplicates(
+      rows.map((r) => atomOrderView(r, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+      (o) => o.invoiceTxnId
+    );
+  } else if (card.source === "smartsun") {
+    const [rows, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+      smartsun.listOrdersForAccounts([card.cardSerial]),
+      repo.getPackCosts(),
+      repo.getAllPlatformPrices(),
+      repo.getAllPlatformFees(),
+      repo.listSmartsunOverrides(),
+      ensureUsdThbRate().then((info) => info.rate),
+    ]);
+    orders = markDuplicates(
+      rows.map((r) => smartsunOrderView(r, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+      (o) => o.invoiceTxnId
+    );
+  } else if (card.source === "donshop") {
+    const [rows, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+      donshop.listOrdersForGames([card.cardSerial]),
+      repo.getPackCosts(),
+      repo.getAllPlatformPrices(),
+      repo.getAllPlatformFees(),
+      repo.listDonshopOverrides(),
+      ensureUsdThbRate().then((info) => info.rate),
+    ]);
+    orders = markDuplicates(
+      rows.map((r) => donshopOrderView(r, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+      (o) => o.saleOrderId || o.invoiceNumber
+    );
+  } else if (card.source === "gamepoint") {
+    const [rows, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+      gamepoint.listOrdersForGames([card.cardSerial]),
+      repo.getPackCosts(),
+      repo.getAllPlatformPrices(),
+      repo.getAllPlatformFees(),
+      repo.listGamepointOverrides(),
+      ensureUsdThbRate().then((info) => info.rate),
+    ]);
+    orders = markDuplicates(
+      rows.map((r) => gamepointOrderView(r, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+      (o) => o.saleOrderId || o.referenceNo
+    );
+  } else if (card.source === "agenh2h") {
+    const [rows, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+      agenh2h.listOrdersForGames([card.cardSerial]),
+      repo.getPackCosts(),
+      repo.getAllPlatformPrices(),
+      repo.getAllPlatformFees(),
+      repo.listAgenh2hOverrides(),
+      ensureUsdThbRate().then((info) => info.rate),
+    ]);
+    orders = markDuplicates(
+      rows.map((r) => agenh2hOrderView(r, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+      (o) => o.saleOrderId || o.invoiceNumber || o.refId
+    );
+  } else if (card.source === "codareseller") {
+    const [rows, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+      codareseller.listOrdersForGames([card.cardSerial]),
+      repo.getPackCosts(),
+      repo.getAllPlatformPrices(),
+      repo.getAllPlatformFees(),
+      repo.listCodaresellerOverrides(),
+      ensureUsdThbRate().then((info) => info.rate),
+    ]);
+    orders = markDuplicates(
+      rows.map((r) => codaresellerOrderView(r, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+      (o) => o.saleOrderId || o.invoiceNumber
+    );
+  } else if (card.source === "netease") {
+    const [rows, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+      netease.listOrdersForGames([card.cardSerial]),
+      repo.getPackCosts(),
+      repo.getAllPlatformPrices(),
+      repo.getAllPlatformFees(),
+      repo.listNeteaseOverrides(),
+      ensureUsdThbRate().then((info) => info.rate),
+    ]);
+    orders = markDuplicates(
+      rows.map((r) => neteaseOrderView(r, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+      (o) => o.saleOrderId || o.neteaseOrderNo
     );
   } else {
     const raw = await repo.listOrders(cardId); // already sorted ascending by createdAt
@@ -737,8 +1622,8 @@ export async function dashboardSummary() {
   // added into these sums.
   const rollupCategories = allCategories.filter((c) => !c.excludeFromTotals);
   const totalOf = (list, key) => list.reduce((s, c) => s + c[key], 0);
-  const human = rollupCategories.filter((c) => c.group === "human");
   const bot = rollupCategories.filter((c) => c.group === "bot");
+  const api = rollupCategories.filter((c) => c.group === "api");
 
   const rollup = (list) => {
     const saleTotal = totalOf(list, "saleTotal");
@@ -757,15 +1642,15 @@ export async function dashboardSummary() {
 
   return {
     totals: rollup(rollupCategories),
-    human: rollup(human),
     bot: rollup(bot),
+    api: rollup(api),
     categories: allCategories,
   };
 }
 
 // Flat GoCash history (newest first) so the category page can list every DB row.
 export async function gocashHistoryFeed(cards = null) {
-  const [rows, cardList, effectiveRate, packCosts, platformPrices, platformFees, overrides] = await Promise.all([
+  const [rows, cardList, rates, packCosts, platformPrices, platformFees, overrides] = await Promise.all([
     gocash.getAllRows(),
     cards ? Promise.resolve(cards) : cardsForCategory("gocash"),
     gocashEffectiveRate(),
@@ -774,6 +1659,7 @@ export async function gocashHistoryFeed(cards = null) {
     repo.getAllPlatformFees(),
     repo.listGocashOverrides(),
   ]);
+  const { effective: effectiveRate, usdThb: usdThbRate } = rates;
   const byCard = new Map(cardList.map((c) => [c.id, c]));
   const dupIds = new Set();
   const seen = new Set();
@@ -785,7 +1671,7 @@ export async function gocashHistoryFeed(cards = null) {
   const newestFirst = [...rows].reverse();
   return newestFirst.map((row) => {
     const card = byCard.get(`gocash:${gocash.cardKey(row.cardSerial, row.slotIndex)}`);
-    const view = gocashOrderView(row, effectiveRate, packCosts, platformPrices, platformFees, overrides);
+    const view = gocashOrderView(row, effectiveRate, packCosts, platformPrices, platformFees, overrides, usdThbRate);
     return {
       ...view,
       game: card?.gameName || null,
@@ -834,16 +1720,17 @@ export async function oxideHistoryFeed() {
 // Flat WavePay history (newest first) -- same idea as oxideHistoryFeed
 // above, sale/cost computed the same way (see wavepayOrderView).
 export async function wavepayHistoryFeed() {
-  const [accounts, packCosts, platformPrices, platformFees, overrides] = await Promise.all([
+  const [accounts, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
     wavepay.listAccounts(),
     repo.getPackCosts(),
     repo.getAllPlatformPrices(),
     repo.getAllPlatformFees(),
     repo.listWavepayOverrides(),
+    ensureUsdThbRate().then((info) => info.rate),
   ]);
   const orders = await wavepay.listOrdersForAccounts(accounts.map((a) => a.account));
   const views = markDuplicates(
-    orders.map((o) => wavepayOrderView(o, packCosts, platformPrices, platformFees, overrides)),
+    orders.map((o) => wavepayOrderView(o, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
     (o) => o.invoiceTxnId
   );
   return views
@@ -851,6 +1738,182 @@ export async function wavepayHistoryFeed() {
       ...view,
       cardId: `wavepay:${view.account}`,
       cardName: view.account,
+    }))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+export async function u9HistoryFeed() {
+  const [accounts, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+    u9.listAccounts(),
+    repo.getPackCosts(),
+    repo.getAllPlatformPrices(),
+    repo.getAllPlatformFees(),
+    repo.listU9Overrides(),
+    ensureUsdThbRate().then((info) => info.rate),
+  ]);
+  const orders = await u9.listOrdersForAccounts(accounts.map((a) => a.account));
+  const views = markDuplicates(
+    orders.map((o) => u9OrderView(o, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+    (o) => o.invoiceTxnId
+  );
+  return views
+    .map((view) => ({
+      ...view,
+      cardId: `u9:${view.account}`,
+      cardName: view.account,
+    }))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+async function phoneChannelHistoryFeed(source, feed, listOverrides, orderView) {
+  const [accounts, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+    feed.listAccounts(),
+    repo.getPackCosts(),
+    repo.getAllPlatformPrices(),
+    repo.getAllPlatformFees(),
+    listOverrides(),
+    ensureUsdThbRate().then((info) => info.rate),
+  ]);
+  const orders = await feed.listOrdersForAccounts(accounts.map((a) => a.account));
+  const views = markDuplicates(
+    orders.map((o) => orderView(o, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+    (o) => o.invoiceTxnId
+  );
+  return views
+    .map((view) => ({
+      ...view,
+      cardId: `${source}:${view.account}`,
+      cardName: view.account,
+    }))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+export async function truemoneyHistoryFeed() {
+  return phoneChannelHistoryFeed("truemoney", truemoney, repo.listTruemoneyOverrides, truemoneyOrderView);
+}
+export async function atomHistoryFeed() {
+  return phoneChannelHistoryFeed("atom", atom, repo.listAtomOverrides, atomOrderView);
+}
+export async function smartsunHistoryFeed() {
+  return phoneChannelHistoryFeed("smartsun", smartsun, repo.listSmartsunOverrides, smartsunOrderView);
+}
+
+// Flat DonShop history (newest first) -- same idea as wavepayHistoryFeed.
+export async function donshopHistoryFeed() {
+  const [games, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+    donshop.listGames(),
+    repo.getPackCosts(),
+    repo.getAllPlatformPrices(),
+    repo.getAllPlatformFees(),
+    repo.listDonshopOverrides(),
+    ensureUsdThbRate().then((info) => info.rate),
+  ]);
+  const orders = await donshop.listOrdersForGames(games.map((g) => g.gameName));
+  const views = markDuplicates(
+    orders.map((o) => donshopOrderView(o, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+    (o) => o.saleOrderId || o.invoiceNumber
+  );
+  return views
+    .map((view) => ({
+      ...view,
+      cardId: `donshop:${view.gameName || "unknown"}`,
+      cardName: view.gameName || "unknown",
+    }))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+// Flat Game Point Club history (newest first) — same idea as donshopHistoryFeed.
+export async function gamepointHistoryFeed() {
+  const [games, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+    gamepoint.listGames(),
+    repo.getPackCosts(),
+    repo.getAllPlatformPrices(),
+    repo.getAllPlatformFees(),
+    repo.listGamepointOverrides(),
+    ensureUsdThbRate().then((info) => info.rate),
+  ]);
+  const orders = await gamepoint.listOrdersForGames(games.map((g) => g.gameName));
+  const views = markDuplicates(
+    orders.map((o) => gamepointOrderView(o, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+    (o) => o.saleOrderId || o.referenceNo
+  );
+  return views
+    .map((view) => ({
+      ...view,
+      cardId: `gamepoint:${view.gameName || "unknown"}`,
+      cardName: view.gameName || "unknown",
+    }))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+// Flat Agen H2H history (newest first).
+export async function agenh2hHistoryFeed() {
+  const [games, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+    agenh2h.listGames(),
+    repo.getPackCosts(),
+    repo.getAllPlatformPrices(),
+    repo.getAllPlatformFees(),
+    repo.listAgenh2hOverrides(),
+    ensureUsdThbRate().then((info) => info.rate),
+  ]);
+  const orders = await agenh2h.listOrdersForGames(games.map((g) => g.gameName));
+  const views = markDuplicates(
+    orders.map((o) => agenh2hOrderView(o, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+    (o) => o.saleOrderId || o.invoiceNumber || o.refId
+  );
+  return views
+    .map((view) => ({
+      ...view,
+      cardId: `agenh2h:${view.gameName || "unknown"}`,
+      cardName: view.gameName || "unknown",
+    }))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+// Flat Codareseller history (newest first).
+export async function codaresellerHistoryFeed() {
+  const [games, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+    codareseller.listGames(),
+    repo.getPackCosts(),
+    repo.getAllPlatformPrices(),
+    repo.getAllPlatformFees(),
+    repo.listCodaresellerOverrides(),
+    ensureUsdThbRate().then((info) => info.rate),
+  ]);
+  const orders = await codareseller.listOrdersForGames(games.map((g) => g.gameName));
+  const views = markDuplicates(
+    orders.map((o) => codaresellerOrderView(o, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+    (o) => o.saleOrderId || o.invoiceNumber
+  );
+  return views
+    .map((view) => ({
+      ...view,
+      cardId: `codareseller:${view.gameName || "unknown"}`,
+      cardName: view.gameName || "unknown",
+    }))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+// Flat Netease history (newest first).
+export async function neteaseHistoryFeed() {
+  const [games, packCosts, platformPrices, platformFees, overrides, usdThbRate] = await Promise.all([
+    netease.listGames(),
+    repo.getPackCosts(),
+    repo.getAllPlatformPrices(),
+    repo.getAllPlatformFees(),
+    repo.listNeteaseOverrides(),
+    ensureUsdThbRate().then((info) => info.rate),
+  ]);
+  const orders = await netease.listOrdersForGames(games.map((g) => g.gameName));
+  const views = markDuplicates(
+    orders.map((o) => neteaseOrderView(o, packCosts, platformPrices, platformFees, overrides, usdThbRate)),
+    (o) => o.saleOrderId || o.neteaseOrderNo
+  );
+  return views
+    .map((view) => ({
+      ...view,
+      cardId: `netease:${view.gameName || "unknown"}`,
+      cardName: view.gameName || "unknown",
     }))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
@@ -882,6 +1945,33 @@ async function listKnownPacks() {
 
   const wavepayOrders = await wavepay.getAllRows();
   for (const o of wavepayOrders) bump("wavepay", o.gameName || "Wavepay", o.packName);
+
+  const u9Orders = await u9.getAllRows();
+  for (const o of u9Orders) bump("u9", o.gameName || "U9", o.packName);
+
+  const truemoneyOrders = await truemoney.getAllRows();
+  for (const o of truemoneyOrders) bump("truemoney", o.gameName || "TrueMoney", o.packName);
+
+  const atomOrders = await atom.getAllRows();
+  for (const o of atomOrders) bump("atom", o.gameName || "ATOM", o.packName);
+
+  const smartsunOrders = await smartsun.getAllRows();
+  for (const o of smartsunOrders) bump("smartsun", o.gameName || "Smart-Sun", o.packName);
+
+  const donshopOrders = await donshop.getAllRows();
+  for (const o of donshopOrders) bump("donshop", o.gameName || "Donshop", o.packName);
+
+  const gamepointOrders = await gamepoint.getAllRows();
+  for (const o of gamepointOrders) bump("gamepoint", o.gameName || "Gamepoint", o.packName);
+
+  const agenh2hOrders = await agenh2h.getAllRows();
+  for (const o of agenh2hOrders) bump("agenh2h", o.gameName || "Agenh2h", o.packName);
+
+  const codaresellerOrders = await codareseller.getAllRows();
+  for (const o of codaresellerOrders) bump("codareseller", o.gameName || "Codareseller", o.packName);
+
+  const neteaseOrders = await netease.getAllRows();
+  for (const o of neteaseOrders) bump("netease", o.gameName || "Netease", o.packName);
 
   return [...byKey.values()];
 }

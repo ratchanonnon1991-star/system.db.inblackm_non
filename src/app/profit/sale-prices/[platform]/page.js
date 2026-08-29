@@ -12,7 +12,7 @@ import { SourceBadge } from "@/components/profit-badges";
 import ProfitModal, { ProfitField, profitInputClass } from "@/components/profit-modal";
 import { platformLabel } from "@/components/profit-platform-select";
 
-const SOURCE_LABELS = { gocash: "GoCash", oxide: "Multi Game Card", wavepay: "Wavepay" };
+const SOURCE_LABELS = { gocash: "GoCash", oxide: "Multigamecard", wavepay: "Wavepay", u9: "U9", donshop: "Donshop", gamepoint: "Gamepoint", agenh2h: "Agenh2h", codareseller: "Codareseller", netease: "Netease", truemoney: "TrueMoney", atom: "ATOM", smartsun: "Smart-Sun" };
 
 function matchesQuery(q, parts) {
   if (!q) return true;
@@ -147,7 +147,9 @@ function ProfitSalePricePlatformContent({ platform }) {
         <div>
           <h1 className="text-xl font-semibold text-ll-ink">{platformLabel(platform)}</h1>
           <p className="mt-1 text-[13px] text-ll-ink-subtle">
-            ราคาขายอ้างอิงของแพลตฟอร์มนี้ — เปิดดูก่อนพิมพ์ราคาขายจริงในออเดอร์เอง ไม่ได้เติมราคาให้อัตโนมัติ
+            {platform === "russia_reseller"
+              ? "ราคาขายอ้างอิงตามชีท product คอลัมน์ USDT — กรอกเป็น USDT (เช่น 0.61) ระบบจะคูณ USD:THB ตอนคิดกำไรให้อัตโนมัติ"
+              : "ราคาขายอ้างอิงของแพลตฟอร์มนี้ — เปิดดูก่อนพิมพ์ราคาขายจริงในออเดอร์เอง ไม่ได้เติมราคาให้อัตโนมัติ"}
             {feePct > 0 && ` กรอกราคาเต็ม (ก่อนหักค่าธรรมเนียม) ระบบจะหักค่าธรรมเนียมของแพลตฟอร์มนี้ (${feePct}%) ให้อัตโนมัติตอนคิดกำไร`}
           </p>
         </div>
@@ -226,7 +228,9 @@ function ProfitSalePricePlatformContent({ platform }) {
                 <th className="px-3 py-2 font-medium">แพ็ก</th>
                 <th className="px-3 py-2 font-medium">ใช้บัตร</th>
                 <th className="px-3 py-2 text-right font-medium">จำนวนออเดอร์</th>
-                <th className="px-3 py-2 text-right font-medium">ราคาขาย</th>
+                <th className="px-3 py-2 text-right font-medium">
+                  {platform === "russia_reseller" ? "ราคาขาย (USDT)" : "ราคาขาย"}
+                </th>
                 {feePct > 0 && (
                   <th className="px-3 py-2 text-right font-medium" title={`ราคาขาย × (1 − ${feePct}%) — หลังหักค่าธรรมเนียมของแพลตฟอร์มนี้อัตโนมัติ`}>
                     หลังหักค่าธรรมเนียม ({feePct}%)
@@ -413,7 +417,7 @@ function BulkPriceModal({ platform, packs, onClose, onApplied }) {
         </ProfitField>
       )}
 
-      <ProfitField label="ราคาขายต่อแพ็ก">
+      <ProfitField label={platform === "russia_reseller" ? "ราคาขายต่อแพ็ก (USDT)" : "ราคาขายต่อแพ็ก"}>
         <input
           type="number"
           step="0.01"

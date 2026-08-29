@@ -1,37 +1,54 @@
-// Live GoCash from sky_gocash_history, live Multi Game Card and WavePay from
-// codashop_orders (see profit-oxide.js / profit-wavepay.js). Other
-// categories are local (team fills sale/cost by hand) until those providers
-// have a DB feed of their own.
+// Live feeds: GoCash (sky_gocash_history), Multi Game Card + WavePay + U9
+// + TrueMoney + ATOM + Smart-Sun (codashop_orders — see profit-*-*.js),
+// Codareseller (CodashopUSD) + Donshop (DonShopIDR) + Gamepoint (GamePointClub)
+// + Agenh2h (AgenH2HIDR) + Netease (netease_purchase_history). Everything else
+// is local (team fills sale/cost by hand) until that provider has a DB feed.
+//
+// Codareseller ≠ Sky Codashop bot (payment_method 'Codashop').
+// TrueMoney / ATOM / Smart/Sun come from codashop_auto_api fill.
+//
+// Groups:
+//   bot  — wallet / card bots
+//   api  — reseller / H2H API channels
+//   human — manual worklists over live bot data (ไม่นับซ้ำในยอดรวม)
 export const CATEGORIES = [
+  // —— Bot ——
+  { id: "wavepay", name: "Wavepay", group: "bot", source: "wavepay" },
+  { id: "u9", name: "U9", group: "bot", source: "u9" },
   { id: "gocash", name: "GoCash", group: "bot", source: "gocash" },
   // Snapshot only — the bot overwrites card balance in place, no per-order
-  // ledger exists, so there's no history/deducted/remaining-over-time to show.
-  // excludeFromTotals: balance is in MOL points, not USD — mixing it into the
-  // dashboard's USD rollups would silently corrupt those totals.
-  { id: "oxide", name: "Multi Game Card", group: "bot", source: "oxide", excludeFromTotals: true },
-  { id: "codashop", name: "Codashop", group: "bot", source: "manual" },
-  { id: "unipin", name: "UniPin", group: "bot", source: "manual" },
-  // Live WavePay wallet accounts (codashop_orders WHERE payment_method =
-  // 'WavePay'). One card pool shared across several games (Love and
-  // Deepspace, Harry Potter: Magic Awakened, The Division Resurgence,
-  // ZEPETO, ...) -- see the "เกม" picker on its category page, same as
-  // Oxide, populated from real game_name data, not hand-tagged.
-  { id: "wavepay", name: "Wavepay", group: "bot", source: "wavepay" },
-  // Filtered view of the same live GoCash data (cards with unusable dust
-  // balance) — a manual clearing worklist for humans, not bot-driven data,
-  // so it lives under HUMAN (MANUAL) rather than nested under GoCash.
-  // excludeFromTotals: it's a subset of the 'gocash' category above, so its
-  // money must not be added a second time into dashboard rollups.
+  // ledger exists. excludeFromTotals: balance is MOL points, not USD.
+  { id: "oxide", name: "Multigamecard", group: "bot", source: "oxide", excludeFromTotals: true },
+  { id: "netease", name: "Netease", group: "bot", source: "netease" },
+  { id: "truemoney", name: "TrueMoney", group: "bot", source: "truemoney" },
+  { id: "atom", name: "ATOM", group: "bot", source: "atom" },
+  { id: "smartsun", name: "Smart-Sun", group: "bot", source: "smartsun" },
+
+  // —— API ——
+  { id: "codareseller", name: "Codareseller", group: "api", source: "codareseller" },
+  { id: "donshop", name: "Donshop", group: "api", source: "donshop" },
+  { id: "gamepoint", name: "Gamepoint", group: "api", source: "gamepoint" },
+  { id: "agenh2h", name: "Agenh2h", group: "api", source: "agenh2h" },
+
+  // —— Human (manual) worklists — live subsets; ไม่รวมยอดซ้ำ ——
   { id: "gocash-dust", name: "GoCash", group: "human", source: "gocash-dust", excludeFromTotals: true },
-  // Filtered view of the same live Multi Game Card data (cards sitting idle
-  // 12h+ with a leftover balance) — a manual consolidation worklist, same
-  // idea as gocash-dust above just triggered by idle time instead of a dust
-  // balance threshold (Multi Game Card has no dust concept -- points don't
-  // go stale the way a sub-$1 USD remainder does).
-  // excludeFromTotals: it's a subset of the 'oxide' category above.
-  { id: "oxide-merge", name: "Multi Game Card", group: "human", source: "oxide-merge", excludeFromTotals: true },
+  { id: "oxide-merge", name: "Multigamecard", group: "human", source: "oxide-merge", excludeFromTotals: true },
 ];
 
+// Old ids kept so bookmarks / local cards still resolve after the Bot/API rename.
+export const LEGACY_CATEGORY_IDS = {
+  unipin: "u9",
+  codashop: "codareseller",
+};
+
 export function getCategory(id) {
-  return CATEGORIES.find((c) => c.id === id) || null;
+  const resolved = LEGACY_CATEGORY_IDS[id] || id;
+  return CATEGORIES.find((c) => c.id === resolved) || null;
+}
+
+/** Previous id(s) that now point at `id`, for reading leftover local cards. */
+export function legacyIdsFor(id) {
+  return Object.entries(LEGACY_CATEGORY_IDS)
+    .filter(([, neo]) => neo === id)
+    .map(([old]) => old);
 }

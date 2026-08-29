@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
-import { fmtDate, fmtMoney, fmtPct, fmtPoints, fmtUsd } from "@/lib/profit-format";
+import { fmtDate, fmtMoney, fmtPct, fmtPoints, fmtUsd, netSaleDisplay } from "@/lib/profit-format";
 import { commitOverrideEdit } from "@/lib/profit-conflict";
 import { useProfitCanEdit } from "@/components/profit-capabilities-context";
 import PlatformSelect, { platformLabel } from "@/components/profit-platform-select";
@@ -19,12 +19,6 @@ function matchesQuery(q, parts) {
 function toLocalInput(d) {
   const pad = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-// Same fee-adjusted display convention as gocash-history's netSaleDisplay.
-function netSaleDisplay(o) {
-  const sale = o.saleAmount || 0;
-  return o.platformFeePct > 0 ? Math.round(sale * (1 - o.platformFeePct / 100) * 100) / 100 : sale;
 }
 
 export default function ProfitOxideHistoryPage() {
@@ -297,6 +291,8 @@ export default function ProfitOxideHistoryPage() {
                         title={
                           o.platformFeePct > 0
                             ? `หักค่าธรรมเนียม ${o.platformFeePct}% ของ ${platformLabel(o.platform)} จากราคาเต็ม ${fmtMoney(o.saleAmount || 0)} แล้ว — แก้ตรงนี้ให้กรอกราคาเต็มใหม่ ระบบจะหักให้อัตโนมัติ`
+                            : o.saleAmountUsdt != null
+                              ? `แสดง ${o.saleAmountUsdt} USDT ตามที่กรอก · กำไรคูณ USD:THB อัตโนมัติ (= ${fmtMoney(o.saleAmount)}) — แก้ตรงนี้กรอก USDT`
                             : o.saleFromPlatform
                               ? "ค่านี้ดึงจากราคาขายตามแพ็กของแพลตฟอร์มนี้ — แก้ตรงนี้จะ override เฉพาะออเดอร์นี้"
                               : o.saleMissingPlatformPrice

@@ -1,0 +1,13 @@
+import { handleApiError, jsonOk } from "@/lib/http";
+import { requireProfitAccess } from "@/server/auth";
+import { smartsunHistoryFeed } from "@/server/profit-aggregate";
+
+export async function GET(request) {
+  try {
+    await requireProfitAccess(request);
+    const history = await smartsunHistoryFeed();
+    return jsonOk({ history });
+  } catch (err) {
+    return handleApiError(err, "โหลดประวัติ Smart-Sun ไม่สำเร็จ");
+  }
+}

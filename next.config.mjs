@@ -1,5 +1,15 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // tw-animate-css only publishes a `style` export. Turbopack (`next build`)
+  // honors that; webpack (`next dev --webpack`) does not, so @import in
+  // globals.css fails until `style` is on the resolve condition list.
+  webpack: (config) => {
+    const names = config.resolve.conditionNames || ["browser", "module", "import", "require", "default"];
+    if (!names.includes("style")) {
+      config.resolve.conditionNames = ["style", ...names];
+    }
+    return config;
+  },
   // Response headers for every route. The session cookie is SameSite=Lax, so a
   // page in someone else's frame would not carry it anyway — but a tool that
   // shows customer data has no reason to be framable at all, and the rest costs

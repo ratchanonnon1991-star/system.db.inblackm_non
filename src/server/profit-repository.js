@@ -130,6 +130,109 @@ async function ensureSchema() {
           updated_by_name TEXT
         )
       `);
+      // Same shape as WavePay/Oxide overrides, keyed by codashop_orders.id
+      // for DonShopIDR API rows (see profit-donshop.js).
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS profit_donshop_overrides (
+          order_id      BIGINT PRIMARY KEY,
+          sale_amount   NUMERIC NOT NULL DEFAULT 0,
+          cost          NUMERIC,
+          platform      TEXT,
+          updated_by_id INTEGER,
+          updated_by_name TEXT
+        )
+      `);
+      // U9 (Ooredoo) telco airtime — same override shape as WavePay, keyed
+      // by codashop_orders.id (payment_method = 'U9' / legacy 'Ooredoo').
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS profit_u9_overrides (
+          order_id      BIGINT PRIMARY KEY,
+          sale_amount   NUMERIC NOT NULL DEFAULT 0,
+          cost          NUMERIC,
+          platform      TEXT,
+          updated_by_id INTEGER,
+          updated_by_name TEXT
+        )
+      `);
+      // Game Point Club (MYR) — same override shape, keyed by codashop_orders.id
+      // (payment_method = 'GamePointClub'; see profit-gamepoint.js).
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS profit_gamepoint_overrides (
+          order_id      BIGINT PRIMARY KEY,
+          sale_amount   NUMERIC NOT NULL DEFAULT 0,
+          cost          NUMERIC,
+          platform      TEXT,
+          updated_by_id INTEGER,
+          updated_by_name TEXT
+        )
+      `);
+      // Agen H2H IDR — same override shape, keyed by codashop_orders.id
+      // (payment_method = 'AgenH2HIDR'; see profit-agenh2h.js).
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS profit_agenh2h_overrides (
+          order_id      BIGINT PRIMARY KEY,
+          sale_amount   NUMERIC NOT NULL DEFAULT 0,
+          cost          NUMERIC,
+          platform      TEXT,
+          updated_by_id INTEGER,
+          updated_by_name TEXT
+        )
+      `);
+      // Codashop Reseller USD — same override shape, keyed by codashop_orders.id
+      // (payment_method = 'CodashopUSD'; see profit-codareseller.js).
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS profit_codareseller_overrides (
+          order_id      BIGINT PRIMARY KEY,
+          sale_amount   NUMERIC NOT NULL DEFAULT 0,
+          cost          NUMERIC,
+          platform      TEXT,
+          updated_by_id INTEGER,
+          updated_by_name TEXT
+        )
+      `);
+      // Netease bot — keyed by netease_purchase_history.id (see profit-netease.js).
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS profit_netease_overrides (
+          order_id      BIGINT PRIMARY KEY,
+          sale_amount   NUMERIC NOT NULL DEFAULT 0,
+          cost          NUMERIC,
+          platform      TEXT,
+          updated_by_id INTEGER,
+          updated_by_name TEXT
+        )
+      `);
+      // TrueMoney / ATOM / Smart-Sun — codashop_auto_api airtime/wallet fills
+      // (payment_method TrueMoney | ATOM | Smart/Sun). Keyed by codashop_orders.id.
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS profit_truemoney_overrides (
+          order_id      BIGINT PRIMARY KEY,
+          sale_amount   NUMERIC NOT NULL DEFAULT 0,
+          cost          NUMERIC,
+          platform      TEXT,
+          updated_by_id INTEGER,
+          updated_by_name TEXT
+        )
+      `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS profit_atom_overrides (
+          order_id      BIGINT PRIMARY KEY,
+          sale_amount   NUMERIC NOT NULL DEFAULT 0,
+          cost          NUMERIC,
+          platform      TEXT,
+          updated_by_id INTEGER,
+          updated_by_name TEXT
+        )
+      `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS profit_smartsun_overrides (
+          order_id      BIGINT PRIMARY KEY,
+          sale_amount   NUMERIC NOT NULL DEFAULT 0,
+          cost          NUMERIC,
+          platform      TEXT,
+          updated_by_id INTEGER,
+          updated_by_name TEXT
+        )
+      `);
       // Manual "someone consolidated this idle Multi Game Card's leftover
       // points onto another card" mark -- same shape/purpose as the GoCash
       // dust-cleared mark below, just for the "ต้องรวมบัตร" worklist (cards
@@ -552,6 +655,15 @@ const OXIDE_OVERRIDE_LOCK_NS = 90002;
 const PACK_COST_LOCK_NS = 90003;
 const PLATFORM_PRICE_LOCK_NS = 90004;
 const WAVEPAY_OVERRIDE_LOCK_NS = 90005;
+const DONSHOP_OVERRIDE_LOCK_NS = 90006;
+const U9_OVERRIDE_LOCK_NS = 90007;
+const GAMEPOINT_OVERRIDE_LOCK_NS = 90008;
+const AGENH2H_OVERRIDE_LOCK_NS = 90009;
+const CODARESELLER_OVERRIDE_LOCK_NS = 90010;
+const NETEASE_OVERRIDE_LOCK_NS = 90011;
+const TRUEMONEY_OVERRIDE_LOCK_NS = 90012;
+const ATOM_OVERRIDE_LOCK_NS = 90013;
+const SMARTSUN_OVERRIDE_LOCK_NS = 90014;
 
 function assertOverrideUnchanged(before, expected, updatedByName) {
   if (!expected) return; // no baseline sent -- caller is forcing an overwrite
@@ -811,6 +923,543 @@ export async function setWavepayOverride(orderId, { saleAmount, cost, platform, 
   } finally {
     client.release();
   }
+}
+
+// ── DonShop cost/sale overrides ──────────────────────────────────────────
+export async function listDonshopOverrides() {
+  await ensureSchema();
+  const { rows } = await getPool().query(`SELECT order_id, sale_amount, cost, platform FROM profit_donshop_overrides`);
+  const byId = {};
+  for (const row of rows) {
+    byId[row.order_id] = {
+      saleAmount: Number(row.sale_amount),
+      cost: row.cost == null ? null : Number(row.cost),
+      platform: row.platform || null,
+    };
+  }
+  return byId;
+}
+
+export async function setDonshopOverride(orderId, { saleAmount, cost, platform, expected }, actor) {
+  await ensureSchema();
+  const actorName = actor?.displayName || actor?.username || "ไม่ทราบชื่อ";
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL statement_timeout = 8000");
+    await client.query("SELECT pg_advisory_xact_lock($1, $2)", [DONSHOP_OVERRIDE_LOCK_NS, Number(orderId)]);
+
+    const { rows: beforeRows } = await client.query(
+      `SELECT sale_amount, cost, platform, updated_by_name FROM profit_donshop_overrides WHERE order_id = $1`,
+      [orderId]
+    );
+    const before = beforeRows[0]
+      ? {
+          saleAmount: Number(beforeRows[0].sale_amount),
+          cost: beforeRows[0].cost == null ? null : Number(beforeRows[0].cost),
+          platform: beforeRows[0].platform,
+        }
+      : null;
+    assertOverrideUnchanged(before, expected, beforeRows[0]?.updated_by_name);
+
+    const { rows } = await client.query(
+      `INSERT INTO profit_donshop_overrides (order_id, sale_amount, cost, platform, updated_by_id, updated_by_name)
+       VALUES ($1, $2, $3, $4, $8, $9)
+       ON CONFLICT (order_id) DO UPDATE SET
+         sale_amount = CASE WHEN $5 THEN EXCLUDED.sale_amount ELSE profit_donshop_overrides.sale_amount END,
+         cost = CASE WHEN $6 THEN EXCLUDED.cost ELSE profit_donshop_overrides.cost END,
+         platform = CASE WHEN $7 THEN EXCLUDED.platform ELSE profit_donshop_overrides.platform END,
+         updated_by_id = $8,
+         updated_by_name = $9
+       RETURNING sale_amount, cost, platform`,
+      [
+        orderId,
+        saleAmount !== undefined ? Number(saleAmount) || 0 : 0,
+        cost !== undefined ? Number(cost) || 0 : null,
+        platform !== undefined ? String(platform || "").trim() || null : null,
+        saleAmount !== undefined,
+        cost !== undefined,
+        platform !== undefined,
+        actor?.id ?? null,
+        actorName,
+      ]
+    );
+    await client.query("COMMIT");
+    const row = rows[0];
+    return {
+      saleAmount: Number(row.sale_amount),
+      cost: row.cost == null ? null : Number(row.cost),
+      platform: row.platform || null,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// ── U9 (Ooredoo) cost/sale overrides ─────────────────────────────────────
+export async function listU9Overrides() {
+  await ensureSchema();
+  const { rows } = await getPool().query(`SELECT order_id, sale_amount, cost, platform FROM profit_u9_overrides`);
+  const byId = {};
+  for (const row of rows) {
+    byId[row.order_id] = {
+      saleAmount: Number(row.sale_amount),
+      cost: row.cost == null ? null : Number(row.cost),
+      platform: row.platform || null,
+    };
+  }
+  return byId;
+}
+
+export async function setU9Override(orderId, { saleAmount, cost, platform, expected }, actor) {
+  await ensureSchema();
+  const actorName = actor?.displayName || actor?.username || "ไม่ทราบชื่อ";
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL statement_timeout = 8000");
+    await client.query("SELECT pg_advisory_xact_lock($1, $2)", [U9_OVERRIDE_LOCK_NS, Number(orderId)]);
+
+    const { rows: beforeRows } = await client.query(
+      `SELECT sale_amount, cost, platform, updated_by_name FROM profit_u9_overrides WHERE order_id = $1`,
+      [orderId]
+    );
+    const before = beforeRows[0]
+      ? {
+          saleAmount: Number(beforeRows[0].sale_amount),
+          cost: beforeRows[0].cost == null ? null : Number(beforeRows[0].cost),
+          platform: beforeRows[0].platform,
+        }
+      : null;
+    assertOverrideUnchanged(before, expected, beforeRows[0]?.updated_by_name);
+
+    const { rows } = await client.query(
+      `INSERT INTO profit_u9_overrides (order_id, sale_amount, cost, platform, updated_by_id, updated_by_name)
+       VALUES ($1, $2, $3, $4, $8, $9)
+       ON CONFLICT (order_id) DO UPDATE SET
+         sale_amount = CASE WHEN $5 THEN EXCLUDED.sale_amount ELSE profit_u9_overrides.sale_amount END,
+         cost = CASE WHEN $6 THEN EXCLUDED.cost ELSE profit_u9_overrides.cost END,
+         platform = CASE WHEN $7 THEN EXCLUDED.platform ELSE profit_u9_overrides.platform END,
+         updated_by_id = $8,
+         updated_by_name = $9
+       RETURNING sale_amount, cost, platform`,
+      [
+        orderId,
+        saleAmount !== undefined ? Number(saleAmount) || 0 : 0,
+        cost !== undefined ? Number(cost) || 0 : null,
+        platform !== undefined ? String(platform || "").trim() || null : null,
+        saleAmount !== undefined,
+        cost !== undefined,
+        platform !== undefined,
+        actor?.id ?? null,
+        actorName,
+      ]
+    );
+    await client.query("COMMIT");
+    const row = rows[0];
+    return {
+      saleAmount: Number(row.sale_amount),
+      cost: row.cost == null ? null : Number(row.cost),
+      platform: row.platform || null,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// ── Game Point Club cost/sale overrides ──────────────────────────────────
+export async function listGamepointOverrides() {
+  await ensureSchema();
+  const { rows } = await getPool().query(`SELECT order_id, sale_amount, cost, platform FROM profit_gamepoint_overrides`);
+  const byId = {};
+  for (const row of rows) {
+    byId[row.order_id] = {
+      saleAmount: Number(row.sale_amount),
+      cost: row.cost == null ? null : Number(row.cost),
+      platform: row.platform || null,
+    };
+  }
+  return byId;
+}
+
+export async function setGamepointOverride(orderId, { saleAmount, cost, platform, expected }, actor) {
+  await ensureSchema();
+  const actorName = actor?.displayName || actor?.username || "ไม่ทราบชื่อ";
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL statement_timeout = 8000");
+    await client.query("SELECT pg_advisory_xact_lock($1, $2)", [GAMEPOINT_OVERRIDE_LOCK_NS, Number(orderId)]);
+
+    const { rows: beforeRows } = await client.query(
+      `SELECT sale_amount, cost, platform, updated_by_name FROM profit_gamepoint_overrides WHERE order_id = $1`,
+      [orderId]
+    );
+    const before = beforeRows[0]
+      ? {
+          saleAmount: Number(beforeRows[0].sale_amount),
+          cost: beforeRows[0].cost == null ? null : Number(beforeRows[0].cost),
+          platform: beforeRows[0].platform,
+        }
+      : null;
+    assertOverrideUnchanged(before, expected, beforeRows[0]?.updated_by_name);
+
+    const { rows } = await client.query(
+      `INSERT INTO profit_gamepoint_overrides (order_id, sale_amount, cost, platform, updated_by_id, updated_by_name)
+       VALUES ($1, $2, $3, $4, $8, $9)
+       ON CONFLICT (order_id) DO UPDATE SET
+         sale_amount = CASE WHEN $5 THEN EXCLUDED.sale_amount ELSE profit_gamepoint_overrides.sale_amount END,
+         cost = CASE WHEN $6 THEN EXCLUDED.cost ELSE profit_gamepoint_overrides.cost END,
+         platform = CASE WHEN $7 THEN EXCLUDED.platform ELSE profit_gamepoint_overrides.platform END,
+         updated_by_id = $8,
+         updated_by_name = $9
+       RETURNING sale_amount, cost, platform`,
+      [
+        orderId,
+        saleAmount !== undefined ? Number(saleAmount) || 0 : 0,
+        cost !== undefined ? Number(cost) || 0 : null,
+        platform !== undefined ? String(platform || "").trim() || null : null,
+        saleAmount !== undefined,
+        cost !== undefined,
+        platform !== undefined,
+        actor?.id ?? null,
+        actorName,
+      ]
+    );
+    await client.query("COMMIT");
+    const row = rows[0];
+    return {
+      saleAmount: Number(row.sale_amount),
+      cost: row.cost == null ? null : Number(row.cost),
+      platform: row.platform || null,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// ── Agen H2H cost/sale overrides ─────────────────────────────────────────
+export async function listAgenh2hOverrides() {
+  await ensureSchema();
+  const { rows } = await getPool().query(`SELECT order_id, sale_amount, cost, platform FROM profit_agenh2h_overrides`);
+  const byId = {};
+  for (const row of rows) {
+    byId[row.order_id] = {
+      saleAmount: Number(row.sale_amount),
+      cost: row.cost == null ? null : Number(row.cost),
+      platform: row.platform || null,
+    };
+  }
+  return byId;
+}
+
+export async function setAgenh2hOverride(orderId, { saleAmount, cost, platform, expected }, actor) {
+  await ensureSchema();
+  const actorName = actor?.displayName || actor?.username || "ไม่ทราบชื่อ";
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL statement_timeout = 8000");
+    await client.query("SELECT pg_advisory_xact_lock($1, $2)", [AGENH2H_OVERRIDE_LOCK_NS, Number(orderId)]);
+
+    const { rows: beforeRows } = await client.query(
+      `SELECT sale_amount, cost, platform, updated_by_name FROM profit_agenh2h_overrides WHERE order_id = $1`,
+      [orderId]
+    );
+    const before = beforeRows[0]
+      ? {
+          saleAmount: Number(beforeRows[0].sale_amount),
+          cost: beforeRows[0].cost == null ? null : Number(beforeRows[0].cost),
+          platform: beforeRows[0].platform,
+        }
+      : null;
+    assertOverrideUnchanged(before, expected, beforeRows[0]?.updated_by_name);
+
+    const { rows } = await client.query(
+      `INSERT INTO profit_agenh2h_overrides (order_id, sale_amount, cost, platform, updated_by_id, updated_by_name)
+       VALUES ($1, $2, $3, $4, $8, $9)
+       ON CONFLICT (order_id) DO UPDATE SET
+         sale_amount = CASE WHEN $5 THEN EXCLUDED.sale_amount ELSE profit_agenh2h_overrides.sale_amount END,
+         cost = CASE WHEN $6 THEN EXCLUDED.cost ELSE profit_agenh2h_overrides.cost END,
+         platform = CASE WHEN $7 THEN EXCLUDED.platform ELSE profit_agenh2h_overrides.platform END,
+         updated_by_id = $8,
+         updated_by_name = $9
+       RETURNING sale_amount, cost, platform`,
+      [
+        orderId,
+        saleAmount !== undefined ? Number(saleAmount) || 0 : 0,
+        cost !== undefined ? Number(cost) || 0 : null,
+        platform !== undefined ? String(platform || "").trim() || null : null,
+        saleAmount !== undefined,
+        cost !== undefined,
+        platform !== undefined,
+        actor?.id ?? null,
+        actorName,
+      ]
+    );
+    await client.query("COMMIT");
+    const row = rows[0];
+    return {
+      saleAmount: Number(row.sale_amount),
+      cost: row.cost == null ? null : Number(row.cost),
+      platform: row.platform || null,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// ── Codareseller (CodashopUSD) cost/sale overrides ───────────────────────
+export async function listCodaresellerOverrides() {
+  await ensureSchema();
+  const { rows } = await getPool().query(`SELECT order_id, sale_amount, cost, platform FROM profit_codareseller_overrides`);
+  const byId = {};
+  for (const row of rows) {
+    byId[row.order_id] = {
+      saleAmount: Number(row.sale_amount),
+      cost: row.cost == null ? null : Number(row.cost),
+      platform: row.platform || null,
+    };
+  }
+  return byId;
+}
+
+export async function setCodaresellerOverride(orderId, { saleAmount, cost, platform, expected }, actor) {
+  await ensureSchema();
+  const actorName = actor?.displayName || actor?.username || "ไม่ทราบชื่อ";
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL statement_timeout = 8000");
+    await client.query("SELECT pg_advisory_xact_lock($1, $2)", [CODARESELLER_OVERRIDE_LOCK_NS, Number(orderId)]);
+
+    const { rows: beforeRows } = await client.query(
+      `SELECT sale_amount, cost, platform, updated_by_name FROM profit_codareseller_overrides WHERE order_id = $1`,
+      [orderId]
+    );
+    const before = beforeRows[0]
+      ? {
+          saleAmount: Number(beforeRows[0].sale_amount),
+          cost: beforeRows[0].cost == null ? null : Number(beforeRows[0].cost),
+          platform: beforeRows[0].platform,
+        }
+      : null;
+    assertOverrideUnchanged(before, expected, beforeRows[0]?.updated_by_name);
+
+    const { rows } = await client.query(
+      `INSERT INTO profit_codareseller_overrides (order_id, sale_amount, cost, platform, updated_by_id, updated_by_name)
+       VALUES ($1, $2, $3, $4, $8, $9)
+       ON CONFLICT (order_id) DO UPDATE SET
+         sale_amount = CASE WHEN $5 THEN EXCLUDED.sale_amount ELSE profit_codareseller_overrides.sale_amount END,
+         cost = CASE WHEN $6 THEN EXCLUDED.cost ELSE profit_codareseller_overrides.cost END,
+         platform = CASE WHEN $7 THEN EXCLUDED.platform ELSE profit_codareseller_overrides.platform END,
+         updated_by_id = $8,
+         updated_by_name = $9
+       RETURNING sale_amount, cost, platform`,
+      [
+        orderId,
+        saleAmount !== undefined ? Number(saleAmount) || 0 : 0,
+        cost !== undefined ? Number(cost) || 0 : null,
+        platform !== undefined ? String(platform || "").trim() || null : null,
+        saleAmount !== undefined,
+        cost !== undefined,
+        platform !== undefined,
+        actor?.id ?? null,
+        actorName,
+      ]
+    );
+    await client.query("COMMIT");
+    const row = rows[0];
+    return {
+      saleAmount: Number(row.sale_amount),
+      cost: row.cost == null ? null : Number(row.cost),
+      platform: row.platform || null,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// ── Netease (netease_purchase_history) cost/sale overrides ────────────────
+export async function listNeteaseOverrides() {
+  await ensureSchema();
+  const { rows } = await getPool().query(`SELECT order_id, sale_amount, cost, platform FROM profit_netease_overrides`);
+  const byId = {};
+  for (const row of rows) {
+    byId[row.order_id] = {
+      saleAmount: Number(row.sale_amount),
+      cost: row.cost == null ? null : Number(row.cost),
+      platform: row.platform || null,
+    };
+  }
+  return byId;
+}
+
+export async function setNeteaseOverride(orderId, { saleAmount, cost, platform, expected }, actor) {
+  await ensureSchema();
+  const actorName = actor?.displayName || actor?.username || "ไม่ทราบชื่อ";
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL statement_timeout = 8000");
+    await client.query("SELECT pg_advisory_xact_lock($1, $2)", [NETEASE_OVERRIDE_LOCK_NS, Number(orderId)]);
+
+    const { rows: beforeRows } = await client.query(
+      `SELECT sale_amount, cost, platform, updated_by_name FROM profit_netease_overrides WHERE order_id = $1`,
+      [orderId]
+    );
+    const before = beforeRows[0]
+      ? {
+          saleAmount: Number(beforeRows[0].sale_amount),
+          cost: beforeRows[0].cost == null ? null : Number(beforeRows[0].cost),
+          platform: beforeRows[0].platform,
+        }
+      : null;
+    assertOverrideUnchanged(before, expected, beforeRows[0]?.updated_by_name);
+
+    const { rows } = await client.query(
+      `INSERT INTO profit_netease_overrides (order_id, sale_amount, cost, platform, updated_by_id, updated_by_name)
+       VALUES ($1, $2, $3, $4, $8, $9)
+       ON CONFLICT (order_id) DO UPDATE SET
+         sale_amount = CASE WHEN $5 THEN EXCLUDED.sale_amount ELSE profit_netease_overrides.sale_amount END,
+         cost = CASE WHEN $6 THEN EXCLUDED.cost ELSE profit_netease_overrides.cost END,
+         platform = CASE WHEN $7 THEN EXCLUDED.platform ELSE profit_netease_overrides.platform END,
+         updated_by_id = $8,
+         updated_by_name = $9
+       RETURNING sale_amount, cost, platform`,
+      [
+        orderId,
+        saleAmount !== undefined ? Number(saleAmount) || 0 : 0,
+        cost !== undefined ? Number(cost) || 0 : null,
+        platform !== undefined ? String(platform || "").trim() || null : null,
+        saleAmount !== undefined,
+        cost !== undefined,
+        platform !== undefined,
+        actor?.id ?? null,
+        actorName,
+      ]
+    );
+    await client.query("COMMIT");
+    const row = rows[0];
+    return {
+      saleAmount: Number(row.sale_amount),
+      cost: row.cost == null ? null : Number(row.cost),
+      platform: row.platform || null,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function listPhoneChannelOverrides(table) {
+  await ensureSchema();
+  const { rows } = await getPool().query(`SELECT order_id, sale_amount, cost, platform FROM ${table}`);
+  const byId = {};
+  for (const row of rows) {
+    byId[row.order_id] = {
+      saleAmount: Number(row.sale_amount),
+      cost: row.cost == null ? null : Number(row.cost),
+      platform: row.platform || null,
+    };
+  }
+  return byId;
+}
+
+async function setPhoneChannelOverride(table, lockNs, orderId, { saleAmount, cost, platform, expected }, actor) {
+  await ensureSchema();
+  const actorName = actor?.displayName || actor?.username || "ไม่ทราบชื่อ";
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL statement_timeout = 8000");
+    await client.query("SELECT pg_advisory_xact_lock($1, $2)", [lockNs, Number(orderId)]);
+
+    const { rows: beforeRows } = await client.query(
+      `SELECT sale_amount, cost, platform, updated_by_name FROM ${table} WHERE order_id = $1`,
+      [orderId]
+    );
+    const before = beforeRows[0]
+      ? {
+          saleAmount: Number(beforeRows[0].sale_amount),
+          cost: beforeRows[0].cost == null ? null : Number(beforeRows[0].cost),
+          platform: beforeRows[0].platform,
+        }
+      : null;
+    assertOverrideUnchanged(before, expected, beforeRows[0]?.updated_by_name);
+
+    const { rows } = await client.query(
+      `INSERT INTO ${table} (order_id, sale_amount, cost, platform, updated_by_id, updated_by_name)
+       VALUES ($1, $2, $3, $4, $8, $9)
+       ON CONFLICT (order_id) DO UPDATE SET
+         sale_amount = CASE WHEN $5 THEN EXCLUDED.sale_amount ELSE ${table}.sale_amount END,
+         cost = CASE WHEN $6 THEN EXCLUDED.cost ELSE ${table}.cost END,
+         platform = CASE WHEN $7 THEN EXCLUDED.platform ELSE ${table}.platform END,
+         updated_by_id = $8,
+         updated_by_name = $9
+       RETURNING sale_amount, cost, platform`,
+      [
+        orderId,
+        saleAmount !== undefined ? Number(saleAmount) || 0 : 0,
+        cost !== undefined ? Number(cost) || 0 : null,
+        platform !== undefined ? String(platform || "").trim() || null : null,
+        saleAmount !== undefined,
+        cost !== undefined,
+        platform !== undefined,
+        actor?.id ?? null,
+        actorName,
+      ]
+    );
+    await client.query("COMMIT");
+    const row = rows[0];
+    return {
+      saleAmount: Number(row.sale_amount),
+      cost: row.cost == null ? null : Number(row.cost),
+      platform: row.platform || null,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// ── TrueMoney / ATOM / Smart-Sun (codashop_auto_api) overrides ────────────
+export async function listTruemoneyOverrides() {
+  return listPhoneChannelOverrides("profit_truemoney_overrides");
+}
+export async function setTruemoneyOverride(orderId, body, actor) {
+  return setPhoneChannelOverride("profit_truemoney_overrides", TRUEMONEY_OVERRIDE_LOCK_NS, orderId, body, actor);
+}
+export async function listAtomOverrides() {
+  return listPhoneChannelOverrides("profit_atom_overrides");
+}
+export async function setAtomOverride(orderId, body, actor) {
+  return setPhoneChannelOverride("profit_atom_overrides", ATOM_OVERRIDE_LOCK_NS, orderId, body, actor);
+}
+export async function listSmartsunOverrides() {
+  return listPhoneChannelOverrides("profit_smartsun_overrides");
+}
+export async function setSmartsunOverride(orderId, body, actor) {
+  return setPhoneChannelOverride("profit_smartsun_overrides", SMARTSUN_OVERRIDE_LOCK_NS, orderId, body, actor);
 }
 
 // ── Multi Game Card (oxide) merge-cleared marks ──────────────────────────

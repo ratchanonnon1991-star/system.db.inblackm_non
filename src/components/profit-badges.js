@@ -46,11 +46,13 @@ export function SourceBadge({ source, label }) {
 }
 
 export function GroupBadge({ group }) {
-  return group === "human" ? (
-    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-600">Human</span>
-  ) : (
-    <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-600">Bot</span>
-  );
+  if (group === "api") {
+    return <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-600">API</span>;
+  }
+  if (group === "human") {
+    return <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-600">Human</span>;
+  }
+  return <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-600">Bot</span>;
 }
 
 // Just the click-to-toggle pill -- who/when it was cleared shows in its own
