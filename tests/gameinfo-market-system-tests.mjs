@@ -163,6 +163,14 @@ const marketChecksPage = readFileSync(new URL("../src/components/gameinfo-market
 assert.match(marketChecksPage, /setConfirmMarket\(market\.key\)[\s\S]*DialogTitle>ยืนยัน Check ทั้ง/);
 assert.match(marketChecksPage, /อัตโนมัติทุกวัน 09:00 น\. เวลาไทย/);
 assert.match(marketChecksPage, /GAMEINFO_MARKETS[\s\S]*const MARKETS = GAMEINFO_MARKETS/);
+// Every market card carries the reset button and says when the automatic round runs.
+assert.match(marketChecksPage, /const AUTO_SCHEDULE_NOTE = "อัตโนมัติทุกวัน 09:00 น\. เวลาไทย"/);
+assert.match(marketChecksPage, /ไม่มี cooldown · \{AUTO_SCHEDULE_NOTE\}/);
+assert.match(marketChecksPage, /onClick=\{\(\) => setResetMarket\(market\.key\)\}[\s\S]*Reset<\/Button>/);
+assert.match(marketChecksPage, /AlertDialogTitle>รีเซ็ตสถานะ[\s\S]*onClick=\{\(\) => reset\(resetMarket\)\}/);
+assert.match(marketChecksPage, /method: "DELETE"[\s\S]*setRuns\(\(current\) => \(\{ \.\.\.current, \[market\]: data\.run \}\)\)/);
+const marketChecksRoute = readFileSync(new URL("../src/app/api/gameinfo/market-checks/[market]/route.js", import.meta.url), "utf8");
+assert.match(marketChecksRoute, /export async function DELETE[\s\S]*requireGameinfoMarketChecker[\s\S]*resetGameinfoMarketCheck/);
 const instrumentation = readFileSync(new URL("../src/instrumentation.js", import.meta.url), "utf8");
 assert.match(instrumentation, /NODE_ENV === "production"[\s\S]*startGameinfoMarketScheduler/);
 const marketScheduler = readFileSync(new URL("../src/server/gameinfo-market-scheduler.js", import.meta.url), "utf8");
@@ -176,6 +184,8 @@ assert.match(marketShell, /<main[\s\S]*data-shadcn-focus/);
 assert.match(marketShell, /seller-price-compare/);
 const marketServer = readFileSync(new URL("../src/server/gameinfo-market-system.js", import.meta.url), "utf8");
 assert.match(marketServer, /if \(!totalGames\)[\s\S]*ยังไม่มีเกมที่เปิด/);
+// Reset closes the stuck run so the single-flight index stops blocking new checks.
+assert.match(marketServer, /export async function resetGameinfoMarketCheck[\s\S]*status IN \('queued', 'running'\)[\s\S]*runners\.delete\(Number\(row\.id\)\)/);
 assert.match(marketServer, /SELECT seller_name FROM gameinfo_market_own_sellers[\s\S]*fetchNormalizedGameinfoMarketCatalog\(run\.market, config\.external_game_key, config\.product_type, ownSellerNames\)/);
 assert.match(marketServer, /requestedOrAll = allSellers \|\| includeCompetitors[\s\S]*selectGameinfoCompareSellerKeys/);
 assert.match(marketServer, /ownOnly[\s\S]*own_offer\.seller_key = ANY\(\$6::text\[\]\)/);
@@ -259,4 +269,4 @@ const rateServer = readFileSync(new URL("../src/server/gameinfo-exchange-rates.j
 assert.match(rateServer, /if \(force \|\| \(refreshStale && current\.stale\)\)/);
 assert.match(rateServer, /if \(!includeHistory\) return \{ pair, \.\.\.current, history: \[\] \};/);
 
-console.log("\n98 passed, 0 failed");
+console.log("\n105 passed, 0 failed");

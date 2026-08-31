@@ -1282,6 +1282,47 @@ export async function startGameinfoMarketCheck(market, actor, triggerType = "man
   return { run: mapRun(result.rows[0]), existing: false };
 }
 
+// A run whose process died mid-flight keeps its 'queued'/'running' row, and the
+// single-flight index then blocks every later Check for that market. Reset closes
+// the stuck row so the button works again. A run that is genuinely still alive in
+// this process keeps going — it just finishes into a row nobody is watching.
+export async function resetGameinfoMarketCheck(market) {
+  const normalizedMarket = normalizeGameinfoMarket(market);
+  const pool = await getGameinfoMarketPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const stuck = await client.query(
+      `UPDATE gameinfo_market_check_runs
+          SET status = 'failed', finished_at = NOW(),
+              error = CONCAT(error, CASE WHEN error = '' THEN '' ELSE E'\n' END, 'reset by user')
+        WHERE market = $1 AND status IN ('queued', 'running')
+        RETURNING id`,
+      [normalizedMarket]
+    );
+    for (const row of stuck.rows) {
+      await client.query(
+        `UPDATE gameinfo_market_check_run_games
+            SET status = 'failed', finished_at = NOW(),
+                error = CASE WHEN error = '' THEN 'reset by user' ELSE error END
+          WHERE run_id = $1 AND status = 'running'`,
+        [row.id]
+      );
+      runners.delete(Number(row.id));
+    }
+    const latest = await client.query(
+      `SELECT * FROM gameinfo_market_check_runs WHERE market = $1 ORDER BY id DESC LIMIT 1`, [normalizedMarket]
+    );
+    await client.query("COMMIT");
+    return { reset: stuck.rows.length, run: mapRun(latest.rows[0]) };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function getGameinfoMarketCheckRun(runId) {
   const pool = await getGameinfoMarketPool();
   const [run, games] = await Promise.all([

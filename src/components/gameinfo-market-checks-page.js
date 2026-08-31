@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Plus, RefreshCw, Settings2, Store, Trash2 } from "lucide-react";
+import { Plus, RefreshCw, RotateCcw, Settings2, Store, Trash2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { GAMEINFO_MARKETS } from "@/lib/gameinfo-market-system";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +18,7 @@ import { Spinner } from "@/components/ui/spinner";
 
 const MARKETS = GAMEINFO_MARKETS;
 const FINISHED = new Set(["completed", "partial", "failed"]);
+const AUTO_SCHEDULE_NOTE = "อัตโนมัติทุกวัน 09:00 น. เวลาไทย";
 
 export default function GameinfoMarketChecksPage({ initialSellers, initialRuns = [], enabledCounts = {}, canCheck, canManage }) {
   const [runs, setRuns] = useState(() => Object.fromEntries(initialRuns.map((run) => [run.market, run])));
@@ -26,6 +28,8 @@ export default function GameinfoMarketChecksPage({ initialSellers, initialRuns =
   const [saving, setSaving] = useState("");
   const [confirmMarket, setConfirmMarket] = useState("");
   const [starting, setStarting] = useState("");
+  const [resetMarket, setResetMarket] = useState("");
+  const [resetting, setResetting] = useState("");
 
   useEffect(() => {
     const active = Object.values(runs).filter((run) => run && !FINISHED.has(run.status));
@@ -57,6 +61,22 @@ export default function GameinfoMarketChecksPage({ initialSellers, initialRuns =
     }
   }
 
+  // Closes out a run that never finished — otherwise the single-flight rule
+  // keeps "กำลังตรวจ" on screen and the Check button disabled forever.
+  async function reset(market) {
+    setResetting(market);
+    setError("");
+    try {
+      const data = await apiJson(`/api/gameinfo/market-checks/${market}`, { method: "DELETE" });
+      setRuns((current) => ({ ...current, [market]: data.run }));
+      setResetMarket("");
+    } catch (reason) {
+      setError(reason.message || "รีเซ็ตสถานะไม่สำเร็จ");
+    } finally {
+      setResetting("");
+    }
+  }
+
   function updateDraft(market, index, value) {
     setDrafts((current) => ({ ...current, [market]: current[market].map((item, itemIndex) => itemIndex === index ? value : item) }));
   }
@@ -79,6 +99,7 @@ export default function GameinfoMarketChecksPage({ initialSellers, initialRuns =
 
   const sellerCounts = useMemo(() => Object.fromEntries(MARKETS.map((market) => [market.key, sellers.filter((seller) => seller.market === market.key && seller.enabled).length])), [sellers]);
   const confirmMarketConfig = MARKETS.find((market) => market.key === confirmMarket);
+  const resetMarketConfig = MARKETS.find((market) => market.key === resetMarket);
 
   return (
     <>
@@ -97,11 +118,27 @@ export default function GameinfoMarketChecksPage({ initialSellers, initialRuns =
         const progress = run?.totalGames ? Math.round((run.completedGames + run.failedGames) / run.totalGames * 100) : 0;
         const running = run && !FINISHED.has(run.status);
         const enabledGames = enabledCounts[market.key] || 0;
-        return <Card key={market.key}><CardHeader><CardTitle>{market.label}</CardTitle><CardDescription>เปิดใช้งาน {enabledGames} เกม · ร้านของเรา {sellerCounts[market.key] || 0} ร้าน · ไม่มี cooldown</CardDescription><CardAction><Button type="button" disabled={!canCheck || running || !enabledGames || Boolean(starting)} onClick={() => setConfirmMarket(market.key)}>{running || starting === market.key ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}{running ? "กำลังตรวจ" : "Check ทั้ง Market"}</Button></CardAction></CardHeader><CardContent className="flex flex-col gap-4">
-          {run ? <><div className="flex flex-wrap gap-2"><Badge variant={run.status === "failed" ? "destructive" : "outline"}>{run.status}</Badge><Badge variant="secondary">สำเร็จ {run.completedGames}</Badge>{run.failedGames ? <Badge variant="destructive">ล้มเหลว {run.failedGames}</Badge> : null}<Badge variant="secondary">Alerts {run.alertsOpened}</Badge></div><Progress value={progress}><ProgressLabel>ความคืบหน้า</ProgressLabel><ProgressValue /></Progress><p className="text-xs text-muted-foreground">ล่าสุด {new Date(run.finishedAt || run.startedAt || run.createdAt).toLocaleString("th-TH")}</p>{run.error ? <p className="text-sm text-destructive">{run.error}</p> : null}</> : <p className="text-sm text-muted-foreground">ยังไม่เคย Check รอบอัตโนมัติทำงานเวลา 09:00 ไทย</p>}
+        return <Card key={market.key}><CardHeader><CardTitle>{market.label}</CardTitle><CardDescription>เปิดใช้งาน {enabledGames} เกม · ร้านของเรา {sellerCounts[market.key] || 0} ร้าน · ไม่มี cooldown · {AUTO_SCHEDULE_NOTE}</CardDescription><CardAction className="flex flex-wrap gap-2"><Button type="button" variant="outline" disabled={!canCheck || !run || Boolean(resetting)} onClick={() => setResetMarket(market.key)} title={run ? "ล้างสถานะรอบล่าสุด" : "ยังไม่เคย Check"}>{resetting === market.key ? <Spinner data-icon="inline-start" /> : <RotateCcw data-icon="inline-start" />}Reset</Button><Button type="button" disabled={!canCheck || running || !enabledGames || Boolean(starting)} onClick={() => setConfirmMarket(market.key)}>{running || starting === market.key ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}{running ? "กำลังตรวจ" : "Check ทั้ง Market"}</Button></CardAction></CardHeader><CardContent className="flex flex-col gap-4">
+          {run ? <><div className="flex flex-wrap gap-2"><Badge variant={run.status === "failed" ? "destructive" : "outline"}>{run.status}</Badge><Badge variant="secondary">สำเร็จ {run.completedGames}</Badge>{run.failedGames ? <Badge variant="destructive">ล้มเหลว {run.failedGames}</Badge> : null}<Badge variant="secondary">Alerts {run.alertsOpened}</Badge></div><Progress value={progress}><ProgressLabel>ความคืบหน้า</ProgressLabel><ProgressValue /></Progress><p className="text-xs text-muted-foreground">ล่าสุด {new Date(run.finishedAt || run.startedAt || run.createdAt).toLocaleString("th-TH")}</p>{run.error ? <p className="text-sm text-destructive">{run.error}</p> : null}</> : <p className="text-sm text-muted-foreground">ยังไม่เคย Check · {AUTO_SCHEDULE_NOTE}</p>}
         </CardContent></Card>;
       })}</div>
       <Dialog open={Boolean(confirmMarket)} onOpenChange={(open) => { if (!open && !starting) setConfirmMarket(""); }}><DialogContent><DialogHeader><DialogTitle>ยืนยัน Check ทั้ง {confirmMarketConfig?.label || "Market"}</DialogTitle><DialogDescription>ระบบจะดึงข้อมูลล่าสุดของทุกเกมที่เปิด {confirmMarketConfig?.label || "Market"} แล้วตรวจราคาทุกร้านของเรา งานอาจใช้เวลาสักครู่และ Market เดียวกันรันได้ครั้งละหนึ่งงาน</DialogDescription></DialogHeader><DialogFooter><DialogClose render={<Button type="button" variant="outline" disabled={Boolean(starting)} />}>ยกเลิก</DialogClose><Button type="button" disabled={!confirmMarket || Boolean(starting)} onClick={() => start(confirmMarket)}>{starting ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}{starting ? "กำลังเริ่ม" : "เริ่ม Check"}</Button></DialogFooter></DialogContent></Dialog>
+      <AlertDialog open={Boolean(resetMarket)} onOpenChange={(open) => { if (!open && !resetting) setResetMarket(""); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>รีเซ็ตสถานะ {resetMarketConfig?.label || "Market"}</AlertDialogTitle>
+            <AlertDialogDescription>
+              ล้างรอบที่ค้างอยู่ของ {resetMarketConfig?.label || "Market"} เพื่อให้สั่ง Check ใหม่ได้ · ไม่ลบ Catalog, Mapping หรือ Alert ที่เคยบันทึกไว้ · ถ้ารอบเดิมยังทำงานอยู่จริง มันจะทำต่อจนจบเบื้องหลัง
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={Boolean(resetting)}>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction disabled={!resetMarket || Boolean(resetting)} onClick={() => reset(resetMarket)}>
+              {resetting ? <Spinner data-icon="inline-start" /> : <RotateCcw data-icon="inline-start" />}รีเซ็ตสถานะ
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {!canCheck ? <Alert><AlertTitle>ดูสถานะได้อย่างเดียว</AlertTitle><AlertDescription>ต้องมีสิทธิ์ gameinfo.market_check จึงจะสั่ง Check ได้</AlertDescription></Alert> : null}
     </>
   );
