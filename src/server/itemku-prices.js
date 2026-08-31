@@ -1,5 +1,5 @@
-import { settlePricePage } from "@/lib/gameinfo-price-diff";
 import { DEFAULT_ITEMKU_GAMES, listItemkuGames } from "@/server/itemku-games-repository";
+import { resolveGameinfoPricePage } from "@/server/gameinfo-price-page-store";
 
 const ITEMKU_ORIGIN = "https://www.itemku.com";
 const JINA_READER_ORIGIN = "https://r.jina.ai";
@@ -452,29 +452,26 @@ async function loadItemkuPage(game, requestedGroup, games, fetchHtml, fetchJson)
   };
 }
 
-export async function fetchItemkuPage(requestedGame = "zepeto", requestedGroup, { force = false, fetchHtml = itemkuFetch, fetchJson = itemkuApiFetch } = {}) {
+export async function fetchItemkuPage(requestedGame = "zepeto", requestedGroup, { force = false, fetchHtml = itemkuFetch, fetchJson = itemkuApiFetch, store } = {}) {
   const games = await loadItemkuGames();
   const game = normalizeItemkuGame(requestedGame, games);
   if (!game) throw new Error("ยังไม่มีเกมในรายการเทียบราคา");
   const group = normalizeItemkuGroup(requestedGroup);
-  const cacheKey = `${game.value}:${group}`;
-  const cached = itemkuCache.get(cacheKey);
-  if (!force && cached?.value && cached.expiresAt > Date.now()) return cached.value;
-  if (!force && cached?.promise) return cached.promise;
-  const promise = loadItemkuPage(game, group, games, fetchHtml, fetchJson);
-  itemkuCache.set(cacheKey, { ...cached, promise });
-  try {
-    const value = settlePricePage(cached?.value, await promise);
-    itemkuCache.set(cacheKey, { value, expiresAt: Date.now() + ITEMKU_CACHE_TTL_MS });
-    return value;
-  } catch (error) {
-    if (cached?.value) {
-      itemkuCache.set(cacheKey, cached);
-      return cached.value;
-    }
-    itemkuCache.delete(cacheKey);
-    throw error;
-  }
+  return resolveGameinfoPricePage({
+    market: "itemku",
+    game: game.value,
+    productType: group,
+    games,
+    cache: itemkuCache,
+    cacheKey: `${game.value}:${group}`,
+    ttlMs: ITEMKU_CACHE_TTL_MS,
+    force,
+    store,
+    // itemku's reader proxy fails often enough that a failed refresh has always
+    // kept the last good page on screen instead of showing an error.
+    serveStoredOnError: true,
+    load: () => loadItemkuPage(game, group, games, fetchHtml, fetchJson),
+  });
 }
 
 export function clearItemkuCache() {

@@ -1,5 +1,5 @@
-import { settlePricePage } from "@/lib/gameinfo-price-diff";
 import { DEFAULT_G2G_GAMES, listG2GGames } from "@/server/g2g-games-repository";
+import { resolveGameinfoPricePage } from "@/server/gameinfo-price-page-store";
 
 const G2G_ORIGIN = "https://www.g2g.com";
 export const G2G_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -14,14 +14,13 @@ export function g2gGameUrl(slug) {
 }
 
 export function normalizeG2GGame(value, games = G2G_GAMES) {
-  const list = games?.length ? games : G2G_GAMES;
+  const list = Array.isArray(games) ? games : G2G_GAMES;
   return list.find((game) => game.value === value || game.slug === value) || list[0] || null;
 }
 
 export async function loadG2GGames() {
   try {
-    const games = await listG2GGames();
-    return games.length ? games : DEFAULT_G2G_GAMES;
+    return await listG2GGames();
   } catch {
     return DEFAULT_G2G_GAMES;
   }
@@ -181,26 +180,23 @@ async function loadG2GPage(game, requestedGroup, games, fetchHtml) {
   };
 }
 
-export async function fetchG2GPage(requestedGame = "zepeto-top-up", requestedGroup, { force = false, fetchHtml = g2gFetch } = {}) {
-  const games = await loadG2GGames();
+export async function fetchG2GPage(requestedGame = "zepeto-top-up", requestedGroup, { force = false, fetchHtml = g2gFetch, games: suppliedGames, store } = {}) {
+  const games = suppliedGames ?? await loadG2GGames();
   const game = normalizeG2GGame(requestedGame, games);
   if (!game) throw new Error("ยังไม่มีเกมในรายการเทียบราคา");
   const group = normalizeG2GGroup(requestedGroup);
-  const cacheKey = `${game.value}:${group}`;
-  const cached = g2gCache.get(cacheKey);
-  if (!force && cached?.value && cached.expiresAt > Date.now()) return cached.value;
-  if (!force && cached?.promise) return cached.promise;
-  const promise = loadG2GPage(game, group, games, fetchHtml);
-  g2gCache.set(cacheKey, { ...cached, promise });
-  try {
-    const value = settlePricePage(cached?.value, await promise);
-    g2gCache.set(cacheKey, { value, expiresAt: Date.now() + G2G_CACHE_TTL_MS });
-    return value;
-  } catch (error) {
-    if (cached?.value) g2gCache.set(cacheKey, cached);
-    else g2gCache.delete(cacheKey);
-    throw error;
-  }
+  return resolveGameinfoPricePage({
+    market: "g2g",
+    game: game.value,
+    productType: group,
+    games,
+    cache: g2gCache,
+    cacheKey: `${game.value}:${group}`,
+    ttlMs: G2G_CACHE_TTL_MS,
+    force,
+    store,
+    load: () => loadG2GPage(game, group, games, fetchHtml),
+  });
 }
 
 export function clearG2GCache() {

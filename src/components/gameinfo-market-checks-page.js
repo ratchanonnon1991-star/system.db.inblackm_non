@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, RefreshCw, Settings2, Store, Trash2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import { GAMEINFO_MARKETS } from "@/lib/gameinfo-market-system";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,7 @@ import { Progress, ProgressLabel, ProgressValue } from "@/components/ui/progress
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Spinner } from "@/components/ui/spinner";
 
-const MARKETS = [{ key: "kaleoz", label: "Kaleoz" }, { key: "itemku", label: "Itemku" }];
+const MARKETS = GAMEINFO_MARKETS;
 const FINISHED = new Set(["completed", "partial", "failed"]);
 
 export default function GameinfoMarketChecksPage({ initialSellers, initialRuns = [], enabledCounts = {}, canCheck, canManage }) {

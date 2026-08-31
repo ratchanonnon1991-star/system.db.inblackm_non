@@ -162,6 +162,7 @@ assert.match(catalogRoute, /getGameinfoMarketPackSource[\s\S]*q\.get\("externalP
 const marketChecksPage = readFileSync(new URL("../src/components/gameinfo-market-checks-page.js", import.meta.url), "utf8");
 assert.match(marketChecksPage, /setConfirmMarket\(market\.key\)[\s\S]*DialogTitle>ยืนยัน Check ทั้ง/);
 assert.match(marketChecksPage, /อัตโนมัติทุกวัน 09:00 น\. เวลาไทย/);
+assert.match(marketChecksPage, /GAMEINFO_MARKETS[\s\S]*const MARKETS = GAMEINFO_MARKETS/);
 const instrumentation = readFileSync(new URL("../src/instrumentation.js", import.meta.url), "utf8");
 assert.match(instrumentation, /NODE_ENV === "production"[\s\S]*startGameinfoMarketScheduler/);
 const marketScheduler = readFileSync(new URL("../src/server/gameinfo-market-scheduler.js", import.meta.url), "utf8");
@@ -212,6 +213,7 @@ assert.match(mappingPage, /visiblePacks\.map\(\(pack\)/);
 assert.match(mappingPage, /value=\{packQuery\}[\s\S]*value=\{packStatus\}/);
 assert.equal((mappingPage.match(/className="h-16"/g) || []).length, 2);
 assert.match(marketServer, /ALTER TABLE gameinfo_market_catalog_packs ADD COLUMN IF NOT EXISTS product_type/);
+assert.match(marketServer, /ALTER TABLE gameinfo_market_own_sellers[\s\S]*DROP CONSTRAINT IF EXISTS gameinfo_market_own_sellers_market_check[\s\S]*ADD CONSTRAINT gameinfo_market_own_sellers_market_check[\s\S]*'g2g'/);
 assert.match(marketServer, /UPDATE gameinfo_market_catalog_packs SET active = FALSE[\s\S]*AND product_type IN \(\$3, ''\)/);
 assert.match(marketServer, /DELETE FROM gameinfo_market_offers o[\s\S]*c\.product_type IN \(\$3, ''\)/);
 assert.match(marketServer, /FROM gameinfo_market_mappings om[\s\S]*om\.data_mode <> \$4[\s\S]*\) other_mode ON TRUE/);

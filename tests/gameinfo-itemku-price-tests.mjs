@@ -80,17 +80,21 @@ const fetchHtml = async (url) => {
   if (failed) throw new Error("offline");
   return url.endsWith("/top-up") ? flight(catalogData) : sellerPage;
 };
-const loaded = await fetchItemkuPage("zepeto", "coin", { fetchHtml, fetchJson: null });
+// No gameinfo database in the suite, so the snapshot store is stubbed out and
+// the cache behaves exactly like the in-memory one it replaced.
+const store = { read: async () => null, save: async () => {} };
+const loaded = await fetchItemkuPage("zepeto", "coin", { fetchHtml, fetchJson: null, store });
 assert.equal(loaded.provider, "itemku");
 assert.equal(loaded.defaultBaselineSeller, undefined);
 assert.equal(loaded.productType, "coin");
 assert.equal(loaded.groups.length, 2);
 failed = true;
-assert.equal(await fetchItemkuPage("zepeto", "coin", { force: true, fetchHtml, fetchJson: null }), loaded);
+assert.equal(await fetchItemkuPage("zepeto", "coin", { force: true, fetchHtml, fetchJson: null, store }), loaded);
 
 clearItemkuCache();
 let apiUrl = "";
 const apiLoaded = await fetchItemkuPage("zepeto", "zem", {
+  store,
   fetchHtml: async (url) => url.endsWith("/top-up") ? flight(catalogData) : sellerPage,
   fetchJson: async (url) => {
     apiUrl = url;

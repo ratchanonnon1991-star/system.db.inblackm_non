@@ -108,6 +108,24 @@ CREATE TABLE IF NOT EXISTS gameinfo_market_own_sellers (
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (market, seller_key)
 );
+ALTER TABLE gameinfo_market_own_sellers
+  DROP CONSTRAINT IF EXISTS gameinfo_market_own_sellers_market_check;
+ALTER TABLE gameinfo_market_own_sellers
+  ADD CONSTRAINT gameinfo_market_own_sellers_market_check
+  CHECK (market IN ('kaleoz', 'itemku', 'playerok', 'g2g'));
+
+-- Snapshot of the "เทียบร้านอื่น" page per market/game/หมวดหมู่, so a page load
+-- renders from the database instead of waiting on the market. Refreshed daily at
+-- 09:00 Thai time and by the refresh button.
+CREATE TABLE IF NOT EXISTS gameinfo_price_pages (
+  market varchar(16) NOT NULL,
+  game text NOT NULL,
+  product_type text NOT NULL DEFAULT '',
+  page jsonb NOT NULL,
+  fetched_at timestamptz NOT NULL DEFAULT now(),
+  checked_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (market, game, product_type)
+);
 
 CREATE TABLE IF NOT EXISTS gameinfo_market_check_runs (
   id bigserial PRIMARY KEY,

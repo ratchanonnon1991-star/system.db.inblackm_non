@@ -27,12 +27,18 @@ assert.equal(parsed.offers[1].quantity, 4680);
 assert.equal(groupG2GOffers(parsed.offers).length, 2);
 assert.equal(g2gGameUrl("zepeto-top-up"), "https://www.g2g.com/categories/zepeto-top-up");
 assert.equal(normalizeG2GGame("missing").value, "zepeto-top-up");
+assert.equal(normalizeG2GGame("missing", []), null);
 assert.equal(normalizeG2GGroup(null), "all");
 assert.equal(slugFromG2GUrl("https://www.g2g.com/id/categories/zepeto-top-up"), "zepeto-top-up");
 assert.equal(slugFromG2GUrl("zepeto-top-up"), "zepeto-top-up");
 assert.throws(() => slugFromG2GUrl("https://playerok.com/categories/coins"), /ลิงก์ไม่ถูกต้อง/);
 
-const page = await fetchG2GPage("zepeto-top-up", "zems", { fetchHtml: async () => html, force: true });
+const page = await fetchG2GPage("zepeto-top-up", "zems", {
+  fetchHtml: async () => html,
+  force: true,
+  games: [{ value: "zepeto-top-up", slug: "zepeto-top-up", label: "ZEPETO" }],
+  store: { read: async () => null, save: async () => {} },
+});
 assert.equal(page.provider, "g2g");
 assert.equal(page.productType, "zems");
 assert.equal(page.groups.length, 1);
@@ -42,7 +48,11 @@ const providers = readFileSync(new URL("../src/server/gameinfo-market-providers.
 assert.match(providers, /g2g:[\s\S]*loadG2GGames[\s\S]*fetchG2GPage/);
 const compare = readFileSync(new URL("../src/components/gameinfo-pack-price-compare.js", import.meta.url), "utf8");
 assert.match(compare, /TabsTrigger value="g2g"/);
+assert.match(compare, /onClick=\{\(\) => setDeletePrompt\(game\)\}/);
+assert.match(compare, /AlertDialogTitle>ยืนยันการลบลิงก์เกม<\/AlertDialogTitle>[\s\S]*removeGame\(deletePrompt\)/);
 const route = readFileSync(new URL("../src/app/api/gameinfo/g2g-prices/route.js", import.meta.url), "utf8");
 assert.match(route, /fetchG2GPage/);
+const repository = readFileSync(new URL("../src/server/g2g-games-repository.js", import.meta.url), "utf8");
+assert.match(repository, /to_regclass\('g2g_games'\)[\s\S]*if \(!tableExists/);
 
-console.log("18 passed");
+console.log("22 passed");

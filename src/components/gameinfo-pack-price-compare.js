@@ -7,6 +7,7 @@ import { SortableContext, arrayMove, horizontalListSortingStrategy, sortableKeyb
 import { CSS } from "@dnd-kit/utilities";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -120,6 +121,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
   const [savedGames, setSavedGames] = useState(null);
   const [gameBusy, setGameBusy] = useState(false);
   const [gameError, setGameError] = useState("");
+  const [deletePrompt, setDeletePrompt] = useState(null);
   const [gameSort, setGameSort] = useState("custom");
   const provider = ["kaleoz", "itemku", "g2g"].includes(serverPage?.provider) ? serverPage.provider : "kaleoz";
   const page = refreshedPage?.provider === provider && refreshedPage?.game === serverPage?.game && refreshedPage?.productType === serverPage?.productType ? refreshedPage : serverPage;
@@ -132,7 +134,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
   const marketUi = {
     kaleoz: { label: "Kaleoz", gameUrl: KALEOZ_GAME_URL, example: "https://www.kaleoz.com/buy/honkai-star-rail", placeholder: "https://www.kaleoz.com/buy/<ชื่อเกม>" },
     itemku: { label: "itemku", gameUrl: ITEMKU_GAME_URL, example: "https://www.itemku.com/en/g/honkai-star-rail/top-up", placeholder: "https://www.itemku.com/en/g/<ชื่อเกม>/top-up" },
-    g2g: { label: "G2G", gameUrl: G2G_GAME_URL, example: "https://www.g2g.com/categories/zepeto-top-up", placeholder: "https://www.g2g.com/categories/<ชื่อเกม>" },
+    g2g: { label: "G2G", gameUrl: G2G_GAME_URL, example: "https://www.g2g.com/categories/pokemon-go-top-up-pokecoins", placeholder: "https://www.g2g.com/categories/<ชื่อเกม>" },
   }[provider];
   const marketLabel = page?.providerLabel || marketUi.label;
   const marketGameUrl = marketUi.gameUrl;
@@ -366,8 +368,10 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
   }
 
   async function removeGame(game) {
+    if (!game) return;
     const nextGames = await submitGameList(`/api/gameinfo/${provider}-games?game=${encodeURIComponent(game.value)}`, { method: "DELETE" }, "ลบเกมไม่สำเร็จ");
     if (!nextGames) return;
+    setDeletePrompt(null);
     if (game.value === currentGame) selectGame(nextGames[0]?.value);
     else router.refresh();
   }
@@ -709,7 +713,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
                     <a href={marketGameUrl(game.slug)} target="_blank" rel="noreferrer" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
                       ดูบน {marketLabel} <ExternalLink data-icon="inline-end" />
                     </a>
-                    <Button type="button" variant="outline" size="sm" disabled={gameBusy || games.length < 2} onClick={() => removeGame(game)} title={games.length < 2 ? "ต้องเหลืออย่างน้อย 1 เกม" : "ลบเกมนี้"}>
+                    <Button type="button" variant="outline" size="sm" disabled={gameBusy || games.length < 2} onClick={() => setDeletePrompt(game)} title={games.length < 2 ? "ต้องเหลืออย่างน้อย 1 เกม" : "ลบเกมนี้"}>
                       <Trash2 data-icon="inline-start" /> ลบ
                     </Button>
                   </div>
@@ -719,6 +723,23 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
             </div>
           </DialogContent>
         </Dialog>
+
+        <AlertDialog open={Boolean(deletePrompt)} onOpenChange={(open) => { if (!open && !gameBusy) setDeletePrompt(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>ยืนยันการลบลิงก์เกม</AlertDialogTitle>
+              <AlertDialogDescription>
+                ลบ {deletePrompt?.label || "เกมนี้"} ออกจากรายการเทียบราคา {marketLabel}? การลบนี้ไม่ลบเกมหรือแพ็คใน GameInfo
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={gameBusy}>ยกเลิก</AlertDialogCancel>
+              <AlertDialogAction variant="destructive" disabled={gameBusy} onClick={() => removeGame(deletePrompt)}>
+                {gameBusy ? <Spinner data-icon="inline-start" /> : <Trash2 data-icon="inline-start" />}ลบลิงก์เกม
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </TooltipProvider>
   );

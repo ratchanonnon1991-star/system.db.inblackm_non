@@ -2,6 +2,7 @@ import { handleApiError, jsonOk } from "@/lib/http";
 import { requireGameinfoAccess, requireGameinfoEditor } from "@/server/auth";
 import { addG2GGame, deleteG2GGame, listG2GGames, slugFromG2GUrl } from "@/server/g2g-games-repository";
 import { clearG2GCache, inspectG2GGame } from "@/server/g2g-prices";
+import { deleteGameinfoPricePages } from "@/server/gameinfo-price-page-store";
 import { auditActor, recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
 
 export async function GET(request) {
@@ -34,6 +35,7 @@ export async function DELETE(request) {
     const value = new URL(request.url).searchParams.get("game") || "";
     const game = await deleteG2GGame(value);
     clearG2GCache();
+    await deleteGameinfoPricePages("g2g", game.value);
     await recordGameinfoAudit({ gameId: 0, area: "settings", actor: auditActor(user), before: { g2gGame: game.label, slug: game.slug }, after: null });
     return jsonOk({ game, games: await listG2GGames() });
   } catch (error) {

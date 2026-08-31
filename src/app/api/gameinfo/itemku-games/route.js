@@ -2,6 +2,7 @@ import { handleApiError, jsonOk } from "@/lib/http";
 import { requireGameinfoAccess, requireGameinfoEditor } from "@/server/auth";
 import { addItemkuGame, deleteItemkuGame, listItemkuGames, slugFromItemkuUrl } from "@/server/itemku-games-repository";
 import { clearItemkuCache, inspectItemkuGame } from "@/server/itemku-prices";
+import { deleteGameinfoPricePages } from "@/server/gameinfo-price-page-store";
 import { auditActor, recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
 
 export async function GET(request) {
@@ -34,6 +35,7 @@ export async function DELETE(request) {
     const value = new URL(request.url).searchParams.get("game") || "";
     const game = await deleteItemkuGame(value);
     clearItemkuCache();
+    await deleteGameinfoPricePages("itemku", game.value);
     await recordGameinfoAudit({ gameId: 0, area: "settings", actor: auditActor(user), before: { itemkuGame: game.label, slug: game.slug }, after: null });
     return jsonOk({ game, games: await listItemkuGames() });
   } catch (error) {

@@ -140,6 +140,11 @@ async function ensureSchema(pool) {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         PRIMARY KEY (market, seller_key)
       );
+      ALTER TABLE gameinfo_market_own_sellers
+        DROP CONSTRAINT IF EXISTS gameinfo_market_own_sellers_market_check;
+      ALTER TABLE gameinfo_market_own_sellers
+        ADD CONSTRAINT gameinfo_market_own_sellers_market_check
+        CHECK (market IN ('kaleoz', 'itemku', 'playerok', 'g2g'));
 
       CREATE TABLE IF NOT EXISTS gameinfo_market_check_runs (
         id BIGSERIAL PRIMARY KEY,

@@ -1,5 +1,5 @@
-import { settlePricePage } from "@/lib/gameinfo-price-diff";
 import { DEFAULT_KALEOZ_GAMES, listKaleozGames, saveKaleozGameLabel } from "@/server/kaleoz-games-repository";
+import { resolveGameinfoPricePage } from "@/server/gameinfo-price-page-store";
 
 const KALEOZ_ORIGIN = "https://www.kaleoz.com";
 const KALEOZ_ITEM_LIST_URL = `${KALEOZ_ORIGIN}/ajax/item-list`;
@@ -340,29 +340,23 @@ async function loadKaleozPage(game, requestedType, games, force) {
   };
 }
 
-export async function fetchKaleozPage(requestedGame = "zepeto", requestedType, { force = false } = {}) {
+export async function fetchKaleozPage(requestedGame = "zepeto", requestedType, { force = false, store } = {}) {
   const games = await loadKaleozGames();
   const game = normalizeKaleozGame(requestedGame, games);
   if (!game) throw new Error("ยังไม่มีเกมในรายการเทียบราคา");
-  const cacheKey = `${game.value}:${requestedType || "default"}`;
-  const cached = kaleozCache.get(cacheKey);
-  if (!force && cached?.value && cached.expiresAt > Date.now()) {
-    const value = normalizeKaleozCategoryLabels(cached.value);
-    kaleozCache.set(cacheKey, { ...cached, value });
-    return value;
-  }
-  if (!force && cached?.promise) return cached.promise;
-  const promise = loadKaleozPage(game, requestedType, games, force);
-  kaleozCache.set(cacheKey, { ...cached, promise });
-  try {
-    const value = settlePricePage(cached?.value, normalizeKaleozCategoryLabels(await promise));
-    kaleozCache.set(cacheKey, { value, expiresAt: Date.now() + KALEOZ_CACHE_TTL_MS });
-    return value;
-  } catch (error) {
-    if (cached?.value) kaleozCache.set(cacheKey, cached);
-    else kaleozCache.delete(cacheKey);
-    throw error;
-  }
+  return resolveGameinfoPricePage({
+    market: "kaleoz",
+    game: game.value,
+    productType: requestedType || "",
+    games,
+    cache: kaleozCache,
+    cacheKey: `${game.value}:${requestedType || "default"}`,
+    ttlMs: KALEOZ_CACHE_TTL_MS,
+    force,
+    store,
+    normalize: normalizeKaleozCategoryLabels,
+    load: () => loadKaleozPage(game, requestedType, games, force),
+  });
 }
 
 export function clearKaleozGameCache(value) {
