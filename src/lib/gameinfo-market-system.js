@@ -242,7 +242,8 @@ export function calculateGameinfoPriceDifference(basePrice, marketPrice) {
     return { kind: "missing_price", direction: "missing", difference: null, percent: null, alert: true };
   }
   const difference = current - base;
-  const percent = Math.abs(difference) / base * 100;
+  const average = (base + current) / 2;
+  const percent = average > 0 ? Math.abs(difference) / average * 100 : 0;
   return {
     kind: "price_difference",
     direction: difference < 0 ? "under" : difference > 0 ? "over" : "equal",

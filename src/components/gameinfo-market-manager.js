@@ -106,7 +106,7 @@ export default function GameinfoMarketManager({ gameId, dataMode, columns, onCol
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           {markets.map((market) => {
             const column = marketColumns.get(market.market);
-            const enabled = market.enabled && column?.enabled !== false;
+            const enabled = market.enabled && column?.enabled === true;
             const games = gamesByMarket[market.market] || [];
             return (
               <Field key={market.market} orientation="horizontal" className="rounded-lg border p-3">

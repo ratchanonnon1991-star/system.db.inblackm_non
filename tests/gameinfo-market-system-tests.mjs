@@ -24,9 +24,14 @@ import { buildGameinfoMarketPackPriceMap } from "@/lib/gameinfo-market-prices.js
 assert.equal(marketPackIdentity("kaleoz", { name: "  128 ZEMS ", category: "Coins", amount: 128 }), "kaleoz:128 zems|coins|128");
 assert.equal(marketPackIdentity("kaleoz", { key: "own:123", name: "เปลี่ยนชื่อได้" }), "kaleoz:เปลี่ยนชื่อได้||");
 assert.equal(marketPackIdentity("itemku", { key: "denomination-128", name: "เปลี่ยนชื่อได้" }), "itemku:denomination-128");
-assert.equal(calculateGameinfoPriceDifference(100, 95.01).alert, false);
-assert.equal(calculateGameinfoPriceDifference(100, 95).alert, true);
-assert.equal(calculateGameinfoPriceDifference(100, 105).alert, true);
+assert.equal(calculateGameinfoPriceDifference(100, 95.13).alert, false);
+assert.equal(calculateGameinfoPriceDifference(100, 95.12).alert, true);
+assert.equal(calculateGameinfoPriceDifference(100, 105.12).alert, false);
+assert.equal(calculateGameinfoPriceDifference(100, 105.13).alert, true);
+assert.equal(
+  calculateGameinfoPriceDifference(100, 110).percent,
+  calculateGameinfoPriceDifference(110, 100).percent
+);
 assert.equal(calculateGameinfoPriceDifference(0, 10).kind, "data_quality");
 assert.equal(calculateGameinfoPriceDifference(100, null).kind, "missing_price");
 assert.equal(nextGameinfoMarketRunAt(new Date("2026-08-29T01:59:59Z")).toISOString(), "2026-08-29T02:00:00.000Z");
@@ -179,6 +184,11 @@ assert.match(marketServer, /COUNT\(\*\) FILTER \(WHERE m\.status = 'stale'\)/);
 assert.match(marketServer, /WHERE m\.game_id = \$1[\s\S]*AND m\.status = 'active' AND c\.active/);
 assert.match(marketServer, /getGameinfoMarketPackSource[\s\S]*gameinfo_market_offers[\s\S]*ORDER BY price, seller_name/);
 assert.match(marketServer, /export async function deleteAllGameinfoMarketMappings[\s\S]*FOR UPDATE[\s\S]*'delete_all'/);
+assert.match(marketServer, /resolveActiveAlertsForMappingChange[\s\S]*WITH resolved AS[\s\S]*status = 'resolved'[\s\S]*gameinfo_price_alert_events/);
+assert.match(marketServer, /reason: current\.rows\[0\] \? "mapping_changed" : "mapping_created"/);
+assert.match(marketServer, /reason: "mapping_created_ordered"/);
+assert.match(marketServer, /export async function deleteGameinfoMarketMapping[\s\S]*reason: "mapping_deleted"[\s\S]*DELETE FROM gameinfo_market_mappings/);
+assert.match(marketServer, /export async function deleteAllGameinfoMarketMappings[\s\S]*reason: "all_mappings_deleted"[\s\S]*DELETE FROM gameinfo_market_mappings/);
 const mappingRoute = readFileSync(new URL("../src/app/api/gameinfo/market-mappings/route.js", import.meta.url), "utf8");
 assert.match(mappingRoute, /input\?\.all === true[\s\S]*deleteAllGameinfoMarketMappings/);
 const mappingPage = readFileSync(new URL("../src/components/gameinfo-market-mapping-page.js", import.meta.url), "utf8");
@@ -228,14 +238,22 @@ assert.match(schema, /product_type text NOT NULL DEFAULT ''/);
 assert.equal(gameinfoMarketGameLabel("Honkai Impact 3 (SEA) · South East Asia · Multi-Platform"), "Honkai Impact 3 (SEA) · SEA · Multi-Platform");
 assert.equal(gameinfoMarketGameLabel(null), "");
 const marketManager = readFileSync(new URL("../src/components/gameinfo-market-manager.js", import.meta.url), "utf8");
+assert.match(marketManager, /const enabled = market\.enabled && column\?\.enabled === true/);
 assert.match(marketManager, /<FieldContent className="min-w-0">/);
 assert.match(marketManager, /<SelectTrigger className="w-full min-w-0 overflow-hidden"><SelectValue className="truncate"/);
 assert.match(marketManager, /label: gameinfoMarketGameLabel\(game\.label\)/);
 
-assert.match(marketServer, /getGameinfoExchangeRates\(\["USDT\/THB", "USDCNY"\], \{ includeHistory: false, refreshStale: false \}\)/);
+assert.match(marketServer, /getGameinfoExchangeRates\(\["USDT\/THB", "USDCNY", "IDRTHB", "USDIDR"\], \{ includeHistory: false, refreshStale: false \}\)/);
 assert.match(marketServer, /const \[availableResult, mappings\] = await Promise\.all\(/);
+assert.match(marketServer, /export async function unacknowledgeGameinfoPriceAlert[\s\S]*acknowledged_by = NULL[\s\S]*acknowledged_at = NULL[\s\S]*note = ''/);
+assert.doesNotMatch(marketServer, /unacknowledgeGameinfoPriceAlert[\s\S]*note = NULL/);
+const priceAlertsRoute = readFileSync(new URL("../src/app/api/gameinfo/price-alerts/route.js", import.meta.url), "utf8");
+assert.match(priceAlertsRoute, /body\.action === "unacknowledge"[\s\S]*unacknowledgeGameinfoPriceAlert/);
+const priceAlertsPage = readFileSync(new URL("../src/components/gameinfo-price-alerts-page.js", import.meta.url), "utf8");
+assert.match(priceAlertsPage, /item\.acknowledgedAt \? "ยกเลิก" : "รับทราบ"/);
+assert.match(priceAlertsPage, /<Badge variant="success"><Check \/>รับทราบแล้ว<\/Badge>/);
 const rateServer = readFileSync(new URL("../src/server/gameinfo-exchange-rates.js", import.meta.url), "utf8");
 assert.match(rateServer, /if \(force \|\| \(refreshStale && current\.stale\)\)/);
 assert.match(rateServer, /if \(!includeHistory\) return \{ pair, \.\.\.current, history: \[\] \};/);
 
-console.log("\n91 passed, 0 failed");
+console.log("\n98 passed, 0 failed");

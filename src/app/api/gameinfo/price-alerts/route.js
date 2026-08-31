@@ -1,6 +1,6 @@
 import { handleApiError, jsonOk } from "@/lib/http";
 import { requireGameinfoAccess, requireGameinfoMarketChecker } from "@/server/auth";
-import { acknowledgeGameinfoPriceAlert, listGameinfoPriceAlerts } from "@/server/gameinfo-market-system";
+import { acknowledgeGameinfoPriceAlert, listGameinfoPriceAlerts, unacknowledgeGameinfoPriceAlert } from "@/server/gameinfo-market-system";
 
 export async function GET(request) {
   try {
@@ -21,8 +21,11 @@ export async function PATCH(request) {
   try {
     const user = await requireGameinfoMarketChecker(request);
     const body = await request.json();
+    if (body.action === "unacknowledge") {
+      return jsonOk({ alert: await unacknowledgeGameinfoPriceAlert(Number(body.id), user) });
+    }
     return jsonOk({ alert: await acknowledgeGameinfoPriceAlert(Number(body.id), body.note, user) });
   } catch (error) {
-    return handleApiError(error, "รับทราบ Alert ไม่สำเร็จ");
+    return handleApiError(error, "อัปเดตสถานะรับทราบ Alert ไม่สำเร็จ");
   }
 }

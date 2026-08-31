@@ -6,7 +6,9 @@ const CONNECTION_NAME = "gameinfo";
 const HISTORY_LIMIT = 48;
 const PAIRS = {
   "USDT/THB": { provider: "CoinGecko", kind: "crypto" },
-  USDCNY: { provider: "Frankfurter/ECB", kind: "fiat" },
+  USDCNY: { provider: "Frankfurter/ECB", kind: "fiat", base: "USD", quote: "CNY" },
+  IDRTHB: { provider: "Frankfurter/ECB", kind: "fiat", base: "IDR", quote: "THB" },
+  USDIDR: { provider: "Frankfurter/ECB", kind: "fiat", base: "USD", quote: "IDR" },
 };
 
 const schemaReady = new Map();
@@ -22,6 +24,8 @@ export function normalizeGameinfoRatePair(value) {
   const compact = String(value || "").trim().toUpperCase().replace(/[^A-Z]/g, "");
   if (compact === "USDTTHB") return "USDT/THB";
   if (compact === "USDCNY") return "USDCNY";
+  if (compact === "IDRTHB") return "IDRTHB";
+  if (compact === "USDIDR") return "USDIDR";
   return null;
 }
 
@@ -56,8 +60,9 @@ export async function fetchGameinfoRate(pair, { fetchImpl = fetch } = {}) {
     };
   }
 
+  const { base, quote } = PAIRS[normalized];
   const response = await fetchImpl(
-    "https://api.frankfurter.dev/v2/rate/USD/CNY?providers=ECB",
+    `https://api.frankfurter.dev/v2/rate/${base}/${quote}?providers=ECB`,
     { signal }
   );
   if (!response.ok) throw new Error(`Frankfurter ตอบกลับ ${response.status}`);

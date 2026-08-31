@@ -102,7 +102,7 @@ export default function GameinfoTagsInput({
   return (
     <div className="relative" ref={ref}>
       <div
-        className={`flex min-h-9 w-full flex-wrap items-center gap-1.5 rounded border px-2 py-1 focus-within:border-linear-primary/40 focus-within:bg-linear-surface-1 ${
+        className={`flex min-h-9 w-max min-w-full flex-nowrap items-center gap-1.5 rounded border px-2 py-1 focus-within:border-linear-primary/40 focus-within:bg-linear-surface-1 ${
           invalid ? "border-red-500/40" : "border-transparent hover:bg-linear-surface-2"
         }`}
       >
@@ -110,7 +110,7 @@ export default function GameinfoTagsInput({
           <span
             key={`${v}-${i}`}
             style={stableColors ? gameinfoStableColorStyle(v) : undefined}
-            className={`inline-flex items-center gap-1 rounded border border-transparent px-2 py-0.5 text-xs ${stableColors ? "gameinfo-stable-tag" : neutral ? "bg-linear-surface-3 text-linear-ink-muted" : "bg-linear-primary/15 text-linear-primary"}`}
+            className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded border border-transparent px-2 py-0.5 text-xs ${stableColors ? "gameinfo-stable-tag" : neutral ? "bg-linear-surface-3 text-linear-ink-muted" : "bg-linear-primary/15 text-linear-primary"}`}
           >
             {onTagImageChange ? (
               <button type="button" onClick={() => editImage(v)} className="flex items-center" aria-label={`ใส่รูป ${v}`} title={`ใส่รูป${imageLabel}`}>
@@ -157,7 +157,8 @@ export default function GameinfoTagsInput({
               }
             }}
             autoComplete="off"
-            className="min-w-[80px] flex-1 border-none py-0.5 text-sm outline-none placeholder:text-linear-ink-tertiary"
+            style={{ width: `${Math.max(80, (text.length + 1) * 8)}px` }}
+            className="min-w-20 flex-none border-none py-0.5 text-sm outline-none placeholder:text-linear-ink-tertiary focus-visible:outline-none"
           />
         )}
       </div>

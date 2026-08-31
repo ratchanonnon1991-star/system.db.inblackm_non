@@ -587,6 +587,32 @@ export async function listGameinfoMarketMappings(gameId, dataMode, market) {
   return result.rows.map(mapMapping);
 }
 
+async function resolveActiveAlertsForMappingChange(
+  client,
+  { gameId, dataMode, market, packIds = null, reason, actor }
+) {
+  const values = [gameId, dataMode, market];
+  const packClause = packIds?.length
+    ? `AND pack_id = ANY($${values.push(packIds)}::text[])`
+    : "";
+  const dataIndex = values.push(JSON.stringify({ reason }));
+  const actorIndex = values.push(actorId(actor));
+  const result = await client.query(
+    `WITH resolved AS (
+       UPDATE gameinfo_price_alerts
+          SET status = 'resolved', resolved_run_id = NULL, resolved_at = NOW()
+        WHERE game_id = $1 AND data_mode = $2 AND market = $3
+          AND status = 'active' ${packClause}
+        RETURNING id
+     )
+     INSERT INTO gameinfo_price_alert_events (alert_id, event_type, data, actor_id)
+     SELECT id, 'resolved', $${dataIndex}::jsonb, $${actorIndex} FROM resolved
+     RETURNING alert_id`,
+    values
+  );
+  return result.rowCount;
+}
+
 export async function saveGameinfoMarketMapping(input, actor) {
   const gameId = Number(input?.gameId);
   const normalizedMode = mode(input?.dataMode);
@@ -619,6 +645,15 @@ export async function saveGameinfoMarketMapping(input, actor) {
     );
     const version = Number(current.rows[0]?.version) || 0;
     if (input?.version !== undefined && Number(input.version) !== version) throw httpError("Mapping ถูกแก้โดยผู้ใช้อื่น", 409);
+    const mappingChanged = !current.rows[0]
+      || current.rows[0].external_game_key !== externalGameKey
+      || current.rows[0].external_pack_key !== externalPackKey;
+    if (mappingChanged) {
+      await resolveActiveAlertsForMappingChange(client, {
+        gameId, dataMode: normalizedMode, market, packIds: [packId],
+        reason: current.rows[0] ? "mapping_changed" : "mapping_created", actor,
+      });
+    }
     let result;
     try {
       result = await client.query(
@@ -685,6 +720,10 @@ export async function saveGameinfoMarketMappingsInOrder(input, actor) {
     );
     const catalogByKey = new Map(catalog.rows.map((row) => [row.external_pack_key, row]));
     if (catalogByKey.size !== clean.length) throw httpError("Pack ของ Market บางรายการไม่พร้อมใช้งาน", 409);
+    await resolveActiveAlertsForMappingChange(client, {
+      gameId, dataMode: normalizedMode, market, packIds: clean.map((pair) => pair.packId),
+      reason: "mapping_created_ordered", actor,
+    });
     for (const pair of clean) {
       const pack = prices.get(pair.packId);
       const externalPack = catalogByKey.get(pair.externalPackKey);
@@ -731,6 +770,10 @@ export async function deleteGameinfoMarketMapping(input, actor) {
     );
     if (!current.rows[0]) throw httpError("ไม่พบ Mapping", 404);
     if (input?.version !== undefined && Number(input.version) !== Number(current.rows[0].version)) throw httpError("Mapping ถูกแก้โดยผู้ใช้อื่น", 409);
+    await resolveActiveAlertsForMappingChange(client, {
+      gameId: values[0], dataMode: values[1], market: values[2], packIds: [values[3]],
+      reason: "mapping_deleted", actor,
+    });
     await client.query(`DELETE FROM gameinfo_market_mappings WHERE game_id = $1 AND data_mode = $2 AND market = $3 AND pack_id = $4`, values);
     await client.query(
       `INSERT INTO gameinfo_market_mapping_logs
@@ -770,6 +813,10 @@ export async function deleteAllGameinfoMarketMappings(input, actor) {
         [...values, mapping.pack_id, actorId(actor), JSON.stringify(mapping)]
       );
     }
+    await resolveActiveAlertsForMappingChange(client, {
+      gameId, dataMode: normalizedMode, market,
+      reason: "all_mappings_deleted", actor,
+    });
     await client.query(
       `DELETE FROM gameinfo_market_mappings WHERE game_id = $1 AND data_mode = $2 AND market = $3`, values
     );
@@ -827,7 +874,7 @@ async function packPriceMap(gameId, dataMode, market) {
   const [gameRow, variableData, rates] = await Promise.all([
     getGameListRow(gameId),
     getGameinfoFormulaVariables(gameId),
-    getGameinfoExchangeRates(["USDT/THB", "USDCNY"], { includeHistory: false, refreshStale: false }).catch(() => []),
+    getGameinfoExchangeRates(["USDT/THB", "USDCNY", "IDRTHB", "USDIDR"], { includeHistory: false, refreshStale: false }).catch(() => []),
   ]);
   const fields = dataMode === "idpass" ? data?.fields : null;
   const game = {
@@ -1318,6 +1365,31 @@ export async function acknowledgeGameinfoPriceAlert(alertId, note, actor) {
     );
     await client.query("COMMIT");
     return { id: Number(alertId), acknowledgedAt: result.rows[0].acknowledged_at, note: result.rows[0].note };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function unacknowledgeGameinfoPriceAlert(alertId, actor) {
+  const pool = await getGameinfoMarketPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await client.query(
+      `UPDATE gameinfo_price_alerts SET acknowledged_by = NULL, acknowledged_at = NULL, note = '' WHERE id = $1 RETURNING id`,
+      [alertId]
+    );
+    if (!result.rows[0]) throw httpError("ไม่พบ Alert", 404);
+    await client.query(
+      `INSERT INTO gameinfo_price_alert_events (alert_id, event_type, data, actor_id)
+       VALUES ($1,'acknowledged',$2,$3)`,
+      [alertId, JSON.stringify({ cancelled: true }), actorId(actor)]
+    );
+    await client.query("COMMIT");
+    return { id: Number(alertId), acknowledgedAt: null, note: "" };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

@@ -1,15 +1,17 @@
 import { formatCell } from "@/lib/gamedb-layout";
 
 export const GAMEINFO_PACK_BASE_COLUMNS = [
-  { id: "serviceEnabled", label: "สถานะ", field: "serviceEnabled", track: "70px" },
-  { id: "image", label: "รูป", field: "image", track: "40px" },
-  { id: "name", label: "ชื่อ pack", field: "name", track: "minmax(110px, 1.6fr)", required: true },
-  { id: "price", label: "ราคา", field: "price", track: "minmax(60px, 0.7fr)", required: true },
+  { id: "serviceEnabled", label: "สถานะ", field: "serviceEnabled", track: "70px", minWidth: 70, maxWidth: 90 },
+  { id: "image", label: "รูป", field: "image", track: "40px", minWidth: 40, maxWidth: 56 },
+  { id: "name", label: "ชื่อ pack", field: "name", track: "minmax(110px, 1.6fr)", minWidth: 140, maxWidth: 360, required: true },
+  { id: "price", label: "ราคา", field: "price", track: "minmax(60px, 0.7fr)", minWidth: 80, maxWidth: 140, required: true },
   {
     id: "amountChargedFee",
     label: "ยอดที่กด + fee",
     field: "amountChargedFee",
     track: "minmax(70px, 0.8fr)",
+    minWidth: 120,
+    maxWidth: 180,
     required: true,
   },
   {
@@ -17,6 +19,8 @@ export const GAMEINFO_PACK_BASE_COLUMNS = [
     label: "ช่องทางหลัก",
     field: "channelsMain",
     track: "minmax(90px, 1fr)",
+    minWidth: 120,
+    maxWidth: 720,
     required: true,
   },
   {
@@ -24,8 +28,10 @@ export const GAMEINFO_PACK_BASE_COLUMNS = [
     label: "ช่องทางรอง",
     field: "channelsSecondary",
     track: "minmax(90px, 1fr)",
+    minWidth: 120,
+    maxWidth: 720,
   },
-  { id: "country", label: "ประเทศ", field: "country", track: "minmax(80px, 0.8fr)", required: true },
+  { id: "country", label: "ประเทศ", field: "country", track: "minmax(80px, 0.8fr)", minWidth: 100, maxWidth: 220, required: true },
 ];
 
 export const GAMEINFO_PACK_SYMBOLS = ["", "$", "฿", "%"];
@@ -38,11 +44,26 @@ export function buildGameinfoPackColumns(computedColumns = []) {
       label: computed.label,
       kind: "computed",
       track: "minmax(70px, 0.8fr)",
+      minWidth: 100,
+      maxWidth: 240,
       computed,
       type: computed.type,
       symbol: typeof computed.symbol === "string" ? computed.symbol.slice(0, 24) : "",
     })),
   ];
+}
+
+export function gameinfoPackColumnWidth(column, values = []) {
+  const minWidth = Number(column?.minWidth) || 100;
+  const maxWidth = Math.max(minWidth, Number(column?.maxWidth) || 240);
+  const textLength = (value) => {
+    const items = Array.isArray(value) ? value : [value];
+    const text = items.map((item) => String(item ?? "")).join(" ");
+    return Array.from(text).length + Math.max(0, items.length - 1) * 3;
+  };
+  const longest = Math.max(textLength(column?.label), ...values.map(textLength));
+  const inputReserve = ["channelsMain", "channelsSecondary"].includes(column?.id) ? 96 : 0;
+  return Math.min(maxWidth, Math.max(minWidth, Math.ceil(32 + longest * 7.5 + inputReserve)));
 }
 
 export function normalizeGameinfoPackLayout(raw, columns) {

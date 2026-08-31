@@ -13,7 +13,24 @@ import { validateGameinfoComputedDependencies } from "@/lib/gameinfo-computed-ev
 import { getGameinfoFormulaVariables } from "@/server/gameinfo-formula-variables";
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { updateGameinfoModeData } from "@/server/gameinfo-mode-data";
-import { findDuplicateGameinfoPackNamePrices } from "@/lib/gameinfo-pack-validation";
+import {
+  findDuplicateGameinfoPackNamePrices,
+  normalizeGameinfoNumericInput,
+} from "@/lib/gameinfo-pack-validation";
+
+function normalizeGameinfoPackNumbers(currencies) {
+  return currencies.map((currency) => ({
+    ...currency,
+    categories: (currency?.categories || []).map((category) => ({
+      ...category,
+      packs: (category?.packs || []).map((pack) => ({
+        ...pack,
+        price: normalizeGameinfoNumericInput(pack?.price),
+        amountChargedFee: normalizeGameinfoNumericInput(pack?.amountChargedFee),
+      })),
+    })),
+  }));
+}
 
 export async function PUT(request, { params }) {
   try {
@@ -26,7 +43,9 @@ export async function PUT(request, { params }) {
     const source = body.auditSource === "csv_append" || body.auditSource === "csv_replace"
       ? body.auditSource
       : "editor";
-    const currencies = Array.isArray(body.currencies) ? body.currencies : [];
+    const currencies = normalizeGameinfoPackNumbers(
+      Array.isArray(body.currencies) ? body.currencies : []
+    );
     if (findDuplicateGameinfoPackNamePrices(currencies).size > 0) {
       return jsonError("ชื่อ Pack และราคาห้ามซ้ำกันพร้อมกัน", 400);
     }

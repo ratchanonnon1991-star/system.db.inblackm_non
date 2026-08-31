@@ -3,6 +3,9 @@ export function getEffectiveGameinfoFormula(column, packId, categoryId) {
   if (typeof override === "string" && override.trim()) {
     return { formula: override, overridden: true, source: "override" };
   }
+  if (column?.entryMode === "manual") {
+    return { formula: "", overridden: false, source: "manual" };
+  }
   const categoryFormula = column?.categoryFormulas?.[String(categoryId)];
   if (
     column?.scopeMode === "category" &&
@@ -30,7 +33,9 @@ export function getGameinfoFormulaDisplay(column, packId, categoryId) {
         ? "สูตรเฉพาะ pack"
         : effective.source === "category"
           ? "สูตรเฉพาะหมวด"
-          : "สูตรหลัก",
+          : effective.source === "manual"
+            ? "กรอกเอง"
+            : "สูตรหลัก",
   };
 }
 
@@ -113,6 +118,7 @@ export function updateGameinfoComputedColumn(columns, nextColumn, { resetOverrid
       formula: nextColumn.formula,
       type: nextColumn.type,
       symbol: nextColumn.symbol,
+      entryMode: nextColumn.entryMode === "manual" ? "manual" : undefined,
       scopeMode: nextColumn.scopeMode === "category" ? "category" : "global",
       categoryFormulas: resetOverrides ? {} : { ...(column.categoryFormulas || {}) },
       rowOverrides: resetOverrides ? {} : { ...(column.rowOverrides || {}) },
