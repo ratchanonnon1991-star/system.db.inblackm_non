@@ -630,7 +630,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
                               <TableCell className="sticky left-0 z-10 truncate bg-card px-3 font-medium" title={packName(group)}>{packName(group)}</TableCell>
                               {visibleSellers.map((seller) => {
                                 const offer = offersBySeller.get(seller);
-                                return <SellerPriceCell key={seller} offer={offer} baselineOffer={baselineOffer} isBaseline={seller === activeBaselineSeller} isCheapest={Boolean(offer && offer.price === cheapest?.price)} isChanged={changedCells.has(`${group.key}:${seller}`)} />;
+                                return <SellerPriceCell key={seller} provider={provider} offer={offer} baselineOffer={baselineOffer} isBaseline={seller === activeBaselineSeller} isCheapest={Boolean(offer && offer.price === cheapest?.price)} isChanged={changedCells.has(`${group.key}:${seller}`)} />;
                               })}
                               {showCheapest ? <TableCell className="px-3 text-right font-semibold tabular-nums text-destructive">{money(cheapest?.price, cheapest?.currency)}</TableCell> : null}
                               {showMostExpensive ? <TableCell className="px-3 text-right font-medium tabular-nums">{money(mostExpensive?.price, mostExpensive?.currency)}</TableCell> : null}
@@ -759,7 +759,7 @@ function MetricCard({ value, label, description, icon: Icon, tone = "blue" }) {
   return <Card size="sm"><CardHeader><CardTitle className="text-2xl tabular-nums">{number(value)}</CardTitle><CardDescription>{label}</CardDescription>{description ? <p className="text-xs text-muted-foreground">{description}</p> : null}<CardAction><Icon className={cn("size-6", METRIC_TONES[tone])} /></CardAction></CardHeader></Card>;
 }
 
-function SellerPriceCell({ offer, baselineOffer, isBaseline, isCheapest, isChanged }) {
+function SellerPriceCell({ provider, offer, baselineOffer, isBaseline, isCheapest, isChanged }) {
   if (!offer) return <TableCell className="bg-muted/40 px-3 text-right text-muted-foreground">—</TableCell>;
   const difference = Number.isFinite(offer.price) && Number.isFinite(baselineOffer?.price)
     ? offer.price - baselineOffer.price
@@ -773,7 +773,7 @@ function SellerPriceCell({ offer, baselineOffer, isBaseline, isCheapest, isChang
           <span className={cn("text-[0.9375rem] font-medium", (isCheapest || difference < 0) && "font-semibold text-destructive", difference > 0 && "font-semibold text-emerald-600 dark:text-emerald-400")}>{money(offer.price, offer.currency)}</span>
           {isBaseline ? <Badge variant="outline" >ราคาอ้างอิง</Badge> : difference == null ? <span className="text-xs text-muted-foreground">ไม่มีราคาอ้างอิง</span> : difference < 0 ? <Badge variant="destructive"><ArrowDown />ถูกกว่า {money(Math.abs(difference), offer.currency)}</Badge> : difference > 0 ? <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"><ArrowUp />แพงกว่า {money(difference, offer.currency)}</Badge> : <Badge variant="outline"><Minus />เท่ากัน</Badge>}
         </TooltipTrigger>
-        <TooltipContent><div className="flex flex-col gap-1">{offer.currency === "USD" ? <><p>Sold: {number(offer.sold)}</p><p>Rating: {offer.rating == null ? "—" : number(offer.rating)}</p><p>Delivery: {offer.delivery || "—"}</p></> : <><p className="font-medium tabular-nums">{offer.unitPrice || "—"}</p><p>Stock: {offer.stockText || number(offer.stock)}</p><p>Trading volume: {number(offer.tradingVolume)}</p></>}</div></TooltipContent>
+        <TooltipContent><div className="flex flex-col gap-1">{provider === "itemku" || provider === "g2g" ? <><p>Sold: {number(offer.sold)}</p><p>Rating: {offer.rating == null ? "—" : number(offer.rating)}</p><p>Delivery: {offer.delivery || "—"}</p></> : <><p className="font-medium tabular-nums">{offer.unitPrice || "—"}</p><p>Stock: {offer.stockText || number(offer.stock)}</p><p>Trading volume: {number(offer.tradingVolume)}</p></>}</div></TooltipContent>
       </Tooltip>
     </TableCell>
   );

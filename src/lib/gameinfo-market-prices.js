@@ -31,7 +31,10 @@ export function buildGameinfoMarketPackPriceMap(
           price = null;
         }
       }
-      return [String(pack.id), { id: String(pack.id), name: pack.name, price }];
+      // basePrice is the plain "ราคา" field in baht, kept next to the market
+      // price so a market priced in another currency can be read against it.
+      const basePrice = Number(pack.price);
+      return [String(pack.id), { id: String(pack.id), name: pack.name, price, basePrice: Number.isFinite(basePrice) ? basePrice : null }];
     })
   )));
 }

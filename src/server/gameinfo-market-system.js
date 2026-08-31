@@ -146,6 +146,17 @@ async function ensureSchema(pool) {
         ADD CONSTRAINT gameinfo_market_own_sellers_market_check
         CHECK (market IN ('kaleoz', 'itemku', 'playerok', 'g2g'));
 
+      CREATE TABLE IF NOT EXISTS gameinfo_market_rate_references (
+        market VARCHAR(16) NOT NULL,
+        external_game_key TEXT NOT NULL,
+        external_game_label TEXT NOT NULL DEFAULT '',
+        reference_at TIMESTAMPTZ NOT NULL,
+        updated_by INTEGER,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (market, external_game_key)
+      );
+
       CREATE TABLE IF NOT EXISTS gameinfo_market_check_runs (
         id BIGSERIAL PRIMARY KEY,
         market VARCHAR(16) NOT NULL CHECK (market IN ('kaleoz', 'itemku', 'playerok', 'g2g')),
@@ -192,8 +203,8 @@ async function ensureSchema(pool) {
         difference NUMERIC(20,6),
         percent NUMERIC(12,6),
         status VARCHAR(16) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'resolved')),
-        first_seen_run_id BIGINT NOT NULL,
-        last_seen_run_id BIGINT NOT NULL,
+        first_seen_run_id BIGINT,
+        last_seen_run_id BIGINT,
         resolved_run_id BIGINT,
         acknowledged_by INTEGER,
         acknowledged_at TIMESTAMPTZ,
@@ -205,6 +216,8 @@ async function ensureSchema(pool) {
       );
       CREATE INDEX IF NOT EXISTS gameinfo_price_alerts_status_idx
         ON gameinfo_price_alerts (status, market, last_seen_at DESC);
+      ALTER TABLE gameinfo_price_alerts ALTER COLUMN first_seen_run_id DROP NOT NULL;
+      ALTER TABLE gameinfo_price_alerts ALTER COLUMN last_seen_run_id DROP NOT NULL;
 
       CREATE TABLE IF NOT EXISTS gameinfo_price_alert_events (
         id BIGSERIAL PRIMARY KEY,
@@ -873,14 +886,94 @@ export async function saveGameinfoOwnSellers(market, sellers, actor) {
   }
 }
 
-async function packPriceMap(gameId, dataMode, market) {
+function mapMarketRateReference(row) {
+  return {
+    market: row.market,
+    externalGameKey: row.external_game_key,
+    externalGameLabel: row.external_game_label,
+    referenceAt: new Date(row.reference_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
+  };
+}
+
+export async function listGameinfoMarketRateReferences(market = "") {
+  const normalizedMarket = market ? normalizeGameinfoMarket(market) : "";
+  const result = await (await getGameinfoMarketPool()).query(
+    `SELECT * FROM gameinfo_market_rate_references ${normalizedMarket ? "WHERE market = $1" : ""}
+      ORDER BY market, external_game_label, external_game_key`,
+    normalizedMarket ? [normalizedMarket] : []
+  );
+  return result.rows.map(mapMarketRateReference);
+}
+
+export async function listGameinfoMarketRateReferenceOptions() {
+  const [references, marketGames] = await Promise.all([
+    listGameinfoMarketRateReferences(),
+    Promise.all(GAMEINFO_MARKETS.map(async (market) => ({
+      ...market,
+      games: await listGameinfoMarketGames(market.key),
+    }))),
+  ]);
+  return marketGames.map((market) => ({
+    key: market.key,
+    label: market.label,
+    games: market.games,
+    references: references.filter((reference) => reference.market === market.key),
+  }));
+}
+
+export async function saveGameinfoMarketRateReference(input, actor) {
+  const market = normalizeGameinfoMarket(input?.market);
+  const externalGameKey = String(input?.externalGameKey || "").trim().slice(0, 200);
+  const referenceAt = new Date(input?.referenceAt);
+  if (!externalGameKey || !Number.isFinite(referenceAt.getTime())) throw httpError("กรุณาเลือกเกมและระบุวันเวลาอ้างอิง");
+  const game = (await listGameinfoMarketGames(market)).find((item) => item.value === externalGameKey);
+  if (!game) throw httpError("ไม่พบเกมนี้ในรายการของ Market", 404);
+  const result = await (await getGameinfoMarketPool()).query(
+    `INSERT INTO gameinfo_market_rate_references
+       (market, external_game_key, external_game_label, reference_at, updated_by)
+     VALUES ($1,$2,$3,$4,$5)
+     ON CONFLICT (market, external_game_key) DO UPDATE SET
+       external_game_label = EXCLUDED.external_game_label,
+       reference_at = EXCLUDED.reference_at,
+       updated_by = EXCLUDED.updated_by,
+       updated_at = NOW()
+     RETURNING *`,
+    [market, externalGameKey, game.label, referenceAt.toISOString(), actorId(actor)]
+  );
+  return mapMarketRateReference(result.rows[0]);
+}
+
+export async function deleteGameinfoMarketRateReference(market, externalGameKey) {
+  const result = await (await getGameinfoMarketPool()).query(
+    `DELETE FROM gameinfo_market_rate_references WHERE market = $1 AND external_game_key = $2 RETURNING *`,
+    [normalizeGameinfoMarket(market), String(externalGameKey || "").trim()]
+  );
+  if (!result.rows[0]) throw httpError("ไม่พบเวลาอ้างอิงที่ต้องการลบ", 404);
+  return mapMarketRateReference(result.rows[0]);
+}
+
+async function getGameinfoMarketRateReference(market, externalGameKey) {
+  if (!externalGameKey) return null;
+  const result = await (await getGameinfoMarketPool()).query(
+    `SELECT reference_at FROM gameinfo_market_rate_references WHERE market = $1 AND external_game_key = $2`,
+    [normalizeGameinfoMarket(market), externalGameKey]
+  );
+  return result.rows[0]?.reference_at ? new Date(result.rows[0].reference_at).toISOString() : null;
+}
+
+async function packPriceMap(gameId, dataMode, market, externalGameKey = "") {
   const data = dataMode === "idpass" ? await getGameinfoModeData(gameId, dataMode) : await getGamelistPacks(gameId);
   const packs = dataMode === "idpass" ? data?.packs : data;
-  const [gameRow, variableData, rates] = await Promise.all([
+  const [gameRow, variableData, referenceAt] = await Promise.all([
     getGameListRow(gameId),
     getGameinfoFormulaVariables(gameId),
-    getGameinfoExchangeRates(["USDT/THB", "USDCNY", "IDRTHB", "USDIDR"], { includeHistory: false, refreshStale: false }).catch(() => []),
+    getGameinfoMarketRateReference(market, externalGameKey),
   ]);
+  const rates = await getGameinfoExchangeRates(
+    ["USDT/THB", "USDCNY", "IDRTHB", "USDIDR"],
+    { at: referenceAt, includeHistory: false, refreshStale: false }
+  ).catch(() => []);
   const fields = dataMode === "idpass" ? data?.fields : null;
   const game = {
     ...gameRow,
@@ -889,11 +982,14 @@ async function packPriceMap(gameId, dataMode, market) {
     platform: fields?.platform ?? gameRow?.platform,
     server: fields?.server ?? gameRow?.server,
   };
+  const externalValues = Object.fromEntries(rates.filter((rate) => rate.available).map((rate) => [rate.pair, rate.rate]));
   const prices = buildGameinfoMarketPackPriceMap(packs, game, market, {
     formulaVariables: variableData.variables,
-    externalValues: Object.fromEntries(rates.filter((rate) => rate.available).map((rate) => [rate.pair, rate.rate])),
+    externalValues,
   });
   prices.priceLabel = findGameinfoMarketPriceColumn(packs?.computedColumns, market)?.label || null;
+  prices.rateReferenceAt = referenceAt;
+  prices.rateSnapshotAt = rates.find((rate) => rate.available)?.fetchedAt || null;
   return prices;
 }
 
@@ -961,16 +1057,17 @@ export async function getGameinfoMappingWorkspace(gameId, dataMode, market, opti
     getGameListRow(gameId),
     listGameinfoOwnSellers(normalizedMarket),
     Promise.all(viewedModes.map(async (viewedMode) => {
-      const [configs, initialMappings, prices] = await Promise.all([
+      const [configs, initialMappings] = await Promise.all([
         listGameinfoGameMarkets(gameId, viewedMode),
         listGameinfoMarketMappings(gameId, viewedMode, normalizedMarket),
-        packPriceMap(gameId, viewedMode, normalizedMarket),
       ]);
+      const config = configs.find((item) => item.market === normalizedMarket);
+      const prices = await packPriceMap(gameId, viewedMode, normalizedMarket, config?.externalGameKey);
       const mappings = await reconcileGameinfoPackMappings(gameId, viewedMode, normalizedMarket, initialMappings, prices);
       const mappingByPack = new Map(mappings.map((mapping) => [mapping.packId, mapping]));
       return {
         dataMode: viewedMode,
-        config: configs.find((item) => item.market === normalizedMarket),
+        config,
         packs: [...prices.values()].map((pack) => ({ ...pack, dataMode: viewedMode, mapping: mappingByPack.get(pack.id) || null })),
       };
     })),
@@ -999,12 +1096,13 @@ export async function getGameinfoPackPriceComparison({ gameId, dataMode = "uid",
   const normalizedMode = mode(dataMode);
   const normalizedMarket = normalizeGameinfoMarket(market);
   const pageNumber = positiveInt(page);
-  const [game, configs, prices, ownSellers] = await Promise.all([
-    getGameListRow(gameId), listGameinfoGameMarkets(gameId, normalizedMode), packPriceMap(gameId, normalizedMode, normalizedMarket), listGameinfoOwnSellers(normalizedMarket),
+  const [game, configs, ownSellers] = await Promise.all([
+    getGameListRow(gameId), listGameinfoGameMarkets(gameId, normalizedMode), listGameinfoOwnSellers(normalizedMarket),
   ]);
   if (!game) throw httpError("ไม่พบเกม", 404);
   const config = configs.find((item) => item.market === normalizedMarket);
   if (!config?.externalGameKey) return { game: { id: game.id, name: game.game }, config, rows: [], sellers: [], total: 0, page: pageNumber, limit: GAMEINFO_COMPARE_PAGE_SIZE };
+  const prices = await packPriceMap(gameId, normalizedMode, normalizedMarket, config.externalGameKey);
   // The seller list and the mapped rows both depend only on the config, so they
   // go out together instead of one after the other.
   const comparePool = await getGameinfoMarketPool();
@@ -1068,10 +1166,12 @@ export async function getGameinfoPackPriceComparison({ gameId, dataMode = "uid",
   return {
     game: { id: game.id, name: game.game }, config, sellers: sellerList,
     priceLabel: prices.priceLabel || GAMEINFO_MARKETS.find((item) => item.key === normalizedMarket)?.label || normalizedMarket,
+    rateReferenceAt: prices.rateReferenceAt,
+    rateSnapshotAt: prices.rateSnapshotAt,
     availableSellers: availableSellers.filter((seller) => !ownOnly || seller.own),
     rows: mappings.rows.map((row) => ({
       packId: row.pack_id, packName: prices.get(row.pack_id)?.name || row.pack_id, externalPackKey: row.external_pack_key,
-      price: prices.get(row.pack_id)?.price ?? null, marketPackName: row.market_pack_name,
+      price: prices.get(row.pack_id)?.price ?? null, basePrice: prices.get(row.pack_id)?.basePrice ?? null, marketPackName: row.market_pack_name,
       category: row.category, amount: row.amount, mappingStatus: row.status,
       offers: offers.get(row.external_pack_key) || [],
     })),
@@ -1095,7 +1195,7 @@ async function upsertAlert(client, { runId, market, gameId, dataMode, packId, se
        seller_name = EXCLUDED.seller_name, kind = EXCLUDED.kind, direction = EXCLUDED.direction,
        base_price = EXCLUDED.base_price, market_price = EXCLUDED.market_price,
        difference = EXCLUDED.difference, percent = EXCLUDED.percent, status = 'active',
-       last_seen_run_id = EXCLUDED.last_seen_run_id, last_seen_at = NOW(),
+       last_seen_run_id = COALESCE(EXCLUDED.last_seen_run_id, gameinfo_price_alerts.last_seen_run_id), last_seen_at = NOW(),
        resolved_run_id = NULL, resolved_at = NULL
      RETURNING *`,
     [market, gameId, dataMode, packId, seller.seller_key, seller.seller_name, result.kind,
@@ -1112,7 +1212,7 @@ async function upsertAlert(client, { runId, market, gameId, dataMode, packId, se
 
 async function evaluateAlertsForConfig(client, runId, config) {
   const [prices, mappings, sellers, offers] = await Promise.all([
-    packPriceMap(Number(config.game_id), config.data_mode, config.market),
+    packPriceMap(Number(config.game_id), config.data_mode, config.market, config.external_game_key),
     client.query(`SELECT * FROM gameinfo_market_mappings WHERE game_id = $1 AND data_mode = $2 AND market = $3`, [config.game_id, config.data_mode, config.market]),
     client.query(`SELECT * FROM gameinfo_market_own_sellers WHERE market = $1 AND enabled`, [config.market]),
     client.query(`SELECT * FROM gameinfo_market_offers WHERE market = $1 AND external_game_key = $2`, [config.market, config.external_game_key]),
@@ -1156,6 +1256,40 @@ async function evaluateAlertsForConfig(client, runId, config) {
     );
   }
   return { mappings: mappings.rows.length, alerts };
+}
+
+// Prices in GameInfo change far more often than the market does, and an alert
+// is the comparison between the two. This re-runs that comparison against the
+// offers already in the database, so no market is called and no check run is
+// opened: the alert rows just catch up with the prices as they are now.
+export async function recalculateGameinfoPriceAlerts({ market = "", gameId = 0, dataMode = "" } = {}) {
+  const pool = await getGameinfoMarketPool();
+  const conditions = ["enabled", "external_game_key <> ''"];
+  const values = [];
+  if (market) { values.push(normalizeGameinfoMarket(market)); conditions.push(`market = ${values.length}`); }
+  if (Number(gameId) > 0) { values.push(Number(gameId)); conditions.push(`game_id = ${values.length}`); }
+  if (dataMode) { values.push(mode(dataMode)); conditions.push(`data_mode = ${values.length}`); }
+  const configs = await pool.query(
+    `SELECT * FROM gameinfo_game_markets WHERE ${conditions.join(" AND ")} ORDER BY market, game_id, data_mode`,
+    values
+  );
+  const result = { games: 0, alerts: 0, errors: [] };
+  for (const config of configs.rows) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const evaluated = await evaluateAlertsForConfig(client, null, config);
+      await client.query("COMMIT");
+      result.games += 1;
+      result.alerts += evaluated.alerts;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      result.errors.push(`${config.game_id}/${config.data_mode}: ${error.message}`);
+    } finally {
+      client.release();
+    }
+  }
+  return result;
 }
 
 export async function executeGameinfoMarketCheck(runId) {

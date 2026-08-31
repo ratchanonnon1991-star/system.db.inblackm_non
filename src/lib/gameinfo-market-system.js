@@ -172,6 +172,8 @@ function normalizeMarketOffers(offers) {
         rating: offer.rating ?? null,
         delivery: offer.delivery ?? null,
         promo: offer.promo ?? null,
+        priceIdr: offer.priceIdr ?? null,
+        fxIdrPerThb: offer.fxIdrPerThb ?? null,
       },
     };
     const current = bySeller.get(sellerKey);

@@ -114,6 +114,17 @@ ALTER TABLE gameinfo_market_own_sellers
   ADD CONSTRAINT gameinfo_market_own_sellers_market_check
   CHECK (market IN ('kaleoz', 'itemku', 'playerok', 'g2g'));
 
+CREATE TABLE IF NOT EXISTS gameinfo_market_rate_references (
+  market varchar(16) NOT NULL,
+  external_game_key text NOT NULL,
+  external_game_label text NOT NULL DEFAULT '',
+  reference_at timestamptz NOT NULL,
+  updated_by integer,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (market, external_game_key)
+);
+
 -- Snapshot of the "เทียบร้านอื่น" page per market/game/หมวดหมู่, so a page load
 -- renders from the database instead of waiting on the market. Refreshed daily at
 -- 09:00 Thai time and by the refresh button.
@@ -172,8 +183,8 @@ CREATE TABLE IF NOT EXISTS gameinfo_price_alerts (
   difference numeric(20,6),
   percent numeric(12,6),
   status varchar(16) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'resolved')),
-  first_seen_run_id bigint NOT NULL,
-  last_seen_run_id bigint NOT NULL,
+  first_seen_run_id bigint,
+  last_seen_run_id bigint,
   resolved_run_id bigint,
   acknowledged_by integer,
   acknowledged_at timestamptz,

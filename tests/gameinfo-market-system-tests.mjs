@@ -253,7 +253,7 @@ assert.match(marketManager, /<FieldContent className="min-w-0">/);
 assert.match(marketManager, /<SelectTrigger className="w-full min-w-0 overflow-hidden"><SelectValue className="truncate"/);
 assert.match(marketManager, /label: gameinfoMarketGameLabel\(game\.label\)/);
 
-assert.match(marketServer, /getGameinfoExchangeRates\(\["USDT\/THB", "USDCNY", "IDRTHB", "USDIDR"\], \{ includeHistory: false, refreshStale: false \}\)/);
+assert.match(marketServer, /getGameinfoExchangeRates\([\s\S]*\{ at: referenceAt, includeHistory: false, refreshStale: false \}/);
 assert.match(marketServer, /const \[availableResult, mappings\] = await Promise\.all\(/);
 assert.match(marketServer, /export async function unacknowledgeGameinfoPriceAlert[\s\S]*acknowledged_by = NULL[\s\S]*acknowledged_at = NULL[\s\S]*note = ''/);
 assert.doesNotMatch(marketServer, /unacknowledgeGameinfoPriceAlert[\s\S]*note = NULL/);
@@ -263,7 +263,26 @@ const priceAlertsPage = readFileSync(new URL("../src/components/gameinfo-price-a
 assert.match(priceAlertsPage, /item\.acknowledgedAt \? "ยกเลิก" : "รับทราบ"/);
 assert.match(priceAlertsPage, /<Badge variant="success"><Check \/>รับทราบแล้ว<\/Badge>/);
 const rateServer = readFileSync(new URL("../src/server/gameinfo-exchange-rates.js", import.meta.url), "utf8");
-assert.match(rateServer, /if \(force \|\| \(refreshStale && current\.stale\)\)/);
-assert.match(rateServer, /if \(!includeHistory\) return \{ pair, \.\.\.current, history: \[\] \};/);
+assert.match(rateServer, /if \(!referenceAt && \(force \|\| \(refreshStale && current\.stale\)\)\)/);
+assert.match(rateServer, /if \(!includeHistory\) return \{ pair, \.\.\.current, referenceAt: referenceAt\?\.toISOString\(\) \|\| null, history: \[\] \};/);
 
-console.log("\n104 passed, 0 failed");
+
+// A price edit in GameInfo changes one half of every alert for that game, so
+// the alerts are recomputed from the offers already stored: no market call,
+// no check run, and the run ids on the row keep whatever the last run left.
+assert.match(marketServer, /export async function recalculateGameinfoPriceAlerts\(\{ market = "", gameId = 0, dataMode = "" \} = \{\}\)/);
+assert.match(marketServer, /recalculateGameinfoPriceAlerts[\s\S]*evaluateAlertsForConfig\(client, null, config\)/);
+assert.doesNotMatch(marketServer, /recalculateGameinfoPriceAlerts[\s\S]{0,1200}fetchNormalizedGameinfoMarketCatalog/);
+assert.match(marketServer, /last_seen_run_id = COALESCE\(EXCLUDED\.last_seen_run_id, gameinfo_price_alerts\.last_seen_run_id\)/);
+assert.match(marketServer, /ALTER TABLE gameinfo_price_alerts ALTER COLUMN first_seen_run_id DROP NOT NULL/);
+assert.match(schema, /first_seen_run_id bigint,/);
+assert.match(priceAlertsRoute, /export async function POST\(request\)[\s\S]*requireGameinfoMarketChecker[\s\S]*recalculateGameinfoPriceAlerts/);
+assert.match(priceAlertsPage, /onClick=\{refreshAlerts\}/);
+assert.match(priceAlertsPage, /canAcknowledge \? "คำนวณ Alert ใหม่" : "โหลดใหม่"/);
+const packsRoute = readFileSync(new URL("../src/app/api/gameinfo/gamelist/[id]/packs/route.js", import.meta.url), "utf8");
+assert.match(packsRoute, /await refreshAlertsAfterSave\(gameId, mode\);\s*return jsonOk\(\{ game: \{ id: gameId, \.\.\.data\.packs/);
+assert.match(packsRoute, /await refreshAlertsAfterSave\(gameId, mode\);\s*return jsonOk\(\{ game: \{ id: gameId, \.\.\.packs \} \}\)/);
+// A failed recalculation must not fail a save whose prices are already stored.
+assert.match(packsRoute, /async function refreshAlertsAfterSave[\s\S]*try \{[\s\S]*\} catch \(error\) \{[\s\S]*console\.error/);
+
+console.log("\n117 passed, 0 failed");

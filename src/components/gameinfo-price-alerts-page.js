@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Check, PackageSearch } from "lucide-react";
+import { AlertTriangle, Check, PackageSearch, RefreshCw } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList } from "@/components/ui/combobox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
@@ -14,6 +14,7 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Pagination, PaginationContent, PaginationItem, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -36,6 +37,8 @@ export default function GameinfoPriceAlertsPage({ games, ownSellers = [], canAck
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [notice, setNotice] = useState("");
   const [acknowledge, setAcknowledge] = useState(null);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
@@ -60,6 +63,31 @@ export default function GameinfoPriceAlertsPage({ games, ownSellers = [], canAck
     }
   }, [dataMode, direction, gameIdByLabel, gameLabel, market, page, seller, status]);
   useEffect(() => { load(); }, [load]);
+
+  // Alerts are stored rows, so a price edited in GameInfo only shows up here
+  // once the comparison is run again. This runs it against the offers already
+  // stored — no market is called — and then reloads the table.
+  async function refreshAlerts() {
+    setRefreshing(true);
+    setError("");
+    setNotice("");
+    try {
+      if (canAcknowledge) {
+        const params = new URLSearchParams();
+        if (market !== "all") params.set("market", market);
+        if (dataMode !== "all") params.set("mode", dataMode);
+        if (gameLabel !== "ทุกเกม") params.set("gameId", String(gameIdByLabel.get(gameLabel)));
+        const result = await apiJson(`/api/gameinfo/price-alerts?${params}`, { method: "POST" });
+        const { games = 0, alerts = 0, errors = [] } = result.recalculated || {};
+        setNotice(`คำนวณใหม่ ${games} ชุดข้อมูล · Alert ที่ยังผิดปกติ ${alerts} รายการ${errors.length ? ` · ข้าม ${errors.length} รายการ` : ""}`);
+      }
+      await load();
+    } catch (reason) {
+      setError(reason.message || "คำนวณ Alert ใหม่ไม่สำเร็จ");
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   async function saveAcknowledge() {
     if (!acknowledge) return;
@@ -98,7 +126,7 @@ export default function GameinfoPriceAlertsPage({ games, ownSellers = [], canAck
 
   return (
     <>
-      <Card><CardHeader><CardTitle>Price Alerts</CardTitle><CardDescription>ผิดปกติเมื่อราคาหน้าร้านต่างจากคอลัมน์ “ราคา” ตั้งแต่ 5% ขึ้นไป</CardDescription></CardHeader><CardContent><FieldGroup className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+      <Card><CardHeader><CardTitle>Price Alerts</CardTitle><CardDescription>ผิดปกติเมื่อราคาหน้าร้านต่างจากคอลัมน์ “ราคา” ตั้งแต่ 5% ขึ้นไป</CardDescription><CardAction className="flex flex-wrap items-center gap-2">{notice ? <span className="text-xs text-muted-foreground">{notice}</span> : null}<Button type="button" variant="outline" disabled={refreshing || loading} onClick={refreshAlerts}>{refreshing ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}{refreshing ? "กำลังคำนวณใหม่" : canAcknowledge ? "คำนวณ Alert ใหม่" : "โหลดใหม่"}</Button></CardAction></CardHeader><CardContent><FieldGroup className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         <Field><FieldLabel>Market</FieldLabel><Select items={MARKET_ITEMS} value={market} onValueChange={resetPage(setMarket)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectGroup>{MARKET_ITEMS.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
         <Field><FieldLabel>เกม</FieldLabel><Combobox items={gameLabels} value={gameLabel} onValueChange={(value) => { setGameLabel(value || "ทุกเกม"); setPage(1); }}><ComboboxInput /><ComboboxContent><ComboboxEmpty>ไม่พบเกม</ComboboxEmpty><ComboboxList>{(item) => <ComboboxItem key={item} value={item}>{item}</ComboboxItem>}</ComboboxList></ComboboxContent></Combobox></Field>
         <Field><FieldLabel>ชุดข้อมูล</FieldLabel><Select items={[{ value: "all", label: "ทั้งหมด" }, { value: "uid", label: "UID" }, { value: "idpass", label: "IDPASS" }]} value={dataMode} onValueChange={resetPage(setDataMode)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="all">ทั้งหมด</SelectItem><SelectItem value="uid">UID</SelectItem><SelectItem value="idpass">IDPASS</SelectItem></SelectGroup></SelectContent></Select></Field>

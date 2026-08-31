@@ -142,6 +142,10 @@ function normalizeGroups(productListData) {
   }).filter((group) => group.denominations.length);
 }
 
+
+// itemku ships its own rate table with every page, quoted per 1 USD, and its
+// UI converts with it. Using the same table is what makes the stored price the
+// same baht figure a Thai buyer reads on the page.
 function findRates(objects) {
   for (const object of objects) {
     const rates = firstObjectWith(object, (value) => value.foreignExchangeRate && typeof value.foreignExchangeRate === "object")?.foreignExchangeRate;
@@ -150,14 +154,19 @@ function findRates(objects) {
   return null;
 }
 
-export function convertItemkuSellerPriceToUsd(sellerPrice, rates) {
+export function convertItemkuSellerPriceToThb(sellerPrice, rates) {
   const price = Number(sellerPrice);
-  const idr = Number(rates?.IDR);
-  const usd = Number(rates?.USD);
-  if (!Number.isFinite(price) || !Number.isFinite(idr) || idr <= 0 || !Number.isFinite(usd) || usd <= 0) {
-    throw new Error("itemku ไม่มีอัตราแลกเปลี่ยน IDR/USD ที่ใช้คำนวณราคาได้");
+  const idrPerUsd = Number(rates?.IDR);
+  const thbPerUsd = Number(rates?.THB);
+  if (!Number.isFinite(price) || !Number.isFinite(idrPerUsd) || idrPerUsd <= 0 || !Number.isFinite(thbPerUsd) || thbPerUsd <= 0) {
+    throw new Error("itemku ไม่มีอัตราแลกเปลี่ยน IDR/THB ที่ใช้คำนวณราคาได้");
   }
-  return price / idr * usd;
+  return price / idrPerUsd * thbPerUsd;
+}
+
+// How many IDR one baht buys, straight from itemku's own table.
+export function itemkuIdrPerThb(rates) {
+  return Number(rates?.IDR) / Number(rates?.THB);
 }
 
 function productRecords(productListData) {
@@ -187,9 +196,12 @@ function numeric(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+// seller_price is quoted in IDR; the stored price is that figure in baht, with
+// the IDR original and the rate used kept next to it.
 function normalizeProduct(product, denomination, rates, fallbackUrl) {
   const seller = sellerName(product);
-  if (!seller) return null;
+  const priceIdr = numeric(product.seller_price);
+  if (!seller || priceIdr == null) return null;
   return {
     itemId: String(product.id),
     itemInfoId: String(product.item_info_id),
@@ -197,8 +209,10 @@ function normalizeProduct(product, denomination, rates, fallbackUrl) {
     packLabel: denomination.name,
     packOrder: denomination.order,
     quantity: null,
-    price: convertItemkuSellerPriceToUsd(product.seller_price, rates),
-    currency: "USD",
+    price: convertItemkuSellerPriceToThb(priceIdr, rates),
+    currency: "THB",
+    priceIdr,
+    fxIdrPerThb: itemkuIdrPerThb(rates),
     seller,
     sellerLevel: String(product.seller?.level_name || product.seller?.level || ""),
     imageUrl: imageUrl(product),
@@ -265,7 +279,7 @@ export function parseItemkuDenominationHtml(html, denomination) {
   ];
   if (!objects.length) throw new Error("อ่านรายการ Seller จาก itemku ไม่ได้");
   const rates = findRates(objects);
-  if (!rates) throw new Error("itemku ไม่มีอัตราแลกเปลี่ยน IDR/USD ที่ใช้คำนวณราคาได้");
+  if (!rates) throw new Error("itemku ไม่มีอัตราแลกเปลี่ยน IDR/THB ที่ใช้คำนวณราคาได้");
   const fallbackUrl = denomination.sourceUrl;
   const unique = new Map();
   for (const object of objects) {

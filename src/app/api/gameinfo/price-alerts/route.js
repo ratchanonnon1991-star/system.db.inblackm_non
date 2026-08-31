@@ -1,6 +1,6 @@
 import { handleApiError, jsonOk } from "@/lib/http";
 import { requireGameinfoAccess, requireGameinfoMarketChecker } from "@/server/auth";
-import { acknowledgeGameinfoPriceAlert, listGameinfoPriceAlerts, unacknowledgeGameinfoPriceAlert } from "@/server/gameinfo-market-system";
+import { acknowledgeGameinfoPriceAlert, listGameinfoPriceAlerts, recalculateGameinfoPriceAlerts, unacknowledgeGameinfoPriceAlert } from "@/server/gameinfo-market-system";
 
 export async function GET(request) {
   try {
@@ -14,6 +14,22 @@ export async function GET(request) {
     }) });
   } catch (error) {
     return handleApiError(error, "โหลด Alert ไม่สำเร็จ");
+  }
+}
+
+// Re-compares the stored market offers against the GameInfo prices as they are
+// right now. No market is called, so this is the cheap way to catch alerts up
+// after a price edit.
+export async function POST(request) {
+  try {
+    await requireGameinfoMarketChecker(request);
+    const q = request.nextUrl.searchParams;
+    const result = await recalculateGameinfoPriceAlerts({
+      market: q.get("market") || "", gameId: q.get("gameId") || 0, dataMode: q.get("mode") || "",
+    });
+    return jsonOk({ recalculated: result });
+  } catch (error) {
+    return handleApiError(error, "คำนวณ Alert ใหม่ไม่สำเร็จ");
   }
 }
 
