@@ -1,4 +1,17 @@
 -- GameInfo market mapping, cached offers, checks, and price alerts.
+
+CREATE TABLE IF NOT EXISTS g2g_games (
+  value text PRIMARY KEY,
+  slug text NOT NULL UNIQUE,
+  label text NOT NULL,
+  sort_order integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO g2g_games (value, slug, label, sort_order)
+VALUES ('zepeto-top-up', 'zepeto-top-up', 'ZEPETO', 0)
+ON CONFLICT DO NOTHING;
 -- Re-runnable by design; runtime keeps the same schema guard for existing installs.
 
 CREATE TABLE IF NOT EXISTS gameinfo_game_markets (

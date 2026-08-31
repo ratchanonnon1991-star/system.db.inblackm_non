@@ -33,6 +33,7 @@ const SELLER_MENU_LIMIT = 50;
 // How long a cell stays marked after a refresh moved it, matching the query panel.
 const CHANGED_HIGHLIGHT_MS = 8000;
 const ITEMKU_GAME_URL = (slug) => `https://www.itemku.com/en/g/${slug}/top-up`;
+const G2G_GAME_URL = (slug) => `https://www.g2g.com/categories/${slug}`;
 
 // Behaviour contract: refreshPrices fetches fresh market data; selectGame and
 // selectProductType preserve URL filters; seller/column preferences persist per
@@ -120,7 +121,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
   const [gameBusy, setGameBusy] = useState(false);
   const [gameError, setGameError] = useState("");
   const [gameSort, setGameSort] = useState("custom");
-  const provider = serverPage?.provider === "itemku" ? "itemku" : "kaleoz";
+  const provider = ["kaleoz", "itemku", "g2g"].includes(serverPage?.provider) ? serverPage.provider : "kaleoz";
   const page = refreshedPage?.provider === provider && refreshedPage?.game === serverPage?.game && refreshedPage?.productType === serverPage?.productType ? refreshedPage : serverPage;
   const currentGame = page?.game || "zepeto";
   const currentProductType = page?.productType;
@@ -128,10 +129,15 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
   const savedBaselineSeller = serverPage?.baselineSeller || "";
   const gameList = savedGames || page?.games;
   const games = useMemo(() => sortGames(gameItems(gameList), gameSort), [gameList, gameSort]);
-  const marketLabel = page?.providerLabel || (provider === "itemku" ? "itemku" : "Kaleoz");
-  const marketGameUrl = provider === "itemku" ? ITEMKU_GAME_URL : KALEOZ_GAME_URL;
-  const marketUrlExample = provider === "itemku" ? "https://www.itemku.com/en/g/honkai-star-rail/top-up" : "https://www.kaleoz.com/buy/honkai-star-rail";
-  const marketUrlPlaceholder = provider === "itemku" ? "https://www.itemku.com/en/g/<ชื่อเกม>/top-up" : "https://www.kaleoz.com/buy/<ชื่อเกม>";
+  const marketUi = {
+    kaleoz: { label: "Kaleoz", gameUrl: KALEOZ_GAME_URL, example: "https://www.kaleoz.com/buy/honkai-star-rail", placeholder: "https://www.kaleoz.com/buy/<ชื่อเกม>" },
+    itemku: { label: "itemku", gameUrl: ITEMKU_GAME_URL, example: "https://www.itemku.com/en/g/honkai-star-rail/top-up", placeholder: "https://www.itemku.com/en/g/<ชื่อเกม>/top-up" },
+    g2g: { label: "G2G", gameUrl: G2G_GAME_URL, example: "https://www.g2g.com/categories/zepeto-top-up", placeholder: "https://www.g2g.com/categories/<ชื่อเกม>" },
+  }[provider];
+  const marketLabel = page?.providerLabel || marketUi.label;
+  const marketGameUrl = marketUi.gameUrl;
+  const marketUrlExample = marketUi.example;
+  const marketUrlPlaceholder = marketUi.placeholder;
   const productTypes = selectItems(page?.productTypes).map((type, index) => index === 0 ? { ...type, label: "ทุกหมวดหมู่" } : type);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -456,6 +462,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
           <TabsList aria-label="ตลาดสำหรับเทียบราคา" className="h-10">
             <TabsTrigger value="kaleoz" className="px-4">Kaleoz</TabsTrigger>
             <TabsTrigger value="itemku" className="px-4">itemku</TabsTrigger>
+            <TabsTrigger value="g2g" className="px-4">G2G</TabsTrigger>
           </TabsList>
         </Tabs>
         <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -645,7 +652,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={offer.imageUrl} alt="" className="size-16 rounded-lg border object-contain" />
                       ) : <span className="flex size-16 items-center justify-center rounded-lg bg-muted text-muted-foreground"><ImageIcon /></span>}
-                      <div className="min-w-0"><a href={offer.productUrl} target="_blank" rel="noreferrer" className="rounded-sm font-medium outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50">{offer.title}</a><p className="mt-1 text-xs text-muted-foreground">{provider === "itemku" ? `Sold: ${number(offer.sold)} · Rating: ${offer.rating == null ? "—" : number(offer.rating)} · Delivery: ${offer.delivery || "—"}` : `Server: ${offer.server || "—"} · Stock: ${offer.stockText || number(offer.stock)} · Trading volume: ${number(offer.tradingVolume)}`}</p><div className="mt-2 flex flex-wrap gap-1.5"><Badge variant="outline">{offer.seller}</Badge>{offer.promo ? <Badge variant="secondary">PROMO</Badge> : null}</div></div>
+                      <div className="min-w-0"><a href={offer.productUrl} target="_blank" rel="noreferrer" className="rounded-sm font-medium outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50">{offer.title}</a><p className="mt-1 text-xs text-muted-foreground">{provider === "itemku" ? `Sold: ${number(offer.sold)} · Rating: ${offer.rating == null ? "—" : number(offer.rating)} · Delivery: ${offer.delivery || "—"}` : provider === "g2g" ? `Orders: ${number(offer.sold)} · Stock: ${offer.stockText || number(offer.stock)} · Delivery: ${offer.delivery || "—"}` : `Server: ${offer.server || "—"} · Stock: ${offer.stockText || number(offer.stock)} · Trading volume: ${number(offer.tradingVolume)}`}</p><div className="mt-2 flex flex-wrap gap-1.5"><Badge variant="outline">{offer.seller}</Badge>{offer.promo ? <Badge variant="secondary">PROMO</Badge> : null}</div></div>
                       <div className="sm:text-right"><p className="font-semibold tabular-nums">{money(offer.price, offer.currency)}</p><p className="mt-1 text-xs text-muted-foreground">{offer.unitPrice || "—"}</p></div>
                     </CardContent></Card>
                   ))}

@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 
-const LABELS = { kaleoz: "Kaleoz", itemku: "Itemku" };
+const LABELS = { kaleoz: "Kaleoz", itemku: "Itemku", g2g: "G2G" };
 
 export default function GameinfoMarketManager({ gameId, dataMode, columns, onColumnsChange }) {
   const [open, setOpen] = useState(false);

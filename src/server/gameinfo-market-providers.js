@@ -1,5 +1,6 @@
 import { fetchKaleozPage, loadKaleozGames } from "@/server/kaleoz-zepeto";
 import { fetchItemkuPage, loadItemkuGames } from "@/server/itemku-prices";
+import { fetchG2GPage, loadG2GGames } from "@/server/g2g-prices";
 import { buildGameinfoOwnSellerReferenceGroups, normalizeGameinfoMarket, normalizeMarketPage } from "@/lib/gameinfo-market-system";
 
 const providers = {
@@ -10,6 +11,10 @@ const providers = {
   itemku: {
     listGames: loadItemkuGames,
     fetchPage: (game, productType, options) => fetchItemkuPage(game, productType, options),
+  },
+  g2g: {
+    listGames: loadG2GGames,
+    fetchPage: (game, productType, options) => fetchG2GPage(game, productType, options),
   },
 };
 

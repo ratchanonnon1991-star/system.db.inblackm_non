@@ -115,7 +115,7 @@ assert.match(compare, /next\.set\("market", value\)[\s\S]*next\.delete\("game"\)
 assert.match(compare, /storageKey\("seller-order", provider, currentGame\)/);
 assert.match(compare, /await submitGameList\(`\/api\/gameinfo\/\$\{provider\}-games`/);
 assert.match(compare, /await submitGameList\(`\/api\/gameinfo\/\$\{provider\}-games\?game=\$\{encodeURIComponent\(game\.value\)\}`/);
-assert.match(compare, /const marketGameUrl = provider === "itemku" \? ITEMKU_GAME_URL : KALEOZ_GAME_URL;/);
+assert.match(compare, /itemku: \{ label: "itemku", gameUrl: ITEMKU_GAME_URL[\s\S]*const marketGameUrl = marketUi\.gameUrl;/);
 assert.match(compare, /provider === "itemku" \? `Sold:/);
 
 // itemku hands back hundreds of shops, so the table opens with a capped set of

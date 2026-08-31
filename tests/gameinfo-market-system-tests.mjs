@@ -24,6 +24,7 @@ import { buildGameinfoMarketPackPriceMap } from "@/lib/gameinfo-market-prices.js
 assert.equal(marketPackIdentity("kaleoz", { name: "  128 ZEMS ", category: "Coins", amount: 128 }), "kaleoz:128 zems|coins|128");
 assert.equal(marketPackIdentity("kaleoz", { key: "own:123", name: "เปลี่ยนชื่อได้" }), "kaleoz:เปลี่ยนชื่อได้||");
 assert.equal(marketPackIdentity("itemku", { key: "denomination-128", name: "เปลี่ยนชื่อได้" }), "itemku:denomination-128");
+assert.equal(marketPackIdentity("g2g", { key: "dataset-128", name: "เปลี่ยนชื่อได้" }), "g2g:dataset-128");
 assert.equal(calculateGameinfoPriceDifference(100, 95.13).alert, false);
 assert.equal(calculateGameinfoPriceDifference(100, 95.12).alert, true);
 assert.equal(calculateGameinfoPriceDifference(100, 105.12).alert, false);

@@ -1,8 +1,9 @@
 export const GAMEINFO_MARKETS = Object.freeze([
   { key: "kaleoz", label: "Kaleoz", identity: "normalized" },
   { key: "itemku", label: "Itemku", identity: "stable-id" },
+  { key: "g2g", label: "G2G", identity: "stable-id" },
 ]);
-export const GAMEINFO_FUTURE_MARKETS = Object.freeze(["playerok", "g2g"]);
+export const GAMEINFO_FUTURE_MARKETS = Object.freeze(["playerok"]);
 
 export const GAMEINFO_MARKET_KEYS = new Set(GAMEINFO_MARKETS.map((market) => market.key));
 export const GAMEINFO_PRICE_ALERT_THRESHOLD = 5;
@@ -142,8 +143,8 @@ export function reconcileGameinfoPackMappingTargets(mappings, packs) {
 
 export function marketPackIdentity(market, { key, name, category, amount } = {}) {
   const normalizedMarket = normalizeGameinfoMarket(market);
-  if (normalizedMarket === "itemku" && key != null && String(key).trim()) {
-    return `itemku:${String(key).trim()}`;
+  if (["itemku", "g2g"].includes(normalizedMarket) && key != null && String(key).trim()) {
+    return `${normalizedMarket}:${String(key).trim()}`;
   }
   const parts = [name, category, amount].map(normalizeMarketIdentityPart);
   return `${normalizedMarket}:${parts.join("|")}`;

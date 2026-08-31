@@ -5,6 +5,7 @@ import { countActiveGameinfoPriceAlerts, listGameinfoOwnSellers } from "@/server
 import { normalizeMarketIdentityPart } from "@/lib/gameinfo-market-system";
 import { fetchItemkuPage, itemkuGameUrl, loadItemkuGames, normalizeItemkuGame, normalizeItemkuGroup } from "@/server/itemku-prices";
 import { fetchKaleozPage, kaleozGameUrl, loadKaleozGames, normalizeKaleozGame, normalizeKaleozProductType } from "@/server/kaleoz-zepeto";
+import { fetchG2GPage, g2gGameUrl, loadG2GGames, normalizeG2GGame, normalizeG2GGroup } from "@/server/g2g-prices";
 import GameinfoMarketShell from "@/components/gameinfo-market-shell";
 import GameinfoPackPriceCompare from "@/components/gameinfo-pack-price-compare";
 
@@ -16,22 +17,26 @@ export default async function Page({ params, searchParams }) {
   const user = await getSessionUser();
   if (!user) redirect("/");
   if (!hasGameinfoAccess(user)) redirect(`/gameinfo/${lang}`);
-  const provider = query.market === "itemku" ? "itemku" : "kaleoz";
-  const games = provider === "itemku" ? await loadItemkuGames() : await loadKaleozGames();
-  const gameConfig = provider === "itemku" ? normalizeItemkuGame(query.game, games) : normalizeKaleozGame(query.game, games);
-  const productType = provider === "itemku" ? normalizeItemkuGroup(query.unit) : normalizeKaleozProductType(query.unit);
+  const providers = {
+    kaleoz: { label: "Kaleoz", loadGames: loadKaleozGames, normalizeGame: normalizeKaleozGame, normalizeGroup: normalizeKaleozProductType, fetchPage: fetchKaleozPage, gameUrl: kaleozGameUrl, fallbackSlug: "zepeto" },
+    itemku: { label: "itemku", loadGames: loadItemkuGames, normalizeGame: normalizeItemkuGame, normalizeGroup: normalizeItemkuGroup, fetchPage: fetchItemkuPage, gameUrl: itemkuGameUrl, fallbackSlug: "zepeto" },
+    g2g: { label: "G2G", loadGames: loadG2GGames, normalizeGame: normalizeG2GGame, normalizeGroup: normalizeG2GGroup, fetchPage: fetchG2GPage, gameUrl: g2gGameUrl, fallbackSlug: "zepeto-top-up" },
+  };
+  const provider = Object.hasOwn(providers, query.market) ? query.market : "kaleoz";
+  const adapter = providers[provider];
+  const games = await adapter.loadGames();
+  const gameConfig = adapter.normalizeGame(query.game, games);
+  const productType = adapter.normalizeGroup(query.unit);
   const [loadedPage, ownSellers, alertCount] = await Promise.all([
-    (provider === "itemku"
-      ? fetchItemkuPage(gameConfig?.value, productType)
-      : fetchKaleozPage(gameConfig?.value, productType)).catch((error) => ({
+    adapter.fetchPage(gameConfig?.value, productType).catch((error) => ({
       provider,
-      providerLabel: provider === "itemku" ? "itemku" : "Kaleoz",
-      error: error.message || `โหลด ${provider === "itemku" ? "itemku" : "Kaleoz"} ไม่สำเร็จ`,
+      providerLabel: adapter.label,
+      error: error.message || `โหลด ${adapter.label} ไม่สำเร็จ`,
       groups: [],
       offers: [],
       game: gameConfig?.value,
       gameLabel: gameConfig?.label,
-      sourceUrl: provider === "itemku" ? itemkuGameUrl(gameConfig?.slug || "zepeto") : kaleozGameUrl(gameConfig?.slug || "zepeto"),
+      sourceUrl: adapter.gameUrl(gameConfig?.slug || adapter.fallbackSlug),
       games,
       productType,
     })),
