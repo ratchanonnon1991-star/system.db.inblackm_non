@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Gamepad2, Image as ImageIcon } from "lucide-react";
+import { Gamepad2, Image as ImageIcon, Lock } from "lucide-react";
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -14,6 +14,7 @@ import { parseFormula } from "@/lib/gamedb-formula";
 import {
   buildGameinfoPackColumns,
   formatGameinfoPackColumnValue,
+  isGameinfoPackColumnPinned,
   matchesGameinfoPackFilters,
 } from "@/lib/gameinfo-pack-columns";
 import { getGameinfoFormulaDisplay } from "@/lib/gameinfo-formula-overrides";
@@ -376,8 +377,10 @@ function PackCategory({
 }
 
 function SortableViewHeader({ column }) {
+  const pinned = isGameinfoPackColumnPinned(column);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: column.id,
+    disabled: pinned,
   });
   return (
     <th
@@ -387,12 +390,16 @@ function SortableViewHeader({ column }) {
         transition,
         opacity: isDragging ? 0.5 : 1,
       }}
-      {...attributes}
-      {...listeners}
-      className="cursor-grab whitespace-nowrap px-3 py-2 font-medium active:cursor-grabbing"
-      title="กดค้างแล้วลากเพื่อเปลี่ยนลำดับ"
+      {...(pinned ? {} : { ...attributes, ...listeners })}
+      className={`whitespace-nowrap px-3 py-2 font-medium ${
+        pinned ? "cursor-default" : "cursor-grab active:cursor-grabbing"
+      }`}
+      title={pinned ? "คอลัมน์สถานะถูกตรึงไว้เป็นคอลัมน์แรก" : "กดค้างแล้วลากเพื่อเปลี่ยนลำดับ"}
     >
-      {column.label}
+      <span className="inline-flex items-center gap-1">
+        {pinned ? <Lock size={10} className="shrink-0" /> : null}
+        {column.label}
+      </span>
     </th>
   );
 }

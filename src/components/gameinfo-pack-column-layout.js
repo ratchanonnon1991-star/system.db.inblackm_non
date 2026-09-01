@@ -8,20 +8,14 @@ import { requestGameinfoDiscard } from "@/lib/gameinfo-unsaved-changes";
 import { Badge } from "@/components/ui/badge";
 import {
   gameinfoPackLayoutStorageKey,
+  isGameinfoPackColumnPinned,
   normalizeGameinfoPackLayout,
   orderGameinfoPackColumns,
   reorderGameinfoPackColumns,
 } from "@/lib/gameinfo-pack-columns";
 
-function normalizeLayoutForScreen(layout, columns, lockRequired) {
-  const normalized = normalizeGameinfoPackLayout(layout, columns);
-  if (!lockRequired) return normalized;
-  return {
-    ...normalized,
-    hidden: normalized.hidden.filter(
-      (id) => !columns.find((column) => column.id === id)?.required
-    ),
-  };
+function normalizeLayoutForScreen(layout, columns) {
+  return normalizeGameinfoPackLayout(layout, columns);
 }
 
 function sameLayout(left, right) {
@@ -46,7 +40,6 @@ export function useGameinfoPackColumnLayout({
   userId,
   gameId,
   surface,
-  lockRequired = false,
 }) {
   const storageKey = gameinfoPackLayoutStorageKey({ userId, gameId, surface });
   const presetsUrl = `/api/gameinfo/gamelist/${gameId}/packs/presets?surface=${encodeURIComponent(surface)}`;
@@ -63,12 +56,12 @@ export function useGameinfoPackColumnLayout({
   const [notice, setNotice] = useState("");
 
   const normalizedLayout = useMemo(
-    () => normalizeLayoutForScreen(layout, columns, lockRequired),
-    [layout, columns, lockRequired]
+    () => normalizeLayoutForScreen(layout, columns),
+    [layout, columns]
   );
   const normalizedBaseline = useMemo(
-    () => normalizeLayoutForScreen(baselineLayout, columns, lockRequired),
-    [baselineLayout, columns, lockRequired]
+    () => normalizeLayoutForScreen(baselineLayout, columns),
+    [baselineLayout, columns]
   );
   const dirty =
     presetName !== baselineName ||
@@ -142,8 +135,7 @@ export function useGameinfoPackColumnLayout({
   function setVisible(columnId, visible) {
     if (loading || saving) return;
     setLayout((current) => {
-      const next = normalizeLayoutForScreen(current, columns, lockRequired);
-      if (lockRequired && columns.find((column) => column.id === columnId)?.required) return next;
+      const next = normalizeLayoutForScreen(current, columns);
       const hidden = new Set(next.hidden);
       if (visible) hidden.delete(columnId);
       else hidden.add(columnId);
@@ -156,7 +148,7 @@ export function useGameinfoPackColumnLayout({
     if (loading || saving) return;
     setLayout((current) =>
       reorderGameinfoPackColumns(
-        normalizeLayoutForScreen(current, columns, lockRequired),
+        normalizeLayoutForScreen(current, columns),
         activeId,
         overId
       )
@@ -167,7 +159,7 @@ export function useGameinfoPackColumnLayout({
   function setFilters(filters) {
     if (loading || saving) return;
     setLayout((current) => ({
-      ...normalizeLayoutForScreen(current, columns, lockRequired),
+      ...normalizeLayoutForScreen(current, columns),
       filters,
     }));
     setNotice("");
@@ -175,7 +167,7 @@ export function useGameinfoPackColumnLayout({
 
   function reset() {
     if (loading || saving) return;
-    setLayout(normalizeLayoutForScreen(null, columns, lockRequired));
+    setLayout(normalizeLayoutForScreen(null, columns));
     setNotice("");
   }
 
@@ -304,7 +296,6 @@ export function GameinfoPackColumnControls({
   onSelectPreset,
   onPresetNameChange,
   onSavePreset,
-  lockRequired = false,
   presetLocked = false,
 }) {
   const [open, setOpen] = useState(false);
@@ -498,22 +489,31 @@ export function GameinfoPackColumnControls({
           </div>
           <div className="max-h-60 space-y-1 overflow-y-auto">
             {columns.map((column) => {
-              const locked = lockRequired && column.required;
-              const checked = locked || !hidden.includes(column.id);
+              const pinned = isGameinfoPackColumnPinned(column);
+              const checked = pinned || !hidden.includes(column.id);
               return (
                 <label
                   key={column.id}
-                  className="flex items-center gap-2 rounded px-2 py-1.5 text-xs text-linear-ink-muted hover:bg-linear-surface-2"
+                  title={pinned ? "คอลัมน์สถานะถูกตรึงไว้เป็นคอลัมน์แรกและซ่อนไม่ได้" : undefined}
+                  className={`flex items-center gap-2 rounded px-2 py-1.5 text-xs ${
+                    pinned
+                      ? "cursor-default text-linear-ink-tertiary"
+                      : "text-linear-ink-muted hover:bg-linear-surface-2"
+                  }`}
                 >
                   <input
                     type="checkbox"
                     checked={checked}
-                    disabled={locked || loading || saving}
+                    disabled={pinned || loading || saving}
                     onChange={(event) => onSetVisible(column.id, event.target.checked)}
                     className="accent-linear-primary"
                   />
                   <span className="min-w-0 flex-1 truncate">{column.label}</span>
-                  {locked ? <span className="text-[10px] text-linear-ink-tertiary">จำเป็น</span> : null}
+                  {pinned ? (
+                    <span className="inline-flex shrink-0 items-center gap-1 text-[10px] text-linear-ink-tertiary">
+                      <Lock size={10} /> ตรึงไว้
+                    </span>
+                  ) : null}
                 </label>
               );
             })}

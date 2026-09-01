@@ -34,6 +34,14 @@ export const GAMEINFO_PACK_BASE_COLUMNS = [
   { id: "country", label: "ประเทศ", field: "country", track: "minmax(80px, 0.8fr)", minWidth: 100, maxWidth: 220, required: true },
 ];
 
+/* The status column doubles as the row-select checkbox, so it stays pinned
+   first and always visible — column presets cannot hide or move it. */
+export const GAMEINFO_PACK_PINNED_COLUMN_ID = "serviceEnabled";
+
+export function isGameinfoPackColumnPinned(column) {
+  return (typeof column === "string" ? column : column?.id) === GAMEINFO_PACK_PINNED_COLUMN_ID;
+}
+
 export const GAMEINFO_PACK_SYMBOLS = ["", "$", "฿", "%"];
 
 export function buildGameinfoPackColumns(computedColumns = []) {
@@ -69,7 +77,7 @@ export function gameinfoPackColumnWidth(column, values = []) {
 export function normalizeGameinfoPackLayout(raw, columns) {
   const ids = columns.map((column) => column.id);
   const known = new Set(ids);
-  const statusId = known.has("serviceEnabled") ? "serviceEnabled" : null;
+  const statusId = known.has(GAMEINFO_PACK_PINNED_COLUMN_ID) ? GAMEINFO_PACK_PINNED_COLUMN_ID : null;
   const order = [];
   if (statusId) order.push(statusId);
   for (const id of Array.isArray(raw?.order) ? raw.order : []) {
@@ -97,7 +105,7 @@ export function normalizeGameinfoPackLayout(raw, columns) {
 }
 
 export function reorderGameinfoPackColumns(layout, activeId, overId) {
-  if (activeId === "serviceEnabled") return layout;
+  if (isGameinfoPackColumnPinned(activeId)) return layout;
   const order = [...layout.order];
   const from = order.indexOf(activeId);
   const to = order.indexOf(overId);

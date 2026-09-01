@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, ChevronDown, Copy, Download, FileUp, Image as ImageIcon, Languages, Pencil, Plus, Trash2, X } from "lucide-react";
+import { CheckCircle2, ChevronDown, Copy, Download, FileUp, Image as ImageIcon, Languages, Lock, Pencil, Plus, Trash2, X } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -61,6 +61,7 @@ import {
   buildGameinfoPackColumns,
   formatGameinfoPackColumnValue,
   gameinfoPackColumnWidth,
+  isGameinfoPackColumnPinned,
   matchesGameinfoPackFilters,
 } from "@/lib/gameinfo-pack-columns";
 import {
@@ -279,7 +280,6 @@ export default function GameinfoPackEditor({
     userId,
     gameId: game.id,
     surface: "edit",
-    lockRequired: true,
   });
   const languageDraftDirty = Boolean(languageDraft.trim());
   useGameinfoUnsavedChanges(dirty || packLayout.dirty || languageDraftDirty);
@@ -1041,7 +1041,6 @@ export default function GameinfoPackEditor({
           onSelectPreset={packLayout.selectPreset}
           onPresetNameChange={packLayout.setPresetName}
           onSavePreset={packLayout.savePreset}
-          lockRequired
         />
         <GameinfoPackHistory gameId={game.id} historyUrl={historyUrl} />
       </div>
@@ -2127,8 +2126,10 @@ function GameinfoFormulaOverrideEditor({
 // reorder (the whole cell is the drag handle, not a separate grip icon). The
 // remove button stops propagation so it doesn't also start a drag.
 function SortableColumnHeader({ column, index, onRemove, onEdit, onEditCategory }) {
+  const pinned = isGameinfoPackColumnPinned(column);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: column.id,
+    disabled: pinned,
   });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -2140,13 +2141,13 @@ function SortableColumnHeader({ column, index, onRemove, onEdit, onEditCategory 
     <span
       ref={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
-      className={`flex min-w-0 cursor-grab items-center gap-1 px-2 active:cursor-grabbing ${
-        column.kind === "computed" ? "text-linear-primary" : "text-linear-ink-tertiary"
-      }`}
-      title="กดค้างแล้วลากเพื่อเปลี่ยนลำดับ"
+      {...(pinned ? {} : { ...attributes, ...listeners })}
+      className={`flex min-w-0 items-center gap-1 px-2 ${
+        pinned ? "cursor-default" : "cursor-grab active:cursor-grabbing"
+      } ${column.kind === "computed" ? "text-linear-primary" : "text-linear-ink-tertiary"}`}
+      title={pinned ? "คอลัมน์สถานะถูกตรึงไว้เป็นคอลัมน์แรก" : "กดค้างแล้วลากเพื่อเปลี่ยนลำดับ"}
     >
+      {pinned ? <Lock size={10} className="shrink-0" /> : null}
       <span className="whitespace-normal break-words">{column.label || `สูตร ${index + 1}`}</span>
       {onEditCategory ? (
         <button

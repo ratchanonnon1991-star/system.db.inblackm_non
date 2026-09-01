@@ -971,7 +971,7 @@ async function packPriceMap(gameId, dataMode, market, externalGameKey = "") {
     getGameinfoMarketRateReference(market, externalGameKey),
   ]);
   const rates = await getGameinfoExchangeRates(
-    ["USDT/THB", "USDCNY", "IDRTHB", "USDIDR"],
+    ["USDT/THB", "USDCNY", "IDRTHB", "USDIDR", "THBUSD"],
     { at: referenceAt, includeHistory: false, refreshStale: false }
   ).catch(() => []);
   const fields = dataMode === "idpass" ? data?.fields : null;
