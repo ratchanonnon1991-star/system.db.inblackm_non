@@ -84,12 +84,17 @@ assert.equal(msUntilNextDailyRefresh(at("2026-08-27T03:00:00.000Z")), 23 * 60 * 
 // Across a month boundary it still resolves to the next calendar day.
 assert.equal(msUntilNextDailyRefresh(at("2026-08-31T23:00:00.000Z")), 3 * 60 * 60 * 1000);
 
-// Both markets de-duplicate through the same helper.
+// Every market de-duplicates through the same helper, now inside the shared
+// store that keeps the page in the database between refreshes.
 import { readFileSync } from "node:fs";
-const itemku = readFileSync(new URL("../src/server/itemku-prices.js", import.meta.url), "utf8");
+const store = readFileSync(new URL("../src/server/gameinfo-price-page-store.js", import.meta.url), "utf8");
+assert.match(store, /settlePricePage\(stored, normalize\(await load\(\)\)\)/);
+for (const file of ["itemku-prices", "kaleoz-zepeto", "g2g-prices"]) {
+  const source = readFileSync(new URL(`../src/server/${file}.js`, import.meta.url), "utf8");
+  assert.match(source, /resolveGameinfoPricePage\(\{/);
+}
 const kaleoz = readFileSync(new URL("../src/server/kaleoz-zepeto.js", import.meta.url), "utf8");
-assert.match(itemku, /settlePricePage\(cached\?\.value, await promise\)/);
-assert.match(kaleoz, /settlePricePage\(cached\?\.value, normalizeKaleozCategoryLabels\(await promise\)\)/);
+assert.match(kaleoz, /normalize: normalizeKaleozCategoryLabels/);
 
 // The page keeps what is on screen when the refresh brought back the same data.
 const compare = readFileSync(new URL("../src/components/gameinfo-pack-price-compare.js", import.meta.url), "utf8");
@@ -104,4 +109,4 @@ assert.match(compare, /refreshPrices\(\);\s*timer = window\.setTimeout\(run, msU
 assert.match(compare, /function confirmRefresh\(\) \{\s*setRefreshPrompt\(null\);\s*refreshPrices\(\);/);
 assert.doesNotMatch(compare, /setInterval\(refreshPrices/);
 
-console.log("\n48 passed");
+console.log("\n51 passed");

@@ -1,6 +1,7 @@
 import { evaluateFormula, extractFormulaRefs, parseFormula } from "@/lib/gamedb-formula";
 import { GAMEINFO_FIELD_NAMES, resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
 import { getGameinfoFormulaDisplay } from "@/lib/gameinfo-formula-overrides";
+import { roundGameinfoNumber } from "@/lib/gameinfo-pack-validation";
 
 export function evaluateGameinfoComputedColumn(column, columns, pack, game, context = {}, stack = []) {
   if (!column) return undefined;
@@ -9,14 +10,16 @@ export function evaluateGameinfoComputedColumn(column, columns, pack, game, cont
     throw new Error(`สูตรอ้างอิงวนซ้ำ: ${labels.join(" → ")}`);
   }
   const effective = getGameinfoFormulaDisplay(column, pack?.id, context.categoryId);
+  if (!effective.formula.trim()) return undefined;
   const ast = parseFormula(effective.formula);
-  return evaluateFormula(ast, (label) => {
+  const value = evaluateFormula(ast, (label) => {
     const dependency = columns.find((item) => item.label === label);
     if (dependency) {
       return evaluateGameinfoComputedColumn(dependency, columns, pack, game, context, [...stack, column.key]);
     }
     return resolveGameinfoField(pack, game, label, context);
   });
+  return column.type && column.type !== "number" ? value : roundGameinfoNumber(value);
 }
 
 export function validateGameinfoComputedDependencies(
@@ -26,12 +29,20 @@ export function validateGameinfoComputedDependencies(
 ) {
   const errors = [];
   const labels = new Map();
+  const normalizedLabels = new Map();
+  const reservedNames = new Set(
+    [...GAMEINFO_FIELD_NAMES, ...extraFieldNames].map((name) => String(name).trim().toLocaleLowerCase("th"))
+  );
   for (const column of columns || []) {
-    if (labels.has(column.label)) errors.push(`ชื่อคอลัมน์สูตรซ้ำ: ${column.label}`);
+    const normalizedLabel = String(column.label || "").trim().toLocaleLowerCase("th");
+    if (reservedNames.has(normalizedLabel)) errors.push(`มีชื่อ "${column.label}" อยู่แล้วในตัวแปรหรือฟิลด์ GameInfo`);
+    if (normalizedLabels.has(normalizedLabel)) errors.push(`ชื่อคอลัมน์สูตรซ้ำ: ${column.label}`);
+    normalizedLabels.set(normalizedLabel, column);
     labels.set(column.label, column);
   }
 
   function validateFormula(column, formula, sourceLabel) {
+    if (column.entryMode === "manual" && !String(formula || "").trim()) return;
     try {
       const ast = parseFormula(formula);
       for (const ref of extractFormulaRefs(ast)) {
@@ -82,10 +93,12 @@ export function validateGameinfoComputedDependencies(
           context.packId,
           context.categoryId
         );
-        const ast = parseFormula(effective.formula);
-        for (const ref of extractFormulaRefs(ast)) {
-          const dependency = labels.get(ref);
-          if (dependency) visit(dependency, [...path, column.label]);
+        if (effective.formula.trim()) {
+          const ast = parseFormula(effective.formula);
+          for (const ref of extractFormulaRefs(ast)) {
+            const dependency = labels.get(ref);
+            if (dependency) visit(dependency, [...path, column.label]);
+          }
         }
       } catch {
         // The formula-specific pass above reports syntax and unknown refs.

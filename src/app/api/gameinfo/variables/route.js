@@ -32,7 +32,7 @@ export async function GET(request) {
       getGameinfoFormulaVariables(0, { includeLogs: true }),
       listGameListRows(),
       listGamelistPackCountByGame(),
-      getGameinfoExchangeRates(["USDT/THB", "USDCNY"]).catch(() => []),
+      getGameinfoExchangeRates(["USDT/THB", "USDCNY", "IDRTHB", "USDIDR"]).catch(() => []),
     ]);
     const game = games.find((item) => packCounts[item.id] > 0) || null;
     const packs = game ? await getGamelistPacks(game.id) : null;

@@ -12,12 +12,15 @@ import { GAMEINFO_FIELD_NAMES } from "@/lib/gameinfo-formula-fields";
 import GameinfoFormulaHelpPanel from "@/components/gameinfo-formula-help-panel";
 import { formatGameinfoPackColumnValue, GAMEINFO_PACK_SYMBOLS } from "@/lib/gameinfo-pack-columns";
 import { validateGameinfoComputedDependencies } from "@/lib/gameinfo-computed-evaluator";
-import { useGameinfoDialog } from "@/lib/use-gameinfo-dialog";
 import {
   requestGameinfoDiscard,
   useGameinfoUnsavedChanges,
 } from "@/lib/gameinfo-unsaved-changes";
 import GameinfoFormulaMemory from "./gameinfo-formula-memory";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // Same parser, validation and function library as the systemdb-side formula
 // editor (gamedb-modals.js's ComputedColumnModal) — this one is a full
@@ -47,6 +50,7 @@ export default function GameinfoComputedEditor({
   extraFieldNames = EMPTY_FIELD_NAMES,
 }) {
   const editingMainFormula = Boolean(initialColumn);
+  const [entryMode, setEntryMode] = useState(initialColumn?.entryMode === "manual" ? "manual" : "formula");
   const [label, setLabel] = useState(initialColumn?.label || "");
   const [formula, setFormula] = useState(initialColumn?.formula || "");
   // Empty until touched, so the type follows the formula while the user is
@@ -57,8 +61,16 @@ export default function GameinfoComputedEditor({
     initialColumn?.scopeMode === "category" ? "category" : "global"
   );
   const [resetOverrides, setResetOverrides] = useState(false);
+  const normalizedLabel = label.trim().toLocaleLowerCase("th");
+  const labelExists = Boolean(normalizedLabel) && [
+    ...GAMEINFO_FIELD_NAMES,
+    ...extraFieldNames,
+    ...otherColumns.map((column) => column.label),
+  ].some((name) => String(name).trim().toLocaleLowerCase("th") === normalizedLabel);
+  const labelError = labelExists ? `มีชื่อ "${label.trim()}" อยู่แล้ว` : "";
   const dirty =
     label.trim() !== String(initialColumn?.label || "").trim() ||
+    entryMode !== (initialColumn?.entryMode === "manual" ? "manual" : "formula") ||
     formula.trim() !== String(initialColumn?.formula || "").trim() ||
     typeChoice !== (initialColumn?.type || "") ||
     symbol !== (initialColumn?.symbol || "") ||
@@ -78,9 +90,8 @@ export default function GameinfoComputedEditor({
     onClose();
   }
 
-  const { dialogRef, titleId, onBackdropMouseDown } = useGameinfoDialog({ onRequestClose: requestClose });
-
   const validation = useMemo(() => {
+    if (entryMode === "manual" && !formula.trim()) return { ok: true, message: "", type: "number" };
     if (!formula.trim()) return { ok: false, message: "", type: "number" };
     try {
       const ast = parseFormula(formula);
@@ -115,21 +126,23 @@ export default function GameinfoComputedEditor({
     } catch (err) {
       return { ok: false, message: err.message, type: "number" };
     }
-  }, [extraFieldNames, formula, initialColumn, label, otherColumns, sampleRow, symbol, typeChoice]);
+  }, [entryMode, extraFieldNames, formula, initialColumn, label, otherColumns, sampleRow, symbol, typeChoice]);
 
   const type = typeChoice || validation.type;
   const missing = [
     !label.trim() && "ชื่อคอลัมน์",
-    !formula.trim() && "สูตร",
+    labelError && "ชื่อคอลัมน์ที่ไม่ซ้ำ",
+    entryMode === "formula" && !formula.trim() && "สูตร",
     formula.trim() && !validation.ok && "สูตรที่ถูกต้อง (ดูข้อความใต้ช่องสูตร)",
   ].filter(Boolean);
 
   function submit() {
-    if (!label.trim() || !validation.ok) return;
+    if (!label.trim() || labelError || !validation.ok) return;
     const nextColumn = {
       key: initialColumn?.key || `col_${Date.now()}`,
       label: label.trim(),
-      formula: formula.trim(),
+      formula: entryMode === "manual" ? "" : formula.trim(),
+      entryMode,
       type,
       symbol: type === "number" ? symbol : "",
       scopeMode,
@@ -171,49 +184,79 @@ export default function GameinfoComputedEditor({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onMouseDown={onBackdropMouseDown}
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) requestClose();
+      }}
     >
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="flex max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-linear-hairline bg-linear-surface-1 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-linear-hairline px-5 py-3">
-          <h2 id={titleId} className="flex items-center gap-2 text-sm font-semibold text-linear-ink">
-            <Calculator size={15} className="text-linear-primary" /> {editingMainFormula ? "แก้ไขสูตรหลัก" : "เพิ่มคอลัมน์/สูตร"}
-          </h2>
-          <button
+      <DialogContent
+        showCloseButton={false}
+        className="flex max-h-[85dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl"
+      >
+        <div className="flex shrink-0 items-center justify-between border-b px-5 py-3">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <DialogTitle className="flex items-center gap-2">
+              <Calculator data-icon="inline-start" />
+              {editingMainFormula ? "แก้ไขคอลัมน์" : "เพิ่มคอลัมน์/สูตร"}
+            </DialogTitle>
+            <DialogDescription>
+              {entryMode === "manual"
+                ? "สร้างคอลัมน์ว่างสำหรับกรอกตัวเลขหรือสูตรแยกแต่ละ Pack"
+                : "กำหนดชื่อ สูตร รูปแบบผลลัพธ์ และเลือกใช้สูตรจาก Formula Memory"}
+            </DialogDescription>
+          </div>
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-sm"
             onClick={requestClose}
-            className="flex h-7 w-7 items-center justify-center rounded text-linear-ink-tertiary hover:bg-linear-surface-2 hover:text-linear-ink"
             aria-label="ปิด"
           >
-            <X size={16} />
-          </button>
+            <X />
+          </Button>
         </div>
 
-        <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_20rem]">
-          <div className="flex flex-col gap-3 overflow-y-auto px-5 py-4">
+        <div className="grid min-h-0 flex-1 overflow-y-auto overscroll-contain lg:grid-cols-[minmax(0,1fr)_20rem] lg:overflow-hidden">
+          <div className="flex flex-col gap-3 px-5 py-4 lg:min-h-0 lg:overflow-y-auto">
           <div>
             <label className="mb-1 block text-xs text-linear-ink-tertiary">ชื่อคอลัมน์</label>
-            <input
+            <Input
               type="text"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               placeholder="เช่น กำไร"
-              className="h-9 w-full rounded border border-linear-hairline-strong bg-linear-surface-2 px-2 text-sm text-linear-ink outline-none focus:border-linear-primary"
+              aria-invalid={Boolean(labelError)}
             />
+            {labelError ? <p role="alert" className="mt-1 text-xs text-linear-danger">{labelError}</p> : null}
           </div>
 
           <div>
+            <label className="mb-1 block text-xs text-linear-ink-tertiary">รูปแบบคอลัมน์</label>
+            <Tabs value={entryMode} onValueChange={setEntryMode}>
+              <TabsList className="grid h-9 w-full grid-cols-2">
+                <TabsTrigger value="formula">ใช้สูตรทั้งคอลัมน์</TabsTrigger>
+                <TabsTrigger value="manual">กรอกเองแต่ละ Pack</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <p className="mt-1 text-[11px] text-linear-ink-tertiary">
+              {entryMode === "manual"
+                ? "เริ่มต้นเป็นค่าว่าง และแต่ละ Pack ใส่ตัวเลขหรือสูตรของตัวเองได้"
+                : "กำหนดสูตรหลักครั้งเดียว แล้วใช้กับทุก Pack"}
+            </p>
+          </div>
+
+          <div className={entryMode === "manual" ? "hidden" : undefined}>
             <label className="mb-1 block text-xs text-linear-ink-tertiary">
               สูตร — ใช้ + - * / ( ) เทียบด้วย = &lt;&gt; &lt; &gt; ใส่ข้อความในเครื่องหมายคำพูด
               และอ้างคอลัมน์ด้วย [ชื่อคอลัมน์]
             </label>
-            <input
+            <Input
               type="text"
               value={formula}
               onChange={(e) => setFormula(e.target.value)}
               placeholder={'เช่น IF(DAYSUNTIL([วันหมดอายุ]) < 3, "ใกล้หมดอายุ", "ปกติ")'}
-              className="h-9 w-full rounded border border-linear-hairline-strong bg-linear-surface-2 px-2 font-mono text-xs text-linear-ink outline-none focus:border-linear-primary"
+              className="font-mono text-xs"
             />
             {formula.trim() && (
               <p className={`mt-1 text-xs ${validation.ok ? "text-linear-success" : "text-linear-danger"}`}>
@@ -222,7 +265,7 @@ export default function GameinfoComputedEditor({
             )}
           </div>
 
-          <div>
+          <div className={entryMode === "manual" ? "hidden" : undefined}>
             <label htmlFor="gameinfo-computed-scope" className="mb-1 block text-xs text-linear-ink-tertiary">
               ขอบเขตการใช้สูตร
             </label>
@@ -258,7 +301,7 @@ export default function GameinfoComputedEditor({
             </select>
           </div>
 
-          {editingMainFormula && (
+          {entryMode === "formula" && editingMainFormula && (
             Object.keys(initialColumn?.rowOverrides || {}).length > 0 ||
             Object.keys(initialColumn?.categoryFormulas || {}).length > 0
           ) ? (
@@ -279,7 +322,7 @@ export default function GameinfoComputedEditor({
             <label htmlFor="gameinfo-computed-symbol" className="mb-1 block text-xs text-linear-ink-tertiary">
               สัญลักษณ์ที่แสดง
             </label>
-            <input
+            <Input
               id="gameinfo-computed-symbol"
               type="text"
               value={type === "number" ? symbol : ""}
@@ -288,7 +331,6 @@ export default function GameinfoComputedEditor({
               maxLength={24}
               list="gameinfo-computed-symbol-suggestions"
               placeholder="เช่น ฿, %, USD, Coins"
-              className="h-9 w-full rounded border border-linear-hairline-strong bg-linear-surface-2 px-2 text-sm text-linear-ink outline-none focus:border-linear-primary disabled:opacity-50"
             />
             <datalist id="gameinfo-computed-symbol-suggestions">
               {GAMEINFO_PACK_SYMBOLS.map((value) => (
@@ -300,20 +342,21 @@ export default function GameinfoComputedEditor({
             </p>
           </div>
 
-          <GameinfoFormulaHelpPanel />
+          {entryMode === "formula" ? <GameinfoFormulaHelpPanel /> : null}
 
-          <div>
+          <div className={entryMode === "manual" ? "hidden" : undefined}>
             <p className="mb-1.5 text-xs text-linear-ink-tertiary">คอลัมน์ที่ใช้ได้ (กดเพื่อแทรก):</p>
             <div className="flex flex-wrap gap-1.5">
               {[...new Set([...GAMEINFO_FIELD_NAMES, ...extraFieldNames, ...otherColumns.map((column) => column.label)])].map((name) => (
-                <button
+                <Button
                   key={name}
                   type="button"
+                  variant="secondary"
+                  size="xs"
                   onClick={() => setFormula((prev) => `${prev}[${name}]`)}
-                  className="rounded bg-linear-surface-3 px-2 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-4"
                 >
                   {name}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
@@ -325,26 +368,29 @@ export default function GameinfoComputedEditor({
           )}
           </div>
 
-          <GameinfoFormulaMemory
+          {entryMode === "formula" ? <GameinfoFormulaMemory
             formula={formula}
             type={type}
             symbol={symbol}
             onApply={applyMemoryPreset}
-            className="overflow-y-auto border-t border-linear-hairline bg-linear-surface-2 p-4 lg:border-l lg:border-t-0"
-          />
+            className="border-t border-linear-hairline bg-linear-surface-2 p-4 lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-t-0"
+          /> : (
+            <aside className="border-t border-linear-hairline bg-linear-surface-2 p-4 text-xs text-linear-ink-tertiary lg:border-l lg:border-t-0">
+              หลังเพิ่มคอลัมน์ ให้กดเซลล์ของแต่ละ Pack เพื่อใส่ตัวเลขหรือสูตร
+            </aside>
+          )}
         </div>
 
-        <div className="flex items-center justify-end border-t border-linear-hairline px-5 py-3">
-          <button
+        <div className="flex shrink-0 items-center justify-end border-t px-5 py-3">
+          <Button
             type="button"
             onClick={submit}
-            disabled={!label.trim() || !validation.ok}
-            className="flex items-center gap-1.5 rounded-md bg-linear-primary px-4 py-2 text-sm font-medium text-white hover:bg-linear-primary-hover disabled:opacity-50"
+            disabled={!label.trim() || Boolean(labelError) || !validation.ok}
           >
-            <Plus size={14} /> {editingMainFormula ? "บันทึกสูตรหลัก" : "เพิ่มคอลัมน์"}
-          </button>
+            <Plus data-icon="inline-start" /> {editingMainFormula ? "บันทึกคอลัมน์" : "เพิ่มคอลัมน์"}
+          </Button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

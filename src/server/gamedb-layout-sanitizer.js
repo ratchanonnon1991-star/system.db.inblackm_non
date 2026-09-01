@@ -66,6 +66,15 @@ export function sanitizeComputedColumns(raw) {
           key: col.key.slice(0, 64),
           label: col.label.slice(0, 120),
           formula: col.formula.slice(0, 500),
+          entryMode:
+            col.entryMode === "manual" || (col.kind !== "market" && !col.formula.trim())
+              ? "manual"
+              : "formula",
+          kind: col.kind === "market" ? "market" : "formula",
+          marketKey: col.kind === "market" && ["kaleoz", "itemku"].includes(col.marketKey)
+            ? col.marketKey
+            : "",
+          enabled: col.kind === "market" ? col.enabled !== false : true,
           // Absent on every column saved before formulas could return text.
           type: COMPUTED_TYPES.includes(col.type) ? col.type : "number",
           // Plain display text only; React escapes it when rendered. Keep the

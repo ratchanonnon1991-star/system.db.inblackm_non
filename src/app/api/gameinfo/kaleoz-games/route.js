@@ -2,6 +2,7 @@ import { handleApiError, jsonOk } from "@/lib/http";
 import { requireGameinfoAccess, requireGameinfoEditor } from "@/server/auth";
 import { addKaleozGame, deleteKaleozGame, listKaleozGames, slugFromKaleozUrl } from "@/server/kaleoz-games-repository";
 import { clearKaleozGameCache, inspectKaleozGame } from "@/server/kaleoz-zepeto";
+import { deleteGameinfoPricePages } from "@/server/gameinfo-price-page-store";
 import { auditActor, recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
 
 export async function GET(request) {
@@ -34,6 +35,7 @@ export async function DELETE(request) {
     const value = new URL(request.url).searchParams.get("game") || "";
     const game = await deleteKaleozGame(value);
     clearKaleozGameCache(game.value);
+    await deleteGameinfoPricePages("kaleoz", game.value);
     await recordGameinfoAudit({ gameId: 0, area: "settings", actor: auditActor(user), before: { kaleozGame: game.label, slug: game.slug }, after: null });
     return jsonOk({ game, games: await listKaleozGames() });
   } catch (error) {

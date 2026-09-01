@@ -5,5 +5,7 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs" && process.env.NODE_ENV === "production") {
     const { startGameinfoRateScheduler } = await import("@/server/gameinfo-rate-scheduler");
     startGameinfoRateScheduler();
+    const { startGameinfoMarketScheduler } = await import("@/server/gameinfo-market-scheduler");
+    startGameinfoMarketScheduler();
   }
 }

@@ -6,7 +6,9 @@ const CONNECTION_NAME = "gameinfo";
 const HISTORY_LIMIT = 48;
 const PAIRS = {
   "USDT/THB": { provider: "CoinGecko", kind: "crypto" },
-  USDCNY: { provider: "Frankfurter/ECB", kind: "fiat" },
+  USDCNY: { provider: "Frankfurter/ECB", kind: "fiat", base: "USD", quote: "CNY" },
+  IDRTHB: { provider: "Frankfurter/ECB", kind: "fiat", base: "IDR", quote: "THB" },
+  USDIDR: { provider: "Frankfurter/ECB", kind: "fiat", base: "USD", quote: "IDR" },
 };
 
 const schemaReady = new Map();
@@ -22,6 +24,8 @@ export function normalizeGameinfoRatePair(value) {
   const compact = String(value || "").trim().toUpperCase().replace(/[^A-Z]/g, "");
   if (compact === "USDTTHB") return "USDT/THB";
   if (compact === "USDCNY") return "USDCNY";
+  if (compact === "IDRTHB") return "IDRTHB";
+  if (compact === "USDIDR") return "USDIDR";
   return null;
 }
 
@@ -56,8 +60,9 @@ export async function fetchGameinfoRate(pair, { fetchImpl = fetch } = {}) {
     };
   }
 
+  const { base, quote } = PAIRS[normalized];
   const response = await fetchImpl(
-    "https://api.frankfurter.dev/v2/rate/USD/CNY?providers=ECB",
+    `https://api.frankfurter.dev/v2/rate/${base}/${quote}?providers=ECB`,
     { signal }
   );
   if (!response.ok) throw new Error(`Frankfurter ตอบกลับ ${response.status}`);
@@ -128,6 +133,16 @@ async function readLatest(client, pair) {
   return result.rows[0] || null;
 }
 
+async function readClosestTo(client, pair, at) {
+  const result = await client.query(
+    `SELECT pair, rate, provider, fetched_at, provider_at, expires_at
+       FROM gameinfo_exchange_rates WHERE pair = $1
+      ORDER BY ABS(EXTRACT(EPOCH FROM (fetched_at - $2::timestamptz))) LIMIT 1`,
+    [pair, at.toISOString()]
+  );
+  return result.rows[0] || null;
+}
+
 async function refreshPair(pool, pair, now, fetchImpl) {
   if (refreshFlights.has(pair)) return refreshFlights.get(pair);
   const flight = (async () => {
@@ -171,31 +186,37 @@ async function loadHistory(client, pair) {
     .reverse();
 }
 
+// Callers that only need today's number — the pack price formulas — can skip
+// both the history query and the upstream refresh, so a stale rate never makes
+// a page wait on the rate provider.
 export async function getGameinfoExchangeRates(
   requestedPairs,
-  { now = new Date(), fetchImpl = fetch, force = false } = {}
+  { now = new Date(), at = null, fetchImpl = fetch, force = false, includeHistory = true, refreshStale = true } = {}
 ) {
   const pairs = [...new Set((requestedPairs || []).map(normalizeGameinfoRatePair).filter(Boolean))];
   if (pairs.length === 0) throw createHttpError("กรุณาระบุคู่สกุลเงินที่รองรับ", 400);
   const pool = await getReadyPool();
+  const referenceAt = at ? new Date(at) : null;
+  if (referenceAt && !Number.isFinite(referenceAt.getTime())) throw createHttpError("วันเวลาอ้างอิงไม่ถูกต้อง", 400);
 
   return Promise.all(
     pairs.map(async (pair) => {
       const client = await pool.connect();
       let latest;
       try {
-        latest = await readLatest(client, pair);
+        latest = referenceAt ? await readClosestTo(client, pair, referenceAt) : await readLatest(client, pair);
       } finally {
         client.release();
       }
-      let current = mapRateRow(latest, now);
-      if (force || current.stale) {
+      let current = mapRateRow(latest, referenceAt || now);
+      if (!referenceAt && (force || (refreshStale && current.stale))) {
         try {
           current = await refreshPair(pool, pair, now, fetchImpl);
         } catch (error) {
           current = mapRateRow(latest, now, error instanceof Error ? error.message : "ดึงราคาไม่สำเร็จ");
         }
       }
+      if (!includeHistory) return { pair, ...current, referenceAt: referenceAt?.toISOString() || null, history: [] };
       const historyClient = await pool.connect();
       try {
         return { pair, ...current, history: await loadHistory(historyClient, pair) };

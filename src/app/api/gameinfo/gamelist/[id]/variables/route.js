@@ -34,7 +34,7 @@ export async function GET(request, { params }) {
       getGameinfoFormulaVariables(gameId, { includeLogs: true }),
       getGamelistPacks(gameId),
       getGameListRow(gameId),
-      getGameinfoExchangeRates(["USDT/THB", "USDCNY"]).catch(() => []),
+      getGameinfoExchangeRates(["USDT/THB", "USDCNY", "IDRTHB", "USDIDR"]).catch(() => []),
     ]);
     const pack = firstPack(packs.currencies);
     const previewValues = {};

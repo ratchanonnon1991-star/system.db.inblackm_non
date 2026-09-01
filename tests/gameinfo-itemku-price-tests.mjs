@@ -5,7 +5,7 @@ import { slugFromItemkuUrl } from "@/server/itemku-games-repository.js";
 import {
   ITEMKU_GAMES,
   clearItemkuCache,
-  convertItemkuSellerPriceToUsd,
+  convertItemkuSellerPriceToThb,
   extractItemkuFlightText,
   fetchItemkuPage,
   groupItemkuOffers,
@@ -34,7 +34,7 @@ const catalogData = {
       { id: 2, name: "Zem", item_info: [{ id: 21, name: "14 Zem", slug: "14-zem" }] },
     ],
   },
-  foreignExchangeRate: { IDR: 500, THB: 1, USD: 0.03 },
+  foreignExchangeRate: { IDR: 16000, THB: 32, USD: 1 },
 };
 
 assert.match(extractItemkuFlightText(flight(catalogData)), /productListData/);
@@ -44,7 +44,7 @@ assert.deepEqual(catalog.groups.map(({ value, label }) => ({ value, label })), [
 assert.equal(catalog.groups[0].denominations[1].id, "12");
 
 const sellerPage = flight({
-  foreignExchangeRate: { IDR: 500, THB: 1, USD: 0.03 },
+  foreignExchangeRate: { IDR: 16000, THB: 32, USD: 1 },
   productDetail: { id: 101, item_info_id: 11, name: "100 Coin", seller_price: 15000, stock: 8, seller: { shop_name: "Topup_youthshop", rating: 4.9 }, seo_string: "zepeto-100-coin", sold: 20, delivery_time: "Instant" },
   products: [
     { id: 101, item_info_id: 11, seller_price: 15000, seller: { shop_name: "Topup_youthshop" } },
@@ -54,14 +54,19 @@ const sellerPage = flight({
 });
 const parsed = parseItemkuDenominationHtml(sellerPage, { id: "11", name: "100 Coin", order: 0, sourceUrl: "https://www.itemku.com/en/g/zepeto/top-up/100-coin" });
 assert.equal(parsed.offers.length, 2);
-assert.equal(parsed.offers[0].currency, "USD");
-assert.equal(parsed.offers[0].price.toFixed(2), "0.90");
+// itemku quotes in IDR; the stored price is that figure in baht, converted with
+// itemku's own rate table, and the IDR original travels with it.
+assert.equal(parsed.offers[0].currency, "THB");
+assert.equal(parsed.offers[0].price, 30);
+assert.equal(parsed.offers[0].priceIdr, 15000);
+assert.equal(parsed.offers[0].fxIdrPerThb, 500);
+assert.equal(convertItemkuSellerPriceToThb(14810, { IDR: 16911.809523809527, THB: 32.1163, USD: 1 }).toFixed(2), "28.12");
+assert.throws(() => convertItemkuSellerPriceToThb(1000, { IDR: 0, THB: 32 }), /อัตราแลกเปลี่ยน/);
 assert.equal(parsed.offers[0].seller, "Topup_youthshop");
 assert.equal(parsed.offers[0].productUrl, "https://www.itemku.com/en/g/zepeto/top-up/100-coin?product_id=101");
 assert.equal(parsed.offers[1].sold, 7);
 assert.equal(groupItemkuOffers(parsed.offers).length, 1);
-assert.equal(convertItemkuSellerPriceToUsd(14810, { IDR: 533.9475950738916, THB: 1, USD: 0.0296 }).toFixed(6), "0.821009");
-assert.throws(() => convertItemkuSellerPriceToUsd(1000, { IDR: 0, USD: 0.03 }), /อัตราแลกเปลี่ยน/);
+// Without the rate table there is no baht price to store, so the parse fails.
 assert.throws(() => parseItemkuDenominationHtml(flight({ products: [{ id: 1, item_info_id: 11, seller_price: 10, seller: { shop_name: "A" } }] }), { id: 11, name: "Pack" }), /อัตราแลกเปลี่ยน/);
 assert.deepEqual(parseItemkuReaderJson('<html><body><pre>{&quot;success&quot;:true,&quot;data&quot;:{&quot;total_item&quot;:2}}</pre></body></html>'), { success: true, data: { total_item: 2 } });
 assert.equal(packCompareStorageKey("hidden-columns", "kaleoz", "zepeto"), "gameinfo:kaleoz-hidden-columns:zepeto");
@@ -80,17 +85,21 @@ const fetchHtml = async (url) => {
   if (failed) throw new Error("offline");
   return url.endsWith("/top-up") ? flight(catalogData) : sellerPage;
 };
-const loaded = await fetchItemkuPage("zepeto", "coin", { fetchHtml, fetchJson: null });
+// No gameinfo database in the suite, so the snapshot store is stubbed out and
+// the cache behaves exactly like the in-memory one it replaced.
+const store = { read: async () => null, save: async () => {} };
+const loaded = await fetchItemkuPage("zepeto", "coin", { fetchHtml, fetchJson: null, store });
 assert.equal(loaded.provider, "itemku");
 assert.equal(loaded.defaultBaselineSeller, undefined);
 assert.equal(loaded.productType, "coin");
 assert.equal(loaded.groups.length, 2);
 failed = true;
-assert.equal(await fetchItemkuPage("zepeto", "coin", { force: true, fetchHtml, fetchJson: null }), loaded);
+assert.equal(await fetchItemkuPage("zepeto", "coin", { force: true, fetchHtml, fetchJson: null, store }), loaded);
 
 clearItemkuCache();
 let apiUrl = "";
 const apiLoaded = await fetchItemkuPage("zepeto", "zem", {
+  store,
   fetchHtml: async (url) => url.endsWith("/top-up") ? flight(catalogData) : sellerPage,
   fetchJson: async (url) => {
     apiUrl = url;
@@ -103,6 +112,9 @@ const apiLoaded = await fetchItemkuPage("zepeto", "zem", {
 assert.equal(apiLoaded.offers.length, 2);
 assert.match(apiUrl, /api-gateway\.itemku\.com\/v1\/product[\s\S]*per_page=100[\s\S]*game_id=257[\s\S]*item_type_id=569/);
 assert.equal(apiLoaded.offers[0].productUrl, "https://www.itemku.com/en/g/zepeto/top-up/14-zem?product_id=201");
+assert.equal(apiLoaded.offers[0].price, 32);
+assert.equal(apiLoaded.offers[0].priceIdr, 16000);
+assert.equal(apiLoaded.offers[0].currency, "THB");
 
 const route = readFileSync(new URL("../src/app/api/gameinfo/itemku-prices/route.js", import.meta.url), "utf8");
 assert.match(route, /requireGameinfoAccess/);
@@ -115,8 +127,10 @@ assert.match(compare, /next\.set\("market", value\)[\s\S]*next\.delete\("game"\)
 assert.match(compare, /storageKey\("seller-order", provider, currentGame\)/);
 assert.match(compare, /await submitGameList\(`\/api\/gameinfo\/\$\{provider\}-games`/);
 assert.match(compare, /await submitGameList\(`\/api\/gameinfo\/\$\{provider\}-games\?game=\$\{encodeURIComponent\(game\.value\)\}`/);
-assert.match(compare, /const marketGameUrl = provider === "itemku" \? ITEMKU_GAME_URL : KALEOZ_GAME_URL;/);
+assert.match(compare, /itemku: \{ label: "itemku", gameUrl: ITEMKU_GAME_URL[\s\S]*const marketGameUrl = marketUi\.gameUrl;/);
 assert.match(compare, /provider === "itemku" \? `Sold:/);
+// The offer tooltip picks its fields from the market, not from the currency.
+assert.match(compare, /provider === "itemku" \|\| provider === "g2g" \? <><p>Sold:/);
 
 // itemku hands back hundreds of shops, so the table opens with a capped set of
 // seller columns instead of one per shop.
@@ -128,8 +142,9 @@ assert.deepEqual(cappedSellerColumns(["a", "b", "c", "d", "e"], coverage, 3, "e"
 // Hidden keys keep the order the columns are in, not the ranking order.
 assert.deepEqual(cappedSellerColumns(["e", "d", "c", "b", "a"], coverage, 2, ""), ["seller:e", "seller:d", "seller:c"]);
 
-// Picking a reference seller moves it to the front without locking the drag order.
-assert.match(compare, /const nextOrder = \[seller, \.\.\.sellers\.filter\(\(item\) => item !== seller\)\];/);
+// Picking a reference seller is preview-only and must not persist or reorder columns.
+assert.match(compare, /function selectBaselineSeller\(seller\)[\s\S]*setBaselineSeller\(seller\)/);
+assert.doesNotMatch(compare, /const nextOrder = \[seller, \.\.\.sellers\.filter\(\(item\) => item !== seller\)\]/);
 // dnd-kit's counter-based aria-describedby tears hydration down if it ships.
 assert.match(compare, /"aria-describedby": describedBy, \.\.\.dragAttributes \} = attributes/);
 // itemku games are added by link, the same way Kaleoz games are.
@@ -162,7 +177,7 @@ assert.match(itemkuGamesRepo, /INSERT INTO itemku_games \(value, slug, label, so
 // Seller columns are fixed boxes, and the table sizes to them so a short set of
 // columns packs to the left instead of stretching across the card.
 assert.match(compare, /<Table className="w-auto table-fixed"/);
-assert.match(compare, /cn\("h-12 w-48 px-3 cursor-grab touch-none text-right active:cursor-grabbing"/);
+assert.match(compare, /cn\("sticky top-0 z-20 h-12 w-48 cursor-grab touch-none bg-card px-3 text-right active:cursor-grabbing"/);
 assert.doesNotMatch(compare, /min-w-\[980px\]/);
 
 // Portalled popups escape the page wrapper, so they opt out of the legacy red
@@ -179,9 +194,10 @@ assert.match(tooltipUi, /data-slot="tooltip-content"\s+data-shadcn-focus/);
 // The bulk actions sit at the top of the menu, and "clear" touches sellers only.
 assert.match(compare, /<DropdownMenuContent[^>]*>\s*<div className="flex gap-1 p-1">\s*<Button[^>]*onClick=\{showAllColumns\}>แสดงทุกคอลัมน์<\/Button>\s*<Button[^>]*onClick=\{clearSellerColumns\}>ล้าง Seller<\/Button>/);
 assert.match(compare, /effectiveHiddenColumns\.filter\(\(column\) => !column\.startsWith\("seller:"\)\),\s*\.\.\.sellers\.map\(\(seller\) => `seller:\$\{seller\}`\),/);
-// Nothing pins a shop as the reference any more, for either market.
+// The configured own shop is the default; changing it on this page is preview-only.
 assert.doesNotMatch(compare, /defaultBaselineSeller/);
-assert.match(compare, /await saveBaselinePreference\("DELETE", "", "ล้าง Seller อ้างอิงไม่สำเร็จ"\)/);
+assert.match(compare, /const savedBaselineSeller = serverPage\?\.baselineSeller \|\| ""/);
+assert.doesNotMatch(compare, /saveBaselinePreference|clearBaselineSeller/);
 
 const preferenceRoute = readFileSync(new URL("../src/app/api/gameinfo/market-preference/route.js", import.meta.url), "utf8");
 assert.match(preferenceRoute, /export async function DELETE\(request\)/);
@@ -210,4 +226,4 @@ const runner = readFileSync(new URL("../src/server/itemku-prices.js", import.met
 assert.match(runner, /response\.status === 403[\s\S]*itemkuReaderUrl\(url\)[\s\S]*x-return-format/);
 assert.match(runner, /searchParams\.append\("country_codes\[\]", "TH"\)/);
 
-console.log("\n89 passed");
+console.log("\n98 passed");

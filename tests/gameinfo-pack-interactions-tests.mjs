@@ -6,6 +6,7 @@ const columnControls = read("../src/components/gameinfo-pack-column-layout.js");
 const editor = read("../src/components/gameinfo-pack-editor.js");
 const view = read("../src/components/gameinfo-game-view.js");
 const rates = read("../src/components/gameinfo-rate-panel.js");
+const tagsInput = read("../src/components/gameinfo-tags-input.js");
 
 assert.ok(columnControls.includes("<Popover.Portal>"), "column controls render outside horizontal overflow");
 assert.ok(columnControls.includes('positionMethod="fixed"'), "popover positioning is viewport-relative");
@@ -16,9 +17,17 @@ assert.ok(columnControls.includes("<Popover.Close") && columnControls.includes("
 assert.ok(columnControls.includes("aria-expanded={open}") && columnControls.includes("aria-controls={popoverId}"), "trigger exposes popup state and relationship");
 assert.ok(columnControls.includes("initialFocus={closeButtonRef}") && columnControls.includes("finalFocus={triggerRef}"), "focus enters and returns from the popup");
 assert.ok(columnControls.includes("--ll-shadow-modal"), "popover uses theme-aware level-2 elevation");
+assert.ok(columnControls.includes("orderDirty") && columnControls.includes("ขยับแล้ว · กดเพื่อบันทึก"), "column reorder visibly points users to the preset save control");
 assert.ok(editor.includes("<GameinfoPackColumnControls") && view.includes("<GameinfoPackColumnControls"), "editor and view share the repaired controls");
 assert.ok(editor.includes('render={<label htmlFor={csvInputId} />}') && editor.includes('className="sr-only"'), "CSV input uses an accessible button-style label");
 assert.ok(editor.includes('<FileUp data-icon="inline-start" />') && editor.includes('"เลือกไฟล์ CSV"'), "CSV picker has a clear button label and icon");
+assert.ok(editor.includes("scopeMode, entryMode") && editor.includes("scopeMode, entryMode, kind:"), "manual column mode survives creation");
+assert.ok(editor.includes('if (column?.kind === "market") return;'), "market columns cannot be removed by the delete handler");
+assert.ok(editor.includes('column.kind === "computed" && column.computed.kind !== "market"'), "market column headers do not expose delete");
+assert.ok(tagsInput.includes("w-max min-w-full flex-nowrap"), "channel tags stay on one horizontal line");
+assert.ok(tagsInput.includes("inline-flex shrink-0") && tagsInput.includes("whitespace-nowrap"), "channel tags never wrap internally");
+assert.ok(tagsInput.includes("(text.length + 1) * 8"), "channel cursor input grows at the end of the tag row");
+assert.ok(tagsInput.includes("focus-visible:outline-none"), "channel input delegates focus styling to its single outer frame");
 
 assert.ok(editor.includes('className="group/pack-tools '), "outer pack tools details uses an isolated group");
 assert.ok(editor.includes("group-open/pack-tools:rotate-180"), "outer arrow follows only the pack tools details");
@@ -39,4 +48,4 @@ assert.ok(view.includes("values.map((item) => ("), "each channel becomes its own
 assert.ok(view.includes("function StableTag({ value, label = value, className"), "one tag component serves the table and the header summary");
 assert.ok(view.includes("gameinfoCountryDisplayName(item)"), "the view shows the same trimmed country name as the editor");
 
-console.log("24 passed");
+console.log("31 passed");

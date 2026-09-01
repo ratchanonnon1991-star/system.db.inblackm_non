@@ -13,7 +13,37 @@ import { validateGameinfoComputedDependencies } from "@/lib/gameinfo-computed-ev
 import { getGameinfoFormulaVariables } from "@/server/gameinfo-formula-variables";
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { updateGameinfoModeData } from "@/server/gameinfo-mode-data";
-import { findDuplicateGameinfoPackNamePrices } from "@/lib/gameinfo-pack-validation";
+import { recalculateGameinfoPriceAlerts } from "@/server/gameinfo-market-system";
+import {
+  findDuplicateGameinfoPackNamePrices,
+  normalizeGameinfoNumericInput,
+} from "@/lib/gameinfo-pack-validation";
+
+// An alert is the gap between a GameInfo price and a market offer, so saving a
+// price makes every alert of this game stale. Recalculating here keeps the
+// Alerts page truthful without waiting for the next market check; a failure
+// must never fail the save, because the prices are already stored.
+async function refreshAlertsAfterSave(gameId, dataMode) {
+  try {
+    await recalculateGameinfoPriceAlerts({ gameId, dataMode });
+  } catch (error) {
+    console.error(`[gameinfo-market] recalculate alerts for game ${gameId} failed`, error);
+  }
+}
+
+function normalizeGameinfoPackNumbers(currencies) {
+  return currencies.map((currency) => ({
+    ...currency,
+    categories: (currency?.categories || []).map((category) => ({
+      ...category,
+      packs: (category?.packs || []).map((pack) => ({
+        ...pack,
+        price: normalizeGameinfoNumericInput(pack?.price),
+        amountChargedFee: normalizeGameinfoNumericInput(pack?.amountChargedFee),
+      })),
+    })),
+  }));
+}
 
 export async function PUT(request, { params }) {
   try {
@@ -26,7 +56,9 @@ export async function PUT(request, { params }) {
     const source = body.auditSource === "csv_append" || body.auditSource === "csv_replace"
       ? body.auditSource
       : "editor";
-    const currencies = Array.isArray(body.currencies) ? body.currencies : [];
+    const currencies = normalizeGameinfoPackNumbers(
+      Array.isArray(body.currencies) ? body.currencies : []
+    );
     if (findDuplicateGameinfoPackNamePrices(currencies).size > 0) {
       return jsonError("ชื่อ Pack และราคาห้ามซ้ำกันพร้อมกัน", 400);
     }
@@ -51,6 +83,17 @@ export async function PUT(request, { params }) {
       ),
       categoryIds
     );
+    const enabledMarketColumns = computedColumns.filter((column) => column.kind === "market" && column.enabled);
+    const marketKeys = enabledMarketColumns.map((column) => column.marketKey);
+    if (new Set(marketKeys).size !== marketKeys.length) {
+      return jsonError("เปิดคอลัมน์ Market เดียวกันได้เพียงหนึ่งคอลัมน์", 400);
+    }
+    for (const column of enabledMarketColumns) {
+      if (column.key !== `market_${column.marketKey}`) return jsonError("Market column key ไม่ถูกต้อง", 400);
+      if (computedColumns.some((other) => other.kind !== "market" && other.label.trim().toLowerCase() === column.label.trim().toLowerCase())) {
+        return jsonError(`มีสูตรเดิมชื่อ ${column.label} กรุณาเปลี่ยนชื่อก่อนเปิด Market`, 400);
+      }
+    }
     const variableData = await getGameinfoFormulaVariables(gameId);
     const formulaErrors = validateGameinfoComputedDependencies(
       computedColumns,
@@ -68,6 +111,7 @@ export async function PUT(request, { params }) {
         ...current,
         packs: packInput,
       }), { area: "pack", actor: auditActor(user), expectedVersion: body.version });
+      await refreshAlertsAfterSave(gameId, mode);
       return jsonOk({ game: { id: gameId, ...data.packs, version: data.version } });
     }
     // Read before writing, so the edit log can say what this replaced. The
@@ -91,6 +135,7 @@ export async function PUT(request, { params }) {
       newValue: JSON.stringify(packs).slice(0, 2000),
       ...requestMeta(request),
     });
+    await refreshAlertsAfterSave(gameId, mode);
     return jsonOk({ game: { id: gameId, ...packs } });
   } catch (err) {
     return handleApiError(err, "บันทึกตารางแพ็กไม่สำเร็จ");
