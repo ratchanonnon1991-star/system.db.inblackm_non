@@ -164,15 +164,21 @@ export async function getRazerAccountOtpBundle(accountOrId, {
   };
 }
 
-function botAccountWithCredentials(account) {
-  const { totp, totpSecondsLeft } = totpMeta(account.tfaSecret || "");
+async function botAccountWithCredentials(account) {
+  const otpBundle = await getRazerAccountOtpBundle(account, {
+    includeSecrets: true,
+    forceExternal: !account.tfaSecret,
+  });
   return {
     ...publicAccount(account),
     password: account.password || "",
-    tfaSecret: account.tfaSecret || "",
-    totp,
-    totpSecondsLeft,
-    otp: totp,
+    tfaSecret: otpBundle.tfaSecret || account.tfaSecret || "",
+    totp: otpBundle.totp || otpBundle.otp || "",
+    totpSecondsLeft: otpBundle.totpSecondsLeft ?? 0,
+    otp: otpBundle.otp || otpBundle.totp || "",
+    otpSource: otpBundle.otpSource || "",
+    otpError: otpBundle.otpError || "",
+    totpKeyUsed: otpBundle.totpKeyUsed || account.totpKey || "",
   };
 }
 
@@ -194,7 +200,7 @@ export async function listRazerAccountsForBot({
     const full = await getRazerAccount(summary.id, { includeSecrets: true });
     if (!full?.hasPassword) continue;
 
-    eligible.push(botAccountWithCredentials(full));
+    eligible.push(await botAccountWithCredentials(full));
   }
 
   return eligible;
@@ -216,7 +222,7 @@ export async function claimRazerAccountForBot(id, body = {}) {
     includeSecrets: true,
     forceExternal: !full.tfaSecret,
   });
-  return { account: botAccountWithCredentials(full), ...otpBundle };
+  return { account: await botAccountWithCredentials(full), ...otpBundle };
 }
 
 export async function claimRazerAccountByEmailForBot(email, body = {}) {

@@ -79,6 +79,7 @@ export default function ProfitRazerStockPage() {
   const [otpKeyEditId, setOtpKeyEditId] = useState(null);
   const [otpKeyDraft, setOtpKeyDraft] = useState("");
   const [otpKeySaving, setOtpKeySaving] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
   const otpExpireRef = useRef({});
 
   useEffect(() => {
@@ -511,7 +512,8 @@ export default function ProfitRazerStockPage() {
     return () => clearInterval(timer);
   }, [syncConfig, canEdit, zoneFilter]);
 
-  const visibleAccounts = accounts.filter((a) => !a.hidden);
+  const visibleAccounts = accounts.filter((a) => showHidden || !a.hidden);
+  const hiddenCount = accounts.filter((a) => a.hidden).length;
 
   return (
     <div className="flex flex-col gap-5">
@@ -659,6 +661,20 @@ export default function ProfitRazerStockPage() {
           >
             <RefreshCw size={13} />
           </button>
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowHidden((v) => !v)}
+              className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[12px] ${
+                showHidden
+                  ? "border-amber-300 bg-amber-50 text-amber-800"
+                  : "border-ll-hairline text-ll-ink-subtle hover:bg-ll-surface-2"
+              }`}
+            >
+              <Eye size={13} />
+              {showHidden ? "ซ่อนรายการที่ซ่อน" : `แสดงที่ซ่อน (${hiddenCount})`}
+            </button>
+          )}
         </div>
 
         {error && <p className="px-4 py-3 text-[12px] text-red-600">{error}</p>}
@@ -687,7 +703,32 @@ export default function ProfitRazerStockPage() {
                 {visibleAccounts.length === 0 && (
                   <tr>
                     <td colSpan={canEdit ? 9 : 7} className="px-4 py-12 text-center text-ll-ink-tertiary">
-                      ยังไม่มีบัญชี
+                      {hiddenCount > 0 ? (
+                        <div className="space-y-2">
+                          <p>มี {hiddenCount} บัญชีที่ซ่อนอยู่</p>
+                          <button
+                            type="button"
+                            onClick={() => setShowHidden(true)}
+                            className="inline-flex items-center gap-1 rounded-lg bg-ll-primary px-3 py-1.5 text-[12px] font-medium text-white hover:opacity-90"
+                          >
+                            <Eye size={14} />
+                            แสดงบัญชีที่ซ่อน
+                          </button>
+                        </div>
+                      ) : accounts.length === 0 && (query || zoneFilter) ? (
+                        <div className="space-y-2">
+                          <p>ไม่พบบัญชีตาม filter</p>
+                          <button
+                            type="button"
+                            onClick={() => { setSearch(""); setQuery(""); setZoneFilter(""); }}
+                            className="text-[12px] text-ll-primary underline"
+                          >
+                            ล้าง Search / โซน
+                          </button>
+                        </div>
+                      ) : (
+                        "ยังไม่มีบัญชี"
+                      )}
                     </td>
                   </tr>
                 )}
@@ -706,8 +747,13 @@ export default function ProfitRazerStockPage() {
                     )
                   );
                   return (
-                  <tr key={account.id} className="border-b border-ll-hairline last:border-0 hover:bg-ll-surface-2/60">
-                    <td className="px-4 py-3 font-medium text-ll-ink">{account.email}</td>
+                  <tr key={account.id} className={`border-b border-ll-hairline last:border-0 hover:bg-ll-surface-2/60 ${account.hidden ? "bg-ll-surface-2/40 opacity-70" : ""}`}>
+                    <td className="px-4 py-3 font-medium text-ll-ink">
+                      {account.email}
+                      {account.hidden && (
+                        <span className="ml-2 rounded bg-ll-surface-2 px-1.5 py-0.5 text-[10px] font-semibold text-ll-ink-tertiary">ซ่อน</span>
+                      )}
+                    </td>
                     <td className="px-3 py-3"><RazerZoneBadge zone={account.zone} /></td>
                     <td className="px-3 py-3">
                       <RazerStatusBadge status={account.status} inUseBy={account.inUseBy} />

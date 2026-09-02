@@ -18,7 +18,7 @@ export async function GET(request) {
     return jsonOk({
       accounts,
       count: accounts.length,
-      hint: "OTP = สร้างจาก 2FA Secret ใน DB · บอทเลือกบัญชีเอง",
+      hint: "OTP จาก api-system (?key=) หรือ 2FA Secret ใน DB · ใช้ POST /use เมื่อหยิบบัญชี",
     });
   } catch (err) {
     return handleApiError(err, "โหลดบัญชี Razer สำหรับบอทไม่สำเร็จ");
