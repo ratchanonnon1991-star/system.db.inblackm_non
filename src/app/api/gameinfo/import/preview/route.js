@@ -4,6 +4,7 @@ import { parseCsv } from "@/lib/gameinfo-csv";
 import { PACK_HEADERS, parsePacksForGame } from "@/lib/gameinfo-import";
 import { getGameListRow, listGameListRows } from "@/server/gameinfo-gamelist";
 import { listGamelistPackColumnRegistry } from "@/server/gameinfo-gamelist-packs";
+import { getGameinfoFormulaVariables } from "@/server/gameinfo-formula-variables";
 import { planGameinfoCsvImport } from "@/server/gameinfo-csv-import";
 
 // Parse an uploaded CSV and return a preview — no DB writes. The file's own
@@ -44,15 +45,17 @@ export async function POST(request) {
     }
     // A bulk file may now name its game instead of carrying an id, so game_id
     // is no longer required — a row with neither is reported per row.
-    const [existingGames, existingColumns] = await Promise.all([
+    const [existingGames, existingColumns, variableData] = await Promise.all([
       listGameListRows(),
       listGamelistPackColumnRegistry(),
+      getGameinfoFormulaVariables(0),
     ]);
     const plan = planGameinfoCsvImport({
       headers,
       rows,
       existingGames,
       existingColumns: existingColumns.map((column) => ({ key: column.columnKey, label: column.label })),
+      variableNames: variableData.variables.map((variable) => variable.name),
     });
     return jsonOk({
       kind: "packs-bulk",

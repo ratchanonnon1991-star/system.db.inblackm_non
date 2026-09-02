@@ -8,7 +8,8 @@
 // one. So `1500` and `[ราคา] * 1.05` both just work, and a column whose cells
 // are all the same formula is offered as a column-level formula instead of the
 // same text repeated on every pack.
-import { parseFormula } from "@/lib/gamedb-formula";
+import { extractFormulaRefs, parseFormula } from "@/lib/gamedb-formula";
+import { GAMEINFO_FIELD_NAMES } from "@/lib/gameinfo-formula-fields";
 import { PACK_HEADERS } from "@/lib/gameinfo-import";
 
 // `amount_charged` is a retired column that is still accepted-and-ignored with
@@ -52,11 +53,25 @@ function looksLikeFormula(value) {
  * the same name. Row numbers in errors are 1-based over the data rows the
  * caller passed, offset so they match the spreadsheet (header row = 1).
  */
-export function buildGameinfoCsvColumns(headers, rowPacks, existingColumns = []) {
+export function buildGameinfoCsvColumns(
+  headers,
+  rowPacks,
+  existingColumns = [],
+  knownNames = []
+) {
   const extras = gameinfoCsvExtraHeaders(headers);
   const byLabel = new Map(
     (existingColumns || []).map((column) => [String(column.label).trim(), column])
   );
+  // What a formula in this file may refer to: the built-in pack fields, the
+  // formula variables, every registered column, and the other columns this
+  // same file introduces.
+  const resolvable = new Set([
+    ...GAMEINFO_FIELD_NAMES,
+    ...(knownNames || []),
+    ...(existingColumns || []).map((column) => String(column.label).trim()),
+    ...extras.map((header) => header.trim()),
+  ]);
   const columns = [];
   const errors = [];
   const now = Date.now();
@@ -64,12 +79,19 @@ export function buildGameinfoCsvColumns(headers, rowPacks, existingColumns = [])
   extras.forEach((header, index) => {
     const existing = byLabel.get(header.trim());
     const cells = [];
+    const unknownRefs = new Set();
     for (const entry of rowPacks || []) {
       const formula = gameinfoCsvCellToFormula(entry.row?.[header]);
       if (!formula) continue;
       if (looksLikeFormula(formula)) {
         try {
-          parseFormula(formula);
+          // A name in brackets that nothing answers to is not a syntax error —
+          // it parses and then quietly evaluates to nothing. Collect those so
+          // the preview can say which names it did not recognise instead of
+          // importing a column that will render blank forever.
+          for (const ref of extractFormulaRefs(parseFormula(formula))) {
+            if (!resolvable.has(ref)) unknownRefs.add(ref);
+          }
         } catch (error) {
           errors.push(
             `คอลัมน์ "${header}" แถวของ pack "${entry.row?.pack_name || entry.packId}": ${error.message}`
@@ -101,6 +123,7 @@ export function buildGameinfoCsvColumns(headers, rowPacks, existingColumns = [])
       formula: promoted,
       entryMode: promoted ? "formula" : "manual",
       valueCount: cells.length,
+      unknownRefs: [...unknownRefs],
       rowOverrides,
     });
   });

@@ -14,6 +14,7 @@ import {
   recordGameinfoAudit,
 } from "@/server/gameinfo-gamelist-packs";
 import { planGameinfoCsvImport } from "@/server/gameinfo-csv-import";
+import { getGameinfoFormulaVariables } from "@/server/gameinfo-formula-variables";
 import { confirmedGameinfoCsvGames } from "@/lib/gameinfo-csv-games";
 import { gameNameKey } from "@/lib/text-distance";
 
@@ -84,15 +85,17 @@ export async function PUT(request) {
     // The file is re-read here rather than carried over from the preview, so
     // the same planner has to run again — anything the user confirmed is
     // matched by name against this reading, never taken on trust.
-    const [existingGames, registry] = await Promise.all([
+    const [existingGames, registry, variableData] = await Promise.all([
       listGameListRows(),
       listGamelistPackColumnRegistry(),
+      getGameinfoFormulaVariables(0),
     ]);
     const plan = planGameinfoCsvImport({
       headers,
       rows,
       existingGames,
       existingColumns: registry.map((column) => ({ key: column.columnKey, label: column.label })),
+      variableNames: variableData.variables.map((variable) => variable.name),
     });
     const errors = [...plan.errors];
     if (!plan.games.length) errors.push("ไม่พบข้อมูลเกมที่นำเข้าได้");

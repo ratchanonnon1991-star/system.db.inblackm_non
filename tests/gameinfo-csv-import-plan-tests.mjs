@@ -23,9 +23,9 @@ const pack = {
   country: "Thailand",
 };
 
-function plan(rows, existingColumns = []) {
+function plan(rows, existingColumns = [], variableNames = []) {
   const headers = [...new Set(rows.flatMap((row) => Object.keys(row)))];
-  return planGameinfoCsvImport({ headers, rows, existingGames: games, existingColumns });
+  return planGameinfoCsvImport({ headers, rows, existingGames: games, existingColumns, variableNames });
 }
 
 // --- the file the importer has always accepted ---------------------------
@@ -119,6 +119,36 @@ check(
     { ...pack, game_id: "3" },
   ]).errors.some((e) => e.includes("ซ้ำ")),
   true
+);
+
+// A bracketed name nothing answers to is not a syntax error — it parses and
+// then evaluates to nothing, so the column would render blank forever. Told,
+// not refused: the user can fix the file or leave the column unticked.
+const dangling = plan([{ ...pack, game_id: "3", "กำไร": "[ไม่มีตัวแปรนี้] * 2" }]);
+check("an unknown reference is not an error", dangling.errors, []);
+check("an unknown reference is reported", dangling.warnings.some((w) => w.includes("ไม่มีตัวแปรนี้")), true);
+check("and named on the column itself", dangling.newColumns[0].unknownRefs, ["ไม่มีตัวแปรนี้"]);
+check(
+  "a built-in pack field resolves",
+  plan([{ ...pack, game_id: "3", "กำไร": "[ราคา] * 2" }]).newColumns[0].unknownRefs,
+  []
+);
+check(
+  "a formula variable resolves",
+  plan([{ ...pack, game_id: "3", "กำไร": "[USDT/THB] * 2" }], [], ["USDT/THB"]).newColumns[0].unknownRefs,
+  []
+);
+check(
+  "an already-registered column resolves",
+  plan([{ ...pack, game_id: "3", "กำไร": "[ต้นทุน] * 2" }], [{ key: "col_cost", label: "ต้นทุน" }])
+    .newColumns[0].unknownRefs,
+  []
+);
+check(
+  "another column introduced by the same file resolves",
+  plan([{ ...pack, game_id: "3", "ต้นทุน": "70", "กำไร": "[ต้นทุน] * 2" }])
+    .columns.find((column) => column.label === "กำไร").unknownRefs,
+  []
 );
 
 // Countries are normalized on the way in, as they always have been.

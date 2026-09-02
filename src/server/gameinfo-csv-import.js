@@ -47,7 +47,7 @@ function legacyAmountWarnings(rows) {
  * and the column values it carries. A game with `isNew` does not exist yet and
  * is only created once the user confirms it by name.
  */
-export function planGameinfoCsvImport({ headers, rows, existingGames, existingColumns }) {
+export function planGameinfoCsvImport({ headers, rows, existingGames, existingColumns, variableNames = [] }) {
   const resolved = resolveGameinfoCsvGames(rows, existingGames);
   const errors = [...resolved.errors, ...validatePackRows(rows)];
   const warnings = [...legacyAmountWarnings(rows), ...resolved.warnings];
@@ -59,7 +59,7 @@ export function planGameinfoCsvImport({ headers, rows, existingGames, existingCo
   function addGame(bucket, { gameId, isNew }) {
     const tree = buildPackTree(bucket.rows);
     countryIssues.push(...normalizeCountries(tree.currencies));
-    const built = buildGameinfoCsvColumns(headers, tree.rowPacks, existingColumns);
+    const built = buildGameinfoCsvColumns(headers, tree.rowPacks, existingColumns, variableNames);
     errors.push(...built.errors);
     for (const column of built.columns) {
       // One label is one column across the whole file, even when several games
@@ -74,9 +74,13 @@ export function planGameinfoCsvImport({ headers, rows, existingGames, existingCo
           formula: column.formula,
           entryMode: column.entryMode,
           valueCount: column.valueCount,
+          unknownRefs: [...column.unknownRefs],
         });
       } else {
         seen.valueCount += column.valueCount;
+        for (const ref of column.unknownRefs) {
+          if (!seen.unknownRefs.includes(ref)) seen.unknownRefs.push(ref);
+        }
         // Only one formula can be the column's; a second game disagreeing
         // keeps its own, which the merge stores as that game's formula.
         if (!seen.formula) seen.formula = column.formula;
@@ -101,6 +105,17 @@ export function planGameinfoCsvImport({ headers, rows, existingGames, existingCo
   for (const bucket of resolved.created) addGame(bucket, { gameId: null, isNew: true });
 
   const columns = [...columnsByLabel.values()];
+  // Reported rather than refused: the formula is valid, it just names
+  // something that does not exist yet. The user can fix the file, or leave the
+  // column unticked, which is what removing it means here.
+  for (const column of columns) {
+    if (!column.unknownRefs.length) continue;
+    warnings.push(
+      `คอลัมน์ "${column.label}" อ้างถึง ${column.unknownRefs
+        .map((ref) => `[${ref}]`)
+        .join(", ")} ซึ่งไม่มีในระบบ — แก้ไฟล์ หรือไม่ต้องติ๊กคอลัมน์นี้`
+    );
+  }
   return {
     games,
     newGames: games.filter((game) => game.isNew),

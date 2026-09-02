@@ -325,7 +325,11 @@ function Preview({
             id: column.label,
             label: column.label,
             meta: column.valueCount ? `${column.valueCount} ค่า` : "คอลัมน์ว่าง",
-            warning: column.formula ? `สูตรของคอลัมน์: ${column.formula}` : "",
+            warning: column.unknownRefs?.length
+              ? `อ้างถึง ${column.unknownRefs.map((ref) => `[${ref}]`).join(", ")} ซึ่งไม่มีในระบบ`
+              : column.formula
+                ? `สูตรของคอลัมน์: ${column.formula}`
+                : "",
           }))}
           checked={confirmedColumns}
           onToggle={onToggleColumn}
