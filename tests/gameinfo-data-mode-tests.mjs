@@ -71,6 +71,97 @@ check("partial IDPASS edit preserves other sections", [updated.fields.server, up
 check("partial IDPASS edit increments its version", updated.version, 4);
 ok("partial mode edit locks the parent game and commits", log.some((entry) => /FOR UPDATE/.test(entry.text)) && log.some((entry) => entry.text === "COMMIT"));
 
+// --- IDPASS shares the column system with UID, not the data -------------
+// Packs live in a separate store per mode, but a pack column is one shared
+// definition. IDPASS therefore has to merge and split it exactly as the uid
+// store does, or the two modes drift apart the moment a column is added.
+const REGISTRY = [
+  {
+    column_key: "col_shared",
+    label: "ต้นทุน",
+    sort_order: 0,
+    data: { formula: "[ราคา] * 0.8", kind: "formula", entryMode: "formula", marketKey: "", type: "number", symbol: "", scopeMode: "global" },
+  },
+  {
+    column_key: "col_other",
+    label: "ของเกมอื่น",
+    sort_order: 1,
+    data: { formula: "1", kind: "formula", entryMode: "formula", marketKey: "", type: "number", symbol: "", scopeMode: "global" },
+  },
+];
+
+reset();
+setResponder((text) => {
+  if (/FROM gamelist_pack_column_registry/.test(text)) return { rows: REGISTRY };
+  if (/SELECT data, version FROM gameinfo_mode_data/.test(text)) {
+    return {
+      rows: [{
+        version: 1,
+        data: {
+          packs: {
+            currencies: [],
+            computedColumns: [],
+            columnOverrides: { col_shared: { gameFormula: "[ราคา] * 0.5", rowOverrides: { pk_1: "42" } } },
+          },
+        },
+      }],
+    };
+  }
+  return null;
+});
+const idpassLoad = await getGameinfoModeData(7, "idpass");
+check(
+  "IDPASS sees every shared column, not just the ones it stored",
+  idpassLoad.packs.computedColumns.map((column) => column.key),
+  ["col_shared", "col_other"]
+);
+check(
+  "a column IDPASS never touched arrives with the shared formula",
+  idpassLoad.packs.computedColumns[1].formula,
+  "1"
+);
+check(
+  "IDPASS keeps its own formula for a column it computes differently",
+  idpassLoad.packs.computedColumns[0].gameFormula,
+  "[ราคา] * 0.5"
+);
+check(
+  "and its own per-pack values",
+  idpassLoad.packs.computedColumns[0].rowOverrides,
+  { pk_1: "42" }
+);
+
+reset();
+setResponder((text) => {
+  if (/FROM gamelist_pack_column_registry/.test(text)) return { rows: REGISTRY };
+  if (/SELECT data FROM gameinfo_mode_data/.test(text)) {
+    return { rows: [{ data: { packs: { currencies: [], computedColumns: [], columnOverrides: {} } } }] };
+  }
+  return null;
+});
+await saveGameinfoModeData(7, "idpass", idpassLoad);
+const idpassSave = log.find((entry) => /INSERT INTO gameinfo_mode_data/.test(entry.text));
+const savedPacks = JSON.parse(idpassSave?.params?.[1] || "{}").packs;
+check(
+  "saving IDPASS stores only its own half of each column",
+  savedPacks.columnOverrides,
+  { col_shared: { gameFormula: "[ราคา] * 0.5", rowOverrides: { pk_1: "42" } } }
+);
+ok(
+  "and writes the shared definitions back to the registry",
+  log.some((entry) => /INSERT INTO gamelist_pack_column_registry/.test(entry.text))
+);
+ok(
+  "an IDPASS save never deletes a column it did not drop",
+  !log.some((entry) => /DELETE FROM gamelist_pack_column_registry/.test(entry.text))
+);
+check(
+  "the rollback copy folds IDPASS's own formula back down",
+  savedPacks.computedColumns.find((column) => column.key === "col_shared")?.formula,
+  "[ราคา] * 0.5"
+);
+
+
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);
 process.exit(failures.length ? 1 : 0);

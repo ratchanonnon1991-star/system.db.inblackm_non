@@ -176,7 +176,23 @@ export async function saveGameinfoModeData(gameId, mode, nextData, transactionCl
     const registry = await listGamelistPackColumnRegistry(client);
     if (registry.length) {
       const split = splitGameinfoColumns(data.packs.computedColumns);
-      await writeGameinfoColumnRegistry(client, split.registry);
+      // What this save dropped: columns this game was showing before and is
+      // not saving now. Diffing against the whole registry instead would let
+      // one game's save delete definitions shared with every other game and
+      // with uid mode.
+      const stored = await client.query(
+        `SELECT data FROM gameinfo_mode_data WHERE game_id = $1 AND data_mode = 'idpass'`,
+        [gameId]
+      );
+      const previous = sanitizeData(stored.rows[0]?.data).packs;
+      const nextKeys = new Set(data.packs.computedColumns.map((column) => column.key));
+      const removedKeys = resolveComputedColumns(registry, {
+        columns: previous.computedColumns,
+        columnOverrides: previous.columnOverrides,
+      })
+        .map((column) => column.key)
+        .filter((key) => !nextKeys.has(key));
+      await writeGameinfoColumnRegistry(client, split.registry, removedKeys);
       data.packs.columnOverrides = split.overrides;
       data.packs.computedColumns = flattenGameinfoColumnsForLegacy(data.packs.computedColumns);
     }

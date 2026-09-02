@@ -368,11 +368,16 @@ export function resolveComputedColumns(registryRows, sentinelData) {
   return mergeGameinfoColumns(registryRows, sentinelData?.columnOverrides || {});
 }
 
-export async function writeGameinfoColumnRegistry(client, registryRows) {
-  return writeColumnRegistry(client, registryRows);
+export async function writeGameinfoColumnRegistry(client, registryRows, removedKeys = []) {
+  return writeColumnRegistry(client, registryRows, removedKeys);
 }
 
-async function writeColumnRegistry(client, registryRows) {
+// `removedKeys` are the columns the caller established were deliberately
+// removed, by diffing what this game had before against what it is saving.
+// Deleting "everything not in this array" instead would let one game's save
+// destroy definitions shared with every other game — a stale client, a
+// role-filtered column list, or a half-migrated store would each be enough.
+async function writeColumnRegistry(client, registryRows, removedKeys = []) {
   for (const row of registryRows) {
     await client.query(
       `INSERT INTO gamelist_pack_column_registry (column_key, label, sort_order, data)
@@ -388,12 +393,12 @@ async function writeColumnRegistry(client, registryRows) {
   // A column dropped in the editor is dropped for every game — that is what
   // "shared definition" means. Its per-game overrides are pruned lazily by
   // the merge, which only ever walks registry rows.
-  const keptKeys = registryRows.map((row) => row.columnKey);
-  await client.query(
-    `DELETE FROM gamelist_pack_column_registry
-     WHERE NOT (column_key = ANY($1::varchar[]))`,
-    [keptKeys]
-  );
+  if (removedKeys.length) {
+    await client.query(
+      `DELETE FROM gamelist_pack_column_registry WHERE column_key = ANY($1::varchar[])`,
+      [removedKeys]
+    );
+  }
 }
 
 /** Shared pack data/config for one game_list row's id. */
@@ -518,7 +523,16 @@ export async function saveGamelistPacks(
     // get the old per-game behaviour back, with no data restore.
     const { registry: nextRegistry, overrides: nextOverrides } =
       splitGameinfoColumns(nextComputed);
-    if (registryActive) await writeColumnRegistry(client, nextRegistry);
+    if (registryActive) {
+      // What this save actually dropped: columns the game was showing before
+      // and is not saving now. Anything else in the registry belongs to a
+      // column this request never saw and must survive.
+      const nextKeys = new Set(nextComputed.map((column) => column.key));
+      const removedKeys = resolveComputedColumns(await readColumnRegistry(client), previousComputed?.data)
+        .map((column) => column.key)
+        .filter((key) => !nextKeys.has(key));
+      await writeColumnRegistry(client, nextRegistry, removedKeys);
+    }
     await client.query(
       `INSERT INTO gamelist_packs (game_id, pack_id, data) VALUES ($1, $2, $3)`,
       [

@@ -489,6 +489,40 @@ async function run() {
     log.some((entry) => /INSERT INTO gamelist_pack_column_registry/.test(entry.text))
   );
 
+  // The registry is one shared definition per column, used by every game and
+  // by both storage modes. A save must only delete what it actually dropped —
+  // deleting "everything this request did not mention" would let one game's
+  // save destroy other games' columns.
+  reset();
+  const REGISTRY_ROWS = [
+    { column_key: "col_keep", label: "เก็บไว้", sort_order: 0, data: { formula: "1", kind: "formula", entryMode: "formula", marketKey: "", type: "number", symbol: "", scopeMode: "global" } },
+    { column_key: "col_drop", label: "ลบทิ้ง", sort_order: 1, data: { formula: "2", kind: "formula", entryMode: "formula", marketKey: "", type: "number", symbol: "", scopeMode: "global" } },
+  ];
+  setResponder((text) => {
+    if (/FROM gamelist_pack_column_registry/.test(text)) return { rows: REGISTRY_ROWS };
+    if (/SELECT version FROM gamelist_pack_revisions/.test(text)) return { rows: [{ version: 1 }] };
+    if (/SELECT game_id, pack_id, data FROM gamelist_packs/.test(text)) {
+      return { rows: [{ game_id: 5, pack_id: "__computed__", data: { schemaVersion: 3, columns: [], columnOverrides: {} } }] };
+    }
+    return null;
+  });
+  await saveGamelistPacks(5, {
+    currencies: [],
+    // Saving only one of the two registered columns: the other was deleted.
+    computedColumns: [{ key: "col_keep", label: "เก็บไว้", formula: "1", entryMode: "formula", kind: "formula", marketKey: "", type: "number", symbol: "", scopeMode: "global", categoryFormulas: {}, rowOverrides: {} }],
+    costProfiles: [],
+  });
+  const registryDeletes = log.filter((entry) => /DELETE FROM gamelist_pack_column_registry/.test(entry.text));
+  check(
+    "a save deletes only the column it dropped",
+    registryDeletes[0]?.params?.[0],
+    ["col_drop"]
+  );
+  ok(
+    "the delete never targets everything it did not mention",
+    !registryDeletes.some((entry) => /NOT \(column_key/.test(entry.text))
+  );
+
   // --- combined history ------------------------------------------------
   reset();
   setResponder((text) => {
