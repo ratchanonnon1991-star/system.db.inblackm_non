@@ -35,7 +35,11 @@ export function mergeGameinfoColumn(registryRow, override = {}) {
   const merged = { key: registryRow.columnKey, label: registryRow.label };
   for (const field of REGISTRY_FIELDS) merged[field] = data[field];
   merged.gameFormula = typeof override.gameFormula === "string" ? override.gameFormula : "";
-  merged.enabled = override.enabled !== false;
+  // A market column is registered for every game but is only *switched on* in
+  // the games that mapped that market, so it defaults off and the game has to
+  // say yes. Every other kind of column defaults on — that is the whole point
+  // of sharing them.
+  merged.enabled = data.kind === "market" ? override.enabled === true : override.enabled !== false;
   merged.categoryFormulas = override.categoryFormulas || {};
   merged.rowOverrides = override.rowOverrides || {};
   return merged;
@@ -64,7 +68,9 @@ export function splitGameinfoColumn(column, sortOrder = 0) {
   if (Object.keys(column.rowOverrides || {}).length) {
     override.rowOverrides = column.rowOverrides;
   }
-  if (column.kind === "market" && column.enabled === false) override.enabled = false;
+  // Being switched on is the exception for a market column, so that is what
+  // gets stored — the absence of a row means off, in every other game.
+  if (column.kind === "market" && column.enabled !== false) override.enabled = true;
   return {
     registry: { columnKey: column.key, label: column.label, sortOrder, data },
     override: Object.keys(override).length ? override : null,

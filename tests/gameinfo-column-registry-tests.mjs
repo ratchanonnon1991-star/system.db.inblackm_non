@@ -79,15 +79,34 @@ check(
   "[ราคา] - [ยอดที่กด + fee]"
 );
 
+// A market column is registered everywhere but only belongs in the games that
+// mapped that market, so being switched on is the exception that gets stored.
+const marketColumn = { ...editedColumn, kind: "market", marketKey: "g2g" };
 check(
-  "a market column switched off in one game stores that, and only that",
-  splitGameinfoColumn({ ...editedColumn, kind: "market", marketKey: "g2g", enabled: false }).override,
-  { enabled: false }
+  "a market column switched on in one game stores that",
+  splitGameinfoColumn({ ...marketColumn, enabled: true }).override,
+  { enabled: true }
 );
 check(
-  "a market column left on stores nothing",
-  splitGameinfoColumn({ ...editedColumn, kind: "market", marketKey: "g2g", enabled: true }).override,
+  "a market column left off stores nothing",
+  splitGameinfoColumn({ ...marketColumn, enabled: false }).override,
   null
+);
+const marketRegistry = splitGameinfoColumn({ ...marketColumn, enabled: true }).registry;
+check(
+  "a game that never mapped the market does not get the column switched on",
+  mergeGameinfoColumn(marketRegistry, {}).enabled,
+  false
+);
+check(
+  "the game that mapped it keeps the column",
+  mergeGameinfoColumn(marketRegistry, { enabled: true }).enabled,
+  true
+);
+check(
+  "an ordinary shared column is on in every game without saying so",
+  mergeGameinfoColumn(split.registry, {}).enabled,
+  true
 );
 
 const many = splitGameinfoColumns([
