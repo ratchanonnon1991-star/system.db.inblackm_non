@@ -454,6 +454,41 @@ async function run() {
   );
   ok("bulk import commits all games as one transaction", statements().includes("COMMIT"));
 
+  // A CSV can carry a column for a game without carrying any of its packs.
+  // Replacing that game with nothing would delete every pack it has, which is
+  // never what such a file meant.
+  reset();
+  const EXISTING_PACK_ROW = {
+    game_id: 5,
+    pack_id: "pk_keep",
+    data: {
+      currencyId: "c1", currencyName: "Gem", currencyImage: "", currencyOrder: 0,
+      categoryId: "cat1", categoryName: "Gem", categoryOrder: 0, packOrder: 0,
+      name: "60 Gems", price: "100", amountChargedFee: "90",
+      channelsMain: ["Wavepay"], channelsSecondary: [], country: "Thailand",
+    },
+  };
+  setResponder((text) => {
+    if (/SELECT id FROM game_list/.test(text)) return { rows: [{ id: 5 }] };
+    if (/SELECT game_id, pack_id, data FROM gamelist_packs/.test(text)) return { rows: [EXISTING_PACK_ROW] };
+    if (/FROM gamelist_pack_column_registry/.test(text)) return { rows: [] };
+    return null;
+  });
+  await importGamelistPacks(
+    [{ gameId: 5, currencies: [], packCount: 0, columns: [{ key: "col_new", label: "ใหม่", formula: "", entryMode: "manual", rowOverrides: {} }] }],
+    "replace",
+    { id: 9, name: "Pack Admin" }
+  );
+  const columnsOnlyInserts = log.filter((entry) => /^INSERT INTO gamelist_packs/.test(entry.text));
+  ok(
+    "a columns-only import keeps the packs the game already had",
+    columnsOnlyInserts.some((entry) => entry.params?.[1] === "pk_keep")
+  );
+  ok(
+    "and still registers the column it came for",
+    log.some((entry) => /INSERT INTO gamelist_pack_column_registry/.test(entry.text))
+  );
+
   // --- combined history ------------------------------------------------
   reset();
   setResponder((text) => {

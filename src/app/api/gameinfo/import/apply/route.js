@@ -158,7 +158,9 @@ export async function PUT(request) {
         let count = 0;
         for (const game of importable) {
           const current = await getGameinfoModeData(game.gameId, "idpass", client);
-          const currencies = mode === "add"
+          // Same rule as the uid store: a file carrying columns but no packs
+          // for this game must not empty it. See importGamelistPacks.
+          const currencies = mode === "add" || !game.currencies.length
             ? mergeCurrencies(current.packs.currencies, game.currencies)
             : game.currencies;
           if (findDuplicateGameinfoPackNamePrices(currencies).size > 0) {

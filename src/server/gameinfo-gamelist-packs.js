@@ -636,7 +636,15 @@ export async function importGamelistPacks(
       const previousComputed = previousResult.rows.find((row) => row.pack_id === COMPUTED_SENTINEL);
       const previousRows = previousResult.rows.filter((row) => row.pack_id !== COMPUTED_SENTINEL);
       let currencies = Array.isArray(game.currencies) ? game.currencies : [];
-      if (mode === "add") currencies = mergeCurrencies(reconstructCurrencies(previousRows), currencies);
+      // A file can now carry columns for a game without carrying any of its
+      // packs — "add this column to these games" is the whole point of naming
+      // a game by name. Replacing a game with nothing would delete every pack
+      // it has, which is never what that file meant, so a game the file has no
+      // packs for keeps the packs it already has.
+      const columnsOnly = !currencies.length;
+      if (mode === "add" || columnsOnly) {
+        currencies = mergeCurrencies(reconstructCurrencies(previousRows), currencies);
+      }
       assertUniquePackNamePrices(currencies);
       const nextRows = flattenCurrencies(game.gameId, currencies);
       const computedColumns = Array.isArray(previousComputed?.data?.columns)
