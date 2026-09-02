@@ -46,6 +46,23 @@ function looksLikeFormula(value) {
 }
 
 /**
+ * Mints the key for a column this file introduces.
+ *
+ * One allocator serves the whole file, because a header is one column across
+ * every game in it: minting per game gave the same header a different key
+ * whenever two games were built either side of a millisecond, and the apply
+ * route keeps a game's columns by key, so every game but the first lost its
+ * column and the per-pack formulas it carried.
+ */
+export function createGameinfoCsvColumnKeys() {
+  const byLabel = new Map();
+  return (label) => {
+    if (!byLabel.has(label)) byLabel.set(label, `col_${Date.now()}_${byLabel.size}`);
+    return byLabel.get(label);
+  };
+}
+
+/**
  * Extra headers + the packs each row produced -> columns to write.
  *
  * `existingColumns` are the registered columns; a header matching one by label
@@ -57,7 +74,8 @@ export function buildGameinfoCsvColumns(
   headers,
   rowPacks,
   existingColumns = [],
-  knownNames = []
+  knownNames = [],
+  newColumnKey = createGameinfoCsvColumnKeys()
 ) {
   const extras = gameinfoCsvExtraHeaders(headers);
   const byLabel = new Map(
@@ -74,9 +92,8 @@ export function buildGameinfoCsvColumns(
   ]);
   const columns = [];
   const errors = [];
-  const now = Date.now();
 
-  extras.forEach((header, index) => {
+  extras.forEach((header) => {
     const existing = byLabel.get(header.trim());
     const cells = [];
     const unknownRefs = new Set();
@@ -115,7 +132,7 @@ export function buildGameinfoCsvColumns(
     if (!promoted) for (const cell of cells) rowOverrides[cell.packId] = cell.formula;
 
     columns.push({
-      key: existing?.key || `col_${now}_${index}`,
+      key: existing?.key || newColumnKey(header.trim()),
       label: header,
       isNew: !existing,
       // A header with no values under it is a column the user wants to fill in

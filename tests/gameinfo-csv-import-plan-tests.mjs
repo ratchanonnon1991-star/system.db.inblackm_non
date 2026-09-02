@@ -58,6 +58,41 @@ const twoGames = plan([
 check("a column used by two games is registered once", twoGames.newColumns.length, 1);
 check("its value count covers both games", twoGames.newColumns[0].valueCount, 2);
 check("both games are written to", twoGames.games.map((g) => g.gameId).sort(), [1, 3]);
+// The key was minted per game, so the same header could arrive with a
+// different key from each one. The apply route keeps a game's columns by the
+// key the merged list reports, so every game that disagreed was dropped along
+// with the per-pack formulas it carried — the column appeared and the formulas
+// did not.
+check(
+  "every game carries the same key for that column",
+  [...new Set(twoGames.games.flatMap((g) => g.columns.map((c) => c.key)))].length,
+  1
+);
+check(
+  "and it is the key the merged list reports",
+  twoGames.games.every((g) => g.columns.every((c) => c.key === twoGames.columns[0].key)),
+  true
+);
+
+// A game that carries no value for a column is still a game the column is
+// written to, and it must not take the key away from the game that has the
+// values: the empty game is built first here.
+const emptyFirst = plan([
+  { ...pack, game_id: "1" },
+  { ...pack, game_id: "3", "ส่วนลด": "[ราคา] * 0.3" },
+]);
+check(
+  "a game with no values does not fork the column key",
+  [...new Set(emptyFirst.games.flatMap((g) => g.columns.map((c) => c.key)))].length,
+  1
+);
+check(
+  "the game with values keeps its per-pack formulas",
+  emptyFirst.games
+    .filter((g) => g.gameId === 3)
+    .flatMap((g) => Object.values(g.columns[0].rowOverrides)),
+  ["[ราคา] * 0.3"]
+);
 
 // --- a new game ----------------------------------------------------------
 const newGame = plan([{ ...pack, game_name: "VALORANT MOBILE" }]);

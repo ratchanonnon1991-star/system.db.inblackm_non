@@ -5,7 +5,11 @@
 // one thing and get another. Keeping the whole reading here is what guarantees
 // that; the routes only differ in what they do with the result.
 import { buildPackTree, validatePackRows } from "@/lib/gameinfo-import";
-import { buildGameinfoCsvColumns, gameinfoCsvExtraHeaders } from "@/lib/gameinfo-csv-columns";
+import {
+  buildGameinfoCsvColumns,
+  createGameinfoCsvColumnKeys,
+  gameinfoCsvExtraHeaders,
+} from "@/lib/gameinfo-csv-columns";
 import { resolveGameinfoCsvGames } from "@/lib/gameinfo-csv-games";
 import { findDuplicateGameinfoPackNamePrices } from "@/lib/gameinfo-pack-validation";
 import { normalizeGameinfoCountry, suggestGameinfoCountries } from "@/lib/gameinfo-countries";
@@ -55,11 +59,20 @@ export function planGameinfoCsvImport({ headers, rows, existingGames, existingCo
   const games = [];
   const columnsByLabel = new Map();
   const countryIssues = [];
+  // Shared by every game in the file: a header is one column, so it has to be
+  // one key too — see createGameinfoCsvColumnKeys.
+  const newColumnKey = createGameinfoCsvColumnKeys();
 
   function addGame(bucket, { gameId, isNew }) {
     const tree = buildPackTree(bucket.rows);
     countryIssues.push(...normalizeCountries(tree.currencies));
-    const built = buildGameinfoCsvColumns(headers, tree.rowPacks, existingColumns, variableNames);
+    const built = buildGameinfoCsvColumns(
+      headers,
+      tree.rowPacks,
+      existingColumns,
+      variableNames,
+      newColumnKey
+    );
     errors.push(...built.errors);
     for (const column of built.columns) {
       // One label is one column across the whole file, even when several games
