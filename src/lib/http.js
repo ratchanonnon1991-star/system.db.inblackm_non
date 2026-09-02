@@ -13,6 +13,6 @@ export function handleApiError(err, fallbackMessage) {
   if (status >= 500) {
     console.error(err);
   }
-  const message = status >= 500 ? fallbackMessage : err.message;
+  const message = err.message && err.message !== fallbackMessage ? err.message : fallbackMessage;
   return jsonError(message, status);
 }

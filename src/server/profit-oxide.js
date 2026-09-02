@@ -6,6 +6,7 @@
 // reading though, just not in its own table: see the big comment on
 // listOrdersForSerials for where it actually lives.
 import { selectQuery } from "@/lib/profit-remote-db";
+import { normalizeSalePlatform } from "@/server/profit-platform-normalize";
 
 const SETTING_KEY = "oxide_payment_card";
 const CACHE_MS = 5_000;
@@ -35,16 +36,9 @@ function maskPin(pin) {
   return `${s.slice(0, 2)}${"*".repeat(s.length - 6)}${s.slice(-4)}`;
 }
 
-// Same convention as profit-gocash.js's normalizePlatform: the Telegram
-// queue calls the Russia reseller channel "russia" instead of the
-// "russia_reseller" tag codashop_orders.source uses directly -- collapse
-// them so it isn't tracked as two separate platforms on the shared
-// per-platform pack-price table.
-const PLATFORM_ALIASES = { russia: "russia_reseller" };
-function normalizePlatform(raw) {
-  if (!raw) return null;
-  return PLATFORM_ALIASES[raw] || raw;
-}
+// Same convention as profit-gocash.js: the Telegram queue calls the Russia
+// reseller channel "russia" instead of "russia_reseller" -- normalizeSalePlatform
+// collapses that so it isn't tracked as two separate platforms downstream.
 
 async function getPaymentData() {
   const now = Date.now();
@@ -150,7 +144,7 @@ export async function listOrdersForSerials(serials) {
       // Which resale platform the order sold through -- see the COALESCE chain
       // above (real when present); untagged orders fall back to a manual pick
       // (see profit_oxide_overrides), same convention as GoCash.
-      platform: normalizePlatform(r.platform),
+      platform: normalizeSalePlatform(r.platform),
       // Customer-facing ORDER ID from the Telegram fulfillment task --
       // distinct from this row's own id (the QUEUE #). Null when the
       // telegram_orders_dev join misses (rare for completed orders).
