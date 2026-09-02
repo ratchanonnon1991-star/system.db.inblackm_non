@@ -333,14 +333,24 @@ async function readColumnRegistry(client) {
   }));
 }
 
+/** Every shared column definition, for surfaces that work across games. */
+export async function listGamelistPackColumnRegistry(transactionClient = null) {
+  const client = transactionClient || (await getReadyPool());
+  return readColumnRegistry(client);
+}
+
 /** Registry + this game's overrides, or the pre-registry per-game columns. */
-function resolveComputedColumns(registryRows, sentinelData) {
+export function resolveComputedColumns(registryRows, sentinelData) {
   // An empty registry is the pre-backfill state: keep serving the per-game
   // columns byte for byte so deploying this code changes nothing on its own.
   if (!registryRows.length) {
     return Array.isArray(sentinelData?.columns) ? sentinelData.columns : [];
   }
   return mergeGameinfoColumns(registryRows, sentinelData?.columnOverrides || {});
+}
+
+export async function writeGameinfoColumnRegistry(client, registryRows) {
+  return writeColumnRegistry(client, registryRows);
 }
 
 async function writeColumnRegistry(client, registryRows) {
@@ -582,15 +592,20 @@ export async function listAllGamelistComputedColumns() {
 
 /** Multi-game CSV import in one transaction. Computed-column sentinel rows
  * are preserved; only real pack rows are replaced/merged. */
-export async function importGamelistPacks(games, mode = "replace", actor = null) {
+export async function importGamelistPacks(
+  games,
+  mode = "replace",
+  actor = null,
+  transactionClient = null
+) {
   if (!Array.isArray(games) || games.length === 0) return { gameCount: 0, packCount: 0 };
   if (mode !== "replace" && mode !== "add") throw createHttpError("โหมดนำเข้าไม่ถูกต้อง", 400);
   const source = mode === "add" ? "csv_append" : "csv_replace";
-  const pool = await getReadyPool();
-  const client = await pool.connect();
+  const pool = transactionClient ? null : await getReadyPool();
+  const client = transactionClient || (await pool.connect());
   let importedPackCount = 0;
   try {
-    await client.query("BEGIN");
+    if (!transactionClient) await client.query("BEGIN");
     for (const game of games) {
       const target = await client.query(`SELECT id FROM game_list WHERE id = $1 FOR UPDATE`, [game.gameId]);
       if (target.rows.length !== 1) throw createHttpError(`ไม่พบ game_id ${game.gameId}`, 404);
@@ -629,19 +644,89 @@ export async function importGamelistPacks(games, mode = "replace", actor = null)
           [row.gameId, row.packId, JSON.stringify(row.data)]
         );
       }
+      if (game.columns?.length) {
+        await writeImportedColumns(client, game.gameId, game.columns, previousComputed, nextRows);
+      }
       for (const event of auditEvents) {
         await insertPackAudit(client, game.gameId, actor, event, source);
       }
       importedPackCount += Number(game.packCount) || 0;
     }
-    await client.query("COMMIT");
+    if (!transactionClient) await client.query("COMMIT");
     return { gameCount: games.length, packCount: importedPackCount };
   } catch (error) {
-    await client.query("ROLLBACK");
+    if (!transactionClient) await client.query("ROLLBACK");
     throw error;
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
+}
+
+// Columns carried by an imported CSV: register the definition (shared by every
+// game) and store this game's values against it. Row overrides are keyed by
+// pack id, and a replace import regenerates every pack id, so overrides that
+// no longer point at a live pack are dropped rather than left dangling.
+async function writeImportedColumns(client, gameId, columns, previousComputed, nextRows) {
+  const registryRows = await readColumnRegistry(client);
+  const known = new Map(registryRows.map((row) => [row.columnKey, row]));
+  let sortOrder = registryRows.length;
+  for (const column of columns) {
+    if (known.has(column.key)) continue;
+    await client.query(
+      `INSERT INTO gamelist_pack_column_registry (column_key, label, sort_order, data)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (column_key) DO NOTHING`,
+      [
+        column.key,
+        column.label,
+        sortOrder++,
+        JSON.stringify({
+          formula: column.formula || "",
+          entryMode: column.entryMode || "manual",
+          kind: "formula",
+          marketKey: "",
+          type: "number",
+          symbol: "",
+          scopeMode: "global",
+        }),
+      ]
+    );
+  }
+
+  const livePackIds = new Set(nextRows.map((row) => row.packId));
+  const previous = previousComputed?.data || {};
+  const overrides = { ...(previous.columnOverrides || {}) };
+  for (const [key, override] of Object.entries(overrides)) {
+    if (!override?.rowOverrides) continue;
+    const kept = Object.fromEntries(
+      Object.entries(override.rowOverrides).filter(([packId]) => livePackIds.has(packId))
+    );
+    overrides[key] = { ...override, rowOverrides: kept };
+  }
+  for (const column of columns) {
+    const existing = overrides[column.key] || {};
+    const next = { ...existing };
+    if (Object.keys(column.rowOverrides).length) {
+      next.rowOverrides = { ...(existing.rowOverrides || {}), ...column.rowOverrides };
+    }
+    if (Object.keys(next).length) overrides[column.key] = next;
+  }
+
+  await client.query(
+    `INSERT INTO gamelist_packs (game_id, pack_id, data) VALUES ($1, $2, $3)
+     ON CONFLICT (game_id, pack_id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
+    [
+      gameId,
+      COMPUTED_SENTINEL,
+      JSON.stringify({
+        ...previous,
+        schemaVersion: 3,
+        columns: Array.isArray(previous.columns) ? previous.columns : [],
+        columnOverrides: overrides,
+        costProfiles: sanitizeGameinfoCostProfiles(previous.costProfiles),
+      }),
+    ]
+  );
 }
 
 function buildAuditEvents({
