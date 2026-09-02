@@ -1,5 +1,5 @@
 import { handleApiError, jsonOk } from "@/lib/http";
-import { requireProfitAccess } from "@/server/auth";
+import { requireProfitAccess, requireProfitEditor } from "@/server/auth";
 import { getRazerAccountOtpBundle } from "@/server/profit-razer-bot";
 
 function readForceExternal(request, body) {
@@ -26,7 +26,7 @@ export async function GET(request, { params }) {
 /** ดึง OTP จาก api-system และบันทึก 2FA secret ลง DB ถ้ามี */
 export async function POST(request, { params }) {
   try {
-    await requireProfitAccess(request);
+    await requireProfitEditor(request);
     const { id } = await params;
     const body = await request.json().catch(() => ({}));
     const forceExternal = readForceExternal(request, body);
