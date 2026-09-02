@@ -7,6 +7,7 @@ import { apiJson } from "@/lib/api-json";
 import { requestGameinfoDiscard } from "@/lib/gameinfo-unsaved-changes";
 import { Badge } from "@/components/ui/badge";
 import {
+  gameinfoPackLayoutKnownIds,
   gameinfoPackLayoutStorageKey,
   isGameinfoPackColumnPinned,
   normalizeGameinfoPackLayout,
@@ -217,7 +218,10 @@ export function useGameinfoPackColumnLayout({
         body: JSON.stringify({
           presetId: asNew || !selectedPresetId ? null : Number(selectedPresetId),
           name,
-          layout: normalizedLayout,
+          // Stamp what the table holds right now. Columns registered after
+          // this save are shared across games and start hidden here, so the
+          // preset keeps showing what its owner picked.
+          layout: { ...normalizedLayout, knownIds: gameinfoPackLayoutKnownIds(columns) },
         }),
         fallbackError: "บันทึก preset การแสดงคอลัมน์ไม่สำเร็จ",
       });

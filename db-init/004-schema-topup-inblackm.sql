@@ -237,6 +237,23 @@ CREATE TABLE IF NOT EXISTS gamelist_pack_revisions (
 CREATE INDEX IF NOT EXISTS gameinfo_formula_presets_updated_idx
   ON gameinfo_formula_presets (updated_at DESC, id DESC);
 
+-- One pack-column definition shared by every game. What stays per game (a
+-- game-specific formula, category formulas, per-pack values, whether a market
+-- column is switched on) lives in gamelist_packs' __computed__ sentinel row
+-- under `columnOverrides`. An empty table means the pre-registry behaviour:
+-- each game reads its own `columns` array from that sentinel.
+CREATE TABLE IF NOT EXISTS gamelist_pack_column_registry (
+  column_key varchar(64)  PRIMARY KEY,
+  label      varchar(120) NOT NULL,
+  sort_order integer      NOT NULL DEFAULT 0,
+  data       jsonb        NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz  NOT NULL DEFAULT now(),
+  updated_at timestamptz  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS gamelist_pack_column_registry_order_idx
+  ON gamelist_pack_column_registry (sort_order, column_key);
+
 CREATE TABLE IF NOT EXISTS gamelist_pack_view_presets (
   id         bigserial PRIMARY KEY,
   game_id    integer     NOT NULL,           -- LOGICAL -> game_list.id

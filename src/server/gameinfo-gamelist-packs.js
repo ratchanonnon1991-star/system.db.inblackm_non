@@ -17,6 +17,11 @@ import {
   validateGameinfoCostProfiles,
 } from "@/lib/gameinfo-cost-profiles";
 import { mergeCurrencies } from "@/lib/gameinfo-import";
+import {
+  flattenGameinfoColumnsForLegacy,
+  mergeGameinfoColumns,
+  splitGameinfoColumns,
+} from "@/lib/gameinfo-column-registry";
 import { parseFormula } from "@/lib/gamedb-formula";
 import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
 
@@ -270,6 +275,23 @@ function ensureSchema(connection) {
         CREATE INDEX IF NOT EXISTS gameinfo_formula_presets_updated_idx
         ON gameinfo_formula_presets (updated_at DESC, id DESC)
       `);
+      // One definition per column, shared by every game. Empty until the
+      // backfill runs, and an empty registry means getGamelistPacks keeps
+      // reading the per-game sentinel exactly as before.
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS gamelist_pack_column_registry (
+          column_key VARCHAR(64) PRIMARY KEY,
+          label      VARCHAR(120) NOT NULL,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          data       JSONB NOT NULL DEFAULT '{}'::jsonb,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS gamelist_pack_column_registry_order_idx
+        ON gamelist_pack_column_registry (sort_order, column_key)
+      `);
     } finally {
       client.release();
     }
@@ -291,6 +313,60 @@ async function getReadyPool() {
   return getPoolForConnection(connection);
 }
 
+// --- shared column registry ---------------------------------------------
+// The registry holds one definition per column for every game; the per-game
+// sentinel keeps only what is about this game's packs. Both halves are merged
+// back into the one flat column array the UI has always read, so nothing above
+// this layer knows the storage was split.
+
+async function readColumnRegistry(client) {
+  const result = await client.query(
+    `SELECT column_key, label, sort_order, data
+     FROM gamelist_pack_column_registry
+     ORDER BY sort_order, column_key`
+  );
+  return result.rows.map((row) => ({
+    columnKey: row.column_key,
+    label: row.label,
+    sortOrder: Number(row.sort_order) || 0,
+    data: row.data || {},
+  }));
+}
+
+/** Registry + this game's overrides, or the pre-registry per-game columns. */
+function resolveComputedColumns(registryRows, sentinelData) {
+  // An empty registry is the pre-backfill state: keep serving the per-game
+  // columns byte for byte so deploying this code changes nothing on its own.
+  if (!registryRows.length) {
+    return Array.isArray(sentinelData?.columns) ? sentinelData.columns : [];
+  }
+  return mergeGameinfoColumns(registryRows, sentinelData?.columnOverrides || {});
+}
+
+async function writeColumnRegistry(client, registryRows) {
+  for (const row of registryRows) {
+    await client.query(
+      `INSERT INTO gamelist_pack_column_registry (column_key, label, sort_order, data)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (column_key) DO UPDATE
+         SET label = EXCLUDED.label,
+             sort_order = EXCLUDED.sort_order,
+             data = EXCLUDED.data,
+             updated_at = NOW()`,
+      [row.columnKey, row.label, row.sortOrder, JSON.stringify(row.data)]
+    );
+  }
+  // A column dropped in the editor is dropped for every game — that is what
+  // "shared definition" means. Its per-game overrides are pruned lazily by
+  // the merge, which only ever walks registry rows.
+  const keptKeys = registryRows.map((row) => row.columnKey);
+  await client.query(
+    `DELETE FROM gamelist_pack_column_registry
+     WHERE NOT (column_key = ANY($1::varchar[]))`,
+    [keptKeys]
+  );
+}
+
 /** Shared pack data/config for one game_list row's id. */
 export async function getGamelistPacks(gameId) {
   const pool = await getReadyPool();
@@ -304,11 +380,12 @@ export async function getGamelistPacks(gameId) {
       `SELECT version FROM gamelist_pack_revisions WHERE game_id = $1`,
       [gameId]
     );
+    const registryRows = await readColumnRegistry(client);
     const computedRow = result.rows.find((r) => r.pack_id === COMPUTED_SENTINEL);
     const packRows = result.rows.filter((r) => r.pack_id !== COMPUTED_SENTINEL);
     return {
       currencies: reconstructCurrencies(packRows),
-      computedColumns: Array.isArray(computedRow?.data?.columns) ? computedRow.data.columns : [],
+      computedColumns: resolveComputedColumns(registryRows, computedRow?.data),
       costProfiles: sanitizeGameinfoCostProfiles(computedRow?.data?.costProfiles),
       schemaVersion: Number(computedRow?.data?.schemaVersion) || 1,
       version: Number(revisionResult.rows[0]?.version) || 1,
@@ -357,6 +434,10 @@ export async function saveGamelistPacks(
     const previousRows = previousResult.rows.filter((row) => row.pack_id !== COMPUTED_SENTINEL);
     const nextRows = flattenCurrencies(gameId, Array.isArray(currencies) ? currencies : []);
     const nextComputed = Array.isArray(computedColumns) ? computedColumns : [];
+    // The registry stays dormant until the backfill fills it, so deploying
+    // this code cannot change how an existing game saves.
+    const registryActive = (await readColumnRegistry(client)).length > 0;
+    const legacyComputed = flattenGameinfoColumnsForLegacy(nextComputed);
     const previousCostProfiles = sanitizeGameinfoCostProfiles(previousComputed?.data?.costProfiles);
     const submittedCostProfiles = sanitizeGameinfoCostProfiles(costProfiles);
     const actorId = Number(actor?.id);
@@ -384,10 +465,12 @@ export async function saveGamelistPacks(
     const auditEvents = buildAuditEvents({
       previousRows,
       nextRows,
+      // Diff the flattened shape both sides so splitting storage does not
+      // show up in the audit log as a change the user never made.
       previousComputed: Array.isArray(previousComputed?.data?.columns)
         ? previousComputed.data.columns
         : [],
-      nextComputed,
+      nextComputed: legacyComputed,
       previousCostProfiles,
       nextCostProfiles,
       source,
@@ -400,12 +483,24 @@ export async function saveGamelistPacks(
         [r.gameId, r.packId, JSON.stringify(r.data)]
       );
     }
+    // Split the edited columns into the shared definitions and this game's
+    // overrides. `columns` keeps being written alongside them: until the
+    // registry is proven in production, reverting the code has to be enough to
+    // get the old per-game behaviour back, with no data restore.
+    const { registry: nextRegistry, overrides: nextOverrides } =
+      splitGameinfoColumns(nextComputed);
+    if (registryActive) await writeColumnRegistry(client, nextRegistry);
     await client.query(
       `INSERT INTO gamelist_packs (game_id, pack_id, data) VALUES ($1, $2, $3)`,
       [
         gameId,
         COMPUTED_SENTINEL,
-        JSON.stringify({ schemaVersion: 2, columns: nextComputed, costProfiles: nextCostProfiles }),
+        JSON.stringify({
+          schemaVersion: registryActive ? 3 : 2,
+          columns: legacyComputed,
+          columnOverrides: nextOverrides,
+          costProfiles: nextCostProfiles,
+        }),
       ]
     );
     for (const event of auditEvents) {
@@ -1005,6 +1100,11 @@ export function sanitizeGamelistPackViewPresetLayout(layout) {
     hidden: presetColumnIds(layout?.hidden),
   };
   if (Array.isArray(layout?.filters)) sanitized.filters = filters;
+  // Which columns existed when this preset was saved. Columns registered later
+  // are shared across every game, so the client hides them until the owner of
+  // the preset asks for them. Absent on presets saved before this shipped, and
+  // those keep showing every column.
+  if (Array.isArray(layout?.knownIds)) sanitized.knownIds = presetColumnIds(layout.knownIds);
   return sanitized;
 }
 

@@ -1,3 +1,9 @@
+// Narrowest scope wins:
+//   pack override -> manual entry -> category formula -> game formula -> the
+// column's own formula. `gameFormula` is the layer the shared column registry
+// added: one column definition is used by every game, so a game that needs to
+// compute this column differently overrides the formula without forking the
+// column. Columns that predate the registry have no gameFormula and skip it.
 export function getEffectiveGameinfoFormula(column, packId, categoryId) {
   const override = column?.rowOverrides?.[String(packId)];
   if (typeof override === "string" && override.trim()) {
@@ -13,6 +19,10 @@ export function getEffectiveGameinfoFormula(column, packId, categoryId) {
     categoryFormula.trim()
   ) {
     return { formula: categoryFormula, overridden: true, source: "category" };
+  }
+  const gameFormula = column?.gameFormula;
+  if (typeof gameFormula === "string" && gameFormula.trim()) {
+    return { formula: gameFormula, overridden: true, source: "game" };
   }
   return {
     formula: typeof column?.formula === "string" ? column.formula : "",
@@ -33,9 +43,11 @@ export function getGameinfoFormulaDisplay(column, packId, categoryId) {
         ? "สูตรเฉพาะ pack"
         : effective.source === "category"
           ? "สูตรเฉพาะหมวด"
-          : effective.source === "manual"
-            ? "กรอกเอง"
-            : "สูตรหลัก",
+          : effective.source === "game"
+            ? "สูตรเฉพาะเกม"
+            : effective.source === "manual"
+              ? "กรอกเอง"
+              : "สูตรหลัก",
   };
 }
 

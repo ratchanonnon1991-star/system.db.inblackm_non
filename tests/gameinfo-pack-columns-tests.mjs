@@ -1,5 +1,7 @@
 import {
   buildGameinfoPackColumns,
+  gameinfoColumnsWithData,
+  gameinfoPackLayoutKnownIds,
   formatGameinfoPackColumnValue,
   gameinfoPackColumnWidth,
   matchesGameinfoPackFilters,
@@ -84,6 +86,63 @@ check(
   "computed:late"
 );
 check("a column added after the preset was saved stays visible", layoutWithLateColumn.hidden, []);
+
+// Once a preset records what existed when it was saved, columns registered
+// later (shared across every game) start hidden instead.
+const stampedColumns = buildGameinfoPackColumns([
+  { key: "old", label: "เดิม", formula: "1" },
+  { key: "late", label: "มาทีหลัง", formula: "1" },
+]);
+const stampedLayout = normalizeGameinfoPackLayout(
+  {
+    order: ["price", "computed:old"],
+    hidden: [],
+    knownIds: ["serviceEnabled", "image", "name", "price", "amountChargedFee",
+      "channelsMain", "channelsSecondary", "country", "computed:old"],
+  },
+  stampedColumns
+);
+check("a preset hides columns registered after it was saved", stampedLayout.hidden, ["computed:late"]);
+check(
+  "a preset still shows every column it was saved with",
+  stampedLayout.order.filter((id) => !stampedLayout.hidden.includes(id)).includes("computed:old"),
+  true
+);
+check(
+  "the pinned status column is never auto-hidden",
+  normalizeGameinfoPackLayout({ knownIds: [] }, stampedColumns).hidden.includes("serviceEnabled"),
+  false
+);
+check(
+  "knownIds are stamped from the live columns",
+  gameinfoPackLayoutKnownIds(buildGameinfoPackColumns([{ key: "x", label: "X", formula: "1" }])).at(-1),
+  "computed:x"
+);
+
+// A shared column is registered for every game; "empty here" is decided by
+// whether any pack in this game produces a value for it.
+const dataColumns = buildGameinfoPackColumns([
+  { key: "filled", label: "มีค่า", formula: "1" },
+  { key: "blank", label: "ว่าง", formula: "" },
+]);
+const withData = gameinfoColumnsWithData(
+  dataColumns,
+  [{ id: "pk_1" }, { id: "pk_2" }],
+  (column, pack) => (column.id === "computed:filled" && pack.id === "pk_2" ? 42 : undefined)
+);
+check("a column one pack fills counts as having data", withData.has("computed:filled"), true);
+check("a column no pack fills counts as empty", withData.has("computed:blank"), false);
+check("base columns always count as having data", withData.has("price"), true);
+check(
+  "a game with no packs at all has no computed data",
+  gameinfoColumnsWithData(dataColumns, [], () => 1).has("computed:filled"),
+  false
+);
+check(
+  "blank strings and nulls do not count as data",
+  gameinfoColumnsWithData(dataColumns, [{ id: "pk_1" }], () => "").has("computed:filled"),
+  false
+);
 
 const filteredLayout = normalizeGameinfoPackLayout(
   {
