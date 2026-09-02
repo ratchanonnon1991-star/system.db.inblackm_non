@@ -9,6 +9,7 @@
 // one) -- so "card" below means one WavePay account, not one game, same
 // idea as Oxide's shared card pool.
 import { selectQuery } from "@/lib/profit-remote-db";
+import { normalizeSalePlatform, platformFromSourceGroup } from "@/server/profit-platform-normalize";
 
 // Kyat amounts come back as either a plain numeric string (balances) or
 // "Ks11,000" (pack_price) -- strip everything but digits/dot/minus so both
@@ -24,12 +25,6 @@ function parseKyat(v) {
 const CACHE_MS = 5_000;
 let cache = { at: 0, data: null };
 
-// Same convention as profit-gocash.js / profit-oxide.js: the Telegram queue
-// calls the Russia reseller channel "russia" instead of the
-// "russia_reseller" tag used on sale-price sheets -- collapse them so it
-// isn't tracked as two separate platforms.
-const PLATFORM_ALIASES = { russia: "russia_reseller" };
-
 // telegram_orders_dev.source_group is the Telegram *chat title*, not a
 // platform tag -- most Russia-queue WavePay orders have source null and a
 // numeric task id (so the prefix fallback never fires), but the chat they
@@ -37,26 +32,6 @@ const PLATFORM_ALIASES = { russia: "russia_reseller" };
 // same platform ids the rest of Profit already uses; anything else (internal
 // Thai ops chats like "แจ้งคิวตกค้าง") stays untagged rather than polluting
 // the platform list with a one-off chat name.
-const SOURCE_GROUP_ALIASES = {
-  kaleoz: "kaleoz",
-  itemku: "itemku",
-  "russia reseller": "russia_reseller",
-  "uid russian order": "russia_reseller",
-  "order russia inblackm": "russia_reseller",
-  "logovo logov | orderito bot": "russia_reseller",
-  "via 2fa (russian resellers)": "russia_reseller",
-  "donatov.net (russia) x inblackm talk and topup": "russia_reseller",
-};
-
-function normalizePlatform(raw) {
-  if (!raw) return null;
-  return PLATFORM_ALIASES[raw] || raw;
-}
-
-function platformFromSourceGroup(group) {
-  if (!group) return null;
-  return SOURCE_GROUP_ALIASES[String(group).trim().toLowerCase()] || null;
-}
 
 // codashop_orders has no index on payment_method any more than it does on
 // phone_number (see profit-oxide.js's listOrdersForSerials) -- every call
@@ -98,7 +73,7 @@ export async function getAllRows() {
       gameName: r.game_name,
       invoiceTxnId: r.invoice_txn_id,
       createdAt: r.created_at,
-      platform: normalizePlatform(r.platform) || platformFromSourceGroup(r.telegram_source_group),
+      platform: normalizeSalePlatform(r.platform) || platformFromSourceGroup(r.telegram_source_group),
       // Customer-facing ORDER ID from the Telegram fulfillment task --
       // distinct from this row's own id (the QUEUE #).
       saleOrderId: r.sale_order_id || null,

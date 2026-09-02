@@ -1,8 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // tw-animate-css only publishes a `style` export. Turbopack (`next build`)
-  // honors that; webpack (`next dev --webpack`) does not, so @import in
-  // globals.css fails until `style` is on the resolve condition list.
+  serverExternalPackages: ["playwright"],
+  // Next 16 defaults `next build` to Turbopack. We keep an explicit webpack
+  // build (`next build --webpack` in package.json) and webpack-only resolve
+  // tweak below; empty turbopack config silences the "webpack without
+  // turbopack" guard if someone runs plain `next build`.
+  turbopack: {},
+  // tw-animate-css only publishes a `style` export. Turbopack honors that;
+  // webpack (`next dev --webpack` / `next build --webpack`) does not, so
+  // @import in globals.css fails until `style` is on the resolve condition list.
   webpack: (config) => {
     const names = config.resolve.conditionNames || ["browser", "module", "import", "require", "default"];
     if (!names.includes("style")) {

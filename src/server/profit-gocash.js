@@ -14,20 +14,7 @@ export const DUST_THRESHOLD = 1;
 const CACHE_MS = 5_000;
 let cache = { at: 0, rows: null };
 
-// codashop_orders.source only tags ~30% of orders directly (kaleoz, PAGE,
-// inblackm_web, russia_reseller) -- the rest come in through the Telegram
-// bot queue instead, whose task record (telegram_orders_dev, joined via
-// codashop_orders.telegram_task_request_id) carries its own source column
-// for those. Together the two cover every sky_gocash_history row (confirmed:
-// 100% join coverage on order_id -> codashop_orders.id, timestamps line up
-// within ~1 minute of each other). The Telegram queue calls the same Russia
-// reseller channel "russia" instead of "russia_reseller" -- normalizePlatform
-// collapses that so it isn't tracked as two separate platforms downstream.
-const PLATFORM_ALIASES = { russia: "russia_reseller" };
-function normalizePlatform(raw) {
-  if (!raw) return null;
-  return PLATFORM_ALIASES[raw] || raw;
-}
+import { normalizeSalePlatform } from "@/server/profit-platform-normalize";
 
 export async function getAllRows() {
   const now = Date.now();
@@ -55,7 +42,7 @@ export async function getAllRows() {
     saleOrderId: r.sale_order_id || null,
     packName: r.pack_name,
     createdAt: r.created_at,
-    platform: normalizePlatform(r.platform),
+    platform: normalizeSalePlatform(r.platform),
   }));
   cache = { at: now, rows: shaped };
   return shaped;

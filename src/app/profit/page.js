@@ -1,24 +1,76 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2 } from "lucide-react";
+import { BarChart3, Loader2, RefreshCw, ShoppingCart, Wallet } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import ProfitSummaryGrid from "@/components/profit-summary-grid";
+import ProfitCategoriesOverview from "@/components/profit-categories-overview";
+import ProfitRazerOverview from "@/components/profit-razer-overview";
 import { DupBadge, GroupBadge } from "@/components/profit-badges";
 import { fmtMoney, fmtPct, fmtUsd } from "@/lib/profit-format";
 
+function DashboardStatCard({ icon: Icon, label, value, tone }) {
+  const valueClass =
+    tone === "pos" ? "text-emerald-600" : tone === "neg" ? "text-red-600" : "text-ll-ink";
+  return (
+    <div className="rounded-xl border border-ll-hairline bg-ll-surface-1 p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-ll-ink-tertiary">{label}</p>
+          <p className={`mt-2 text-2xl font-semibold tracking-[-0.03em] ${valueClass}`}>{value}</p>
+        </div>
+        {Icon && (
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ll-primary-subtle-bg text-ll-primary">
+            <Icon size={18} />
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ProfitDashboardPage() {
   const [dashboard, setDashboard] = useState(null);
+  const [razerOverview, setRazerOverview] = useState(null);
   const [error, setError] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    apiJson("/api/profit/dashboard", { fallbackError: "โหลดภาพรวมไม่สำเร็จ" })
-      .then((data) => setDashboard(data.dashboard))
-      .catch((err) => setError(err.message));
+  const [razerError, setRazerError] = useState("");
+
+  const loadAll = useCallback(async () => {
+    setRefreshing(true);
+    setError("");
+    setRazerError("");
+    try {
+      const [dashResult, razerResult] = await Promise.allSettled([
+        apiJson("/api/profit/dashboard", { fallbackError: "โหลดภาพรวมไม่สำเร็จ" }),
+        apiJson("/api/profit/razer/overview", { fallbackError: "โหลด Razer Stock ไม่สำเร็จ" }),
+      ]);
+
+      if (dashResult.status === "fulfilled") {
+        setDashboard(dashResult.value.dashboard);
+      } else {
+        setError(dashResult.reason?.message || "โหลดภาพรวมไม่สำเร็จ");
+        setDashboard(null);
+      }
+
+      if (razerResult.status === "fulfilled") {
+        setRazerOverview(razerResult.value.overview);
+      } else {
+        setRazerError(razerResult.reason?.message || "โหลด Razer Stock ไม่สำเร็จ");
+        setRazerOverview(null);
+      }
+    } finally {
+      setRefreshing(false);
+    }
   }, []);
 
-  if (error) {
+  useEffect(() => {
+    loadAll();
+  }, [loadAll]);
+
+  if (error && !dashboard) {
     return <div className="rounded-lg border border-ll-hairline bg-ll-surface-1 p-6 text-sm text-ll-primary-subtle-text">เกิดข้อผิดพลาด: {error}</div>;
   }
   if (!dashboard) {
@@ -29,31 +81,59 @@ export default function ProfitDashboardPage() {
     );
   }
 
-  const { totals, categories } = dashboard;
+  const { totals, bot, api, categories } = dashboard;
 
   return (
-    <div className="flex flex-col gap-5">
-      <div>
-        <h1 className="text-xl font-semibold text-ll-ink">ภาพรวม</h1>
-        <p className="mt-0.5 text-[13px] text-ll-ink-subtle">ยอดขาย / ต้นทุนที่กรอกเอง และยอดตัดจากบอท (USD)</p>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-ll-ink-tertiary">SaaS Portal / Analytics Dashboard</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-ll-ink">System Overview</h1>
+          <p className="mt-1 text-[13px] text-ll-ink-subtle">ยอดขาย / ต้นทุน / กำไร และสต็อกทุกช่องทาง</p>
+        </div>
+        <button
+          type="button"
+          onClick={loadAll}
+          disabled={refreshing}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-ll-hairline bg-ll-surface-1 px-3 py-2 text-[12px] font-medium text-ll-ink hover:bg-ll-surface-2 disabled:opacity-60"
+        >
+          <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} /> Refresh Data
+        </button>
       </div>
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <DashboardStatCard icon={Wallet} label="ยอดขายรวม" value={fmtMoney(totals.saleTotal)} />
+        <DashboardStatCard icon={ShoppingCart} label="บัตรทั้งหมด" value={totals.cardCount} />
+        <DashboardStatCard
+          icon={BarChart3}
+          label="กำไรรวม"
+          value={fmtMoney(totals.profitTotal)}
+          tone={totals.profitTotal >= 0 ? "pos" : "neg"}
+        />
+        <DashboardStatCard icon={Wallet} label="% กำไร" value={fmtPct(totals.profitPct)} />
+      </section>
 
       <ProfitSummaryGrid
         items={[
-          { k: "บัตรทั้งหมด", v: totals.cardCount },
-          { k: "ยอดขายรวม", v: fmtMoney(totals.saleTotal) },
           { k: "ต้นทุนรวม", v: fmtMoney(totals.costTotal) },
-          { k: "กำไรรวม", v: fmtMoney(totals.profitTotal), tone: totals.profitTotal >= 0 ? "pos" : "neg" },
-          { k: "%กำไร", v: fmtPct(totals.profitPct) },
-          { k: "คงเหลือรวม GoCash (USD)", v: fmtUsd(totals.remainingTotal) },
-          { k: "ยอดตัดรวม GoCash (USD)", v: fmtUsd(totals.deductedTotal) },
+          { k: "Bot — บัตร/เกม", v: bot?.cardCount ?? 0 },
+          { k: "API — เกม", v: api?.cardCount ?? 0 },
           { k: "บัตรที่พบยอดซ้ำ", v: totals.duplicateCardCount, tone: totals.duplicateCardCount > 0 ? "neg" : undefined },
         ]}
       />
 
-      <section className="rounded-lg border border-ll-hairline bg-ll-surface-1">
+      <ProfitCategoriesOverview categories={categories} bot={bot} api={api} />
+
+      <ProfitRazerOverview overview={razerOverview} onRefresh={loadAll} refreshing={refreshing} />
+      {razerError && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-900">
+          โหลด Razer Stock ไม่สำเร็จ: {razerError}
+        </div>
+      )}
+
+      <section className="rounded-xl border border-ll-hairline bg-ll-surface-1 shadow-sm">
         <div className="flex items-center justify-between border-b border-ll-hairline px-4 py-3">
-          <h2 className="text-sm font-semibold text-ll-ink">หมวดหมู่</h2>
+          <h2 className="text-sm font-semibold text-ll-ink">หมวดหมู่ Profit</h2>
           <span className="text-[12px] text-ll-ink-subtle">{categories.length} หมวด</span>
         </div>
         <div className="overflow-x-auto">

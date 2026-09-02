@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   ChevronDown,
+  Coins,
   History,
   LayoutGrid,
   Loader2,
@@ -101,6 +102,7 @@ export default function ProfitShell({ displayName, canEdit, children }) {
   }, [categories, pathname]);
 
   const isDashboard = pathname === "/profit";
+  const isRazerStock = pathname === "/profit/razer-stock";
   const isPackCosts = pathname === "/profit/pack-costs";
   const isSalePrices = pathname.startsWith("/profit/sale-prices");
   const isGocashHistory = pathname === "/profit/gocash-history";
@@ -161,6 +163,14 @@ export default function ProfitShell({ displayName, canEdit, children }) {
             }`}
           >
             ภาพรวม
+          </Link>
+          <Link
+            href="/profit/razer-stock"
+            className={`flex items-center gap-1.5 rounded-md px-3 py-2 text-[13px] font-medium transition ${
+              isRazerStock ? "bg-ll-primary-subtle-bg text-ll-primary-subtle-text" : "text-ll-ink hover:bg-ll-surface-2"
+            }`}
+          >
+            <Coins size={13} aria-hidden="true" /> Razer Stock
           </Link>
           <Link
             href="/profit/pack-costs"
