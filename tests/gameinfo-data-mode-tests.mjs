@@ -161,6 +161,66 @@ check(
   "[ราคา] * 0.5"
 );
 
+// A CSV import appends its column to computedColumns and hangs the per-pack
+// formulas off it. The save splits this game's half out of that shape, so
+// values written anywhere else — a columnOverrides map assembled alongside —
+// are overwritten by the split and never reach the database.
+reset();
+setResponder((text) => {
+  if (/FROM gamelist_pack_column_registry/.test(text)) {
+    return {
+      rows: [
+        {
+          column_key: "col_imported",
+          label: "test",
+          sort_order: 0,
+          data: {
+            formula: "",
+            entryMode: "manual",
+            kind: "formula",
+            marketKey: "",
+            type: "number",
+            symbol: "",
+            scopeMode: "global",
+          },
+        },
+      ],
+    };
+  }
+  if (/SELECT data FROM gameinfo_mode_data/.test(text)) {
+    return { rows: [{ data: { packs: { currencies: [], computedColumns: [], columnOverrides: {} } } }] };
+  }
+  return null;
+});
+await saveGameinfoModeData(7, "idpass", {
+  packs: {
+    currencies: [],
+    costProfiles: [],
+    computedColumns: [
+      {
+        key: "col_imported",
+        label: "test",
+        formula: "",
+        entryMode: "manual",
+        kind: "formula",
+        marketKey: "",
+        type: "number",
+        symbol: "",
+        scopeMode: "global",
+        categoryFormulas: {},
+        rowOverrides: { pk_1: "[ราคา]*0.3", pk_2: "[ราคา]*0.4" },
+      },
+    ],
+  },
+});
+check(
+  "an imported column keeps its per-pack formulas through an IDPASS save",
+  JSON.parse(
+    log.find((entry) => /INSERT INTO gameinfo_mode_data/.test(entry.text))?.params?.[1] || "{}"
+  ).packs.columnOverrides,
+  { col_imported: { rowOverrides: { pk_1: "[ราคา]*0.3", pk_2: "[ราคา]*0.4" } } }
+);
+
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);

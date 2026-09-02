@@ -21,11 +21,26 @@ import { gameNameKey } from "@/lib/text-distance";
 // idpass keeps its own copy of the merged column list. An imported column that
 // this game has never seen is appended; one it already has keeps its
 // definition, since the definition is shared and the CSV only carries values.
+//
+// The per-pack formulas ride on the column itself, in the merged shape every
+// surface reads. saveGameinfoModeData splits the shared definition from this
+// game's values out of exactly that shape, so anything written to a separate
+// columnOverrides map here is overwritten by the split and lost.
 function mergeImportedColumns(current, imported) {
   const columns = Array.isArray(current) ? [...current] : [];
-  const known = new Set(columns.map((column) => column.key));
+  const indexByKey = new Map(columns.map((column, index) => [column.key, index]));
   for (const column of imported || []) {
-    if (known.has(column.key)) continue;
+    const rowOverrides = column.rowOverrides || {};
+    const at = indexByKey.get(column.key);
+    if (at !== undefined) {
+      if (!Object.keys(rowOverrides).length) continue;
+      columns[at] = {
+        ...columns[at],
+        rowOverrides: { ...(columns[at].rowOverrides || {}), ...rowOverrides },
+      };
+      continue;
+    }
+    indexByKey.set(column.key, columns.length);
     columns.push({
       key: column.key,
       label: column.label,
@@ -37,23 +52,10 @@ function mergeImportedColumns(current, imported) {
       symbol: "",
       scopeMode: "global",
       categoryFormulas: {},
-      rowOverrides: {},
+      rowOverrides: { ...rowOverrides },
     });
   }
   return columns;
-}
-
-function mergeImportedOverrides(current, imported) {
-  const overrides = { ...(current || {}) };
-  for (const column of imported || []) {
-    if (!Object.keys(column.rowOverrides || {}).length) continue;
-    const existing = overrides[column.key] || {};
-    overrides[column.key] = {
-      ...existing,
-      rowOverrides: { ...(existing.rowOverrides || {}), ...column.rowOverrides },
-    };
-  }
-  return overrides;
 }
 
 // The preview sends back exactly what the user ticked. An absent field means
@@ -178,7 +180,6 @@ export async function PUT(request) {
             // Columns are shared across both storage modes, so an imported
             // column lands here the same way it lands in the uid store.
             computedColumns: mergeImportedColumns(current.packs.computedColumns, game.columns),
-            columnOverrides: mergeImportedOverrides(current.packs.columnOverrides, game.columns),
           };
           await saveGameinfoModeData(game.gameId, "idpass", { ...current, packs: nextPacks }, client);
           await recordGameinfoAudit({
