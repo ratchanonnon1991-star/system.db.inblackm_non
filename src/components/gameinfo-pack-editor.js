@@ -1877,14 +1877,13 @@ function PackEditorColumn({
         }`}
         title={`${effective.sourceLabel} — กดเพื่อกำหนดสูตรเฉพาะ pack`}
       >
+        {/* Which scope a cell's formula came from used to be spelled out on
+            every overridden cell, which crowded the numbers in a table that is
+            mostly numbers. The tooltip above already says it, and the dialog
+            the cell opens says it in its title. */}
         {formulaError ? "สูตรผิด" : manualMode && !effective.formula ? (
           <span className="text-linear-ink-tertiary">ใส่ค่า/สูตร</span>
         ) : formatGameinfoPackColumnValue(value, column)}
-        {effective.source === "override" ? (
-          <span className="ml-1 text-[9px] text-linear-primary">เฉพาะแถว</span>
-        ) : effective.source === "category" ? (
-          <span className="ml-1 text-[9px] text-linear-ink-tertiary">เฉพาะหมวด</span>
-        ) : null}
       </button>
     );
   }

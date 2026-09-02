@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Gamepad2, Image as ImageIcon, Lock } from "lucide-react";
+import { ArrowLeftRight, Gamepad2, Image as ImageIcon, Lock } from "lucide-react";
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -64,9 +64,36 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
   );
   // Columns this viewer's role is not meant to see never reach the table, so
   // nothing downstream — widths, filters, presets — has to know about roles.
-  const packColumns = useMemo(
-    () => filterGameinfoColumnsForRole(buildGameinfoPackColumns(parsedColumns), new Set(hiddenColumnKeys)),
-    [parsedColumns, hiddenColumnKeys]
+  // Main and secondary channels are two columns in the editor because they are
+  // edited separately, but a reader is looking at one thing — where this pack
+  // is topped up — and the second column is empty for most packs. Here they
+  // share one column with a switch, so the table stays narrow and the presence
+  // of a second channel is stated rather than left to be noticed.
+  const [channelView, setChannelView] = useState("main");
+  const packColumns = useMemo(() => {
+    const roleColumns = filterGameinfoColumnsForRole(
+      buildGameinfoPackColumns(parsedColumns),
+      new Set(hiddenColumnKeys)
+    );
+    const secondary = channelView === "secondary";
+    return roleColumns
+      .filter((column) => column.id !== "channelsSecondary")
+      .map((column) => (column.id === "channelsMain"
+        // The id stays channelsMain so saved layouts and filters keep working;
+        // only which field it reads changes.
+        ? {
+            ...column,
+            field: secondary ? "channelsSecondary" : "channelsMain",
+            label: secondary ? "ช่องทางรอง" : "ช่องทางหลัก",
+            channelToggle: true,
+          }
+        : column));
+  }, [parsedColumns, hiddenColumnKeys, channelView]);
+  const hasSecondaryChannels = useMemo(
+    () => currencies.some((currency) => currency.categories.some((category) =>
+      category.packs.some((pack) => (pack.channelsSecondary || []).length > 0)
+    )),
+    [currencies]
   );
   // Every column is registered for every game, so this one carries columns it
   // has nothing to put in. Readers only want what this game actually uses, so
@@ -223,6 +250,11 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
               formulaVariables={formulaVariables}
               externalValues={rateState.externalValues}
               onReorderColumns={packLayout.reorder}
+              channelView={channelView}
+              hasSecondaryChannels={hasSecondaryChannels}
+              onToggleChannelView={() =>
+                setChannelView((current) => (current === "secondary" ? "main" : "secondary"))
+              }
             />
           ))}
         </div>
@@ -242,6 +274,9 @@ function PackCurrency({
   formulaVariables,
   externalValues,
   onReorderColumns,
+  channelView,
+  hasSecondaryChannels,
+  onToggleChannelView,
 }) {
   return (
     <div className="rounded-lg border border-linear-hairline bg-linear-surface-1 p-4">
@@ -268,6 +303,9 @@ function PackCurrency({
             formulaVariables={formulaVariables}
             externalValues={externalValues}
             onReorderColumns={onReorderColumns}
+            channelView={channelView}
+            hasSecondaryChannels={hasSecondaryChannels}
+            onToggleChannelView={onToggleChannelView}
           />
         ))}
       </div>
@@ -305,6 +343,9 @@ function PackCategory({
   formulaVariables,
   externalValues,
   onReorderColumns,
+  channelView,
+  hasSecondaryChannels,
+  onToggleChannelView,
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -364,7 +405,13 @@ function PackCategory({
                   <thead className="border-b border-linear-hairline bg-linear-surface-2 text-xs text-linear-ink-subtle">
                     <tr>
                       {columns.map((column) => (
-                        <SortableViewHeader key={column.id} column={column} />
+                        <SortableViewHeader
+                          key={column.id}
+                          column={column}
+                          channelView={channelView}
+                          hasSecondaryChannels={hasSecondaryChannels}
+                          onToggleChannelView={onToggleChannelView}
+                        />
                       ))}
                     </tr>
                   </thead>
@@ -398,7 +445,7 @@ function PackCategory({
   );
 }
 
-function SortableViewHeader({ column }) {
+function SortableViewHeader({ column, channelView, hasSecondaryChannels, onToggleChannelView }) {
   const pinned = isGameinfoPackColumnPinned(column);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: column.id,
@@ -421,6 +468,24 @@ function SortableViewHeader({ column }) {
       <span className="inline-flex items-center gap-1">
         {pinned ? <Lock size={10} className="shrink-0" /> : null}
         {column.label}
+        {column.channelToggle && hasSecondaryChannels ? (
+          <button
+            type="button"
+            // Dragging reorders columns, so the button has to keep the drag
+            // handlers on the header from swallowing its click.
+            onPointerDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleChannelView?.();
+            }}
+            title="เกมนี้มี 2 ช่องทาง — กดเพื่อสลับดูอีกช่องทาง"
+            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-linear-hairline-strong bg-linear-surface-1 px-2 py-0.5 text-[10px] font-medium text-linear-primary hover:bg-linear-surface-2"
+          >
+            <ArrowLeftRight size={9} />
+            {channelView === "secondary" ? "ดูช่องทางหลัก" : "สลับช่องทางรอง"}
+          </button>
+        ) : null}
       </span>
     </th>
   );
