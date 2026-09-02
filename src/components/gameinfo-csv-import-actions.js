@@ -27,7 +27,7 @@ const CONFIG = {
   },
   packs: {
     title: "นำเข้า Packs ทุกเกม",
-    description: "แต่ละแถวต้องมี game_id ที่มีอยู่แล้ว ระบบจะตรวจทุกเกมก่อนบันทึกพร้อมกัน",
+    description: "ระบุเกมด้วย game_id หรือชื่อเกมก็ได้ หัวคอลัมน์ที่ไม่รู้จักจะกลายเป็นคอลัมน์ใหม่ ระบบตรวจทุกเกมก่อนบันทึกพร้อมกัน",
     previewUrl: "/api/gameinfo/import/preview",
     applyUrl: "/api/gameinfo/import/apply",
     templateUrl: "/api/gameinfo/import/template",
