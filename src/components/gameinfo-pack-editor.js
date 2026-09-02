@@ -77,7 +77,10 @@ import {
   duplicateGameinfoPack,
   getGameinfoPackName,
 } from "@/lib/gameinfo-pack-model";
-import { evaluateGameinfoComputedColumn } from "@/lib/gameinfo-computed-evaluator";
+import {
+  evaluateGameinfoComputedColumn,
+  gameinfoColumnsWithDataInGame,
+} from "@/lib/gameinfo-computed-evaluator";
 import { normalizeSpaces } from "@/lib/text-normalize";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -275,11 +278,23 @@ export default function GameinfoPackEditor({
     [computedColumns]
   );
   const packColumns = useMemo(() => buildGameinfoPackColumns(parsedColumns), [parsedColumns]);
+  // Columns are shared by every game, so this editor shows columns this game
+  // has never filled in. It shows them all by default — that is how a column
+  // gets its first value here — with a toggle to clear the empty ones away.
+  // Deliberately not persisted: it is a way of looking at the table right now,
+  // not a preference, and it must not be confused with hiding a column.
+  const [hideEmptyColumns, setHideEmptyColumns] = useState(false);
+  const emptyColumnIds = useMemo(() => {
+    const withData = gameinfoColumnsWithDataInGame(packColumns, currencies, game, formulaContext);
+    return new Set(packColumns.map((column) => column.id).filter((id) => !withData.has(id)));
+  }, [packColumns, currencies, game, formulaContext]);
   const packLayout = useGameinfoPackColumnLayout({
     columns: packColumns,
     userId,
     gameId: game.id,
     surface: "edit",
+    emptyColumnIds,
+    hideEmptyColumns,
   });
   const languageDraftDirty = Boolean(languageDraft.trim());
   useGameinfoUnsavedChanges(dirty || packLayout.dirty || languageDraftDirty);
@@ -1035,6 +1050,9 @@ export default function GameinfoPackEditor({
           error={packLayout.error}
           notice={packLayout.notice}
           legacyDraft={packLayout.legacyDraft}
+          emptyColumnIds={emptyColumnIds}
+          hideEmptyColumns={hideEmptyColumns}
+          onHideEmptyColumnsChange={setHideEmptyColumns}
           onSetVisible={packLayout.setVisible}
           onFiltersChange={packLayout.setFilters}
           onReset={packLayout.reset}

@@ -2,6 +2,7 @@ import { evaluateFormula, extractFormulaRefs, parseFormula } from "@/lib/gamedb-
 import { GAMEINFO_FIELD_NAMES, resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
 import { getGameinfoFormulaDisplay } from "@/lib/gameinfo-formula-overrides";
 import { roundGameinfoNumber } from "@/lib/gameinfo-pack-validation";
+import { gameinfoColumnsWithData } from "@/lib/gameinfo-pack-columns";
 
 export function evaluateGameinfoComputedColumn(column, columns, pack, game, context = {}, stack = []) {
   if (!column) return undefined;
@@ -20,6 +21,34 @@ export function evaluateGameinfoComputedColumn(column, columns, pack, game, cont
     return resolveGameinfoField(pack, game, label, context);
   });
   return column.type && column.type !== "number" ? value : roundGameinfoNumber(value);
+}
+
+// Columns are shared by every game, so most games have nothing to put in most
+// of them. This walks the whole currency/category/pack tree once and reports
+// which columns actually produce a value here, so the read-only view can drop
+// the empty ones and the editor can offer to. A formula that throws for one
+// pack is treated as no value for that pack, not as an error — the cell
+// already renders that way.
+export function gameinfoColumnsWithDataInGame(packColumns, currencies, game, context = {}) {
+  const computedColumns = (packColumns || [])
+    .filter((column) => column.kind === "computed")
+    .map((column) => column.computed);
+  const entries = [];
+  for (const currency of currencies || []) {
+    for (const category of currency.categories || []) {
+      for (const pack of category.packs || []) entries.push({ pack, categoryId: category.id });
+    }
+  }
+  return gameinfoColumnsWithData(packColumns, entries, (column, entry) => {
+    try {
+      return evaluateGameinfoComputedColumn(column.computed, computedColumns, entry.pack, game, {
+        ...context,
+        categoryId: entry.categoryId,
+      });
+    } catch {
+      return undefined;
+    }
+  });
 }
 
 export function validateGameinfoComputedDependencies(

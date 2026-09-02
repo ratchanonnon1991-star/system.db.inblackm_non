@@ -18,7 +18,10 @@ import {
   matchesGameinfoPackFilters,
 } from "@/lib/gameinfo-pack-columns";
 import { getGameinfoFormulaDisplay } from "@/lib/gameinfo-formula-overrides";
-import { evaluateGameinfoComputedColumn } from "@/lib/gameinfo-computed-evaluator";
+import {
+  evaluateGameinfoComputedColumn,
+  gameinfoColumnsWithDataInGame,
+} from "@/lib/gameinfo-computed-evaluator";
 import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
 import { gameinfoStableColorStyle } from "@/lib/gameinfo-stable-color";
 import { gameinfoCountryDisplayName } from "@/lib/gameinfo-countries";
@@ -59,11 +62,24 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
     [computedColumns]
   );
   const packColumns = useMemo(() => buildGameinfoPackColumns(parsedColumns), [parsedColumns]);
+  // Every column is registered for every game, so this one carries columns it
+  // has nothing to put in. Readers only want what this game actually uses, so
+  // the empty ones never reach the table here — no toggle, unlike the editor.
+  const emptyColumnIds = useMemo(() => {
+    const withData = gameinfoColumnsWithDataInGame(packColumns, currencies, formulaGame, {
+      costProfiles,
+      formulaVariables,
+      externalValues: rateState.externalValues,
+    });
+    return new Set(packColumns.map((column) => column.id).filter((id) => !withData.has(id)));
+  }, [packColumns, currencies, formulaGame, costProfiles, formulaVariables, rateState.externalValues]);
   const packLayout = useGameinfoPackColumnLayout({
     columns: packColumns,
     userId,
     gameId: row.id,
     surface: "view",
+    emptyColumnIds,
+    hideEmptyColumns: true,
   });
   useGameinfoUnsavedChanges(packLayout.dirty);
 

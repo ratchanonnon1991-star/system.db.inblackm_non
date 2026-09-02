@@ -41,6 +41,10 @@ export function useGameinfoPackColumnLayout({
   userId,
   gameId,
   surface,
+  // Ids of columns no pack in this game fills. The read-only view always drops
+  // them; the editor lets the user choose, so it passes its own toggle in.
+  emptyColumnIds = null,
+  hideEmptyColumns = false,
 }) {
   const storageKey = gameinfoPackLayoutStorageKey({ userId, gameId, surface });
   const presetsUrl = `/api/gameinfo/gamelist/${gameId}/packs/presets?surface=${encodeURIComponent(surface)}`;
@@ -128,10 +132,17 @@ export function useGameinfoPackColumnLayout({
     () => orderGameinfoPackColumns(columns, normalizedLayout),
     [columns, normalizedLayout]
   );
-  const visibleColumns = useMemo(
-    () => orderedColumns.filter((column) => !normalizedLayout.hidden.includes(column.id)),
-    [orderedColumns, normalizedLayout.hidden]
-  );
+  // Columns belong to every game now, so a game that has nothing to put in one
+  // still gets the column. Dropping the empty ones is a display choice, not a
+  // preset edit: it must not mark the layout dirty or be saved, or a game that
+  // later fills the column would find it hidden.
+  const visibleColumns = useMemo(() => {
+    const shown = orderedColumns.filter((column) => !normalizedLayout.hidden.includes(column.id));
+    if (!hideEmptyColumns || !emptyColumnIds) return shown;
+    return shown.filter(
+      (column) => isGameinfoPackColumnPinned(column) || !emptyColumnIds.has(column.id)
+    );
+  }, [orderedColumns, normalizedLayout.hidden, hideEmptyColumns, emptyColumnIds]);
 
   function setVisible(columnId, visible) {
     if (loading || saving) return;
@@ -283,6 +294,11 @@ export function useGameinfoPackColumnLayout({
 export function GameinfoPackColumnControls({
   columns,
   hidden,
+  // Columns this game has nothing in. Only the editor passes these — the
+  // read-only view drops them before they ever reach a control.
+  emptyColumnIds = null,
+  hideEmptyColumns = false,
+  onHideEmptyColumnsChange = null,
   filters = [],
   presets,
   selectedPresetId,
@@ -303,6 +319,9 @@ export function GameinfoPackColumnControls({
   presetLocked = false,
 }) {
   const [open, setOpen] = useState(false);
+  const emptyCount = columns.filter(
+    (column) => !isGameinfoPackColumnPinned(column) && emptyColumnIds?.has(column.id)
+  ).length;
   const popoverId = useId();
   const triggerRef = useRef(null);
   const closeButtonRef = useRef(null);
@@ -491,10 +510,25 @@ export function GameinfoPackColumnControls({
               <RotateCcw size={12} /> คืนค่าเริ่มต้น
             </button>
           </div>
+          {onHideEmptyColumnsChange && emptyCount > 0 ? (
+            <label className="mb-1 flex items-center gap-2 rounded px-2 py-1.5 text-xs text-linear-ink-muted hover:bg-linear-surface-2">
+              <input
+                type="checkbox"
+                checked={hideEmptyColumns}
+                onChange={(event) => onHideEmptyColumnsChange(event.target.checked)}
+                className="accent-linear-primary"
+              />
+              <span className="min-w-0 flex-1 truncate">ซ่อนคอลัมน์ที่ไม่มีข้อมูล</span>
+              <span className="shrink-0 text-[10px] text-linear-ink-tertiary">{emptyCount} คอลัมน์</span>
+            </label>
+          ) : null}
           <div className="max-h-60 space-y-1 overflow-y-auto">
             {columns.map((column) => {
               const pinned = isGameinfoPackColumnPinned(column);
               const checked = pinned || !hidden.includes(column.id);
+              // Empty here, not empty everywhere: the column belongs to every
+              // game and another game may well be using it.
+              const empty = !pinned && Boolean(emptyColumnIds?.has(column.id));
               return (
                 <label
                   key={column.id}
@@ -516,6 +550,13 @@ export function GameinfoPackColumnControls({
                   {pinned ? (
                     <span className="inline-flex shrink-0 items-center gap-1 text-[10px] text-linear-ink-tertiary">
                       <Lock size={10} /> ตรึงไว้
+                    </span>
+                  ) : empty ? (
+                    <span
+                      title="เกมนี้ยังไม่มีข้อมูลในคอลัมน์นี้ — กรอกค่าลงไปก็นับว่ามีทันที"
+                      className="shrink-0 text-[10px] text-linear-ink-tertiary"
+                    >
+                      ไม่มีข้อมูล
                     </span>
                   ) : null}
                 </label>
