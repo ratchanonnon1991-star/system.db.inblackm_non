@@ -254,6 +254,18 @@ CREATE TABLE IF NOT EXISTS gamelist_pack_column_registry (
 CREATE INDEX IF NOT EXISTS gamelist_pack_column_registry_order_idx
   ON gamelist_pack_column_registry (sort_order, column_key);
 
+-- Which pack columns a GameInfo role sees. game_id 0 is the rule for every
+-- game; a row naming a real game overrides it for that game only. Only rules
+-- that hide something are stored, so a column nobody has ruled on is visible.
+CREATE TABLE IF NOT EXISTS gamelist_pack_column_roles (
+  role       varchar(16) NOT NULL,           -- 'topup' | 'admin'
+  game_id    integer     NOT NULL DEFAULT 0, -- 0 = every game
+  column_key varchar(64) NOT NULL,           -- LOGICAL -> gamelist_pack_column_registry.column_key
+  visible    boolean     NOT NULL DEFAULT true,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (role, game_id, column_key)
+);
+
 CREATE TABLE IF NOT EXISTS gamelist_pack_view_presets (
   id         bigserial PRIMARY KEY,
   game_id    integer     NOT NULL,           -- LOGICAL -> game_list.id

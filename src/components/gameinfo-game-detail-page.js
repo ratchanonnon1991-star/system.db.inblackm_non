@@ -31,7 +31,9 @@ import { listGamelistReports } from "@/server/gameinfo-gamelist-reports";
 import GameinfoReportPanel from "@/components/gameinfo-report-panel";
 import GameinfoPackEditor from "@/components/gameinfo-pack-editor";
 import { buildPackSuggestions } from "@/lib/gameinfo-suggestions";
-import { hasPermission } from "@/lib/permissions";
+import { hasPermission, permissionRole } from "@/lib/permissions";
+import { hiddenGameinfoColumnKeys } from "@/lib/gameinfo-column-roles";
+import { listGameinfoColumnRoleRules } from "@/server/gameinfo-column-roles";
 
 export default async function GameinfoGameDetailPage({ params, searchParams, manage = false }) {
   const { lang, id } = await params;
@@ -44,6 +46,11 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   if (manage && !editableRole) redirect(gameinfoGameHref(lang, id, dataMode));
   const manageMode = manage && editableRole;
   const topupView = !manageMode && rawView === "topup";
+  // Columns are shared by every game, so a role that works with only a few of
+  // them would otherwise meet all of them everywhere. Resolved here because
+  // the server is what knows the viewer's role; the topup preview deliberately
+  // resolves as topup so an admin sees what a topup user would.
+  const viewerRole = topupView ? "topup" : permissionRole(user.permissions, "gameinfo");
 
   // A non-numeric segment here (e.g. a stale /admin bookmark from before that
   // path was removed) would otherwise reach getGameListRow() as NaN and blow
@@ -66,6 +73,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   let allChannels = [];
   let packLanguages = [];
   let packVersion = 1;
+  let hiddenColumnKeys = [];
   try {
     row = await getGameListRow(numericId);
     if (row) {
@@ -89,7 +97,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         main: [...new Set(flatModePacks.flatMap((pack) => pack.channelsMain || []))],
         secondary: [...new Set(flatModePacks.flatMap((pack) => pack.channelsSecondary || []))],
       };
-      const [channelsByGame, allRows, tutorial, warning, vpnNote, image, storedLinks, variableData, tagsByGame, publishersByGame, loadedReports, sharedChannels, languages, loadedTagImages, loadedPublisherImages] = await Promise.all([
+      const [channelsByGame, allRows, tutorial, warning, vpnNote, image, storedLinks, variableData, tagsByGame, publishersByGame, loadedReports, sharedChannels, languages, loadedTagImages, loadedPublisherImages, columnRoleRules] = await Promise.all([
         listGamelistChannelsByGame(),
         listGameListRows(),
         dataMode === "idpass" ? Promise.resolve(modeData.tutorial) : getGamelistTutorial(row.id),
@@ -105,6 +113,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         manageMode ? listGamelistPackLanguages() : Promise.resolve([]),
         manageMode ? listGamelistTagImages() : Promise.resolve({}),
         manageMode ? listGamelistPublisherImages() : Promise.resolve({}),
+        listGameinfoColumnRoleRules(),
       ]);
       // Same ordering the list table shows as "ลำดับ" (gamelist_order-aware,
       // falls back to id order) — this game's position within it.
@@ -138,6 +147,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         reportCount: loadedReports.filter((report) => report.status === "open").length,
       };
       formulaVariables = variableData.variables;
+      hiddenColumnKeys = [...hiddenGameinfoColumnKeys(columnRoleRules, viewerRole, row.id)];
     }
   } catch (err) {
     return (
@@ -210,6 +220,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
             formulaVariables={formulaVariables}
             userId={user.id}
             dataMode={dataMode}
+            hiddenColumnKeys={hiddenColumnKeys}
           />
           <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage={editableRole} canReport={canReport} />
         </>

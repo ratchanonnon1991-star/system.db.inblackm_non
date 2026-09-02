@@ -25,6 +25,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   CheckCircle2,
+  Columns3,
   GripVertical,
   Image as ImageIcon,
   MoreVertical,
@@ -656,6 +657,14 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
         {editable ? <GameinfoAllPackHistory /> : null}
         {editable ? (
           <GameinfoFormulaVariablesButton endpoint="/api/gameinfo/variables" toolbar />
+        ) : null}
+        {editable ? (
+          <Link
+            href={`/gameinfo/${lang}/columns`}
+            className="flex h-10 items-center gap-2 rounded-xl border border-linear-hairline-strong px-3 text-sm text-linear-ink hover:bg-linear-surface-2"
+          >
+            <Columns3 size={15} className="text-linear-ink-muted" /> สิทธิ์คอลัมน์
+          </Link>
         ) : null}
         {editable ? <GameinfoCsvImportActions hasUnsavedChanges={dirty} dataMode={dataMode} /> : null}
         {editable && selectedGameIds.size > 0 ? (

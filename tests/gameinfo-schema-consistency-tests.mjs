@@ -17,5 +17,9 @@ assert.ok(runtime.includes("CREATE TABLE IF NOT EXISTS gamelist_pack_column_regi
 assert.ok(bootstrap.includes("CREATE TABLE IF NOT EXISTS gamelist_pack_column_registry"));
 assert.ok(runtime.includes("ON gamelist_pack_column_registry (sort_order, column_key)"));
 assert.ok(bootstrap.includes("ON gamelist_pack_column_registry (sort_order, column_key)"));
+assert.ok(runtime.includes("CREATE TABLE IF NOT EXISTS gamelist_pack_column_roles"));
+assert.ok(bootstrap.includes("CREATE TABLE IF NOT EXISTS gamelist_pack_column_roles"));
+assert.ok(runtime.includes("PRIMARY KEY (role, game_id, column_key)"));
+assert.ok(bootstrap.includes("PRIMARY KEY (role, game_id, column_key)"));
 
-console.log("12 passed");
+console.log("16 passed");

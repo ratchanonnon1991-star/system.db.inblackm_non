@@ -292,6 +292,20 @@ function ensureSchema(connection) {
         CREATE INDEX IF NOT EXISTS gamelist_pack_column_registry_order_idx
         ON gamelist_pack_column_registry (sort_order, column_key)
       `);
+      // Which columns a role sees. game_id 0 is the rule for every game and a
+      // row for a real game overrides it. Only rows that hide something are
+      // stored — no row means visible, so a newly registered column is visible
+      // to everyone until someone decides otherwise.
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS gamelist_pack_column_roles (
+          role       VARCHAR(16) NOT NULL,
+          game_id    INTEGER NOT NULL DEFAULT 0,
+          column_key VARCHAR(64) NOT NULL,
+          visible    BOOLEAN NOT NULL DEFAULT TRUE,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (role, game_id, column_key)
+        )
+      `);
     } finally {
       client.release();
     }
@@ -299,6 +313,11 @@ function ensureSchema(connection) {
   promise.catch(() => schemaReadyByConnection.delete(connection.id));
   schemaReadyByConnection.set(connection.id, { cacheKey, promise });
   return promise;
+}
+
+/** The gameinfo pool with its schema ensured — for sibling repositories. */
+export async function getGameinfoPool() {
+  return getReadyPool();
 }
 
 async function getReadyPool() {

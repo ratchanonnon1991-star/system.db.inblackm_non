@@ -18,6 +18,7 @@ import {
   matchesGameinfoPackFilters,
 } from "@/lib/gameinfo-pack-columns";
 import { getGameinfoFormulaDisplay } from "@/lib/gameinfo-formula-overrides";
+import { filterGameinfoColumnsForRole } from "@/lib/gameinfo-column-roles";
 import {
   evaluateGameinfoComputedColumn,
   gameinfoColumnsWithDataInGame,
@@ -40,7 +41,7 @@ import {
 // gameinfo-gamelist-table.js and GameinfoPackEditor) plus its packs — same
 // currencies/computedColumns tree the pack editor saves to gamelist_packs,
 // so what's shown here always matches what "จัดการแพ็ก" last saved.
-export default function GameinfoGameView({ row, currencies, computedColumns, costProfiles = [], formulaVariables = [], userId, dataMode = "uid" }) {
+export default function GameinfoGameView({ row, currencies, computedColumns, costProfiles = [], formulaVariables = [], userId, dataMode = "uid", hiddenColumnKeys = [] }) {
   const [formulaMode, setFormulaMode] = useState("result");
   const rateState = useGameinfoRates();
   // Same field set the pack editor's formulas can reference (see
@@ -61,7 +62,12 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
       }),
     [computedColumns]
   );
-  const packColumns = useMemo(() => buildGameinfoPackColumns(parsedColumns), [parsedColumns]);
+  // Columns this viewer's role is not meant to see never reach the table, so
+  // nothing downstream — widths, filters, presets — has to know about roles.
+  const packColumns = useMemo(
+    () => filterGameinfoColumnsForRole(buildGameinfoPackColumns(parsedColumns), new Set(hiddenColumnKeys)),
+    [parsedColumns, hiddenColumnKeys]
+  );
   // Every column is registered for every game, so this one carries columns it
   // has nothing to put in. Readers only want what this game actually uses, so
   // the empty ones never reach the table here — no toggle, unlike the editor.
