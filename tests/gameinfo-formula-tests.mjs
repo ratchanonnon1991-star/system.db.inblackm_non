@@ -46,9 +46,21 @@ check("numeric picker excludes descriptive fields", GAMEINFO_NUMERIC_FIELD_NAMES
   "ยอดที่กด + fee",
   "USDT/THB",
   "USDCNY",
+  "IDRTHB",
+  "USDIDR",
 ]);
 ok("variable editor uses the numeric field picker", variableEditorSource.includes("GAMEINFO_NUMERIC_FIELD_NAMES"));
 ok("formula memory is a separate side panel", computedEditorSource.includes("lg:grid-cols-[minmax(0,1fr)_20rem]"));
+ok("computed editor uses the dynamic mobile viewport", computedEditorSource.includes("max-h-[85dvh]"));
+ok(
+  "stacked computed editor content scrolls as one pane on narrow screens",
+  computedEditorSource.includes("overflow-y-auto overscroll-contain") &&
+    computedEditorSource.includes("lg:overflow-hidden")
+);
+ok(
+  "computed editor keeps its header and action footer visible",
+  (computedEditorSource.match(/flex shrink-0/g) || []).length >= 2
+);
 ok("formula memory shows ready-to-use cards with formulas", formulaMemorySource.includes("<Card") && formulaMemorySource.includes("{preset.formula}"));
 ok("formula memory management is optional and collapsed", formulaMemorySource.includes("<details") && formulaMemorySource.includes("จัดการคลังสูตร"));
 ok("bulk formula editor labels the empty computed-column state", bulkFormulaSource.includes("ไม่มีคอลัมน์สูตร"));
@@ -76,6 +88,8 @@ check(
   resolveGameinfoField(pack, game, "USDT/THB", { externalValues: { "USDT/THB": 33.75 } }),
   33.75
 );
+check("IDRTHB resolves from formula context", resolveGameinfoField(pack, game, "IDRTHB", { externalValues: { IDRTHB: 0.0019 } }), 0.0019);
+check("USDIDR resolves from formula context", resolveGameinfoField(pack, game, "USDIDR", { externalValues: { USDIDR: 16350 } }), 16350);
 
 const costProfiles = [
   { id: "cost_usd", label: "USD", inputCurrency: "USD", baseValue: "0.5", rateFormula: "" },
@@ -114,6 +128,37 @@ check(
   evaluateGameinfoComputedColumn(dependentColumns[1], dependentColumns, pack, game),
   55
 );
+const roundedColumns = [
+  { key: "rounded-down", label: "ปัดลง", formula: "0.123", type: "number" },
+  { key: "rounded-up", label: "ปัดขึ้น", formula: "0.126", type: "number" },
+  { key: "continued", label: "คำนวณต่อ", formula: "[ปัดขึ้น] * 100", type: "number" },
+];
+check("gameinfo numeric formulas round 0.123 to two decimals", evaluateGameinfoComputedColumn(roundedColumns[0], roundedColumns, pack, game), 0.12);
+check("gameinfo numeric formulas round 0.126 to two decimals", evaluateGameinfoComputedColumn(roundedColumns[1], roundedColumns, pack, game), 0.13);
+check("dependent formulas start from the rounded value", evaluateGameinfoComputedColumn(roundedColumns[2], roundedColumns, pack, game), 13);
+const manualColumns = [{
+  key: "manual-cost",
+  label: "ต้นทุนกรอกเอง",
+  formula: "",
+  entryMode: "manual",
+  rowOverrides: { pk_number: "125", pk_formula: "[ราคา] * 0.9" },
+}];
+check(
+  "manual column starts empty when a pack has no value",
+  evaluateGameinfoComputedColumn(manualColumns[0], manualColumns, { ...pack, id: "pk_empty" }, game),
+  undefined
+);
+check(
+  "manual column accepts a number",
+  evaluateGameinfoComputedColumn(manualColumns[0], manualColumns, { ...pack, id: "pk_number" }, game),
+  125
+);
+check(
+  "manual column accepts a formula",
+  evaluateGameinfoComputedColumn(manualColumns[0], manualColumns, { ...pack, id: "pk_formula" }, game),
+  90
+);
+check("blank manual columns pass dependency validation", validateGameinfoComputedDependencies(manualColumns), []);
 const scopedColumns = [
   {
     key: "cost",
@@ -170,6 +215,28 @@ check(
   validateGameinfoComputedDependencies([
     { key: "a", label: "ซ้ำ", formula: "1" },
     { key: "b", label: "ซ้ำ", formula: "2" },
+  ]).some((message) => message.includes("ชื่อคอลัมน์สูตรซ้ำ")),
+  true
+);
+check(
+  "computed column names cannot duplicate a formula variable",
+  validateGameinfoComputedDependencies(
+    [{ key: "a", label: "ต้นทุน", formula: "1" }],
+    ["ต้นทุน"]
+  ).some((message) => message.includes('มีชื่อ "ต้นทุน" อยู่แล้ว')),
+  true
+);
+check(
+  "computed column names cannot duplicate a GameInfo field",
+  validateGameinfoComputedDependencies([{ key: "a", label: "ราคา", formula: "1" }])
+    .some((message) => message.includes('มีชื่อ "ราคา" อยู่แล้ว')),
+  true
+);
+check(
+  "duplicate column names are case insensitive",
+  validateGameinfoComputedDependencies([
+    { key: "a", label: "Profit", formula: "1" },
+    { key: "b", label: " profit ", formula: "2" },
   ]).some((message) => message.includes("ชื่อคอลัมน์สูตรซ้ำ")),
   true
 );

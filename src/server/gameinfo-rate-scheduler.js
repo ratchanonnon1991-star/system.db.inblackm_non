@@ -9,6 +9,8 @@ const SCHEDULER_KEY = Symbol.for("gameinfo.exchangeRateScheduler");
 const JOBS = [
   { pair: "USDT/THB", nextAt: nextCoinGeckoRefreshAt },
   { pair: "USDCNY", nextAt: nextFrankfurterRefreshAt },
+  { pair: "IDRTHB", nextAt: nextFrankfurterRefreshAt },
+  { pair: "USDIDR", nextAt: nextFrankfurterRefreshAt },
 ];
 
 export function startGameinfoRateScheduler() {

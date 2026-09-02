@@ -45,6 +45,13 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
   const { lang } = await params;
   const { mode: rawMode, view: rawView, section, game, unit, market } = await searchParams;
   const priceComparison = section === "pack-price-compare";
+  if (priceComparison) {
+    const query = new URLSearchParams();
+    if (rawMode === "idpass") query.set("mode", "idpass");
+    if (market) query.set("market", market);
+    if (game) query.set("game", game);
+    redirect(`/gameinfo/${lang}/pack-price-compare${query.size ? `?${query}` : ""}`);
+  }
   const provider = market === "itemku" ? "itemku" : "kaleoz";
   const kaleozGames = priceComparison && provider === "kaleoz" ? await loadKaleozGames() : [];
   const itemkuGames = priceComparison && provider === "itemku" ? await loadItemkuGames() : [];

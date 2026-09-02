@@ -137,6 +137,14 @@ export async function requireGameinfoReporter(request) {
   return user;
 }
 
+export async function requireGameinfoMarketChecker(request) {
+  const user = await requireGameinfoAccess(request);
+  if (!hasPermission(user, "gameinfo.market_check")) {
+    throw createHttpError("บัญชีนี้ไม่มีสิทธิ์สั่งตรวจราคา Market", 403);
+  }
+  return user;
+}
+
 export async function requireProjectmAdmin(request) {
   const user = await requireProjectmAccess(request);
   if (!hasPermission(user, "projectm.admin")) {

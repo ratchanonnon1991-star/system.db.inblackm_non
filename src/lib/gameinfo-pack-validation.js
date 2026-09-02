@@ -7,12 +7,28 @@ export function cleanGameinfoNumericInput(value) {
   return `${whole}.${fraction}`;
 }
 
+function shiftGameinfoDecimal(number, digits) {
+  if (!Number.isFinite(number) || digits === 0) return number;
+  const [mantissa, exponent = "0"] = String(number).split("e");
+  const shifted = Number(`${mantissa}e${Number(exponent) + digits}`);
+  return Number.isFinite(shifted) ? shifted : number * 10 ** digits;
+}
+
+export function roundGameinfoNumber(value) {
+  if (value === null || value === undefined || value === "" || typeof value === "boolean") return value;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return value;
+  return shiftGameinfoDecimal(Math.round(shiftGameinfoDecimal(number, 2)), -2);
+}
+
 export function normalizeGameinfoNumericInput(value) {
   const clean = cleanGameinfoNumericInput(value);
   if (!clean) return "";
   const [rawWhole, fraction] = clean.split(".");
   const whole = (rawWhole || "0").replace(/^0+(?=\d)/, "");
-  return fraction == null || fraction === "" ? whole : `${whole}.${fraction}`;
+  if (fraction == null || fraction === "") return whole;
+  const normalized = `${whole}.${fraction}`;
+  return fraction.length <= 2 ? normalized : String(roundGameinfoNumber(normalized));
 }
 
 function gameinfoPackPriceKey(value) {

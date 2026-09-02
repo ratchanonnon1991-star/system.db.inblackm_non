@@ -1,6 +1,7 @@
 import {
   buildGameinfoPackColumns,
   formatGameinfoPackColumnValue,
+  gameinfoPackColumnWidth,
   matchesGameinfoPackFilters,
   normalizeGameinfoPackLayout,
   reorderGameinfoPackColumns,
@@ -46,6 +47,10 @@ check(
     "computed:profit",
   ]
 );
+check("short pack names use the column minimum", gameinfoPackColumnWidth(columns.find((column) => column.id === "name"), ["60 Crystals"]), 140);
+check("pack names grow with their longest value", gameinfoPackColumnWidth(columns.find((column) => column.id === "name"), ["A".repeat(30)]), 257);
+check("very long pack names wrap at the column maximum", gameinfoPackColumnWidth(columns.find((column) => column.id === "name"), ["A".repeat(100)]), 360);
+check("channel width keeps multiple tags and the input on one line", gameinfoPackColumnWidth(columns.find((column) => column.id === "channelsMain"), [["Itemku", "Topup Youthshop"]]), 316);
 
 const normalized = normalizeGameinfoPackLayout(
   { order: ["computed:profit", "price", "missing"], hidden: ["country", "missing", "country"] },
@@ -168,6 +173,29 @@ check("computed sanitizer keeps only non-empty string row overrides", sanitizedO
   pk_special: "[ราคา] * 0.5",
 });
 
+const sanitizedManualColumn = sanitizeComputedColumns([{
+  key: "manual-cost",
+  label: "ต้นทุนกรอกเอง",
+  formula: "",
+  entryMode: "manual",
+  rowOverrides: { pk_1: "125", pk_2: "[ราคา] * 0.9" },
+}])[0];
+check("computed sanitizer preserves a blank manual column", sanitizedManualColumn.entryMode, "manual");
+check("manual column keeps per-pack numbers and formulas", sanitizedManualColumn.rowOverrides, {
+  pk_1: "125",
+  pk_2: "[ราคา] * 0.9",
+});
+check(
+  "blank legacy columns recover as manual so existing row values can be saved",
+  sanitizeComputedColumns([{
+    key: "russia",
+    label: "Russia",
+    formula: "",
+    rowOverrides: { pk_1: "18.5" },
+  }])[0].entryMode,
+  "manual"
+);
+
 const sanitizedCategoryColumn = sanitizeComputedColumns([
   {
     key: "profit",
@@ -218,6 +246,17 @@ check("formula display identifies a pack override", getGameinfoFormulaDisplay(fo
   overridden: true,
   source: "override",
   sourceLabel: "สูตรเฉพาะ pack",
+});
+check("an empty manual cell does not inherit a main formula", getGameinfoFormulaDisplay({
+  key: "manual",
+  formula: "",
+  entryMode: "manual",
+  rowOverrides: { pk_filled: "123" },
+}, "pk_empty"), {
+  formula: "",
+  overridden: false,
+  source: "manual",
+  sourceLabel: "กรอกเอง",
 });
 
 const categoryColumn = {

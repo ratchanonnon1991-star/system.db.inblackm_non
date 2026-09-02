@@ -87,9 +87,9 @@ export default async function GameinfoGamelistPacksPage({ params, searchParams }
         className="mb-4 inline-flex items-center gap-1 text-sm text-linear-primary hover:underline"
         href={gameinfoGameHref(lang, row.id, dataMode)}
       />
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold text-linear-ink">แพ็ก — {row.game}</h1>
-        <div className="flex items-center gap-2">
+      <div className="mb-6 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="min-w-0 break-words text-2xl font-bold text-linear-ink">แพ็ก — {row.game}</h1>
+        <div className="flex flex-wrap items-center gap-2">
           <GameinfoModeCloneButton gameId={row.id} currentMode={dataMode} scope="packs" />
           <GameinfoDatasetToggle basePath={gameinfoPacksHref(lang, row.id, "uid")} />
         </div>

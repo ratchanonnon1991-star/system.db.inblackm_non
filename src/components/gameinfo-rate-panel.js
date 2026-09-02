@@ -19,7 +19,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-const RATE_URL = "/api/gameinfo/rates?pairs=USDTTHB,USDCNY";
+const RATE_URL = "/api/gameinfo/rates?pairs=USDTTHB,USDCNY,IDRTHB,USDIDR";
 
 export function useGameinfoRates() {
   const [rates, setRates] = useState([]);
@@ -153,6 +153,18 @@ function RateRefreshDetails() {
           />
           <RateScheduleItem
             pair="USD/CNY"
+            provider="Frankfurter / ECB"
+            schedule="ทุกวัน เวลา 11:05 และ 23:05"
+            cache="เก็บค่าไว้ 12 ชั่วโมง"
+          />
+          <RateScheduleItem
+            pair="IDR/THB"
+            provider="Frankfurter / ECB"
+            schedule="ทุกวัน เวลา 11:05 และ 23:05"
+            cache="เก็บค่าไว้ 12 ชั่วโมง"
+          />
+          <RateScheduleItem
+            pair="USD/IDR"
             provider="Frankfurter / ECB"
             schedule="ทุกวัน เวลา 11:05 และ 23:05"
             cache="เก็บค่าไว้ 12 ชั่วโมง"

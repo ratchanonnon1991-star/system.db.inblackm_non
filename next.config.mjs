@@ -16,6 +16,10 @@ const nextConfig = {
     }
     return config;
   },
+  // Next 16 runs `next build` on Turbopack, and a `webpack` key with no
+  // `turbopack` key is a hard error there. Turbopack needs no extra resolve
+  // config (it already honors `style`), so an empty object is the whole answer.
+  turbopack: {},
   // Response headers for every route. The session cookie is SameSite=Lax, so a
   // page in someone else's frame would not carry it anyway — but a tool that
   // shows customer data has no reason to be framable at all, and the rest costs

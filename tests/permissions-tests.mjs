@@ -16,6 +16,8 @@ ok("removing Projectm Topup also clears Admin", !togglePermission(projectmAdmin,
 
 const gameinfoAdmin = normalizePermissions(["gameinfo.admin"]);
 ok("GameInfo Admin includes reporting", gameinfoAdmin.includes("gameinfo.report"));
+ok("GameInfo Admin includes market checks", gameinfoAdmin.includes("gameinfo.market_check"));
+ok("Market check implies GameInfo access", normalizePermissions(["gameinfo.market_check"]).includes("gameinfo.access"));
 ok("removing reporting also clears Admin", !togglePermission(gameinfoAdmin, "gameinfo.report", false).includes("gameinfo.admin"));
 ok("legacy roles remain readable during migration", hasPermission({ projectmRole: "topup" }, "projectm.claim"));
 ok("explicit permission grants are checked", hasPermission({ permissions: ["gameinfo.access"] }, "gameinfo.access"));

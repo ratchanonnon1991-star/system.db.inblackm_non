@@ -23,5 +23,9 @@ assert.ok(dialog.includes("previousFocus.isConnected"), "shared dialog behavior 
 assert.ok(theme.includes("--color-linear-success") && theme.includes("--color-linear-warning") && theme.includes("--color-linear-danger"), "semantic status tokens are defined");
 assert.ok(theme.includes("prefers-reduced-motion") && theme.includes(":focus-visible"), "GameInfo respects reduced motion and keyboard focus");
 assert.ok(manager.includes("บันทึกเรียบร้อย") && packEditor.includes("บันทึกเรียบร้อย"), "admin save feedback uses consistent copy");
+assert.ok(packEditor.includes("overflow-x-auto overscroll-x-contain"), "pack tables scroll horizontally on narrow viewports");
+assert.ok(packEditor.includes("width: `max(100%, ${grid.minWidth}px)`"), "pack tables preserve readable column widths while scrolling");
+assert.ok(packEditor.includes("flex min-h-9 cursor-pointer items-center whitespace-normal break-words"), "pack cells show complete values instead of clipping them");
+assert.equal(packEditor.includes("flex h-9 cursor-pointer items-center truncate rounded border px-2"), false, "pack cells no longer truncate long values");
 
-console.log("15 passed");
+console.log("19 passed");

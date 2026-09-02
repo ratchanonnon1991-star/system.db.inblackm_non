@@ -5,6 +5,7 @@ import { Popover } from "@base-ui/react/popover";
 import { Columns3, Copy, LoaderCircle, Lock, Pencil, Plus, RotateCcw, Save, Trash2, X } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { requestGameinfoDiscard } from "@/lib/gameinfo-unsaved-changes";
+import { Badge } from "@/components/ui/badge";
 import {
   gameinfoPackLayoutStorageKey,
   normalizeGameinfoPackLayout,
@@ -72,6 +73,7 @@ export function useGameinfoPackColumnLayout({
   const dirty =
     presetName !== baselineName ||
     !sameLayout(normalizedLayout, normalizedBaseline);
+  const orderDirty = !sameLayout(normalizedLayout.order, normalizedBaseline.order);
   const selectedPreset = presets.find((preset) => String(preset.id) === selectedPresetId) || null;
   const presetLocked = surface === "view" && Boolean(selectedPreset?.locked);
 
@@ -261,6 +263,7 @@ export function useGameinfoPackColumnLayout({
     selectedPresetId,
     presetName,
     dirty,
+    orderDirty,
     loading,
     saving,
     error,
@@ -289,6 +292,7 @@ export function GameinfoPackColumnControls({
   selectedPresetId,
   presetName,
   dirty,
+  orderDirty,
   loading,
   saving,
   error,
@@ -350,7 +354,12 @@ export function GameinfoPackColumnControls({
         aria-controls={popoverId}
         className="inline-flex items-center gap-1.5 rounded-md border border-linear-hairline-strong px-3 py-1.5 text-xs text-linear-ink-muted hover:bg-linear-surface-2"
       >
-        <Columns3 size={14} /> คอลัมน์/ตัวกรอง{dirty ? <span className="text-linear-primary">•</span> : null}
+        <Columns3 size={14} /> คอลัมน์/ตัวกรอง
+        {orderDirty ? (
+          <Badge variant="secondary">ขยับแล้ว · กดเพื่อบันทึก</Badge>
+        ) : dirty ? (
+          <span className="text-linear-primary">•</span>
+        ) : null}
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner
