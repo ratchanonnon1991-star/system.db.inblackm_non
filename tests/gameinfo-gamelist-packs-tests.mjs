@@ -484,8 +484,36 @@ async function run() {
     "a columns-only import keeps the packs the game already had",
     columnsOnlyInserts.some((entry) => entry.params?.[1] === "pk_keep")
   );
+  // The registry is dormant in this stub, which is how production looks before
+  // the backfill. Putting the imported column there would flip every game onto
+  // the registry at once and each would lose its own columns, so it is written
+  // the old way instead — into this game's own list.
   ok(
-    "and still registers the column it came for",
+    "a dormant registry is not activated by an import",
+    !log.some((entry) => /INSERT INTO gamelist_pack_column_registry/.test(entry.text))
+  );
+  const dormantSentinel = columnsOnlyInserts.find((entry) => entry.params?.[1] === "__computed__");
+  const dormantData = JSON.parse(dormantSentinel?.params?.[2] || "{}");
+  check("the column still arrives, in the game's own list", dormantData.columns?.map((c) => c.key), ["col_new"]);
+  check("and the store is left on the pre-registry shape", dormantData.schemaVersion, 2);
+
+  // Once the backfill has run, the same import registers the column instead.
+  reset();
+  setResponder((text) => {
+    if (/SELECT id FROM game_list/.test(text)) return { rows: [{ id: 5 }] };
+    if (/SELECT game_id, pack_id, data FROM gamelist_packs/.test(text)) return { rows: [EXISTING_PACK_ROW] };
+    if (/FROM gamelist_pack_column_registry/.test(text)) {
+      return { rows: [{ column_key: "col_existing", label: "เดิม", sort_order: 0, data: { formula: "1", kind: "formula", entryMode: "formula", marketKey: "", type: "number", symbol: "", scopeMode: "global" } }] };
+    }
+    return null;
+  });
+  await importGamelistPacks(
+    [{ gameId: 5, currencies: [], packCount: 0, columns: [{ key: "col_new", label: "ใหม่", formula: "", entryMode: "manual", rowOverrides: {} }] }],
+    "replace",
+    { id: 9, name: "Pack Admin" }
+  );
+  ok(
+    "an active registry does take the imported column",
     log.some((entry) => /INSERT INTO gamelist_pack_column_registry/.test(entry.text))
   );
 

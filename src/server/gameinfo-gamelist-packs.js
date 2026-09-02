@@ -703,46 +703,107 @@ export async function importGamelistPacks(
   }
 }
 
+// Row overrides are keyed by pack id and a replace import regenerates every
+// pack id, so ones that no longer point at a live pack are dropped rather than
+// left dangling.
+function pruneToLivePacks(rowOverrides, livePackIds) {
+  return Object.fromEntries(
+    Object.entries(rowOverrides || {}).filter(([packId]) => livePackIds.has(packId))
+  );
+}
+
 // Columns carried by an imported CSV: register the definition (shared by every
 // game) and store this game's values against it. Row overrides are keyed by
 // pack id, and a replace import regenerates every pack id, so overrides that
 // no longer point at a live pack are dropped rather than left dangling.
 async function writeImportedColumns(client, gameId, columns, previousComputed, nextRows) {
   const registryRows = await readColumnRegistry(client);
-  const known = new Map(registryRows.map((row) => [row.columnKey, row]));
-  let sortOrder = registryRows.length;
-  for (const column of columns) {
-    if (known.has(column.key)) continue;
+  // An empty registry means every game still keeps its own columns, and the
+  // reader switches to the registry the moment it holds a single row. Putting
+  // one there would leave the system half-migrated: every game this file does
+  // not name would show only the column this import created and lose its own.
+  // So while the registry is dormant an imported column is written the old
+  // way, into this game's own list. Activation stays one deliberate act — the
+  // backfill, which promotes every game at once.
+  const registryActive = registryRows.length > 0;
+  const previous = previousComputed?.data || {};
+  const livePackIds = new Set(nextRows.map((row) => row.packId));
+
+  if (registryActive) {
+    const known = new Set(registryRows.map((row) => row.columnKey));
+    let sortOrder = registryRows.length;
+    for (const column of columns) {
+      if (known.has(column.key)) continue;
+      await client.query(
+        `INSERT INTO gamelist_pack_column_registry (column_key, label, sort_order, data)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (column_key) DO NOTHING`,
+        [
+          column.key,
+          column.label,
+          sortOrder++,
+          JSON.stringify({
+            formula: column.formula || "",
+            entryMode: column.entryMode || "manual",
+            kind: "formula",
+            marketKey: "",
+            type: "number",
+            symbol: "",
+            scopeMode: "global",
+          }),
+        ]
+      );
+    }
+  } else {
+    const legacy = Array.isArray(previous.columns) ? [...previous.columns] : [];
+    const known = new Set(legacy.map((column) => column.key));
+    for (const column of columns) {
+      const rowOverrides = { ...column.rowOverrides };
+      const index = legacy.findIndex((item) => item.key === column.key);
+      if (known.has(column.key)) {
+        const existing = legacy[index];
+        legacy[index] = {
+          ...existing,
+          rowOverrides: pruneToLivePacks({ ...existing.rowOverrides, ...rowOverrides }, livePackIds),
+        };
+        continue;
+      }
+      legacy.push({
+        key: column.key,
+        label: column.label,
+        formula: column.formula || "",
+        entryMode: column.entryMode || "manual",
+        kind: "formula",
+        marketKey: "",
+        enabled: true,
+        type: "number",
+        symbol: "",
+        scopeMode: "global",
+        categoryFormulas: {},
+        rowOverrides: pruneToLivePacks(rowOverrides, livePackIds),
+      });
+    }
     await client.query(
-      `INSERT INTO gamelist_pack_column_registry (column_key, label, sort_order, data)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (column_key) DO NOTHING`,
+      `INSERT INTO gamelist_packs (game_id, pack_id, data) VALUES ($1, $2, $3)
+       ON CONFLICT (game_id, pack_id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
       [
-        column.key,
-        column.label,
-        sortOrder++,
+        gameId,
+        COMPUTED_SENTINEL,
         JSON.stringify({
-          formula: column.formula || "",
-          entryMode: column.entryMode || "manual",
-          kind: "formula",
-          marketKey: "",
-          type: "number",
-          symbol: "",
-          scopeMode: "global",
+          ...previous,
+          schemaVersion: 2,
+          columns: legacy,
+          costProfiles: sanitizeGameinfoCostProfiles(previous.costProfiles),
         }),
       ]
     );
+    return;
   }
 
-  const livePackIds = new Set(nextRows.map((row) => row.packId));
-  const previous = previousComputed?.data || {};
   const overrides = { ...(previous.columnOverrides || {}) };
   for (const [key, override] of Object.entries(overrides)) {
     if (!override?.rowOverrides) continue;
-    const kept = Object.fromEntries(
-      Object.entries(override.rowOverrides).filter(([packId]) => livePackIds.has(packId))
-    );
-    overrides[key] = { ...override, rowOverrides: kept };
+    overrides[key] = { ...override, rowOverrides: pruneToLivePacks(override.rowOverrides, livePackIds) };
   }
   for (const column of columns) {
     const existing = overrides[column.key] || {};
