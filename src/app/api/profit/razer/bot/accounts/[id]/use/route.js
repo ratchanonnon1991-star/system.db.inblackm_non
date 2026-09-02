@@ -1,5 +1,5 @@
 import { handleApiError, jsonOk } from "@/lib/http";
-import { useRazerAccountForBot } from "@/server/profit-razer-bot";
+import { claimRazerAccountForBot } from "@/server/profit-razer-bot";
 import { requireRazerBotApiKey } from "@/server/razer-bot-auth";
 
 export async function POST(request, { params }) {
@@ -7,7 +7,7 @@ export async function POST(request, { params }) {
     await requireRazerBotApiKey(request);
     const { id } = await params;
     const body = await request.json().catch(() => ({}));
-    const result = await useRazerAccountForBot(id, body);
+    const result = await claimRazerAccountForBot(id, body);
     return jsonOk(result);
   } catch (err) {
     return handleApiError(err, "มาร์กบัญชี IN_USE ไม่สำเร็จ");

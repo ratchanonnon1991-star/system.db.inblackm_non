@@ -200,7 +200,7 @@ export async function listRazerAccountsForBot({
   return eligible;
 }
 
-export async function useRazerAccountForBot(id, body = {}) {
+export async function claimRazerAccountForBot(id, body = {}) {
   const account = await getRazerAccount(id);
   if (!account) throw Object.assign(new Error("ไม่พบบัญชี"), { status: 404 });
   if (!account.botEnabled) throw Object.assign(new Error("บัญชีนี้ปิด Bot API"), { status: 403 });
@@ -219,10 +219,10 @@ export async function useRazerAccountForBot(id, body = {}) {
   return { account: botAccountWithCredentials(full), ...otpBundle };
 }
 
-export async function useRazerAccountByEmailForBot(email, body = {}) {
+export async function claimRazerAccountByEmailForBot(email, body = {}) {
   const account = await getRazerAccountByEmail(email);
   if (!account) throw Object.assign(new Error(`ไม่พบบัญชี ${email}`), { status: 404 });
-  return useRazerAccountForBot(account.id, body);
+  return claimRazerAccountForBot(account.id, body);
 }
 
 export async function releaseRazerAccountForBot(id, body = {}) {
