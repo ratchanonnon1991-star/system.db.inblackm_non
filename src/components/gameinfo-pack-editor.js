@@ -188,6 +188,11 @@ export default function GameinfoPackEditor({
     () => new Set(currencies.flatMap((currency) => currency.categories.map((category) => String(category.id)))),
     [currencies]
   );
+  // A formula column has nothing to compute over until there is a category to
+  // hold packs, and it is the third step of building a game — currency, then
+  // category, then the columns derived from what they hold. Offering it first
+  // reads as the place to start.
+  const canAddColumn = currentCategoryIds.size > 0;
   const visiblePackIds = useMemo(
     () => [
       ...new Set(
@@ -1090,9 +1095,11 @@ export default function GameinfoPackEditor({
               columns={computedColumns}
               onColumnsChange={setComputedColumns}
             />
-            <Button type="button" variant="outline" size="sm" onClick={() => setModalOpen(true)}>
-              <Plus data-icon="inline-start" /> เพิ่มสูตร
-            </Button>
+            {canAddColumn ? (
+              <Button type="button" variant="outline" size="sm" onClick={() => setModalOpen(true)}>
+                <Plus data-icon="inline-start" /> เพิ่มสูตร
+              </Button>
+            ) : null}
             <Button type="button" variant="outline" size="sm" onClick={addCurrency}>
               <Plus data-icon="inline-start" /> สกุลเงิน
             </Button>
