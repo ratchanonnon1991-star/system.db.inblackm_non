@@ -1,5 +1,5 @@
 import { handleApiError, jsonOk } from "@/lib/http";
-import { getRazerOtpForBot, useRazerAccountByEmailForBot } from "@/server/profit-razer-bot";
+import { getRazerOtpForBot, claimRazerAccountByEmailForBot } from "@/server/profit-razer-bot";
 import { requireRazerBotApiKey } from "@/server/razer-bot-auth";
 
 export async function GET(request) {
@@ -21,7 +21,7 @@ export async function POST(request) {
     const body = await request.json().catch(() => ({}));
     const email = body.email;
     if (!email) throw Object.assign(new Error("ต้องระบุ email"), { status: 400 });
-    const result = await useRazerAccountByEmailForBot(email, body);
+    const result = await claimRazerAccountByEmailForBot(email, body);
     return jsonOk(result);
   } catch (err) {
     return handleApiError(err, "ใช้บัญชี Razer ไม่สำเร็จ");
