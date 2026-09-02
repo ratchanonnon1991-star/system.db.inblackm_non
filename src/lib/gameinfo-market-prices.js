@@ -1,7 +1,18 @@
 import { evaluateGameinfoComputedColumn } from "@/lib/gameinfo-computed-evaluator";
 
-export function findGameinfoMarketPriceColumn(computedColumns, market) {
-  return (computedColumns || []).find((column) => (
+// Which column holds this market's price for this game.
+//
+// Turning a market on used to append a market_<market> column that could never
+// be deleted and existed only to be a market price. A game now points at a
+// column it already has, which is what `priceColumnKey` is. Mappings made
+// before that still have no key, so the old market-kind column is still looked
+// up when none is named.
+export function findGameinfoMarketPriceColumn(computedColumns, market, priceColumnKey = "") {
+  const columns = computedColumns || [];
+  if (priceColumnKey) {
+    return columns.find((column) => column.key === priceColumnKey) || null;
+  }
+  return columns.find((column) => (
     column.kind === "market" && column.marketKey === market && column.enabled !== false
   )) || null;
 }
@@ -10,9 +21,9 @@ export function buildGameinfoMarketPackPriceMap(
   { currencies = [], computedColumns = [], costProfiles = [] } = {},
   game,
   market,
-  { formulaVariables = [], externalValues = {} } = {}
+  { formulaVariables = [], externalValues = {}, priceColumnKey = "" } = {}
 ) {
-  const marketColumn = findGameinfoMarketPriceColumn(computedColumns, market);
+  const marketColumn = findGameinfoMarketPriceColumn(computedColumns, market, priceColumnKey);
   return new Map(currencies.flatMap((currency) => (currency.categories || []).flatMap((category) =>
     (category.packs || []).map((pack) => {
       let price = null;

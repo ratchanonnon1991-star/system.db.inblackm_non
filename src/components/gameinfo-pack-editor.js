@@ -493,9 +493,12 @@ export default function GameinfoPackEditor({
     ]);
     setModalOpen(false);
   }
+  // Market columns used to be undeletable: they were created by turning a
+  // market on and nothing else could unmake them. A market now links to a
+  // column instead, so the link can be pointed elsewhere and the column is
+  // ordinary again.
   function removeComputedColumn(key) {
     const column = computedColumns.find((item) => item.key === key);
-    if (column?.kind === "market") return;
     setConfirmRequest({
       title: "ลบคอลัมน์สูตร",
       message: `คอลัมน์ "${column?.label || key}" และสูตรเฉพาะแถวที่เกี่ยวข้องจะถูกลบเมื่อกดบันทึก`,
@@ -1513,7 +1516,7 @@ function CategoryBlock({
                       column={column}
                       index={i}
                       onRemove={
-                        column.kind === "computed" && column.computed.kind !== "market"
+                        column.kind === "computed"
                           ? () => onRemoveColumn(column.computed.key)
                           : undefined
                       }

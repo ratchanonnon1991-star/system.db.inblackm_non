@@ -89,7 +89,12 @@ export async function PUT(request, { params }) {
       return jsonError("เปิดคอลัมน์ Market เดียวกันได้เพียงหนึ่งคอลัมน์", 400);
     }
     for (const column of enabledMarketColumns) {
-      if (column.key !== `market_${column.marketKey}`) return jsonError("Market column key ไม่ถูกต้อง", 400);
+      // The key check that used to be here required market_<marketKey>. A
+      // market's price is now a link to any column (gameinfo_game_markets
+      // .price_column_key), so only the market-kind columns that predate
+      // linking still carry that name, and requiring it would block naming a
+      // column freely. Labels must still be unique because formulas reference
+      // columns by label.
       if (computedColumns.some((other) => other.kind !== "market" && other.label.trim().toLowerCase() === column.label.trim().toLowerCase())) {
         return jsonError(`มีสูตรเดิมชื่อ ${column.label} กรุณาเปลี่ยนชื่อก่อนเปิด Market`, 400);
       }

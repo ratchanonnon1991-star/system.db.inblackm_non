@@ -248,7 +248,13 @@ assert.match(schema, /product_type text NOT NULL DEFAULT ''/);
 assert.equal(gameinfoMarketGameLabel("Honkai Impact 3 (SEA) · South East Asia · Multi-Platform"), "Honkai Impact 3 (SEA) · SEA · Multi-Platform");
 assert.equal(gameinfoMarketGameLabel(null), "");
 const marketManager = readFileSync(new URL("../src/components/gameinfo-market-manager.js", import.meta.url), "utf8");
-assert.match(marketManager, /const enabled = market\.enabled && column\?\.enabled === true/);
+// A market's price is a link to a column the game already has, not a column
+// the market creates. A game mapped before linking existed has no key and
+// still resolves the old market-kind column, so both paths are asserted.
+assert.match(marketManager, /market\.priceColumnKey \? Boolean\(column\) : column\?\.enabled === true/);
+assert.match(marketManager, /return market\.priceColumnKey \|\| marketColumns\.get\(market\.market\)\?\.key \|\| ""/);
+assert.match(marketManager, /async function linkColumn\(current, columnKey\)/);
+assert.match(schema, /price_column_key varchar\(64\) NOT NULL DEFAULT ''/);
 assert.match(marketManager, /<FieldContent className="min-w-0">/);
 assert.match(marketManager, /<SelectTrigger className="w-full min-w-0 overflow-hidden"><SelectValue className="truncate"/);
 assert.match(marketManager, /label: gameinfoMarketGameLabel\(game\.label\)/);

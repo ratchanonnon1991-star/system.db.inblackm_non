@@ -56,6 +56,12 @@ async function ensureSchema(pool) {
       );
       CREATE INDEX IF NOT EXISTS gameinfo_game_markets_enabled_idx
         ON gameinfo_game_markets (market, enabled, game_id);
+      -- Which pack column holds this market's price. Turning a market on used
+      -- to append a market_<market> column that could never be deleted; now a
+      -- game points at a column it already has. Empty means the old behaviour,
+      -- so mappings made before this still resolve.
+      ALTER TABLE gameinfo_game_markets
+        ADD COLUMN IF NOT EXISTS price_column_key VARCHAR(64) NOT NULL DEFAULT '';
 
       CREATE TABLE IF NOT EXISTS gameinfo_market_catalog_packs (
         market VARCHAR(16) NOT NULL CHECK (market IN ('kaleoz', 'itemku', 'playerok', 'g2g')),
@@ -269,6 +275,7 @@ function mapGameMarket(row) {
     externalGameLabel: row.external_game_label,
     productType: row.product_type,
     enabled: row.enabled,
+    priceColumnKey: row.price_column_key || "",
     version: Number(row.version),
     updatedAt: row.updated_at,
   };
@@ -283,7 +290,7 @@ export async function listGameinfoGameMarkets(gameId, dataMode = "uid") {
   const saved = new Map(result.rows.map((row) => [row.market, mapGameMarket(row)]));
   return GAMEINFO_MARKETS.map((market) => saved.get(market.key) || {
     gameId: Number(gameId), dataMode: normalizedMode, market: market.key,
-    externalGameKey: "", externalGameLabel: "", productType: "", enabled: false, version: 0,
+    externalGameKey: "", externalGameLabel: "", productType: "", enabled: false, priceColumnKey: "", version: 0,
   });
 }
 
@@ -292,6 +299,7 @@ export async function saveGameinfoGameMarket(gameId, dataMode, market, input, ac
   const normalizedMode = mode(dataMode);
   const externalGameKey = String(input?.externalGameKey || "").trim().slice(0, 200);
   const enabled = input?.enabled === true;
+  const priceColumnKey = String(input?.priceColumnKey || "").trim().slice(0, 64);
   if (enabled && !externalGameKey) throw httpError("กรุณาเลือกเกมของ Market");
   const pool = await getGameinfoMarketPool();
   const client = await pool.connect();
@@ -305,20 +313,21 @@ export async function saveGameinfoGameMarket(gameId, dataMode, market, input, ac
     if (input?.version !== undefined && Number(input.version) !== version) throw httpError("การตั้งค่า Market ถูกแก้โดยผู้ใช้อื่น", 409);
     const result = await client.query(
       `INSERT INTO gameinfo_game_markets
-         (game_id, data_mode, market, external_game_key, external_game_label, product_type, enabled, version, updated_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,1,$8)
+         (game_id, data_mode, market, external_game_key, external_game_label, product_type, enabled, price_column_key, version, updated_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,1,$9)
        ON CONFLICT (game_id, data_mode, market) DO UPDATE SET
          external_game_key = EXCLUDED.external_game_key,
          external_game_label = EXCLUDED.external_game_label,
          product_type = EXCLUDED.product_type,
          enabled = EXCLUDED.enabled,
+         price_column_key = EXCLUDED.price_column_key,
          version = gameinfo_game_markets.version + 1,
          updated_by = EXCLUDED.updated_by,
          updated_at = NOW()
        RETURNING *`,
       [gameId, normalizedMode, normalizedMarket, externalGameKey,
         String(input?.externalGameLabel || externalGameKey).trim().slice(0, 255),
-        String(input?.productType || "").trim().slice(0, 160), enabled, actorId(actor)]
+        String(input?.productType || "").trim().slice(0, 160), enabled, priceColumnKey, actorId(actor)]
     );
     await client.query("COMMIT");
     return mapGameMarket(result.rows[0]);
@@ -965,11 +974,17 @@ async function getGameinfoMarketRateReference(market, externalGameKey) {
 async function packPriceMap(gameId, dataMode, market, externalGameKey = "") {
   const data = dataMode === "idpass" ? await getGameinfoModeData(gameId, dataMode) : await getGamelistPacks(gameId);
   const packs = dataMode === "idpass" ? data?.packs : data;
-  const [gameRow, variableData, referenceAt] = await Promise.all([
+  const [gameRow, variableData, referenceAt, gameMarkets] = await Promise.all([
     getGameListRow(gameId),
     getGameinfoFormulaVariables(gameId),
     getGameinfoMarketRateReference(market, externalGameKey),
+    listGameinfoGameMarkets(gameId, dataMode),
   ]);
+  // Which column this game says holds the market's price. Empty for mappings
+  // made before columns could be linked, which fall back to the old
+  // market-kind column.
+  const priceColumnKey =
+    gameMarkets.find((entry) => entry.market === normalizeGameinfoMarket(market))?.priceColumnKey || "";
   const rates = await getGameinfoExchangeRates(
     ["USDT/THB", "USDCNY", "IDRTHB", "USDIDR", "THBUSD"],
     { at: referenceAt, includeHistory: false, refreshStale: false }
@@ -986,8 +1001,10 @@ async function packPriceMap(gameId, dataMode, market, externalGameKey = "") {
   const prices = buildGameinfoMarketPackPriceMap(packs, game, market, {
     formulaVariables: variableData.variables,
     externalValues,
+    priceColumnKey,
   });
-  prices.priceLabel = findGameinfoMarketPriceColumn(packs?.computedColumns, market)?.label || null;
+  prices.priceLabel =
+    findGameinfoMarketPriceColumn(packs?.computedColumns, market, priceColumnKey)?.label || null;
   prices.rateReferenceAt = referenceAt;
   prices.rateSnapshotAt = rates.find((rate) => rate.available)?.fetchedAt || null;
   return prices;

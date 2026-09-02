@@ -22,8 +22,11 @@ assert.ok(editor.includes("<GameinfoPackColumnControls") && view.includes("<Game
 assert.ok(editor.includes('render={<label htmlFor={csvInputId} />}') && editor.includes('className="sr-only"'), "CSV input uses an accessible button-style label");
 assert.ok(editor.includes('<FileUp data-icon="inline-start" />') && editor.includes('"เลือกไฟล์ CSV"'), "CSV picker has a clear button label and icon");
 assert.ok(editor.includes("scopeMode, entryMode") && editor.includes("scopeMode, entryMode, kind:"), "manual column mode survives creation");
-assert.ok(editor.includes('if (column?.kind === "market") return;'), "market columns cannot be removed by the delete handler");
-assert.ok(editor.includes('column.kind === "computed" && column.computed.kind !== "market"'), "market column headers do not expose delete");
+// A market's price is now a link to a column the game already has, so the
+// column is ordinary and deletable; it used to be created by turning a market
+// on and nothing could unmake it.
+assert.ok(!editor.includes('if (column?.kind === "market") return;'), "market columns are no longer undeletable");
+assert.ok(!editor.includes('column.computed.kind !== "market"'), "delete is no longer withheld from market columns");
 assert.ok(tagsInput.includes("w-max min-w-full flex-nowrap"), "channel tags stay on one horizontal line");
 assert.ok(tagsInput.includes("inline-flex shrink-0") && tagsInput.includes("whitespace-nowrap"), "channel tags never wrap internally");
 assert.ok(tagsInput.includes("(text.length + 1) * 8"), "channel cursor input grows at the end of the tag row");

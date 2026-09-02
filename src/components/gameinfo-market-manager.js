@@ -20,6 +20,12 @@ export default function GameinfoMarketManager({ gameId, dataMode, columns, onCol
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const marketColumns = useMemo(() => new Map(columns.filter((column) => column.kind === "market").map((column) => [column.marketKey, column])), [columns]);
+  // Any column can be a market's price. Legacy market-kind columns are still
+  // offered so a game can point at the one it already has instead of losing it.
+  const linkableColumns = useMemo(
+    () => columns.map((column) => ({ key: column.key, label: column.label })),
+    [columns]
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -60,35 +66,43 @@ export default function GameinfoMarketManager({ gameId, dataMode, columns, onCol
     }
   }
 
+  // Turning a market on used to append a market_<market> column that could
+  // never be deleted. A game now points at a column it already has, so the
+  // same column can serve a market and still be edited or removed like any
+  // other. Mappings made before this have no linked column and keep using the
+  // old market-kind one, which is why it is still resolved below.
+  function linkedColumnKey(market) {
+    return market.priceColumnKey || marketColumns.get(market.market)?.key || "";
+  }
+
   async function toggleMarket(current, enabled) {
     if (enabled && !current.externalGameKey) {
       setError(`กรุณาเลือกเกมของ ${LABELS[current.market]} ก่อนเปิดใช้งาน`);
       return;
     }
-    const existing = marketColumns.get(current.market);
-    const collision = columns.find((column) => column.kind !== "market" && column.label.trim().toLowerCase() === LABELS[current.market].toLowerCase());
-    if (enabled && !existing && collision) {
-      setError(`มีคอลัมน์สูตรชื่อ ${LABELS[current.market]} อยู่แล้ว กรุณาเปลี่ยนชื่อก่อนเปิด Market`);
+    if (enabled && !linkedColumnKey(current)) {
+      setError(`กรุณาเลือกคอลัมน์อ้างอิงราคาของ ${LABELS[current.market]} ก่อนเปิดใช้งาน`);
       return;
     }
     const saved = await saveMarket(current, { enabled });
     if (!saved) return;
-    if (existing) {
-      onColumnsChange(columns.map((column) => column.key === existing.key ? { ...column, enabled } : column));
-    } else if (enabled) {
-      onColumnsChange([...columns, {
-        key: `market_${current.market}`,
-        label: LABELS[current.market],
-        formula: "[ราคา]",
-        type: "number",
-        symbol: "฿",
-        scopeMode: "global",
-        categoryFormulas: {},
-        rowOverrides: {},
-        kind: "market",
-        marketKey: current.market,
-        enabled: true,
-      }]);
+    // A legacy market-kind column still carries its own on/off flag, so keep
+    // the two in step for games that have not been relinked yet.
+    const legacy = marketColumns.get(current.market);
+    if (legacy && !current.priceColumnKey) {
+      onColumnsChange(columns.map((column) => (column.key === legacy.key ? { ...column, enabled } : column)));
+    }
+  }
+
+  async function linkColumn(current, columnKey) {
+    const saved = await saveMarket(current, { priceColumnKey: columnKey });
+    if (!saved) return;
+    // The linked column is an ordinary formula column now. A leftover
+    // market-kind column would keep answering for this market, so switch it
+    // off rather than leaving two answers to the same question.
+    const legacy = marketColumns.get(current.market);
+    if (legacy && legacy.key !== columnKey) {
+      onColumnsChange(columns.map((column) => (column.key === legacy.key ? { ...column, enabled: false } : column)));
     }
   }
 
@@ -105,8 +119,11 @@ export default function GameinfoMarketManager({ gameId, dataMode, columns, onCol
         <div className="flex flex-col gap-3 px-4">
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           {markets.map((market) => {
-            const column = marketColumns.get(market.market);
-            const enabled = market.enabled && column?.enabled === true;
+            const columnKey = linkedColumnKey(market);
+            const column = columns.find((item) => item.key === columnKey) || null;
+            // A legacy market column still gates on its own flag; a linked
+            // ordinary column has nothing to gate on but the mapping itself.
+            const enabled = market.enabled && (market.priceColumnKey ? Boolean(column) : column?.enabled === true);
             const games = gamesByMarket[market.market] || [];
             return (
               <Field key={market.market} orientation="horizontal" className="rounded-lg border p-3">
@@ -128,7 +145,28 @@ export default function GameinfoMarketManager({ gameId, dataMode, columns, onCol
                     <SelectTrigger className="w-full min-w-0 overflow-hidden"><SelectValue className="truncate" placeholder="เลือกเกมใน Market" /></SelectTrigger>
                     <SelectContent><SelectGroup>{games.map((game) => <SelectItem key={game.value} value={game.value}>{gameinfoMarketGameLabel(game.label)}</SelectItem>)}</SelectGroup></SelectContent>
                   </Select>
-                  <FieldDescription>{column ? "มีคอลัมน์และสูตร Market แล้ว" : "เปิดครั้งแรกเพื่อสร้างคอลัมน์สูตร"}</FieldDescription>
+                  <Select
+                    items={linkableColumns.map((item) => ({ value: item.key, label: item.label }))}
+                    value={columnKey || null}
+                    onValueChange={(value) => linkColumn(market, value)}
+                    disabled={busy === market.market}
+                  >
+                    <SelectTrigger className="w-full min-w-0 overflow-hidden">
+                      <SelectValue className="truncate" placeholder="เลือกคอลัมน์อ้างอิงราคา" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {linkableColumns.map((item) => (
+                          <SelectItem key={item.key} value={item.key}>{item.label}</SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <FieldDescription>
+                    {linkableColumns.length
+                      ? "เลือกคอลัมน์ที่มีอยู่ให้เป็นราคาของ Market นี้"
+                      : "ยังไม่มีคอลัมน์ให้เลือก — สร้างคอลัมน์สูตรก่อน"}
+                  </FieldDescription>
                 </FieldContent>
                 <Switch checked={enabled} disabled={busy === market.market} onCheckedChange={(checked) => toggleMarket(market, checked)} aria-label={`เปิด ${LABELS[market.market]}`} />
               </Field>
