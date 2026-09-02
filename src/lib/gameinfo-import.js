@@ -76,6 +76,10 @@ export const PACK_SAMPLE = [
 export function buildPackTree(groupRows) {
   const currencyOrder = [];
   const currencyMap = new Map();
+  // Which row produced which pack. Pack ids are generated here, so a caller
+  // that wants to attach anything else from the same row — a custom column's
+  // value, which is stored per pack id — has no other way to line them up.
+  const rowPacks = [];
   let packCount = 0;
 
   for (const row of groupRows) {
@@ -105,8 +109,9 @@ export function buildPackTree(groupRows) {
     }
     const cat = cur.cats.get(catKey);
 
+    const packId = genId("pk");
     cat.packs.push({
-      id: genId("pk"),
+      id: packId,
       name: packName,
       image: norm(row["pack_image"]),
       price: norm(row["price"]),
@@ -115,6 +120,7 @@ export function buildPackTree(groupRows) {
       channelsSecondary: splitList(row["channel_secondary"]),
       country: norm(row["country"]),
     });
+    rowPacks.push({ row, packId, categoryId: cat.id });
     packCount += 1;
   }
 
@@ -128,7 +134,7 @@ export function buildPackTree(groupRows) {
     };
   });
 
-  return { currencies, packCount };
+  return { currencies, packCount, rowPacks };
 }
 
 // "Add" mode: match currency/category by case-insensitive name and append the
