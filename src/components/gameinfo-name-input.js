@@ -4,31 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle } from "lucide-react";
 import { normalizeSpaces } from "@/lib/text-normalize";
-
-// Iterative Levenshtein (edit distance) — small, no need for a dependency
-// for a "did you mean this?" nudge on a handful of candidate names.
-function levenshtein(a, b) {
-  const m = a.length;
-  const n = b.length;
-  if (m === 0) return n;
-  if (n === 0) return m;
-  const dp = new Array(n + 1);
-  for (let j = 0; j <= n; j++) dp[j] = j;
-  for (let i = 1; i <= m; i++) {
-    let prev = dp[0];
-    dp[0] = i;
-    for (let j = 1; j <= n; j++) {
-      const temp = dp[j];
-      dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
-      prev = temp;
-    }
-  }
-  return dp[n];
-}
-
-function norm(s) {
-  return String(s || "").trim().toLowerCase();
-}
+import { gameNameKey as norm, suggestSimilarNames } from "@/lib/text-distance";
 
 // Game-name field — same "click in, see every existing value, filter as you
 // type" picklist behavior as GameinfoMemoryInput (see that component), plus
@@ -99,15 +75,7 @@ export default function GameinfoNameInput({
   // what made typing a game name visibly stutter once there were a couple
   // hundred other games to compare against. Memoized + skipped entirely
   // unless the dropdown is actually open.
-  const similar = useMemo(() => {
-    if (!open || q.length < 2) return [];
-    return pool
-      .map((n) => ({ name: n, dist: levenshtein(q, norm(n)) }))
-      .filter(({ dist, name }) => dist > 0 && norm(name) !== q && dist <= Math.max(1, Math.round(q.length * 0.3)))
-      .sort((a, b) => a.dist - b.dist)
-      .slice(0, 5)
-      .map((x) => x.name);
-  }, [open, q, pool]);
+  const similar = useMemo(() => (open ? suggestSimilarNames(q, pool) : []), [open, q, pool]);
 
   // Same picklist as GameinfoMemoryInput — every other game's name before
   // the user has typed anything, narrowed to a substring match once they

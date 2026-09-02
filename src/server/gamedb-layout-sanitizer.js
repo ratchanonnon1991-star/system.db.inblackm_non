@@ -22,6 +22,7 @@ import {
   TABLE_TONES,
 } from "@/lib/gamedb-layout";
 import { isSafeIdentifier, isSafeIdentifierPart } from "@/lib/gamedb-identifier";
+import { GAMEINFO_MARKET_KEYS } from "@/lib/gameinfo-market-system";
 
 function sanitizeStringArray(value) {
   return Array.isArray(value)
@@ -71,9 +72,10 @@ export function sanitizeComputedColumns(raw) {
               ? "manual"
               : "formula",
           kind: col.kind === "market" ? "market" : "formula",
-          marketKey: col.kind === "market" && ["kaleoz", "itemku"].includes(col.marketKey)
-            ? col.marketKey
-            : "",
+          marketKey:
+            col.kind === "market" && GAMEINFO_MARKET_KEYS.has(col.marketKey)
+              ? col.marketKey
+              : "",
           enabled: col.kind === "market" ? col.enabled !== false : true,
           // Absent on every column saved before formulas could return text.
           type: COMPUTED_TYPES.includes(col.type) ? col.type : "number",

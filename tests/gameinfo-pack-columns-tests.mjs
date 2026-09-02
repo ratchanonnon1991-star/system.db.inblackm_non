@@ -70,6 +70,21 @@ check("layout pins the service status column to the front", normalized.order, [
 check("layout drops unknown, duplicate, and hidden status ids", normalized.hidden, ["country"]);
 check("layout defaults to no row filters", normalized.filters, []);
 
+// A preset saved before a column existed: the column is appended to the end of
+// the order and is never auto-hidden, so it shows up for everyone who saved
+// that preset. Pinned here because it is the rule the shared column registry
+// changes — a saved preset must stop absorbing newly added columns.
+const layoutWithLateColumn = normalizeGameinfoPackLayout(
+  { order: ["price", "name"], hidden: [] },
+  buildGameinfoPackColumns([{ key: "late", label: "มาทีหลัง", formula: "1" }])
+);
+check(
+  "a column added after the preset was saved lands at the end of the order",
+  layoutWithLateColumn.order.at(-1),
+  "computed:late"
+);
+check("a column added after the preset was saved stays visible", layoutWithLateColumn.hidden, []);
+
 const filteredLayout = normalizeGameinfoPackLayout(
   {
     filters: [
@@ -218,6 +233,34 @@ check(
   "legacy computed columns default to global scope",
   sanitizeComputedColumns([{ key: "old", label: "เดิม", formula: "1" }])[0].scopeMode,
   "global"
+);
+
+// The sanitizer used to carry a hardcoded market list that fell behind
+// GAMEINFO_MARKETS: a G2G column had its marketKey blanked here and then died
+// on the `key === market_${marketKey}` check in the packs route.
+check(
+  "computed sanitizer accepts every registered market",
+  sanitizeComputedColumns(
+    ["kaleoz", "itemku", "g2g"].map((market) => ({
+      key: `market_${market}`,
+      label: market,
+      formula: "[ราคา]",
+      kind: "market",
+      marketKey: market,
+    }))
+  ).map((column) => column.marketKey),
+  ["kaleoz", "itemku", "g2g"]
+);
+check(
+  "computed sanitizer still rejects an unregistered market",
+  sanitizeComputedColumns([{
+    key: "market_playerok",
+    label: "Playerok",
+    formula: "[ราคา]",
+    kind: "market",
+    marketKey: "playerok",
+  }])[0].marketKey,
+  ""
 );
 
 const formulaColumn = {
