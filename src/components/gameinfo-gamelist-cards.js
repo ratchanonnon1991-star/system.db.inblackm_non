@@ -19,6 +19,7 @@ import {
   Eye,
   Menu,
   MoreVertical,
+  PackageSearch,
   Search,
   Send,
   Settings,
@@ -430,6 +431,13 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
               }`}
             >
               <ArrowLeftRight size={16} /> เทียบราคาแพ็ค
+            </Link>
+            <Link
+              href={`/gameinfo/${lang}/russia-check`}
+              onClick={() => setSidebarOpen(false)}
+              className="mt-1 flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-sm text-linear-ink-subtle hover:bg-linear-surface-3"
+            >
+              <PackageSearch size={16} /> Russia Check
             </Link>
             {editable ? (
               <Link
