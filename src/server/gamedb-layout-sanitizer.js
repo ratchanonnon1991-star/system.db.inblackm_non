@@ -84,6 +84,12 @@ export function sanitizeComputedColumns(raw, { limit = GAMEDB_QUERY_COLUMN_LIMIT
           // silently fall back to what every other game computes.
           gameFormula:
             typeof col.gameFormula === "string" ? col.gameFormula.slice(0, 500) : "",
+          // Which revision of the shared definition this client was shown.
+          // Dropping it here would make every save look like a brand new
+          // column to the registry's optimistic lock.
+          version: Number.isSafeInteger(Number(col.version)) && Number(col.version) > 0
+            ? Number(col.version)
+            : undefined,
           entryMode:
             col.entryMode === "manual" ||
             (col.kind !== "market" &&

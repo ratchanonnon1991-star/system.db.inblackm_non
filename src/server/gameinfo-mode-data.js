@@ -154,10 +154,24 @@ export async function listGameinfoModeData(mode) {
   const client = await pool.connect();
   try {
     const result = await client.query(`SELECT game_id, data, version FROM gameinfo_mode_data WHERE data_mode = 'idpass'`);
-    return Object.fromEntries(result.rows.map((row) => [row.game_id, {
-      ...sanitizeData(row.data),
-      version: Number(row.version) || 1,
-    }]));
+    // Columns are resolved here for the same reason getGameinfoModeData does
+    // it: a caller checking "does any formula still use this variable" has to
+    // see the shared definitions, not this game's rollback copy of them.
+    const registry = await listGamelistPackColumnRegistry(client);
+    return Object.fromEntries(result.rows.map((row) => {
+      const data = sanitizeData(row.data);
+      return [row.game_id, {
+        ...data,
+        packs: {
+          ...data.packs,
+          computedColumns: resolveComputedColumns(registry, {
+            columns: data.packs.computedColumns,
+            columnOverrides: data.packs.columnOverrides,
+          }),
+        },
+        version: Number(row.version) || 1,
+      }];
+    }));
   } finally {
     client.release();
   }

@@ -247,9 +247,15 @@ CREATE TABLE IF NOT EXISTS gamelist_pack_column_registry (
   label      varchar(120) NOT NULL,
   sort_order integer      NOT NULL DEFAULT 0,
   data       jsonb        NOT NULL DEFAULT '{}'::jsonb,
+  -- Optimistic lock for the definition itself. A column is edited from any
+  -- game that shows it, while gamelist_pack_revisions guards one game's packs,
+  -- so without this two admins in two games overwrite each other in silence.
+  version    bigint       NOT NULL DEFAULT 1,
   created_at timestamptz  NOT NULL DEFAULT now(),
   updated_at timestamptz  NOT NULL DEFAULT now()
 );
+ALTER TABLE gamelist_pack_column_registry
+  ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 1;
 
 CREATE INDEX IF NOT EXISTS gamelist_pack_column_registry_order_idx
   ON gamelist_pack_column_registry (sort_order, column_key);

@@ -293,6 +293,15 @@ function ensureSchema(connection) {
         CREATE INDEX IF NOT EXISTS gamelist_pack_column_registry_order_idx
         ON gamelist_pack_column_registry (sort_order, column_key)
       `);
+      // One column is edited from any game that shows it, while the optimistic
+      // lock guards a game's packs — so nothing stopped two admins in two
+      // games from overwriting each other's definition. This is that lock, per
+      // column: a save carrying a version that is not the stored one is
+      // refused instead of applied.
+      await client.query(`
+        ALTER TABLE gamelist_pack_column_registry
+        ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1
+      `);
       // Which columns a role sees. game_id 0 is the rule for every game and a
       // row for a real game overrides it. Only rows that hide something are
       // stored — no row means visible, so a newly registered column is visible
@@ -341,7 +350,7 @@ async function getReadyPool() {
 
 async function readColumnRegistry(client) {
   const result = await client.query(
-    `SELECT column_key, label, sort_order, data
+    `SELECT column_key, label, sort_order, data, version
      FROM gamelist_pack_column_registry
      ORDER BY sort_order, column_key`
   );
@@ -350,6 +359,7 @@ async function readColumnRegistry(client) {
     label: row.label,
     sortOrder: Number(row.sort_order) || 0,
     data: row.data || {},
+    version: Number(row.version) || 1,
   }));
 }
 
@@ -379,14 +389,42 @@ export async function writeGameinfoColumnRegistry(client, registryRows, removedK
 // destroy definitions shared with every other game — a stale client, a
 // role-filtered column list, or a half-migrated store would each be enough.
 async function writeColumnRegistry(client, registryRows, removedKeys = []) {
+  const stored = new Map(
+    (await readColumnRegistry(client)).map((row) => [row.columnKey, row])
+  );
   for (const row of registryRows) {
+    const current = stored.get(row.columnKey);
+    // A column definition is shared, so every game's save carries all of them
+    // and almost every row in this loop is unchanged. Writing only what
+    // differs is what keeps versions meaningful: bumping them all would make
+    // every open editor stale the moment anyone saved anything.
+    if (
+      current &&
+      current.label === row.label &&
+      current.sortOrder === row.sortOrder &&
+      sameJson(current.data, row.data)
+    ) {
+      continue;
+    }
+    // `version` is the definition this client was shown. Absent means a column
+    // it just created — which must not already exist, or two people named the
+    // same column at once and the second would silently replace the first.
+    const expected = Number(row.version);
+    const seen = Number.isSafeInteger(expected) && expected > 0 ? expected : null;
+    if (current ? seen !== current.version : seen !== null) {
+      throw createHttpError(
+        `คอลัมน์ "${row.label}" ถูกแก้โดยผู้ใช้อื่น กรุณาโหลดข้อมูลล่าสุดก่อนแก้และบันทึกใหม่`,
+        409
+      );
+    }
     await client.query(
-      `INSERT INTO gamelist_pack_column_registry (column_key, label, sort_order, data)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO gamelist_pack_column_registry (column_key, label, sort_order, data, version)
+       VALUES ($1, $2, $3, $4, 1)
        ON CONFLICT (column_key) DO UPDATE
          SET label = EXCLUDED.label,
              sort_order = EXCLUDED.sort_order,
              data = EXCLUDED.data,
+             version = gamelist_pack_column_registry.version + 1,
              updated_at = NOW()`,
       [row.columnKey, row.label, row.sortOrder, JSON.stringify(row.data)]
     );
@@ -606,18 +644,25 @@ export async function createGamelistPackLanguage(name, actorId = null) {
 }
 
 /** Computed-column configs for every game, used to protect the one global
- * formula-variable set from removing a name that any saved formula needs. */
+ * formula-variable set from removing a name that any saved formula needs.
+ *
+ * Resolved through the registry, not read straight out of `data.columns`: that
+ * array is the pre-registry rollback copy, so reading it would tie a live
+ * correctness check to a copy that exists only until the registry is trusted
+ * and is then deleted — the guard would quietly start reporting that nothing
+ * uses the variable being removed. */
 export async function listAllGamelistComputedColumns() {
   const pool = await getReadyPool();
   const client = await pool.connect();
   try {
+    const registryRows = await readColumnRegistry(client);
     const result = await client.query(
       `SELECT game_id, data FROM gamelist_packs WHERE pack_id = $1 ORDER BY game_id`,
       [COMPUTED_SENTINEL]
     );
     return result.rows.map((row) => ({
       gameId: row.game_id,
-      computedColumns: Array.isArray(row.data?.columns) ? row.data.columns : [],
+      computedColumns: resolveComputedColumns(registryRows, row.data),
     }));
   } finally {
     client.release();

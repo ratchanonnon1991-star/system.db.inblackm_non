@@ -34,6 +34,10 @@ export function mergeGameinfoColumn(registryRow, override = {}) {
   // so a merged column and a pre-registry one serialise identically.
   const merged = { key: registryRow.columnKey, label: registryRow.label };
   for (const field of REGISTRY_FIELDS) merged[field] = data[field];
+  // The definition this client was shown. It travels with the column so a save
+  // can be refused when someone else has since changed it — the game's own
+  // version guards its packs and says nothing about the shared columns.
+  merged.version = Number(registryRow.version) || 1;
   merged.gameFormula = typeof override.gameFormula === "string" ? override.gameFormula : "";
   // A market column is registered for every game but is only *switched on* in
   // the games that mapped that market, so it defaults off and the game has to
@@ -72,7 +76,15 @@ export function splitGameinfoColumn(column, sortOrder = 0) {
   // gets stored — the absence of a row means off, in every other game.
   if (column.kind === "market" && column.enabled !== false) override.enabled = true;
   return {
-    registry: { columnKey: column.key, label: column.label, sortOrder, data },
+    registry: {
+      columnKey: column.key,
+      label: column.label,
+      sortOrder,
+      data,
+      // Absent for a column this editor just created, which is how the write
+      // path tells "new" from "someone else deleted it while I was editing".
+      version: Number(column.version) || null,
+    },
     override: Object.keys(override).length ? override : null,
   };
 }

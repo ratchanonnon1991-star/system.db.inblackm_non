@@ -37,6 +37,9 @@ const editedColumn = {
 };
 
 const split = splitGameinfoColumn(editedColumn, 3);
+// `version` rides along as the revision of the shared definition this client
+// was shown; null here because the column in this test was never read back
+// out of the registry (see the concurrency section at the end).
 check("the shared half carries the definition", split.registry, {
   columnKey: "profit",
   label: "กำไร",
@@ -50,13 +53,27 @@ check("the shared half carries the definition", split.registry, {
     symbol: "฿",
     scopeMode: "global",
   },
+  version: null,
 });
 check("a game using the column as-is leaves no override", split.override, null);
 
+// Destructured so the expected object lists its keys in the order the merge
+// produces them — these checks compare serialised objects.
+const { gameFormula, enabled, categoryFormulas, rowOverrides, ...definition } = editedColumn;
 check(
   "merging the halves rebuilds the column the UI reads",
-  mergeGameinfoColumn(split.registry, {}),
-  editedColumn
+  mergeGameinfoColumn({ ...split.registry, version: 4 }, {}),
+  { ...definition, version: 4, gameFormula, enabled, categoryFormulas, rowOverrides }
+);
+check(
+  "a registry row with no version reads as the first revision",
+  mergeGameinfoColumn(split.registry, {}).version,
+  1
+);
+check(
+  "and the version survives the round trip back out",
+  splitGameinfoColumn(mergeGameinfoColumn({ ...split.registry, version: 4 }, {})).registry.version,
+  4
 );
 
 const localised = splitGameinfoColumn(
