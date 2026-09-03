@@ -1,0 +1,3 @@
+﻿game_name,currency_name,category_name,pack_name,price,amount_charged_fee,channel_main,country,ต้นทุนทดสอบ
+CSVTEST BETA,Coin,เติมปกติ,100 Coins,50,44,Wavepay,Myanmar,41
+CSVTEST BETA,Coin,เติมปกติ,500 Coins,240,210,Wavepay,Myanmar,205

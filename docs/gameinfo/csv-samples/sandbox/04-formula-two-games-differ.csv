@@ -1,0 +1,5 @@
+﻿game_name,currency_name,category_name,pack_name,price,amount_charged_fee,channel_main,country,ส่วนต่างทดสอบ
+CSVTEST ALPHA,Gem,เติมปกติ,60 Gems,35,30,Razer (CAD),Thailand,[ราคา] * 0.10
+CSVTEST ALPHA,Gem,เติมปกติ,300 Gems,169,150,Razer (CAD),Thailand,[ราคา] * 0.10
+CSVTEST BETA,Coin,เติมปกติ,100 Coins,50,44,Wavepay,Myanmar,[ราคา] * 0.25
+CSVTEST BETA,Coin,เติมปกติ,500 Coins,240,210,Wavepay,Myanmar,[ราคา] * 0.25
