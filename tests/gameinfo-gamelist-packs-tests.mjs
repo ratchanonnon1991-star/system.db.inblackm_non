@@ -516,6 +516,24 @@ async function run() {
     "an active registry does take the imported column",
     log.some((entry) => /INSERT INTO gamelist_pack_column_registry/.test(entry.text))
   );
+  // Every save leaves the pre-registry `columns` copy behind so that reverting
+  // the code is a complete rollback with no data restore. An import used to
+  // skip it, so a column that arrived by CSV was invisible to the old code
+  // while still sitting in the database.
+  const importedSentinel = log
+    .filter((entry) => /^INSERT INTO gamelist_packs/.test(entry.text))
+    .find((entry) => entry.params?.[1] === "__computed__");
+  const importedData = JSON.parse(importedSentinel?.params?.[2] || "{}");
+  check(
+    "an import leaves the same rollback copy an editor save does",
+    importedData.columns?.map((column) => column.key),
+    ["col_existing"]
+  );
+  check(
+    "and that copy is the flat pre-registry shape",
+    Object.hasOwn(importedData.columns?.[0] || {}, "gameFormula"),
+    false
+  );
 
   // The registry is one shared definition per column, used by every game and
   // by both storage modes. A save must only delete what it actually dropped —

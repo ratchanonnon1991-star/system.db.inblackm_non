@@ -885,6 +885,13 @@ async function writeImportedColumns(client, gameId, columns, previousComputed, n
     if (Object.keys(next).length) overrides[column.key] = next;
   }
 
+  // `columns` is the pre-registry copy every save keeps so that reverting the
+  // code is a complete rollback with no data restore. An import used to leave
+  // it untouched, so a column that arrived by CSV — and the values under it —
+  // existed only in the registry: revert, and they were gone from the screen
+  // while still sitting in the database. Rebuilt here from the same merge the
+  // editor's save flattens, so both paths leave the same fallback behind.
+  const mergedColumns = mergeGameinfoColumns(await readColumnRegistry(client), overrides);
   await client.query(
     `INSERT INTO gamelist_packs (game_id, pack_id, data) VALUES ($1, $2, $3)
      ON CONFLICT (game_id, pack_id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
@@ -894,7 +901,7 @@ async function writeImportedColumns(client, gameId, columns, previousComputed, n
       JSON.stringify({
         ...previous,
         schemaVersion: 3,
-        columns: Array.isArray(previous.columns) ? previous.columns : [],
+        columns: flattenGameinfoColumnsForLegacy(mergedColumns),
         columnOverrides: overrides,
         costProfiles: sanitizeGameinfoCostProfiles(previous.costProfiles),
       }),
