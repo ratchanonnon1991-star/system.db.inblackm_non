@@ -4,7 +4,12 @@
 // preview, so the two must reach identical conclusions or a user could confirm
 // one thing and get another. Keeping the whole reading here is what guarantees
 // that; the routes only differ in what they do with the result.
-import { buildPackTree, validatePackRows } from "@/lib/gameinfo-import";
+import {
+  buildPackTree,
+  legacyAmountWarnings,
+  normalizeGameinfoImportCountries,
+  validatePackRows,
+} from "@/lib/gameinfo-import";
 import {
   buildGameinfoCsvColumns,
   createGameinfoCsvColumnKeys,
@@ -12,37 +17,6 @@ import {
 } from "@/lib/gameinfo-csv-columns";
 import { resolveGameinfoCsvGames } from "@/lib/gameinfo-csv-games";
 import { findDuplicateGameinfoPackNamePrices } from "@/lib/gameinfo-pack-validation";
-import { normalizeGameinfoCountry, suggestGameinfoCountries } from "@/lib/gameinfo-countries";
-
-const AMOUNT_CHARGED_WARNING = "พบคอลัมน์ amount_charged";
-
-function normalizeCountries(currencies) {
-  const issues = [];
-  for (const currency of currencies) {
-    for (const category of currency.categories) {
-      for (const pack of category.packs) {
-        const normalized = normalizeGameinfoCountry(pack.country);
-        if (normalized.matched) pack.country = normalized.value;
-        else if (pack.country) {
-          issues.push({
-            packId: pack.id,
-            packName: pack.name,
-            input: pack.country,
-            suggestions: suggestGameinfoCountries(pack.country),
-          });
-        }
-      }
-    }
-  }
-  return issues;
-}
-
-function legacyAmountWarnings(rows) {
-  const count = (rows || []).filter((row) => String(row?.amount_charged ?? "").trim() !== "").length;
-  return count
-    ? [`${AMOUNT_CHARGED_WARNING} ${count} แถว — ระบบเลิกใช้แล้วและจะไม่นำเข้าค่านี้`]
-    : [];
-}
 
 /**
  * A parsed CSV + the current games and columns -> everything both routes need.
@@ -65,7 +39,7 @@ export function planGameinfoCsvImport({ headers, rows, existingGames, existingCo
 
   function addGame(bucket, { gameId, isNew }) {
     const tree = buildPackTree(bucket.rows);
-    countryIssues.push(...normalizeCountries(tree.currencies));
+    countryIssues.push(...normalizeGameinfoImportCountries(tree.currencies));
     const built = buildGameinfoCsvColumns(
       headers,
       tree.rowPacks,

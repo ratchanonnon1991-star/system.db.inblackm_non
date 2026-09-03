@@ -10,7 +10,6 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { parseFormula } from "@/lib/gamedb-formula";
 import {
   buildGameinfoPackColumns,
   formatGameinfoPackColumnValue,
@@ -41,7 +40,15 @@ import {
 // gameinfo-gamelist-table.js and GameinfoPackEditor) plus its packs — same
 // currencies/computedColumns tree the pack editor saves to gamelist_packs,
 // so what's shown here always matches what "จัดการแพ็ก" last saved.
-export default function GameinfoGameView({ row, currencies, computedColumns, costProfiles = [], formulaVariables = [], userId, dataMode = "uid", hiddenColumnKeys = [] }) {
+// A stable empty list: a fresh [] as the default would be a new dependency
+// on every render for the memos below.
+const NO_COLUMNS = [];
+
+// The columns used to be parsed here first, once per column per render, into
+// a tree nothing ever read — on top of the parse the evaluator did per cell.
+// The evaluator caches by formula text now (gameinfo-computed-evaluator.js)
+// and a broken formula is reported in the cell, where a reader can see it.
+export default function GameinfoGameView({ row, currencies, computedColumns = NO_COLUMNS, costProfiles = [], formulaVariables = [], userId, dataMode = "uid", hiddenColumnKeys = [] }) {
   const [formulaMode, setFormulaMode] = useState("result");
   const rateState = useGameinfoRates();
   // Same field set the pack editor's formulas can reference (see
@@ -50,17 +57,6 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
   const formulaGame = useMemo(
     () => ({ gameName: row.game, region: row.region, platform: row.platform, server: row.server }),
     [row.game, row.region, row.platform, row.server]
-  );
-  const parsedColumns = useMemo(
-    () =>
-      (computedColumns || []).map((col) => {
-        try {
-          return { ...col, ast: parseFormula(col.formula) };
-        } catch {
-          return { ...col, ast: null };
-        }
-      }),
-    [computedColumns]
   );
   // Columns this viewer's role is not meant to see never reach the table, so
   // nothing downstream — widths, filters, presets — has to know about roles.
@@ -72,7 +68,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
   const [channelView, setChannelView] = useState("main");
   const packColumns = useMemo(() => {
     const roleColumns = filterGameinfoColumnsForRole(
-      buildGameinfoPackColumns(parsedColumns),
+      buildGameinfoPackColumns(computedColumns),
       new Set(hiddenColumnKeys)
     );
     const secondary = channelView === "secondary";
@@ -88,7 +84,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns, cos
             channelToggle: true,
           }
         : column));
-  }, [parsedColumns, hiddenColumnKeys, channelView]);
+  }, [computedColumns, hiddenColumnKeys, channelView]);
   const hasSecondaryChannels = useMemo(
     () => currencies.some((currency) => currency.categories.some((category) =>
       category.packs.some((pack) => (pack.channelsSecondary || []).length > 0)

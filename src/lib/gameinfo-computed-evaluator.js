@@ -4,6 +4,24 @@ import { getGameinfoFormulaDisplay } from "@/lib/gameinfo-formula-overrides";
 import { roundGameinfoNumber } from "@/lib/gameinfo-pack-validation";
 import { gameinfoColumnsWithData } from "@/lib/gameinfo-pack-columns";
 
+// One column's formula is the same string for every pack under it, and every
+// game now carries every registered column, so a table asks for the same parse
+// hundreds of times per render — twice over, since the empty-column pass walks
+// the tree before the cells do. Parsing is pure, so the tree is cached by the
+// formula text. The cap is there only so a long session cannot accumulate
+// every draft a user typed into the formula editor.
+const astCache = new Map();
+const AST_CACHE_LIMIT = 500;
+
+function parseFormulaCached(formula) {
+  const cached = astCache.get(formula);
+  if (cached) return cached;
+  const ast = parseFormula(formula);
+  if (astCache.size >= AST_CACHE_LIMIT) astCache.clear();
+  astCache.set(formula, ast);
+  return ast;
+}
+
 export function evaluateGameinfoComputedColumn(column, columns, pack, game, context = {}, stack = []) {
   if (!column) return undefined;
   if (stack.includes(column.key)) {
@@ -12,7 +30,7 @@ export function evaluateGameinfoComputedColumn(column, columns, pack, game, cont
   }
   const effective = getGameinfoFormulaDisplay(column, pack?.id, context.categoryId);
   if (!effective.formula.trim()) return undefined;
-  const ast = parseFormula(effective.formula);
+  const ast = parseFormulaCached(effective.formula);
   const value = evaluateFormula(ast, (label) => {
     const dependency = columns.find((item) => item.label === label);
     if (dependency) {
