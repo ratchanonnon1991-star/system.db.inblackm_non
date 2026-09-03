@@ -82,7 +82,8 @@ assert.match(dailyUi, /ยังไม่มีเกมที่ติดตา
 assert.match(dailyUi, /24 ชั่วโมงล่าสุด · ทุกเกม/);
 assert.match(dailyUi, /กลับ Russia Check/);
 assert.match(dailyUi, /clearInterval\(timer\)/);
-assert.doesNotMatch(dailyUi, /<Select|<Tabs|gameId=|method: "POST"/);
+assert.doesNotMatch(dailyUi, /<Select|<Tabs|method: "POST"/);
+assert.match(dailyUi, /russia-check\?gameId=\$\{item.gameId\}/);
 assert.doesNotMatch(dailyUi, /packName|nextCursor|logStatus|\.events/);
 assert.doesNotMatch(dailyUi, /วันนี้|00:00/);
 

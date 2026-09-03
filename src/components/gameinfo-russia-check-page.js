@@ -10,7 +10,7 @@ import { refreshWithLogin, loginRequiredGames } from "@/lib/gameinfo-russia-chec
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -49,8 +49,9 @@ function statusBadge(status) {
   return "secondary";
 }
 
-function displayStatusDate(item) {
-  return item.displayStatus === "added" ? item.activatedAt || item.firstSeenAt : item.firstSeenAt;
+function latestMovementAt(item) {
+  // Refreshes and the 24-hour "new" badge expiry are not pack movements.
+  return item.status === "removed" ? item.removedAt : item.activatedAt || item.firstSeenAt;
 }
 
 function eventBadge(kind) {
@@ -58,12 +59,13 @@ function eventBadge(kind) {
   return "destructive";
 }
 
-export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs, canRefresh, canManage, lang }) {
+export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs, initialGameId = null, canRefresh, canManage, lang }) {
   const [dashboard, setDashboard] = useState(initialDashboard);
   const [logs, setLogs] = useState(initialLogs.events || []);
   const [nextCursor, setNextCursor] = useState(initialLogs.nextCursor || null);
-  const [game, setGame] = useState("all");
+  const [game, setGame] = useState(initialGameId == null ? "all" : String(initialGameId));
   const [status, setStatus] = useState("all");
+  const [search, setSearch] = useState("");
   const [logStatus, setLogStatus] = useState("all");
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -292,9 +294,12 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
 
   const latest = dashboard.latestRun;
   const latestChanges = (latest?.addedCount || 0) + (latest?.removedCount || 0) + (latest?.restoredCount || 0);
-  const packItems = useMemo(() => (dashboard.items || [])
-    .map((item) => ({ ...item, displayStatus: russiaCheckDisplayStatus(item, dashboard.dailyLog?.endAt) }))
-    .filter((item) => status === "all" || item.displayStatus === status), [dashboard.items, dashboard.dailyLog?.endAt, status]);
+  const allPackItems = useMemo(() => (dashboard.items || [])
+    .map((item) => ({ ...item, displayStatus: russiaCheckDisplayStatus(item, dashboard.dailyLog?.endAt) })), [dashboard.items, dashboard.dailyLog?.endAt]);
+  const packItems = useMemo(() => filterPacks(allPackItems, status, search), [allPackItems, status, search]);
+  const newPackCount = allPackItems.filter((item) => item.displayStatus === "added").length;
+  const resultLabel = runResultLabel(latest, latestChanges);
+  const sourceDescription = demoSelected ? "ข้อมูลตัวอย่าง · อ่านอย่างเดียว" : !selectedGame ? "ดูภาพรวมทุกเกม หรือเลือกเกมเพื่อเปิดร้านและจัดการ Login" : selectedGame.provider === "xsolla" ? "ร้านรัสเซีย · ภาษาอังกฤษ · ไม่ต้อง Login" : selectedGame.provider === "midasbuy" ? "ร้านประเทศไทย · ภาษาอังกฤษ · ไม่ต้อง Login" : "ใช้บัญชีและพื้นที่ที่เชื่อมไว้กับเกมนี้";
   const groups = useMemo(() => {
     const byGame = new Map();
     for (const event of logs) {
@@ -307,19 +312,56 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
   const configErrors = (dashboard.games || []).filter((item) => item.configError);
 
   return (
-    <div data-shadcn-focus className="mx-auto flex max-w-[1600px] flex-col gap-5 px-4 py-6 sm:px-6">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <Link href={`/gameinfo/${lang}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "w-fit")}><ArrowLeft data-icon="inline-start" />กลับ GameInfo</Link>
-          <p className="text-xs font-medium text-muted-foreground">GAMEINFO · PACK AVAILABILITY</p>
-          <h1 className="text-2xl font-semibold tracking-tight">Russia Check</h1>
-          <p className="text-sm text-muted-foreground">ติดตามแพ็กที่เพิ่ม หาย และกลับมา · SKY ใช้ประเทศรัสเซีย · NIKKE ใช้ร้านประเทศไทย (ไม่ต้อง Login) · Love and Deepspace / Endfield ใช้บัญชีและพื้นที่ที่เชื่อมไว้</p>
+    <div data-shadcn-focus className="mx-auto flex w-full min-w-0 max-w-[1600px] flex-col gap-5 px-4 py-6 sm:px-6">
+      <header className="flex flex-col gap-3">
+        <Link href={`/gameinfo/${lang}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "-ml-2 w-fit")}><ArrowLeft data-icon="inline-start" />กลับ GameInfo</Link>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-col gap-1">
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Russia Check</h1>
+            <p className="text-sm text-muted-foreground">ติดตามแพ็กเข้า–ออก และความเปลี่ยนแปลงของแต่ละเกม</p>
+          </div>
+          <nav aria-label="หน้าอื่นของ Russia Check" className="flex flex-wrap items-center gap-2">
+            <Link href={`/gameinfo/${lang}/russia-check/game-logs`} className={buttonVariants({ variant: "outline" })}><Clock3 data-icon="inline-start" />Log รายเกม</Link>
+            {canManage ? <Link href={`/gameinfo/${lang}/russia-check/extension`} className={buttonVariants({ variant: "ghost" })}><Download data-icon="inline-start" />โหลดส่วนขยาย</Link> : null}
+          </nav>
         </div>
-        <Button onClick={refresh} disabled={!canRefresh || running || loading || demoSelected || (Boolean(refreshBlockedReason) && !canReconnect)} aria-describedby={refreshBlockedReason ? "russia-check-source-blocked" : undefined} title={demoSelected ? "demo data เป็นข้อมูลตัวอย่างแบบอ่านอย่างเดียว" : canReconnect ? "เชื่อม Login แล้วรีข้อมูล" : refreshBlockedReason || (canRefresh ? "ดึงข้อมูลตามเกมที่เลือก" : "ต้องมีสิทธิ์ Market Check")}>
-          {running ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
-          {running ? refreshProgress || "กำลังตรวจ…" : "รีข้อมูล"}
-        </Button>
       </header>
+
+      <Card size="sm">
+        <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex min-w-0 flex-1 flex-col gap-2">
+            <div className="flex flex-wrap items-end gap-2">
+              <Field className="w-full sm:w-72">
+                <FieldLabel htmlFor="russia-check-game">เกมที่กำลังดู</FieldLabel>
+                <Select items={gameItems} value={game} onValueChange={selectGame} disabled={running || loading}>
+                  <SelectTrigger id="russia-check-game" aria-label="เลือกเกม" className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectGroup>{gameItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
+                </Select>
+              </Field>
+              {selectedGame?.storeUrl ? <a href={selectedGame.storeUrl} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline" })}><ExternalLink data-icon="inline-start" />เปิดหน้าเว็บ</a> : null}
+              {selectedGame?.authRequired && canManage ? <Button variant="outline" disabled={running || loading} onClick={() => setSessionDialog(true)}><KeyRound data-icon="inline-start" />จัดการ Login</Button> : null}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-xs text-muted-foreground">{sourceDescription}</p>
+              {selectedGame?.authRequired ? <Badge variant={selectedGame.authState === "verified" ? "success" : selectedGame.authExpired || selectedGame.authState === "invalid" ? "destructive" : "secondary"}><KeyRound data-icon="inline-start" />{authLabel}</Badge> : null}
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-col gap-1.5 sm:items-end">
+            <Button onClick={refresh} disabled={!canRefresh || running || loading || demoSelected || (Boolean(refreshBlockedReason) && !canReconnect)} aria-describedby={refreshBlockedReason ? "russia-check-source-blocked" : undefined} title={demoSelected ? "demo data เป็นข้อมูลตัวอย่างแบบอ่านอย่างเดียว" : canReconnect ? "เชื่อม Login แล้วรีข้อมูล" : refreshBlockedReason || (canRefresh ? "ดึงข้อมูลตามเกมที่เลือก" : "ต้องมีสิทธิ์ Market Check")}>
+              {running ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
+              {running ? "กำลังตรวจ…" : game === "all" ? "รีทุกเกม" : "รีเกมนี้"}
+            </Button>
+            <p role="status" className="max-w-80 text-xs text-muted-foreground">{running ? refreshProgress : demoSelected ? "ข้อมูลตัวอย่าง ไม่ดึงจากร้านจริง" : !canRefresh ? "ต้องมีสิทธิ์ Market Check เพื่อรีข้อมูล" : "ตรวจอัตโนมัติทุกวัน 09:00 น. เวลาไทย"}</p>
+          </div>
+        </CardContent>
+        <CardFooter>
+          <dl className="grid w-full gap-3 text-xs sm:grid-cols-3">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1"><dt className="text-muted-foreground">ผลรอบล่าสุด</dt><dd className="font-medium">{resultLabel}</dd></div>
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1"><dt className="text-muted-foreground">ตรวจล่าสุด</dt><dd>{latest ? formatBangkok(latest.finishedAt || latest.createdAt) : "ยังไม่เคยตรวจ"}</dd></div>
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1"><dt className="text-muted-foreground">รอบถัดไป</dt><dd>{demoSelected || refreshBlockedReason ? "ยังไม่มีกำหนด" : formatBangkok(dashboard.nextRunAt)}</dd></div>
+          </dl>
+        </CardFooter>
+      </Card>
 
       {error ? <Alert variant="destructive"><AlertCircle /><AlertTitle>ดำเนินการไม่สำเร็จ</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
       {sessionNotice ? <Alert><ShieldCheck /><AlertTitle>ผลการจัดการ Login</AlertTitle><AlertDescription role="status">{sessionNotice}</AlertDescription></Alert> : null}
@@ -327,53 +369,41 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
       {refreshBlockedReason && !demoSelected ? <Alert><AlertCircle /><AlertTitle>ยังรีข้อมูลเกมนี้ไม่ได้</AlertTitle><AlertDescription id="russia-check-source-blocked">{refreshBlockedReason}</AlertDescription></Alert> : null}
       {game === "all" && unavailableGames.length ? <Alert><AlertCircle /><AlertTitle>บางเกมยังไม่พร้อมตรวจ</AlertTitle><AlertDescription>กดรีเพื่อเชื่อม Login ที่ขาดทีละเกม: {unavailableGames.map((item) => item.gameName).join(", ")} · รอบอัตโนมัติข้ามเกมที่รอ Login โดยไม่เปลี่ยนข้อมูลเดิม</AlertDescription></Alert> : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>สถานะการตรวจ</CardTitle>
-          <CardDescription>{refreshBlockedReason ? "เกมที่เลือกยังไม่พร้อมตรวจอัตโนมัติ" : "อัตโนมัติทุกวัน 09:00 น. เวลาไทย"}</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-3">
-          <div><p className="text-xs text-muted-foreground">รอบล่าสุด</p><p className="font-medium">{latest ? formatBangkok(latest.finishedAt || latest.createdAt) : "ยังไม่เคยตรวจ"}</p></div>
-          <div><p className="text-xs text-muted-foreground">ผลล่าสุด</p><p className="font-medium">{!latest ? "ยังไม่มีผลการตรวจ" : latest.status === "failed" ? "ตรวจไม่สำเร็จ" : latestChanges ? `เปลี่ยนแปลง ${latestChanges} รายการ` : "ไม่มีการเปลี่ยนแปลง"}</p></div>
-          <div><p className="text-xs text-muted-foreground">รอบถัดไป</p><p className="font-medium">{refreshBlockedReason ? "ยังไม่มีกำหนด" : formatBangkok(dashboard.nextRunAt)}</p></div>
-        </CardContent>
-      </Card>
-
-      <div className="flex flex-wrap gap-3">
-        <Link href={`/gameinfo/${lang}/russia-check/game-logs`} className={buttonVariants({ variant: "outline" })}><Clock3 data-icon="inline-start" />Log รายเกม</Link>
-      </div>
-
-      <div className="flex flex-wrap gap-3">
-        <Select items={gameItems} value={game} onValueChange={selectGame} disabled={running || loading}>
-          <SelectTrigger aria-label="เลือกเกม"><SelectValue /></SelectTrigger>
-          <SelectContent><SelectGroup>{gameItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
-        </Select>
-        {selectedGame?.storeUrl ? <a href={selectedGame.storeUrl} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline" })}><ExternalLink data-icon="inline-start" />เปิดหน้าเว็บ</a> : null}
-        {selectedGame?.authRequired ? <Badge variant={selectedGame.authState === "verified" ? "success" : selectedGame.authExpired || selectedGame.authState === "invalid" ? "destructive" : "secondary"}><KeyRound data-icon="inline-start" />{authLabel}</Badge> : null}
-        {selectedGame?.authRequired && canManage ? <Button variant="outline" onClick={() => setSessionDialog(true)}><KeyRound data-icon="inline-start" />จัดการ Login</Button> : null}
-        {canManage ? <Link href={`/gameinfo/${lang}/russia-check/extension`} className={buttonVariants({ variant: "outline" })}><Download data-icon="inline-start" />โหลดส่วนขยาย</Link> : null}
-      </div>
-
       <Tabs defaultValue="packs">
-        <TabsList><TabsTrigger value="packs"><PackageCheck data-icon="inline-start" />แพ็กปัจจุบัน</TabsTrigger><TabsTrigger value="logs"><Clock3 data-icon="inline-start" />Log</TabsTrigger></TabsList>
+        <div className="border-b pb-1"><TabsList variant="line" aria-label="ข้อมูลแพ็ก"><TabsTrigger value="packs"><PackageCheck data-icon="inline-start" />แพ็กปัจจุบัน</TabsTrigger><TabsTrigger value="logs"><Clock3 data-icon="inline-start" />Log</TabsTrigger></TabsList></div>
         <TabsContent value="packs" className="flex flex-col gap-4 pt-2">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <SummaryCard title="มีอยู่" value={dashboard.summary.active} icon={PackageCheck} />
-            <SummaryCard title="เพิ่มรอบล่าสุด" value={latest?.addedCount || 0} icon={PackagePlus} />
-            <SummaryCard title="รอยืนยันหาย" value={dashboard.summary.pending} icon={Clock3} />
-            <SummaryCard title="หายแล้ว" value={dashboard.summary.removed} icon={PackageMinus} />
+          <dl aria-label="สรุปแพ็กของเกมที่เลือก" className="grid grid-cols-2 gap-x-6 gap-y-3 border-b pb-4 sm:grid-cols-4">
+            <PackCount title="มีอยู่" value={dashboard.summary.active} />
+            <PackCount title="เพิ่มใหม่ใน 24 ชม." value={newPackCount} />
+            <PackCount title="รอยืนยันหาย" value={dashboard.summary.pending} />
+            <PackCount title="หายแล้ว" value={dashboard.summary.removed} />
+          </dl>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <Field className="w-full sm:max-w-sm">
+              <FieldLabel htmlFor="russia-check-search">ค้นหาชื่อ Pack</FieldLabel>
+              <Input id="russia-check-search" type="search" placeholder="พิมพ์ชื่อแพ็กที่ต้องการ…" value={search} onChange={(event) => setSearch(event.target.value)} />
+            </Field>
+            <Field className="w-full sm:w-56">
+              <FieldLabel htmlFor="russia-check-status">สถานะ Pack</FieldLabel>
+              <Select items={STATUS_ITEMS} value={status} onValueChange={setStatus}>
+                <SelectTrigger id="russia-check-status" aria-label="กรองสถานะ Pack" className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectGroup>{STATUS_ITEMS.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
+              </Select>
+            </Field>
           </div>
-          <Select items={STATUS_ITEMS} value={status} onValueChange={setStatus}>
-            <SelectTrigger aria-label="กรองสถานะ Pack"><SelectValue /></SelectTrigger>
-            <SelectContent><SelectGroup>{STATUS_ITEMS.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
-          </Select>
-          {loading ? <LoadingTable /> : packItems.length ? <PackTable items={packItems} /> : <Empty><EmptyHeader><EmptyMedia variant="icon"><PackageCheck /></EmptyMedia><EmptyTitle>ยังไม่มี Pack</EmptyTitle><EmptyDescription>{refreshBlockedReason || "กดรีข้อมูลเพื่อสร้างข้อมูลตั้งต้น หรือเปลี่ยนตัวกรอง"}</EmptyDescription></EmptyHeader></Empty>}
+          {loading ? <LoadingTable /> : packItems.length ? <PackTable items={packItems} showGame={game === "all"} /> : <Empty><EmptyHeader><EmptyMedia variant="icon"><PackageCheck /></EmptyMedia><EmptyTitle>{search || status !== "all" ? "ไม่พบ Pack ตามตัวกรอง" : "ยังไม่มี Pack"}</EmptyTitle><EmptyDescription>{search || status !== "all" ? "ลองใช้ชื่ออื่น หรือเลือกดูทุกสถานะ" : refreshBlockedReason || "กดรีข้อมูลเพื่อสร้างข้อมูลตั้งต้น"}</EmptyDescription></EmptyHeader>{search || status !== "all" ? <Button variant="outline" onClick={() => { setSearch(""); setStatus("all"); }}>ล้างตัวกรอง</Button> : null}</Empty>}
         </TabsContent>
         <TabsContent value="logs" className="flex flex-col gap-4 pt-2">
-          <Select items={LOG_STATUS_ITEMS} value={logStatus} onValueChange={selectLogStatus}>
-            <SelectTrigger aria-label="กรองสถานะ Log"><SelectValue /></SelectTrigger>
-            <SelectContent><SelectGroup>{LOG_STATUS_ITEMS.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
-          </Select>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <p className="text-sm text-muted-foreground">ประวัติแพ็กเข้า–ออก เรียงจากใหม่ไปเก่า แยกตามเกม</p>
+            <Field className="w-full sm:w-56">
+              <FieldLabel htmlFor="russia-check-log-status">สถานะ Log</FieldLabel>
+              <Select items={LOG_STATUS_ITEMS} value={logStatus} onValueChange={selectLogStatus} disabled={loading || loadingMore}>
+                <SelectTrigger id="russia-check-log-status" aria-label="กรองสถานะ Log" className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectGroup>{LOG_STATUS_ITEMS.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
+              </Select>
+            </Field>
+          </div>
           {loading ? <LoadingLog /> : groups.length ? groups.map((group) => <LogGroup key={group.gameId} group={group} />) : <Empty><EmptyHeader><EmptyMedia variant="icon"><Clock3 /></EmptyMedia><EmptyTitle>ยังไม่มี Log ตามสถานะนี้</EmptyTitle><EmptyDescription>ลองเลือกสถานะอื่น กดรีข้อมูล หรือรอรอบอัตโนมัติ</EmptyDescription></EmptyHeader></Empty>}
           {!loading && nextCursor ? <Button variant="outline" onClick={loadMore} disabled={loadingMore} className="self-center">{loadingMore ? <Spinner data-icon="inline-start" /> : null}โหลดเพิ่มเติม</Button> : null}
         </TabsContent>
@@ -426,16 +456,44 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
   );
 }
 
-function SummaryCard({ title, value, icon: Icon }) {
-  return <Card size="sm"><CardHeader><CardDescription>{title}</CardDescription><CardTitle className="flex items-center justify-between"><span className="text-2xl tabular-nums">{value}</span><Icon className="text-muted-foreground" /></CardTitle></CardHeader></Card>;
+function filterPacks(items, status, search) {
+  const query = search.normalize("NFKC").trim().toLocaleLowerCase();
+  return items.filter((item) => (status === "all" || item.displayStatus === status)
+    && item.name.normalize("NFKC").toLocaleLowerCase().includes(query));
 }
 
-function PackTable({ items }) {
-  return <Card><CardHeader><CardTitle>รายการ Pack</CardTitle><CardDescription>{items.length} รายการตามตัวกรองปัจจุบัน</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>เกม</TableHead><TableHead>ชื่อ Pack</TableHead><TableHead>สถานะ</TableHead><TableHead>วันที่เริ่มพบ/เพิ่ม</TableHead><TableHead>วันที่หาย</TableHead></TableRow></TableHeader><TableBody>{items.map((item, index) => <TableRow key={`${item.gameId}:${item.name}:${index}`}><TableCell>{item.gameName}</TableCell><TableCell className="font-medium"><div className="flex items-center gap-2">{item.name}<CopyPackName key={item.name} name={item.name} /></div></TableCell><TableCell><Badge variant={statusBadge(item.displayStatus)}>{STATUS_LABELS[item.displayStatus]}</Badge></TableCell><TableCell>{formatBangkok(displayStatusDate(item))}</TableCell><TableCell>{formatBangkok(item.removedAt)}</TableCell></TableRow>)}</TableBody></Table></CardContent></Card>;
+function runResultLabel(latest, changes) {
+  if (!latest) return "ยังไม่มีผลการตรวจ";
+  if (latest.status === "failed") return "ตรวจไม่สำเร็จ";
+  if (latest.status === "queued") return "รอคิวตรวจ";
+  if (latest.status === "running") return "กำลังตรวจ…";
+  if (latest.status === "partial") return `ตรวจสำเร็จบางส่วน · เปลี่ยนแปลง ${changes} รายการ`;
+  return changes ? `เปลี่ยนแปลง ${changes} รายการ` : "ไม่มีการเปลี่ยนแปลง";
+}
+
+function PackCount({ title, value }) {
+  return <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1"><dt className="text-xs text-muted-foreground">{title}</dt><dd className="order-first text-2xl font-semibold tabular-nums">{value}</dd></div>;
+}
+
+function PackTable({ items, showGame }) {
+  return <Card size="sm" className="min-w-0">
+    <CardHeader className="flex flex-wrap items-center justify-between gap-2"><CardTitle>รายการ Pack</CardTitle><CardDescription aria-live="polite">{items.length} รายการ · วันที่และเวลาไทย</CardDescription></CardHeader>
+    <CardContent>
+      <Table containerClassName="focus-visible:outline-ring" tabIndex={0} aria-label="รายการ Pack ตามตัวกรอง">
+        <TableHeader><TableRow><TableHead scope="col">ชื่อ Pack</TableHead>{showGame ? <TableHead scope="col">เกม</TableHead> : null}<TableHead scope="col">สถานะ</TableHead><TableHead scope="col">วันที่มีการเคลื่อนไหวล่าสุด</TableHead></TableRow></TableHeader>
+        <TableBody>{items.map((item, index) => <TableRow key={`${item.gameId}:${item.name}:${index}`}>
+          <TableCell><div className="flex min-w-56 max-w-md items-center justify-between gap-2"><span className="whitespace-normal break-words font-medium">{item.name}</span><CopyPackName key={item.name} name={item.name} /></div></TableCell>
+          {showGame ? <TableCell><span className="text-xs text-muted-foreground">{item.gameName}</span></TableCell> : null}
+          <TableCell><div className="flex flex-col items-start gap-1"><Badge variant={statusBadge(item.displayStatus)}>{STATUS_LABELS[item.displayStatus]}</Badge>{item.status === "pending_removal" ? <span className="text-xs text-muted-foreground">รอยืนยันหาย · {item.missingRuns}/2 ครั้ง</span> : null}</div></TableCell>
+          <TableCell><time dateTime={latestMovementAt(item) || undefined} className="text-xs tabular-nums">{formatBangkok(latestMovementAt(item))}</time></TableCell>
+        </TableRow>)}</TableBody>
+      </Table>
+    </CardContent>
+  </Card>;
 }
 
 function LogGroup({ group }) {
-  return <Card><CardHeader><CardTitle>{group.gameName}</CardTitle><CardDescription>{group.events.length} เหตุการณ์ที่โหลดแล้ว</CardDescription></CardHeader><CardContent><ol className="flex flex-col gap-3">{group.events.map((event) => <li key={event.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"><div className="flex items-center gap-2"><Badge variant={eventBadge(event.eventType)}>{event.eventType === "restored" ? <RotateCcw data-icon="inline-start" /> : event.eventType === "removed" ? <PackageMinus data-icon="inline-start" /> : <PackagePlus data-icon="inline-start" />}{EVENT_LABELS[event.eventType]}</Badge><span className="font-medium">{event.packName}</span><CopyPackName key={event.packName} name={event.packName} /></div><time className="text-xs text-muted-foreground">{formatBangkok(event.createdAt)}</time></li>)}</ol></CardContent></Card>;
+  return <Card size="sm"><CardHeader><CardTitle>{group.gameName}</CardTitle><CardDescription>{group.events.length} เหตุการณ์ที่โหลดแล้ว</CardDescription></CardHeader><CardContent><ol className="divide-y">{group.events.map((event) => <li key={event.id} className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 flex-wrap items-center gap-2"><Badge variant={eventBadge(event.eventType)}>{event.eventType === "restored" ? <RotateCcw data-icon="inline-start" /> : event.eventType === "removed" ? <PackageMinus data-icon="inline-start" /> : <PackagePlus data-icon="inline-start" />}{EVENT_LABELS[event.eventType]}</Badge><span className="min-w-0 break-words font-medium">{event.packName}</span><CopyPackName key={event.packName} name={event.packName} /></div><time dateTime={event.createdAt} className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatBangkok(event.createdAt)}</time></li>)}</ol></CardContent></Card>;
 }
 
 function CopyPackName({ name }) {
@@ -456,7 +514,7 @@ function CopyPackName({ name }) {
     }
   }
 
-  return <span className="inline-flex items-center gap-1">
+  return <span className="inline-flex shrink-0 items-center gap-1">
     <Button type="button" variant="ghost" size="icon-sm" onClick={copyName} disabled={copyState === "pending"} title="คัดลอกชื่อ Pack" aria-label={`คัดลอกชื่อ Pack: ${name}`}>
       {copyState === "pending" ? <Spinner data-icon="inline-start" /> : copyState === "copied" ? <Check data-icon="inline-start" /> : <Copy data-icon="inline-start" />}
     </Button>

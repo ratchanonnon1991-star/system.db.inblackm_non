@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, ArrowLeft } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -56,7 +56,10 @@ export default function GameinfoRussiaCheckGameLogsPage({ initialLog, lang }) {
         {log?.games?.length ? <Table aria-label="การเปลี่ยนแปลงรายเกมใน 24 ชั่วโมงล่าสุด">
           <TableHeader><TableRow><TableHead scope="col">เกม</TableHead><TableHead scope="col">สถานะใน 24 ชม.</TableHead></TableRow></TableHeader>
           <TableBody>{log.games.map((item) => <TableRow key={item.gameId}>
-            <TableCell>{item.gameName}</TableCell>
+            <TableCell><div className="flex items-center gap-2">
+              <span>{item.gameName}</span>
+              <Link href={`/gameinfo/${lang}/russia-check?gameId=${item.gameId}`} className={buttonVariants({ variant: "outline", size: "sm" })} aria-label={`ดู Pack ของ ${item.gameName}`}>ดู Pack<ArrowRight data-icon="inline-end" /></Link>
+            </div></TableCell>
             <TableCell><Badge variant={item.status === "changed" ? "success" : item.status === "unchanged" ? "secondary" : "outline"}>{labels[item.status] || labels.unchecked}</Badge></TableCell>
           </TableRow>)}</TableBody>
         </Table> : <Empty><EmptyHeader><EmptyTitle>ยังไม่มีเกมที่ติดตาม</EmptyTitle><EmptyDescription>เมื่อมีเกมที่ติดตาม สรุปทุกเกมจะแสดงที่นี่</EmptyDescription></EmptyHeader></Empty>}
