@@ -1,9 +1,12 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, ArrowLeft, Clock3, ExternalLink, KeyRound, PackageCheck, PackageMinus, PackagePlus, RefreshCw, RotateCcw, ShieldCheck } from "lucide-react";
+import { AlertCircle, ArrowLeft, Check, Clock3, Copy, Download, ExternalLink, KeyRound, PackageCheck, PackageMinus, PackagePlus, RefreshCw, RotateCcw, ShieldCheck } from "lucide-react";
+import GameinfoRussiaCheckBrowserConnect from "@/components/gameinfo-russia-check-browser-connect";
 import { apiJson } from "@/lib/api-json";
+import { russiaCheckDisplayStatus } from "@/lib/gameinfo-russia-check-recency";
+import { refreshWithLogin, loginRequiredGames } from "@/lib/gameinfo-russia-check-refresh";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -20,7 +23,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
-const FINISHED = new Set(["completed", "partial", "failed"]);
 const STATUS_ITEMS = [
   { value: "all", label: "ทั้งหมด" },
   { value: "unchanged", label: "ไม่มีการเปลี่ยนแปลง" },
@@ -47,12 +49,6 @@ function statusBadge(status) {
   return "secondary";
 }
 
-function displayStatus(item) {
-  if (item.status === "removed") return "removed";
-  if (item.activatedAt && (!item.lastScheduledAt || new Date(item.activatedAt) >= new Date(item.lastScheduledAt))) return "added";
-  return "unchanged";
-}
-
 function displayStatusDate(item) {
   return item.displayStatus === "added" ? item.activatedAt || item.firstSeenAt : item.firstSeenAt;
 }
@@ -60,10 +56,6 @@ function displayStatusDate(item) {
 function eventBadge(kind) {
   if (kind === "added" || kind === "restored") return "success";
   return "destructive";
-}
-
-async function pause(ms) {
-  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs, canRefresh, canManage, lang }) {
@@ -81,7 +73,37 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
   const [sessionCookie, setSessionCookie] = useState("");
   const [sessionExpiresAt, setSessionExpiresAt] = useState("");
   const [savingSession, setSavingSession] = useState(false);
+  const [sessionNotice, setSessionNotice] = useState("");
+  const [connectingBrowser, setConnectingBrowser] = useState(false);
+  const [manualLogin, setManualLogin] = useState(false);
+  const [loginRequest, setLoginRequest] = useState(null);
+  const [refreshProgress, setRefreshProgress] = useState("");
+  const loginCompletion = useRef(null);
+  const refreshActive = useRef(false);
   const loadRequest = useRef(0);
+  useEffect(() => () => { loginCompletion.current?.reject(Error("ยกเลิกการรีข้อมูล")); loginCompletion.current = null; }, []);
+
+  // Re-read stored data only; never start provider checks or login from this timer.
+  useEffect(() => {
+    if (loading || running) return;
+    let cancelled = false;
+    let inFlight = false;
+    const timer = setInterval(async () => {
+      if (inFlight || document.visibilityState === "hidden") return;
+      inFlight = true;
+      const requestId = loadRequest.current;
+      try {
+        const query = game === "all" ? "" : `?gameId=${encodeURIComponent(game)}`;
+        const nextDashboard = await apiJson(`/api/gameinfo/russia-check${query}`, { fallbackError: "โหลดสถานะไม่สำเร็จ" });
+        if (!cancelled && requestId === loadRequest.current) setDashboard(nextDashboard);
+      } catch {
+        // Preserve the last successful snapshot and its displayed time; retry next minute.
+      } finally {
+        inFlight = false;
+      }
+    }, 60_000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [game, loading, running]);
 
   const gameItems = useMemo(() => [
     { value: "all", label: "ทุกเกม" },
@@ -90,6 +112,22 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
   const selectedGame = (dashboard.games || []).find((item) => String(item.gameId) === game);
   const demoSelected = Boolean(selectedGame?.isDemo);
   const selectedSourceDisabled = Boolean(selectedGame && !selectedGame.sourceEnabled && !selectedGame.isDemo);
+  const refreshBlockedReason = selectedGame?.refreshBlockedReason || (selectedSourceDisabled ? "Source นี้ยังไม่เปิดดึงข้อมูลอัตโนมัติ" : "");
+  const unavailableGames = (dashboard.games || []).filter((item) => !item.isDemo && item.refreshBlockedReason);
+  const isInfold = selectedGame?.provider === "infold";
+  const hasBrowserLogin = ["infold", "gryphline"].includes(selectedGame?.provider);
+  const canReconnect = canManage && loginRequiredGames(dashboard.games, game === "all" ? null : game).some((item) => item.sourceId === selectedGame?.sourceId);
+  const authLabel = selectedGame?.authState === "verified" ? "เชื่อมบัญชีแล้ว · ตรวจสอบผ่าน" : selectedGame?.authState === "invalid" ? "ต้อง Login ใหม่" : selectedGame?.authExpired ? "Session หมดอายุ" : selectedGame?.authConfigured ? "บันทึก Session แล้ว · ยังไม่ตรวจสอบ" : "ยังไม่มี Session";
+
+  function changeSessionDialog(open) {
+    if (savingSession || connectingBrowser) return;
+    setSessionDialog(open);
+    if (!open) {
+      setSessionCookie("");
+      setSessionExpiresAt("");
+      setManualLogin(false);
+    }
+  }
 
   async function load(nextGame = game, nextLogStatus = logStatus) {
     const requestId = ++loadRequest.current;
@@ -109,9 +147,11 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
       setLogs(nextLogs.events || []);
       setNextCursor(nextLogs.nextCursor || null);
     }
+    return nextDashboard;
   }
 
   async function changeGame(nextGame) {
+    setSessionNotice("");
     setLoading(true);
     setError("");
     try {
@@ -142,26 +182,39 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
   }
 
   async function refresh() {
+    if (refreshActive.current) return;
+    refreshActive.current = true;
     setRunning(true);
     setError("");
     try {
-      const result = await apiJson("/api/gameinfo/russia-check/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ gameId: game === "all" ? null : Number(game) }),
-        fallbackError: "เริ่ม Russia Check ไม่สำเร็จ",
+      await refreshWithLogin({
+        gameId: game === "all" ? null : Number(game), canManage,
+        loadDashboard: () => load(game, logStatus),
+        connect: (source) => new Promise((resolve, reject) => { loginCompletion.current = { resolve, reject }; setLoginRequest(source); }),
+        startRun: (body) => apiJson("/api/gameinfo/russia-check/refresh", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), fallbackError: "เริ่ม Russia Check ไม่สำเร็จ",
+        }),
+        readRun: (id) => apiJson(`/api/gameinfo/russia-check/runs/${id}`, { fallbackError: "โหลดสถานะ Russia Check ไม่สำเร็จ" }),
+        onProgress: setRefreshProgress,
       });
-      let run = result.run;
-      for (let attempt = 0; attempt < 90 && !FINISHED.has(run.status); attempt += 1) {
-        await pause(2000);
-        run = (await apiJson(`/api/gameinfo/russia-check/runs/${run.id}`, { fallbackError: "โหลดสถานะ Russia Check ไม่สำเร็จ" })).run;
-      }
-      await load(game, logStatus);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Russia Check ไม่สำเร็จ");
     } finally {
+      refreshActive.current = false;
+      setLoginRequest(null);
+      loginCompletion.current = null;
+      setRefreshProgress("");
       setRunning(false);
     }
+  }
+
+  function finishRefreshLogin(cancelled = false) {
+    const completion = loginCompletion.current;
+    loginCompletion.current = null;
+    setLoginRequest(null);
+    setConnectingBrowser(false);
+    if (cancelled) completion?.reject(Error("ยกเลิกการรีข้อมูล ข้อมูลแพ็กเดิมยังอยู่"));
+    else completion?.resolve();
   }
 
   async function loadMore() {
@@ -184,15 +237,15 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
 
   async function saveSession(event) {
     event.preventDefault();
-    if (!selectedGame?.sourceId) return;
+    if (!selectedGame?.sourceId || connectingBrowser || (isInfold && !manualLogin)) return;
     setSavingSession(true);
     setError("");
     try {
-      await apiJson(`/api/gameinfo/russia-check/sources/${selectedGame.sourceId}/session`, {
+      const result = await apiJson(`/api/gameinfo/russia-check/sources/${selectedGame.sourceId}/session`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sessionCookie,
+          ...(isInfold ? { formData: sessionCookie } : { sessionCookie }),
           expiresAt: sessionExpiresAt ? new Date(sessionExpiresAt).toISOString() : null,
         }),
         fallbackError: "บันทึก session ไม่สำเร็จ",
@@ -200,6 +253,7 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
       setSessionCookie("");
       setSessionExpiresAt("");
       setSessionDialog(false);
+      setSessionNotice(result.authState === "verified" ? `ตรวจสอบ Login ผ่าน พบ ${result.verifiedPackCount} แพ็ก กดรีข้อมูลเพื่อบันทึกแพ็กและ Log` : "บันทึก Session แล้ว แต่ยังไม่ผ่านการตรวจสอบ");
       await load(game, logStatus);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "บันทึก session ไม่สำเร็จ");
@@ -208,10 +262,20 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
     }
   }
 
+  async function browserConnected(result) {
+    setSessionNotice(`ตรวจสอบ Login ผ่าน พบ ${result.packCount} แพ็ก กดรีข้อมูลเพื่อบันทึกแพ็กและ Log`);
+    await load(game, logStatus);
+    setSessionDialog(false);
+    setSessionCookie("");
+    setSessionExpiresAt("");
+    setManualLogin(false);
+  }
+
   async function disconnectSession() {
     if (!selectedGame?.sourceId || !window.confirm("ลบ session ที่เก็บไว้สำหรับเกมนี้หรือไม่?")) return;
     setSavingSession(true);
     setError("");
+    setSessionNotice("");
     try {
       await apiJson(`/api/gameinfo/russia-check/sources/${selectedGame.sourceId}/session`, {
         method: "DELETE",
@@ -229,8 +293,8 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
   const latest = dashboard.latestRun;
   const latestChanges = (latest?.addedCount || 0) + (latest?.removedCount || 0) + (latest?.restoredCount || 0);
   const packItems = useMemo(() => (dashboard.items || [])
-    .map((item) => ({ ...item, displayStatus: displayStatus(item) }))
-    .filter((item) => status === "all" || item.displayStatus === status), [dashboard.items, status]);
+    .map((item) => ({ ...item, displayStatus: russiaCheckDisplayStatus(item, dashboard.dailyLog?.endAt) }))
+    .filter((item) => status === "all" || item.displayStatus === status), [dashboard.items, dashboard.dailyLog?.endAt, status]);
   const groups = useMemo(() => {
     const byGame = new Map();
     for (const event of logs) {
@@ -249,38 +313,45 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
           <Link href={`/gameinfo/${lang}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "w-fit")}><ArrowLeft data-icon="inline-start" />กลับ GameInfo</Link>
           <p className="text-xs font-medium text-muted-foreground">GAMEINFO · PACK AVAILABILITY</p>
           <h1 className="text-2xl font-semibold tracking-tight">Russia Check</h1>
-          <p className="text-sm text-muted-foreground">ติดตามแพ็กที่เพิ่ม หาย และกลับมาใน Xsolla ประเทศรัสเซีย</p>
+          <p className="text-sm text-muted-foreground">ติดตามแพ็กที่เพิ่ม หาย และกลับมา · SKY ใช้ประเทศรัสเซีย · NIKKE ใช้ร้านประเทศไทย (ไม่ต้อง Login) · Love and Deepspace / Endfield ใช้บัญชีและพื้นที่ที่เชื่อมไว้</p>
         </div>
-        <Button onClick={refresh} disabled={!canRefresh || running || demoSelected || selectedSourceDisabled} title={demoSelected ? "demo data เป็นข้อมูลตัวอย่างแบบอ่านอย่างเดียว" : selectedSourceDisabled ? "Source นี้ยังไม่เปิดดึงข้อมูลอัตโนมัติ" : canRefresh ? "ดึงข้อมูลตามเกมที่เลือก" : "ต้องมีสิทธิ์ Market Check"}>
+        <Button onClick={refresh} disabled={!canRefresh || running || loading || demoSelected || (Boolean(refreshBlockedReason) && !canReconnect)} aria-describedby={refreshBlockedReason ? "russia-check-source-blocked" : undefined} title={demoSelected ? "demo data เป็นข้อมูลตัวอย่างแบบอ่านอย่างเดียว" : canReconnect ? "เชื่อม Login แล้วรีข้อมูล" : refreshBlockedReason || (canRefresh ? "ดึงข้อมูลตามเกมที่เลือก" : "ต้องมีสิทธิ์ Market Check")}>
           {running ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
-          {running ? "กำลังตรวจ…" : "รีข้อมูล"}
+          {running ? refreshProgress || "กำลังตรวจ…" : "รีข้อมูล"}
         </Button>
       </header>
 
       {error ? <Alert variant="destructive"><AlertCircle /><AlertTitle>ดำเนินการไม่สำเร็จ</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
+      {sessionNotice ? <Alert><ShieldCheck /><AlertTitle>ผลการจัดการ Login</AlertTitle><AlertDescription role="status">{sessionNotice}</AlertDescription></Alert> : null}
       {configErrors.length ? <Alert variant="destructive"><AlertCircle /><AlertTitle>Source ผูกกับเกมไม่ถูกต้อง</AlertTitle><AlertDescription>{configErrors.map((item) => `Game ID ${item.gameId} ต้องเป็น ${item.expectedGameName}`).join(", ")}</AlertDescription></Alert> : null}
-      {selectedGame?.authRequired && (!selectedGame.authConfigured || selectedGame.authExpired) ? <Alert><KeyRound /><AlertTitle>{selectedGame.authExpired ? "Session หมดอายุ" : "ยังไม่ได้เชื่อมบัญชี"}</AlertTitle><AlertDescription>ระบบจะไม่ดึงหรือเปลี่ยนสถานะ Pack จนกว่าจะบันทึก session ที่ใช้งานได้</AlertDescription></Alert> : null}
+      {refreshBlockedReason && !demoSelected ? <Alert><AlertCircle /><AlertTitle>ยังรีข้อมูลเกมนี้ไม่ได้</AlertTitle><AlertDescription id="russia-check-source-blocked">{refreshBlockedReason}</AlertDescription></Alert> : null}
+      {game === "all" && unavailableGames.length ? <Alert><AlertCircle /><AlertTitle>บางเกมยังไม่พร้อมตรวจ</AlertTitle><AlertDescription>กดรีเพื่อเชื่อม Login ที่ขาดทีละเกม: {unavailableGames.map((item) => item.gameName).join(", ")} · รอบอัตโนมัติข้ามเกมที่รอ Login โดยไม่เปลี่ยนข้อมูลเดิม</AlertDescription></Alert> : null}
 
       <Card>
         <CardHeader>
           <CardTitle>สถานะการตรวจ</CardTitle>
-          <CardDescription>อัตโนมัติทุกวัน 09:00 น. เวลาไทย</CardDescription>
+          <CardDescription>{refreshBlockedReason ? "เกมที่เลือกยังไม่พร้อมตรวจอัตโนมัติ" : "อัตโนมัติทุกวัน 09:00 น. เวลาไทย"}</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-3">
           <div><p className="text-xs text-muted-foreground">รอบล่าสุด</p><p className="font-medium">{latest ? formatBangkok(latest.finishedAt || latest.createdAt) : "ยังไม่เคยตรวจ"}</p></div>
-          <div><p className="text-xs text-muted-foreground">ผลล่าสุด</p><p className="font-medium">{latest?.status === "failed" ? "ตรวจไม่สำเร็จ" : latestChanges ? `เปลี่ยนแปลง ${latestChanges} รายการ` : "ไม่มีการเปลี่ยนแปลง"}</p></div>
-          <div><p className="text-xs text-muted-foreground">รอบถัดไป</p><p className="font-medium">{formatBangkok(dashboard.nextRunAt)}</p></div>
+          <div><p className="text-xs text-muted-foreground">ผลล่าสุด</p><p className="font-medium">{!latest ? "ยังไม่มีผลการตรวจ" : latest.status === "failed" ? "ตรวจไม่สำเร็จ" : latestChanges ? `เปลี่ยนแปลง ${latestChanges} รายการ` : "ไม่มีการเปลี่ยนแปลง"}</p></div>
+          <div><p className="text-xs text-muted-foreground">รอบถัดไป</p><p className="font-medium">{refreshBlockedReason ? "ยังไม่มีกำหนด" : formatBangkok(dashboard.nextRunAt)}</p></div>
         </CardContent>
       </Card>
 
       <div className="flex flex-wrap gap-3">
-        <Select items={gameItems} value={game} onValueChange={selectGame}>
+        <Link href={`/gameinfo/${lang}/russia-check/game-logs`} className={buttonVariants({ variant: "outline" })}><Clock3 data-icon="inline-start" />Log รายเกม</Link>
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        <Select items={gameItems} value={game} onValueChange={selectGame} disabled={running || loading}>
           <SelectTrigger aria-label="เลือกเกม"><SelectValue /></SelectTrigger>
           <SelectContent><SelectGroup>{gameItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
         </Select>
         {selectedGame?.storeUrl ? <a href={selectedGame.storeUrl} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline" })}><ExternalLink data-icon="inline-start" />เปิดหน้าเว็บ</a> : null}
-        {selectedGame?.authRequired ? <Badge variant={selectedGame.authConfigured && !selectedGame.authExpired ? "success" : "secondary"}>{selectedGame.authConfigured && !selectedGame.authExpired ? <ShieldCheck data-icon="inline-start" /> : <KeyRound data-icon="inline-start" />}{selectedGame.authConfigured && !selectedGame.authExpired ? "เชื่อมบัญชีแล้ว" : "ต้องเชื่อมบัญชี"}</Badge> : null}
+        {selectedGame?.authRequired ? <Badge variant={selectedGame.authState === "verified" ? "success" : selectedGame.authExpired || selectedGame.authState === "invalid" ? "destructive" : "secondary"}><KeyRound data-icon="inline-start" />{authLabel}</Badge> : null}
         {selectedGame?.authRequired && canManage ? <Button variant="outline" onClick={() => setSessionDialog(true)}><KeyRound data-icon="inline-start" />จัดการ Login</Button> : null}
+        {canManage ? <Link href={`/gameinfo/${lang}/russia-check/extension`} className={buttonVariants({ variant: "outline" })}><Download data-icon="inline-start" />โหลดส่วนขยาย</Link> : null}
       </div>
 
       <Tabs defaultValue="packs">
@@ -296,7 +367,7 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
             <SelectTrigger aria-label="กรองสถานะ Pack"><SelectValue /></SelectTrigger>
             <SelectContent><SelectGroup>{STATUS_ITEMS.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
           </Select>
-          {loading ? <LoadingTable /> : packItems.length ? <PackTable items={packItems} /> : <Empty><EmptyHeader><EmptyMedia variant="icon"><PackageCheck /></EmptyMedia><EmptyTitle>ยังไม่มี Pack</EmptyTitle><EmptyDescription>กดรีข้อมูลเพื่อสร้างข้อมูลตั้งต้น หรือเปลี่ยนตัวกรอง</EmptyDescription></EmptyHeader></Empty>}
+          {loading ? <LoadingTable /> : packItems.length ? <PackTable items={packItems} /> : <Empty><EmptyHeader><EmptyMedia variant="icon"><PackageCheck /></EmptyMedia><EmptyTitle>ยังไม่มี Pack</EmptyTitle><EmptyDescription>{refreshBlockedReason || "กดรีข้อมูลเพื่อสร้างข้อมูลตั้งต้น หรือเปลี่ยนตัวกรอง"}</EmptyDescription></EmptyHeader></Empty>}
         </TabsContent>
         <TabsContent value="logs" className="flex flex-col gap-4 pt-2">
           <Select items={LOG_STATUS_ITEMS} value={logStatus} onValueChange={selectLogStatus}>
@@ -308,29 +379,45 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
         </TabsContent>
       </Tabs>
 
-      <Dialog open={sessionDialog} onOpenChange={setSessionDialog}>
-        <DialogContent className="sm:max-w-lg">
+      <Dialog open={Boolean(loginRequest)} onOpenChange={(open) => { if (!open && !connectingBrowser) finishRefreshLogin(true); }}>
+        <DialogContent showCloseButton={!connectingBrowser} className="sm:max-w-lg">
+          <DialogHeader><DialogTitle>ต้อง Login · {loginRequest?.gameName}</DialogTitle><DialogDescription>Session ขาดหรือหมดอายุ เชื่อมบัญชีนี้ก่อน แล้วระบบจะตรวจเกมถัดไปและรีข้อมูลต่อโดยอัตโนมัติ</DialogDescription></DialogHeader>
+          {loginRequest ? <GameinfoRussiaCheckBrowserConnect key={loginRequest.sourceId} sourceId={loginRequest.sourceId} provider={loginRequest.provider} lang={lang} autoStart onBusyChange={setConnectingBrowser} onConnected={() => finishRefreshLogin()} onCancelled={() => finishRefreshLogin(true)} /> : null}
+          <DialogFooter><Button variant="outline" onClick={() => finishRefreshLogin(true)} disabled={connectingBrowser}>ยกเลิกการรี</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={sessionDialog} onOpenChange={changeSessionDialog}>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
           <form onSubmit={saveSession} className="contents">
             <DialogHeader>
-              <DialogTitle>เชื่อมบัญชี {selectedGame?.gameName}</DialogTitle>
-              <DialogDescription>วางค่า Cookie จาก request หลังล็อกอิน ระบบจะเข้ารหัสและเก็บไว้ฝั่งเซิร์ฟเวอร์เท่านั้น ผู้ใช้ทั่วไปจะไม่เห็นค่านี้</DialogDescription>
+              <DialogTitle>เก็บ Session · {selectedGame?.gameName}</DialogTitle>
+              <DialogDescription>{hasBrowserLogin ? "เชื่อมผ่าน popup ของส่วนขยาย แล้วทดสอบโหลดแพ็กก่อนบันทึก Session แบบเข้ารหัส" : "บันทึก Cookie แบบเข้ารหัสฝั่งเซิร์ฟเวอร์เท่านั้น ยังไม่ได้ตรวจสอบ Login กับผู้ให้บริการ"}</DialogDescription>
             </DialogHeader>
+            {hasBrowserLogin ? <>
+              <GameinfoRussiaCheckBrowserConnect sourceId={selectedGame.sourceId} provider={selectedGame.provider} lang={lang} disabled={savingSession || running} onBusyChange={setConnectingBrowser} onConnected={browserConnected} />
+              {isInfold ? <Button type="button" variant="ghost" onClick={() => setManualLogin((value) => !value)} disabled={savingSession || connectingBrowser} aria-expanded={manualLogin}>{manualLogin ? "ซ่อนการนำเข้าแบบเดิม" : "ใช้ Form Data แบบเดิม (ทางเลือกสำรอง)"}</Button> : null}
+            </> : null}
+            {!hasBrowserLogin || manualLogin ? <>
+            {isInfold ? <Alert><KeyRound /><AlertTitle>ใช้ Form Data ไม่ใช่ Cookie</AlertTitle><AlertDescription>ล็อกอินและเลือกตัวละครจนเห็นแพ็ก → Network → products → Payload → View source แล้วคัดลอกทั้งชุดมาวางที่นี่เท่านั้น ไม่ส่งในแชต ระบบใช้บัญชี/ตัวละคร/พื้นที่เดิมตามคำขอ ไม่ได้บังคับเป็น RU</AlertDescription></Alert> : null}
+            {error ? <Alert variant="destructive"><AlertCircle /><AlertTitle>ดำเนินการไม่สำเร็จ</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
             <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="russia-check-session-cookie">Cookie</FieldLabel>
-                <Textarea id="russia-check-session-cookie" value={sessionCookie} onChange={(event) => setSessionCookie(event.target.value)} placeholder="cookie_name=value; another_cookie=value" autoComplete="off" rows={5} required aria-describedby="russia-check-session-help" />
-                <FieldDescription id="russia-check-session-help">ใส่เฉพาะค่าใน Request Header ชื่อ Cookie และอย่าส่งรหัสผ่านบัญชี</FieldDescription>
+              <Field data-invalid={Boolean(error)} data-disabled={savingSession}>
+                <FieldLabel htmlFor="russia-check-session-cookie">{isInfold ? "Form Data จาก products" : "Cookie"}</FieldLabel>
+                <Textarea id="russia-check-session-cookie" value={sessionCookie} onChange={(event) => setSessionCookie(event.target.value)} placeholder={isInfold ? "app_id=1010001&timestamp=...&sign_type=hmac&clientid=1067&lang=en&data=...&sign=..." : "cookie_name=value; another_cookie=value"} maxLength={isInfold ? 65536 : 16384} disabled={savingSession} aria-invalid={Boolean(error)} spellCheck={false} autoComplete="off" rows={5} required aria-describedby="russia-check-session-help" />
+                <FieldDescription id="russia-check-session-help">{isInfold ? "ต้องมี data และ sign ครบ คำขอนี้มีข้อมูล Login ห้ามแชร์ให้ผู้อื่น" : "ใส่เฉพาะค่าใน Request Header ชื่อ Cookie และอย่าส่งรหัสผ่านบัญชี"}</FieldDescription>
               </Field>
               <Field>
                 <FieldLabel htmlFor="russia-check-session-expiry">วันหมดอายุ (ถ้าทราบ)</FieldLabel>
                 <Input id="russia-check-session-expiry" type="datetime-local" value={sessionExpiresAt} onChange={(event) => setSessionExpiresAt(event.target.value)} />
-                <FieldDescription>เว้นว่างได้ ระบบจะแสดงว่าเชื่อมอยู่จนกว่าการดึงข้อมูลจะตอบว่า session ใช้ไม่ได้</FieldDescription>
+                <FieldDescription>เว้นว่างได้หากไม่ทราบ วันหมดอายุนี้เป็นข้อมูลที่กรอกเอง ไม่ใช่ผลตรวจสอบจาก Infold</FieldDescription>
               </Field>
             </FieldGroup>
+            </> : null}
             <DialogFooter>
-              {selectedGame?.authConfigured ? <Button type="button" variant="destructive" onClick={disconnectSession} disabled={savingSession}>ลบ Session</Button> : null}
-              <Button type="button" variant="outline" onClick={() => setSessionDialog(false)} disabled={savingSession}>ยกเลิก</Button>
-              <Button type="submit" disabled={savingSession || !sessionCookie.trim()}>{savingSession ? <Spinner data-icon="inline-start" /> : <ShieldCheck data-icon="inline-start" />}{savingSession ? "กำลังบันทึก…" : "บันทึก Session"}</Button>
+              {selectedGame?.authConfigured ? <Button type="button" variant="destructive" onClick={disconnectSession} disabled={savingSession || connectingBrowser}>ลบ Session</Button> : null}
+              <Button type="button" variant="outline" onClick={() => changeSessionDialog(false)} disabled={savingSession || connectingBrowser}>ปิด</Button>
+              {!hasBrowserLogin || manualLogin ? <Button type="submit" disabled={savingSession || connectingBrowser || !sessionCookie.trim()}>{savingSession ? <Spinner data-icon="inline-start" /> : <ShieldCheck data-icon="inline-start" />}{savingSession ? "กำลังตรวจสอบและบันทึก…" : isInfold ? "ทดสอบและบันทึก Login" : "บันทึก Session"}</Button> : null}
             </DialogFooter>
           </form>
         </DialogContent>
@@ -344,11 +431,39 @@ function SummaryCard({ title, value, icon: Icon }) {
 }
 
 function PackTable({ items }) {
-  return <Card><CardHeader><CardTitle>รายการ Pack</CardTitle><CardDescription>{items.length} รายการตามตัวกรองปัจจุบัน</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>เกม</TableHead><TableHead>ชื่อ Pack</TableHead><TableHead>สถานะ</TableHead><TableHead>วันที่เริ่มพบ/เพิ่ม</TableHead><TableHead>วันที่หาย</TableHead></TableRow></TableHeader><TableBody>{items.map((item, index) => <TableRow key={`${item.gameId}:${item.name}:${index}`}><TableCell>{item.gameName}</TableCell><TableCell className="font-medium">{item.name}</TableCell><TableCell><Badge variant={statusBadge(item.displayStatus)}>{STATUS_LABELS[item.displayStatus]}</Badge></TableCell><TableCell>{formatBangkok(displayStatusDate(item))}</TableCell><TableCell>{formatBangkok(item.removedAt)}</TableCell></TableRow>)}</TableBody></Table></CardContent></Card>;
+  return <Card><CardHeader><CardTitle>รายการ Pack</CardTitle><CardDescription>{items.length} รายการตามตัวกรองปัจจุบัน</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>เกม</TableHead><TableHead>ชื่อ Pack</TableHead><TableHead>สถานะ</TableHead><TableHead>วันที่เริ่มพบ/เพิ่ม</TableHead><TableHead>วันที่หาย</TableHead></TableRow></TableHeader><TableBody>{items.map((item, index) => <TableRow key={`${item.gameId}:${item.name}:${index}`}><TableCell>{item.gameName}</TableCell><TableCell className="font-medium"><div className="flex items-center gap-2">{item.name}<CopyPackName key={item.name} name={item.name} /></div></TableCell><TableCell><Badge variant={statusBadge(item.displayStatus)}>{STATUS_LABELS[item.displayStatus]}</Badge></TableCell><TableCell>{formatBangkok(displayStatusDate(item))}</TableCell><TableCell>{formatBangkok(item.removedAt)}</TableCell></TableRow>)}</TableBody></Table></CardContent></Card>;
 }
 
 function LogGroup({ group }) {
-  return <Card><CardHeader><CardTitle>{group.gameName}</CardTitle><CardDescription>{group.events.length} เหตุการณ์ที่โหลดแล้ว</CardDescription></CardHeader><CardContent><ol className="flex flex-col gap-3">{group.events.map((event) => <li key={event.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"><div className="flex items-center gap-2"><Badge variant={eventBadge(event.eventType)}>{event.eventType === "restored" ? <RotateCcw data-icon="inline-start" /> : event.eventType === "removed" ? <PackageMinus data-icon="inline-start" /> : <PackagePlus data-icon="inline-start" />}{EVENT_LABELS[event.eventType]}</Badge><span className="font-medium">{event.packName}</span></div><time className="text-xs text-muted-foreground">{formatBangkok(event.createdAt)}</time></li>)}</ol></CardContent></Card>;
+  return <Card><CardHeader><CardTitle>{group.gameName}</CardTitle><CardDescription>{group.events.length} เหตุการณ์ที่โหลดแล้ว</CardDescription></CardHeader><CardContent><ol className="flex flex-col gap-3">{group.events.map((event) => <li key={event.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"><div className="flex items-center gap-2"><Badge variant={eventBadge(event.eventType)}>{event.eventType === "restored" ? <RotateCcw data-icon="inline-start" /> : event.eventType === "removed" ? <PackageMinus data-icon="inline-start" /> : <PackagePlus data-icon="inline-start" />}{EVENT_LABELS[event.eventType]}</Badge><span className="font-medium">{event.packName}</span><CopyPackName key={event.packName} name={event.packName} /></div><time className="text-xs text-muted-foreground">{formatBangkok(event.createdAt)}</time></li>)}</ol></CardContent></Card>;
+}
+
+function CopyPackName({ name }) {
+  const [copyState, setCopyState] = useState("idle");
+  useEffect(() => {
+    if (copyState !== "copied") return;
+    const timer = setTimeout(() => setCopyState("idle"), 2000);
+    return () => clearTimeout(timer);
+  }, [copyState]);
+
+  async function copyName() {
+    setCopyState("pending");
+    try {
+      await navigator.clipboard.writeText(name);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+  }
+
+  return <span className="inline-flex items-center gap-1">
+    <Button type="button" variant="ghost" size="icon-sm" onClick={copyName} disabled={copyState === "pending"} title="คัดลอกชื่อ Pack" aria-label={`คัดลอกชื่อ Pack: ${name}`}>
+      {copyState === "pending" ? <Spinner data-icon="inline-start" /> : copyState === "copied" ? <Check data-icon="inline-start" /> : <Copy data-icon="inline-start" />}
+    </Button>
+    <span role="status" aria-live="polite" className={cn("text-xs", copyState === "failed" ? "text-destructive" : "text-muted-foreground")}>
+      {copyState === "copied" ? "คัดลอกแล้ว" : copyState === "failed" ? "คัดลอกไม่สำเร็จ ลองเลือกชื่อแล้วคัดลอกเอง" : ""}
+    </span>
+  </span>;
 }
 
 function LoadingTable() {

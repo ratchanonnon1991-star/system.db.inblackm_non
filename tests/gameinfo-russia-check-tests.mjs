@@ -118,7 +118,7 @@ const instrumentation = readFileSync(new URL("../src/instrumentation.js", import
 assert.match(instrumentation, /startGameinfoRussiaCheckScheduler/);
 const refreshRoute = readFileSync(new URL("../src/app/api/gameinfo/russia-check/refresh/route.js", import.meta.url), "utf8");
 assert.match(refreshRoute, /requireGameinfoMarketChecker/);
-assert.match(refreshRoute, /startRussiaCheck\(user, "manual", body\.gameId\)/);
+assert.match(refreshRoute, /startRussiaCheck\(user, "manual", body\.gameId, body\.retryRunId\)/);
 const readRoute = readFileSync(new URL("../src/app/api/gameinfo/russia-check/route.js", import.meta.url), "utf8");
 assert.match(readRoute, /requireGameinfoAccess/);
 const sessionRoute = readFileSync(new URL("../src/app/api/gameinfo/russia-check/sources/[id]/session/route.js", import.meta.url), "utf8");
@@ -127,7 +127,7 @@ assert.doesNotMatch(sessionRoute, /GET\s*\(/);
 const logsRoute = readFileSync(new URL("../src/app/api/gameinfo/russia-check/logs/route.js", import.meta.url), "utf8");
 assert.match(logsRoute, /eventType: query\.get\("eventType"\)/);
 const server = readFileSync(new URL("../src/server/gameinfo-russia-check.js", import.meta.url), "utf8");
-assert.match(server, /MAX\(r\.started_at\) AS last_scheduled_at[\s\S]*r\.trigger_type='scheduled'/);
+assert.doesNotMatch(server, /last_scheduled_at|lastScheduledAt/);
 assert.match(server, /i\.is_baseline AND s\.provider<>'demo'[\s\S]*e\.event_type='added'/);
 assert.match(server, /RUSSIA_CHECK_EVENT_TYPES[\s\S]*e\.event_type=\$3/);
 const page = readFileSync(new URL("../src/components/gameinfo-russia-check-page.js", import.meta.url), "utf8");

@@ -2,6 +2,13 @@ import { createHash } from "node:crypto";
 import { getPoolForConnection } from "@/lib/db";
 import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
 import { decryptRussiaCheckSession, encryptRussiaCheckSession } from "@/server/crypto";
+import { getRussiaCheckSourceAvailability } from "@/lib/gameinfo-russia-check-source";
+import { getRussiaCheckDailyLog } from "@/server/gameinfo-russia-check-daily";
+import { fetchInfoldCatalog } from "@/server/gameinfo-infold-catalog";
+import { fetchMidasbuyCatalog } from "@/server/gameinfo-midasbuy-catalog";
+import { fetchGryphlineCatalog } from "@/server/gameinfo-gryphline-catalog";
+import { saveGryphlineSession } from "@/server/gameinfo-gryphline-session";
+import { saveInfoldSession } from "@/server/gameinfo-infold-session";
 import {
   RUSSIA_CHECK_PAGE_SIZE,
   RUSSIA_CHECK_STATUSES,
@@ -57,11 +64,15 @@ async function ensureSchema(connection) {
         );
         ALTER TABLE gameinfo_russia_check_sources ADD COLUMN IF NOT EXISTS store_url text;
         ALTER TABLE gameinfo_russia_check_sources ADD COLUMN IF NOT EXISTS auth_required boolean NOT NULL DEFAULT false;
+        ALTER TABLE gameinfo_russia_check_sources ADD COLUMN IF NOT EXISTS catalog_scope_hash varchar(64);
         CREATE TABLE IF NOT EXISTS gameinfo_russia_check_source_credentials (
           source_id bigint PRIMARY KEY REFERENCES gameinfo_russia_check_sources(id) ON DELETE CASCADE,
           session_enc text NOT NULL, expires_at timestamptz, updated_by integer,
           created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
         );
+        ALTER TABLE gameinfo_russia_check_source_credentials ADD COLUMN IF NOT EXISTS credential_kind varchar(16) NOT NULL DEFAULT 'cookie';
+        ALTER TABLE gameinfo_russia_check_source_credentials ADD COLUMN IF NOT EXISTS verified_at timestamptz;
+        ALTER TABLE gameinfo_russia_check_source_credentials ADD COLUMN IF NOT EXISTS invalidated_at timestamptz;
         CREATE TABLE IF NOT EXISTS gameinfo_russia_check_runs (
           id bigserial PRIMARY KEY, target_game_id integer,
           trigger_type varchar(16) NOT NULL CHECK (trigger_type IN ('manual','scheduled')),
@@ -111,6 +122,20 @@ async function ensureSchema(connection) {
         INSERT INTO gameinfo_russia_check_sources
           (source_key,game_id,expected_game_name,provider,source_url,store_url,project_id,country,locale,auth_required,enabled)
         VALUES ('love-deepspace-infold',3,'LOVE AND DEEPSPACE','infold','https://loveanddeepspace.infoldgames.com/charge/en-EN','https://loveanddeepspace.infoldgames.com/charge/en-EN','love-and-deepspace','RU','en-EN',true,false)
+        ON CONFLICT (source_key) DO UPDATE SET
+          game_id=EXCLUDED.game_id,expected_game_name=EXCLUDED.expected_game_name,provider=EXCLUDED.provider,
+          source_url=EXCLUDED.source_url,store_url=EXCLUDED.store_url,project_id=EXCLUDED.project_id,country=EXCLUDED.country,
+          locale=EXCLUDED.locale,auth_required=true,updated_at=now();
+        INSERT INTO gameinfo_russia_check_sources
+          (source_key,game_id,expected_game_name,provider,source_url,store_url,project_id,country,locale,auth_required,enabled)
+        VALUES ('nikke-midasbuy-th',22,'GODDESS OF VICTORY: NIKKE UID','midasbuy','https://www.midasbuy.com/frontend/api/midasbuy/v1/shelves/query','https://www.midasbuy.com/midasbuy/th/shop/nikkegl#/pages/shop/items','1460000285','TH','en',false,true)
+        ON CONFLICT (source_key) DO UPDATE SET
+          game_id=EXCLUDED.game_id,expected_game_name=EXCLUDED.expected_game_name,provider=EXCLUDED.provider,
+          source_url=EXCLUDED.source_url,store_url=EXCLUDED.store_url,project_id=EXCLUDED.project_id,country=EXCLUDED.country,
+          locale=EXCLUDED.locale,auth_required=false,updated_at=now();
+        INSERT INTO gameinfo_russia_check_sources
+          (source_key,game_id,expected_game_name,provider,source_url,store_url,project_id,country,locale,auth_required,enabled)
+        VALUES ('endfield-gryphline',217,'ARKNIGHTS: ENDFIELD','gryphline','https://as.gryphline.com/user/pay/v3/query_web_product','https://topup.gryphline.com/endfield','d9f6dbb6bbd6bb33','ZZ','en-us',true,false)
         ON CONFLICT (source_key) DO UPDATE SET
           game_id=EXCLUDED.game_id,expected_game_name=EXCLUDED.expected_game_name,provider=EXCLUDED.provider,
           source_url=EXCLUDED.source_url,store_url=EXCLUDED.store_url,project_id=EXCLUDED.project_id,country=EXCLUDED.country,
@@ -246,15 +271,17 @@ function normalizeSessionExpiry(value) {
 
 export async function saveRussiaCheckSourceSession(sourceId, fields, actor) {
   const normalizedSourceId = optionalPositiveInt(sourceId, "Source ID");
-  const sessionCookie = normalizeRussiaCheckSessionCookie(fields?.sessionCookie);
-  const expiresAt = normalizeSessionExpiry(fields?.expiresAt);
   const pool = await getPool();
   const source = await pool.query(
-    `SELECT id,expected_game_name,auth_required FROM gameinfo_russia_check_sources WHERE id=$1`,
+    `SELECT id,expected_game_name,auth_required,provider FROM gameinfo_russia_check_sources WHERE id=$1`,
     [normalizedSourceId]
   );
   if (!source.rows[0]) throw httpError("ไม่พบ Source", 404);
   if (!source.rows[0].auth_required) throw httpError("Source นี้ไม่ต้องใช้ session", 409);
+  if (source.rows[0].provider === "infold") return saveInfoldSession(pool, normalizedSourceId, fields, actor);
+  if (source.rows[0].provider === "gryphline") return saveGryphlineSession(pool, normalizedSourceId, fields, actor);
+  const sessionCookie = normalizeRussiaCheckSessionCookie(fields?.sessionCookie);
+  const expiresAt = normalizeSessionExpiry(fields?.expiresAt);
   await pool.query(
     `INSERT INTO gameinfo_russia_check_source_credentials (source_id,session_enc,expires_at,updated_by)
      VALUES ($1,$2,$3,$4)
@@ -262,15 +289,23 @@ export async function saveRussiaCheckSourceSession(sourceId, fields, actor) {
        updated_by=EXCLUDED.updated_by,updated_at=NOW()`,
     [normalizedSourceId, encryptRussiaCheckSession(sessionCookie), expiresAt, actorId(actor)]
   );
-  return { sourceId: normalizedSourceId, configured: true, expiresAt, expired: false };
+  return { sourceId: normalizedSourceId, configured: true, expiresAt, expired: false, authState: "saved_unverified" };
 }
 
 export async function deleteRussiaCheckSourceSession(sourceId) {
   const normalizedSourceId = optionalPositiveInt(sourceId, "Source ID");
   const pool = await getPool();
-  const result = await pool.query(`DELETE FROM gameinfo_russia_check_source_credentials WHERE source_id=$1`, [normalizedSourceId]);
-  if (!result.rowCount) throw httpError("Source นี้ยังไม่มี session", 404);
-  return { sourceId: normalizedSourceId, configured: false };
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(`SELECT id FROM gameinfo_russia_check_sources WHERE id=$1 FOR UPDATE`, [normalizedSourceId]);
+    const result = await client.query(`DELETE FROM gameinfo_russia_check_source_credentials WHERE source_id=$1`, [normalizedSourceId]);
+    if (!result.rowCount) throw httpError("Source นี้ยังไม่มี session", 404);
+    await client.query(`UPDATE gameinfo_russia_check_sources SET enabled=false,updated_at=NOW() WHERE id=$1 AND auth_required`, [normalizedSourceId]);
+    await client.query("COMMIT");
+    return { sourceId: normalizedSourceId, configured: false };
+  } catch (error) { await client.query("ROLLBACK"); throw error; }
+  finally { client.release(); }
 }
 
 export async function getRussiaCheckSourceSession(sourceId) {
@@ -281,6 +316,7 @@ export async function getRussiaCheckSourceSession(sourceId) {
     [normalizedSourceId]
   );
   if (!result.rows[0]) return null;
+  if (result.rows[0].expires_at && new Date(result.rows[0].expires_at) <= new Date()) return null;
   return { cookie: decryptRussiaCheckSession(result.rows[0].session_enc), expiresAt: result.rows[0].expires_at };
 }
 
@@ -309,6 +345,9 @@ async function fetchJsonWithRetry(url, { fetchImpl, retries, retryDelay }) {
 }
 
 export async function fetchRussiaCheckCatalog(source, options = {}) {
+  if (source.provider && source.provider !== "xsolla") {
+    throw httpError("ยังไม่มีตัวดึงรายการแพ็กสำหรับ Source นี้ ไม่สามารถใช้ API ของ Xsolla แทนได้", 409);
+  }
   const fetchImpl = options.fetchImpl || fetch;
   const retries = Math.max(1, Number(options.retries) || 3);
   const retryDelay = options.retryDelay || ((attempt) => wait([1000, 3000, 5000][attempt] || 5000));
@@ -371,17 +410,34 @@ async function processSource(pool, runId, source) {
     `UPDATE gameinfo_russia_check_run_sources SET status='running', started_at=COALESCE(started_at,NOW()), error='' WHERE run_id=$1 AND source_id=$2`,
     [runId, source.id]
   );
+  let credential;
   try {
     const game = await pool.query(`SELECT id, game FROM game_list WHERE id=$1`, [source.game_id]);
     const actualName = String(game.rows[0]?.game || "").trim().toUpperCase();
     if (!game.rows[0] || actualName !== String(source.expected_game_name).trim().toUpperCase()) {
       throw new Error(`Source ${source.source_key} ต้องผูกกับ Game ID ${source.game_id} ชื่อ ${source.expected_game_name}`);
     }
-    const catalog = await fetchRussiaCheckCatalog(source);
+    let catalog;
+    if (["infold", "gryphline"].includes(source.provider)) {
+      credential = (await pool.query(`SELECT * FROM gameinfo_russia_check_source_credentials WHERE source_id=$1`, [source.id])).rows[0];
+      if (!credential || credential.credential_kind !== source.provider || !credential.verified_at || credential.invalidated_at || (credential.expires_at && new Date(credential.expires_at) <= new Date())) {
+        throw Object.assign(httpError("ต้องเชื่อมบัญชีและตรวจสอบ Login ใหม่", 409), { authInvalid: true });
+      }
+      let session;
+      try { session = JSON.parse(decryptRussiaCheckSession(credential.session_enc)); }
+      catch { throw Object.assign(httpError("อ่าน Session ไม่สำเร็จ กรุณาเชื่อมบัญชีใหม่", 409), { authInvalid: true }); }
+      catalog = await (source.provider === "infold" ? fetchInfoldCatalog(session) : fetchGryphlineCatalog(session));
+    } else if (source.provider === "midasbuy") catalog = await fetchMidasbuyCatalog(source);
+    else catalog = await fetchRussiaCheckCatalog(source);
     const hash = createHash("sha256").update(JSON.stringify(catalog)).digest("hex");
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
+      if (["infold", "gryphline"].includes(source.provider)) {
+        const currentSource = (await client.query(`SELECT enabled FROM gameinfo_russia_check_sources WHERE id=$1 FOR UPDATE`, [source.id])).rows[0];
+        const currentCredential = (await client.query(`SELECT session_enc,invalidated_at FROM gameinfo_russia_check_source_credentials WHERE source_id=$1`, [source.id])).rows[0];
+        if (!currentSource?.enabled || currentCredential?.session_enc !== credential.session_enc || currentCredential?.invalidated_at) throw httpError("Login เปลี่ยนระหว่างตรวจ กรุณารีใหม่", 409);
+      }
       const [currentResult, previousRun] = await Promise.all([
         client.query(`SELECT * FROM gameinfo_russia_check_items WHERE source_id=$1 FOR UPDATE`, [source.id]),
         client.query(
@@ -441,6 +497,9 @@ async function processSource(pool, runId, source) {
       client.release();
     }
   } catch (error) {
+    if (error.authInvalid && credential) {
+      await pool.query(`UPDATE gameinfo_russia_check_source_credentials SET invalidated_at=NOW() WHERE source_id=$1 AND session_enc=$2`, [source.id, credential.session_enc]);
+    }
     await pool.query(
       `UPDATE gameinfo_russia_check_run_sources SET status='failed',error=$3,finished_at=NOW() WHERE run_id=$1 AND source_id=$2`,
       [runId, source.id, String(error?.message || error).slice(0, 2000)]
@@ -470,20 +529,27 @@ function launchRun(runId) {
   return promise;
 }
 
-export async function startRussiaCheck(actor, triggerType = "manual", gameId = null) {
+export async function startRussiaCheck(actor, triggerType = "manual", gameId = null, retryRunId = null) {
   const pool = await getPool();
   const targetGameId = gameId == null || gameId === "" ? null : Number(gameId);
   if (targetGameId != null && (!Number.isInteger(targetGameId) || targetGameId <= 0)) throw httpError("Game ID ไม่ถูกต้อง", 400);
+  const retryId = optionalPositiveInt(retryRunId, "Retry run ID");
+  const retryClause = retryId == null ? "" : "AND EXISTS (SELECT 1 FROM gameinfo_russia_check_run_sources previous WHERE previous.source_id=s.id AND previous.run_id=$2 AND previous.status='failed')";
+  const sources = await pool.query(
+    `SELECT s.id FROM gameinfo_russia_check_sources s
+     LEFT JOIN gameinfo_russia_check_source_credentials c ON c.source_id=s.id
+     WHERE s.enabled AND ($1::int IS NULL OR s.game_id=$1) ${retryClause}
+       AND ((s.provider IN ('xsolla','midasbuy') AND NOT s.auth_required) OR
+         (s.provider='infold' AND c.credential_kind='infold' AND c.verified_at IS NOT NULL AND c.invalidated_at IS NULL AND (c.expires_at IS NULL OR c.expires_at>NOW())) OR
+         (s.provider='gryphline' AND c.credential_kind='gryphline' AND c.verified_at IS NOT NULL AND c.invalidated_at IS NULL AND (c.expires_at IS NULL OR c.expires_at>NOW()))) ORDER BY s.id`,
+    retryId == null ? [targetGameId] : [targetGameId, retryId]
+  );
+  if (!sources.rowCount) throw httpError("เกมนี้ยังไม่มี Source ที่พร้อมดึงข้อมูล การบันทึก session อย่างเดียวยังไม่เปิดใช้ API", 409);
   const active = await pool.query(`SELECT * FROM gameinfo_russia_check_runs WHERE status IN ('queued','running') ORDER BY id DESC LIMIT 1`);
   if (active.rows[0]) {
     launchRun(Number(active.rows[0].id));
     return { run: mapRun(active.rows[0]), existing: true };
   }
-  const sources = await pool.query(
-    `SELECT id FROM gameinfo_russia_check_sources WHERE enabled AND ($1::int IS NULL OR game_id=$1) ORDER BY id`,
-    [targetGameId]
-  );
-  if (!sources.rowCount) throw httpError("ไม่พบ Source ที่เปิดใช้งานสำหรับเกมนี้", 409);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -529,6 +595,10 @@ export async function getRussiaCheckRun(runId) {
   })));
 }
 
+export async function getRussiaCheckGameLog() {
+  return getRussiaCheckDailyLog(await getPool());
+}
+
 export async function getRussiaCheckDashboard({ gameId = null, status = "" } = {}) {
   const pool = await getPool();
   const normalizedGameId = optionalPositiveInt(gameId, "Game ID");
@@ -536,10 +606,11 @@ export async function getRussiaCheckDashboard({ gameId = null, status = "" } = {
   const values = [normalizedGameId];
   const statusClause = status ? `AND i.status=$2` : "";
   if (status) values.push(status);
-  const [gamesResult, itemsResult, summaryResult, runResult] = await Promise.all([
+  const [gamesResult, itemsResult, summaryResult, runResult, dailyLog] = await Promise.all([
     pool.query(
       `SELECT DISTINCT s.id AS source_id,s.game_id,COALESCE(g.game,s.expected_game_name) AS game_name,s.expected_game_name,
               s.provider,s.store_url,s.enabled,s.auth_required,c.source_id IS NOT NULL AS auth_configured,c.expires_at AS auth_expires_at,
+              c.credential_kind,c.verified_at,c.invalidated_at,
               CASE WHEN s.provider='demo' THEN false WHEN g.id IS NULL OR UPPER(TRIM(g.game))<>UPPER(TRIM(s.expected_game_name)) THEN true ELSE false END config_error
        FROM gameinfo_russia_check_sources s LEFT JOIN game_list g ON g.id=s.game_id
        LEFT JOIN gameinfo_russia_check_source_credentials c ON c.source_id=s.id
@@ -547,16 +618,9 @@ export async function getRussiaCheckDashboard({ gameId = null, status = "" } = {
     ),
     pool.query(
       `SELECT i.name,i.status,i.is_baseline,i.first_seen_at,i.last_seen_at,i.activated_at,i.removed_at,
-              i.missing_runs,s.game_id,COALESCE(g.game,s.expected_game_name) AS game_name,
-              schedule.last_scheduled_at
+              i.missing_runs,s.game_id,COALESCE(g.game,s.expected_game_name) AS game_name
        FROM gameinfo_russia_check_items i JOIN gameinfo_russia_check_sources s ON s.id=i.source_id
        LEFT JOIN game_list g ON g.id=s.game_id
-       LEFT JOIN LATERAL (
-         SELECT MAX(r.started_at) AS last_scheduled_at
-         FROM gameinfo_russia_check_run_sources rs
-         JOIN gameinfo_russia_check_runs r ON r.id=rs.run_id
-         WHERE rs.source_id=i.source_id AND rs.status='completed' AND r.trigger_type='scheduled'
-       ) schedule ON true
        WHERE ($1::int IS NULL OR s.game_id=$1) ${statusClause}
        ORDER BY g.game,i.name`,
       values
@@ -583,27 +647,33 @@ export async function getRussiaCheckDashboard({ gameId = null, status = "" } = {
          FROM gameinfo_russia_check_run_sources rs JOIN gameinfo_russia_check_sources s ON s.id=rs.source_id
          WHERE rs.run_id=r.id AND s.game_id=$1
        ) x ON true
-       WHERE $1::int IS NULL OR x.source_count>0 ORDER BY r.id DESC LIMIT 1`,
+      WHERE $1::int IS NULL OR x.source_count>0 ORDER BY r.id DESC LIMIT 1`,
       [normalizedGameId]
     ),
+    // Daily game log is a global overview, independent of pack/game filters.
+    getRussiaCheckDailyLog(pool),
   ]);
   const summary = summaryResult.rows[0] || {};
   return {
-    games: gamesResult.rows.map((row) => ({
-      sourceId: Number(row.source_id), gameId: Number(row.game_id), gameName: row.game_name || row.expected_game_name,
-      expectedGameName: row.expected_game_name, configError: row.config_error, isDemo: row.provider === "demo",
-      storeUrl: row.store_url || null, sourceEnabled: row.enabled, authRequired: row.auth_required,
-      authConfigured: row.auth_configured, authExpiresAt: row.auth_expires_at,
-      authExpired: Boolean(row.auth_expires_at && new Date(row.auth_expires_at) <= new Date()),
-    })),
+    games: gamesResult.rows.map((row) => {
+      const source = {
+        sourceId: Number(row.source_id), gameId: Number(row.game_id), gameName: row.game_name || row.expected_game_name,
+        provider: row.provider,
+        expectedGameName: row.expected_game_name, configError: row.config_error, isDemo: row.provider === "demo",
+        storeUrl: row.store_url || null, sourceEnabled: row.enabled, authRequired: row.auth_required,
+        authConfigured: row.auth_configured, authExpiresAt: row.auth_expires_at,
+        credentialKind: row.credential_kind, authVerifiedAt: row.verified_at, authInvalidated: Boolean(row.invalidated_at),
+      };
+      return { ...source, ...getRussiaCheckSourceAvailability(source) };
+    }),
     items: itemsResult.rows.map((row) => ({
       gameId: Number(row.game_id), gameName: row.game_name, name: row.name, status: row.status,
       isBaseline: row.is_baseline, missingRuns: Number(row.missing_runs), firstSeenAt: row.first_seen_at,
       lastSeenAt: row.last_seen_at, activatedAt: row.activated_at, removedAt: row.removed_at,
-      lastScheduledAt: row.last_scheduled_at,
     })),
     summary: { active: Number(summary.active) || 0, pending: Number(summary.pending) || 0, removed: Number(summary.removed) || 0 },
     latestRun: mapRun(runResult.rows[0]),
+    dailyLog,
     nextRunAt: nextRussiaCheckRunAt().toISOString(),
   };
 }

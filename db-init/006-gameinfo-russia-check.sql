@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS gameinfo_russia_check_sources (
 );
 ALTER TABLE gameinfo_russia_check_sources ADD COLUMN IF NOT EXISTS store_url text;
 ALTER TABLE gameinfo_russia_check_sources ADD COLUMN IF NOT EXISTS auth_required boolean NOT NULL DEFAULT false;
+ALTER TABLE gameinfo_russia_check_sources ADD COLUMN IF NOT EXISTS catalog_scope_hash varchar(64);
 
 CREATE TABLE IF NOT EXISTS gameinfo_russia_check_source_credentials (
   source_id bigint PRIMARY KEY REFERENCES gameinfo_russia_check_sources(id) ON DELETE CASCADE,
@@ -26,6 +27,9 @@ CREATE TABLE IF NOT EXISTS gameinfo_russia_check_source_credentials (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE gameinfo_russia_check_source_credentials ADD COLUMN IF NOT EXISTS credential_kind varchar(16) NOT NULL DEFAULT 'cookie';
+ALTER TABLE gameinfo_russia_check_source_credentials ADD COLUMN IF NOT EXISTS verified_at timestamptz;
+ALTER TABLE gameinfo_russia_check_source_credentials ADD COLUMN IF NOT EXISTS invalidated_at timestamptz;
 
 CREATE TABLE IF NOT EXISTS gameinfo_russia_check_runs (
   id bigserial PRIMARY KEY,
@@ -123,6 +127,31 @@ ON CONFLICT (source_key) DO UPDATE SET
   locale = EXCLUDED.locale,
   auth_required = true,
   updated_at = now();
+
+INSERT INTO gameinfo_russia_check_sources
+  (source_key, game_id, expected_game_name, provider, source_url, store_url, project_id, country, locale, auth_required, enabled)
+VALUES
+  ('nikke-midasbuy-th', 22, 'GODDESS OF VICTORY: NIKKE UID', 'midasbuy', 'https://www.midasbuy.com/frontend/api/midasbuy/v1/shelves/query', 'https://www.midasbuy.com/midasbuy/th/shop/nikkegl#/pages/shop/items', '1460000285', 'TH', 'en', false, true)
+ON CONFLICT (source_key) DO UPDATE SET
+  game_id = EXCLUDED.game_id,
+  expected_game_name = EXCLUDED.expected_game_name,
+  provider = EXCLUDED.provider,
+  source_url = EXCLUDED.source_url,
+  store_url = EXCLUDED.store_url,
+  project_id = EXCLUDED.project_id,
+  country = EXCLUDED.country,
+  locale = EXCLUDED.locale,
+  auth_required = false,
+  updated_at = now();
+
+INSERT INTO gameinfo_russia_check_sources
+  (source_key, game_id, expected_game_name, provider, source_url, store_url, project_id, country, locale, auth_required, enabled)
+VALUES
+  ('endfield-gryphline', 217, 'ARKNIGHTS: ENDFIELD', 'gryphline', 'https://as.gryphline.com/user/pay/v3/query_web_product', 'https://topup.gryphline.com/endfield', 'd9f6dbb6bbd6bb33', 'ZZ', 'en-us', true, false)
+ON CONFLICT (source_key) DO UPDATE SET
+  game_id=EXCLUDED.game_id, expected_game_name=EXCLUDED.expected_game_name, provider=EXCLUDED.provider,
+  source_url=EXCLUDED.source_url, store_url=EXCLUDED.store_url, project_id=EXCLUDED.project_id,
+  country=EXCLUDED.country, locale=EXCLUDED.locale, auth_required=true, updated_at=now();
 
 INSERT INTO gameinfo_russia_check_sources
   (source_key, game_id, expected_game_name, provider, source_url, project_id, country, locale, enabled)
