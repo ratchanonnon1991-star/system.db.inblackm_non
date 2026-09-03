@@ -52,7 +52,19 @@ function sanitizeGameinfoCategoryFormulas(value) {
 
 // Shared with the gameinfo module: a game's computed_column JSONB column
 // holds the same shape, so both surfaces can edit it with this one sanitizer.
-export function sanitizeComputedColumns(raw) {
+// A query's formula columns are that query's own, so a handful is plenty. A
+// gameinfo pack column is shared by every game, which makes this list the
+// whole registry rather than one game's few — hence the second, larger cap.
+//
+// The size matters beyond storage: a gameinfo save works out which columns
+// were removed by diffing what the game had against what it sends, so a list
+// silently truncated here would read as "the user deleted the rest" and take
+// those definitions away from every game. The route refuses an over-long list
+// instead of letting the truncation happen.
+export const GAMEDB_QUERY_COLUMN_LIMIT = 30;
+export const GAMEINFO_PACK_COLUMN_LIMIT = 200;
+
+export function sanitizeComputedColumns(raw, { limit = GAMEDB_QUERY_COLUMN_LIMIT } = {}) {
   return Array.isArray(raw)
     ? raw
         .filter(
@@ -62,7 +74,7 @@ export function sanitizeComputedColumns(raw) {
             typeof col.label === "string" &&
             typeof col.formula === "string"
         )
-        .slice(0, 30)
+        .slice(0, limit)
         .map((col) => ({
           key: col.key.slice(0, 64),
           label: col.label.slice(0, 120),

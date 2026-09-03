@@ -8,7 +8,11 @@ import {
   normalizeGameinfoPackLayout,
   reorderGameinfoPackColumns,
 } from "@/lib/gameinfo-pack-columns.js";
-import { sanitizeComputedColumns } from "@/server/gamedb-layout-sanitizer.js";
+import {
+  GAMEDB_QUERY_COLUMN_LIMIT,
+  GAMEINFO_PACK_COLUMN_LIMIT,
+  sanitizeComputedColumns,
+} from "@/server/gamedb-layout-sanitizer.js";
 import {
   duplicateGameinfoFormulaOverrides,
   getEffectiveGameinfoFormula,
@@ -452,6 +456,25 @@ check(
   updateGameinfoComputedColumn(updatedMainFormula, { ...updatedMainFormula[0], formula: "[ราคา] * 3" }, { resetOverrides: true })[0].rowOverrides,
   {}
 );
+
+// --- how many columns fit ------------------------------------------------
+// A query's formula columns belong to that query; a pack column is shared by
+// every game, so the list being sanitized is the whole registry and the old
+// 30 that suited a query is far too few. Truncating is what makes this worth
+// a test: a gameinfo save deletes the columns it does not send, so a list cut
+// down to the cap would take the rest away from every game.
+const manyColumns = Array.from({ length: 120 }, (_, index) => ({
+  key: `col_${index}`,
+  label: `คอลัมน์ ${index}`,
+  formula: "[ราคา]",
+}));
+check("a query keeps its small cap", sanitizeComputedColumns(manyColumns).length, GAMEDB_QUERY_COLUMN_LIMIT);
+check(
+  "pack columns are capped far higher, because the list is every game's",
+  sanitizeComputedColumns(manyColumns, { limit: GAMEINFO_PACK_COLUMN_LIMIT }).length,
+  120
+);
+check("and the cap is still a cap", GAMEINFO_PACK_COLUMN_LIMIT > GAMEDB_QUERY_COLUMN_LIMIT, true);
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);

@@ -1,6 +1,9 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireGameinfoEditor } from "@/server/auth";
-import { sanitizeComputedColumns } from "@/server/gamedb-layout-sanitizer";
+import {
+  GAMEINFO_PACK_COLUMN_LIMIT,
+  sanitizeComputedColumns,
+} from "@/server/gamedb-layout-sanitizer";
 import { auditActor, getGamelistPacks, saveGamelistPacks } from "@/server/gameinfo-gamelist-packs";
 import { recordEdit } from "@/server/gamedb-edit-log";
 import { requestMeta } from "@/lib/request-meta";
@@ -76,9 +79,15 @@ export async function PUT(request, { params }) {
           .map((pack) => [String(pack.id), String(category.id)])
       )
     );
+    // Refused rather than trimmed: columns are shared by every game, and this
+    // save deletes the ones it does not send, so a list quietly cut down to
+    // the cap would take the rest away from all of them.
+    if (Array.isArray(body.computedColumns) && body.computedColumns.length > GAMEINFO_PACK_COLUMN_LIMIT) {
+      return jsonError(`คอลัมน์สูตรได้สูงสุด ${GAMEINFO_PACK_COLUMN_LIMIT} คอลัมน์`, 400);
+    }
     const computedColumns = pruneGameinfoCategoryFormulas(
       pruneGameinfoFormulaOverrides(
-        sanitizeComputedColumns(body.computedColumns),
+        sanitizeComputedColumns(body.computedColumns, { limit: GAMEINFO_PACK_COLUMN_LIMIT }),
         packIds
       ),
       categoryIds
