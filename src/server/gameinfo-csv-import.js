@@ -84,7 +84,12 @@ export function planGameinfoCsvImport({ headers, rows, existingGames, existingCo
           key: column.key,
           label: column.label,
           isNew: column.isNew,
-          formula: column.formula,
+          // What the file computes, per game. The column's own formula is not
+          // set from a CSV — see buildGameinfoCsvColumns — so this is here to
+          // be shown in the preview, and to record whether the games in the
+          // file agree on one rule.
+          formula: column.gameFormula,
+          gameFormulas: column.gameFormula ? [column.gameFormula] : [],
           entryMode: column.entryMode,
           valueCount: column.valueCount,
           unknownRefs: [...column.unknownRefs],
@@ -94,9 +99,13 @@ export function planGameinfoCsvImport({ headers, rows, existingGames, existingCo
         for (const ref of column.unknownRefs) {
           if (!seen.unknownRefs.includes(ref)) seen.unknownRefs.push(ref);
         }
-        // Only one formula can be the column's; a second game disagreeing
-        // keeps its own, which the merge stores as that game's formula.
-        if (!seen.formula) seen.formula = column.formula;
+        // Each game keeps the rule it stated; the preview only needs to know
+        // what they are and whether they are all the same one.
+        if (column.gameFormula && !seen.gameFormulas.includes(column.gameFormula)) {
+          seen.gameFormulas.push(column.gameFormula);
+        }
+        if (!seen.formula) seen.formula = column.gameFormula;
+        if (column.entryMode === "formula") seen.entryMode = "formula";
       }
     }
     if (findDuplicateGameinfoPackNamePrices(tree.currencies).size > 0) {
@@ -118,6 +127,17 @@ export function planGameinfoCsvImport({ headers, rows, existingGames, existingCo
   for (const bucket of resolved.created) addGame(bucket, { gameId: null, isNew: true });
 
   const columns = [...columnsByLabel.values()];
+  // A column is one definition for every game, so the games in one file cannot
+  // each register a different entry mode: a column any game states a rule for
+  // is a formula column, and the games with no rule simply have no rule.
+  const formulaColumns = new Set(
+    columns.filter((column) => column.entryMode === "formula").map((column) => column.key)
+  );
+  for (const game of games) {
+    for (const column of game.columns) {
+      if (formulaColumns.has(column.key)) column.entryMode = "formula";
+    }
+  }
   // Reported rather than refused: the formula is valid, it just names
   // something that does not exist yet. The user can fix the file, or leave the
   // column unticked, which is what removing it means here.

@@ -33,9 +33,16 @@ function mergeImportedColumns(current, imported) {
     const rowOverrides = column.rowOverrides || {};
     const at = indexByKey.get(column.key);
     if (at !== undefined) {
-      if (!Object.keys(rowOverrides).length) continue;
+      if (!Object.keys(rowOverrides).length && !column.gameFormula) continue;
       columns[at] = {
         ...columns[at],
+        // The rule the file stated for this game, kept next to the shared
+        // definition instead of replacing it — the same trade the uid store
+        // makes. Without it a second game in one file silently computed the
+        // first game's formula.
+        // entryMode is left alone: it is part of the shared definition, and
+        // gameFormula outranks it anyway (getEffectiveGameinfoFormula).
+        ...(column.gameFormula ? { gameFormula: column.gameFormula } : {}),
         rowOverrides: { ...(columns[at].rowOverrides || {}), ...rowOverrides },
       };
       continue;
@@ -44,7 +51,9 @@ function mergeImportedColumns(current, imported) {
     columns.push({
       key: column.key,
       label: column.label,
-      formula: column.formula || "",
+      // Empty on purpose: a CSV never writes the formula every game computes.
+      formula: "",
+      gameFormula: column.gameFormula || "",
       entryMode: column.entryMode || "manual",
       kind: "formula",
       marketKey: "",

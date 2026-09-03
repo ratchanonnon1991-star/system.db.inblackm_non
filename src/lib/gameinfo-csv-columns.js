@@ -137,7 +137,14 @@ export function buildGameinfoCsvColumns(
       isNew: !existing,
       // A header with no values under it is a column the user wants to fill in
       // later — create it empty rather than refusing it.
-      formula: promoted,
+      //
+      // The rule this file states belongs to *this game*, never to the column:
+      // a column definition is shared by every game, so writing it there would
+      // make "the formula I put next to my game's packs" the formula all 216
+      // games compute. It rides as gameFormula, which is exactly the layer the
+      // registry added for a game that computes a shared column differently.
+      formula: "",
+      gameFormula: promoted,
       entryMode: promoted ? "formula" : "manual",
       valueCount: cells.length,
       unknownRefs: [...unknownRefs],

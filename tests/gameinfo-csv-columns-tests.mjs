@@ -55,7 +55,15 @@ const shared = columnsFor([
   { ...base, pack_name: "A", กำไร: "[ราคา] * 1.05" },
   { ...base, pack_name: "B", กำไร: "[ราคา] * 1.05" },
 ]);
-check("one formula repeated on every pack becomes the column formula", shared.columns[0].formula, "[ราคา] * 1.05");
+check(
+  "one formula repeated on every pack becomes this game's formula",
+  shared.columns[0].gameFormula,
+  "[ราคา] * 1.05"
+);
+// The column's own formula is what every game computes. A file states what
+// the games it names compute, so it must never write that one, or putting a
+// formula beside one game's packs would change all 216 games.
+check("but never the formula the column shares with every game", shared.columns[0].formula, "");
 check("a promoted formula leaves no per-pack copies", shared.columns[0].rowOverrides, {});
 check("a promoted column is a formula column", shared.columns[0].entryMode, "formula");
 
@@ -63,7 +71,8 @@ const mixed = columnsFor([
   { ...base, pack_name: "A", กำไร: "[ราคา] * 1.05" },
   { ...base, pack_name: "B", กำไร: "[ราคา] * 2" },
 ]);
-check("formulas that differ stay per pack", mixed.columns[0].formula, "");
+check("formulas that differ stay per pack", mixed.columns[0].gameFormula, "");
+check("and still write no shared formula", mixed.columns[0].formula, "");
 check("both per-pack formulas are kept", Object.values(mixed.columns[0].rowOverrides).sort(), [
   "[ราคา] * 1.05",
   "[ราคา] * 2",
@@ -75,7 +84,7 @@ const repeatedValue = columnsFor([
 ]);
 check(
   "the same plain value on every pack is a coincidence, not a rule",
-  repeatedValue.columns[0].formula,
+  repeatedValue.columns[0].gameFormula,
   ""
 );
 

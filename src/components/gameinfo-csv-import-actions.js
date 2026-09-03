@@ -325,11 +325,16 @@ function Preview({
             id: column.label,
             label: column.label,
             meta: column.valueCount ? `${column.valueCount} ค่า` : "คอลัมน์ว่าง",
+            // A formula in the file is the rule for the games the file names,
+            // not for the column — say which, or "shared column" reads as
+            // "every game now computes this".
             warning: column.unknownRefs?.length
               ? `อ้างถึง ${column.unknownRefs.map((ref) => `[${ref}]`).join(", ")} ซึ่งไม่มีในระบบ`
-              : column.formula
-                ? `สูตรของคอลัมน์: ${column.formula}`
-                : "",
+              : column.gameFormulas?.length > 1
+                ? `ใช้สูตรต่างกันตามเกม: ${column.gameFormulas.join(" · ")}`
+                : column.formula
+                  ? `สูตรเฉพาะเกมในไฟล์นี้: ${column.formula}`
+                  : "",
           }))}
           checked={confirmedColumns}
           onToggle={onToggleColumn}
@@ -405,8 +410,10 @@ function CsvGuide() {
         </p>
         <p className="mt-2 text-xs">
           ในช่องใส่ได้ทั้งค่าและสูตร เช่น <code className="text-linear-primary">1500</code> หรือ{" "}
-          <code className="text-linear-primary">[ราคา] * 1.05</code> — ถ้าทุกแถวเป็นสูตรเดียวกันจะถูกยกขึ้นเป็นสูตรของคอลัมน์ให้เอง
-          เว้นว่างทั้งคอลัมน์ได้ ระบบจะสร้างคอลัมน์เปล่าไว้ให้ใส่สูตรทีหลัง
+          <code className="text-linear-primary">[ราคา] * 1.05</code> — ถ้าทุกแถวของเกมหนึ่งเป็นสูตรเดียวกัน
+          จะถูกยกขึ้นเป็นสูตรของคอลัมน์ <strong>เฉพาะเกมนั้น</strong> เกมอื่นไม่เปลี่ยนตาม
+          และสองเกมในไฟล์เดียวกันใส่สูตรต่างกันได้
+          · เว้นว่างทั้งคอลัมน์ได้ ระบบจะสร้างคอลัมน์เปล่าไว้ให้ใส่สูตรทีหลัง
         </p>
       </section>
       <p className="rounded-xl border border-linear-warning/40 bg-linear-warning-bg p-3 font-medium text-linear-warning">

@@ -195,6 +195,63 @@ check(
   1
 );
 
+// --- a formula in the file belongs to the games the file names -----------
+// A column definition is shared by every game, so a formula written into it
+// would be computed by all 216 of them. Three ways that used to happen:
+//
+//   a) one game states a rule -> it became the rule for every game
+//   b) two games state different rules -> whichever was built first won and
+//      the other was dropped without a word
+//   c) a game that left the column blank was built first -> it registered an
+//      empty rule and the game that had one lost it, per-pack copies included
+const onlyOneGame = plan([
+  { ...pack, game_id: "3", "กำไร": "[ราคา] * 0.1" },
+  { ...pack, game_id: "3", pack_name: "120 Gems", "กำไร": "[ราคา] * 0.1" },
+  { ...pack, game_id: "1", "กำไร": "" },
+  { ...pack, game_id: "1", pack_name: "120 Gems", "กำไร": "" },
+]);
+const byGame = (result) => Object.fromEntries(result.games.map((game) => [game.gameId, game.columns[0]]));
+check("(a) the game that stated the rule keeps it", byGame(onlyOneGame)[3].gameFormula, "[ราคา] * 0.1");
+check("(a) and no other game is given it", byGame(onlyOneGame)[1].gameFormula, "");
+check(
+  "(a) the shared definition stays empty, so the other 215 games are untouched",
+  onlyOneGame.games.every((game) => game.columns[0].formula === ""),
+  true
+);
+
+const disagree = plan([
+  { ...pack, game_id: "3", "กำไร": "[ราคา] * 0.1" },
+  { ...pack, game_id: "3", pack_name: "120 Gems", "กำไร": "[ราคา] * 0.1" },
+  { ...pack, game_id: "1", "กำไร": "[ราคา] * 0.9" },
+  { ...pack, game_id: "1", pack_name: "120 Gems", "กำไร": "[ราคา] * 0.9" },
+]);
+check("(b) each game keeps the rule it stated", [byGame(disagree)[3].gameFormula, byGame(disagree)[1].gameFormula], [
+  "[ราคา] * 0.1",
+  "[ราคา] * 0.9",
+]);
+check("(b) the preview reports both", disagree.columns[0].gameFormulas.sort(), [
+  "[ราคา] * 0.1",
+  "[ราคา] * 0.9",
+]);
+
+// Same file, blank game first: the order rows appear in is the order games are
+// built in, and it must not decide whose formula survives.
+const blankFirst = plan([
+  { ...pack, game_id: "1", "กำไร": "" },
+  { ...pack, game_id: "1", pack_name: "120 Gems", "กำไร": "" },
+  { ...pack, game_id: "3", "กำไร": "[ราคา] * 0.1" },
+  { ...pack, game_id: "3", pack_name: "120 Gems", "กำไร": "[ราคา] * 0.1" },
+]);
+check("(c) the row order does not decide whose formula survives", byGame(blankFirst)[3].gameFormula, "[ราคา] * 0.1");
+check("(c) and the blank game states nothing", byGame(blankFirst)[1].gameFormula, "");
+// A column any game has a rule for is a formula column, not a manual one:
+// there is one entry mode for every game because there is one definition.
+check(
+  "(c) every game agrees on the entry mode",
+  [...new Set(blankFirst.games.map((game) => game.columns[0].entryMode))],
+  ["formula"]
+);
+
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);
 process.exit(failures.length ? 1 : 0);

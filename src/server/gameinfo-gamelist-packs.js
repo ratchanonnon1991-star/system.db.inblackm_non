@@ -22,6 +22,7 @@ import {
   mergeGameinfoColumns,
   splitGameinfoColumns,
 } from "@/lib/gameinfo-column-registry";
+import { groupGameinfoColumnFormulas } from "@/lib/gameinfo-column-formula-usage";
 import { parseFormula } from "@/lib/gamedb-formula";
 import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
 
@@ -623,6 +624,65 @@ export async function listAllGamelistComputedColumns() {
   }
 }
 
+/**
+ * Every formula any game computes in one column, grouped and counted.
+ *
+ * Three places hold one: the shared definition in the registry, a game's own
+ * `gameFormula`, and — for games not migrated yet — the per-game `columns`
+ * array that predates the registry. That last one is matched by label as well
+ * as by key, because keys were minted per game back then and the label is what
+ * makes two of those the same column.
+ */
+export async function listGameinfoColumnFormulaUsage(columnKey, label = "") {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  const wantedLabel = String(label || "").trim();
+  try {
+    const entries = [];
+    const registry = await client.query(
+      `SELECT data FROM gamelist_pack_column_registry WHERE column_key = $1`,
+      [columnKey]
+    );
+    const shared = registry.rows[0]?.data?.formula;
+    if (shared) entries.push({ formula: shared, shared: true });
+
+    function collect(gameName, packs) {
+      const override = packs?.columnOverrides?.[columnKey];
+      if (override?.gameFormula) entries.push({ gameName, formula: override.gameFormula });
+      for (const column of Array.isArray(packs?.columns) ? packs.columns : []) {
+        const sameColumn =
+          column?.key === columnKey ||
+          (wantedLabel && String(column?.label || "").trim() === wantedLabel);
+        if (sameColumn && column?.formula) entries.push({ gameName, formula: column.formula });
+      }
+    }
+
+    const uid = await client.query(
+      `SELECT g.game AS game_name, p.data AS data
+       FROM gamelist_packs p
+       JOIN game_list g ON g.id = p.game_id
+       WHERE p.pack_id = $1`,
+      [COMPUTED_SENTINEL]
+    );
+    for (const row of uid.rows) collect(row.game_name, row.data || {});
+
+    // idpass keeps its packs in a store of its own; a formula written there is
+    // just as much an answer to "how do other games compute this".
+    const modeTable = await client.query(`SELECT to_regclass('gameinfo_mode_data') AS present`);
+    if (modeTable.rows[0]?.present) {
+      const idpass = await client.query(
+        `SELECT g.game AS game_name, m.data AS data
+         FROM gameinfo_mode_data m
+         JOIN game_list g ON g.id = m.game_id`
+      );
+      for (const row of idpass.rows) collect(row.game_name, row.data?.packs || {});
+    }
+    return groupGameinfoColumnFormulas(entries);
+  } finally {
+    client.release();
+  }
+}
+
 /** Multi-game CSV import in one transaction. Computed-column sentinel rows
  * are preserved; only real pack rows are replaced/merged. */
 export async function importGamelistPacks(
@@ -743,7 +803,10 @@ async function writeImportedColumns(client, gameId, columns, previousComputed, n
           column.label,
           sortOrder++,
           JSON.stringify({
-            formula: column.formula || "",
+            // Deliberately empty: an imported formula belongs to the game whose
+            // rows carried it (stored as gameFormula below), never to the
+            // shared definition every game computes.
+            formula: "",
             entryMode: column.entryMode || "manual",
             kind: "formula",
             marketKey: "",
@@ -764,6 +827,10 @@ async function writeImportedColumns(client, gameId, columns, previousComputed, n
         const existing = legacy[index];
         legacy[index] = {
           ...existing,
+          // Before the registry exists a column is this game's own, so its
+          // `formula` is the per-game rule gameFormula becomes afterwards.
+          formula: column.gameFormula || existing.formula || "",
+          entryMode: column.gameFormula ? "formula" : existing.entryMode,
           rowOverrides: pruneToLivePacks({ ...existing.rowOverrides, ...rowOverrides }, livePackIds),
         };
         continue;
@@ -771,7 +838,7 @@ async function writeImportedColumns(client, gameId, columns, previousComputed, n
       legacy.push({
         key: column.key,
         label: column.label,
-        formula: column.formula || "",
+        formula: column.gameFormula || "",
         entryMode: column.entryMode || "manual",
         kind: "formula",
         marketKey: "",
@@ -811,6 +878,10 @@ async function writeImportedColumns(client, gameId, columns, previousComputed, n
     if (Object.keys(column.rowOverrides).length) {
       next.rowOverrides = { ...(existing.rowOverrides || {}), ...column.rowOverrides };
     }
+    // The one rule this file stated for this game. Stored here rather than in
+    // the registry so two games in one file can state different rules and both
+    // keep theirs, and so a file naming one game leaves the other 215 alone.
+    if (column.gameFormula) next.gameFormula = column.gameFormula;
     if (Object.keys(next).length) overrides[column.key] = next;
   }
 
