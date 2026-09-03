@@ -86,6 +86,11 @@ export function validateGameinfoComputedDependencies(
 
   for (const column of columns || []) {
     validateFormula(column, column.formula, "สูตรหลัก");
+    // Only when the game has one: an empty gameFormula means "compute this the
+    // way every other game does", not an empty formula to complain about.
+    if (String(column.gameFormula || "").trim()) {
+      validateFormula(column, column.gameFormula, "สูตรเฉพาะเกม");
+    }
     for (const [categoryId, formula] of Object.entries(column.categoryFormulas || {})) {
       validateFormula(column, formula, `สูตรหมวด ${categoryId}`);
     }

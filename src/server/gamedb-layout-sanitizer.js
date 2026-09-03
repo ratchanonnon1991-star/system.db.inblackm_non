@@ -67,8 +67,16 @@ export function sanitizeComputedColumns(raw) {
           key: col.key.slice(0, 64),
           label: col.label.slice(0, 120),
           formula: col.formula.slice(0, 500),
+          // The formula this one game computes instead of the shared one. Kept
+          // here or the pack editor's save would drop it and the game would
+          // silently fall back to what every other game computes.
+          gameFormula:
+            typeof col.gameFormula === "string" ? col.gameFormula.slice(0, 500) : "",
           entryMode:
-            col.entryMode === "manual" || (col.kind !== "market" && !col.formula.trim())
+            col.entryMode === "manual" ||
+            (col.kind !== "market" &&
+              !col.formula.trim() &&
+              !String(col.gameFormula || "").trim())
               ? "manual"
               : "formula",
           kind: col.kind === "market" ? "market" : "formula",

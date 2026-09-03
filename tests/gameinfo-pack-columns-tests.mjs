@@ -431,11 +431,22 @@ check("editing a main formula keeps explicit row overrides by default", updatedM
   formula: "[ราคา] * 2",
   rowOverrides: { pk_special: "[ราคา] * 0.5" },
   label: "กำไรใหม่",
+  // Empty because this edit was scoped to every game: the editor writes the
+  // text to one of `formula` and `gameFormula` and clears the other.
+  gameFormula: "",
   type: "number",
   symbol: "฿",
   scopeMode: "global",
   categoryFormulas: {},
 });
+check(
+  "an edit scoped to this game leaves the shared formula alone",
+  updateGameinfoComputedColumn(
+    [formulaColumn],
+    { key: "profit", label: "กำไร", formula: formulaColumn.formula, gameFormula: "[ราคา] * 4", type: "number", symbol: "฿" }
+  )[0],
+  { ...updatedMainFormula[0], label: "กำไร", formula: formulaColumn.formula, gameFormula: "[ราคา] * 4" }
+);
 check(
   "editing main formula can deliberately apply it to every pack by clearing overrides",
   updateGameinfoComputedColumn(updatedMainFormula, { ...updatedMainFormula[0], formula: "[ราคา] * 3" }, { resetOverrides: true })[0].rowOverrides,

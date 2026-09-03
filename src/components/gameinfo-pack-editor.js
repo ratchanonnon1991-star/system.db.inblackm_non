@@ -491,10 +491,12 @@ export default function GameinfoPackEditor({
     }
   }
 
-  function addComputedColumn({ key, label, formula, type, symbol, scopeMode, entryMode }) {
+  function addComputedColumn({ key, label, formula, gameFormula, type, symbol, scopeMode, entryMode }) {
     setComputedColumns((prev) => [
       ...prev,
-      { key, label, formula, type, symbol, scopeMode, entryMode, kind: "formula", marketKey: "", enabled: true, categoryFormulas: {}, rowOverrides: {} },
+      // A new column can be created for this game alone: the definition is
+      // shared either way, the formula is what the editor scoped.
+      { key, label, formula, gameFormula: gameFormula || "", type, symbol, scopeMode, entryMode, kind: "formula", marketKey: "", enabled: true, categoryFormulas: {}, rowOverrides: {} },
     ]);
     setModalOpen(false);
   }
