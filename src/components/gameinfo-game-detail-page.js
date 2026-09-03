@@ -32,7 +32,10 @@ import GameinfoReportPanel from "@/components/gameinfo-report-panel";
 import GameinfoPackEditor from "@/components/gameinfo-pack-editor";
 import { buildPackSuggestions } from "@/lib/gameinfo-suggestions";
 import { hasPermission, permissionRole } from "@/lib/permissions";
-import { hiddenGameinfoColumnKeys } from "@/lib/gameinfo-column-roles";
+import {
+  hiddenGameinfoColumnKeys,
+  stripHiddenGameinfoColumns,
+} from "@/lib/gameinfo-column-roles";
 import { listGameinfoColumnRoleRules } from "@/server/gameinfo-column-roles";
 
 export default async function GameinfoGameDetailPage({ params, searchParams, manage = false }) {
@@ -148,6 +151,14 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
       };
       formulaVariables = variableData.variables;
       hiddenColumnKeys = [...hiddenGameinfoColumnKeys(columnRoleRules, viewerRole, row.id)];
+      // Enforced here rather than in the browser: a hidden column carries
+      // its formula and its typed-in per-pack values, so leaving it in the
+      // payload would hand the reader exactly what the rule hides. The
+      // editor keeps the whole list on purpose — it saves what it is given,
+      // and a filtered list would delete those definitions for every game.
+      if (!manageMode) {
+        computedColumns = stripHiddenGameinfoColumns(computedColumns, hiddenColumnKeys);
+      }
     }
   } catch (err) {
     return (

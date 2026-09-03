@@ -1,6 +1,8 @@
 import {
+  GAMEINFO_HIDDEN_COLUMN_REF,
   filterGameinfoColumnsForRole,
   hiddenGameinfoColumnKeys,
+  stripHiddenGameinfoColumns,
 } from "@/lib/gameinfo-column-roles.js";
 import { buildGameinfoPackColumns } from "@/lib/gameinfo-pack-columns.js";
 
@@ -85,6 +87,86 @@ check(
   "and never the pinned status column",
   filterGameinfoColumnsForRole(columns, new Set(["serviceEnabled"]))[0].id,
   "serviceEnabled"
+);
+
+// --- the payload, not just the table -------------------------------------
+// A rule is only worth anything if the hidden column never leaves the server:
+// the definition carries the formula, and rowOverrides carries the numbers
+// someone typed in by hand.
+const definitions = [
+  { key: "cost", label: "ต้นทุน", formula: "", entryMode: "manual", rowOverrides: { p1: "1400" } },
+  { key: "profit", label: "กำไร", formula: "[ราคา] - [ต้นทุน]", rowOverrides: {} },
+];
+const forTopup = stripHiddenGameinfoColumns(definitions, ["cost"]);
+check("a hidden column is not in the payload at all", forTopup.map((column) => column.key), ["profit"]);
+check(
+  "so its per-pack values cannot be read out of it",
+  JSON.stringify(forTopup).includes("1400"),
+  false
+);
+check("a Set of keys works the same as an array", stripHiddenGameinfoColumns(definitions, new Set(["cost"])).length, 1);
+check("no rules means the list is passed through untouched", stripHiddenGameinfoColumns(definitions, []), definitions);
+check("and an admin keeps everything", stripHiddenGameinfoColumns(definitions, new Set()).length, 2);
+
+// The table filter still runs on whatever survives, so a surface that forgets
+// to strip is drawn correctly rather than exposed.
+check(
+  "the table filter still hides a column the payload kept",
+  filterGameinfoColumnsForRole(buildGameinfoPackColumns(definitions), new Set(["cost"]))
+    .some((column) => column.id === "computed:cost"),
+  false
+);
+
+// --- a visible column that names a hidden one ----------------------------
+// The read-only view can show formulas instead of results, so the reference
+// itself has to go: otherwise hiding ต้นทุน still announces that a column by
+// that name exists and that กำไร is computed from it.
+const referencing = [
+  { key: "cost", label: "ต้นทุน", formula: "", rowOverrides: { p1: "1400" } },
+  {
+    key: "profit",
+    label: "กำไร",
+    formula: "[ราคา] - [ต้นทุน]",
+    gameFormula: "[ราคา] - [ ต้นทุน ] * 2",
+    categoryFormulas: { cat1: "[ต้นทุน] + 1" },
+    rowOverrides: { p1: "[ต้นทุน] + 2" },
+  },
+];
+const masked = stripHiddenGameinfoColumns(referencing, ["cost"])[0];
+const REF = `[${GAMEINFO_HIDDEN_COLUMN_REF}]`;
+check("the reference is masked in the column formula", masked.formula, `[ราคา] - ${REF}`);
+check("padding inside the brackets is masked too", masked.gameFormula, `[ราคา] - ${REF} * 2`);
+check("and in a category formula", masked.categoryFormulas.cat1, `${REF} + 1`);
+check("and in a per-pack formula", masked.rowOverrides.p1, `${REF} + 2`);
+check(
+  "the hidden name is nowhere in what the browser receives",
+  JSON.stringify(stripHiddenGameinfoColumns(referencing, ["cost"])).includes("ต้นทุน"),
+  false
+);
+check("a reference to a visible column is left alone", masked.formula.includes("[ราคา]"), true);
+
+// A bracket inside a quoted string is text, not a reference.
+const quoted = stripHiddenGameinfoColumns(
+  [
+    { key: "cost", label: "ต้นทุน" },
+    { key: "note", label: "หมายเหตุ", formula: 'CONCAT("[ต้นทุน]", [ราคา])' },
+  ],
+  ["cost"]
+)[0];
+check("text in quotes is not treated as a reference", quoted.formula, 'CONCAT("[ต้นทุน]", [ราคา])');
+
+// An unclosed bracket is a formula that does not parse; the user has to see
+// their own text to fix it.
+check(
+  "an unclosed bracket is kept verbatim",
+  stripHiddenGameinfoColumns(
+    [
+      { key: "cost", label: "ต้นทุน" },
+      { key: "broken", label: "พัง", formula: "[ราคา] - [ต้นทุน" },
+    ],
+    ["cost"]
+  )[0].formula,
+  "[ราคา] - [ต้นทุน"
 );
 
 console.log(`\n${pass} passed, ${failures.length} failed`);

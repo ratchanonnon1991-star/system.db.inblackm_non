@@ -1,5 +1,5 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
-import { requireGameinfoAccess, requireGameinfoEditor } from "@/server/auth";
+import { requireGameinfoEditor } from "@/server/auth";
 import {
   listGameinfoColumnRoleRules,
   saveGameinfoColumnRoleRules,
@@ -7,11 +7,13 @@ import {
 import { listGamelistPackColumnRegistry } from "@/server/gameinfo-gamelist-packs";
 import { GAMEINFO_COLUMN_ROLES } from "@/lib/gameinfo-column-roles";
 
-// Read is open to anyone who can see GameInfo: every pack page needs the rules
-// to know what to draw, including the topup users the rules are about.
+// Admin-only, like the write. The pack pages do not read this: the server
+// resolves the rules while rendering and never sends the hidden columns, so
+// the only caller is the admin screen — and listing every column here would
+// hand a reader the names of the columns the rules hide.
 export async function GET(request) {
   try {
-    await requireGameinfoAccess(request);
+    await requireGameinfoEditor(request);
     const [rules, columns] = await Promise.all([
       listGameinfoColumnRoleRules(),
       listGamelistPackColumnRegistry(),
