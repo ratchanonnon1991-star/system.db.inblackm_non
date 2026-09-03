@@ -71,6 +71,205 @@ check("partial IDPASS edit preserves other sections", [updated.fields.server, up
 check("partial IDPASS edit increments its version", updated.version, 4);
 ok("partial mode edit locks the parent game and commits", log.some((entry) => /FOR UPDATE/.test(entry.text)) && log.some((entry) => entry.text === "COMMIT"));
 
+// --- IDPASS shares the column system with UID, not the data -------------
+// Packs live in a separate store per mode, but a pack column is one shared
+// definition. IDPASS therefore has to merge and split it exactly as the uid
+// store does, or the two modes drift apart the moment a column is added.
+const REGISTRY = [
+  {
+    column_key: "col_shared",
+    label: "ต้นทุน",
+    sort_order: 0,
+    data: { formula: "[ราคา] * 0.8", kind: "formula", entryMode: "formula", marketKey: "", type: "number", symbol: "", scopeMode: "global" },
+  },
+  {
+    column_key: "col_other",
+    label: "ของเกมอื่น",
+    sort_order: 1,
+    data: { formula: "1", kind: "formula", entryMode: "formula", marketKey: "", type: "number", symbol: "", scopeMode: "global" },
+  },
+];
+
+reset();
+setResponder((text) => {
+  if (/FROM gamelist_pack_column_registry/.test(text)) return { rows: REGISTRY };
+  if (/SELECT data, version FROM gameinfo_mode_data/.test(text)) {
+    return {
+      rows: [{
+        version: 1,
+        data: {
+          packs: {
+            currencies: [],
+            computedColumns: [],
+            columnOverrides: { col_shared: { gameFormula: "[ราคา] * 0.5", rowOverrides: { pk_1: "42" } } },
+          },
+        },
+      }],
+    };
+  }
+  return null;
+});
+const idpassLoad = await getGameinfoModeData(7, "idpass");
+check(
+  "IDPASS sees every shared column, not just the ones it stored",
+  idpassLoad.packs.computedColumns.map((column) => column.key),
+  ["col_shared", "col_other"]
+);
+check(
+  "a column IDPASS never touched arrives with the shared formula",
+  idpassLoad.packs.computedColumns[1].formula,
+  "1"
+);
+check(
+  "IDPASS keeps its own formula for a column it computes differently",
+  idpassLoad.packs.computedColumns[0].gameFormula,
+  "[ราคา] * 0.5"
+);
+check(
+  "and its own per-pack values",
+  idpassLoad.packs.computedColumns[0].rowOverrides,
+  { pk_1: "42" }
+);
+
+
+reset();
+setResponder((text) => {
+  if (/FROM gamelist_pack_column_registry/.test(text)) return { rows: REGISTRY };
+  if (/SELECT data FROM gameinfo_mode_data/.test(text)) {
+    return { rows: [{ data: { packs: { currencies: [], computedColumns: [], columnOverrides: {} } } }] };
+  }
+  return null;
+});
+await saveGameinfoModeData(7, "idpass", idpassLoad);
+const idpassSave = log.find((entry) => /INSERT INTO gameinfo_mode_data/.test(entry.text));
+const savedPacks = JSON.parse(idpassSave?.params?.[1] || "{}").packs;
+check(
+  "saving IDPASS stores only its own half of each column",
+  savedPacks.columnOverrides,
+  { col_shared: { gameFormula: "[ราคา] * 0.5", rowOverrides: { pk_1: "42" } } }
+);
+
+ok(
+  "an IDPASS save never deletes a column it did not drop",
+  !log.some((entry) => /DELETE FROM gamelist_pack_column_registry/.test(entry.text))
+);
+check(
+  "the rollback copy folds IDPASS's own formula back down",
+  savedPacks.computedColumns.find((column) => column.key === "col_shared")?.formula,
+  "[ราคา] * 0.5"
+);
+
+// One definition is shared by every game and both modes, so a save carries all
+// of them whether or not it touched any. Rewriting the untouched ones would
+// bump their version and make every other open editor stale, so a row that
+// matches what is stored is left alone.
+ok(
+  "a save that changed no definition writes none of them back",
+  !log.some((entry) => /INSERT INTO gamelist_pack_column_registry/.test(entry.text))
+);
+reset();
+setResponder((text) => {
+  if (/FROM gamelist_pack_column_registry/.test(text)) return { rows: REGISTRY };
+  if (/SELECT data FROM gameinfo_mode_data/.test(text)) {
+    return { rows: [{ data: { packs: { currencies: [], computedColumns: [], columnOverrides: {} } } }] };
+  }
+  return null;
+});
+await saveGameinfoModeData(7, "idpass", {
+  ...idpassLoad,
+  packs: {
+    ...idpassLoad.packs,
+    computedColumns: idpassLoad.packs.computedColumns.map((column) => (
+      column.key === "col_shared" ? { ...column, formula: "[ราคา] * 2" } : column
+    )),
+  },
+});
+ok(
+  "but an edited definition is written",
+  log.some((entry) => /INSERT INTO gamelist_pack_column_registry/.test(entry.text))
+);
+// The version the client was shown has to match what is stored, or two people
+// editing the same column from two different games overwrite each other with
+// no warning — the game's own version says nothing about a shared column.
+let conflict = "";
+try {
+  await saveGameinfoModeData(7, "idpass", {
+    ...idpassLoad,
+    packs: {
+      ...idpassLoad.packs,
+      computedColumns: idpassLoad.packs.computedColumns.map((column) => (
+        column.key === "col_shared"
+          ? { ...column, formula: "[ราคา] * 3", version: 99 }
+          : column
+      )),
+    },
+  });
+} catch (error) {
+  conflict = `${error.status} ${error.message}`;
+}
+ok("a stale definition is refused, not applied", conflict.startsWith("409"));
+
+// A CSV import appends its column to computedColumns and hangs the per-pack
+// formulas off it. The save splits this game's half out of that shape, so
+// values written anywhere else — a columnOverrides map assembled alongside —
+// are overwritten by the split and never reach the database.
+reset();
+setResponder((text) => {
+  if (/FROM gamelist_pack_column_registry/.test(text)) {
+    return {
+      rows: [
+        {
+          column_key: "col_imported",
+          label: "test",
+          sort_order: 0,
+          data: {
+            formula: "",
+            entryMode: "manual",
+            kind: "formula",
+            marketKey: "",
+            type: "number",
+            symbol: "",
+            scopeMode: "global",
+          },
+        },
+      ],
+    };
+  }
+  if (/SELECT data FROM gameinfo_mode_data/.test(text)) {
+    return { rows: [{ data: { packs: { currencies: [], computedColumns: [], columnOverrides: {} } } }] };
+  }
+  return null;
+});
+await saveGameinfoModeData(7, "idpass", {
+  packs: {
+    currencies: [],
+    costProfiles: [],
+    computedColumns: [
+      {
+        key: "col_imported",
+        label: "test",
+        formula: "",
+        entryMode: "manual",
+        kind: "formula",
+        marketKey: "",
+        type: "number",
+        symbol: "",
+        scopeMode: "global",
+        categoryFormulas: {},
+        rowOverrides: { pk_1: "[ราคา]*0.3", pk_2: "[ราคา]*0.4" },
+      },
+    ],
+  },
+});
+check(
+  "an imported column keeps its per-pack formulas through an IDPASS save",
+  JSON.parse(
+    log.find((entry) => /INSERT INTO gameinfo_mode_data/.test(entry.text))?.params?.[1] || "{}"
+  ).packs.columnOverrides,
+  { col_imported: { rowOverrides: { pk_1: "[ราคา]*0.3", pk_2: "[ราคา]*0.4" } } }
+);
+
+
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);
 process.exit(failures.length ? 1 : 0);

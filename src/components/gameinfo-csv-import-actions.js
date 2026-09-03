@@ -27,7 +27,7 @@ const CONFIG = {
   },
   packs: {
     title: "นำเข้า Packs ทุกเกม",
-    description: "แต่ละแถวต้องมี game_id ที่มีอยู่แล้ว ระบบจะตรวจทุกเกมก่อนบันทึกพร้อมกัน",
+    description: "ระบุเกมด้วย game_id หรือชื่อเกมก็ได้ หัวคอลัมน์ที่ไม่รู้จักจะกลายเป็นคอลัมน์ใหม่ ระบบตรวจทุกเกมก่อนบันทึกพร้อมกัน",
     previewUrl: "/api/gameinfo/import/preview",
     applyUrl: "/api/gameinfo/import/apply",
     templateUrl: "/api/gameinfo/import/template",
@@ -40,6 +40,8 @@ export default function GameinfoCsvImportActions({ hasUnsavedChanges = false, da
   const [kind, setKind] = useState(null);
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
+  const [confirmedGames, setConfirmedGames] = useState(() => new Set());
+  const [confirmedColumns, setConfirmedColumns] = useState(() => new Set());
   const [mode, setMode] = useState("replace");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -99,11 +101,25 @@ export default function GameinfoCsvImportActions({ hasUnsavedChanges = false, da
         fallbackError: "อ่านไฟล์ไม่สำเร็จ",
       });
       setPreview(result);
+      // Nothing starts ticked. Creating a game or a column is not undoable and
+      // a typo'd game name looks exactly like a new game, so the user has to
+      // say yes to each one rather than notice and say no.
+      setConfirmedGames(new Set());
+      setConfirmedColumns(new Set());
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "อ่านไฟล์ไม่สำเร็จ");
     } finally {
       setBusy(false);
     }
+  }
+
+  function toggle(setter, value) {
+    setter((current) => {
+      const next = new Set(current);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
   }
 
   async function performImport() {
@@ -114,6 +130,15 @@ export default function GameinfoCsvImportActions({ hasUnsavedChanges = false, da
       const form = new FormData();
       form.append("file", file);
       if (kind === "packs") form.append("mode", mode);
+      // Apply re-reads the file, so it is told what was ticked rather than
+      // trusting the preview. Sending the lists even when empty is what
+      // distinguishes "confirmed none" from "never saw a preview".
+      if (kind === "packs" && preview.newGames) {
+        form.append("confirmNewGames", JSON.stringify([...confirmedGames]));
+      }
+      if (kind === "packs" && preview.newColumns) {
+        form.append("confirmNewColumns", JSON.stringify([...confirmedColumns]));
+      }
       const result = await apiJson(`${CONFIG[kind].applyUrl}${dataMode === "idpass" ? "?mode=idpass" : ""}`, {
         method: "PUT",
         body: form,
@@ -122,7 +147,14 @@ export default function GameinfoCsvImportActions({ hasUnsavedChanges = false, da
       setSuccess(
         kind === "games"
           ? `เพิ่มเกมแล้ว ${result.createdCount} เกม`
-          : `นำเข้าแล้ว ${result.packCount} packs ใน ${result.gameCount} เกม`
+          : [
+              `นำเข้าแล้ว ${result.packCount} packs ใน ${result.gameCount} เกม`,
+              result.createdGameCount ? `สร้างเกมใหม่ ${result.createdGameCount} เกม` : "",
+              result.newColumnCount ? `สร้างคอลัมน์ใหม่ ${result.newColumnCount} คอลัมน์` : "",
+              result.skippedGameNames?.length ? `ข้ามเกมที่ไม่ได้ยืนยัน ${result.skippedGameNames.length} เกม` : "",
+            ]
+              .filter(Boolean)
+              .join(" · ")
       );
       setPreview(null);
     } catch (nextError) {
@@ -200,7 +232,19 @@ export default function GameinfoCsvImportActions({ hasUnsavedChanges = false, da
                 {busy ? <p className="mt-4 text-sm text-linear-ink-subtle">กำลังประมวลผล…</p> : null}
                 {error ? <p className="mt-4 whitespace-pre-line rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">{error}</p> : null}
                 {success ? <p className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-400">{success}</p> : null}
-                {preview ? <Preview kind={kind} preview={preview} errors={errors} mode={mode} setMode={setMode} /> : null}
+                {preview ? (
+                  <Preview
+                    kind={kind}
+                    preview={preview}
+                    errors={errors}
+                    mode={mode}
+                    setMode={setMode}
+                    confirmedGames={confirmedGames}
+                    confirmedColumns={confirmedColumns}
+                    onToggleGame={(name) => toggle(setConfirmedGames, name)}
+                    onToggleColumn={(label) => toggle(setConfirmedColumns, label)}
+                  />
+                ) : null}
               </>
             )}
 
@@ -215,19 +259,125 @@ export default function GameinfoCsvImportActions({ hasUnsavedChanges = false, da
   );
 }
 
-function Preview({ kind, preview, errors, mode, setMode }) {
+function Preview({
+  kind,
+  preview,
+  errors,
+  mode,
+  setMode,
+  confirmedGames,
+  confirmedColumns,
+  onToggleGame,
+  onToggleColumn,
+}) {
+  const existingGames = (preview.games || []).filter((game) => !game.isNew);
   return (
     <div className="mt-5 space-y-4">
       <div className="rounded-xl border border-linear-hairline bg-linear-surface-2 p-4">
         {kind === "games" ? (
           <><p className="font-medium text-linear-ink">พบ {preview.rows.length} เกมที่เพิ่มได้</p>{preview.rows.map((row, index) => <p key={`${row.game}-${index}`} className="mt-1 text-sm text-linear-ink-muted">{row.game} · {row.region || "ไม่ระบุ Region"}</p>)}</>
         ) : (
-          <><p className="font-medium text-linear-ink">พบ {preview.games.length} เกม รวม {preview.games.reduce((sum, game) => sum + game.packCount, 0)} packs</p>{preview.games.map((game) => <p key={game.gameId} className="mt-1 flex justify-between text-sm text-linear-ink-muted"><span>ID {game.gameId} · {game.currentGameName || game.gameName || "ไม่พบเกม"}</span><span>{game.packCount} packs</span></p>)}</>
+          <>
+            <p className="font-medium text-linear-ink">
+              เขียนลงเกมที่มีอยู่ {existingGames.length} เกม รวม{" "}
+              {existingGames.reduce((sum, game) => sum + game.packCount, 0)} packs
+            </p>
+            {existingGames.map((game) => (
+              <p key={game.gameId} className="mt-1 flex justify-between gap-3 text-sm text-linear-ink-muted">
+                <span className="min-w-0 truncate">
+                  ID {game.gameId} · {game.currentGameName || game.gameName || "ไม่พบเกม"}
+                  {game.matchedByName ? (
+                    <span className="ml-1 text-[10px] text-linear-ink-tertiary">จับคู่จากชื่อ</span>
+                  ) : null}
+                </span>
+                <span className="shrink-0">{game.packCount} packs</span>
+              </p>
+            ))}
+            {existingGames.length === 0 ? (
+              <p className="mt-1 text-sm text-linear-ink-tertiary">ไม่มี — ไฟล์นี้เขียนลงเกมใหม่อย่างเดียว</p>
+            ) : null}
+          </>
         )}
       </div>
+
+      {kind === "packs" && preview.newGames?.length ? (
+        <ConfirmList
+          title="เกมใหม่ที่จะถูกสร้าง"
+          hint="ติ๊กเฉพาะเกมที่ต้องการสร้างจริง — ที่ไม่ติ๊กจะถูกข้ามทั้งแถวของเกมนั้น"
+          items={preview.newGames.map((game) => ({
+            id: game.gameName,
+            label: game.gameName,
+            meta: `${game.packCount} packs`,
+            warning: game.similar?.length
+              ? `ชื่อคล้าย ${game.similar.join(", ")} — เกมเดียวกันหรือเปล่า?`
+              : "",
+          }))}
+          checked={confirmedGames}
+          onToggle={onToggleGame}
+        />
+      ) : null}
+
+      {kind === "packs" && preview.newColumns?.length ? (
+        <ConfirmList
+          title="คอลัมน์ใหม่ที่จะถูกสร้าง"
+          hint="คอลัมน์เป็นของกลางทุกเกม — ที่ไม่ติ๊กจะไม่ถูกสร้างและค่าในคอลัมน์นั้นจะไม่ถูกนำเข้า"
+          items={preview.newColumns.map((column) => ({
+            id: column.label,
+            label: column.label,
+            meta: column.valueCount ? `${column.valueCount} ค่า` : "คอลัมน์ว่าง",
+            // A formula in the file is the rule for the games the file names,
+            // not for the column — say which, or "shared column" reads as
+            // "every game now computes this".
+            warning: column.unknownRefs?.length
+              ? `อ้างถึง ${column.unknownRefs.map((ref) => `[${ref}]`).join(", ")} ซึ่งไม่มีในระบบ`
+              : column.gameFormulas?.length > 1
+                ? `ใช้สูตรต่างกันตามเกม: ${column.gameFormulas.join(" · ")}`
+                : column.formula
+                  ? `สูตรเฉพาะเกมในไฟล์นี้: ${column.formula}`
+                  : "",
+          }))}
+          checked={confirmedColumns}
+          onToggle={onToggleColumn}
+        />
+      ) : null}
       {errors.length ? <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400"><p className="mb-1 flex items-center gap-1 font-medium"><AlertTriangle size={14} /> ต้องแก้ไฟล์ก่อนนำเข้า</p>{errors.map((message, index) => <p key={`${message}-${index}`}>{message}</p>)}</div> : null}
       {preview.warnings?.length ? <div className="rounded-xl border border-linear-warning/40 bg-linear-warning-bg p-3 text-sm font-medium text-linear-warning">{preview.warnings.map((message, index) => <p key={`${message}-${index}`}>{message}</p>)}</div> : null}
       {kind === "packs" && !errors.length ? <div className="flex flex-wrap gap-4 text-sm text-linear-ink-muted"><label className="flex gap-2"><input type="radio" checked={mode === "replace"} onChange={() => setMode("replace")} />แทนที่ packs เดิมของเกมในไฟล์</label><label className="flex gap-2"><input type="radio" checked={mode === "add"} onChange={() => setMode("add")} />เพิ่มต่อจาก packs เดิม</label></div> : null}
+    </div>
+  );
+}
+
+// Nothing here is ticked by default: these are the two things an import can
+// create that cannot be undone from the UI afterwards.
+function ConfirmList({ title, hint, items, checked, onToggle }) {
+  return (
+    <div className="rounded-xl border border-linear-warning/40 bg-linear-warning-bg p-3">
+      <p className="text-sm font-medium text-linear-warning">{title} ({items.length})</p>
+      <p className="mt-0.5 text-xs text-linear-ink-muted">{hint}</p>
+      <div className="mt-2 space-y-1">
+        {items.map((item) => (
+          <label
+            key={item.id}
+            className="flex items-start gap-2 rounded px-1.5 py-1 text-sm text-linear-ink hover:bg-linear-surface-2"
+          >
+            <input
+              type="checkbox"
+              checked={checked.has(item.id)}
+              onChange={() => onToggle(item.id)}
+              className="mt-0.5 accent-linear-primary"
+            />
+            <span className="min-w-0 flex-1">
+              <span className="flex flex-wrap items-baseline gap-x-2">
+                <span className="font-medium">{item.label}</span>
+                <span className="text-xs text-linear-ink-tertiary">{item.meta}</span>
+              </span>
+              {item.warning ? (
+                <span className="mt-0.5 block text-xs text-linear-ink-muted">{item.warning}</span>
+              ) : null}
+            </span>
+          </label>
+        ))}
+      </div>
     </div>
   );
 }
@@ -237,6 +387,39 @@ function MenuLink({ label, href }) { return <a href={href} className="flex w-ful
 function Divider() { return <div className="my-1 border-t border-linear-hairline" />; }
 
 function CsvGuide() {
-  return <div className="mt-5 space-y-4 text-sm text-linear-ink-muted"><Guide title="CSV เพิ่มเกม" fields="game* · region · platform · server · bot_manual · link" /><Guide title="CSV Packs หลายเกม" fields="game_id* · game_name · currency_name · currency_image · category_name · pack_name* · pack_image · price* · amount_charged_fee* · channel_main* · channel_secondary · country" /><p className="rounded-xl border border-linear-warning/40 bg-linear-warning-bg p-3 font-medium text-linear-warning">ใช้ game_id จากเมนู “โหลดรายการเกมล่าสุด” เครื่องหมาย * คือข้อมูลจำเป็น ระบบไม่รับคอลัมน์ฐานข้อมูลที่หน้า GameInfo ไม่ได้ใช้</p></div>;
+  return (
+    <div className="mt-5 space-y-4 text-sm text-linear-ink-muted">
+      <Guide title="CSV เพิ่มเกม" fields="game* · region · platform · server · bot_manual · link" />
+      <Guide
+        title="CSV Packs หลายเกม"
+        fields="game_id · game_name · currency_name · currency_image · category_name · pack_name* · pack_image · price* · amount_charged_fee* · channel_main* · channel_secondary · country"
+      />
+      <section className="rounded-xl border border-linear-hairline p-4">
+        <h3 className="font-semibold text-linear-ink">ระบุเกม</h3>
+        <p className="mt-2 text-xs">
+          ใส่ <code className="text-linear-primary">game_id</code> หรือ{" "}
+          <code className="text-linear-primary">game_name</code> อย่างใดอย่างหนึ่งก็ได้ — ชื่อที่ตรงกับเกมที่มีอยู่จะเขียนลงเกมนั้น
+          ส่วนชื่อที่ไม่ตรงกับใครจะเสนอเป็นเกมใหม่ให้ติ๊กยืนยันก่อนสร้าง ถ้าชื่อใกล้เคียงเกมเดิมจะเตือนให้ดูก่อนว่าพิมพ์ผิดหรือเปล่า
+        </p>
+      </section>
+      <section className="rounded-xl border border-linear-hairline p-4">
+        <h3 className="font-semibold text-linear-ink">คอลัมน์ใหม่</h3>
+        <p className="mt-2 text-xs">
+          หัวคอลัมน์ที่ไม่อยู่ในรายการข้างบนจะกลายเป็นคอลัมน์ — ชื่อที่ตรงกับคอลัมน์ที่มีอยู่คือการเติมค่าลงคอลัมน์นั้น
+          ชื่อใหม่จะเสนอให้ติ๊กยืนยันก่อนสร้าง คอลัมน์เป็นของกลางทุกเกม
+        </p>
+        <p className="mt-2 text-xs">
+          ในช่องใส่ได้ทั้งค่าและสูตร เช่น <code className="text-linear-primary">1500</code> หรือ{" "}
+          <code className="text-linear-primary">[ราคา] * 1.05</code> — ถ้าทุกแถวของเกมหนึ่งเป็นสูตรเดียวกัน
+          จะถูกยกขึ้นเป็นสูตรของคอลัมน์ <strong>เฉพาะเกมนั้น</strong> เกมอื่นไม่เปลี่ยนตาม
+          และสองเกมในไฟล์เดียวกันใส่สูตรต่างกันได้
+          · เว้นว่างทั้งคอลัมน์ได้ ระบบจะสร้างคอลัมน์เปล่าไว้ให้ใส่สูตรทีหลัง
+        </p>
+      </section>
+      <p className="rounded-xl border border-linear-warning/40 bg-linear-warning-bg p-3 font-medium text-linear-warning">
+        ใช้ game_id จากเมนู “โหลดรายการเกมล่าสุด” เครื่องหมาย * คือข้อมูลจำเป็นของแต่ละ pack
+      </p>
+    </div>
+  );
 }
 function Guide({ title, fields }) { return <section className="rounded-xl border border-linear-hairline p-4"><h3 className="font-semibold text-linear-ink">{title}</h3><code className="mt-2 block whitespace-normal text-xs text-linear-primary">{fields}</code></section>; }

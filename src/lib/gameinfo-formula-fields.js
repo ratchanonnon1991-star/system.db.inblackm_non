@@ -20,6 +20,7 @@ export const GAMEINFO_FIELDS = {
   USDCNY: "__externalRate",
   IDRTHB: "__externalRate",
   USDIDR: "__externalRate",
+  THBUSD: "__externalRate",
 };
 
 export const GAMEINFO_FIELD_NAMES = Object.keys(GAMEINFO_FIELDS);
@@ -34,6 +35,7 @@ export const GAMEINFO_NUMERIC_FIELD_NAMES = [
   "USDCNY",
   "IDRTHB",
   "USDIDR",
+  "THBUSD",
 ];
 
 export function resolveGameinfoField(pack, game, label, context = {}) {

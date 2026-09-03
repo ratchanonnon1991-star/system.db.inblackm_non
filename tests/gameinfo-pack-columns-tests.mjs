@@ -1,12 +1,18 @@
 import {
   buildGameinfoPackColumns,
+  gameinfoColumnsWithData,
+  gameinfoPackLayoutKnownIds,
   formatGameinfoPackColumnValue,
   gameinfoPackColumnWidth,
   matchesGameinfoPackFilters,
   normalizeGameinfoPackLayout,
   reorderGameinfoPackColumns,
 } from "@/lib/gameinfo-pack-columns.js";
-import { sanitizeComputedColumns } from "@/server/gamedb-layout-sanitizer.js";
+import {
+  GAMEDB_QUERY_COLUMN_LIMIT,
+  GAMEINFO_PACK_COLUMN_LIMIT,
+  sanitizeComputedColumns,
+} from "@/server/gamedb-layout-sanitizer.js";
 import {
   duplicateGameinfoFormulaOverrides,
   getEffectiveGameinfoFormula,
@@ -69,6 +75,78 @@ check("layout pins the service status column to the front", normalized.order, [
 ]);
 check("layout drops unknown, duplicate, and hidden status ids", normalized.hidden, ["country"]);
 check("layout defaults to no row filters", normalized.filters, []);
+
+// A preset saved before a column existed: the column is appended to the end of
+// the order and is never auto-hidden, so it shows up for everyone who saved
+// that preset. Pinned here because it is the rule the shared column registry
+// changes — a saved preset must stop absorbing newly added columns.
+const layoutWithLateColumn = normalizeGameinfoPackLayout(
+  { order: ["price", "name"], hidden: [] },
+  buildGameinfoPackColumns([{ key: "late", label: "มาทีหลัง", formula: "1" }])
+);
+check(
+  "a column added after the preset was saved lands at the end of the order",
+  layoutWithLateColumn.order.at(-1),
+  "computed:late"
+);
+check("a column added after the preset was saved stays visible", layoutWithLateColumn.hidden, []);
+
+// Once a preset records what existed when it was saved, columns registered
+// later (shared across every game) start hidden instead.
+const stampedColumns = buildGameinfoPackColumns([
+  { key: "old", label: "เดิม", formula: "1" },
+  { key: "late", label: "มาทีหลัง", formula: "1" },
+]);
+const stampedLayout = normalizeGameinfoPackLayout(
+  {
+    order: ["price", "computed:old"],
+    hidden: [],
+    knownIds: ["serviceEnabled", "image", "name", "price", "amountChargedFee",
+      "channelsMain", "channelsSecondary", "country", "computed:old"],
+  },
+  stampedColumns
+);
+check("a preset hides columns registered after it was saved", stampedLayout.hidden, ["computed:late"]);
+check(
+  "a preset still shows every column it was saved with",
+  stampedLayout.order.filter((id) => !stampedLayout.hidden.includes(id)).includes("computed:old"),
+  true
+);
+check(
+  "the pinned status column is never auto-hidden",
+  normalizeGameinfoPackLayout({ knownIds: [] }, stampedColumns).hidden.includes("serviceEnabled"),
+  false
+);
+check(
+  "knownIds are stamped from the live columns",
+  gameinfoPackLayoutKnownIds(buildGameinfoPackColumns([{ key: "x", label: "X", formula: "1" }])).at(-1),
+  "computed:x"
+);
+
+// A shared column is registered for every game; "empty here" is decided by
+// whether any pack in this game produces a value for it.
+const dataColumns = buildGameinfoPackColumns([
+  { key: "filled", label: "มีค่า", formula: "1" },
+  { key: "blank", label: "ว่าง", formula: "" },
+]);
+const withData = gameinfoColumnsWithData(
+  dataColumns,
+  [{ id: "pk_1" }, { id: "pk_2" }],
+  (column, pack) => (column.id === "computed:filled" && pack.id === "pk_2" ? 42 : undefined)
+);
+check("a column one pack fills counts as having data", withData.has("computed:filled"), true);
+check("a column no pack fills counts as empty", withData.has("computed:blank"), false);
+check("base columns always count as having data", withData.has("price"), true);
+check(
+  "a game with no packs at all has no computed data",
+  gameinfoColumnsWithData(dataColumns, [], () => 1).has("computed:filled"),
+  false
+);
+check(
+  "blank strings and nulls do not count as data",
+  gameinfoColumnsWithData(dataColumns, [{ id: "pk_1" }], () => "").has("computed:filled"),
+  false
+);
 
 const filteredLayout = normalizeGameinfoPackLayout(
   {
@@ -220,6 +298,34 @@ check(
   "global"
 );
 
+// The sanitizer used to carry a hardcoded market list that fell behind
+// GAMEINFO_MARKETS: a G2G column had its marketKey blanked here and then died
+// on the `key === market_${marketKey}` check in the packs route.
+check(
+  "computed sanitizer accepts every registered market",
+  sanitizeComputedColumns(
+    ["kaleoz", "itemku", "g2g"].map((market) => ({
+      key: `market_${market}`,
+      label: market,
+      formula: "[ราคา]",
+      kind: "market",
+      marketKey: market,
+    }))
+  ).map((column) => column.marketKey),
+  ["kaleoz", "itemku", "g2g"]
+);
+check(
+  "computed sanitizer still rejects an unregistered market",
+  sanitizeComputedColumns([{
+    key: "market_playerok",
+    label: "Playerok",
+    formula: "[ราคา]",
+    kind: "market",
+    marketKey: "playerok",
+  }])[0].marketKey,
+  ""
+);
+
 const formulaColumn = {
   key: "profit",
   formula: "[ราคา] - [ยอดที่กด + fee]",
@@ -329,16 +435,46 @@ check("editing a main formula keeps explicit row overrides by default", updatedM
   formula: "[ราคา] * 2",
   rowOverrides: { pk_special: "[ราคา] * 0.5" },
   label: "กำไรใหม่",
+  // Empty because this edit was scoped to every game: the editor writes the
+  // text to one of `formula` and `gameFormula` and clears the other.
+  gameFormula: "",
   type: "number",
   symbol: "฿",
   scopeMode: "global",
   categoryFormulas: {},
 });
 check(
+  "an edit scoped to this game leaves the shared formula alone",
+  updateGameinfoComputedColumn(
+    [formulaColumn],
+    { key: "profit", label: "กำไร", formula: formulaColumn.formula, gameFormula: "[ราคา] * 4", type: "number", symbol: "฿" }
+  )[0],
+  { ...updatedMainFormula[0], label: "กำไร", formula: formulaColumn.formula, gameFormula: "[ราคา] * 4" }
+);
+check(
   "editing main formula can deliberately apply it to every pack by clearing overrides",
   updateGameinfoComputedColumn(updatedMainFormula, { ...updatedMainFormula[0], formula: "[ราคา] * 3" }, { resetOverrides: true })[0].rowOverrides,
   {}
 );
+
+// --- how many columns fit ------------------------------------------------
+// A query's formula columns belong to that query; a pack column is shared by
+// every game, so the list being sanitized is the whole registry and the old
+// 30 that suited a query is far too few. Truncating is what makes this worth
+// a test: a gameinfo save deletes the columns it does not send, so a list cut
+// down to the cap would take the rest away from every game.
+const manyColumns = Array.from({ length: 120 }, (_, index) => ({
+  key: `col_${index}`,
+  label: `คอลัมน์ ${index}`,
+  formula: "[ราคา]",
+}));
+check("a query keeps its small cap", sanitizeComputedColumns(manyColumns).length, GAMEDB_QUERY_COLUMN_LIMIT);
+check(
+  "pack columns are capped far higher, because the list is every game's",
+  sanitizeComputedColumns(manyColumns, { limit: GAMEINFO_PACK_COLUMN_LIMIT }).length,
+  120
+);
+check("and the cap is still a cap", GAMEINFO_PACK_COLUMN_LIMIT > GAMEDB_QUERY_COLUMN_LIMIT, true);
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);

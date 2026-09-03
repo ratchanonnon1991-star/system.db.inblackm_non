@@ -22,8 +22,25 @@ assert.ok(editor.includes("<GameinfoPackColumnControls") && view.includes("<Game
 assert.ok(editor.includes('render={<label htmlFor={csvInputId} />}') && editor.includes('className="sr-only"'), "CSV input uses an accessible button-style label");
 assert.ok(editor.includes('<FileUp data-icon="inline-start" />') && editor.includes('"เลือกไฟล์ CSV"'), "CSV picker has a clear button label and icon");
 assert.ok(editor.includes("scopeMode, entryMode") && editor.includes("scopeMode, entryMode, kind:"), "manual column mode survives creation");
-assert.ok(editor.includes('if (column?.kind === "market") return;'), "market columns cannot be removed by the delete handler");
-assert.ok(editor.includes('column.kind === "computed" && column.computed.kind !== "market"'), "market column headers do not expose delete");
+// A market's price is now a link to a column the game already has, so the
+// column is ordinary and deletable; it used to be created by turning a market
+// on and nothing could unmake it.
+assert.ok(!editor.includes('if (column?.kind === "market") return;'), "market columns are no longer undeletable");
+assert.ok(!editor.includes('column.computed.kind !== "market"'), "delete is no longer withheld from market columns");
+// Main and secondary channels share one column in the read-only view, with a
+// switch, rather than two columns the second of which is empty for most packs.
+assert.ok(!view.includes('column.id === "channelsSecondary"') || view.includes('filter((column) => column.id !== "channelsSecondary")'), "the view merges the two channel columns into one");
+assert.ok(view.includes('field: secondary ? "channelsSecondary" : "channelsMain"'), "the merged column switches which field it reads");
+assert.ok(view.includes('label: secondary ? "ช่องทางรอง" : "ช่องทางหลัก"'), "the merged column says which channel it is showing");
+assert.ok(view.includes('"สลับช่องทางรอง"') || view.includes("สลับช่องทางรอง"), "the switch is labelled for the reader");
+assert.ok(view.includes("hasSecondaryChannels"), "the switch only appears when the game has a second channel");
+assert.ok(view.includes("onPointerDown={(event) => event.stopPropagation()}"), "the switch survives the header's drag-to-reorder handlers");
+// Per-cell scope badges crowded a table that is mostly numbers; the tooltip
+// and the dialog title already say which scope a formula came from.
+assert.ok(!editor.includes(">เฉพาะแถว<"), "cells no longer label row-specific formulas inline");
+assert.ok(!editor.includes(">เฉพาะหมวด<"), "cells no longer label category formulas inline");
+assert.ok(editor.includes("effective.sourceLabel"), "the cell tooltip still names the formula's scope");
+
 assert.ok(tagsInput.includes("w-max min-w-full flex-nowrap"), "channel tags stay on one horizontal line");
 assert.ok(tagsInput.includes("inline-flex shrink-0") && tagsInput.includes("whitespace-nowrap"), "channel tags never wrap internally");
 assert.ok(tagsInput.includes("(text.length + 1) * 8"), "channel cursor input grows at the end of the tag row");
@@ -48,4 +65,4 @@ assert.ok(view.includes("values.map((item) => ("), "each channel becomes its own
 assert.ok(view.includes("function StableTag({ value, label = value, className"), "one tag component serves the table and the header summary");
 assert.ok(view.includes("gameinfoCountryDisplayName(item)"), "the view shows the same trimmed country name as the editor");
 
-console.log("31 passed");
+console.log("41 passed");

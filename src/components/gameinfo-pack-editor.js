@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, ChevronDown, Copy, Download, FileUp, Image as ImageIcon, Languages, Pencil, Plus, Trash2, X } from "lucide-react";
+import { CheckCircle2, ChevronDown, Copy, Download, FileUp, Image as ImageIcon, Languages, Lock, Pencil, Plus, Trash2, X } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -61,6 +61,7 @@ import {
   buildGameinfoPackColumns,
   formatGameinfoPackColumnValue,
   gameinfoPackColumnWidth,
+  isGameinfoPackColumnPinned,
   matchesGameinfoPackFilters,
 } from "@/lib/gameinfo-pack-columns";
 import {
@@ -76,7 +77,10 @@ import {
   duplicateGameinfoPack,
   getGameinfoPackName,
 } from "@/lib/gameinfo-pack-model";
-import { evaluateGameinfoComputedColumn } from "@/lib/gameinfo-computed-evaluator";
+import {
+  evaluateGameinfoComputedColumn,
+  gameinfoColumnsWithDataInGame,
+} from "@/lib/gameinfo-computed-evaluator";
 import { normalizeSpaces } from "@/lib/text-normalize";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -184,6 +188,11 @@ export default function GameinfoPackEditor({
     () => new Set(currencies.flatMap((currency) => currency.categories.map((category) => String(category.id)))),
     [currencies]
   );
+  // A formula column has nothing to compute over until there is a category to
+  // hold packs, and it is the third step of building a game — currency, then
+  // category, then the columns derived from what they hold. Offering it first
+  // reads as the place to start.
+  const canAddColumn = currentCategoryIds.size > 0;
   const visiblePackIds = useMemo(
     () => [
       ...new Set(
@@ -274,12 +283,23 @@ export default function GameinfoPackEditor({
     [computedColumns]
   );
   const packColumns = useMemo(() => buildGameinfoPackColumns(parsedColumns), [parsedColumns]);
+  // Columns are shared by every game, so this editor shows columns this game
+  // has never filled in. It shows them all by default — that is how a column
+  // gets its first value here — with a toggle to clear the empty ones away.
+  // Deliberately not persisted: it is a way of looking at the table right now,
+  // not a preference, and it must not be confused with hiding a column.
+  const [hideEmptyColumns, setHideEmptyColumns] = useState(false);
+  const emptyColumnIds = useMemo(() => {
+    const withData = gameinfoColumnsWithDataInGame(packColumns, currencies, game, formulaContext);
+    return new Set(packColumns.map((column) => column.id).filter((id) => !withData.has(id)));
+  }, [packColumns, currencies, game, formulaContext]);
   const packLayout = useGameinfoPackColumnLayout({
     columns: packColumns,
     userId,
     gameId: game.id,
     surface: "edit",
-    lockRequired: true,
+    emptyColumnIds,
+    hideEmptyColumns,
   });
   const languageDraftDirty = Boolean(languageDraft.trim());
   useGameinfoUnsavedChanges(dirty || packLayout.dirty || languageDraftDirty);
@@ -471,16 +491,21 @@ export default function GameinfoPackEditor({
     }
   }
 
-  function addComputedColumn({ key, label, formula, type, symbol, scopeMode, entryMode }) {
+  function addComputedColumn({ key, label, formula, gameFormula, type, symbol, scopeMode, entryMode }) {
     setComputedColumns((prev) => [
       ...prev,
-      { key, label, formula, type, symbol, scopeMode, entryMode, kind: "formula", marketKey: "", enabled: true, categoryFormulas: {}, rowOverrides: {} },
+      // A new column can be created for this game alone: the definition is
+      // shared either way, the formula is what the editor scoped.
+      { key, label, formula, gameFormula: gameFormula || "", type, symbol, scopeMode, entryMode, kind: "formula", marketKey: "", enabled: true, categoryFormulas: {}, rowOverrides: {} },
     ]);
     setModalOpen(false);
   }
+  // Market columns used to be undeletable: they were created by turning a
+  // market on and nothing else could unmake them. A market now links to a
+  // column instead, so the link can be pointed elsewhere and the column is
+  // ordinary again.
   function removeComputedColumn(key) {
     const column = computedColumns.find((item) => item.key === key);
-    if (column?.kind === "market") return;
     setConfirmRequest({
       title: "ลบคอลัมน์สูตร",
       message: `คอลัมน์ "${column?.label || key}" และสูตรเฉพาะแถวที่เกี่ยวข้องจะถูกลบเมื่อกดบันทึก`,
@@ -1035,13 +1060,15 @@ export default function GameinfoPackEditor({
           error={packLayout.error}
           notice={packLayout.notice}
           legacyDraft={packLayout.legacyDraft}
+          emptyColumnIds={emptyColumnIds}
+          hideEmptyColumns={hideEmptyColumns}
+          onHideEmptyColumnsChange={setHideEmptyColumns}
           onSetVisible={packLayout.setVisible}
           onFiltersChange={packLayout.setFilters}
           onReset={packLayout.reset}
           onSelectPreset={packLayout.selectPreset}
           onPresetNameChange={packLayout.setPresetName}
           onSavePreset={packLayout.savePreset}
-          lockRequired
         />
         <GameinfoPackHistory gameId={game.id} historyUrl={historyUrl} />
       </div>
@@ -1070,9 +1097,11 @@ export default function GameinfoPackEditor({
               columns={computedColumns}
               onColumnsChange={setComputedColumns}
             />
-            <Button type="button" variant="outline" size="sm" onClick={() => setModalOpen(true)}>
-              <Plus data-icon="inline-start" /> เพิ่มสูตร
-            </Button>
+            {canAddColumn ? (
+              <Button type="button" variant="outline" size="sm" onClick={() => setModalOpen(true)}>
+                <Plus data-icon="inline-start" /> เพิ่มสูตร
+              </Button>
+            ) : null}
             <Button type="button" variant="outline" size="sm" onClick={addCurrency}>
               <Plus data-icon="inline-start" /> สกุลเงิน
             </Button>
@@ -1496,7 +1525,7 @@ function CategoryBlock({
                       column={column}
                       index={i}
                       onRemove={
-                        column.kind === "computed" && column.computed.kind !== "market"
+                        column.kind === "computed"
                           ? () => onRemoveColumn(column.computed.key)
                           : undefined
                       }
@@ -1857,14 +1886,13 @@ function PackEditorColumn({
         }`}
         title={`${effective.sourceLabel} — กดเพื่อกำหนดสูตรเฉพาะ pack`}
       >
+        {/* Which scope a cell's formula came from used to be spelled out on
+            every overridden cell, which crowded the numbers in a table that is
+            mostly numbers. The tooltip above already says it, and the dialog
+            the cell opens says it in its title. */}
         {formulaError ? "สูตรผิด" : manualMode && !effective.formula ? (
           <span className="text-linear-ink-tertiary">ใส่ค่า/สูตร</span>
         ) : formatGameinfoPackColumnValue(value, column)}
-        {effective.source === "override" ? (
-          <span className="ml-1 text-[9px] text-linear-primary">เฉพาะแถว</span>
-        ) : effective.source === "category" ? (
-          <span className="ml-1 text-[9px] text-linear-ink-tertiary">เฉพาะหมวด</span>
-        ) : null}
       </button>
     );
   }
@@ -2127,8 +2155,10 @@ function GameinfoFormulaOverrideEditor({
 // reorder (the whole cell is the drag handle, not a separate grip icon). The
 // remove button stops propagation so it doesn't also start a drag.
 function SortableColumnHeader({ column, index, onRemove, onEdit, onEditCategory }) {
+  const pinned = isGameinfoPackColumnPinned(column);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: column.id,
+    disabled: pinned,
   });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -2140,13 +2170,13 @@ function SortableColumnHeader({ column, index, onRemove, onEdit, onEditCategory 
     <span
       ref={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
-      className={`flex min-w-0 cursor-grab items-center gap-1 px-2 active:cursor-grabbing ${
-        column.kind === "computed" ? "text-linear-primary" : "text-linear-ink-tertiary"
-      }`}
-      title="กดค้างแล้วลากเพื่อเปลี่ยนลำดับ"
+      {...(pinned ? {} : { ...attributes, ...listeners })}
+      className={`flex min-w-0 items-center gap-1 px-2 ${
+        pinned ? "cursor-default" : "cursor-grab active:cursor-grabbing"
+      } ${column.kind === "computed" ? "text-linear-primary" : "text-linear-ink-tertiary"}`}
+      title={pinned ? "คอลัมน์สถานะถูกตรึงไว้เป็นคอลัมน์แรก" : "กดค้างแล้วลากเพื่อเปลี่ยนลำดับ"}
     >
+      {pinned ? <Lock size={10} className="shrink-0" /> : null}
       <span className="whitespace-normal break-words">{column.label || `สูตร ${index + 1}`}</span>
       {onEditCategory ? (
         <button

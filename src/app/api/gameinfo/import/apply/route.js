@@ -1,9 +1,83 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireGameinfoEditor } from "@/server/auth";
 import { parseCsv } from "@/lib/gameinfo-csv";
-import { mergeCurrencies, PACK_HEADERS, parsePacks, validatePackRows } from "@/lib/gameinfo-import";
-import { listGameListRows, withGameinfoTransaction } from "@/server/gameinfo-gamelist";
-import { auditActor, importGamelistPacks, recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
+import { mergeCurrencies } from "@/lib/gameinfo-import";
+import {
+  createGameListRows,
+  listGameListRows,
+  withGameinfoTransaction,
+} from "@/server/gameinfo-gamelist";
+import {
+  auditActor,
+  importGamelistPacks,
+  listGamelistPackColumnRegistry,
+  recordGameinfoAudit,
+} from "@/server/gameinfo-gamelist-packs";
+import { planGameinfoCsvImport } from "@/server/gameinfo-csv-import";
+import { getGameinfoFormulaVariables } from "@/server/gameinfo-formula-variables";
+import { confirmedGameinfoCsvGames } from "@/lib/gameinfo-csv-games";
+import { gameNameKey } from "@/lib/text-distance";
+
+// idpass keeps its own copy of the merged column list. An imported column that
+// this game has never seen is appended; one it already has keeps its
+// definition, since the definition is shared and the CSV only carries values.
+//
+// The per-pack formulas ride on the column itself, in the merged shape every
+// surface reads. saveGameinfoModeData splits the shared definition from this
+// game's values out of exactly that shape, so anything written to a separate
+// columnOverrides map here is overwritten by the split and lost.
+function mergeImportedColumns(current, imported) {
+  const columns = Array.isArray(current) ? [...current] : [];
+  const indexByKey = new Map(columns.map((column, index) => [column.key, index]));
+  for (const column of imported || []) {
+    const rowOverrides = column.rowOverrides || {};
+    const at = indexByKey.get(column.key);
+    if (at !== undefined) {
+      if (!Object.keys(rowOverrides).length && !column.gameFormula) continue;
+      columns[at] = {
+        ...columns[at],
+        // The rule the file stated for this game, kept next to the shared
+        // definition instead of replacing it — the same trade the uid store
+        // makes. Without it a second game in one file silently computed the
+        // first game's formula.
+        // entryMode is left alone: it is part of the shared definition, and
+        // gameFormula outranks it anyway (getEffectiveGameinfoFormula).
+        ...(column.gameFormula ? { gameFormula: column.gameFormula } : {}),
+        rowOverrides: { ...(columns[at].rowOverrides || {}), ...rowOverrides },
+      };
+      continue;
+    }
+    indexByKey.set(column.key, columns.length);
+    columns.push({
+      key: column.key,
+      label: column.label,
+      // Empty on purpose: a CSV never writes the formula every game computes.
+      formula: "",
+      gameFormula: column.gameFormula || "",
+      entryMode: column.entryMode || "manual",
+      kind: "formula",
+      marketKey: "",
+      type: "number",
+      symbol: "",
+      scopeMode: "global",
+      categoryFormulas: {},
+      rowOverrides: { ...rowOverrides },
+    });
+  }
+  return columns;
+}
+
+// The preview sends back exactly what the user ticked. An absent field means
+// they never confirmed; an empty list means they confirmed none.
+function parseConfirmList(value) {
+  if (typeof value !== "string") return null;
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map((item) => String(item)) : null;
+  } catch {
+    return null;
+  }
+}
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { getGameinfoModeData, saveGameinfoModeData } from "@/server/gameinfo-mode-data";
 import { findDuplicateGameinfoPackNamePrices } from "@/lib/gameinfo-pack-validation";
@@ -19,32 +93,88 @@ export async function PUT(request) {
     if (mode !== "replace" && mode !== "add") return jsonError("โหมดนำเข้าไม่ถูกต้อง", 400);
     const { headers, rows } = parseCsv(await file.text());
     if (!rows.length) return jsonError("ไฟล์ว่างเปล่า หรือไม่มีข้อมูลใต้หัวคอลัมน์", 400);
-    if (!headers.includes("game_id")) return jsonError("ไม่พบคอลัมน์ game_id", 400);
-    const unsupported = headers.filter(
-      (header) => !PACK_HEADERS.includes(header) && header !== "amount_charged"
-    );
-    if (unsupported.length) return jsonError(`พบคอลัมน์ที่ระบบไม่รับ: ${unsupported.join(", ")}`, 400);
-    const parsed = parsePacks(rows);
-    const errors = [
-      ...parsed.errors.filter((message) => !message.startsWith("พบคอลัมน์ amount_charged")),
-      ...validatePackRows(rows),
-    ];
-    for (const game of parsed.perGame) {
-      if (findDuplicateGameinfoPackNamePrices(game.currencies).size > 0) {
-        errors.push(`game_id ${game.gameId}: ชื่อ Pack และราคาห้ามซ้ำกันพร้อมกัน`);
-      }
+    // The file is re-read here rather than carried over from the preview, so
+    // the same planner has to run again — anything the user confirmed is
+    // matched by name against this reading, never taken on trust.
+    const [existingGames, registry, variableData] = await Promise.all([
+      listGameListRows(),
+      listGamelistPackColumnRegistry(),
+      getGameinfoFormulaVariables(0),
+    ]);
+    const plan = planGameinfoCsvImport({
+      headers,
+      rows,
+      existingGames,
+      existingColumns: registry.map((column) => ({ key: column.columnKey, label: column.label })),
+      variableNames: variableData.variables.map((variable) => variable.name),
+    });
+    const errors = [...plan.errors];
+    if (!plan.games.length) errors.push("ไม่พบข้อมูลเกมที่นำเข้าได้");
+
+    // Creating a game or a column is not undoable, and a typo'd game name is
+    // indistinguishable from a new game, so neither happens unless the user
+    // ticked it in the preview. An absent list means they never saw the
+    // preview for this file.
+    const confirmedGames = parseConfirmList(form.get("confirmNewGames"));
+    const confirmedColumns = parseConfirmList(form.get("confirmNewColumns"));
+    if (plan.newGames.length && !confirmedGames) {
+      errors.push(
+        `ไฟล์นี้จะสร้างเกมใหม่ ${plan.newGames.length} เกม (${plan.newGames
+          .map((game) => game.gameName)
+          .join(", ")}) — กรุณายืนยันในหน้าตัวอย่างก่อน`
+      );
     }
-    const existingIds = new Set((await listGameListRows()).map((game) => Number(game.id)));
-    const missing = parsed.perGame.filter((game) => !existingIds.has(game.gameId)).map((game) => game.gameId);
-    if (missing.length) errors.push(`ไม่พบ game_id ในระบบ: ${missing.join(", ")}`);
-    if (!parsed.perGame.length) errors.push("ไม่พบข้อมูลเกมที่นำเข้าได้");
+    if (plan.newColumns.length && !confirmedColumns) {
+      errors.push(
+        `ไฟล์นี้จะสร้างคอลัมน์ใหม่ ${plan.newColumns.length} คอลัมน์ (${plan.newColumns
+          .map((column) => column.label)
+          .join(", ")}) — กรุณายืนยันในหน้าตัวอย่างก่อน`
+      );
+    }
     if (errors.length) return jsonError(errors.join("\n"), 400);
-    if (normalizeGameinfoDataMode(request.nextUrl.searchParams.get("mode")) === "idpass") {
-      const packCount = await withGameinfoTransaction(async (client) => {
+
+    const { confirmed: gamesToCreate, skipped: gamesSkipped } = confirmedGameinfoCsvGames(
+      plan.newGames,
+      confirmedGames || []
+    );
+    const skippedGameNames = new Set(gamesSkipped.map((game) => gameNameKey(game.gameName)));
+    const keptColumns = new Set(
+      plan.columns
+        .filter((column) => !column.isNew || (confirmedColumns || []).includes(column.label))
+        .map((column) => column.key)
+    );
+    const actor = { id: user.id, name: user.displayName || user.username };
+    const idpass = normalizeGameinfoDataMode(request.nextUrl.searchParams.get("mode")) === "idpass";
+    const result = await withGameinfoTransaction(async (client) => {
+      // Creating the games first is what turns a name into the game_id the
+      // pack rows need; the sequence hands out the id, we never compute one.
+      const createdRows = gamesToCreate.length
+        ? await createGameListRows(
+            gamesToCreate.map((game) => ({ game: game.gameName })),
+            auditActor(user),
+            client
+          )
+        : [];
+      const idByName = new Map(createdRows.map((row) => [gameNameKey(row.game), Number(row.id)]));
+      const importable = [];
+      for (const game of plan.games) {
+        const gameId = game.isNew ? idByName.get(gameNameKey(game.gameName)) : game.gameId;
+        // A game the user chose not to create takes its rows with it.
+        if (!gameId) continue;
+        importable.push({
+          ...game,
+          gameId,
+          columns: game.columns.filter((column) => keptColumns.has(column.key)),
+        });
+      }
+
+      if (idpass) {
         let count = 0;
-        for (const game of parsed.perGame) {
+        for (const game of importable) {
           const current = await getGameinfoModeData(game.gameId, "idpass", client);
-          const currencies = mode === "add"
+          // Same rule as the uid store: a file carrying columns but no packs
+          // for this game must not empty it. See importGamelistPacks.
+          const currencies = mode === "add" || !game.currencies.length
             ? mergeCurrencies(current.packs.currencies, game.currencies)
             : game.currencies;
           if (findDuplicateGameinfoPackNamePrices(currencies).size > 0) {
@@ -52,11 +182,15 @@ export async function PUT(request) {
             error.status = 400;
             throw error;
           }
-          count += game.currencies.flatMap((currency) => currency.categories.flatMap((category) => category.packs)).length;
-          await saveGameinfoModeData(game.gameId, "idpass", {
-            ...current,
-            packs: { ...current.packs, currencies },
-          }, client);
+          count += game.packCount;
+          const nextPacks = {
+            ...current.packs,
+            currencies,
+            // Columns are shared across both storage modes, so an imported
+            // column lands here the same way it lands in the uid store.
+            computedColumns: mergeImportedColumns(current.packs.computedColumns, game.columns),
+          };
+          await saveGameinfoModeData(game.gameId, "idpass", { ...current, packs: nextPacks }, client);
           await recordGameinfoAudit({
             gameId: game.gameId,
             area: "import",
@@ -65,19 +199,21 @@ export async function PUT(request) {
             source: mode === "add" ? "csv_append" : "csv_replace",
             actor: auditActor(user),
             before: current.packs,
-            after: { ...current.packs, currencies },
+            after: nextPacks,
             client,
           });
         }
-        return count;
-      });
-      return jsonOk({ gameCount: parsed.perGame.length, packCount });
-    }
-    const result = await importGamelistPacks(parsed.perGame, mode, {
-      id: user.id,
-      name: user.displayName || user.username,
+        return { gameCount: importable.length, packCount: count, createdGameCount: createdRows.length };
+      }
+
+      const imported = await importGamelistPacks(importable, mode, actor, client);
+      return { ...imported, createdGameCount: createdRows.length };
     });
-    return jsonOk(result);
+    return jsonOk({
+      ...result,
+      skippedGameNames: [...skippedGameNames],
+      newColumnCount: plan.newColumns.filter((column) => keptColumns.has(column.key)).length,
+    });
   } catch (error) {
     return handleApiError(error, "นำเข้า packs ไม่สำเร็จ");
   }

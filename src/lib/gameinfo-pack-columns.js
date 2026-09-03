@@ -34,6 +34,14 @@ export const GAMEINFO_PACK_BASE_COLUMNS = [
   { id: "country", label: "ประเทศ", field: "country", track: "minmax(80px, 0.8fr)", minWidth: 100, maxWidth: 220, required: true },
 ];
 
+/* The status column doubles as the row-select checkbox, so it stays pinned
+   first and always visible — column presets cannot hide or move it. */
+export const GAMEINFO_PACK_PINNED_COLUMN_ID = "serviceEnabled";
+
+export function isGameinfoPackColumnPinned(column) {
+  return (typeof column === "string" ? column : column?.id) === GAMEINFO_PACK_PINNED_COLUMN_ID;
+}
+
 export const GAMEINFO_PACK_SYMBOLS = ["", "$", "฿", "%"];
 
 export function buildGameinfoPackColumns(computedColumns = []) {
@@ -69,7 +77,7 @@ export function gameinfoPackColumnWidth(column, values = []) {
 export function normalizeGameinfoPackLayout(raw, columns) {
   const ids = columns.map((column) => column.id);
   const known = new Set(ids);
-  const statusId = known.has("serviceEnabled") ? "serviceEnabled" : null;
+  const statusId = known.has(GAMEINFO_PACK_PINNED_COLUMN_ID) ? GAMEINFO_PACK_PINNED_COLUMN_ID : null;
   const order = [];
   if (statusId) order.push(statusId);
   for (const id of Array.isArray(raw?.order) ? raw.order : []) {
@@ -82,6 +90,19 @@ export function normalizeGameinfoPackLayout(raw, columns) {
   for (const id of Array.isArray(raw?.hidden) ? raw.hidden : []) {
     if (id === statusId) continue;
     if (known.has(id) && !hidden.includes(id)) hidden.push(id);
+  }
+  // Columns are shared by every game now, so new ones appear in games that had
+  // nothing to do with creating them. A saved preset is a deliberate choice of
+  // what to look at, so anything registered after it was saved starts hidden
+  // and the user opts in. `knownIds` records what existed at save time;
+  // presets saved before it was recorded keep the old show-everything
+  // behaviour rather than suddenly hiding columns their owner relies on.
+  if (Array.isArray(raw?.knownIds)) {
+    const knownAtSave = new Set(raw.knownIds);
+    for (const id of ids) {
+      if (id === statusId || knownAtSave.has(id) || hidden.includes(id)) continue;
+      hidden.push(id);
+    }
   }
   const filters = [];
   for (const filter of Array.isArray(raw?.filters) ? raw.filters : []) {
@@ -96,8 +117,36 @@ export function normalizeGameinfoPackLayout(raw, columns) {
   return { order, hidden, filters };
 }
 
+/** The column ids to record on a preset so later additions start hidden. */
+export function gameinfoPackLayoutKnownIds(columns) {
+  return (columns || []).map((column) => column.id);
+}
+
+// A shared column is registered for every game, but most games have nothing to
+// put in most columns. "Has data here" is simply: at least one pack in this
+// game produces a value. Computed values are never stored — they are derived
+// on render — so this asks the same evaluator the table does, and a column
+// that gets its first value stops counting as empty with no flag to maintain.
+export function gameinfoColumnsWithData(columns, packs, getValue) {
+  const withData = new Set();
+  for (const column of columns || []) {
+    if (column.kind !== "computed") {
+      withData.add(column.id);
+      continue;
+    }
+    for (const pack of packs || []) {
+      const value = getValue(column, pack);
+      if (value !== undefined && value !== null && value !== "") {
+        withData.add(column.id);
+        break;
+      }
+    }
+  }
+  return withData;
+}
+
 export function reorderGameinfoPackColumns(layout, activeId, overId) {
-  if (activeId === "serviceEnabled") return layout;
+  if (isGameinfoPackColumnPinned(activeId)) return layout;
   const order = [...layout.order];
   const from = order.indexOf(activeId);
   const to = order.indexOf(overId);

@@ -11,6 +11,7 @@ const JOBS = [
   { pair: "USDCNY", nextAt: nextFrankfurterRefreshAt },
   { pair: "IDRTHB", nextAt: nextFrankfurterRefreshAt },
   { pair: "USDIDR", nextAt: nextFrankfurterRefreshAt },
+  { pair: "THBUSD", nextAt: nextFrankfurterRefreshAt },
 ];
 
 export function startGameinfoRateScheduler() {

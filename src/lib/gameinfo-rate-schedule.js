@@ -3,6 +3,7 @@ export const GAMEINFO_RATE_CACHE_MS = {
   USDCNY: 12 * 60 * 60 * 1000,
   IDRTHB: 12 * 60 * 60 * 1000,
   USDIDR: 12 * 60 * 60 * 1000,
+  THBUSD: 12 * 60 * 60 * 1000,
 };
 
 export function nextCoinGeckoRefreshAt(now = new Date()) {

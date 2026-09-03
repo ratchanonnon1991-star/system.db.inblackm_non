@@ -76,6 +76,10 @@ export const PACK_SAMPLE = [
 export function buildPackTree(groupRows) {
   const currencyOrder = [];
   const currencyMap = new Map();
+  // Which row produced which pack. Pack ids are generated here, so a caller
+  // that wants to attach anything else from the same row — a custom column's
+  // value, which is stored per pack id — has no other way to line them up.
+  const rowPacks = [];
   let packCount = 0;
 
   for (const row of groupRows) {
@@ -105,8 +109,9 @@ export function buildPackTree(groupRows) {
     }
     const cat = cur.cats.get(catKey);
 
+    const packId = genId("pk");
     cat.packs.push({
-      id: genId("pk"),
+      id: packId,
       name: packName,
       image: norm(row["pack_image"]),
       price: norm(row["price"]),
@@ -115,6 +120,7 @@ export function buildPackTree(groupRows) {
       channelsSecondary: splitList(row["channel_secondary"]),
       country: norm(row["country"]),
     });
+    rowPacks.push({ row, packId, categoryId: cat.id });
     packCount += 1;
   }
 
@@ -128,7 +134,7 @@ export function buildPackTree(groupRows) {
     };
   });
 
-  return { currencies, packCount };
+  return { currencies, packCount, rowPacks };
 }
 
 // "Add" mode: match currency/category by case-insensitive name and append the
@@ -202,19 +208,23 @@ export function parsePacks(rows) {
 
 // Single-game parse (used inside one game's pack editor): the game_id column
 // in the file is ignored — every non-empty row belongs to the given gameId.
-export function parsePacksForGame(rows, gameId, fallbackGameName) {
-  const dataRows = rows.filter((row) => Object.values(row).some((v) => norm(v) !== ""));
-  const tree = buildPackTree(dataRows);
-  const gameNameFromFile = dataRows.map((r) => norm(r["game_name"])).find((n) => n);
-  const countryIssues = [];
-  for (const currency of tree.currencies) {
-    for (const category of currency.categories) {
-      for (const pack of category.packs) {
+/**
+ * Canonicalises every pack's country in place and reports the ones it could
+ * not match. Shared by both importers — the single-game one below and the
+ * bulk planner in server/gameinfo-csv-import.js — because they are reading the
+ * same file format and a fix to one that skipped the other would mean the same
+ * CSV normalised differently depending on which button was pressed.
+ */
+export function normalizeGameinfoImportCountries(currencies) {
+  const issues = [];
+  for (const currency of currencies || []) {
+    for (const category of currency.categories || []) {
+      for (const pack of category.packs || []) {
         const normalized = normalizeGameinfoCountry(pack.country);
         if (normalized.matched) {
           pack.country = normalized.value;
         } else if (pack.country) {
-          countryIssues.push({
+          issues.push({
             packId: pack.id,
             packName: pack.name,
             input: pack.country,
@@ -224,6 +234,14 @@ export function parsePacksForGame(rows, gameId, fallbackGameName) {
       }
     }
   }
+  return issues;
+}
+
+export function parsePacksForGame(rows, gameId, fallbackGameName) {
+  const dataRows = rows.filter((row) => Object.values(row).some((v) => norm(v) !== ""));
+  const tree = buildPackTree(dataRows);
+  const gameNameFromFile = dataRows.map((r) => norm(r["game_name"])).find((n) => n);
+  const countryIssues = normalizeGameinfoImportCountries(tree.currencies);
   return {
     game: {
       gameId,
@@ -301,7 +319,8 @@ export function validatePackRows(rows) {
   return errors;
 }
 
-function legacyAmountWarnings(rows) {
+/** The retired amount_charged column: accepted, ignored, and reported. */
+export function legacyAmountWarnings(rows) {
   const count = (rows || []).filter((row) => norm(row?.amount_charged) !== "").length;
   return count
     ? [`พบคอลัมน์ amount_charged ${count} แถว — ระบบเลิกใช้แล้วและจะไม่นำเข้าค่านี้`]

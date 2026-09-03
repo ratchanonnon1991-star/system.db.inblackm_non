@@ -1,6 +1,9 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireGameinfoEditor } from "@/server/auth";
-import { sanitizeComputedColumns } from "@/server/gamedb-layout-sanitizer";
+import {
+  GAMEINFO_PACK_COLUMN_LIMIT,
+  sanitizeComputedColumns,
+} from "@/server/gamedb-layout-sanitizer";
 import { auditActor, getGamelistPacks, saveGamelistPacks } from "@/server/gameinfo-gamelist-packs";
 import { recordEdit } from "@/server/gamedb-edit-log";
 import { requestMeta } from "@/lib/request-meta";
@@ -76,9 +79,15 @@ export async function PUT(request, { params }) {
           .map((pack) => [String(pack.id), String(category.id)])
       )
     );
+    // Refused rather than trimmed: columns are shared by every game, and this
+    // save deletes the ones it does not send, so a list quietly cut down to
+    // the cap would take the rest away from all of them.
+    if (Array.isArray(body.computedColumns) && body.computedColumns.length > GAMEINFO_PACK_COLUMN_LIMIT) {
+      return jsonError(`คอลัมน์สูตรได้สูงสุด ${GAMEINFO_PACK_COLUMN_LIMIT} คอลัมน์`, 400);
+    }
     const computedColumns = pruneGameinfoCategoryFormulas(
       pruneGameinfoFormulaOverrides(
-        sanitizeComputedColumns(body.computedColumns),
+        sanitizeComputedColumns(body.computedColumns, { limit: GAMEINFO_PACK_COLUMN_LIMIT }),
         packIds
       ),
       categoryIds
@@ -89,7 +98,12 @@ export async function PUT(request, { params }) {
       return jsonError("เปิดคอลัมน์ Market เดียวกันได้เพียงหนึ่งคอลัมน์", 400);
     }
     for (const column of enabledMarketColumns) {
-      if (column.key !== `market_${column.marketKey}`) return jsonError("Market column key ไม่ถูกต้อง", 400);
+      // The key check that used to be here required market_<marketKey>. A
+      // market's price is now a link to any column (gameinfo_game_markets
+      // .price_column_key), so only the market-kind columns that predate
+      // linking still carry that name, and requiring it would block naming a
+      // column freely. Labels must still be unique because formulas reference
+      // columns by label.
       if (computedColumns.some((other) => other.kind !== "market" && other.label.trim().toLowerCase() === column.label.trim().toLowerCase())) {
         return jsonError(`มีสูตรเดิมชื่อ ${column.label} กรุณาเปลี่ยนชื่อก่อนเปิด Market`, 400);
       }
