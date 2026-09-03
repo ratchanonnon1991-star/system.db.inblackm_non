@@ -252,8 +252,19 @@ const marketManager = readFileSync(new URL("../src/components/gameinfo-market-ma
 // the market creates. A game mapped before linking existed has no key and
 // still resolves the old market-kind column, so both paths are asserted.
 assert.match(marketManager, /market\.priceColumnKey \? Boolean\(column\) : column\?\.enabled === true/);
-assert.match(marketManager, /return market\.priceColumnKey \|\| marketColumns\.get\(market\.market\)\?\.key \|\| ""/);
+// The legacy column answers for the market only while it is switched on, the
+// same rule the server applies — otherwise unlinking looks like it did
+// nothing, because a column that was switched off still reads as the link.
+assert.match(marketManager, /if \(market\.priceColumnKey\) return market\.priceColumnKey;/);
+assert.match(marketManager, /return legacy && legacy\.enabled !== false \? legacy\.key : ""/);
 assert.match(marketManager, /async function linkColumn\(current, columnKey\)/);
+// A mapping can be taken back out, not only swapped for another one. Both
+// selects clear to nothing, and both switch the market off on the way: the
+// server refuses a market that is on with no source game, and this refuses
+// turning one on with no price column.
+assert.match(marketManager, /const CLEAR = "__clear__"/);
+assert.match(marketManager, /await saveMarket\(current, \{ priceColumnKey: "", enabled: false \}\)/);
+assert.match(marketManager, /await saveMarket\(current, \{ externalGameKey: "", externalGameLabel: "", enabled: false \}\)/);
 assert.match(schema, /price_column_key varchar\(64\) NOT NULL DEFAULT ''/);
 assert.match(marketManager, /<FieldContent className="min-w-0">/);
 assert.match(marketManager, /<SelectTrigger className="w-full min-w-0 overflow-hidden"><SelectValue className="truncate"/);
