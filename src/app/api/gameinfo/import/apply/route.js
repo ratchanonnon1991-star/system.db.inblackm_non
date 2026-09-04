@@ -105,7 +105,11 @@ export async function PUT(request) {
       headers,
       rows,
       existingGames,
-      existingColumns: registry.map((column) => ({ key: column.columnKey, label: column.label })),
+      existingColumns: registry.map((column) => ({
+        key: column.columnKey,
+        label: column.label,
+        entryMode: column.data?.entryMode,
+      })),
       variableNames: variableData.variables.map((variable) => variable.name),
     });
     const errors = [...plan.errors];

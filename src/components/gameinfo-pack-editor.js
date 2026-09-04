@@ -67,6 +67,7 @@ import {
 import {
   duplicateGameinfoFormulaOverrides,
   getGameinfoFormulaDisplay,
+  mergeImportedGameinfoFormulaValues,
   removeGameinfoFormulaOverridesForPack,
   setGameinfoCategoryFormula,
   setGameinfoFormulaOverride,
@@ -653,6 +654,9 @@ export default function GameinfoPackEditor({
       const countryIssues = data.countryIssues ?? [];
       if (currencies.length === 0 && countryIssues.length === 0) {
         setCurrencies(data.game.currencies);
+        setComputedColumns((current) =>
+          mergeImportedGameinfoFormulaValues(current, data.game.columns)
+        );
         setAuditSource("csv_replace");
         setImportErrors(errors);
         setImportMsg(
@@ -661,6 +665,7 @@ export default function GameinfoPackEditor({
       } else {
         setPendingImport({
           currencies: data.game.currencies,
+          columns: data.game.columns,
           packCount: data.game.packCount,
           countryIssues,
           hadExistingData: currencies.length > 0,
@@ -683,6 +688,9 @@ export default function GameinfoPackEditor({
       setCurrencies((prev) => mergeCurrencies(prev, pendingImport.currencies));
       setAuditSource("csv_append");
     }
+    setComputedColumns((current) =>
+      mergeImportedGameinfoFormulaValues(current, pendingImport.columns)
+    );
     setImportMsg(
       `นำเข้าแล้ว ${pendingImport.packCount} แพ็ก (${
         mode === "replace" ? "แทนที่ทั้งชุด" : "เพิ่มเข้าไป"

@@ -1,3 +1,5 @@
+import { getEffectiveGameinfoFormula } from "@/lib/gameinfo-formula-overrides";
+
 // CSV <-> pack-tree mapping for the gameinfo importer. Ported from the
 // reference app's lib/import.ts, packs only (no gamelist import, no per-pack
 // `formulas` field — this module's pack model doesn't have overrides).
@@ -36,6 +38,20 @@ export const PACK_HEADERS = [
   "channel_secondary",
   "country",
 ];
+
+export function gameinfoPackExportHeaders(games) {
+  const headers = [...PACK_HEADERS];
+  const seen = new Set(headers);
+  for (const game of games || []) {
+    for (const column of game.computedColumns || []) {
+      const label = String(column?.label || "").trim();
+      if (!label || seen.has(label) || label === "amount_charged") continue;
+      seen.add(label);
+      headers.push(label);
+    }
+  }
+  return headers;
+}
 
 // Worked examples shipped inside the downloadable template so users see the
 // expected format (multi-channel cell, Thai category, etc.).
@@ -251,6 +267,7 @@ export function parsePacksForGame(rows, gameId, fallbackGameName) {
     },
     errors: legacyAmountWarnings(rows),
     countryIssues,
+    rowPacks: tree.rowPacks,
   };
 }
 
@@ -259,11 +276,14 @@ export function parsePacksForGame(rows, gameId, fallbackGameName) {
 export function gamesToPackRows(games) {
   const out = [];
   for (const g of games) {
+    const formulaColumns = (g.computedColumns || []).filter(
+      (column) => column?.label && !PACK_HEADERS.includes(String(column.label).trim())
+    );
     let emitted = false;
     for (const c of g.currencies || []) {
       for (const cat of c.categories || []) {
         for (const p of cat.packs || []) {
-          out.push({
+          const row = {
             game_id: String(g.id),
             game_name: g.gameName,
             currency_name: c.name,
@@ -276,13 +296,21 @@ export function gamesToPackRows(games) {
             channel_main: (p.channelsMain || []).join(", "),
             channel_secondary: (p.channelsSecondary || []).join(", "),
             country: p.country ?? "",
-          });
+          };
+          for (const column of formulaColumns) {
+            row[String(column.label).trim()] = getEffectiveGameinfoFormula(
+              column,
+              p.id,
+              cat.id
+            ).formula;
+          }
+          out.push(row);
           emitted = true;
         }
       }
     }
     if (!emitted) {
-      out.push({
+      const row = {
         game_id: String(g.id),
         game_name: g.gameName,
         currency_name: "",
@@ -295,7 +323,9 @@ export function gamesToPackRows(games) {
         channel_main: "",
         channel_secondary: "",
         country: "",
-      });
+      };
+      for (const column of formulaColumns) row[String(column.label).trim()] = "";
+      out.push(row);
     }
   }
   return out;

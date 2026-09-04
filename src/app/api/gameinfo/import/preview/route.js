@@ -6,6 +6,7 @@ import { getGameListRow, listGameListRows } from "@/server/gameinfo-gamelist";
 import { listGamelistPackColumnRegistry } from "@/server/gameinfo-gamelist-packs";
 import { getGameinfoFormulaVariables } from "@/server/gameinfo-formula-variables";
 import { planGameinfoCsvImport } from "@/server/gameinfo-csv-import";
+import { buildGameinfoCsvColumns } from "@/lib/gameinfo-csv-columns";
 
 // Parse an uploaded CSV and return a preview — no DB writes. The file's own
 // game_id column is ignored; every row is treated as ?gameId='s game_list
@@ -32,16 +33,42 @@ export async function POST(request) {
     }
 
     if (gameIdRaw) {
-      // The single-game editor still takes only the known headers: it imports
-      // into one game's pack tree and has its own column editor alongside.
+      const [row, registry, variableData] = await Promise.all([
+        getGameListRow(Number(gameIdRaw)),
+        listGamelistPackColumnRegistry(),
+        getGameinfoFormulaVariables(0),
+      ]);
+      if (!row) return jsonError("ไม่พบเกมนี้", 404);
+      const existingColumns = registry.map((column) => ({
+        key: column.columnKey,
+        label: column.label,
+        entryMode: column.data?.entryMode,
+      }));
+      const existingLabels = new Set(existingColumns.map((column) => column.label));
       const unsupported = headers.filter(
-        (header) => !PACK_HEADERS.includes(header) && header !== "amount_charged"
+        (header) =>
+          !PACK_HEADERS.includes(header) &&
+          header !== "amount_charged" &&
+          !existingLabels.has(header.trim())
       );
       if (unsupported.length) return jsonError(`พบคอลัมน์ที่ระบบไม่รับ: ${unsupported.join(", ")}`, 400);
-      const row = await getGameListRow(Number(gameIdRaw));
-      if (!row) return jsonError("ไม่พบเกมนี้", 404);
-      const { game: parsed, errors, countryIssues } = parsePacksForGame(rows, row.id, row.game);
-      return jsonOk({ kind: "packs-single", game: parsed, errors, countryIssues });
+      const { game: parsed, errors, countryIssues, rowPacks } = parsePacksForGame(
+        rows,
+        row.id,
+        row.game
+      );
+      const built = buildGameinfoCsvColumns(
+        headers,
+        rowPacks,
+        existingColumns,
+        variableData.variables.map((variable) => variable.name)
+      );
+      return jsonOk({
+        kind: "packs-single",
+        game: { ...parsed, columns: built.columns },
+        errors: [...errors, ...built.errors],
+        countryIssues,
+      });
     }
     // A bulk file may now name its game instead of carrying an id, so game_id
     // is no longer required — a row with neither is reported per row.
@@ -54,7 +81,11 @@ export async function POST(request) {
       headers,
       rows,
       existingGames,
-      existingColumns: existingColumns.map((column) => ({ key: column.columnKey, label: column.label })),
+      existingColumns: existingColumns.map((column) => ({
+        key: column.columnKey,
+        label: column.label,
+        entryMode: column.data?.entryMode,
+      })),
       variableNames: variableData.variables.map((variable) => variable.name),
     });
     return jsonOk({

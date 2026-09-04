@@ -32,9 +32,10 @@ export function gameinfoCsvExtraHeaders(headers) {
 // quoted into a string literal and thousands separators are dropped, which
 // leaves the two cases users actually write — a number and a bracketed
 // formula — untouched.
-export function gameinfoCsvCellToFormula(raw) {
+export function gameinfoCsvCellToFormula(raw, preserveFormula = false) {
   const value = String(raw ?? "").trim();
   if (!value) return "";
+  if (preserveFormula) return value;
   if (value.includes("[")) return value;
   const unpunctuated = value.replace(/,/g, "");
   if (/^-?\d+(\.\d+)?$/.test(unpunctuated)) return unpunctuated;
@@ -98,7 +99,10 @@ export function buildGameinfoCsvColumns(
     const cells = [];
     const unknownRefs = new Set();
     for (const entry of rowPacks || []) {
-      const formula = gameinfoCsvCellToFormula(entry.row?.[header]);
+      const formula = gameinfoCsvCellToFormula(
+        entry.row?.[header],
+        existing?.entryMode === "formula"
+      );
       if (!formula) continue;
       if (looksLikeFormula(formula)) {
         try {

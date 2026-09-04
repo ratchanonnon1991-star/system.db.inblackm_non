@@ -27,6 +27,7 @@ check("a decimal survives", gameinfoCsvCellToFormula("12.5"), "12.5");
 check("a negative number survives", gameinfoCsvCellToFormula("-5"), "-5");
 check("Excel thousands separators are dropped", gameinfoCsvCellToFormula("1,000"), "1000");
 check("a formula is kept as written", gameinfoCsvCellToFormula("[ราคา] * 1.05"), "[ราคา] * 1.05");
+check("an exported formula without a reference is kept for a known formula column", gameinfoCsvCellToFormula("1 + 1", true), "1 + 1");
 check("text becomes a string literal", gameinfoCsvCellToFormula("ข้อมูล"), '"ข้อมูล"');
 check("quotes inside text are escaped", gameinfoCsvCellToFormula('a"b'), '"a""b"');
 check("a percentage is text, not a broken formula", gameinfoCsvCellToFormula("12.5%"), '"12.5%"');

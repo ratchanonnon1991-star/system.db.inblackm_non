@@ -56,6 +56,24 @@ export function getGameinfoFormulaDisplay(column, packId, categoryId) {
   };
 }
 
+export function mergeImportedGameinfoFormulaValues(columns, importedColumns) {
+  const importedByKey = new Map(
+    (importedColumns || []).map((column) => [String(column.key), column])
+  );
+  return (columns || []).map((column) => {
+    const imported = importedByKey.get(String(column.key));
+    if (!imported) return column;
+    return {
+      ...column,
+      ...(imported.gameFormula ? { gameFormula: imported.gameFormula } : {}),
+      rowOverrides: {
+        ...(column.rowOverrides || {}),
+        ...(imported.rowOverrides || {}),
+      },
+    };
+  });
+}
+
 export function setGameinfoFormulaOverride(columns, columnKey, packId, formula) {
   const cleanFormula = typeof formula === "string" ? formula.trim() : "";
   const id = String(packId);
