@@ -9,8 +9,9 @@ const origin = "https://gameinfo.fixture.test";
 const manifest = extensionManifest(origin);
 assert.equal(manifest.manifest_version, 3);
 assert.equal(manifest.minimum_chrome_version, "120");
-assert.deepEqual(manifest.permissions, ["webRequest", "storage", "alarms"]);
-assert.equal(manifest.host_permissions.length, 5);
+assert.deepEqual(manifest.permissions, ["webRequest", "storage", "alarms", "browsingData"]);
+assert.equal(manifest.host_permissions.length, 6);
+assert.ok(manifest.host_permissions.includes("https://infinitynikki.infoldgames.com/*"));
 assert.equal(manifest.host_permissions.some((url) => url.includes("*://") || url.includes("*.")), false);
 assert.equal(manifest.externally_connectable, undefined);
 assert.equal(manifest.web_accessible_resources, undefined);
@@ -44,7 +45,7 @@ const form = { app_id: ["1010001"], timestamp: ["1900000000"], sign_type: ["hmac
 function harness() {
   let clock = 1000;
   let storage = {};
-  const sent = [], closed = [], navigated = [];
+  const sent = [], closed = [], navigated = [], cleared = [];
   const api = {
     runtime: { id: "test-extension", getURL: (name) => `chrome-extension://test-extension/${name}` },
     storage: { session: {
@@ -59,13 +60,14 @@ function harness() {
       sendMessage: async (...args) => { sent.push(args); return { accepted: true }; },
     },
     alarms: { create: async () => {}, clear: async () => {} },
+    browsingData: { remove: async (...args) => { cleared.push(args); } },
   };
   const options = { now: () => clock, uuid: () => "private-flow-id" };
   const connector = createConnector(api, { origin }, options);
   const app = { id: api.runtime.id, tab: { id: 10 }, documentId: "document-one", frameId: 0, url: `${origin}/gameinfo/th/russia-check` };
   const consent = { id: api.runtime.id, tab: { id: 30 }, frameId: 0, url: api.runtime.getURL("confirm.html") };
   const details = { tabId: 30, method: "POST", url: PRODUCTS_URL, initiator: new URL(STORE_URL).origin, requestBody: { formData: form } };
-  return { connector, api, app, consent, details, sent, closed, navigated, options,
+  return { connector, api, app, consent, details, sent, closed, navigated, cleared, options,
     state: () => storage.connection, advance: (ms) => { clock += ms; },
     async begin() { await connector.message({ action: "begin", sourceId: 2 }, app); },
     async approve() { await connector.message({ action: "approve" }, consent); },
@@ -75,7 +77,7 @@ const h = harness();
 await assert.rejects(h.connector.message({ action: "ping" }, { ...h.app, url: "https://evil.test/gameinfo/th/russia-check" }));
 await assert.rejects(h.connector.message({ action: "ping" }, { ...h.app, frameId: 1 }));
 await assert.rejects(h.connector.message({ action: "begin", sourceId: "2" }, h.app));
-assert.equal((await h.connector.message({ action: "ping" }, h.app)).version, "1.1.0");
+assert.equal((await h.connector.message({ action: "ping" }, h.app)).version, "1.2.2");
 await h.begin();
 assert.equal(h.state().status, "confirming");
 assert.equal(capturedForm(h.details, h.state(), 1000), null);
@@ -83,6 +85,8 @@ await assert.rejects(h.connector.message({ action: "begin", sourceId: 2 }, h.app
 await assert.rejects(h.connector.message({ action: "approve" }, h.app));
 await assert.rejects(h.connector.message({ action: "approve" }, { ...h.consent, tab: { id: 999 } }));
 await h.approve();
+assert.equal(h.cleared.length, 1);
+assert.deepEqual(h.cleared[0][1], { cookies: true, localStorage: true, indexedDB: true, cacheStorage: true, serviceWorkers: true });
 assert.equal(h.navigated[0].url, STORE_URL);
 assert.equal(h.state().status, "waiting");
 for (const patch of [{ tabId: 999 }, { method: "GET" }, { url: `${PRODUCTS_URL}/other` }, { initiator: "https://evil.test" }, { requestBody: { formData: { ...form, token: ["leak"] } } }, { requestBody: { formData: { ...form, data: ["one", "two"] } } }, { requestBody: { formData: { ...form, app_id: ["other"] } } }]) {
@@ -131,6 +135,7 @@ assert.ok((await gryph.connector.message({ action: "ping" }, gryph.app)).provide
 await gryph.connector.message({ action: "begin", sourceId: 5, provider: "gryphline" }, gryph.app);
 assert.equal((await gryph.connector.message({ action: "describe" }, gryph.consent)).gameName, "ARKNIGHTS: ENDFIELD");
 await gryph.approve();
+assert.equal(gryph.cleared.length, 0);
 assert.equal(gryph.navigated[0].url, "https://topup.gryphline.com/endfield");
 await gryph.connector.capture(gryph.details); // An Infold request must not cross providers.
 assert.equal(gryph.sent.length, 0);
@@ -140,4 +145,14 @@ assert.equal(gryph.sent[0][1].formData, gryphUrl);
 assert.doesNotMatch(JSON.stringify(gryph.state()), /Zml4dHVyZQ|query_web_product/);
 await gryph.connector.message({ action: "complete", flowId: "private-flow-id", ok: true, packCount: 2 }, gryph.app);
 assert.equal(gryph.state().status, "completed");
+const nikki = harness();
+await nikki.connector.message({ action: "begin", sourceId: 6, provider: "infinity-nikki" }, nikki.app);
+assert.equal((await nikki.connector.message({ action: "describe" }, nikki.consent)).gameName, "Infinity Nikki");
+await nikki.approve();
+assert.equal(nikki.cleared.length, 1);
+assert.equal(nikki.navigated[0].url, "https://infinitynikki.infoldgames.com/charge/th-th");
+const nikkiForm = { ...form, clientid: ["1116"], lang: ["th-th"] };
+await nikki.connector.capture({ ...nikki.details, initiator: "https://infinitynikki.infoldgames.com", requestBody: { formData: nikkiForm } });
+assert.equal(nikki.sent.length, 1);
+await nikki.connector.message({ action: "complete", flowId: "private-flow-id", ok: true, packCount: 4 }, nikki.app);
 console.log(`${assertions} passed`);

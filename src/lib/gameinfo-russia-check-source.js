@@ -6,7 +6,6 @@ export function getRussiaCheckSourceAvailability(source, now = new Date()) {
   const authState = !source.authRequired ? "not_required" : !source.authConfigured ? "missing" : authExpired ? "expired" : source.authInvalidated ? "invalid" : verified ? "verified" : "saved_unverified";
   let refreshBlockedReason = "";
   if (source.isDemo) refreshBlockedReason = "demo data เป็นข้อมูลตัวอย่างแบบอ่านอย่างเดียว";
-  else if (source.configError) refreshBlockedReason = "Source ผูกกับเกมไม่ถูกต้อง";
   else if (!catalogSupported) refreshBlockedReason = "ยังไม่มีตัวดึงรายการแพ็กสำหรับ Source นี้";
   else if (source.provider === "infold" && authState !== "verified") refreshBlockedReason = "เปิดจัดการ Login แล้วนำเข้า Form Data จาก request products เพื่อตรวจสอบ Login (Cookie เดิมใช้ไม่ได้)";
   else if (source.provider === "gryphline" && authState !== "verified") refreshBlockedReason = "กดรีข้อมูลเพื่อ Login Gryphline และเลือกตัวละคร Endfield ผ่าน Browser";

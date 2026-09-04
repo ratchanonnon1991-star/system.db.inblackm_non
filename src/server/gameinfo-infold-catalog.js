@@ -8,6 +8,10 @@ const APP_KEY = "m6h0MReLDHp1XGFa";
 export const INFOLD_CATALOG_URL = "https://passport.infoldgames.com/v2/payment/user/products";
 const FORM_KEYS = ["app_id", "timestamp", "sign_type", "clientid", "lang", "data", "sign"];
 const CONTEXT_KEYS = ["nid", "token", "role_id", "zone_id", "area", "region", "DOID", "web_deviceid", "sdk_channel", "os_platform"];
+const INFOLD_PROFILES = Object.freeze({
+  "love-and-deepspace": { clientId: "1067", lang: "en", catalogLang: "en", requiresRegion: true },
+  "infinity-nikki": { clientId: "1116", lang: "th-th", catalogLang: "en", requiresRegion: false },
+});
 
 function fail(message, status = 400, authInvalid = false) {
   return Object.assign(new Error(message), { status, authInvalid, safeMessage: true });
@@ -38,8 +42,9 @@ export function signInfoldForm(form) {
   return createHmac("md5", APP_KEY).update(message).digest("hex");
 }
 
-export function buildInfoldForm(session, now = Date.now()) {
-  const form = { app_id: "1010001", timestamp: String(Math.floor(now / 1000)), sign_type: "hmac", clientid: "1067", lang: "en", data: encryptInfoldData(session.data) };
+export function buildInfoldForm(session, now = Date.now(), { lang } = {}) {
+  const requestLang = lang || session.lang || "en";
+  const form = { app_id: "1010001", timestamp: String(Math.floor(now / 1000)), sign_type: "hmac", clientid: session.clientId || "1067", lang: requestLang, data: encryptInfoldData({ ...session.data, lang: requestLang }) };
   form.sign = signInfoldForm(form);
   return new URLSearchParams(form).toString();
 }
@@ -60,22 +65,33 @@ export function parseInfoldFormData(value) {
     form[key] = item;
   }
   if (FORM_KEYS.some((key) => !form[key])) throw fail("Form Data ไม่ครบ ต้องมี app_id, timestamp, sign_type, clientid, lang, data และ sign");
-  if (form.app_id !== "1010001" || form.clientid !== "1067" || form.lang !== "en" || form.sign_type !== "hmac") throw fail("คำขอนี้ไม่ใช่ Love and Deepspace ภาษาอังกฤษที่รองรับ");
+  const profile = Object.values(INFOLD_PROFILES).find((item) => item.clientId === form.clientid && item.lang === form.lang);
+  if (form.app_id !== "1010001" || !profile || form.sign_type !== "hmac") throw fail("คำขอนี้ไม่ใช่เกม Infold และภาษาที่รองรับ");
   if (!/^\d{10,11}$/.test(form.timestamp) || !/^[a-f0-9]{32}$/i.test(form.sign) || !timingSafeEqual(Buffer.from(form.sign.toLowerCase()), Buffer.from(signInfoldForm(form)))) throw fail("ลายเซ็น Form Data ไม่ถูกต้อง กรุณาคัดลอกใหม่ทั้งชุด");
   const decoded = decryptInfoldData(form.data);
   if (decoded.shelf_id !== "payment") throw fail("ใช้ request products จากหน้า Top-up Center เท่านั้น");
-  const data = { shelf_id: "payment", lang: "en" };
+  const data = { shelf_id: "payment", lang: form.lang };
   for (const key of CONTEXT_KEYS) {
     if (decoded[key] == null) continue;
     if (!["string", "number"].includes(typeof decoded[key]) || String(decoded[key]).length > 8192) throw fail("ข้อมูล session Infold ไม่ถูกต้อง");
     data[key] = decoded[key];
   }
-  for (const key of ["nid", "token", "role_id", "zone_id", "area", "region"]) {
-    if (!String(data[key] ?? "").trim()) throw fail("คำขอไม่มี Login/ตัวละคร/ภูมิภาคครบ กรุณาเลือกตัวละครให้เห็นแพ็กก่อนคัดลอก");
+  const requiredContext = ["nid", "token", "role_id", "zone_id", "area", ...(profile.requiresRegion ? ["region"] : [])];
+  for (const key of requiredContext) {
+    if (!String(data[key] ?? "").trim()) throw fail("คำขอไม่มีข้อมูล Login/ตัวละครที่จำเป็น กรุณาเลือกตัวละครให้เห็นแพ็กก่อนคัดลอก");
   }
   // Never replay category/page/cart filters or arbitrary captured parameters.
-  const scope = [data.nid, data.role_id, data.zone_id, data.area, data.region].map(String);
-  return { version: 1, kind: "infold", data, scopeHash: createHash("sha256").update(JSON.stringify(scope)).digest("hex") };
+  const scope = [data.nid, data.role_id, data.zone_id, data.area, data.region ?? ""].map(String);
+  return { version: 1, kind: "infold", clientId: form.clientid, lang: form.lang, data, scopeHash: createHash("sha256").update(JSON.stringify(scope)).digest("hex") };
+}
+
+export function assertInfoldSessionMatchesSource(session, source) {
+  const profile = INFOLD_PROFILES[source?.project_id];
+  const clientId = session?.clientId || "1067";
+  const lang = session?.lang || "en";
+  if (!profile || clientId !== profile.clientId || lang !== profile.lang) {
+    throw fail(`Form Data ไม่ตรงกับ ${source?.expected_game_name || "เกม Infold ที่เลือก"}`);
+  }
 }
 
 export function parseInfoldCatalog(payload) {
@@ -108,15 +124,17 @@ export function parseInfoldCatalog(payload) {
   catch { throw fail("Infold ส่งรายการที่มี SKU ซ้ำ หรือชื่อ/SKU ว่าง จะไม่เปลี่ยนข้อมูลเดิม", 502); }
 }
 
-export async function fetchInfoldCatalog(session, { fetchImpl = fetch, retryDelay = (attempt) => new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1))), now = Date.now } = {}) {
+export async function fetchInfoldCatalog(session, { fetchImpl = fetch, retryDelay = (attempt) => new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1))), now = Date.now, source } = {}) {
   if (session?.kind !== "infold" || session.version !== 1 || !session.data?.token) throw fail("ต้องนำเข้า Form Data ใหม่ Cookie เดิมใช้กับ Infold ไม่ได้", 409, true);
+  if (source) assertInfoldSessionMatchesSource(session, source);
+  const profile = INFOLD_PROFILES[source?.project_id] || Object.values(INFOLD_PROFILES).find((item) => item.clientId === session.clientId && item.lang === session.lang);
   for (let attempt = 0; attempt < 3; attempt += 1) {
     let response;
     try {
       response = await fetchImpl(INFOLD_CATALOG_URL, {
         method: "POST", redirect: "error", signal: AbortSignal.timeout(15000),
         headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-        body: buildInfoldForm(session, now()),
+        body: buildInfoldForm(session, now(), { lang: profile?.catalogLang }),
       });
     } catch {
       if (attempt < 2) { await retryDelay(attempt); continue; }

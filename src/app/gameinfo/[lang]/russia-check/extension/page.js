@@ -35,7 +35,7 @@ export default async function Page({ params }) {
       </ol></CardContent>
     </Card>
     <Card>
-      <CardHeader><CardTitle>เชื่อม Love and Deepspace / Endfield</CardTitle><CardDescription>ใช้บัญชีและตัวละครเดิมเมื่อเชื่อมใหม่ ไม่ได้บังคับพื้นที่เป็น RU</CardDescription></CardHeader>
+      <CardHeader><CardTitle>เชื่อม Love and Deepspace / Infinity Nikki / Endfield</CardTitle><CardDescription>ใช้บัญชีและตัวละครเดิมเมื่อเชื่อมใหม่ ไม่ได้บังคับพื้นที่เป็น RU</CardDescription></CardHeader>
       <CardContent><ol className="flex list-decimal flex-col gap-3 pl-5">
         <li>กลับ Russia Check → เลือกเกมหรือทุกเกม → กดรีข้อมูล ระบบจะเปิด Login เฉพาะเกมที่ Session ขาดทีละเกม</li>
         <li>ตรวจชื่อเว็บปลายทางใน popup ของส่วนขยาย แล้วกดอนุญาต</li>

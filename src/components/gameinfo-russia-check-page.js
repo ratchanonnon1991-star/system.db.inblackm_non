@@ -117,6 +117,7 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
   const refreshBlockedReason = selectedGame?.refreshBlockedReason || (selectedSourceDisabled ? "Source นี้ยังไม่เปิดดึงข้อมูลอัตโนมัติ" : "");
   const unavailableGames = (dashboard.games || []).filter((item) => !item.isDemo && item.refreshBlockedReason);
   const isInfold = selectedGame?.provider === "infold";
+  const isInfinityNikki = selectedGame?.connectorProvider === "infinity-nikki";
   const hasBrowserLogin = ["infold", "gryphline"].includes(selectedGame?.provider);
   const canReconnect = canManage && loginRequiredGames(dashboard.games, game === "all" ? null : game).some((item) => item.sourceId === selectedGame?.sourceId);
   const authLabel = selectedGame?.authState === "verified" ? "เชื่อมบัญชีแล้ว · ตรวจสอบผ่าน" : selectedGame?.authState === "invalid" ? "ต้อง Login ใหม่" : selectedGame?.authExpired ? "Session หมดอายุ" : selectedGame?.authConfigured ? "บันทึก Session แล้ว · ยังไม่ตรวจสอบ" : "ยังไม่มี Session";
@@ -309,8 +310,6 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
     }
     return [...byGame.values()];
   }, [logs]);
-  const configErrors = (dashboard.games || []).filter((item) => item.configError);
-
   return (
     <div data-shadcn-focus className="mx-auto flex w-full min-w-0 max-w-[1600px] flex-col gap-5 px-4 py-6 sm:px-6">
       <header className="flex flex-col gap-3">
@@ -365,7 +364,6 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
 
       {error ? <Alert variant="destructive"><AlertCircle /><AlertTitle>ดำเนินการไม่สำเร็จ</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
       {sessionNotice ? <Alert><ShieldCheck /><AlertTitle>ผลการจัดการ Login</AlertTitle><AlertDescription role="status">{sessionNotice}</AlertDescription></Alert> : null}
-      {configErrors.length ? <Alert variant="destructive"><AlertCircle /><AlertTitle>Source ผูกกับเกมไม่ถูกต้อง</AlertTitle><AlertDescription>{configErrors.map((item) => `Game ID ${item.gameId} ต้องเป็น ${item.expectedGameName}`).join(", ")}</AlertDescription></Alert> : null}
       {refreshBlockedReason && !demoSelected ? <Alert><AlertCircle /><AlertTitle>ยังรีข้อมูลเกมนี้ไม่ได้</AlertTitle><AlertDescription id="russia-check-source-blocked">{refreshBlockedReason}</AlertDescription></Alert> : null}
       {game === "all" && unavailableGames.length ? <Alert><AlertCircle /><AlertTitle>บางเกมยังไม่พร้อมตรวจ</AlertTitle><AlertDescription>กดรีเพื่อเชื่อม Login ที่ขาดทีละเกม: {unavailableGames.map((item) => item.gameName).join(", ")} · รอบอัตโนมัติข้ามเกมที่รอ Login โดยไม่เปลี่ยนข้อมูลเดิม</AlertDescription></Alert> : null}
 
@@ -412,7 +410,7 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
       <Dialog open={Boolean(loginRequest)} onOpenChange={(open) => { if (!open && !connectingBrowser) finishRefreshLogin(true); }}>
         <DialogContent showCloseButton={!connectingBrowser} className="sm:max-w-lg">
           <DialogHeader><DialogTitle>ต้อง Login · {loginRequest?.gameName}</DialogTitle><DialogDescription>Session ขาดหรือหมดอายุ เชื่อมบัญชีนี้ก่อน แล้วระบบจะตรวจเกมถัดไปและรีข้อมูลต่อโดยอัตโนมัติ</DialogDescription></DialogHeader>
-          {loginRequest ? <GameinfoRussiaCheckBrowserConnect key={loginRequest.sourceId} sourceId={loginRequest.sourceId} provider={loginRequest.provider} lang={lang} autoStart onBusyChange={setConnectingBrowser} onConnected={() => finishRefreshLogin()} onCancelled={() => finishRefreshLogin(true)} /> : null}
+          {loginRequest ? <GameinfoRussiaCheckBrowserConnect key={loginRequest.sourceId} sourceId={loginRequest.sourceId} provider={loginRequest.connectorProvider || loginRequest.provider} lang={lang} autoStart onBusyChange={setConnectingBrowser} onConnected={() => finishRefreshLogin()} onCancelled={() => finishRefreshLogin(true)} /> : null}
           <DialogFooter><Button variant="outline" onClick={() => finishRefreshLogin(true)} disabled={connectingBrowser}>ยกเลิกการรี</Button></DialogFooter>
         </DialogContent>
       </Dialog>
@@ -425,7 +423,7 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
               <DialogDescription>{hasBrowserLogin ? "เชื่อมผ่าน popup ของส่วนขยาย แล้วทดสอบโหลดแพ็กก่อนบันทึก Session แบบเข้ารหัส" : "บันทึก Cookie แบบเข้ารหัสฝั่งเซิร์ฟเวอร์เท่านั้น ยังไม่ได้ตรวจสอบ Login กับผู้ให้บริการ"}</DialogDescription>
             </DialogHeader>
             {hasBrowserLogin ? <>
-              <GameinfoRussiaCheckBrowserConnect sourceId={selectedGame.sourceId} provider={selectedGame.provider} lang={lang} disabled={savingSession || running} onBusyChange={setConnectingBrowser} onConnected={browserConnected} />
+              <GameinfoRussiaCheckBrowserConnect sourceId={selectedGame.sourceId} provider={selectedGame.connectorProvider || selectedGame.provider} lang={lang} disabled={savingSession || running} onBusyChange={setConnectingBrowser} onConnected={browserConnected} />
               {isInfold ? <Button type="button" variant="ghost" onClick={() => setManualLogin((value) => !value)} disabled={savingSession || connectingBrowser} aria-expanded={manualLogin}>{manualLogin ? "ซ่อนการนำเข้าแบบเดิม" : "ใช้ Form Data แบบเดิม (ทางเลือกสำรอง)"}</Button> : null}
             </> : null}
             {!hasBrowserLogin || manualLogin ? <>
@@ -434,7 +432,7 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
             <FieldGroup>
               <Field data-invalid={Boolean(error)} data-disabled={savingSession}>
                 <FieldLabel htmlFor="russia-check-session-cookie">{isInfold ? "Form Data จาก products" : "Cookie"}</FieldLabel>
-                <Textarea id="russia-check-session-cookie" value={sessionCookie} onChange={(event) => setSessionCookie(event.target.value)} placeholder={isInfold ? "app_id=1010001&timestamp=...&sign_type=hmac&clientid=1067&lang=en&data=...&sign=..." : "cookie_name=value; another_cookie=value"} maxLength={isInfold ? 65536 : 16384} disabled={savingSession} aria-invalid={Boolean(error)} spellCheck={false} autoComplete="off" rows={5} required aria-describedby="russia-check-session-help" />
+                <Textarea id="russia-check-session-cookie" value={sessionCookie} onChange={(event) => setSessionCookie(event.target.value)} placeholder={isInfold ? `app_id=1010001&timestamp=...&sign_type=hmac&clientid=${isInfinityNikki ? "1116" : "1067"}&lang=${isInfinityNikki ? "th-th" : "en"}&data=...&sign=...` : "cookie_name=value; another_cookie=value"} maxLength={isInfold ? 65536 : 16384} disabled={savingSession} aria-invalid={Boolean(error)} spellCheck={false} autoComplete="off" rows={5} required aria-describedby="russia-check-session-help" />
                 <FieldDescription id="russia-check-session-help">{isInfold ? "ต้องมี data และ sign ครบ คำขอนี้มีข้อมูล Login ห้ามแชร์ให้ผู้อื่น" : "ใส่เฉพาะค่าใน Request Header ชื่อ Cookie และอย่าส่งรหัสผ่านบัญชี"}</FieldDescription>
               </Field>
               <Field>

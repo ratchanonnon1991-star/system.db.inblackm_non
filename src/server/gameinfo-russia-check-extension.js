@@ -17,9 +17,9 @@ export function extensionManifest(origin) {
   const appPattern = `${url.protocol}//${url.hostname}/*`;
   return {
     manifest_version: 3, minimum_chrome_version: "120", name: "GameInfo — Russia Check Connector", version: VERSION,
-    description: "เชื่อม Love and Deepspace / Endfield กับ GameInfo หลังผู้ดูแลอนุญาต ไม่อ่านรหัสผ่านหรือ Cookie",
-    permissions: ["webRequest", "storage", "alarms"],
-    host_permissions: [appPattern, "https://loveanddeepspace.infoldgames.com/*", "https://passport.infoldgames.com/*", "https://topup.gryphline.com/*", "https://as.gryphline.com/*"],
+    description: "เชื่อม Love and Deepspace / Infinity Nikki / Endfield กับ GameInfo หลังผู้ดูแลอนุญาต ไม่อ่านรหัสผ่านหรือ Cookie",
+    permissions: ["webRequest", "storage", "alarms", "browsingData"],
+    host_permissions: [appPattern, "https://loveanddeepspace.infoldgames.com/*", "https://infinitynikki.infoldgames.com/*", "https://passport.infoldgames.com/*", "https://topup.gryphline.com/*", "https://as.gryphline.com/*"],
     background: { service_worker: "background.js", type: "module" },
     // Next.js uses client-side navigation: load the bridge on this origin, but
     // enforce the Russia Check pathname in both bridge and worker at each call.

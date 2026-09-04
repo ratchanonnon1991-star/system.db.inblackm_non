@@ -10,6 +10,11 @@ export function createConnector(api, config, { now = Date.now, uuid = () => cryp
   const owned = (state, sender) => state && sender.id === api.runtime.id && sender.frameId === 0 && sender.tab?.id === state.appTabId && sender.documentId === state.appDocumentId && isAppUrl(sender.url, config.origin);
   const appSender = (sender) => sender.id === api.runtime.id && sender.frameId === 0 && Number.isInteger(sender.tab?.id) && Boolean(sender.documentId) && isAppUrl(sender.url, config.origin);
   const consentSender = (state, sender) => state && sender.id === api.runtime.id && sender.frameId === 0 && sender.tab?.id === state.popupTabId && sender.url === api.runtime.getURL("confirm.html");
+  const clearInfoldLogin = () => api.browsingData.remove({ origins: [
+    "https://loveanddeepspace.infoldgames.com",
+    "https://infinitynikki.infoldgames.com",
+    "https://passport.infoldgames.com",
+  ] }, { cookies: true, localStorage: true, indexedDB: true, cacheStorage: true, serviceWorkers: true });
   async function finish(state, status, message = "") {
     await write({ ...state, status, message, endedAt: now() });
     if (state.popupTabId != null) await api.tabs.remove(state.popupTabId).catch(() => {});
@@ -56,8 +61,9 @@ export function createConnector(api, config, { now = Date.now, uuid = () => cryp
         }
       }
       if (consentSender(state, sender)) {
-        if (message.action === "describe") return { origin: config.origin, ...publicState(state) };
+        if (message.action === "describe") return { origin: config.origin, freshLogin: Boolean(PROVIDERS[state?.provider || "infold"]?.freshLogin), ...publicState(state) };
         if (message.action === "approve" && state.status === "confirming") {
+          if (PROVIDERS[state.provider || "infold"].freshLogin) await clearInfoldLogin();
           await write({ ...state, status: "waiting" });
           await api.tabs.update(state.popupTabId, { url: PROVIDERS[state.provider || "infold"].storeUrl });
           return { ok: true };

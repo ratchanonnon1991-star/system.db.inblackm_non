@@ -1,9 +1,10 @@
-export const VERSION = "1.1.0";
+export const VERSION = "1.2.2";
 export const CHANNEL = "gameinfo-russia-check-v1";
 export const STORE_URL = "https://loveanddeepspace.infoldgames.com/charge/en-EN";
 export const PRODUCTS_URL = "https://passport.infoldgames.com/v2/payment/user/products";
 export const PROVIDERS = Object.freeze({
-  infold: { name: "Love and Deepspace", storeUrl: STORE_URL, productsUrl: PRODUCTS_URL },
+  infold: { name: "Love and Deepspace", storeUrl: STORE_URL, productsUrl: PRODUCTS_URL, freshLogin: true },
+  "infinity-nikki": { name: "Infinity Nikki", storeUrl: "https://infinitynikki.infoldgames.com/charge/th-th", productsUrl: PRODUCTS_URL, clientId: "1116", lang: "th-th", freshLogin: true },
   gryphline: { name: "ARKNIGHTS: ENDFIELD", storeUrl: "https://topup.gryphline.com/endfield", productsUrl: "https://as.gryphline.com/user/pay/v3/query_web_product" },
 });
 export const ACTIVE = new Set(["confirming", "waiting", "submitting"]);
@@ -28,10 +29,11 @@ export function capturedForm(details, state, now) {
       return url.href;
     } catch { return null; }
   }
-  if (state?.provider && state.provider !== "infold") return null;
+  const provider = PROVIDERS[state?.provider || "infold"];
+  if (!provider || state?.provider === "gryphline") return null;
   if (!state || state.status !== "waiting" || state.expiresAt <= now || details.tabId !== state.popupTabId ||
       details.method !== "POST" || details.url !== PRODUCTS_URL ||
-      ![new URL(STORE_URL).origin, new URL(PRODUCTS_URL).origin].includes(details.initiator)) return null;
+      ![new URL(provider.storeUrl).origin, new URL(PRODUCTS_URL).origin].includes(details.initiator)) return null;
   const keys = ["app_id", "timestamp", "sign_type", "clientid", "lang", "data", "sign"];
   let entries;
   if (details.requestBody?.formData) {
@@ -49,7 +51,7 @@ export function capturedForm(details, state, now) {
   if (entries.length !== keys.length || new Set(entries.map(([key]) => key)).size !== keys.length ||
       entries.some(([key, value]) => !keys.includes(key) || typeof value !== "string" || !value || value.length > 65536)) return null;
   const form = Object.fromEntries(entries);
-  if (form.app_id !== "1010001" || form.clientid !== "1067" || form.lang !== "en" || form.sign_type !== "hmac") return null;
+  if (form.app_id !== "1010001" || form.clientid !== (provider.clientId || "1067") || form.lang !== (provider.lang || "en") || form.sign_type !== "hmac") return null;
   const encoded = new URLSearchParams(entries).toString();
   return encoded.length <= 65536 ? encoded : null;
 }

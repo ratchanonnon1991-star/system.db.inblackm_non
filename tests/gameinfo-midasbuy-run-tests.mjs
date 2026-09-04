@@ -11,7 +11,7 @@ const originalFetch = globalThis.fetch;
 await assert.rejects(getRussiaCheckRun(999999), { status: 404 });
 assert.ok(log.some(({ text }) => text.includes("VALUES ('nikke-midasbuy-th',22,'GODDESS OF VICTORY: NIKKE UID'") && text.includes("'1460000285','TH','en',false,true)")));
 let runId = 1000;
-async function run({ payload = fixture, existing = [], wrongGame = false, mode = "recovery", gameId = 22, writeFailure = false, failedSecondPage = false } = {}) {
+async function run({ payload = fixture, existing = [], mode = "recovery", gameId = 22, writeFailure = false, failedSecondPage = false } = {}) {
   reset(); runId++;
   let finish;
   const completed = new Promise((resolve) => { finish = resolve; });
@@ -25,7 +25,6 @@ async function run({ payload = fixture, existing = [], wrongGame = false, mode =
     }
     if (sql.startsWith("INSERT INTO gameinfo_russia_check_runs")) return { rows: [{ id: runId, target_game_id: params[0], trigger_type: params[1], status: "queued" }] };
     if (sql.includes("SELECT s.* FROM gameinfo_russia_check_run_sources")) return { rows: [source] };
-    if (sql.startsWith("SELECT id, game FROM game_list")) return { rows: [{ game: wrongGame ? "different game" : source.expected_game_name }] };
     if (sql.startsWith("SELECT * FROM gameinfo_russia_check_items")) return { rows: existing };
     if (sql.includes("SELECT EXISTS(SELECT 1 FROM gameinfo_russia_check_run_sources")) return { rows: [{ seen: existing.length > 0 }] };
     if (writeFailure && sql.startsWith("INSERT INTO gameinfo_russia_check_events")) throw Error("fixture write failure");
@@ -73,13 +72,11 @@ try {
     { payload: { shelf: { ...fixture.shelf, is_part_activity_fail: true } } },
     { payload: { shelf: { ...fixture.shelf, products: [] } } },
     { payload: { shelf: { ...fixture.shelf, product_offset: "next" } }, failedSecondPage: true },
-    { wrongGame: true },
   ]) {
     const checked = await run(overrides);
     assert.equal(packWrites(checked.entries).length, 0);
     assert.ok(checked.entries.some(({ text }) => text.includes("SET status='failed',error=")));
     assert.equal(checked.entries.some(({ text }) => text === "COMMIT"), false);
-    if (overrides.wrongGame) assert.equal(checked.fetches, 0);
   }
   const failedWrite = await run({ writeFailure: true });
   assert.ok(failedWrite.entries.some(({ text }) => text === "ROLLBACK"));

@@ -128,6 +128,13 @@ async function ensureSchema(connection) {
           locale=EXCLUDED.locale,auth_required=true,updated_at=now();
         INSERT INTO gameinfo_russia_check_sources
           (source_key,game_id,expected_game_name,provider,source_url,store_url,project_id,country,locale,auth_required,enabled)
+        VALUES ('infinity-nikki-infold',218,'Infinity Nikki','infold','https://infinitynikki.infoldgames.com/charge/th-th','https://infinitynikki.infoldgames.com/charge/th-th','infinity-nikki','TH','th-th',true,false)
+        ON CONFLICT (source_key) DO UPDATE SET
+          game_id=EXCLUDED.game_id,expected_game_name=EXCLUDED.expected_game_name,provider=EXCLUDED.provider,
+          source_url=EXCLUDED.source_url,store_url=EXCLUDED.store_url,project_id=EXCLUDED.project_id,country=EXCLUDED.country,
+          locale=EXCLUDED.locale,auth_required=true,updated_at=now();
+        INSERT INTO gameinfo_russia_check_sources
+          (source_key,game_id,expected_game_name,provider,source_url,store_url,project_id,country,locale,auth_required,enabled)
         VALUES ('nikke-midasbuy-th',22,'GODDESS OF VICTORY: NIKKE UID','midasbuy','https://www.midasbuy.com/frontend/api/midasbuy/v1/shelves/query','https://www.midasbuy.com/midasbuy/th/shop/nikkegl#/pages/shop/items','1460000285','TH','en',false,true)
         ON CONFLICT (source_key) DO UPDATE SET
           game_id=EXCLUDED.game_id,expected_game_name=EXCLUDED.expected_game_name,provider=EXCLUDED.provider,
@@ -273,12 +280,12 @@ export async function saveRussiaCheckSourceSession(sourceId, fields, actor) {
   const normalizedSourceId = optionalPositiveInt(sourceId, "Source ID");
   const pool = await getPool();
   const source = await pool.query(
-    `SELECT id,expected_game_name,auth_required,provider FROM gameinfo_russia_check_sources WHERE id=$1`,
+    `SELECT id,expected_game_name,auth_required,provider,project_id FROM gameinfo_russia_check_sources WHERE id=$1`,
     [normalizedSourceId]
   );
   if (!source.rows[0]) throw httpError("ไม่พบ Source", 404);
   if (!source.rows[0].auth_required) throw httpError("Source นี้ไม่ต้องใช้ session", 409);
-  if (source.rows[0].provider === "infold") return saveInfoldSession(pool, normalizedSourceId, fields, actor);
+  if (source.rows[0].provider === "infold") return saveInfoldSession(pool, normalizedSourceId, fields, actor, { source: source.rows[0] });
   if (source.rows[0].provider === "gryphline") return saveGryphlineSession(pool, normalizedSourceId, fields, actor);
   const sessionCookie = normalizeRussiaCheckSessionCookie(fields?.sessionCookie);
   const expiresAt = normalizeSessionExpiry(fields?.expiresAt);
@@ -412,11 +419,6 @@ async function processSource(pool, runId, source) {
   );
   let credential;
   try {
-    const game = await pool.query(`SELECT id, game FROM game_list WHERE id=$1`, [source.game_id]);
-    const actualName = String(game.rows[0]?.game || "").trim().toUpperCase();
-    if (!game.rows[0] || actualName !== String(source.expected_game_name).trim().toUpperCase()) {
-      throw new Error(`Source ${source.source_key} ต้องผูกกับ Game ID ${source.game_id} ชื่อ ${source.expected_game_name}`);
-    }
     let catalog;
     if (["infold", "gryphline"].includes(source.provider)) {
       credential = (await pool.query(`SELECT * FROM gameinfo_russia_check_source_credentials WHERE source_id=$1`, [source.id])).rows[0];
@@ -426,7 +428,7 @@ async function processSource(pool, runId, source) {
       let session;
       try { session = JSON.parse(decryptRussiaCheckSession(credential.session_enc)); }
       catch { throw Object.assign(httpError("อ่าน Session ไม่สำเร็จ กรุณาเชื่อมบัญชีใหม่", 409), { authInvalid: true }); }
-      catalog = await (source.provider === "infold" ? fetchInfoldCatalog(session) : fetchGryphlineCatalog(session));
+      catalog = await (source.provider === "infold" ? fetchInfoldCatalog(session, { source }) : fetchGryphlineCatalog(session));
     } else if (source.provider === "midasbuy") catalog = await fetchMidasbuyCatalog(source);
     else catalog = await fetchRussiaCheckCatalog(source);
     const hash = createHash("sha256").update(JSON.stringify(catalog)).digest("hex");
@@ -582,8 +584,8 @@ export async function getRussiaCheckRun(runId) {
   const [run, sources] = await Promise.all([
     pool.query(`SELECT * FROM gameinfo_russia_check_runs WHERE id=$1`, [normalizedRunId]),
     pool.query(
-      `SELECT rs.*,s.game_id,COALESCE(g.game,s.expected_game_name) AS game_name FROM gameinfo_russia_check_run_sources rs
-       JOIN gameinfo_russia_check_sources s ON s.id=rs.source_id LEFT JOIN game_list g ON g.id=s.game_id
+      `SELECT rs.*,s.game_id,s.expected_game_name AS game_name FROM gameinfo_russia_check_run_sources rs
+       JOIN gameinfo_russia_check_sources s ON s.id=rs.source_id
        WHERE rs.run_id=$1 ORDER BY s.game_id`,
       [normalizedRunId]
     ),
@@ -608,21 +610,19 @@ export async function getRussiaCheckDashboard({ gameId = null, status = "" } = {
   if (status) values.push(status);
   const [gamesResult, itemsResult, summaryResult, runResult, dailyLog] = await Promise.all([
     pool.query(
-      `SELECT DISTINCT s.id AS source_id,s.game_id,COALESCE(g.game,s.expected_game_name) AS game_name,s.expected_game_name,
+      `SELECT DISTINCT s.id AS source_id,s.source_key,s.game_id,s.expected_game_name AS game_name,s.expected_game_name,
               s.provider,s.store_url,s.enabled,s.auth_required,c.source_id IS NOT NULL AS auth_configured,c.expires_at AS auth_expires_at,
-              c.credential_kind,c.verified_at,c.invalidated_at,
-              CASE WHEN s.provider='demo' THEN false WHEN g.id IS NULL OR UPPER(TRIM(g.game))<>UPPER(TRIM(s.expected_game_name)) THEN true ELSE false END config_error
-       FROM gameinfo_russia_check_sources s LEFT JOIN game_list g ON g.id=s.game_id
+              c.credential_kind,c.verified_at,c.invalidated_at
+       FROM gameinfo_russia_check_sources s
        LEFT JOIN gameinfo_russia_check_source_credentials c ON c.source_id=s.id
-       WHERE s.enabled OR s.provider='demo' OR s.auth_required ORDER BY COALESCE(g.game,s.expected_game_name),s.game_id`
+       WHERE s.enabled OR s.provider='demo' OR s.auth_required ORDER BY s.expected_game_name,s.game_id`
     ),
     pool.query(
       `SELECT i.name,i.status,i.is_baseline,i.first_seen_at,i.last_seen_at,i.activated_at,i.removed_at,
-              i.missing_runs,s.game_id,COALESCE(g.game,s.expected_game_name) AS game_name
+              i.missing_runs,s.game_id,s.expected_game_name AS game_name
        FROM gameinfo_russia_check_items i JOIN gameinfo_russia_check_sources s ON s.id=i.source_id
-       LEFT JOIN game_list g ON g.id=s.game_id
        WHERE ($1::int IS NULL OR s.game_id=$1) ${statusClause}
-       ORDER BY g.game,i.name`,
+       ORDER BY s.expected_game_name,i.name`,
       values
     ),
     pool.query(
@@ -658,8 +658,8 @@ export async function getRussiaCheckDashboard({ gameId = null, status = "" } = {
     games: gamesResult.rows.map((row) => {
       const source = {
         sourceId: Number(row.source_id), gameId: Number(row.game_id), gameName: row.game_name || row.expected_game_name,
-        provider: row.provider,
-        expectedGameName: row.expected_game_name, configError: row.config_error, isDemo: row.provider === "demo",
+        provider: row.provider, connectorProvider: row.source_key === "infinity-nikki-infold" ? "infinity-nikki" : row.provider,
+        expectedGameName: row.expected_game_name, isDemo: row.provider === "demo",
         storeUrl: row.store_url || null, sourceEnabled: row.enabled, authRequired: row.auth_required,
         authConfigured: row.auth_configured, authExpiresAt: row.auth_expires_at,
         credentialKind: row.credential_kind, authVerifiedAt: row.verified_at, authInvalidated: Boolean(row.invalidated_at),
@@ -685,9 +685,8 @@ export async function listRussiaCheckLogs({ gameId = null, eventType = "", curso
   const normalizedCursor = optionalPositiveInt(cursor, "Cursor");
   if (eventType && !RUSSIA_CHECK_EVENT_TYPES.has(eventType)) throw httpError("สถานะ Log ไม่ถูกต้อง", 400);
   const result = await pool.query(
-    `SELECT e.id,e.pack_name,e.event_type,e.created_at,s.game_id,COALESCE(g.game,s.expected_game_name) AS game_name
+    `SELECT e.id,e.pack_name,e.event_type,e.created_at,s.game_id,s.expected_game_name AS game_name
        FROM gameinfo_russia_check_events e JOIN gameinfo_russia_check_sources s ON s.id=e.source_id
-       LEFT JOIN game_list g ON g.id=s.game_id
       WHERE ($1::int IS NULL OR s.game_id=$1) AND ($2::bigint IS NULL OR e.id<$2)
         AND ($3::varchar IS NULL OR e.event_type=$3)
       ORDER BY e.id DESC LIMIT $4`,

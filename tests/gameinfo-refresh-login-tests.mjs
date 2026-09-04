@@ -7,7 +7,7 @@ const missing = (id) => ({ gameId: id, sourceId: id, gameName: `Game ${id}`, cat
 const fixture = [missing(3), missing(217), { ...missing(22), authRequired: false, authState: "not_required", sourceEnabled: true }, { ...missing(999), isDemo: true }];
 assert.deepEqual(loginRequiredGames(fixture).map((g) => g.gameId), [3, 217]);
 assert.deepEqual(loginRequiredGames(fixture, 217).map((g) => g.gameId), [217]);
-assert.equal(loginRequiredGames([{ ...missing(3), configError: true }, { ...missing(4), catalogSupported: false }]).length, 0);
+assert.equal(loginRequiredGames([{ ...missing(4), catalogSupported: false }]).length, 0);
 function harness({ games = structuredClone(fixture), gameId = null, cancel = false, denied = false, expiresDuringRun = false, reExpires = false } = {}) {
   const calls = [], logins = [], progress = [];
   let runCount = 0, active = 0, maxActive = 0;

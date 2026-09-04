@@ -10,8 +10,6 @@ export async function saveGryphlineSession(pool, sourceId, fields, actor, { veri
     await client.query("BEGIN");
     const source = (await client.query(`SELECT * FROM gameinfo_russia_check_sources WHERE id=$1 FOR UPDATE`, [sourceId])).rows[0];
     if (source?.provider !== "gryphline") throw fail("ไม่พบ Source Endfield");
-    const game = (await client.query(`SELECT game FROM game_list WHERE id=$1`, [source.game_id])).rows[0];
-    if (String(game?.game || "").trim().toUpperCase() !== source.expected_game_name.trim().toUpperCase()) throw fail("Source ผูกกับเกมไม่ถูกต้อง");
     const busy = await client.query(`SELECT 1 FROM gameinfo_russia_check_run_sources rs JOIN gameinfo_russia_check_runs r ON r.id=rs.run_id WHERE rs.source_id=$1 AND r.status IN ('queued','running') LIMIT 1`, [sourceId]);
     if (busy.rowCount) throw fail("รอให้รอบตรวจปัจจุบันเสร็จก่อนเปลี่ยน Login");
     if (source.catalog_scope_hash !== session.scopeHash && (await client.query(`SELECT 1 FROM gameinfo_russia_check_items WHERE source_id=$1 LIMIT 1`, [sourceId])).rowCount) throw fail("บัญชี/เซิร์ฟเวอร์/ภูมิภาคไม่ตรงกับชุดข้อมูลเดิม กรุณาใช้ชุดเดิม");

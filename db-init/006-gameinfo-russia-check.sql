@@ -131,6 +131,22 @@ ON CONFLICT (source_key) DO UPDATE SET
 INSERT INTO gameinfo_russia_check_sources
   (source_key, game_id, expected_game_name, provider, source_url, store_url, project_id, country, locale, auth_required, enabled)
 VALUES
+  ('infinity-nikki-infold', 218, 'Infinity Nikki', 'infold', 'https://infinitynikki.infoldgames.com/charge/th-th', 'https://infinitynikki.infoldgames.com/charge/th-th', 'infinity-nikki', 'TH', 'th-th', true, false)
+ON CONFLICT (source_key) DO UPDATE SET
+  game_id = EXCLUDED.game_id,
+  expected_game_name = EXCLUDED.expected_game_name,
+  provider = EXCLUDED.provider,
+  source_url = EXCLUDED.source_url,
+  store_url = EXCLUDED.store_url,
+  project_id = EXCLUDED.project_id,
+  country = EXCLUDED.country,
+  locale = EXCLUDED.locale,
+  auth_required = true,
+  updated_at = now();
+
+INSERT INTO gameinfo_russia_check_sources
+  (source_key, game_id, expected_game_name, provider, source_url, store_url, project_id, country, locale, auth_required, enabled)
+VALUES
   ('nikke-midasbuy-th', 22, 'GODDESS OF VICTORY: NIKKE UID', 'midasbuy', 'https://www.midasbuy.com/frontend/api/midasbuy/v1/shelves/query', 'https://www.midasbuy.com/midasbuy/th/shop/nikkegl#/pages/shop/items', '1460000285', 'TH', 'en', false, true)
 ON CONFLICT (source_key) DO UPDATE SET
   game_id = EXCLUDED.game_id,

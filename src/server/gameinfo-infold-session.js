@@ -3,7 +3,7 @@ import { encryptRussiaCheckSession } from "@/server/crypto";
 
 const error = (message, status = 409) => Object.assign(new Error(message), { status });
 
-export async function saveInfoldSession(pool, sourceId, fields, actor, { fetchCatalog = fetchInfoldCatalog } = {}) {
+export async function saveInfoldSession(pool, sourceId, fields, actor, { fetchCatalog = fetchInfoldCatalog, source: expectedSource } = {}) {
   const session = parseInfoldFormData(fields?.formData);
   let expiresAt = null;
   if (fields?.expiresAt) {
@@ -12,15 +12,13 @@ export async function saveInfoldSession(pool, sourceId, fields, actor, { fetchCa
   }
   // A saved form is never considered verified until a fresh signed request
   // returns a complete, nonempty catalog. No DB writes precede this check.
-  const catalog = await fetchCatalog(session);
+  const catalog = await fetchCatalog(session, expectedSource ? { source: expectedSource } : undefined);
   const encrypted = encryptRussiaCheckSession(JSON.stringify(session));
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     const source = (await client.query(`SELECT * FROM gameinfo_russia_check_sources WHERE id=$1 FOR UPDATE`, [sourceId])).rows[0];
     if (!source || source.provider !== "infold") throw error("ไม่พบ Source Infold", 404);
-    const game = (await client.query(`SELECT game FROM game_list WHERE id=$1`, [source.game_id])).rows[0];
-    if (String(game?.game || "").trim().toUpperCase() !== source.expected_game_name.trim().toUpperCase()) throw error("Source ผูกกับเกมไม่ถูกต้อง");
     const busy = await client.query(`SELECT 1 FROM gameinfo_russia_check_run_sources rs JOIN gameinfo_russia_check_runs r ON r.id=rs.run_id WHERE rs.source_id=$1 AND r.status IN ('queued','running') LIMIT 1`, [sourceId]);
     if (busy.rowCount) throw error("รอให้รอบตรวจปัจจุบันเสร็จก่อนเปลี่ยน Login");
     if (source.catalog_scope_hash !== session.scopeHash) {

@@ -107,6 +107,7 @@ assert.match(ddl, /sky-xsolla-ru[\s\S]*139[\s\S]*SKY CHILDREN/);
 assert.match(ddl, /store_url[\s\S]*https:\/\/store\.thatskygame\.com\//);
 assert.match(ddl, /gameinfo_russia_check_source_credentials[\s\S]*session_enc[\s\S]*expires_at/);
 assert.match(ddl, /love-deepspace-infold[\s\S]*LOVE AND DEEPSPACE[\s\S]*auth_required/);
+assert.match(ddl, /infinity-nikki-infold[\s\S]*Infinity Nikki[\s\S]*infinitynikki\.infoldgames\.com\/charge\/th-th/);
 assert.match(ddl, /WHERE status IN \('queued', 'running'\)/);
 assert.match(ddl, /event_type IN \('added', 'removed', 'restored'\)/);
 assert.match(ddl, /demo-data[\s\S]*demo data[\s\S]*'demo'[\s\S]*false/);
@@ -128,6 +129,7 @@ const logsRoute = readFileSync(new URL("../src/app/api/gameinfo/russia-check/log
 assert.match(logsRoute, /eventType: query\.get\("eventType"\)/);
 const server = readFileSync(new URL("../src/server/gameinfo-russia-check.js", import.meta.url), "utf8");
 assert.doesNotMatch(server, /last_scheduled_at|lastScheduledAt/);
+assert.doesNotMatch(server, /JOIN game_list|Source .*ต้องผูกกับ Game ID|config_error/);
 assert.match(server, /i\.is_baseline AND s\.provider<>'demo'[\s\S]*e\.event_type='added'/);
 assert.match(server, /RUSSIA_CHECK_EVENT_TYPES[\s\S]*e\.event_type=\$3/);
 const page = readFileSync(new URL("../src/components/gameinfo-russia-check-page.js", import.meta.url), "utf8");
@@ -140,6 +142,7 @@ assert.match(page, /ใส่เฉพาะค่าใน Request Header ช�
 assert.doesNotMatch(page, /<TableHead>พบล่าสุด<\/TableHead>/);
 assert.match(page, /demoSelected[\s\S]*ข้อมูลตัวอย่างแบบอ่านอย่างเดียว/);
 assert.match(page, /อัตโนมัติทุกวัน 09:00 น\. เวลาไทย/);
+assert.doesNotMatch(page, /Source (?:ยัง)?ผูกกับเกม|configErrors/);
 assert.doesNotMatch(page, />SKU<|ราคา/);
 const home = readFileSync(new URL("../src/components/gameinfo-gamelist-cards.js", import.meta.url), "utf8");
 assert.match(home, /russia-check[\s\S]*Russia Check/);

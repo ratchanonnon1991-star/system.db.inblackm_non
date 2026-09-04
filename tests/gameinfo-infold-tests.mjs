@@ -1,5 +1,5 @@
 import strict from "node:assert/strict";
-import { buildInfoldForm, decryptInfoldData, encryptInfoldData, fetchInfoldCatalog, INFOLD_CATALOG_URL, parseInfoldCatalog, parseInfoldFormData, signInfoldForm } from "@/server/gameinfo-infold-catalog";
+import { assertInfoldSessionMatchesSource, buildInfoldForm, decryptInfoldData, encryptInfoldData, fetchInfoldCatalog, INFOLD_CATALOG_URL, parseInfoldCatalog, parseInfoldFormData, signInfoldForm } from "@/server/gameinfo-infold-catalog";
 import { saveInfoldSession } from "@/server/gameinfo-infold-session";
 import { decryptRussiaCheckSession } from "@/server/crypto";
 
@@ -9,6 +9,10 @@ const assert = new Proxy(strict, { get(target, key) { return (...args) => { asse
 const context = { nid: "123", token: "fixture-only-token", role_id: "456", zone_id: "1", area: "global", region: "fixture-region", shelf_id: "payment", lang: "en", os_platform: 61, sdk_channel: 1 };
 const capture = (data = context) => buildInfoldForm({ data }, 1784168030000);
 const session = parseInfoldFormData(capture());
+const { region: _loveOnlyRegion, ...sharedNikkiContext } = context;
+const nikkiContext = { ...sharedNikkiContext, lang: "th-th" };
+const nikkiCapture = () => buildInfoldForm({ clientId: "1116", lang: "th-th", data: nikkiContext }, 1784168030000);
+const nikkiSession = parseInfoldFormData(nikkiCapture());
 const product = (sku, text) => ({ product_info: { sku_id: sku, name: [{ lang: "en", text }] }, price_info: { amount: 999 }, limit_info: { remaining: 0 } });
 const fixture = { product_list: [product("b", " Pack B "), product("a", "Pack A")] };
 const expected = [{ sku: "a", name: "Pack A" }, { sku: "b", name: "Pack B" }];
@@ -18,6 +22,11 @@ assert.deepEqual(decryptInfoldData(encryptInfoldData(context)), context);
 assert.deepEqual(session.data, context);
 assert.equal(session.kind, "infold");
 assert.equal(session.version, 1);
+assert.equal(nikkiSession.clientId, "1116");
+assert.equal(nikkiSession.lang, "th-th");
+assert.equal(Object.hasOwn(nikkiSession.data, "region"), false);
+assert.equal(new URLSearchParams(buildInfoldForm(nikkiSession, 1900000000000)).get("clientid"), "1116");
+assert.throws(() => parseInfoldFormData(nikkiCapture().replace("lang=th-th", "lang=en")));
 const lines = [...new URLSearchParams(capture())].map(([key, value]) => `${key}: ${value}`).join("\n");
 assert.deepEqual(parseInfoldFormData(lines), session);
 const filtered = parseInfoldFormData(capture({ ...context, category_id: "limited", page: 2, cart: "ignore" }));
@@ -54,6 +63,13 @@ assert.equal(calls[0].init.method, "POST");
 assert.equal(calls[0].init.redirect, "error");
 assert.equal(calls[0].init.headers.Cookie, undefined);
 assert.notEqual(new URLSearchParams(calls[0].init.body).get("timestamp"), new URLSearchParams(calls[2].init.body).get("timestamp"));
+let nikkiRequest;
+await fetchInfoldCatalog(nikkiSession, { ...options, source: { project_id: "infinity-nikki", expected_game_name: "Infinity Nikki" }, fetchImpl: async (_url, init) => {
+  nikkiRequest = new URLSearchParams(init.body);
+  return Response.json({ code: 0, data: encryptInfoldData(fixture) });
+} });
+assert.equal(nikkiRequest.get("lang"), "en");
+assert.equal(decryptInfoldData(nikkiRequest.get("data")).lang, "en");
 let retries = 0;
 await assert.rejects(fetchInfoldCatalog(session, { ...options, fetchImpl: async () => { retries++; throw Error("fixture-secret"); } }), (error) => error.status === 502 && !error.message.includes("fixture-secret"));
 assert.equal(retries, 3);
@@ -66,14 +82,15 @@ for (const response of [() => Response.json({ code: 123, info: context.token }),
   await assert.rejects(fetchInfoldCatalog(session, { ...options, fetchImpl: async () => response() }), (error) => !error.message.includes(context.token));
 }
 await assert.rejects(fetchInfoldCatalog({ cookie: "legacy" }, options), { authInvalid: true });
+await assert.rejects(fetchInfoldCatalog(nikkiSession, { ...options, source: { project_id: "love-and-deepspace", expected_game_name: "LOVE AND DEEPSPACE" } }), /LOVE AND DEEPSPACE/);
+assert.doesNotThrow(() => assertInfoldSessionMatchesSource({ version: 1, kind: "infold", data: session.data }, { project_id: "love-and-deepspace" }));
 
-function database({ busy = false, existing = false, scope = null, gameName = "LOVE AND DEEPSPACE", failWrite = false } = {}) {
+function database({ busy = false, existing = false, scope = null, failWrite = false } = {}) {
   const history = [];
   const client = {
     async query(sql, values) {
       history.push({ sql, values });
       if (sql.startsWith("SELECT * FROM gameinfo_russia_check_sources")) return { rows: [{ provider: "infold", game_id: 3, expected_game_name: "LOVE AND DEEPSPACE", catalog_scope_hash: scope }] };
-      if (sql.startsWith("SELECT game")) return { rows: [{ game: gameName }] };
       if (sql.startsWith("SELECT 1 FROM gameinfo_russia_check_run_sources")) return { rowCount: Number(busy) };
       if (sql.startsWith("SELECT 1 FROM gameinfo_russia_check_items")) return { rowCount: Number(existing) };
       if (failWrite && sql.startsWith("UPDATE gameinfo_russia_check_sources")) throw Error("fixture DB failure");
@@ -99,13 +116,14 @@ assert.equal(write.values[3], 7);
 assert.match(db.history.at(-3).sql, /enabled=true,catalog_scope_hash/);
 assert.equal(db.history.at(-2).sql, "COMMIT");
 assert.equal(db.history.at(-1).sql, "RELEASE");
+assert.equal(db.history.some(({ sql }) => sql.includes("game_list")), false);
 assert.equal(db.history.some(({ sql }) => /^(INSERT INTO|UPDATE) gameinfo_russia_check_(items|events)/.test(sql)), false);
 for (const failure of [async () => { throw Error("failed upstream"); }, async () => parseInfoldCatalog({ ...fixture, pagination: { has_more: true } })]) {
   const failedDb = database();
   await assert.rejects(saveInfoldSession(failedDb, 2, { formData: capture() }, {}, { fetchCatalog: failure }));
   assert.equal(failedDb.history.length, 0);
 }
-for (const config of [{ busy: true }, { existing: true, scope: "other-account" }, { gameName: "WRONG GAME" }]) {
+for (const config of [{ busy: true }, { existing: true, scope: "other-account" }]) {
   const failedDb = database(config);
   await assert.rejects(saveInfoldSession(failedDb, 2, { formData: capture() }, {}, { fetchCatalog: async () => expected }));
   assert.equal(failedDb.history.at(-2).sql, "ROLLBACK");

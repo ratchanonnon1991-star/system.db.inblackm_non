@@ -8,7 +8,7 @@ let assertions = 0;
 const assert = new Proxy(strict, { get(target, key) { return (...args) => { assertions++; return target[key](...args); }; } });
 const session = parseInfoldFormData(buildInfoldForm({ data: { nid: "fixture", token: "fixture-token", role_id: "1", zone_id: "1", area: "global", region: "test", shelf_id: "payment" } }, 1900000000000));
 const credential = { credential_kind: "infold", verified_at: new Date(), session_enc: encryptRussiaCheckSession(JSON.stringify(session)) };
-const source = { id: 2, provider: "infold", game_id: 3, expected_game_name: "LOVE AND DEEPSPACE" };
+const source = { id: 2, provider: "infold", project_id: "love-and-deepspace", game_id: 3, expected_game_name: "LOVE AND DEEPSPACE" };
 const fixture = { product_list: [{ product_info: { sku_id: "new", name: [{ lang: "en", text: "New pack" }] } }] };
 const originalFetch = globalThis.fetch;
 // Initialize schema once, then isolate run statements from seed/migration SQL.

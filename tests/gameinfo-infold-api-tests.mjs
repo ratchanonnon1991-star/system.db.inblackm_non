@@ -30,10 +30,9 @@ setResponder((sql) => {
   if (sql.includes("FROM gamedb_users u")) return { rows: [{ id: 7, username: "fixture", role: "staff", permissions }] };
   if (sql.startsWith("SELECT id,expected_game_name,auth_required,provider")) {
     if (failDatabase) throw Error("fixture-secret DB detail");
-    return { rows: [{ id: 2, provider: "infold", auth_required: true }] };
+    return { rows: [{ id: 2, provider: "infold", auth_required: true, project_id: "love-and-deepspace", expected_game_name: "LOVE AND DEEPSPACE" }] };
   }
   if (sql.startsWith("SELECT * FROM gameinfo_russia_check_sources")) return { rows: [{ id: 2, provider: "infold", game_id: 3, expected_game_name: "LOVE AND DEEPSPACE" }] };
-  if (sql.startsWith("SELECT game FROM game_list")) return { rows: [{ game: "LOVE AND DEEPSPACE" }] };
   if (sql.startsWith("DELETE FROM gameinfo_russia_check_source_credentials")) return { rows: [{ source_id: 2 }] };
   return { rows: [] };
 });
