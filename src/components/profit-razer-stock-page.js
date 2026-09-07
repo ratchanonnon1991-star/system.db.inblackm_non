@@ -66,6 +66,7 @@ export default function ProfitRazerStockPage() {
   const [pasteLine, setPasteLine] = useState("");
   const [syncConfig, setSyncConfig] = useState(null);
   const [syncingAll, setSyncingAll] = useState(false);
+  const syncAllInFlight = useRef(false);
   const [tfaEdit, setTfaEdit] = useState(null);
   const [tfaValue, setTfaValue] = useState("");
   const [totpKeyValue, setTotpKeyValue] = useState("");
@@ -480,6 +481,8 @@ export default function ProfitRazerStockPage() {
 
   async function handleSyncAll({ silent = false } = {}) {
     if (!canEdit) return;
+    if (syncAllInFlight.current) return;
+    syncAllInFlight.current = true;
     if (!silent) setSyncingAll(true);
     if (!silent) setError("");
     try {
@@ -499,14 +502,20 @@ export default function ProfitRazerStockPage() {
     } catch (err) {
       if (!silent) setError(err.message);
     } finally {
+      syncAllInFlight.current = false;
       if (!silent) setSyncingAll(false);
     }
   }
 
+  // Each sync spins up a Chromium per account, so a poll that fires while the
+  // previous one is still running just piles work onto the server. Skip the
+  // tick when a run is in flight or the tab is in the background.
   useEffect(() => {
     if (!syncConfig?.enabled || !canEdit) return undefined;
-    const pollMs = Number(syncConfig.pollMs) || 300000;
+    const pollMs = Math.max(300000, Number(syncConfig.pollMs) || 900000);
     const timer = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      if (syncAllInFlight.current) return;
       handleSyncAll({ silent: true });
     }, pollMs);
     return () => clearInterval(timer);
