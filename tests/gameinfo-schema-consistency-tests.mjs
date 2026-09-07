@@ -13,5 +13,15 @@ assert.ok(runtime.includes("CREATE TABLE IF NOT EXISTS gameinfo_formula_presets"
 assert.ok(bootstrap.includes("CREATE TABLE IF NOT EXISTS gameinfo_formula_presets"));
 assert.ok(runtime.includes("ON gameinfo_formula_presets (updated_at DESC, id DESC)"));
 assert.ok(bootstrap.includes("ON gameinfo_formula_presets (updated_at DESC, id DESC)"));
+assert.ok(runtime.includes("CREATE TABLE IF NOT EXISTS gamelist_pack_column_registry"));
+assert.ok(bootstrap.includes("CREATE TABLE IF NOT EXISTS gamelist_pack_column_registry"));
+assert.ok(runtime.includes("ON gamelist_pack_column_registry (sort_order, column_key)"));
+assert.ok(bootstrap.includes("ON gamelist_pack_column_registry (sort_order, column_key)"));
+assert.ok(runtime.includes("ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1"));
+assert.ok(bootstrap.includes("ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 1"));
+assert.ok(runtime.includes("CREATE TABLE IF NOT EXISTS gamelist_pack_column_roles"));
+assert.ok(bootstrap.includes("CREATE TABLE IF NOT EXISTS gamelist_pack_column_roles"));
+assert.ok(runtime.includes("PRIMARY KEY (role, game_id, column_key)"));
+assert.ok(bootstrap.includes("PRIMARY KEY (role, game_id, column_key)"));
 
-console.log("8 passed");
+console.log("18 passed");

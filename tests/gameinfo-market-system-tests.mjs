@@ -248,7 +248,24 @@ assert.match(schema, /product_type text NOT NULL DEFAULT ''/);
 assert.equal(gameinfoMarketGameLabel("Honkai Impact 3 (SEA) · South East Asia · Multi-Platform"), "Honkai Impact 3 (SEA) · SEA · Multi-Platform");
 assert.equal(gameinfoMarketGameLabel(null), "");
 const marketManager = readFileSync(new URL("../src/components/gameinfo-market-manager.js", import.meta.url), "utf8");
-assert.match(marketManager, /const enabled = market\.enabled && column\?\.enabled === true/);
+// A market's price is a link to a column the game already has, not a column
+// the market creates. A game mapped before linking existed has no key and
+// still resolves the old market-kind column, so both paths are asserted.
+assert.match(marketManager, /market\.priceColumnKey \? Boolean\(column\) : column\?\.enabled === true/);
+// The legacy column answers for the market only while it is switched on, the
+// same rule the server applies — otherwise unlinking looks like it did
+// nothing, because a column that was switched off still reads as the link.
+assert.match(marketManager, /if \(market\.priceColumnKey\) return market\.priceColumnKey;/);
+assert.match(marketManager, /return legacy && legacy\.enabled !== false \? legacy\.key : ""/);
+assert.match(marketManager, /async function linkColumn\(current, columnKey\)/);
+// A mapping can be taken back out, not only swapped for another one. Both
+// selects clear to nothing, and both switch the market off on the way: the
+// server refuses a market that is on with no source game, and this refuses
+// turning one on with no price column.
+assert.match(marketManager, /const CLEAR = "__clear__"/);
+assert.match(marketManager, /await saveMarket\(current, \{ priceColumnKey: "", enabled: false \}\)/);
+assert.match(marketManager, /await saveMarket\(current, \{ externalGameKey: "", externalGameLabel: "", enabled: false \}\)/);
+assert.match(schema, /price_column_key varchar\(64\) NOT NULL DEFAULT ''/);
 assert.match(marketManager, /<FieldContent className="min-w-0">/);
 assert.match(marketManager, /<SelectTrigger className="w-full min-w-0 overflow-hidden"><SelectValue className="truncate"/);
 assert.match(marketManager, /label: gameinfoMarketGameLabel\(game\.label\)/);

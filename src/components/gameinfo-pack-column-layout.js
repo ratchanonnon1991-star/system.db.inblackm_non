@@ -7,21 +7,16 @@ import { apiJson } from "@/lib/api-json";
 import { requestGameinfoDiscard } from "@/lib/gameinfo-unsaved-changes";
 import { Badge } from "@/components/ui/badge";
 import {
+  gameinfoPackLayoutKnownIds,
   gameinfoPackLayoutStorageKey,
+  isGameinfoPackColumnPinned,
   normalizeGameinfoPackLayout,
   orderGameinfoPackColumns,
   reorderGameinfoPackColumns,
 } from "@/lib/gameinfo-pack-columns";
 
-function normalizeLayoutForScreen(layout, columns, lockRequired) {
-  const normalized = normalizeGameinfoPackLayout(layout, columns);
-  if (!lockRequired) return normalized;
-  return {
-    ...normalized,
-    hidden: normalized.hidden.filter(
-      (id) => !columns.find((column) => column.id === id)?.required
-    ),
-  };
+function normalizeLayoutForScreen(layout, columns) {
+  return normalizeGameinfoPackLayout(layout, columns);
 }
 
 function sameLayout(left, right) {
@@ -46,7 +41,10 @@ export function useGameinfoPackColumnLayout({
   userId,
   gameId,
   surface,
-  lockRequired = false,
+  // Ids of columns no pack in this game fills. The read-only view always drops
+  // them; the editor lets the user choose, so it passes its own toggle in.
+  emptyColumnIds = null,
+  hideEmptyColumns = false,
 }) {
   const storageKey = gameinfoPackLayoutStorageKey({ userId, gameId, surface });
   const presetsUrl = `/api/gameinfo/gamelist/${gameId}/packs/presets?surface=${encodeURIComponent(surface)}`;
@@ -63,12 +61,12 @@ export function useGameinfoPackColumnLayout({
   const [notice, setNotice] = useState("");
 
   const normalizedLayout = useMemo(
-    () => normalizeLayoutForScreen(layout, columns, lockRequired),
-    [layout, columns, lockRequired]
+    () => normalizeLayoutForScreen(layout, columns),
+    [layout, columns]
   );
   const normalizedBaseline = useMemo(
-    () => normalizeLayoutForScreen(baselineLayout, columns, lockRequired),
-    [baselineLayout, columns, lockRequired]
+    () => normalizeLayoutForScreen(baselineLayout, columns),
+    [baselineLayout, columns]
   );
   const dirty =
     presetName !== baselineName ||
@@ -134,16 +132,22 @@ export function useGameinfoPackColumnLayout({
     () => orderGameinfoPackColumns(columns, normalizedLayout),
     [columns, normalizedLayout]
   );
-  const visibleColumns = useMemo(
-    () => orderedColumns.filter((column) => !normalizedLayout.hidden.includes(column.id)),
-    [orderedColumns, normalizedLayout.hidden]
-  );
+  // Columns belong to every game now, so a game that has nothing to put in one
+  // still gets the column. Dropping the empty ones is a display choice, not a
+  // preset edit: it must not mark the layout dirty or be saved, or a game that
+  // later fills the column would find it hidden.
+  const visibleColumns = useMemo(() => {
+    const shown = orderedColumns.filter((column) => !normalizedLayout.hidden.includes(column.id));
+    if (!hideEmptyColumns || !emptyColumnIds) return shown;
+    return shown.filter(
+      (column) => isGameinfoPackColumnPinned(column) || !emptyColumnIds.has(column.id)
+    );
+  }, [orderedColumns, normalizedLayout.hidden, hideEmptyColumns, emptyColumnIds]);
 
   function setVisible(columnId, visible) {
     if (loading || saving) return;
     setLayout((current) => {
-      const next = normalizeLayoutForScreen(current, columns, lockRequired);
-      if (lockRequired && columns.find((column) => column.id === columnId)?.required) return next;
+      const next = normalizeLayoutForScreen(current, columns);
       const hidden = new Set(next.hidden);
       if (visible) hidden.delete(columnId);
       else hidden.add(columnId);
@@ -156,7 +160,7 @@ export function useGameinfoPackColumnLayout({
     if (loading || saving) return;
     setLayout((current) =>
       reorderGameinfoPackColumns(
-        normalizeLayoutForScreen(current, columns, lockRequired),
+        normalizeLayoutForScreen(current, columns),
         activeId,
         overId
       )
@@ -167,7 +171,7 @@ export function useGameinfoPackColumnLayout({
   function setFilters(filters) {
     if (loading || saving) return;
     setLayout((current) => ({
-      ...normalizeLayoutForScreen(current, columns, lockRequired),
+      ...normalizeLayoutForScreen(current, columns),
       filters,
     }));
     setNotice("");
@@ -175,7 +179,7 @@ export function useGameinfoPackColumnLayout({
 
   function reset() {
     if (loading || saving) return;
-    setLayout(normalizeLayoutForScreen(null, columns, lockRequired));
+    setLayout(normalizeLayoutForScreen(null, columns));
     setNotice("");
   }
 
@@ -225,7 +229,10 @@ export function useGameinfoPackColumnLayout({
         body: JSON.stringify({
           presetId: asNew || !selectedPresetId ? null : Number(selectedPresetId),
           name,
-          layout: normalizedLayout,
+          // Stamp what the table holds right now. Columns registered after
+          // this save are shared across games and start hidden here, so the
+          // preset keeps showing what its owner picked.
+          layout: { ...normalizedLayout, knownIds: gameinfoPackLayoutKnownIds(columns) },
         }),
         fallbackError: "บันทึก preset การแสดงคอลัมน์ไม่สำเร็จ",
       });
@@ -287,6 +294,11 @@ export function useGameinfoPackColumnLayout({
 export function GameinfoPackColumnControls({
   columns,
   hidden,
+  // Columns this game has nothing in. Only the editor passes these — the
+  // read-only view drops them before they ever reach a control.
+  emptyColumnIds = null,
+  hideEmptyColumns = false,
+  onHideEmptyColumnsChange = null,
   filters = [],
   presets,
   selectedPresetId,
@@ -304,10 +316,12 @@ export function GameinfoPackColumnControls({
   onSelectPreset,
   onPresetNameChange,
   onSavePreset,
-  lockRequired = false,
   presetLocked = false,
 }) {
   const [open, setOpen] = useState(false);
+  const emptyCount = columns.filter(
+    (column) => !isGameinfoPackColumnPinned(column) && emptyColumnIds?.has(column.id)
+  ).length;
   const popoverId = useId();
   const triggerRef = useRef(null);
   const closeButtonRef = useRef(null);
@@ -496,24 +510,55 @@ export function GameinfoPackColumnControls({
               <RotateCcw size={12} /> คืนค่าเริ่มต้น
             </button>
           </div>
+          {onHideEmptyColumnsChange && emptyCount > 0 ? (
+            <label className="mb-1 flex items-center gap-2 rounded px-2 py-1.5 text-xs text-linear-ink-muted hover:bg-linear-surface-2">
+              <input
+                type="checkbox"
+                checked={hideEmptyColumns}
+                onChange={(event) => onHideEmptyColumnsChange(event.target.checked)}
+                className="accent-linear-primary"
+              />
+              <span className="min-w-0 flex-1 truncate">ซ่อนคอลัมน์ที่ไม่มีข้อมูล</span>
+              <span className="shrink-0 text-[10px] text-linear-ink-tertiary">{emptyCount} คอลัมน์</span>
+            </label>
+          ) : null}
           <div className="max-h-60 space-y-1 overflow-y-auto">
             {columns.map((column) => {
-              const locked = lockRequired && column.required;
-              const checked = locked || !hidden.includes(column.id);
+              const pinned = isGameinfoPackColumnPinned(column);
+              const checked = pinned || !hidden.includes(column.id);
+              // Empty here, not empty everywhere: the column belongs to every
+              // game and another game may well be using it.
+              const empty = !pinned && Boolean(emptyColumnIds?.has(column.id));
               return (
                 <label
                   key={column.id}
-                  className="flex items-center gap-2 rounded px-2 py-1.5 text-xs text-linear-ink-muted hover:bg-linear-surface-2"
+                  title={pinned ? "คอลัมน์สถานะถูกตรึงไว้เป็นคอลัมน์แรกและซ่อนไม่ได้" : undefined}
+                  className={`flex items-center gap-2 rounded px-2 py-1.5 text-xs ${
+                    pinned
+                      ? "cursor-default text-linear-ink-tertiary"
+                      : "text-linear-ink-muted hover:bg-linear-surface-2"
+                  }`}
                 >
                   <input
                     type="checkbox"
                     checked={checked}
-                    disabled={locked || loading || saving}
+                    disabled={pinned || loading || saving}
                     onChange={(event) => onSetVisible(column.id, event.target.checked)}
                     className="accent-linear-primary"
                   />
                   <span className="min-w-0 flex-1 truncate">{column.label}</span>
-                  {locked ? <span className="text-[10px] text-linear-ink-tertiary">จำเป็น</span> : null}
+                  {pinned ? (
+                    <span className="inline-flex shrink-0 items-center gap-1 text-[10px] text-linear-ink-tertiary">
+                      <Lock size={10} /> ตรึงไว้
+                    </span>
+                  ) : empty ? (
+                    <span
+                      title="เกมนี้ยังไม่มีข้อมูลในคอลัมน์นี้ — กรอกค่าลงไปก็นับว่ามีทันที"
+                      className="shrink-0 text-[10px] text-linear-ink-tertiary"
+                    >
+                      ไม่มีข้อมูล
+                    </span>
+                  ) : null}
                 </label>
               );
             })}

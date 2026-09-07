@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Calculator, Plus, X } from "lucide-react";
 import {
   evaluateFormula,
@@ -17,6 +17,7 @@ import {
   useGameinfoUnsavedChanges,
 } from "@/lib/gameinfo-unsaved-changes";
 import GameinfoFormulaMemory from "./gameinfo-formula-memory";
+import { apiJson } from "@/lib/api-json";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -52,7 +53,17 @@ export default function GameinfoComputedEditor({
   const editingMainFormula = Boolean(initialColumn);
   const [entryMode, setEntryMode] = useState(initialColumn?.entryMode === "manual" ? "manual" : "formula");
   const [label, setLabel] = useState(initialColumn?.label || "");
-  const [formula, setFormula] = useState(initialColumn?.formula || "");
+  // One column definition is shared by every game, so a formula written here
+  // lands in one of two places: the definition (every game computes it) or
+  // this game's own gameFormula. Editing used to always write the definition,
+  // silently changing the column in all 216 games; a column that already has a
+  // formula of its own for this game opens on that formula and that scope.
+  const [formulaScope, setFormulaScope] = useState(
+    String(initialColumn?.gameFormula || "").trim() ? "game" : "all"
+  );
+  const [formula, setFormula] = useState(
+    String(initialColumn?.gameFormula || "").trim() || initialColumn?.formula || ""
+  );
   // Empty until touched, so the type follows the formula while the user is
   // still writing it and stops the moment they choose one themselves.
   const [typeChoice, setTypeChoice] = useState(initialColumn?.type || "");
@@ -68,10 +79,13 @@ export default function GameinfoComputedEditor({
     ...otherColumns.map((column) => column.label),
   ].some((name) => String(name).trim().toLocaleLowerCase("th") === normalizedLabel);
   const labelError = labelExists ? `มีชื่อ "${label.trim()}" อยู่แล้ว` : "";
+  const initialFormula =
+    String(initialColumn?.gameFormula || "").trim() || String(initialColumn?.formula || "").trim();
   const dirty =
     label.trim() !== String(initialColumn?.label || "").trim() ||
     entryMode !== (initialColumn?.entryMode === "manual" ? "manual" : "formula") ||
-    formula.trim() !== String(initialColumn?.formula || "").trim() ||
+    formulaScope !== (String(initialColumn?.gameFormula || "").trim() ? "game" : "all") ||
+    formula.trim() !== initialFormula ||
     typeChoice !== (initialColumn?.type || "") ||
     symbol !== (initialColumn?.symbol || "") ||
     scopeMode !== (initialColumn?.scopeMode === "category" ? "category" : "global") ||
@@ -138,10 +152,14 @@ export default function GameinfoComputedEditor({
 
   function submit() {
     if (!label.trim() || labelError || !validation.ok) return;
+    const written = entryMode === "manual" ? "" : formula.trim();
     const nextColumn = {
       key: initialColumn?.key || `col_${Date.now()}`,
       label: label.trim(),
-      formula: entryMode === "manual" ? "" : formula.trim(),
+      // "This game only" leaves the shared formula exactly as it was, so every
+      // other game keeps computing what it computed before this edit.
+      formula: formulaScope === "game" ? String(initialColumn?.formula || "") : written,
+      gameFormula: formulaScope === "game" ? written : "",
       entryMode,
       type,
       symbol: type === "number" ? symbol : "",
@@ -150,6 +168,31 @@ export default function GameinfoComputedEditor({
     if (editingMainFormula) onSave?.(nextColumn, { resetOverrides });
     else onAdd(nextColumn);
   }
+
+  // What other games already compute in this column. Only for a column that
+  // exists — a brand new one has no history to offer.
+  const [otherFormulas, setOtherFormulas] = useState([]);
+  const columnKey = initialColumn?.key || "";
+  const columnLabel = initialColumn?.label || "";
+  useEffect(() => {
+    if (!columnKey) return undefined;
+    let cancelled = false;
+    apiJson(
+      `/api/gameinfo/column-formulas?columnKey=${encodeURIComponent(columnKey)}&label=${encodeURIComponent(columnLabel)}`
+    )
+      .then((data) => {
+        if (!cancelled) setOtherFormulas(data.formulas || []);
+      })
+      // A suggestion nobody asked for must not turn into an error banner.
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [columnKey, columnLabel]);
+  const suggestions = useMemo(
+    () => otherFormulas.filter((item) => item.formula.trim() !== formula.trim()),
+    [otherFormulas, formula]
+  );
 
   function applyMemoryPreset(preset) {
     try {
@@ -266,8 +309,59 @@ export default function GameinfoComputedEditor({
           </div>
 
           <div className={entryMode === "manual" ? "hidden" : undefined}>
+            <label className="mb-1 block text-xs text-linear-ink-tertiary">สูตรนี้ใช้กับเกมไหน</label>
+            <Tabs value={formulaScope} onValueChange={setFormulaScope}>
+              <TabsList className="grid h-9 w-full grid-cols-2">
+                <TabsTrigger value="all">ทุกเกมที่ใช้คอลัมน์นี้</TabsTrigger>
+                <TabsTrigger value="game">เฉพาะเกมนี้</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            {formulaScope === "game" ? (
+              <p className="mt-1 text-[11px] text-linear-ink-tertiary">
+                เก็บเป็นสูตรเฉพาะเกม เกมอื่นยังคำนวณด้วยสูตรกลางเหมือนเดิม
+                {String(initialColumn?.formula || "").trim()
+                  ? ` (สูตรกลางตอนนี้: ${initialColumn.formula})`
+                  : " (คอลัมน์นี้ยังไม่มีสูตรกลาง)"}
+              </p>
+            ) : (
+              <p className="mt-1 text-[11px] text-linear-warning">
+                คอลัมน์เป็นของกลาง — บันทึกแล้วทุกเกมที่ใช้คอลัมน์นี้จะคำนวณตามสูตรนี้
+                {String(initialColumn?.gameFormula || "").trim()
+                  ? " และสูตรเฉพาะเกมของเกมนี้จะถูกยกเลิก"
+                  : ""}
+              </p>
+            )}
+          </div>
+
+          {suggestions.length > 0 && entryMode === "formula" ? (
+            <div>
+              <p className="mb-1.5 text-xs text-linear-ink-tertiary">
+                สูตรที่ใช้อยู่ในคอลัมน์นี้ (กดเพื่อใช้ตาม):
+              </p>
+              <div className="flex flex-col gap-1">
+                {suggestions.map((item) => (
+                  <button
+                    key={item.formula}
+                    type="button"
+                    onClick={() => setFormula(item.formula)}
+                    className="flex flex-col items-start gap-0.5 rounded-md border border-linear-hairline-strong px-2.5 py-1.5 text-left hover:bg-linear-surface-2"
+                  >
+                    <span className="w-full truncate font-mono text-[11px] text-linear-ink">{item.formula}</span>
+                    <span className="text-[10px] text-linear-ink-tertiary">
+                      {item.shared ? "สูตรกลางของคอลัมน์" : `ใช้ใน ${item.gameCount} เกม`}
+                      {item.games.length
+                        ? ` · ${item.games.join(", ")}${item.moreGames ? ` +${item.moreGames}` : ""}`
+                        : ""}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className={entryMode === "manual" ? "hidden" : undefined}>
             <label htmlFor="gameinfo-computed-scope" className="mb-1 block text-xs text-linear-ink-tertiary">
-              ขอบเขตการใช้สูตร
+              ขอบเขตการใช้สูตร (ภายในเกมนี้)
             </label>
             <select
               id="gameinfo-computed-scope"

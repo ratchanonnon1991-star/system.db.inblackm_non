@@ -1,7 +1,7 @@
 import { handleApiError, jsonError } from "@/lib/http";
 import { requireGameinfoEditor } from "@/server/auth";
 import { toCsv } from "@/lib/gameinfo-csv";
-import { PACK_HEADERS, gamesToPackRows } from "@/lib/gameinfo-import";
+import { gameinfoPackExportHeaders, gamesToPackRows } from "@/lib/gameinfo-import";
 import { getGameListRow, listGameListRows } from "@/server/gameinfo-gamelist";
 import { getGamelistPacks } from "@/server/gameinfo-gamelist-packs";
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
@@ -25,7 +25,12 @@ export async function GET(request) {
       const packs = mode === "idpass"
         ? (await getGameinfoModeData(row.id, mode)).packs
         : await getGamelistPacks(row.id);
-      games = [{ id: row.id, gameName: row.game, currencies: packs.currencies }];
+      games = [{
+        id: row.id,
+        gameName: row.game,
+        currencies: packs.currencies,
+        computedColumns: packs.computedColumns,
+      }];
       filename = `packs_${mode}_game_${row.id}.csv`;
     } else {
       const rows = await listGameListRows();
@@ -34,13 +39,18 @@ export async function GET(request) {
           const packs = mode === "idpass"
             ? (await getGameinfoModeData(row.id, mode)).packs
             : await getGamelistPacks(row.id);
-          return { id: row.id, gameName: row.game, currencies: packs.currencies };
+          return {
+            id: row.id,
+            gameName: row.game,
+            currencies: packs.currencies,
+            computedColumns: packs.computedColumns,
+          };
         })
       );
       filename = "packs_all_games.csv";
     }
 
-    const csv = "﻿" + toCsv(PACK_HEADERS, gamesToPackRows(games));
+    const csv = "﻿" + toCsv(gameinfoPackExportHeaders(games), gamesToPackRows(games));
     return new Response(csv, {
       status: 200,
       headers: {

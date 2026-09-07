@@ -1,8 +1,12 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireGameinfoEditor } from "@/server/auth";
 import { parseCsv } from "@/lib/gameinfo-csv";
-import { PACK_HEADERS, parsePacks, parsePacksForGame, validatePackRows } from "@/lib/gameinfo-import";
+import { PACK_HEADERS, parsePacksForGame } from "@/lib/gameinfo-import";
 import { getGameListRow, listGameListRows } from "@/server/gameinfo-gamelist";
+import { listGamelistPackColumnRegistry } from "@/server/gameinfo-gamelist-packs";
+import { getGameinfoFormulaVariables } from "@/server/gameinfo-formula-variables";
+import { planGameinfoCsvImport } from "@/server/gameinfo-csv-import";
+import { buildGameinfoCsvColumns } from "@/lib/gameinfo-csv-columns";
 
 // Parse an uploaded CSV and return a preview — no DB writes. The file's own
 // game_id column is ignored; every row is treated as ?gameId='s game_list
@@ -28,35 +32,83 @@ export async function POST(request) {
       return jsonError("ไฟล์ว่างเปล่า หรือไม่มีข้อมูลใต้หัวคอลัมน์", 400);
     }
 
-    const unsupported = headers.filter(
-      (header) => !PACK_HEADERS.includes(header) && header !== "amount_charged"
-    );
-    if (unsupported.length) return jsonError(`พบคอลัมน์ที่ระบบไม่รับ: ${unsupported.join(", ")}`, 400);
     if (gameIdRaw) {
-      const row = await getGameListRow(Number(gameIdRaw));
+      const [row, registry, variableData] = await Promise.all([
+        getGameListRow(Number(gameIdRaw)),
+        listGamelistPackColumnRegistry(),
+        getGameinfoFormulaVariables(0),
+      ]);
       if (!row) return jsonError("ไม่พบเกมนี้", 404);
-      const { game: parsed, errors, countryIssues } = parsePacksForGame(rows, row.id, row.game);
-      return jsonOk({ kind: "packs-single", game: parsed, errors, countryIssues });
+      const existingColumns = registry.map((column) => ({
+        key: column.columnKey,
+        label: column.label,
+        entryMode: column.data?.entryMode,
+      }));
+      const existingLabels = new Set(existingColumns.map((column) => column.label));
+      const unsupported = headers.filter(
+        (header) =>
+          !PACK_HEADERS.includes(header) &&
+          header !== "amount_charged" &&
+          !existingLabels.has(header.trim())
+      );
+      if (unsupported.length) return jsonError(`พบคอลัมน์ที่ระบบไม่รับ: ${unsupported.join(", ")}`, 400);
+      const { game: parsed, errors, countryIssues, rowPacks } = parsePacksForGame(
+        rows,
+        row.id,
+        row.game
+      );
+      const built = buildGameinfoCsvColumns(
+        headers,
+        rowPacks,
+        existingColumns,
+        variableData.variables.map((variable) => variable.name)
+      );
+      return jsonOk({
+        kind: "packs-single",
+        game: { ...parsed, columns: built.columns },
+        errors: [...errors, ...built.errors],
+        countryIssues,
+      });
     }
-    if (!headers.includes("game_id")) return jsonError("ไม่พบคอลัมน์ game_id", 400);
-    const parsed = parsePacks(rows);
-    const existing = await listGameListRows();
-    const byId = new Map(existing.map((game) => [Number(game.id), game]));
-    const missingIds = parsed.perGame.filter((game) => !byId.has(game.gameId)).map((game) => game.gameId);
-    const warnings = parsed.errors.filter((message) => message.startsWith("พบคอลัมน์ amount_charged"));
-    const errors = [
-      ...parsed.errors.filter((message) => !message.startsWith("พบคอลัมน์ amount_charged")),
-      ...validatePackRows(rows),
-    ];
-    if (missingIds.length) errors.push(`ไม่พบ game_id ในระบบ: ${missingIds.join(", ")}`);
+    // A bulk file may now name its game instead of carrying an id, so game_id
+    // is no longer required — a row with neither is reported per row.
+    const [existingGames, existingColumns, variableData] = await Promise.all([
+      listGameListRows(),
+      listGamelistPackColumnRegistry(),
+      getGameinfoFormulaVariables(0),
+    ]);
+    const plan = planGameinfoCsvImport({
+      headers,
+      rows,
+      existingGames,
+      existingColumns: existingColumns.map((column) => ({
+        key: column.columnKey,
+        label: column.label,
+        entryMode: column.data?.entryMode,
+      })),
+      variableNames: variableData.variables.map((variable) => variable.name),
+    });
     return jsonOk({
       kind: "packs-bulk",
-      games: parsed.perGame.map((game) => ({
-        ...game,
-        currentGameName: byId.get(game.gameId)?.game || "",
+      games: plan.games.map((game) => ({
+        gameId: game.gameId,
+        gameName: game.gameName,
+        currentGameName: game.isNew ? "" : game.gameName,
+        packCount: game.packCount,
+        isNew: game.isNew,
+        matchedByName: game.matchedByName,
+        similar: game.similar,
       })),
-      errors,
-      warnings,
+      newGames: plan.newGames.map((game) => ({
+        gameName: game.gameName,
+        packCount: game.packCount,
+        similar: game.similar,
+      })),
+      columns: plan.columns,
+      newColumns: plan.newColumns,
+      countryIssues: plan.countryIssues,
+      errors: plan.errors,
+      warnings: plan.warnings,
     });
   } catch (err) {
     return handleApiError(err, "อ่านไฟล์ไม่สำเร็จ");

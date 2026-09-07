@@ -48,6 +48,7 @@ check("numeric picker excludes descriptive fields", GAMEINFO_NUMERIC_FIELD_NAMES
   "USDCNY",
   "IDRTHB",
   "USDIDR",
+  "THBUSD",
 ]);
 ok("variable editor uses the numeric field picker", variableEditorSource.includes("GAMEINFO_NUMERIC_FIELD_NAMES"));
 ok("formula memory is a separate side panel", computedEditorSource.includes("lg:grid-cols-[minmax(0,1fr)_20rem]"));
@@ -90,6 +91,14 @@ check(
 );
 check("IDRTHB resolves from formula context", resolveGameinfoField(pack, game, "IDRTHB", { externalValues: { IDRTHB: 0.0019 } }), 0.0019);
 check("USDIDR resolves from formula context", resolveGameinfoField(pack, game, "USDIDR", { externalValues: { USDIDR: 16350 } }), 16350);
+check("THBUSD resolves from formula context", resolveGameinfoField(pack, game, "THBUSD", { externalValues: { THBUSD: 0.0308 } }), 0.0308);
+check(
+  "THB converts to USD by multiplying the THBUSD rate",
+  evaluateFormula(parseFormula("[ราคา] * [THBUSD]"), (label) =>
+    resolveGameinfoField(pack, game, label, { externalValues: { THBUSD: 0.0308 } })
+  ),
+  3.08
+);
 
 const costProfiles = [
   { id: "cost_usd", label: "USD", inputCurrency: "USD", baseValue: "0.5", rateFormula: "" },

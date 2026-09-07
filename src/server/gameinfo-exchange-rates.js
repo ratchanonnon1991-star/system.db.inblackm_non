@@ -9,6 +9,7 @@ const PAIRS = {
   USDCNY: { provider: "Frankfurter/ECB", kind: "fiat", base: "USD", quote: "CNY" },
   IDRTHB: { provider: "Frankfurter/ECB", kind: "fiat", base: "IDR", quote: "THB" },
   USDIDR: { provider: "Frankfurter/ECB", kind: "fiat", base: "USD", quote: "IDR" },
+  THBUSD: { provider: "Frankfurter/ECB", kind: "fiat", base: "THB", quote: "USD" },
 };
 
 const schemaReady = new Map();
@@ -26,6 +27,7 @@ export function normalizeGameinfoRatePair(value) {
   if (compact === "USDCNY") return "USDCNY";
   if (compact === "IDRTHB") return "IDRTHB";
   if (compact === "USDIDR") return "USDIDR";
+  if (compact === "THBUSD") return "THBUSD";
   return null;
 }
 

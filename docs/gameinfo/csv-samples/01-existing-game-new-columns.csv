@@ -1,0 +1,4 @@
+﻿game_id,game_name,currency_name,category_name,pack_name,price,amount_charged_fee,channel_main,channel_secondary,country,ต้นทุนทดสอบ,ราคาบวก 5%
+3,LOVE AND DEEPSPACE,Crystal,Crystal,60 Crystals,20,2000,Wavepay,,Myanmar,15,[ราคา] * 1.05
+3,LOVE AND DEEPSPACE,Crystal,Crystal,300 Crystals+30 Diamonds,90,11000,Wavepay,,Myanmar,70,[ราคา] * 1.05
+3,LOVE AND DEEPSPACE,Crystal,Crystal,450 Crystals+90 Diamonds,140,17334,Wavepay,,Myanmar,110,[ราคา] * 1.05

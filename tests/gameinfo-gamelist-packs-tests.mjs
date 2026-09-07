@@ -454,6 +454,121 @@ async function run() {
   );
   ok("bulk import commits all games as one transaction", statements().includes("COMMIT"));
 
+  // A CSV can carry a column for a game without carrying any of its packs.
+  // Replacing that game with nothing would delete every pack it has, which is
+  // never what such a file meant.
+  reset();
+  const EXISTING_PACK_ROW = {
+    game_id: 5,
+    pack_id: "pk_keep",
+    data: {
+      currencyId: "c1", currencyName: "Gem", currencyImage: "", currencyOrder: 0,
+      categoryId: "cat1", categoryName: "Gem", categoryOrder: 0, packOrder: 0,
+      name: "60 Gems", price: "100", amountChargedFee: "90",
+      channelsMain: ["Wavepay"], channelsSecondary: [], country: "Thailand",
+    },
+  };
+  setResponder((text) => {
+    if (/SELECT id FROM game_list/.test(text)) return { rows: [{ id: 5 }] };
+    if (/SELECT game_id, pack_id, data FROM gamelist_packs/.test(text)) return { rows: [EXISTING_PACK_ROW] };
+    if (/FROM gamelist_pack_column_registry/.test(text)) return { rows: [] };
+    return null;
+  });
+  await importGamelistPacks(
+    [{ gameId: 5, currencies: [], packCount: 0, columns: [{ key: "col_new", label: "ใหม่", formula: "", entryMode: "manual", rowOverrides: {} }] }],
+    "replace",
+    { id: 9, name: "Pack Admin" }
+  );
+  const columnsOnlyInserts = log.filter((entry) => /^INSERT INTO gamelist_packs/.test(entry.text));
+  ok(
+    "a columns-only import keeps the packs the game already had",
+    columnsOnlyInserts.some((entry) => entry.params?.[1] === "pk_keep")
+  );
+  // The registry is dormant in this stub, which is how production looks before
+  // the backfill. Putting the imported column there would flip every game onto
+  // the registry at once and each would lose its own columns, so it is written
+  // the old way instead — into this game's own list.
+  ok(
+    "a dormant registry is not activated by an import",
+    !log.some((entry) => /INSERT INTO gamelist_pack_column_registry/.test(entry.text))
+  );
+  const dormantSentinel = columnsOnlyInserts.find((entry) => entry.params?.[1] === "__computed__");
+  const dormantData = JSON.parse(dormantSentinel?.params?.[2] || "{}");
+  check("the column still arrives, in the game's own list", dormantData.columns?.map((c) => c.key), ["col_new"]);
+  check("and the store is left on the pre-registry shape", dormantData.schemaVersion, 2);
+
+  // Once the backfill has run, the same import registers the column instead.
+  reset();
+  setResponder((text) => {
+    if (/SELECT id FROM game_list/.test(text)) return { rows: [{ id: 5 }] };
+    if (/SELECT game_id, pack_id, data FROM gamelist_packs/.test(text)) return { rows: [EXISTING_PACK_ROW] };
+    if (/FROM gamelist_pack_column_registry/.test(text)) {
+      return { rows: [{ column_key: "col_existing", label: "เดิม", sort_order: 0, data: { formula: "1", kind: "formula", entryMode: "formula", marketKey: "", type: "number", symbol: "", scopeMode: "global" } }] };
+    }
+    return null;
+  });
+  await importGamelistPacks(
+    [{ gameId: 5, currencies: [], packCount: 0, columns: [{ key: "col_new", label: "ใหม่", formula: "", entryMode: "manual", rowOverrides: {} }] }],
+    "replace",
+    { id: 9, name: "Pack Admin" }
+  );
+  ok(
+    "an active registry does take the imported column",
+    log.some((entry) => /INSERT INTO gamelist_pack_column_registry/.test(entry.text))
+  );
+  // Every save leaves the pre-registry `columns` copy behind so that reverting
+  // the code is a complete rollback with no data restore. An import used to
+  // skip it, so a column that arrived by CSV was invisible to the old code
+  // while still sitting in the database.
+  const importedSentinel = log
+    .filter((entry) => /^INSERT INTO gamelist_packs/.test(entry.text))
+    .find((entry) => entry.params?.[1] === "__computed__");
+  const importedData = JSON.parse(importedSentinel?.params?.[2] || "{}");
+  check(
+    "an import leaves the same rollback copy an editor save does",
+    importedData.columns?.map((column) => column.key),
+    ["col_existing"]
+  );
+  check(
+    "and that copy is the flat pre-registry shape",
+    Object.hasOwn(importedData.columns?.[0] || {}, "gameFormula"),
+    false
+  );
+
+  // The registry is one shared definition per column, used by every game and
+  // by both storage modes. A save must only delete what it actually dropped —
+  // deleting "everything this request did not mention" would let one game's
+  // save destroy other games' columns.
+  reset();
+  const REGISTRY_ROWS = [
+    { column_key: "col_keep", label: "เก็บไว้", sort_order: 0, data: { formula: "1", kind: "formula", entryMode: "formula", marketKey: "", type: "number", symbol: "", scopeMode: "global" } },
+    { column_key: "col_drop", label: "ลบทิ้ง", sort_order: 1, data: { formula: "2", kind: "formula", entryMode: "formula", marketKey: "", type: "number", symbol: "", scopeMode: "global" } },
+  ];
+  setResponder((text) => {
+    if (/FROM gamelist_pack_column_registry/.test(text)) return { rows: REGISTRY_ROWS };
+    if (/SELECT version FROM gamelist_pack_revisions/.test(text)) return { rows: [{ version: 1 }] };
+    if (/SELECT game_id, pack_id, data FROM gamelist_packs/.test(text)) {
+      return { rows: [{ game_id: 5, pack_id: "__computed__", data: { schemaVersion: 3, columns: [], columnOverrides: {} } }] };
+    }
+    return null;
+  });
+  await saveGamelistPacks(5, {
+    currencies: [],
+    // Saving only one of the two registered columns: the other was deleted.
+    computedColumns: [{ key: "col_keep", label: "เก็บไว้", formula: "1", entryMode: "formula", kind: "formula", marketKey: "", type: "number", symbol: "", scopeMode: "global", categoryFormulas: {}, rowOverrides: {} }],
+    costProfiles: [],
+  });
+  const registryDeletes = log.filter((entry) => /DELETE FROM gamelist_pack_column_registry/.test(entry.text));
+  check(
+    "a save deletes only the column it dropped",
+    registryDeletes[0]?.params?.[0],
+    ["col_drop"]
+  );
+  ok(
+    "the delete never targets everything it did not mention",
+    !registryDeletes.some((entry) => /NOT \(column_key/.test(entry.text))
+  );
+
   // --- combined history ------------------------------------------------
   reset();
   setResponder((text) => {

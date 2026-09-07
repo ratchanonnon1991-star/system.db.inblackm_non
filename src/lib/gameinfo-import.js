@@ -1,3 +1,5 @@
+import { getEffectiveGameinfoFormula } from "@/lib/gameinfo-formula-overrides";
+
 // CSV <-> pack-tree mapping for the gameinfo importer. Ported from the
 // reference app's lib/import.ts, packs only (no gamelist import, no per-pack
 // `formulas` field — this module's pack model doesn't have overrides).
@@ -36,6 +38,20 @@ export const PACK_HEADERS = [
   "channel_secondary",
   "country",
 ];
+
+export function gameinfoPackExportHeaders(games) {
+  const headers = [...PACK_HEADERS];
+  const seen = new Set(headers);
+  for (const game of games || []) {
+    for (const column of game.computedColumns || []) {
+      const label = String(column?.label || "").trim();
+      if (!label || seen.has(label) || label === "amount_charged") continue;
+      seen.add(label);
+      headers.push(label);
+    }
+  }
+  return headers;
+}
 
 // Worked examples shipped inside the downloadable template so users see the
 // expected format (multi-channel cell, Thai category, etc.).
@@ -76,6 +92,10 @@ export const PACK_SAMPLE = [
 export function buildPackTree(groupRows) {
   const currencyOrder = [];
   const currencyMap = new Map();
+  // Which row produced which pack. Pack ids are generated here, so a caller
+  // that wants to attach anything else from the same row — a custom column's
+  // value, which is stored per pack id — has no other way to line them up.
+  const rowPacks = [];
   let packCount = 0;
 
   for (const row of groupRows) {
@@ -105,8 +125,9 @@ export function buildPackTree(groupRows) {
     }
     const cat = cur.cats.get(catKey);
 
+    const packId = genId("pk");
     cat.packs.push({
-      id: genId("pk"),
+      id: packId,
       name: packName,
       image: norm(row["pack_image"]),
       price: norm(row["price"]),
@@ -115,6 +136,7 @@ export function buildPackTree(groupRows) {
       channelsSecondary: splitList(row["channel_secondary"]),
       country: norm(row["country"]),
     });
+    rowPacks.push({ row, packId, categoryId: cat.id });
     packCount += 1;
   }
 
@@ -128,7 +150,7 @@ export function buildPackTree(groupRows) {
     };
   });
 
-  return { currencies, packCount };
+  return { currencies, packCount, rowPacks };
 }
 
 // "Add" mode: match currency/category by case-insensitive name and append the
@@ -202,19 +224,23 @@ export function parsePacks(rows) {
 
 // Single-game parse (used inside one game's pack editor): the game_id column
 // in the file is ignored — every non-empty row belongs to the given gameId.
-export function parsePacksForGame(rows, gameId, fallbackGameName) {
-  const dataRows = rows.filter((row) => Object.values(row).some((v) => norm(v) !== ""));
-  const tree = buildPackTree(dataRows);
-  const gameNameFromFile = dataRows.map((r) => norm(r["game_name"])).find((n) => n);
-  const countryIssues = [];
-  for (const currency of tree.currencies) {
-    for (const category of currency.categories) {
-      for (const pack of category.packs) {
+/**
+ * Canonicalises every pack's country in place and reports the ones it could
+ * not match. Shared by both importers — the single-game one below and the
+ * bulk planner in server/gameinfo-csv-import.js — because they are reading the
+ * same file format and a fix to one that skipped the other would mean the same
+ * CSV normalised differently depending on which button was pressed.
+ */
+export function normalizeGameinfoImportCountries(currencies) {
+  const issues = [];
+  for (const currency of currencies || []) {
+    for (const category of currency.categories || []) {
+      for (const pack of category.packs || []) {
         const normalized = normalizeGameinfoCountry(pack.country);
         if (normalized.matched) {
           pack.country = normalized.value;
         } else if (pack.country) {
-          countryIssues.push({
+          issues.push({
             packId: pack.id,
             packName: pack.name,
             input: pack.country,
@@ -224,6 +250,14 @@ export function parsePacksForGame(rows, gameId, fallbackGameName) {
       }
     }
   }
+  return issues;
+}
+
+export function parsePacksForGame(rows, gameId, fallbackGameName) {
+  const dataRows = rows.filter((row) => Object.values(row).some((v) => norm(v) !== ""));
+  const tree = buildPackTree(dataRows);
+  const gameNameFromFile = dataRows.map((r) => norm(r["game_name"])).find((n) => n);
+  const countryIssues = normalizeGameinfoImportCountries(tree.currencies);
   return {
     game: {
       gameId,
@@ -233,6 +267,7 @@ export function parsePacksForGame(rows, gameId, fallbackGameName) {
     },
     errors: legacyAmountWarnings(rows),
     countryIssues,
+    rowPacks: tree.rowPacks,
   };
 }
 
@@ -241,11 +276,14 @@ export function parsePacksForGame(rows, gameId, fallbackGameName) {
 export function gamesToPackRows(games) {
   const out = [];
   for (const g of games) {
+    const formulaColumns = (g.computedColumns || []).filter(
+      (column) => column?.label && !PACK_HEADERS.includes(String(column.label).trim())
+    );
     let emitted = false;
     for (const c of g.currencies || []) {
       for (const cat of c.categories || []) {
         for (const p of cat.packs || []) {
-          out.push({
+          const row = {
             game_id: String(g.id),
             game_name: g.gameName,
             currency_name: c.name,
@@ -258,13 +296,21 @@ export function gamesToPackRows(games) {
             channel_main: (p.channelsMain || []).join(", "),
             channel_secondary: (p.channelsSecondary || []).join(", "),
             country: p.country ?? "",
-          });
+          };
+          for (const column of formulaColumns) {
+            row[String(column.label).trim()] = getEffectiveGameinfoFormula(
+              column,
+              p.id,
+              cat.id
+            ).formula;
+          }
+          out.push(row);
           emitted = true;
         }
       }
     }
     if (!emitted) {
-      out.push({
+      const row = {
         game_id: String(g.id),
         game_name: g.gameName,
         currency_name: "",
@@ -277,7 +323,9 @@ export function gamesToPackRows(games) {
         channel_main: "",
         channel_secondary: "",
         country: "",
-      });
+      };
+      for (const column of formulaColumns) row[String(column.label).trim()] = "";
+      out.push(row);
     }
   }
   return out;
@@ -301,7 +349,8 @@ export function validatePackRows(rows) {
   return errors;
 }
 
-function legacyAmountWarnings(rows) {
+/** The retired amount_charged column: accepted, ignored, and reported. */
+export function legacyAmountWarnings(rows) {
   const count = (rows || []).filter((row) => norm(row?.amount_charged) !== "").length;
   return count
     ? [`พบคอลัมน์ amount_charged ${count} แถว — ระบบเลิกใช้แล้วและจะไม่นำเข้าค่านี้`]

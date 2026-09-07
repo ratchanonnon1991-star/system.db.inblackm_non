@@ -1,0 +1,5 @@
+﻿game_id,game_name,currency_name,category_name,pack_name,price,amount_charged_fee,channel_main,country,สูตรพังทดสอบ
+999999,ไม่มีเกมนี้,Gem,Gem,A,10,9,Wavepay,Thailand,
+,CSVTEST ALPHA,Gem,Gem,,,,,,
+,CSVTEST ALPHA,Gem,Gem,B,10,9,Wavepay,Thailand,[ราคา] *
+,,Gem,Gem,C,10,9,Wavepay,Thailand,
