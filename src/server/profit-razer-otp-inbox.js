@@ -3,14 +3,27 @@
 import { hasValidTfaSecret, normalizeTfaSecret } from "@/server/profit-razer-sync";
 import { suggestTotpKeyFromEmail } from "@/server/profit-razer";
 
+function extractReturnedAccount(data) {
+  if (!data || typeof data !== "object") return null;
+  const payload = data.data && typeof data.data === "object" ? data.data : data;
+  const account = payload.account && typeof payload.account === "object" ? payload.account : null;
+  if (!account) return null;
+  return {
+    lookupKey: String(account.lookup_key || account.lookupKey || "").trim().toLowerCase(),
+    accountName: String(account.account_name || account.accountName || "").trim().toLowerCase(),
+    label: String(account.label || "").trim(),
+    id: account.id ?? null,
+  };
+}
+
 function parseTotpApiResponse(data, rawText) {
   if (!data || typeof data !== "object") {
     const otp = String(rawText || "").match(/\b(\d{6})\b/)?.[1] || "";
-    return { ok: Boolean(otp), otp, expiresIn: 0, error: otp ? "" : "Invalid response" };
+    return { ok: Boolean(otp), otp, expiresIn: 0, error: otp ? "" : "Invalid response", account: null };
   }
 
   if (data.status && data.status !== "success") {
-    return { ok: false, otp: "", expiresIn: 0, error: data.message || data.status };
+    return { ok: false, otp: "", expiresIn: 0, error: data.message || data.status, account: null };
   }
 
   const payload = data.data && typeof data.data === "object" ? data.data : data;
@@ -22,12 +35,13 @@ function parseTotpApiResponse(data, rawText) {
     data.code ??
     "";
   const expiresIn = Number(payload.expiresIn ?? payload.expires_in ?? 0) || 0;
+  const account = extractReturnedAccount(data);
 
   if (!otp) {
-    return { ok: false, otp: "", expiresIn: 0, error: data.message || "ไม่พบ OTP ใน response" };
+    return { ok: false, otp: "", expiresIn: 0, error: data.message || "ไม่พบ OTP ใน response", account };
   }
 
-  return { ok: true, otp: String(otp).trim(), expiresIn, error: "" };
+  return { ok: true, otp: String(otp).trim(), expiresIn, error: "", account };
 }
 
 function extractTfaSecret(data) {
@@ -54,8 +68,10 @@ export function getRazerOtpInboxConfig() {
 
 function totpApiBase(urlTemplate) {
   const trimmed = (urlTemplate || "").trim().replace(/\/+$/, "");
-  if (trimmed.includes("/api/totp/code")) return trimmed.split("?")[0];
-  return `${trimmed}/api/totp/code`;
+  const noQuery = trimmed.split("?")[0];
+  if (/\/api\/totp\/code$/.test(noQuery)) return noQuery;
+  if (/\/api\/totp$/.test(noQuery)) return `${noQuery}/code`;
+  return `${noQuery}/api/totp/code`;
 }
 
 /** Detect api-system returning the same OTP for different ?key= values. */
@@ -179,6 +195,25 @@ async function fetchOtpOnce(target, apiKey) {
       return { ok: false, error: parsed.error || `HTTP ${res.status}`, url: target };
     }
 
+    let requestedKey = "";
+    try {
+      requestedKey = String(new URL(target).searchParams.get("key") || "").trim().toLowerCase();
+    } catch {
+      requestedKey = "";
+    }
+    const returned = parsed.account;
+    if (
+      requestedKey &&
+      returned?.lookupKey &&
+      returned.lookupKey !== requestedKey
+    ) {
+      return {
+        ok: false,
+        error: `api-system คืน OTP ของ key "${returned.lookupKey}" แทน "${requestedKey}" — ยังไม่มี lookup key นี้ใน TOTP (หรือ Secret ว่าง) ให้แก้ที่ 2fa.inblackm.com แล้ว Save ใหม่`,
+        url: target,
+      };
+    }
+
     const tfaSecret = extractTfaSecret(data);
     return {
       ok: true,
@@ -187,6 +222,7 @@ async function fetchOtpOnce(target, apiKey) {
       tfaSecret,
       source: "external",
       url: target,
+      account: returned,
       error: "",
     };
   } catch (err) {

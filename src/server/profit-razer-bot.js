@@ -10,8 +10,22 @@ import {
   suggestTotpKeyFromEmail,
   updateRazerAccount,
 } from "@/server/profit-razer";
-import { generateTotp } from "@/server/profit-razer-sync";
+import { generateTotp, syncRazerAccountById } from "@/server/profit-razer-sync";
 import { fetchRazerOtpFromExternalApi, fetchTotpSecretForAccount } from "@/server/profit-razer-otp-inbox";
+
+/**
+ * After bot finishes, pull live Gold/Silver so DB matches Razer
+ * (bot-reported deducts / stale poll can drift).
+ */
+async function syncBalanceAfterBotUse(id) {
+  try {
+    const synced = await syncRazerAccountById(id);
+    return { account: synced.account, synced: true, syncError: null };
+  } catch (err) {
+    console.error(`Razer post-bot sync failed for ${id}:`, err.message);
+    return { account: null, synced: false, syncError: err.message };
+  }
+}
 
 function inferStatus({ goldBalance, silverBalance }) {
   const gold = Number(goldBalance) || 0;
@@ -195,6 +209,7 @@ export async function listRazerAccountsForBot({
   for (const summary of accounts) {
     if (summary.hidden) continue;
     if (!includeDisabled && !summary.botEnabled) continue;
+    if (summary.status === "IN_USE") continue;
     if (summary.goldBalance < minGold && summary.silverBalance < minSilver) continue;
 
     const full = await getRazerAccount(summary.id, { includeSecrets: true });
@@ -232,8 +247,14 @@ export async function claimRazerAccountByEmailForBot(email, body = {}) {
 }
 
 export async function releaseRazerAccountForBot(id, body = {}) {
-  const updated = await releaseRazerAccountInUse(id, { status: body.status });
-  return { account: publicAccount(updated) };
+  // Clear IN_USE first, then sync live balance (status from real Gold/Silver).
+  const released = await releaseRazerAccountInUse(id, { status: body.status });
+  const { account: synced, synced: didSync, syncError } = await syncBalanceAfterBotUse(id);
+  return {
+    account: publicAccount(synced || released),
+    synced: didSync,
+    syncError,
+  };
 }
 
 export async function getRazerOtpForBot({ id, email }) {
@@ -302,6 +323,7 @@ export async function reportRazerPayment(id, body = {}) {
     ? body.status
     : inferStatus({ goldBalance: nextGold, silverBalance: nextSilver });
 
+  // Optimistic update from bot deduct, then overwrite with live Razer sync.
   const updated = await updateRazerAccount(id, {
     goldBalance: nextGold,
     silverBalance: nextSilver,
@@ -310,8 +332,12 @@ export async function reportRazerPayment(id, body = {}) {
     syncBalance: true,
   });
 
+  const { account: synced, synced: didSync, syncError } = await syncBalanceAfterBotUse(id);
+
   return {
-    account: publicAccount(updated),
+    account: publicAccount(synced || updated),
     note: body.note || body.orderId || null,
+    synced: didSync,
+    syncError,
   };
 }
