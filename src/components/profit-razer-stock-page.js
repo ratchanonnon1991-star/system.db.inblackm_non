@@ -155,6 +155,14 @@ export default function ProfitRazerStockPage() {
     loadAccounts();
   }, [loadAccounts]);
 
+  // Light refresh so IN_USE from bot claim shows without manual reload.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      loadAccounts();
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [loadAccounts]);
+
   function revealOtp(account) {
     setOtpRevealed((prev) => ({ ...prev, [account.id]: true }));
     fetchOtpForAccount(account, { forceExternal: true });

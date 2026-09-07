@@ -10,8 +10,14 @@ export async function POST(request) {
       zone: body.zone,
       minGold: Number(body.minGold ?? body.min_gold ?? 0),
       email: body.email || undefined,
+      botName: body.botName || body.bot || body.by,
+      orderId: body.orderId || body.order_id,
+      note: body.note,
     });
-    return jsonOk({ ...result, deprecated: "ใช้ GET /bot/accounts แล้วให้บอทเลือกเอง" });
+    return jsonOk({
+      ...result,
+      hint: "บัญชีถูกมาร์ก IN_USE แล้ว · หลังใช้เสร็จเรียก POST .../release หรือ /report",
+    });
   } catch (err) {
     return handleApiError(err, "เลือกบัญชี Razer สำหรับจ่ายไม่สำเร็จ");
   }

@@ -277,8 +277,15 @@ export async function getRazerOtpForBot({ id, email }) {
   throw Object.assign(new Error("ต้องระบุ id หรือ email"), { status: 400 });
 }
 
-/** @deprecated Bot should list accounts and pick itself — kept for compatibility. */
-export async function pickRazerAccountForBot({ zone, minGold = 0, email } = {}) {
+/** Pick best account and claim it as IN_USE (atomic). */
+export async function pickRazerAccountForBot({
+  zone,
+  minGold = 0,
+  email,
+  botName,
+  orderId,
+  note,
+} = {}) {
   let accounts = await listRazerAccountsForBot({
     zone: zone ? normalizeZone(zone) : undefined,
     minGold,
@@ -297,7 +304,13 @@ export async function pickRazerAccountForBot({ zone, minGold = 0, email } = {}) 
     if (b.status === "ACTIVE" && a.status !== "ACTIVE") return 1;
     return b.goldBalance - a.goldBalance;
   });
-  return { account: accounts[0] };
+
+  // Claim immediately so UI shows IN_USE and other bots skip this account.
+  return claimRazerAccountForBot(accounts[0].id, {
+    botName: botName || "bot",
+    orderId,
+    note,
+  });
 }
 
 export async function reportRazerPayment(id, body = {}) {
