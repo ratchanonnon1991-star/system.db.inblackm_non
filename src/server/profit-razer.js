@@ -366,13 +366,30 @@ export async function importRazerAccountsFromCsv(text) {
 }
 
 export async function markRazerAccountInUse(id, { botName, orderId, note } = {}) {
+  await ensureSchema();
   const label = [botName, orderId, note].filter(Boolean).join(" · ") || "bot";
-  return updateRazerAccount(id, {
-    status: "IN_USE",
-    inUseBy: label,
-    inUseOrderId: orderId || null,
-    inUseAt: new Date().toISOString(),
-  });
+
+  // Atomic: only claim if NOT already IN_USE
+  const { rows } = await getPool().query(
+    `UPDATE profit_razer_accounts
+     SET status = 'IN_USE',
+         in_use_by = $1,
+         in_use_order_id = $2,
+         in_use_at = NOW(),
+         updated_at = NOW()
+     WHERE id = $3 AND (status <> 'IN_USE' OR in_use_by IS NULL)
+     RETURNING *`,
+    [label, orderId || null, id]
+  );
+  if (!rows.length) {
+    const current = await getRazerAccount(id);
+    if (!current) throw Object.assign(new Error("ไม่พบบัญชี"), { status: 404 });
+    throw Object.assign(
+      new Error(`บัญชีนี้กำลังถูกใช้โดย ${current.inUseBy || "bot อื่น"} (order: ${current.inUseOrderId || "-"})`),
+      { status: 409 }
+    );
+  }
+  return rowToAccount(rows[0]);
 }
 
 export async function releaseRazerAccountInUse(id, { status } = {}) {

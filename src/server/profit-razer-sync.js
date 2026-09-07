@@ -208,12 +208,13 @@ export async function syncRazerAccountById(id) {
 export async function syncAllRazerAccounts({ zone } = {}) {
   const accounts = await listRazerAccounts({ zone });
   const results = { ok: 0, failed: 0, errors: [] };
+  const concurrency = Math.max(1, Number(process.env.RAZER_SYNC_CONCURRENCY || 3));
 
-  for (const account of accounts) {
+  async function syncOne(account) {
     if (!account.hasPassword) {
       results.failed += 1;
       results.errors.push({ id: account.id, email: account.email, message: "ไม่มีรหัสผ่าน" });
-      continue;
+      return;
     }
     try {
       await syncRazerAccountById(account.id);
@@ -223,6 +224,15 @@ export async function syncAllRazerAccounts({ zone } = {}) {
       results.errors.push({ id: account.id, email: account.email, message: err.message });
     }
   }
+
+  const queue = [...accounts];
+  async function worker() {
+    let account;
+    while ((account = queue.shift())) {
+      await syncOne(account);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, accounts.length) }, worker));
 
   return results;
 }
