@@ -155,9 +155,10 @@ export default function ProfitRazerDeveloperApi({ canEdit }) {
         <p className="font-medium text-ll-ink">Header</p>
         <code className="mt-1 block font-mono">Authorization: Bearer &lt;secret_key&gt;</code>
         <p className="mt-2">Response มี email, password, tfaSecret, otp (จาก 2FA), zone, status, goldBalance</p>
-        <p className="mt-1 font-mono text-[10px]">POST /bot/otp — body: {`{"email":"...","botName":"..."}`} → status IN_USE + OTP</p>
-        <p className="mt-1 font-mono text-[10px]">POST .../accounts/:id/use — มาร์ก IN_USE · POST .../release หรือ /report — ปล่อย + sync ยอดจริงจาก Razer</p>
-        <p className="mt-1 font-mono text-[10px]">GET /bot/otp?email=... — OTP + ยอด Gold/Silver</p>
+        <p className="mt-1 font-mono text-[10px]">GET /bot/accounts — รายการอย่างเดียว (ไม่เปลี่ยน status)</p>
+        <p className="mt-1 font-mono text-[10px]">POST /bot/pick หรือ POST .../accounts/:id/use หรือ POST /bot/otp — มาร์ก IN_USE</p>
+        <p className="mt-1 font-mono text-[10px]">POST .../release หรือ /report — ปล่อย + sync ยอดจริงจาก Razer</p>
+        <p className="mt-1 font-mono text-[10px]">GET /bot/otp?email=... — OTP + ยอด Gold/Silver (ไม่มาร์ก IN_USE)</p>
         <p className="mt-1">ปิด/เปิดบัญชีทีละรายการได้ที่คอลัมน์ Bot API ในตารางด้านล่าง</p>
       </div>
     </div>
