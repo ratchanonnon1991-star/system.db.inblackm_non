@@ -205,7 +205,27 @@ export async function syncRazerAccountById(id) {
   return { account: updated, remote };
 }
 
+/**
+ * Guard against overlapping full syncs. Every open browser tab polls this
+ * endpoint on a timer; when a run outlasts the poll interval the runs stack
+ * and each one spawns its own Chromium fleet. Concurrent callers now join the
+ * run already in flight instead of starting another.
+ */
+const inFlightSyncAll = new Map();
+
 export async function syncAllRazerAccounts({ zone } = {}) {
+  const key = zone || "*";
+  const running = inFlightSyncAll.get(key);
+  if (running) return running;
+
+  const promise = runSyncAllRazerAccounts({ zone }).finally(() => {
+    inFlightSyncAll.delete(key);
+  });
+  inFlightSyncAll.set(key, promise);
+  return promise;
+}
+
+async function runSyncAllRazerAccounts({ zone } = {}) {
   const accounts = await listRazerAccounts({ zone });
   const results = { ok: 0, failed: 0, errors: [] };
   const concurrency = Math.max(1, Number(process.env.RAZER_SYNC_CONCURRENCY || 3));

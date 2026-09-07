@@ -100,6 +100,10 @@ async function scrapeBalancesFromDom(page) {
       let gold = null;
       let silver = null;
       for (const el of cards) {
+        // innerText forces a synchronous reflow on every call and this page has
+        // thousands of nodes. textContent needs no layout, so use it to skip the
+        // elements that cannot match before paying for innerText.
+        if (!/Razer (Gold|Silver)/i.test(el.textContent || "")) continue;
         const t = (el.innerText || "").replace(/\u00a0/g, " ");
         if (!gold && /Razer Gold/i.test(t) && !/Razer Silver/i.test(t)) {
           const block = t.split(/wallet\s*limit/i)[0];
@@ -282,6 +286,13 @@ export async function syncRazerBalanceWithPlaywright({ email, password, otp, zon
 
   try {
     const context = await browser.newContext({ userAgent: USER_AGENT, locale: "en-US" });
+    // Only the balance numbers matter. Stylesheets stay because innerText and
+    // isVisible() both depend on layout; images, fonts and media do not.
+    await context.route("**/*", (route) => {
+      const type = route.request().resourceType();
+      if (type === "image" || type === "media" || type === "font") return route.abort();
+      return route.continue();
+    });
     const page = await context.newPage();
 
     page.on("response", async (resp) => {
