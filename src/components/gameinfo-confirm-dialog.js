@@ -12,7 +12,7 @@ export default function GameinfoConfirmDialog({ open, title, message, confirmLab
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3">
             <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-linear-danger-bg text-linear-danger"><AlertTriangle size={18} /></span>
-            <div><h2 id={titleId} className="text-base font-semibold tracking-[-0.1px]">{title}</h2><p className="mt-1 text-sm text-linear-ink-subtle">{message}</p></div>
+            <div className="min-w-0"><h2 id={titleId} className="text-base font-semibold tracking-[-0.1px]">{title}</h2><p className="mt-1 max-h-72 overflow-y-auto whitespace-pre-line text-sm text-linear-ink-subtle">{message}</p></div>
           </div>
           <button type="button" onClick={onClose} aria-label="ปิด" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-linear-ink-tertiary hover:bg-linear-surface-2"><X size={16} /></button>
         </div>

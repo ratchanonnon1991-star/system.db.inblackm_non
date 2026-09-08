@@ -38,6 +38,11 @@ import {
 import { apiJson } from "@/lib/api-json";
 import { evaluateFormula, extractFormulaRefs, parseFormula } from "@/lib/gamedb-formula";
 import { GAMEINFO_FIELD_NAMES, resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
+import {
+  clearGameinfoColumnReferences,
+  formatGameinfoColumnReference,
+  listGameinfoColumnReferences,
+} from "@/lib/gameinfo-column-dependencies";
 import { mergeCurrencies } from "@/lib/gameinfo-import";
 import {
   GAMEINFO_COUNTRY_NAMES,
@@ -507,14 +512,44 @@ export default function GameinfoPackEditor({
   // market on and nothing else could unmake them. A market now links to a
   // column instead, so the link can be pointed elsewhere and the column is
   // ordinary again.
-  function removeComputedColumn(key) {
+  async function removeComputedColumn(key) {
     const column = computedColumns.find((item) => item.key === key);
-    setConfirmRequest({
-      title: "ลบคอลัมน์สูตร",
-      message: `คอลัมน์ "${column?.label || key}" และสูตรเฉพาะแถวที่เกี่ยวข้องจะถูกลบเมื่อกดบันทึก`,
-      confirmLabel: "ลบคอลัมน์",
-      onConfirm: () => setComputedColumns((prev) => prev.filter((c) => c.key !== key)),
-    });
+    if (!column) return;
+    try {
+      const localReferences = listGameinfoColumnReferences(computedColumns, key, column.label, {
+        gameId: game.id,
+        gameName: game.game || `เกม ${game.id}`,
+        dataMode,
+        currencies,
+        includeShared: !column.version,
+      });
+      const storedReferences = column.version
+        ? (await apiJson(`/api/gameinfo/columns/${encodeURIComponent(key)}/dependencies`)).references || []
+        : [];
+      const references = [
+        ...storedReferences.filter((reference) =>
+          reference.dataMode === "all" ||
+          reference.scope === "market" ||
+          Number(reference.gameId) !== Number(game.id) ||
+          reference.dataMode !== dataMode
+        ),
+        ...localReferences,
+      ];
+      const lines = references.map(formatGameinfoColumnReference);
+      const summary = lines.length
+        ? `สูตรที่อ้างถึง ${lines.length} จุดจะถูกลบ แต่คอลัมน์ปลายทางยังอยู่:\n${lines.map((line) => `• ${line}`).join("\n")}`
+        : "ไม่พบสูตรที่อ้างถึงคอลัมน์นี้";
+      setConfirmRequest({
+        title: "ลบคอลัมน์สูตร",
+        message: `เมื่อกดบันทึก คอลัมน์ “${column.label}” จะถูกลบจากทุกเกม\n\n${summary}`,
+        confirmLabel: "ลบคอลัมน์และสูตรอ้างอิง",
+        onConfirm: () => setComputedColumns((prev) =>
+          clearGameinfoColumnReferences(prev, key, column.label)
+        ),
+      });
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "โหลดรายการอ้างอิงคอลัมน์ไม่สำเร็จ");
+    }
   }
   function updateComputedColumn(nextColumn, { resetOverrides }) {
     setComputedColumns((prev) =>

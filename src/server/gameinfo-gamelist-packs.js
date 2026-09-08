@@ -20,10 +20,15 @@ import { mergeCurrencies } from "@/lib/gameinfo-import";
 import {
   flattenGameinfoColumnsForLegacy,
   localizeGameinfoColumnFormulas,
+  mergeGameinfoColumn,
   mergeGameinfoColumns,
   splitGameinfoColumns,
 } from "@/lib/gameinfo-column-registry";
 import { groupGameinfoColumnFormulas } from "@/lib/gameinfo-column-formula-usage";
+import {
+  clearGameinfoColumnReferences,
+  listGameinfoColumnReferences,
+} from "@/lib/gameinfo-column-dependencies";
 import { parseFormula } from "@/lib/gamedb-formula";
 import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
 
@@ -434,10 +439,186 @@ async function writeColumnRegistry(client, registryRows, removedKeys = []) {
   // "shared definition" means. Its per-game overrides are pruned lazily by
   // the merge, which only ever walks registry rows.
   if (removedKeys.length) {
+    for (const key of removedKeys) {
+      const target = stored.get(key);
+      if (target) await clearStoredGameinfoColumnReferences(client, key, target.label, [...stored.values()]);
+    }
     await client.query(
       `DELETE FROM gamelist_pack_column_registry WHERE column_key = ANY($1::varchar[])`,
       [removedKeys]
     );
+  }
+}
+
+async function clearStoredGameinfoColumnReferences(client, targetKey, targetLabel, registryRows) {
+  for (const row of registryRows) {
+    if (row.columnKey === targetKey) continue;
+    const [cleaned] = clearGameinfoColumnReferences(
+      [mergeGameinfoColumn(row, {})],
+      targetKey,
+      targetLabel
+    );
+    if (cleaned.formula === row.data.formula) continue;
+    await client.query(
+      `UPDATE gamelist_pack_column_registry
+       SET data = $2, version = version + 1, updated_at = NOW()
+       WHERE column_key = $1`,
+      [row.columnKey, JSON.stringify({ ...row.data, formula: "", entryMode: "manual" })]
+    );
+  }
+
+  const uidRows = await client.query(
+    `SELECT game_id, data FROM gamelist_packs WHERE pack_id = $1`,
+    [COMPUTED_SENTINEL]
+  );
+  for (const row of uidRows.rows) {
+    const data = row.data || {};
+    const cleaned = clearGameinfoColumnReferences(
+      mergeGameinfoColumns(registryRows, data.columnOverrides || {}),
+      targetKey,
+      targetLabel
+    );
+    const split = splitGameinfoColumns(cleaned);
+    await client.query(
+      `UPDATE gamelist_packs SET data = $3, updated_at = NOW()
+       WHERE game_id = $1 AND pack_id = $2`,
+      [row.game_id, COMPUTED_SENTINEL, JSON.stringify({
+        ...data,
+        columns: flattenGameinfoColumnsForLegacy(cleaned),
+        columnOverrides: split.overrides,
+      })]
+    );
+  }
+
+  try {
+    const modeRows = await client.query(
+      `SELECT game_id, data FROM gameinfo_mode_data WHERE data_mode = 'idpass'`
+    );
+    for (const row of modeRows.rows) {
+      const data = row.data || {};
+      const packs = data.packs || {};
+      const cleaned = clearGameinfoColumnReferences(
+        mergeGameinfoColumns(registryRows, packs.columnOverrides || {}),
+        targetKey,
+        targetLabel
+      );
+      const split = splitGameinfoColumns(cleaned);
+      await client.query(
+        `UPDATE gameinfo_mode_data
+         SET data = $2, version = version + 1, updated_at = NOW()
+         WHERE game_id = $1 AND data_mode = 'idpass'`,
+        [row.game_id, JSON.stringify({
+          ...data,
+          packs: {
+            ...packs,
+            computedColumns: flattenGameinfoColumnsForLegacy(cleaned),
+            columnOverrides: split.overrides,
+          },
+        })]
+      );
+    }
+  } catch (error) {
+    if (error?.code !== "42P01") throw error;
+  }
+
+  try {
+    await client.query(
+      `UPDATE gameinfo_game_markets
+       SET price_column_key = '', enabled = FALSE, version = version + 1, updated_at = NOW()
+       WHERE price_column_key = $1`,
+      [targetKey]
+    );
+  } catch (error) {
+    if (error?.code !== "42P01") throw error;
+  }
+}
+
+export async function getGameinfoColumnDeletionImpact(columnKey) {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    const registryRows = await readColumnRegistry(client);
+    const target = registryRows.find((row) => row.columnKey === columnKey);
+    if (!target) return { column: null, references: [] };
+    const references = listGameinfoColumnReferences(
+      mergeGameinfoColumns(registryRows, {}),
+      columnKey,
+      target.label,
+      { gameId: 0, gameName: "ทุกเกม", dataMode: "all", includeShared: true }
+    );
+    const uid = await client.query(
+      `SELECT g.id AS game_id, g.game AS game_name, p.pack_id, p.data
+       FROM game_list g
+       JOIN gamelist_packs p ON p.game_id = g.id
+       ORDER BY g.id`
+    );
+    const uidByGame = new Map();
+    for (const row of uid.rows) {
+      const group = uidByGame.get(row.game_id) || { gameName: row.game_name, sentinel: {}, packs: [] };
+      if (row.pack_id === COMPUTED_SENTINEL) group.sentinel = row.data || {};
+      else group.packs.push(row);
+      uidByGame.set(row.game_id, group);
+    }
+    for (const [gameId, group] of uidByGame) {
+      references.push(...listGameinfoColumnReferences(
+        mergeGameinfoColumns(registryRows, group.sentinel.columnOverrides || {}),
+        columnKey,
+        target.label,
+        {
+          gameId,
+          gameName: group.gameName,
+          dataMode: "uid",
+          currencies: reconstructCurrencies(group.packs),
+        }
+      ));
+    }
+    try {
+      const modes = await client.query(
+        `SELECT m.game_id, g.game AS game_name, m.data
+         FROM gameinfo_mode_data m
+         JOIN game_list g ON g.id = m.game_id
+         WHERE m.data_mode = 'idpass'`
+      );
+      for (const row of modes.rows) {
+        const packs = row.data?.packs || {};
+        references.push(...listGameinfoColumnReferences(
+          mergeGameinfoColumns(registryRows, packs.columnOverrides || {}),
+          columnKey,
+          target.label,
+          {
+            gameId: row.game_id,
+            gameName: row.game_name,
+            dataMode: "idpass",
+            currencies: packs.currencies || [],
+          }
+        ));
+      }
+    } catch (error) {
+      if (error?.code !== "42P01") throw error;
+    }
+    try {
+      const mappings = await client.query(
+        `SELECT m.game_id, g.game AS game_name, m.data_mode, m.market
+         FROM gameinfo_game_markets m
+         JOIN game_list g ON g.id = m.game_id
+         WHERE m.price_column_key = $1`,
+        [columnKey]
+      );
+      references.push(...mappings.rows.map((row) => ({
+        gameId: row.game_id,
+        gameName: row.game_name,
+        dataMode: row.data_mode,
+        columnKey,
+        columnLabel: target.label,
+        scope: "market",
+        market: row.market,
+      })));
+    } catch (error) {
+      if (error?.code !== "42P01") throw error;
+    }
+    return { column: { key: target.columnKey, label: target.label }, references };
+  } finally {
+    client.release();
   }
 }
 

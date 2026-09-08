@@ -547,6 +547,15 @@ async function run() {
   setResponder((text) => {
     if (/FROM gamelist_pack_column_registry/.test(text)) return { rows: REGISTRY_ROWS };
     if (/SELECT version FROM gamelist_pack_revisions/.test(text)) return { rows: [{ version: 1 }] };
+    if (/SELECT game_id, data FROM gamelist_packs WHERE pack_id/.test(text)) {
+      return { rows: [{
+        game_id: 6,
+        data: {
+          columns: [],
+          columnOverrides: { col_keep: { gameFormula: "[ลบทิ้ง] + 1" } },
+        },
+      }] };
+    }
     if (/SELECT game_id, pack_id, data FROM gamelist_packs/.test(text)) {
       return { rows: [{ game_id: 5, pack_id: "__computed__", data: { schemaVersion: 3, columns: [], columnOverrides: {} } }] };
     }
@@ -567,6 +576,13 @@ async function run() {
   ok(
     "the delete never targets everything it did not mention",
     !registryDeletes.some((entry) => /NOT \(column_key/.test(entry.text))
+  );
+  const cascadedSentinel = log.find((entry) => /UPDATE gamelist_packs SET data/.test(entry.text));
+  const cascadedData = JSON.parse(cascadedSentinel?.params?.[2] || "{}");
+  check(
+    "deleting a referenced column clears only the referring game formula",
+    cascadedData.columnOverrides.col_keep,
+    { gameEntryMode: "manual" }
   );
 
   // --- combined history ------------------------------------------------
