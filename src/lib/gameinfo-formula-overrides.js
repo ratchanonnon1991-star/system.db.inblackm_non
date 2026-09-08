@@ -9,6 +9,18 @@
 // no shared rule and is typed in game by game, so a game that does have a rule
 // of its own must still be allowed to use it. Above it, only the shared
 // formula is suppressed.
+export function getEffectiveGameinfoEntryMode(column) {
+  return column?.gameEntryMode === "manual" || column?.gameEntryMode === "formula"
+    ? column.gameEntryMode
+    : column?.entryMode === "manual" ? "manual" : "formula";
+}
+
+export function getEffectiveGameinfoScopeMode(column) {
+  return column?.gameScopeMode === "category" || column?.gameScopeMode === "global"
+    ? column.gameScopeMode
+    : column?.scopeMode === "category" ? "category" : "global";
+}
+
 export function getEffectiveGameinfoFormula(column, packId, categoryId) {
   const override = column?.rowOverrides?.[String(packId)];
   if (typeof override === "string" && override.trim()) {
@@ -16,7 +28,7 @@ export function getEffectiveGameinfoFormula(column, packId, categoryId) {
   }
   const categoryFormula = column?.categoryFormulas?.[String(categoryId)];
   if (
-    column?.scopeMode === "category" &&
+    getEffectiveGameinfoScopeMode(column) === "category" &&
     typeof categoryFormula === "string" &&
     categoryFormula.trim()
   ) {
@@ -26,7 +38,7 @@ export function getEffectiveGameinfoFormula(column, packId, categoryId) {
   if (typeof gameFormula === "string" && gameFormula.trim()) {
     return { formula: gameFormula, overridden: true, source: "game" };
   }
-  if (column?.entryMode === "manual") {
+  if (getEffectiveGameinfoEntryMode(column) === "manual") {
     return { formula: "", overridden: false, source: "manual" };
   }
   return {
@@ -150,16 +162,25 @@ export function updateGameinfoComputedColumn(columns, nextColumn, { resetOverrid
     return {
       ...column,
       label: nextColumn.label,
-      formula: nextColumn.formula,
-      // Which of the two the editor wrote is its decision (see the scope
-      // control): "every game" puts the text in `formula` and clears this,
-      // "this game only" puts it here and leaves `formula` alone.
+      // A Pack-page update must never rewrite the registry fallback used by
+      // other games.
+      formula: column.formula,
+      // Pack-page edits write this game's whole-column formula here. `formula`
+      // is retained as a legacy registry fallback and is not edited there.
       gameFormula:
         typeof nextColumn.gameFormula === "string" ? nextColumn.gameFormula : column.gameFormula || "",
       type: nextColumn.type,
       symbol: nextColumn.symbol,
-      entryMode: nextColumn.entryMode === "manual" ? "manual" : undefined,
-      scopeMode: nextColumn.scopeMode === "category" ? "category" : "global",
+      entryMode: column.entryMode,
+      gameEntryMode:
+        nextColumn.gameEntryMode === "manual" || nextColumn.gameEntryMode === "formula"
+          ? nextColumn.gameEntryMode
+          : column.gameEntryMode,
+      scopeMode: column.scopeMode === "category" ? "category" : "global",
+      gameScopeMode:
+        nextColumn.gameScopeMode === "category" || nextColumn.gameScopeMode === "global"
+          ? nextColumn.gameScopeMode
+          : column.gameScopeMode,
       categoryFormulas: resetOverrides ? {} : { ...(column.categoryFormulas || {}) },
       rowOverrides: resetOverrides ? {} : { ...(column.rowOverrides || {}) },
     };

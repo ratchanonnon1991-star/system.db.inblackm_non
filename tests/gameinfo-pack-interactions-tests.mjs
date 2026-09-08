@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const columnControls = read("../src/components/gameinfo-pack-column-layout.js");
 const editor = read("../src/components/gameinfo-pack-editor.js");
+const computedEditor = read("../src/components/gameinfo-computed-editor.js");
 const view = read("../src/components/gameinfo-game-view.js");
 const rates = read("../src/components/gameinfo-rate-panel.js");
 const tagsInput = read("../src/components/gameinfo-tags-input.js");
@@ -21,7 +22,10 @@ assert.ok(columnControls.includes("orderDirty") && columnControls.includes("ข�
 assert.ok(editor.includes("<GameinfoPackColumnControls") && view.includes("<GameinfoPackColumnControls"), "editor and view share the repaired controls");
 assert.ok(editor.includes('render={<label htmlFor={csvInputId} />}') && editor.includes('className="sr-only"'), "CSV input uses an accessible button-style label");
 assert.ok(editor.includes('<FileUp data-icon="inline-start" />') && editor.includes('"เลือกไฟล์ CSV"'), "CSV picker has a clear button label and icon");
-assert.ok(editor.includes("scopeMode, entryMode") && editor.includes("scopeMode, entryMode, kind:"), "manual column mode survives creation");
+assert.ok(editor.includes("gameEntryMode, gameScopeMode") && editor.includes("gameEntryMode, gameScopeMode, kind:"), "game-scoped column modes survive creation");
+assert.ok(!computedEditor.includes("ทุกเกมที่ใช้คอลัมน์นี้"), "whole-column formula no longer offers an all-games scope");
+assert.ok(computedEditor.includes('gameFormula: written'), "whole-column formula is stored on the current game");
+assert.ok(computedEditor.includes('formula: String(initialColumn?.formula || "")'), "editing one game preserves the registry fallback");
 // A market's price is now a link to a column the game already has, so the
 // column is ordinary and deletable; it used to be created by turning a market
 // on and nothing could unmake it.

@@ -1,5 +1,6 @@
 import {
   flattenGameinfoColumnsForLegacy,
+  localizeGameinfoColumnFormulas,
   mergeGameinfoColumn,
   mergeGameinfoColumns,
   pickSharedGameinfoFormula,
@@ -63,7 +64,7 @@ const { gameFormula, enabled, categoryFormulas, rowOverrides, ...definition } = 
 check(
   "merging the halves rebuilds the column the UI reads",
   mergeGameinfoColumn({ ...split.registry, version: 4 }, {}),
-  { ...definition, version: 4, gameFormula, enabled, categoryFormulas, rowOverrides }
+  { ...definition, version: 4, gameFormula, gameEntryMode: "", gameScopeMode: "", enabled, categoryFormulas, rowOverrides }
 );
 check(
   "a registry row with no version reads as the first revision",
@@ -94,6 +95,49 @@ check(
   "the shared definition is unchanged by a game's override",
   localised.registry.data.formula,
   "[ราคา] - [ยอดที่กด + fee]"
+);
+const registryRows = [{ ...split.registry, version: 4 }];
+check(
+  "an older client changing formula is localized to its game",
+  localizeGameinfoColumnFormulas(
+    [{ ...editedColumn, formula: "[ราคา] * 0.6" }],
+    registryRows
+  )[0],
+  { ...editedColumn, formula: editedColumn.formula, gameFormula: "[ราคา] * 0.6", gameEntryMode: "", gameScopeMode: "" }
+);
+check(
+  "a current client keeps its explicit game formula",
+  localizeGameinfoColumnFormulas(
+    [{ ...editedColumn, gameFormula: "[ราคา] * 0.7" }],
+    registryRows
+  )[0].gameFormula,
+  "[ราคา] * 0.7"
+);
+const localizedManual = localizeGameinfoColumnFormulas(
+  [{ ...editedColumn, formula: "", entryMode: "manual" }],
+  registryRows
+)[0];
+check("an older client's manual mode is localized to its game", localizedManual.gameEntryMode, "manual");
+check("manual mode cannot rewrite the registry mode", localizedManual.entryMode, "formula");
+check(
+  "the localized manual game does not fall back to the shared formula",
+  getEffectiveGameinfoFormula(localizedManual, "pk_1").source,
+  "manual"
+);
+check(
+  "the localized mode is stored in this game's overrides",
+  splitGameinfoColumn(localizedManual).override,
+  { gameEntryMode: "manual" }
+);
+check(
+  "the rollback copy preserves this game's manual mode",
+  flattenGameinfoColumnsForLegacy([localizedManual])[0].entryMode,
+  "manual"
+);
+check(
+  "pre-registry storage remains unchanged",
+  localizeGameinfoColumnFormulas([{ ...editedColumn, formula: "7" }], [])[0].formula,
+  "7"
 );
 
 // A market column is registered everywhere but only belongs in the games that

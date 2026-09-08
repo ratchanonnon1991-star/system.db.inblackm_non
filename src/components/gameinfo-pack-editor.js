@@ -66,6 +66,8 @@ import {
 } from "@/lib/gameinfo-pack-columns";
 import {
   duplicateGameinfoFormulaOverrides,
+  getEffectiveGameinfoEntryMode,
+  getEffectiveGameinfoScopeMode,
   getGameinfoFormulaDisplay,
   mergeImportedGameinfoFormulaValues,
   removeGameinfoFormulaOverridesForPack,
@@ -492,12 +494,12 @@ export default function GameinfoPackEditor({
     }
   }
 
-  function addComputedColumn({ key, label, formula, gameFormula, type, symbol, scopeMode, entryMode }) {
+  function addComputedColumn({ key, label, formula, gameFormula, type, symbol, scopeMode, entryMode, gameEntryMode, gameScopeMode }) {
     setComputedColumns((prev) => [
       ...prev,
-      // A new column can be created for this game alone: the definition is
-      // shared either way, the formula is what the editor scoped.
-      { key, label, formula, gameFormula: gameFormula || "", type, symbol, scopeMode, entryMode, kind: "formula", marketKey: "", enabled: true, categoryFormulas: {}, rowOverrides: {} },
+      // Column metadata is registered centrally, while the formula created
+      // from this Pack page belongs only to the current game.
+      { key, label, formula, gameFormula: gameFormula || "", type, symbol, scopeMode, entryMode, gameEntryMode, gameScopeMode, kind: "formula", marketKey: "", enabled: true, categoryFormulas: {}, rowOverrides: {} },
     ]);
     setModalOpen(false);
   }
@@ -1543,7 +1545,7 @@ function CategoryBlock({
                           : undefined
                       }
                       onEditCategory={
-                        column.kind === "computed" && column.computed.scopeMode === "category"
+                        column.kind === "computed" && getEffectiveGameinfoScopeMode(column.computed) === "category"
                           ? () => setCategoryFormulaColumn(column.computed)
                           : undefined
                       }
@@ -1829,7 +1831,7 @@ function PackEditorColumn({
   }
   if (column.kind === "computed") {
     const formula = column.computed;
-    const manualMode = formula.entryMode === "manual";
+    const manualMode = getEffectiveGameinfoEntryMode(formula) === "manual";
     const effective = getGameinfoFormulaDisplay(formula, pack.id, categoryId);
     let value = null;
     let formulaError = false;
@@ -1971,7 +1973,7 @@ function GameinfoFormulaOverrideEditor({
   onSave,
 }) {
   const categoryMode = Boolean(category);
-  const manualMode = column.entryMode === "manual";
+  const manualMode = getEffectiveGameinfoEntryMode(column) === "manual";
   const categoryId = categoryMode ? category.id : packCategoryId;
   const samplePack = useMemo(() => pack || category?.packs?.[0] || {}, [category, pack]);
   const existing = categoryMode

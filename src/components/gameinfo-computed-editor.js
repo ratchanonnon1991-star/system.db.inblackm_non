@@ -16,6 +16,10 @@ import {
   requestGameinfoDiscard,
   useGameinfoUnsavedChanges,
 } from "@/lib/gameinfo-unsaved-changes";
+import {
+  getEffectiveGameinfoEntryMode,
+  getEffectiveGameinfoScopeMode,
+} from "@/lib/gameinfo-formula-overrides";
 import GameinfoFormulaMemory from "./gameinfo-formula-memory";
 import { apiJson } from "@/lib/api-json";
 import { Button } from "@/components/ui/button";
@@ -51,16 +55,13 @@ export default function GameinfoComputedEditor({
   extraFieldNames = EMPTY_FIELD_NAMES,
 }) {
   const editingMainFormula = Boolean(initialColumn);
-  const [entryMode, setEntryMode] = useState(initialColumn?.entryMode === "manual" ? "manual" : "formula");
+  const initialEntryMode = getEffectiveGameinfoEntryMode(initialColumn);
+  const initialScopeMode = getEffectiveGameinfoScopeMode(initialColumn);
+  const [entryMode, setEntryMode] = useState(initialEntryMode);
   const [label, setLabel] = useState(initialColumn?.label || "");
-  // One column definition is shared by every game, so a formula written here
-  // lands in one of two places: the definition (every game computes it) or
-  // this game's own gameFormula. Editing used to always write the definition,
-  // silently changing the column in all 216 games; a column that already has a
-  // formula of its own for this game opens on that formula and that scope.
-  const [formulaScope, setFormulaScope] = useState(
-    String(initialColumn?.gameFormula || "").trim() ? "game" : "all"
-  );
+  // Column metadata is shared, but formulas edited from a game's Pack page
+  // always belong to that game. The registry formula remains only as a legacy
+  // fallback for games that have not saved their own formula yet.
   const [formula, setFormula] = useState(
     String(initialColumn?.gameFormula || "").trim() || initialColumn?.formula || ""
   );
@@ -68,9 +69,7 @@ export default function GameinfoComputedEditor({
   // still writing it and stops the moment they choose one themselves.
   const [typeChoice, setTypeChoice] = useState(initialColumn?.type || "");
   const [symbol, setSymbol] = useState(initialColumn?.symbol || "");
-  const [scopeMode, setScopeMode] = useState(
-    initialColumn?.scopeMode === "category" ? "category" : "global"
-  );
+  const [scopeMode, setScopeMode] = useState(initialScopeMode);
   const [resetOverrides, setResetOverrides] = useState(false);
   const normalizedLabel = label.trim().toLocaleLowerCase("th");
   const labelExists = Boolean(normalizedLabel) && [
@@ -83,12 +82,11 @@ export default function GameinfoComputedEditor({
     String(initialColumn?.gameFormula || "").trim() || String(initialColumn?.formula || "").trim();
   const dirty =
     label.trim() !== String(initialColumn?.label || "").trim() ||
-    entryMode !== (initialColumn?.entryMode === "manual" ? "manual" : "formula") ||
-    formulaScope !== (String(initialColumn?.gameFormula || "").trim() ? "game" : "all") ||
+    entryMode !== initialEntryMode ||
     formula.trim() !== initialFormula ||
     typeChoice !== (initialColumn?.type || "") ||
     symbol !== (initialColumn?.symbol || "") ||
-    scopeMode !== (initialColumn?.scopeMode === "category" ? "category" : "global") ||
+    scopeMode !== initialScopeMode ||
     resetOverrides;
   useGameinfoUnsavedChanges(dirty);
 
@@ -156,14 +154,17 @@ export default function GameinfoComputedEditor({
     const nextColumn = {
       key: initialColumn?.key || `col_${Date.now()}`,
       label: label.trim(),
-      // "This game only" leaves the shared formula exactly as it was, so every
-      // other game keeps computing what it computed before this edit.
-      formula: formulaScope === "game" ? String(initialColumn?.formula || "") : written,
-      gameFormula: formulaScope === "game" ? written : "",
-      entryMode,
+      // Never rewrite the registry formula from a game's Pack page. A new
+      // column starts with no registry fallback; its formula is owned by this
+      // game through gameFormula.
+      formula: String(initialColumn?.formula || ""),
+      gameFormula: written,
+      entryMode: initialColumn?.entryMode || entryMode,
+      gameEntryMode: entryMode,
       type,
       symbol: type === "number" ? symbol : "",
-      scopeMode,
+      scopeMode: initialColumn?.scopeMode || scopeMode,
+      gameScopeMode: scopeMode,
     };
     if (editingMainFormula) onSave?.(nextColumn, { resetOverrides });
     else onAdd(nextColumn);
@@ -285,7 +286,7 @@ export default function GameinfoComputedEditor({
             <p className="mt-1 text-[11px] text-linear-ink-tertiary">
               {entryMode === "manual"
                 ? "เริ่มต้นเป็นค่าว่าง และแต่ละ Pack ใส่ตัวเลขหรือสูตรของตัวเองได้"
-                : "กำหนดสูตรหลักครั้งเดียว แล้วใช้กับทุก Pack"}
+                : "กำหนดสูตรครั้งเดียว แล้วใช้กับทุก Pack ของเกมนี้"}
             </p>
           </div>
 
@@ -308,31 +309,6 @@ export default function GameinfoComputedEditor({
             )}
           </div>
 
-          <div className={entryMode === "manual" ? "hidden" : undefined}>
-            <label className="mb-1 block text-xs text-linear-ink-tertiary">สูตรนี้ใช้กับเกมไหน</label>
-            <Tabs value={formulaScope} onValueChange={setFormulaScope}>
-              <TabsList className="grid h-9 w-full grid-cols-2">
-                <TabsTrigger value="all">ทุกเกมที่ใช้คอลัมน์นี้</TabsTrigger>
-                <TabsTrigger value="game">เฉพาะเกมนี้</TabsTrigger>
-              </TabsList>
-            </Tabs>
-            {formulaScope === "game" ? (
-              <p className="mt-1 text-[11px] text-linear-ink-tertiary">
-                เก็บเป็นสูตรเฉพาะเกม เกมอื่นยังคำนวณด้วยสูตรกลางเหมือนเดิม
-                {String(initialColumn?.formula || "").trim()
-                  ? ` (สูตรกลางตอนนี้: ${initialColumn.formula})`
-                  : " (คอลัมน์นี้ยังไม่มีสูตรกลาง)"}
-              </p>
-            ) : (
-              <p className="mt-1 text-[11px] text-linear-warning">
-                คอลัมน์เป็นของกลาง — บันทึกแล้วทุกเกมที่ใช้คอลัมน์นี้จะคำนวณตามสูตรนี้
-                {String(initialColumn?.gameFormula || "").trim()
-                  ? " และสูตรเฉพาะเกมของเกมนี้จะถูกยกเลิก"
-                  : ""}
-              </p>
-            )}
-          </div>
-
           {suggestions.length > 0 && entryMode === "formula" ? (
             <div>
               <p className="mb-1.5 text-xs text-linear-ink-tertiary">
@@ -348,7 +324,7 @@ export default function GameinfoComputedEditor({
                   >
                     <span className="w-full truncate font-mono text-[11px] text-linear-ink">{item.formula}</span>
                     <span className="text-[10px] text-linear-ink-tertiary">
-                      {item.shared ? "สูตรกลางของคอลัมน์" : `ใช้ใน ${item.gameCount} เกม`}
+                      {item.shared ? "สูตรเดิมของคอลัมน์" : `ใช้ใน ${item.gameCount} เกม`}
                       {item.games.length
                         ? ` · ${item.games.join(", ")}${item.moreGames ? ` +${item.moreGames}` : ""}`
                         : ""}
@@ -369,11 +345,11 @@ export default function GameinfoComputedEditor({
               onChange={(event) => setScopeMode(event.target.value)}
               className="h-9 w-full rounded border border-linear-hairline-strong bg-linear-surface-2 px-2 text-sm text-linear-ink outline-none focus:border-linear-primary"
             >
-              <option value="global">ใช้สูตรหลักทั้งคอลัมน์</option>
+              <option value="global">ใช้สูตรนี้ทั้งคอลัมน์ของเกมนี้</option>
               <option value="category">แยกสูตรตามหมวด</option>
             </select>
             <p className="mt-1 text-[11px] text-linear-ink-tertiary">
-              หมวดที่ยังไม่มีสูตรเฉพาะจะใช้สูตรหลักด้านบนเสมอ ชื่อหมวดไม่มีผลต่อสูตร
+              หมวดที่ยังไม่มีสูตรเฉพาะจะใช้สูตรของเกมนี้ด้านบนเสมอ ชื่อหมวดไม่มีผลต่อสูตร
             </p>
           </div>
 
@@ -407,7 +383,7 @@ export default function GameinfoComputedEditor({
                 className="mt-0.5 accent-linear-primary"
               />
               <span>
-                ใช้สูตรหลักนี้กับทุก pack และล้างสูตรเฉพาะหมวด/เฉพาะ pack ทั้งหมด
+                ใช้สูตรนี้กับทุก Pack ของเกมนี้ และล้างสูตรเฉพาะหมวด/เฉพาะ Pack ทั้งหมด
               </span>
             </label>
           ) : null}

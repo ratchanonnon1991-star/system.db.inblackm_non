@@ -42,9 +42,9 @@ check(
   { formula: "[ราคา]", shared: false, gameCount: 8, games: ["a", "b", "c"], moreGames: 5 }
 );
 
-// --- the editor's two scopes ---------------------------------------------
-// "This game only" must leave the shared definition exactly as it was: it is
-// the formula the other 215 games compute.
+// --- Pack-page formula scope ---------------------------------------------
+// A whole-column formula belongs to the current game and must leave the
+// registry fallback exactly as it was.
 const column = {
   key: "col_profit",
   label: "กำไร",
@@ -73,14 +73,18 @@ check(
   "[ราคา] * 0.9"
 );
 
-const shared = updateGameinfoComputedColumn([perGame], {
+const attemptedSharedEdit = updateGameinfoComputedColumn([perGame], {
   ...perGame,
   formula: "[ราคา] * 0.8",
-  gameFormula: "",
+  gameFormula: "[ราคา] * 0.8",
 })[0];
-check("switching back to every game rewrites the shared formula", shared.formula, "[ราคา] * 0.8");
-check("and drops this game's own", shared.gameFormula, "");
-check("so nothing is left in its overrides", splitGameinfoColumn(shared).override, null);
+check("a Pack-page edit cannot rewrite the registry fallback", attemptedSharedEdit.formula, "[ราคา] * 0.9");
+check("the edited formula stays on this game", attemptedSharedEdit.gameFormula, "[ราคา] * 0.8");
+check(
+  "the edited formula remains in this game's overrides",
+  splitGameinfoColumn(attemptedSharedEdit).override,
+  { gameFormula: "[ราคา] * 0.8" }
+);
 
 // --- the save path -------------------------------------------------------
 const [saved] = sanitizeComputedColumns([

@@ -426,18 +426,16 @@ check(
   { pk_copy: "[ราคา] * 0.5" }
 );
 
-const updatedMainFormula = updateGameinfoComputedColumn(
+const updatedGameFormula = updateGameinfoComputedColumn(
   [formulaColumn],
-  { key: "profit", label: "กำไรใหม่", formula: "[ราคา] * 2", type: "number", symbol: "฿" }
+  { key: "profit", label: "กำไรใหม่", formula: "[ราคา] * 2", gameFormula: "[ราคา] * 2", type: "number", symbol: "฿" }
 );
-check("editing a main formula keeps explicit row overrides by default", updatedMainFormula[0], {
+check("editing a whole-column formula keeps explicit row overrides by default", updatedGameFormula[0], {
   key: "profit",
-  formula: "[ราคา] * 2",
+  formula: "[ราคา] - [ยอดที่กด + fee]",
   rowOverrides: { pk_special: "[ราคา] * 0.5" },
   label: "กำไรใหม่",
-  // Empty because this edit was scoped to every game: the editor writes the
-  // text to one of `formula` and `gameFormula` and clears the other.
-  gameFormula: "",
+  gameFormula: "[ราคา] * 2",
   type: "number",
   symbol: "฿",
   scopeMode: "global",
@@ -449,11 +447,11 @@ check(
     [formulaColumn],
     { key: "profit", label: "กำไร", formula: formulaColumn.formula, gameFormula: "[ราคา] * 4", type: "number", symbol: "฿" }
   )[0],
-  { ...updatedMainFormula[0], label: "กำไร", formula: formulaColumn.formula, gameFormula: "[ราคา] * 4" }
+  { ...updatedGameFormula[0], label: "กำไร", formula: formulaColumn.formula, gameFormula: "[ราคา] * 4" }
 );
 check(
   "editing main formula can deliberately apply it to every pack by clearing overrides",
-  updateGameinfoComputedColumn(updatedMainFormula, { ...updatedMainFormula[0], formula: "[ราคา] * 3" }, { resetOverrides: true })[0].rowOverrides,
+  updateGameinfoComputedColumn(updatedGameFormula, { ...updatedGameFormula[0], gameFormula: "[ราคา] * 3" }, { resetOverrides: true })[0].rowOverrides,
   {}
 );
 

@@ -12,6 +12,7 @@ import {
 } from "@/server/gameinfo-gamelist-packs";
 import {
   flattenGameinfoColumnsForLegacy,
+  localizeGameinfoColumnFormulas,
   splitGameinfoColumns,
 } from "@/lib/gameinfo-column-registry";
 
@@ -189,6 +190,10 @@ export async function saveGameinfoModeData(gameId, mode, nextData, transactionCl
     // makes, including keeping `computedColumns` as the rollback copy.
     const registry = await listGamelistPackColumnRegistry(client);
     if (registry.length) {
+      data.packs.computedColumns = localizeGameinfoColumnFormulas(
+        data.packs.computedColumns,
+        registry
+      );
       const split = splitGameinfoColumns(data.packs.computedColumns);
       // What this save dropped: columns this game was showing before and is
       // not saving now. Diffing against the whole registry instead would let
@@ -254,15 +259,51 @@ export async function updateGameinfoModeData(
       conflict.status = 409;
       throw conflict;
     }
-    const current = sanitizeData(currentResult.rows[0]?.data);
-    const next = sanitizeData(await updater(structuredClone(current)));
+    const storedCurrent = sanitizeData(currentResult.rows[0]?.data);
+    const registry = await listGamelistPackColumnRegistry(client);
+    const current = registry.length
+      ? {
+          ...storedCurrent,
+          packs: {
+            ...storedCurrent.packs,
+            computedColumns: resolveComputedColumns(registry, {
+              columns: storedCurrent.packs.computedColumns,
+              columnOverrides: storedCurrent.packs.columnOverrides,
+            }),
+          },
+        }
+      : storedCurrent;
+    let next = sanitizeData(await updater(structuredClone(current)));
+    if (registry.length) {
+      next = {
+        ...next,
+        packs: {
+          ...next.packs,
+          computedColumns: localizeGameinfoColumnFormulas(
+            next.packs.computedColumns,
+            registry
+          ),
+        },
+      };
+    }
+    const storedNext = structuredClone(next);
+    if (registry.length) {
+      const split = splitGameinfoColumns(next.packs.computedColumns);
+      const nextKeys = new Set(next.packs.computedColumns.map((column) => column.key));
+      const removedKeys = current.packs.computedColumns
+        .map((column) => column.key)
+        .filter((key) => !nextKeys.has(key));
+      await writeGameinfoColumnRegistry(client, split.registry, removedKeys);
+      storedNext.packs.columnOverrides = split.overrides;
+      storedNext.packs.computedColumns = flattenGameinfoColumnsForLegacy(next.packs.computedColumns);
+    }
     const nextVersion = currentVersion + 1;
     await client.query(
       `INSERT INTO gameinfo_mode_data (game_id, data_mode, data, version, updated_at)
        VALUES ($1, 'idpass', $2, $3, NOW())
        ON CONFLICT (game_id, data_mode) DO UPDATE
        SET data = EXCLUDED.data, version = EXCLUDED.version, updated_at = NOW()`,
-      [gameId, JSON.stringify(next), nextVersion]
+      [gameId, JSON.stringify(storedNext), nextVersion]
     );
     if (area) {
       const slice = (data) => {

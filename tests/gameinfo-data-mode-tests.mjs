@@ -167,6 +167,50 @@ ok(
   "a save that changed no definition writes none of them back",
   !log.some((entry) => /INSERT INTO gamelist_pack_column_registry/.test(entry.text))
 );
+
+reset();
+setResponder((text) => {
+  if (/FROM gamelist_pack_column_registry/.test(text)) return { rows: REGISTRY };
+  if (/SELECT id FROM game_list/.test(text)) return { rows: [{ id: 7 }] };
+  if (/SELECT data, version FROM gameinfo_mode_data/.test(text)) {
+    return {
+      rows: [{
+        version: 2,
+        data: {
+          packs: {
+            currencies: [],
+            computedColumns: [],
+            columnOverrides: { col_shared: { gameFormula: "[ราคา] * 0.5" } },
+          },
+        },
+      }],
+    };
+  }
+  return null;
+});
+const updatedFormula = await updateGameinfoModeData(7, "idpass", (current) => ({
+  ...current,
+  packs: {
+    ...current.packs,
+    computedColumns: current.packs.computedColumns.map((column) =>
+      column.key === "col_shared" ? { ...column, gameFormula: "[ราคา] * 0.6" } : column
+    ),
+  },
+}));
+const updateWithFormula = log.find(
+  (entry) => /INSERT INTO gameinfo_mode_data/.test(entry.text) && entry.params?.length === 3
+);
+const updatedStoredPacks = JSON.parse(updateWithFormula?.params?.[1] || "{}").packs;
+check(
+  "transactional IDPASS update stores a game formula in columnOverrides",
+  updatedStoredPacks.columnOverrides.col_shared,
+  { gameFormula: "[ราคา] * 0.6" }
+);
+check(
+  "transactional IDPASS update returns the merged game formula",
+  updatedFormula.packs.computedColumns.find((column) => column.key === "col_shared")?.gameFormula,
+  "[ราคา] * 0.6"
+);
 reset();
 setResponder((text) => {
   if (/FROM gamelist_pack_column_registry/.test(text)) return { rows: REGISTRY };
@@ -180,13 +224,21 @@ await saveGameinfoModeData(7, "idpass", {
   packs: {
     ...idpassLoad.packs,
     computedColumns: idpassLoad.packs.computedColumns.map((column) => (
-      column.key === "col_shared" ? { ...column, formula: "[ราคา] * 2" } : column
+      column.key === "col_shared" ? { ...column, formula: "[ราคา] * 2", gameFormula: "" } : column
     )),
   },
 });
 ok(
-  "but an edited definition is written",
-  log.some((entry) => /INSERT INTO gamelist_pack_column_registry/.test(entry.text))
+  "an older client cannot rewrite the shared formula",
+  !log.some((entry) => /INSERT INTO gamelist_pack_column_registry/.test(entry.text))
+);
+const localizedLegacySave = log.find(
+  (entry) => /INSERT INTO gameinfo_mode_data/.test(entry.text) && entry.params?.length === 2
+);
+check(
+  "an older client's formula edit is stored on this game",
+  JSON.parse(localizedLegacySave?.params?.[1] || "{}").packs.columnOverrides.col_shared.gameFormula,
+  "[ราคา] * 2"
 );
 // The version the client was shown has to match what is stored, or two people
 // editing the same column from two different games overwrite each other with
@@ -199,7 +251,7 @@ try {
       ...idpassLoad.packs,
       computedColumns: idpassLoad.packs.computedColumns.map((column) => (
         column.key === "col_shared"
-          ? { ...column, formula: "[ราคา] * 3", version: 99 }
+          ? { ...column, label: "ต้นทุนใหม่", version: 99 }
           : column
       )),
     },

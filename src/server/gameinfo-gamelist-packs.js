@@ -19,6 +19,7 @@ import {
 import { mergeCurrencies } from "@/lib/gameinfo-import";
 import {
   flattenGameinfoColumnsForLegacy,
+  localizeGameinfoColumnFormulas,
   mergeGameinfoColumns,
   splitGameinfoColumns,
 } from "@/lib/gameinfo-column-registry";
@@ -506,10 +507,12 @@ export async function saveGamelistPacks(
     const previousComputed = previousResult.rows.find((row) => row.pack_id === COMPUTED_SENTINEL);
     const previousRows = previousResult.rows.filter((row) => row.pack_id !== COMPUTED_SENTINEL);
     const nextRows = flattenCurrencies(gameId, Array.isArray(currencies) ? currencies : []);
-    const nextComputed = Array.isArray(computedColumns) ? computedColumns : [];
+    const submittedComputed = Array.isArray(computedColumns) ? computedColumns : [];
     // The registry stays dormant until the backfill fills it, so deploying
     // this code cannot change how an existing game saves.
-    const registryActive = (await readColumnRegistry(client)).length > 0;
+    const registryRows = await readColumnRegistry(client);
+    const registryActive = registryRows.length > 0;
+    const nextComputed = localizeGameinfoColumnFormulas(submittedComputed, registryRows);
     const legacyComputed = flattenGameinfoColumnsForLegacy(nextComputed);
     const previousCostProfiles = sanitizeGameinfoCostProfiles(previousComputed?.data?.costProfiles);
     const submittedCostProfiles = sanitizeGameinfoCostProfiles(costProfiles);
