@@ -115,6 +115,22 @@ check(
   ]),
   []
 );
+check(
+  "a blank registry formula does not block a valid game formula",
+  validateGameinfoComputedDependencies([
+    {
+      key: "russia",
+      label: "ราคาRussia",
+      formula: "",
+      gameFormula: "[ราคา] * 2",
+      entryMode: "formula",
+      gameEntryMode: "formula",
+      categoryFormulas: {},
+      rowOverrides: {},
+    },
+  ]),
+  []
+);
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);

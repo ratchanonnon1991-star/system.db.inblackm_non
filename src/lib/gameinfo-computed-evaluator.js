@@ -1,9 +1,6 @@
 import { evaluateFormula, extractFormulaRefs, parseFormula } from "@/lib/gamedb-formula";
 import { GAMEINFO_FIELD_NAMES, resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
-import {
-  getEffectiveGameinfoEntryMode,
-  getGameinfoFormulaDisplay,
-} from "@/lib/gameinfo-formula-overrides";
+import { getGameinfoFormulaDisplay } from "@/lib/gameinfo-formula-overrides";
 import { roundGameinfoNumber } from "@/lib/gameinfo-pack-validation";
 import { gameinfoColumnsWithData } from "@/lib/gameinfo-pack-columns";
 
@@ -92,7 +89,10 @@ export function validateGameinfoComputedDependencies(
   }
 
   function validateFormula(column, formula, sourceLabel) {
-    if (getEffectiveGameinfoEntryMode(column) === "manual" && !String(formula || "").trim()) return;
+    // A shared registry formula may intentionally be blank when this game
+    // supplies `gameFormula` or per-Pack overrides. Blank means "no rule at
+    // this scope", not a parser input.
+    if (!String(formula || "").trim()) return;
     try {
       const ast = parseFormula(formula);
       for (const ref of extractFormulaRefs(ast)) {
