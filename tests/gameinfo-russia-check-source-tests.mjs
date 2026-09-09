@@ -18,6 +18,7 @@ assert.equal(getRussiaCheckSourceAvailability({ ...infold, authExpiresAt: now.to
 const sky = { provider: "xsolla", sourceEnabled: true, authRequired: false };
 assert.equal(getRussiaCheckSourceAvailability(sky, now).refreshBlockedReason, "");
 assert.equal(getRussiaCheckSourceAvailability(sky, now).authState, "not_required");
+assert.equal(getRussiaCheckSourceAvailability({ provider: "codashop", sourceEnabled: true, authRequired: false }, now).catalogSupported, true);
 assert.match(getRussiaCheckSourceAvailability({ ...sky, sourceEnabled: false }, now).refreshBlockedReason, /ยังไม่เปิด/);
 assert.match(getRussiaCheckSourceAvailability({ provider: "demo", isDemo: true }, now).refreshBlockedReason, /อ่านอย่างเดียว/);
 assert.equal(getRussiaCheckSourceAvailability({ provider: "unknown", sourceEnabled: true }, now).catalogSupported, false);

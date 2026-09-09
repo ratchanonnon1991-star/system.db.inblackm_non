@@ -6,6 +6,7 @@ import { getRussiaCheckSourceAvailability } from "@/lib/gameinfo-russia-check-so
 import { getRussiaCheckDailyLog } from "@/server/gameinfo-russia-check-daily";
 import { fetchInfoldCatalog } from "@/server/gameinfo-infold-catalog";
 import { fetchMidasbuyCatalog } from "@/server/gameinfo-midasbuy-catalog";
+import { fetchCodashopCatalog } from "@/server/gameinfo-codashop-catalog";
 import { fetchGryphlineCatalog } from "@/server/gameinfo-gryphline-catalog";
 import { saveGryphlineSession } from "@/server/gameinfo-gryphline-session";
 import { saveInfoldSession } from "@/server/gameinfo-infold-session";
@@ -133,13 +134,17 @@ async function ensureSchema(connection) {
           game_id=EXCLUDED.game_id,expected_game_name=EXCLUDED.expected_game_name,provider=EXCLUDED.provider,
           source_url=EXCLUDED.source_url,store_url=EXCLUDED.store_url,project_id=EXCLUDED.project_id,country=EXCLUDED.country,
           locale=EXCLUDED.locale,auth_required=true,updated_at=now();
+        UPDATE gameinfo_russia_check_sources SET enabled=false,updated_at=now()
+        WHERE source_key='nikke-midasbuy-th';
         INSERT INTO gameinfo_russia_check_sources
           (source_key,game_id,expected_game_name,provider,source_url,store_url,project_id,country,locale,auth_required,enabled)
-        VALUES ('nikke-midasbuy-th',22,'GODDESS OF VICTORY: NIKKE UID','midasbuy','https://www.midasbuy.com/frontend/api/midasbuy/v1/shelves/query','https://www.midasbuy.com/midasbuy/th/shop/nikkegl#/pages/shop/items','1460000285','TH','en',false,true)
+        VALUES
+          ('stumble-guys-codashop-ph',21,'STUMBLE GUYS','codashop','https://www.codashop.com/en-ph/stumble-guys','https://www.codashop.com/en-ph/stumble-guys','stumble-guys','PH','en-ph',false,true),
+          ('shining-nikki-codashop-mm',6,'SHINING NIKKI','codashop','https://www.codashop.com/my-mm/shining-nikki','https://www.codashop.com/my-mm/shining-nikki','shining-nikki','MM','my-mm',false,true)
         ON CONFLICT (source_key) DO UPDATE SET
           game_id=EXCLUDED.game_id,expected_game_name=EXCLUDED.expected_game_name,provider=EXCLUDED.provider,
           source_url=EXCLUDED.source_url,store_url=EXCLUDED.store_url,project_id=EXCLUDED.project_id,country=EXCLUDED.country,
-          locale=EXCLUDED.locale,auth_required=false,updated_at=now();
+          locale=EXCLUDED.locale,auth_required=false,enabled=true,updated_at=now();
         INSERT INTO gameinfo_russia_check_sources
           (source_key,game_id,expected_game_name,provider,source_url,store_url,project_id,country,locale,auth_required,enabled)
         VALUES ('endfield-gryphline',217,'ARKNIGHTS: ENDFIELD','gryphline','https://as.gryphline.com/user/pay/v3/query_web_product','https://topup.gryphline.com/endfield','d9f6dbb6bbd6bb33','ZZ','en-us',true,false)
@@ -430,6 +435,7 @@ async function processSource(pool, runId, source) {
       catch { throw Object.assign(httpError("อ่าน Session ไม่สำเร็จ กรุณาเชื่อมบัญชีใหม่", 409), { authInvalid: true }); }
       catalog = await (source.provider === "infold" ? fetchInfoldCatalog(session, { source }) : fetchGryphlineCatalog(session));
     } else if (source.provider === "midasbuy") catalog = await fetchMidasbuyCatalog(source);
+    else if (source.provider === "codashop") catalog = await fetchCodashopCatalog(source);
     else catalog = await fetchRussiaCheckCatalog(source);
     const hash = createHash("sha256").update(JSON.stringify(catalog)).digest("hex");
     const client = await pool.connect();
@@ -541,7 +547,7 @@ export async function startRussiaCheck(actor, triggerType = "manual", gameId = n
     `SELECT s.id FROM gameinfo_russia_check_sources s
      LEFT JOIN gameinfo_russia_check_source_credentials c ON c.source_id=s.id
      WHERE s.enabled AND ($1::int IS NULL OR s.game_id=$1) ${retryClause}
-       AND ((s.provider IN ('xsolla','midasbuy') AND NOT s.auth_required) OR
+       AND ((s.provider IN ('xsolla','midasbuy','codashop') AND NOT s.auth_required) OR
          (s.provider='infold' AND c.credential_kind='infold' AND c.verified_at IS NOT NULL AND c.invalidated_at IS NULL AND (c.expires_at IS NULL OR c.expires_at>NOW())) OR
          (s.provider='gryphline' AND c.credential_kind='gryphline' AND c.verified_at IS NOT NULL AND c.invalidated_at IS NULL AND (c.expires_at IS NULL OR c.expires_at>NOW()))) ORDER BY s.id`,
     retryId == null ? [targetGameId] : [targetGameId, retryId]
@@ -593,8 +599,44 @@ export async function getRussiaCheckRun(runId) {
   if (!run.rows[0]) throw httpError("ไม่พบ Russia Check run", 404);
   return mapRun(run.rows[0], sources.rows.map((row) => ({
     sourceId: Number(row.source_id), gameId: Number(row.game_id), gameName: row.game_name,
-    status: row.status, itemCount: Number(row.item_count), error: row.error,
+    status: row.status, itemCount: Number(row.item_count), addedCount: Number(row.added_count || 0),
+    removedCount: Number(row.removed_count || 0), restoredCount: Number(row.restored_count || 0), error: row.error,
   })));
+}
+
+export async function checkRussiaCheckSessions(sourceId = null) {
+  const normalizedSourceId = optionalPositiveInt(sourceId, "Source ID");
+  const pool = await getPool();
+  const sources = await pool.query(
+    `SELECT s.*,c.session_enc,c.credential_kind,c.expires_at,c.verified_at,c.invalidated_at
+     FROM gameinfo_russia_check_sources s
+     LEFT JOIN gameinfo_russia_check_source_credentials c ON c.source_id=s.id
+     WHERE s.auth_required AND ($1::bigint IS NULL OR s.id=$1) ORDER BY s.expected_game_name`,
+    [normalizedSourceId]
+  );
+  if (normalizedSourceId && !sources.rowCount) throw httpError("ไม่พบเกมที่ต้องใช้ Login", 404);
+  const results = [];
+  for (const source of sources.rows) {
+    if (!source.session_enc) { results.push({ sourceId: Number(source.id), status: "missing" }); continue; }
+    if (source.expires_at && new Date(source.expires_at) <= new Date()) { results.push({ sourceId: Number(source.id), status: "expired" }); continue; }
+    if (source.invalidated_at) { results.push({ sourceId: Number(source.id), status: "invalid" }); continue; }
+    try {
+      let session;
+      try { session = JSON.parse(decryptRussiaCheckSession(source.session_enc)); }
+      catch { throw Object.assign(httpError("อ่าน Session ไม่สำเร็จ", 409), { authInvalid: true }); }
+      if (source.provider === "infold") await fetchInfoldCatalog(session, { source });
+      else if (source.provider === "gryphline") await fetchGryphlineCatalog(session);
+      else throw httpError("Provider นี้ไม่รองรับการตรวจ Session", 409);
+      await pool.query(`UPDATE gameinfo_russia_check_source_credentials SET verified_at=NOW(),invalidated_at=NULL,updated_at=NOW() WHERE source_id=$1 AND session_enc=$2`, [source.id, source.session_enc]);
+      results.push({ sourceId: Number(source.id), status: "verified" });
+    } catch (error) {
+      if (error.authInvalid) {
+        await pool.query(`UPDATE gameinfo_russia_check_source_credentials SET invalidated_at=NOW(),updated_at=NOW() WHERE source_id=$1 AND session_enc=$2`, [source.id, source.session_enc]);
+        results.push({ sourceId: Number(source.id), status: "invalid" });
+      } else results.push({ sourceId: Number(source.id), status: "error", error: String(error?.message || error).slice(0, 500) });
+    }
+  }
+  return { results };
 }
 
 export async function getRussiaCheckGameLog() {
@@ -612,9 +654,16 @@ export async function getRussiaCheckDashboard({ gameId = null, status = "" } = {
     pool.query(
       `SELECT DISTINCT s.id AS source_id,s.source_key,s.game_id,s.expected_game_name AS game_name,s.expected_game_name,
               s.provider,s.store_url,s.enabled,s.auth_required,c.source_id IS NOT NULL AS auth_configured,c.expires_at AS auth_expires_at,
-              c.credential_kind,c.verified_at,c.invalidated_at
+              c.credential_kind,c.verified_at,c.invalidated_at,
+              failed.trigger_type AS last_failed_trigger,failed.finished_at AS last_failed_at
        FROM gameinfo_russia_check_sources s
        LEFT JOIN gameinfo_russia_check_source_credentials c ON c.source_id=s.id
+       LEFT JOIN LATERAL (
+         SELECT r.trigger_type,rs.finished_at
+         FROM gameinfo_russia_check_run_sources rs JOIN gameinfo_russia_check_runs r ON r.id=rs.run_id
+         WHERE rs.source_id=s.id AND rs.status='failed'
+         ORDER BY rs.finished_at DESC NULLS LAST,rs.run_id DESC LIMIT 1
+       ) failed ON true
        WHERE s.enabled OR s.provider='demo' OR s.auth_required ORDER BY s.expected_game_name,s.game_id`
     ),
     pool.query(
@@ -663,6 +712,7 @@ export async function getRussiaCheckDashboard({ gameId = null, status = "" } = {
         storeUrl: row.store_url || null, sourceEnabled: row.enabled, authRequired: row.auth_required,
         authConfigured: row.auth_configured, authExpiresAt: row.auth_expires_at,
         credentialKind: row.credential_kind, authVerifiedAt: row.verified_at, authInvalidated: Boolean(row.invalidated_at),
+        authInvalidatedAt: row.invalidated_at, lastFailedTrigger: row.last_failed_trigger, lastFailedAt: row.last_failed_at,
       };
       return { ...source, ...getRussiaCheckSourceAvailability(source) };
     }),

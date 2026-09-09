@@ -9,7 +9,7 @@ const fixture = JSON.parse(readFileSync(new URL("./fixtures/midasbuy-nikke-th.js
 const source = { id: 4, source_key: "nikke-midasbuy-th", provider: "midasbuy", game_id: 22, expected_game_name: "GODDESS OF VICTORY: NIKKE UID", project_id: "1460000285", country: "TH", locale: "en" };
 const originalFetch = globalThis.fetch;
 await assert.rejects(getRussiaCheckRun(999999), { status: 404 });
-assert.ok(log.some(({ text }) => text.includes("VALUES ('nikke-midasbuy-th',22,'GODDESS OF VICTORY: NIKKE UID'") && text.includes("'1460000285','TH','en',false,true)")));
+assert.ok(log.some(({ text }) => text.includes("WHERE source_key='nikke-midasbuy-th'") && text.includes("enabled=false")));
 let runId = 1000;
 async function run({ payload = fixture, existing = [], mode = "recovery", gameId = 22, writeFailure = false, failedSecondPage = false } = {}) {
   reset(); runId++;
@@ -18,7 +18,7 @@ async function run({ payload = fixture, existing = [], mode = "recovery", gameId
   setResponder((sql, params) => {
     if (sql.startsWith("SELECT id FROM gameinfo_russia_check_runs WHERE status='queued'")) return { rows: [{ id: runId }] };
     if (sql.startsWith("SELECT s.id FROM gameinfo_russia_check_sources")) {
-      assert.ok(sql.includes("s.provider IN ('xsolla','midasbuy') AND NOT s.auth_required"));
+      assert.ok(sql.includes("s.provider IN ('xsolla','midasbuy','codashop') AND NOT s.auth_required"));
       assert.ok(sql.includes("($1::int IS NULL OR s.game_id=$1)"));
       assert.equal(params[0], gameId);
       return { rows: [{ id: source.id }] };

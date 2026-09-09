@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, ArrowLeft, Check, Clock3, Copy, Download, ExternalLink, KeyRound, PackageCheck, PackageMinus, PackagePlus, RefreshCw, RotateCcw, ShieldCheck } from "lucide-react";
+import { AlertCircle, ArrowLeft, Check, Clock3, Copy, Download, ExternalLink, KeyRound, LogIn, PackageCheck, PackageMinus, PackagePlus, RefreshCw, RotateCcw, ShieldCheck } from "lucide-react";
 import GameinfoRussiaCheckBrowserConnect from "@/components/gameinfo-russia-check-browser-connect";
 import { apiJson } from "@/lib/api-json";
 import { russiaCheckDisplayStatus } from "@/lib/gameinfo-russia-check-recency";
@@ -80,6 +80,7 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
   const [manualLogin, setManualLogin] = useState(false);
   const [loginRequest, setLoginRequest] = useState(null);
   const [refreshProgress, setRefreshProgress] = useState("");
+  const [refreshResult, setRefreshResult] = useState(null);
   const loginCompletion = useRef(null);
   const refreshActive = useRef(false);
   const loadRequest = useRef(0);
@@ -190,7 +191,7 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
     setRunning(true);
     setError("");
     try {
-      await refreshWithLogin({
+      const run = await refreshWithLogin({
         gameId: game === "all" ? null : Number(game), canManage,
         loadDashboard: () => load(game, logStatus),
         connect: (source) => new Promise((resolve, reject) => { loginCompletion.current = { resolve, reject }; setLoginRequest(source); }),
@@ -199,6 +200,13 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
         }),
         readRun: (id) => apiJson(`/api/gameinfo/russia-check/runs/${id}`, { fallbackError: "โหลดสถานะ Russia Check ไม่สำเร็จ" }),
         onProgress: setRefreshProgress,
+      });
+      setRefreshResult({
+        partial: run.status === "partial",
+        games: (run.sources || []).map((source) => ({
+          gameName: source.gameName,
+          count: (source.addedCount || 0) + (source.removedCount || 0) + (source.restoredCount || 0),
+        })).filter((item) => item.count > 0),
       });
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Russia Check ไม่สำเร็จ");
@@ -320,6 +328,7 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
             <p className="text-sm text-muted-foreground">ติดตามแพ็กเข้า–ออก และความเปลี่ยนแปลงของแต่ละเกม</p>
           </div>
           <nav aria-label="หน้าอื่นของ Russia Check" className="flex flex-wrap items-center gap-2">
+            <Link href={`/gameinfo/${lang}/russia-check/logins`} className={buttonVariants({ variant: "outline" })}><LogIn data-icon="inline-start" />สถานะ Login</Link>
             <Link href={`/gameinfo/${lang}/russia-check/game-logs`} className={buttonVariants({ variant: "outline" })}><Clock3 data-icon="inline-start" />Log รายเกม</Link>
             {canManage ? <Link href={`/gameinfo/${lang}/russia-check/extension`} className={buttonVariants({ variant: "ghost" })}><Download data-icon="inline-start" />โหลดส่วนขยาย</Link> : null}
           </nav>
@@ -412,6 +421,19 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
           <DialogHeader><DialogTitle>ต้อง Login · {loginRequest?.gameName}</DialogTitle><DialogDescription>Session ขาดหรือหมดอายุ เชื่อมบัญชีนี้ก่อน แล้วระบบจะตรวจเกมถัดไปและรีข้อมูลต่อโดยอัตโนมัติ</DialogDescription></DialogHeader>
           {loginRequest ? <GameinfoRussiaCheckBrowserConnect key={loginRequest.sourceId} sourceId={loginRequest.sourceId} provider={loginRequest.connectorProvider || loginRequest.provider} lang={lang} autoStart onBusyChange={setConnectingBrowser} onConnected={() => finishRefreshLogin()} onCancelled={() => finishRefreshLogin(true)} /> : null}
           <DialogFooter><Button variant="outline" onClick={() => finishRefreshLogin(true)} disabled={connectingBrowser}>ยกเลิกการรี</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(refreshResult)} onOpenChange={(open) => { if (!open) setRefreshResult(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Check className="size-5 text-green-600" />รีข้อมูลเสร็จแล้ว</DialogTitle>
+            <DialogDescription>{refreshResult?.partial ? "ตรวจสำเร็จบางส่วน" : refreshResult?.games.length ? "เกมที่มีการเปลี่ยนแปลง" : "ไม่มีเกมที่มีการเปลี่ยนแปลง"}</DialogDescription>
+          </DialogHeader>
+          {refreshResult?.games.length ? <ul className="divide-y rounded-md border">
+            {refreshResult.games.map((item) => <li key={item.gameName} className="flex items-center justify-between gap-4 px-4 py-3"><span className="font-medium">{item.gameName}</span><Badge variant="secondary">{item.count} รายการ</Badge></li>)}
+          </ul> : null}
+          <DialogFooter><Button onClick={() => setRefreshResult(null)}>ปิด</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

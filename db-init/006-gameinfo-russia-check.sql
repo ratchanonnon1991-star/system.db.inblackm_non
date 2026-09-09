@@ -144,21 +144,8 @@ ON CONFLICT (source_key) DO UPDATE SET
   auth_required = true,
   updated_at = now();
 
-INSERT INTO gameinfo_russia_check_sources
-  (source_key, game_id, expected_game_name, provider, source_url, store_url, project_id, country, locale, auth_required, enabled)
-VALUES
-  ('nikke-midasbuy-th', 22, 'GODDESS OF VICTORY: NIKKE UID', 'midasbuy', 'https://www.midasbuy.com/frontend/api/midasbuy/v1/shelves/query', 'https://www.midasbuy.com/midasbuy/th/shop/nikkegl#/pages/shop/items', '1460000285', 'TH', 'en', false, true)
-ON CONFLICT (source_key) DO UPDATE SET
-  game_id = EXCLUDED.game_id,
-  expected_game_name = EXCLUDED.expected_game_name,
-  provider = EXCLUDED.provider,
-  source_url = EXCLUDED.source_url,
-  store_url = EXCLUDED.store_url,
-  project_id = EXCLUDED.project_id,
-  country = EXCLUDED.country,
-  locale = EXCLUDED.locale,
-  auth_required = false,
-  updated_at = now();
+UPDATE gameinfo_russia_check_sources SET enabled=false, updated_at=now()
+WHERE source_key='nikke-midasbuy-th';
 
 INSERT INTO gameinfo_russia_check_sources
   (source_key, game_id, expected_game_name, provider, source_url, store_url, project_id, country, locale, auth_required, enabled)
@@ -168,6 +155,16 @@ ON CONFLICT (source_key) DO UPDATE SET
   game_id=EXCLUDED.game_id, expected_game_name=EXCLUDED.expected_game_name, provider=EXCLUDED.provider,
   source_url=EXCLUDED.source_url, store_url=EXCLUDED.store_url, project_id=EXCLUDED.project_id,
   country=EXCLUDED.country, locale=EXCLUDED.locale, auth_required=true, updated_at=now();
+
+INSERT INTO gameinfo_russia_check_sources
+  (source_key, game_id, expected_game_name, provider, source_url, store_url, project_id, country, locale, auth_required, enabled)
+VALUES
+  ('stumble-guys-codashop-ph', 21, 'STUMBLE GUYS', 'codashop', 'https://www.codashop.com/en-ph/stumble-guys', 'https://www.codashop.com/en-ph/stumble-guys', 'stumble-guys', 'PH', 'en-ph', false, true),
+  ('shining-nikki-codashop-mm', 6, 'SHINING NIKKI', 'codashop', 'https://www.codashop.com/my-mm/shining-nikki', 'https://www.codashop.com/my-mm/shining-nikki', 'shining-nikki', 'MM', 'my-mm', false, true)
+ON CONFLICT (source_key) DO UPDATE SET
+  game_id=EXCLUDED.game_id, expected_game_name=EXCLUDED.expected_game_name, provider=EXCLUDED.provider,
+  source_url=EXCLUDED.source_url, store_url=EXCLUDED.store_url, project_id=EXCLUDED.project_id,
+  country=EXCLUDED.country, locale=EXCLUDED.locale, auth_required=false, enabled=true, updated_at=now();
 
 INSERT INTO gameinfo_russia_check_sources
   (source_key, game_id, expected_game_name, provider, source_url, project_id, country, locale, enabled)

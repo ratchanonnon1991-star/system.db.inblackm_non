@@ -9,6 +9,7 @@ import {
 import { fetchRussiaCheckCatalog } from "@/server/gameinfo-russia-check.js";
 import { normalizeRussiaCheckSessionCookie } from "@/server/gameinfo-russia-check.js";
 import { decryptRussiaCheckSession, encryptRussiaCheckSession } from "@/server/crypto.js";
+import { parseCodashopPage } from "@/server/gameinfo-codashop-catalog.js";
 
 assert.equal(normalizeRussiaCheckName("  Pack\u00a0  Name  "), "Pack Name");
 assert.deepEqual(normalizeRussiaCheckCatalog([
@@ -91,6 +92,10 @@ await assert.rejects(fetchRussiaCheckCatalog({ sourceUrl: "https://store.xsolla.
 }), /404/);
 assert.equal(clientErrors, 1);
 
+const codashopHtml = `<html><body><div class="sku-card" capture-custom-sku-id="12" capture-custom-sku-name="Pack &amp; Bonus" data-auto-capture="skuClick"></div><div class="sku-card sku-card--disabled" capture-custom-sku-id="13" capture-custom-sku-name="Unavailable" data-auto-capture="skuClick"></div><script type="application/json" id="__NUXT_DATA__">[]</script></body></html>`;
+assert.deepEqual(parseCodashopPage(codashopHtml), [{ sku: "12", name: "Pack & Bonus" }]);
+assert.throws(() => parseCodashopPage("<html></html>"), /ไม่สมบูรณ์/);
+
 assert.equal(normalizeRussiaCheckSessionCookie("  sid=abc; token=xyz  "), "sid=abc; token=xyz");
 assert.throws(() => normalizeRussiaCheckSessionCookie("sid=abc\nother=value"), /บรรทัดเดียว/);
 assert.throws(() => normalizeRussiaCheckSessionCookie("missing-separator"), /รูปแบบ Cookie/);
@@ -108,6 +113,8 @@ assert.match(ddl, /store_url[\s\S]*https:\/\/store\.thatskygame\.com\//);
 assert.match(ddl, /gameinfo_russia_check_source_credentials[\s\S]*session_enc[\s\S]*expires_at/);
 assert.match(ddl, /love-deepspace-infold[\s\S]*LOVE AND DEEPSPACE[\s\S]*auth_required/);
 assert.match(ddl, /infinity-nikki-infold[\s\S]*Infinity Nikki[\s\S]*infinitynikki\.infoldgames\.com\/charge\/th-th/);
+assert.match(ddl, /stumble-guys-codashop-ph[\s\S]*21[\s\S]*STUMBLE GUYS[\s\S]*codashop\.com\/en-ph\/stumble-guys/);
+assert.match(ddl, /shining-nikki-codashop-mm[\s\S]*6[\s\S]*SHINING NIKKI[\s\S]*codashop\.com\/my-mm\/shining-nikki/);
 assert.match(ddl, /WHERE status IN \('queued', 'running'\)/);
 assert.match(ddl, /event_type IN \('added', 'removed', 'restored'\)/);
 assert.match(ddl, /demo-data[\s\S]*demo data[\s\S]*'demo'[\s\S]*false/);
@@ -128,6 +135,7 @@ assert.doesNotMatch(sessionRoute, /GET\s*\(/);
 const logsRoute = readFileSync(new URL("../src/app/api/gameinfo/russia-check/logs/route.js", import.meta.url), "utf8");
 assert.match(logsRoute, /eventType: query\.get\("eventType"\)/);
 const server = readFileSync(new URL("../src/server/gameinfo-russia-check.js", import.meta.url), "utf8");
+assert.match(server, /provider IN \('xsolla','midasbuy','codashop'\)/);
 assert.doesNotMatch(server, /last_scheduled_at|lastScheduledAt/);
 assert.doesNotMatch(server, /JOIN game_list|Source .*ต้องผูกกับ Game ID|config_error/);
 assert.match(server, /i\.is_baseline AND s\.provider<>'demo'[\s\S]*e\.event_type='added'/);
@@ -142,6 +150,7 @@ assert.match(page, /ใส่เฉพาะค่าใน Request Header ช�
 assert.doesNotMatch(page, /<TableHead>พบล่าสุด<\/TableHead>/);
 assert.match(page, /demoSelected[\s\S]*ข้อมูลตัวอย่างแบบอ่านอย่างเดียว/);
 assert.match(page, /อัตโนมัติทุกวัน 09:00 น\. เวลาไทย/);
+assert.match(page, /รีข้อมูลเสร็จแล้ว[\s\S]*เกมที่มีการเปลี่ยนแปลง[\s\S]*item\.count.*รายการ/);
 assert.doesNotMatch(page, /Source (?:ยัง)?ผูกกับเกม|configErrors/);
 assert.doesNotMatch(page, />SKU<|ราคา/);
 const home = readFileSync(new URL("../src/components/gameinfo-gamelist-cards.js", import.meta.url), "utf8");
