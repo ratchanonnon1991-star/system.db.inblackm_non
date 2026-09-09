@@ -25,6 +25,7 @@ import {
   resolveRazerPasteRow,
   RAZER_DELIMITER_LABELS,
   RAZER_IMPORT_FORMAT_HINT,
+  RAZER_ZONES,
 } from "@/lib/profit-razer-parse";
 
 const EMPTY_FORM = {
@@ -660,7 +661,7 @@ export default function ProfitRazerStockPage() {
             className="rounded-lg border border-ll-hairline bg-ll-surface-1 px-2.5 py-1.5 text-[12px] text-ll-ink"
           >
             <option value="">ทุกโซน</option>
-            {["CAD", "SGD", "PHP", "VND", "OTHER"].map((z) => (
+            {RAZER_ZONES.map((z) => (
               <option key={z} value={z}>{z}</option>
             ))}
           </select>
@@ -1091,7 +1092,7 @@ export default function ProfitRazerStockPage() {
                 onChange={(e) => setAddForm((f) => ({ ...f, zone: e.target.value }))}
                 className={profitInputClass}
               >
-                {["CAD", "SGD", "PHP", "VND", "OTHER"].map((z) => (
+                {RAZER_ZONES.map((z) => (
                   <option key={z} value={z}>{z}</option>
                 ))}
               </select>

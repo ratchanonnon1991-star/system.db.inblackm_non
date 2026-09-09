@@ -1,12 +1,13 @@
-export const RAZER_ZONES = ["CAD", "SGD", "PHP", "VND", "OTHER"];
+export const RAZER_ZONES = ["CAD", "SGD", "PHP", "VND", "THB", "OTHER"];
 
 const ZONE_ALIASES = {
   cad: "CAD",
   sgd: "SGD",
   php: "PHP",
   vnd: "VND",
+  thb: "THB",
+  th: "THB",
   other: "OTHER",
-  th: "OTHER",
   vn: "VND",
 };
 
