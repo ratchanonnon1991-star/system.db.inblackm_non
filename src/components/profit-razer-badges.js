@@ -3,6 +3,7 @@ const ZONE_STYLES = {
   SGD: "bg-emerald-50 text-emerald-700 ring-emerald-200",
   PHP: "bg-amber-50 text-amber-700 ring-amber-200",
   VND: "bg-rose-50 text-rose-700 ring-rose-200",
+  THB: "bg-indigo-50 text-indigo-700 ring-indigo-200",
   OTHER: "bg-ll-surface-2 text-ll-ink-subtle ring-ll-hairline",
 };
 
@@ -44,5 +45,6 @@ export const RAZER_ZONE_LABELS = {
   SGD: "Razer SGD",
   PHP: "Razer PHP",
   VND: "Razer VND",
+  THB: "Razer THB",
   OTHER: "Razer Other",
 };
