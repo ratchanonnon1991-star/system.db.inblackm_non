@@ -6,7 +6,7 @@ import {
   normalizeRussiaCheckName,
   reconcileRussiaCheckCatalog,
 } from "@/lib/gameinfo-russia-check.js";
-import { fetchRussiaCheckCatalog } from "@/server/gameinfo-russia-check.js";
+import { fetchRussiaCheckCatalog, parseXsollaCatalogTypes } from "@/server/gameinfo-russia-check.js";
 import { normalizeRussiaCheckSessionCookie } from "@/server/gameinfo-russia-check.js";
 import { decryptRussiaCheckSession, encryptRussiaCheckSession } from "@/server/crypto.js";
 import { parseCodashopPage } from "@/server/gameinfo-codashop-catalog.js";
@@ -54,8 +54,8 @@ assert.equal(nextRussiaCheckRunAt(new Date("2026-09-02T02:00:00Z")).toISOString(
 
 const requested = [];
 const pages = [
-  { has_more: true, items: [{ sku: "a", name: "A" }] },
-  { has_more: false, items: [{ sku: "b", name: "B" }] },
+  { has_more: true, items: [{ sku: "a", name: "A", groups: [{ external_id: "candles", name: "Candles" }] }] },
+  { has_more: false, items: [{ sku: "b", name: "B", groups: [{ external_id: "candles", name: "Candles" }] }, { sku: "ungrouped", name: "Not on any page", groups: [] }] },
 ];
 const catalog = await fetchRussiaCheckCatalog({ sourceUrl: "https://store.xsolla.com/api/v2", projectId: "207830", country: "RU", locale: "en" }, {
   retries: 1,
@@ -70,20 +70,30 @@ assert.match(requested[0], /country=RU/);
 assert.match(requested[0], /locale=en/);
 assert.match(requested[0], /offset=0/);
 assert.match(requested[1], /offset=1/);
-// The whole sellable catalog, not one item type: Bullet Echo files 27 of its 44
-// packs as bundles and Oxide its 6 currency packages under virtual_currency.
-assert.match(requested[0], /\/project\/207830\/items\?/);
-assert.doesNotMatch(requested.join(" "), /virtual_items|\/items\/bundle|virtual_currency/);
-const mixedTypes = await fetchRussiaCheckCatalog({ sourceUrl: "https://store.xsolla.com/api/v2", projectId: "190666", country: "RU", locale: "en" }, {
+// Each storefront renders a fixed catalog set; ungrouped items reach no page.
+assert.match(requested[0], /\/project\/207830\/items\/virtual_items\?/);
+assert.doesNotMatch(requested.join(" "), /items\/bundle|virtual_currency/);
+const grouped = [{ external_id: "candles", name: "Candles" }];
+const bulletEcho = { sourceUrl: "https://store.xsolla.com/api/v2", projectId: "190666", country: "RU", locale: "en", catalog_types: "virtual_items,bundle" };
+const paths = [];
+const bothCatalogs = await fetchRussiaCheckCatalog(bulletEcho, {
   retries: 1,
   retryDelay: async () => {},
-  fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ has_more: false, items: [
-    { sku: "xsolla.bulletecho.bucks1", name: "Handful of Bucks", type: "virtual_good", can_be_bought: true },
-    { sku: "xsolla.bulletecho.extra5", name: "Legendary Pack", type: "bundle", can_be_bought: true },
-    { sku: "xsolla.bulletecho.retired", name: "Retired Pack", type: "bundle", can_be_bought: false },
-  ] }) }),
+  fetchImpl: async (url) => {
+    paths.push(new URL(url).pathname);
+    const bundle = new URL(url).pathname.endsWith("/items/bundle");
+    return { ok: true, status: 200, json: async () => ({ has_more: false, items: bundle
+      ? [{ sku: "xsolla.bulletecho.extra5", name: "Legendary Pack", groups: grouped }, { sku: "welcome-offer-test", name: "Untabbed", groups: [] }]
+      : [{ sku: "xsolla.bulletecho.bucks1", name: "Handful of Bucks", groups: grouped }, { sku: "hidden", name: "Hidden", groups: grouped, can_be_bought: false }] }) };
+  },
 });
-assert.deepEqual(mixedTypes, [{ sku: "xsolla.bulletecho.bucks1", name: "Handful of Bucks" }, { sku: "xsolla.bulletecho.extra5", name: "Legendary Pack" }]);
+assert.deepEqual(paths, ["/api/v2/project/190666/items/virtual_items", "/api/v2/project/190666/items/bundle"]);
+assert.deepEqual(bothCatalogs, [{ sku: "xsolla.bulletecho.bucks1", name: "Handful of Bucks" }, { sku: "xsolla.bulletecho.extra5", name: "Legendary Pack" }]);
+// Sky's `sky115` wrapper bundle and Oxide's currency packages stay out by default.
+assert.equal(parseXsollaCatalogTypes(undefined).join(), "virtual_items");
+assert.deepEqual(parseXsollaCatalogTypes("virtual_items,bundle"), ["virtual_items", "bundle"]);
+assert.throws(() => parseXsollaCatalogTypes("virtual_currency"), /ไม่รองรับ/);
+assert.throws(() => parseXsollaCatalogTypes("bundle,bundle"), /ซ้ำ/);
 
 let attempts = 0;
 const retried = await fetchRussiaCheckCatalog({ sourceUrl: "https://store.xsolla.com/api/v2", projectId: "207830", country: "RU", locale: "en" }, {
@@ -92,7 +102,7 @@ const retried = await fetchRussiaCheckCatalog({ sourceUrl: "https://store.xsolla
   fetchImpl: async () => {
     attempts += 1;
     if (attempts < 3) throw new Error("temporary");
-    return { ok: true, status: 200, json: async () => ({ has_more: false, items: [{ sku: "a", name: "A" }] }) };
+    return { ok: true, status: 200, json: async () => ({ has_more: false, items: [{ sku: "a", name: "A", groups: [{ external_id: "candles", name: "Candles" }] }] }) };
   },
 });
 assert.equal(attempts, 3);
@@ -184,4 +194,4 @@ assert.doesNotMatch(page, />SKU<|ราคา/);
 const home = readFileSync(new URL("../src/components/gameinfo-gamelist-cards.js", import.meta.url), "utf8");
 assert.match(home, /russia-check[\s\S]*Russia Check/);
 
-console.log("50 passed");
+console.log("56 passed");
