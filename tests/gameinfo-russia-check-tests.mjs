@@ -6,7 +6,7 @@ import {
   normalizeRussiaCheckName,
   reconcileRussiaCheckCatalog,
 } from "@/lib/gameinfo-russia-check.js";
-import { fetchRussiaCheckCatalog, parseXsollaCatalogTypes } from "@/server/gameinfo-russia-check.js";
+import { fetchRussiaCheckCatalog, parseExcludedGroups, selectXsollaStorefrontItems } from "@/server/gameinfo-russia-check.js";
 import { normalizeRussiaCheckSessionCookie } from "@/server/gameinfo-russia-check.js";
 import { decryptRussiaCheckSession, encryptRussiaCheckSession } from "@/server/crypto.js";
 import { parseCodashopPage } from "@/server/gameinfo-codashop-catalog.js";
@@ -53,9 +53,12 @@ assert.equal(nextRussiaCheckRunAt(new Date("2026-09-02T01:59:59Z")).toISOString(
 assert.equal(nextRussiaCheckRunAt(new Date("2026-09-02T02:00:00Z")).toISOString(), "2026-09-03T02:00:00.000Z");
 
 const requested = [];
+const candles = [{ external_id: "candles", name: "Candles" }];
 const pages = [
-  { has_more: true, items: [{ sku: "a", name: "A", groups: [{ external_id: "candles", name: "Candles" }] }] },
-  { has_more: false, items: [{ sku: "b", name: "B", groups: [{ external_id: "candles", name: "Candles" }] }, { sku: "ungrouped", name: "Not on any page", groups: [] }] },
+  { has_more: true, items: [{ sku: "a", name: "A", type: "virtual_good", groups: candles }] },
+  { has_more: false, items: [{ sku: "b", name: "B", type: "virtual_good", groups: candles }, { sku: "ungrouped", name: "Not on any page", type: "virtual_good", groups: [] }] },
+  // Candles is a virtual-item row, so its wrapper bundle stays hidden the way `sky115` does.
+  { has_more: false, items: [{ sku: "wrapper", name: "Bundle 5", type: "bundle", groups: candles }, { sku: "realbundle", name: "Real Bundle", type: "bundle", groups: [{ external_id: "packs", name: "Packs" }] }] },
 ];
 const catalog = await fetchRussiaCheckCatalog({ sourceUrl: "https://store.xsolla.com/api/v2", projectId: "207830", country: "RU", locale: "en" }, {
   retries: 1,
@@ -65,35 +68,40 @@ const catalog = await fetchRussiaCheckCatalog({ sourceUrl: "https://store.xsolla
     return { ok: true, status: 200, json: async () => pages.shift() };
   },
 });
-assert.deepEqual(catalog, [{ sku: "a", name: "A" }, { sku: "b", name: "B" }]);
+assert.deepEqual(catalog, [{ sku: "a", name: "A" }, { sku: "b", name: "B" }, { sku: "realbundle", name: "Real Bundle" }]);
 assert.match(requested[0], /country=RU/);
 assert.match(requested[0], /locale=en/);
 assert.match(requested[0], /offset=0/);
 assert.match(requested[1], /offset=1/);
-// Each storefront renders a fixed catalog set; ungrouped items reach no page.
-assert.match(requested[0], /\/project\/207830\/items\/virtual_items\?/);
-assert.doesNotMatch(requested.join(" "), /items\/bundle|virtual_currency/);
-const grouped = [{ external_id: "candles", name: "Candles" }];
-const bulletEcho = { sourceUrl: "https://store.xsolla.com/api/v2", projectId: "190666", country: "RU", locale: "en", catalog_types: "virtual_items,bundle" };
-const paths = [];
-const bothCatalogs = await fetchRussiaCheckCatalog(bulletEcho, {
-  retries: 1,
-  retryDelay: async () => {},
-  fetchImpl: async (url) => {
-    paths.push(new URL(url).pathname);
-    const bundle = new URL(url).pathname.endsWith("/items/bundle");
-    return { ok: true, status: 200, json: async () => ({ has_more: false, items: bundle
-      ? [{ sku: "xsolla.bulletecho.extra5", name: "Legendary Pack", groups: grouped }, { sku: "welcome-offer-test", name: "Untabbed", groups: [] }]
-      : [{ sku: "xsolla.bulletecho.bucks1", name: "Handful of Bucks", groups: grouped }, { sku: "hidden", name: "Hidden", groups: grouped, can_be_bought: false }] }) };
-  },
-});
-assert.deepEqual(paths, ["/api/v2/project/190666/items/virtual_items", "/api/v2/project/190666/items/bundle"]);
-assert.deepEqual(bothCatalogs, [{ sku: "xsolla.bulletecho.bucks1", name: "Handful of Bucks" }, { sku: "xsolla.bulletecho.extra5", name: "Legendary Pack" }]);
-// Sky's `sky115` wrapper bundle and Oxide's currency packages stay out by default.
-assert.equal(parseXsollaCatalogTypes(undefined).join(), "virtual_items");
-assert.deepEqual(parseXsollaCatalogTypes("virtual_items,bundle"), ["virtual_items", "bundle"]);
-assert.throws(() => parseXsollaCatalogTypes("virtual_currency"), /ไม่รองรับ/);
-assert.throws(() => parseXsollaCatalogTypes("bundle,bundle"), /ซ้ำ/);
+// Both catalogs every time; a group renders one type, so it is the group that
+// decides, not per-source config. Verified against the rendered storefronts.
+assert.deepEqual(requested.map((u) => new URL(u).pathname), [
+  "/api/v2/project/207830/items/virtual_items",
+  "/api/v2/project/207830/items/virtual_items",
+  "/api/v2/project/207830/items/bundle",
+]);
+const g = (id) => [{ external_id: id, name: id }];
+const bulletEcho = [
+  { sku: "xsolla.bulletecho.bucks1", name: "Handful of Bucks", type: "virtual_good", groups: g("currency") },
+  { sku: "xsolla.bulletecho.bucks1_TEST", name: "Handful of Bucks", type: "bundle", groups: g("currency") },
+  { sku: "xsolla.bulletecho.bucks1_bundle", name: "Handful of Bucks", type: "bundle", groups: g("currency") },
+  { sku: "xsolla.bulletecho.extra5", name: "Legendary Pack", type: "bundle", groups: g("extra_offers") },
+  { sku: "welcome-offer-test", name: "Bucks wholesale", type: "bundle", groups: [] },
+  { sku: "loyalty.ticket.5", name: "Loyalty Ticket", type: "virtual_good", groups: g("loyalty_tickets") },
+];
+// BUCKS PACKS holds virtual items, so the two leftover duplicate bundles stay hidden.
+assert.deepEqual(selectXsollaStorefrontItems(bulletEcho).map((i) => i.sku),
+  ["xsolla.bulletecho.bucks1", "xsolla.bulletecho.extra5", "loyalty.ticket.5"]);
+// A group nobody can see without logging in is excluded per source.
+assert.deepEqual(selectXsollaStorefrontItems(bulletEcho, parseExcludedGroups("loyalty_tickets")).map((i) => i.sku),
+  ["xsolla.bulletecho.bucks1", "xsolla.bulletecho.extra5"]);
+// An item kept through any one of its groups survives.
+assert.deepEqual(selectXsollaStorefrontItems([
+  { sku: "shared", name: "Shared", type: "bundle", groups: [{ external_id: "currency" }, { external_id: "drones" }] },
+  { sku: "vg", name: "VG", type: "virtual_good", groups: g("currency") },
+]).map((i) => i.sku).sort(), ["shared", "vg"]);
+assert.deepEqual([...parseExcludedGroups(" a , ,b ")], ["a", "b"]);
+assert.equal(parseExcludedGroups(undefined).size, 0);
 
 let attempts = 0;
 const retried = await fetchRussiaCheckCatalog({ sourceUrl: "https://store.xsolla.com/api/v2", projectId: "207830", country: "RU", locale: "en" }, {
@@ -105,7 +113,8 @@ const retried = await fetchRussiaCheckCatalog({ sourceUrl: "https://store.xsolla
     return { ok: true, status: 200, json: async () => ({ has_more: false, items: [{ sku: "a", name: "A", groups: [{ external_id: "candles", name: "Candles" }] }] }) };
   },
 });
-assert.equal(attempts, 3);
+// Two transient failures, then virtual_items succeeds; the bundle call is the 4th.
+assert.equal(attempts, 4);
 assert.equal(retried.length, 1);
 
 let clientErrors = 0;
@@ -194,4 +203,4 @@ assert.doesNotMatch(page, />SKU<|ราคา/);
 const home = readFileSync(new URL("../src/components/gameinfo-gamelist-cards.js", import.meta.url), "utf8");
 assert.match(home, /russia-check[\s\S]*Russia Check/);
 
-console.log("56 passed");
+console.log("58 passed");

@@ -67,7 +67,8 @@ async function ensureSchema(connection) {
         ALTER TABLE gameinfo_russia_check_sources ADD COLUMN IF NOT EXISTS store_url text;
         ALTER TABLE gameinfo_russia_check_sources ADD COLUMN IF NOT EXISTS auth_required boolean NOT NULL DEFAULT false;
         ALTER TABLE gameinfo_russia_check_sources ADD COLUMN IF NOT EXISTS catalog_scope_hash varchar(64);
-        ALTER TABLE gameinfo_russia_check_sources ADD COLUMN IF NOT EXISTS catalog_types varchar(64) NOT NULL DEFAULT 'virtual_items';
+        ALTER TABLE gameinfo_russia_check_sources ADD COLUMN IF NOT EXISTS excluded_groups text NOT NULL DEFAULT '';
+        ALTER TABLE gameinfo_russia_check_sources DROP COLUMN IF EXISTS catalog_types;
         CREATE TABLE IF NOT EXISTS gameinfo_russia_check_source_credentials (
           source_id bigint PRIMARY KEY REFERENCES gameinfo_russia_check_sources(id) ON DELETE CASCADE,
           session_enc text NOT NULL, expires_at timestamptz, updated_by integer,
@@ -136,9 +137,9 @@ async function ensureSchema(connection) {
           game_id=EXCLUDED.game_id,expected_game_name=EXCLUDED.expected_game_name,provider=EXCLUDED.provider,
           source_url=EXCLUDED.source_url,store_url=EXCLUDED.store_url,project_id=EXCLUDED.project_id,country=EXCLUDED.country,
           locale=EXCLUDED.locale,auth_required=false,enabled=true,updated_at=now();
-        -- shop.bulletecho.game renders items/bundle/group as well as items/virtual_items/group.
-        UPDATE gameinfo_russia_check_sources SET catalog_types='virtual_items,bundle',updated_at=now()
-        WHERE source_key='bullet-echo-xsolla-ru' AND catalog_types<>'virtual_items,bundle';
+        -- shop.playoxide.com never renders these two rows to a logged-out shopper.
+        UPDATE gameinfo_russia_check_sources SET excluded_groups='subscriptions,loyalty_tickets',updated_at=now()
+        WHERE source_key='oxide-xsolla-ru' AND excluded_groups<>'subscriptions,loyalty_tickets';
         INSERT INTO gameinfo_russia_check_sources
           (source_key,game_id,expected_game_name,provider,source_url,store_url,project_id,country,locale,auth_required,enabled)
         VALUES ('love-deepspace-infold',3,'LOVE AND DEEPSPACE','infold','https://loveanddeepspace.infoldgames.com/charge/en-EN','https://loveanddeepspace.infoldgames.com/charge/en-EN','love-and-deepspace','RU','en-EN',true,false)
@@ -382,22 +383,33 @@ async function fetchJsonWithRetry(url, { fetchImpl, retries, retryDelay }) {
   throw lastError || new Error("โหลด Xsolla ไม่สำเร็จ");
 }
 
-// Each Xsolla storefront renders a fixed set of catalogs, and only the packs that
-// sit in one of its groups. Sky Children and Oxide render virtual_items alone, so
-// Sky's `sky115` bundle (a wrapper around one existing candle pack) and Oxide's six
-// virtual_currency packages never reach a shopper. Bullet Echo also renders bundles,
-// which is where 26 of its 43 packs live. An ungrouped item has no page to appear on.
-export const XSOLLA_CATALOG_PATHS = { virtual_items: "items/virtual_items", bundle: "items/bundle" };
-export const DEFAULT_XSOLLA_CATALOG_TYPES = "virtual_items";
+export const XSOLLA_CATALOG_PATHS = ["items/virtual_items", "items/bundle"];
 
-export function parseXsollaCatalogTypes(value) {
-  const types = String(value || DEFAULT_XSOLLA_CATALOG_TYPES).split(",").map((type) => type.trim()).filter(Boolean);
-  if (!types.length) throw new Error("Source นี้ยังไม่ได้ระบุประเภทแคตตาล็อกของ Xsolla");
-  for (const type of types) {
-    if (!Object.hasOwn(XSOLLA_CATALOG_PATHS, type)) throw new Error(`Xsolla ไม่รองรับแคตตาล็อก: ${type}`);
+export function parseExcludedGroups(value) {
+  return new Set(String(value || "").split(",").map((group) => group.trim()).filter(Boolean));
+}
+
+// A storefront block renders one catalog type per group, so a group holding virtual
+// items never shows the bundles that share its id. That is how Bullet Echo's BUCKS
+// PACKS row lists bucks1..6 while hiding the leftover `bucks1_TEST`/`bucks1_bundle`
+// duplicates, and how Sky keeps the `sky115` wrapper off its Candles row. Nothing in
+// the Store API marks those as hidden. An item in no group has no block to appear in.
+export function selectXsollaStorefrontItems(items, excludedGroups = new Set()) {
+  const byGroup = new Map();
+  for (const item of items) {
+    for (const group of item?.groups || []) {
+      const id = group?.external_id;
+      if (!id || excludedGroups.has(id)) continue;
+      if (!byGroup.has(id)) byGroup.set(id, []);
+      byGroup.get(id).push(item);
+    }
   }
-  if (new Set(types).size !== types.length) throw new Error("ประเภทแคตตาล็อกของ Xsolla ซ้ำกัน");
-  return types;
+  const kept = new Map();
+  for (const groupItems of byGroup.values()) {
+    const virtualItems = groupItems.filter((item) => item.type !== "bundle");
+    for (const item of virtualItems.length ? virtualItems : groupItems) kept.set(item.sku, item);
+  }
+  return [...kept.values()];
 }
 
 export async function fetchRussiaCheckCatalog(source, options = {}) {
@@ -410,25 +422,25 @@ export async function fetchRussiaCheckCatalog(source, options = {}) {
   const base = String(source.sourceUrl || source.source_url).replace(/\/$/, "");
   const projectId = source.projectId || source.project_id;
   const collected = [];
-  for (const type of parseXsollaCatalogTypes(source.catalogTypes ?? source.catalog_types)) {
+  for (const path of XSOLLA_CATALOG_PATHS) {
     let offset = 0;
     for (let page = 0; ; page += 1) {
       if (page >= 100) throw new Error("Xsolla ส่งหน้ารายการมากเกินขีดจำกัด");
-      const url = new URL(`${base}/project/${projectId}/${XSOLLA_CATALOG_PATHS[type]}`);
+      const url = new URL(`${base}/project/${projectId}/${path}`);
       url.searchParams.set("limit", String(RUSSIA_CHECK_PAGE_SIZE));
       url.searchParams.set("offset", String(offset));
       url.searchParams.set("locale", source.locale || "en");
       url.searchParams.set("country", source.country || "RU");
       const payload = await fetchJsonWithRetry(url, { fetchImpl, retries, retryDelay });
       if (!Array.isArray(payload?.items)) throw new Error("รูปแบบข้อมูล Xsolla ไม่ถูกต้อง");
-      // Keep only what a shopper can reach: an item outside every group has no page.
-      collected.push(...payload.items.filter((item) => Array.isArray(item?.groups) && item.groups.length > 0));
+      collected.push(...payload.items.filter((item) => item?.can_be_bought !== false));
       if (!payload.has_more) break;
       if (!payload.items.length) throw new Error("Xsolla ระบุว่ามีหน้าถัดไปแต่ไม่ส่ง Pack");
       offset += payload.items.length;
     }
   }
-  return normalizeRussiaCheckCatalog(collected);
+  const excluded = parseExcludedGroups(source.excludedGroups ?? source.excluded_groups);
+  return normalizeRussiaCheckCatalog(selectXsollaStorefrontItems(collected, excluded));
 }
 
 function mapRun(row, sources = []) {

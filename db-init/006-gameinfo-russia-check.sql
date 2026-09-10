@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS gameinfo_russia_check_sources (
 ALTER TABLE gameinfo_russia_check_sources ADD COLUMN IF NOT EXISTS store_url text;
 ALTER TABLE gameinfo_russia_check_sources ADD COLUMN IF NOT EXISTS auth_required boolean NOT NULL DEFAULT false;
 ALTER TABLE gameinfo_russia_check_sources ADD COLUMN IF NOT EXISTS catalog_scope_hash varchar(64);
-ALTER TABLE gameinfo_russia_check_sources ADD COLUMN IF NOT EXISTS catalog_types varchar(64) NOT NULL DEFAULT 'virtual_items';
+ALTER TABLE gameinfo_russia_check_sources ADD COLUMN IF NOT EXISTS excluded_groups text NOT NULL DEFAULT '';
+ALTER TABLE gameinfo_russia_check_sources DROP COLUMN IF EXISTS catalog_types;
 
 CREATE TABLE IF NOT EXISTS gameinfo_russia_check_source_credentials (
   source_id bigint PRIMARY KEY REFERENCES gameinfo_russia_check_sources(id) ON DELETE CASCADE,
@@ -131,10 +132,10 @@ ON CONFLICT (source_key) DO UPDATE SET
   source_url=EXCLUDED.source_url, store_url=EXCLUDED.store_url, project_id=EXCLUDED.project_id,
   country=EXCLUDED.country, locale=EXCLUDED.locale, auth_required=false, enabled=true, updated_at=now();
 
--- shop.bulletecho.game renders items/bundle/group as well as items/virtual_items/group;
--- 26 of its 43 packs are bundles. Sky Children and Oxide render virtual_items alone.
-UPDATE gameinfo_russia_check_sources SET catalog_types='virtual_items,bundle', updated_at=now()
-WHERE source_key='bullet-echo-xsolla-ru' AND catalog_types<>'virtual_items,bundle';
+-- shop.playoxide.com renders neither row to a logged-out shopper, so the checker
+-- would otherwise report 7 packs (2 memberships, 5 loyalty tickets) nobody can see.
+UPDATE gameinfo_russia_check_sources SET excluded_groups='subscriptions,loyalty_tickets', updated_at=now()
+WHERE source_key='oxide-xsolla-ru' AND excluded_groups<>'subscriptions,loyalty_tickets';
 
 INSERT INTO gameinfo_russia_check_sources
   (source_key, game_id, expected_game_name, provider, source_url, store_url, project_id, country, locale, auth_required, enabled)
