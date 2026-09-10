@@ -115,6 +115,24 @@ ON CONFLICT (source_key) DO UPDATE SET
 INSERT INTO gameinfo_russia_check_sources
   (source_key, game_id, expected_game_name, provider, source_url, store_url, project_id, country, locale, auth_required, enabled)
 VALUES
+  ('oxide-xsolla-ru', 89, 'OXIDE : SURVIVAL ISLAND', 'xsolla', 'https://store.xsolla.com/api/v2', 'https://shop.playoxide.com/', '274717', 'RU', 'en', false, true)
+ON CONFLICT (source_key) DO UPDATE SET
+  game_id=EXCLUDED.game_id, expected_game_name=EXCLUDED.expected_game_name, provider=EXCLUDED.provider,
+  source_url=EXCLUDED.source_url, store_url=EXCLUDED.store_url, project_id=EXCLUDED.project_id,
+  country=EXCLUDED.country, locale=EXCLUDED.locale, auth_required=false, enabled=true, updated_at=now();
+
+INSERT INTO gameinfo_russia_check_sources
+  (source_key, game_id, expected_game_name, provider, source_url, store_url, project_id, country, locale, auth_required, enabled)
+VALUES
+  ('bullet-echo-xsolla-ru', 72, 'BULLET ECHO', 'xsolla', 'https://store.xsolla.com/api/v2', 'https://shop.bulletecho.game/', '190666', 'RU', 'en', false, true)
+ON CONFLICT (source_key) DO UPDATE SET
+  game_id=EXCLUDED.game_id, expected_game_name=EXCLUDED.expected_game_name, provider=EXCLUDED.provider,
+  source_url=EXCLUDED.source_url, store_url=EXCLUDED.store_url, project_id=EXCLUDED.project_id,
+  country=EXCLUDED.country, locale=EXCLUDED.locale, auth_required=false, enabled=true, updated_at=now();
+
+INSERT INTO gameinfo_russia_check_sources
+  (source_key, game_id, expected_game_name, provider, source_url, store_url, project_id, country, locale, auth_required, enabled)
+VALUES
   ('love-deepspace-infold', 3, 'LOVE AND DEEPSPACE', 'infold', 'https://loveanddeepspace.infoldgames.com/charge/en-EN', 'https://loveanddeepspace.infoldgames.com/charge/en-EN', 'love-and-deepspace', 'RU', 'en-EN', true, false)
 ON CONFLICT (source_key) DO UPDATE SET
   game_id = EXCLUDED.game_id,

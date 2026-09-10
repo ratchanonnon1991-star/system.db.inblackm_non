@@ -122,6 +122,20 @@ async function ensureSchema(connection) {
           locale=EXCLUDED.locale, updated_at=now();
         INSERT INTO gameinfo_russia_check_sources
           (source_key,game_id,expected_game_name,provider,source_url,store_url,project_id,country,locale,auth_required,enabled)
+        VALUES ('oxide-xsolla-ru',89,'OXIDE : SURVIVAL ISLAND','xsolla','https://store.xsolla.com/api/v2','https://shop.playoxide.com/','274717','RU','en',false,true)
+        ON CONFLICT (source_key) DO UPDATE SET
+          game_id=EXCLUDED.game_id,expected_game_name=EXCLUDED.expected_game_name,provider=EXCLUDED.provider,
+          source_url=EXCLUDED.source_url,store_url=EXCLUDED.store_url,project_id=EXCLUDED.project_id,country=EXCLUDED.country,
+          locale=EXCLUDED.locale,auth_required=false,enabled=true,updated_at=now();
+        INSERT INTO gameinfo_russia_check_sources
+          (source_key,game_id,expected_game_name,provider,source_url,store_url,project_id,country,locale,auth_required,enabled)
+        VALUES ('bullet-echo-xsolla-ru',72,'BULLET ECHO','xsolla','https://store.xsolla.com/api/v2','https://shop.bulletecho.game/','190666','RU','en',false,true)
+        ON CONFLICT (source_key) DO UPDATE SET
+          game_id=EXCLUDED.game_id,expected_game_name=EXCLUDED.expected_game_name,provider=EXCLUDED.provider,
+          source_url=EXCLUDED.source_url,store_url=EXCLUDED.store_url,project_id=EXCLUDED.project_id,country=EXCLUDED.country,
+          locale=EXCLUDED.locale,auth_required=false,enabled=true,updated_at=now();
+        INSERT INTO gameinfo_russia_check_sources
+          (source_key,game_id,expected_game_name,provider,source_url,store_url,project_id,country,locale,auth_required,enabled)
         VALUES ('love-deepspace-infold',3,'LOVE AND DEEPSPACE','infold','https://loveanddeepspace.infoldgames.com/charge/en-EN','https://loveanddeepspace.infoldgames.com/charge/en-EN','love-and-deepspace','RU','en-EN',true,false)
         ON CONFLICT (source_key) DO UPDATE SET
           game_id=EXCLUDED.game_id,expected_game_name=EXCLUDED.expected_game_name,provider=EXCLUDED.provider,
@@ -476,8 +490,8 @@ async function processSource(pool, runId, source) {
           );
         } else {
           await client.query(
-            `UPDATE gameinfo_russia_check_items SET status=$3,missing_runs=$4,
-               removed_at=CASE WHEN $3='removed' THEN COALESCE(removed_at,NOW()) ELSE removed_at END,updated_at=NOW()
+            `UPDATE gameinfo_russia_check_items SET status=$3::varchar(24),missing_runs=$4,
+               removed_at=CASE WHEN $3::varchar(24)='removed' THEN COALESCE(removed_at,NOW()) ELSE removed_at END,updated_at=NOW()
              WHERE source_id=$1 AND sku=$2`,
             [source.id, item.sku, item.status, item.missingRuns]
           );
@@ -728,19 +742,21 @@ export async function getRussiaCheckDashboard({ gameId = null, status = "" } = {
   };
 }
 
-export async function listRussiaCheckLogs({ gameId = null, eventType = "", cursor = null, limit = 50 } = {}) {
+export async function listRussiaCheckLogs({ gameId = null, eventType = "", date = "", cursor = null, limit = 50 } = {}) {
   const pool = await getPool();
   const normalizedLimit = Math.max(1, Math.min(100, Number(limit) || 50));
   const normalizedGameId = optionalPositiveInt(gameId, "Game ID");
   const normalizedCursor = optionalPositiveInt(cursor, "Cursor");
   if (eventType && !RUSSIA_CHECK_EVENT_TYPES.has(eventType)) throw httpError("สถานะ Log ไม่ถูกต้อง", 400);
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw httpError("วันที่ Log ไม่ถูกต้อง", 400);
   const result = await pool.query(
     `SELECT e.id,e.pack_name,e.event_type,e.created_at,s.game_id,s.expected_game_name AS game_name
        FROM gameinfo_russia_check_events e JOIN gameinfo_russia_check_sources s ON s.id=e.source_id
       WHERE ($1::int IS NULL OR s.game_id=$1) AND ($2::bigint IS NULL OR e.id<$2)
         AND ($3::varchar IS NULL OR e.event_type=$3)
-      ORDER BY e.id DESC LIMIT $4`,
-    [normalizedGameId, normalizedCursor, eventType || null, normalizedLimit + 1]
+        AND ($4::date IS NULL OR (e.created_at AT TIME ZONE 'Asia/Bangkok')::date=$4::date)
+      ORDER BY e.id DESC LIMIT $5`,
+    [normalizedGameId, normalizedCursor, eventType || null, date || null, normalizedLimit + 1]
   );
   const hasMore = result.rows.length > normalizedLimit;
   const rows = result.rows.slice(0, normalizedLimit);

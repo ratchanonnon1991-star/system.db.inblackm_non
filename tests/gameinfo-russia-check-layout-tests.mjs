@@ -61,6 +61,8 @@ assert.equal(context.runResultLabel({ status: "completed" }, 3), "เปลี�
 assert.match(page, /newPackCount = allPackItems\.filter\(\(item\) => item\.displayStatus === "added"\)\.length/);
 assert.match(page, /เพิ่มใหม่ใน 24 ชม\./);
 assert.match(page, /game === "all" \? "รีทุกเกม" : "รีเกมนี้"/);
+assert.match(page, /className="min-w-28"[\s\S]*refreshProgress \|\| "กำลังเริ่มตรวจ…"/);
+assert.match(page, /role="status" className="min-h-4/);
 assert.match(page, /showGame=\{game === "all"\}/);
 assert.match(page, /htmlFor="russia-check-search"/);
 assert.match(page, /htmlFor="russia-check-status"/);

@@ -6,7 +6,7 @@ export async function GET(request) {
   try {
     await requireGameinfoAccess(request);
     const query = request.nextUrl.searchParams;
-    return jsonOk(await listRussiaCheckLogs({ gameId: query.get("gameId"), eventType: query.get("eventType"), cursor: query.get("cursor"), limit: query.get("limit") }));
+    return jsonOk(await listRussiaCheckLogs({ gameId: query.get("gameId"), eventType: query.get("eventType"), date: query.get("date"), cursor: query.get("cursor"), limit: query.get("limit") }));
   } catch (error) {
     return handleApiError(error, "โหลด Log Russia Check ไม่สำเร็จ");
   }

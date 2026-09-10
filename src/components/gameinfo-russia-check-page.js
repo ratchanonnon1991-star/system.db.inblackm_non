@@ -38,6 +38,10 @@ const LOG_STATUS_ITEMS = [
 ];
 const EVENT_LABELS = { added: "เพิ่มใหม่", removed: "หาย", restored: "กลับมา" };
 
+function bangkokToday() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+}
+
 function formatBangkok(value) {
   if (!value) return "—";
   return new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
@@ -67,6 +71,7 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
   const [status, setStatus] = useState("all");
   const [search, setSearch] = useState("");
   const [logStatus, setLogStatus] = useState("all");
+  const [logDate, setLogDate] = useState(initialGameId == null ? "" : bangkokToday());
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [running, setRunning] = useState(false);
@@ -133,7 +138,7 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
     }
   }
 
-  async function load(nextGame = game, nextLogStatus = logStatus) {
+  async function load(nextGame = game, nextLogStatus = logStatus, nextLogDate = logDate) {
     const requestId = ++loadRequest.current;
     const dashboardQuery = new URLSearchParams();
     const logQuery = new URLSearchParams({ limit: "50" });
@@ -142,6 +147,7 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
       logQuery.set("gameId", nextGame);
     }
     if (nextLogStatus !== "all") logQuery.set("eventType", nextLogStatus);
+    if (nextGame !== "all" && nextLogDate) logQuery.set("date", nextLogDate);
     const [nextDashboard, nextLogs] = await Promise.all([
       apiJson(`/api/gameinfo/russia-check${dashboardQuery.size ? `?${dashboardQuery}` : ""}`, { fallbackError: "โหลดรายการ Pack ไม่สำเร็จ" }),
       apiJson(`/api/gameinfo/russia-check/logs?${logQuery}`, { fallbackError: "โหลด Log ไม่สำเร็จ" }),
@@ -159,7 +165,9 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
     setLoading(true);
     setError("");
     try {
-      await load(nextGame);
+      const nextDate = nextGame === "all" ? "" : bangkokToday();
+      setLogDate(nextDate);
+      await load(nextGame, logStatus, nextDate);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "โหลด Russia Check ไม่สำเร็จ");
     } finally {
@@ -185,6 +193,20 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
     }
   }
 
+  async function selectLogDate(event) {
+    const value = event.target.value;
+    setLogDate(value);
+    setLoading(true);
+    setError("");
+    try {
+      await load(game, logStatus, value);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "โหลด Log ไม่สำเร็จ");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function refresh() {
     if (refreshActive.current) return;
     refreshActive.current = true;
@@ -202,11 +224,15 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
         onProgress: setRefreshProgress,
       });
       setRefreshResult({
-        partial: run.status === "partial",
+        status: run.status,
         games: (run.sources || []).map((source) => ({
           gameName: source.gameName,
           count: (source.addedCount || 0) + (source.removedCount || 0) + (source.restoredCount || 0),
         })).filter((item) => item.count > 0),
+        failedGames: (run.sources || []).filter((source) => source.status === "failed").map((source) => ({
+          gameName: source.gameName,
+          reason: source.error || "เชื่อมต่อร้านหรือโหลดรายการแพ็กไม่สำเร็จ",
+        })),
       });
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Russia Check ไม่สำเร็จ");
@@ -236,6 +262,7 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
       const query = new URLSearchParams({ limit: "50", cursor: nextCursor });
       if (game !== "all") query.set("gameId", game);
       if (logStatus !== "all") query.set("eventType", logStatus);
+      if (game !== "all" && logDate) query.set("date", logDate);
       const data = await apiJson(`/api/gameinfo/russia-check/logs?${query}`, { fallbackError: "โหลด Log เพิ่มไม่สำเร็จ" });
       setLogs((current) => [...current, ...(data.events || [])]);
       setNextCursor(data.nextCursor || null);
@@ -355,11 +382,11 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
             </div>
           </div>
           <div className="flex shrink-0 flex-col gap-1.5 sm:items-end">
-            <Button onClick={refresh} disabled={!canRefresh || running || loading || demoSelected || (Boolean(refreshBlockedReason) && !canReconnect)} aria-describedby={refreshBlockedReason ? "russia-check-source-blocked" : undefined} title={demoSelected ? "demo data เป็นข้อมูลตัวอย่างแบบอ่านอย่างเดียว" : canReconnect ? "เชื่อม Login แล้วรีข้อมูล" : refreshBlockedReason || (canRefresh ? "ดึงข้อมูลตามเกมที่เลือก" : "ต้องมีสิทธิ์ Market Check")}>
+            <Button className="min-w-28" onClick={refresh} disabled={!canRefresh || running || loading || demoSelected || (Boolean(refreshBlockedReason) && !canReconnect)} aria-describedby={refreshBlockedReason ? "russia-check-source-blocked" : undefined} title={demoSelected ? "demo data เป็นข้อมูลตัวอย่างแบบอ่านอย่างเดียว" : canReconnect ? "เชื่อม Login แล้วรีข้อมูล" : refreshBlockedReason || (canRefresh ? "ดึงข้อมูลตามเกมที่เลือก" : "ต้องมีสิทธิ์ Market Check")}>
               {running ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
               {running ? "กำลังตรวจ…" : game === "all" ? "รีทุกเกม" : "รีเกมนี้"}
             </Button>
-            <p role="status" className="max-w-80 text-xs text-muted-foreground">{running ? refreshProgress : demoSelected ? "ข้อมูลตัวอย่าง ไม่ดึงจากร้านจริง" : !canRefresh ? "ต้องมีสิทธิ์ Market Check เพื่อรีข้อมูล" : "ตรวจอัตโนมัติทุกวัน 09:00 น. เวลาไทย"}</p>
+            <p role="status" className="min-h-4 max-w-80 text-xs text-muted-foreground">{running ? refreshProgress || "กำลังเริ่มตรวจ…" : demoSelected ? "ข้อมูลตัวอย่าง ไม่ดึงจากร้านจริง" : !canRefresh ? "ต้องมีสิทธิ์ Market Check เพื่อรีข้อมูล" : "ตรวจอัตโนมัติทุกวัน 09:00 น. เวลาไทย"}</p>
           </div>
         </CardContent>
         <CardFooter>
@@ -403,6 +430,11 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
         <TabsContent value="logs" className="flex flex-col gap-4 pt-2">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <p className="text-sm text-muted-foreground">ประวัติแพ็กเข้า–ออก เรียงจากใหม่ไปเก่า แยกตามเกม</p>
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+            {game !== "all" ? <Field className="w-full sm:w-44">
+              <FieldLabel htmlFor="russia-check-log-date">วันที่เกิดรายการ</FieldLabel>
+              <Input id="russia-check-log-date" type="date" value={logDate} onChange={selectLogDate} disabled={loading || loadingMore} />
+            </Field> : null}
             <Field className="w-full sm:w-56">
               <FieldLabel htmlFor="russia-check-log-status">สถานะ Log</FieldLabel>
               <Select items={LOG_STATUS_ITEMS} value={logStatus} onValueChange={selectLogStatus} disabled={loading || loadingMore}>
@@ -410,6 +442,7 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
                 <SelectContent><SelectGroup>{LOG_STATUS_ITEMS.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
               </Select>
             </Field>
+            </div>
           </div>
           {loading ? <LoadingLog /> : groups.length ? groups.map((group) => <LogGroup key={group.gameId} group={group} />) : <Empty><EmptyHeader><EmptyMedia variant="icon"><Clock3 /></EmptyMedia><EmptyTitle>ยังไม่มี Log ตามสถานะนี้</EmptyTitle><EmptyDescription>ลองเลือกสถานะอื่น กดรีข้อมูล หรือรอรอบอัตโนมัติ</EmptyDescription></EmptyHeader></Empty>}
           {!loading && nextCursor ? <Button variant="outline" onClick={loadMore} disabled={loadingMore} className="self-center">{loadingMore ? <Spinner data-icon="inline-start" /> : null}โหลดเพิ่มเติม</Button> : null}
@@ -427,12 +460,13 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
       <Dialog open={Boolean(refreshResult)} onOpenChange={(open) => { if (!open) setRefreshResult(null); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Check className="size-5 text-green-600" />รีข้อมูลเสร็จแล้ว</DialogTitle>
-            <DialogDescription>{refreshResult?.partial ? "ตรวจสำเร็จบางส่วน" : refreshResult?.games.length ? "เกมที่มีการเปลี่ยนแปลง" : "ไม่มีเกมที่มีการเปลี่ยนแปลง"}</DialogDescription>
+            <DialogTitle className="flex items-center gap-2">{refreshResult?.status === "failed" ? <AlertCircle className="size-5 text-destructive" /> : <Check className="size-5 text-green-600" />}{refreshResult?.status === "failed" ? "รีข้อมูลไม่สำเร็จ" : "รีข้อมูลเสร็จแล้ว"}</DialogTitle>
+            <DialogDescription>{refreshResult?.status === "failed" ? `ตรวจไม่สำเร็จ ${refreshResult.failedGames.length} เกม ข้อมูลแพ็กเดิมยังอยู่` : refreshResult?.status === "partial" ? `ตรวจสำเร็จบางส่วน มี ${refreshResult.failedGames.length} เกมที่ยังสรุปไม่ได้` : refreshResult?.games.length ? "เกมที่มีการเปลี่ยนแปลง" : "ตรวจครบทุกเกมแล้ว ไม่มีเกมที่มีการเปลี่ยนแปลง"}</DialogDescription>
           </DialogHeader>
           {refreshResult?.games.length ? <ul className="divide-y rounded-md border">
             {refreshResult.games.map((item) => <li key={item.gameName} className="flex items-center justify-between gap-4 px-4 py-3"><span className="font-medium">{item.gameName}</span><Badge variant="secondary">{item.count} รายการ</Badge></li>)}
           </ul> : null}
+          {refreshResult?.failedGames.length ? <div className="rounded-md border border-destructive/30 bg-destructive/5 p-4"><p className="text-sm font-medium text-destructive">เกมที่ตรวจไม่สำเร็จ</p><ul className="mt-3 space-y-3">{refreshResult.failedGames.map((item) => <li key={item.gameName} className="text-sm"><div className="flex items-center gap-2"><span className="font-medium">{item.gameName}</span><Badge variant="destructive">ยังสรุปไม่ได้</Badge></div><p className="mt-1 text-xs text-muted-foreground">{item.reason}</p></li>)}</ul></div> : null}
           <DialogFooter><Button onClick={() => setRefreshResult(null)}>ปิด</Button></DialogFooter>
         </DialogContent>
       </Dialog>
