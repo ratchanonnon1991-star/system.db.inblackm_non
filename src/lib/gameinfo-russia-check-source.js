@@ -1,6 +1,6 @@
 // Saving a secret is not evidence that a provider accepted it.
 export function getRussiaCheckSourceAvailability(source, now = new Date()) {
-  const catalogSupported = ["xsolla", "infold", "midasbuy", "gryphline", "codashop"].includes(source.provider);
+  const catalogSupported = ["xsolla", "infold", "midasbuy", "gryphline", "codashop", "skystone"].includes(source.provider);
   const authExpired = Boolean(source.authExpiresAt && new Date(source.authExpiresAt) <= now);
   const verified = ["infold", "gryphline"].includes(source.provider) && source.credentialKind === source.provider && Boolean(source.authVerifiedAt);
   const authState = !source.authRequired ? "not_required" : !source.authConfigured ? "missing" : authExpired ? "expired" : source.authInvalidated ? "invalid" : verified ? "verified" : "saved_unverified";

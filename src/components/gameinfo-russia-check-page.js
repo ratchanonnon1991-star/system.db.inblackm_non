@@ -335,7 +335,7 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
   const packItems = useMemo(() => filterPacks(allPackItems, status, search), [allPackItems, status, search]);
   const newPackCount = allPackItems.filter((item) => item.displayStatus === "added").length;
   const resultLabel = runResultLabel(latest, latestChanges);
-  const sourceDescription = demoSelected ? "ข้อมูลตัวอย่าง · อ่านอย่างเดียว" : !selectedGame ? "ดูภาพรวมทุกเกม หรือเลือกเกมเพื่อเปิดร้านและจัดการ Login" : selectedGame.provider === "xsolla" ? "ร้านรัสเซีย · ภาษาอังกฤษ · ไม่ต้อง Login" : selectedGame.provider === "midasbuy" ? "ร้านประเทศไทย · ภาษาอังกฤษ · ไม่ต้อง Login" : "ใช้บัญชีและพื้นที่ที่เชื่อมไว้กับเกมนี้";
+  const sourceDescription = demoSelected ? "ข้อมูลตัวอย่าง · อ่านอย่างเดียว" : !selectedGame ? "ดูภาพรวมทุกเกม หรือเลือกเกมเพื่อเปิดร้านและจัดการ Login" : selectedGame.provider === "xsolla" ? "ร้านรัสเซีย · ภาษาอังกฤษ · ไม่ต้อง Login" : selectedGame.provider === "midasbuy" ? "ร้านประเทศไทย · ภาษาอังกฤษ · ไม่ต้อง Login" : selectedGame.provider === "skystone" ? "ร้าน EU/NA · ภาษาอังกฤษ · ไม่ต้อง Login" : "ใช้บัญชีและพื้นที่ที่เชื่อมไว้กับเกมนี้";
   const groups = useMemo(() => {
     const byGame = new Map();
     for (const event of logs) {

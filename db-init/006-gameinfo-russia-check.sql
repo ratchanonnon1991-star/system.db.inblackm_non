@@ -184,6 +184,16 @@ ON CONFLICT (source_key) DO UPDATE SET
   source_url=EXCLUDED.source_url, store_url=EXCLUDED.store_url, project_id=EXCLUDED.project_id,
   country=EXCLUDED.country, locale=EXCLUDED.locale, auth_required=false, enabled=true, updated_at=now();
 
+-- Crystal of Atlan sells through the Skystone web shop; the EU/NA catalog answers on country US.
+INSERT INTO gameinfo_russia_check_sources
+  (source_key, game_id, expected_game_name, provider, source_url, store_url, project_id, country, locale, auth_required, enabled)
+VALUES
+  ('crystal-of-atlan-skystone-us', 122, 'CRYSTAL OF ATLAN ( EU/NA)', 'skystone', 'https://topup.games.skystone.games', 'https://topup.games.skystone.games/Topup/754024', '754024', 'US', 'en', false, true)
+ON CONFLICT (source_key) DO UPDATE SET
+  game_id=EXCLUDED.game_id, expected_game_name=EXCLUDED.expected_game_name, provider=EXCLUDED.provider,
+  source_url=EXCLUDED.source_url, store_url=EXCLUDED.store_url, project_id=EXCLUDED.project_id,
+  country=EXCLUDED.country, locale=EXCLUDED.locale, auth_required=false, enabled=true, updated_at=now();
+
 INSERT INTO gameinfo_russia_check_sources
   (source_key, game_id, expected_game_name, provider, source_url, project_id, country, locale, enabled)
 VALUES

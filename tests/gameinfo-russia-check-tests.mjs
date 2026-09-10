@@ -70,6 +70,20 @@ assert.match(requested[0], /country=RU/);
 assert.match(requested[0], /locale=en/);
 assert.match(requested[0], /offset=0/);
 assert.match(requested[1], /offset=1/);
+// The whole sellable catalog, not one item type: Bullet Echo files 27 of its 44
+// packs as bundles and Oxide its 6 currency packages under virtual_currency.
+assert.match(requested[0], /\/project\/207830\/items\?/);
+assert.doesNotMatch(requested.join(" "), /virtual_items|\/items\/bundle|virtual_currency/);
+const mixedTypes = await fetchRussiaCheckCatalog({ sourceUrl: "https://store.xsolla.com/api/v2", projectId: "190666", country: "RU", locale: "en" }, {
+  retries: 1,
+  retryDelay: async () => {},
+  fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ has_more: false, items: [
+    { sku: "xsolla.bulletecho.bucks1", name: "Handful of Bucks", type: "virtual_good", can_be_bought: true },
+    { sku: "xsolla.bulletecho.extra5", name: "Legendary Pack", type: "bundle", can_be_bought: true },
+    { sku: "xsolla.bulletecho.retired", name: "Retired Pack", type: "bundle", can_be_bought: false },
+  ] }) }),
+});
+assert.deepEqual(mixedTypes, [{ sku: "xsolla.bulletecho.bucks1", name: "Handful of Bucks" }, { sku: "xsolla.bulletecho.extra5", name: "Legendary Pack" }]);
 
 let attempts = 0;
 const retried = await fetchRussiaCheckCatalog({ sourceUrl: "https://store.xsolla.com/api/v2", projectId: "207830", country: "RU", locale: "en" }, {
@@ -118,6 +132,7 @@ assert.match(ddl, /love-deepspace-infold[\s\S]*LOVE AND DEEPSPACE[\s\S]*auth_req
 assert.match(ddl, /infinity-nikki-infold[\s\S]*Infinity Nikki[\s\S]*infinitynikki\.infoldgames\.com\/charge\/th-th/);
 assert.match(ddl, /stumble-guys-codashop-ph[\s\S]*21[\s\S]*STUMBLE GUYS[\s\S]*codashop\.com\/en-ph\/stumble-guys/);
 assert.match(ddl, /shining-nikki-codashop-mm[\s\S]*6[\s\S]*SHINING NIKKI[\s\S]*codashop\.com\/my-mm\/shining-nikki/);
+assert.match(ddl, /crystal-of-atlan-skystone-us[\s\S]*122[\s\S]*CRYSTAL OF ATLAN \( EU\/NA\)[\s\S]*skystone[\s\S]*topup\.games\.skystone\.games\/Topup\/754024[\s\S]*'754024', 'US'/);
 assert.match(ddl, /WHERE status IN \('queued', 'running'\)/);
 assert.match(ddl, /event_type IN \('added', 'removed', 'restored'\)/);
 assert.match(ddl, /demo-data[\s\S]*demo data[\s\S]*'demo'[\s\S]*false/);
@@ -140,8 +155,9 @@ assert.match(logsRoute, /eventType: query\.get\("eventType"\)/);
 assert.match(logsRoute, /date: query\.get\("date"\)/);
 const server = readFileSync(new URL("../src/server/gameinfo-russia-check.js", import.meta.url), "utf8");
 assert.match(server, /'bullet-echo-xsolla-ru',72,'BULLET ECHO','xsolla'/);
+assert.match(server, /'crystal-of-atlan-skystone-us',122,'CRYSTAL OF ATLAN \( EU\/NA\)','skystone'[\s\S]*'754024','US','en',false,true/);
 assert.doesNotMatch(server, /'bullet-echo-xsolla-ru',217/);
-assert.match(server, /provider IN \('xsolla','midasbuy','codashop'\)/);
+assert.match(server, /provider IN \('xsolla','midasbuy','codashop','skystone'\)/);
 assert.match(server, /status=\$3::varchar\(24\)[\s\S]*CASE WHEN \$3::varchar\(24\)='removed'/);
 assert.doesNotMatch(server, /last_scheduled_at|lastScheduledAt/);
 assert.doesNotMatch(server, /JOIN game_list|Source .*ต้องผูกกับ Game ID|config_error/);
@@ -168,4 +184,4 @@ assert.doesNotMatch(page, />SKU<|ราคา/);
 const home = readFileSync(new URL("../src/components/gameinfo-gamelist-cards.js", import.meta.url), "utf8");
 assert.match(home, /russia-check[\s\S]*Russia Check/);
 
-console.log("45 passed");
+console.log("50 passed");

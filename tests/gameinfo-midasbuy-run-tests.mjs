@@ -18,7 +18,7 @@ async function run({ payload = fixture, existing = [], mode = "recovery", gameId
   setResponder((sql, params) => {
     if (sql.startsWith("SELECT id FROM gameinfo_russia_check_runs WHERE status='queued'")) return { rows: [{ id: runId }] };
     if (sql.startsWith("SELECT s.id FROM gameinfo_russia_check_sources")) {
-      assert.ok(sql.includes("s.provider IN ('xsolla','midasbuy','codashop') AND NOT s.auth_required"));
+      assert.ok(sql.includes("s.provider IN ('xsolla','midasbuy','codashop','skystone') AND NOT s.auth_required"));
       assert.ok(sql.includes("($1::int IS NULL OR s.game_id=$1)"));
       assert.equal(params[0], gameId);
       return { rows: [{ id: source.id }] };

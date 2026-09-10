@@ -1,0 +1,242 @@
+{
+  "code": 0,
+  "message": "",
+  "data": {
+    "activity": [],
+    "normal": [
+      {
+        "goods_type": 1,
+        "product_id": "uswb.coa.cz10",
+        "product_name": "60 Vouchers + 5 Bonus",
+        "local_product_name": "60 Vouchers + 5 Bonus",
+        "goods_desc": "Basic Bonus 5 Vouchers",
+        "label": "p6_shop_sheetname_Voucher",
+        "channels": [
+          "xsolla_paystation"
+        ]
+      },
+      {
+        "goods_type": 2,
+        "product_id": "us.coa.cz1",
+        "product_name": "60 Opals + 9 Bonus",
+        "local_product_name": "60 Opals + 9 Bonus",
+        "goods_desc": "Basic Bonus 6 Opals + 3 Bonus for Top-up Center",
+        "label": "p6_shop_sheetname_Opal",
+        "channels": [
+          "xsolla_paystation"
+        ]
+      },
+      {
+        "goods_type": 1,
+        "product_id": "us.coa.halflunarcard",
+        "product_name": "Phantasium Pass (15 Days) + 8 Opals",
+        "local_product_name": "Phantasium Pass (15 Days) + 8 Opals",
+        "goods_desc": "Unlock Phantasium Pass for 15 days of privileges + 8 Opals for Top-up Center",
+        "label": "p6_shop_sheetname_Opal",
+        "channels": [
+          "xsolla_paystation"
+        ]
+      },
+      {
+        "goods_type": 1,
+        "product_id": "us.coa.lunarcard",
+        "product_name": "Phantasium Pass (30 Days) + 14 Opals",
+        "local_product_name": "Phantasium Pass (30 Days) + 14 Opals",
+        "goods_desc": "Unlock Phantasium Pass for 30 days of privileges + 14 Opals for Top-up Center",
+        "label": "p6_shop_sheetname_Opal",
+        "channels": [
+          "xsolla_paystation"
+        ]
+      },
+      {
+        "goods_type": 1,
+        "product_id": "uswb.coa.cz11",
+        "product_name": "300 Vouchers + 25 Bonus",
+        "local_product_name": "300 Vouchers + 25 Bonus",
+        "goods_desc": "Basic Bonus 25 Vouchers",
+        "label": "p6_shop_sheetname_Voucher",
+        "channels": [
+          "xsolla_paystation"
+        ]
+      },
+      {
+        "goods_type": 2,
+        "product_id": "us.coa.cz2",
+        "product_name": "300 Opals + 60 Bonus",
+        "local_product_name": "300 Opals + 60 Bonus",
+        "goods_desc": "Basic Bonus 45 Opals + 15 Bonus for Top-up Center",
+        "label": "p6_shop_sheetname_Opal",
+        "channels": [
+          "xsolla_paystation"
+        ]
+      },
+      {
+        "goods_type": 1,
+        "product_id": "uswb.coa.cz12",
+        "product_name": "980 Vouchers + 81 Bonus",
+        "local_product_name": "980 Vouchers + 81 Bonus",
+        "goods_desc": "Basic Bonus 81 Vouchers",
+        "label": "p6_shop_sheetname_Voucher",
+        "channels": [
+          "xsolla_paystation"
+        ]
+      },
+      {
+        "goods_type": 2,
+        "product_id": "us.coa.cz3",
+        "product_name": "980 Opals + 229 Bonus",
+        "local_product_name": "980 Opals + 229 Bonus",
+        "goods_desc": "Basic Bonus 180 Opals + 49 Bonus for Top-up Center",
+        "label": "p6_shop_sheetname_Opal",
+        "channels": [
+          "xsolla_paystation"
+        ]
+      },
+      {
+        "goods_type": 1,
+        "product_id": "uswb.coa.cz13",
+        "product_name": "1,980 Vouchers + 165 Bonus",
+        "local_product_name": "1,980 Vouchers + 165 Bonus",
+        "goods_desc": "Basic Bonus 165 Vouchers",
+        "label": "p6_shop_sheetname_Voucher",
+        "channels": [
+          "xsolla_paystation"
+        ]
+      },
+      {
+        "goods_type": 2,
+        "product_id": "us.coa.cz4",
+        "product_name": "1,980 Opals + 499 Bonus",
+        "local_product_name": "1,980 Opals + 499 Bonus",
+        "goods_desc": "Basic Bonus 400 Opals + 99 Bonus for Top-up Center",
+        "label": "p6_shop_sheetname_Opal",
+        "channels": [
+          "xsolla_paystation"
+        ]
+      },
+      {
+        "goods_type": 1,
+        "product_id": "uswb.coa.cz14",
+        "product_name": "3,280 Vouchers + 273 Bonus",
+        "local_product_name": "3,280 Vouchers + 273 Bonus",
+        "goods_desc": "Basic Bonus 273 Vouchers",
+        "label": "p6_shop_sheetname_Voucher",
+        "channels": [
+          "xsolla_paystation"
+        ]
+      },
+      {
+        "goods_type": 2,
+        "product_id": "us.coa.cz5",
+        "product_name": "3,280 Opals + 965 Bonus",
+        "local_product_name": "3,280 Opals + 965 Bonus",
+        "goods_desc": "Basic Bonus 800 Opals + 165 Bonus for Top-up Center",
+        "label": "p6_shop_sheetname_Opal",
+        "channels": [
+          "xsolla_paystation"
+        ]
+      },
+      {
+        "goods_type": 1,
+        "product_id": "uswb.coa.cz15",
+        "product_name": "6,480 Vouchers + 540 Bonus",
+        "local_product_name": "6,480 Vouchers + 540 Bonus",
+        "goods_desc": "Basic Bonus 540 Vouchers",
+        "label": "p6_shop_sheetname_Voucher",
+        "channels": [
+          "xsolla_paystation"
+        ]
+      },
+      {
+        "goods_type": 2,
+        "product_id": "us.coa.cz6",
+        "product_name": "6,480 Opals + 2,126 Bonus",
+        "local_product_name": "6,480 Opals + 2,126 Bonus",
+        "goods_desc": "Basic Bonus 1,800 Opals + 326 Bonus for Top-up Center",
+        "label": "p6_shop_sheetname_Opal",
+        "channels": [
+          "xsolla_paystation"
+        ]
+      },
+      {
+        "goods_type": 1,
+        "product_id": "uswb.coa.cz16",
+        "product_name": "19,800 Vouchers + 1,650 Bonus",
+        "local_product_name": "19,800 Vouchers + 1,650 Bonus",
+        "goods_desc": "Basic Bonus 1,650 Vouchers",
+        "label": "p6_shop_sheetname_Voucher",
+        "channels": [
+          "xsolla_paystation"
+        ]
+      },
+      {
+        "goods_type": 2,
+        "product_id": "uswb.coa.cz7",
+        "product_name": "19,800 Opals + 6,500 Bonus",
+        "local_product_name": "19,800 Opals + 6,500 Bonus",
+        "goods_desc": "Basic Bonus 5,500 Opals + 1,000 Bonus for Top-up Center",
+        "label": "p6_shop_sheetname_Opal",
+        "channels": [
+          "xsolla_paystation"
+        ]
+      },
+      {
+        "goods_type": 1,
+        "product_id": "uswb.coa.cz17",
+        "product_name": "32,800 Vouchers + 2,733 Bonus",
+        "local_product_name": "32,800 Vouchers + 2,733 Bonus",
+        "goods_desc": "Basic Bonus 2,733 Vouchers",
+        "label": "p6_shop_sheetname_Voucher",
+        "channels": [
+          "xsolla_paystation"
+        ]
+      },
+      {
+        "goods_type": 2,
+        "product_id": "uswb.coa.cz8",
+        "product_name": "32,800 Opals + 10,771 Bonus",
+        "local_product_name": "32,800 Opals + 10,771 Bonus",
+        "goods_desc": "Basic Bonus 9,111 Opals + 1,660 Bonus for Top-up Center",
+        "label": "p6_shop_sheetname_Opal",
+        "channels": [
+          "xsolla_paystation"
+        ]
+      },
+      {
+        "goods_type": 1,
+        "product_id": "uswb.coa.cz18",
+        "product_name": "64,800 Vouchers + 5,400 Bonus",
+        "local_product_name": "64,800 Vouchers + 5,400 Bonus",
+        "goods_desc": "Basic Bonus 5,400 Vouchers",
+        "label": "p6_shop_sheetname_Voucher",
+        "channels": [
+          "xsolla_paystation"
+        ]
+      },
+      {
+        "goods_type": 2,
+        "product_id": "uswb.coa.cz9",
+        "product_name": "64,800 Opals + 21,300 Bonus",
+        "local_product_name": "64,800 Opals + 21,300 Bonus",
+        "goods_desc": "Basic Bonus 18,000 Opals + 3,300 Bonus for Top-up Center",
+        "label": "p6_shop_sheetname_Opal",
+        "channels": [
+          "xsolla_paystation"
+        ]
+      },
+      {
+        "goods_type": 1,
+        "product_id": "uswb.coa.cz52",
+        "product_name": "648,000 Voucher + 80,000 Bonus Vouchers",
+        "local_product_name": "648,000 Voucher + 80,000 Bonus Vouchers",
+        "goods_desc": "Get 80,000 bonus vouchers!",
+        "label": "p6_shop_sheetname_Voucher",
+        "channels": [
+          "xsolla_paystation"
+        ]
+      }
+    ],
+    "classify_products": null,
+    "is_update": false
+  }
+}

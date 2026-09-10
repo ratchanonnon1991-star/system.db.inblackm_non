@@ -8,6 +8,7 @@ import { fetchInfoldCatalog } from "@/server/gameinfo-infold-catalog";
 import { fetchMidasbuyCatalog } from "@/server/gameinfo-midasbuy-catalog";
 import { fetchCodashopCatalog } from "@/server/gameinfo-codashop-catalog";
 import { fetchGryphlineCatalog } from "@/server/gameinfo-gryphline-catalog";
+import { fetchSkystoneCatalog } from "@/server/gameinfo-skystone-catalog";
 import { saveGryphlineSession } from "@/server/gameinfo-gryphline-session";
 import { saveInfoldSession } from "@/server/gameinfo-infold-session";
 import {
@@ -166,6 +167,13 @@ async function ensureSchema(connection) {
           game_id=EXCLUDED.game_id,expected_game_name=EXCLUDED.expected_game_name,provider=EXCLUDED.provider,
           source_url=EXCLUDED.source_url,store_url=EXCLUDED.store_url,project_id=EXCLUDED.project_id,country=EXCLUDED.country,
           locale=EXCLUDED.locale,auth_required=true,updated_at=now();
+        INSERT INTO gameinfo_russia_check_sources
+          (source_key,game_id,expected_game_name,provider,source_url,store_url,project_id,country,locale,auth_required,enabled)
+        VALUES ('crystal-of-atlan-skystone-us',122,'CRYSTAL OF ATLAN ( EU/NA)','skystone','https://topup.games.skystone.games','https://topup.games.skystone.games/Topup/754024','754024','US','en',false,true)
+        ON CONFLICT (source_key) DO UPDATE SET
+          game_id=EXCLUDED.game_id,expected_game_name=EXCLUDED.expected_game_name,provider=EXCLUDED.provider,
+          source_url=EXCLUDED.source_url,store_url=EXCLUDED.store_url,project_id=EXCLUDED.project_id,country=EXCLUDED.country,
+          locale=EXCLUDED.locale,auth_required=false,enabled=true,updated_at=now();
         INSERT INTO gameinfo_russia_check_sources
           (source_key,game_id,expected_game_name,provider,source_url,project_id,country,locale,enabled)
         VALUES ('demo-data',2147483647,'demo data','demo','internal://demo','demo','RU','en',false)
@@ -380,7 +388,10 @@ export async function fetchRussiaCheckCatalog(source, options = {}) {
   const collected = [];
   let offset = 0;
   for (let page = 0; page < 100; page += 1) {
-    const url = new URL(`${String(source.sourceUrl || source.source_url).replace(/\/$/, "")}/project/${source.projectId || source.project_id}/items/virtual_items`);
+    // `/items` is the whole sellable catalog. The per-type paths each miss packs:
+    // Bullet Echo keeps 27 of its 44 packs as bundles, and Oxide files its 6
+    // currency packages under virtual_currency/package rather than bundle.
+    const url = new URL(`${String(source.sourceUrl || source.source_url).replace(/\/$/, "")}/project/${source.projectId || source.project_id}/items`);
     url.searchParams.set("limit", String(RUSSIA_CHECK_PAGE_SIZE));
     url.searchParams.set("offset", String(offset));
     url.searchParams.set("locale", source.locale || "en");
@@ -450,6 +461,7 @@ async function processSource(pool, runId, source) {
       catalog = await (source.provider === "infold" ? fetchInfoldCatalog(session, { source }) : fetchGryphlineCatalog(session));
     } else if (source.provider === "midasbuy") catalog = await fetchMidasbuyCatalog(source);
     else if (source.provider === "codashop") catalog = await fetchCodashopCatalog(source);
+    else if (source.provider === "skystone") catalog = await fetchSkystoneCatalog(source);
     else catalog = await fetchRussiaCheckCatalog(source);
     const hash = createHash("sha256").update(JSON.stringify(catalog)).digest("hex");
     const client = await pool.connect();
@@ -561,7 +573,7 @@ export async function startRussiaCheck(actor, triggerType = "manual", gameId = n
     `SELECT s.id FROM gameinfo_russia_check_sources s
      LEFT JOIN gameinfo_russia_check_source_credentials c ON c.source_id=s.id
      WHERE s.enabled AND ($1::int IS NULL OR s.game_id=$1) ${retryClause}
-       AND ((s.provider IN ('xsolla','midasbuy','codashop') AND NOT s.auth_required) OR
+       AND ((s.provider IN ('xsolla','midasbuy','codashop','skystone') AND NOT s.auth_required) OR
          (s.provider='infold' AND c.credential_kind='infold' AND c.verified_at IS NOT NULL AND c.invalidated_at IS NULL AND (c.expires_at IS NULL OR c.expires_at>NOW())) OR
          (s.provider='gryphline' AND c.credential_kind='gryphline' AND c.verified_at IS NOT NULL AND c.invalidated_at IS NULL AND (c.expires_at IS NULL OR c.expires_at>NOW()))) ORDER BY s.id`,
     retryId == null ? [targetGameId] : [targetGameId, retryId]
