@@ -11,6 +11,7 @@ import {
   Loader2,
   Lock,
   LogOut,
+  Radio,
   Table2,
   User,
   Users,
@@ -114,6 +115,13 @@ const SYSTEMS = [
     desc: "Itune — ฝั่ง Admin และ Topup",
     icon: Folders,
     href: "/projectm/th",
+  },
+  {
+    key: "feed-social",
+    label: "Feed Social",
+    desc: "ติดตามโพสต์ Facebook ด้วย Rule และ Tag",
+    icon: Radio,
+    href: "/feed-social",
   },
   {
     key: "profit",
@@ -244,6 +252,8 @@ function SystemHub({ me, onLoggedOut, onPermissionsChanged }) {
               const accent =
                 system.key === "systemdb"
                   ? "bg-red-50 text-red-600 group-hover:bg-red-600 group-hover:text-white"
+                  : system.key === "feed-social"
+                    ? "bg-zinc-100 text-zinc-800 group-hover:bg-zinc-900 group-hover:text-white"
                   : "bg-sky-50 text-sky-600 group-hover:bg-sky-600 group-hover:text-white";
               return (
                 <NextLink

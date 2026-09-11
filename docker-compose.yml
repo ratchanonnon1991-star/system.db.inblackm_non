@@ -18,5 +18,26 @@ services:
       timeout: 5s
       retries: 10
 
+  app:
+    build: .
+    container_name: gamedb-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PG_HOST: postgres
+      PG_PORT: 5432
+      PG_DATABASE: ${PG_DATABASE:-inblackm_system}
+      PG_USER: ${PG_USER:-postgres}
+      PG_PASSWORD: ${PG_PASSWORD:-postgres}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      GAMEDB_ENC_KEY: ${GAMEDB_ENC_KEY:?GAMEDB_ENC_KEY is required}
+      SOCIAL_FEED_DATABASE: ${SOCIAL_FEED_DATABASE:-topup_inblackm}
+      SOCIAL_FEED_INGEST_SECRET: ${SOCIAL_FEED_INGEST_SECRET:-}
+      TURNSTILE_ENABLED: ${TURNSTILE_ENABLED:-false}
+    ports:
+      - "${APP_PORT:-4183}:4183"
+
 volumes:
   gamedb_pgdata:
