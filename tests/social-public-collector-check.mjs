@@ -10,7 +10,7 @@ const context = vm.createContext({
     storage: { local: { get: async () => ({ serverUrl: "https://tools.inblackm.com", ingestSecret: "x".repeat(32), collectorInstanceId: "reader" }), set: async () => {} } },
     offscreen: { hasDocument: async () => false, createDocument: async () => {}, closeDocument: async () => {} },
     runtime: { onInstalled: event, onMessage: event, sendMessage: async () => ({ status: "unknown", posts: [] }) },
-    alarms: { onAlarm: event }, cookies: { onChanged: event, getAll: () => { throw new Error("Collection must not read login cookies"); } },
+    alarms: { onAlarm: event, create: async () => {} }, cookies: { onChanged: event, getAll: () => { throw new Error("Collection must not read login cookies"); } },
     tabs: { onRemoved: event, create: () => { throw new Error("Collection must not open tabs"); } },
   },
   fetch: async (url, options) => {

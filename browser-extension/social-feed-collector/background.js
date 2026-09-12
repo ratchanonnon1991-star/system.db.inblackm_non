@@ -8,6 +8,11 @@ async function report(sourceId, result) { await api("/api/social-feed/collector"
 async function beginLogin({ label, targetInstanceId = "" }) { const ownInstanceId = await instanceId(); if (targetInstanceId && targetInstanceId !== ownInstanceId) throw new Error("กรุณาเปิดหน้านี้ใน Chrome profile ของบัญชีที่เลือก"); const previous = (await chrome.storage.session.get("loginFlow")).loginFlow; if (previous && previous.expiresAt > Date.now()) throw new Error("มีหน้าต่าง Login เปิดอยู่แล้ว"); if (previous) await chrome.storage.session.remove("loginFlow"); await chrome.storage.local.set({ accountLabel: String(label || "").trim().slice(0, 100) }); const popup = await chrome.windows.create({ url: "about:blank", type: "popup", width: 540, height: 680, focused: true }); const popupTabId = popup.tabs?.[0]?.id; if (!Number.isInteger(popupTabId)) throw new Error("เปิดหน้าต่าง Login ไม่สำเร็จ"); await chrome.storage.session.set({ loginFlow: { label, popupTabId, windowId: popup.id, status: "confirming", expiresAt: Date.now() + 600000 } }); await chrome.tabs.update(popupTabId, { url: chrome.runtime.getURL("login.html") }); }
 async function finishLogin(flow) { const facebookId = await currentFacebookId(); if (!facebookId) return; await heartbeat({ activate: true }); await chrome.storage.session.remove("loginFlow"); await chrome.windows.remove(flow.windowId).catch(() => {}); }
 let currentCheck;
+async function scheduleNextCheck() {
+  const nextCheckAt = Date.now() + 5 * 60 * 1000;
+  await chrome.storage.local.set({ nextCheckAt });
+  await chrome.alarms.create("social-feed-check", { when: nextCheckAt });
+}
 async function checkSource(source) {
   try {
     const url = new URL(source.url);
@@ -49,10 +54,10 @@ function runCheck() {
       await chrome.storage.local.set({ lastCheckAt: new Date().toISOString(), lastResults: results });
       return results;
     } finally { await chrome.offscreen.closeDocument().catch(() => {}); }
-  })().finally(() => { currentCheck = null; });
+  })().finally(async () => { currentCheck = null; await scheduleNextCheck(); });
   return currentCheck;
 }
-chrome.runtime.onInstalled.addListener(async () => { await instanceId(); chrome.alarms.create("social-feed-check", { periodInMinutes: 5 }); });
+chrome.runtime.onInstalled.addListener(async () => { await instanceId(); await scheduleNextCheck(); });
 chrome.alarms.onAlarm.addListener((alarm) => { if (alarm.name === "social-feed-check") runCheck().catch(() => heartbeat().catch(() => {})); });
 chrome.cookies.onChanged.addListener((info) => { if (info.cookie?.name !== "c_user" || !String(info.cookie.domain).endsWith("facebook.com")) return; if (info.removed) { heartbeat({ forcedStatus: "logged_out" }).catch(() => {}); return; } setTimeout(async () => { const flow = (await chrome.storage.session.get("loginFlow")).loginFlow; if (flow?.status === "waiting") finishLogin(flow).catch(() => {}); else heartbeat().catch(() => {}); }, 1200); });
 chrome.tabs.onRemoved.addListener(async (tabId) => { const flow = (await chrome.storage.session.get("loginFlow")).loginFlow; if (flow?.popupTabId === tabId) await chrome.storage.session.remove("loginFlow"); });

@@ -25,6 +25,13 @@ function formatTime(value) {
   return new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
+function formatCountdown(value, now) {
+  const seconds = Math.max(0, Math.ceil((Number(value) - now) / 1000));
+  if (!Number(value)) return "รอข้อมูลจาก Extension";
+  if (seconds <= 0) return "กำลังรอดึงโพสต์";
+  return `ดึงโพสต์ใน ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} นาที`;
+}
+
 function RuleBadge({ mode }) {
   const label = mode === "all" ? "ALL" : mode === "exclude" ? "ไม่เอา" : "+ ANY";
   return <Badge variant={mode === "all" ? "default" : "outline"}>{label}</Badge>;
@@ -52,6 +59,8 @@ export default function SocialFeedPage() {
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginTarget, setLoginTarget] = useState(null);
   const [checkingSessions, setCheckingSessions] = useState(false);
+  const [collectorTiming, setCollectorTiming] = useState({ lastCheckAt: "", nextCheckAt: 0 });
+  const [now, setNow] = useState(() => Date.now());
 
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setRefreshing(true);
@@ -74,6 +83,15 @@ export default function SocialFeedPage() {
     const timer = window.setInterval(() => load(true), 10000);
     return () => window.clearInterval(timer);
   }, [load]);
+  useEffect(() => {
+    const listener = (event) => {
+      if (event.origin === window.location.origin && event.data?.type === "INBLACKM_SOCIAL_STATUS_RESULT") setCollectorTiming(event.data.status);
+    };
+    window.addEventListener("message", listener);
+    window.postMessage({ type: "INBLACKM_SOCIAL_STATUS" }, window.location.origin);
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => { window.removeEventListener("message", listener); window.clearInterval(timer); };
+  }, []);
 
   const sourcesByCategory = useMemo(() => data.categories.map((item) => ({
     ...item, sources: data.sources.filter((source) => source.categoryId === item.id),
@@ -129,7 +147,7 @@ export default function SocialFeedPage() {
             <div><p className="font-semibold tracking-tight">Feed Social</p><p className="text-xs text-muted-foreground">Facebook text monitor</p></div>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="outline"><CircleDot data-icon="inline-start" /> อัปเดตทุก 10 วินาที</Badge>
+            <Badge variant="outline"><CircleDot data-icon="inline-start" />{formatCountdown(collectorTiming.nextCheckAt, now)}</Badge>
             <Button variant="outline" size="icon" onClick={() => load()} disabled={refreshing} aria-label="รีเฟรช"><RefreshCw className={refreshing ? "animate-spin" : ""} /></Button>
             <Button variant="outline" size="icon" render={<Link href="/" />} aria-label="กลับเมนู"><LayoutGrid /></Button>
           </div>
