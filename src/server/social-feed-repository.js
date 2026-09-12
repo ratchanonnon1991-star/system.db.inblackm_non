@@ -238,7 +238,7 @@ export async function getSocialFeedState(userId, filters = {}) {
       COALESCE(jsonb_agg(DISTINCT jsonb_build_object('id',t.id::text,'name',t.name)) FILTER (WHERE t.id IS NOT NULL),'[]') AS tags
     FROM social_feed_posts p
     JOIN social_feed_sources s ON s.id=p.source_id
-    ${filters.applyRules ? "JOIN social_feed_post_categories pc ON pc.post_id=p.id AND pc.category_id=s.category_id" : ""}
+
     LEFT JOIN social_feed_saved_posts sp ON sp.post_id=p.id AND sp.user_id=$1
     LEFT JOIN social_feed_post_tags pt ON pt.post_id=p.id LEFT JOIN social_feed_tags t ON t.id=pt.tag_id
     ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
@@ -384,31 +384,33 @@ export async function ingestSocialPosts(items) {
   await ensureSchema();
   const client = await getSocialPool().connect();
   let ingested = 0;
+  let existing = 0;
+  const now = Date.now();
   try {
     await client.query("BEGIN");
-    const rules = await client.query(`SELECT * FROM social_feed_rules WHERE enabled=TRUE`);
     for (const item of (items || []).slice(0, 500)) {
       const rawSourceId = String(item.sourceId || "");
       const sourceId = /^\d+$/.test(rawSourceId) ? rawSourceId : "0";
       const source = await client.query(`SELECT * FROM social_feed_sources WHERE id=$1 OR facebook_group_id=$2 LIMIT 1`, [sourceId, String(item.groupId || "")]);
       if (!source.rows[0] || !item.externalPostId || !String(item.message || "").trim()) continue;
       const sourceRow = source.rows[0];
-      const postedAt = Number.isNaN(new Date(item.postedAt).getTime()) ? new Date().toISOString() : new Date(item.postedAt).toISOString();
+      const timestamp = item.postedAt ? new Date(item.postedAt).getTime() : NaN;
+      const postedAt = new Date(Number.isFinite(timestamp) && timestamp <= now ? timestamp : now).toISOString();
       let originalUrl = sourceRow.facebook_url;
       try {
         const candidate = new URL(String(item.originalUrl || ""));
         if (candidate.protocol === "https:" && /(^|\.)facebook\.com$/i.test(candidate.hostname)) originalUrl = candidate.toString();
       } catch {}
       const message = String(item.message).trim().slice(0, 20000);
-      const result = await client.query(`INSERT INTO social_feed_posts(source_id,external_post_id,message,original_url,posted_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,external_post_id) DO UPDATE SET message=EXCLUDED.message,original_url=EXCLUDED.original_url,posted_at=LEAST(social_feed_posts.posted_at,EXCLUDED.posted_at) RETURNING id`, [sourceRow.id, String(item.externalPostId).slice(0, 255), message, originalUrl, postedAt]);
+      const result = await client.query(`INSERT INTO social_feed_posts(source_id,external_post_id,message,original_url,posted_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,external_post_id) DO UPDATE SET message=CASE WHEN length(EXCLUDED.message)>length(social_feed_posts.message) THEN EXCLUDED.message ELSE social_feed_posts.message END,original_url=CASE WHEN length(EXCLUDED.message)>length(social_feed_posts.message) THEN EXCLUDED.original_url ELSE social_feed_posts.original_url END RETURNING id,(xmax=0) AS inserted`, [sourceRow.id, String(item.externalPostId).slice(0, 255), message, originalUrl, postedAt]);
+      if (!result.rows[0].inserted) { existing += 1; continue; }
       const postId = result.rows[0].id;
       await client.query(`DELETE FROM social_feed_post_categories WHERE post_id=$1`, [postId]);
-      const categoryRules = rules.rows.filter((rule) => String(rule.category_id) === String(sourceRow.category_id));
-      if (categoryMatchesRules(categoryRules, message)) await client.query(`INSERT INTO social_feed_post_categories(post_id,category_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, [postId, sourceRow.category_id]);
+      await client.query(`INSERT INTO social_feed_post_categories(post_id,category_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, [postId, sourceRow.category_id]);
       await client.query(`UPDATE social_feed_sources SET last_seen_at=NOW(),last_error='',updated_at=NOW() WHERE id=$1`, [sourceRow.id]);
       ingested += 1;
     }
     await client.query("COMMIT");
-    return { ingested };
+    return { ingested, existing };
   } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
 }

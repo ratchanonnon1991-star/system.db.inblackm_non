@@ -10,7 +10,6 @@ export async function GET(request) {
       categoryId: params.get("category") || "",
       tagId: params.get("tag") || "",
       saved: params.get("saved") || "",
-      applyRules: params.get("rules") === "true",
       q: params.get("q") || "",
     }));
   } catch (error) {

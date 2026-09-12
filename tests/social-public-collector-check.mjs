@@ -3,6 +3,7 @@ import fs from "node:fs";
 import vm from "node:vm";
 
 const calls = [];
+const tabs = [];
 const event = { addListener() {} };
 const context = vm.createContext({
   URL, AbortSignal, setTimeout, clearTimeout, crypto: { randomUUID: () => "reader" },
@@ -11,7 +12,14 @@ const context = vm.createContext({
     offscreen: { hasDocument: async () => false, createDocument: async () => {}, closeDocument: async () => {} },
     runtime: { onInstalled: event, onMessage: event, sendMessage: async () => ({ status: "unknown", posts: [] }) },
     alarms: { onAlarm: event, create: async () => {} }, cookies: { onChanged: event, getAll: () => { throw new Error("Collection must not read login cookies"); } },
-    tabs: { onRemoved: event, create: () => { throw new Error("Collection must not open tabs"); } },
+    tabs: {
+      onRemoved: event,
+      create: async (options) => { tabs.push(["create", options]); return { id: 7 }; },
+      update: async (id, options) => { tabs.push(["update", id, options]); },
+      get: async () => ({ status: "complete" }),
+      sendMessage: async () => ({ status: "ready", note: "read", posts: [] }),
+      remove: async (id) => { tabs.push(["remove", id]); },
+    },
   },
   fetch: async (url, options) => {
     calls.push({ url, options });
@@ -19,9 +27,16 @@ const context = vm.createContext({
   },
 });
 vm.runInContext(fs.readFileSync("browser-extension/social-feed-collector/background.js", "utf8"), context);
+const contentSource = fs.readFileSync("browser-extension/social-feed-collector/content.js", "utf8");
+assert.match(contentSource, /see more\|ดูเพิ่มเติม/i);
+assert.match(contentSource, /data-ad-preview/);
+assert.doesNotMatch(contentSource, /const message = article\?\.innerText/);
 await vm.runInContext("Promise.all([runCheck(), runCheck()])", context);
 const facebook = calls.filter(({ url }) => url.startsWith("https://www.facebook.com"));
-assert.equal(facebook.length, 1, "Overlapping runs must share one collection");
-assert.equal(facebook[0].options.credentials, "omit");
+assert.equal(facebook.length, 0, "Facebook is read through the rendered tab");
+assert.equal(tabs.filter((item) => item[0] === "create").length, 1);
+assert.equal(tabs[0][1].active, false);
+assert.equal(tabs.filter((item) => item[0] === "update").length, 1);
+assert.equal(tabs.filter((item) => item[0] === "remove").length, 1);
 assert.equal(calls.filter(({ url }) => url.includes("?mode=public")).length, 1);
-console.log("PASS: no-login collection, no tabs, cookie omission, overlapping-run guard");
+console.log("PASS: one inactive tab, tab cleanup, overlapping-run guard, no login-cookie inspection");

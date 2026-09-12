@@ -1,10 +1,22 @@
 const account = document.querySelector("#account");
 const status = document.querySelector("#status");
-chrome.storage.local.get({ accountLabel: "", ingestSecret: "", lastCheckAt: "" }).then((data) => { account.textContent = data.accountLabel ? `บัญชี: ${data.accountLabel}` : "ยังไม่ได้ตั้งชื่อบัญชี"; const configured = data.ingestSecret.length >= 24 ? "Ingest secret: ตั้งค่าแล้ว" : "Ingest secret: ยังไม่ได้ตั้งค่า"; status.textContent = data.lastCheckAt ? `${configured} · ตรวจล่าสุด ${new Date(data.lastCheckAt).toLocaleString("th-TH")}` : configured; });
+function showResults(results = []) {
+  status.style.whiteSpace = "pre-line";
+  status.textContent = `ตรวจ ${results.length} กลุ่ม · เพิ่มใหม่ ${results.reduce((n, r) => n + (r.ingested || 0), 0)} · มีแล้ว ${results.reduce((n, r) => n + (r.existing || 0), 0)}\n` + results.map((r) => `${r.source}: ${r.note || r.status}`).join("\n");
+}
+chrome.storage.local.get({ accountLabel: "", ingestSecret: "", lastCheckAt: "", lastResults: [] }).then((data) => {
+  account.textContent = data.accountLabel ? `บัญชีที่เก็บไว้: ${data.accountLabel}` : "ดึง Public โดยไม่ต้อง Login";
+  if (data.lastCheckAt) showResults(data.lastResults);
+  else status.textContent = data.ingestSecret.length >= 24 ? "Ingest secret: ตั้งค่าแล้ว" : "Ingest secret: ยังไม่ได้ตั้งค่า";
+});
 document.querySelector("#options").addEventListener("click", () => chrome.runtime.openOptionsPage());
 document.querySelector("#check").addEventListener("click", async (event) => {
-  event.currentTarget.disabled = true; status.textContent = "กำลังตรวจกลุ่ม...";
-  const result = await chrome.runtime.sendMessage({ type: "RUN_SOCIAL_FEED_CHECK" });
-  status.textContent = result.ok ? `ตรวจแล้ว ${result.results.length} กลุ่ม · พบ ${result.results.reduce((n, item) => n + (item.posts?.length || 0), 0)} โพสต์ · อ่านไม่ได้ ${result.results.filter((item) => item.status !== "ready").length} กลุ่ม` : result.error;
-  event.currentTarget.disabled = false;
+  event.currentTarget.disabled = true;
+  status.textContent = "กำลังรวบรวมโพสต์จากทุกกลุ่ม...";
+  try {
+    const result = await chrome.runtime.sendMessage({ type: "RUN_SOCIAL_FEED_CHECK" });
+    if (result.ok) showResults(result.results);
+    else status.textContent = result.error;
+  } catch (error) { status.textContent = error.message; }
+  finally { event.currentTarget.disabled = false; }
 });

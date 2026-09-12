@@ -32,10 +32,6 @@ function formatCountdown(value, now) {
   return `ดึงโพสต์ใน ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} นาที`;
 }
 
-function RuleBadge({ mode }) {
-  const label = mode === "all" ? "ALL" : mode === "exclude" ? "ไม่เอา" : "+ ANY";
-  return <Badge variant={mode === "all" ? "default" : "outline"}>{label}</Badge>;
-}
 
 const ACCESS_LABELS = { ready: "พร้อมใช้งาน", logged_out: "Session หลุด", needs_join: "ยังไม่เข้ากลุ่ม", checkpoint: "ต้องยืนยันตัวตน", error: "ตรวจไม่สำเร็จ", unknown: "ไม่ทราบสถานะ", unchecked: "ยังไม่ตรวจ" };
 const ACCOUNT_LABELS = { ...ACCESS_LABELS, offline: "Extension ออฟไลน์" };
@@ -48,11 +44,9 @@ export default function SocialFeedPage() {
   const [category, setCategory] = useState("all");
   const [tag, setTag] = useState("all");
   const [savedOnly, setSavedOnly] = useState(false);
-  const [applyRules, setApplyRules] = useState(false);
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState("feed");
-  const [ruleOpen, setRuleOpen] = useState(false);
   const [tagPost, setTagPost] = useState(null);
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [sourceOpen, setSourceOpen] = useState(false);
@@ -68,14 +62,13 @@ export default function SocialFeedPage() {
     if (category !== "all") params.set("category", category);
     if (tag !== "all") params.set("tag", tag);
     if (savedOnly) params.set("saved", "true");
-    if (applyRules) params.set("rules", "true");
     if (query) params.set("q", query);
     try {
       const result = await apiJson(`/api/social-feed?${params}`, { fallbackError: "โหลด Social Feed ไม่สำเร็จ" });
       setData(result); setError("");
     } catch (err) { setError(err.message); }
     finally { setLoading(false); setRefreshing(false); }
-  }, [category, tag, savedOnly, applyRules, query]);
+  }, [category, tag, savedOnly, query]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- filter changes intentionally start a server refresh
   useEffect(() => { load(); }, [load]);
@@ -158,11 +151,10 @@ export default function SocialFeedPage() {
         <section className="flex flex-col gap-4 border-b pb-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-2xl">
             <h1 className="text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">จับข้อความที่ต้องใช้<br />ก่อนโพสต์จะไหลผ่านไป</h1>
-            <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">รวมโพสต์จาก {data.sources.length || 13} กลุ่ม แสดงทั้งหมดตามค่าเริ่มต้น และเลือกใช้ Rule เพื่อกรองข้อความได้</p>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">รวมโพสต์จาก {data.sources.length || 13} กลุ่ม รวมทุกโพสต์ที่เก็บได้ และอัปเดตโพสต์ใหม่อัตโนมัติ</p>
           </div>
           <div className="flex items-center gap-6 text-sm">
             <div><p className="text-2xl font-semibold tabular-nums">{data.posts.length}</p><p className="text-muted-foreground">โพสต์ที่แสดง</p></div>
-            <div><p className="text-2xl font-semibold tabular-nums">{data.rules.length}</p><p className="text-muted-foreground">rules ที่เปิดใช้</p></div>
           </div>
         </section>
 
@@ -177,32 +169,13 @@ export default function SocialFeedPage() {
           </TabsList>
 
           <TabsContent value="feed" className="pt-4">
-            <div className="grid gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
-              <aside className="flex flex-col gap-4">
-                <Card size="sm">
-                  <CardHeader><CardTitle>กรองฟีด</CardTitle><CardDescription>เลือกเงื่อนไขที่ต้องการดู</CardDescription></CardHeader>
-                  <CardContent><FieldGroup>
-                    <Field><FieldLabel>ค้นหาข้อความ</FieldLabel><div className="flex gap-2"><Input value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === "Enter" && setQuery(search.trim())} placeholder="เช่น เติมเกม" /><Button size="icon" onClick={() => setQuery(search.trim())} aria-label="ค้นหา"><Search /></Button></div></Field>
-                    <Field><FieldLabel>หมวดหมู่</FieldLabel><Select value={category} onValueChange={setCategory}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="all">ทุกหมวดหมู่</SelectItem>{data.categories.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
-                    <Field><FieldLabel>Tag</FieldLabel><Select value={tag} onValueChange={setTag}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="all">ทุก Tag</SelectItem>{data.tags.map((item) => <SelectItem key={item.id} value={item.id}>#{item.name} ({item.count})</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
-                    <Field orientation="horizontal"><Checkbox checked={applyRules} onCheckedChange={setApplyRules} id="apply-rules" /><FieldLabel htmlFor="apply-rules">กรองด้วย Rules</FieldLabel></Field>
-                    <Field orientation="horizontal"><Checkbox checked={savedOnly} onCheckedChange={setSavedOnly} id="saved-only" /><FieldLabel htmlFor="saved-only">เฉพาะโพสต์ที่บันทึก</FieldLabel></Field>
-                  </FieldGroup></CardContent>
-                </Card>
-
-                <Card size="sm">
-                  <CardHeader><CardTitle>Rules</CardTitle><CardDescription>หลาย rule ใช้แบบ “หรือ” ต่อกัน</CardDescription><CardAction><Button size="icon-sm" onClick={() => setRuleOpen(true)} aria-label="เพิ่ม rule"><Plus /></Button></CardAction></CardHeader>
-                  <CardContent className="flex flex-col gap-3">
-                    {data.rules.map((rule) => <div key={rule.id} className="flex items-start gap-2 border-b pb-3 last:border-0 last:pb-0"><RuleBadge mode={rule.mode} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{rule.name}</p><p className="mt-1 text-xs text-muted-foreground">{rule.terms.join(" · ")}</p></div><Button variant="ghost" size="icon-xs" aria-label="ลบ rule" onClick={async () => { await apiJson(`/api/social-feed/rules?id=${rule.id}`, { method: "DELETE" }); load(true); }}><Trash2 /></Button></div>)}
-                  </CardContent>
-                </Card>
-              </aside>
+            <div className="grid gap-6 lg:grid-cols-1">
 
               <section className="min-w-0">
                 <div className="mb-3 flex items-center justify-between"><p className="text-sm text-muted-foreground"><Filter className="mr-1 inline size-4" />พบ {data.posts.length} โพสต์</p>{data.refreshedAt && <p className="text-xs text-muted-foreground">ล่าสุด {formatTime(data.refreshedAt)}</p>}</div>
                 {loading ? <div className="flex flex-col gap-3">{[1,2,3].map((item) => <Skeleton key={item} className="h-40 w-full" />)}</div> : data.posts.length === 0 ? <Card><CardHeader><CardTitle>ยังไม่มีโพสต์</CardTitle><CardDescription>ลองเปลี่ยนตัวกรอง หรือรอรอบอัปเดตถัดไป</CardDescription></CardHeader></Card> : <div className="flex flex-col gap-3">
                   {data.posts.map((post) => <article key={post.id} className="group rounded-xl border bg-card p-4 sm:p-5">
-                    <div className="flex items-start justify-between gap-4"><div className="min-w-0"><p className="truncate text-sm font-medium">{post.sourceName}</p><p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Clock3 />เวลาโพสต์ {formatTime(post.postedAt)}</p></div><Button variant="ghost" size="icon" aria-label={post.saved ? "ยกเลิกบันทึก" : "บันทึกโพสต์"} onClick={() => updatePost(post, { saved: !post.saved })}>{post.saved ? <BookmarkCheck /> : <Bookmark />}</Button></div>
+                    <div className="flex items-start justify-between gap-4"><div className="min-w-0"><p className="truncate text-sm font-medium">{post.sourceName}</p><p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Clock3 />เวลาโพสต์/ตรวจพบ {formatTime(post.postedAt)}</p></div><Button variant="ghost" size="icon" aria-label={post.saved ? "ยกเลิกบันทึก" : "บันทึกโพสต์"} onClick={() => updatePost(post, { saved: !post.saved })}>{post.saved ? <BookmarkCheck /> : <Bookmark />}</Button></div>
                     <p className="mt-4 whitespace-pre-wrap text-[15px] leading-7">{post.message}</p>
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-3"><div className="flex flex-wrap gap-1.5">{post.tags.map((item) => <Button key={item.id} variant="outline" size="xs" onClick={() => openTag(item.id)}>#{item.name}</Button>)}<Button variant="ghost" size="xs" onClick={() => setTagPost(post)}><Hash data-icon="inline-start" />ใส่ Tag</Button></div><Button variant="link" size="sm" render={<a href={post.originalUrl} target="_blank" rel="noreferrer" />}>เปิดต้นโพสต์<ArrowUpRight data-icon="inline-end" /></Button></div>
                   </article>)}
@@ -228,7 +201,6 @@ export default function SocialFeedPage() {
         </Tabs>
       </main>
 
-      <RuleDialog open={ruleOpen} onOpenChange={setRuleOpen} categories={data.categories} onSaved={() => load(true)} />
       <TagDialog key={tagPost?.id || "closed"} post={tagPost} onOpenChange={(open) => !open && setTagPost(null)} onSave={(names) => updatePost(tagPost, { tags: names })} />
       <CategoryDialog open={categoryOpen} onOpenChange={setCategoryOpen} onSaved={() => load(true)} />
       <SourceDialog open={sourceOpen} onOpenChange={setSourceOpen} categories={data.categories} onSaved={() => load(true)} />
@@ -237,17 +209,6 @@ export default function SocialFeedPage() {
   );
 }
 
-function RuleDialog({ open, onOpenChange, categories, onSaved }) {
-  const [categoryId, setCategoryId] = useState("");
-  const [name, setName] = useState("");
-  const [mode, setMode] = useState("all");
-  const [terms, setTerms] = useState("");
-  const save = async () => {
-    await apiJson("/api/social-feed/rules", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ categoryId: categoryId || categories[0]?.id, name, mode, terms }), fallbackError: "บันทึก rule ไม่สำเร็จ" });
-    setName(""); setTerms(""); onOpenChange(false); onSaved();
-  };
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>เพิ่ม Filter Rule</DialogTitle><DialogDescription>ALL ต้องเจอครบทุกคำ, + ANY เจอคำใดคำหนึ่งก็รับโพสต์, ไม่เอาใช้ตัดโพสต์ออก</DialogDescription></DialogHeader><FieldGroup><Field><FieldLabel>หมวดหมู่</FieldLabel><Select value={categoryId || categories[0]?.id || ""} onValueChange={setCategoryId}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectGroup>{categories.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectGroup></SelectContent></Select></Field><Field><FieldLabel>ชื่อ Rule</FieldLabel><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น มีทั้งคำว่า เติม และ เกม" /></Field><Field><FieldLabel>รูปแบบ</FieldLabel><Select value={mode} onValueChange={setMode}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="all">ALL — ต้องมีครบทุกคำ</SelectItem><SelectItem value="any">+ ANY — เจอคำไหนก็รับ</SelectItem><SelectItem value="exclude">ไม่เอา — เจอแล้วตัดออก</SelectItem></SelectGroup></SelectContent></Select></Field><Field><FieldLabel>คำที่ต้องการ</FieldLabel><Input value={terms} onChange={(e) => setTerms(e.target.value)} placeholder="เติม, เกม" /><FieldDescription>คั่นหลายคำด้วยเครื่องหมายจุลภาค</FieldDescription></Field></FieldGroup><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>ยกเลิก</Button><Button onClick={save} disabled={!name.trim() || !terms.trim()}><Check data-icon="inline-start" />บันทึก Rule</Button></DialogFooter></DialogContent></Dialog>;
-}
 
 function TagDialog({ post, onOpenChange, onSave }) {
   const [value, setValue] = useState(post?.tags?.map((item) => item.name).join(", ") || "");

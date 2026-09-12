@@ -13,16 +13,31 @@ async function scheduleNextCheck() {
   await chrome.storage.local.set({ nextCheckAt });
   await chrome.alarms.create("social-feed-check", { when: nextCheckAt });
 }
-async function checkSource(source) {
+async function checkSource(source, tabId) {
   try {
     const url = new URL(source.url);
     if (!["www.facebook.com", "facebook.com"].includes(url.hostname) || url.protocol !== "https:") throw new Error("URL กลุ่มไม่ถูกต้อง");
-    const response = await fetch(url.href, { credentials: "omit", signal: AbortSignal.timeout(30000) });
-    if (!response.ok) throw new Error(`Facebook HTTP ${response.status}`);
-    const result = await chrome.runtime.sendMessage({ type: "PARSE_PUBLIC_SOCIAL_HTML", html: await response.text(), source });
+    await chrome.tabs.update(tabId, { url: url.href, active: false });
+    const deadline = Date.now() + 45000;
+    let result;
+    while (Date.now() < deadline) {
+      const tab = await chrome.tabs.get(tabId);
+      if (tab.status === "complete") {
+        try {
+          result = await chrome.tabs.sendMessage(tabId, { type: "SCAN_FACEBOOK_GROUP", source });
+          break;
+        } catch (error) {
+          if (!/Receiving end does not exist|Could not establish connection/.test(error.message)) throw error;
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
     if (!result) throw new Error("ตัวอ่านหน้า Public ไม่ตอบกลับ");
+    const counts = result.posts?.length ? await api("/api/social-feed/ingest", { method: "POST", body: JSON.stringify({ posts: result.posts }) }) : { ingested: 0, existing: 0 };
+    result.ingested = counts.ingested || 0;
+    result.existing = counts.existing || 0;
+    result.note += ` · เพิ่มใหม่ ${result.ingested} · มีแล้ว ${result.existing}`;
     await report(source.id, result);
-    if (result.posts?.length) await api("/api/social-feed/ingest", { method: "POST", body: JSON.stringify({ posts: result.posts }) });
     return { source: source.name, ...result };
   } catch (error) {
     const result = { status: "error", note: error.message };
@@ -30,17 +45,14 @@ async function checkSource(source) {
     return { source: source.name, ...result };
   }
 }
-async function checkSources(sources, concurrency = 3) {
-  const results = new Array(sources.length);
-  let nextIndex = 0;
-  async function worker() {
-    while (nextIndex < sources.length) {
-      const index = nextIndex++;
-      results[index] = await checkSource(sources[index]);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(concurrency, sources.length) }, () => worker()));
-  return results;
+async function checkSources(sources) {
+  if (!sources.length) return [];
+  const tab = await chrome.tabs.create({ url: "about:blank", active: false });
+  const results = [];
+  try {
+    for (const source of sources) results.push(await checkSource(source, tab.id));
+    return results;
+  } finally { await chrome.tabs.remove(tab.id).catch(() => {}); }
 }
 function runCheck() {
   if (currentCheck) return currentCheck;
@@ -48,12 +60,11 @@ function runCheck() {
     const config = await settings();
     if (config.ingestSecret.length < 24) throw new Error("กรุณาตั้งค่า Ingest secret อย่างน้อย 24 ตัวอักษร");
     const { sources = [] } = await api("/api/social-feed/collector?mode=public");
-    try {
-      if (!await chrome.offscreen.hasDocument()) await chrome.offscreen.createDocument({ url: "public-reader.html", reasons: ["DOM_PARSER"], justification: "อ่านข้อความจาก HTML สาธารณะโดยไม่ใช้ Facebook session" });
+    {
       const results = await checkSources(sources);
       await chrome.storage.local.set({ lastCheckAt: new Date().toISOString(), lastResults: results });
       return results;
-    } finally { await chrome.offscreen.closeDocument().catch(() => {}); }
+    }
   })().finally(async () => { currentCheck = null; await scheduleNextCheck(); });
   return currentCheck;
 }
