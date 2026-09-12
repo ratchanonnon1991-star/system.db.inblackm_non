@@ -84,7 +84,10 @@ const schemaSql = `
 
 const seedSql = `
   INSERT INTO social_feed_categories(name,sort_order) VALUES
-    ('Neverness to Everness',1),('CookieRun Classic',2),('Light and Night',3),('Lineage W',4)
+    ('Neverness to Everness',1),('CookieRun Classic',2),('Light and Night',3),('Lineage W',4),
+    ('Gangstar Mirage City',5),('Marvel Rivals',6),('JoJo’s Bizarre Adventure Golden Spirit',7),
+    ('Yulgang',8),('Petit Planet',9),('Silver Palace',10),('Azur Promilia',11),('ANANTA',12),
+    ('Animula Nook',13),('MapleStory Classic World',14)
   ON CONFLICT(name) DO NOTHING;
   INSERT INTO social_feed_sources(category_id,name,facebook_url,facebook_group_id)
   SELECT c.id,v.name,v.url,v.gid FROM (VALUES
@@ -103,8 +106,80 @@ const seedSql = `
     ('Light and Night','Light and Night TH Community 🌙','https://www.facebook.com/groups/1678836633288770','1678836633288770')
     ,('Lineage W','Lineage W Thailand Official','https://www.facebook.com/groups/lineagew.th/','lineagew.th')
     ,('Lineage W','Lineage W (กลุ่มซื้อขาย/พูดคุย/แลกเปลี่ยน)','https://www.facebook.com/groups/1761641817978633/','1761641817978633')
+    ,('Gangstar Mirage City','Gangstar Mirage City Thailand Official','https://www.facebook.com/groups/gangstarmcth/about','gangstarmcth')
+    ,('Gangstar Mirage City','Gangstar Mirage City Thailand พูดคุย ซื้อขาย','https://www.facebook.com/groups/478490952955117/about','478490952955117')
+    ,('Gangstar Mirage City','Gangstar Mirage City Thailand กลุ่มผู้เล่นคนไทย','https://www.facebook.com/groups/963468448130704/about','963468448130704')
+    ,('Gangstar Mirage City','Gangstar Mirage City Thailand ( SEA ) พูดคุย ซื้อขาย แลกเปลี่ยน','https://www.facebook.com/groups/1055847651695176/about','1055847651695176')
+    ,('Gangstar Mirage City','Gangstar Mirage CITY ซื้อขาย - พูดคุย','https://www.facebook.com/groups/526249674465851/about','526249674465851')
+    ,('Marvel Rivals','Marvel Rivals Thailand Community','https://www.facebook.com/groups/marvelrivalsthailandcommunity/about','marvelrivalsthailandcommunity')
+    ,('Marvel Rivals','Marvel Rivals Thailand Marketplace','https://www.facebook.com/groups/marvelrivalsthaimarketplace/about','marvelrivalsthaimarketplace')
+    ,('Marvel Rivals','Marvel Rivals Thailand [ ซื้อขาย - แลกเปลี่ยน ]','https://www.facebook.com/groups/marvelrivalsmarket/','marvelrivalsmarket')
+    ,('Marvel Rivals','Marvel Rivals Thailand','https://www.facebook.com/groups/marvelrivalsthailandd/','marvelrivalsthailandd')
+    ,('Marvel Rivals','Marvel Rival TH (พูดคุยซื้อ-ขาย)','https://www.facebook.com/groups/572922525361325/','572922525361325')
+    ,('JoJo’s Bizarre Adventure Golden Spirit','JoJo’s Bizarre Adventure Golden Spirit [โจโจ้] กลุ่มคนไทย Thailand 🇹🇭 💥','https://www.facebook.com/groups/318905500488469/about','318905500488469')
+    ,('JoJo’s Bizarre Adventure Golden Spirit','JoJo Bizarre Adventure Thailand พูดคุย-ซื้อขาย','https://www.facebook.com/groups/582132906659836/about','582132906659836')
+    ,('JoJo’s Bizarre Adventure Golden Spirit','JoJo ซื้อ,ขาย,สะสม Figure Sas Sl','https://www.facebook.com/groups/777523929109356/','777523929109356')
+    ,('JoJo’s Bizarre Adventure Golden Spirit','JoJo’s Bizarre Adventure: Golden Spirit พูดคุย ซื้อขาย','https://www.facebook.com/groups/1281225385844774/','1281225385844774')
+    ,('Yulgang','กลุ่มทางการ Yulgang:ยุทธภพสนุก','https://www.facebook.com/groups/877664901512112/','877664901512112')
+    ,('Yulgang','Yulgang W: โลกโยกังใหม่','https://www.facebook.com/groups/297280407053408/about','297280407053408')
+    ,('Yulgang','Yulgang:ยุทธภพสนุก X Yulgang W','https://www.facebook.com/groups/snookkiddinggame/about','snookkiddinggame')
+    ,('Yulgang','Yulgang Thailand Community','https://www.facebook.com/groups/633204573718114/','633204573718114')
+    ,('Yulgang','Yulgang W: โลกโยกังใหม่ Thailand พูดคุย-ซื้อขายทั่วโลก(FastlaneLV)','https://www.facebook.com/groups/866311771720582/','866311771720582')
+    ,('Yulgang','Yulgang: ยุทธภพสนุก Thailand พูดคุย ซื้อขาย แลกเปลี่ยน','https://www.facebook.com/groups/1283990985968844/','1283990985968844')
+    ,('Yulgang','Yulgang W: โลกโยกังใหม่ Thailand🇹🇭 Community 💥','https://www.facebook.com/groups/310217680232780/','310217680232780')
+    ,('Yulgang','Yulgang W กลุ่มพูดคุยเซิร์ฟไทย ( กลุ่มคนไทย )','https://www.facebook.com/groups/477704268354631/','477704268354631')
+    ,('Yulgang','Yulgang W : โลกโยกังใหม่ ซื้อขาย แลกเปลี่ยน พูดคุย','https://www.facebook.com/groups/194021220698215/','194021220698215')
+    ,('Yulgang','Yulgang W ไทย(ของแทร่)⚡️พูดคุย ซื้อขาย แลกเปลี่ยน(แอดเบส)','https://www.facebook.com/groups/864046295178908/','864046295178908')
+    ,('Petit Planet','Petit Planet Thailand Community','https://www.facebook.com/groups/2438981359896396/about','2438981359896396')
+    ,('Petit Planet','Petit Planet กลุ่มพูดคุยคนไทย','https://www.facebook.com/groups/809985948743571/about','809985948743571')
+    ,('Petit Planet','Petit Planet Thailand','https://www.facebook.com/groups/1517856661849480/about','1517856661849480')
+    ,('Petit Planet','Petit Planet Thailand กลุ่มคนไทย','https://www.facebook.com/groups/196659795455369/about','196659795455369')
+    ,('Petit Planet','Petit Planet Thailand Community พูดคุย ซื้อขาย กลุ่มคนไทย','https://www.facebook.com/groups/1581771539320708/about','1581771539320708')
+    ,('Petit Planet','Petit Planet Thailand พูดคุย','https://www.facebook.com/groups/1257240161777744/about','1257240161777744')
+    ,('Petit Planet','Petit Planet กลุ่มผู้เล่นคนไทย 🇹🇭✨','https://www.facebook.com/groups/609882599187813/about','609882599187813')
+    ,('Petit Planet','Petit Planet - Thailand (ไทย)','https://www.facebook.com/groups/669037316240282/','669037316240282')
+    ,('Petit Planet','Petit Planet 🇹🇭กลุ่มคนไทย💥','https://www.facebook.com/groups/800338830051069/','800338830051069')
+    ,('Petit Planet','Petit Planet 💥กลุ่มสำหรับคนไทย🇹🇭','https://www.facebook.com/groups/1335404753775723/','1335404753775723')
+    ,('Silver Palace','Silver Palace | TH คอมมูนิตี้ พูดคุย หาเพื่อนเล่น แชร์ข้อมูล','https://www.facebook.com/groups/1440748763749525/','1440748763749525')
+    ,('Silver Palace','Silver Palace Thailand 🇹🇭 พูดคุย ซื้อขาย แลกเปลี่ยน','https://www.facebook.com/groups/1199616331620303/','1199616331620303')
+    ,('Silver Palace','Silver Palace Thailand พูดคุยซื้อขาย','https://www.facebook.com/groups/astronomia.brasil.enigmas','astronomia.brasil.enigmas')
+    ,('Silver Palace','Silver Palace Thailand','https://www.facebook.com/groups/941677328633277/','941677328633277')
+    ,('Silver Palace','Silver Palace TH กลุ่มสำหรับคนไทย🇹🇭','https://www.facebook.com/groups/3316579448373294/','3316579448373294')
+    ,('Silver Palace','Silver Palace Thailand Community - กลุ่มผู้เล่นไทย','https://www.facebook.com/groups/2228493587574036/','2228493587574036')
+    ,('Silver Palace','Silver Palace Thailand Community','https://www.facebook.com/groups/2063033291763906/','2063033291763906')
+    ,('Silver Palace','Silver Palace Thailand พูดคุย ซื้อขาย','https://www.facebook.com/groups/1422483853118774/','1422483853118774')
+    ,('Silver Palace','Silver Palace [SP] กลุ่มผู้เล่นไทย Thailand 🇹🇭 💥','https://www.facebook.com/groups/1326713434849965/','1326713434849965')
+    ,('Azur Promilia','Azur Promilia ข่าวสาร พูดคุย TH','https://www.facebook.com/groups/2378649879283926','2378649879283926')
+    ,('Azur Promilia','Azur Promilia Community','https://www.facebook.com/groups/3220346201502211/about','3220346201502211')
+    ,('Azur Promilia','Azur Promilia คนไทย💜','https://www.facebook.com/groups/thaithai/about','thaithai')
+    ,('Azur Promilia','Azur Promilia กลุ่ม สำหรับคนไทย 🇹🇭🇹🇭','https://www.facebook.com/groups/879961319600139/about','879961319600139')
+    ,('Azur Promilia','Azur Promilia (Global) กลุ่มผู้เล่นไทย','https://www.facebook.com/groups/395120316564555/about','395120316564555')
+    ,('Azur Promilia','Azur Promilia Thailand พูดคุย ซื้อขาย','https://www.facebook.com/groups/1366329835624795/about','1366329835624795')
+    ,('Azur Promilia','Azur Promilia พูดคุย ซื้อขาย 🇹🇭💯','https://www.facebook.com/groups/779075234106283/about','779075234106283')
+    ,('ANANTA','ANANTA THAILAND','https://www.facebook.com/groups/1864275091102322/about','1864275091102322')
+    ,('ANANTA','ANANTA : Thailand (ไทย)','https://www.facebook.com/groups/1244449906612579/about','1244449906612579')
+    ,('ANANTA','ANANTA กลุ่มผู้เล่นไทย Thailand 🇹🇭 💥','https://www.facebook.com/groups/772249140569779/about','772249140569779')
+    ,('ANANTA','Ananta Thailand Community','https://www.facebook.com/groups/958379027060721/about','958379027060721')
+    ,('ANANTA','Ananta THAILAND 🇹🇭✨','https://www.facebook.com/groups/2201339183773089/about','2201339183773089')
+    ,('ANANTA','Ananta Thailand พูดคุย ซื้อขาย-เเลกเปลี่ยน','https://www.facebook.com/groups/1096438688261641/','1096438688261641')
+    ,('Animula Nook','Animula Nook Thailand Community','https://www.facebook.com/groups/1734709991280989/about','1734709991280989')
+    ,('Animula Nook','Animula Nook 🇹🇭🦉','https://www.facebook.com/groups/3745004222216872/about','3745004222216872')
+    ,('Animula Nook','Animula Nook Thailand กลุ่มผู้เล่นคนไทย','https://www.facebook.com/groups/fragpunkthailand/about','fragpunkthailand')
+    ,('Animula Nook','Animula Nook Community กลุ่มพูดคุยผู้เล่นคนไทย🇹🇭','https://www.facebook.com/groups/703633548080172/about','703633548080172')
+    ,('Animula Nook','Animula Nook Thailand กลุ่มผู้เล่นไทย','https://www.facebook.com/groups/516808099465868/about','516808099465868')
+    ,('Animula Nook','Animula Nook - Thailand Community','https://www.facebook.com/groups/1390512556182382/','1390512556182382')
+    ,('Animula Nook','Animula Nook TH Community','https://www.facebook.com/groups/1472581481209293/','1472581481209293')
+    ,('Animula Nook','Animula Nook Community','https://www.facebook.com/groups/1813871656655299/about','1813871656655299')
+    ,('Animula Nook','Animula Nook Thailand ชุมชนคนตัวจิ๋ว','https://www.facebook.com/groups/1463633151955983/','1463633151955983')
+    ,('Animula Nook','Animula Nook Talk & Trade TH community','https://www.facebook.com/groups/1231366255816934/','1231366255816934')
+    ,('MapleStory Classic World','MapleStory Classic World Thailand','https://www.facebook.com/groups/1464880627539200/about','1464880627539200')
+    ,('MapleStory Classic World','MapleStory Classic World TH Community','https://www.facebook.com/groups/869032788171097/about','869032788171097')
+    ,('MapleStory Classic World','Maplestory Classic world ซื้อ-ขาย','https://www.facebook.com/groups/riseofstarsthailand/about','riseofstarsthailand')
+    ,('MapleStory Classic World','Maplestory Classic World TH','https://www.facebook.com/groups/1618645192114562/','1618645192114562')
+    ,('MapleStory Classic World','MapleStory Classic World + NFT Thailand ตลาดพูดคุย-ซื้อขาย (FastlaneLV)','https://www.facebook.com/groups/1006125957157207/about','1006125957157207')
+    ,('MapleStory Classic World','Maplestory Classic World [TH]','https://www.facebook.com/groups/1487123340125034/','1487123340125034')
   ) AS v(category,name,url,gid) JOIN social_feed_categories c ON c.name=v.category
-  ON CONFLICT(facebook_url) DO NOTHING;
+  ON CONFLICT DO NOTHING;
   INSERT INTO social_feed_rules(category_id,name,mode,terms)
   SELECT c.id,v.rule_name,v.mode,v.terms FROM (VALUES
     ('Neverness to Everness','มีทั้งคำว่า เติม และ เกม','all',ARRAY['เติม','เกม']::text[]),
@@ -206,7 +281,7 @@ export async function createSocialCategory(name) {
   return mapCategory(result.rows[0]);
 }
 
-export async function createSocialSource({ categoryId, name, facebookUrl, requiresLogin }) {
+export async function createSocialSource({ categoryId, name, facebookUrl }) {
 
   await ensureSchema();
   const cleanName = String(name || "").trim().slice(0, 180);
@@ -218,18 +293,12 @@ export async function createSocialSource({ categoryId, name, facebookUrl, requir
   }
   const canonicalUrl = `https://www.facebook.com/groups/${groupId}/`;
   try {
-    const result = await getSocialPool().query(`INSERT INTO social_feed_sources(category_id,name,facebook_url,facebook_group_id,requires_login) VALUES($1,$2,$3,$4,$5) RETURNING *`, [categoryId, cleanName, canonicalUrl, groupId, Boolean(requiresLogin)]);
+    const result = await getSocialPool().query(`INSERT INTO social_feed_sources(category_id,name,facebook_url,facebook_group_id) VALUES($1,$2,$3,$4) RETURNING *`, [categoryId, cleanName, canonicalUrl, groupId]);
     return { id: String(result.rows[0].id), categoryId: String(result.rows[0].category_id), name: result.rows[0].name, url: result.rows[0].facebook_url, groupId };
   } catch (error) {
     if (error.code === "23505") { error.message = "กลุ่ม Facebook นี้มีอยู่แล้ว"; error.status = 409; }
     throw error;
   }
-}
-
-export async function updateSocialSourceAccount(id, requiresLogin) {
-  await ensureSchema();
-  const result = await getSocialPool().query(`UPDATE social_feed_sources SET login_account='',requires_login=$2,access_status='unchecked',session_checked_at=NULL,updated_at=NOW() WHERE id=$1 RETURNING id`, [id, Boolean(requiresLogin)]);
-  if (!result.rowCount) { const error = new Error("ไม่พบกลุ่ม Facebook"); error.status = 404; throw error; }
 }
 
 export async function heartbeatCollectorAccount({ instanceId, label, platformAccountId, status, activate = false }) {
