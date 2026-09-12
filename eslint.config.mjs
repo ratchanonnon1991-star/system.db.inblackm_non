@@ -17,6 +17,14 @@ const eslintConfig = defineConfig([
     },
   },
   ...nextRest,
+  {
+    files: ["browser-extension/social-feed-collector/**/*.js"],
+    languageOptions: {
+      globals: {
+        chrome: "readonly",
+      },
+    },
+  },
   globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts"]),
 ]);
 
