@@ -237,6 +237,41 @@ CREATE TABLE IF NOT EXISTS gamelist_pack_revisions (
 CREATE INDEX IF NOT EXISTS gameinfo_formula_presets_updated_idx
   ON gameinfo_formula_presets (updated_at DESC, id DESC);
 
+-- One pack-column definition shared by every game. What stays per game (a
+-- game-specific formula, category formulas, per-pack values, whether a market
+-- column is switched on) lives in gamelist_packs' __computed__ sentinel row
+-- under `columnOverrides`. An empty table means the pre-registry behaviour:
+-- each game reads its own `columns` array from that sentinel.
+CREATE TABLE IF NOT EXISTS gamelist_pack_column_registry (
+  column_key varchar(64)  PRIMARY KEY,
+  label      varchar(120) NOT NULL,
+  sort_order integer      NOT NULL DEFAULT 0,
+  data       jsonb        NOT NULL DEFAULT '{}'::jsonb,
+  -- Optimistic lock for the definition itself. A column is edited from any
+  -- game that shows it, while gamelist_pack_revisions guards one game's packs,
+  -- so without this two admins in two games overwrite each other in silence.
+  version    bigint       NOT NULL DEFAULT 1,
+  created_at timestamptz  NOT NULL DEFAULT now(),
+  updated_at timestamptz  NOT NULL DEFAULT now()
+);
+ALTER TABLE gamelist_pack_column_registry
+  ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 1;
+
+CREATE INDEX IF NOT EXISTS gamelist_pack_column_registry_order_idx
+  ON gamelist_pack_column_registry (sort_order, column_key);
+
+-- Which pack columns a GameInfo role sees. game_id 0 is the rule for every
+-- game; a row naming a real game overrides it for that game only. Only rules
+-- that hide something are stored, so a column nobody has ruled on is visible.
+CREATE TABLE IF NOT EXISTS gamelist_pack_column_roles (
+  role       varchar(16) NOT NULL,           -- 'topup' | 'admin'
+  game_id    integer     NOT NULL DEFAULT 0, -- 0 = every game
+  column_key varchar(64) NOT NULL,           -- LOGICAL -> gamelist_pack_column_registry.column_key
+  visible    boolean     NOT NULL DEFAULT true,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (role, game_id, column_key)
+);
+
 CREATE TABLE IF NOT EXISTS gamelist_pack_view_presets (
   id         bigserial PRIMARY KEY,
   game_id    integer     NOT NULL,           -- LOGICAL -> game_list.id

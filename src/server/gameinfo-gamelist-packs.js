@@ -17,6 +17,18 @@ import {
   validateGameinfoCostProfiles,
 } from "@/lib/gameinfo-cost-profiles";
 import { mergeCurrencies } from "@/lib/gameinfo-import";
+import {
+  flattenGameinfoColumnsForLegacy,
+  localizeGameinfoColumnFormulas,
+  mergeGameinfoColumn,
+  mergeGameinfoColumns,
+  splitGameinfoColumns,
+} from "@/lib/gameinfo-column-registry";
+import { groupGameinfoColumnFormulas } from "@/lib/gameinfo-column-formula-usage";
+import {
+  clearGameinfoColumnReferences,
+  listGameinfoColumnReferences,
+} from "@/lib/gameinfo-column-dependencies";
 import { parseFormula } from "@/lib/gamedb-formula";
 import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
 
@@ -270,6 +282,46 @@ function ensureSchema(connection) {
         CREATE INDEX IF NOT EXISTS gameinfo_formula_presets_updated_idx
         ON gameinfo_formula_presets (updated_at DESC, id DESC)
       `);
+      // One definition per column, shared by every game. Empty until the
+      // backfill runs, and an empty registry means getGamelistPacks keeps
+      // reading the per-game sentinel exactly as before.
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS gamelist_pack_column_registry (
+          column_key VARCHAR(64) PRIMARY KEY,
+          label      VARCHAR(120) NOT NULL,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          data       JSONB NOT NULL DEFAULT '{}'::jsonb,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS gamelist_pack_column_registry_order_idx
+        ON gamelist_pack_column_registry (sort_order, column_key)
+      `);
+      // One column is edited from any game that shows it, while the optimistic
+      // lock guards a game's packs — so nothing stopped two admins in two
+      // games from overwriting each other's definition. This is that lock, per
+      // column: a save carrying a version that is not the stored one is
+      // refused instead of applied.
+      await client.query(`
+        ALTER TABLE gamelist_pack_column_registry
+        ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1
+      `);
+      // Which columns a role sees. game_id 0 is the rule for every game and a
+      // row for a real game overrides it. Only rows that hide something are
+      // stored — no row means visible, so a newly registered column is visible
+      // to everyone until someone decides otherwise.
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS gamelist_pack_column_roles (
+          role       VARCHAR(16) NOT NULL,
+          game_id    INTEGER NOT NULL DEFAULT 0,
+          column_key VARCHAR(64) NOT NULL,
+          visible    BOOLEAN NOT NULL DEFAULT TRUE,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (role, game_id, column_key)
+        )
+      `);
     } finally {
       client.release();
     }
@@ -277,6 +329,11 @@ function ensureSchema(connection) {
   promise.catch(() => schemaReadyByConnection.delete(connection.id));
   schemaReadyByConnection.set(connection.id, { cacheKey, promise });
   return promise;
+}
+
+/** The gameinfo pool with its schema ensured — for sibling repositories. */
+export async function getGameinfoPool() {
+  return getReadyPool();
 }
 
 async function getReadyPool() {
@@ -289,6 +346,280 @@ async function getReadyPool() {
   }
   await ensureSchema(connection);
   return getPoolForConnection(connection);
+}
+
+// --- shared column registry ---------------------------------------------
+// The registry holds one definition per column for every game; the per-game
+// sentinel keeps only what is about this game's packs. Both halves are merged
+// back into the one flat column array the UI has always read, so nothing above
+// this layer knows the storage was split.
+
+async function readColumnRegistry(client) {
+  const result = await client.query(
+    `SELECT column_key, label, sort_order, data, version
+     FROM gamelist_pack_column_registry
+     ORDER BY sort_order, column_key`
+  );
+  return result.rows.map((row) => ({
+    columnKey: row.column_key,
+    label: row.label,
+    sortOrder: Number(row.sort_order) || 0,
+    data: row.data || {},
+    version: Number(row.version) || 1,
+  }));
+}
+
+/** Every shared column definition, for surfaces that work across games. */
+export async function listGamelistPackColumnRegistry(transactionClient = null) {
+  const client = transactionClient || (await getReadyPool());
+  return readColumnRegistry(client);
+}
+
+/** Registry + this game's overrides, or the pre-registry per-game columns. */
+export function resolveComputedColumns(registryRows, sentinelData) {
+  // An empty registry is the pre-backfill state: keep serving the per-game
+  // columns byte for byte so deploying this code changes nothing on its own.
+  if (!registryRows.length) {
+    return Array.isArray(sentinelData?.columns) ? sentinelData.columns : [];
+  }
+  return mergeGameinfoColumns(registryRows, sentinelData?.columnOverrides || {});
+}
+
+export async function writeGameinfoColumnRegistry(client, registryRows, removedKeys = []) {
+  return writeColumnRegistry(client, registryRows, removedKeys);
+}
+
+// `removedKeys` are the columns the caller established were deliberately
+// removed, by diffing what this game had before against what it is saving.
+// Deleting "everything not in this array" instead would let one game's save
+// destroy definitions shared with every other game — a stale client, a
+// role-filtered column list, or a half-migrated store would each be enough.
+async function writeColumnRegistry(client, registryRows, removedKeys = []) {
+  const stored = new Map(
+    (await readColumnRegistry(client)).map((row) => [row.columnKey, row])
+  );
+  for (const row of registryRows) {
+    const current = stored.get(row.columnKey);
+    // A column definition is shared, so every game's save carries all of them
+    // and almost every row in this loop is unchanged. Writing only what
+    // differs is what keeps versions meaningful: bumping them all would make
+    // every open editor stale the moment anyone saved anything.
+    if (
+      current &&
+      current.label === row.label &&
+      current.sortOrder === row.sortOrder &&
+      sameJson(current.data, row.data)
+    ) {
+      continue;
+    }
+    // `version` is the definition this client was shown. Absent means a column
+    // it just created — which must not already exist, or two people named the
+    // same column at once and the second would silently replace the first.
+    const expected = Number(row.version);
+    const seen = Number.isSafeInteger(expected) && expected > 0 ? expected : null;
+    if (current ? seen !== current.version : seen !== null) {
+      throw createHttpError(
+        `คอลัมน์ "${row.label}" ถูกแก้โดยผู้ใช้อื่น กรุณาโหลดข้อมูลล่าสุดก่อนแก้และบันทึกใหม่`,
+        409
+      );
+    }
+    await client.query(
+      `INSERT INTO gamelist_pack_column_registry (column_key, label, sort_order, data, version)
+       VALUES ($1, $2, $3, $4, 1)
+       ON CONFLICT (column_key) DO UPDATE
+         SET label = EXCLUDED.label,
+             sort_order = EXCLUDED.sort_order,
+             data = EXCLUDED.data,
+             version = gamelist_pack_column_registry.version + 1,
+             updated_at = NOW()`,
+      [row.columnKey, row.label, row.sortOrder, JSON.stringify(row.data)]
+    );
+  }
+  // A column dropped in the editor is dropped for every game — that is what
+  // "shared definition" means. Its per-game overrides are pruned lazily by
+  // the merge, which only ever walks registry rows.
+  if (removedKeys.length) {
+    for (const key of removedKeys) {
+      const target = stored.get(key);
+      if (target) await clearStoredGameinfoColumnReferences(client, key, target.label, [...stored.values()]);
+    }
+    await client.query(
+      `DELETE FROM gamelist_pack_column_registry WHERE column_key = ANY($1::varchar[])`,
+      [removedKeys]
+    );
+  }
+}
+
+async function clearStoredGameinfoColumnReferences(client, targetKey, targetLabel, registryRows) {
+  for (const row of registryRows) {
+    if (row.columnKey === targetKey) continue;
+    const [cleaned] = clearGameinfoColumnReferences(
+      [mergeGameinfoColumn(row, {})],
+      targetKey,
+      targetLabel
+    );
+    if (cleaned.formula === row.data.formula) continue;
+    await client.query(
+      `UPDATE gamelist_pack_column_registry
+       SET data = $2, version = version + 1, updated_at = NOW()
+       WHERE column_key = $1`,
+      [row.columnKey, JSON.stringify({ ...row.data, formula: "", entryMode: "manual" })]
+    );
+  }
+
+  const uidRows = await client.query(
+    `SELECT game_id, data FROM gamelist_packs WHERE pack_id = $1`,
+    [COMPUTED_SENTINEL]
+  );
+  for (const row of uidRows.rows) {
+    const data = row.data || {};
+    const cleaned = clearGameinfoColumnReferences(
+      mergeGameinfoColumns(registryRows, data.columnOverrides || {}),
+      targetKey,
+      targetLabel
+    );
+    const split = splitGameinfoColumns(cleaned);
+    await client.query(
+      `UPDATE gamelist_packs SET data = $3, updated_at = NOW()
+       WHERE game_id = $1 AND pack_id = $2`,
+      [row.game_id, COMPUTED_SENTINEL, JSON.stringify({
+        ...data,
+        columns: flattenGameinfoColumnsForLegacy(cleaned),
+        columnOverrides: split.overrides,
+      })]
+    );
+  }
+
+  try {
+    const modeRows = await client.query(
+      `SELECT game_id, data FROM gameinfo_mode_data WHERE data_mode = 'idpass'`
+    );
+    for (const row of modeRows.rows) {
+      const data = row.data || {};
+      const packs = data.packs || {};
+      const cleaned = clearGameinfoColumnReferences(
+        mergeGameinfoColumns(registryRows, packs.columnOverrides || {}),
+        targetKey,
+        targetLabel
+      );
+      const split = splitGameinfoColumns(cleaned);
+      await client.query(
+        `UPDATE gameinfo_mode_data
+         SET data = $2, version = version + 1, updated_at = NOW()
+         WHERE game_id = $1 AND data_mode = 'idpass'`,
+        [row.game_id, JSON.stringify({
+          ...data,
+          packs: {
+            ...packs,
+            computedColumns: flattenGameinfoColumnsForLegacy(cleaned),
+            columnOverrides: split.overrides,
+          },
+        })]
+      );
+    }
+  } catch (error) {
+    if (error?.code !== "42P01") throw error;
+  }
+
+  try {
+    await client.query(
+      `UPDATE gameinfo_game_markets
+       SET price_column_key = '', enabled = FALSE, version = version + 1, updated_at = NOW()
+       WHERE price_column_key = $1`,
+      [targetKey]
+    );
+  } catch (error) {
+    if (error?.code !== "42P01") throw error;
+  }
+}
+
+export async function getGameinfoColumnDeletionImpact(columnKey) {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  try {
+    const registryRows = await readColumnRegistry(client);
+    const target = registryRows.find((row) => row.columnKey === columnKey);
+    if (!target) return { column: null, references: [] };
+    const references = listGameinfoColumnReferences(
+      mergeGameinfoColumns(registryRows, {}),
+      columnKey,
+      target.label,
+      { gameId: 0, gameName: "ทุกเกม", dataMode: "all", includeShared: true }
+    );
+    const uid = await client.query(
+      `SELECT g.id AS game_id, g.game AS game_name, p.pack_id, p.data
+       FROM game_list g
+       JOIN gamelist_packs p ON p.game_id = g.id
+       ORDER BY g.id`
+    );
+    const uidByGame = new Map();
+    for (const row of uid.rows) {
+      const group = uidByGame.get(row.game_id) || { gameName: row.game_name, sentinel: {}, packs: [] };
+      if (row.pack_id === COMPUTED_SENTINEL) group.sentinel = row.data || {};
+      else group.packs.push(row);
+      uidByGame.set(row.game_id, group);
+    }
+    for (const [gameId, group] of uidByGame) {
+      references.push(...listGameinfoColumnReferences(
+        mergeGameinfoColumns(registryRows, group.sentinel.columnOverrides || {}),
+        columnKey,
+        target.label,
+        {
+          gameId,
+          gameName: group.gameName,
+          dataMode: "uid",
+          currencies: reconstructCurrencies(group.packs),
+        }
+      ));
+    }
+    try {
+      const modes = await client.query(
+        `SELECT m.game_id, g.game AS game_name, m.data
+         FROM gameinfo_mode_data m
+         JOIN game_list g ON g.id = m.game_id
+         WHERE m.data_mode = 'idpass'`
+      );
+      for (const row of modes.rows) {
+        const packs = row.data?.packs || {};
+        references.push(...listGameinfoColumnReferences(
+          mergeGameinfoColumns(registryRows, packs.columnOverrides || {}),
+          columnKey,
+          target.label,
+          {
+            gameId: row.game_id,
+            gameName: row.game_name,
+            dataMode: "idpass",
+            currencies: packs.currencies || [],
+          }
+        ));
+      }
+    } catch (error) {
+      if (error?.code !== "42P01") throw error;
+    }
+    try {
+      const mappings = await client.query(
+        `SELECT m.game_id, g.game AS game_name, m.data_mode, m.market
+         FROM gameinfo_game_markets m
+         JOIN game_list g ON g.id = m.game_id
+         WHERE m.price_column_key = $1`,
+        [columnKey]
+      );
+      references.push(...mappings.rows.map((row) => ({
+        gameId: row.game_id,
+        gameName: row.game_name,
+        dataMode: row.data_mode,
+        columnKey,
+        columnLabel: target.label,
+        scope: "market",
+        market: row.market,
+      })));
+    } catch (error) {
+      if (error?.code !== "42P01") throw error;
+    }
+    return { column: { key: target.columnKey, label: target.label }, references };
+  } finally {
+    client.release();
+  }
 }
 
 /** Shared pack data/config for one game_list row's id. */
@@ -304,11 +635,12 @@ export async function getGamelistPacks(gameId) {
       `SELECT version FROM gamelist_pack_revisions WHERE game_id = $1`,
       [gameId]
     );
+    const registryRows = await readColumnRegistry(client);
     const computedRow = result.rows.find((r) => r.pack_id === COMPUTED_SENTINEL);
     const packRows = result.rows.filter((r) => r.pack_id !== COMPUTED_SENTINEL);
     return {
       currencies: reconstructCurrencies(packRows),
-      computedColumns: Array.isArray(computedRow?.data?.columns) ? computedRow.data.columns : [],
+      computedColumns: resolveComputedColumns(registryRows, computedRow?.data),
       costProfiles: sanitizeGameinfoCostProfiles(computedRow?.data?.costProfiles),
       schemaVersion: Number(computedRow?.data?.schemaVersion) || 1,
       version: Number(revisionResult.rows[0]?.version) || 1,
@@ -356,7 +688,13 @@ export async function saveGamelistPacks(
     const previousComputed = previousResult.rows.find((row) => row.pack_id === COMPUTED_SENTINEL);
     const previousRows = previousResult.rows.filter((row) => row.pack_id !== COMPUTED_SENTINEL);
     const nextRows = flattenCurrencies(gameId, Array.isArray(currencies) ? currencies : []);
-    const nextComputed = Array.isArray(computedColumns) ? computedColumns : [];
+    const submittedComputed = Array.isArray(computedColumns) ? computedColumns : [];
+    // The registry stays dormant until the backfill fills it, so deploying
+    // this code cannot change how an existing game saves.
+    const registryRows = await readColumnRegistry(client);
+    const registryActive = registryRows.length > 0;
+    const nextComputed = localizeGameinfoColumnFormulas(submittedComputed, registryRows);
+    const legacyComputed = flattenGameinfoColumnsForLegacy(nextComputed);
     const previousCostProfiles = sanitizeGameinfoCostProfiles(previousComputed?.data?.costProfiles);
     const submittedCostProfiles = sanitizeGameinfoCostProfiles(costProfiles);
     const actorId = Number(actor?.id);
@@ -384,10 +722,12 @@ export async function saveGamelistPacks(
     const auditEvents = buildAuditEvents({
       previousRows,
       nextRows,
+      // Diff the flattened shape both sides so splitting storage does not
+      // show up in the audit log as a change the user never made.
       previousComputed: Array.isArray(previousComputed?.data?.columns)
         ? previousComputed.data.columns
         : [],
-      nextComputed,
+      nextComputed: legacyComputed,
       previousCostProfiles,
       nextCostProfiles,
       source,
@@ -400,12 +740,33 @@ export async function saveGamelistPacks(
         [r.gameId, r.packId, JSON.stringify(r.data)]
       );
     }
+    // Split the edited columns into the shared definitions and this game's
+    // overrides. `columns` keeps being written alongside them: until the
+    // registry is proven in production, reverting the code has to be enough to
+    // get the old per-game behaviour back, with no data restore.
+    const { registry: nextRegistry, overrides: nextOverrides } =
+      splitGameinfoColumns(nextComputed);
+    if (registryActive) {
+      // What this save actually dropped: columns the game was showing before
+      // and is not saving now. Anything else in the registry belongs to a
+      // column this request never saw and must survive.
+      const nextKeys = new Set(nextComputed.map((column) => column.key));
+      const removedKeys = resolveComputedColumns(await readColumnRegistry(client), previousComputed?.data)
+        .map((column) => column.key)
+        .filter((key) => !nextKeys.has(key));
+      await writeColumnRegistry(client, nextRegistry, removedKeys);
+    }
     await client.query(
       `INSERT INTO gamelist_packs (game_id, pack_id, data) VALUES ($1, $2, $3)`,
       [
         gameId,
         COMPUTED_SENTINEL,
-        JSON.stringify({ schemaVersion: 2, columns: nextComputed, costProfiles: nextCostProfiles }),
+        JSON.stringify({
+          schemaVersion: registryActive ? 3 : 2,
+          columns: legacyComputed,
+          columnOverrides: nextOverrides,
+          costProfiles: nextCostProfiles,
+        }),
       ]
     );
     for (const event of auditEvents) {
@@ -467,19 +828,85 @@ export async function createGamelistPackLanguage(name, actorId = null) {
 }
 
 /** Computed-column configs for every game, used to protect the one global
- * formula-variable set from removing a name that any saved formula needs. */
+ * formula-variable set from removing a name that any saved formula needs.
+ *
+ * Resolved through the registry, not read straight out of `data.columns`: that
+ * array is the pre-registry rollback copy, so reading it would tie a live
+ * correctness check to a copy that exists only until the registry is trusted
+ * and is then deleted — the guard would quietly start reporting that nothing
+ * uses the variable being removed. */
 export async function listAllGamelistComputedColumns() {
   const pool = await getReadyPool();
   const client = await pool.connect();
   try {
+    const registryRows = await readColumnRegistry(client);
     const result = await client.query(
       `SELECT game_id, data FROM gamelist_packs WHERE pack_id = $1 ORDER BY game_id`,
       [COMPUTED_SENTINEL]
     );
     return result.rows.map((row) => ({
       gameId: row.game_id,
-      computedColumns: Array.isArray(row.data?.columns) ? row.data.columns : [],
+      computedColumns: resolveComputedColumns(registryRows, row.data),
     }));
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Every formula any game computes in one column, grouped and counted.
+ *
+ * Three places hold one: the shared definition in the registry, a game's own
+ * `gameFormula`, and — for games not migrated yet — the per-game `columns`
+ * array that predates the registry. That last one is matched by label as well
+ * as by key, because keys were minted per game back then and the label is what
+ * makes two of those the same column.
+ */
+export async function listGameinfoColumnFormulaUsage(columnKey, label = "") {
+  const pool = await getReadyPool();
+  const client = await pool.connect();
+  const wantedLabel = String(label || "").trim();
+  try {
+    const entries = [];
+    const registry = await client.query(
+      `SELECT data FROM gamelist_pack_column_registry WHERE column_key = $1`,
+      [columnKey]
+    );
+    const shared = registry.rows[0]?.data?.formula;
+    if (shared) entries.push({ formula: shared, shared: true });
+
+    function collect(gameName, packs) {
+      const override = packs?.columnOverrides?.[columnKey];
+      if (override?.gameFormula) entries.push({ gameName, formula: override.gameFormula });
+      for (const column of Array.isArray(packs?.columns) ? packs.columns : []) {
+        const sameColumn =
+          column?.key === columnKey ||
+          (wantedLabel && String(column?.label || "").trim() === wantedLabel);
+        if (sameColumn && column?.formula) entries.push({ gameName, formula: column.formula });
+      }
+    }
+
+    const uid = await client.query(
+      `SELECT g.game AS game_name, p.data AS data
+       FROM gamelist_packs p
+       JOIN game_list g ON g.id = p.game_id
+       WHERE p.pack_id = $1`,
+      [COMPUTED_SENTINEL]
+    );
+    for (const row of uid.rows) collect(row.game_name, row.data || {});
+
+    // idpass keeps its packs in a store of its own; a formula written there is
+    // just as much an answer to "how do other games compute this".
+    const modeTable = await client.query(`SELECT to_regclass('gameinfo_mode_data') AS present`);
+    if (modeTable.rows[0]?.present) {
+      const idpass = await client.query(
+        `SELECT g.game AS game_name, m.data AS data
+         FROM gameinfo_mode_data m
+         JOIN game_list g ON g.id = m.game_id`
+      );
+      for (const row of idpass.rows) collect(row.game_name, row.data?.packs || {});
+    }
+    return groupGameinfoColumnFormulas(entries);
   } finally {
     client.release();
   }
@@ -487,15 +914,20 @@ export async function listAllGamelistComputedColumns() {
 
 /** Multi-game CSV import in one transaction. Computed-column sentinel rows
  * are preserved; only real pack rows are replaced/merged. */
-export async function importGamelistPacks(games, mode = "replace", actor = null) {
+export async function importGamelistPacks(
+  games,
+  mode = "replace",
+  actor = null,
+  transactionClient = null
+) {
   if (!Array.isArray(games) || games.length === 0) return { gameCount: 0, packCount: 0 };
   if (mode !== "replace" && mode !== "add") throw createHttpError("โหมดนำเข้าไม่ถูกต้อง", 400);
   const source = mode === "add" ? "csv_append" : "csv_replace";
-  const pool = await getReadyPool();
-  const client = await pool.connect();
+  const pool = transactionClient ? null : await getReadyPool();
+  const client = transactionClient || (await pool.connect());
   let importedPackCount = 0;
   try {
-    await client.query("BEGIN");
+    if (!transactionClient) await client.query("BEGIN");
     for (const game of games) {
       const target = await client.query(`SELECT id FROM game_list WHERE id = $1 FOR UPDATE`, [game.gameId]);
       if (target.rows.length !== 1) throw createHttpError(`ไม่พบ game_id ${game.gameId}`, 404);
@@ -507,7 +939,15 @@ export async function importGamelistPacks(games, mode = "replace", actor = null)
       const previousComputed = previousResult.rows.find((row) => row.pack_id === COMPUTED_SENTINEL);
       const previousRows = previousResult.rows.filter((row) => row.pack_id !== COMPUTED_SENTINEL);
       let currencies = Array.isArray(game.currencies) ? game.currencies : [];
-      if (mode === "add") currencies = mergeCurrencies(reconstructCurrencies(previousRows), currencies);
+      // A file can now carry columns for a game without carrying any of its
+      // packs — "add this column to these games" is the whole point of naming
+      // a game by name. Replacing a game with nothing would delete every pack
+      // it has, which is never what that file meant, so a game the file has no
+      // packs for keeps the packs it already has.
+      const columnsOnly = !currencies.length;
+      if (mode === "add" || columnsOnly) {
+        currencies = mergeCurrencies(reconstructCurrencies(previousRows), currencies);
+      }
       assertUniquePackNamePrices(currencies);
       const nextRows = flattenCurrencies(game.gameId, currencies);
       const computedColumns = Array.isArray(previousComputed?.data?.columns)
@@ -534,19 +974,168 @@ export async function importGamelistPacks(games, mode = "replace", actor = null)
           [row.gameId, row.packId, JSON.stringify(row.data)]
         );
       }
+      if (game.columns?.length) {
+        await writeImportedColumns(client, game.gameId, game.columns, previousComputed, nextRows);
+      }
       for (const event of auditEvents) {
         await insertPackAudit(client, game.gameId, actor, event, source);
       }
       importedPackCount += Number(game.packCount) || 0;
     }
-    await client.query("COMMIT");
+    if (!transactionClient) await client.query("COMMIT");
     return { gameCount: games.length, packCount: importedPackCount };
   } catch (error) {
-    await client.query("ROLLBACK");
+    if (!transactionClient) await client.query("ROLLBACK");
     throw error;
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
+}
+
+// Row overrides are keyed by pack id and a replace import regenerates every
+// pack id, so ones that no longer point at a live pack are dropped rather than
+// left dangling.
+function pruneToLivePacks(rowOverrides, livePackIds) {
+  return Object.fromEntries(
+    Object.entries(rowOverrides || {}).filter(([packId]) => livePackIds.has(packId))
+  );
+}
+
+// Columns carried by an imported CSV: register the definition (shared by every
+// game) and store this game's values against it. Row overrides are keyed by
+// pack id, and a replace import regenerates every pack id, so overrides that
+// no longer point at a live pack are dropped rather than left dangling.
+async function writeImportedColumns(client, gameId, columns, previousComputed, nextRows) {
+  const registryRows = await readColumnRegistry(client);
+  // An empty registry means every game still keeps its own columns, and the
+  // reader switches to the registry the moment it holds a single row. Putting
+  // one there would leave the system half-migrated: every game this file does
+  // not name would show only the column this import created and lose its own.
+  // So while the registry is dormant an imported column is written the old
+  // way, into this game's own list. Activation stays one deliberate act — the
+  // backfill, which promotes every game at once.
+  const registryActive = registryRows.length > 0;
+  const previous = previousComputed?.data || {};
+  const livePackIds = new Set(nextRows.map((row) => row.packId));
+
+  if (registryActive) {
+    const known = new Set(registryRows.map((row) => row.columnKey));
+    let sortOrder = registryRows.length;
+    for (const column of columns) {
+      if (known.has(column.key)) continue;
+      await client.query(
+        `INSERT INTO gamelist_pack_column_registry (column_key, label, sort_order, data)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (column_key) DO NOTHING`,
+        [
+          column.key,
+          column.label,
+          sortOrder++,
+          JSON.stringify({
+            // Deliberately empty: an imported formula belongs to the game whose
+            // rows carried it (stored as gameFormula below), never to the
+            // shared definition every game computes.
+            formula: "",
+            entryMode: column.entryMode || "manual",
+            kind: "formula",
+            marketKey: "",
+            type: "number",
+            symbol: "",
+            scopeMode: "global",
+          }),
+        ]
+      );
+    }
+  } else {
+    const legacy = Array.isArray(previous.columns) ? [...previous.columns] : [];
+    const known = new Set(legacy.map((column) => column.key));
+    for (const column of columns) {
+      const rowOverrides = { ...column.rowOverrides };
+      const index = legacy.findIndex((item) => item.key === column.key);
+      if (known.has(column.key)) {
+        const existing = legacy[index];
+        legacy[index] = {
+          ...existing,
+          // Before the registry exists a column is this game's own, so its
+          // `formula` is the per-game rule gameFormula becomes afterwards.
+          formula: column.gameFormula || existing.formula || "",
+          entryMode: column.gameFormula ? "formula" : existing.entryMode,
+          rowOverrides: pruneToLivePacks({ ...existing.rowOverrides, ...rowOverrides }, livePackIds),
+        };
+        continue;
+      }
+      legacy.push({
+        key: column.key,
+        label: column.label,
+        formula: column.gameFormula || "",
+        entryMode: column.entryMode || "manual",
+        kind: "formula",
+        marketKey: "",
+        enabled: true,
+        type: "number",
+        symbol: "",
+        scopeMode: "global",
+        categoryFormulas: {},
+        rowOverrides: pruneToLivePacks(rowOverrides, livePackIds),
+      });
+    }
+    await client.query(
+      `INSERT INTO gamelist_packs (game_id, pack_id, data) VALUES ($1, $2, $3)
+       ON CONFLICT (game_id, pack_id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
+      [
+        gameId,
+        COMPUTED_SENTINEL,
+        JSON.stringify({
+          ...previous,
+          schemaVersion: 2,
+          columns: legacy,
+          costProfiles: sanitizeGameinfoCostProfiles(previous.costProfiles),
+        }),
+      ]
+    );
+    return;
+  }
+
+  const overrides = { ...(previous.columnOverrides || {}) };
+  for (const [key, override] of Object.entries(overrides)) {
+    if (!override?.rowOverrides) continue;
+    overrides[key] = { ...override, rowOverrides: pruneToLivePacks(override.rowOverrides, livePackIds) };
+  }
+  for (const column of columns) {
+    const existing = overrides[column.key] || {};
+    const next = { ...existing };
+    if (Object.keys(column.rowOverrides).length) {
+      next.rowOverrides = { ...(existing.rowOverrides || {}), ...column.rowOverrides };
+    }
+    // The one rule this file stated for this game. Stored here rather than in
+    // the registry so two games in one file can state different rules and both
+    // keep theirs, and so a file naming one game leaves the other 215 alone.
+    if (column.gameFormula) next.gameFormula = column.gameFormula;
+    if (Object.keys(next).length) overrides[column.key] = next;
+  }
+
+  // `columns` is the pre-registry copy every save keeps so that reverting the
+  // code is a complete rollback with no data restore. An import used to leave
+  // it untouched, so a column that arrived by CSV — and the values under it —
+  // existed only in the registry: revert, and they were gone from the screen
+  // while still sitting in the database. Rebuilt here from the same merge the
+  // editor's save flattens, so both paths leave the same fallback behind.
+  const mergedColumns = mergeGameinfoColumns(await readColumnRegistry(client), overrides);
+  await client.query(
+    `INSERT INTO gamelist_packs (game_id, pack_id, data) VALUES ($1, $2, $3)
+     ON CONFLICT (game_id, pack_id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
+    [
+      gameId,
+      COMPUTED_SENTINEL,
+      JSON.stringify({
+        ...previous,
+        schemaVersion: 3,
+        columns: flattenGameinfoColumnsForLegacy(mergedColumns),
+        columnOverrides: overrides,
+        costProfiles: sanitizeGameinfoCostProfiles(previous.costProfiles),
+      }),
+    ]
+  );
 }
 
 function buildAuditEvents({
@@ -1005,6 +1594,11 @@ export function sanitizeGamelistPackViewPresetLayout(layout) {
     hidden: presetColumnIds(layout?.hidden),
   };
   if (Array.isArray(layout?.filters)) sanitized.filters = filters;
+  // Which columns existed when this preset was saved. Columns registered later
+  // are shared across every game, so the client hides them until the owner of
+  // the preset asks for them. Absent on presets saved before this shipped, and
+  // those keep showing every column.
+  if (Array.isArray(layout?.knownIds)) sanitized.knownIds = presetColumnIds(layout.knownIds);
   return sanitized;
 }
 

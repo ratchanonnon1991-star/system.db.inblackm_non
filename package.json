@@ -5,14 +5,18 @@
   "type": "module",
   "scripts": {
     "dev": "next dev --webpack --port 4183",
-    "build": "next build",
-    "start": "next start --port 5589",
+    "build": "next build --webpack",
+    "start": "next start --port 4183",
     "lint": "eslint",
     "test": "node tests/run.mjs",
     "pm2:start": "pm2 start ecosystem.config.cjs",
     "pm2:stop": "pm2 stop system.db.inblackm",
     "pm2:restart": "pm2 restart system.db.inblackm",
-    "pm2:logs": "pm2 logs system.db.inblackm"
+    "pm2:logs": "pm2 logs system.db.inblackm",
+    "razer-sync-worker": "node scripts/razer-sync-worker.mjs",
+    "razer-sync-worker:restart": "powershell -ExecutionPolicy Bypass -File scripts/restart-razer-worker.ps1",
+    "razer:setup": "node node_modules/playwright/cli.js install chromium",
+    "razer:stack": "powershell -ExecutionPolicy Bypass -File scripts/start-razer-stack.ps1"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
@@ -24,9 +28,9 @@
     "lucide-react": "^1.18.0",
     "next": "16.2.12",
     "pg": "^8.21.0",
+    "playwright": "^1.62.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "shadcn": "^4.19.0",
     "tailwind-merge": "^3.6.0",
     "tw-animate-css": "^1.4.0"
   },
@@ -35,6 +39,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "picomatch": "^4.0.5",
+    "shadcn": "^4.19.1",
     "tailwindcss": "^4",
     "typescript": "^5.9.3"
   }

@@ -4,7 +4,17 @@ import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { normalizeGamelistLinks } from "@/server/gameinfo-gamelist-links";
 import { normalizeGamelistTutorialCategories } from "@/server/gameinfo-gamelist-tutorial";
 import { sanitizeGameinfoPack } from "@/lib/gameinfo-pack-model";
-import { recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
+import {
+  listGamelistPackColumnRegistry,
+  recordGameinfoAudit,
+  resolveComputedColumns,
+  writeGameinfoColumnRegistry,
+} from "@/server/gameinfo-gamelist-packs";
+import {
+  flattenGameinfoColumnsForLegacy,
+  localizeGameinfoColumnFormulas,
+  splitGameinfoColumns,
+} from "@/lib/gameinfo-column-registry";
 
 function sanitizeCurrencies(currencies) {
   return (Array.isArray(currencies) ? currencies : []).map((currency, currencyIndex) => ({
@@ -51,6 +61,13 @@ function sanitizeData(raw) {
     packs: {
       currencies: sanitizeCurrencies(source.packs?.currencies),
       computedColumns: Array.isArray(source.packs?.computedColumns) ? source.packs.computedColumns : [],
+      // This game's half of the shared column definitions, same shape as the
+      // uid store's sentinel row. Dropping it here would silently discard a
+      // game's per-pack values on the next save.
+      columnOverrides:
+        source.packs?.columnOverrides && typeof source.packs.columnOverrides === "object"
+          ? source.packs.columnOverrides
+          : {},
       costProfiles: Array.isArray(source.packs?.costProfiles) ? source.packs.costProfiles : [],
     },
   };
@@ -110,10 +127,26 @@ export async function getGameinfoModeData(gameId, mode, transactionClient = null
       `SELECT data, version FROM gameinfo_mode_data WHERE game_id = $1 AND data_mode = 'idpass'`,
       [gameId]
     );
-    return { ...sanitizeData(result.rows[0]?.data), version: Number(result.rows[0]?.version) || 1 };
+    const data = sanitizeData(result.rows[0]?.data);
+    return {
+      ...data,
+      packs: { ...data.packs, computedColumns: await resolveModeColumns(client, data.packs) },
+      version: Number(result.rows[0]?.version) || 1,
+    };
   } finally {
     if (!transactionClient) client.release();
   }
+}
+
+// idpass keeps its packs in a store of its own, but pack columns are shared by
+// every game in both modes — so this resolves them the same way the uid store
+// does, and falls back to the game's own columns while the registry is empty.
+async function resolveModeColumns(client, packs) {
+  const registry = await listGamelistPackColumnRegistry(client);
+  return resolveComputedColumns(registry, {
+    columns: packs.computedColumns,
+    columnOverrides: packs.columnOverrides,
+  });
 }
 
 export async function listGameinfoModeData(mode) {
@@ -122,10 +155,24 @@ export async function listGameinfoModeData(mode) {
   const client = await pool.connect();
   try {
     const result = await client.query(`SELECT game_id, data, version FROM gameinfo_mode_data WHERE data_mode = 'idpass'`);
-    return Object.fromEntries(result.rows.map((row) => [row.game_id, {
-      ...sanitizeData(row.data),
-      version: Number(row.version) || 1,
-    }]));
+    // Columns are resolved here for the same reason getGameinfoModeData does
+    // it: a caller checking "does any formula still use this variable" has to
+    // see the shared definitions, not this game's rollback copy of them.
+    const registry = await listGamelistPackColumnRegistry(client);
+    return Object.fromEntries(result.rows.map((row) => {
+      const data = sanitizeData(row.data);
+      return [row.game_id, {
+        ...data,
+        packs: {
+          ...data.packs,
+          computedColumns: resolveComputedColumns(registry, {
+            columns: data.packs.computedColumns,
+            columnOverrides: data.packs.columnOverrides,
+          }),
+        },
+        version: Number(row.version) || 1,
+      }];
+    }));
   } finally {
     client.release();
   }
@@ -137,6 +184,37 @@ export async function saveGameinfoModeData(gameId, mode, nextData, transactionCl
   const pool = await readyPool();
   const client = transactionClient || await pool.connect();
   try {
+    // Columns arrive merged, the way every surface reads them. Split them back
+    // apart so the shared definition is written once and only this game's
+    // formulas and per-pack values stay here — the same trade saveGamelistPacks
+    // makes, including keeping `computedColumns` as the rollback copy.
+    const registry = await listGamelistPackColumnRegistry(client);
+    if (registry.length) {
+      data.packs.computedColumns = localizeGameinfoColumnFormulas(
+        data.packs.computedColumns,
+        registry
+      );
+      const split = splitGameinfoColumns(data.packs.computedColumns);
+      // What this save dropped: columns this game was showing before and is
+      // not saving now. Diffing against the whole registry instead would let
+      // one game's save delete definitions shared with every other game and
+      // with uid mode.
+      const stored = await client.query(
+        `SELECT data FROM gameinfo_mode_data WHERE game_id = $1 AND data_mode = 'idpass'`,
+        [gameId]
+      );
+      const previous = sanitizeData(stored.rows[0]?.data).packs;
+      const nextKeys = new Set(data.packs.computedColumns.map((column) => column.key));
+      const removedKeys = resolveComputedColumns(registry, {
+        columns: previous.computedColumns,
+        columnOverrides: previous.columnOverrides,
+      })
+        .map((column) => column.key)
+        .filter((key) => !nextKeys.has(key));
+      await writeGameinfoColumnRegistry(client, split.registry, removedKeys);
+      data.packs.columnOverrides = split.overrides;
+      data.packs.computedColumns = flattenGameinfoColumnsForLegacy(data.packs.computedColumns);
+    }
     await client.query(
       `INSERT INTO gameinfo_mode_data (game_id, data_mode, data, version, updated_at)
        VALUES ($1, 'idpass', $2, 2, NOW())
@@ -181,15 +259,51 @@ export async function updateGameinfoModeData(
       conflict.status = 409;
       throw conflict;
     }
-    const current = sanitizeData(currentResult.rows[0]?.data);
-    const next = sanitizeData(await updater(structuredClone(current)));
+    const storedCurrent = sanitizeData(currentResult.rows[0]?.data);
+    const registry = await listGamelistPackColumnRegistry(client);
+    const current = registry.length
+      ? {
+          ...storedCurrent,
+          packs: {
+            ...storedCurrent.packs,
+            computedColumns: resolveComputedColumns(registry, {
+              columns: storedCurrent.packs.computedColumns,
+              columnOverrides: storedCurrent.packs.columnOverrides,
+            }),
+          },
+        }
+      : storedCurrent;
+    let next = sanitizeData(await updater(structuredClone(current)));
+    if (registry.length) {
+      next = {
+        ...next,
+        packs: {
+          ...next.packs,
+          computedColumns: localizeGameinfoColumnFormulas(
+            next.packs.computedColumns,
+            registry
+          ),
+        },
+      };
+    }
+    const storedNext = structuredClone(next);
+    if (registry.length) {
+      const split = splitGameinfoColumns(next.packs.computedColumns);
+      const nextKeys = new Set(next.packs.computedColumns.map((column) => column.key));
+      const removedKeys = current.packs.computedColumns
+        .map((column) => column.key)
+        .filter((key) => !nextKeys.has(key));
+      await writeGameinfoColumnRegistry(client, split.registry, removedKeys);
+      storedNext.packs.columnOverrides = split.overrides;
+      storedNext.packs.computedColumns = flattenGameinfoColumnsForLegacy(next.packs.computedColumns);
+    }
     const nextVersion = currentVersion + 1;
     await client.query(
       `INSERT INTO gameinfo_mode_data (game_id, data_mode, data, version, updated_at)
        VALUES ($1, 'idpass', $2, $3, NOW())
        ON CONFLICT (game_id, data_mode) DO UPDATE
        SET data = EXCLUDED.data, version = EXCLUDED.version, updated_at = NOW()`,
-      [gameId, JSON.stringify(next), nextVersion]
+      [gameId, JSON.stringify(storedNext), nextVersion]
     );
     if (area) {
       const slice = (data) => {

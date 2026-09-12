@@ -22,12 +22,18 @@ CREATE TABLE IF NOT EXISTS gameinfo_game_markets (
   external_game_label text NOT NULL DEFAULT '',
   product_type text NOT NULL DEFAULT '',
   enabled boolean NOT NULL DEFAULT false,
+  -- Which pack column holds this market's price. Empty means the pre-linking
+  -- behaviour: look for the market_<market> column this game was given when
+  -- the market was first switched on.
+  price_column_key varchar(64) NOT NULL DEFAULT '',
   version bigint NOT NULL DEFAULT 1,
   updated_by integer,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (game_id, data_mode, market)
 );
+ALTER TABLE gameinfo_game_markets
+  ADD COLUMN IF NOT EXISTS price_column_key varchar(64) NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS gameinfo_game_markets_enabled_idx ON gameinfo_game_markets (market, enabled, game_id);
 
 CREATE TABLE IF NOT EXISTS gameinfo_market_catalog_packs (

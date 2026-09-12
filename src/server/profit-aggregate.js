@@ -16,6 +16,7 @@ import * as smartsun from "@/server/profit-smartsun";
 import * as u9 from "@/server/profit-u9";
 import { CATEGORIES, getCategory, legacyIdsFor } from "@/server/profit-categories";
 import { fetchUsdThbRate } from "@/server/exchangerate-api";
+import { listDetectedSalePlatforms, normalizeSalePlatform } from "@/server/profit-platform-normalize";
 
 // The free tier of exchangerate-api.com only refreshes once every 24h, so
 // re-fetching more often than this would just repeat the same number.
@@ -1570,6 +1571,69 @@ export async function cardDetail(categoryId, cardId) {
   return { ...card, orders, dustClearLog, duplicateReviewLog, mergeClearLog };
 }
 
+// Per-source balance / deducted figures for the dashboard overview cards.
+// Uses each card's native unit (USD, points, Ks, etc.) — not mixed into totals.
+function sumCardField(cards, key) {
+  return cards.reduce((s, c) => s + (Number(c[key]) || 0), 0);
+}
+
+function categoryStockFields(cards, source) {
+  switch (source) {
+    case "gocash":
+    case "gocash-dust":
+      return {
+        stock: { label: "คงเหลือ", value: sumCardField(cards, "remaining"), unit: "usd" },
+        deducted: { label: "ยอดตัด", value: sumCardField(cards, "deductedTotal"), unit: "usd" },
+      };
+    case "oxide":
+    case "oxide-merge":
+      return {
+        stock: { label: "คงเหลือ", value: sumCardField(cards, "balancePoints"), unit: "points" },
+      };
+    case "wavepay":
+      return {
+        stock: { label: "คงเหลือ", value: sumCardField(cards, "balanceKs"), unit: "kyat" },
+        deducted: { label: "ยอดตัด", value: sumCardField(cards, "deductedKsTotal"), unit: "kyat" },
+      };
+    case "u9":
+      return {
+        stock: { label: "คงเหลือ", value: sumCardField(cards, "balanceKs"), unit: "kyat" },
+        deducted: { label: "ยอดตัด", value: sumCardField(cards, "deductedKsTotal"), unit: "kyat" },
+      };
+    case "truemoney":
+      return {
+        deducted: { label: "ยอดตัด", value: sumCardField(cards, "deductedThbTotal"), unit: "thb" },
+      };
+    case "atom":
+      return {
+        deducted: { label: "ยอดตัด", value: sumCardField(cards, "deductedKsTotal"), unit: "kyat" },
+      };
+    case "smartsun":
+      return {
+        deducted: { label: "ยอดตัด", value: sumCardField(cards, "deductedPhpTotal"), unit: "php" },
+      };
+    case "donshop":
+      return {
+        deducted: { label: "ยอดตัด", value: sumCardField(cards, "deductedIdrTotal"), unit: "idr" },
+      };
+    case "gamepoint":
+      return {
+        deducted: { label: "ยอดตัด", value: sumCardField(cards, "deductedMyrTotal"), unit: "myr" },
+      };
+    case "agenh2h":
+      return {
+        deducted: { label: "ยอดตัด", value: sumCardField(cards, "deductedIdrTotal"), unit: "idr" },
+      };
+    case "codareseller":
+    case "netease":
+      return {
+        deducted: { label: "ยอดตัด", value: sumCardField(cards, "deductedUsdTotal"), unit: "usd" },
+      };
+    default:
+      return {};
+  }
+}
+
 // ── Category summaries + dashboard totals ────────────────────────────────
 export async function categorySummaries() {
   const out = [];
@@ -1608,6 +1672,7 @@ export async function categorySummaries() {
       deductedTotal: cards.reduce((s, c) => s + c.deductedTotal, 0),
       remainingTotal: cards.reduce((s, c) => s + (c.remaining ?? 0), 0),
       duplicateCardCount: cards.filter((c) => c.duplicateCount > 0 && !c.duplicateReviewed).length,
+      ...categoryStockFields(cards, category.source),
     });
   }
   return out;
@@ -2019,17 +2084,24 @@ export async function platformPackPrices(platform) {
 // Small overview across every platform at once -- how many of the known
 // packs each one has priced, so the team can tell at a glance which
 // platform (Kaleoz, USDT Russia, ...) still needs filling in. Also surfaces
-// platforms nobody has priced a single pack for yet, as long as
-// codashop_orders.source has actually tagged a real GoCash order with them --
-// staff can still add any other name by hand from the sale-prices page too.
+// platforms nobody has priced a single pack for yet, as long as any
+// completed codashop order (any payment method) has been tagged with them.
 export async function platformSummary() {
-  const [known, counts, gocashRows] = await Promise.all([listKnownPacks(), repo.getPlatformPriceCounts(), gocash.getAllRows()]);
+  const [known, counts, detectedList] = await Promise.all([
+    listKnownPacks(),
+    repo.getPlatformPriceCounts(),
+    listDetectedSalePlatforms(),
+  ]);
   const totalPacks = known.length;
-  const pricedCountByPlatform = new Map(counts.map((p) => [p.platform, p.pricedCount]));
-  for (const row of gocashRows) {
-    if (row.platform && !pricedCountByPlatform.has(row.platform)) pricedCountByPlatform.set(row.platform, 0);
+  const pricedCountByPlatform = new Map();
+  for (const p of counts) {
+    const key = normalizeSalePlatform(p.platform) || p.platform;
+    pricedCountByPlatform.set(key, (pricedCountByPlatform.get(key) || 0) + p.pricedCount);
   }
-  const detected = new Set(gocashRows.map((r) => r.platform).filter(Boolean));
+  const detected = new Set(detectedList);
+  for (const platform of detected) {
+    if (!pricedCountByPlatform.has(platform)) pricedCountByPlatform.set(platform, 0);
+  }
   const platforms = [...pricedCountByPlatform.entries()]
     .map(([platform, pricedCount]) => ({
       platform,

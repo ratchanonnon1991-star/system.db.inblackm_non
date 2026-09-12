@@ -22,6 +22,7 @@ import {
   TABLE_TONES,
 } from "@/lib/gamedb-layout";
 import { isSafeIdentifier, isSafeIdentifierPart } from "@/lib/gamedb-identifier";
+import { GAMEINFO_MARKET_KEYS } from "@/lib/gameinfo-market-system";
 
 function sanitizeStringArray(value) {
   return Array.isArray(value)
@@ -51,7 +52,19 @@ function sanitizeGameinfoCategoryFormulas(value) {
 
 // Shared with the gameinfo module: a game's computed_column JSONB column
 // holds the same shape, so both surfaces can edit it with this one sanitizer.
-export function sanitizeComputedColumns(raw) {
+// A query's formula columns are that query's own, so a handful is plenty. A
+// gameinfo pack column is shared by every game, which makes this list the
+// whole registry rather than one game's few — hence the second, larger cap.
+//
+// The size matters beyond storage: a gameinfo save works out which columns
+// were removed by diffing what the game had against what it sends, so a list
+// silently truncated here would read as "the user deleted the rest" and take
+// those definitions away from every game. The route refuses an over-long list
+// instead of letting the truncation happen.
+export const GAMEDB_QUERY_COLUMN_LIMIT = 30;
+export const GAMEINFO_PACK_COLUMN_LIMIT = 200;
+
+export function sanitizeComputedColumns(raw, { limit = GAMEDB_QUERY_COLUMN_LIMIT } = {}) {
   return Array.isArray(raw)
     ? raw
         .filter(
@@ -61,19 +74,40 @@ export function sanitizeComputedColumns(raw) {
             typeof col.label === "string" &&
             typeof col.formula === "string"
         )
-        .slice(0, 30)
+        .slice(0, limit)
         .map((col) => ({
           key: col.key.slice(0, 64),
           label: col.label.slice(0, 120),
           formula: col.formula.slice(0, 500),
+          // The formula this one game computes instead of the shared one. Kept
+          // here or the pack editor's save would drop it and the game would
+          // silently fall back to what every other game computes.
+          gameFormula:
+            typeof col.gameFormula === "string" ? col.gameFormula.slice(0, 500) : "",
+          ...(col.gameEntryMode === "manual" || col.gameEntryMode === "formula"
+            ? { gameEntryMode: col.gameEntryMode }
+            : {}),
+          ...(col.gameScopeMode === "category" || col.gameScopeMode === "global"
+            ? { gameScopeMode: col.gameScopeMode }
+            : {}),
+          // Which revision of the shared definition this client was shown.
+          // Dropping it here would make every save look like a brand new
+          // column to the registry's optimistic lock.
+          version: Number.isSafeInteger(Number(col.version)) && Number(col.version) > 0
+            ? Number(col.version)
+            : undefined,
           entryMode:
-            col.entryMode === "manual" || (col.kind !== "market" && !col.formula.trim())
+            col.entryMode === "manual" ||
+            (col.kind !== "market" &&
+              !col.formula.trim() &&
+              !String(col.gameFormula || "").trim())
               ? "manual"
               : "formula",
           kind: col.kind === "market" ? "market" : "formula",
-          marketKey: col.kind === "market" && ["kaleoz", "itemku"].includes(col.marketKey)
-            ? col.marketKey
-            : "",
+          marketKey:
+            col.kind === "market" && GAMEINFO_MARKET_KEYS.has(col.marketKey)
+              ? col.marketKey
+              : "",
           enabled: col.kind === "market" ? col.enabled !== false : true,
           // Absent on every column saved before formulas could return text.
           type: COMPUTED_TYPES.includes(col.type) ? col.type : "number",

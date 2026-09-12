@@ -2,6 +2,25 @@ import { evaluateFormula, extractFormulaRefs, parseFormula } from "@/lib/gamedb-
 import { GAMEINFO_FIELD_NAMES, resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
 import { getGameinfoFormulaDisplay } from "@/lib/gameinfo-formula-overrides";
 import { roundGameinfoNumber } from "@/lib/gameinfo-pack-validation";
+import { gameinfoColumnsWithData } from "@/lib/gameinfo-pack-columns";
+
+// One column's formula is the same string for every pack under it, and every
+// game now carries every registered column, so a table asks for the same parse
+// hundreds of times per render — twice over, since the empty-column pass walks
+// the tree before the cells do. Parsing is pure, so the tree is cached by the
+// formula text. The cap is there only so a long session cannot accumulate
+// every draft a user typed into the formula editor.
+const astCache = new Map();
+const AST_CACHE_LIMIT = 500;
+
+function parseFormulaCached(formula) {
+  const cached = astCache.get(formula);
+  if (cached) return cached;
+  const ast = parseFormula(formula);
+  if (astCache.size >= AST_CACHE_LIMIT) astCache.clear();
+  astCache.set(formula, ast);
+  return ast;
+}
 
 export function evaluateGameinfoComputedColumn(column, columns, pack, game, context = {}, stack = []) {
   if (!column) return undefined;
@@ -11,7 +30,7 @@ export function evaluateGameinfoComputedColumn(column, columns, pack, game, cont
   }
   const effective = getGameinfoFormulaDisplay(column, pack?.id, context.categoryId);
   if (!effective.formula.trim()) return undefined;
-  const ast = parseFormula(effective.formula);
+  const ast = parseFormulaCached(effective.formula);
   const value = evaluateFormula(ast, (label) => {
     const dependency = columns.find((item) => item.label === label);
     if (dependency) {
@@ -20,6 +39,34 @@ export function evaluateGameinfoComputedColumn(column, columns, pack, game, cont
     return resolveGameinfoField(pack, game, label, context);
   });
   return column.type && column.type !== "number" ? value : roundGameinfoNumber(value);
+}
+
+// Columns are shared by every game, so most games have nothing to put in most
+// of them. This walks the whole currency/category/pack tree once and reports
+// which columns actually produce a value here, so the read-only view can drop
+// the empty ones and the editor can offer to. A formula that throws for one
+// pack is treated as no value for that pack, not as an error — the cell
+// already renders that way.
+export function gameinfoColumnsWithDataInGame(packColumns, currencies, game, context = {}) {
+  const computedColumns = (packColumns || [])
+    .filter((column) => column.kind === "computed")
+    .map((column) => column.computed);
+  const entries = [];
+  for (const currency of currencies || []) {
+    for (const category of currency.categories || []) {
+      for (const pack of category.packs || []) entries.push({ pack, categoryId: category.id });
+    }
+  }
+  return gameinfoColumnsWithData(packColumns, entries, (column, entry) => {
+    try {
+      return evaluateGameinfoComputedColumn(column.computed, computedColumns, entry.pack, game, {
+        ...context,
+        categoryId: entry.categoryId,
+      });
+    } catch {
+      return undefined;
+    }
+  });
 }
 
 export function validateGameinfoComputedDependencies(
@@ -42,7 +89,10 @@ export function validateGameinfoComputedDependencies(
   }
 
   function validateFormula(column, formula, sourceLabel) {
-    if (column.entryMode === "manual" && !String(formula || "").trim()) return;
+    // A shared registry formula may intentionally be blank when this game
+    // supplies `gameFormula` or per-Pack overrides. Blank means "no rule at
+    // this scope", not a parser input.
+    if (!String(formula || "").trim()) return;
     try {
       const ast = parseFormula(formula);
       for (const ref of extractFormulaRefs(ast)) {
@@ -57,6 +107,11 @@ export function validateGameinfoComputedDependencies(
 
   for (const column of columns || []) {
     validateFormula(column, column.formula, "สูตรหลัก");
+    // Only when the game has one: an empty gameFormula means "compute this the
+    // way every other game does", not an empty formula to complain about.
+    if (String(column.gameFormula || "").trim()) {
+      validateFormula(column, column.gameFormula, "สูตรเฉพาะเกม");
+    }
     for (const [categoryId, formula] of Object.entries(column.categoryFormulas || {})) {
       validateFormula(column, formula, `สูตรหมวด ${categoryId}`);
     }

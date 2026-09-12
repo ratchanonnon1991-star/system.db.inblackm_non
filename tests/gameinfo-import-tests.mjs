@@ -3,6 +3,7 @@
 // export -> parse round-trip.
 import {
   buildPackTree,
+  gameinfoPackExportHeaders,
   gamesToPackRows,
   mergeCurrencies,
   PACK_HEADERS,
@@ -10,6 +11,7 @@ import {
   parsePacksForGame,
   splitList,
 } from "@/lib/gameinfo-import.js";
+import { mergeImportedGameinfoFormulaValues } from "@/lib/gameinfo-formula-overrides.js";
 import {
   GAMEINFO_COUNTRY_NAMES,
   gameinfoCountryDisplayName,
@@ -226,6 +228,13 @@ const games = [
   {
     id: 7,
     gameName: "ML",
+    computedColumns: [
+      { key: "shared", label: "ราคากลาง", formula: "[ราคา] * 2", entryMode: "formula" },
+      { key: "game", label: "ราคาเกม", formula: "[ราคา]", gameFormula: "[ราคา] * 3", entryMode: "formula" },
+      { key: "category", label: "ราคาหมวด", formula: "[ราคา] * 5", scopeMode: "category", categoryFormulas: { cat1: "[ราคา] * 4" }, entryMode: "formula" },
+      { key: "pack", label: "ราคาแพ็ก", formula: "[ราคา] * 6", rowOverrides: { p1: "[ราคา] * 7" }, entryMode: "formula" },
+      { key: "manual", label: "กรอกเอง", formula: "", rowOverrides: { p1: "99" }, entryMode: "manual" },
+    ],
     currencies: [
       {
         id: "c1",
@@ -253,13 +262,31 @@ const games = [
       },
     ],
   },
-  { id: 8, gameName: "Empty", currencies: [] },
+  { id: 8, gameName: "Empty", currencies: [], computedColumns: [{ key: "empty", label: "คอลัมน์ว่าง", formula: "1" }] },
 ];
 const exported = gamesToPackRows(games);
+check("export appends every formula-column label once", gameinfoPackExportHeaders(games).slice(PACK_HEADERS.length), [
+  "ราคากลาง", "ราคาเกม", "ราคาหมวด", "ราคาแพ็ก", "กรอกเอง", "คอลัมน์ว่าง",
+]);
 check("export emits one row per pack", exported.filter((r) => r.pack_name).length, 1);
 check("export still emits a blank-pack row for a game with no packs", exported.length, 2);
 check("export joins channels with a comma", exported[0].channel_main, "A, B");
 ok("export does not emit amount_charged", !("amount_charged" in exported[0]));
+check("export writes the shared formula", exported[0]["ราคากลาง"], "[ราคา] * 2");
+check("export writes the game formula before the shared formula", exported[0]["ราคาเกม"], "[ราคา] * 3");
+check("export writes the category formula before broader formulas", exported[0]["ราคาหมวด"], "[ราคา] * 4");
+check("export writes the pack override first", exported[0]["ราคาแพ็ก"], "[ราคา] * 7");
+check("export writes a manual pack value", exported[0]["กรอกเอง"], "99");
+check("an empty game's formula cells stay blank", exported[1]["คอลัมน์ว่าง"], "");
+
+check(
+  "single-game import merges formulas into the matching existing column",
+  mergeImportedGameinfoFormulaValues(
+    [{ key: "shared", label: "ราคากลาง", formula: "[ราคา]", type: "number", rowOverrides: { old: "1" } }],
+    [{ key: "shared", gameFormula: "[ราคา] * 2", rowOverrides: { fresh: "2" } }]
+  ),
+  [{ key: "shared", label: "ราคากลาง", formula: "[ราคา]", type: "number", rowOverrides: { old: "1", fresh: "2" }, gameFormula: "[ราคา] * 2" }]
+);
 
 const reparsed = parsePacks(exported);
 // Both games are recovered — game 8's blank-pack row keeps it addressable on

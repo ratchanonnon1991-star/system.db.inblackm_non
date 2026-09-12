@@ -1,0 +1,3 @@
+﻿game_name,currency_name,category_name,pack_name,price,amount_charged_fee,channel_main,country,ต้นทุนทดสอบ
+CSVTEST ALPHA,IDPASS,ชุดไอดี,ID Starter,300,270,Wavepay,Myanmar,265
+CSVTEST ALPHA,IDPASS,ชุดไอดี,ID Premium,900,820,Wavepay,Myanmar,810

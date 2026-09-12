@@ -4,6 +4,12 @@
 // so manual cards/orders and the GoCash cost overrides/dust marks/pack-cost
 // defaults live in their own tables instead of a file on disk.
 import { getPool } from "@/lib/db";
+import { normalizeSalePlatform } from "@/server/profit-platform-normalize";
+
+function platformStorageKey(platform) {
+  const raw = String(platform || "").trim();
+  return normalizeSalePlatform(raw) || raw;
+}
 
 let schemaReady;
 
@@ -1866,9 +1872,10 @@ export async function getPlatformPriceCounts() {
 
 export async function getPlatformPrices(platform) {
   await ensureSchema();
+  const plat = platformStorageKey(platform);
   const { rows } = await getPool().query(
     `SELECT pack_key, price FROM profit_platform_pack_prices WHERE platform = $1`,
-    [platform]
+    [plat]
   );
   const byKey = {};
   for (const row of rows) byKey[row.pack_key] = Number(row.price);
@@ -1884,15 +1891,16 @@ export async function getAllPlatformPrices() {
   const { rows } = await getPool().query(`SELECT platform, pack_key, price FROM profit_platform_pack_prices`);
   const byPlatform = {};
   for (const row of rows) {
-    if (!byPlatform[row.platform]) byPlatform[row.platform] = {};
-    byPlatform[row.platform][row.pack_key] = Number(row.price);
+    const plat = platformStorageKey(row.platform);
+    if (!byPlatform[plat]) byPlatform[plat] = {};
+    byPlatform[plat][row.pack_key] = Number(row.price);
   }
   return byPlatform;
 }
 
 export async function setPlatformPrice(platform, source, packName, price, expected, actor) {
   await ensureSchema();
-  const plat = String(platform || "").trim();
+  const plat = platformStorageKey(platform);
   const src = String(source || "").trim();
   const name = String(packName || "").trim();
   if (!plat || !src || !name) throw new Error("platform, source and packName required");
@@ -1934,7 +1942,7 @@ export async function setPlatformPrice(platform, source, packName, price, expect
 // wrongly zero out sale/profit for any order pulling from it).
 export async function resetPlatformPrices(platform) {
   await ensureSchema();
-  const plat = String(platform || "").trim();
+  const plat = platformStorageKey(platform);
   if (!plat) throw new Error("platform required");
   await getPool().query(`DELETE FROM profit_platform_pack_prices WHERE platform = $1`, [plat]);
 }

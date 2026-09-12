@@ -1,18 +1,45 @@
+// Narrowest scope wins:
+//   pack override -> category formula -> game formula -> manual entry -> the
+// column's own formula. `gameFormula` is the layer the shared column registry
+// added: one column definition is used by every game, so a game that needs to
+// compute this column differently overrides the formula without forking the
+// column. Columns that predate the registry have no gameFormula and skip it.
+//
+// "Manual" sits below the per-game layers on purpose: it means the column has
+// no shared rule and is typed in game by game, so a game that does have a rule
+// of its own must still be allowed to use it. Above it, only the shared
+// formula is suppressed.
+export function getEffectiveGameinfoEntryMode(column) {
+  return column?.gameEntryMode === "manual" || column?.gameEntryMode === "formula"
+    ? column.gameEntryMode
+    : column?.entryMode === "manual" ? "manual" : "formula";
+}
+
+export function getEffectiveGameinfoScopeMode(column) {
+  return column?.gameScopeMode === "category" || column?.gameScopeMode === "global"
+    ? column.gameScopeMode
+    : column?.scopeMode === "category" ? "category" : "global";
+}
+
 export function getEffectiveGameinfoFormula(column, packId, categoryId) {
   const override = column?.rowOverrides?.[String(packId)];
   if (typeof override === "string" && override.trim()) {
     return { formula: override, overridden: true, source: "override" };
   }
-  if (column?.entryMode === "manual") {
-    return { formula: "", overridden: false, source: "manual" };
-  }
   const categoryFormula = column?.categoryFormulas?.[String(categoryId)];
   if (
-    column?.scopeMode === "category" &&
+    getEffectiveGameinfoScopeMode(column) === "category" &&
     typeof categoryFormula === "string" &&
     categoryFormula.trim()
   ) {
     return { formula: categoryFormula, overridden: true, source: "category" };
+  }
+  const gameFormula = column?.gameFormula;
+  if (typeof gameFormula === "string" && gameFormula.trim()) {
+    return { formula: gameFormula, overridden: true, source: "game" };
+  }
+  if (getEffectiveGameinfoEntryMode(column) === "manual") {
+    return { formula: "", overridden: false, source: "manual" };
   }
   return {
     formula: typeof column?.formula === "string" ? column.formula : "",
@@ -33,10 +60,30 @@ export function getGameinfoFormulaDisplay(column, packId, categoryId) {
         ? "สูตรเฉพาะ pack"
         : effective.source === "category"
           ? "สูตรเฉพาะหมวด"
-          : effective.source === "manual"
-            ? "กรอกเอง"
-            : "สูตรหลัก",
+          : effective.source === "game"
+            ? "สูตรเฉพาะเกม"
+            : effective.source === "manual"
+              ? "กรอกเอง"
+              : "สูตรหลัก",
   };
+}
+
+export function mergeImportedGameinfoFormulaValues(columns, importedColumns) {
+  const importedByKey = new Map(
+    (importedColumns || []).map((column) => [String(column.key), column])
+  );
+  return (columns || []).map((column) => {
+    const imported = importedByKey.get(String(column.key));
+    if (!imported) return column;
+    return {
+      ...column,
+      ...(imported.gameFormula ? { gameFormula: imported.gameFormula } : {}),
+      rowOverrides: {
+        ...(column.rowOverrides || {}),
+        ...(imported.rowOverrides || {}),
+      },
+    };
+  });
 }
 
 export function setGameinfoFormulaOverride(columns, columnKey, packId, formula) {
@@ -115,11 +162,25 @@ export function updateGameinfoComputedColumn(columns, nextColumn, { resetOverrid
     return {
       ...column,
       label: nextColumn.label,
-      formula: nextColumn.formula,
+      // A Pack-page update must never rewrite the registry fallback used by
+      // other games.
+      formula: column.formula,
+      // Pack-page edits write this game's whole-column formula here. `formula`
+      // is retained as a legacy registry fallback and is not edited there.
+      gameFormula:
+        typeof nextColumn.gameFormula === "string" ? nextColumn.gameFormula : column.gameFormula || "",
       type: nextColumn.type,
       symbol: nextColumn.symbol,
-      entryMode: nextColumn.entryMode === "manual" ? "manual" : undefined,
-      scopeMode: nextColumn.scopeMode === "category" ? "category" : "global",
+      entryMode: column.entryMode,
+      gameEntryMode:
+        nextColumn.gameEntryMode === "manual" || nextColumn.gameEntryMode === "formula"
+          ? nextColumn.gameEntryMode
+          : column.gameEntryMode,
+      scopeMode: column.scopeMode === "category" ? "category" : "global",
+      gameScopeMode:
+        nextColumn.gameScopeMode === "category" || nextColumn.gameScopeMode === "global"
+          ? nextColumn.gameScopeMode
+          : column.gameScopeMode,
       categoryFormulas: resetOverrides ? {} : { ...(column.categoryFormulas || {}) },
       rowOverrides: resetOverrides ? {} : { ...(column.rowOverrides || {}) },
     };
