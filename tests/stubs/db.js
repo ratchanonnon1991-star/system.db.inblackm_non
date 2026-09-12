@@ -61,5 +61,5 @@ export function getPoolForConnection() {
 // getPool().query() and relied on it always answering empty, so unifying the
 // two does not change any existing suite's behaviour.
 export function getPool() {
-  return client();
+  return { ...client(), connect: async () => client() };
 }

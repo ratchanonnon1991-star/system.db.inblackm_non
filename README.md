@@ -146,6 +146,7 @@ cp .env.example .env
 | `TURNSTILE_ENABLED` | `false` สำหรับ local | ค่าเริ่มต้นในไฟล์คือ `true` แต่ Site Key/Secret Key ว่าง ระบบจะปฏิเสธ login แบบ fail-closed ตอบ 503 `ระบบตรวจสอบความปลอดภัยยังไม่พร้อม` |
 | `SESSION_SECRET` | string ยาว ๆ อะไรก็ได้ | local ยังรันได้ แต่ production แอปจะไม่ยอมบูต |
 | `GAMEDB_ENC_KEY` | string ยาว ๆ อะไรก็ได้ | ใช้เข้ารหัสรหัสผ่าน connection — **ตั้งแล้วห้ามเปลี่ยน** ไม่งั้น connection ที่เพิ่มไว้แล้วถอดรหัสไม่ได้ |
+| `RUSSIA_CHECK_SESSION_KEY` | string ยาว ๆ อะไรก็ได้ (แนะนำ) | คีย์แยกสำหรับเข้ารหัส session ของร้านที่ต้อง Login; ถ้าไม่ตั้งจะใช้ `GAMEDB_ENC_KEY` และตั้งแล้วห้ามเปลี่ยน |
 | `GAMEDB_ADMIN_PASSWORD` | รหัสสำหรับ admin คนแรก | ใช้ล็อกอินครั้งแรก จะถูก seed ให้อัตโนมัติตอนตาราง `gamedb_users` ยังว่าง |
 
 ### 2. เปิดฐานข้อมูล
