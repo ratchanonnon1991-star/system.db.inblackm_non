@@ -25,16 +25,27 @@ async function checkSource(source) {
     return { source: source.name, ...result };
   }
 }
+async function checkSources(sources, concurrency = 3) {
+  const results = new Array(sources.length);
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < sources.length) {
+      const index = nextIndex++;
+      results[index] = await checkSource(sources[index]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, sources.length) }, () => worker()));
+  return results;
+}
 function runCheck() {
   if (currentCheck) return currentCheck;
   currentCheck = (async () => {
     const config = await settings();
     if (config.ingestSecret.length < 24) throw new Error("กรุณาตั้งค่า Ingest secret อย่างน้อย 24 ตัวอักษร");
     const { sources = [] } = await api("/api/social-feed/collector?mode=public");
-    const results = [];
     try {
       if (!await chrome.offscreen.hasDocument()) await chrome.offscreen.createDocument({ url: "public-reader.html", reasons: ["DOM_PARSER"], justification: "อ่านข้อความจาก HTML สาธารณะโดยไม่ใช้ Facebook session" });
-      for (const source of sources) results.push(await checkSource(source));
+      const results = await checkSources(sources);
       await chrome.storage.local.set({ lastCheckAt: new Date().toISOString(), lastResults: results });
       return results;
     } finally { await chrome.offscreen.closeDocument().catch(() => {}); }

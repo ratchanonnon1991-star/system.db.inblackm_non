@@ -400,7 +400,7 @@ export async function ingestSocialPosts(items) {
         if (candidate.protocol === "https:" && /(^|\.)facebook\.com$/i.test(candidate.hostname)) originalUrl = candidate.toString();
       } catch {}
       const message = String(item.message).trim().slice(0, 20000);
-      const result = await client.query(`INSERT INTO social_feed_posts(source_id,external_post_id,message,original_url,posted_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,external_post_id) DO UPDATE SET message=EXCLUDED.message,original_url=EXCLUDED.original_url,posted_at=EXCLUDED.posted_at RETURNING id`, [sourceRow.id, String(item.externalPostId).slice(0, 255), message, originalUrl, postedAt]);
+      const result = await client.query(`INSERT INTO social_feed_posts(source_id,external_post_id,message,original_url,posted_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,external_post_id) DO UPDATE SET message=EXCLUDED.message,original_url=EXCLUDED.original_url,posted_at=LEAST(social_feed_posts.posted_at,EXCLUDED.posted_at) RETURNING id`, [sourceRow.id, String(item.externalPostId).slice(0, 255), message, originalUrl, postedAt]);
       const postId = result.rows[0].id;
       await client.query(`DELETE FROM social_feed_post_categories WHERE post_id=$1`, [postId]);
       const categoryRules = rules.rows.filter((rule) => String(rule.category_id) === String(sourceRow.category_id));
