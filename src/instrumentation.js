@@ -7,5 +7,7 @@ export async function register() {
     startGameinfoRateScheduler();
     const { startGameinfoMarketScheduler } = await import("@/server/gameinfo-market-scheduler");
     startGameinfoMarketScheduler();
+    const { startGameinfoRussiaCheckScheduler } = await import("@/server/gameinfo-russia-check-scheduler");
+    startGameinfoRussiaCheckScheduler();
   }
 }

@@ -1,0 +1,20 @@
+{
+  "shelf": {
+    "app_id": "1460000285",
+    "product_offset": "",
+    "is_part_activity_fail": false,
+    "is_channel_activity_fail": false,
+    "loss_level": "",
+    "products": [
+      { "app_id": "1460000285", "product_id": "com.proximabeta.nikke.monthlykit03_01", "name": "Monthly pass", "region": "th", "product_type": "Rp", "available_channel_ids": ["CREDIT_CARD"], "isMaintaining": false },
+      { "app_id": "1460000285", "product_id": "com.proximabeta.nikke.midasbuy02_01_07", "name": "Enhanced Module Set", "region": "th", "product_type": "Rp", "available_channel_ids": ["CREDIT_CARD"], "isMaintaining": false },
+      { "app_id": "1460000285", "product_id": "com.proximabeta.nikke.midasbuy02_01_01_5", "name": "Technical Support S I", "region": "th", "product_type": "Rp", "available_channel_ids": ["CREDIT_CARD"], "isMaintaining": false },
+      { "app_id": "1460000285", "product_id": "com.proximabeta.nikke.midasbuy02_01_02_5", "name": "Technical Support S II", "region": "th", "product_type": "Rp", "available_channel_ids": ["CREDIT_CARD"], "isMaintaining": false },
+      { "app_id": "1460000285", "product_id": "com.proximabeta.nikke.midasbuy02_01_03", "name": "Technical Master", "region": "th", "product_type": "Rp", "available_channel_ids": ["CREDIT_CARD"], "isMaintaining": false },
+      { "app_id": "1460000285", "product_id": "com.proximabeta.nikke.midasbuy02_01_04", "name": "Grow Selection Set", "region": "th", "product_type": "Rp", "available_channel_ids": ["CREDIT_CARD"], "isMaintaining": false },
+      { "app_id": "1460000285", "product_id": "com.proximabeta.nikke.midasbuy02_01_05_3", "name": "Manufacturer Backup", "region": "th", "product_type": "Rp", "available_channel_ids": ["CREDIT_CARD"], "isMaintaining": false },
+      { "app_id": "1460000285", "product_id": "com.proximabeta.nikke.midasbuy02_01_08_1", "name": "Class Research Set", "region": "th", "product_type": "Rp", "available_channel_ids": ["CREDIT_CARD"], "isMaintaining": false },
+      { "app_id": "1460000285", "product_id": "com.proximabeta.nikke.midasbuy02_01_09_3", "name": "Manufacturer Research Set", "region": "th", "product_type": "Rp", "available_channel_ids": ["CREDIT_CARD"], "isMaintaining": false }
+    ]
+  }
+}

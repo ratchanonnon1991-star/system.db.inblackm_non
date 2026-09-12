@@ -20,6 +20,9 @@ const nextConfig = {
   // `turbopack` key is a hard error there. Turbopack needs no extra resolve
   // config (it already honors `style`), so an empty object is the whole answer.
   turbopack: {},
+  outputFileTracingIncludes: {
+    "/api/gameinfo/russia-check/extension/download": ["./extensions/russia-check/**/*"],
+  },
   // Response headers for every route. The session cookie is SameSite=Lax, so a
   // page in someone else's frame would not carry it anyway — but a tool that
   // shows customer data has no reason to be framable at all, and the rest costs

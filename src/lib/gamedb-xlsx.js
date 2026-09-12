@@ -295,8 +295,13 @@ function buildParts(sheets) {
  * [{ label, tone, span }] left to right, spanning every column.
  */
 export function buildXlsxBlob(sheets) {
+  return buildZipBlob(buildParts(sheets), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+}
+
+// Shared store-only ZIP writer; extension downloads reuse the same tested format.
+export function buildZipBlob(files, type = "application/zip") {
   const encoder = new TextEncoder();
-  const parts = buildParts(sheets).map((part) => ({
+  const parts = files.map((part) => ({
     nameBytes: encoder.encode(part.path),
     dataBytes: encoder.encode(part.data),
   }));
@@ -377,7 +382,5 @@ export function buildXlsxBlob(sheets) {
   ];
   chunks.push(new Uint8Array(end));
 
-  return new Blob(chunks, {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  });
+  return new Blob(chunks, { type });
 }

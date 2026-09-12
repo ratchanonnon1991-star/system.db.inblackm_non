@@ -1,0 +1,47 @@
+import strict from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
+
+let assertions = 0;
+const assert = new Proxy(strict, { get(target, key) { return (...args) => { assertions++; return target[key](...args); }; } });
+const origin = "https://fixture.test";
+let pageListener, extensionListener, finish;
+const posted = [], runtime = [], requests = [];
+const window = { location: { origin }, addEventListener: (_, listener) => { pageListener = listener; }, postMessage: (...args) => { posted.push(args); } };
+window.top = window;
+const chrome = { runtime: { id: "fixture-extension", sendMessage: async (message) => { runtime.push(message); if (message.action === "complete") finish(); return { version: "1.0.0" }; }, onMessage: { addListener: (fn) => { extensionListener = fn; } } } };
+const context = vm.createContext({ window, location: { origin, pathname: "/gameinfo/th/russia-check" }, chrome, RUSSIA_CHECK_CONFIG: { origin }, AbortSignal,
+  fetch: async (...args) => { requests.push(args); return Response.json({ authState: "verified", verifiedPackCount: 5 }); },
+});
+vm.runInContext(readFileSync(new URL("../extensions/russia-check/bridge.js", import.meta.url), "utf8"), context);
+const message = { channel: "gameinfo-russia-check-v1", direction: "request", requestId: "test", action: "ping" };
+await pageListener({ source: window, origin, data: message });
+assert.equal(runtime.length, 1);
+assert.equal(posted[0][1], origin);
+for (const event of [{ source: {}, origin, data: message }, { source: window, origin: "https://evil.test", data: message }, { source: window, origin, data: { ...message, action: "complete", formData: "must-not-forward" } }]) await pageListener(event);
+assert.equal(runtime.length, 1);
+let ack = false;
+const done = new Promise((resolve) => { finish = resolve; });
+const capture = { type: "russia-check-capture", sourceId: 2, flowId: "private-flow", formData: "fixture-secret" };
+extensionListener({ ...capture }, { id: "other-extension" }, () => { ack = true; });
+assert.equal(ack, false);
+assert.equal(requests.length, 0);
+extensionListener({ ...capture }, { id: chrome.runtime.id }, () => { ack = true; });
+await done;
+assert.equal(ack, true);
+assert.equal(requests.length, 1);
+assert.equal(requests[0][0], "/api/gameinfo/russia-check/sources/2/session");
+assert.equal(requests[0][1].credentials, "same-origin");
+assert.equal(requests[0][1].redirect, "error");
+assert.equal(JSON.parse(requests[0][1].body).formData, "fixture-secret");
+assert.equal(runtime.at(-1).packCount, 5);
+assert.doesNotMatch(JSON.stringify(posted), /fixture-secret|private-flow|formData/);
+assert.doesNotMatch(JSON.stringify(runtime), /fixture-secret|formData/);
+const page = readFileSync(new URL("../src/components/gameinfo-russia-check-page.js", import.meta.url), "utf8");
+assert.match(page, /GameinfoRussiaCheckBrowserConnect sourceId=\{selectedGame.sourceId\}/);
+assert.match(page, /ใช้ Form Data แบบเดิม/);
+const downloadPage = readFileSync(new URL("../src/app/gameinfo/[lang]/russia-check/extension/page.js", import.meta.url), "utf8");
+assert.match(downloadPage, /canManageGameinfo\(user\)/);
+assert.match(downloadPage, /Load unpacked/);
+assert.match(downloadPage, /manifest.json/);
+console.log(`${assertions} passed`);
