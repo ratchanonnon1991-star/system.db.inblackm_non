@@ -41,6 +41,7 @@ export default function SocialFeedPage() {
   const [category, setCategory] = useState("all");
   const [tag, setTag] = useState("all");
   const [savedOnly, setSavedOnly] = useState(false);
+  const [applyRules, setApplyRules] = useState(false);
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState("feed");
@@ -58,13 +59,14 @@ export default function SocialFeedPage() {
     if (category !== "all") params.set("category", category);
     if (tag !== "all") params.set("tag", tag);
     if (savedOnly) params.set("saved", "true");
+    if (applyRules) params.set("rules", "true");
     if (query) params.set("q", query);
     try {
       const result = await apiJson(`/api/social-feed?${params}`, { fallbackError: "โหลด Social Feed ไม่สำเร็จ" });
       setData(result); setError("");
     } catch (err) { setError(err.message); }
     finally { setLoading(false); setRefreshing(false); }
-  }, [category, tag, savedOnly, query]);
+  }, [category, tag, savedOnly, applyRules, query]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- filter changes intentionally start a server refresh
   useEffect(() => { load(); }, [load]);
@@ -138,10 +140,10 @@ export default function SocialFeedPage() {
         <section className="flex flex-col gap-4 border-b pb-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-2xl">
             <h1 className="text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">จับข้อความที่ต้องใช้<br />ก่อนโพสต์จะไหลผ่านไป</h1>
-            <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">รวมโพสต์จาก {data.sources.length || 13} กลุ่ม แยกตามเกมและคัดด้วย rule ที่บันทึกไว้ โดยเก็บเฉพาะข้อความกับลิงก์ต้นโพสต์</p>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">รวมโพสต์จาก {data.sources.length || 13} กลุ่ม แสดงทั้งหมดตามค่าเริ่มต้น และเลือกใช้ Rule เพื่อกรองข้อความได้</p>
           </div>
           <div className="flex items-center gap-6 text-sm">
-            <div><p className="text-2xl font-semibold tabular-nums">{data.posts.length}</p><p className="text-muted-foreground">โพสต์ที่ตรง rule</p></div>
+            <div><p className="text-2xl font-semibold tabular-nums">{data.posts.length}</p><p className="text-muted-foreground">โพสต์ที่แสดง</p></div>
             <div><p className="text-2xl font-semibold tabular-nums">{data.rules.length}</p><p className="text-muted-foreground">rules ที่เปิดใช้</p></div>
           </div>
         </section>
@@ -165,6 +167,7 @@ export default function SocialFeedPage() {
                     <Field><FieldLabel>ค้นหาข้อความ</FieldLabel><div className="flex gap-2"><Input value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === "Enter" && setQuery(search.trim())} placeholder="เช่น เติมเกม" /><Button size="icon" onClick={() => setQuery(search.trim())} aria-label="ค้นหา"><Search /></Button></div></Field>
                     <Field><FieldLabel>หมวดหมู่</FieldLabel><Select value={category} onValueChange={setCategory}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="all">ทุกหมวดหมู่</SelectItem>{data.categories.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
                     <Field><FieldLabel>Tag</FieldLabel><Select value={tag} onValueChange={setTag}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="all">ทุก Tag</SelectItem>{data.tags.map((item) => <SelectItem key={item.id} value={item.id}>#{item.name} ({item.count})</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
+                    <Field orientation="horizontal"><Checkbox checked={applyRules} onCheckedChange={setApplyRules} id="apply-rules" /><FieldLabel htmlFor="apply-rules">กรองด้วย Rules</FieldLabel></Field>
                     <Field orientation="horizontal"><Checkbox checked={savedOnly} onCheckedChange={setSavedOnly} id="saved-only" /><FieldLabel htmlFor="saved-only">เฉพาะโพสต์ที่บันทึก</FieldLabel></Field>
                   </FieldGroup></CardContent>
                 </Card>
@@ -179,7 +182,7 @@ export default function SocialFeedPage() {
 
               <section className="min-w-0">
                 <div className="mb-3 flex items-center justify-between"><p className="text-sm text-muted-foreground"><Filter className="mr-1 inline size-4" />พบ {data.posts.length} โพสต์</p>{data.refreshedAt && <p className="text-xs text-muted-foreground">ล่าสุด {formatTime(data.refreshedAt)}</p>}</div>
-                {loading ? <div className="flex flex-col gap-3">{[1,2,3].map((item) => <Skeleton key={item} className="h-40 w-full" />)}</div> : data.posts.length === 0 ? <Card><CardHeader><CardTitle>ยังไม่มีโพสต์ที่ตรงเงื่อนไข</CardTitle><CardDescription>ลองเปลี่ยนหมวดหมู่, Tag หรือ rule แล้วรอรอบอัปเดตถัดไป</CardDescription></CardHeader></Card> : <div className="flex flex-col gap-3">
+                {loading ? <div className="flex flex-col gap-3">{[1,2,3].map((item) => <Skeleton key={item} className="h-40 w-full" />)}</div> : data.posts.length === 0 ? <Card><CardHeader><CardTitle>ยังไม่มีโพสต์</CardTitle><CardDescription>ลองเปลี่ยนตัวกรอง หรือรอรอบอัปเดตถัดไป</CardDescription></CardHeader></Card> : <div className="flex flex-col gap-3">
                   {data.posts.map((post) => <article key={post.id} className="group rounded-xl border bg-card p-4 sm:p-5">
                     <div className="flex items-start justify-between gap-4"><div className="min-w-0"><p className="truncate text-sm font-medium">{post.sourceName}</p><p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Clock3 />{formatTime(post.postedAt)}</p></div><Button variant="ghost" size="icon" aria-label={post.saved ? "ยกเลิกบันทึก" : "บันทึกโพสต์"} onClick={() => updatePost(post, { saved: !post.saved })}>{post.saved ? <BookmarkCheck /> : <Bookmark />}</Button></div>
                     <p className="mt-4 whitespace-pre-wrap text-[15px] leading-7">{post.message}</p>

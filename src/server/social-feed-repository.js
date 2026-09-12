@@ -229,7 +229,7 @@ export async function getSocialFeedState(userId, filters = {}) {
   ]);
   const values = [String(userId)];
   const where = [];
-  if (filters.categoryId) { values.push(filters.categoryId); where.push(`pc.category_id = $${values.length}`); }
+  if (filters.categoryId) { values.push(filters.categoryId); where.push(`s.category_id = $${values.length}`); }
   if (filters.tagId) { values.push(filters.tagId); where.push(`EXISTS (SELECT 1 FROM social_feed_post_tags x WHERE x.post_id=p.id AND x.tag_id=$${values.length})`); }
   if (filters.saved === "true") where.push(`sp.post_id IS NOT NULL`);
   if (filters.q) { values.push(`%${String(filters.q).slice(0, 120)}%`); where.push(`p.message ILIKE $${values.length}`); }
@@ -238,7 +238,7 @@ export async function getSocialFeedState(userId, filters = {}) {
       COALESCE(jsonb_agg(DISTINCT jsonb_build_object('id',t.id::text,'name',t.name)) FILTER (WHERE t.id IS NOT NULL),'[]') AS tags
     FROM social_feed_posts p
     JOIN social_feed_sources s ON s.id=p.source_id
-    JOIN social_feed_post_categories pc ON pc.post_id=p.id
+    ${filters.applyRules ? "JOIN social_feed_post_categories pc ON pc.post_id=p.id AND pc.category_id=s.category_id" : ""}
     LEFT JOIN social_feed_saved_posts sp ON sp.post_id=p.id AND sp.user_id=$1
     LEFT JOIN social_feed_post_tags pt ON pt.post_id=p.id LEFT JOIN social_feed_tags t ON t.id=pt.tag_id
     ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
