@@ -9,7 +9,7 @@ async function beginLogin({ label, targetInstanceId = "" }) { const ownInstanceI
 async function finishLogin(flow) { const facebookId = await currentFacebookId(); if (!facebookId) return; await heartbeat({ activate: true }); await chrome.storage.session.remove("loginFlow"); await chrome.windows.remove(flow.windowId).catch(() => {}); }
 let currentCheck;
 async function scheduleNextCheck() {
-  const nextCheckAt = Date.now() + 5 * 60 * 1000;
+  const nextCheckAt = Date.now() + 30 * 1000;
   await chrome.storage.local.set({ nextCheckAt });
   await chrome.alarms.create("social-feed-check", { when: nextCheckAt });
 }
@@ -45,12 +45,16 @@ async function checkSource(source, tabId) {
     return { source: source.name, ...result };
   }
 }
-async function checkSources(sources) {
-  if (!sources.length) return [];
+async function checkClaimedSources(id) {
   const tab = await chrome.tabs.create({ url: "about:blank", active: false });
   const results = [];
+  const deadline = Date.now() + 4 * 60 * 1000;
   try {
-    for (const source of sources) results.push(await checkSource(source, tab.id));
+    while (Date.now() < deadline) {
+      const { sources = [] } = await api(`/api/social-feed/collector?mode=public&claim=1&instance=${encodeURIComponent(id)}`);
+      if (!sources.length) break;
+      results.push(await checkSource(sources[0], tab.id));
+    }
     return results;
   } finally { await chrome.tabs.remove(tab.id).catch(() => {}); }
 }
@@ -59,12 +63,10 @@ function runCheck() {
   currentCheck = (async () => {
     const config = await settings();
     if (config.ingestSecret.length < 24) throw new Error("กรุณาตั้งค่า Ingest secret อย่างน้อย 24 ตัวอักษร");
-    const { sources = [] } = await api("/api/social-feed/collector?mode=public");
-    {
-      const results = await checkSources(sources);
-      await chrome.storage.local.set({ lastCheckAt: new Date().toISOString(), lastResults: results });
-      return results;
-    }
+    const id = await instanceId();
+    const results = await checkClaimedSources(id);
+    await chrome.storage.local.set({ lastCheckAt: new Date().toISOString(), lastResults: results });
+    return results;
   })().finally(async () => { currentCheck = null; await scheduleNextCheck(); });
   return currentCheck;
 }
