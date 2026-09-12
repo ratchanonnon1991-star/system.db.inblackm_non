@@ -11,7 +11,7 @@ function authorized(request) {
 export async function GET(request) {
   try {
     if (!authorized(request)) { const error = new Error("ไม่มีสิทธิ์ใช้งาน collector"); error.status = 401; throw error; }
-    return jsonOk({ sources: await listCollectorSources(request.nextUrl.searchParams.get("instance")) });
+    return jsonOk({ sources: await listCollectorSources(request.nextUrl.searchParams.get("instance"), request.nextUrl.searchParams.get("mode") === "public") });
   } catch (error) { return handleApiError(error, "โหลดรายการกลุ่มไม่สำเร็จ"); }
 }
 

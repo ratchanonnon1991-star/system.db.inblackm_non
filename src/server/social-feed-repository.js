@@ -312,8 +312,12 @@ export async function heartbeatCollectorAccount({ instanceId, label, platformAcc
   return { id: String(result.rows[0].id), enabled: result.rows[0].enabled };
 }
 
-export async function listCollectorSources(instanceId) {
+export async function listCollectorSources(instanceId, publicOnly = false) {
   await ensureSchema();
+  if (publicOnly) {
+    const result = await getSocialPool().query("SELECT id,name,facebook_url,facebook_group_id FROM social_feed_sources WHERE enabled=TRUE AND requires_login=FALSE ORDER BY id");
+    return result.rows.map((row) => ({ id: String(row.id), name: row.name, url: row.facebook_url, groupId: row.facebook_group_id }));
+  }
   const account = await getSocialPool().query(`SELECT id FROM social_feed_collector_accounts WHERE instance_id=$1 AND enabled=TRUE AND status='ready' AND last_seen_at>NOW()-INTERVAL '10 minutes'`, [String(instanceId || "").trim()]);
   if (!account.rowCount) return [];
   const result = await getSocialPool().query(`WITH active AS (SELECT id,row_number() OVER(ORDER BY id)-1 AS slot,count(*) OVER() AS total FROM social_feed_collector_accounts WHERE enabled=TRUE AND status='ready' AND last_seen_at>NOW()-INTERVAL '10 minutes'), eligible AS (SELECT s.id,s.name,s.facebook_url,s.facebook_group_id,s.requires_login,a.id AS account_id,row_number() OVER(PARTITION BY s.id ORDER BY mod(a.slot-mod(s.id-1,a.total)+a.total,a.total)) AS choice FROM social_feed_sources s CROSS JOIN active a LEFT JOIN social_feed_source_account_status sas ON sas.source_id=s.id AND sas.account_id=a.id WHERE s.enabled=TRUE AND COALESCE(sas.status,'') NOT IN ('needs_join','checkpoint')) SELECT id,name,facebook_url,facebook_group_id,requires_login FROM eligible WHERE choice=1 AND account_id=$1 ORDER BY id`, [account.rows[0].id]);
@@ -325,7 +329,10 @@ export async function updateCollectorSourceStatus({ sourceId, instanceId, status
   const allowed = ["ready", "logged_out", "needs_join", "checkpoint", "unknown", "error"];
   const cleanStatus = allowed.includes(status) ? status : "unknown";
   const account = await getSocialPool().query(`SELECT id FROM social_feed_collector_accounts WHERE instance_id=$1 AND enabled=TRUE`, [String(instanceId || "").trim()]);
-  if (!account.rowCount) return;
+  if (!account.rowCount) {
+    await getSocialPool().query(`UPDATE social_feed_sources SET access_status=$2,access_note=$3,session_checked_at=NOW(),updated_at=NOW() WHERE id=$1`, [sourceId, cleanStatus, String(note || "").slice(0, 500)]);
+    return;
+  }
   await getSocialPool().query(`INSERT INTO social_feed_source_account_status(source_id,account_id,status,note,checked_at) VALUES($1,$2,$3,$4,NOW()) ON CONFLICT(source_id,account_id) DO UPDATE SET status=EXCLUDED.status,note=EXCLUDED.note,checked_at=NOW()`, [sourceId, account.rows[0].id, cleanStatus, String(note || "").slice(0, 500)]);
   await getSocialPool().query(`UPDATE social_feed_sources SET access_status=$2,access_note=$3,session_checked_at=NOW(),updated_at=NOW() WHERE id=$1`, [sourceId, cleanStatus, String(note || "").slice(0, 500)]);
 }

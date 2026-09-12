@@ -5,6 +5,6 @@ document.querySelector("#options").addEventListener("click", () => chrome.runtim
 document.querySelector("#check").addEventListener("click", async (event) => {
   event.currentTarget.disabled = true; status.textContent = "กำลังตรวจกลุ่ม...";
   const result = await chrome.runtime.sendMessage({ type: "RUN_SOCIAL_FEED_CHECK" });
-  status.textContent = result.ok ? `ตรวจแล้ว ${result.results.length} กลุ่ม` : result.error;
+  status.textContent = result.ok ? `ตรวจแล้ว ${result.results.length} กลุ่ม · พบ ${result.results.reduce((n, item) => n + (item.posts?.length || 0), 0)} โพสต์ · อ่านไม่ได้ ${result.results.filter((item) => item.status !== "ready").length} กลุ่ม` : result.error;
   event.currentTarget.disabled = false;
 });
