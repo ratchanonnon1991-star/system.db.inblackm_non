@@ -37,9 +37,6 @@ const schemaSql = `
   ALTER TABLE social_feed_sources ADD COLUMN IF NOT EXISTS access_note TEXT NOT NULL DEFAULT '';
   ALTER TABLE social_feed_sources ADD COLUMN IF NOT EXISTS platform_account_id TEXT NOT NULL DEFAULT '';
   ALTER TABLE social_feed_sources ADD COLUMN IF NOT EXISTS requires_login BOOLEAN NOT NULL DEFAULT FALSE;
-  ALTER TABLE social_feed_sources ADD COLUMN IF NOT EXISTS collector_lease_instance_id TEXT NOT NULL DEFAULT '';
-  ALTER TABLE social_feed_sources ADD COLUMN IF NOT EXISTS collector_lease_until TIMESTAMPTZ;
-  ALTER TABLE social_feed_sources ADD COLUMN IF NOT EXISTS next_scan_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
   CREATE TABLE IF NOT EXISTS social_feed_collector_accounts (
     id BIGSERIAL PRIMARY KEY, instance_id TEXT NOT NULL UNIQUE, label TEXT NOT NULL,
     platform_account_id TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'unknown',
@@ -274,6 +271,12 @@ export async function deleteSocialRule(id) {
   if (result.rows[0]) await reclassifyCategory(result.rows[0].category_id);
 }
 
+export async function deleteAllSocialPosts() {
+  await ensureSchema();
+  const result = await getSocialPool().query(`WITH deleted AS (DELETE FROM social_feed_posts RETURNING 1) SELECT COUNT(*)::int AS count FROM deleted`);
+  return result.rows[0]?.count || 0;
+}
+
 export async function createSocialCategory(name) {
   await ensureSchema();
   const clean = String(name || "").trim().slice(0, 100);
@@ -327,37 +330,17 @@ export async function listCollectorSources(instanceId, publicOnly = false) {
   return result.rows.map((row) => ({ id: String(row.id), name: row.name, url: row.facebook_url, groupId: row.facebook_group_id, requiresLogin: row.requires_login }));
 }
 
-export async function claimNextCollectorSource(instanceId, publicOnly = false) {
-  await ensureSchema();
-  const cleanInstance = String(instanceId || "").trim().slice(0, 100);
-  if (!cleanInstance) { const error = new Error("ไม่พบรหัส Browser"); error.status = 400; throw error; }
-  const result = await getSocialPool().query(`WITH candidate AS (
-    SELECT id FROM social_feed_sources
-    WHERE enabled=TRUE AND ($2::boolean=FALSE OR requires_login=FALSE)
-      AND next_scan_at<=NOW()
-      AND (collector_lease_until IS NULL OR collector_lease_until<NOW())
-    ORDER BY next_scan_at,id
-    FOR UPDATE SKIP LOCKED LIMIT 1
-  )
-  UPDATE social_feed_sources s
-  SET collector_lease_instance_id=$1,collector_lease_until=NOW()+INTERVAL '2 minutes',updated_at=NOW()
-  FROM candidate WHERE s.id=candidate.id
-  RETURNING s.id,s.name,s.facebook_url,s.facebook_group_id,s.requires_login`, [cleanInstance, publicOnly]);
-  const row = result.rows[0];
-  return row ? { id: String(row.id), name: row.name, url: row.facebook_url, groupId: row.facebook_group_id, requiresLogin: row.requires_login } : null;
-}
-
 export async function updateCollectorSourceStatus({ sourceId, instanceId, status, note }) {
   await ensureSchema();
   const allowed = ["ready", "logged_out", "needs_join", "checkpoint", "unknown", "error"];
   const cleanStatus = allowed.includes(status) ? status : "unknown";
   const account = await getSocialPool().query(`SELECT id FROM social_feed_collector_accounts WHERE instance_id=$1 AND enabled=TRUE`, [String(instanceId || "").trim()]);
   if (!account.rowCount) {
-    await getSocialPool().query(`UPDATE social_feed_sources SET access_status=$2,access_note=$3,session_checked_at=NOW(),collector_lease_instance_id='',collector_lease_until=NULL,next_scan_at=NOW()+CASE WHEN $2='error' THEN INTERVAL '5 minutes' ELSE INTERVAL '90 seconds' END,updated_at=NOW() WHERE id=$1 AND (collector_lease_instance_id='' OR collector_lease_instance_id=$4 OR collector_lease_until<NOW())`, [sourceId, cleanStatus, String(note || "").slice(0, 500), String(instanceId || "").trim().slice(0, 100)]);
+    await getSocialPool().query(`UPDATE social_feed_sources SET access_status=$2,access_note=$3,session_checked_at=NOW(),updated_at=NOW() WHERE id=$1`, [sourceId, cleanStatus, String(note || "").slice(0, 500)]);
     return;
   }
   await getSocialPool().query(`INSERT INTO social_feed_source_account_status(source_id,account_id,status,note,checked_at) VALUES($1,$2,$3,$4,NOW()) ON CONFLICT(source_id,account_id) DO UPDATE SET status=EXCLUDED.status,note=EXCLUDED.note,checked_at=NOW()`, [sourceId, account.rows[0].id, cleanStatus, String(note || "").slice(0, 500)]);
-  await getSocialPool().query(`UPDATE social_feed_sources SET access_status=$2,access_note=$3,session_checked_at=NOW(),collector_lease_instance_id='',collector_lease_until=NULL,next_scan_at=NOW()+CASE WHEN $2='error' THEN INTERVAL '5 minutes' ELSE INTERVAL '90 seconds' END,updated_at=NOW() WHERE id=$1 AND (collector_lease_instance_id='' OR collector_lease_instance_id=$4 OR collector_lease_until<NOW())`, [sourceId, cleanStatus, String(note || "").slice(0, 500), String(instanceId || "").trim().slice(0, 100)]);
+  await getSocialPool().query(`UPDATE social_feed_sources SET access_status=$2,access_note=$3,session_checked_at=NOW(),updated_at=NOW() WHERE id=$1`, [sourceId, cleanStatus, String(note || "").slice(0, 500)]);
 }
 
 export async function removeCollectorAccount(id) {

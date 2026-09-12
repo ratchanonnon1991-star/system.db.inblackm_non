@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { handleApiError, jsonOk } from "@/lib/http";
-import { claimNextCollectorSource, heartbeatCollectorAccount, listCollectorSources, updateCollectorSourceStatus } from "@/server/social-feed-repository";
+import { heartbeatCollectorAccount, listCollectorSources, updateCollectorSourceStatus } from "@/server/social-feed-repository";
 
 function authorized(request) {
   const configured = process.env.SOCIAL_FEED_INGEST_SECRET || "";
@@ -11,13 +11,7 @@ function authorized(request) {
 export async function GET(request) {
   try {
     if (!authorized(request)) { const error = new Error("ไม่มีสิทธิ์ใช้งาน collector"); error.status = 401; throw error; }
-    const instanceId = request.nextUrl.searchParams.get("instance");
-    const publicOnly = request.nextUrl.searchParams.get("mode") === "public";
-    if (request.nextUrl.searchParams.get("claim") === "1") {
-      const source = await claimNextCollectorSource(instanceId, publicOnly);
-      return jsonOk({ sources: source ? [source] : [] });
-    }
-    return jsonOk({ sources: await listCollectorSources(instanceId, publicOnly) });
+    return jsonOk({ sources: await listCollectorSources(request.nextUrl.searchParams.get("instance"), request.nextUrl.searchParams.get("mode") === "public") });
   } catch (error) { return handleApiError(error, "โหลดรายการกลุ่มไม่สำเร็จ"); }
 }
 

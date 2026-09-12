@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,6 +54,8 @@ export default function SocialFeedPage() {
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginTarget, setLoginTarget] = useState(null);
   const [checkingSessions, setCheckingSessions] = useState(false);
+  const [deleteAllOpen, setDeleteAllOpen] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
   const [collectorTiming, setCollectorTiming] = useState({ lastCheckAt: "", nextCheckAt: 0 });
   const [now, setNow] = useState(() => Date.now());
 
@@ -95,6 +98,16 @@ export default function SocialFeedPage() {
       await apiJson(`/api/social-feed/posts/${post.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), fallbackError: "อัปเดตโพสต์ไม่สำเร็จ" });
       await load(true);
     } catch (err) { setError(err.message); }
+  };
+
+  const deleteAllPosts = async () => {
+    setDeletingAll(true); setError("");
+    try {
+      await apiJson("/api/social-feed", { method: "DELETE", fallbackError: "ลบโพสต์ทั้งหมดไม่สำเร็จ" });
+      setDeleteAllOpen(false);
+      await load(true);
+    } catch (err) { setError(err.message); }
+    finally { setDeletingAll(false); }
   };
 
   const openTag = (selectedTag) => { setTag(selectedTag); setTab("feed"); };
@@ -172,7 +185,7 @@ export default function SocialFeedPage() {
             <div className="grid gap-6 lg:grid-cols-1">
 
               <section className="min-w-0">
-                <div className="mb-3 flex items-center justify-between"><p className="text-sm text-muted-foreground"><Filter className="mr-1 inline size-4" />พบ {data.posts.length} โพสต์</p>{data.refreshedAt && <p className="text-xs text-muted-foreground">ล่าสุด {formatTime(data.refreshedAt)}</p>}</div>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><p className="text-sm text-muted-foreground"><Filter className="mr-1 inline size-4" />พบ {data.posts.length} โพสต์</p><div className="flex items-center gap-2">{data.refreshedAt && <p className="text-xs text-muted-foreground">ล่าสุด {formatTime(data.refreshedAt)}</p>}<Button variant="destructive" size="sm" onClick={() => setDeleteAllOpen(true)} disabled={!data.posts.length || deletingAll}><Trash2 data-icon="inline-start" />ลบโพสต์ทั้งหมด</Button></div></div>
                 {loading ? <div className="flex flex-col gap-3">{[1,2,3].map((item) => <Skeleton key={item} className="h-40 w-full" />)}</div> : data.posts.length === 0 ? <Card><CardHeader><CardTitle>ยังไม่มีโพสต์</CardTitle><CardDescription>ลองเปลี่ยนตัวกรอง หรือรอรอบอัปเดตถัดไป</CardDescription></CardHeader></Card> : <div className="flex flex-col gap-3">
                   {data.posts.map((post) => <article key={post.id} className="group rounded-xl border bg-card p-4 sm:p-5">
                     <div className="flex items-start justify-between gap-4"><div className="min-w-0"><p className="truncate text-sm font-medium">{post.sourceName}</p><p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Clock3 />เวลาโพสต์/ตรวจพบ {formatTime(post.postedAt)}</p></div><Button variant="ghost" size="icon" aria-label={post.saved ? "ยกเลิกบันทึก" : "บันทึกโพสต์"} onClick={() => updatePost(post, { saved: !post.saved })}>{post.saved ? <BookmarkCheck /> : <Bookmark />}</Button></div>
@@ -202,6 +215,7 @@ export default function SocialFeedPage() {
       </main>
 
       <TagDialog key={tagPost?.id || "closed"} post={tagPost} onOpenChange={(open) => !open && setTagPost(null)} onSave={(names) => updatePost(tagPost, { tags: names })} />
+      <AlertDialog open={deleteAllOpen} onOpenChange={(open) => { if (!deletingAll) setDeleteAllOpen(open); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>ลบโพสต์ทั้งหมด?</AlertDialogTitle><AlertDialogDescription>โพสต์ที่เก็บไว้ รวมถึงสถานะบันทึกและ Tag ที่ผูกกับโพสต์จะถูกลบทั้งหมด แต่กลุ่ม แท็ก บัญชี Bot และการตั้งค่าจะยังอยู่ โพสต์อาจถูกดึงกลับมาใหม่ในรอบถัดไป</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deletingAll}>ยกเลิก</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={deletingAll} onClick={deleteAllPosts}><Trash2 data-icon="inline-start" />{deletingAll ? "กำลังลบ..." : "ยืนยันลบทั้งหมด"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       <CategoryDialog open={categoryOpen} onOpenChange={setCategoryOpen} onSaved={() => load(true)} />
       <SourceDialog open={sourceOpen} onOpenChange={setSourceOpen} categories={data.categories} onSaved={() => load(true)} />
       <LoginDialog key={`${loginTarget?.id || "new"}-${loginOpen}`} open={loginOpen} account={loginTarget} onOpenChange={setLoginOpen} onConnect={connectLogin} />

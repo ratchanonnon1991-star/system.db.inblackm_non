@@ -1,6 +1,6 @@
 import { handleApiError, jsonOk } from "@/lib/http";
 import { requireAdmin } from "@/server/auth";
-import { getSocialFeedState } from "@/server/social-feed-repository";
+import { deleteAllSocialPosts, getSocialFeedState } from "@/server/social-feed-repository";
 
 export async function GET(request) {
   try {
@@ -14,5 +14,14 @@ export async function GET(request) {
     }));
   } catch (error) {
     return handleApiError(error, "โหลด Social Feed ไม่สำเร็จ");
+  }
+}
+
+export async function DELETE(request) {
+  try {
+    await requireAdmin(request);
+    return jsonOk({ deleted: await deleteAllSocialPosts() });
+  } catch (error) {
+    return handleApiError(error, "ลบโพสต์ Social Feed ไม่สำเร็จ");
   }
 }
