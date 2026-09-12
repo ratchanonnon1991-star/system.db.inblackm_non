@@ -1,4 +1,4 @@
-const DEFAULTS = { serverUrl: "https://systemdb.inblackm.com", accountLabel: "", ingestSecret: "" };
+const DEFAULTS = { serverUrl: "https://tools.inblackm.com", accountLabel: "", ingestSecret: "" };
 const settings = () => chrome.storage.local.get(DEFAULTS);
 async function instanceId() { const stored = await chrome.storage.local.get("collectorInstanceId"); if (stored.collectorInstanceId) return stored.collectorInstanceId; const id = crypto.randomUUID(); await chrome.storage.local.set({ collectorInstanceId: id }); return id; }
 const waitForTab = (tabId) => new Promise((resolve, reject) => { const timeout = setTimeout(() => { chrome.tabs.onUpdated.removeListener(listener); reject(new Error("หมดเวลารอ Facebook")); }, 30000); const listener = (id, info) => { if (id === tabId && info.status === "complete") { clearTimeout(timeout); chrome.tabs.onUpdated.removeListener(listener); setTimeout(resolve, 1500); } }; chrome.tabs.onUpdated.addListener(listener); });
