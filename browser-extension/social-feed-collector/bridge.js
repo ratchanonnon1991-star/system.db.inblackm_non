@@ -10,8 +10,4 @@ window.addEventListener("message", (event) => {
       chrome.storage.local.get({ lastCheckAt: "", nextCheckAt: 0 }).then((status) => window.postMessage({ type: "INBLACKM_SOCIAL_STATUS_RESULT", status }, location.origin));
     });
   }
-  if (event.data?.type === "INBLACKM_SOCIAL_LOGIN") {
-    window.postMessage({ type: "INBLACKM_SOCIAL_LOGIN_STARTED" }, location.origin);
-    chrome.runtime.sendMessage({ type: "BEGIN_FACEBOOK_LOGIN", label: event.data.label, targetInstanceId: event.data.targetInstanceId }).then((result) => window.postMessage({ type: "INBLACKM_SOCIAL_LOGIN_RESULT", result }, location.origin));
-  }
 });

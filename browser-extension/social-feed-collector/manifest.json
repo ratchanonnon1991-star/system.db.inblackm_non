@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Inblackm Social Feed Collector",
-  "version": "1.4.9",
+  "version": "1.5.0",
   "description": "ตรวจ session และส่งข้อความจาก Facebook Groups ที่ได้รับอนุญาตเข้า Feed Social",
-  "permissions": ["alarms", "browsingData", "cookies", "storage", "tabs"],
+  "permissions": ["alarms", "cookies", "storage", "tabs"],
   "host_permissions": [
     "https://www.facebook.com/*",
     "https://facebook.com/*",
