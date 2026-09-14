@@ -38,6 +38,57 @@ const THAI_MONTHS = new Map([
   ["ม.ค.", 0], ["ก.พ.", 1], ["มี.ค.", 2], ["เม.ย.", 3], ["พ.ค.", 4], ["มิ.ย.", 5],
   ["ก.ค.", 6], ["ส.ค.", 7], ["ก.ย.", 8], ["ต.ค.", 9], ["พ.ย.", 10], ["ธ.ค.", 11],
 ]);
+const ENGLISH_MONTHS = new Map([
+  ["jan", 0], ["january", 0], ["feb", 1], ["february", 1], ["mar", 2], ["march", 2],
+  ["apr", 3], ["april", 3], ["may", 4], ["jun", 5], ["june", 5], ["jul", 6], ["july", 6],
+  ["aug", 7], ["august", 7], ["sep", 8], ["sept", 8], ["september", 8], ["oct", 9], ["october", 9],
+  ["nov", 10], ["november", 10], ["dec", 11], ["december", 11],
+]);
+const ENGLISH_UNIT_MS = new Map([
+  ["s", 1000], ["sec", 1000], ["secs", 1000], ["second", 1000], ["seconds", 1000],
+  ["m", 60000], ["min", 60000], ["mins", 60000], ["minute", 60000], ["minutes", 60000],
+  ["h", 3600000], ["hr", 3600000], ["hrs", 3600000], ["hour", 3600000], ["hours", 3600000],
+  ["d", 86400000], ["day", 86400000], ["days", 86400000],
+  ["w", 604800000], ["wk", 604800000], ["wks", 604800000], ["week", 604800000], ["weeks", 604800000],
+]);
+function parseEnglishDateLabel(text, now) {
+  const lower = text.toLowerCase();
+  if (/^(just now|a few seconds ago|a moment ago)$/.test(lower)) return new Date(now);
+  if (/^yesterday\b/.test(lower)) return new Date(now.getTime() - 86400000);
+  const relative = lower.match(/^(?:about\s+)?(\d+)\s*([a-z]+)(?:\s+ago)?$/);
+  if (relative) {
+    const unitMs = ENGLISH_UNIT_MS.get(relative[2]);
+    if (unitMs) return new Date(now.getTime() - Number(relative[1]) * unitMs);
+  }
+  const single = lower.match(/^an?\s+([a-z]+)\s+ago$/);
+  if (single) {
+    const unitMs = ENGLISH_UNIT_MS.get(single[1]);
+    if (unitMs) return new Date(now.getTime() - unitMs);
+  }
+  let month;
+  let day;
+  let year;
+  let hasYear = false;
+  let dm = lower.match(/^([a-z]+)\s+(\d{1,2})(?:,?\s+(\d{4}))?/);
+  if (dm && ENGLISH_MONTHS.has(dm[1])) {
+    month = ENGLISH_MONTHS.get(dm[1]);
+    day = Number(dm[2]);
+    hasYear = Boolean(dm[3]);
+    year = hasYear ? Number(dm[3]) : now.getFullYear();
+  } else {
+    dm = lower.match(/^(\d{1,2})\s+([a-z]+)(?:,?\s+(\d{4}))?/);
+    if (dm && ENGLISH_MONTHS.has(dm[2])) {
+      month = ENGLISH_MONTHS.get(dm[2]);
+      day = Number(dm[1]);
+      hasYear = Boolean(dm[3]);
+      year = hasYear ? Number(dm[3]) : now.getFullYear();
+    }
+  }
+  if (month === undefined) return null;
+  let date = new Date(year, month, day, 12, 0, 0, 0);
+  if (!hasYear && date.getTime() > now.getTime() + 86400000) date = new Date(year - 1, month, day, 12, 0, 0, 0);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
 function parseFacebookDateLabel(value, now = new Date()) {
   const text = String(value || "").replace(/[\u200B-\u200D\uFEFF]/g, "").replace(/[๐-๙]/g, (digit) => String("๐๑๒๓๔๕๖๗๘๙".indexOf(digit))).replace(/\s+/g, " ").trim();
   if (/^เมื่อสักครู่$/.test(text)) return new Date(now);
@@ -48,12 +99,14 @@ function parseFacebookDateLabel(value, now = new Date()) {
   }
   if (/^เมื่อวาน(?:นี้)?$/.test(text)) return new Date(now.getTime() - 86400000);
   const match = text.match(/^(\d{1,2})\s+([ก-๙.]+)(?:\s+(\d{4}))?/);
-  if (!match || !THAI_MONTHS.has(match[2])) return null;
-  let year = match[3] ? Number(match[3]) : now.getFullYear();
-  if (year > 2400) year -= 543;
-  let date = new Date(year, THAI_MONTHS.get(match[2]), Number(match[1]), 12, 0, 0, 0);
-  if (!match[3] && date.getTime() > now.getTime() + 86400000) date = new Date(year - 1, THAI_MONTHS.get(match[2]), Number(match[1]), 12, 0, 0, 0);
-  return Number.isNaN(date.getTime()) ? null : date;
+  if (match && THAI_MONTHS.has(match[2])) {
+    let year = match[3] ? Number(match[3]) : now.getFullYear();
+    if (year > 2400) year -= 543;
+    let date = new Date(year, THAI_MONTHS.get(match[2]), Number(match[1]), 12, 0, 0, 0);
+    if (!match[3] && date.getTime() > now.getTime() + 86400000) date = new Date(year - 1, THAI_MONTHS.get(match[2]), Number(match[1]), 12, 0, 0, 0);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  return parseEnglishDateLabel(text, now);
 }
 function postReference(url) {
   const pathMatch = url.pathname.match(/\/groups\/([^/]+)\/(?:posts|permalink)\/(\d+)/);
@@ -105,7 +158,8 @@ async function scan(source) {
     if (location.pathname.includes("checkpoint")) return { status: "checkpoint", note: "Facebook ต้องการยืนยันตัวตน", posts: [] };
     dismissLoginPrompt();
     await pause(1000);
-    if (!openedDiscussion && openDiscussionTab()) { openedDiscussion = true; await pause(2500); continue; }
+    const alreadyOnDiscussion = /^\/groups\/[^/]+\/?$/.test(location.pathname);
+    if (!alreadyOnDiscussion && !openedDiscussion && openDiscussionTab()) { openedDiscussion = true; await pause(2500); continue; }
     expandVisiblePosts();
     await pause(500);
     const previous = found.size;

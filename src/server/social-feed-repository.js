@@ -41,6 +41,8 @@ const schemaSql = `
   ALTER TABLE social_feed_sources ADD COLUMN IF NOT EXISTS access_note TEXT NOT NULL DEFAULT '';
   ALTER TABLE social_feed_sources ADD COLUMN IF NOT EXISTS platform_account_id TEXT NOT NULL DEFAULT '';
   ALTER TABLE social_feed_sources ADD COLUMN IF NOT EXISTS requires_login BOOLEAN NOT NULL DEFAULT FALSE;
+  ALTER TABLE social_feed_sources ADD COLUMN IF NOT EXISTS idle_checks INT NOT NULL DEFAULT 0;
+  ALTER TABLE social_feed_sources ADD COLUMN IF NOT EXISTS next_check_at TIMESTAMPTZ;
   CREATE TABLE IF NOT EXISTS social_feed_collector_accounts (
     id BIGSERIAL PRIMARY KEY, instance_id TEXT NOT NULL UNIQUE, label TEXT NOT NULL,
     platform_account_id TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'unknown',
@@ -54,6 +56,11 @@ const schemaSql = `
     status TEXT NOT NULL DEFAULT 'unknown', note TEXT NOT NULL DEFAULT '', checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY(source_id,account_id)
   );
+  CREATE TABLE IF NOT EXISTS social_feed_control (
+    id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    running BOOLEAN NOT NULL DEFAULT FALSE, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  INSERT INTO social_feed_control(id,running) VALUES (1,FALSE) ON CONFLICT (id) DO NOTHING;
   CREATE TABLE IF NOT EXISTS social_feed_rules (
     id BIGSERIAL PRIMARY KEY, category_id BIGINT NOT NULL REFERENCES social_feed_categories(id) ON DELETE CASCADE,
     name TEXT NOT NULL, mode TEXT NOT NULL CHECK (mode IN ('all','any','exclude')), terms TEXT[] NOT NULL,
@@ -185,6 +192,9 @@ const seedSql = `
     ,('MapleStory Classic World','Maplestory Classic World [TH]','https://www.facebook.com/groups/1487123340125034/','1487123340125034')
   ) AS v(category,name,url,gid) JOIN social_feed_categories c ON c.name=v.category
   ON CONFLICT DO NOTHING;
+  UPDATE social_feed_sources
+  SET facebook_url='https://www.facebook.com/groups/' || facebook_group_id || '/', updated_at=NOW()
+  WHERE facebook_url<>('https://www.facebook.com/groups/' || facebook_group_id || '/');
   INSERT INTO social_feed_rules(category_id,name,mode,terms)
   SELECT c.id,v.rule_name,v.mode,v.terms FROM (VALUES
     ('Neverness to Everness','มีทั้งคำว่า เติม และ เกม','all',ARRAY['เติม','เกม']::text[]),
@@ -233,18 +243,27 @@ function validDateFilter(value) {
   return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value);
 }
 
+// เครื่องถูกกันออกจากกลุ่มเฉพาะช่วง cooldown หลังรายงานว่าเข้าไม่ได้ พ้น cooldown แล้วกลับมาเป็นตัวสำรองให้คิวลองใหม่เอง
+const SOURCE_ELIGIBLE = `NOT COALESCE(sas.status IN ('needs_join','checkpoint','logged_out') AND sas.checked_at > NOW() - INTERVAL '45 minutes', FALSE) AND (NOT s.requires_login OR a.platform_account_id<>'')`;
+// sticky: เครื่องที่อ่านกลุ่มนี้ได้ล่าสุด (ready) ถูกใช้ต่อไปจนกว่าจะโดน block ค่อยหมุนไปเครื่องถัดไปตามลำดับ
+const SOURCE_PICK_ORDER = `(CASE WHEN sas.status='ready' THEN 0 ELSE 1 END), mod(a.slot-mod(s.id-1,a.total)+a.total,a.total)`;
+
 export async function getSocialFeedState(userId, filters = {}) {
   await ensureSchema();
   const db = getSocialPool();
-  const [categoriesResult, sourcesResult, rulesResult, tagsResult, accountsResult, assignmentsResult] = await Promise.all([
+  const [categoriesResult, sourcesResult, rulesResult, tagsResult, accountsResult, assignmentsResult, coverageResult, controlResult] = await Promise.all([
     db.query(`SELECT * FROM social_feed_categories ORDER BY sort_order, id`),
     db.query(`SELECT * FROM social_feed_sources ORDER BY category_id, id`),
     db.query(`SELECT * FROM social_feed_rules ORDER BY category_id, id`),
     db.query(`SELECT t.*, COUNT(pt.post_id)::int AS count FROM social_feed_tags t LEFT JOIN social_feed_post_tags pt ON pt.tag_id=t.id GROUP BY t.id ORDER BY t.name`),
     db.query(`SELECT a.*,COUNT(sas.source_id)::int AS checked_sources FROM social_feed_collector_accounts a LEFT JOIN social_feed_source_account_status sas ON sas.account_id=a.id WHERE a.enabled=TRUE GROUP BY a.id ORDER BY a.id`),
-    db.query(`WITH active AS (SELECT id,row_number() OVER(ORDER BY id)-1 AS slot,count(*) OVER() AS total FROM social_feed_collector_accounts WHERE enabled=TRUE AND status='ready' AND last_seen_at>NOW()-INTERVAL '10 minutes'), eligible AS (SELECT s.id AS source_id,s.name,s.facebook_url,a.id AS account_id,row_number() OVER(PARTITION BY s.id ORDER BY mod(a.slot-mod(s.id-1,a.total)+a.total,a.total)) AS choice FROM social_feed_sources s CROSS JOIN active a LEFT JOIN social_feed_source_account_status sas ON sas.source_id=s.id AND sas.account_id=a.id WHERE s.enabled=TRUE AND COALESCE(sas.status,'') NOT IN ('needs_join','checkpoint','logged_out')) SELECT account_id,COUNT(*)::int AS source_count,COALESCE(jsonb_agg(jsonb_build_object('id',source_id::text,'name',name,'url',facebook_url) ORDER BY source_id),'[]') AS sources FROM eligible WHERE choice=1 GROUP BY account_id`),
+    db.query(`WITH active AS (SELECT id,row_number() OVER(ORDER BY id)-1 AS slot,count(*) OVER() AS total FROM social_feed_collector_accounts WHERE enabled=TRUE AND status='ready' AND last_seen_at>NOW()-INTERVAL '10 minutes'), eligible AS (SELECT s.id AS source_id,s.name,s.facebook_url,a.id AS account_id,row_number() OVER(PARTITION BY s.id ORDER BY ${SOURCE_PICK_ORDER}) AS choice FROM social_feed_sources s CROSS JOIN active a LEFT JOIN social_feed_source_account_status sas ON sas.source_id=s.id AND sas.account_id=a.id WHERE s.enabled=TRUE AND ${SOURCE_ELIGIBLE}) SELECT account_id,COUNT(*)::int AS source_count,COALESCE(jsonb_agg(jsonb_build_object('id',source_id::text,'name',name,'url',facebook_url) ORDER BY source_id),'[]') AS sources FROM eligible WHERE choice=1 GROUP BY account_id`),
+    db.query(`SELECT s.id AS source_id, EXISTS(SELECT 1 FROM social_feed_collector_accounts a LEFT JOIN social_feed_source_account_status sas ON sas.source_id=s.id AND sas.account_id=a.id WHERE a.enabled=TRUE AND a.status='ready' AND a.last_seen_at>NOW()-INTERVAL '10 minutes' AND ${SOURCE_ELIGIBLE}) AS covered FROM social_feed_sources s`),
+    db.query(`SELECT running FROM social_feed_control WHERE id=1`),
   ]);
+  const running = controlResult.rows[0]?.running ?? false;
   const assignmentByAccount = new Map(assignmentsResult.rows.map((row) => [String(row.account_id), { count: row.source_count, sources: row.sources }]));
+  const coveredSources = new Set(coverageResult.rows.filter((row) => row.covered).map((row) => String(row.source_id)));
   const accounts = accountsResult.rows.map((row) => {
     const status = row.status === "ready" && Date.now() - new Date(row.last_seen_at).getTime() > 10 * 60 * 1000 ? "offline" : row.status;
     const assignment = assignmentByAccount.get(String(row.id)) || { count: 0, sources: [] };
@@ -271,6 +290,8 @@ export async function getSocialFeedState(userId, filters = {}) {
   if (pageSize !== "all") {
     values.push(Number(pageSize), (page - 1) * Number(pageSize));
     pagingSql = `LIMIT $${values.length - 1} OFFSET $${values.length}`;
+  } else {
+    pagingSql = "LIMIT 1000";
   }
   const [postsResult, countResult] = await Promise.all([db.query(`
     SELECT p.*, s.name AS source_name, s.facebook_url AS source_url, sp.post_id IS NOT NULL AS saved,
@@ -285,13 +306,13 @@ export async function getSocialFeedState(userId, filters = {}) {
   const totalPosts = countResult.rows[0]?.count || 0;
   return {
     categories: categoriesResult.rows.map(mapCategory),
-    sources: sourcesResult.rows.map((row) => ({ id: String(row.id), categoryId: String(row.category_id), name: row.name, url: row.facebook_url, groupId: row.facebook_group_id, enabled: row.enabled, lastSeenAt: row.last_seen_at, lastError: row.last_error, requiresLogin: row.requires_login, accessStatus: row.access_status, sessionCheckedAt: row.session_checked_at, accessNote: row.access_note })),
+    sources: sourcesResult.rows.map((row) => ({ id: String(row.id), categoryId: String(row.category_id), name: row.name, url: row.facebook_url, groupId: row.facebook_group_id, enabled: row.enabled, lastSeenAt: row.last_seen_at, lastError: row.last_error, requiresLogin: row.requires_login, accessStatus: coveredSources.has(String(row.id)) ? "ready" : "no_worker", sessionCheckedAt: row.session_checked_at, accessNote: row.access_note, idleChecks: row.idle_checks, nextCheckAt: row.next_check_at })),
     rules: rulesResult.rows.map((row) => ({ id: String(row.id), categoryId: String(row.category_id), name: row.name, mode: row.mode, terms: row.terms, enabled: row.enabled })),
     tags: tagsResult.rows.map((row) => ({ id: String(row.id), name: row.name, count: row.count })),
     accounts,
-    collectorSummary: { activeCollectorCount, enabledSourceCount, sourcesPerCollector, riskLevel },
+    collectorSummary: { activeCollectorCount, enabledSourceCount, sourcesPerCollector, riskLevel, running },
     posts: postsResult.rows.map((row) => ({ id: String(row.id), sourceId: String(row.source_id), sourceName: row.source_name, message: row.message, originalUrl: row.original_url, postedAt: row.posted_at, ingestedAt: row.ingested_at, saved: row.saved, tags: row.tags })),
-    pagination: { page: pageSize === "all" ? 1 : page, pageSize, total: totalPosts, totalPages: pageSize === "all" ? 1 : Math.max(1, Math.ceil(totalPosts / Number(pageSize))) },
+    pagination: { page: pageSize === "all" ? 1 : page, pageSize, total: totalPosts, shown: pageSize === "all" ? Math.min(totalPosts, 1000) : postsResult.rows.length, totalPages: pageSize === "all" ? 1 : Math.max(1, Math.ceil(totalPosts / Number(pageSize))) },
     refreshedAt: new Date().toISOString(),
   };
 }
@@ -369,15 +390,27 @@ export async function deleteSocialSources(id = "") {
   return result.rowCount;
 }
 
-export async function heartbeatCollectorAccount({ instanceId, label, platformAccountId, status, activate = false }) {
+export async function heartbeatCollectorAccount({ instanceId, label, platformAccountId, clearPlatformAccountId = false, status, activate = false }) {
   await ensureSchema();
   const cleanInstance = String(instanceId || "").trim().slice(0, 100);
   const cleanLabel = String(label || "").trim().slice(0, 100);
   if (!cleanInstance || !cleanLabel) { const error = new Error("ข้อมูล Chrome profile ไม่ครบ"); error.status = 400; throw error; }
   const allowed = ["ready", "logged_out", "checkpoint", "offline", "unknown"];
   const cleanStatus = allowed.includes(status) ? status : "unknown";
-  const result = await getSocialPool().query(`INSERT INTO social_feed_collector_accounts(instance_id,label,platform_account_id,status,enabled,last_seen_at,session_checked_at) VALUES($1,$2,$3,$4,TRUE,NOW(),NOW()) ON CONFLICT(instance_id) DO UPDATE SET label=EXCLUDED.label,platform_account_id=CASE WHEN EXCLUDED.platform_account_id<>'' THEN EXCLUDED.platform_account_id ELSE social_feed_collector_accounts.platform_account_id END,status=EXCLUDED.status,last_seen_at=NOW(),session_checked_at=NOW(),enabled=CASE WHEN $5 THEN TRUE ELSE social_feed_collector_accounts.enabled END,updated_at=NOW() RETURNING id,enabled`, [cleanInstance, cleanLabel, String(platformAccountId || "").replace(/\D/g, "").slice(0, 40), cleanStatus, Boolean(activate)]);
+  const result = await getSocialPool().query(`INSERT INTO social_feed_collector_accounts(instance_id,label,platform_account_id,status,enabled,last_seen_at,session_checked_at) VALUES($1,$2,$3,$4,TRUE,NOW(),NOW()) ON CONFLICT(instance_id) DO UPDATE SET label=EXCLUDED.label,platform_account_id=CASE WHEN $6 THEN '' WHEN EXCLUDED.platform_account_id<>'' THEN EXCLUDED.platform_account_id ELSE social_feed_collector_accounts.platform_account_id END,status=EXCLUDED.status,last_seen_at=NOW(),session_checked_at=NOW(),enabled=CASE WHEN $5 THEN TRUE ELSE social_feed_collector_accounts.enabled END,updated_at=NOW() RETURNING id,enabled`, [cleanInstance, cleanLabel, String(platformAccountId || "").replace(/\D/g, "").slice(0, 40), cleanStatus, Boolean(activate), Boolean(clearPlatformAccountId)]);
   return { id: String(result.rows[0].id), enabled: result.rows[0].enabled };
+}
+
+export async function getCollectorRunning() {
+  await ensureSchema();
+  const result = await getSocialPool().query(`SELECT running FROM social_feed_control WHERE id=1`);
+  return result.rows[0]?.running ?? false;
+}
+
+export async function setCollectorRunning(running) {
+  await ensureSchema();
+  const result = await getSocialPool().query(`INSERT INTO social_feed_control(id,running,updated_at) VALUES(1,$1,NOW()) ON CONFLICT(id) DO UPDATE SET running=EXCLUDED.running,updated_at=NOW() RETURNING running`, [Boolean(running)]);
+  return result.rows[0].running;
 }
 
 export async function listCollectorSources(instanceId, publicOnly = false) {
@@ -387,21 +420,30 @@ export async function listCollectorSources(instanceId, publicOnly = false) {
   }
   const account = await getSocialPool().query(`SELECT id FROM social_feed_collector_accounts WHERE instance_id=$1 AND enabled=TRUE AND status='ready' AND last_seen_at>NOW()-INTERVAL '10 minutes'`, [String(instanceId || "").trim()]);
   if (!account.rowCount) return [];
-  const result = await getSocialPool().query(`WITH active AS (SELECT id,row_number() OVER(ORDER BY id)-1 AS slot,count(*) OVER() AS total FROM social_feed_collector_accounts WHERE enabled=TRUE AND status='ready' AND last_seen_at>NOW()-INTERVAL '10 minutes'), eligible AS (SELECT s.id,s.name,s.facebook_url,s.facebook_group_id,s.requires_login,a.id AS account_id,row_number() OVER(PARTITION BY s.id ORDER BY mod(a.slot-mod(s.id-1,a.total)+a.total,a.total)) AS choice FROM social_feed_sources s CROSS JOIN active a LEFT JOIN social_feed_source_account_status sas ON sas.source_id=s.id AND sas.account_id=a.id WHERE s.enabled=TRUE AND COALESCE(sas.status,'') NOT IN ('needs_join','checkpoint','logged_out')) SELECT id,name,facebook_url,facebook_group_id,requires_login FROM eligible WHERE choice=1 AND account_id=$1 ORDER BY id`, [account.rows[0].id]);
+  const result = await getSocialPool().query(`WITH active AS (SELECT id,row_number() OVER(ORDER BY id)-1 AS slot,count(*) OVER() AS total FROM social_feed_collector_accounts WHERE enabled=TRUE AND status='ready' AND last_seen_at>NOW()-INTERVAL '10 minutes'), eligible AS (SELECT s.id,s.name,s.facebook_url,s.facebook_group_id,s.requires_login,s.idle_checks,a.id AS account_id,row_number() OVER(PARTITION BY s.id ORDER BY ${SOURCE_PICK_ORDER}) AS choice FROM social_feed_sources s CROSS JOIN active a LEFT JOIN social_feed_source_account_status sas ON sas.source_id=s.id AND sas.account_id=a.id WHERE s.enabled=TRUE AND (s.next_check_at IS NULL OR s.next_check_at<=NOW()) AND ${SOURCE_ELIGIBLE}) SELECT id,name,facebook_url,facebook_group_id,requires_login FROM eligible WHERE choice=1 AND account_id=$1 ORDER BY idle_checks,id`, [account.rows[0].id]);
   return result.rows.map((row) => ({ id: String(row.id), name: row.name, url: row.facebook_url, groupId: row.facebook_group_id, requiresLogin: row.requires_login }));
 }
 
-export async function updateCollectorSourceStatus({ sourceId, instanceId, status, note }) {
+export async function updateCollectorSourceStatus({ sourceId, instanceId, status, note, ingested }) {
   await ensureSchema();
   const allowed = ["ready", "logged_out", "needs_join", "checkpoint", "unknown", "error"];
   const cleanStatus = allowed.includes(status) ? status : "unknown";
+  const cleanNote = String(note || "").slice(0, 500);
+  const newPosts = Math.max(0, Number.parseInt(ingested, 10) || 0);
   const account = await getSocialPool().query(`SELECT id FROM social_feed_collector_accounts WHERE instance_id=$1 AND enabled=TRUE`, [String(instanceId || "").trim()]);
-  if (!account.rowCount) {
-    await getSocialPool().query(`UPDATE social_feed_sources SET access_status=$2,access_note=$3,session_checked_at=NOW(),updated_at=NOW() WHERE id=$1`, [sourceId, cleanStatus, String(note || "").slice(0, 500)]);
+  // สถานะราย (กลุ่ม×เครื่อง) คือสิ่งที่คิวใช้ย้ายกลุ่มไปเครื่องที่ยังอ่านได้ — session หลุดของเครื่องเดียวจึงอยู่แค่ตรงนี้
+  if (account.rowCount) await getSocialPool().query(`INSERT INTO social_feed_source_account_status(source_id,account_id,status,note,checked_at) VALUES($1,$2,$3,$4,NOW()) ON CONFLICT(source_id,account_id) DO UPDATE SET status=EXCLUDED.status,note=EXCLUDED.note,checked_at=NOW()`, [sourceId, account.rows[0].id, cleanStatus, cleanNote]);
+  if (cleanStatus === "ready") {
+    // จัด priority ตามความถี่โพสต์ใหม่: มีโพสต์ใหม่ = รีเซ็ตให้ตรวจทุกลูป, ไม่มีติดกันครบ 3 ลูป = ลดความถี่ลงทีละขั้น (ทุก 2 → ทุก 3 ลูป) ผ่าน next_check_at
+    await getSocialPool().query(`UPDATE social_feed_sources SET
+      idle_checks = CASE WHEN $2 > 0 THEN 0 ELSE idle_checks + 1 END,
+      next_check_at = CASE WHEN $2 > 0 THEN NULL ELSE NOW() + ((LEAST(1 + (idle_checks + 1) / 3, 3) - 1) * INTERVAL '5 minutes') END,
+      session_checked_at = NOW(), updated_at = NOW()
+      WHERE id = $1`, [sourceId, newPosts]);
     return;
   }
-  await getSocialPool().query(`INSERT INTO social_feed_source_account_status(source_id,account_id,status,note,checked_at) VALUES($1,$2,$3,$4,NOW()) ON CONFLICT(source_id,account_id) DO UPDATE SET status=EXCLUDED.status,note=EXCLUDED.note,checked_at=NOW()`, [sourceId, account.rows[0].id, cleanStatus, String(note || "").slice(0, 500)]);
-  await getSocialPool().query(`UPDATE social_feed_sources SET access_status=$2,access_note=$3,session_checked_at=NOW(),updated_at=NOW() WHERE id=$1`, [sourceId, cleanStatus, String(note || "").slice(0, 500)]);
+  // ตรวจไม่สำเร็จ (หลุด/checkpoint/error) ไม่นับเป็นลูปเงียบ และไม่ throttle — อัปเดตแค่เวลาตรวจล่าสุด
+  await getSocialPool().query(`UPDATE social_feed_sources SET session_checked_at=NOW(),updated_at=NOW() WHERE id=$1`, [sourceId]);
 }
 
 export async function claimSocialSource({ sourceId, instanceId }) {

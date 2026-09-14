@@ -5,13 +5,20 @@ import vm from "node:vm";
 const calls = [];
 const tabs = [];
 const event = { addListener() {} };
+const localStore = { serverUrl: "https://tools.inblackm.com", ingestSecret: "x".repeat(32), collectorInstanceId: "reader" };
+let runtimeListener;
+let cookieReads = 0;
 const context = vm.createContext({
   URL, AbortSignal, setTimeout, clearTimeout, crypto: { randomUUID: () => "reader" },
   chrome: {
-    storage: { local: { get: async () => ({ serverUrl: "https://tools.inblackm.com", ingestSecret: "x".repeat(32), collectorInstanceId: "reader" }), set: async () => {} } },
+    storage: { local: {
+      get: async (keys) => typeof keys === "string" ? { [keys]: localStore[keys] } : { ...keys, ...localStore },
+      set: async (values) => Object.assign(localStore, values),
+      remove: async (key) => { delete localStore[key]; },
+    } },
     offscreen: { hasDocument: async () => false, createDocument: async () => {}, closeDocument: async () => {} },
-    runtime: { onInstalled: event, onMessage: event, sendMessage: async () => ({ status: "unknown", posts: [] }) },
-    alarms: { onAlarm: event, create: async () => {} }, cookies: { onChanged: event, getAll: () => { throw new Error("Collection must not read login cookies"); } },
+    runtime: { onInstalled: event, onMessage: { addListener(listener) { runtimeListener = listener; } }, sendMessage: async () => ({ status: "unknown", note: "public", posts: [] }) },
+    alarms: { onAlarm: event, create: async () => {} }, cookies: { onChanged: event, getAll: async () => { cookieReads += 1; return [{ name: "c_user", value: "61553646485632" }]; } },
     tabs: {
       onRemoved: event,
       create: async (options) => { tabs.push(["create", options]); return { id: 7 }; },
@@ -23,11 +30,18 @@ const context = vm.createContext({
   },
   fetch: async (url, options) => {
     calls.push({ url, options });
-    return { ok: true, text: async () => "<html></html>", json: async () => url.includes("?instance=reader") ? { sources: [{ id: "1", url: "https://www.facebook.com/groups/123", groupId: "123" }] } : { claimed: true } };
+    return { ok: true, text: async () => "<html></html>", json: async () => url.includes("?instance=reader") ? { sources: [{ id: "1", url: "https://www.facebook.com/groups/123/about", groupId: "123" }], running: true } : { claimed: true } };
   },
 });
 vm.runInContext(fs.readFileSync("browser-extension/social-feed-collector/background.js", "utf8"), context);
 const contentSource = fs.readFileSync("browser-extension/social-feed-collector/content.js", "utf8");
+const backgroundSource = fs.readFileSync("browser-extension/social-feed-collector/background.js", "utf8");
+const popupSource = fs.readFileSync("browser-extension/social-feed-collector/popup.js", "utf8");
+assert.match(backgroundSource, /TOGGLE_FACEBOOK_LOGIN/);
+assert.match(backgroundSource, /facebookAccountId/);
+assert.match(backgroundSource, /clearPlatformAccountId/);
+assert.match(backgroundSource, /credentials:\s*"omit"/);
+assert.match(popupSource, /ใช้ Facebook ที่ล็อกอินอยู่/);
 assert.match(contentSource, /see more\|ดูเพิ่มเติม/i);
 assert.match(contentSource, /data-ad-preview/);
 assert.doesNotMatch(contentSource, /const message = article\?\.innerText/);
@@ -50,14 +64,33 @@ assert.equal(relativeDate.toISOString(), "2026-09-14T06:26:00.000Z");
 assert.equal(vm.runInContext(`parseFacebookDateLabel("2 ชั่วโมง", new Date("${relativeNow.toISOString()}"))`, contentContext).toISOString(), "2026-09-14T04:30:00.000Z");
 await vm.runInContext("Promise.all([runCheck(), runCheck()])", context);
 const facebook = calls.filter(({ url }) => url.startsWith("https://www.facebook.com"));
-assert.equal(facebook.length, 0, "Facebook is read through the rendered tab");
-assert.equal(tabs.filter((item) => item[0] === "create").length, 1);
-assert.equal(tabs[0][1].active, false);
-assert.equal(tabs.filter((item) => item[0] === "update").length, 1);
-assert.equal(tabs.filter((item) => item[0] === "remove").length, 1);
+assert.equal(facebook.length, 1, "public mode fetches Facebook HTML once");
+assert.equal(facebook[0].url, "https://www.facebook.com/groups/123/", "public mode removes /about before reading");
+assert.equal(facebook[0].options.credentials, "omit", "public mode must not attach Facebook cookies");
+assert.equal(cookieReads, 0, "public collection must not inspect login cookies");
+assert.equal(tabs.length, 0, "public mode must not open an authenticated browser tab");
 assert.equal(calls.filter(({ url }) => url.includes("?instance=reader")).length, 1);
 assert.equal(calls.filter(({ url, options }) => url.endsWith("/api/social-feed/collector") && options.method === "POST" && JSON.parse(options.body).type === "heartbeat").length, 2, "worker refreshes heartbeat before claiming a source");
-console.log("PASS: one inactive tab, tab cleanup, overlapping-run guard, no login-cookie inspection");
+console.log("PASS: anonymous public fetch, overlapping-run guard, no login-cookie inspection");
+const dispatch = (message) => new Promise((resolve) => runtimeListener(message, {}, resolve));
+const linked = await dispatch({ type: "TOGGLE_FACEBOOK_LOGIN" });
+assert.equal(linked.facebookAccountId, "61553646485632");
+assert.equal(localStore.facebookAccountId, "61553646485632");
+assert.equal(cookieReads, 1, "cookies are inspected only after explicit user action");
+const facebookFetchesBeforeLoginScan = calls.filter(({ url }) => url.startsWith("https://www.facebook.com")).length;
+await vm.runInContext('checkSources([{ id: "2", name: "private", url: "https://www.facebook.com/groups/456/about?ref=share", groupId: "456" }])', context);
+assert.equal(tabs.filter((item) => item[0] === "create").length, 1);
+assert.equal(tabs.find((item) => item[0] === "create")[1].active, false, "login mode opens an inactive tab");
+assert.equal(tabs.filter((item) => item[0] === "update").length, 1);
+assert.equal(tabs.find((item) => item[0] === "update")[2].url, "https://www.facebook.com/groups/456/", "login mode removes /about before opening the tab");
+assert.equal(tabs.filter((item) => item[0] === "remove").length, 1);
+assert.equal(calls.filter(({ url }) => url.startsWith("https://www.facebook.com")).length, facebookFetchesBeforeLoginScan, "login mode uses the rendered tab instead of anonymous fetch");
+const unlinked = await dispatch({ type: "TOGGLE_FACEBOOK_LOGIN" });
+assert.equal(unlinked.wasRemoved, true);
+assert.equal(localStore.facebookAccountId, undefined);
+const clearHeartbeat = calls.findLast(({ url, options }) => url.endsWith("/api/social-feed/collector") && options.method === "POST" && JSON.parse(options.body).clearPlatformAccountId);
+assert.ok(clearHeartbeat, "unlink sends an explicit server-side account-id clear");
+console.log("PASS: explicit Facebook account link and unlink");
 const beforeDenied = tabs.length;
 context.fetch = async () => ({ ok: true, json: async () => ({ claimed: false }) });
 await vm.runInContext('checkSources([{ id: "1", url: "https://www.facebook.com/groups/123", groupId: "123" }])', context);

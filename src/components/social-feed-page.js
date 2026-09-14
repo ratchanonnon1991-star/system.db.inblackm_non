@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowUpRight, Bookmark, BookmarkCheck, Check, ChevronLeft, ChevronRight, CircleDot, Clock3, Download, ExternalLink,
-  Filter, FolderPlus, Hash, LayoutGrid, LogIn, Monitor, Plus, Radio, RefreshCw, Search, Tags, Trash2, UserRound,
+  Filter, FolderPlus, Hash, LayoutGrid, Monitor, Play, Plus, Radio, RefreshCw, Search, Square, Tags, Trash2, UserRound,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -20,7 +20,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-const EMPTY = { categories: [], sources: [], rules: [], tags: [], posts: [], accounts: [], collectorSummary: { activeCollectorCount: 0, enabledSourceCount: 0, sourcesPerCollector: 0, riskLevel: "offline" }, pagination: { page: 1, pageSize: "20", total: 0, totalPages: 1 } };
+const EMPTY = { categories: [], sources: [], rules: [], tags: [], posts: [], accounts: [], collectorSummary: { activeCollectorCount: 0, enabledSourceCount: 0, sourcesPerCollector: 0, riskLevel: "offline", running: false }, pagination: { page: 1, pageSize: "20", total: 0, totalPages: 1 } };
 
 function formatTime(value) {
   return new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
@@ -36,15 +36,9 @@ function formatPostTime(value, now) {
   return `โพสต์เมื่อ ${Math.floor(elapsed / 3600000)} ชั่วโมงที่แล้ว`;
 }
 
-function formatCountdown(value, now) {
-  const seconds = Math.max(0, Math.ceil((Number(value) - now) / 1000));
-  if (!Number(value)) return "รอข้อมูลจาก Extension";
-  if (seconds <= 0) return "กำลังรอดึงโพสต์";
-  return `ดึงโพสต์ใน ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} นาที`;
-}
+const COLLECTOR_STATE_LABELS = { offline: "ไม่พร้อม", standby: "สแตนบาย", running: "กำลังอ่าน" };
 
-
-const ACCESS_LABELS = { ready: "พร้อมใช้งาน", logged_out: "Session หลุด", needs_join: "ยังไม่เข้ากลุ่ม", checkpoint: "ต้องยืนยันตัวตน", error: "ตรวจไม่สำเร็จ", unknown: "ไม่ทราบสถานะ", unchecked: "ยังไม่ตรวจ" };
+const ACCESS_LABELS = { ready: "พร้อมใช้งาน", no_worker: "ไม่มีเครื่องรองรับ", logged_out: "Session หลุด", needs_join: "ยังไม่เข้ากลุ่ม", checkpoint: "ต้องยืนยันตัวตน", error: "ตรวจไม่สำเร็จ", unknown: "ไม่ทราบสถานะ", unchecked: "ยังไม่ตรวจ" };
 const ACCOUNT_LABELS = { ...ACCESS_LABELS, offline: "Extension ออฟไลน์" };
 const WORKER_LABELS = { ready: "ออนไลน์", offline: "ออฟไลน์", logged_out: "ออฟไลน์", checkpoint: "ต้องตรวจสอบ", unknown: "ไม่ทราบสถานะ" };
 const RISK_LABELS = { offline: "ยังไม่มีเครื่องทำงาน", low: "ภาระต่ำ", medium: "ภาระปานกลาง", high: "ภาระสูง" };
@@ -70,8 +64,6 @@ export default function SocialFeedPage() {
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [sourceOpen, setSourceOpen] = useState(false);
   const [sourceCategoryId, setSourceCategoryId] = useState("");
-  const [loginOpen, setLoginOpen] = useState(false);
-  const [loginTarget, setLoginTarget] = useState(null);
   const [checkingSessions, setCheckingSessions] = useState(false);
   const [deleteAllOpen, setDeleteAllOpen] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
@@ -79,7 +71,7 @@ export default function SocialFeedPage() {
   const [deletingSources, setDeletingSources] = useState(false);
   const [deleteCategoryTarget, setDeleteCategoryTarget] = useState(null);
   const [deletingCategory, setDeletingCategory] = useState(false);
-  const [collectorTiming, setCollectorTiming] = useState({ lastCheckAt: "", nextCheckAt: 0 });
+  const [settingRunning, setSettingRunning] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
   const load = useCallback(async (quiet = false) => {
@@ -108,13 +100,8 @@ export default function SocialFeedPage() {
     return () => window.clearInterval(timer);
   }, [load]);
   useEffect(() => {
-    const listener = (event) => {
-      if (event.origin === window.location.origin && event.data?.type === "INBLACKM_SOCIAL_STATUS_RESULT") setCollectorTiming(event.data.status);
-    };
-    window.addEventListener("message", listener);
-    window.postMessage({ type: "INBLACKM_SOCIAL_STATUS" }, window.location.origin);
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => { window.removeEventListener("message", listener); window.clearInterval(timer); };
+    return () => window.clearInterval(timer);
   }, []);
 
   const sourcesByCategory = useMemo(() => data.categories.map((item) => ({
@@ -160,6 +147,14 @@ export default function SocialFeedPage() {
   };
 
   const openTag = (selectedTag) => { setTag(selectedTag); setPage(1); setTab("feed"); };
+  const setRunning = async (next) => {
+    setSettingRunning(true); setError("");
+    try {
+      await apiJson("/api/social-feed/control", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ running: next }), fallbackError: "เปลี่ยนสถานะการอ่านไม่สำเร็จ" });
+      await load(true);
+    } catch (err) { setError(err.message); }
+    finally { setSettingRunning(false); }
+  };
   const checkSessions = () => {
     setCheckingSessions(true); setError("");
     let acknowledged = false;
@@ -179,19 +174,6 @@ export default function SocialFeedPage() {
       setError("ไม่พบ Social Feed Collector Extension — ติดตั้งหรือเปิด Extension ก่อน");
     }, 1500);
   };
-  const connectLogin = ({ label, instanceId = "" }) => {
-    let acknowledged = false;
-    const listener = (event) => {
-      if (event.origin !== window.location.origin) return;
-      if (event.data?.type === "INBLACKM_SOCIAL_LOGIN_STARTED") acknowledged = true;
-      if (event.data?.type !== "INBLACKM_SOCIAL_LOGIN_RESULT") return;
-      window.removeEventListener("message", listener);
-      if (!event.data.result?.ok) setError(event.data.result?.error || "เปิดหน้าต่าง Login ไม่สำเร็จ");
-    };
-    window.addEventListener("message", listener);
-    window.postMessage({ type: "INBLACKM_SOCIAL_LOGIN", label, targetInstanceId: instanceId }, window.location.origin);
-    window.setTimeout(() => { if (!acknowledged) { window.removeEventListener("message", listener); setError("ไม่พบ Social Feed Collector Extension — ติดตั้งหรือ Reload Extension ก่อน"); } }, 1500);
-  };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -202,8 +184,16 @@ export default function SocialFeedPage() {
             <div><p className="font-semibold tracking-tight">Feed Social</p><p className="text-xs text-muted-foreground">Facebook text monitor</p></div>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="outline"><CircleDot data-icon="inline-start" />{formatCountdown(collectorTiming.nextCheckAt, now)}</Badge>
-            <Button variant="outline" size="icon" onClick={() => load()} disabled={refreshing} aria-label="รีเฟรช"><RefreshCw className={refreshing ? "animate-spin" : ""} /></Button>
+            {(() => {
+              const online = data.collectorSummary.activeCollectorCount > 0;
+              const state = !online ? "offline" : data.collectorSummary.running ? "running" : "standby";
+              return (<>
+                <Badge variant={state === "running" ? "default" : "outline"}><CircleDot data-icon="inline-start" />{COLLECTOR_STATE_LABELS[state]}</Badge>
+                {state === "running"
+                  ? <Button variant="outline" size="sm" onClick={() => setRunning(false)} disabled={settingRunning}><Square data-icon="inline-start" />หยุด</Button>
+                  : <Button size="sm" onClick={() => setRunning(true)} disabled={!online || settingRunning}><Play data-icon="inline-start" />เริ่ม</Button>}
+              </>);
+            })()}
             <Button variant="outline" size="icon" render={<Link href="/" />} aria-label="กลับเมนู"><LayoutGrid /></Button>
           </div>
         </div>
@@ -257,19 +247,19 @@ export default function SocialFeedPage() {
               <div><p className="font-medium">หมวดหมู่และกลุ่มที่ติดตาม</p><p className="text-sm text-muted-foreground">เพิ่มกลุ่มใหม่แล้วใช้ Group ID เดียวกันกับ collector</p></div>
               <div className="flex flex-wrap gap-2"><Button variant="outline" render={<a href="/social-feed-collector.zip" download />}><Download data-icon="inline-start" />ดาวน์โหลด Extension</Button><Button variant="outline" onClick={() => setCategoryOpen(true)}><FolderPlus data-icon="inline-start" />เพิ่มหมวดหมู่</Button><Button variant="destructive" onClick={() => setDeleteSourceTarget({ all: true })} disabled={!data.categories.length || deletingSources}><Trash2 data-icon="inline-start" />ลบทุกกลุ่ม</Button><Button onClick={() => { setSourceCategoryId(""); setSourceOpen(true); }}><Plus data-icon="inline-start" />เพิ่มกลุ่ม</Button></div>
             </div>
-            <div className="grid gap-4 lg:grid-cols-3">{sourcesByCategory.map((group) => <Card key={group.id}><CardHeader><CardTitle>{group.name}</CardTitle><CardDescription>{group.sources.length} กลุ่ม Facebook</CardDescription><CardAction className="flex gap-1"><Button variant="ghost" size="icon-sm" aria-label={`เพิ่มกลุ่ม Facebook ใน ${group.name}`} onClick={() => { setSourceCategoryId(group.id); setSourceOpen(true); }}><Plus /></Button><Button variant="ghost" size="icon-sm" aria-label={`ลบหมวดหมู่ ${group.name}`} onClick={() => setDeleteCategoryTarget(group)}><Trash2 /></Button></CardAction></CardHeader><CardContent className="flex flex-col gap-2">{group.sources.map((source) => <div key={source.id} className="flex flex-col gap-2 rounded-lg border p-3 text-sm"><div className="flex items-start justify-between gap-3"><a href={source.url} target="_blank" rel="noreferrer" className="min-w-0 font-medium hover:underline"><span>{source.name}</span><ExternalLink className="ml-1 inline size-4" /></a><Button variant="ghost" size="icon-sm" aria-label={`ลบ ${source.name}`} onClick={() => setDeleteSourceTarget(source)}><Trash2 /></Button></div><div className="flex flex-wrap items-center gap-2"><Badge variant={source.accessStatus === "ready" ? "default" : "outline"}>{ACCESS_LABELS[source.accessStatus] || ACCESS_LABELS.unknown}</Badge></div>{source.sessionCheckedAt && <span className="text-xs text-muted-foreground">ตรวจล่าสุด {formatTime(source.sessionCheckedAt)}</span>}</div>)}</CardContent></Card>)}</div>
+            <div className="grid gap-4 lg:grid-cols-3">{sourcesByCategory.map((group) => <Card key={group.id}><CardHeader><CardTitle>{group.name}</CardTitle><CardDescription>{group.sources.length} กลุ่ม Facebook</CardDescription><CardAction className="flex gap-1"><Button variant="ghost" size="icon-sm" aria-label={`เพิ่มกลุ่ม Facebook ใน ${group.name}`} onClick={() => { setSourceCategoryId(group.id); setSourceOpen(true); }}><Plus /></Button><Button variant="ghost" size="icon-sm" aria-label={`ลบหมวดหมู่ ${group.name}`} onClick={() => setDeleteCategoryTarget(group)}><Trash2 /></Button></CardAction></CardHeader><CardContent className="flex flex-col gap-2">{group.sources.map((source) => <div key={source.id} className="flex flex-col gap-2 rounded-lg border p-3 text-sm"><div className="flex items-start justify-between gap-3"><a href={source.url} target="_blank" rel="noreferrer" className="min-w-0 font-medium hover:underline"><span>{source.name}</span><ExternalLink className="ml-1 inline size-4" /></a><Button variant="ghost" size="icon-sm" aria-label={`ลบ ${source.name}`} onClick={() => setDeleteSourceTarget(source)}><Trash2 /></Button></div><div className="flex flex-wrap items-center gap-2"><Badge variant={source.accessStatus === "ready" ? "default" : "destructive"}>{ACCESS_LABELS[source.accessStatus] || ACCESS_LABELS.unknown}</Badge></div>{source.sessionCheckedAt && <span className="text-xs text-muted-foreground">ตรวจล่าสุด {formatTime(source.sessionCheckedAt)}</span>}</div>)}</CardContent></Card>)}</div>
           </TabsContent>
 
           <TabsContent value="workers" className="pt-4">
             <div className="mb-4"><p className="font-medium">เครื่องที่เข้าระบบ</p><p className="text-sm text-muted-foreground">ทั้งหมด {data.accounts.length} เครื่อง · ออนไลน์ {data.collectorSummary.activeCollectorCount} เครื่อง</p></div>
             <Card className="mb-4"><CardHeader><CardTitle>คิวการดึง</CardTitle><CardDescription>{data.collectorSummary.enabledSourceCount} กลุ่ม · ประมาณ {data.collectorSummary.sourcesPerCollector} กลุ่มต่อเครื่องในแต่ละรอบ</CardDescription><CardAction><Badge variant={data.collectorSummary.riskLevel === "low" ? "default" : "outline"}>{RISK_LABELS[data.collectorSummary.riskLevel] || RISK_LABELS.offline}</Badge></CardAction></CardHeader><CardContent><p className="text-xs text-muted-foreground">เครื่องที่ไม่ส่งสถานะเกิน 10 นาทีจะแสดงเป็นออฟไลน์ และคิวจะย้ายให้เครื่องที่ยังออนไลน์ในรอบถัดไป</p></CardContent></Card>
-            {data.accounts.length ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{data.accounts.map((worker) => <Card key={worker.id}><CardHeader><CardTitle className="flex items-center gap-2"><Monitor />{worker.label}</CardTitle><CardDescription>รหัสเครื่อง {worker.instanceId.slice(0, 8)}</CardDescription><CardAction><Badge variant={worker.status === "ready" ? "default" : "outline"}>{WORKER_LABELS[worker.status] || WORKER_LABELS.unknown}</Badge></CardAction></CardHeader><CardContent className="flex flex-col gap-3"><div className="text-xs text-muted-foreground"><p>คิวรอบนี้ {worker.assignedSourceCount} กลุ่ม</p><p>ติดต่อครั้งล่าสุด {formatTime(worker.lastSeenAt)}</p></div>{worker.assignedSources?.length > 0 && <div className="flex flex-col gap-1 border-t pt-3">{worker.assignedSources.map((source) => <a key={source.id} href={source.url} target="_blank" rel="noreferrer" className="truncate text-xs hover:underline">{source.name}</a>)}</div>}</CardContent></Card>)}</div> : <Card><CardHeader><CardTitle>ยังไม่มีเครื่องเข้าระบบ</CardTitle><CardDescription>ติดตั้ง Extension แล้วกด “เริ่มอ่าน” เครื่องจะปรากฏในหน้านี้</CardDescription></CardHeader></Card>}
+            {data.accounts.length ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{data.accounts.map((worker) => <Card key={worker.id}><CardHeader><CardTitle className="flex items-center gap-2"><Monitor />{worker.label}</CardTitle><CardDescription>รหัสเครื่อง {worker.instanceId.slice(0, 8)}</CardDescription><CardAction><Badge variant={worker.status === "ready" ? "default" : "outline"}>{WORKER_LABELS[worker.status] || WORKER_LABELS.unknown}</Badge></CardAction></CardHeader><CardContent className="flex flex-col gap-3"><div className="text-xs text-muted-foreground"><p>คิวรอบนี้ {worker.assignedSourceCount} กลุ่ม</p><p>ติดต่อครั้งล่าสุด {formatTime(worker.lastSeenAt)}</p></div>{worker.assignedSources?.length > 0 && <div className="flex flex-col gap-1 border-t pt-3">{worker.assignedSources.map((source) => <a key={source.id} href={source.url} target="_blank" rel="noreferrer" className="truncate text-xs hover:underline">{source.name}</a>)}</div>}</CardContent></Card>)}</div> : <Card><CardHeader><CardTitle>ยังไม่มีเครื่องเข้าระบบ</CardTitle><CardDescription>ติดตั้ง Extension แล้วกด “เชื่อมต่อ” เครื่องจะขึ้นสแตนบายในหน้านี้ แล้วกด “เริ่ม” ด้านบนเพื่อสั่งให้อ่าน</CardDescription></CardHeader></Card>}
           </TabsContent>
 
           <TabsContent value="accounts" className="pt-4">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><p className="font-medium">บัญชี Bot</p><p className="text-sm text-muted-foreground">Login ครั้งเดียวใน Chrome profile แล้ว Bot จะใช้บัญชีนี้ดึงโพสต์จากทุกกลุ่มอัตโนมัติ</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={checkSessions} disabled={checkingSessions}><RefreshCw data-icon="inline-start" className={checkingSessions ? "animate-spin" : ""} />{checkingSessions ? "กำลังเช็ค..." : "สั่ง Bot ดึงโพสต์ตอนนี้"}</Button><Button onClick={() => { setLoginTarget(null); setLoginOpen(true); }}><Plus data-icon="inline-start" />เพิ่มบัญชี Bot</Button></div></div>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><p className="font-medium">บัญชี Bot</p><p className="text-sm text-muted-foreground">Login Facebook ในเบราว์เซอร์ที่เปิด Extension เอง ระบบจะดึงบัญชีจาก Chrome profile นั้นให้อัตโนมัติ ไม่ต้องเพิ่มจากหน้านี้</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={checkSessions} disabled={checkingSessions}><RefreshCw data-icon="inline-start" className={checkingSessions ? "animate-spin" : ""} />{checkingSessions ? "กำลังเช็ค..." : "สั่ง Bot ดึงโพสต์ตอนนี้"}</Button></div></div>
             <Card className="mb-4"><CardHeader><CardTitle>คิวการดึง</CardTitle><CardDescription>เปิดใช้งาน {data.collectorSummary.activeCollectorCount} เครื่อง · {data.collectorSummary.enabledSourceCount} กลุ่ม · ประมาณ {data.collectorSummary.sourcesPerCollector} กลุ่มต่อเครื่องในแต่ละรอบ</CardDescription><CardAction><Badge variant={data.collectorSummary.riskLevel === "low" ? "default" : "outline"}>{RISK_LABELS[data.collectorSummary.riskLevel] || RISK_LABELS.offline}</Badge></CardAction></CardHeader><CardContent><p className="text-xs text-muted-foreground">ประเมินจากจำนวนกลุ่มต่อเครื่อง: ไม่เกิน 10 ต่ำ, 11–25 ปานกลาง, มากกว่า 25 สูง</p></CardContent></Card>
-            {data.accounts.length ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{data.accounts.map((account) => <Card key={account.id}><CardHeader><CardTitle className="flex items-center gap-2"><UserRound />{account.label}</CardTitle><CardDescription>{account.platformAccountId ? `Facebook ID ${account.platformAccountId}` : "เครื่องอ่าน Public"}</CardDescription><CardAction><Badge variant={account.status === "ready" ? "default" : "outline"}>{ACCOUNT_LABELS[account.status] || ACCOUNT_LABELS.unknown}</Badge></CardAction></CardHeader><CardContent className="flex flex-col gap-3"><div className="text-xs text-muted-foreground"><p>คิวรอบนี้ {account.assignedSourceCount} กลุ่ม</p><p>ติดต่อครั้งล่าสุด {formatTime(account.lastSeenAt)}</p></div>{account.assignedSources?.length > 0 && <div className="flex flex-col gap-1 border-t pt-3">{account.assignedSources.map((source) => <a key={source.id} href={source.url} target="_blank" rel="noreferrer" className="truncate text-xs hover:underline">{source.name}</a>)}</div>}<div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={() => { setLoginTarget(account); setLoginOpen(true); }}><LogIn data-icon="inline-start" />Login ใหม่</Button><Button variant="ghost" size="sm" onClick={async () => { await apiJson(`/api/social-feed/accounts?id=${account.id}`, { method: "DELETE" }); load(true); }}><Trash2 data-icon="inline-start" />ลบออก</Button></div></CardContent></Card>)}</div> : <Card><CardHeader><CardTitle>ยังไม่มีเครื่องอ่าน</CardTitle><CardDescription>เปิด Extension แล้วกด “เริ่มอ่าน” เครื่องจะเข้าคิวและรับกลุ่ม Facebook อัตโนมัติ</CardDescription></CardHeader></Card>}
+            {data.accounts.length ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{data.accounts.map((account) => <Card key={account.id}><CardHeader><CardTitle className="flex items-center gap-2"><UserRound />{account.label}</CardTitle><CardDescription>{account.platformAccountId ? `Facebook ID ${account.platformAccountId}` : "เครื่องอ่าน Public"}</CardDescription><CardAction><Badge variant={account.status === "ready" ? "default" : "outline"}>{ACCOUNT_LABELS[account.status] || ACCOUNT_LABELS.unknown}</Badge></CardAction></CardHeader><CardContent className="flex flex-col gap-3"><div className="text-xs text-muted-foreground"><p>คิวรอบนี้ {account.assignedSourceCount} กลุ่ม</p><p>ติดต่อครั้งล่าสุด {formatTime(account.lastSeenAt)}</p></div>{account.assignedSources?.length > 0 && <div className="flex flex-col gap-1 border-t pt-3">{account.assignedSources.map((source) => <a key={source.id} href={source.url} target="_blank" rel="noreferrer" className="truncate text-xs hover:underline">{source.name}</a>)}</div>}<div className="flex flex-wrap gap-2"><Button variant="ghost" size="sm" onClick={async () => { await apiJson(`/api/social-feed/accounts?id=${account.id}`, { method: "DELETE" }); load(true); }}><Trash2 data-icon="inline-start" />ลบออก</Button></div></CardContent></Card>)}</div> : <Card><CardHeader><CardTitle>ยังไม่มีเครื่องอ่าน</CardTitle><CardDescription>เปิด Extension แล้วกด “เชื่อมต่อ” เครื่องจะสแตนบายและรับกลุ่ม Facebook อัตโนมัติเมื่อกด “เริ่ม” ด้านบน</CardDescription></CardHeader></Card>}
           </TabsContent>
         </Tabs>
       </main>
@@ -280,13 +270,12 @@ export default function SocialFeedPage() {
       <AlertDialog open={Boolean(deleteCategoryTarget)} onOpenChange={(open) => { if (!open && !deletingCategory) setDeleteCategoryTarget(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>ลบหมวดหมู่ {deleteCategoryTarget?.name}?</AlertDialogTitle><AlertDialogDescription>หมวดหมู่นี้ รวมถึงกลุ่ม Facebook โพสต์ และสถานะตรวจสอบทั้งหมดที่อยู่ภายในจะถูกลบถาวร</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deletingCategory}>ยกเลิก</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={deletingCategory} onClick={deleteCategory}><Trash2 data-icon="inline-start" />{deletingCategory ? "กำลังลบ..." : "ยืนยันลบหมวดหมู่"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       <CategoryDialog open={categoryOpen} onOpenChange={setCategoryOpen} onSaved={() => load(true)} />
       <SourceDialog key={`${sourceCategoryId || "all"}-${sourceOpen}`} open={sourceOpen} onOpenChange={setSourceOpen} categories={data.categories} initialCategoryId={sourceCategoryId} onSaved={() => load(true)} />
-      <LoginDialog key={`${loginTarget?.id || "new"}-${loginOpen}`} open={loginOpen} account={loginTarget} onOpenChange={setLoginOpen} onConnect={connectLogin} />
     </div>
   );
 }
 
 function FeedPagination({ pagination, pageSize, onPageSizeChange, onPageChange }) {
-  return <div className="my-3 flex flex-wrap items-center justify-center gap-3"><Select value={pageSize} onValueChange={onPageSizeChange}><SelectTrigger size="sm" className="w-32"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="20">20 ต่อหน้า</SelectItem><SelectItem value="50">50 ต่อหน้า</SelectItem><SelectItem value="100">100 ต่อหน้า</SelectItem><SelectItem value="all">แสดงทั้งหมด</SelectItem></SelectGroup></SelectContent></Select>{pageSize === "all" ? <span className="text-sm text-muted-foreground">แสดงทั้งหมด {pagination.total} โพสต์</span> : <><Button variant="outline" size="sm" onClick={() => onPageChange((value) => Math.max(1, value - 1))} disabled={pagination.page <= 1}><ChevronLeft data-icon="inline-start" />ก่อนหน้า</Button><span className="text-sm tabular-nums text-muted-foreground">หน้า {pagination.page} / {pagination.totalPages}</span><Button variant="outline" size="sm" onClick={() => onPageChange((value) => Math.min(pagination.totalPages, value + 1))} disabled={pagination.page >= pagination.totalPages}>ถัดไป<ChevronRight data-icon="inline-end" /></Button></>}</div>;
+  return <div className="my-3 flex flex-wrap items-center justify-center gap-3"><Select value={pageSize} onValueChange={onPageSizeChange}><SelectTrigger size="sm" className="w-40"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="20">20 ต่อหน้า</SelectItem><SelectItem value="50">50 ต่อหน้า</SelectItem><SelectItem value="100">100 ต่อหน้า</SelectItem><SelectItem value="all">ทั้งหมด (สูงสุด 1,000)</SelectItem></SelectGroup></SelectContent></Select>{pageSize === "all" ? <span className="text-sm text-muted-foreground">แสดง {pagination.shown ?? pagination.total} จาก {pagination.total} โพสต์</span> : <><Button variant="outline" size="sm" onClick={() => onPageChange((value) => Math.max(1, value - 1))} disabled={pagination.page <= 1}><ChevronLeft data-icon="inline-start" />ก่อนหน้า</Button><span className="text-sm tabular-nums text-muted-foreground">หน้า {pagination.page} / {pagination.totalPages}</span><Button variant="outline" size="sm" onClick={() => onPageChange((value) => Math.min(pagination.totalPages, value + 1))} disabled={pagination.page >= pagination.totalPages}>ถัดไป<ChevronRight data-icon="inline-end" /></Button></>}</div>;
 }
 
 
@@ -321,7 +310,3 @@ function SourceDialog({ open, onOpenChange, categories, initialCategoryId = "", 
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>เพิ่มกลุ่ม Facebook</DialogTitle><DialogDescription>บัญชี Bot ที่ Login ไว้จะดึงโพสต์จากกลุ่มนี้อัตโนมัติ</DialogDescription></DialogHeader>{error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}<FieldGroup><Field><FieldLabel>หมวดหมู่</FieldLabel><Select value={categoryId || categories[0]?.id || ""} onValueChange={setCategoryId}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectGroup>{categories.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectGroup></SelectContent></Select></Field><Field><FieldLabel>ชื่อกลุ่ม</FieldLabel><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="ชื่อที่ต้องการแสดง" /></Field><Field data-invalid={Boolean(error)}><FieldLabel>ลิงก์ Facebook Group</FieldLabel><Input type="url" value={facebookUrl} onChange={(event) => setFacebookUrl(event.target.value)} aria-invalid={Boolean(error)} placeholder="https://www.facebook.com/groups/123456789/" /><FieldDescription>รองรับทั้ง Group ID และ slug เช่น lineagew.th</FieldDescription></Field></FieldGroup><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>ยกเลิก</Button><Button onClick={save} disabled={!categories.length || !name.trim() || !facebookUrl.trim()}><Check data-icon="inline-start" />เพิ่มกลุ่ม</Button></DialogFooter></DialogContent></Dialog>;
 }
 
-function LoginDialog({ open, account, onOpenChange, onConnect }) {
-  const [label, setLabel] = useState(account?.label || "");
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>{account ? "Login บัญชี Bot ใหม่อีกครั้ง" : "เพิ่มบัญชี Bot"}</DialogTitle><DialogDescription>Login ครั้งเดียว ระบบเก็บ session ไว้ใน Chrome profile นี้ แล้ว Bot จะใช้บัญชีเดียวกันดึงโพสต์จากทุกกลุ่ม ไม่ต้องตั้งค่ารายกลุ่ม</DialogDescription></DialogHeader><FieldGroup><Field><FieldLabel>ชื่อเรียกบัญชี Bot</FieldLabel><Input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="เช่น FB-Bot-01" /></Field></FieldGroup><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>ยกเลิก</Button><Button disabled={!label.trim()} onClick={() => { onConnect({ label: label.trim(), instanceId: account?.instanceId }); onOpenChange(false); }}><LogIn data-icon="inline-start" />เปิด Login</Button></DialogFooter></DialogContent></Dialog>;
-}
