@@ -63,6 +63,7 @@ const schemaSql = `
     UNIQUE(source_id, external_post_id)
   );
   CREATE INDEX IF NOT EXISTS social_feed_posts_time_idx ON social_feed_posts(posted_at DESC, id DESC);
+  ALTER TABLE social_feed_posts ALTER COLUMN posted_at DROP NOT NULL;
   CREATE TABLE IF NOT EXISTS social_feed_post_categories (
     post_id BIGINT NOT NULL REFERENCES social_feed_posts(id) ON DELETE CASCADE,
     category_id BIGINT NOT NULL REFERENCES social_feed_categories(id) ON DELETE CASCADE,
@@ -205,7 +206,7 @@ const seedSql = `
 
 async function ensureSchema() {
   if (!schemaReady) {
-    schemaReady = getSocialPool().query(schemaSql).then(() => getSocialPool().query(seedSql)).catch((error) => {
+    schemaReady = getSocialPool().query(schemaSql).catch((error) => {
       schemaReady = null;
       throw error;
     });
@@ -213,27 +214,61 @@ async function ensureSchema() {
   await schemaReady;
 }
 
+export async function seedSocialFeedDefaults() {
+  await ensureSchema();
+  await getSocialPool().query(seedSql);
+}
+
 function mapCategory(row) {
   return { id: String(row.id), name: row.name, sortOrder: row.sort_order };
+}
+
+function validDateFilter(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value || "")) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value);
 }
 
 export async function getSocialFeedState(userId, filters = {}) {
   await ensureSchema();
   const db = getSocialPool();
-  const [categoriesResult, sourcesResult, rulesResult, tagsResult, accountsResult] = await Promise.all([
+  const [categoriesResult, sourcesResult, rulesResult, tagsResult, accountsResult, assignmentsResult] = await Promise.all([
     db.query(`SELECT * FROM social_feed_categories ORDER BY sort_order, id`),
     db.query(`SELECT * FROM social_feed_sources ORDER BY category_id, id`),
     db.query(`SELECT * FROM social_feed_rules ORDER BY category_id, id`),
     db.query(`SELECT t.*, COUNT(pt.post_id)::int AS count FROM social_feed_tags t LEFT JOIN social_feed_post_tags pt ON pt.tag_id=t.id GROUP BY t.id ORDER BY t.name`),
     db.query(`SELECT a.*,COUNT(sas.source_id)::int AS checked_sources FROM social_feed_collector_accounts a LEFT JOIN social_feed_source_account_status sas ON sas.account_id=a.id WHERE a.enabled=TRUE GROUP BY a.id ORDER BY a.id`),
+    db.query(`WITH active AS (SELECT id,row_number() OVER(ORDER BY id)-1 AS slot,count(*) OVER() AS total FROM social_feed_collector_accounts WHERE enabled=TRUE AND status='ready' AND last_seen_at>NOW()-INTERVAL '10 minutes'), eligible AS (SELECT s.id AS source_id,s.name,s.facebook_url,a.id AS account_id,row_number() OVER(PARTITION BY s.id ORDER BY mod(a.slot-mod(s.id-1,a.total)+a.total,a.total)) AS choice FROM social_feed_sources s CROSS JOIN active a LEFT JOIN social_feed_source_account_status sas ON sas.source_id=s.id AND sas.account_id=a.id WHERE s.enabled=TRUE AND COALESCE(sas.status,'') NOT IN ('needs_join','checkpoint')) SELECT account_id,COUNT(*)::int AS source_count,COALESCE(jsonb_agg(jsonb_build_object('id',source_id::text,'name',name,'url',facebook_url) ORDER BY source_id),'[]') AS sources FROM eligible WHERE choice=1 GROUP BY account_id`),
   ]);
+  const assignmentByAccount = new Map(assignmentsResult.rows.map((row) => [String(row.account_id), { count: row.source_count, sources: row.sources }]));
+  const accounts = accountsResult.rows.map((row) => {
+    const status = row.status === "ready" && Date.now() - new Date(row.last_seen_at).getTime() > 10 * 60 * 1000 ? "offline" : row.status;
+    const assignment = assignmentByAccount.get(String(row.id)) || { count: 0, sources: [] };
+    return { id: String(row.id), instanceId: row.instance_id, label: row.label, platformAccountId: row.platform_account_id, status, lastSeenAt: row.last_seen_at, sessionCheckedAt: row.session_checked_at, checkedSources: row.checked_sources, assignedSourceCount: assignment.count, assignedSources: assignment.sources };
+  });
+  const activeCollectorCount = accounts.filter((account) => account.status === "ready").length;
+  const enabledSourceCount = sourcesResult.rows.filter((source) => source.enabled).length;
+  const sourcesPerCollector = activeCollectorCount ? Math.ceil(enabledSourceCount / activeCollectorCount) : enabledSourceCount;
+  const riskLevel = !activeCollectorCount ? "offline" : sourcesPerCollector <= 10 ? "low" : sourcesPerCollector <= 25 ? "medium" : "high";
   const values = [String(userId)];
   const where = [];
   if (filters.categoryId) { values.push(filters.categoryId); where.push(`s.category_id = $${values.length}`); }
   if (filters.tagId) { values.push(filters.tagId); where.push(`EXISTS (SELECT 1 FROM social_feed_post_tags x WHERE x.post_id=p.id AND x.tag_id=$${values.length})`); }
   if (filters.saved === "true") where.push(`sp.post_id IS NOT NULL`);
   if (filters.q) { values.push(`%${String(filters.q).slice(0, 120)}%`); where.push(`p.message ILIKE $${values.length}`); }
-  const postsResult = await db.query(`
+  if (validDateFilter(filters.dateFrom)) { values.push(filters.dateFrom); where.push(`p.posted_at >= ($${values.length}::date AT TIME ZONE 'Asia/Bangkok')`); }
+  if (validDateFilter(filters.dateTo)) { values.push(filters.dateTo); where.push(`p.posted_at < (($${values.length}::date + 1) AT TIME ZONE 'Asia/Bangkok')`); }
+  const requestedPage = Number.parseInt(filters.page, 10);
+  const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  const pageSize = ["20", "50", "100", "all"].includes(String(filters.pageSize)) ? String(filters.pageSize) : "20";
+  const countValues = [...values];
+  const countSql = `SELECT COUNT(*)::int AS count FROM social_feed_posts p JOIN social_feed_sources s ON s.id=p.source_id LEFT JOIN social_feed_saved_posts sp ON sp.post_id=p.id AND sp.user_id=$1 ${where.length ? `WHERE ${where.join(" AND ")}` : ""}`;
+  let pagingSql = "";
+  if (pageSize !== "all") {
+    values.push(Number(pageSize), (page - 1) * Number(pageSize));
+    pagingSql = `LIMIT $${values.length - 1} OFFSET $${values.length}`;
+  }
+  const [postsResult, countResult] = await Promise.all([db.query(`
     SELECT p.*, s.name AS source_name, s.facebook_url AS source_url, sp.post_id IS NOT NULL AS saved,
       COALESCE(jsonb_agg(DISTINCT jsonb_build_object('id',t.id::text,'name',t.name)) FILTER (WHERE t.id IS NOT NULL),'[]') AS tags
     FROM social_feed_posts p
@@ -242,14 +277,17 @@ export async function getSocialFeedState(userId, filters = {}) {
     LEFT JOIN social_feed_saved_posts sp ON sp.post_id=p.id AND sp.user_id=$1
     LEFT JOIN social_feed_post_tags pt ON pt.post_id=p.id LEFT JOIN social_feed_tags t ON t.id=pt.tag_id
     ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-    GROUP BY p.id,s.id,sp.post_id ORDER BY p.posted_at DESC,p.id DESC LIMIT 200`, values);
+    GROUP BY p.id,s.id,sp.post_id ORDER BY p.posted_at DESC NULLS LAST,p.id DESC ${pagingSql}`, values), db.query(countSql, countValues)]);
+  const totalPosts = countResult.rows[0]?.count || 0;
   return {
     categories: categoriesResult.rows.map(mapCategory),
     sources: sourcesResult.rows.map((row) => ({ id: String(row.id), categoryId: String(row.category_id), name: row.name, url: row.facebook_url, groupId: row.facebook_group_id, enabled: row.enabled, lastSeenAt: row.last_seen_at, lastError: row.last_error, requiresLogin: row.requires_login, accessStatus: row.access_status, sessionCheckedAt: row.session_checked_at, accessNote: row.access_note })),
     rules: rulesResult.rows.map((row) => ({ id: String(row.id), categoryId: String(row.category_id), name: row.name, mode: row.mode, terms: row.terms, enabled: row.enabled })),
     tags: tagsResult.rows.map((row) => ({ id: String(row.id), name: row.name, count: row.count })),
-    accounts: accountsResult.rows.map((row) => ({ id: String(row.id), instanceId: row.instance_id, label: row.label, platformAccountId: row.platform_account_id, status: row.status === "ready" && Date.now() - new Date(row.last_seen_at).getTime() > 10 * 60 * 1000 ? "offline" : row.status, lastSeenAt: row.last_seen_at, sessionCheckedAt: row.session_checked_at, checkedSources: row.checked_sources })),
+    accounts,
+    collectorSummary: { activeCollectorCount, enabledSourceCount, sourcesPerCollector, riskLevel },
     posts: postsResult.rows.map((row) => ({ id: String(row.id), sourceId: String(row.source_id), sourceName: row.source_name, message: row.message, originalUrl: row.original_url, postedAt: row.posted_at, ingestedAt: row.ingested_at, saved: row.saved, tags: row.tags })),
+    pagination: { page: pageSize === "all" ? 1 : page, pageSize, total: totalPosts, totalPages: pageSize === "all" ? 1 : Math.max(1, Math.ceil(totalPosts / Number(pageSize))) },
     refreshedAt: new Date().toISOString(),
   };
 }
@@ -287,6 +325,15 @@ export async function createSocialCategory(name) {
   return mapCategory(result.rows[0]);
 }
 
+export async function deleteSocialCategory(id) {
+  await ensureSchema();
+  const categoryId = String(id || "").trim();
+  if (!/^\d+$/.test(categoryId)) { const error = new Error("รหัสหมวดหมู่ไม่ถูกต้อง"); error.status = 400; throw error; }
+  const result = await getSocialPool().query(`DELETE FROM social_feed_categories WHERE id=$1 RETURNING 1`, [categoryId]);
+  if (!result.rowCount) { const error = new Error("ไม่พบหมวดหมู่"); error.status = 404; throw error; }
+  return result.rowCount;
+}
+
 export async function createSocialSource({ categoryId, name, facebookUrl }) {
 
   await ensureSchema();
@@ -307,12 +354,23 @@ export async function createSocialSource({ categoryId, name, facebookUrl }) {
   }
 }
 
+export async function deleteSocialSources(id = "") {
+  await ensureSchema();
+  const sourceId = String(id || "").trim();
+  if (sourceId && !/^\d+$/.test(sourceId)) { const error = new Error("รหัสกลุ่มไม่ถูกต้อง"); error.status = 400; throw error; }
+  const result = sourceId
+    ? await getSocialPool().query(`DELETE FROM social_feed_sources WHERE id=$1 RETURNING 1`, [sourceId])
+    : await getSocialPool().query(`DELETE FROM social_feed_categories RETURNING 1`);
+  if (sourceId && !result.rowCount) { const error = new Error("ไม่พบกลุ่ม Facebook"); error.status = 404; throw error; }
+  return result.rowCount;
+}
+
 export async function heartbeatCollectorAccount({ instanceId, label, platformAccountId, status, activate = false }) {
   await ensureSchema();
   const cleanInstance = String(instanceId || "").trim().slice(0, 100);
   const cleanLabel = String(label || "").trim().slice(0, 100);
   if (!cleanInstance || !cleanLabel) { const error = new Error("ข้อมูล Chrome profile ไม่ครบ"); error.status = 400; throw error; }
-  const allowed = ["ready", "logged_out", "checkpoint", "unknown"];
+  const allowed = ["ready", "logged_out", "checkpoint", "offline", "unknown"];
   const cleanStatus = allowed.includes(status) ? status : "unknown";
   const result = await getSocialPool().query(`INSERT INTO social_feed_collector_accounts(instance_id,label,platform_account_id,status,enabled,last_seen_at,session_checked_at) VALUES($1,$2,$3,$4,TRUE,NOW(),NOW()) ON CONFLICT(instance_id) DO UPDATE SET label=EXCLUDED.label,platform_account_id=CASE WHEN EXCLUDED.platform_account_id<>'' THEN EXCLUDED.platform_account_id ELSE social_feed_collector_accounts.platform_account_id END,status=EXCLUDED.status,last_seen_at=NOW(),session_checked_at=NOW(),enabled=CASE WHEN $5 THEN TRUE ELSE social_feed_collector_accounts.enabled END,updated_at=NOW() RETURNING id,enabled`, [cleanInstance, cleanLabel, String(platformAccountId || "").replace(/\D/g, "").slice(0, 40), cleanStatus, Boolean(activate)]);
   return { id: String(result.rows[0].id), enabled: result.rows[0].enabled };
@@ -401,14 +459,14 @@ export async function ingestSocialPosts(items) {
       if (!source.rows[0] || !item.externalPostId || !String(item.message || "").trim()) continue;
       const sourceRow = source.rows[0];
       const timestamp = item.postedAt ? new Date(item.postedAt).getTime() : NaN;
-      const postedAt = new Date(Number.isFinite(timestamp) && timestamp <= now ? timestamp : now).toISOString();
+      const postedAt = Number.isFinite(timestamp) && timestamp <= now ? new Date(timestamp).toISOString() : null;
       let originalUrl = sourceRow.facebook_url;
       try {
         const candidate = new URL(String(item.originalUrl || ""));
         if (candidate.protocol === "https:" && /(^|\.)facebook\.com$/i.test(candidate.hostname)) originalUrl = candidate.toString();
       } catch {}
       const message = String(item.message).trim().slice(0, 20000);
-      const result = await client.query(`INSERT INTO social_feed_posts(source_id,external_post_id,message,original_url,posted_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,external_post_id) DO UPDATE SET message=CASE WHEN length(EXCLUDED.message)>length(social_feed_posts.message) THEN EXCLUDED.message ELSE social_feed_posts.message END,original_url=CASE WHEN length(EXCLUDED.message)>length(social_feed_posts.message) THEN EXCLUDED.original_url ELSE social_feed_posts.original_url END RETURNING id,(xmax=0) AS inserted`, [sourceRow.id, String(item.externalPostId).slice(0, 255), message, originalUrl, postedAt]);
+      const result = await client.query(`INSERT INTO social_feed_posts(source_id,external_post_id,message,original_url,posted_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,external_post_id) DO UPDATE SET posted_at=COALESCE(EXCLUDED.posted_at,social_feed_posts.posted_at),message=CASE WHEN length(EXCLUDED.message)>length(social_feed_posts.message) THEN EXCLUDED.message ELSE social_feed_posts.message END,original_url=CASE WHEN length(EXCLUDED.message)>length(social_feed_posts.message) THEN EXCLUDED.original_url ELSE social_feed_posts.original_url END RETURNING id,(xmax=0) AS inserted`, [sourceRow.id, String(item.externalPostId).slice(0, 255), message, originalUrl, postedAt]);
       if (!result.rows[0].inserted) { existing += 1; continue; }
       const postId = result.rows[0].id;
       await client.query(`DELETE FROM social_feed_post_categories WHERE post_id=$1`, [postId]);

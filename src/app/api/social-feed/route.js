@@ -11,6 +11,10 @@ export async function GET(request) {
       tagId: params.get("tag") || "",
       saved: params.get("saved") || "",
       q: params.get("q") || "",
+      dateFrom: params.get("dateFrom") || "",
+      dateTo: params.get("dateTo") || "",
+      page: params.get("page") || "1",
+      pageSize: params.get("pageSize") || "20",
     }));
   } catch (error) {
     return handleApiError(error, "โหลด Social Feed ไม่สำเร็จ");
