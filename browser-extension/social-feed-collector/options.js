@@ -1,5 +1,5 @@
-const ids = ["serverUrl", "ingestSecret"];
-chrome.storage.local.get({ serverUrl: "https://tools.inblackm.com", ingestSecret: "" }).then((data) => ids.forEach((id) => { document.querySelector(`#${id}`).value = data[id]; }));
+const ids = ["collectorLabel", "serverUrl", "ingestSecret"];
+chrome.storage.local.get({ collectorLabel: "", serverUrl: "https://tools.inblackm.com", ingestSecret: "" }).then((data) => ids.forEach((id) => { document.querySelector(`#${id}`).value = data[id]; }));
 document.querySelector("#save").addEventListener("click", async () => {
   const values = Object.fromEntries(ids.map((id) => [id, document.querySelector(`#${id}`).value.trim()]));
   try {

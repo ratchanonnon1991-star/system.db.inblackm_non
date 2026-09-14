@@ -16,3 +16,7 @@ CLAUDE.md
 .seed-tmp/
 AGENTS.md
 /PACK_PRICE_MAPPING_PLAN.md
+
+# Extension source (built zip is shipped in public/social-feed-collector.zip)
+browser-extension/*
+!browser-extension/social-feed-collector/

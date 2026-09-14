@@ -1,0 +1,65 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import vm from "node:vm";
+
+const calls = [];
+const tabs = [];
+const event = { addListener() {} };
+const context = vm.createContext({
+  URL, AbortSignal, setTimeout, clearTimeout, crypto: { randomUUID: () => "reader" },
+  chrome: {
+    storage: { local: { get: async () => ({ serverUrl: "https://tools.inblackm.com", ingestSecret: "x".repeat(32), collectorInstanceId: "reader" }), set: async () => {} } },
+    offscreen: { hasDocument: async () => false, createDocument: async () => {}, closeDocument: async () => {} },
+    runtime: { onInstalled: event, onMessage: event, sendMessage: async () => ({ status: "unknown", posts: [] }) },
+    alarms: { onAlarm: event, create: async () => {} }, cookies: { onChanged: event, getAll: () => { throw new Error("Collection must not read login cookies"); } },
+    tabs: {
+      onRemoved: event,
+      create: async (options) => { tabs.push(["create", options]); return { id: 7 }; },
+      update: async (id, options) => { tabs.push(["update", id, options]); },
+      get: async () => ({ status: "complete" }),
+      sendMessage: async () => ({ status: "ready", note: "read", posts: [] }),
+      remove: async (id) => { tabs.push(["remove", id]); },
+    },
+  },
+  fetch: async (url, options) => {
+    calls.push({ url, options });
+    return { ok: true, text: async () => "<html></html>", json: async () => url.includes("?instance=reader") ? { sources: [{ id: "1", url: "https://www.facebook.com/groups/123", groupId: "123" }] } : { claimed: true } };
+  },
+});
+vm.runInContext(fs.readFileSync("browser-extension/social-feed-collector/background.js", "utf8"), context);
+const contentSource = fs.readFileSync("browser-extension/social-feed-collector/content.js", "utf8");
+assert.match(contentSource, /see more\|ดูเพิ่มเติม/i);
+assert.match(contentSource, /data-ad-preview/);
+assert.doesNotMatch(contentSource, /const message = article\?\.innerText/);
+const contentContext = vm.createContext({ URL, Date, Map, chrome: { runtime: { onMessage: event } } });
+vm.runInContext(contentSource, contentContext);
+const parsedReference = vm.runInContext(`postReference(new URL("https://www.facebook.com/groups/832745976781717/?multi_permalinks=28173991072230505&hoisted_section_header_type=recently_seen"))`, contentContext);
+assert.deepEqual({ ...parsedReference }, { groupId: "832745976781717", postId: "28173991072230505" });
+const parsedDate = vm.runInContext(`parseFacebookDateLabel("30 กรกฎาคม", new Date(2026, 8, 14))`, contentContext);
+assert.equal(parsedDate.getFullYear(), 2026);
+assert.equal(parsedDate.getMonth(), 6);
+assert.equal(parsedDate.getDate(), 30);
+const augustDate = vm.runInContext(`parseFacebookDateLabel("13 สิงหาคม", new Date(2026, 8, 14))`, contentContext);
+assert.equal(augustDate.getFullYear(), 2026);
+assert.equal(augustDate.getMonth(), 7);
+assert.equal(augustDate.getDate(), 13);
+assert.equal(vm.runInContext(`parseFacebookDateLabel("๑๓ ส.ค.", new Date(2026, 8, 14))`, contentContext).getDate(), 13);
+const relativeNow = new Date("2026-09-14T06:30:00.000Z");
+const relativeDate = vm.runInContext(`parseFacebookDateLabel("4 นาที", new Date("${relativeNow.toISOString()}"))`, contentContext);
+assert.equal(relativeDate.toISOString(), "2026-09-14T06:26:00.000Z");
+assert.equal(vm.runInContext(`parseFacebookDateLabel("2 ชั่วโมง", new Date("${relativeNow.toISOString()}"))`, contentContext).toISOString(), "2026-09-14T04:30:00.000Z");
+await vm.runInContext("Promise.all([runCheck(), runCheck()])", context);
+const facebook = calls.filter(({ url }) => url.startsWith("https://www.facebook.com"));
+assert.equal(facebook.length, 0, "Facebook is read through the rendered tab");
+assert.equal(tabs.filter((item) => item[0] === "create").length, 1);
+assert.equal(tabs[0][1].active, false);
+assert.equal(tabs.filter((item) => item[0] === "update").length, 1);
+assert.equal(tabs.filter((item) => item[0] === "remove").length, 1);
+assert.equal(calls.filter(({ url }) => url.includes("?instance=reader")).length, 1);
+assert.equal(calls.filter(({ url, options }) => url.endsWith("/api/social-feed/collector") && options.method === "POST" && JSON.parse(options.body).type === "heartbeat").length, 2, "worker refreshes heartbeat before claiming a source");
+console.log("PASS: one inactive tab, tab cleanup, overlapping-run guard, no login-cookie inspection");
+const beforeDenied = tabs.length;
+context.fetch = async () => ({ ok: true, json: async () => ({ claimed: false }) });
+await vm.runInContext('checkSources([{ id: "1", url: "https://www.facebook.com/groups/123", groupId: "123" }])', context);
+assert.equal(tabs.length, beforeDenied, "a denied work lease must never open or scan a tab");
+console.log("PASS: denied lease skips browser work");
