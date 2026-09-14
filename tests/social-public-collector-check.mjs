@@ -23,7 +23,7 @@ const context = vm.createContext({
   },
   fetch: async (url, options) => {
     calls.push({ url, options });
-    return { ok: true, text: async () => "<html></html>", json: async () => url.includes("?instance=reader") ? { sources: [{ id: "1", url: "https://www.facebook.com/groups/123", groupId: "123" }] } : {} };
+    return { ok: true, text: async () => "<html></html>", json: async () => url.includes("?instance=reader") ? { sources: [{ id: "1", url: "https://www.facebook.com/groups/123", groupId: "123" }] } : { claimed: true } };
   },
 });
 vm.runInContext(fs.readFileSync("browser-extension/social-feed-collector/background.js", "utf8"), context);
@@ -56,5 +56,10 @@ assert.equal(tabs[0][1].active, false);
 assert.equal(tabs.filter((item) => item[0] === "update").length, 1);
 assert.equal(tabs.filter((item) => item[0] === "remove").length, 1);
 assert.equal(calls.filter(({ url }) => url.includes("?instance=reader")).length, 1);
-assert.equal(calls.filter(({ url, options }) => url.endsWith("/api/social-feed/collector") && options.method === "POST" && JSON.parse(options.body).type === "heartbeat").length, 1, "worker joins the shared queue before requesting sources");
+assert.equal(calls.filter(({ url, options }) => url.endsWith("/api/social-feed/collector") && options.method === "POST" && JSON.parse(options.body).type === "heartbeat").length, 2, "worker refreshes heartbeat before claiming a source");
 console.log("PASS: one inactive tab, tab cleanup, overlapping-run guard, no login-cookie inspection");
+const beforeDenied = tabs.length;
+context.fetch = async () => ({ ok: true, json: async () => ({ claimed: false }) });
+await vm.runInContext('checkSources([{ id: "1", url: "https://www.facebook.com/groups/123", groupId: "123" }])', context);
+assert.equal(tabs.length, beforeDenied, "a denied work lease must never open or scan a tab");
+console.log("PASS: denied lease skips browser work");

@@ -47,7 +47,7 @@ function formatCountdown(value, now) {
 const ACCESS_LABELS = { ready: "พร้อมใช้งาน", logged_out: "Session หลุด", needs_join: "ยังไม่เข้ากลุ่ม", checkpoint: "ต้องยืนยันตัวตน", error: "ตรวจไม่สำเร็จ", unknown: "ไม่ทราบสถานะ", unchecked: "ยังไม่ตรวจ" };
 const ACCOUNT_LABELS = { ...ACCESS_LABELS, offline: "Extension ออฟไลน์" };
 const WORKER_LABELS = { ready: "ออนไลน์", offline: "ออฟไลน์", logged_out: "ออฟไลน์", checkpoint: "ต้องตรวจสอบ", unknown: "ไม่ทราบสถานะ" };
-const RISK_LABELS = { offline: "ยังไม่มีเครื่องทำงาน", low: "ความเสี่ยงต่ำ", medium: "ความเสี่ยงปานกลาง", high: "ความเสี่ยงสูง" };
+const RISK_LABELS = { offline: "ยังไม่มีเครื่องทำงาน", low: "ภาระต่ำ", medium: "ภาระปานกลาง", high: "ภาระสูง" };
 
 export default function SocialFeedPage() {
   const [data, setData] = useState(EMPTY);
