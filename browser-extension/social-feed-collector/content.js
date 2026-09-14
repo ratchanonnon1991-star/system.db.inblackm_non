@@ -158,7 +158,8 @@ async function scan(source) {
     if (location.pathname.includes("checkpoint")) return { status: "checkpoint", note: "Facebook ต้องการยืนยันตัวตน", posts: [] };
     dismissLoginPrompt();
     await pause(1000);
-    if (!openedDiscussion && openDiscussionTab()) { openedDiscussion = true; await pause(2500); continue; }
+    const alreadyOnDiscussion = /^\/groups\/[^/]+\/?$/.test(location.pathname);
+    if (!alreadyOnDiscussion && !openedDiscussion && openDiscussionTab()) { openedDiscussion = true; await pause(2500); continue; }
     expandVisiblePosts();
     await pause(500);
     const previous = found.size;

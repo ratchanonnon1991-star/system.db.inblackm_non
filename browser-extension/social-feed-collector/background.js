@@ -10,8 +10,15 @@ async function scanWithTimeout(tabId, source) {
 const settings = () => chrome.storage.local.get(DEFAULTS);
 async function instanceId() { const stored = await chrome.storage.local.get("collectorInstanceId"); if (stored.collectorInstanceId) return stored.collectorInstanceId; const id = crypto.randomUUID(); await chrome.storage.local.set({ collectorInstanceId: id }); return id; }
 async function api(path, options = {}) { const config = await settings(); const response = await fetch(`${new URL(config.serverUrl).origin}${path}`, { signal: AbortSignal.timeout(15000), ...options, headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.ingestSecret}`, ...options.headers } }); const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`); return body; }
-async function currentFacebookId() { const cookies = await chrome.cookies.getAll({ domain: "facebook.com", name: "c_user" }); return cookies.find((cookie) => cookie.name === "c_user")?.value || ""; }
-async function workerHeartbeat(status = "ready") { const config = await settings(); if (config.ingestSecret.length < 24) return null; const id = await instanceId(); const stored = await chrome.storage.local.get({ collectorLabel: "" }); const facebookId = await currentFacebookId(); return api("/api/social-feed/collector", { method: "POST", body: JSON.stringify({ type: "heartbeat", instanceId: id, label: stored.collectorLabel || config.accountLabel || `เครื่อง ${id.slice(0, 8)}`, platformAccountId: facebookId, status, activate: true }) }); }
+async function browserFacebookId() { const cookies = await chrome.cookies.getAll({ domain: "facebook.com", name: "c_user" }); return cookies.find((cookie) => cookie.name === "c_user")?.value || ""; }
+async function currentFacebookId() { const stored = await chrome.storage.local.get({ facebookAccountId: "" }); return stored.facebookAccountId || ""; }
+function groupDiscussionUrl(source) {
+  const url = new URL(source.url);
+  const groupId = String(source.groupId || url.pathname.match(/^\/groups\/([^/]+)/)?.[1] || "").trim();
+  if (groupId) { url.pathname = `/groups/${groupId}/`; url.search = ""; url.hash = ""; }
+  return url;
+}
+async function workerHeartbeat(status = "ready", clearPlatformAccountId = false) { const config = await settings(); if (config.ingestSecret.length < 24) return null; const id = await instanceId(); const stored = await chrome.storage.local.get({ collectorLabel: "" }); const facebookId = await currentFacebookId(); return api("/api/social-feed/collector", { method: "POST", body: JSON.stringify({ type: "heartbeat", instanceId: id, label: stored.collectorLabel || config.accountLabel || `เครื่อง ${id.slice(0, 8)}`, platformAccountId: facebookId, clearPlatformAccountId, status, activate: true }) }); }
 async function report(sourceId, result) { await api("/api/social-feed/collector", { method: "POST", body: JSON.stringify({ sourceId, instanceId: await instanceId(), status: result.status, note: result.note || "", ingested: result.ingested || 0 }) }); }
 let currentCheck;
 let stopRequested = false;
@@ -32,7 +39,7 @@ async function ensureTab(state) {
 }
 async function checkSource(source, state) {
   try {
-    const url = new URL(source.url);
+    const url = groupDiscussionUrl(source);
     if (!["www.facebook.com", "facebook.com"].includes(url.hostname) || url.protocol !== "https:") throw new Error("URL กลุ่มไม่ถูกต้อง");
     let tabId = await ensureTab(state);
     await chrome.tabs.update(tabId, { url: url.href, active: false });
@@ -67,12 +74,34 @@ async function checkSource(source, state) {
     return { source: source.name, ...result };
   }
 }
+async function checkPublicSource(source) {
+  try {
+    const url = groupDiscussionUrl(source);
+    if (!["www.facebook.com", "facebook.com"].includes(url.hostname) || url.protocol !== "https:") throw new Error("URL กลุ่มไม่ถูกต้อง");
+    const response = await fetch(url.href, { credentials: "omit", redirect: "follow", signal: AbortSignal.timeout(30000) });
+    if (!response.ok) throw new Error(`Facebook HTTP ${response.status}`);
+    const result = await chrome.runtime.sendMessage({ type: "PARSE_PUBLIC_SOCIAL_HTML", html: await response.text(), source });
+    if (!result) throw new Error("ตัวอ่านหน้า Public ไม่ตอบกลับ");
+    const counts = result.posts?.length ? await api("/api/social-feed/ingest", { method: "POST", body: JSON.stringify({ posts: result.posts }) }) : { ingested: 0, existing: 0 };
+    result.ingested = counts.ingested || 0;
+    result.existing = counts.existing || 0;
+    result.note += ` · เพิ่มใหม่ ${result.ingested} · มีแล้ว ${result.existing}`;
+    await report(source.id, result);
+    return { source: source.name, ...result };
+  } catch (error) {
+    const result = { status: "error", note: error.message };
+    await report(source.id, result).catch(() => {});
+    return { source: source.name, ...result };
+  }
+}
 async function checkSources(sources) {
   if (!sources.length) return [];
+  const authenticated = Boolean(await currentFacebookId());
   const state = { id: null };
   const results = [];
   let opened = 0;
   try {
+    if (!authenticated && !await chrome.offscreen.hasDocument()) await chrome.offscreen.createDocument({ url: "public-reader.html", reasons: ["DOM_PARSER"], justification: "อ่านข้อความสาธารณะโดยไม่ส่ง Facebook cookie" });
     for (const source of sources) {
       if (stopRequested || await isPaused()) break;
       // เว้นช่วงเหมือนคนสลับดูทีละกลุ่ม (สุ่ม 8–25 วินาที) ไม่เปิดรัวติดกัน
@@ -81,13 +110,16 @@ async function checkSources(sources) {
       await workerHeartbeat();
       const claim = await api("/api/social-feed/collector", { method: "POST", body: JSON.stringify({ type: "claim", sourceId: source.id, instanceId: await instanceId() }) });
       if (!claim.claimed) continue;
-      const result = await checkSource(source, state);
+      const result = authenticated ? await checkSource(source, state) : await checkPublicSource(source);
       opened++;
       results.push(result);
       if (result.status === "checkpoint") { stopRequested = true; await chrome.storage.local.set({ paused: true }); await workerHeartbeat("checkpoint"); break; }
     }
     return results;
-  } finally { if (state.id !== null) await chrome.tabs.remove(state.id).catch(() => {}); }
+  } finally {
+    if (state.id !== null) await chrome.tabs.remove(state.id).catch(() => {});
+    if (!authenticated) await chrome.offscreen.closeDocument().catch(() => {});
+  }
 }
 function runCheck() {
   if (currentCheck) return currentCheck;
@@ -109,5 +141,5 @@ function runCheck() {
 }
 chrome.runtime.onInstalled.addListener(async () => { await instanceId(); await scheduleNextCheck(); });
 chrome.alarms.onAlarm.addListener((alarm) => { if (alarm.name !== "social-feed-check") return; isPaused().then((paused) => { if (!paused) runCheck().catch(() => workerHeartbeat().catch(() => {})); }); });
-chrome.cookies.onChanged.addListener((info) => { if (info.cookie?.name !== "c_user" || !String(info.cookie.domain).endsWith("facebook.com")) return; if (info.removed) { workerHeartbeat("logged_out").catch(() => {}); return; } setTimeout(() => workerHeartbeat().catch(() => {}), 1200); });
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => { if (message.type === "PARSE_PUBLIC_SOCIAL_HTML") return; (async () => { if (message.type === "RUN_SOCIAL_FEED_CHECK") return { ok: true, results: await runCheck() }; if (message.type === "SET_SOCIAL_FEED_PAUSED") { const paused = Boolean(message.paused); await chrome.storage.local.set({ paused }); if (paused) { stopRequested = true; await chrome.alarms.clear("social-feed-check"); await chrome.storage.local.remove("nextCheckAt"); await workerHeartbeat("offline").catch(() => {}); } else { stopRequested = false; await workerHeartbeat().catch(() => {}); await scheduleNextCheck(); } return { ok: true, paused }; } throw new Error("ไม่อนุญาตคำขอนี้"); })().then(sendResponse).catch((error) => sendResponse({ ok: false, error: error.message })); return true; });
+chrome.cookies.onChanged.addListener((info) => { if (info.cookie?.name !== "c_user" || !String(info.cookie.domain).endsWith("facebook.com")) return; currentFacebookId().then((savedId) => { if (!savedId) return; if (info.removed) { chrome.storage.local.remove("facebookAccountId"); workerHeartbeat("logged_out", true).catch(() => {}); return; } setTimeout(() => workerHeartbeat().catch(() => {}), 1200); }); });
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => { if (message.type === "PARSE_PUBLIC_SOCIAL_HTML") return; (async () => { if (message.type === "RUN_SOCIAL_FEED_CHECK") return { ok: true, results: await runCheck() }; if (message.type === "TOGGLE_FACEBOOK_LOGIN") { const savedId = await currentFacebookId(); if (savedId) { await chrome.storage.local.remove("facebookAccountId"); await workerHeartbeat("ready", true); return { ok: true, facebookAccountId: "", wasRemoved: true }; } const facebookAccountId = await browserFacebookId(); if (!facebookAccountId) return { ok: true, facebookAccountId: "", wasRemoved: false }; await chrome.storage.local.set({ facebookAccountId }); await workerHeartbeat(); return { ok: true, facebookAccountId, wasRemoved: false }; } if (message.type === "SET_SOCIAL_FEED_PAUSED") { const paused = Boolean(message.paused); await chrome.storage.local.set({ paused }); if (paused) { stopRequested = true; await chrome.alarms.clear("social-feed-check"); await chrome.storage.local.remove("nextCheckAt"); await workerHeartbeat("offline").catch(() => {}); } else { stopRequested = false; await workerHeartbeat().catch(() => {}); await scheduleNextCheck(); } return { ok: true, paused }; } throw new Error("ไม่อนุญาตคำขอนี้"); })().then(sendResponse).catch((error) => sendResponse({ ok: false, error: error.message })); return true; });

@@ -192,6 +192,9 @@ const seedSql = `
     ,('MapleStory Classic World','Maplestory Classic World [TH]','https://www.facebook.com/groups/1487123340125034/','1487123340125034')
   ) AS v(category,name,url,gid) JOIN social_feed_categories c ON c.name=v.category
   ON CONFLICT DO NOTHING;
+  UPDATE social_feed_sources
+  SET facebook_url='https://www.facebook.com/groups/' || facebook_group_id || '/', updated_at=NOW()
+  WHERE facebook_url<>('https://www.facebook.com/groups/' || facebook_group_id || '/');
   INSERT INTO social_feed_rules(category_id,name,mode,terms)
   SELECT c.id,v.rule_name,v.mode,v.terms FROM (VALUES
     ('Neverness to Everness','มีทั้งคำว่า เติม และ เกม','all',ARRAY['เติม','เกม']::text[]),
@@ -241,7 +244,7 @@ function validDateFilter(value) {
 }
 
 // เครื่องถูกกันออกจากกลุ่มเฉพาะช่วง cooldown หลังรายงานว่าเข้าไม่ได้ พ้น cooldown แล้วกลับมาเป็นตัวสำรองให้คิวลองใหม่เอง
-const SOURCE_ELIGIBLE = `NOT COALESCE(sas.status IN ('needs_join','checkpoint','logged_out') AND sas.checked_at > NOW() - INTERVAL '45 minutes', FALSE)`;
+const SOURCE_ELIGIBLE = `NOT COALESCE(sas.status IN ('needs_join','checkpoint','logged_out') AND sas.checked_at > NOW() - INTERVAL '45 minutes', FALSE) AND (NOT s.requires_login OR a.platform_account_id<>'')`;
 // sticky: เครื่องที่อ่านกลุ่มนี้ได้ล่าสุด (ready) ถูกใช้ต่อไปจนกว่าจะโดน block ค่อยหมุนไปเครื่องถัดไปตามลำดับ
 const SOURCE_PICK_ORDER = `(CASE WHEN sas.status='ready' THEN 0 ELSE 1 END), mod(a.slot-mod(s.id-1,a.total)+a.total,a.total)`;
 
@@ -287,6 +290,8 @@ export async function getSocialFeedState(userId, filters = {}) {
   if (pageSize !== "all") {
     values.push(Number(pageSize), (page - 1) * Number(pageSize));
     pagingSql = `LIMIT $${values.length - 1} OFFSET $${values.length}`;
+  } else {
+    pagingSql = "LIMIT 1000";
   }
   const [postsResult, countResult] = await Promise.all([db.query(`
     SELECT p.*, s.name AS source_name, s.facebook_url AS source_url, sp.post_id IS NOT NULL AS saved,
@@ -307,7 +312,7 @@ export async function getSocialFeedState(userId, filters = {}) {
     accounts,
     collectorSummary: { activeCollectorCount, enabledSourceCount, sourcesPerCollector, riskLevel, running },
     posts: postsResult.rows.map((row) => ({ id: String(row.id), sourceId: String(row.source_id), sourceName: row.source_name, message: row.message, originalUrl: row.original_url, postedAt: row.posted_at, ingestedAt: row.ingested_at, saved: row.saved, tags: row.tags })),
-    pagination: { page: pageSize === "all" ? 1 : page, pageSize, total: totalPosts, totalPages: pageSize === "all" ? 1 : Math.max(1, Math.ceil(totalPosts / Number(pageSize))) },
+    pagination: { page: pageSize === "all" ? 1 : page, pageSize, total: totalPosts, shown: pageSize === "all" ? Math.min(totalPosts, 1000) : postsResult.rows.length, totalPages: pageSize === "all" ? 1 : Math.max(1, Math.ceil(totalPosts / Number(pageSize))) },
     refreshedAt: new Date().toISOString(),
   };
 }
@@ -385,14 +390,14 @@ export async function deleteSocialSources(id = "") {
   return result.rowCount;
 }
 
-export async function heartbeatCollectorAccount({ instanceId, label, platformAccountId, status, activate = false }) {
+export async function heartbeatCollectorAccount({ instanceId, label, platformAccountId, clearPlatformAccountId = false, status, activate = false }) {
   await ensureSchema();
   const cleanInstance = String(instanceId || "").trim().slice(0, 100);
   const cleanLabel = String(label || "").trim().slice(0, 100);
   if (!cleanInstance || !cleanLabel) { const error = new Error("ข้อมูล Chrome profile ไม่ครบ"); error.status = 400; throw error; }
   const allowed = ["ready", "logged_out", "checkpoint", "offline", "unknown"];
   const cleanStatus = allowed.includes(status) ? status : "unknown";
-  const result = await getSocialPool().query(`INSERT INTO social_feed_collector_accounts(instance_id,label,platform_account_id,status,enabled,last_seen_at,session_checked_at) VALUES($1,$2,$3,$4,TRUE,NOW(),NOW()) ON CONFLICT(instance_id) DO UPDATE SET label=EXCLUDED.label,platform_account_id=CASE WHEN EXCLUDED.platform_account_id<>'' THEN EXCLUDED.platform_account_id ELSE social_feed_collector_accounts.platform_account_id END,status=EXCLUDED.status,last_seen_at=NOW(),session_checked_at=NOW(),enabled=CASE WHEN $5 THEN TRUE ELSE social_feed_collector_accounts.enabled END,updated_at=NOW() RETURNING id,enabled`, [cleanInstance, cleanLabel, String(platformAccountId || "").replace(/\D/g, "").slice(0, 40), cleanStatus, Boolean(activate)]);
+  const result = await getSocialPool().query(`INSERT INTO social_feed_collector_accounts(instance_id,label,platform_account_id,status,enabled,last_seen_at,session_checked_at) VALUES($1,$2,$3,$4,TRUE,NOW(),NOW()) ON CONFLICT(instance_id) DO UPDATE SET label=EXCLUDED.label,platform_account_id=CASE WHEN $6 THEN '' WHEN EXCLUDED.platform_account_id<>'' THEN EXCLUDED.platform_account_id ELSE social_feed_collector_accounts.platform_account_id END,status=EXCLUDED.status,last_seen_at=NOW(),session_checked_at=NOW(),enabled=CASE WHEN $5 THEN TRUE ELSE social_feed_collector_accounts.enabled END,updated_at=NOW() RETURNING id,enabled`, [cleanInstance, cleanLabel, String(platformAccountId || "").replace(/\D/g, "").slice(0, 40), cleanStatus, Boolean(activate), Boolean(clearPlatformAccountId)]);
   return { id: String(result.rows[0].id), enabled: result.rows[0].enabled };
 }
 
