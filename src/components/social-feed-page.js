@@ -72,6 +72,8 @@ export default function SocialFeedPage() {
   const [deleteCategoryTarget, setDeleteCategoryTarget] = useState(null);
   const [deletingCategory, setDeletingCategory] = useState(false);
   const [deleteFolderTarget, setDeleteFolderTarget] = useState(null);
+  const [editingFolderId, setEditingFolderId] = useState("");
+  const [editingFolderName, setEditingFolderName] = useState("");
   const [settingRunning, setSettingRunning] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
@@ -114,6 +116,17 @@ export default function SocialFeedPage() {
   const assignSource = async (sourceId, accountId) => {
     try {
       await apiJson("/api/social-feed/sources", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sourceId, accountId }), fallbackError: "เลือกเครื่องรับคิวไม่สำเร็จ" });
+      await load(true);
+    } catch (err) { setError(err.message); }
+  };
+
+  const renameFolder = async (id, name) => {
+    const clean = String(name || "").trim();
+    if (!clean) return;
+    setError("");
+    try {
+      await apiJson("/api/social-feed/folders", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, name: clean }), fallbackError: "เปลี่ยนชื่อโฟลเดอร์ไม่สำเร็จ" });
+      setEditingFolderId("");
       await load(true);
     } catch (err) { setError(err.message); }
   };
@@ -266,7 +279,10 @@ export default function SocialFeedPage() {
             <div className="mb-4"><p className="font-medium">โฟลเดอร์ที่บันทึก</p><p className="text-sm text-muted-foreground">กดไอคอนบันทึกที่โพสต์เพื่อโยนเข้าโฟลเดอร์ สร้างใหม่หรือเลือกที่มีอยู่ได้</p></div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <Card size="sm" className="cursor-pointer" onClick={openAllSaved}><CardHeader><CardTitle className="flex items-center gap-2"><Bookmark />ทั้งหมดที่บันทึก</CardTitle><CardDescription>โพสต์ทุกโฟลเดอร์รวมกัน</CardDescription><CardAction><ArrowUpRight /></CardAction></CardHeader></Card>
-              {data.folders.map((item) => <Card key={item.id} size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Folder />{item.name}</CardTitle><CardDescription>{item.count} โพสต์</CardDescription><CardAction><Button variant="ghost" size="icon-sm" aria-label={`ลบโฟลเดอร์ ${item.name}`} onClick={() => setDeleteFolderTarget(item)}><Trash2 /></Button></CardAction></CardHeader><CardContent><Button variant="outline" size="sm" onClick={() => openFolder(item.id)}><Folder data-icon="inline-start" />เปิดดูโพสต์</Button></CardContent></Card>)}
+              {data.folders.map((item) => <Card key={item.id} size="sm"><CardHeader>{editingFolderId === item.id
+                ? <div className="flex items-center gap-2"><Folder className="size-4 shrink-0 text-muted-foreground" /><Input autoFocus value={editingFolderName} onChange={(event) => setEditingFolderName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); renameFolder(item.id, editingFolderName); } if (event.key === "Escape") setEditingFolderId(""); }} className="h-8" /><Button variant="ghost" size="icon-sm" aria-label="บันทึกชื่อ" onClick={() => renameFolder(item.id, editingFolderName)} disabled={!editingFolderName.trim()}><Check /></Button><Button variant="ghost" size="icon-sm" aria-label="ยกเลิก" onClick={() => setEditingFolderId("")}><X /></Button></div>
+                : <><CardTitle className="flex items-center gap-2"><Folder />{item.name}</CardTitle><CardDescription>{item.count} โพสต์</CardDescription><CardAction className="flex gap-1"><Button variant="ghost" size="icon-sm" aria-label={`เปลี่ยนชื่อ ${item.name}`} onClick={() => { setEditingFolderId(item.id); setEditingFolderName(item.name); }}><Pencil /></Button><Button variant="ghost" size="icon-sm" aria-label={`ลบโฟลเดอร์ ${item.name}`} onClick={() => setDeleteFolderTarget(item)}><Trash2 /></Button></CardAction></>}
+              </CardHeader><CardContent><Button variant="outline" size="sm" onClick={() => openFolder(item.id)}><Folder data-icon="inline-start" />เปิดดูโพสต์</Button></CardContent></Card>)}
             </div>
             {!data.folders.length && <p className="mt-3 text-sm text-muted-foreground">ยังไม่มีโฟลเดอร์ — กดไอคอนบันทึกที่โพสต์แล้วสร้างโฟลเดอร์แรกได้เลย</p>}
           </TabsContent>
