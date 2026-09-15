@@ -82,16 +82,21 @@ const schemaSql = `
   CREATE TABLE IF NOT EXISTS social_feed_alert_rules (
     id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, group_mode TEXT NOT NULL CHECK (group_mode IN ('all','any')),
     groups JSONB NOT NULL DEFAULT '[]'::jsonb, enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    matches_built_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    matches_built_at TIMESTAMPTZ, format_version INT NOT NULL DEFAULT 2,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
   ALTER TABLE social_feed_alert_rules ADD COLUMN IF NOT EXISTS matches_built_at TIMESTAMPTZ;
+  ALTER TABLE social_feed_alert_rules ADD COLUMN IF NOT EXISTS format_version INT NOT NULL DEFAULT 1;
+  ALTER TABLE social_feed_alert_rules ALTER COLUMN format_version SET DEFAULT 2;
   CREATE TABLE IF NOT EXISTS social_feed_posts (
     id BIGSERIAL PRIMARY KEY, source_id BIGINT NOT NULL REFERENCES social_feed_sources(id) ON DELETE CASCADE,
     external_post_id TEXT NOT NULL, message TEXT NOT NULL, original_url TEXT NOT NULL,
-    posted_at TIMESTAMPTZ NOT NULL, ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    posted_at TIMESTAMPTZ NOT NULL, ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
     UNIQUE(source_id, external_post_id)
   );
   ALTER TABLE social_feed_posts ADD COLUMN IF NOT EXISTS author_name TEXT NOT NULL DEFAULT '';
+  ALTER TABLE social_feed_posts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp();
+  ALTER TABLE social_feed_posts ALTER COLUMN updated_at SET DEFAULT clock_timestamp();
   UPDATE social_feed_posts SET author_name='' WHERE author_name ~ '^\\d+\\s+[^ ]*\\*+$';
   CREATE INDEX IF NOT EXISTS social_feed_posts_time_idx ON social_feed_posts(posted_at DESC, id DESC);
   ALTER TABLE social_feed_posts ALTER COLUMN posted_at DROP NOT NULL;
@@ -273,9 +278,32 @@ async function replaceAlertRuleMatches(client, ruleId, rule, posts) {
   const matchedPostIds = posts.filter(({ message }) => alertRuleMatches(rule, message)).map((post) => String(post.id));
   await client.query(`DELETE FROM social_feed_alert_rule_posts WHERE rule_id=$1`, [ruleId]);
   if (matchedPostIds.length) {
-    await client.query(`INSERT INTO social_feed_alert_rule_posts(rule_id,post_id) SELECT $1::bigint,unnest($2::bigint[]) ON CONFLICT DO NOTHING`, [ruleId, matchedPostIds]);
+    await client.query(`INSERT INTO social_feed_alert_rule_posts(rule_id,post_id) SELECT $1::bigint,p.id FROM social_feed_posts p JOIN unnest($2::bigint[]) AS matched(id) ON matched.id=p.id ON CONFLICT DO NOTHING`, [ruleId, matchedPostIds]);
   }
-  await client.query(`UPDATE social_feed_alert_rules SET matches_built_at=NOW() WHERE id=$1`, [ruleId]);
+  await client.query(`UPDATE social_feed_alert_rules SET group_mode=$2,groups=$3::jsonb,matches_built_at=NOW(),format_version=2 WHERE id=$1`, [ruleId, rule.groupMode, JSON.stringify(rule.groups)]);
+}
+
+async function loadAlertPostSnapshot(client) {
+  await client.query("BEGIN");
+  let marker;
+  try {
+    await lockAlertMatches(client);
+    marker = await client.query(`SELECT clock_timestamp() AS started_at`);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
+  const posts = (await client.query(`SELECT id,message FROM social_feed_posts`)).rows;
+  return { startedAt: marker.rows[0].started_at, posts };
+}
+
+async function catchUpAlertPostSnapshot(client, snapshot) {
+  const changed = (await client.query(`SELECT id,message FROM social_feed_posts WHERE updated_at >= $1`, [snapshot.startedAt])).rows;
+  if (!changed.length) return snapshot.posts;
+  const posts = new Map(snapshot.posts.map((post) => [String(post.id), post]));
+  for (const post of changed) posts.set(String(post.id), post);
+  return [...posts.values()];
 }
 
 async function lockAlertMatches(client) {
@@ -287,7 +315,7 @@ async function backfillPendingAlertRuleMatches() {
   try {
     await client.query("BEGIN");
     await lockAlertMatches(client);
-    const rulesResult = await client.query(`SELECT id,name,group_mode,groups FROM social_feed_alert_rules WHERE matches_built_at IS NULL FOR UPDATE`);
+    const rulesResult = await client.query(`SELECT id,name,group_mode,groups FROM social_feed_alert_rules WHERE matches_built_at IS NULL OR format_version<2 FOR UPDATE`);
     if (rulesResult.rows.length) {
       const posts = (await client.query(`SELECT id,message FROM social_feed_posts`)).rows;
       for (const row of rulesResult.rows) {
@@ -429,19 +457,40 @@ export async function deleteSocialRule(id) {
 export async function listSocialAlertRules() {
   await ensureSchema();
   const result = await getSocialPool().query(`SELECT id::text,name,group_mode,groups,enabled,created_at,updated_at FROM social_feed_alert_rules ORDER BY id DESC`);
-  return result.rows.map((row) => ({ id: row.id, name: row.name, groupMode: row.group_mode, groups: row.groups, enabled: row.enabled, createdAt: row.created_at, updatedAt: row.updated_at }));
+  return result.rows.map((row) => ({ id: row.id, ...normalizeAlertRule({ name: row.name, groupMode: row.group_mode, groups: row.groups }), enabled: row.enabled, createdAt: row.created_at, updatedAt: row.updated_at }));
 }
 
 export async function saveSocialAlertRule(input) {
   await ensureSchema();
+  if ((Array.isArray(input.includeTerms) && input.includeTerms.length > 20) || (Array.isArray(input.excludeTerms) && input.excludeTerms.length > 20)) { const error = new Error("Rule ใส่คำได้สูงสุดฝั่งละ 20 คำ"); error.status = 400; throw error; }
   const rule = normalizeAlertRule(input);
-  if (!rule.name || !rule.groups.length) { const error = new Error("กรุณาตั้งชื่อ Rule และเพิ่มเงื่อนไข"); error.status = 400; throw error; }
+  if (!rule.name || !rule.includeTerms.length) { const error = new Error("กรุณาตั้งชื่อ Rule และเพิ่มคำที่ต้องการหา"); error.status = 400; throw error; }
   const client = await getSocialPool().connect();
   try {
+    const snapshot = await loadAlertPostSnapshot(client);
     await client.query("BEGIN");
     await lockAlertMatches(client);
     const result = await client.query(`INSERT INTO social_feed_alert_rules(name,group_mode,groups) VALUES($1,$2,$3::jsonb) RETURNING id::text`, [rule.name, rule.groupMode, JSON.stringify(rule.groups)]);
-    const posts = (await client.query(`SELECT id,message FROM social_feed_posts`)).rows;
+    const posts = await catchUpAlertPostSnapshot(client, snapshot);
+    await replaceAlertRuleMatches(client, result.rows[0].id, rule, posts);
+    await client.query("COMMIT");
+    return { id: result.rows[0].id, ...rule, enabled: true };
+  } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+}
+
+export async function updateSocialAlertRule(id, input) {
+  await ensureSchema();
+  if ((Array.isArray(input.includeTerms) && input.includeTerms.length > 20) || (Array.isArray(input.excludeTerms) && input.excludeTerms.length > 20)) { const error = new Error("Rule ใส่คำได้สูงสุดฝั่งละ 20 คำ"); error.status = 400; throw error; }
+  const rule = normalizeAlertRule(input);
+  if (!/^[1-9]\d*$/.test(String(id || "")) || !rule.name || !rule.includeTerms.length) { const error = new Error("ข้อมูล Rule ไม่ครบ"); error.status = 400; throw error; }
+  const client = await getSocialPool().connect();
+  try {
+    const snapshot = await loadAlertPostSnapshot(client);
+    await client.query("BEGIN");
+    await lockAlertMatches(client);
+    const result = await client.query(`UPDATE social_feed_alert_rules SET name=$2,group_mode=$3,groups=$4::jsonb,matches_built_at=NULL,updated_at=NOW() WHERE id=$1 RETURNING id::text`, [id, rule.name, rule.groupMode, JSON.stringify(rule.groups)]);
+    if (!result.rowCount) { const error = new Error("ไม่พบ Rule"); error.status = 404; throw error; }
+    const posts = await catchUpAlertPostSnapshot(client, snapshot);
     await replaceAlertRuleMatches(client, result.rows[0].id, rule, posts);
     await client.query("COMMIT");
     return { id: result.rows[0].id, ...rule, enabled: true };
@@ -756,7 +805,7 @@ export async function ingestSocialPosts(items) {
       } catch {}
       const message = String(item.message).trim().slice(0, 20000);
       const authorName = String(item.authorName || "").trim().slice(0, 200);
-      const result = await client.query(`INSERT INTO social_feed_posts(source_id,external_post_id,author_name,message,original_url,posted_at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(source_id,external_post_id) DO UPDATE SET posted_at=COALESCE(EXCLUDED.posted_at,social_feed_posts.posted_at),author_name=CASE WHEN EXCLUDED.author_name<>'' THEN EXCLUDED.author_name ELSE social_feed_posts.author_name END,message=CASE WHEN length(EXCLUDED.message)>length(social_feed_posts.message) THEN EXCLUDED.message ELSE social_feed_posts.message END,original_url=CASE WHEN length(EXCLUDED.message)>length(social_feed_posts.message) THEN EXCLUDED.original_url ELSE social_feed_posts.original_url END RETURNING id,message,(xmax=0) AS inserted`, [sourceRow.id, String(item.externalPostId).slice(0, 255), authorName, message, originalUrl, postedAt]);
+      const result = await client.query(`INSERT INTO social_feed_posts(source_id,external_post_id,author_name,message,original_url,posted_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,clock_timestamp()) ON CONFLICT(source_id,external_post_id) DO UPDATE SET posted_at=COALESCE(EXCLUDED.posted_at,social_feed_posts.posted_at),author_name=CASE WHEN EXCLUDED.author_name<>'' THEN EXCLUDED.author_name ELSE social_feed_posts.author_name END,message=CASE WHEN length(EXCLUDED.message)>length(social_feed_posts.message) THEN EXCLUDED.message ELSE social_feed_posts.message END,original_url=CASE WHEN length(EXCLUDED.message)>length(social_feed_posts.message) THEN EXCLUDED.original_url ELSE social_feed_posts.original_url END,updated_at=clock_timestamp() RETURNING id,message,(xmax=0) AS inserted`, [sourceRow.id, String(item.externalPostId).slice(0, 255), authorName, message, originalUrl, postedAt]);
       alertPosts.set(String(result.rows[0].id), result.rows[0].message);
       if (!result.rows[0].inserted) { existing += 1; continue; }
       const postId = result.rows[0].id;

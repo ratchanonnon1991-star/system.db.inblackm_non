@@ -1,6 +1,6 @@
 import { handleApiError, jsonOk } from "@/lib/http";
 import { requireAdmin } from "@/server/auth";
-import { deleteSocialAlertRule, listSocialAlertPosts, listSocialAlertRules, saveSocialAlertRule } from "@/server/social-feed-repository";
+import { deleteSocialAlertRule, listSocialAlertPosts, listSocialAlertRules, saveSocialAlertRule, updateSocialAlertRule } from "@/server/social-feed-repository";
 
 export async function GET(request) {
   try {
@@ -19,6 +19,14 @@ export async function POST(request) {
     await requireAdmin(request);
     return jsonOk({ rule: await saveSocialAlertRule(await request.json()) }, 201);
   } catch (error) { return handleApiError(error, "บันทึก Rule ไม่สำเร็จ"); }
+}
+
+export async function PATCH(request) {
+  try {
+    await requireAdmin(request);
+    const input = await request.json();
+    return jsonOk({ rule: await updateSocialAlertRule(input.id, input) });
+  } catch (error) { return handleApiError(error, "แก้ไข Rule ไม่สำเร็จ"); }
 }
 
 export async function DELETE(request) {
