@@ -5,6 +5,10 @@ const { Pool } = pg;
 let pool;
 let schemaReady;
 
+// กันแบน: เพดานคอมเมนต์ต่อบัญชีใน 24 ชม. และระยะห่างขั้นต่ำระหว่างคอมเมนต์ (นับรวมงานที่พยายามส่งไปแล้วทุกสถานะ)
+const COMMENT_DAILY_CAP = Math.max(1, Math.floor(Number(process.env.SOCIAL_FEED_COMMENT_DAILY_CAP) || 40));
+const COMMENT_MIN_GAP_SECONDS = Math.max(0, Math.floor(Number(process.env.SOCIAL_FEED_COMMENT_MIN_GAP_SECONDS) || 180));
+
 function getSocialPool() {
   if (!pool) {
     pool = new Pool({
@@ -508,12 +512,21 @@ export async function claimSocialCommentJob({ instanceId }) {
   await ensureSchema();
   const cleanInstance = String(instanceId || "").trim();
   if (!cleanInstance) return null;
-  const result = await getSocialPool().query(`WITH next_job AS (
-    SELECT j.id FROM social_feed_comment_jobs j JOIN social_feed_collector_accounts a ON a.id=j.account_id
-    WHERE j.status='queued' AND a.instance_id=$1 AND a.enabled=TRUE AND a.status='ready' AND a.platform_account_id<>''
+  const result = await getSocialPool().query(`WITH acct AS (
+    SELECT a.id FROM social_feed_collector_accounts a
+    WHERE a.instance_id=$1 AND a.enabled=TRUE AND a.status='ready' AND a.platform_account_id<>''
+      AND (SELECT COUNT(*) FROM social_feed_comment_jobs c
+           WHERE c.account_id=a.id AND c.status IN ('executing','succeeded','failed')
+             AND c.updated_at > NOW() - INTERVAL '24 hours') < $2
+      AND NOT EXISTS (SELECT 1 FROM social_feed_comment_jobs c
+           WHERE c.account_id=a.id AND c.status IN ('executing','succeeded','failed')
+             AND c.updated_at > NOW() - make_interval(secs => $3))
+  ), next_job AS (
+    SELECT j.id FROM social_feed_comment_jobs j JOIN acct ON acct.id=j.account_id
+    WHERE j.status='queued'
     ORDER BY j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1
   ) UPDATE social_feed_comment_jobs j SET status='executing',instance_id=$1,updated_at=NOW() FROM next_job n
-    WHERE j.id=n.id RETURNING j.id::text,j.comment_text,(SELECT original_url FROM social_feed_posts WHERE id=j.post_id) AS url`, [cleanInstance]);
+    WHERE j.id=n.id RETURNING j.id::text,j.comment_text,(SELECT original_url FROM social_feed_posts WHERE id=j.post_id) AS url`, [cleanInstance, COMMENT_DAILY_CAP, COMMENT_MIN_GAP_SECONDS]);
   return result.rows[0] ? { id: result.rows[0].id, text: result.rows[0].comment_text, url: result.rows[0].url } : null;
 }
 

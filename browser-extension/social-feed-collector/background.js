@@ -18,7 +18,7 @@ function groupDiscussionUrl(source) {
   if (groupId) { url.pathname = `/groups/${groupId}/`; url.search = ""; url.hash = ""; }
   return url;
 }
-async function sendFacebookCommentInPage({ url, text, capturedDocId }) {
+async function sendFacebookCommentInPage({ url, text, capturedDocId, envelope = {} }) {
   const unescapeHtml = (value) => String(value || "").replace(/&quot;|&#0?34;/g, '"').replace(/&#0?39;|&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#x2f;|&#47;/gi, "/").replace(/&amp;/g, "&");
   const first = (value, patterns) => { for (const pattern of patterns) { const match = value.match(pattern); if (match?.[1]) return unescapeHtml(match[1]).replace(/\\\//g, "/"); } return ""; };
   const cookie = (name) => document.cookie.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`))?.[1] || "";
@@ -45,11 +45,11 @@ async function sendFacebookCommentInPage({ url, text, capturedDocId }) {
       feedback_id: feedbackId,
       formatting_style: null,
       message: { ranges: [], text: String(text || "") },
-      attribution_id_v2: `CometSinglePostDialogRoot.react,comet.post.single_dialog.group,via_cold_start,${now},309365,${now % 4000000000},,`,
+      attribution_id_v2: envelope.attribution || `CometSinglePostDialogRoot.react,comet.post.single_dialog.group,via_cold_start,${now},309365,${now % 4000000000},,`,
       vod_video_timestamp: null,
       feedback_referrer: target.pathname,
       is_tracking_encrypted: true,
-      tracking: [JSON.stringify({ assistant_caller: "comet_above_composer", conversation_guide_session_id: null, conversation_guide_shown: null })],
+      tracking: Array.isArray(envelope.tracking) && envelope.tracking.length ? envelope.tracking : [JSON.stringify({ assistant_caller: "comet_above_composer", conversation_guide_session_id: null, conversation_guide_shown: null })],
       feedback_source: "OBJECT",
       idempotence_token: `client:${crypto.randomUUID()}`,
       session_id: crypto.randomUUID(),
@@ -88,7 +88,7 @@ async function sendFacebookCommentInPage({ url, text, capturedDocId }) {
   if (lsd) form.set("lsd", lsd);
   const response = await fetch(`${location.origin}/api/graphql/`, {
     method: "POST", credentials: "include",
-    headers: { "content-type": "application/x-www-form-urlencoded", "x-fb-friendly-name": friendlyName, "x-asbd-id": "359341", ...(lsd ? { "x-fb-lsd": lsd } : {}) },
+    headers: { "content-type": "application/x-www-form-urlencoded", "x-fb-friendly-name": friendlyName, "x-asbd-id": envelope.asbdId || "359341", ...(lsd ? { "x-fb-lsd": lsd } : {}) },
     body: form.toString(),
   });
   const raw = await response.text();
@@ -124,8 +124,8 @@ async function runPendingComment() {
     if (url.protocol !== "https:" || !["facebook.com", "www.facebook.com"].includes(url.hostname)) throw new Error("URL โพสต์ไม่ถูกต้อง");
     let [tab] = await chrome.tabs.query({ url: ["https://www.facebook.com/*"] });
     if (!tab) { tab = await chrome.tabs.create({ url: "https://www.facebook.com/", active: false }); while ((await chrome.tabs.get(tab.id)).status !== "complete") await wait(500); }
-    const { facebookGraphqlDocIds = {} } = await chrome.storage.local.get({ facebookGraphqlDocIds: {} });
-    const [injection] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: "MAIN", func: sendFacebookCommentInPage, args: [{ url: url.href, text: job.text, capturedDocId: facebookGraphqlDocIds.useCometUFICreateCommentMutation || "" }] });
+    const { facebookGraphqlDocIds = {}, facebookGraphqlEnvelope = {} } = await chrome.storage.local.get({ facebookGraphqlDocIds: {}, facebookGraphqlEnvelope: {} });
+    const [injection] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: "MAIN", func: sendFacebookCommentInPage, args: [{ url: url.href, text: job.text, capturedDocId: facebookGraphqlDocIds.useCometUFICreateCommentMutation || "", envelope: facebookGraphqlEnvelope }] });
     if (!injection?.result?.ok) throw new Error("ส่งคอมเมนต์ไม่สำเร็จ");
     ok = true; note = `ส่งคอมเมนต์แล้ว (${injection.result.commentId})`;
   } catch (error) { note = error.message; }
