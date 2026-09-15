@@ -155,7 +155,7 @@ export default function SocialFeedPage() {
     finally { setDeletingCategory(false); }
   };
 
-  const openTag = (selectedTag) => { setTag(selectedTag); setPage(1); setTab("feed"); };
+  const openTag = (selectedTag) => { setTag(selectedTag); setSavedOnly(false); setPage(1); setTab("feed"); };
   const setRunning = async (next) => {
     setSettingRunning(true); setError("");
     try {
@@ -221,23 +221,24 @@ export default function SocialFeedPage() {
 
         {error && <Alert variant="destructive"><AlertTitle>โหลดข้อมูลไม่สำเร็จ</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
 
-        <Tabs value={tab} onValueChange={setTab}>
+        <Tabs value={tab} onValueChange={(value) => { setTab(value); setSavedOnly(value === "saved"); setPage(1); }}>
           <TabsList variant="line">
             <TabsTrigger value="feed"><Radio data-icon="inline-start" />ฟีด</TabsTrigger>
+            <TabsTrigger value="saved"><Bookmark data-icon="inline-start" />บันทึกไว้</TabsTrigger>
             <TabsTrigger value="tags"><Tags data-icon="inline-start" />ดูตาม Tag</TabsTrigger>
             <TabsTrigger value="sources"><ExternalLink data-icon="inline-start" />แหล่งข้อมูล</TabsTrigger>
             <TabsTrigger value="workers"><Monitor data-icon="inline-start" />เครื่องอ่าน</TabsTrigger>
             <TabsTrigger value="accounts"><UserRound data-icon="inline-start" />บัญชี Bot</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="feed" className="pt-4">
+          <TabsContent value={tab === "saved" ? "saved" : "feed"} className="pt-4">
             <div className="grid gap-6 lg:grid-cols-1">
 
               <section className="min-w-0">
                 <div className="mb-3 grid gap-3 xl:grid-cols-3"><form className="flex flex-wrap items-end gap-2 rounded-lg border p-3" onSubmit={(event) => { event.preventDefault(); setQuery(search.trim()); setPage(1); }}><label className="min-w-52 flex-1 text-xs text-muted-foreground">ค้นหาข้อความในโพสต์<Input className="mt-1" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ข้อความในโพสต์" /></label><Button type="submit"><Search data-icon="inline-start" />ค้นหา</Button><Button type="button" variant="outline" disabled={!search && !query} onClick={() => { setSearch(""); setQuery(""); setPage(1); }}>ล้างค้นหา</Button></form><div className="flex items-end gap-2 rounded-lg border p-3"><label className="min-w-52 flex-1 text-xs text-muted-foreground">กรองตามหมวดหมู่<Select items={[{ value: "all", label: "ทุกหมวดหมู่" }, ...data.categories.map((item) => ({ value: item.id, label: item.name }))]} value={category} onValueChange={(value) => { setCategory(value); setPage(1); }}><SelectTrigger className="mt-1 w-full"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="all">ทุกหมวดหมู่</SelectItem>{data.categories.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectGroup></SelectContent></Select></label></div><form className="flex flex-wrap items-end gap-2 rounded-lg border p-3" onSubmit={(event) => { event.preventDefault(); setDateFrom(dateFromInput); setDateTo(dateToInput); setPage(1); }}><label className="min-w-36 flex-1 text-xs text-muted-foreground">ตั้งแต่วันที่<Input className="mt-1" type="date" value={dateFromInput} onChange={(event) => setDateFromInput(event.target.value)} /></label><label className="min-w-36 flex-1 text-xs text-muted-foreground">ถึงวันที่<Input className="mt-1" type="date" value={dateToInput} min={dateFromInput || undefined} onChange={(event) => setDateToInput(event.target.value)} /></label><Button type="submit">กรองวันที่</Button><Button type="button" variant="outline" disabled={!dateFromInput && !dateToInput && !dateFrom && !dateTo} onClick={() => { setDateFromInput(""); setDateToInput(""); setDateFrom(""); setDateTo(""); setPage(1); }}>ล้างวันที่</Button></form></div>
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><p className="text-sm text-muted-foreground"><Filter className="mr-1 inline size-4" />พบ {data.pagination.total} โพสต์</p><div className="flex items-center gap-2">{data.refreshedAt && <p className="text-xs text-muted-foreground">ล่าสุด {formatTime(data.refreshedAt)}</p>}<Button variant="destructive" size="sm" onClick={() => setDeleteAllOpen(true)} disabled={!data.pagination.total || deletingAll}><Trash2 data-icon="inline-start" />ลบโพสต์ทั้งหมด</Button></div></div>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><p className="text-sm text-muted-foreground"><Filter className="mr-1 inline size-4" />พบ {data.pagination.total} {savedOnly ? "โพสต์ที่บันทึก" : "โพสต์"}</p><div className="flex items-center gap-2">{data.refreshedAt && <p className="text-xs text-muted-foreground">ล่าสุด {formatTime(data.refreshedAt)}</p>}{!savedOnly && <Button variant="destructive" size="sm" onClick={() => setDeleteAllOpen(true)} disabled={!data.pagination.total || deletingAll}><Trash2 data-icon="inline-start" />ลบโพสต์ทั้งหมด</Button>}</div></div>
                 <FeedPagination pagination={data.pagination} pageSize={pageSize} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} onPageChange={setPage} />
-                {loading ? <div className="flex flex-col gap-3">{[1,2,3].map((item) => <Skeleton key={item} className="h-40 w-full" />)}</div> : data.posts.length === 0 ? <Card><CardHeader><CardTitle>ยังไม่มีโพสต์</CardTitle><CardDescription>ลองเปลี่ยนตัวกรอง หรือรอรอบอัปเดตถัดไป</CardDescription></CardHeader></Card> : <div className="flex flex-col gap-3">
+                {loading ? <div className="flex flex-col gap-3">{[1,2,3].map((item) => <Skeleton key={item} className="h-40 w-full" />)}</div> : data.posts.length === 0 ? <Card><CardHeader><CardTitle>{savedOnly ? "ยังไม่มีโพสต์ที่บันทึก" : "ยังไม่มีโพสต์"}</CardTitle><CardDescription>{savedOnly ? "กดไอคอนบันทึกในหน้าฟีด แล้วโพสต์จะแสดงที่นี่" : "ลองเปลี่ยนตัวกรอง หรือรอรอบอัปเดตถัดไป"}</CardDescription></CardHeader></Card> : <div className="flex flex-col gap-3">
                   {data.posts.map((post) => <article key={post.id} className="group rounded-xl border bg-card p-4 sm:p-5">
                     <div className="flex items-start justify-between gap-4"><div className="min-w-0"><p className="truncate text-sm font-medium">{post.sourceName}</p><p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Clock3 />{formatPostTime(post.postedAt, now)}</p></div><div className="flex gap-1"><Button variant="ghost" size="icon" aria-label="คอมเมนต์โพสต์" onClick={() => setCommentPost(post)}><MessageCircle /></Button><Button variant="ghost" size="icon" aria-label={post.saved ? "ยกเลิกบันทึก" : "บันทึกโพสต์"} onClick={() => updatePost(post, { saved: !post.saved })}>{post.saved ? <BookmarkCheck /> : <Bookmark />}</Button></div></div>
                     {post.authorName && <p className="mt-4 text-sm font-medium">{post.authorName}</p>}

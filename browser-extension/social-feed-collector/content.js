@@ -21,8 +21,11 @@ function expandVisiblePosts() {
   }
   return clicked;
 }
+function isJoinGroupControl(node) {
+  return [node.getAttribute("aria-label"), node.getAttribute("title"), node.textContent].some((value) => /^(เข้าร่วมกลุ่ม|join group)(?:\s|$)/iu.test(String(value || "").replace(/\s+/g, " ").trim()));
+}
 function privateGroupNeedsJoin() {
-  const hasJoin = [...document.querySelectorAll('button, [role="button"]')].some((node) => /^(เข้าร่วมกลุ่ม|join group)$/iu.test(controlLabel(node)));
+  const hasJoin = [...document.querySelectorAll('button, [role="button"]')].some(isJoinGroupControl);
   if (!hasJoin) return false;
   return [...document.querySelectorAll('h1, h2, span[dir="auto"]')].some((node) => /^(กลุ่มส่วนตัว|กลุ่มนี้เป็นกลุ่มส่วนตัว|private group|this group is private)$/iu.test((node.textContent || "").replace(/\s+/g, " ").trim()));
 }
@@ -231,27 +234,6 @@ async function scan(source) {
 }
 let scanning;
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.type === "POST_FACEBOOK_COMMENT") {
-    (async () => {
-      const deadline = Date.now() + 20000;
-      let editor;
-      while (Date.now() < deadline && !editor) {
-        const article = document.querySelector('[role="article"]');
-        editor = article?.querySelector('[contenteditable="true"][role="textbox"], div[contenteditable="true"]');
-        if (!editor) await pause(500);
-      }
-      if (!editor) throw new Error("ไม่พบช่องเขียนความคิดเห็น");
-      editor.click(); editor.focus();
-      document.execCommand("insertText", false, String(message.text || ""));
-      editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: String(message.text || "") }));
-      await pause(300);
-      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }));
-      editor.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", bubbles: true }));
-      await pause(1500);
-      return { ok: true };
-    })().then(sendResponse).catch((error) => sendResponse({ ok: false, error: error.message }));
-    return true;
-  }
   if (message.type !== "SCAN_FACEBOOK_GROUP") return;
   if (!scanning) scanning = scan(message.source).finally(() => { scanning = null; });
   scanning.then(sendResponse).catch((error) => sendResponse({ status: "error", note: error.message, posts: [] }));

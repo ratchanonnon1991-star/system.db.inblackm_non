@@ -42,7 +42,9 @@ assert.match(backgroundSource, /facebookAccountId/);
 assert.match(backgroundSource, /clearPlatformAccountId/);
 assert.match(backgroundSource, /if \(!await serverRunning\(\)\) \{ stopRequested = true; break; \}/, "an active collection loop must observe the server stop control");
 assert.match(backgroundSource, /type:\s*"claim_comment"/, "collector must claim queued comment jobs");
-assert.match(contentSource, /POST_FACEBOOK_COMMENT/, "Facebook content script must accept comment jobs");
+assert.match(backgroundSource, /chrome\.scripting\.executeScript/, "comment jobs must run in Facebook's main world");
+assert.match(backgroundSource, /useCometUFICreateCommentMutation/, "comment jobs must use Facebook's GraphQL mutation");
+assert.doesNotMatch(contentSource, /execCommand\("insertText"/, "comment jobs must not type through the Facebook DOM");
 assert.match(contentSource, /consecutiveExisting\s*>=\s*2/, "collector must stop at two consecutive posts already stored");
 assert.match(contentSource, /progress\.seen\.has\(reference\.postId\)/, "the same rendered post must not count twice toward the stored-post boundary");
 assert.match(contentSource, /privateGroupNeedsJoin\(\)/, "collector must detect private groups that still show a Join group control");
@@ -52,8 +54,26 @@ assert.match(contentSource, /see more\|ดูเพิ่มเติม/i);
 assert.match(contentSource, /aria-label/);
 assert.match(contentSource, /data-ad-preview/);
 assert.doesNotMatch(contentSource, /const message = article\?\.innerText/);
+const injectedCommentSource = vm.runInContext("sendFacebookCommentInPage.toString()", context);
+const facebookCommentCalls = [];
+const facebookPageContext = vm.createContext({
+  URL, URLSearchParams, FormData, btoa, crypto: { randomUUID: () => "request-id" },
+  location: { origin: "https://www.facebook.com", protocol: "https:", host: "www.facebook.com" },
+  document: { cookie: "c_user=123456789; dpr=1" },
+  fetch: async (url, options) => {
+    facebookCommentCalls.push({ url, options });
+    if (String(url).includes("/api/graphql/")) return { ok: true, status: 200, text: async () => 'for (;;);{"data":{"comment_create":{"feedback_comment_edge":{"node":{"id":"comment:1","legacy_fbid":"1"}}}}}' };
+    return { ok: true, status: 200, text: async () => '<script>"actorID":"123456789","DTSGInitData",[],{"token":"fb-token"},"LSD",[],{"token":"lsd-token"}</script>' };
+  },
+});
+const directCommentResult = await vm.runInContext(`(${injectedCommentSource})({ url: "https://www.facebook.com/groups/123/permalink/456/", text: "ทดสอบ", capturedDocId: "27687311557628355" })`, facebookPageContext);
+assert.equal(directCommentResult.ok, true);
+assert.equal(facebookCommentCalls.length, 2, "direct comments fetch the post context then submit one GraphQL mutation");
+assert.match(facebookCommentCalls[1].options.body, /fb_api_req_friendly_name=useCometUFICreateCommentMutation/);
 const contentContext = vm.createContext({ URL, Date, Map, chrome: { runtime: { onMessage: event } } });
 vm.runInContext(contentSource, contentContext);
+contentContext.joinControl = { getAttribute: (name) => name === "aria-label" ? "เข้าร่วมกลุ่ม CookieRun Classic Thailand" : "", textContent: "เข้าร่วมกลุ่ม" };
+assert.equal(vm.runInContext("isJoinGroupControl(joinControl)", contentContext), true, "join controls may include the group name in aria-label");
 contentContext.authorArticle = { querySelectorAll: (selector) => selector.includes('[role="button"]') || selector.includes('[aria-label]') ? [] : [{ textContent: "Anansit Sukthuayat" }] };
 assert.equal(vm.runInContext("censoredAuthor(authorArticle)", contentContext), "A****** S*********", "author names keep only each word's first character and original length");
 contentContext.timeAuthorArticle = { querySelectorAll: (selector) => selector.includes('[role="button"]') || selector.includes('[aria-label]') ? [] : [{ textContent: "7 นาที" }] };
