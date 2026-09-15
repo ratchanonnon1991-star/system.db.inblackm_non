@@ -81,7 +81,10 @@ export default function ProfitRazerStockPage() {
   const [query, setQuery] = useState("");
   const [zoneFilter, setZoneFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [goldSort, setGoldSort] = useState("");
+  const [sortBy, setSortBy] = useState("gold");
+  const [sortDir, setSortDir] = useState("desc");
+  const [pageSize, setPageSize] = useState(20);
+  const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [editAccount, setEditAccount] = useState(null);
   const [editForm, setEditForm] = useState(EMPTY_EDIT_FORM);
@@ -250,7 +253,7 @@ export default function ProfitRazerStockPage() {
     try {
       const preview = parseRazerImportText(text);
       if (!preview.rows.length) {
-        setImportMsg("ไม่พบข้อมูล — ตรวจรูปแบบ: Email | Password | 2FA | Region | Rate");
+        setImportMsg("ไม่พบข้อมูล — ใช้ CSV: email,password,zone หรือ Email | Password | 2FA | Region | Rate");
         return;
       }
       const data = await apiJson("/api/profit/razer/import", {
@@ -280,6 +283,11 @@ export default function ProfitRazerStockPage() {
 
   async function handleImport(file) {
     if (!file || !canEdit) return;
+    const name = String(file.name || "").toLowerCase();
+    if (name && !name.endsWith(".csv") && !name.endsWith(".txt")) {
+      setImportMsg("รองรับเฉพาะไฟล์ .csv (หรือ .txt) — คอลัมน์อย่างน้อย email,password,zone");
+      return;
+    }
     handleImportText(await file.text());
   }
 
@@ -570,34 +578,47 @@ export default function ProfitRazerStockPage() {
   const displayAccounts = useMemo(() => {
     let list = accounts.filter((a) => showHidden || !a.hidden);
     if (statusFilter) list = list.filter((a) => a.status === statusFilter);
-    if (goldSort) {
-      list = [...list].sort((a, b) => {
-        const av = Number(a.goldBalance) || 0;
-        const bv = Number(b.goldBalance) || 0;
-        if (av !== bv) return goldSort === "asc" ? av - bv : bv - av;
-        const ath = Number(a.goldThb) || 0;
-        const bth = Number(b.goldThb) || 0;
-        return goldSort === "asc" ? ath - bth : bth - ath;
-      });
-    }
+    list = [...list].sort((a, b) => {
+      let cmp = 0;
+      if (sortBy === "gold") {
+        cmp = (Number(a.goldBalance) || 0) - (Number(b.goldBalance) || 0);
+        if (cmp === 0) cmp = (Number(a.goldThb) || 0) - (Number(b.goldThb) || 0);
+      } else if (sortBy === "silver") {
+        cmp = (Number(a.silverBalance) || 0) - (Number(b.silverBalance) || 0);
+      } else {
+        cmp = new Date(a.lastSyncedAt || 0).getTime() - new Date(b.lastSyncedAt || 0).getTime();
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
     return list;
-  }, [accounts, showHidden, statusFilter, goldSort]);
+  }, [accounts, showHidden, statusFilter, sortBy, sortDir]);
 
-  const selectedVisibleCount = displayAccounts.filter((a) => selectedIds.has(a.id)).length;
-  const allVisibleSelected = displayAccounts.length > 0 && selectedVisibleCount === displayAccounts.length;
+  const totalPages = Math.max(1, Math.ceil(displayAccounts.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const pageAccounts = useMemo(() => {
+    const start = (safePage - 1) * pageSize;
+    return displayAccounts.slice(start, start + pageSize);
+  }, [displayAccounts, safePage, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter, zoneFilter, query, showHidden, sortBy, sortDir, pageSize]);
+
+  const selectedVisibleCount = pageAccounts.filter((a) => selectedIds.has(a.id)).length;
+  const allVisibleSelected = pageAccounts.length > 0 && selectedVisibleCount === pageAccounts.length;
   const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected;
 
   function toggleSelectAllVisible() {
     if (allVisibleSelected) {
       setSelectedIds((prev) => {
         const next = new Set(prev);
-        for (const a of displayAccounts) next.delete(a.id);
+        for (const a of pageAccounts) next.delete(a.id);
         return next;
       });
     } else {
       setSelectedIds((prev) => {
         const next = new Set(prev);
-        for (const a of displayAccounts) next.add(a.id);
+        for (const a of pageAccounts) next.add(a.id);
         return next;
       });
     }
@@ -612,8 +633,13 @@ export default function ProfitRazerStockPage() {
     });
   }
 
-  function cycleGoldSort() {
-    setGoldSort((prev) => (prev === "" ? "desc" : prev === "desc" ? "asc" : ""));
+  function setGoldSortFromHeader() {
+    if (sortBy !== "gold") {
+      setSortBy("gold");
+      setSortDir("desc");
+      return;
+    }
+    setSortDir((prev) => (prev === "desc" ? "asc" : "desc"));
   }
 
   function openEditAccount(account) {
@@ -824,16 +850,20 @@ export default function ProfitRazerStockPage() {
           <input
             ref={fileRef}
             type="file"
-            accept=".csv,.txt"
+            accept=".csv,text/csv,.txt"
             className="hidden"
             onChange={(e) => handleImport(e.target.files?.[0])}
           />
           <Upload size={28} className="mx-auto text-ll-ink-tertiary" />
-          <p className="mt-3 text-sm font-medium text-ll-ink">Drag &amp; Drop File, Click to Upload, or Paste (Ctrl+V)</p>
+          <p className="mt-3 text-sm font-medium text-ll-ink">ลากไฟล์ .csv / คลิกอัปโหลด / วางข้อความ (Ctrl+V)</p>
           <p className="mt-1 text-[12px] text-ll-ink-subtle">
-            Auto-detect: <code className="rounded bg-ll-surface-2 px-1.5 py-0.5">{RAZER_IMPORT_FORMAT_HINT}</code>
+            แบบสั้น: <code className="rounded bg-ll-surface-2 px-1.5 py-0.5">email,password,zone</code>
+            {" "}เช่น <code className="rounded bg-ll-surface-2 px-1.5 py-0.5">a@hotmail.com,pass123,CAD</code>
           </p>
-          <p className="mt-1 text-[11px] text-ll-ink-tertiary">รองรับตัวคั่น | , tab — ข้าม header อัตโนมัติ</p>
+          <p className="mt-1 text-[11px] text-ll-ink-tertiary">
+            หรือเต็ม: <code className="rounded bg-ll-surface-2 px-1 py-0.5">{RAZER_IMPORT_FORMAT_HINT}</code>
+            {" "}· มี header ก็ได้ · ข้ามอัตโนมัติ
+          </p>
           {importing && (
             <p className="mt-3 flex items-center justify-center gap-2 text-[12px] text-ll-ink-subtle">
               <Loader2 size={14} className="animate-spin" /> กำลังนำเข้า...
@@ -892,6 +922,50 @@ export default function ProfitRazerStockPage() {
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
+          <label className="flex items-center gap-1.5 text-[11px] text-ll-ink-subtle">
+            เรียง
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="rounded-lg border border-ll-hairline bg-ll-surface-1 px-2.5 py-1.5 text-[12px] text-ll-ink"
+            >
+              <option value="gold">จำนวนเงิน (Gold)</option>
+              <option value="silver">Silver</option>
+              <option value="updated">วันที่อัปเดต</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-1.5 text-[11px] text-ll-ink-subtle">
+            ลำดับ
+            <select
+              value={sortDir}
+              onChange={(e) => setSortDir(e.target.value)}
+              className="rounded-lg border border-ll-hairline bg-ll-surface-1 px-2.5 py-1.5 text-[12px] text-ll-ink"
+            >
+              {sortBy === "updated" ? (
+                <>
+                  <option value="desc">ใหม่สุดก่อน</option>
+                  <option value="asc">เก่าสุดก่อน</option>
+                </>
+              ) : (
+                <>
+                  <option value="desc">มาก → น้อย</option>
+                  <option value="asc">น้อย → มาก</option>
+                </>
+              )}
+            </select>
+          </label>
+          <label className="flex items-center gap-1.5 text-[11px] text-ll-ink-subtle">
+            แถว
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              className="rounded-lg border border-ll-hairline bg-ll-surface-1 px-2.5 py-1.5 text-[12px] text-ll-ink"
+            >
+              {[10, 20, 50, 100].map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+          </label>
           <button
             type="button"
             onClick={() => setQuery(search)}
@@ -925,7 +999,7 @@ export default function ProfitRazerStockPage() {
         {canEdit && selectedIds.size > 0 && (
           <div className="flex flex-wrap items-center gap-2 border-b border-ll-hairline bg-ll-primary-subtle-bg/40 px-4 py-2">
             <span className="text-[12px] font-medium text-ll-ink">
-              เลือก {selectedVisibleCount} / {displayAccounts.length} รายการ
+              เลือก {selectedVisibleCount} / {pageAccounts.length} ในหน้านี้ · ทั้งหมดที่เลือก {selectedIds.size}
             </span>
             <button
               type="button"
@@ -977,12 +1051,16 @@ export default function ProfitRazerStockPage() {
                   <th className="px-3 py-2.5 font-medium">
                     <button
                       type="button"
-                      onClick={cycleGoldSort}
+                      onClick={setGoldSortFromHeader}
                       className="inline-flex items-center gap-1 hover:text-ll-ink"
-                      title="เรียงตาม Gold (คลิกสลับ asc/desc)"
+                      title="เรียงตาม Gold"
                     >
                       Gold / THB
-                      {goldSort === "desc" ? <ArrowDown size={12} /> : goldSort === "asc" ? <ArrowUp size={12} /> : <ArrowUpDown size={12} className="opacity-50" />}
+                      {sortBy === "gold" ? (
+                        sortDir === "desc" ? <ArrowDown size={12} /> : <ArrowUp size={12} />
+                      ) : (
+                        <ArrowUpDown size={12} className="opacity-50" />
+                      )}
                     </button>
                   </th>
                   <th className="px-3 py-2.5 font-medium">Silver</th>
@@ -1035,7 +1113,7 @@ export default function ProfitRazerStockPage() {
                     </td>
                   </tr>
                 )}
-                {displayAccounts.map((account) => {
+                {pageAccounts.map((account) => {
                   const otpLive = otpCache[account.id];
                   const isRevealed = Boolean(otpRevealed[account.id]);
                   const displayOtp = isRevealed ? otpLive?.otp : "";
@@ -1307,6 +1385,32 @@ export default function ProfitRazerStockPage() {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {!loading && displayAccounts.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ll-hairline px-4 py-3">
+            <span className="text-[12px] text-ll-ink-subtle">
+              {displayAccounts.length} บัญชี · หน้า {safePage}/{totalPages}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={safePage <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="rounded-lg border border-ll-hairline px-2.5 py-1.5 text-[12px] text-ll-ink hover:bg-ll-surface-2 disabled:opacity-40"
+              >
+                ก่อนหน้า
+              </button>
+              <button
+                type="button"
+                disabled={safePage >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="rounded-lg border border-ll-hairline px-2.5 py-1.5 text-[12px] text-ll-ink hover:bg-ll-surface-2 disabled:opacity-40"
+              >
+                ถัดไป
+              </button>
+            </div>
           </div>
         )}
       </section>
