@@ -1,5 +1,6 @@
 import pg from "pg";
 import { categoryMatchesRules, normalizeRuleTerms } from "@/lib/social-feed-rules";
+import { parseSocialFeedSearchTerms } from "@/lib/social-feed-search";
 
 const { Pool } = pg;
 let pool;
@@ -315,7 +316,10 @@ export async function getSocialFeedState(userId, filters = {}) {
   if (filters.categoryId) { values.push(filters.categoryId); where.push(`s.category_id = $${values.length}`); }
   if (filters.folderId) { values.push(filters.folderId); where.push(`EXISTS (SELECT 1 FROM social_feed_folder_posts x JOIN social_feed_folders xf ON xf.id=x.folder_id WHERE x.post_id=p.id AND x.folder_id=$${values.length} AND xf.user_id=$1)`); }
   if (filters.saved === "true") where.push(`EXISTS (SELECT 1 FROM social_feed_folder_posts x JOIN social_feed_folders xf ON xf.id=x.folder_id WHERE x.post_id=p.id AND xf.user_id=$1)`);
-  if (filters.q) { values.push(`%${String(filters.q).slice(0, 120)}%`); where.push(`p.message ILIKE $${values.length}`); }
+  for (const term of parseSocialFeedSearchTerms(filters.q)) {
+    values.push(`%${term}%`);
+    where.push(`p.message ILIKE $${values.length}`);
+  }
   if (validDateFilter(filters.dateFrom)) { values.push(filters.dateFrom); where.push(`p.posted_at >= ($${values.length}::date AT TIME ZONE 'Asia/Bangkok')`); }
   if (validDateFilter(filters.dateTo)) { values.push(filters.dateTo); where.push(`p.posted_at < (($${values.length}::date + 1) AT TIME ZONE 'Asia/Bangkok')`); }
   const requestedPage = Number.parseInt(filters.page, 10);

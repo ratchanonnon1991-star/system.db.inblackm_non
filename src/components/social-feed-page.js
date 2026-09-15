@@ -7,6 +7,7 @@ import {
   Filter, Folder, FolderPlus, LayoutGrid, MessageCircle, Monitor, Pencil, Play, Plus, Radio, RefreshCw, Search, Square, Trash2, X,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import { parseSocialFeedSearchTerms } from "@/lib/social-feed-search";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +35,17 @@ function formatPostTime(value, now) {
   if (elapsed < 60 * 1000) return "โพสต์เมื่อสักครู่";
   if (elapsed < 60 * 60 * 1000) return `โพสต์เมื่อ ${Math.floor(elapsed / 60000)} นาทีที่แล้ว`;
   return `โพสต์เมื่อ ${Math.floor(elapsed / 3600000)} ชั่วโมงที่แล้ว`;
+}
+
+function HighlightedText({ text, query }) {
+  const terms = parseSocialFeedSearchTerms(query);
+  if (!terms.length) return text;
+  const normalizedTerms = new Set(terms.map((term) => term.toLocaleLowerCase()));
+  const escaped = terms.sort((a, b) => b.length - a.length).map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const parts = String(text || "").split(new RegExp(`(${escaped.join("|")})`, "gi"));
+  return parts.map((part, index) => normalizedTerms.has(part.toLocaleLowerCase())
+    ? <mark key={index} className="rounded-sm bg-yellow-300 px-0.5 text-black dark:bg-yellow-400">{part}</mark>
+    : part);
 }
 
 const COLLECTOR_STATE_LABELS = { offline: "ไม่พร้อม", standby: "สแตนบาย", running: "กำลังอ่าน" };
@@ -264,9 +276,8 @@ export default function SocialFeedPage() {
                 <FeedPagination pagination={data.pagination} pageSize={pageSize} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} onPageChange={setPage} />
                 {loading ? <div className="flex flex-col gap-3">{[1,2,3].map((item) => <Skeleton key={item} className="h-40 w-full" />)}</div> : data.posts.length === 0 ? <Card><CardHeader><CardTitle>{savedOnly || activeFolder ? "ยังไม่มีโพสต์ที่บันทึก" : "ยังไม่มีโพสต์"}</CardTitle><CardDescription>{activeFolder ? "ยังไม่มีโพสต์ในโฟลเดอร์นี้ — กดไอคอนบันทึกที่โพสต์แล้วเลือกโฟลเดอร์นี้" : savedOnly ? "กดไอคอนบันทึกที่โพสต์แล้วเลือกโฟลเดอร์ โพสต์จะแสดงที่นี่" : "ลองเปลี่ยนตัวกรอง หรือรอรอบอัปเดตถัดไป"}</CardDescription></CardHeader></Card> : <div className="flex flex-col gap-3">
                   {data.posts.map((post) => <article key={post.id} className="group rounded-xl border bg-card p-4 sm:p-5">
-                    <div className="flex items-start justify-between gap-4"><div className="min-w-0"><p className="truncate text-sm font-medium">{post.sourceName}</p><p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Clock3 />{formatPostTime(post.postedAt, now)}</p></div><div className="flex gap-1"><Button variant="ghost" size="icon" aria-label="คอมเมนต์โพสต์" onClick={() => setCommentPost(post)}><MessageCircle /></Button><Button variant="ghost" size="icon" aria-label={post.saved ? "แก้ไขโฟลเดอร์ที่บันทึก" : "บันทึกโพสต์"} onClick={() => setSavePost(post)}>{post.saved ? <BookmarkCheck /> : <Bookmark />}</Button></div></div>
-                    {post.authorName && <p className="mt-4 text-sm font-medium">{post.authorName}</p>}
-                    <p className={post.authorName ? "mt-2 whitespace-pre-wrap text-[15px] leading-7" : "mt-4 whitespace-pre-wrap text-[15px] leading-7"}>{post.message}</p>
+                    <div className="flex items-start justify-between gap-4"><div className="min-w-0"><p className="truncate text-sm font-medium">{post.sourceName}</p>{post.authorName && <p className="mt-1 text-sm font-medium">{post.authorName}</p>}<p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="size-3" />{formatPostTime(post.postedAt, now)}</p></div><div className="flex gap-1"><Button variant="ghost" size="icon" aria-label="คอมเมนต์โพสต์" onClick={() => setCommentPost(post)}><MessageCircle /></Button><Button variant="ghost" size="icon" aria-label={post.saved ? "แก้ไขโฟลเดอร์ที่บันทึก" : "บันทึกโพสต์"} onClick={() => setSavePost(post)}>{post.saved ? <BookmarkCheck /> : <Bookmark />}</Button></div></div>
+                    <p className="mt-4 whitespace-pre-wrap text-[15px] leading-7"><HighlightedText text={post.message} query={query} /></p>
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-3"><div className="flex flex-wrap gap-1.5">{post.folders.map((item) => <Button key={item.id} variant="outline" size="xs" onClick={() => openFolder(item.id)}><Folder data-icon="inline-start" />{item.name}</Button>)}</div><Button variant="link" size="sm" nativeButton={false} render={<a href={post.originalUrl} target="_blank" rel="noreferrer" />}>เปิดต้นโพสต์<ArrowUpRight data-icon="inline-end" /></Button></div>
                   </article>)}
                   <FeedPagination pagination={data.pagination} pageSize={pageSize} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} onPageChange={setPage} />
