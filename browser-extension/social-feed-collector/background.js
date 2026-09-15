@@ -19,7 +19,40 @@ function groupDiscussionUrl(source) {
   return url;
 }
 async function workerHeartbeat(status = "ready", clearPlatformAccountId = false) { const config = await settings(); if (config.ingestSecret.length < 24) return null; const id = await instanceId(); const stored = await chrome.storage.local.get({ collectorLabel: "" }); const facebookId = await currentFacebookId(); return api("/api/social-feed/collector", { method: "POST", body: JSON.stringify({ type: "heartbeat", instanceId: id, label: stored.collectorLabel || config.accountLabel || `เครื่อง ${id.slice(0, 8)}`, platformAccountId: facebookId, clearPlatformAccountId, status, activate: true }) }); }
+async function serverRunning() { const id = await instanceId(); const result = await api(`/api/social-feed/collector?instance=${encodeURIComponent(id)}`); await chrome.storage.local.set({ collectorRunning: result.running }); return result.running; }
 async function report(sourceId, result) { await api("/api/social-feed/collector", { method: "POST", body: JSON.stringify({ sourceId, instanceId: await instanceId(), status: result.status, note: result.note || "", ingested: result.ingested || 0 }) }); }
+async function runPendingComment() {
+  const linkedFacebookId = await currentFacebookId();
+  if (!linkedFacebookId) return false;
+  const activeFacebookId = await browserFacebookId();
+  if (activeFacebookId !== linkedFacebookId) return false;
+  const id = await instanceId();
+  const { job } = await api("/api/social-feed/collector", { method: "POST", body: JSON.stringify({ type: "claim_comment", instanceId: id }) });
+  if (!job) return false;
+  let ok = false; let note = ""; let tabId;
+  try {
+    const url = new URL(job.url);
+    if (url.protocol !== "https:" || !["facebook.com", "www.facebook.com"].includes(url.hostname)) throw new Error("URL โพสต์ไม่ถูกต้อง");
+    const tab = await chrome.tabs.create({ url: url.href, active: false }); tabId = tab.id;
+    const deadline = Date.now() + 45000;
+    while (Date.now() < deadline) {
+      const current = await chrome.tabs.get(tabId);
+      if (current.status === "complete") {
+        await wait(1500);
+        const result = await chrome.tabs.sendMessage(tabId, { type: "POST_FACEBOOK_COMMENT", text: job.text });
+        if (!result?.ok) throw new Error(result?.error || "ส่งคอมเมนต์ไม่สำเร็จ");
+        ok = true; note = "ส่งคอมเมนต์แล้ว"; break;
+      }
+      await wait(500);
+    }
+    if (!ok) throw new Error("รอหน้าโพสต์เกินเวลาที่กำหนด");
+  } catch (error) { note = error.message; }
+  finally {
+    if (tabId !== undefined) await chrome.tabs.remove(tabId).catch(() => {});
+    await api("/api/social-feed/collector", { method: "POST", body: JSON.stringify({ type: "report_comment", jobId: job.id, instanceId: id, ok, note }) }).catch(() => {});
+  }
+  return true;
+}
 let currentCheck;
 let stopRequested = false;
 async function isPaused() { return (await chrome.storage.local.get({ paused: false })).paused; }
@@ -104,8 +137,12 @@ async function checkSources(sources) {
     if (!authenticated && !await chrome.offscreen.hasDocument()) await chrome.offscreen.createDocument({ url: "public-reader.html", reasons: ["DOM_PARSER"], justification: "อ่านข้อความสาธารณะโดยไม่ส่ง Facebook cookie" });
     for (const source of sources) {
       if (stopRequested || await isPaused()) break;
+      if (!await serverRunning()) { stopRequested = true; break; }
       // เว้นช่วงเหมือนคนสลับดูทีละกลุ่ม (สุ่ม 8–25 วินาที) ไม่เปิดรัวติดกัน
-      if (opened > 0) await wait(randomBetween(8000, 25000));
+      if (opened > 0) {
+        await wait(randomBetween(8000, 25000));
+        if (!await serverRunning()) { stopRequested = true; break; }
+      }
       if (stopRequested || await isPaused()) break;
       await workerHeartbeat();
       const claim = await api("/api/social-feed/collector", { method: "POST", body: JSON.stringify({ type: "claim", sourceId: source.id, instanceId: await instanceId() }) });
@@ -129,6 +166,7 @@ function runCheck() {
     if (config.ingestSecret.length < 24) throw new Error("กรุณาตั้งค่า Ingest secret อย่างน้อย 24 ตัวอักษร");
     const id = await instanceId();
     await workerHeartbeat();
+    await runPendingComment();
     const { sources = [], running = false } = await api(`/api/social-feed/collector?instance=${encodeURIComponent(id)}`);
     await chrome.storage.local.set({ collectorRunning: running });
     // ยังไม่กดเริ่มจากเว็บ = สแตนบาย: heartbeat แล้วรอ ไม่เปิดกลุ่มใด ๆ

@@ -21,14 +21,10 @@ function expandVisiblePosts() {
   }
   return clicked;
 }
-function textWithEmoji(node) {
-  if (!node) return "";
-  const clone = node.cloneNode(true);
-  for (const emoji of clone.querySelectorAll('img[alt], [role="img"][aria-label]')) {
-    const label = emoji.getAttribute("alt") || emoji.getAttribute("aria-label") || "";
-    if (label) emoji.replaceWith(document.createTextNode(label));
-  }
-  return (clone.innerText || clone.textContent || "").trim();
+function privateGroupNeedsJoin() {
+  const hasJoin = [...document.querySelectorAll('button, [role="button"]')].some((node) => /^(เข้าร่วมกลุ่ม|join group)$/iu.test(controlLabel(node)));
+  if (!hasJoin) return false;
+  return [...document.querySelectorAll('h1, h2, span[dir="auto"]')].some((node) => /^(กลุ่มส่วนตัว|กลุ่มนี้เป็นกลุ่มส่วนตัว|private group|this group is private)$/iu.test((node.textContent || "").replace(/\s+/g, " ").trim()));
 }
 function openDiscussionTab() {
   const label = /^(discussion|สนทนา|โพสต์|พูดคุย|feed)$/i;
@@ -43,12 +39,42 @@ function openDiscussionTab() {
 }
 function postMessage(article) {
   const explicit = article.querySelector('[data-ad-preview="message"], [data-ad-comet-preview="message"]');
-  const explicitText = textWithEmoji(explicit);
-  if (explicitText) return explicitText;
+  if (explicit?.innerText?.trim()) return explicit.innerText.trim();
   return [...article.querySelectorAll('div[dir="auto"]')]
-    .map(textWithEmoji)
+    .map((node) => node.innerText?.trim() || "")
     .filter((text) => text.length >= 3 && !/^(like|comment|share|ถูกใจ|แสดงความคิดเห็น|แชร์)$/i.test(text))
     .sort((a, b) => b.length - a.length)[0] || "";
+}
+function postActionAuthor(article) {
+  for (const node of article.querySelectorAll('[aria-label]')) {
+    const label = (node.getAttribute("aria-label") || "").trim();
+    const match = label.match(/^การดำเนินการสำหรับโพสต์นี้โดย\s+(.+)$/u) || label.match(/^(?:actions|options) for this post by\s+(.+)$/i);
+    if (match) return match[1].trim();
+  }
+  return "";
+}
+function containingPostArticle(link) {
+  let article = link.closest('[role="article"]');
+  while (article) {
+    if (postActionAuthor(article)) return article;
+    article = article.parentElement?.closest('[role="article"]') || null;
+  }
+  return null;
+}
+function censoredAuthor(article) {
+  const anonymous = [...article.querySelectorAll('[role="button"]')].map((node) => (node.textContent || "").replace(/\s+/g, " ").trim()).find((text) => /^(ผู้มีส่วนร่วมที่ไม่ระบุตัวตน|anonymous participant)$/iu.test(text));
+  if (anonymous) return anonymous;
+  const actionAuthor = postActionAuthor(article);
+  const candidates = article.querySelectorAll('h2 span, h3 span, strong > span, a[href*="/user/"] span.html-span, a[href*="profile.php"] span.html-span');
+  const node = [...candidates].find((candidate) => {
+    const text = (candidate.textContent || "").replace(/\s+/g, " ").trim();
+    return text && !parseFacebookDateLabel(text) && !/^(see more|ดูเพิ่มเติม|follow|ติดตาม)$/iu.test(text);
+  });
+  const name = (actionAuthor || node?.textContent || "").replace(/\s+/g, " ").trim();
+  return name.slice(0, 200).replace(/\S+/gu, (word) => {
+    const characters = Array.from(word);
+    return characters[0] + "*".repeat(Math.max(0, characters.length - 1));
+  });
 }
 const THAI_MONTHS = new Map([
   ["มกราคม", 0], ["กุมภาพันธ์", 1], ["มีนาคม", 2], ["เมษายน", 3], ["พฤษภาคม", 4], ["มิถุนายน", 5],
@@ -154,35 +180,47 @@ function postDate(link, article) {
   }
   return null;
 }
-function collectPosts(source, found) {
+function collectPosts(source, found, progress) {
+  const knownPostIds = new Set(source.knownPostIds || []);
   for (const link of document.querySelectorAll('a[href*="/posts/"], a[href*="/permalink/"], a[href*="multi_permalinks="]')) {
     const url = new URL(link.href);
     const reference = postReference(url);
     if (!reference || !["www.facebook.com", "facebook.com"].includes(url.hostname)) continue;
     const expected = new URL(source.url).pathname.match(/\/groups\/([^/]+)/)?.[1];
     if (![expected, String(source.groupId)].includes(reference.groupId)) continue;
-    const article = link.closest('[role="article"]');
+    const article = containingPostArticle(link);
+    if (!article || progress.seen.has(reference.postId)) continue;
+    progress.seen.add(reference.postId);
+    const externalPostId = `${source.groupId}_${reference.postId}`;
+    if (knownPostIds.has(externalPostId)) {
+      progress.consecutiveExisting += 1;
+      if (progress.consecutiveExisting >= 2) progress.reachedExistingBoundary = true;
+      continue;
+    }
+    progress.consecutiveExisting = 0;
     const message = article ? postMessage(article) : "";
     if (!message || message.length < 3) continue;
     const date = postDate(link, article);
-    found.set(reference.postId, { sourceId: source.id, groupId: source.groupId, externalPostId: `${source.groupId}_${reference.postId}`, message: message.slice(0, 20000), originalUrl: `https://www.facebook.com/groups/${reference.groupId}/permalink/${reference.postId}/`, postedAt: !date || Number.isNaN(date.getTime()) ? found.get(reference.postId)?.postedAt || null : date.toISOString() });
+    found.set(reference.postId, { sourceId: source.id, groupId: source.groupId, externalPostId, authorName: censoredAuthor(article), message: message.slice(0, 20000), originalUrl: `https://www.facebook.com/groups/${reference.groupId}/permalink/${reference.postId}/`, postedAt: !date || Number.isNaN(date.getTime()) ? found.get(reference.postId)?.postedAt || null : date.toISOString() });
   }
 }
 async function scan(source) {
   const found = new Map();
+  const progress = { seen: new Set(), consecutiveExisting: 0, reachedExistingBoundary: false };
   let stale = 0;
   let openedDiscussion = false;
   for (let step = 0; step < 10; step += 1) {
     if (location.pathname.includes("checkpoint")) return { status: "checkpoint", note: "Facebook ต้องการยืนยันตัวตน", posts: [] };
     dismissLoginPrompt();
     await pause(1000);
+    if (privateGroupNeedsJoin()) return { status: "needs_join", note: "ยังไม่ได้เข้าร่วมกลุ่มส่วนตัว", posts: [] };
     const alreadyOnDiscussion = /^\/groups\/[^/]+\/?$/.test(location.pathname);
     if (!alreadyOnDiscussion && !openedDiscussion && openDiscussionTab()) { openedDiscussion = true; await pause(2500); continue; }
     if (expandVisiblePosts()) await pause(750);
     const previous = found.size;
-    collectPosts(source, found);
+    collectPosts(source, found, progress);
     stale = found.size === previous ? stale + 1 : 0;
-    if (found.size >= 100 || (step >= 3 && stale >= 3)) break;
+    if (progress.reachedExistingBoundary || found.size >= 100 || (step >= 3 && stale >= 3)) break;
     window.scrollBy(0, Math.max(window.innerHeight, 800));
   }
   if (found.size) return { status: "ready", note: `อ่านหน้าเว็บได้ ${found.size} โพสต์`, posts: [...found.values()].slice(0, 100) };
@@ -193,6 +231,27 @@ async function scan(source) {
 }
 let scanning;
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.type === "POST_FACEBOOK_COMMENT") {
+    (async () => {
+      const deadline = Date.now() + 20000;
+      let editor;
+      while (Date.now() < deadline && !editor) {
+        const article = document.querySelector('[role="article"]');
+        editor = article?.querySelector('[contenteditable="true"][role="textbox"], div[contenteditable="true"]');
+        if (!editor) await pause(500);
+      }
+      if (!editor) throw new Error("ไม่พบช่องเขียนความคิดเห็น");
+      editor.click(); editor.focus();
+      document.execCommand("insertText", false, String(message.text || ""));
+      editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: String(message.text || "") }));
+      await pause(300);
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }));
+      editor.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", bubbles: true }));
+      await pause(1500);
+      return { ok: true };
+    })().then(sendResponse).catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
   if (message.type !== "SCAN_FACEBOOK_GROUP") return;
   if (!scanning) scanning = scan(message.source).finally(() => { scanning = null; });
   scanning.then(sendResponse).catch((error) => sendResponse({ status: "error", note: error.message, posts: [] }));
