@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowUpRight, Bookmark, BookmarkCheck, Check, ChevronLeft, ChevronRight, CircleDot, Clock3, Download, ExternalLink,
-  Filter, FolderPlus, Hash, LayoutGrid, MessageCircle, Monitor, Play, Plus, Radio, RefreshCw, Search, Square, Tags, Trash2,
+  Filter, Folder, FolderPlus, LayoutGrid, MessageCircle, Monitor, Play, Plus, Radio, RefreshCw, Search, Square, Trash2, X,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -20,7 +20,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-const EMPTY = { categories: [], sources: [], rules: [], tags: [], posts: [], accounts: [], collectorSummary: { activeCollectorCount: 0, enabledSourceCount: 0, sourcesPerCollector: 0, riskLevel: "offline", running: false }, pagination: { page: 1, pageSize: "20", total: 0, totalPages: 1 } };
+const EMPTY = { categories: [], sources: [], rules: [], folders: [], posts: [], accounts: [], collectorSummary: { activeCollectorCount: 0, enabledSourceCount: 0, sourcesPerCollector: 0, riskLevel: "offline", running: false }, pagination: { page: 1, pageSize: "20", total: 0, totalPages: 1 } };
 
 function formatTime(value) {
   return new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
@@ -48,7 +48,7 @@ export default function SocialFeedPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [category, setCategory] = useState("all");
-  const [tag, setTag] = useState("all");
+  const [folder, setFolder] = useState("all");
   const [savedOnly, setSavedOnly] = useState(false);
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
@@ -59,7 +59,7 @@ export default function SocialFeedPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState("20");
   const [tab, setTab] = useState("feed");
-  const [tagPost, setTagPost] = useState(null);
+  const [savePost, setSavePost] = useState(null);
   const [commentPost, setCommentPost] = useState(null);
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [sourceOpen, setSourceOpen] = useState(false);
@@ -71,6 +71,7 @@ export default function SocialFeedPage() {
   const [deletingSources, setDeletingSources] = useState(false);
   const [deleteCategoryTarget, setDeleteCategoryTarget] = useState(null);
   const [deletingCategory, setDeletingCategory] = useState(false);
+  const [deleteFolderTarget, setDeleteFolderTarget] = useState(null);
   const [settingRunning, setSettingRunning] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
@@ -78,7 +79,7 @@ export default function SocialFeedPage() {
     if (!quiet) setRefreshing(true);
     const params = new URLSearchParams();
     if (category !== "all") params.set("category", category);
-    if (tag !== "all") params.set("tag", tag);
+    if (folder !== "all") params.set("folder", folder);
     if (savedOnly) params.set("saved", "true");
     if (query) params.set("q", query);
     if (dateFrom) params.set("dateFrom", dateFrom);
@@ -91,7 +92,7 @@ export default function SocialFeedPage() {
       if (result.pagination?.page > result.pagination?.totalPages) setPage(result.pagination.totalPages);
     } catch (err) { setError(err.message); }
     finally { setLoading(false); setRefreshing(false); }
-  }, [category, tag, savedOnly, query, dateFrom, dateTo, page, pageSize]);
+  }, [category, folder, savedOnly, query, dateFrom, dateTo, page, pageSize]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- filter changes intentionally start a server refresh
   useEffect(() => { load(); }, [load]);
@@ -108,6 +109,7 @@ export default function SocialFeedPage() {
     ...item, sources: data.sources.filter((source) => source.categoryId === item.id),
   })), [data.categories, data.sources]);
   const parkedSources = data.sources.filter((source) => source.queueState === "needs_assignment");
+  const activeFolder = data.folders.find((item) => item.id === folder) || null;
 
   const assignSource = async (sourceId, accountId) => {
     try {
@@ -116,9 +118,11 @@ export default function SocialFeedPage() {
     } catch (err) { setError(err.message); }
   };
 
-  const updatePost = async (post, body) => {
+  const deleteFolder = async (id) => {
+    setError("");
     try {
-      await apiJson(`/api/social-feed/posts/${post.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), fallbackError: "อัปเดตโพสต์ไม่สำเร็จ" });
+      await apiJson(`/api/social-feed/folders?id=${id}`, { method: "DELETE", fallbackError: "ลบโฟลเดอร์ไม่สำเร็จ" });
+      if (folder === id) { setFolder("all"); setSavedOnly(false); }
       await load(true);
     } catch (err) { setError(err.message); }
   };
@@ -162,7 +166,9 @@ export default function SocialFeedPage() {
     } catch (err) { setError(err.message); }
   };
 
-  const openTag = (selectedTag) => { setTag(selectedTag); setSavedOnly(false); setPage(1); setTab("feed"); };
+  const openFolder = (folderId) => { setFolder(folderId); setSavedOnly(false); setPage(1); setTab("feed"); };
+  const openAllSaved = () => { setFolder("all"); setSavedOnly(true); setPage(1); setTab("feed"); };
+  const clearFolderFilter = () => { setFolder("all"); setSavedOnly(false); setPage(1); };
   const setRunning = async (next) => {
     setSettingRunning(true); setError("");
     try {
@@ -228,28 +234,27 @@ export default function SocialFeedPage() {
 
         {error && <Alert variant="destructive"><AlertTitle>โหลดข้อมูลไม่สำเร็จ</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
 
-        <Tabs value={tab} onValueChange={(value) => { setTab(value); setSavedOnly(value === "saved"); setPage(1); }}>
+        <Tabs value={tab} onValueChange={(value) => { setTab(value); setPage(1); }}>
           <TabsList variant="line">
             <TabsTrigger value="feed"><Radio data-icon="inline-start" />ฟีด</TabsTrigger>
             <TabsTrigger value="saved"><Bookmark data-icon="inline-start" />บันทึกไว้</TabsTrigger>
-            <TabsTrigger value="tags"><Tags data-icon="inline-start" />ดูตาม Tag</TabsTrigger>
             <TabsTrigger value="sources"><ExternalLink data-icon="inline-start" />แหล่งข้อมูล</TabsTrigger>
             <TabsTrigger value="workers"><Monitor data-icon="inline-start" />เครื่องอ่าน</TabsTrigger>
           </TabsList>
 
-          <TabsContent value={tab === "saved" ? "saved" : "feed"} className="pt-4">
+          <TabsContent value="feed" className="pt-4">
             <div className="grid gap-6 lg:grid-cols-1">
 
               <section className="min-w-0">
                 <div className="mb-3 grid gap-3 xl:grid-cols-3"><form className="flex flex-wrap items-end gap-2 rounded-lg border p-3" onSubmit={(event) => { event.preventDefault(); setQuery(search.trim()); setPage(1); }}><label className="min-w-52 flex-1 text-xs text-muted-foreground">ค้นหาข้อความในโพสต์<Input className="mt-1" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ข้อความในโพสต์" /></label><Button type="submit"><Search data-icon="inline-start" />ค้นหา</Button><Button type="button" variant="outline" disabled={!search && !query} onClick={() => { setSearch(""); setQuery(""); setPage(1); }}>ล้างค้นหา</Button></form><div className="flex items-end gap-2 rounded-lg border p-3"><label className="min-w-52 flex-1 text-xs text-muted-foreground">กรองตามหมวดหมู่<Select items={[{ value: "all", label: "ทุกหมวดหมู่" }, ...data.categories.map((item) => ({ value: item.id, label: item.name }))]} value={category} onValueChange={(value) => { setCategory(value); setPage(1); }}><SelectTrigger className="mt-1 w-full"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="all">ทุกหมวดหมู่</SelectItem>{data.categories.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectGroup></SelectContent></Select></label></div><form className="flex flex-wrap items-end gap-2 rounded-lg border p-3" onSubmit={(event) => { event.preventDefault(); setDateFrom(dateFromInput); setDateTo(dateToInput); setPage(1); }}><label className="min-w-36 flex-1 text-xs text-muted-foreground">ตั้งแต่วันที่<Input className="mt-1" type="date" value={dateFromInput} onChange={(event) => setDateFromInput(event.target.value)} /></label><label className="min-w-36 flex-1 text-xs text-muted-foreground">ถึงวันที่<Input className="mt-1" type="date" value={dateToInput} min={dateFromInput || undefined} onChange={(event) => setDateToInput(event.target.value)} /></label><Button type="submit">กรองวันที่</Button><Button type="button" variant="outline" disabled={!dateFromInput && !dateToInput && !dateFrom && !dateTo} onClick={() => { setDateFromInput(""); setDateToInput(""); setDateFrom(""); setDateTo(""); setPage(1); }}>ล้างวันที่</Button></form></div>
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><p className="text-sm text-muted-foreground"><Filter className="mr-1 inline size-4" />พบ {data.pagination.total} {savedOnly ? "โพสต์ที่บันทึก" : "โพสต์"}</p><div className="flex items-center gap-2">{data.refreshedAt && <p className="text-xs text-muted-foreground">ล่าสุด {formatTime(data.refreshedAt)}</p>}{!savedOnly && <Button variant="destructive" size="sm" onClick={() => setDeleteAllOpen(true)} disabled={!data.pagination.total || deletingAll}><Trash2 data-icon="inline-start" />ลบโพสต์ทั้งหมด</Button>}</div></div>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div className="flex flex-wrap items-center gap-2"><p className="text-sm text-muted-foreground"><Filter className="mr-1 inline size-4" />พบ {data.pagination.total} {savedOnly || activeFolder ? "โพสต์ที่บันทึก" : "โพสต์"}</p>{(activeFolder || savedOnly) && <Badge variant="secondary" className="gap-1"><Folder className="size-3.5" />{activeFolder ? activeFolder.name : "ทั้งหมดที่บันทึก"}<button type="button" aria-label="ล้างตัวกรองโฟลเดอร์" className="ml-0.5 hover:text-foreground" onClick={clearFolderFilter}><X className="size-3.5" /></button></Badge>}</div><div className="flex items-center gap-2">{data.refreshedAt && <p className="text-xs text-muted-foreground">ล่าสุด {formatTime(data.refreshedAt)}</p>}{!savedOnly && !activeFolder && <Button variant="destructive" size="sm" onClick={() => setDeleteAllOpen(true)} disabled={!data.pagination.total || deletingAll}><Trash2 data-icon="inline-start" />ลบโพสต์ทั้งหมด</Button>}</div></div>
                 <FeedPagination pagination={data.pagination} pageSize={pageSize} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} onPageChange={setPage} />
-                {loading ? <div className="flex flex-col gap-3">{[1,2,3].map((item) => <Skeleton key={item} className="h-40 w-full" />)}</div> : data.posts.length === 0 ? <Card><CardHeader><CardTitle>{savedOnly ? "ยังไม่มีโพสต์ที่บันทึก" : "ยังไม่มีโพสต์"}</CardTitle><CardDescription>{savedOnly ? "กดไอคอนบันทึกในหน้าฟีด แล้วโพสต์จะแสดงที่นี่" : "ลองเปลี่ยนตัวกรอง หรือรอรอบอัปเดตถัดไป"}</CardDescription></CardHeader></Card> : <div className="flex flex-col gap-3">
+                {loading ? <div className="flex flex-col gap-3">{[1,2,3].map((item) => <Skeleton key={item} className="h-40 w-full" />)}</div> : data.posts.length === 0 ? <Card><CardHeader><CardTitle>{savedOnly || activeFolder ? "ยังไม่มีโพสต์ที่บันทึก" : "ยังไม่มีโพสต์"}</CardTitle><CardDescription>{activeFolder ? "ยังไม่มีโพสต์ในโฟลเดอร์นี้ — กดไอคอนบันทึกที่โพสต์แล้วเลือกโฟลเดอร์นี้" : savedOnly ? "กดไอคอนบันทึกที่โพสต์แล้วเลือกโฟลเดอร์ โพสต์จะแสดงที่นี่" : "ลองเปลี่ยนตัวกรอง หรือรอรอบอัปเดตถัดไป"}</CardDescription></CardHeader></Card> : <div className="flex flex-col gap-3">
                   {data.posts.map((post) => <article key={post.id} className="group rounded-xl border bg-card p-4 sm:p-5">
-                    <div className="flex items-start justify-between gap-4"><div className="min-w-0"><p className="truncate text-sm font-medium">{post.sourceName}</p><p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Clock3 />{formatPostTime(post.postedAt, now)}</p></div><div className="flex gap-1"><Button variant="ghost" size="icon" aria-label="คอมเมนต์โพสต์" onClick={() => setCommentPost(post)}><MessageCircle /></Button><Button variant="ghost" size="icon" aria-label={post.saved ? "ยกเลิกบันทึก" : "บันทึกโพสต์"} onClick={() => updatePost(post, { saved: !post.saved })}>{post.saved ? <BookmarkCheck /> : <Bookmark />}</Button></div></div>
+                    <div className="flex items-start justify-between gap-4"><div className="min-w-0"><p className="truncate text-sm font-medium">{post.sourceName}</p><p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Clock3 />{formatPostTime(post.postedAt, now)}</p></div><div className="flex gap-1"><Button variant="ghost" size="icon" aria-label="คอมเมนต์โพสต์" onClick={() => setCommentPost(post)}><MessageCircle /></Button><Button variant="ghost" size="icon" aria-label={post.saved ? "แก้ไขโฟลเดอร์ที่บันทึก" : "บันทึกโพสต์"} onClick={() => setSavePost(post)}>{post.saved ? <BookmarkCheck /> : <Bookmark />}</Button></div></div>
                     {post.authorName && <p className="mt-4 text-sm font-medium">{post.authorName}</p>}
                     <p className={post.authorName ? "mt-2 whitespace-pre-wrap text-[15px] leading-7" : "mt-4 whitespace-pre-wrap text-[15px] leading-7"}>{post.message}</p>
-                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-3"><div className="flex flex-wrap gap-1.5">{post.tags.map((item) => <Button key={item.id} variant="outline" size="xs" onClick={() => openTag(item.id)}>#{item.name}</Button>)}<Button variant="ghost" size="xs" onClick={() => setTagPost(post)}><Hash data-icon="inline-start" />ใส่ Tag</Button></div><Button variant="link" size="sm" nativeButton={false} render={<a href={post.originalUrl} target="_blank" rel="noreferrer" />}>เปิดต้นโพสต์<ArrowUpRight data-icon="inline-end" /></Button></div>
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-3"><div className="flex flex-wrap gap-1.5">{post.folders.map((item) => <Button key={item.id} variant="outline" size="xs" onClick={() => openFolder(item.id)}><Folder data-icon="inline-start" />{item.name}</Button>)}</div><Button variant="link" size="sm" nativeButton={false} render={<a href={post.originalUrl} target="_blank" rel="noreferrer" />}>เปิดต้นโพสต์<ArrowUpRight data-icon="inline-end" /></Button></div>
                   </article>)}
                   <FeedPagination pagination={data.pagination} pageSize={pageSize} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} onPageChange={setPage} />
                 </div>}
@@ -257,7 +262,14 @@ export default function SocialFeedPage() {
             </div>
           </TabsContent>
 
-          <TabsContent value="tags" className="pt-4"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{data.tags.length ? data.tags.map((item) => <Card key={item.id} size="sm" className="cursor-pointer" onClick={() => openTag(item.id)}><CardHeader><CardTitle>#{item.name}</CardTitle><CardDescription>{item.count} โพสต์</CardDescription><CardAction><ArrowUpRight /></CardAction></CardHeader></Card>) : <p className="text-sm text-muted-foreground">ยังไม่มี Tag — เพิ่มได้จากปุ่ม “ใส่ Tag” ใต้โพสต์</p>}</div></TabsContent>
+          <TabsContent value="saved" className="pt-4">
+            <div className="mb-4"><p className="font-medium">โฟลเดอร์ที่บันทึก</p><p className="text-sm text-muted-foreground">กดไอคอนบันทึกที่โพสต์เพื่อโยนเข้าโฟลเดอร์ สร้างใหม่หรือเลือกที่มีอยู่ได้</p></div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <Card size="sm" className="cursor-pointer" onClick={openAllSaved}><CardHeader><CardTitle className="flex items-center gap-2"><Bookmark />ทั้งหมดที่บันทึก</CardTitle><CardDescription>โพสต์ทุกโฟลเดอร์รวมกัน</CardDescription><CardAction><ArrowUpRight /></CardAction></CardHeader></Card>
+              {data.folders.map((item) => <Card key={item.id} size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Folder />{item.name}</CardTitle><CardDescription>{item.count} โพสต์</CardDescription><CardAction><Button variant="ghost" size="icon-sm" aria-label={`ลบโฟลเดอร์ ${item.name}`} onClick={() => setDeleteFolderTarget(item)}><Trash2 /></Button></CardAction></CardHeader><CardContent><Button variant="outline" size="sm" onClick={() => openFolder(item.id)}><Folder data-icon="inline-start" />เปิดดูโพสต์</Button></CardContent></Card>)}
+            </div>
+            {!data.folders.length && <p className="mt-3 text-sm text-muted-foreground">ยังไม่มีโฟลเดอร์ — กดไอคอนบันทึกที่โพสต์แล้วสร้างโฟลเดอร์แรกได้เลย</p>}
+          </TabsContent>
 
           <TabsContent value="sources" className="pt-4">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -276,10 +288,11 @@ export default function SocialFeedPage() {
         </Tabs>
       </main>
 
-      <TagDialog key={`tag-${tagPost?.id || "closed"}`} post={tagPost} onOpenChange={(open) => !open && setTagPost(null)} onSave={(names) => updatePost(tagPost, { tags: names })} />
+      <SaveDialog key={`save-${savePost?.id || "closed"}`} post={savePost} folders={data.folders} onOpenChange={(open) => !open && setSavePost(null)} onSaved={() => load(true)} />
       <CommentDialog key={`comment-${commentPost?.id || "closed"}`} post={commentPost} accounts={data.accounts.filter((account) => account.status === "ready" && account.platformAccountId)} onOpenChange={(open) => !open && setCommentPost(null)} />
-      <AlertDialog open={deleteAllOpen} onOpenChange={(open) => { if (!deletingAll) setDeleteAllOpen(open); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>ลบโพสต์ทั้งหมด?</AlertDialogTitle><AlertDialogDescription>โพสต์ที่เก็บไว้ รวมถึงสถานะบันทึกและ Tag ที่ผูกกับโพสต์จะถูกลบทั้งหมด แต่กลุ่ม แท็ก บัญชี Bot และการตั้งค่าจะยังอยู่ โพสต์อาจถูกดึงกลับมาใหม่ในรอบถัดไป</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deletingAll}>ยกเลิก</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={deletingAll} onClick={deleteAllPosts}><Trash2 data-icon="inline-start" />{deletingAll ? "กำลังลบ..." : "ยืนยันลบทั้งหมด"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-      <AlertDialog open={Boolean(deleteSourceTarget)} onOpenChange={(open) => { if (!open && !deletingSources) setDeleteSourceTarget(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{deleteSourceTarget?.all ? "ลบทุกหมวดหมู่และกลุ่ม Facebook?" : `ลบ ${deleteSourceTarget?.name || "กลุ่มนี้"}?`}</AlertDialogTitle><AlertDialogDescription>{deleteSourceTarget?.all ? "หมวดหมู่และกลุ่ม Facebook ทั้งหมด รวมถึงโพสต์ กฎ และสถานะตรวจสอบที่ผูกไว้จะถูกลบ แต่แท็กและบัญชี Bot จะยังอยู่" : "กลุ่มนี้ รวมถึงโพสต์และสถานะตรวจสอบที่ผูกไว้จะถูกลบออกจาก Feed Social"}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deletingSources}>ยกเลิก</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={deletingSources} onClick={deleteSources}><Trash2 data-icon="inline-start" />{deletingSources ? "กำลังลบ..." : "ยืนยันลบ"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+      <AlertDialog open={Boolean(deleteFolderTarget)} onOpenChange={(open) => { if (!open) setDeleteFolderTarget(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>ลบโฟลเดอร์ {deleteFolderTarget?.name}?</AlertDialogTitle><AlertDialogDescription>โพสต์จะยังอยู่ในฟีด แต่จะถูกนำออกจากโฟลเดอร์นี้ทั้งหมด — การกระทำนี้ย้อนกลับไม่ได้</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>ยกเลิก</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => { const target = deleteFolderTarget; setDeleteFolderTarget(null); if (target) deleteFolder(target.id); }}><Trash2 data-icon="inline-start" />ยืนยันลบโฟลเดอร์</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+      <AlertDialog open={deleteAllOpen} onOpenChange={(open) => { if (!deletingAll) setDeleteAllOpen(open); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>ลบโพสต์ทั้งหมด?</AlertDialogTitle><AlertDialogDescription>โพสต์ที่เก็บไว้ รวมถึงสถานะบันทึกในโฟลเดอร์ที่ผูกกับโพสต์จะถูกลบทั้งหมด แต่กลุ่ม โฟลเดอร์ บัญชี Bot และการตั้งค่าจะยังอยู่ โพสต์อาจถูกดึงกลับมาใหม่ในรอบถัดไป</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deletingAll}>ยกเลิก</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={deletingAll} onClick={deleteAllPosts}><Trash2 data-icon="inline-start" />{deletingAll ? "กำลังลบ..." : "ยืนยันลบทั้งหมด"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+      <AlertDialog open={Boolean(deleteSourceTarget)} onOpenChange={(open) => { if (!open && !deletingSources) setDeleteSourceTarget(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{deleteSourceTarget?.all ? "ลบทุกหมวดหมู่และกลุ่ม Facebook?" : `ลบ ${deleteSourceTarget?.name || "กลุ่มนี้"}?`}</AlertDialogTitle><AlertDialogDescription>{deleteSourceTarget?.all ? "หมวดหมู่และกลุ่ม Facebook ทั้งหมด รวมถึงโพสต์ กฎ และสถานะตรวจสอบที่ผูกไว้จะถูกลบ แต่โฟลเดอร์และบัญชี Bot จะยังอยู่" : "กลุ่มนี้ รวมถึงโพสต์และสถานะตรวจสอบที่ผูกไว้จะถูกลบออกจาก Feed Social"}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deletingSources}>ยกเลิก</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={deletingSources} onClick={deleteSources}><Trash2 data-icon="inline-start" />{deletingSources ? "กำลังลบ..." : "ยืนยันลบ"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       <AlertDialog open={Boolean(deleteCategoryTarget)} onOpenChange={(open) => { if (!open && !deletingCategory) setDeleteCategoryTarget(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>ลบหมวดหมู่ {deleteCategoryTarget?.name}?</AlertDialogTitle><AlertDialogDescription>หมวดหมู่นี้ รวมถึงกลุ่ม Facebook โพสต์ และสถานะตรวจสอบทั้งหมดที่อยู่ภายในจะถูกลบถาวร</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deletingCategory}>ยกเลิก</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={deletingCategory} onClick={deleteCategory}><Trash2 data-icon="inline-start" />{deletingCategory ? "กำลังลบ..." : "ยืนยันลบหมวดหมู่"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       <CategoryDialog open={categoryOpen} onOpenChange={setCategoryOpen} onSaved={() => load(true)} />
       <SourceDialog key={`${sourceCategoryId || "all"}-${sourceOpen}`} open={sourceOpen} onOpenChange={setSourceOpen} categories={data.categories} initialCategoryId={sourceCategoryId} onSaved={() => load(true)} />
@@ -292,9 +305,33 @@ function FeedPagination({ pagination, pageSize, onPageSizeChange, onPageChange }
 }
 
 
-function TagDialog({ post, onOpenChange, onSave }) {
-  const [value, setValue] = useState(post?.tags?.map((item) => item.name).join(", ") || "");
-  return <Dialog open={Boolean(post)} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>ใส่ Tag ให้โพสต์</DialogTitle><DialogDescription>ใช้ Tag เพื่อรวมโพสต์ที่ต้องกลับมาดูด้วยกัน</DialogDescription></DialogHeader><FieldGroup><Field><FieldLabel>Tag</FieldLabel><Input value={value} onChange={(e) => setValue(e.target.value)} placeholder="ลูกค้าใหม่, ต้องตอบ" /><FieldDescription>คั่นหลาย Tag ด้วยเครื่องหมายจุลภาค</FieldDescription></Field></FieldGroup><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>ยกเลิก</Button><Button onClick={() => { onSave(value.split(",")); onOpenChange(false); }}><Check data-icon="inline-start" />บันทึก Tag</Button></DialogFooter></DialogContent></Dialog>;
+function SaveDialog({ post, folders, onOpenChange, onSaved }) {
+  const [selected, setSelected] = useState(() => new Set((post?.folders || []).map((item) => item.id)));
+  const [created, setCreated] = useState([]);
+  const [newName, setNewName] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const available = useMemo(() => { const map = new Map(folders.map((item) => [item.id, item])); for (const item of created) if (!map.has(item.id)) map.set(item.id, item); return [...map.values()]; }, [folders, created]);
+  const toggle = (id) => setSelected((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const createFolder = async () => {
+    const name = newName.trim();
+    if (!name) return;
+    setBusy(true); setError("");
+    try {
+      const folder = await apiJson("/api/social-feed/folders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }), fallbackError: "สร้างโฟลเดอร์ไม่สำเร็จ" });
+      setCreated((prev) => prev.some((item) => item.id === folder.id) ? prev : [...prev, folder]);
+      setSelected((prev) => new Set(prev).add(folder.id));
+      setNewName("");
+    } catch (err) { setError(err.message); } finally { setBusy(false); }
+  };
+  const save = async () => {
+    setBusy(true); setError("");
+    try {
+      await apiJson(`/api/social-feed/posts/${post.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ folders: [...selected] }), fallbackError: "บันทึกไม่สำเร็จ" });
+      onOpenChange(false); onSaved();
+    } catch (err) { setError(err.message); } finally { setBusy(false); }
+  };
+  return <Dialog open={Boolean(post)} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>บันทึกเข้าโฟลเดอร์</DialogTitle><DialogDescription>เลือกโฟลเดอร์ที่จะเก็บโพสต์นี้ หรือสร้างใหม่ — เลือกได้หลายโฟลเดอร์</DialogDescription></DialogHeader>{error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}<FieldGroup><Field><div className="flex gap-2"><Input value={newName} onChange={(event) => setNewName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); createFolder(); } }} placeholder="สร้างโฟลเดอร์ใหม่ เช่น ลูกค้าใหม่" /><Button variant="outline" onClick={createFolder} disabled={busy || !newName.trim()}><FolderPlus data-icon="inline-start" />สร้าง</Button></div></Field>{available.length > 0 && <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">{available.map((item) => <div key={item.id} role="button" tabIndex={0} className="flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm hover:bg-muted" onClick={() => toggle(item.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggle(item.id); } }}><Checkbox checked={selected.has(item.id)} className="pointer-events-none" /><Folder className="size-4 text-muted-foreground" /><span className="min-w-0 flex-1 truncate">{item.name}</span></div>)}</div>}{!available.length && <FieldDescription>ยังไม่มีโฟลเดอร์ — พิมพ์ชื่อด้านบนแล้วกด “สร้าง”</FieldDescription>}</FieldGroup><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>ยกเลิก</Button><Button onClick={save} disabled={busy}><Check data-icon="inline-start" />{busy ? "กำลังบันทึก..." : "บันทึก"}</Button></DialogFooter></DialogContent></Dialog>;
 }
 
 function CommentDialog({ post, accounts, onOpenChange }) {

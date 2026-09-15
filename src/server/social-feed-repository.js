@@ -102,6 +102,25 @@ const schemaSql = `
     post_id BIGINT NOT NULL REFERENCES social_feed_posts(id) ON DELETE CASCADE,
     user_id TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY(post_id, user_id)
   );
+  CREATE TABLE IF NOT EXISTS social_feed_folders (
+    id BIGSERIAL PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(user_id, name)
+  );
+  CREATE TABLE IF NOT EXISTS social_feed_folder_posts (
+    folder_id BIGINT NOT NULL REFERENCES social_feed_folders(id) ON DELETE CASCADE,
+    post_id BIGINT NOT NULL REFERENCES social_feed_posts(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY(folder_id, post_id)
+  );
+  -- ย้ายโพสต์ที่เคยกด save เข้าโฟลเดอร์ "บันทึกไว้" ครั้งเดียว (guard ด้วยตารางว่าง เพื่อไม่ทับสิ่งที่ผู้ใช้แก้ทีหลัง)
+  INSERT INTO social_feed_folders(user_id, name)
+    SELECT DISTINCT user_id, 'บันทึกไว้' FROM social_feed_saved_posts
+    WHERE NOT EXISTS (SELECT 1 FROM social_feed_folders)
+    ON CONFLICT (user_id, name) DO NOTHING;
+  INSERT INTO social_feed_folder_posts(folder_id, post_id)
+    SELECT f.id, sp.post_id FROM social_feed_saved_posts sp
+    JOIN social_feed_folders f ON f.user_id=sp.user_id AND f.name='บันทึกไว้'
+    WHERE NOT EXISTS (SELECT 1 FROM social_feed_folder_posts)
+    ON CONFLICT DO NOTHING;
   CREATE TABLE IF NOT EXISTS social_feed_comment_jobs (
     id BIGSERIAL PRIMARY KEY, post_id BIGINT NOT NULL REFERENCES social_feed_posts(id) ON DELETE CASCADE,
     account_id BIGINT NOT NULL REFERENCES social_feed_collector_accounts(id) ON DELETE CASCADE,
@@ -267,11 +286,11 @@ const SOURCE_PICK_ORDER = `(CASE WHEN sas.status='ready' THEN 0 ELSE 1 END), mod
 export async function getSocialFeedState(userId, filters = {}) {
   await ensureSchema();
   const db = getSocialPool();
-  const [categoriesResult, sourcesResult, rulesResult, tagsResult, accountsResult, assignmentsResult, coverageResult, controlResult, currentReadsResult] = await Promise.all([
+  const [categoriesResult, sourcesResult, rulesResult, foldersResult, accountsResult, assignmentsResult, coverageResult, controlResult, currentReadsResult] = await Promise.all([
     db.query(`SELECT * FROM social_feed_categories ORDER BY sort_order, id`),
     db.query(`SELECT * FROM social_feed_sources ORDER BY category_id, id`),
     db.query(`SELECT * FROM social_feed_rules ORDER BY category_id, id`),
-    db.query(`SELECT t.*, COUNT(pt.post_id)::int AS count FROM social_feed_tags t LEFT JOIN social_feed_post_tags pt ON pt.tag_id=t.id GROUP BY t.id ORDER BY t.name`),
+    db.query(`SELECT f.id, f.name, COUNT(fp.post_id)::int AS count FROM social_feed_folders f LEFT JOIN social_feed_folder_posts fp ON fp.folder_id=f.id WHERE f.user_id=$1 GROUP BY f.id ORDER BY f.name`, [String(userId)]),
     db.query(`SELECT a.*,COUNT(sas.source_id)::int AS checked_sources FROM social_feed_collector_accounts a LEFT JOIN social_feed_source_account_status sas ON sas.account_id=a.id WHERE a.enabled=TRUE GROUP BY a.id ORDER BY a.id`),
     db.query(`WITH active AS (SELECT id,platform_account_id,row_number() OVER(ORDER BY id)-1 AS slot,count(*) OVER() AS total FROM social_feed_collector_accounts WHERE enabled=TRUE AND status='ready' AND last_seen_at>NOW()-INTERVAL '10 minutes'), eligible AS (SELECT s.id AS source_id,s.name,s.facebook_url,a.id AS account_id,row_number() OVER(PARTITION BY s.id ORDER BY ${SOURCE_PICK_ORDER}) AS choice FROM social_feed_sources s CROSS JOIN active a LEFT JOIN social_feed_source_account_status sas ON sas.source_id=s.id AND sas.account_id=a.id WHERE s.enabled=TRUE AND ${SOURCE_ELIGIBLE}) SELECT account_id,COUNT(*)::int AS source_count,COALESCE(jsonb_agg(jsonb_build_object('id',source_id::text,'name',name,'url',facebook_url) ORDER BY source_id),'[]') AS sources FROM eligible WHERE choice=1 GROUP BY account_id`),
     db.query(`SELECT s.id AS source_id, EXISTS(SELECT 1 FROM social_feed_collector_accounts a LEFT JOIN social_feed_source_account_status sas ON sas.source_id=s.id AND sas.account_id=a.id WHERE a.enabled=TRUE AND a.status='ready' AND a.last_seen_at>NOW()-INTERVAL '10 minutes' AND ${SOURCE_ELIGIBLE}) AS covered FROM social_feed_sources s`),
@@ -294,8 +313,8 @@ export async function getSocialFeedState(userId, filters = {}) {
   const values = [String(userId)];
   const where = [];
   if (filters.categoryId) { values.push(filters.categoryId); where.push(`s.category_id = $${values.length}`); }
-  if (filters.tagId) { values.push(filters.tagId); where.push(`EXISTS (SELECT 1 FROM social_feed_post_tags x WHERE x.post_id=p.id AND x.tag_id=$${values.length})`); }
-  if (filters.saved === "true") where.push(`sp.post_id IS NOT NULL`);
+  if (filters.folderId) { values.push(filters.folderId); where.push(`EXISTS (SELECT 1 FROM social_feed_folder_posts x JOIN social_feed_folders xf ON xf.id=x.folder_id WHERE x.post_id=p.id AND x.folder_id=$${values.length} AND xf.user_id=$1)`); }
+  if (filters.saved === "true") where.push(`EXISTS (SELECT 1 FROM social_feed_folder_posts x JOIN social_feed_folders xf ON xf.id=x.folder_id WHERE x.post_id=p.id AND xf.user_id=$1)`);
   if (filters.q) { values.push(`%${String(filters.q).slice(0, 120)}%`); where.push(`p.message ILIKE $${values.length}`); }
   if (validDateFilter(filters.dateFrom)) { values.push(filters.dateFrom); where.push(`p.posted_at >= ($${values.length}::date AT TIME ZONE 'Asia/Bangkok')`); }
   if (validDateFilter(filters.dateTo)) { values.push(filters.dateTo); where.push(`p.posted_at < (($${values.length}::date + 1) AT TIME ZONE 'Asia/Bangkok')`); }
@@ -303,7 +322,7 @@ export async function getSocialFeedState(userId, filters = {}) {
   const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   const pageSize = ["20", "50", "100", "all"].includes(String(filters.pageSize)) ? String(filters.pageSize) : "20";
   const countValues = [...values];
-  const countSql = `SELECT COUNT(*)::int AS count FROM social_feed_posts p JOIN social_feed_sources s ON s.id=p.source_id LEFT JOIN social_feed_saved_posts sp ON sp.post_id=p.id AND sp.user_id=$1 ${where.length ? `WHERE ${where.join(" AND ")}` : ""}`;
+  const countSql = `SELECT COUNT(DISTINCT p.id)::int AS count FROM social_feed_posts p JOIN social_feed_sources s ON s.id=p.source_id LEFT JOIN social_feed_folder_posts fp ON fp.post_id=p.id LEFT JOIN social_feed_folders f ON f.id=fp.folder_id AND f.user_id=$1 ${where.length ? `WHERE ${where.join(" AND ")}` : ""}`;
   let pagingSql = "";
   if (pageSize !== "all") {
     values.push(Number(pageSize), (page - 1) * Number(pageSize));
@@ -312,24 +331,23 @@ export async function getSocialFeedState(userId, filters = {}) {
     pagingSql = "LIMIT 1000";
   }
   const [postsResult, countResult] = await Promise.all([db.query(`
-    SELECT p.*, s.name AS source_name, s.facebook_url AS source_url, sp.post_id IS NOT NULL AS saved,
-      COALESCE(jsonb_agg(DISTINCT jsonb_build_object('id',t.id::text,'name',t.name)) FILTER (WHERE t.id IS NOT NULL),'[]') AS tags
+    SELECT p.*, s.name AS source_name, s.facebook_url AS source_url, bool_or(f.id IS NOT NULL) AS saved,
+      COALESCE(jsonb_agg(DISTINCT jsonb_build_object('id',f.id::text,'name',f.name)) FILTER (WHERE f.id IS NOT NULL),'[]') AS folders
     FROM social_feed_posts p
     JOIN social_feed_sources s ON s.id=p.source_id
-
-    LEFT JOIN social_feed_saved_posts sp ON sp.post_id=p.id AND sp.user_id=$1
-    LEFT JOIN social_feed_post_tags pt ON pt.post_id=p.id LEFT JOIN social_feed_tags t ON t.id=pt.tag_id
+    LEFT JOIN social_feed_folder_posts fp ON fp.post_id=p.id
+    LEFT JOIN social_feed_folders f ON f.id=fp.folder_id AND f.user_id=$1
     ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-    GROUP BY p.id,s.id,sp.post_id ORDER BY p.posted_at DESC NULLS LAST,p.id DESC ${pagingSql}`, values), db.query(countSql, countValues)]);
+    GROUP BY p.id,s.id ORDER BY p.posted_at DESC NULLS LAST,p.id DESC ${pagingSql}`, values), db.query(countSql, countValues)]);
   const totalPosts = countResult.rows[0]?.count || 0;
   return {
     categories: categoriesResult.rows.map(mapCategory),
     sources: sourcesResult.rows.map((row) => ({ id: String(row.id), categoryId: String(row.category_id), name: row.name, url: row.facebook_url, groupId: row.facebook_group_id, enabled: row.enabled, lastSeenAt: row.last_seen_at, lastError: row.last_error, requiresLogin: row.requires_login, queueState: row.queue_state, assignedAccountId: row.assigned_account_id ? String(row.assigned_account_id) : "", accessStatus: row.queue_state === "needs_assignment" ? "needs_join" : coveredSources.has(String(row.id)) ? "ready" : "no_worker", sessionCheckedAt: row.session_checked_at, accessNote: row.access_note, idleChecks: row.idle_checks, nextCheckAt: row.next_check_at })),
     rules: rulesResult.rows.map((row) => ({ id: String(row.id), categoryId: String(row.category_id), name: row.name, mode: row.mode, terms: row.terms, enabled: row.enabled })),
-    tags: tagsResult.rows.map((row) => ({ id: String(row.id), name: row.name, count: row.count })),
+    folders: foldersResult.rows.map((row) => ({ id: String(row.id), name: row.name, count: row.count })),
     accounts,
     collectorSummary: { activeCollectorCount, enabledSourceCount, sourcesPerCollector, riskLevel, running },
-    posts: postsResult.rows.map((row) => ({ id: String(row.id), sourceId: String(row.source_id), sourceName: row.source_name, authorName: row.author_name, message: row.message, originalUrl: row.original_url, postedAt: row.posted_at, ingestedAt: row.ingested_at, saved: row.saved, tags: row.tags })),
+    posts: postsResult.rows.map((row) => ({ id: String(row.id), sourceId: String(row.source_id), sourceName: row.source_name, authorName: row.author_name, message: row.message, originalUrl: row.original_url, postedAt: row.posted_at, ingestedAt: row.ingested_at, saved: row.saved, folders: row.folders })),
     pagination: { page: pageSize === "all" ? 1 : page, pageSize, total: totalPosts, shown: pageSize === "all" ? Math.min(totalPosts, 1000) : postsResult.rows.length, totalPages: pageSize === "all" ? 1 : Math.max(1, Math.ceil(totalPosts / Number(pageSize))) },
     refreshedAt: new Date().toISOString(),
   };
@@ -559,23 +577,29 @@ async function reclassifyCategory(categoryId) {
   } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
 }
 
-export async function setSocialPostSaved(postId, userId, saved) {
+export async function createSocialFolder(userId, name) {
   await ensureSchema();
-  if (saved) await getSocialPool().query(`INSERT INTO social_feed_saved_posts(post_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, [postId, String(userId)]);
-  else await getSocialPool().query(`DELETE FROM social_feed_saved_posts WHERE post_id=$1 AND user_id=$2`, [postId, String(userId)]);
+  const clean = String(name || "").trim().slice(0, 60);
+  if (!clean) { const error = new Error("กรุณาตั้งชื่อโฟลเดอร์"); error.status = 400; throw error; }
+  const result = await getSocialPool().query(`INSERT INTO social_feed_folders(user_id,name) VALUES($1,$2) ON CONFLICT(user_id,name) DO UPDATE SET name=EXCLUDED.name RETURNING id,name`, [String(userId), clean]);
+  return { id: String(result.rows[0].id), name: result.rows[0].name, count: 0 };
 }
 
-export async function setSocialPostTags(postId, names) {
+export async function deleteSocialFolder(userId, folderId) {
   await ensureSchema();
-  const clean = [...new Set((names || []).map((name) => String(name).trim()).filter(Boolean))].slice(0, 12);
+  const result = await getSocialPool().query(`DELETE FROM social_feed_folders WHERE id=$1 AND user_id=$2 RETURNING id`, [folderId, String(userId)]);
+  if (!result.rowCount) { const error = new Error("ไม่พบโฟลเดอร์"); error.status = 404; throw error; }
+}
+
+// ตั้งค่าว่าโพสต์นี้อยู่ในโฟลเดอร์ใดบ้างของผู้ใช้ (แทนที่ทั้งชุด) — folder ที่ไม่ใช่ของผู้ใช้จะถูกมองข้าม
+export async function setPostFolders(postId, userId, folderIds) {
+  await ensureSchema();
+  const ids = [...new Set((folderIds || []).map((value) => String(value)).filter((value) => /^[1-9]\d*$/.test(value)))].slice(0, 50);
   const client = await getSocialPool().connect();
   try {
     await client.query("BEGIN");
-    await client.query(`DELETE FROM social_feed_post_tags WHERE post_id=$1`, [postId]);
-    for (const name of clean) {
-      const tag = await client.query(`INSERT INTO social_feed_tags(name) VALUES($1) ON CONFLICT(name) DO UPDATE SET name=EXCLUDED.name RETURNING id`, [name.slice(0, 60)]);
-      await client.query(`INSERT INTO social_feed_post_tags(post_id,tag_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, [postId, tag.rows[0].id]);
-    }
+    await client.query(`DELETE FROM social_feed_folder_posts fp USING social_feed_folders f WHERE fp.folder_id=f.id AND fp.post_id=$1 AND f.user_id=$2`, [postId, String(userId)]);
+    if (ids.length) await client.query(`INSERT INTO social_feed_folder_posts(folder_id,post_id) SELECT f.id,$1 FROM social_feed_folders f WHERE f.user_id=$2 AND f.id = ANY($3::bigint[]) ON CONFLICT DO NOTHING`, [postId, String(userId), ids]);
     await client.query("COMMIT");
   } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
 }
