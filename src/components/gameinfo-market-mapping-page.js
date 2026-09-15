@@ -263,9 +263,9 @@ export default function GameinfoMarketMappingPage({ games, dataMode, editable })
                 <ComboboxContent><ComboboxEmpty>ไม่พบเกม</ComboboxEmpty><ComboboxList>{(item) => <ComboboxItem key={item} value={item}>{item}</ComboboxItem>}</ComboboxList></ComboboxContent>
               </Combobox>
             </Field>
-            <Field><FieldLabel>Market</FieldLabel>
+            <Field data-disabled={!enabledMarkets.length}><FieldLabel>Market</FieldLabel>
               <Select items={enabledMarkets.map((item) => ({ value: item.market, label: MARKET_LABELS[item.market] }))} value={market} onValueChange={selectMarket} disabled={!enabledMarkets.length}>
-                <SelectTrigger><SelectValue placeholder="ยังไม่ได้เปิด Market" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={enabledMarkets.length ? undefined : "ไม่มี"} /></SelectTrigger>
                 <SelectContent><SelectGroup>{enabledMarkets.map((item) => <SelectItem key={item.market} value={item.market}>{MARKET_LABELS[item.market]}</SelectItem>)}</SelectGroup></SelectContent>
               </Select>
             </Field>

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ArrowUpRight, BellRing, Clock3, Pencil, Plus, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, BellRing, Clock3, MessageCircle, Pencil, Plus, Trash2, X } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { reconcileAlertRuleView } from "@/lib/social-feed-alert-rules";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -14,8 +14,9 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui
 import { Input as BaseInput } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import SocialFeedCommentDialog from "@/components/social-feed-comment-dialog";
 
-const EMPTY = { rules: [], selectedId: "", posts: [], pagination: { page: 1, pageSize: "20", total: 0, totalPages: 1 } };
+const EMPTY = { rules: [], selectedId: "", posts: [], accounts: [], pagination: { page: 1, pageSize: "20", total: 0, totalPages: 1 } };
 const MAX_TERMS = 20;
 const MODE_ITEMS = [{ value: "all", label: "ต้องมีครบทุกคำ" }, { value: "any", label: "มีคำใดคำหนึ่ง" }];
 const MODE_LABELS = Object.fromEntries(MODE_ITEMS.map((item) => [item.value, item.label]));
@@ -46,6 +47,7 @@ export default function SocialFeedRulesPage() {
   const [error, setError] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [editingRule, setEditingRule] = useState(null);
+  const [commentPost, setCommentPost] = useState(null);
   const requestRef = useRef({ sequence: 0, controller: null });
   const setSelectedId = useCallback((value) => {
     requestRef.current.controller?.abort();
@@ -96,9 +98,10 @@ export default function SocialFeedRulesPage() {
       <section className="min-w-0">{error && <Alert variant="destructive" className="mb-4"><AlertDescription>{error}</AlertDescription></Alert>}{loading ? <div className="flex flex-col gap-3"><Skeleton className="h-28 w-full" /><Skeleton className="h-44 w-full" /></div> : !selectedRule ? <Card><CardHeader><CardTitle>เริ่มจากสร้าง Rule แรก</CardTitle><CardDescription>ตั้งชื่อ Rule แล้วกำหนดคำและรูปแบบการจับคู่ โพสต์ที่ตรงเงื่อนไขจะปรากฏในหน้านี้</CardDescription></CardHeader><CardContent><Button onClick={() => setCreateOpen(true)}><Plus data-icon="inline-start" />เพิ่ม Rule</Button></CardContent></Card> : <>
         <Card className="mb-4"><CardHeader><div className="flex items-start justify-between gap-3"><div><CardTitle>{selectedRule.name}</CardTitle><CardDescription>{MODE_LABELS[selectedRule.includeMode] || MODE_LABELS.all}</CardDescription></div><div className="flex gap-1"><Button variant="ghost" size="icon" aria-label={`แก้ไข ${selectedRule.name}`} onClick={() => { setCreateOpen(false); setEditingRule(selectedRule); }}><Pencil /></Button><Button variant="ghost" size="icon" aria-label={`ลบ ${selectedRule.name}`} onClick={() => removeRule(selectedRule)}><Trash2 /></Button></div></div></CardHeader><CardContent className="flex flex-col gap-3"><div><p className="mb-2 text-xs text-muted-foreground">คำที่ต้องการหา</p><div className="flex flex-wrap gap-1.5">{selectedRule.includeTerms.map((term) => <Badge key={term} variant="secondary">{term}</Badge>)}</div></div>{selectedRule.excludeTerms.length > 0 && <div><p className="mb-2 text-xs text-muted-foreground">คำที่ไม่ต้องการ · {MODE_LABELS[selectedRule.excludeMode] || MODE_LABELS.any}</p><div className="flex flex-wrap gap-1.5">{selectedRule.excludeTerms.map((term) => <Badge key={term} variant="outline">{term}</Badge>)}</div></div>}</CardContent></Card>
         <div className="mb-3 flex items-center justify-between"><p className="text-sm text-muted-foreground">พบ {data.pagination.total} โพสต์ที่ตรง Rule</p><div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>ก่อนหน้า</Button><span className="text-sm">{data.pagination.page}/{data.pagination.totalPages}</span><Button variant="outline" size="sm" disabled={page >= data.pagination.totalPages} onClick={() => setPage((value) => value + 1)}>ถัดไป</Button></div></div>
-        <div className="flex flex-col gap-3">{data.posts.map((post) => <article key={post.id} className="rounded-xl border bg-card p-4 sm:p-5"><div><p className="text-sm font-medium">{post.sourceName}</p>{post.authorName && <p className="mt-1 text-sm">{post.authorName}</p>}<p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="size-3" />{formatTime(post.postedAt)}</p></div><p className="mt-4 whitespace-pre-wrap text-[15px] leading-7"><HighlightTerms text={post.message} terms={selectedRule.includeTerms} /></p><div className="mt-4 border-t pt-3 text-right"><Button variant="link" size="sm" nativeButton={false} render={<a href={post.originalUrl} target="_blank" rel="noreferrer" />}>เปิดต้นโพสต์<ArrowUpRight data-icon="inline-end" /></Button></div></article>)}</div>{!data.posts.length && <Card><CardHeader><CardTitle>ยังไม่มีโพสต์ที่ตรง Rule</CardTitle><CardDescription>โพสต์ใหม่ที่ตรงเงื่อนไขจะปรากฏที่หน้านี้อัตโนมัติ</CardDescription></CardHeader></Card>}
+        <div className="flex flex-col gap-3">{data.posts.map((post) => <article key={post.id} className="rounded-xl border bg-card p-4 sm:p-5"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-medium">{post.sourceName}</p>{post.authorName && <p className="mt-1 text-sm">{post.authorName}</p>}<p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="size-3" />{formatTime(post.postedAt)}</p></div><Button variant="ghost" size="icon" aria-label="คอมเมนต์โพสต์" onClick={() => setCommentPost(post)}><MessageCircle /></Button></div><p className="mt-4 whitespace-pre-wrap text-[15px] leading-7"><HighlightTerms text={post.message} terms={selectedRule.includeTerms} /></p><div className="mt-4 border-t pt-3 text-right"><Button variant="link" size="sm" nativeButton={false} render={<a href={post.originalUrl} target="_blank" rel="noreferrer" />}>เปิดต้นโพสต์<ArrowUpRight data-icon="inline-end" /></Button></div></article>)}</div>{!data.posts.length && <Card><CardHeader><CardTitle>ยังไม่มีโพสต์ที่ตรง Rule</CardTitle><CardDescription>โพสต์ใหม่ที่ตรงเงื่อนไขจะปรากฏที่หน้านี้อัตโนมัติ</CardDescription></CardHeader></Card>}
       </>}</section>
     </main>
+    <SocialFeedCommentDialog key={`comment-${commentPost?.id || "closed"}`} post={commentPost} accounts={data.accounts} onOpenChange={(open) => !open && setCommentPost(null)} />
     {(createOpen || editingRule) && <RuleDialog key={editingRule?.id || "create"} open rule={editingRule} onOpenChange={(open) => { if (!open) { setCreateOpen(false); setEditingRule(null); } }} onSaved={(savedRule) => { setEditingRule(null); setSelectedId(savedRule.id); setPage(1); }} />}
   </div>;
 }

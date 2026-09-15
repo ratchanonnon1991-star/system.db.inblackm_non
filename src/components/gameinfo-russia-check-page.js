@@ -366,10 +366,10 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
         <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex min-w-0 flex-1 flex-col gap-2">
             <div className="flex flex-wrap items-end gap-2">
-              <Field className="w-full sm:w-72">
+              <Field className="w-full sm:w-72" data-disabled={running || loading || !gameItems.length}>
                 <FieldLabel htmlFor="russia-check-game">เกมที่กำลังดู</FieldLabel>
-                <Select items={gameItems} value={game} onValueChange={selectGame} disabled={running || loading}>
-                  <SelectTrigger id="russia-check-game" aria-label="เลือกเกม" className="w-full"><SelectValue /></SelectTrigger>
+                <Select items={gameItems} value={game} onValueChange={selectGame} disabled={running || loading || !gameItems.length}>
+                  <SelectTrigger id="russia-check-game" aria-label="เลือกเกม" className="w-full"><SelectValue placeholder={gameItems.length ? undefined : "ไม่มี"} /></SelectTrigger>
                   <SelectContent><SelectGroup>{gameItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
                 </Select>
               </Field>

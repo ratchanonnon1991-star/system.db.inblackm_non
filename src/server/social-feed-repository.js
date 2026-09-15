@@ -460,6 +460,12 @@ export async function listSocialAlertRules() {
   return result.rows.map((row) => ({ id: row.id, ...normalizeAlertRule({ name: row.name, groupMode: row.group_mode, groups: row.groups }), enabled: row.enabled, createdAt: row.created_at, updatedAt: row.updated_at }));
 }
 
+export async function listReadySocialCommentAccounts() {
+  await ensureSchema();
+  const result = await getSocialPool().query(`SELECT id::text,label,platform_account_id FROM social_feed_collector_accounts WHERE enabled=TRUE AND status='ready' AND last_seen_at>NOW()-INTERVAL '10 minutes' AND platform_account_id<>'' ORDER BY id`);
+  return result.rows.map((row) => ({ id: row.id, label: row.label, platformAccountId: row.platform_account_id }));
+}
+
 export async function saveSocialAlertRule(input) {
   await ensureSchema();
   if ((Array.isArray(input.includeTerms) && input.includeTerms.length > 20) || (Array.isArray(input.excludeTerms) && input.excludeTerms.length > 20)) { const error = new Error("Rule ใส่คำได้สูงสุดฝั่งละ 20 คำ"); error.status = 400; throw error; }

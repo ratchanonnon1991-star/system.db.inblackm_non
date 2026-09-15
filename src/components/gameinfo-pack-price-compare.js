@@ -511,24 +511,24 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
               </CardHeader>
               <CardContent>
                 <FieldGroup className="grid gap-4 md:grid-cols-3">
-                  <Field>
+                  <Field data-disabled={!games.length}>
                     <FieldLabel htmlFor="compare-game">เกม</FieldLabel>
-                    <Select items={games} value={currentGame} onValueChange={selectGame}>
-                      <SelectTrigger id="compare-game" className="w-full"><SelectValue /></SelectTrigger>
+                    <Select items={games} value={currentGame} onValueChange={selectGame} disabled={!games.length}>
+                      <SelectTrigger id="compare-game" className="w-full"><SelectValue placeholder={games.length ? undefined : "ไม่มี"} /></SelectTrigger>
                       <SelectContent><SelectGroup>{games.map((game) => <SelectItem key={game.value} value={game.value}>{game.label}</SelectItem>)}</SelectGroup></SelectContent>
                     </Select>
                   </Field>
-                  <Field>
+                  <Field data-disabled={!productTypes.length}>
                     <FieldLabel htmlFor="compare-unit">หมวดหมู่</FieldLabel>
                     <Select items={productTypes} value={currentProductType || null} onValueChange={selectProductType} disabled={!productTypes.length}>
-                      <SelectTrigger id="compare-unit" className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectTrigger id="compare-unit" className="w-full"><SelectValue placeholder={productTypes.length ? undefined : "ไม่มี"} /></SelectTrigger>
                       <SelectContent><SelectGroup>{productTypes.map((type) => <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>)}</SelectGroup></SelectContent>
                     </Select>
                   </Field>
-                  <Field>
+                  <Field data-disabled={!sellerItems.length}>
                     <FieldLabel htmlFor="compare-seller">Seller อ้างอิง</FieldLabel>
                     <Select items={sellerItems} value={activeBaselineSeller || null} onValueChange={selectBaselineSeller} disabled={!sellerItems.length}>
-                      <SelectTrigger id="compare-seller" className="w-full"><SelectValue placeholder="ไม่พบร้านของเราในหมวดนี้" /></SelectTrigger>
+                      <SelectTrigger id="compare-seller" className="w-full"><SelectValue placeholder={sellerItems.length ? undefined : "ไม่มี"} /></SelectTrigger>
                       <SelectContent><SelectGroup>{sellerItems.map((seller) => <SelectItem key={seller.value} value={seller.value}>{seller.label}</SelectItem>)}</SelectGroup></SelectContent>
                     </Select>
                     <FieldDescription>{!savedBaselineSeller ? "ยังไม่พบร้านของเราที่ตั้งไว้ในหมวดนี้" : baselineSeller === savedBaselineSeller ? "ค่าเริ่มต้นจากร้านของเรา" : "เลือกเพื่อดูชั่วคราว ระบบจะไม่บันทึกค่านี้"}</FieldDescription>

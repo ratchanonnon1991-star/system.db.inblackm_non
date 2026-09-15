@@ -98,7 +98,7 @@ export default function GameinfoMarketRateReferencesPage({ initialMarkets, canMa
               <FieldGroup className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(15rem,0.7fr)]">
                 <Field data-disabled={!canManage || !availableGames.length}><FieldLabel htmlFor={`${market.key}-game`}>เกม</FieldLabel>
                   <Select items={availableGames.map((game) => ({ label: game.label, value: game.value }))} value={addGames[market.key] || null} onValueChange={(value) => setAddGames((current) => ({ ...current, [market.key]: value }))} disabled={!canManage || !availableGames.length}>
-                    <SelectTrigger id={`${market.key}-game`} className="w-full"><SelectValue placeholder={availableGames.length ? "เลือกเกม" : "ตั้งเวลาครบทุกเกมแล้ว"} /></SelectTrigger>
+                    <SelectTrigger id={`${market.key}-game`} className="w-full"><SelectValue placeholder={availableGames.length ? "เลือกเกม" : "ไม่มี"} /></SelectTrigger>
                     <SelectContent><SelectGroup>{availableGames.map((game) => <SelectItem key={game.value} value={game.value}>{game.label}</SelectItem>)}</SelectGroup></SelectContent>
                   </Select>
                 </Field>

@@ -30,6 +30,7 @@ assert.deepEqual(reconcileAlertRuleView({ selectedId: "8", pagination: { totalPa
 const repository = fs.readFileSync("src/server/social-feed-repository.js", "utf8");
 const page = fs.readFileSync("src/components/social-feed-rules-page.js", "utf8");
 const route = fs.readFileSync("src/app/api/social-feed/alert-rules/route.js", "utf8");
+const commentDialog = fs.readFileSync("src/components/social-feed-comment-dialog.js", "utf8");
 const listPostsPath = repository.match(/export async function listSocialAlertPosts[\s\S]*?(?=export async function deleteAllSocialPosts)/)?.[0] || "";
 assert.match(repository, /CREATE TABLE IF NOT EXISTS social_feed_alert_rule_posts/);
 assert.match(repository, /alertRuleMatches\(rule, message\)/);
@@ -46,5 +47,10 @@ assert.match(page, /\(createOpen \|\| editingRule\) && <RuleDialog/);
 assert.match(page, /includeTerms\.length >= MAX_TERMS/);
 assert.match(repository, /clock_timestamp\(\) AS started_at/);
 assert.match(repository, /WHERE updated_at >= \$1/);
+assert.match(repository, /export async function listReadySocialCommentAccounts/);
+assert.match(route, /accounts, \.\.\.result/);
+assert.match(page, /aria-label="คอมเมนต์โพสต์"/);
+assert.match(page, /<SocialFeedCommentDialog/);
+assert.match(commentDialog, /\/api\/social-feed\/comments/);
 
-console.log("28 passed");
+console.log("33 passed");
