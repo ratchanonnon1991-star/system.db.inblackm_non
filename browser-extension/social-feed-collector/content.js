@@ -6,12 +6,29 @@ function dismissLoginPrompt() {
     if (close) close.click();
   }
 }
+function controlLabel(node) {
+  return (node.getAttribute("aria-label") || node.getAttribute("title") || node.textContent || "").replace(/\s+/g, " ").trim();
+}
 function expandVisiblePosts() {
+  let clicked = 0;
   for (const article of document.querySelectorAll('[role="article"]')) {
     for (const node of article.querySelectorAll('button, [role="button"]')) {
-      if (/^(see more|ดูเพิ่มเติม)$/i.test(node.textContent.trim())) node.click();
+      if (/^(see more|ดูเพิ่มเติม)$/iu.test(controlLabel(node))) {
+        node.click();
+        clicked += 1;
+      }
     }
   }
+  return clicked;
+}
+function textWithEmoji(node) {
+  if (!node) return "";
+  const clone = node.cloneNode(true);
+  for (const emoji of clone.querySelectorAll('img[alt], [role="img"][aria-label]')) {
+    const label = emoji.getAttribute("alt") || emoji.getAttribute("aria-label") || "";
+    if (label) emoji.replaceWith(document.createTextNode(label));
+  }
+  return (clone.innerText || clone.textContent || "").trim();
 }
 function openDiscussionTab() {
   const label = /^(discussion|สนทนา|โพสต์|พูดคุย|feed)$/i;
@@ -26,9 +43,10 @@ function openDiscussionTab() {
 }
 function postMessage(article) {
   const explicit = article.querySelector('[data-ad-preview="message"], [data-ad-comet-preview="message"]');
-  if (explicit?.innerText?.trim()) return explicit.innerText.trim();
+  const explicitText = textWithEmoji(explicit);
+  if (explicitText) return explicitText;
   return [...article.querySelectorAll('div[dir="auto"]')]
-    .map((node) => node.innerText?.trim() || "")
+    .map(textWithEmoji)
     .filter((text) => text.length >= 3 && !/^(like|comment|share|ถูกใจ|แสดงความคิดเห็น|แชร์)$/i.test(text))
     .sort((a, b) => b.length - a.length)[0] || "";
 }
@@ -160,8 +178,7 @@ async function scan(source) {
     await pause(1000);
     const alreadyOnDiscussion = /^\/groups\/[^/]+\/?$/.test(location.pathname);
     if (!alreadyOnDiscussion && !openedDiscussion && openDiscussionTab()) { openedDiscussion = true; await pause(2500); continue; }
-    expandVisiblePosts();
-    await pause(500);
+    if (expandVisiblePosts()) await pause(750);
     const previous = found.size;
     collectPosts(source, found);
     stale = found.size === previous ? stale + 1 : 0;
