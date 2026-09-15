@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowUpRight, Bookmark, BookmarkCheck, Check, ChevronLeft, ChevronRight, CircleDot, Clock3, Download, ExternalLink,
-  Filter, Folder, FolderPlus, LayoutGrid, MessageCircle, Monitor, Play, Plus, Radio, RefreshCw, Search, Square, Trash2, X,
+  Filter, Folder, FolderPlus, LayoutGrid, MessageCircle, Monitor, Pencil, Play, Plus, Radio, RefreshCw, Search, Square, Trash2, X,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -308,11 +308,24 @@ function FeedPagination({ pagination, pageSize, onPageSizeChange, onPageChange }
 function SaveDialog({ post, folders, onOpenChange, onSaved }) {
   const [selected, setSelected] = useState(() => new Set((post?.folders || []).map((item) => item.id)));
   const [created, setCreated] = useState([]);
+  const [renamed, setRenamed] = useState({});
+  const [editingId, setEditingId] = useState("");
+  const [editingName, setEditingName] = useState("");
   const [newName, setNewName] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const available = useMemo(() => { const map = new Map(folders.map((item) => [item.id, item])); for (const item of created) if (!map.has(item.id)) map.set(item.id, item); return [...map.values()]; }, [folders, created]);
+  const available = useMemo(() => { const map = new Map(folders.map((item) => [item.id, item])); for (const item of created) if (!map.has(item.id)) map.set(item.id, item); return [...map.values()].map((item) => renamed[item.id] ? { ...item, name: renamed[item.id] } : item); }, [folders, created, renamed]);
   const toggle = (id) => setSelected((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const renameFolder = async (id) => {
+    const name = editingName.trim();
+    if (!name) return;
+    setBusy(true); setError("");
+    try {
+      const folder = await apiJson("/api/social-feed/folders", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, name }), fallbackError: "เปลี่ยนชื่อไม่สำเร็จ" });
+      setRenamed((prev) => ({ ...prev, [id]: folder.name }));
+      setEditingId(""); onSaved();
+    } catch (err) { setError(err.message); } finally { setBusy(false); }
+  };
   const createFolder = async () => {
     const name = newName.trim();
     if (!name) return;
@@ -331,7 +344,9 @@ function SaveDialog({ post, folders, onOpenChange, onSaved }) {
       onOpenChange(false); onSaved();
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   };
-  return <Dialog open={Boolean(post)} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>บันทึกเข้าโฟลเดอร์</DialogTitle><DialogDescription>เลือกโฟลเดอร์ที่จะเก็บโพสต์นี้ หรือสร้างใหม่ — เลือกได้หลายโฟลเดอร์</DialogDescription></DialogHeader>{error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}<FieldGroup><Field><div className="flex gap-2"><Input value={newName} onChange={(event) => setNewName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); createFolder(); } }} placeholder="สร้างโฟลเดอร์ใหม่ เช่น ลูกค้าใหม่" /><Button variant="outline" onClick={createFolder} disabled={busy || !newName.trim()}><FolderPlus data-icon="inline-start" />สร้าง</Button></div></Field>{available.length > 0 && <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">{available.map((item) => <div key={item.id} role="button" tabIndex={0} className="flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm hover:bg-muted" onClick={() => toggle(item.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggle(item.id); } }}><Checkbox checked={selected.has(item.id)} className="pointer-events-none" /><Folder className="size-4 text-muted-foreground" /><span className="min-w-0 flex-1 truncate">{item.name}</span></div>)}</div>}{!available.length && <FieldDescription>ยังไม่มีโฟลเดอร์ — พิมพ์ชื่อด้านบนแล้วกด “สร้าง”</FieldDescription>}</FieldGroup><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>ยกเลิก</Button><Button onClick={save} disabled={busy}><Check data-icon="inline-start" />{busy ? "กำลังบันทึก..." : "บันทึก"}</Button></DialogFooter></DialogContent></Dialog>;
+  return <Dialog open={Boolean(post)} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>บันทึกเข้าโฟลเดอร์</DialogTitle><DialogDescription>เลือกโฟลเดอร์ที่จะเก็บโพสต์นี้ หรือสร้างใหม่ — เลือกได้หลายโฟลเดอร์</DialogDescription></DialogHeader>{error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}<FieldGroup><Field><div className="flex gap-2"><Input value={newName} onChange={(event) => setNewName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); createFolder(); } }} placeholder="สร้างโฟลเดอร์ใหม่ เช่น ลูกค้าใหม่" /><Button variant="outline" onClick={createFolder} disabled={busy || !newName.trim()}><FolderPlus data-icon="inline-start" />สร้าง</Button></div></Field>{available.length > 0 && <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">{available.map((item) => editingId === item.id
+  ? <div key={item.id} className="flex items-center gap-2 rounded-md border p-2"><Folder className="size-4 shrink-0 text-muted-foreground" /><Input autoFocus value={editingName} onChange={(event) => setEditingName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); renameFolder(item.id); } if (event.key === "Escape") setEditingId(""); }} className="h-8" /><Button variant="ghost" size="icon-sm" aria-label="บันทึกชื่อ" onClick={() => renameFolder(item.id)} disabled={busy || !editingName.trim()}><Check /></Button><Button variant="ghost" size="icon-sm" aria-label="ยกเลิก" onClick={() => setEditingId("")}><X /></Button></div>
+  : <div key={item.id} role="button" tabIndex={0} className="flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm hover:bg-muted" onClick={() => toggle(item.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggle(item.id); } }}><Checkbox checked={selected.has(item.id)} className="pointer-events-none" /><Folder className="size-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate">{item.name}</span><button type="button" aria-label={`เปลี่ยนชื่อ ${item.name}`} className="shrink-0 text-muted-foreground hover:text-foreground" onClick={(event) => { event.stopPropagation(); setEditingId(item.id); setEditingName(item.name); }}><Pencil className="size-3.5" /></button></div>)}</div>}{!available.length && <FieldDescription>ยังไม่มีโฟลเดอร์ — พิมพ์ชื่อด้านบนแล้วกด “สร้าง”</FieldDescription>}</FieldGroup><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>ยกเลิก</Button><Button onClick={save} disabled={busy}><Check data-icon="inline-start" />{busy ? "กำลังบันทึก..." : "บันทึก"}</Button></DialogFooter></DialogContent></Dialog>;
 }
 
 function CommentDialog({ post, accounts, onOpenChange }) {

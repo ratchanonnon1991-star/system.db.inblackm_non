@@ -1,6 +1,6 @@
 import { handleApiError, jsonOk } from "@/lib/http";
 import { requireAdmin } from "@/server/auth";
-import { createSocialFolder, deleteSocialFolder } from "@/server/social-feed-repository";
+import { createSocialFolder, deleteSocialFolder, renameSocialFolder } from "@/server/social-feed-repository";
 
 export async function POST(request) {
   try {
@@ -8,6 +8,14 @@ export async function POST(request) {
     const body = await request.json();
     return jsonOk(await createSocialFolder(user.id, body.name));
   } catch (error) { return handleApiError(error, "สร้างโฟลเดอร์ไม่สำเร็จ"); }
+}
+
+export async function PATCH(request) {
+  try {
+    const user = await requireAdmin(request);
+    const body = await request.json();
+    return jsonOk(await renameSocialFolder(user.id, body.id, body.name));
+  } catch (error) { return handleApiError(error, "เปลี่ยนชื่อโฟลเดอร์ไม่สำเร็จ"); }
 }
 
 export async function DELETE(request) {

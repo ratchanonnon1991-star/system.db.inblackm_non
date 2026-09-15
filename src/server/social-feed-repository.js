@@ -585,6 +585,20 @@ export async function createSocialFolder(userId, name) {
   return { id: String(result.rows[0].id), name: result.rows[0].name, count: 0 };
 }
 
+export async function renameSocialFolder(userId, folderId, name) {
+  await ensureSchema();
+  const clean = String(name || "").trim().slice(0, 60);
+  if (!clean) { const error = new Error("กรุณาตั้งชื่อโฟลเดอร์"); error.status = 400; throw error; }
+  try {
+    const result = await getSocialPool().query(`UPDATE social_feed_folders SET name=$3 WHERE id=$1 AND user_id=$2 RETURNING id,name`, [folderId, String(userId), clean]);
+    if (!result.rowCount) { const error = new Error("ไม่พบโฟลเดอร์"); error.status = 404; throw error; }
+    return { id: String(result.rows[0].id), name: result.rows[0].name };
+  } catch (error) {
+    if (error.code === "23505") { const conflict = new Error("มีโฟลเดอร์ชื่อนี้แล้ว"); conflict.status = 409; throw conflict; }
+    throw error;
+  }
+}
+
 export async function deleteSocialFolder(userId, folderId) {
   await ensureSchema();
   const result = await getSocialPool().query(`DELETE FROM social_feed_folders WHERE id=$1 AND user_id=$2 RETURNING id`, [folderId, String(userId)]);
