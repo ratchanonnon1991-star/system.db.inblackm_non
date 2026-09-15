@@ -1,14 +1,17 @@
 import pg from "pg";
 import { categoryMatchesRules, normalizeRuleTerms } from "@/lib/social-feed-rules";
 import { parseSocialFeedSearchTerms } from "@/lib/social-feed-search";
+import { alertRuleMatches, normalizeAlertRule } from "@/lib/social-feed-alert-rules";
 
 const { Pool } = pg;
 let pool;
 let schemaReady;
+let alertMatchesReady;
 
 // กันแบน: เพดานคอมเมนต์ต่อบัญชีใน 24 ชม. และระยะห่างขั้นต่ำระหว่างคอมเมนต์ (นับรวมงานที่พยายามส่งไปแล้วทุกสถานะ)
 const COMMENT_DAILY_CAP = Math.max(1, Math.floor(Number(process.env.SOCIAL_FEED_COMMENT_DAILY_CAP) || 40));
 const COMMENT_MIN_GAP_SECONDS = Math.max(0, Math.floor(Number(process.env.SOCIAL_FEED_COMMENT_MIN_GAP_SECONDS) || 180));
+const ALERT_MATCH_LOCK_ID = 208198321;
 
 function getSocialPool() {
   if (!pool) {
@@ -76,6 +79,12 @@ const schemaSql = `
     enabled BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
+  CREATE TABLE IF NOT EXISTS social_feed_alert_rules (
+    id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, group_mode TEXT NOT NULL CHECK (group_mode IN ('all','any')),
+    groups JSONB NOT NULL DEFAULT '[]'::jsonb, enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    matches_built_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  ALTER TABLE social_feed_alert_rules ADD COLUMN IF NOT EXISTS matches_built_at TIMESTAMPTZ;
   CREATE TABLE IF NOT EXISTS social_feed_posts (
     id BIGSERIAL PRIMARY KEY, source_id BIGINT NOT NULL REFERENCES social_feed_sources(id) ON DELETE CASCADE,
     external_post_id TEXT NOT NULL, message TEXT NOT NULL, original_url TEXT NOT NULL,
@@ -91,6 +100,12 @@ const schemaSql = `
     category_id BIGINT NOT NULL REFERENCES social_feed_categories(id) ON DELETE CASCADE,
     PRIMARY KEY(post_id, category_id)
   );
+  CREATE TABLE IF NOT EXISTS social_feed_alert_rule_posts (
+    rule_id BIGINT NOT NULL REFERENCES social_feed_alert_rules(id) ON DELETE CASCADE,
+    post_id BIGINT NOT NULL REFERENCES social_feed_posts(id) ON DELETE CASCADE,
+    PRIMARY KEY(rule_id,post_id)
+  );
+  CREATE INDEX IF NOT EXISTS social_feed_alert_rule_posts_post_idx ON social_feed_alert_rule_posts(post_id);
   CREATE TABLE IF NOT EXISTS social_feed_tags (
     id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
@@ -254,6 +269,36 @@ const seedSql = `
   WHERE p.external_post_id LIKE 'demo-%' ON CONFLICT DO NOTHING;
 `;
 
+async function replaceAlertRuleMatches(client, ruleId, rule, posts) {
+  const matchedPostIds = posts.filter(({ message }) => alertRuleMatches(rule, message)).map((post) => String(post.id));
+  await client.query(`DELETE FROM social_feed_alert_rule_posts WHERE rule_id=$1`, [ruleId]);
+  if (matchedPostIds.length) {
+    await client.query(`INSERT INTO social_feed_alert_rule_posts(rule_id,post_id) SELECT $1::bigint,unnest($2::bigint[]) ON CONFLICT DO NOTHING`, [ruleId, matchedPostIds]);
+  }
+  await client.query(`UPDATE social_feed_alert_rules SET matches_built_at=NOW() WHERE id=$1`, [ruleId]);
+}
+
+async function lockAlertMatches(client) {
+  await client.query(`SELECT pg_advisory_xact_lock($1)`, [ALERT_MATCH_LOCK_ID]);
+}
+
+async function backfillPendingAlertRuleMatches() {
+  const client = await getSocialPool().connect();
+  try {
+    await client.query("BEGIN");
+    await lockAlertMatches(client);
+    const rulesResult = await client.query(`SELECT id,name,group_mode,groups FROM social_feed_alert_rules WHERE matches_built_at IS NULL FOR UPDATE`);
+    if (rulesResult.rows.length) {
+      const posts = (await client.query(`SELECT id,message FROM social_feed_posts`)).rows;
+      for (const row of rulesResult.rows) {
+        const rule = normalizeAlertRule({ name: row.name, groupMode: row.group_mode, groups: row.groups });
+        await replaceAlertRuleMatches(client, row.id, rule, posts);
+      }
+    }
+    await client.query("COMMIT");
+  } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+}
+
 async function ensureSchema() {
   if (!schemaReady) {
     schemaReady = getSocialPool().query(schemaSql).catch((error) => {
@@ -262,6 +307,13 @@ async function ensureSchema() {
     });
   }
   await schemaReady;
+  if (!alertMatchesReady) {
+    alertMatchesReady = backfillPendingAlertRuleMatches().catch((error) => {
+      alertMatchesReady = null;
+      throw error;
+    });
+  }
+  await alertMatchesReady;
 }
 
 export async function seedSocialFeedDefaults() {
@@ -372,6 +424,59 @@ export async function deleteSocialRule(id) {
   await ensureSchema();
   const result = await getSocialPool().query(`DELETE FROM social_feed_rules WHERE id=$1 RETURNING category_id`, [id]);
   if (result.rows[0]) await reclassifyCategory(result.rows[0].category_id);
+}
+
+export async function listSocialAlertRules() {
+  await ensureSchema();
+  const result = await getSocialPool().query(`SELECT id::text,name,group_mode,groups,enabled,created_at,updated_at FROM social_feed_alert_rules ORDER BY id DESC`);
+  return result.rows.map((row) => ({ id: row.id, name: row.name, groupMode: row.group_mode, groups: row.groups, enabled: row.enabled, createdAt: row.created_at, updatedAt: row.updated_at }));
+}
+
+export async function saveSocialAlertRule(input) {
+  await ensureSchema();
+  const rule = normalizeAlertRule(input);
+  if (!rule.name || !rule.groups.length) { const error = new Error("กรุณาตั้งชื่อ Rule และเพิ่มเงื่อนไข"); error.status = 400; throw error; }
+  const client = await getSocialPool().connect();
+  try {
+    await client.query("BEGIN");
+    await lockAlertMatches(client);
+    const result = await client.query(`INSERT INTO social_feed_alert_rules(name,group_mode,groups) VALUES($1,$2,$3::jsonb) RETURNING id::text`, [rule.name, rule.groupMode, JSON.stringify(rule.groups)]);
+    const posts = (await client.query(`SELECT id,message FROM social_feed_posts`)).rows;
+    await replaceAlertRuleMatches(client, result.rows[0].id, rule, posts);
+    await client.query("COMMIT");
+    return { id: result.rows[0].id, ...rule, enabled: true };
+  } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+}
+
+export async function deleteSocialAlertRule(id) {
+  await ensureSchema();
+  const client = await getSocialPool().connect();
+  try {
+    await client.query("BEGIN");
+    await lockAlertMatches(client);
+    await client.query(`DELETE FROM social_feed_alert_rules WHERE id=$1`, [id]);
+    await client.query("COMMIT");
+  } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+}
+
+export async function listSocialAlertPosts(userId, ruleId, requestedPage = 1, requestedPageSize = "20") {
+  await ensureSchema();
+  const page = Math.max(1, Number.parseInt(requestedPage, 10) || 1);
+  const pageSize = ["20", "50", "100"].includes(String(requestedPageSize)) ? String(requestedPageSize) : "20";
+  const values = [String(userId), ruleId, Number(pageSize), (page - 1) * Number(pageSize)];
+  const [postsResult, countResult] = await Promise.all([
+    getSocialPool().query(`SELECT p.id::text,p.message,p.original_url,p.posted_at,p.author_name,s.name AS source_name,
+      COALESCE(jsonb_agg(DISTINCT jsonb_build_object('id',f.id::text,'name',f.name)) FILTER (WHERE f.id IS NOT NULL),'[]') AS folders
+      FROM social_feed_alert_rule_posts arp JOIN social_feed_posts p ON p.id=arp.post_id JOIN social_feed_sources s ON s.id=p.source_id
+      LEFT JOIN social_feed_folder_posts fp ON fp.post_id=p.id LEFT JOIN social_feed_folders f ON f.id=fp.folder_id AND f.user_id=$1
+      WHERE arp.rule_id=$2 GROUP BY p.id,s.id ORDER BY p.posted_at DESC NULLS LAST,p.id DESC LIMIT $3 OFFSET $4`, values),
+    getSocialPool().query(`SELECT COUNT(*)::int AS count FROM social_feed_alert_rule_posts WHERE rule_id=$1`, [ruleId]),
+  ]);
+  const total = countResult.rows[0]?.count || 0;
+  return {
+    posts: postsResult.rows.map((post) => ({ id: post.id, message: post.message, originalUrl: post.original_url, postedAt: post.posted_at, authorName: post.author_name, sourceName: post.source_name, folders: post.folders })),
+    pagination: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / Number(pageSize))) },
+  };
 }
 
 export async function deleteAllSocialPosts() {
@@ -630,6 +735,12 @@ export async function ingestSocialPosts(items) {
   const now = Date.now();
   try {
     await client.query("BEGIN");
+    await lockAlertMatches(client);
+    const alertRules = (await client.query(`SELECT id,name,group_mode,groups FROM social_feed_alert_rules WHERE enabled=TRUE`)).rows.map((row) => ({
+      id: String(row.id),
+      ...normalizeAlertRule({ name: row.name, groupMode: row.group_mode, groups: row.groups }),
+    }));
+    const alertPosts = new Map();
     for (const item of (items || []).slice(0, 500)) {
       const rawSourceId = String(item.sourceId || "");
       const sourceId = /^\d+$/.test(rawSourceId) ? rawSourceId : "0";
@@ -645,13 +756,28 @@ export async function ingestSocialPosts(items) {
       } catch {}
       const message = String(item.message).trim().slice(0, 20000);
       const authorName = String(item.authorName || "").trim().slice(0, 200);
-      const result = await client.query(`INSERT INTO social_feed_posts(source_id,external_post_id,author_name,message,original_url,posted_at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(source_id,external_post_id) DO UPDATE SET posted_at=COALESCE(EXCLUDED.posted_at,social_feed_posts.posted_at),author_name=CASE WHEN EXCLUDED.author_name<>'' THEN EXCLUDED.author_name ELSE social_feed_posts.author_name END,message=CASE WHEN length(EXCLUDED.message)>length(social_feed_posts.message) THEN EXCLUDED.message ELSE social_feed_posts.message END,original_url=CASE WHEN length(EXCLUDED.message)>length(social_feed_posts.message) THEN EXCLUDED.original_url ELSE social_feed_posts.original_url END RETURNING id,(xmax=0) AS inserted`, [sourceRow.id, String(item.externalPostId).slice(0, 255), authorName, message, originalUrl, postedAt]);
+      const result = await client.query(`INSERT INTO social_feed_posts(source_id,external_post_id,author_name,message,original_url,posted_at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(source_id,external_post_id) DO UPDATE SET posted_at=COALESCE(EXCLUDED.posted_at,social_feed_posts.posted_at),author_name=CASE WHEN EXCLUDED.author_name<>'' THEN EXCLUDED.author_name ELSE social_feed_posts.author_name END,message=CASE WHEN length(EXCLUDED.message)>length(social_feed_posts.message) THEN EXCLUDED.message ELSE social_feed_posts.message END,original_url=CASE WHEN length(EXCLUDED.message)>length(social_feed_posts.message) THEN EXCLUDED.original_url ELSE social_feed_posts.original_url END RETURNING id,message,(xmax=0) AS inserted`, [sourceRow.id, String(item.externalPostId).slice(0, 255), authorName, message, originalUrl, postedAt]);
+      alertPosts.set(String(result.rows[0].id), result.rows[0].message);
       if (!result.rows[0].inserted) { existing += 1; continue; }
       const postId = result.rows[0].id;
       await client.query(`DELETE FROM social_feed_post_categories WHERE post_id=$1`, [postId]);
       await client.query(`INSERT INTO social_feed_post_categories(post_id,category_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, [postId, sourceRow.category_id]);
       await client.query(`UPDATE social_feed_sources SET last_seen_at=NOW(),last_error='',updated_at=NOW() WHERE id=$1`, [sourceRow.id]);
       ingested += 1;
+    }
+    const alertPostIds = [...alertPosts.keys()];
+    if (alertPostIds.length) {
+      await client.query(`DELETE FROM social_feed_alert_rule_posts WHERE post_id=ANY($1::bigint[])`, [alertPostIds]);
+      const matchedRuleIds = [];
+      const matchedPostIds = [];
+      for (const [postId, message] of alertPosts) {
+        for (const rule of alertRules) {
+          if (alertRuleMatches(rule, message)) { matchedRuleIds.push(rule.id); matchedPostIds.push(postId); }
+        }
+      }
+      if (matchedPostIds.length) {
+        await client.query(`INSERT INTO social_feed_alert_rule_posts(rule_id,post_id) SELECT * FROM unnest($1::bigint[],$2::bigint[]) ON CONFLICT DO NOTHING`, [matchedRuleIds, matchedPostIds]);
+      }
     }
     await client.query("COMMIT");
     return { ingested, existing };

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowUpRight, Bookmark, BookmarkCheck, Check, ChevronLeft, ChevronRight, CircleDot, Clock3, Download, ExternalLink,
+  ArrowUpRight, BellRing, Bookmark, BookmarkCheck, Check, ChevronLeft, ChevronRight, CircleDot, Clock3, Download, ExternalLink,
   Filter, Folder, FolderPlus, LayoutGrid, MessageCircle, Monitor, Pencil, Play, Plus, Radio, RefreshCw, Search, Square, Trash2, X,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
@@ -241,6 +241,7 @@ export default function SocialFeedPage() {
                   : <Button size="sm" onClick={() => setRunning(true)} disabled={!online || settingRunning}><Play data-icon="inline-start" />เริ่ม</Button>}
               </>);
             })()}
+            <Button variant="outline" size="sm" nativeButton={false} render={<Link href="/feed-social/rules" />}><BellRing data-icon="inline-start" />Rule</Button>
             <Button variant="outline" size="icon" nativeButton={false} render={<Link href="/" />} aria-label="กลับเมนู"><LayoutGrid /></Button>
           </div>
         </div>
