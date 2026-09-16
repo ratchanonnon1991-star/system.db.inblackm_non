@@ -34,6 +34,43 @@ import {
 
 const RAZER_STATUSES = ["PENDING_TOPUP", "SILVER_READY", "ACTIVE", "INACTIVE", "IN_USE"];
 
+const SYNC_POLL_MS = 2500;
+const SYNC_POLL_MAX_MS = 8 * 60 * 1000;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Start async sync then poll until Playwright finishes (avoids proxy HTTP 504). */
+async function waitForRazerSyncJob(startUrl, { method = "POST", headers, body, fallbackError } = {}) {
+  const started = await apiJson(startUrl, {
+    method,
+    headers,
+    body,
+    fallbackError,
+  });
+  const jobId = started.jobId || started.job?.id;
+  if (!jobId) {
+    // Backward compat if an older server still returns the sync result inline.
+    return started;
+  }
+
+  const deadline = Date.now() + SYNC_POLL_MAX_MS;
+  while (Date.now() < deadline) {
+    await sleep(SYNC_POLL_MS);
+    const { job } = await apiJson(`/api/profit/razer/sync/jobs/${jobId}`, {
+      fallbackError: "อ่านสถานะดึงยอดไม่สำเร็จ",
+    });
+    if (job.status === "ok") return { ...started, job };
+    if (job.status === "error") {
+      const err = new Error(job.error || fallbackError || "ดึงยอดไม่สำเร็จ");
+      err.status = 400;
+      throw err;
+    }
+  }
+  throw new Error("ดึงยอดใช้เวลานานเกินไป — ลองอีกครั้ง");
+}
+
 const EMPTY_FORM = {
   email: "",
   password: "",
@@ -516,8 +553,8 @@ export default function ProfitRazerStockPage() {
     setError("");
     setImportMsg("");
     try {
-      setImportMsg(`กำลังดึงยอด ${account.email}… (รอ 1–2 นาที)`);
-      await apiJson(`/api/profit/razer/accounts/${account.id}/sync`, {
+      setImportMsg(`กำลังดึงยอด ${account.email}… (รอ 1–3 นาที)`);
+      await waitForRazerSyncJob(`/api/profit/razer/accounts/${account.id}/sync`, {
         method: "POST",
         fallbackError: "ดึงยอดจาก Razer ไม่สำเร็จ",
       });
@@ -538,15 +575,16 @@ export default function ProfitRazerStockPage() {
     if (!silent) setSyncingAll(true);
     if (!silent) setError("");
     try {
-      const data = await apiJson("/api/profit/razer/sync", {
+      if (!silent) setImportMsg("กำลังดึงยอดทั้งหมด… (รอบพื้นหลัง ไม่โดน timeout)");
+      const data = await waitForRazerSyncJob("/api/profit/razer/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ zone: zoneFilter || undefined }),
         fallbackError: "ดึงยอดทั้งหมดไม่สำเร็จ",
       });
-      const { ok, failed, errors } = data.result;
+      const { ok, failed, errors } = data.job?.result || data.result || {};
       if (!silent) {
-        setImportMsg(`ดึงยอดเสร็จ · สำเร็จ ${ok}${failed ? ` · ไม่สำเร็จ ${failed}` : ""}`);
+        setImportMsg(`ดึงยอดเสร็จ · สำเร็จ ${ok ?? 0}${failed ? ` · ไม่สำเร็จ ${failed}` : ""}`);
       } else if (failed > 0 && errors?.[0]?.message) {
         setError(`ดึงยอดอัตโนมัติไม่สำเร็จ: ${errors[0].message}`);
       }

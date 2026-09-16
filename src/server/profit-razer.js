@@ -128,7 +128,7 @@ function rowToAccount(row, { includeSecrets = false } = {}) {
   return account;
 }
 
-export async function listRazerAccounts({ zone, search, status } = {}) {
+export async function listRazerAccounts({ zone, search, status, includeSecrets = false } = {}) {
   await ensureSchema();
   const clauses = [];
   const params = [];
@@ -151,7 +151,7 @@ export async function listRazerAccounts({ zone, search, status } = {}) {
     `SELECT * FROM profit_razer_accounts ${where} ORDER BY zone, email`,
     params
   );
-  return rows.map((row) => rowToAccount(row));
+  return rows.map((row) => rowToAccount(row, { includeSecrets }));
 }
 
 export async function getRazerAccountByEmail(email, options) {

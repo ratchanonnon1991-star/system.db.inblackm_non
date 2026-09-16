@@ -10,7 +10,9 @@ CREATE TABLE IF NOT EXISTS g2g_games (
 );
 
 INSERT INTO g2g_games (value, slug, label, sort_order)
-VALUES ('zepeto-top-up', 'zepeto-top-up', 'ZEPETO', 0)
+VALUES
+  ('zepeto-top-up', 'zepeto-top-up', 'ZEPETO', 0),
+  ('love-and-deepspace-top-up', 'love-and-deepspace-top-up', 'LOVE AND DEEPSPACE', 1)
 ON CONFLICT DO NOTHING;
 -- Re-runnable by design; runtime keeps the same schema guard for existing installs.
 
