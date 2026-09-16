@@ -196,26 +196,51 @@ async function botAccountWithCredentials(account) {
   };
 }
 
+/**
+ * List payload for bots — local TOTP only (no api-system fan-out).
+ * With hundreds of emails, calling external OTP per row timed out the API.
+ * Full OTP refresh stays on /bot/otp, /bot/pick, and /accounts/:id/use.
+ */
+function botAccountListItem(account) {
+  const { totp, totpSecondsLeft } = totpMeta(account.tfaSecret || "");
+  return {
+    ...publicAccount(account),
+    password: account.password || "",
+    tfaSecret: account.tfaSecret || "",
+    totp,
+    totpSecondsLeft,
+    otp: totp,
+    otpSource: totp ? "totp" : "none",
+    otpError: totp
+      ? ""
+      : "ยังไม่มี 2FA Secret ในระบบ — เรียก GET /bot/otp หรือ POST /bot/pick|/accounts/:id/use",
+    totpKeyUsed: account.totpKey || "",
+  };
+}
+
 export async function listRazerAccountsForBot({
   zone,
   status,
   minGold = 0,
   minSilver = 0,
   includeDisabled = false,
+  withLiveOtp = false,
 } = {}) {
-  const accounts = await listRazerAccounts({ zone, status });
+  const accounts = await listRazerAccounts({ zone, status, includeSecrets: true });
   const eligible = [];
 
-  for (const summary of accounts) {
-    if (summary.hidden) continue;
-    if (!includeDisabled && !summary.botEnabled) continue;
-    if (summary.status === "IN_USE") continue;
-    if (summary.goldBalance < minGold && summary.silverBalance < minSilver) continue;
+  for (const full of accounts) {
+    if (full.hidden) continue;
+    if (!includeDisabled && !full.botEnabled) continue;
+    if (full.status === "IN_USE") continue;
+    if (full.goldBalance < minGold && full.silverBalance < minSilver) continue;
+    if (!full.hasPassword) continue;
 
-    const full = await getRazerAccount(summary.id, { includeSecrets: true });
-    if (!full?.hasPassword) continue;
-
-    eligible.push(await botAccountWithCredentials(full));
+    eligible.push(
+      withLiveOtp
+        ? await botAccountWithCredentials(full)
+        : botAccountListItem(full)
+    );
   }
 
   return eligible;
