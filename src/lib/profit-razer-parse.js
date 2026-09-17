@@ -323,7 +323,7 @@ export function parsedRowToForm(row) {
     tfaSecret: row.tfaSecret,
     zone: row.zone,
     rate: row.rate ? String(row.rate) : "",
-    status: "PENDING_TOPUP",
+    status: "ACTIVE",
     goldBalance: row.goldBalance ? String(row.goldBalance) : "",
     silverBalance: row.silverBalance ? String(row.silverBalance) : "",
   };

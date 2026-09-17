@@ -262,7 +262,7 @@ export default function ProfitRazerDeveloperApi({ canEdit }) {
           </button>
         </div>
         <p className="mt-1.5 font-mono text-[11px] text-ll-ink-tertiary">
-          ?zone=CAD&amp;status=ACTIVE — filter โซน / สถานะ
+          ?zone=CAD&amp;status=ACTIVE — บอทใช้ได้เฉพาะ Active
         </p>
       </div>
 
@@ -272,10 +272,10 @@ export default function ProfitRazerDeveloperApi({ canEdit }) {
         <p className="font-medium text-ll-ink">Header</p>
         <code className="mt-1 block font-mono">Authorization: Bearer &lt;secret_key&gt;</code>
         <p className="mt-2">Response มี email, password, tfaSecret, otp (จาก 2FA), zone, status, goldBalance</p>
-        <p className="mt-1 font-mono text-[10px]">GET /bot/accounts — รายการเร็ว (OTP จาก 2FA ใน DB เท่านั้น ไม่ยิงทีละเมล)</p>
-        <p className="mt-1 font-mono text-[10px]">POST /bot/pick หรือ POST .../accounts/:id/use — มาร์ก IN_USE + ดึง OTP</p>
-        <p className="mt-1 font-mono text-[10px]">POST .../release หรือ /report — ปล่อย + sync ยอดจริงจาก Razer</p>
-        <p className="mt-1 font-mono text-[10px]">GET /bot/otp?email=... — OTP บัญชีเดียว (ไม่มาร์ก IN_USE)</p>
+        <p className="mt-1 font-mono text-[10px]">GET /bot/accounts — รายการเร็ว (เฉพาะ Active ที่บอทใช้ได้)</p>
+        <p className="mt-1 font-mono text-[10px]">POST /bot/pick หรือ /accounts/:id/use — มาร์กกำลังส่งเติม Twocard/AZ (+ platform)</p>
+        <p className="mt-1 font-mono text-[10px]">POST .../release หรือ /report — ปล่อยกลับ Active + sync ยอด</p>
+        <p className="mt-1 font-mono text-[10px]">GET /bot/otp?email=... — OTP บัญชีเดียว</p>
         <p className="mt-1">ปิด/เปิดบัญชีทีละรายการได้ที่คอลัมน์ Bot API ในตารางด้านล่าง</p>
       </div>
 

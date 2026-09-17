@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Coins, Globe, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
-import { RAZER_ZONE_LABELS } from "@/components/profit-razer-badges";
+import { RAZER_ZONE_LABELS, RAZER_STATUS_LABELS } from "@/components/profit-razer-badges";
 import { fmtMoney } from "@/lib/profit-format";
 
 function fmtGold(n) {
@@ -52,10 +52,10 @@ function ProgressRow({ label, count, total, detail, color }) {
 
 const STATUS_COLORS = {
   ACTIVE: "bg-emerald-500",
-  SILVER_READY: "bg-violet-500",
-  PENDING_TOPUP: "bg-red-400",
-  INACTIVE: "bg-ll-ink-tertiary",
-  IN_USE: "bg-amber-500",
+  FILLING_TWOCARD: "bg-amber-500",
+  FILLING_AZ: "bg-orange-500",
+  LINE_DROPPED: "bg-red-500",
+  DISABLED: "bg-ll-ink-tertiary",
 };
 
 export default function ProfitRazerOverview({ overview, onRefresh, refreshing }) {
@@ -154,7 +154,7 @@ export default function ProfitRazerOverview({ overview, onRefresh, refreshing })
             {statuses.map((s) => (
               <ProgressRow
                 key={s.status}
-                label={s.status}
+                label={RAZER_STATUS_LABELS[s.status] || s.status}
                 count={s.accountCount}
                 total={totals.accountCount}
                 color={STATUS_COLORS[s.status] || "bg-ll-ink-tertiary"}
