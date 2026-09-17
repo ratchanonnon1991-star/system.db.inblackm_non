@@ -28,6 +28,10 @@ function ensureSchema(connection) {
   const promise = (async () => {
     const client = await getPoolForConnection(connection).connect();
     try {
+      // Seed only on first create — re-seeding every call brought deleted defaults back.
+      const tableExists = Boolean((await client.query(
+        `SELECT to_regclass('g2g_games') IS NOT NULL AS exists`
+      )).rows[0]?.exists);
       await client.query(`
         CREATE TABLE IF NOT EXISTS g2g_games (
           value      TEXT PRIMARY KEY,
@@ -38,14 +42,15 @@ function ensureSchema(connection) {
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
-      // Seed แบบเดียวกับ kaleoz/itemku — ใส่ของใหม่จาก DEFAULT ได้แม้ตารางมีอยู่แล้ว
-      await client.query(
-        `INSERT INTO g2g_games (value, slug, label, sort_order)
-         SELECT seed.value, seed.slug, seed.label, seed.sort_order
-         FROM jsonb_to_recordset($1::jsonb) AS seed(value TEXT, slug TEXT, label TEXT, sort_order INTEGER)
-         ON CONFLICT DO NOTHING`,
-        [JSON.stringify(DEFAULT_G2G_GAMES.map((game, index) => ({ ...game, sort_order: index })))]
-      );
+      if (!tableExists) {
+        await client.query(
+          `INSERT INTO g2g_games (value, slug, label, sort_order)
+           SELECT seed.value, seed.slug, seed.label, seed.sort_order
+           FROM jsonb_to_recordset($1::jsonb) AS seed(value TEXT, slug TEXT, label TEXT, sort_order INTEGER)
+           ON CONFLICT DO NOTHING`,
+          [JSON.stringify(DEFAULT_G2G_GAMES.map((game, index) => ({ ...game, sort_order: index })))]
+        );
+      }
     } finally {
       client.release();
     }
