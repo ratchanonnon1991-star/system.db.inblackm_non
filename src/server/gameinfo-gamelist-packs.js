@@ -9,6 +9,7 @@
 // so they're stored as one sentinel row per game at pack_id = "__computed__"
 // rather than adding a second table — keeps the "just id -> pack_id -> json"
 // shape the whole way through.
+import { createHash } from "node:crypto";
 import { getPoolForConnection } from "@/lib/db";
 import { sanitizeGameinfoPack } from "@/lib/gameinfo-pack-model";
 import { findDuplicateGameinfoPackNamePrices } from "@/lib/gameinfo-pack-validation";
@@ -1303,6 +1304,17 @@ function groupRenames(previousRows, nextRows) {
   return renames;
 }
 
+function summarizeEmbeddedImages(value) {
+  if (typeof value === "string" && value.startsWith("data:image/")) {
+    return `embedded-image:sha256:${createHash("sha256").update(value).digest("hex")}:bytes:${value.length}`;
+  }
+  if (Array.isArray(value)) return value.map(summarizeEmbeddedImages);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, summarizeEmbeddedImages(item)]));
+  }
+  return value;
+}
+
 export async function recordGameinfoAudit({
   gameId,
   area,
@@ -1316,7 +1328,9 @@ export async function recordGameinfoAudit({
   client: transactionClient = null,
 }) {
   const numericGameId = Number(gameId);
-  if (!Number.isInteger(numericGameId) || numericGameId < 0 || sameJson(before ?? null, after ?? null)) return;
+  const auditBefore = area === "tutorial" || area === "warning" ? summarizeEmbeddedImages(before) : before;
+  const auditAfter = area === "tutorial" || area === "warning" ? summarizeEmbeddedImages(after) : after;
+  if (!Number.isInteger(numericGameId) || numericGameId < 0 || sameJson(auditBefore ?? null, auditAfter ?? null)) return;
   const pool = await getReadyPool();
   const client = transactionClient || await pool.connect();
   try {
@@ -1324,7 +1338,7 @@ export async function recordGameinfoAudit({
       client,
       numericGameId,
       actor,
-      { packId, action, area, before, after },
+      { packId, action, area, before: auditBefore, after: auditAfter },
       source,
       dataMode
     );
