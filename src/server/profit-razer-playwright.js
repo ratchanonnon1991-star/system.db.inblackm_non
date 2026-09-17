@@ -29,10 +29,8 @@ function parseNumber(raw) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function inferStatus(goldBalance, silverBalance) {
-  if (goldBalance > 0) return "ACTIVE";
-  if (silverBalance >= 5000) return "SILVER_READY";
-  return "PENDING_TOPUP";
+function inferStatus() {
+  return "ACTIVE";
 }
 
 function parseBalancesFromApi(json) {
