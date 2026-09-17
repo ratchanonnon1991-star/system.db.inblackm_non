@@ -148,6 +148,13 @@ const schemaSql = `
     comment_text TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued', instance_id TEXT NOT NULL DEFAULT '',
     result_note TEXT NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
+  CREATE TABLE IF NOT EXISTS social_feed_comment_preset_categories (
+    id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  CREATE TABLE IF NOT EXISTS social_feed_comment_presets (
+    id BIGSERIAL PRIMARY KEY, category_id BIGINT NOT NULL REFERENCES social_feed_comment_preset_categories(id) ON DELETE CASCADE,
+    body TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
 `;
 
 const seedSql = `
@@ -685,6 +692,47 @@ export async function claimSocialSource({ sourceId, instanceId }) {
 export async function finishSocialSource({ sourceId, instanceId, status }) {
   await ensureSchema();
   await getSocialPool().query(`UPDATE social_feed_work_leases SET active=FALSE,expires_at=NOW()+CASE WHEN $3='ready' THEN INTERVAL '5 minutes' ELSE INTERVAL '0 seconds' END WHERE source_id=$1 AND instance_id=$2`, [sourceId, instanceId, status]);
+}
+
+export async function listSocialCommentPresets() {
+  await ensureSchema();
+  const [categories, presets] = await Promise.all([
+    getSocialPool().query(`SELECT id::text,name FROM social_feed_comment_preset_categories ORDER BY id`),
+    getSocialPool().query(`SELECT id::text,category_id::text,body FROM social_feed_comment_presets ORDER BY id`),
+  ]);
+  return categories.rows.map((category) => ({ ...category, presets: presets.rows.filter((item) => item.category_id === category.id).map((item) => ({ id: item.id, body: item.body })) }));
+}
+
+export async function saveSocialCommentPreset({ kind, id, categoryId, name, body }) {
+  await ensureSchema();
+  const cleanId = String(id || "");
+  if (cleanId && !/^[1-9]\d*$/.test(cleanId)) { const error = new Error("รหัสข้อความไม่ถูกต้อง"); error.status = 400; throw error; }
+  if (kind === "category") {
+    const cleanName = String(name || "").trim().slice(0, 120);
+    if (!cleanName) { const error = new Error("กรุณาระบุชื่อหมวด"); error.status = 400; throw error; }
+    const result = cleanId
+      ? await getSocialPool().query(`UPDATE social_feed_comment_preset_categories SET name=$2 WHERE id=$1 RETURNING id`, [cleanId, cleanName])
+      : await getSocialPool().query(`INSERT INTO social_feed_comment_preset_categories(name) VALUES($1) RETURNING id`, [cleanName]);
+    if (!result.rowCount) { const error = new Error("ไม่พบหมวด"); error.status = 404; throw error; }
+    return { id: String(result.rows[0].id) };
+  }
+  if (kind !== "preset") { const error = new Error("ชนิดข้อมูลไม่ถูกต้อง"); error.status = 400; throw error; }
+  const cleanBody = String(body || "").trim();
+  if (!cleanBody || cleanBody.length > 8000 || !/^[1-9]\d*$/.test(String(categoryId || ""))) { const error = new Error("ข้อความหรือหมวดไม่ถูกต้อง"); error.status = 400; throw error; }
+  const result = cleanId
+    ? await getSocialPool().query(`UPDATE social_feed_comment_presets SET body=$2 WHERE id=$1 AND category_id=$3 RETURNING id`, [cleanId, cleanBody, categoryId])
+    : await getSocialPool().query(`INSERT INTO social_feed_comment_presets(category_id,body) SELECT id,$2 FROM social_feed_comment_preset_categories WHERE id=$1 RETURNING id`, [categoryId, cleanBody]);
+  if (!result.rowCount) { const error = new Error("ไม่พบข้อความหรือหมวด"); error.status = 404; throw error; }
+  return { id: String(result.rows[0].id) };
+}
+
+export async function deleteSocialCommentPreset({ kind, id }) {
+  await ensureSchema();
+  if (!/^[1-9]\d*$/.test(String(id || "")) || !["category", "preset"].includes(kind)) { const error = new Error("ข้อมูลที่ลบไม่ถูกต้อง"); error.status = 400; throw error; }
+  const table = kind === "category" ? "social_feed_comment_preset_categories" : "social_feed_comment_presets";
+  const result = await getSocialPool().query(`DELETE FROM ${table} WHERE id=$1 RETURNING id`, [id]);
+  if (!result.rowCount) { const error = new Error("ไม่พบข้อมูลที่ลบ"); error.status = 404; throw error; }
+  return { id: String(result.rows[0].id) };
 }
 
 export async function createSocialCommentJob({ postId, accountId, text }) {

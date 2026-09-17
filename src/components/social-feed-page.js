@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowUpRight, BellRing, Bookmark, BookmarkCheck, Check, ChevronLeft, ChevronRight, CircleDot, Clock3, Download, ExternalLink,
-  Filter, Folder, FolderPlus, LayoutGrid, MessageCircle, Monitor, Pencil, Play, Plus, Radio, RefreshCw, Search, Square, Trash2, X,
+  ArrowUpRight, BellRing, Bookmark, BookmarkCheck, Check, ChevronLeft, ChevronRight, CircleDot, Clock3, ExternalLink,
+  Filter, Folder, FolderPlus, LayoutGrid, MessageCircle, Monitor, Pencil, Play, Plus, Puzzle, Radio, RefreshCw, Search, Square, Trash2, X,
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { parseSocialFeedSearchTerms } from "@/lib/social-feed-search";
@@ -21,6 +21,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import SocialFeedCommentDialog from "@/components/social-feed-comment-dialog";
+import SocialFeedCommentPresets from "@/components/social-feed-comment-presets";
 
 const EMPTY = { categories: [], sources: [], rules: [], folders: [], posts: [], accounts: [], collectorSummary: { activeCollectorCount: 0, enabledSourceCount: 0, sourcesPerCollector: 0, riskLevel: "offline", running: false }, pagination: { page: 1, pageSize: "20", total: 0, totalPages: 1 } };
 
@@ -273,12 +274,16 @@ export default function SocialFeedPage() {
         {error && <Alert variant="destructive"><AlertTitle>โหลดข้อมูลไม่สำเร็จ</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
 
         <Tabs value={tab} onValueChange={(value) => { setTab(value); setPage(1); }}>
-          <TabsList variant="line">
-            <TabsTrigger value="feed"><Radio data-icon="inline-start" />ฟีด</TabsTrigger>
-            <TabsTrigger value="saved"><Bookmark data-icon="inline-start" />บันทึกไว้</TabsTrigger>
-            <TabsTrigger value="sources"><ExternalLink data-icon="inline-start" />แหล่งข้อมูล</TabsTrigger>
-            <TabsTrigger value="workers"><Monitor data-icon="inline-start" />เครื่องอ่าน</TabsTrigger>
-          </TabsList>
+          <div className="flex flex-wrap items-end gap-1">
+            <TabsList variant="line">
+              <TabsTrigger value="feed"><Radio data-icon="inline-start" />ฟีด</TabsTrigger>
+              <TabsTrigger value="saved"><Bookmark data-icon="inline-start" />บันทึกไว้</TabsTrigger>
+              <TabsTrigger value="sources"><ExternalLink data-icon="inline-start" />แหล่งข้อมูล</TabsTrigger>
+              <TabsTrigger value="workers"><Monitor data-icon="inline-start" />เครื่องอ่าน</TabsTrigger>
+              <TabsTrigger value="comment-presets"><MessageCircle data-icon="inline-start" />คลังข้อความ</TabsTrigger>
+            </TabsList>
+            <Link href="/feed-social/extension" className="inline-flex h-8 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-sm font-medium text-foreground/60 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><Puzzle className="size-4" />Extension</Link>
+          </div>
 
           <TabsContent value="feed" className="pt-4">
             <div className="grid gap-6 lg:grid-cols-1">
@@ -314,10 +319,12 @@ export default function SocialFeedPage() {
           <TabsContent value="sources" className="pt-4">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div><p className="font-medium">หมวดหมู่และกลุ่มที่ติดตาม</p><p className="text-sm text-muted-foreground">เพิ่มกลุ่มใหม่แล้วใช้ Group ID เดียวกันกับ collector</p></div>
-              <div className="flex flex-wrap gap-2"><Button variant="outline" nativeButton={false} render={<a href="/social-feed-collector.zip" download />}><Download data-icon="inline-start" />ดาวน์โหลด Extension</Button><Button variant="outline" onClick={() => setCategoryOpen(true)}><FolderPlus data-icon="inline-start" />เพิ่มหมวดหมู่</Button><Button variant="destructive" onClick={() => setDeleteSourceTarget({ all: true })} disabled={!data.categories.length || deletingSources}><Trash2 data-icon="inline-start" />ลบทุกกลุ่ม</Button><Button onClick={() => { setSourceCategoryId(""); setSourceOpen(true); }}><Plus data-icon="inline-start" />เพิ่มกลุ่ม</Button></div>
+              <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setCategoryOpen(true)}><FolderPlus data-icon="inline-start" />เพิ่มหมวดหมู่</Button><Button variant="destructive" onClick={() => setDeleteSourceTarget({ all: true })} disabled={!data.categories.length || deletingSources}><Trash2 data-icon="inline-start" />ลบทุกกลุ่ม</Button><Button onClick={() => { setSourceCategoryId(""); setSourceOpen(true); }}><Plus data-icon="inline-start" />เพิ่มกลุ่ม</Button></div>
             </div>
             <div className="grid gap-4 lg:grid-cols-3">{sourcesByCategory.map((group) => <Card key={group.id}><CardHeader><CardTitle>{group.name}</CardTitle><CardDescription>{group.sources.length} กลุ่ม Facebook</CardDescription><CardAction className="flex gap-1"><Button variant="ghost" size="icon-sm" aria-label={`เพิ่มกลุ่ม Facebook ใน ${group.name}`} onClick={() => { setSourceCategoryId(group.id); setSourceOpen(true); }}><Plus /></Button><Button variant="ghost" size="icon-sm" aria-label={`ลบหมวดหมู่ ${group.name}`} onClick={() => setDeleteCategoryTarget(group)}><Trash2 /></Button></CardAction></CardHeader><CardContent className="flex flex-col gap-2">{group.sources.map((source) => <div key={source.id} className="flex flex-col gap-2 rounded-lg border p-3 text-sm"><div className="flex items-start justify-between gap-3"><a href={source.url} target="_blank" rel="noreferrer" className="min-w-0 font-medium hover:underline"><span>{source.name}</span><ExternalLink className="ml-1 inline size-4" /></a><Button variant="ghost" size="icon-sm" aria-label={`ลบ ${source.name}`} onClick={() => setDeleteSourceTarget(source)}><Trash2 /></Button></div><div className="flex flex-wrap items-center gap-2"><Badge variant={source.accessStatus === "ready" ? "default" : "destructive"}>{ACCESS_LABELS[source.accessStatus] || ACCESS_LABELS.unknown}</Badge></div>{source.sessionCheckedAt && <span className="text-xs text-muted-foreground">ตรวจล่าสุด {formatTime(source.sessionCheckedAt)}</span>}</div>)}</CardContent></Card>)}</div>
           </TabsContent>
+
+          <TabsContent value="comment-presets" className="pt-4"><SocialFeedCommentPresets /></TabsContent>
 
           <TabsContent value="workers" className="pt-4">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><p className="font-medium">เครื่องที่เข้าระบบ</p><p className="text-sm text-muted-foreground">ทั้งหมด {data.accounts.length} เครื่อง · ออนไลน์ {data.collectorSummary.activeCollectorCount} เครื่อง</p></div><Button variant="outline" onClick={checkSessions} disabled={checkingSessions}><RefreshCw data-icon="inline-start" className={checkingSessions ? "animate-spin" : ""} />{checkingSessions ? "กำลังเช็ค..." : "สั่งดึงโพสต์ตอนนี้"}</Button></div>
