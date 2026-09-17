@@ -10,6 +10,6 @@ export async function POST(request, { params }) {
     const result = await releaseRazerAccountForBot(id, body);
     return jsonOk(result);
   } catch (err) {
-    return handleApiError(err, "ปล่อยบัญชี IN_USE ไม่สำเร็จ");
+    return handleApiError(err, "ปล่อยบัญชีหลังส่งเติมไม่สำเร็จ");
   }
 }

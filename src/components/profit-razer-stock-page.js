@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { fmtDate, fmtMoney } from "@/lib/profit-format";
-import { RazerStatusBadge, RazerZoneBadge } from "@/components/profit-razer-badges";
+import { RazerStatusBadge, RazerZoneBadge, RAZER_STATUS_LABELS, RAZER_STATUSES } from "@/components/profit-razer-badges";
 import ProfitRazerDeveloperApi from "@/components/profit-razer-developer-api";
 import ProfitModal, { ProfitField, profitInputClass } from "@/components/profit-modal";
 import { useProfitCanEdit } from "@/components/profit-capabilities-context";
@@ -31,8 +31,7 @@ import {
   RAZER_IMPORT_FORMAT_HINT,
   RAZER_ZONES,
 } from "@/lib/profit-razer-parse";
-
-const RAZER_STATUSES = ["PENDING_TOPUP", "SILVER_READY", "ACTIVE", "INACTIVE", "IN_USE"];
+import { isRazerBusyStatus } from "@/lib/profit-razer-status";
 
 const SYNC_POLL_MS = 2500;
 const SYNC_POLL_MAX_MS = 8 * 60 * 1000;
@@ -77,7 +76,7 @@ const EMPTY_FORM = {
   tfaSecret: "",
   zone: "CAD",
   rate: "",
-  status: "PENDING_TOPUP",
+  status: "ACTIVE",
   goldBalance: "",
   silverBalance: "",
 };
@@ -85,7 +84,7 @@ const EMPTY_FORM = {
 const EMPTY_EDIT_FORM = {
   zone: "CAD",
   rate: "",
-  status: "PENDING_TOPUP",
+  status: "ACTIVE",
   goldBalance: "",
   silverBalance: "",
   botEnabled: true,
@@ -231,7 +230,7 @@ export default function ProfitRazerStockPage() {
     loadAccounts();
   }, [loadAccounts]);
 
-  // Light refresh so IN_USE from bot claim shows without manual reload.
+  // Light refresh so filling status from bot claim shows without manual reload.
   useEffect(() => {
     const timer = setInterval(() => {
       loadAccounts();
@@ -685,7 +684,7 @@ export default function ProfitRazerStockPage() {
     setEditForm({
       zone: account.zone || "CAD",
       rate: account.rate != null ? String(account.rate) : "",
-      status: account.status || "PENDING_TOPUP",
+      status: account.status || "ACTIVE",
       goldBalance: account.goldBalance != null ? String(account.goldBalance) : "",
       silverBalance: account.silverBalance != null ? String(account.silverBalance) : "",
       botEnabled: account.botEnabled !== false,
@@ -715,12 +714,12 @@ export default function ProfitRazerStockPage() {
     setEditError("");
     try {
       const body = buildPatchBody(editForm, { includeBalances: true });
-      if (body.status !== "IN_USE" && editAccount.status === "IN_USE") {
+      if (!isRazerBusyStatus(body.status) && isRazerBusyStatus(editAccount.status)) {
         body.clearInUse = true;
       }
-      if (body.status === "IN_USE" && editAccount.status !== "IN_USE") {
+      if (isRazerBusyStatus(body.status) && !isRazerBusyStatus(editAccount.status)) {
         const ok = confirm(
-          "ตั้งเป็น IN_USE ด้วยมืออาจชนกับบอท — แนะนำให้บอท claim เอง\n\nยืนยันตั้งสถานะ IN_USE?"
+          `ตั้งเป็น “${RAZER_STATUS_LABELS[body.status] || body.status}” ด้วยมืออาจชนกับบอท — แนะนำให้บอท claim เองตอนสั่งเติม\n\nยืนยัน?`
         );
         if (!ok) {
           setEditSaving(false);
@@ -772,12 +771,12 @@ export default function ProfitRazerStockPage() {
       return;
     }
 
-    const inUseCount = ids.filter((id) => accounts.find((a) => a.id === id)?.status === "IN_USE").length;
+    const busyCount = ids.filter((id) => isRazerBusyStatus(accounts.find((a) => a.id === id)?.status)).length;
     let msg = `อัปเดต ${ids.length} บัญชีพร้อมกัน?`;
-    if (bulkForm.status === "IN_USE") {
-      msg += "\n\n⚠ ตั้ง IN_USE แบบกลุ่มไม่แนะนำ — บอทควร claim เอง";
-    } else if (bulkForm.status && inUseCount > 0) {
-      msg += `\n\n${inUseCount} บัญชี IN_USE จะถูกปล่อย (clear in_use)`;
+    if (isRazerBusyStatus(bulkForm.status)) {
+      msg += `\n\n⚠ ตั้ง “${RAZER_STATUS_LABELS[bulkForm.status] || bulkForm.status}” แบบกลุ่มไม่แนะนำ — บอทควร claim เองตอนสั่งเติม`;
+    } else if (bulkForm.status && busyCount > 0) {
+      msg += `\n\n${busyCount} บัญชีที่กำลังส่งเติมจะถูกปล่อย (clear in_use)`;
     }
     if (!confirm(msg)) return;
 
@@ -789,7 +788,7 @@ export default function ProfitRazerStockPage() {
       for (const id of ids) {
         const acc = accounts.find((a) => a.id === id);
         const patch = { ...body };
-        if (patch.status && patch.status !== "IN_USE" && acc?.status === "IN_USE") {
+        if (patch.status && !isRazerBusyStatus(patch.status) && isRazerBusyStatus(acc?.status)) {
           patch.clearInUse = true;
         }
         try {
@@ -957,7 +956,7 @@ export default function ProfitRazerStockPage() {
           >
             <option value="">ทุกสถานะ</option>
             {RAZER_STATUSES.map((s) => (
-              <option key={s} value={s}>{s}</option>
+              <option key={s} value={s}>{RAZER_STATUS_LABELS[s] || s}</option>
             ))}
           </select>
           <label className="flex items-center gap-1.5 text-[11px] text-ll-ink-subtle">
@@ -1562,7 +1561,7 @@ export default function ProfitRazerStockPage() {
               className={profitInputClass}
             >
               {RAZER_STATUSES.map((s) => (
-                <option key={s} value={s}>{s}</option>
+                <option key={s} value={s}>{RAZER_STATUS_LABELS[s] || s}</option>
               ))}
             </select>
           </ProfitField>
@@ -1662,9 +1661,9 @@ export default function ProfitRazerStockPage() {
           }
         >
           {editError && <p className="text-[12px] text-red-600">{editError}</p>}
-          {editAccount.status === "IN_USE" && editAccount.inUseBy && (
+          {isRazerBusyStatus(editAccount.status) && editAccount.inUseBy && (
             <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
-              กำลัง IN_USE โดย <strong>{editAccount.inUseBy}</strong>
+              {RAZER_STATUS_LABELS[editAccount.status] || editAccount.status} โดย <strong>{editAccount.inUseBy}</strong>
               {editAccount.inUseOrderId ? ` · order ${editAccount.inUseOrderId}` : ""}
               {" "}— เปลี่ยนสถานะอื่นจะปล่อยบัญชี (clear in_use)
             </p>
@@ -1698,7 +1697,7 @@ export default function ProfitRazerStockPage() {
               className={profitInputClass}
             >
               {RAZER_STATUSES.map((s) => (
-                <option key={s} value={s}>{s}</option>
+                <option key={s} value={s}>{RAZER_STATUS_LABELS[s] || s}</option>
               ))}
             </select>
           </ProfitField>
@@ -1787,13 +1786,13 @@ export default function ProfitRazerStockPage() {
             >
               <option value="">— ไม่เปลี่ยน —</option>
               {RAZER_STATUSES.map((s) => (
-                <option key={s} value={s}>{s}</option>
+                <option key={s} value={s}>{RAZER_STATUS_LABELS[s] || s}</option>
               ))}
             </select>
           </ProfitField>
-          {bulkForm.status === "IN_USE" && (
+          {isRazerBusyStatus(bulkForm.status) && (
             <p className="text-[11px] text-amber-700">
-              ⚠ ตั้ง IN_USE แบบกลุ่มไม่แนะนำ — บอทควร claim เอง มิฉะนั้นอาจชนกับ in_use ที่มีอยู่
+              ⚠ ตั้งสถานะกำลังส่งเติมแบบกลุ่มไม่แนะนำ — บอทควร claim เองตอนสั่งเติม
             </p>
           )}
           <ProfitField label="Rate (THB/G)">

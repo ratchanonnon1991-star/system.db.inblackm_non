@@ -5,7 +5,10 @@ import {
   markRazerAccountInUse,
   normalizeZone,
   persistUniqueTfaSecret,
-  RAZER_STATUSES,
+  RAZER_BUSY_STATUSES,
+  RAZER_STATUS_LABELS,
+  isRazerBotUsableStatus,
+  normalizeStatus,
   releaseRazerAccountInUse,
   suggestTotpKeyFromEmail,
   updateRazerAccount,
@@ -25,14 +28,6 @@ async function syncBalanceAfterBotUse(id) {
     console.error(`Razer post-bot sync failed for ${id}:`, err.message);
     return { account: null, synced: false, syncError: err.message };
   }
-}
-
-function inferStatus({ goldBalance, silverBalance }) {
-  const gold = Number(goldBalance) || 0;
-  const silver = Number(silverBalance) || 0;
-  if (gold > 0) return "ACTIVE";
-  if (silver >= 5000) return "SILVER_READY";
-  return "PENDING_TOPUP";
 }
 
 function totpMeta(tfaSecret) {
@@ -232,7 +227,8 @@ export async function listRazerAccountsForBot({
   for (const full of accounts) {
     if (full.hidden) continue;
     if (!includeDisabled && !full.botEnabled) continue;
-    if (full.status === "IN_USE") continue;
+    // Bots may only take Active accounts (busy / dropped / disabled are locked out).
+    if (!isRazerBotUsableStatus(full.status)) continue;
     if (full.goldBalance < minGold && full.silverBalance < minSilver) continue;
     if (!full.hasPassword) continue;
 
@@ -250,11 +246,23 @@ export async function claimRazerAccountForBot(id, body = {}) {
   const account = await getRazerAccount(id);
   if (!account) throw Object.assign(new Error("ไม่พบบัญชี"), { status: 404 });
   if (!account.botEnabled) throw Object.assign(new Error("บัญชีนี้ปิด Bot API"), { status: 403 });
+  if (!isRazerBotUsableStatus(account.status)) {
+    throw Object.assign(
+      new Error(
+        `บัญชีสถานะ “${RAZER_STATUS_LABELS[normalizeStatus(account.status)] || account.status}” — บอทใช้ได้เฉพาะ Active`
+      ),
+      { status: 409 }
+    );
+  }
 
   const updated = await markRazerAccountInUse(id, {
     botName: body.botName || body.bot || body.by,
     orderId: body.orderId || body.order_id,
     note: body.note,
+    platform: body.platform || body.channel || body.provider || body.filling,
+    channel: body.channel,
+    provider: body.provider,
+    status: body.status,
   });
 
   const full = await getRazerAccount(updated.id, { includeSecrets: true });
@@ -262,7 +270,12 @@ export async function claimRazerAccountForBot(id, body = {}) {
     includeSecrets: true,
     forceExternal: !full.tfaSecret,
   });
-  return { account: await botAccountWithCredentials(full), ...otpBundle };
+  return {
+    account: await botAccountWithCredentials(full),
+    ...otpBundle,
+    fillingStatus: updated.status,
+    fillingLabel: RAZER_STATUS_LABELS[updated.status] || updated.status,
+  };
 }
 
 export async function claimRazerAccountByEmailForBot(email, body = {}) {
@@ -272,7 +285,7 @@ export async function claimRazerAccountByEmailForBot(email, body = {}) {
 }
 
 export async function releaseRazerAccountForBot(id, body = {}) {
-  // Clear IN_USE first, then sync live balance (status from real Gold/Silver).
+  // Clear filling/busy first, then sync live Gold/Silver (status stays as released).
   const released = await releaseRazerAccountInUse(id, { status: body.status });
   const { account: synced, synced: didSync, syncError } = await syncBalanceAfterBotUse(id);
   return {
@@ -302,7 +315,7 @@ export async function getRazerOtpForBot({ id, email }) {
   throw Object.assign(new Error("ต้องระบุ id หรือ email"), { status: 400 });
 }
 
-/** Pick best account and claim it as IN_USE (atomic). */
+/** Pick best Active account and claim it as filling (Twocard/AZ). */
 export async function pickRazerAccountForBot({
   zone,
   minGold = 0,
@@ -310,6 +323,10 @@ export async function pickRazerAccountForBot({
   botName,
   orderId,
   note,
+  platform,
+  channel,
+  provider,
+  status,
 } = {}) {
   let accounts = await listRazerAccountsForBot({
     zone: zone ? normalizeZone(zone) : undefined,
@@ -321,20 +338,19 @@ export async function pickRazerAccountForBot({
   }
 
   if (!accounts.length) {
-    throw Object.assign(new Error(`ไม่มีบัญชีพร้อมจ่ายในโซน ${zone || "?"}`), { status: 404 });
+    throw Object.assign(new Error(`ไม่มีบัญชี Active พร้อมจ่ายในโซน ${zone || "?"}`), { status: 404 });
   }
 
-  accounts.sort((a, b) => {
-    if (a.status === "ACTIVE" && b.status !== "ACTIVE") return -1;
-    if (b.status === "ACTIVE" && a.status !== "ACTIVE") return 1;
-    return b.goldBalance - a.goldBalance;
-  });
+  accounts.sort((a, b) => b.goldBalance - a.goldBalance);
 
-  // Claim immediately so UI shows IN_USE and other bots skip this account.
   return claimRazerAccountForBot(accounts[0].id, {
     botName: botName || "bot",
     orderId,
     note,
+    platform,
+    channel,
+    provider,
+    status,
   });
 }
 
@@ -357,11 +373,9 @@ export async function reportRazerPayment(id, body = {}) {
 
   const nextGold = goldBalance != null ? Number(goldBalance) || 0 : account.goldBalance;
   const nextSilver = silverBalance != null ? Number(silverBalance) || 0 : account.silverBalance;
-  const nextStatus = body.status && RAZER_STATUSES.includes(body.status) && body.status !== "IN_USE"
-    ? body.status
-    : inferStatus({ goldBalance: nextGold, silverBalance: nextSilver });
+  const requested = body.status ? normalizeStatus(body.status) : "ACTIVE";
+  const nextStatus = RAZER_BUSY_STATUSES.includes(requested) ? "ACTIVE" : requested;
 
-  // Optimistic update from bot deduct, then overwrite with live Razer sync.
   const updated = await updateRazerAccount(id, {
     goldBalance: nextGold,
     silverBalance: nextSilver,

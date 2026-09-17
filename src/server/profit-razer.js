@@ -1,14 +1,27 @@
 import { getPool } from "@/lib/db";
 import { normalizeZone, parseRazerImportText, RAZER_ZONES } from "@/lib/profit-razer-parse";
+import {
+  RAZER_BUSY_STATUSES,
+  RAZER_STATUSES,
+  RAZER_STATUS_LABELS,
+  isRazerBotUsableStatus,
+  normalizeRazerStatus,
+  resolveRazerFillingStatus,
+} from "@/lib/profit-razer-status";
 import { decryptSecret, encryptSecret } from "@/server/crypto";
 import { hasValidTfaSecret, normalizeTfaSecret } from "@/server/profit-razer-sync";
 
 export { normalizeZone, RAZER_ZONES };
-export const RAZER_STATUSES = ["PENDING_TOPUP", "SILVER_READY", "ACTIVE", "INACTIVE", "IN_USE"];
+export {
+  RAZER_STATUSES,
+  RAZER_STATUS_LABELS,
+  RAZER_BUSY_STATUSES,
+  isRazerBotUsableStatus,
+  resolveRazerFillingStatus,
+};
 
 export function normalizeStatus(raw) {
-  const upper = String(raw || "").trim().toUpperCase();
-  return RAZER_STATUSES.includes(upper) ? upper : "PENDING_TOPUP";
+  return normalizeRazerStatus(raw);
 }
 
 export function normalizeTotpKey(raw) {
@@ -36,7 +49,7 @@ async function ensureSchema() {
           tfa_secret      TEXT,
           zone            VARCHAR(16) NOT NULL DEFAULT 'OTHER',
           rate            NUMERIC NOT NULL DEFAULT 0,
-          status          VARCHAR(32) NOT NULL DEFAULT 'PENDING_TOPUP',
+          status          VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
           gold_balance    NUMERIC NOT NULL DEFAULT 0,
           silver_balance  NUMERIC NOT NULL DEFAULT 0,
           hidden          BOOLEAN NOT NULL DEFAULT false,
@@ -82,6 +95,19 @@ async function ensureSchema() {
             updated_at = NOW()
         WHERE totp_key IS NULL OR btrim(totp_key) = ''
       `);
+      // Migrate legacy operational statuses → new Razer stock set.
+      await client.query(`
+        UPDATE profit_razer_accounts SET status = 'ACTIVE', updated_at = NOW()
+        WHERE status IN ('PENDING_TOPUP', 'SILVER_READY')
+      `);
+      await client.query(`
+        UPDATE profit_razer_accounts SET status = 'DISABLED', updated_at = NOW()
+        WHERE status = 'INACTIVE'
+      `);
+      await client.query(`
+        UPDATE profit_razer_accounts SET status = 'FILLING_TWOCARD', updated_at = NOW()
+        WHERE status = 'IN_USE'
+      `);
     } finally {
       client.release();
     }
@@ -103,7 +129,7 @@ function rowToAccount(row, { includeSecrets = false } = {}) {
     email: row.email,
     zone: row.zone,
     rate: Number(row.rate) || 0,
-    status: row.status,
+    status: normalizeStatus(row.status),
     goldBalance: Number(row.gold_balance) || 0,
     silverBalance: Number(row.silver_balance) || 0,
     goldThb: (Number(row.gold_balance) || 0) * (Number(row.rate) || 0),
@@ -365,25 +391,44 @@ export async function importRazerAccountsFromCsv(text) {
   return results;
 }
 
-export async function markRazerAccountInUse(id, { botName, orderId, note } = {}) {
+export async function markRazerAccountInUse(id, {
+  botName,
+  orderId,
+  note,
+  platform,
+  channel,
+  provider,
+  status,
+} = {}) {
   await ensureSchema();
-  const label = [botName, orderId, note].filter(Boolean).join(" · ") || "bot";
+  const label = [botName, orderId, note, platform || channel || provider].filter(Boolean).join(" · ") || "bot";
+  const fillingStatus = RAZER_BUSY_STATUSES.includes(String(status || "").toUpperCase())
+    ? String(status).toUpperCase()
+    : resolveRazerFillingStatus(platform || channel || provider || note);
 
-  // Atomic: only claim if NOT already IN_USE
+  // Atomic: only claim when currently Active (bot-usable).
   const { rows } = await getPool().query(
     `UPDATE profit_razer_accounts
-     SET status = 'IN_USE',
-         in_use_by = $1,
-         in_use_order_id = $2,
+     SET status = $1,
+         in_use_by = $2,
+         in_use_order_id = $3,
          in_use_at = NOW(),
          updated_at = NOW()
-     WHERE id = $3 AND (status <> 'IN_USE' OR in_use_by IS NULL)
+     WHERE id = $4 AND status = 'ACTIVE'
      RETURNING *`,
-    [label, orderId || null, id]
+    [fillingStatus, label, orderId || null, id]
   );
   if (!rows.length) {
     const current = await getRazerAccount(id);
     if (!current) throw Object.assign(new Error("ไม่พบบัญชี"), { status: 404 });
+    if (!isRazerBotUsableStatus(current.status)) {
+      throw Object.assign(
+        new Error(
+          `บัญชีสถานะ “${RAZER_STATUS_LABELS[normalizeStatus(current.status)] || current.status}” — บอทใช้ได้เฉพาะ Active`
+        ),
+        { status: 409 }
+      );
+    }
     throw Object.assign(
       new Error(`บัญชีนี้กำลังถูกใช้โดย ${current.inUseBy || "bot อื่น"} (order: ${current.inUseOrderId || "-"})`),
       { status: 409 }
@@ -395,13 +440,8 @@ export async function markRazerAccountInUse(id, { botName, orderId, note } = {})
 export async function releaseRazerAccountInUse(id, { status } = {}) {
   const account = await getRazerAccount(id);
   if (!account) throw Object.assign(new Error("ไม่พบบัญชี"), { status: 404 });
-  const nextStatus = status && RAZER_STATUSES.includes(status) && status !== "IN_USE"
-    ? status
-    : account.goldBalance > 0
-      ? "ACTIVE"
-      : account.silverBalance >= 5000
-        ? "SILVER_READY"
-        : "PENDING_TOPUP";
+  const requested = status ? normalizeStatus(status) : "ACTIVE";
+  const nextStatus = RAZER_BUSY_STATUSES.includes(requested) ? "ACTIVE" : requested;
   return updateRazerAccount(id, {
     status: nextStatus,
     clearInUse: true,
@@ -438,7 +478,8 @@ export async function razerOverview() {
     byZone[zone].silver += silver;
     byZone[zone].goldThb += goldThb;
 
-    const status = RAZER_STATUSES.includes(row.status) ? row.status : "PENDING_TOPUP";
+    const status = normalizeStatus(row.status);
+    if (!byStatus[status]) byStatus[status] = { status, accountCount: 0 };
     byStatus[status].accountCount += 1;
   }
 

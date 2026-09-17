@@ -16,7 +16,7 @@ export async function POST(request) {
     });
     return jsonOk({
       ...result,
-      hint: "บัญชีถูกมาร์ก IN_USE แล้ว · หลังใช้เสร็จเรียก POST .../release หรือ /report",
+      hint: "บัญชีถูกตั้งสถานะกำลังส่งเติมแล้ว · หลังใช้เสร็จเรียก POST .../release หรือ /report (กลับ Active)",
     });
   } catch (err) {
     return handleApiError(err, "เลือกบัญชี Razer สำหรับจ่ายไม่สำเร็จ");

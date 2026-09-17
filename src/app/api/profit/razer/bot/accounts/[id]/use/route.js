@@ -10,6 +10,6 @@ export async function POST(request, { params }) {
     const result = await claimRazerAccountForBot(id, body);
     return jsonOk(result);
   } catch (err) {
-    return handleApiError(err, "มาร์กบัญชี IN_USE ไม่สำเร็จ");
+    return handleApiError(err, "มาร์กบัญชีกำลังส่งเติมไม่สำเร็จ");
   }
 }

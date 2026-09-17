@@ -67,12 +67,10 @@ function parseBalance(raw) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function inferStatus({ goldBalance, silverBalance }) {
-  const gold = parseBalance(goldBalance);
-  const silver = parseBalance(silverBalance);
-  if (gold > 0) return "ACTIVE";
-  if (silver >= 5000) return "SILVER_READY";
-  return "PENDING_TOPUP";
+function inferStatus() {
+  // Operational status is managed by staff / bot claim (Active, filling, …).
+  // Balance sync must not rewrite those labels from Gold/Silver.
+  return "ACTIVE";
 }
 
 /**
@@ -198,7 +196,7 @@ export async function syncRazerAccountById(id) {
   const updated = await updateRazerAccount(id, {
     goldBalance: remote.goldBalance,
     silverBalance: remote.silverBalance,
-    status: remote.status,
+    // Keep staff/bot operational status (Active / filling / dropped / disabled).
     syncBalance: true,
   });
 
