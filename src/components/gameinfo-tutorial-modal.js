@@ -99,7 +99,6 @@ export default function GameinfoTutorialButton({
   disabled,
   variant = "tutorial",
   autoOpen = false,
-  autoOpenRevision = "legacy",
   dataMode = "uid",
   compact = false,
 }) {
@@ -107,19 +106,11 @@ export default function GameinfoTutorialButton({
   const isVpn = variant === "vpn";
   const [open, setOpen] = useState(false);
   const buttonLabel = isWarning ? "ข้อควรระวัง" : isVpn ? "โน้ต VPN" : "Tutorial";
-  const autoOpenKey = `gameinfo-warning-seen:${dataMode}:${gameId}:${autoOpenRevision}`;
-
   useEffect(() => {
     if (!isWarning || !autoOpen || !hasData) return;
-    try {
-      if (window.sessionStorage.getItem(autoOpenKey)) return;
-      window.sessionStorage.setItem(autoOpenKey, "1");
-    } catch {
-      // Storage can be unavailable in strict privacy modes; opening still works.
-    }
     const timer = window.setTimeout(() => setOpen(true), 0);
     return () => window.clearTimeout(timer);
-  }, [autoOpen, autoOpenKey, hasData, isWarning]);
+  }, [autoOpen, hasData, isWarning, gameId]);
 
   // View-only (role "user") gets nothing to click if there's no tutorial to
   // show — editable users always keep the button so they can add one.
@@ -132,9 +123,6 @@ export default function GameinfoTutorialButton({
         onClick={(e) => {
           e.stopPropagation();
           if (disabled) return;
-          if (isWarning) {
-            try { window.sessionStorage.setItem(autoOpenKey, "1"); } catch {}
-          }
           setOpen(true);
         }}
         disabled={disabled}
@@ -243,7 +231,6 @@ export function TutorialModal({ gameId, gameName, editable, variant, contentVari
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
-  const [warningAutoOpen, setWarningAutoOpen] = useState(false);
   const closeTimerRef = useRef(null);
   // Snapshot of the last loaded/saved categories, used by both the modal's
   // close confirmation and the page-level unsaved-navigation guard.
@@ -260,9 +247,7 @@ export function TutorialModal({ gameId, gameName, editable, variant, contentVari
           setCategories(data[dataKey].categories);
           setCategoryNames(data.categoryNames || []);
           setActiveCatId(data[dataKey].categories[0]?.id ?? null);
-          const nextAutoOpen = activeVariant === "warning" && Boolean(data[dataKey].autoOpen);
-          setWarningAutoOpen(nextAutoOpen);
-          setSavedSnapshot(JSON.stringify({ categories: data[dataKey].categories, autoOpen: nextAutoOpen }));
+          setSavedSnapshot(JSON.stringify(data[dataKey].categories));
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : `โหลด${contentLabel}ไม่สำเร็จ`);
@@ -275,10 +260,7 @@ export function TutorialModal({ gameId, gameName, editable, variant, contentVari
     };
   }, [activeVariant, contentLabel, dataKey, endpoint]);
 
-  const dirty = editable && savedSnapshot !== null && JSON.stringify({
-    categories,
-    autoOpen: activeVariant === "warning" && warningAutoOpen,
-  }) !== savedSnapshot;
+  const dirty = editable && savedSnapshot !== null && JSON.stringify(categories) !== savedSnapshot;
   useGameinfoUnsavedChanges(dirty);
 
   function requestClose() {
@@ -370,13 +352,11 @@ export function TutorialModal({ gameId, gameName, editable, variant, contentVari
       const data = await apiJson(endpoint, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ categories, ...(activeVariant === "warning" ? { autoOpen: warningAutoOpen } : {}) }),
+        body: JSON.stringify({ categories }),
         fallbackError: `บันทึก${contentLabel}ไม่สำเร็จ`,
       });
       setCategories(data[dataKey].categories);
-      const nextAutoOpen = activeVariant === "warning" && Boolean(data[dataKey].autoOpen);
-      setWarningAutoOpen(nextAutoOpen);
-      setSavedSnapshot(JSON.stringify({ categories: data[dataKey].categories, autoOpen: nextAutoOpen }));
+      setSavedSnapshot(JSON.stringify(data[dataKey].categories));
       setSavedAt(Date.now());
       closeTimerRef.current = window.setTimeout(onClose, 900);
     } catch (e) {
@@ -450,8 +430,6 @@ export function TutorialModal({ gameId, gameName, editable, variant, contentVari
             <QuickWarningList
               categories={categories}
               editable={editable}
-              autoOpen={warningAutoOpen}
-              onAutoOpenChange={setWarningAutoOpen}
               onCategoriesChange={setCategories}
             />
           ) : categories.length === 0 ? (
@@ -509,7 +487,7 @@ export function TutorialModal({ gameId, gameName, editable, variant, contentVari
   );
 }
 
-function QuickWarningList({ categories, editable, autoOpen, onAutoOpenChange, onCategoriesChange }) {
+function QuickWarningList({ categories, editable, onCategoriesChange }) {
   const items = categories.flatMap((category) =>
     category.steps.map((step, stepIndex) => ({ category, step, stepIndex }))
   );
@@ -572,10 +550,6 @@ function QuickWarningList({ categories, editable, autoOpen, onAutoOpenChange, on
             <p className="text-sm font-medium text-linear-ink">ข้อความเตือนแบบสั้น</p>
             <p className="text-xs text-linear-ink-tertiary">ใช้ข้อความที่อ่านจบได้ทันที ไม่ต้องใส่ขั้นตอนหรือรูปภาพ</p>
           </div>
-          <label className="flex items-center gap-2 text-xs text-linear-ink-muted">
-            <input type="checkbox" checked={autoOpen} onChange={(event) => onAutoOpenChange(event.target.checked)} className="accent-linear-primary" />
-            เด้งเมื่อเปิดหน้าเกม
-          </label>
         </div>
       ) : null}
 

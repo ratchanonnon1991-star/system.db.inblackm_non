@@ -136,8 +136,6 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         orderPosition: orderPosition > 0 ? orderPosition : null,
         hasTutorial: tutorial.categories.some((c) => c.steps.length > 0),
         hasWarning: warning.categories.some((c) => c.steps.length > 0),
-        warningAutoOpen: Boolean(warning.autoOpen),
-        warningRevision: warning.revision || "legacy",
         hasVpnNote: vpnNote.categories.some((c) => c.steps.length > 0),
         image: image.imageUrl,
         links: storedLinks.exists ? storedLinks.links : legacyGamelistLinks(row.link),

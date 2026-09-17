@@ -188,8 +188,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
               editable={false}
               hasData={row.hasWarning}
               variant="warning"
-              autoOpen={row.warningAutoOpen}
-              autoOpenRevision={row.warningRevision}
+              autoOpen
               dataMode={dataMode}
             />
           </div>

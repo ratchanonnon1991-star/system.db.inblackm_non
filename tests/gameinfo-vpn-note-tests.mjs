@@ -24,11 +24,13 @@ const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const table = read("../src/components/gameinfo-gamelist-table.js");
 const manager = read("../src/components/gameinfo-game-manager.js");
 const modal = read("../src/components/gameinfo-tutorial-modal.js");
+const gameView = read("../src/components/gameinfo-game-view.js");
 assert.ok(!table.includes("onVpnToggledOn"), "VPN status no longer auto-opens the note");
 assert.ok(table.includes("<GameinfoDetailsButton") && table.includes("hasVpnNote={row.hasVpnNote}"), "manage table groups VPN notes under the game details button");
 assert.ok(manager.includes('value={draft.vpn}') && manager.includes("<GameinfoDetailsButton"), "detail manager separates VPN status from grouped game details");
 assert.ok(modal.includes('isVpn ? "โน้ต VPN"'), "VPN note has its own button label");
 assert.ok(modal.includes('label: "วิธีเติม"') && modal.includes('label: "VPN"'), "game details modal exposes tutorial and VPN tabs");
-assert.ok(modal.includes("autoOpenRevision"), "warning auto-open keys include a content revision");
+assert.ok(!modal.includes("sessionStorage"), "warning opens on each game page visit");
+assert.match(gameView, /variant="warning"\s+autoOpen/, "game detail opens warnings whenever they exist");
 
-console.log("8 passed");
+console.log("9 passed");
