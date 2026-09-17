@@ -39,6 +39,7 @@ assert.doesNotMatch(source, /const where = \["p\.posted_at IS NOT NULL"\]/);
 assert.match(source, /ORDER BY p\.posted_at DESC NULLS LAST,p\.id DESC/);
 assert.match(source, /pagingSql = "LIMIT 1000"/, "show-all mode must be bounded");
 assert.match(source, /NOT s\.requires_login OR a\.platform_account_id<>''/, "public collectors must not receive login-only groups");
+assert.equal((source.match(/WITH active AS \(SELECT id,platform_account_id,/g) || []).length, 2, "active collector CTEs must expose platform_account_id");
 assert.match(source, /SET facebook_url='https:\/\/www\.facebook\.com\/groups\/' \|\| facebook_group_id \|\| '\/'/, "stored /about URLs must be normalized");
 vm.runInContext(source.slice(source.indexOf("export async function ingestSocialPosts")).replace("export ", ""), context);
 const post = { sourceId: "1", externalPostId: "1_123", message: "original", postedAt: new Date(Date.now() - 60000).toISOString() };

@@ -1,13 +1,17 @@
 import { handleApiError, jsonOk } from "@/lib/http";
 import { requireProfitEditor } from "@/server/auth";
-import { regenerateRazerBotApiKey } from "@/server/profit-razer-bot-settings";
+import { createRazerBotApiKey } from "@/server/profit-razer-bot-settings";
 
+/** @deprecated use POST /config/keys with { name } */
 export async function POST(request) {
   try {
     await requireProfitEditor(request);
-    const { secretKey, settings } = await regenerateRazerBotApiKey();
+    const body = await request.json().catch(() => ({}));
+    const name = String(body.name || "").trim() || `Rotated ${new Date().toISOString().slice(0, 19)}`;
+    const { secretKey, key, settings } = await createRazerBotApiKey({ name });
     return jsonOk({
       secretKey,
+      key,
       botApi: settings,
       message: "คัดลอก Secret Key นี้ไปใช้กับบอท — จะไม่แสดงอีกครั้ง",
     });

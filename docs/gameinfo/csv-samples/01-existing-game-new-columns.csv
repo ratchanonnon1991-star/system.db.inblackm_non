@@ -1,4 +1,10 @@
 ﻿game_id,game_name,currency_name,category_name,pack_name,price,amount_charged_fee,channel_main,channel_secondary,country,ต้นทุนทดสอบ,ราคาบวก 5%
+3,LOVE AND DEEPSPACE,Crystal,Crystal,Aurum Pass (30 Days),90,11000,Wavepay,,Myanmar,70,[ราคา] * 1.05
 3,LOVE AND DEEPSPACE,Crystal,Crystal,60 Crystals,20,2000,Wavepay,,Myanmar,15,[ราคา] * 1.05
-3,LOVE AND DEEPSPACE,Crystal,Crystal,300 Crystals+30 Diamonds,90,11000,Wavepay,,Myanmar,70,[ราคา] * 1.05
-3,LOVE AND DEEPSPACE,Crystal,Crystal,450 Crystals+90 Diamonds,140,17334,Wavepay,,Myanmar,110,[ราคา] * 1.05
+3,LOVE AND DEEPSPACE,Crystal,Crystal,Companionship Pack,140,17334,Wavepay,,Myanmar,110,[ราคา] * 1.05
+3,LOVE AND DEEPSPACE,Crystal,Crystal,300 Crystals + 30 Diamonds,90,11000,Wavepay,,Myanmar,70,[ราคา] * 1.05
+3,LOVE AND DEEPSPACE,Crystal,Crystal,450 Crystals + 90 Diamonds,140,17334,Wavepay,,Myanmar,110,[ราคา] * 1.05
+3,LOVE AND DEEPSPACE,Crystal,Crystal,980 Crystals + 150 Diamonds,280,35000,Wavepay,,Myanmar,220,[ราคา] * 1.05
+3,LOVE AND DEEPSPACE,Crystal,Crystal,1980 Crystals + 360 Diamonds,560,70000,Wavepay,,Myanmar,440,[ราคา] * 1.05
+3,LOVE AND DEEPSPACE,Crystal,Crystal,3280 Crystals + 720 Diamonds,930,116000,Wavepay,,Myanmar,730,[ราคา] * 1.05
+3,LOVE AND DEEPSPACE,Crystal,Crystal,6480 Crystals + 1600 Diamonds,1860,232000,Wavepay,,Myanmar,1460,[ราคา] * 1.05
