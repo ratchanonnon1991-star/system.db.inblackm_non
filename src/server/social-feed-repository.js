@@ -426,7 +426,7 @@ export async function getSocialFeedState(userId, filters = {}) {
   const totalPosts = countResult.rows[0]?.count || 0;
   return {
     categories: categoriesResult.rows.map(mapCategory),
-    sources: sourcesResult.rows.map((row) => ({ id: String(row.id), categoryId: String(row.category_id), name: row.name, url: row.facebook_url, groupId: row.facebook_group_id, enabled: row.enabled, lastSeenAt: row.last_seen_at, lastError: row.last_error, requiresLogin: row.requires_login, queueState: row.queue_state, assignedAccountId: row.assigned_account_id ? String(row.assigned_account_id) : "", accessStatus: row.queue_state === "needs_assignment" ? "needs_join" : coveredSources.has(String(row.id)) ? "ready" : "no_worker", sessionCheckedAt: row.session_checked_at, accessNote: row.access_note, idleChecks: row.idle_checks, nextCheckAt: row.next_check_at })),
+    sources: sourcesResult.rows.map((row) => ({ id: String(row.id), categoryId: String(row.category_id), name: row.name, url: row.facebook_url, groupId: row.facebook_group_id, enabled: row.enabled, lastSeenAt: row.last_seen_at, lastError: row.last_error, requiresLogin: row.requires_login, queueState: row.queue_state, assignedAccountId: row.assigned_account_id ? String(row.assigned_account_id) : "", accessStatus: row.queue_state === "needs_assignment" ? "needs_join" : coveredSources.has(String(row.id)) ? "ready" : "no_worker", sessionCheckedAt: row.session_checked_at, accessNote: row.access_note, isSimulatedNeedsJoin: row.queue_state === "needs_assignment" && row.access_note === SIMULATED_NEEDS_JOIN_NOTE, idleChecks: row.idle_checks, nextCheckAt: row.next_check_at })),
     rules: rulesResult.rows.map((row) => ({ id: String(row.id), categoryId: String(row.category_id), name: row.name, mode: row.mode, terms: row.terms, enabled: row.enabled })),
     folders: foldersResult.rows.map((row) => ({ id: String(row.id), name: row.name, count: row.count })),
     accounts,
@@ -597,6 +597,16 @@ export async function assignSocialSource({ sourceId, accountId }) {
   if (!result.rowCount) { const error = new Error("ไม่พบกลุ่มหรือเครื่องที่เลือก"); error.status = 404; throw error; }
   await getSocialPool().query(`DELETE FROM social_feed_source_account_status WHERE source_id=$1 AND account_id=$2`, [sourceId, accountId]);
   return { id: String(result.rows[0].id), accountId: String(accountId) };
+}
+
+const SIMULATED_NEEDS_JOIN_NOTE = "จำลองเหตุการณ์: เครื่องยังไม่ได้เข้าร่วมกลุ่ม";
+
+export async function clearSimulatedSocialSourceNeedsJoin(sourceId) {
+  await ensureSchema();
+  if (!/^[1-9]\d*$/.test(String(sourceId || ""))) { const error = new Error("รหัสกลุ่มไม่ถูกต้อง"); error.status = 400; throw error; }
+  const result = await getSocialPool().query(`UPDATE social_feed_sources SET queue_state='active',access_note='',session_checked_at=NULL,next_check_at=NULL,updated_at=NOW() WHERE id=$1 AND queue_state='needs_assignment' AND access_note=$2 RETURNING id`, [sourceId, SIMULATED_NEEDS_JOIN_NOTE]);
+  if (!result.rowCount) { const error = new Error("ไม่พบสถานะทดสอบที่ล้างได้"); error.status = 409; throw error; }
+  return { id: String(result.rows[0].id) };
 }
 
 export async function heartbeatCollectorAccount({ instanceId, label, platformAccountId, clearPlatformAccountId = false, status, activate = false }) {

@@ -235,6 +235,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
           {currencies.map((currency) => (
             <PackCurrency
               key={currency.id}
+              gameId={row.id}
               currency={currency}
               game={formulaGame}
               columns={packLayout.visibleColumns}
@@ -259,6 +260,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
 }
 
 function PackCurrency({
+  gameId,
   currency,
   game,
   columns,
@@ -288,6 +290,7 @@ function PackCurrency({
         {currency.categories.map((cat) => (
           <PackCategory
             key={cat.id}
+            dndId={`gameinfo-pack-${gameId}-${currency.id}-${cat.id}`}
             category={cat}
             game={game}
             columns={columns}
@@ -328,6 +331,7 @@ function PackThumb({ src }) {
 }
 
 function PackCategory({
+  dndId,
   category,
   game,
   columns,
@@ -388,6 +392,7 @@ function PackCategory({
         <div className="overflow-hidden rounded-md border border-linear-hairline bg-linear-surface-1">
           <div className="overflow-x-auto">
             <DndContext
+              id={dndId}
               sensors={sensors}
               collisionDetection={closestCenter}
               onDragEnd={handleColumnDragEnd}
