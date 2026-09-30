@@ -64,9 +64,9 @@ async function getReadyPool() {
 }
 
 /** "" if never set. */
-export async function getGamelistImage(gameId) {
+export async function getGamelistImage(gameId, transactionClient = null) {
   const pool = await getReadyPool();
-  const client = await pool.connect();
+  const client = transactionClient || await pool.connect();
   try {
     const result = await client.query(
       `SELECT image_url FROM gamelist_images WHERE game_id = $1`,
@@ -74,14 +74,14 @@ export async function getGamelistImage(gameId) {
     );
     return { imageUrl: result.rows[0]?.image_url ?? "" };
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
 }
 
 /** Upserts, or deletes the row entirely when cleared back to "". */
-export async function saveGamelistImage(gameId, imageUrl) {
+export async function saveGamelistImage(gameId, imageUrl, transactionClient = null) {
   const pool = await getReadyPool();
-  const client = await pool.connect();
+  const client = transactionClient || await pool.connect();
   try {
     const normalized = String(imageUrl ?? "").trim();
     if (!normalized) {
@@ -96,7 +96,7 @@ export async function saveGamelistImage(gameId, imageUrl) {
     );
     return { imageUrl: normalized };
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
 }
 

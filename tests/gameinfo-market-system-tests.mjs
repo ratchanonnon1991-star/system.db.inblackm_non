@@ -297,9 +297,9 @@ assert.match(priceAlertsRoute, /export async function POST\(request\)[\s\S]*requ
 assert.match(priceAlertsPage, /onClick=\{refreshAlerts\}/);
 assert.match(priceAlertsPage, /canAcknowledge \? "คำนวณ Alert ใหม่" : "โหลดใหม่"/);
 const packsRoute = readFileSync(new URL("../src/app/api/gameinfo/gamelist/[id]/packs/route.js", import.meta.url), "utf8");
-assert.match(packsRoute, /await refreshAlertsAfterSave\(gameId, mode\);\s*return jsonOk\(\{ game: \{ id: gameId, \.\.\.data\.packs/);
-assert.match(packsRoute, /await refreshAlertsAfterSave\(gameId, mode\);\s*return jsonOk\(\{ game: \{ id: gameId, \.\.\.packs \} \}\)/);
+assert.match(packsRoute, /await refreshGameinfoAlertsAfterSave\(\[gameId\], mode\);\s*return jsonOk\(\{ game: \{ id: gameId, \.\.\.data\.packs/);
+assert.match(packsRoute, /await refreshGameinfoAlertsAfterSave\(\[gameId\], mode\);\s*return jsonOk\(\{ game: \{ id: gameId, \.\.\.packs \} \}\)/);
 // A failed recalculation must not fail a save whose prices are already stored.
-assert.match(packsRoute, /async function refreshAlertsAfterSave[\s\S]*try \{[\s\S]*\} catch \(error\) \{[\s\S]*console\.error/);
+assert.match(readFileSync(new URL("../src/server/gameinfo-post-save.js", import.meta.url), "utf8"), /async function runGameinfoPostSave[\s\S]*try \{[\s\S]*\} catch \(error\) \{[\s\S]*console\.error/);
 
 console.log("\n117 passed, 0 failed");

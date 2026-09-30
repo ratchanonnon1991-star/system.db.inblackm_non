@@ -34,3 +34,17 @@ export function listChangedGameinfoImages(savedImages, images) {
     return imageUrl === imageFor(savedImages, name) ? [] : [{ name, imageUrl }];
   });
 }
+
+export async function saveGameinfoSections(steps) {
+  const completed = [];
+  for (const step of steps) {
+    try {
+      const result = await step.run();
+      step.onSaved(result);
+      completed.push(step.label);
+    } catch (error) {
+      return { completed, failed: step.label, error };
+    }
+  }
+  return { completed, failed: null, error: null };
+}

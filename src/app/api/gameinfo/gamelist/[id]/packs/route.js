@@ -5,7 +5,7 @@ import {
   sanitizeComputedColumns,
 } from "@/server/gamedb-layout-sanitizer";
 import { auditActor, getGamelistPacks, saveGamelistPacks } from "@/server/gameinfo-gamelist-packs";
-import { recordEdit } from "@/server/gamedb-edit-log";
+import { recordGameinfoEditAfterSave } from "@/server/gameinfo-post-save";
 import { requestMeta } from "@/lib/request-meta";
 import {
   pruneGameinfoCategoryFormulas,
@@ -16,23 +16,11 @@ import { validateGameinfoComputedDependencies } from "@/lib/gameinfo-computed-ev
 import { getGameinfoFormulaVariables } from "@/server/gameinfo-formula-variables";
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { updateGameinfoModeData } from "@/server/gameinfo-mode-data";
-import { recalculateGameinfoPriceAlerts } from "@/server/gameinfo-market-system";
+import { refreshGameinfoAlertsAfterSave } from "@/server/gameinfo-post-save";
 import {
   findDuplicateGameinfoPackNamePrices,
   normalizeGameinfoNumericInput,
 } from "@/lib/gameinfo-pack-validation";
-
-// An alert is the gap between a GameInfo price and a market offer, so saving a
-// price makes every alert of this game stale. Recalculating here keeps the
-// Alerts page truthful without waiting for the next market check; a failure
-// must never fail the save, because the prices are already stored.
-async function refreshAlertsAfterSave(gameId, dataMode) {
-  try {
-    await recalculateGameinfoPriceAlerts({ gameId, dataMode });
-  } catch (error) {
-    console.error(`[gameinfo-market] recalculate alerts for game ${gameId} failed`, error);
-  }
-}
 
 function normalizeGameinfoPackNumbers(currencies) {
   return currencies.map((currency) => ({
@@ -125,7 +113,7 @@ export async function PUT(request, { params }) {
         ...current,
         packs: packInput,
       }), { area: "pack", actor: auditActor(user), expectedVersion: body.version });
-      await refreshAlertsAfterSave(gameId, mode);
+      await refreshGameinfoAlertsAfterSave([gameId], mode);
       return jsonOk({ game: { id: gameId, ...data.packs, version: data.version } });
     }
     // Read before writing, so the edit log can say what this replaced. The
@@ -138,7 +126,7 @@ export async function PUT(request, { params }) {
       source,
       expectedVersion: body.version,
     });
-    await recordEdit({
+    await recordGameinfoEditAfterSave({
       queryId: null,
       actor: user.username || user.displayName || "",
       table: "gamelist_packs",
@@ -149,7 +137,7 @@ export async function PUT(request, { params }) {
       newValue: JSON.stringify(packs).slice(0, 2000),
       ...requestMeta(request),
     });
-    await refreshAlertsAfterSave(gameId, mode);
+    await refreshGameinfoAlertsAfterSave([gameId], mode);
     return jsonOk({ game: { id: gameId, ...packs } });
   } catch (err) {
     return handleApiError(err, "บันทึกตารางแพ็กไม่สำเร็จ");

@@ -1,9 +1,10 @@
 import { handleApiError, jsonOk } from "@/lib/http";
 import { requireGameinfoAccess, requireGameinfoEditor } from "@/server/auth";
 import { getGamelistImage, saveGamelistImage } from "@/server/gameinfo-gamelist-image";
-import { recordEdit } from "@/server/gamedb-edit-log";
+import { recordGameinfoEditAfterSave } from "@/server/gameinfo-post-save";
 import { requestMeta } from "@/lib/request-meta";
 import { auditActor, recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
+import { withGameinfoTransaction } from "@/server/gameinfo-gamelist";
 
 export async function GET(request, { params }) {
   try {
@@ -21,17 +22,21 @@ export async function PUT(request, { params }) {
     const admin = await requireGameinfoEditor(request);
     const { id } = await params;
     const body = await request.json();
-    const before = await getGamelistImage(Number(id));
-    const image = await saveGamelistImage(Number(id), body.imageUrl);
-    await recordGameinfoAudit({
-      gameId: Number(id),
-      area: "image",
-      actor: auditActor(admin),
-      before: { image: Boolean(before.imageUrl) },
-      after: { image: Boolean(image.imageUrl) },
+    const { before, image } = await withGameinfoTransaction(async (client) => {
+      const before = await getGamelistImage(Number(id), client);
+      const image = await saveGamelistImage(Number(id), body.imageUrl, client);
+      await recordGameinfoAudit({
+        gameId: Number(id),
+        area: "image",
+        actor: auditActor(admin),
+        before: { image: Boolean(before.imageUrl) },
+        after: { image: Boolean(image.imageUrl) },
+        client,
+      });
+      return { before, image };
     });
     if (before.imageUrl !== image.imageUrl) {
-      await recordEdit({
+      await recordGameinfoEditAfterSave({
         queryId: null,
         actor: admin.username || admin.displayName || "",
         table: "gamelist_images",

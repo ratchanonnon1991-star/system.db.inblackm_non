@@ -1283,9 +1283,9 @@ export async function recalculateGameinfoPriceAlerts({ market = "", gameId = 0, 
   const pool = await getGameinfoMarketPool();
   const conditions = ["enabled", "external_game_key <> ''"];
   const values = [];
-  if (market) { values.push(normalizeGameinfoMarket(market)); conditions.push(`market = ${values.length}`); }
-  if (Number(gameId) > 0) { values.push(Number(gameId)); conditions.push(`game_id = ${values.length}`); }
-  if (dataMode) { values.push(mode(dataMode)); conditions.push(`data_mode = ${values.length}`); }
+  if (market) { values.push(normalizeGameinfoMarket(market)); conditions.push(`market = $${values.length}`); }
+  if (Number(gameId) > 0) { values.push(Number(gameId)); conditions.push(`game_id = $${values.length}`); }
+  if (dataMode) { values.push(mode(dataMode)); conditions.push(`data_mode = $${values.length}`); }
   const configs = await pool.query(
     `SELECT * FROM gameinfo_game_markets WHERE ${conditions.join(" AND ")} ORDER BY market, game_id, data_mode`,
     values
