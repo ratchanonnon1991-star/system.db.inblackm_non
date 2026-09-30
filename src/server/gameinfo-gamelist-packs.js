@@ -204,6 +204,15 @@ function ensureSchema(connection) {
         ADD COLUMN IF NOT EXISTS area VARCHAR(32) NOT NULL DEFAULT 'pack',
         ADD COLUMN IF NOT EXISTS data_mode VARCHAR(16) NOT NULL DEFAULT 'uid'
       `);
+      // VPN note edits were once logged before "vpn_note" was a known area,
+      // so they fell back to "pack". Pack-editor rows always carry a pack_id
+      // or a non-"update" action, so a pack/update row with no pack_id can
+      // only be one of those VPN edits.
+      await client.query(`
+        UPDATE gamelist_pack_audit_logs
+        SET area = 'vpn_note'
+        WHERE area = 'pack' AND pack_id IS NULL AND action = 'update'
+      `);
       await client.query(`
         CREATE INDEX IF NOT EXISTS gamelist_pack_audit_area_time_idx
         ON gamelist_pack_audit_logs (area, created_at DESC, id DESC)
@@ -1242,7 +1251,7 @@ function onlyPositionChanged(before, after) {
 
 const AUDIT_SOURCES = new Set(["editor", "csv_append", "csv_replace", "mode_clone", "import"]);
 export const GAMEINFO_AUDIT_AREAS = new Set([
-  "pack", "group", "game", "tutorial", "warning", "links", "variables",
+  "pack", "group", "game", "tutorial", "warning", "vpn_note", "links", "variables",
   "status", "import", "clone", "image", "tags", "publishers", "order", "settings",
 ]);
 
@@ -1328,8 +1337,9 @@ export async function recordGameinfoAudit({
   client: transactionClient = null,
 }) {
   const numericGameId = Number(gameId);
-  const auditBefore = area === "tutorial" || area === "warning" ? summarizeEmbeddedImages(before) : before;
-  const auditAfter = area === "tutorial" || area === "warning" ? summarizeEmbeddedImages(after) : after;
+  const hasEmbeddedImages = area === "tutorial" || area === "warning" || area === "vpn_note";
+  const auditBefore = hasEmbeddedImages ? summarizeEmbeddedImages(before) : before;
+  const auditAfter = hasEmbeddedImages ? summarizeEmbeddedImages(after) : after;
   if (!Number.isInteger(numericGameId) || numericGameId < 0 || sameJson(auditBefore ?? null, auditAfter ?? null)) return;
   const pool = await getReadyPool();
   const client = transactionClient || await pool.connect();
@@ -1351,14 +1361,20 @@ export function auditActor(user) {
   return user ? { id: user.id, name: user.displayName || user.username || "" } : null;
 }
 
+// The per-game pack history only shows audit rows that touch packs; the
+// same log also holds tutorial/warning/link edits, which have their own
+// history in the all-games view.
+export const GAMEINFO_PACK_HISTORY_AREAS = ["pack", "group", "import", "clone"];
+
 export async function listGamelistPackAudit(gameId, limit = 100, { dataMode = null } = {}) {
   return listAllGamelistPackAudit(Math.min(500, Math.max(1, Number(limit) || 100)), {
     gameId,
     dataMode,
+    areas: GAMEINFO_PACK_HISTORY_AREAS,
   });
 }
 
-export async function listAllGamelistPackAudit(limit = 1000, { area = null, gameId = null, dataMode = null } = {}) {
+export async function listAllGamelistPackAudit(limit = 1000, { area = null, areas = null, gameId = null, dataMode = null } = {}) {
   const pool = await getReadyPool();
   const client = await pool.connect();
   try {
@@ -1368,6 +1384,9 @@ export async function listAllGamelistPackAudit(limit = 1000, { area = null, game
     if (GAMEINFO_AUDIT_AREAS.has(area)) {
       params.push(area);
       where.push(`a.area = $${params.length}`);
+    } else if (Array.isArray(areas)) {
+      params.push(areas.filter((value) => GAMEINFO_AUDIT_AREAS.has(value)));
+      where.push(`COALESCE(a.area, 'pack') = ANY($${params.length}::text[])`);
     }
     const numericGameId = gameId === null || gameId === "" ? NaN : Number(gameId);
     if (Number.isInteger(numericGameId) && numericGameId >= 0) {

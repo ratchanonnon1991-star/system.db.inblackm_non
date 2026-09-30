@@ -4,6 +4,7 @@ export const AUDIT_AREA_LABELS = {
   game: "ข้อมูลเกม",
   tutorial: "Tutorial",
   warning: "ข้อควรระวัง",
+  vpn_note: "VPN",
   links: "ลิงก์",
   variables: "สูตรและตัวแปร",
   status: "สถานะบริการ",
