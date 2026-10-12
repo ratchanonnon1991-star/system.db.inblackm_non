@@ -47,7 +47,7 @@ export async function GET(request) {
       listClaimedItuneEntriesForUser(actor.id),
       listClaimableItuneEntriesForUser(actor.id, settings),
     ]);
-    return jsonOk({ entries, availableEntries, claimPaused: settings.claimPaused });
+    return jsonOk({ entries, availableEntries, claimPaused: settings.claimPaused, queueSettings: settings });
   } catch (err) {
     return handleApiError(err, "โหลดรายการที่ถืออยู่ไม่สำเร็จ");
   }

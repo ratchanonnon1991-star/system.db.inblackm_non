@@ -968,7 +968,7 @@ export default function ItuneAdminTable({ initialEntries }) {
     () => ({
       email: uniq(savedRows.map((r) => r.email)),
       password: uniq(savedRows.map((r) => r.password)),
-      currency: uniq(savedRows.map((r) => r.currency)),
+      currency: uniq(["USD", "TRY", "DE", ...savedRows.map((r) => r.currency)]),
       supplier: uniq(savedRows.map((r) => r.supplier)),
       linkSms: uniq(savedRows.map((r) => r.linkSms)),
       qna: uniq(savedRows.map((r) => r.qna)),
@@ -1452,7 +1452,8 @@ export default function ItuneAdminTable({ initialEntries }) {
             value={value}
             onChange={(v) => updateField(row.id, field, v)}
             suggestions={suggestions[field] || []}
-            placeholder={label}
+            placeholder={field === "currency" ? "เลือกหรือพิมพ์สกุลเงิน" : label}
+            allowCustom={field === "currency"}
             autoFocus
             onEnter={() => focusNextField(row.id, field)}
             className="w-full rounded-md border border-ll-primary bg-ll-surface-1 px-2 py-1 text-sm text-ll-ink outline-none"

@@ -27,6 +27,7 @@ export default function ItuneComboInput({
   onEnter,
   isDuplicate,
   duplicateMessage,
+  allowCustom = false,
 }) {
   const [open, setOpen] = useState(autoFocus ?? false);
   const [pos, setPos] = useState(null);
@@ -118,7 +119,7 @@ export default function ItuneComboInput({
               </div>
             )}
             <ul>
-              {filtered.length === 0 ? (
+              {filtered.length === 0 && !(allowCustom && value.trim()) ? (
                 <li className="px-3 py-1.5 text-sm text-ll-ink-tertiary">ไม่มีตัวเลือกที่ตรงกัน</li>
               ) : (
                 filtered.map((s) => (
@@ -139,6 +140,24 @@ export default function ItuneComboInput({
                 ))
               )}
             </ul>
+            {allowCustom && (
+              <div className="border-t border-ll-hairline px-3 py-2 text-xs text-ll-ink-subtle">
+                {value.trim() && !pool.some((s) => s.toLowerCase() === q) ? (
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      onChange(normalizeSpaces(value));
+                      setOpen(false);
+                      setHasTyped(false);
+                    }}
+                    className="w-full break-words text-left font-medium text-ll-primary"
+                  >
+                    ใช้สกุลเงิน “{value.trim()}”
+                  </button>
+                ) : "เลือกจากรายการหรือพิมพ์สกุลเงินอื่นได้"}
+              </div>
+            )}
           </div>,
           document.body
         )}

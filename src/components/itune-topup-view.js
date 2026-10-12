@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { Inbox, Plus } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { useMinuteTicker } from "@/lib/itune-ticker";
+import { compareItuneQueueEntries, computeItuneQueueMetrics } from "@/lib/itune-queue";
+import { DEFAULT_ITUNE_RELEASE_THRESHOLD, ITUNE_UNAVAILABLE_STATUS } from "@/lib/itune-status";
 import ItuneTopupCard from "@/components/itune-topup-card";
 
 // Same cap enforced server-side in claimItuneEntry (see
@@ -28,10 +30,12 @@ export default function ItuneTopupView({
   initialAvailableEntries,
   releaseThreshold,
   initialClaimPaused,
+  initialQueueSettings,
 }) {
   const [claims, setClaims] = useState(initialClaims || []);
   const [availableEntries, setAvailableEntries] = useState(initialAvailableEntries || []);
   const [claimPaused, setClaimPaused] = useState(Boolean(initialClaimPaused));
+  const [queueSettings, setQueueSettings] = useState(initialQueueSettings || {});
   const [claimingId, setClaimingId] = useState(null);
   const [claimError, setClaimError] = useState("");
   const now = useMinuteTicker();
@@ -45,6 +49,7 @@ export default function ItuneTopupView({
             setClaims(data.entries || []);
             setAvailableEntries(data.availableEntries || []);
             setClaimPaused(Boolean(data.claimPaused));
+            if (data.queueSettings) setQueueSettings(data.queueSettings);
           }
         })
         .catch(() => {
@@ -66,6 +71,7 @@ export default function ItuneTopupView({
       setClaims(data.entries || []);
       setAvailableEntries(data.availableEntries || []);
       setClaimPaused(Boolean(data.claimPaused));
+      if (data.queueSettings) setQueueSettings(data.queueSettings);
     } catch {
       // A visible action already reports its own error. The periodic poll
       // will retry, so a refresh failure should not replace that message.
@@ -104,6 +110,16 @@ export default function ItuneTopupView({
   }
 
   const atLimit = claims.length >= MAX_CLAIMS;
+  const usableClaimIds = new Set(claims
+    .filter((entry) => Number(entry.amount) >= (releaseThreshold ?? DEFAULT_ITUNE_RELEASE_THRESHOLD) && entry.status !== ITUNE_UNAVAILABLE_STATUS)
+    .map((entry) => entry.id));
+  const orderedClaims = [...claims].sort((a, b) =>
+    Number(usableClaimIds.has(b.id)) - Number(usableClaimIds.has(a.id)) ||
+    compareItuneQueueEntries(a, b, queueSettings, now)
+  );
+  const orderedAvailableEntries = [...availableEntries].sort((a, b) =>
+    compareItuneQueueEntries(a, b, queueSettings, now)
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -132,12 +148,14 @@ export default function ItuneTopupView({
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            {claims.map((entry) => (
+            {orderedClaims.map((entry, index) => (
               <ItuneTopupCard
                 key={entry.id}
                 entry={entry}
                 now={now}
                 releaseThreshold={releaseThreshold}
+                usagePriority={usableClaimIds.has(entry.id) ? index + 1 : null}
+                queueSettings={queueSettings}
                 onReleased={() => handleReleased(entry.id)}
                 onUpdated={handleUpdated}
               />
@@ -153,6 +171,10 @@ export default function ItuneTopupView({
             <p className="mt-0.5 text-[12px] text-ll-ink-subtle">
               พบ {availableEntries.length} รายการ
             </p>
+            <p className="mt-1 text-[12px] text-ll-ink-subtle">
+              เรียงตามลำดับที่ควรใช้ก่อนจากยอดคงเหลือและอายุเมล — เมลเก่าหรือยอดมากจะเร่งด่วนขึ้น
+              หากแอดมินปักหมุด จะอยู่หน้าคิว
+            </p>
           </div>
           <Inbox size={18} className="text-ll-ink-tertiary" />
         </div>
@@ -167,20 +189,47 @@ export default function ItuneTopupView({
           </div>
         ) : (
           <div className="overflow-hidden rounded-lg border border-ll-hairline bg-ll-surface-1 shadow-[var(--ll-shadow-card)]">
-            {availableEntries.map((entry, index) => {
+            {orderedAvailableEntries.map((entry, index) => {
               const isClaiming = claimingId === entry.id;
+              const metrics = computeItuneQueueMetrics(entry, queueSettings, now);
+              const hasCreatedAt = Boolean(entry.addedAt) && Number.isFinite(new Date(entry.addedAt).getTime());
+              const urgent = hasCreatedAt && metrics.completionSlackHours <= 6;
+              const pinned = entry.priorityOrder != null;
               return (
                 <div
                   key={entry.id}
                   className={`flex flex-wrap items-center justify-between gap-3 px-4 py-3 ${index > 0 ? "border-t border-ll-hairline" : ""}`}
                 >
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-ll-ink">{entry.email || "-"}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="min-w-0 truncate text-sm font-medium text-ll-ink">{entry.email || "-"}</p>
+                      <span className="shrink-0 rounded-md bg-ll-surface-2 px-2 py-0.5 text-[12px] font-medium text-ll-ink-subtle">
+                        {entry.currency?.trim() || "ยังไม่ระบุสกุลเงิน"}
+                      </span>
+                      <span className={`rounded-md px-2 py-0.5 text-[12px] font-medium ${index === 0 ? "bg-ll-warning-bg text-ll-warning" : "bg-ll-surface-2 text-ll-ink-subtle"}`}>
+                        {index === 0 ? "ควรใช้ก่อน · อันดับ 1" : `ลำดับแนะนำ ${index + 1}`}
+                      </span>
+                      {pinned && (
+                        <span className="text-[12px] font-medium text-ll-primary">แอดมินปักหมุด</span>
+                      )}
+                    </div>
                     <p className="mt-0.5 text-[12px] text-ll-ink-subtle">
                       ยอด {Number(entry.amount || 0).toLocaleString("th-TH", { maximumFractionDigits: 2 })}
                       {entry.currency ? ` ${entry.currency}` : ""}
                       {entry.supplier ? ` · ${entry.supplier}` : ""}
                     </p>
+                    <p className="mt-1 text-[12px] text-ll-ink-subtle">
+                      {hasCreatedAt
+                        ? `สร้างมาแล้ว ${metrics.knownAgeHours.toLocaleString("th-TH", { maximumFractionDigits: 1 })} ชม. · สร้างเมื่อ ${new Date(entry.addedAt).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short", timeZone: "Asia/Bangkok" })}`
+                        : "ยังไม่ระบุเวลาที่สร้าง"}
+                    </p>
+                    {urgent && (
+                      <p className="mt-1 text-[12px] font-medium text-ll-warning">
+                        {metrics.completionSlackHours < 0
+                          ? "ควรเร่งใช้ — คาดว่าใช้ยอดคงเหลือไม่ทันเป้าหมายเวลา"
+                          : `ใกล้ถึงเวลาที่ควรเริ่มใช้ — เหลือเวลาเผื่อประมาณ ${metrics.completionSlackHours.toFixed(1)} ชม.`}
+                      </p>
+                    )}
                   </div>
                   <button
                     type="button"
