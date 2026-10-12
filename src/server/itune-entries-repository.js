@@ -693,7 +693,7 @@ function ensureSchema(connection) {
   return promise;
 }
 
-async function getReadyPool() {
+export async function getReadyPool() {
   const connection = await getItuneConnection();
   if (!connection) {
     throw createHttpError(

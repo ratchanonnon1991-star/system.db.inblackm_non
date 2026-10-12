@@ -644,7 +644,7 @@ function RowActionsMenu({
 // at any viewport width instead of one of the flexible columns swallowing
 // the leftover space before it.
 const GRID_COLS =
-  "grid-cols-[40px_50px_180px_minmax(180px,1fr)_minmax(180px,0.8fr)_120px_100px_100px_80px_150px_120px_100px_minmax(130px,1fr)_minmax(180px,1fr)_44px]";
+  "grid-cols-[40px_50px_180px_minmax(180px,1fr)_minmax(180px,0.8fr)_120px_100px_100px_200px_150px_120px_100px_minmax(130px,1fr)_minmax(180px,1fr)_44px]";
 
 // The table's minimum width, derived straight from GRID_COLS's own track
 // list (every `Npx` — bare tracks and the min side of `minmax(Npx, fr)`
@@ -1454,6 +1454,7 @@ export default function ItuneAdminTable({ initialEntries }) {
             suggestions={suggestions[field] || []}
             placeholder={field === "currency" ? "เลือกหรือพิมพ์สกุลเงิน" : label}
             allowCustom={field === "currency"}
+            dropdownMinWidth={field === "currency" ? 240 : 0}
             autoFocus
             onEnter={() => focusNextField(row.id, field)}
             className="w-full rounded-md border border-ll-primary bg-ll-surface-1 px-2 py-1 text-sm text-ll-ink outline-none"

@@ -28,6 +28,7 @@ export default function ItuneComboInput({
   isDuplicate,
   duplicateMessage,
   allowCustom = false,
+  dropdownMinWidth = 0,
 }) {
   const [open, setOpen] = useState(autoFocus ?? false);
   const [pos, setPos] = useState(null);
@@ -51,7 +52,9 @@ export default function ItuneComboInput({
       const el = ref.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
-      setPos({ top: r.bottom, left: r.left, width: r.width });
+      const width = Math.min(Math.max(r.width, dropdownMinWidth), Math.max(0, window.innerWidth - 16));
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
+      setPos({ top: r.bottom, left, width });
     }
     updatePos();
     window.addEventListener("scroll", updatePos, true);
@@ -60,7 +63,7 @@ export default function ItuneComboInput({
       window.removeEventListener("scroll", updatePos, true);
       window.removeEventListener("resize", updatePos);
     };
-  }, [open]);
+  }, [open, dropdownMinWidth]);
 
   const q = value.trim().toLowerCase();
   const pool = suggestions || [];

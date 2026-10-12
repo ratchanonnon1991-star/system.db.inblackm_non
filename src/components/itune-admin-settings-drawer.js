@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useParams } from "next/navigation";
 import { AlertTriangle, Database, Table2, X } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { DEFAULT_ITUNE_RELEASE_THRESHOLD } from "@/lib/itune-status";
 import { useItuneSettings } from "@/lib/itune-settings";
 
 export default function ItuneAdminSettingsDrawer({ onClose }) {
+  const { lang } = useParams();
   const [settings, setSetting] = useItuneSettings();
   const [queueSettings, setQueueSettings] = useState({
     maxAmount: String(DEFAULT_ITUNE_RELEASE_THRESHOLD),
@@ -184,6 +186,9 @@ export default function ItuneAdminSettingsDrawer({ onClose }) {
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
+          <section className="border-b border-ll-hairline p-5">
+            <a href={`/projectm/${lang}/itune/admin/order-links`} className="text-sm font-semibold text-ll-ink underline">เชื่อมบัญชี Orders และดูประวัติการใช้เมล (Super Admin)</a>
+          </section>
           <section className="border-b border-ll-hairline p-5">
             <div className="flex items-center gap-2 text-sm font-semibold text-ll-ink">
               <Table2 size={16} /> ตาราง
