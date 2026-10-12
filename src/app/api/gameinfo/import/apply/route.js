@@ -1,3 +1,4 @@
+import { refreshGameinfoAlertsAfterSave } from "@/server/gameinfo-post-save";
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireGameinfoEditor } from "@/server/auth";
 import { parseCsv } from "@/lib/gameinfo-csv";
@@ -149,6 +150,7 @@ export async function PUT(request) {
     );
     const actor = { id: user.id, name: user.displayName || user.username };
     const idpass = normalizeGameinfoDataMode(request.nextUrl.searchParams.get("mode")) === "idpass";
+    const affectedGameIds = [];
     const result = await withGameinfoTransaction(async (client) => {
       // Creating the games first is what turns a name into the game_id the
       // pack rows need; the sequence hands out the id, we never compute one.
@@ -165,6 +167,7 @@ export async function PUT(request) {
         const gameId = game.isNew ? idByName.get(gameNameKey(game.gameName)) : game.gameId;
         // A game the user chose not to create takes its rows with it.
         if (!gameId) continue;
+        affectedGameIds.push(gameId);
         importable.push({
           ...game,
           gameId,
@@ -213,6 +216,7 @@ export async function PUT(request) {
       const imported = await importGamelistPacks(importable, mode, actor, client);
       return { ...imported, createdGameCount: createdRows.length };
     });
+    await refreshGameinfoAlertsAfterSave(affectedGameIds, idpass ? "idpass" : "uid");
     return jsonOk({
       ...result,
       skippedGameNames: [...skippedGameNames],

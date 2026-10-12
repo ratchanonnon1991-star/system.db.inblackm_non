@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { handleApiError, jsonOk } from "@/lib/http";
-import { claimSocialSource, finishSocialSource, getCollectorRunning, heartbeatCollectorAccount, listCollectorSources, updateCollectorSourceStatus } from "@/server/social-feed-repository";
+import { claimSocialCommentJob, claimSocialSource, finishSocialSource, getCollectorRunning, heartbeatCollectorAccount, listCollectorSources, reportSocialCommentJob, updateCollectorSourceStatus } from "@/server/social-feed-repository";
 
 function authorized(request) {
   const configured = process.env.SOCIAL_FEED_INGEST_SECRET || "";
@@ -23,6 +23,8 @@ export async function POST(request) {
   try {
     if (!authorized(request)) { const error = new Error("ไม่มีสิทธิ์ใช้งาน collector"); error.status = 401; throw error; }
     const body = await request.json();
+    if (body.type === "claim_comment") return jsonOk({ job: await claimSocialCommentJob(body) });
+    if (body.type === "report_comment") return jsonOk({ updated: await reportSocialCommentJob(body) });
     if (body.type === "claim") return jsonOk({ claimed: await claimSocialSource(body) });
     if (body.type === "heartbeat") return jsonOk({ account: await heartbeatCollectorAccount(body) });
     await updateCollectorSourceStatus(body);

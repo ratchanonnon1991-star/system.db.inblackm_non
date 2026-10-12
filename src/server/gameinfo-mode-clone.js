@@ -1,3 +1,4 @@
+import { refreshGameinfoAlertsAfterSave } from "@/server/gameinfo-post-save";
 import { getGameListRow, updateGameListRow, withGameinfoTransaction } from "@/server/gameinfo-gamelist";
 import { getGamelistPacks, recordGameinfoAudit, saveGamelistPacks } from "@/server/gameinfo-gamelist-packs";
 import { getGamelistTutorial, getGamelistWarning, saveGamelistTutorial, saveGamelistWarning } from "@/server/gameinfo-gamelist-tutorial";
@@ -75,5 +76,6 @@ export async function cloneGameinfoDataMode({ gameId, sourceMode, targetMode, sc
       });
     });
   }
+  await refreshGameinfoAlertsAfterSave([gameId], target);
   return { sourceMode: source, targetMode: target, scope };
 }

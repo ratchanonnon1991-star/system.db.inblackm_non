@@ -8,6 +8,7 @@ import {
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { getGameinfoModeData, updateGameinfoModeData } from "@/server/gameinfo-mode-data";
 import { auditActor } from "@/server/gameinfo-gamelist-packs";
+import { assertStepImageDataSize } from "@/lib/gameinfo-step-image-size";
 
 export async function GET(request, { params }) {
   try {
@@ -31,6 +32,7 @@ export async function PUT(request, { params }) {
     const user = await requireGameinfoEditor(request);
     const { id } = await params;
     const body = await request.json();
+    assertStepImageDataSize(body.categories);
     if (normalizeGameinfoDataMode(request.nextUrl.searchParams.get("mode")) === "idpass") {
       const data = await updateGameinfoModeData(Number(id), "idpass", (current) => ({
         ...current,

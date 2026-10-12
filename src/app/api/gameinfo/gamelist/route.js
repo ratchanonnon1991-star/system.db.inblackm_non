@@ -1,7 +1,7 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireGameinfoAccess, requireGameinfoEditor } from "@/server/auth";
 import { createGameListRow, listGameListRows } from "@/server/gameinfo-gamelist";
-import { recordEdit } from "@/server/gamedb-edit-log";
+import { recordGameinfoEditAfterSave } from "@/server/gameinfo-post-save";
 import { requestMeta } from "@/lib/request-meta";
 import { auditActor } from "@/server/gameinfo-gamelist-packs";
 
@@ -25,7 +25,7 @@ export async function POST(request) {
     // GameInfo has no "Query" of its own for the log's queryId to point at --
     // every entry from here carries queryId: null, which is also what tells
     // the /log revert button not to offer reverting it (see canRevert there).
-    await recordEdit({
+    await recordGameinfoEditAfterSave({
       queryId: null,
       actor: admin.username || admin.displayName || "",
       table: "game_list",

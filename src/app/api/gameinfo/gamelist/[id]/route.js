@@ -1,7 +1,7 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireGameinfoEditor } from "@/server/auth";
 import { deleteGameListRow, getGameListRow, updateGameListRow } from "@/server/gameinfo-gamelist";
-import { recordEdit } from "@/server/gamedb-edit-log";
+import { recordGameinfoEditAfterSave } from "@/server/gameinfo-post-save";
 import { requestMeta } from "@/lib/request-meta";
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { updateGameinfoModeData } from "@/server/gameinfo-mode-data";
@@ -33,7 +33,7 @@ export async function PUT(request, { params }) {
     const before = await getGameListRow(Number(id));
     const row = await updateGameListRow(Number(id), body, null, auditActor(admin));
     if (!row) return jsonError("ไม่พบเกมนี้", 404);
-    await recordEdit({
+    await recordGameinfoEditAfterSave({
       queryId: null,
       actor: admin.username || admin.displayName || "",
       table: "game_list",
@@ -56,7 +56,7 @@ export async function DELETE(request, { params }) {
     const { id } = await params;
     const before = await getGameListRow(Number(id));
     await deleteGameListRow(Number(id), auditActor(admin));
-    await recordEdit({
+    await recordGameinfoEditAfterSave({
       queryId: null,
       actor: admin.username || admin.displayName || "",
       table: "game_list",

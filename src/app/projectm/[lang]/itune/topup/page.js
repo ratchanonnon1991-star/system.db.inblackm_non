@@ -4,8 +4,9 @@ import { ArrowLeft, ShieldCheck } from "lucide-react";
 import { getSessionUser } from "@/server/session-user";
 import { hasPermission } from "@/lib/permissions";
 import {
+  getItuneClaimSettings,
+  listClaimableItuneEntriesForUser,
   listClaimedItuneEntriesForUser,
-  getItuneReleaseThreshold,
 } from "@/server/itune-entries-repository";
 import ItuneTopupView from "@/components/itune-topup-view";
 
@@ -20,13 +21,18 @@ export default async function ItuneTopupPage({ params }) {
   // instead of a hard 500 if it hasn't been configured yet (see that page's
   // identical try/catch).
   let claims = null;
+  let availableEntries = null;
   let releaseThreshold = null;
+  let claimPaused = false;
   let loadError = null;
   try {
-    [claims, releaseThreshold] = await Promise.all([
+    const settings = await getItuneClaimSettings();
+    [claims, availableEntries] = await Promise.all([
       listClaimedItuneEntriesForUser(user.id),
-      getItuneReleaseThreshold(),
+      listClaimableItuneEntriesForUser(user.id, settings),
     ]);
+    releaseThreshold = settings.maxAmount;
+    claimPaused = settings.claimPaused;
   } catch (err) {
     loadError = err.message || "โหลดข้อมูลไม่สำเร็จ";
   }
@@ -71,7 +77,12 @@ export default async function ItuneTopupPage({ params }) {
           {loadError}
         </div>
       ) : (
-        <ItuneTopupView initialClaims={claims} releaseThreshold={releaseThreshold} />
+        <ItuneTopupView
+          initialClaims={claims}
+          initialAvailableEntries={availableEntries}
+          releaseThreshold={releaseThreshold}
+          initialClaimPaused={claimPaused}
+        />
       )}
     </div>
   );

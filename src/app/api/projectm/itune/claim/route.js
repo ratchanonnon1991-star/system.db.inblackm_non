@@ -1,12 +1,33 @@
-import { handleApiError, jsonOk } from "@/lib/http";
+import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireProjectmTopup } from "@/server/auth";
-import { claimItuneEntry, listClaimedItuneEntriesForUser } from "@/server/itune-entries-repository";
+import {
+  claimItuneEntry,
+  getItuneClaimSettings,
+  listClaimableItuneEntriesForUser,
+  listClaimedItuneEntriesForUser,
+} from "@/server/itune-entries-repository";
 
-// claimItuneEntry enforces the per-user cap and picks the lowest-id available row.
+// claimItuneEntry enforces the per-user cap and atomically claims the row the
+// user selected. An empty body remains supported for older clients and falls
+// back to the queue's first available row.
 export async function POST(request) {
   try {
     const actor = await requireProjectmTopup(request);
-    const entry = await claimItuneEntry(actor);
+    const raw = await request.text();
+    let entryId = null;
+    if (raw) {
+      let body;
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        return jsonError("รูปแบบข้อมูลไม่ถูกต้อง", 400);
+      }
+      entryId = Number(body?.entryId);
+      if (!Number.isInteger(entryId) || entryId <= 0) {
+        return jsonError("รายการเมลไม่ถูกต้อง", 400);
+      }
+    }
+    const entry = await claimItuneEntry(actor, entryId);
     return jsonOk({ entry }, 201);
   } catch (err) {
     return handleApiError(err, "รับเมลไม่สำเร็จ");
@@ -21,8 +42,12 @@ export async function POST(request) {
 export async function GET(request) {
   try {
     const actor = await requireProjectmTopup(request);
-    const entries = await listClaimedItuneEntriesForUser(actor.id);
-    return jsonOk({ entries });
+    const settings = await getItuneClaimSettings();
+    const [entries, availableEntries] = await Promise.all([
+      listClaimedItuneEntriesForUser(actor.id),
+      listClaimableItuneEntriesForUser(actor.id, settings),
+    ]);
+    return jsonOk({ entries, availableEntries, claimPaused: settings.claimPaused });
   } catch (err) {
     return handleApiError(err, "โหลดรายการที่ถืออยู่ไม่สำเร็จ");
   }

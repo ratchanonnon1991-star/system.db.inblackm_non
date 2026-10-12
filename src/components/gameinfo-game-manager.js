@@ -8,6 +8,7 @@ import {
   buildGameinfoStatusUpdate,
   buildGameinfoUpdate,
   listChangedGameinfoImages,
+  saveGameinfoSections,
   updateGameinfoImage,
 } from "@/lib/gameinfo-game-manager";
 import GameinfoNameInput from "./gameinfo-name-input";
@@ -30,17 +31,6 @@ function fieldsFromRow(row) {
 
 function statusFromRow(row) {
   return row.serviceEnabled === false ? "offline" : "online";
-}
-
-async function saveImageChanges(url, savedImages, images, fallbackError) {
-  for (const { name, imageUrl } of listChangedGameinfoImages(savedImages, images)) {
-    await apiJson(url, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, imageUrl }),
-      fallbackError,
-    });
-  }
 }
 
 export default function GameinfoGameManager({ row, existingNames, tagSuggestions, publisherSuggestions, dataMode = "uid" }) {
@@ -102,71 +92,64 @@ export default function GameinfoGameManager({ row, existingNames, tagSuggestions
     setError("");
     setNotice("");
     const modeQuery = dataMode === "idpass" ? "?mode=idpass" : "";
-    try {
-      const gameUpdate = buildGameinfoUpdate(draft, dataMode);
-      if (JSON.stringify(gameUpdate) !== JSON.stringify(buildGameinfoUpdate(saved, dataMode))) {
-        await apiJson(`/api/gameinfo/gamelist/${row.id}${modeQuery}`, {
-          method: "PUT",
+    const steps = [];
+    function add(label, url, body, onSaved) {
+      steps.push({
+        label,
+        run: () => apiJson(url, {
+          method: url.endsWith("/status") ? "POST" : "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(gameUpdate),
-          fallbackError: "บันทึกข้อมูลเกมไม่สำเร็จ",
-        });
-      }
-      if (dataMode === "idpass" && draft.vpn !== saved.vpn) {
-        await apiJson(`/api/gameinfo/gamelist/${row.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ vpn: draft.vpn }),
-          fallbackError: "บันทึกสถานะ VPN ไม่สำเร็จ",
-        });
-      }
-      if (status !== savedStatus) {
-        await apiJson("/api/gameinfo/gamelist/status", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ gameIds: [row.id], ...buildGameinfoStatusUpdate(status) }),
-          fallbackError: "บันทึกสถานะเกมไม่สำเร็จ",
-        });
-      }
-      if (image !== savedImage) {
-        await apiJson(`/api/gameinfo/gamelist/${row.id}/image`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ imageUrl: image }),
-          fallbackError: "บันทึกรูปเกมไม่สำเร็จ",
-        });
-      }
-      if (JSON.stringify(tags) !== JSON.stringify(savedTags)) {
-        const data = await apiJson(`/api/gameinfo/gamelist/${row.id}/tags`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tags }),
-          fallbackError: "บันทึก tags เกมไม่สำเร็จ",
-        });
-        setTags(data.tags);
+          body: JSON.stringify(body),
+          fallbackError: `บันทึก${label}ไม่สำเร็จ`,
+        }),
+        onSaved,
+      });
+    }
+    const gameUpdate = buildGameinfoUpdate(draft, dataMode);
+    if (JSON.stringify(gameUpdate) !== JSON.stringify(buildGameinfoUpdate(saved, dataMode))) {
+      add("ข้อมูลเกม", `/api/gameinfo/gamelist/${row.id}${modeQuery}`, gameUpdate,
+        () => setSaved((current) => ({ ...current, ...gameUpdate })));
+    }
+    if (dataMode === "idpass" && draft.vpn !== saved.vpn) {
+      add("VPN", `/api/gameinfo/gamelist/${row.id}`, { vpn: draft.vpn },
+        () => setSaved((current) => ({ ...current, vpn: draft.vpn })));
+    }
+    if (status !== savedStatus) {
+      add("สถานะเกม", "/api/gameinfo/gamelist/status", { gameIds: [row.id], ...buildGameinfoStatusUpdate(status) },
+        () => setSavedStatus(status));
+    }
+    if (image !== savedImage) {
+      add("รูปเกม", `/api/gameinfo/gamelist/${row.id}/image`, { imageUrl: image }, () => setSavedImage(image));
+    }
+    if (JSON.stringify(tags) !== JSON.stringify(savedTags)) {
+      add("หมวดหมู่", `/api/gameinfo/gamelist/${row.id}/tags`, { tags }, (data) => {
+        setTags((current) => JSON.stringify(current) === JSON.stringify(tags) ? data.tags : current);
         setSavedTags(data.tags);
-      }
-      if (JSON.stringify(publishers) !== JSON.stringify(savedPublishers)) {
-        const data = await apiJson(`/api/gameinfo/gamelist/${row.id}/publishers`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ publishers }),
-          fallbackError: "บันทึกค่ายเกมไม่สำเร็จ",
-        });
-        setPublishers(data.publishers);
+      });
+    }
+    if (JSON.stringify(publishers) !== JSON.stringify(savedPublishers)) {
+      add("ค่ายเกม", `/api/gameinfo/gamelist/${row.id}/publishers`, { publishers }, (data) => {
+        setPublishers((current) => JSON.stringify(current) === JSON.stringify(publishers) ? data.publishers : current);
         setSavedPublishers(data.publishers);
+      });
+    }
+    for (const { name, imageUrl } of listChangedGameinfoImages(savedTagImages, tagImages)) {
+      add(`รูปหมวดหมู่ ${name}`, "/api/gameinfo/tags", { name, imageUrl },
+        () => setSavedTagImages((current) => updateGameinfoImage(current, name, imageUrl)));
+    }
+    for (const { name, imageUrl } of listChangedGameinfoImages(savedPublisherImages, publisherImages)) {
+      add(`รูปค่ายเกม ${name}`, "/api/gameinfo/publishers", { name, imageUrl },
+        () => setSavedPublisherImages((current) => updateGameinfoImage(current, name, imageUrl)));
+    }
+    try {
+      const result = await saveGameinfoSections(steps);
+      if (result.failed) {
+        setError(`บันทึก${result.failed}ไม่สำเร็จ: ${result.error instanceof Error ? result.error.message : "เกิดข้อผิดพลาด"} — กดบันทึกอีกครั้งเพื่อบันทึกส่วนที่ยังค้าง`);
+        if (result.completed.length) setNotice(`บันทึกแล้ว: ${result.completed.join(", ")}`);
+      } else {
+        setNotice("บันทึกเรียบร้อย");
       }
-      await saveImageChanges("/api/gameinfo/tags", savedTagImages, tagImages, "บันทึกรูปหมวดหมู่ไม่สำเร็จ");
-      await saveImageChanges("/api/gameinfo/publishers", savedPublisherImages, publisherImages, "บันทึกรูปค่ายเกมไม่สำเร็จ");
-      setSaved(draft);
-      setSavedStatus(status);
-      setSavedImage(image);
-      setSavedTagImages(tagImages);
-      setSavedPublisherImages(publisherImages);
-      setNotice("บันทึกเรียบร้อย");
-      router.refresh();
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "บันทึกข้อมูลเกมไม่สำเร็จ");
+      if (result.completed.length) router.refresh();
     } finally {
       setSaving(false);
     }
@@ -181,7 +164,7 @@ export default function GameinfoGameManager({ row, existingNames, tagSuggestions
           <p className="text-xs font-medium text-linear-ink-tertiary">MANAGE GAME</p>
           <h1 className="text-xl font-semibold tracking-[-0.3px] text-linear-ink">จัดการข้อมูลเกม</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           {notice ? (
             <span className="flex items-center gap-1.5 text-xs text-linear-success" role="status">
               <CheckCircle2 size={15} aria-hidden="true" /> {notice}

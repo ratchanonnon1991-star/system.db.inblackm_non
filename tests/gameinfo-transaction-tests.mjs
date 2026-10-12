@@ -30,6 +30,7 @@ await assert.rejects(() => cloneGameinfoDataMode({
 }));
 assert.ok(log.some((entry) => entry.text.trim() === "ROLLBACK"));
 assert.ok(!log.some((entry) => entry.text.trim() === "COMMIT"));
+assert.ok(!log.some((entry) => /SELECT \* FROM gameinfo_game_markets/.test(entry.text)));
 
 const importRoute = readFileSync(new URL("../src/app/api/gameinfo/import/apply/route.js", import.meta.url), "utf8");
 assert.ok(importRoute.includes("withGameinfoTransaction(async (client)"));
@@ -56,4 +57,4 @@ assert.ok(!transactionLog.includes("BEGIN"));
 assert.ok(!transactionLog.includes("COMMIT"));
 assert.ok(!transactionLog.includes("ROLLBACK"));
 
-console.log("11 passed");
+console.log("12 passed");

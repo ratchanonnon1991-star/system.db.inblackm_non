@@ -1,7 +1,7 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireGameinfoEditor } from "@/server/auth";
 import { reorderGameListRows } from "@/server/gameinfo-gamelist";
-import { recordEdit } from "@/server/gamedb-edit-log";
+import { recordGameinfoEditAfterSave } from "@/server/gameinfo-post-save";
 import { requestMeta } from "@/lib/request-meta";
 import { auditActor } from "@/server/gameinfo-gamelist-packs";
 
@@ -15,7 +15,7 @@ export async function POST(request) {
     // One entry for the whole reorder, not one per row -- there's no
     // meaningful single pkValue, and a row's own old/new position isn't
     // worth reverting to individually the way a value is.
-    await recordEdit({
+    await recordGameinfoEditAfterSave({
       queryId: null,
       actor: admin.username || admin.displayName || "",
       table: "gamelist_order",

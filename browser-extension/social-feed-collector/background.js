@@ -18,8 +18,122 @@ function groupDiscussionUrl(source) {
   if (groupId) { url.pathname = `/groups/${groupId}/`; url.search = ""; url.hash = ""; }
   return url;
 }
+async function sendFacebookCommentInPage({ url, text, capturedDocId, envelope = {} }) {
+  const unescapeHtml = (value) => String(value || "").replace(/&quot;|&#0?34;/g, '"').replace(/&#0?39;|&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#x2f;|&#47;/gi, "/").replace(/&amp;/g, "&");
+  const first = (value, patterns) => { for (const pattern of patterns) { const match = value.match(pattern); if (match?.[1]) return unescapeHtml(match[1]).replace(/\\\//g, "/"); } return ""; };
+  const cookie = (name) => document.cookie.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`))?.[1] || "";
+  const target = new URL(url);
+  target.protocol = location.protocol;
+  target.host = location.host;
+  const pageResponse = await fetch(target.href, { credentials: "include", redirect: "follow" });
+  if (!pageResponse.ok) throw new Error(`โหลดโพสต์ไม่ได้ (Facebook HTTP ${pageResponse.status})`);
+  const html = await pageResponse.text();
+  const decoded = unescapeHtml(html).replace(/\\\//g, "/");
+  const actor = first(decoded, [/"actorID"\s*:\s*"(\d+)"/, /"USER_ID"\s*:\s*"(\d+)"/, /__user=(\d+)/]) || cookie("c_user");
+  const fbDtsg = first(decoded, [/"DTSGInitData",\[\],\{"token":"([^"\\]+)/, /"name"\s*:\s*"fb_dtsg"[\s\S]{0,300}?"value"\s*:\s*"([^"\\]+)/, /name="fb_dtsg"\s+value="([^"]+)/]);
+  const lsd = first(decoded, [/"LSD",\[\],\{"token":"([^"\\]+)/, /"name"\s*:\s*"lsd"[\s\S]{0,300}?"value"\s*:\s*"([^"\\]+)/]);
+  if (!actor || !fbDtsg) throw new Error("อ่าน Session Token จาก Facebook ไม่ได้");
+  const postId = first(target.href, [/[?&]fbid=(\d+)/, /[?&]story_fbid=(\d+)/, /\/permalink\/(\d+)/, /\/posts\/(\d+)/]);
+  let feedbackId = postId ? btoa(`feedback:${postId}`) : first(decoded, [/"feedback_id"\s*:\s*"(ZmVlZGJhY2s6[0-9A-Za-z_+/=-]+)"/, /(ZmVlZGJhY2s6[0-9A-Za-z_+/=-]+)/]);
+  if (!feedbackId) throw new Error("หา feedback_id ของโพสต์ไม่พบ");
+  const groupId = first(target.href, [/\/groups\/(\d+)/]) || first(decoded, [/"groupID"\s*:\s*"(\d+)"/, /"group_id"\s*:\s*"(\d+)"/]);
+  const now = Date.now();
+  const variables = {
+    input: {
+      client_mutation_id: "40",
+      attachments: null,
+      feedback_id: feedbackId,
+      formatting_style: null,
+      message: { ranges: [], text: String(text || "") },
+      attribution_id_v2: envelope.attribution || `CometSinglePostDialogRoot.react,comet.post.single_dialog.group,via_cold_start,${now},309365,${now % 4000000000},,`,
+      vod_video_timestamp: null,
+      feedback_referrer: target.pathname,
+      is_tracking_encrypted: true,
+      tracking: Array.isArray(envelope.tracking) && envelope.tracking.length ? envelope.tracking : [JSON.stringify({ assistant_caller: "comet_above_composer", conversation_guide_session_id: null, conversation_guide_shown: null })],
+      feedback_source: "OBJECT",
+      idempotence_token: `client:${crypto.randomUUID()}`,
+      session_id: crypto.randomUUID(),
+    },
+    feedLocation: "POST_PERMALINK_DIALOG",
+    feedbackSource: 2,
+    groupID: groupId || null,
+    inviteShortLinkKey: null,
+    renderLocation: null,
+    scale: 1,
+    useDefaultActor: false,
+    focusCommentID: null,
+    translationType: "AUTO_TRANSLATE",
+    canUseNicknameOnComet: false,
+    __relay_internal__pv__groups_comet_use_glvrelayprovider: false,
+    __relay_internal__pv__CometUFICommentActionLinksRewriteEnabledrelayprovider: true,
+    __relay_internal__pv__CometUFICommentAvatarStickerAnimatedImagerelayprovider: false,
+    __relay_internal__pv__IsWorkUserrelayprovider: false,
+    __relay_internal__pv__CometUFICommentAutoTranslationTyperelayprovider: "AUTO_TRANSLATE",
+  };
+  const friendlyName = "useCometUFICreateCommentMutation";
+  const nearbyDocId = first(decoded, [new RegExp(`${friendlyName}[\\s\\S]{0,1200}?[\\\\\"]doc_id[\\\\\"]\\s*:\\s*[\\\\\"](\\d{10,})`), new RegExp(`[\\\\\"]doc_id[\\\\\"]\\s*:\\s*[\\\\\"](\\d{10,})[\\s\\S]{0,1200}?${friendlyName}`)]);
+  const form = new URLSearchParams({
+    av: actor, __aaid: "0", __user: actor, __a: "1", __req: "1", dpr: cookie("dpr") || "1",
+    fb_dtsg: fbDtsg, jazoest: `2${[...fbDtsg].map((character) => character.charCodeAt(0)).join("")}`,
+    fb_api_caller_class: "RelayModern", fb_api_req_friendly_name: friendlyName, server_timestamps: "true",
+    variables: JSON.stringify(variables), doc_id: capturedDocId || nearbyDocId || "27687311557628355",
+  });
+  const tokenPatterns = {
+    __hs: [/"haste_session"\s*:\s*"([^"]+)/, /__hs=([^&"\\]+)/], __ccg: [/"connectionClass"\s*:\s*"([^"]+)/],
+    __rev: [/"__spin_r"\s*:\s*(\d+)/], __s: [/"__s"\s*:\s*"([^"]+)/, /__s=([^&"\\]+)/], __hsi: [/"hsi"\s*:\s*"(\d+)/, /__hsi=(\d+)/],
+    __dyn: [/"__dyn"\s*:\s*"([^"]*)/, /__dyn=([^&"\\]+)/], __csr: [/"__csr"\s*:\s*"([^"]*)/, /__csr=([^&"\\]+)/],
+    __comet_req: [/__comet_req[=:\"]+(\d+)/], __spin_r: [/"__spin_r"\s*:\s*(\d+)/], __spin_b: [/"__spin_b"\s*:\s*"([^"]+)/], __spin_t: [/"__spin_t"\s*:\s*(\d+)/],
+  };
+  for (const [name, patterns] of Object.entries(tokenPatterns)) { const value = first(decoded, patterns); if (value) form.set(name, value); }
+  if (lsd) form.set("lsd", lsd);
+  const response = await fetch(`${location.origin}/api/graphql/`, {
+    method: "POST", credentials: "include",
+    headers: { "content-type": "application/x-www-form-urlencoded", "x-fb-friendly-name": friendlyName, "x-asbd-id": envelope.asbdId || "359341", ...(lsd ? { "x-fb-lsd": lsd } : {}) },
+    body: form.toString(),
+  });
+  const raw = await response.text();
+  const cleaned = raw.replace(/^for \(;;\);\s*/, "");
+  let payload;
+  try { payload = JSON.parse(cleaned); }
+  catch { payload = cleaned.split("\n").map((line) => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean); }
+  const findComment = (value) => {
+    if (!value || typeof value !== "object") return null;
+    const node = value.data?.comment_create?.feedback_comment_edge?.node;
+    if (node?.id) return node;
+    for (const child of Object.values(value)) { const found = findComment(child); if (found) return found; }
+    return null;
+  };
+  const comment = findComment(payload);
+  if (!response.ok || !comment) throw new Error(payload.errors?.[0]?.message || `Facebook ไม่ยืนยันผลคอมเมนต์ (HTTP ${response.status})`);
+  return { ok: true, commentId: comment.legacy_fbid || comment.id };
+}
 async function workerHeartbeat(status = "ready", clearPlatformAccountId = false) { const config = await settings(); if (config.ingestSecret.length < 24) return null; const id = await instanceId(); const stored = await chrome.storage.local.get({ collectorLabel: "" }); const facebookId = await currentFacebookId(); return api("/api/social-feed/collector", { method: "POST", body: JSON.stringify({ type: "heartbeat", instanceId: id, label: stored.collectorLabel || config.accountLabel || `เครื่อง ${id.slice(0, 8)}`, platformAccountId: facebookId, clearPlatformAccountId, status, activate: true }) }); }
+async function serverRunning() { const id = await instanceId(); const result = await api(`/api/social-feed/collector?instance=${encodeURIComponent(id)}`); await chrome.storage.local.set({ collectorRunning: result.running }); return result.running; }
 async function report(sourceId, result) { await api("/api/social-feed/collector", { method: "POST", body: JSON.stringify({ sourceId, instanceId: await instanceId(), status: result.status, note: result.note || "", ingested: result.ingested || 0 }) }); }
+async function runPendingComment() {
+  const linkedFacebookId = await currentFacebookId();
+  if (!linkedFacebookId) return false;
+  const activeFacebookId = await browserFacebookId();
+  if (activeFacebookId !== linkedFacebookId) return false;
+  const id = await instanceId();
+  const { job } = await api("/api/social-feed/collector", { method: "POST", body: JSON.stringify({ type: "claim_comment", instanceId: id }) });
+  if (!job) return false;
+  let ok = false; let note = "";
+  try {
+    const url = new URL(job.url);
+    if (url.protocol !== "https:" || !["facebook.com", "www.facebook.com"].includes(url.hostname)) throw new Error("URL โพสต์ไม่ถูกต้อง");
+    let [tab] = await chrome.tabs.query({ url: ["https://www.facebook.com/*"] });
+    if (!tab) { tab = await chrome.tabs.create({ url: "https://www.facebook.com/", active: false }); while ((await chrome.tabs.get(tab.id)).status !== "complete") await wait(500); }
+    const { facebookGraphqlDocIds = {}, facebookGraphqlEnvelope = {} } = await chrome.storage.local.get({ facebookGraphqlDocIds: {}, facebookGraphqlEnvelope: {} });
+    const [injection] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: "MAIN", func: sendFacebookCommentInPage, args: [{ url: url.href, text: job.text, capturedDocId: facebookGraphqlDocIds.useCometUFICreateCommentMutation || "", envelope: facebookGraphqlEnvelope }] });
+    if (!injection?.result?.ok) throw new Error("ส่งคอมเมนต์ไม่สำเร็จ");
+    ok = true; note = `ส่งคอมเมนต์แล้ว (${injection.result.commentId})`;
+  } catch (error) { note = error.message; }
+  finally {
+    await api("/api/social-feed/collector", { method: "POST", body: JSON.stringify({ type: "report_comment", jobId: job.id, instanceId: id, ok, note }) }).catch(() => {});
+  }
+  return true;
+}
 let currentCheck;
 let stopRequested = false;
 async function isPaused() { return (await chrome.storage.local.get({ paused: false })).paused; }
@@ -104,8 +218,12 @@ async function checkSources(sources) {
     if (!authenticated && !await chrome.offscreen.hasDocument()) await chrome.offscreen.createDocument({ url: "public-reader.html", reasons: ["DOM_PARSER"], justification: "อ่านข้อความสาธารณะโดยไม่ส่ง Facebook cookie" });
     for (const source of sources) {
       if (stopRequested || await isPaused()) break;
+      if (!await serverRunning()) { stopRequested = true; break; }
       // เว้นช่วงเหมือนคนสลับดูทีละกลุ่ม (สุ่ม 8–25 วินาที) ไม่เปิดรัวติดกัน
-      if (opened > 0) await wait(randomBetween(8000, 25000));
+      if (opened > 0) {
+        await wait(randomBetween(8000, 25000));
+        if (!await serverRunning()) { stopRequested = true; break; }
+      }
       if (stopRequested || await isPaused()) break;
       await workerHeartbeat();
       const claim = await api("/api/social-feed/collector", { method: "POST", body: JSON.stringify({ type: "claim", sourceId: source.id, instanceId: await instanceId() }) });
@@ -129,6 +247,7 @@ function runCheck() {
     if (config.ingestSecret.length < 24) throw new Error("กรุณาตั้งค่า Ingest secret อย่างน้อย 24 ตัวอักษร");
     const id = await instanceId();
     await workerHeartbeat();
+    await runPendingComment();
     const { sources = [], running = false } = await api(`/api/social-feed/collector?instance=${encodeURIComponent(id)}`);
     await chrome.storage.local.set({ collectorRunning: running });
     // ยังไม่กดเริ่มจากเว็บ = สแตนบาย: heartbeat แล้วรอ ไม่เปิดกลุ่มใด ๆ

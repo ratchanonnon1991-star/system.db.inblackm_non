@@ -160,6 +160,9 @@ export default function GameinfoMarketManager({ gameId, dataMode, columns, onCol
             // ordinary column has nothing to gate on but the mapping itself.
             const enabled = market.enabled && (market.priceColumnKey ? Boolean(column) : column?.enabled === true);
             const games = gamesByMarket[market.market] || [];
+            const gamesLoaded = Object.prototype.hasOwnProperty.call(gamesByMarket, market.market);
+            const hasGameOptions = Boolean(market.externalGameKey) || games.length > 0;
+            const hasColumnOptions = Boolean(columnKey) || linkableColumns.length > 0;
             return (
               <Field key={market.market} orientation="horizontal" className="rounded-lg border p-3">
                 <FieldContent className="min-w-0">
@@ -182,9 +185,9 @@ export default function GameinfoMarketManager({ gameId, dataMode, columns, onCol
                       const selected = games.find((game) => game.value === value);
                       saveMarket(market, { externalGameKey: value, externalGameLabel: selected?.label || value });
                     }}
-                    disabled={busy === market.market}
+                    disabled={busy === market.market || (gamesLoaded && !hasGameOptions)}
                   >
-                    <SelectTrigger className="w-full min-w-0 overflow-hidden"><SelectValue className="truncate" placeholder="เลือกเกมใน Market" /></SelectTrigger>
+                    <SelectTrigger className="w-full min-w-0 overflow-hidden"><SelectValue className="truncate" placeholder={gamesLoaded && !hasGameOptions ? "ไม่มี" : "เลือกเกมใน Market"} /></SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
                         {market.externalGameKey ? (
@@ -201,10 +204,10 @@ export default function GameinfoMarketManager({ gameId, dataMode, columns, onCol
                     ]}
                     value={columnKey || null}
                     onValueChange={(value) => linkColumn(market, value)}
-                    disabled={busy === market.market}
+                    disabled={busy === market.market || !hasColumnOptions}
                   >
                     <SelectTrigger className="w-full min-w-0 overflow-hidden">
-                      <SelectValue className="truncate" placeholder="เลือกคอลัมน์อ้างอิงราคา" />
+                      <SelectValue className="truncate" placeholder={hasColumnOptions ? "เลือกคอลัมน์อ้างอิงราคา" : "ไม่มี"} />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>

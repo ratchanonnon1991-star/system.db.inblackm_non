@@ -431,7 +431,8 @@ async function run() {
     createdAt: "2026-08-17T10:00:00.000Z",
   });
   const historyQuery = find(/FROM gamelist_pack_audit_logs/);
-  check("history: binds game id and clamps the limit", historyQuery?.params, [5, 500]);
+  check("history: binds pack areas, game id and clamps the limit", historyQuery?.params, [["pack", "group", "import", "clone"], 5, 500]);
+  ok("history: excludes non-pack areas such as warning/tutorial", /COALESCE\(a\.area, 'pack'\) = ANY\(\$1::text\[\]\)/.test(historyQuery?.text || ""));
 
   // --- multi-game CSV import -------------------------------------------
   reset();

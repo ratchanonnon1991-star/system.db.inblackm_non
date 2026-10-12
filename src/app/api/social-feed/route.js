@@ -8,7 +8,7 @@ export async function GET(request) {
     const params = request.nextUrl.searchParams;
     return jsonOk(await getSocialFeedState(user.id, {
       categoryId: params.get("category") || "",
-      tagId: params.get("tag") || "",
+      folderId: params.get("folder") || "",
       saved: params.get("saved") || "",
       q: params.get("q") || "",
       dateFrom: params.get("dateFrom") || "",

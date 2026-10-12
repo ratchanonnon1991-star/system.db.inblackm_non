@@ -40,13 +40,48 @@ const popupSource = fs.readFileSync("browser-extension/social-feed-collector/pop
 assert.match(backgroundSource, /TOGGLE_FACEBOOK_LOGIN/);
 assert.match(backgroundSource, /facebookAccountId/);
 assert.match(backgroundSource, /clearPlatformAccountId/);
+assert.match(backgroundSource, /if \(!await serverRunning\(\)\) \{ stopRequested = true; break; \}/, "an active collection loop must observe the server stop control");
+assert.match(backgroundSource, /type:\s*"claim_comment"/, "collector must claim queued comment jobs");
+assert.match(backgroundSource, /chrome\.scripting\.executeScript/, "comment jobs must run in Facebook's main world");
+assert.match(backgroundSource, /useCometUFICreateCommentMutation/, "comment jobs must use Facebook's GraphQL mutation");
+assert.doesNotMatch(contentSource, /execCommand\("insertText"/, "comment jobs must not type through the Facebook DOM");
+assert.match(contentSource, /consecutiveExisting\s*>=\s*2/, "collector must stop at two consecutive posts already stored");
+assert.match(contentSource, /progress\.seen\.has\(reference\.postId\)/, "the same rendered post must not count twice toward the stored-post boundary");
+assert.match(contentSource, /privateGroupNeedsJoin\(\)/, "collector must detect private groups that still show a Join group control");
 assert.match(backgroundSource, /credentials:\s*"omit"/);
 assert.match(popupSource, /ใช้ Facebook ที่ล็อกอินอยู่/);
 assert.match(contentSource, /see more\|ดูเพิ่มเติม/i);
+assert.match(contentSource, /aria-label/);
 assert.match(contentSource, /data-ad-preview/);
 assert.doesNotMatch(contentSource, /const message = article\?\.innerText/);
+const injectedCommentSource = vm.runInContext("sendFacebookCommentInPage.toString()", context);
+const facebookCommentCalls = [];
+const facebookPageContext = vm.createContext({
+  URL, URLSearchParams, FormData, btoa, crypto: { randomUUID: () => "request-id" },
+  location: { origin: "https://www.facebook.com", protocol: "https:", host: "www.facebook.com" },
+  document: { cookie: "c_user=123456789; dpr=1" },
+  fetch: async (url, options) => {
+    facebookCommentCalls.push({ url, options });
+    if (String(url).includes("/api/graphql/")) return { ok: true, status: 200, text: async () => 'for (;;);{"data":{"comment_create":{"feedback_comment_edge":{"node":{"id":"comment:1","legacy_fbid":"1"}}}}}' };
+    return { ok: true, status: 200, text: async () => '<script>"actorID":"123456789","DTSGInitData",[],{"token":"fb-token"},"LSD",[],{"token":"lsd-token"}</script>' };
+  },
+});
+const directCommentResult = await vm.runInContext(`(${injectedCommentSource})({ url: "https://www.facebook.com/groups/123/permalink/456/", text: "ทดสอบ", capturedDocId: "27687311557628355" })`, facebookPageContext);
+assert.equal(directCommentResult.ok, true);
+assert.equal(facebookCommentCalls.length, 2, "direct comments fetch the post context then submit one GraphQL mutation");
+assert.match(facebookCommentCalls[1].options.body, /fb_api_req_friendly_name=useCometUFICreateCommentMutation/);
 const contentContext = vm.createContext({ URL, Date, Map, chrome: { runtime: { onMessage: event } } });
 vm.runInContext(contentSource, contentContext);
+contentContext.joinControl = { getAttribute: (name) => name === "aria-label" ? "เข้าร่วมกลุ่ม CookieRun Classic Thailand" : "", textContent: "เข้าร่วมกลุ่ม" };
+assert.equal(vm.runInContext("isJoinGroupControl(joinControl)", contentContext), true, "join controls may include the group name in aria-label");
+contentContext.authorArticle = { querySelectorAll: (selector) => selector.includes('[role="button"]') || selector.includes('[aria-label]') ? [] : [{ textContent: "Anansit Sukthuayat" }] };
+assert.equal(vm.runInContext("censoredAuthor(authorArticle)", contentContext), "A****** S*********", "author names keep only each word's first character and original length");
+contentContext.timeAuthorArticle = { querySelectorAll: (selector) => selector.includes('[role="button"]') || selector.includes('[aria-label]') ? [] : [{ textContent: "7 นาที" }] };
+assert.equal(vm.runInContext("censoredAuthor(timeAuthorArticle)", contentContext), "", "relative post times must never become author names");
+contentContext.anonymousArticle = { querySelectorAll: (selector) => selector.includes('[role="button"]') ? [{ textContent: "ผู้มีส่วนร่วมที่ไม่ระบุตัวตน" }] : [] };
+assert.equal(vm.runInContext("censoredAuthor(anonymousArticle)", contentContext), "ผู้มีส่วนร่วมที่ไม่ระบุตัวตน");
+contentContext.actionArticle = { querySelectorAll: (selector) => selector.includes('[aria-label]') ? [{ getAttribute: () => "การดำเนินการสำหรับโพสต์นี้โดย Pheerasu Korsrisuwan" }] : [] };
+assert.equal(vm.runInContext("censoredAuthor(actionArticle)", contentContext), "P******* K**********", "post action labels are the authoritative author source");
 const parsedReference = vm.runInContext(`postReference(new URL("https://www.facebook.com/groups/832745976781717/?multi_permalinks=28173991072230505&hoisted_section_header_type=recently_seen"))`, contentContext);
 assert.deepEqual({ ...parsedReference }, { groupId: "832745976781717", postId: "28173991072230505" });
 const parsedDate = vm.runInContext(`parseFacebookDateLabel("30 กรกฎาคม", new Date(2026, 8, 14))`, contentContext);
@@ -69,7 +104,7 @@ assert.equal(facebook[0].url, "https://www.facebook.com/groups/123/", "public mo
 assert.equal(facebook[0].options.credentials, "omit", "public mode must not attach Facebook cookies");
 assert.equal(cookieReads, 0, "public collection must not inspect login cookies");
 assert.equal(tabs.length, 0, "public mode must not open an authenticated browser tab");
-assert.equal(calls.filter(({ url }) => url.includes("?instance=reader")).length, 1);
+assert.equal(calls.filter(({ url }) => url.includes("?instance=reader")).length, 2, "collector checks server control again before reading its assigned source");
 assert.equal(calls.filter(({ url, options }) => url.endsWith("/api/social-feed/collector") && options.method === "POST" && JSON.parse(options.body).type === "heartbeat").length, 2, "worker refreshes heartbeat before claiming a source");
 console.log("PASS: anonymous public fetch, overlapping-run guard, no login-cookie inspection");
 const dispatch = (message) => new Promise((resolve) => runtimeListener(message, {}, resolve));

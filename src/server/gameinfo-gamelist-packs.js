@@ -9,6 +9,7 @@
 // so they're stored as one sentinel row per game at pack_id = "__computed__"
 // rather than adding a second table — keeps the "just id -> pack_id -> json"
 // shape the whole way through.
+import { createHash } from "node:crypto";
 import { getPoolForConnection } from "@/lib/db";
 import { sanitizeGameinfoPack } from "@/lib/gameinfo-pack-model";
 import { findDuplicateGameinfoPackNamePrices } from "@/lib/gameinfo-pack-validation";
@@ -202,6 +203,15 @@ function ensureSchema(connection) {
         ALTER TABLE gamelist_pack_audit_logs
         ADD COLUMN IF NOT EXISTS area VARCHAR(32) NOT NULL DEFAULT 'pack',
         ADD COLUMN IF NOT EXISTS data_mode VARCHAR(16) NOT NULL DEFAULT 'uid'
+      `);
+      // VPN note edits were once logged before "vpn_note" was a known area,
+      // so they fell back to "pack". Pack-editor rows always carry a pack_id
+      // or a non-"update" action, so a pack/update row with no pack_id can
+      // only be one of those VPN edits.
+      await client.query(`
+        UPDATE gamelist_pack_audit_logs
+        SET area = 'vpn_note'
+        WHERE area = 'pack' AND pack_id IS NULL AND action = 'update'
       `);
       await client.query(`
         CREATE INDEX IF NOT EXISTS gamelist_pack_audit_area_time_idx
@@ -1241,7 +1251,7 @@ function onlyPositionChanged(before, after) {
 
 const AUDIT_SOURCES = new Set(["editor", "csv_append", "csv_replace", "mode_clone", "import"]);
 export const GAMEINFO_AUDIT_AREAS = new Set([
-  "pack", "group", "game", "tutorial", "warning", "links", "variables",
+  "pack", "group", "game", "tutorial", "warning", "vpn_note", "links", "variables",
   "status", "import", "clone", "image", "tags", "publishers", "order", "settings",
 ]);
 
@@ -1303,6 +1313,17 @@ function groupRenames(previousRows, nextRows) {
   return renames;
 }
 
+function summarizeEmbeddedImages(value) {
+  if (typeof value === "string" && value.startsWith("data:image/")) {
+    return `embedded-image:sha256:${createHash("sha256").update(value).digest("hex")}:bytes:${value.length}`;
+  }
+  if (Array.isArray(value)) return value.map(summarizeEmbeddedImages);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, summarizeEmbeddedImages(item)]));
+  }
+  return value;
+}
+
 export async function recordGameinfoAudit({
   gameId,
   area,
@@ -1316,7 +1337,10 @@ export async function recordGameinfoAudit({
   client: transactionClient = null,
 }) {
   const numericGameId = Number(gameId);
-  if (!Number.isInteger(numericGameId) || numericGameId < 0 || sameJson(before ?? null, after ?? null)) return;
+  const hasEmbeddedImages = area === "tutorial" || area === "warning" || area === "vpn_note";
+  const auditBefore = hasEmbeddedImages ? summarizeEmbeddedImages(before) : before;
+  const auditAfter = hasEmbeddedImages ? summarizeEmbeddedImages(after) : after;
+  if (!Number.isInteger(numericGameId) || numericGameId < 0 || sameJson(auditBefore ?? null, auditAfter ?? null)) return;
   const pool = await getReadyPool();
   const client = transactionClient || await pool.connect();
   try {
@@ -1324,7 +1348,7 @@ export async function recordGameinfoAudit({
       client,
       numericGameId,
       actor,
-      { packId, action, area, before, after },
+      { packId, action, area, before: auditBefore, after: auditAfter },
       source,
       dataMode
     );
@@ -1337,14 +1361,20 @@ export function auditActor(user) {
   return user ? { id: user.id, name: user.displayName || user.username || "" } : null;
 }
 
+// The per-game pack history only shows audit rows that touch packs; the
+// same log also holds tutorial/warning/link edits, which have their own
+// history in the all-games view.
+export const GAMEINFO_PACK_HISTORY_AREAS = ["pack", "group", "import", "clone"];
+
 export async function listGamelistPackAudit(gameId, limit = 100, { dataMode = null } = {}) {
   return listAllGamelistPackAudit(Math.min(500, Math.max(1, Number(limit) || 100)), {
     gameId,
     dataMode,
+    areas: GAMEINFO_PACK_HISTORY_AREAS,
   });
 }
 
-export async function listAllGamelistPackAudit(limit = 1000, { area = null, gameId = null, dataMode = null } = {}) {
+export async function listAllGamelistPackAudit(limit = 1000, { area = null, areas = null, gameId = null, dataMode = null } = {}) {
   const pool = await getReadyPool();
   const client = await pool.connect();
   try {
@@ -1354,6 +1384,9 @@ export async function listAllGamelistPackAudit(limit = 1000, { area = null, game
     if (GAMEINFO_AUDIT_AREAS.has(area)) {
       params.push(area);
       where.push(`a.area = $${params.length}`);
+    } else if (Array.isArray(areas)) {
+      params.push(areas.filter((value) => GAMEINFO_AUDIT_AREAS.has(value)));
+      where.push(`COALESCE(a.area, 'pack') = ANY($${params.length}::text[])`);
     }
     const numericGameId = gameId === null || gameId === "" ? NaN : Number(gameId);
     if (Number.isInteger(numericGameId) && numericGameId >= 0) {
