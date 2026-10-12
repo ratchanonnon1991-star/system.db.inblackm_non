@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Image as ImageIcon, Loader2, X } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import { computeItuneQueueMetrics } from "@/lib/itune-queue";
 import {
   computeEffectiveItuneStatus,
   DEFAULT_ITUNE_RELEASE_THRESHOLD,
@@ -157,7 +158,7 @@ function ItuneFinishClaimModal({ entry, threshold, onConfirm, onClose, submittin
 // cards needs), expanded adds everything else as label/value fields (not
 // table rows, unlike the admin table) plus the "อัปเดตยอดคงเหลือ" balance-
 // update form, its adjustment history, and the "คืนเมล" release action.
-export default function ItuneTopupCard({ entry, now, releaseThreshold, onReleased, onUpdated }) {
+export default function ItuneTopupCard({ entry, now, releaseThreshold, onReleased, onUpdated, usagePriority, queueSettings }) {
   const [expanded, setExpanded] = useState(false);
   const [amountLog, setAmountLog] = useState(null);
   const [loadingLog, setLoadingLog] = useState(false);
@@ -177,6 +178,7 @@ export default function ItuneTopupCard({ entry, now, releaseThreshold, onRelease
 
   const threshold = releaseThreshold ?? DEFAULT_ITUNE_RELEASE_THRESHOLD;
   const { label: statusLabel, tone: statusTone } = computeEffectiveItuneStatus(entry, threshold);
+  const usageMetrics = computeItuneQueueMetrics(entry, queueSettings, now);
 
   function toggleExpanded() {
     const next = !expanded;
@@ -265,7 +267,23 @@ export default function ItuneTopupCard({ entry, now, releaseThreshold, onRelease
         className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-ll-surface-2/50"
       >
         <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="truncate text-sm font-medium text-ll-ink">{entry.email || "-"}</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="min-w-0 truncate text-sm font-medium text-ll-ink">{entry.email || "-"}</span>
+            <span className="shrink-0 rounded-md bg-ll-surface-2 px-2 py-0.5 text-[12px] font-medium text-ll-ink-subtle">
+              {entry.currency?.trim() || "ยังไม่ระบุสกุลเงิน"}
+            </span>
+            {usagePriority && (
+              <span className={`rounded-md px-2 py-0.5 text-[12px] font-medium ${usagePriority === 1 ? "bg-ll-warning-bg text-ll-warning" : "bg-ll-surface-2 text-ll-ink-subtle"}`}>
+                {usagePriority === 1 ? "ควรใช้ก่อนในเมลที่ถืออยู่" : `ลำดับใช้งาน ${usagePriority}`}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-ll-ink-subtle">
+            ยอด {Number(entry.amount || 0).toLocaleString("th-TH", { maximumFractionDigits: 2 })} {entry.currency || ""}
+            {entry.addedAt && Number.isFinite(new Date(entry.addedAt).getTime())
+              ? ` · สร้างมาแล้ว ${usageMetrics.knownAgeHours.toLocaleString("th-TH", { maximumFractionDigits: 1 })} ชม.`
+              : " · ยังไม่ระบุเวลาที่สร้าง"}
+          </p>
           <ItunePasswordValue value={entry.password} className="text-xs text-ll-ink-subtle" />
         </div>
         <button

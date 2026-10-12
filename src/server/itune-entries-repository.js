@@ -1945,6 +1945,7 @@ export async function listClaimableItuneEntriesForUser(userId, settings = null) 
     currency: row.currency || "",
     supplier: row.supplier || "",
     addedAt: toIsoString(row.added_at),
+    priorityOrder: row.priority_order == null ? null : Number(row.priority_order),
   }));
 }
 

@@ -24,6 +24,7 @@ export default async function ItuneTopupPage({ params }) {
   let availableEntries = null;
   let releaseThreshold = null;
   let claimPaused = false;
+  let queueSettings = null;
   let loadError = null;
   try {
     const settings = await getItuneClaimSettings();
@@ -33,6 +34,7 @@ export default async function ItuneTopupPage({ params }) {
     ]);
     releaseThreshold = settings.maxAmount;
     claimPaused = settings.claimPaused;
+    queueSettings = settings;
   } catch (err) {
     loadError = err.message || "โหลดข้อมูลไม่สำเร็จ";
   }
@@ -82,6 +84,7 @@ export default async function ItuneTopupPage({ params }) {
           initialAvailableEntries={availableEntries}
           releaseThreshold={releaseThreshold}
           initialClaimPaused={claimPaused}
+          initialQueueSettings={queueSettings}
         />
       )}
     </div>
