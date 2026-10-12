@@ -1756,9 +1756,9 @@ function isProjectmAdminActor(actor) {
 const MAX_CLAIMS_PER_USER = 2;
 const ITUNE_CLAIM_LOCK_NAMESPACE = 0x4954554e; // "ITUN"
 
-// "รับเมล" (claim) — assigns the first row in CLAIM_ORDER_SQL's order (an
-// admin's manual pin if there is one, otherwise the oldest entry in the
-// highest-value tier) that's neither already claimed, reported unavailable
+// "รับเมล" (claim) — assigns the requested row, or the first row in
+// CLAIM_ORDER_SQL's order for older callers that do not provide an id. It
+// must be neither already claimed nor reported unavailable
 // (see ITUNE_UNAVAILABLE_STATUS — a topup user should never be handed a
 // card someone's already flagged broken), individually held back by an
 // admin (claim_hold), nor the subject of a CONFIRMED reject by this
@@ -1770,7 +1770,13 @@ const ITUNE_CLAIM_LOCK_NAMESPACE = 0x4954554e; // "ITUN"
 // "รับเมล" at the same instant can't both land on the same row — the second
 // just skips past it to the next candidate instead of blocking on the
 // first's lock.
-export async function claimItuneEntry(actor) {
+export async function claimItuneEntry(actor, requestedEntryId = null) {
+  const targetEntryId = requestedEntryId === null || requestedEntryId === undefined
+    ? null
+    : Number(requestedEntryId);
+  if (targetEntryId !== null && (!Number.isInteger(targetEntryId) || targetEntryId <= 0)) {
+    throw createHttpError("รายการเมลไม่ถูกต้อง", 400);
+  }
   // Read before opening the transaction: both values are plain settings,
   // and a paused queue should fail before taking any row locks at all.
   const {
@@ -1802,6 +1808,16 @@ export async function claimItuneEntry(actor) {
         400
       );
     }
+    const targetSql = targetEntryId === null ? "" : "AND e.id = $7";
+    const queryParams = [
+      ITUNE_UNAVAILABLE_STATUS,
+      maxAmount,
+      targetHours,
+      burnRateUsdPerHour,
+      expectedIdleHours,
+      actor.id,
+    ];
+    if (targetEntryId !== null) queryParams.push(targetEntryId);
     const { rows } = await client.query(
       `SELECT id, email, amount, amount_confirm_image FROM projectm_itune_entries e
        WHERE ${CLAIMABLE_WHERE_SQL}
@@ -1811,20 +1827,19 @@ export async function claimItuneEntry(actor) {
            WHERE l.entry_id = e.id AND l.is_reject AND l.reject_confirmed_at IS NOT NULL
              AND l.reported_by_user_id = $6
          )
+         ${targetSql}
        ${CLAIM_ORDER_SQL}
        LIMIT 1
        FOR UPDATE SKIP LOCKED`,
-      [
-        ITUNE_UNAVAILABLE_STATUS,
-        maxAmount,
-        targetHours,
-        burnRateUsdPerHour,
-        expectedIdleHours,
-        actor.id,
-      ]
+      queryParams
     );
     if (rows.length === 0) {
-      throw createHttpError("ไม่มีรายการว่างให้รับตอนนี้", 404);
+      throw createHttpError(
+        targetEntryId === null
+          ? "ไม่มีรายการว่างให้รับตอนนี้"
+          : "เมลนี้ถูกจองไปแล้วหรือไม่พร้อมให้จอง กรุณาเลือกรายการอื่น",
+        targetEntryId === null ? 404 : 409
+      );
     }
     const claimedRow = rows[0];
     claimedId = claimedRow.id;
@@ -1893,6 +1908,44 @@ export async function claimItuneEntry(actor) {
   const entry = await findItuneEntryById(claimedId);
   publishItuneQueueChanged();
   return entry;
+}
+
+// Safe preview for the Topup page. Only fields needed to choose an entry are
+// exposed here; credentials and proof images remain hidden until the claim is
+// completed successfully. The query mirrors claimItuneEntry's availability
+// rules and ordering, including the current user's confirmed-reject exclusion.
+export async function listClaimableItuneEntriesForUser(userId, settings = null) {
+  const pool = await getReadyPool();
+  const currentSettings = settings || await getItuneClaimSettings();
+  const result = await pool.query(
+    `SELECT e.id, e.email, e.amount, e.currency, e.supplier, e.added_at,
+            e.priority_order, ${COMPLETION_SLACK_SQL} AS completion_slack_hours
+     FROM projectm_itune_entries e
+     WHERE ${CLAIMABLE_WHERE_SQL}
+       AND claim_hold = FALSE
+       AND NOT EXISTS (
+         SELECT 1 FROM projectm_itune_issue_log l
+         WHERE l.entry_id = e.id AND l.is_reject AND l.reject_confirmed_at IS NOT NULL
+           AND l.reported_by_user_id = $6
+       )
+     ${CLAIM_ORDER_SQL}`,
+    [
+      ITUNE_UNAVAILABLE_STATUS,
+      currentSettings.maxAmount,
+      currentSettings.targetHours,
+      currentSettings.burnRateUsdPerHour,
+      currentSettings.expectedIdleHours,
+      userId,
+    ]
+  );
+  return result.rows.map((row) => ({
+    id: Number(row.id),
+    email: row.email || "",
+    amount: row.amount === null ? 0 : Number(row.amount),
+    currency: row.currency || "",
+    supplier: row.supplier || "",
+    addedAt: toIsoString(row.added_at),
+  }));
 }
 
 // The admin "จัดคิวรับเมล" page's list: every entry that's up for grabs,
