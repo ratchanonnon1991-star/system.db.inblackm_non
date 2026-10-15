@@ -1,0 +1,96 @@
+// Renders the actual client with mocked HTTP, never application databases.
+import assert from "node:assert/strict";
+import { createRequire } from "node:module";
+import { mkdtemp, readFile, readdir } from "node:fs/promises";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { chromium } from "playwright";
+const require = createRequire(import.meta.url);
+const { webpack } = require("next/dist/compiled/webpack/webpack");
+const root = process.cwd(); const output = await mkdtemp(path.join(tmpdir(), "coda-ledger-"));
+await new Promise((resolve, reject) => {
+  const compiler = webpack({ mode: "development", devtool: false, entry: path.join(root, "tests/ui/usdcodashop-ledger-entry.jsx"), output: { path: output, filename: "preview.js" },
+    plugins: [new webpack.DefinePlugin({ "process.env": JSON.stringify({ NODE_ENV: "development" }) })],
+    resolve: { alias: { "next/link$": path.join(root, "tests/ui/usdcodashop-link.js"), "@": path.join(root, "src") }, extensions: [".js", ".jsx", ".mjs"] },
+    module: { rules: [{ test: /\.m?jsx?$/, resolve: { fullySpecified: false } }, { test: /\.jsx?$/, exclude: /node_modules/, use: path.join(root, "tests/ui/usdcodashop-loader.cjs") }] },
+  });
+  compiler.run((error, stats) => compiler.close(() => error ? reject(error) : stats.hasErrors() ? reject(new Error(stats.toString({ all: false, errors: true }))) : resolve()));
+});
+async function cssFiles(dir) {
+  const files = [];
+  for (const item of await readdir(dir, { withFileTypes: true })) {
+    const file = path.join(dir, item.name);
+    if (item.isDirectory()) files.push(...await cssFiles(file));
+    else if (item.name.endsWith(".css")) files.push(await readFile(file, "utf8"));
+  }
+  return files;
+}
+const css = (await cssFiles(path.join(root, ".next/static"))).join("\n"); const bundle = await readFile(path.join(output, "preview.js"));
+const server = createServer((request, response) => {
+  if (request.url === "/preview.js") { response.setHeader("Content-Type", "text/javascript"); response.end(bundle); }
+  else { response.setHeader("Content-Type", "text/html; charset=utf-8"); response.end(`<!doctype html><html lang="th"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><body><div data-theme="light" class="min-h-screen bg-ll-canvas"><div id="root"></div></div><script src="/preview.js"></script></body></html>`); }
+});
+await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+let browser;
+try {
+  browser = await chromium.launch({ channel: "chrome", headless: true });
+  for (const width of [375, 1536]) for (const theme of ["light", "dark"]) {
+    const page = await browser.newPage({ viewport: { width, height: 1100 }, reducedMotion: "reduce" });
+    let configured = false; let canManage = true; let offline = false; let entries = []; let deposits = "0.00";
+    const errors = []; page.on("pageerror", (e) => errors.push(e.message));
+    await page.route("**/api/projectm/usdcodashop/ledger**", async (route) => {
+      if (offline) return route.fulfill({ status: 503, json: { error: "จำลองเชื่อมต่อไม่สำเร็จ" } });
+      if (route.request().method() === "GET") {
+        const search = new URL(route.request().url()).searchParams.get("search");
+        const filtered = search ? entries.filter((e) => e.orderId.includes(search)) : entries;
+        return route.fulfill({ json: { configured, canManage, entries: filtered, boundary: "K7306171", opening: "9373.17", deposits, used: entries.length ? "3.70" : "0.00", remaining: entries.length ? (9369.47 + Number(deposits)).toFixed(2) : "9373.17", total: filtered.length, lastSync: configured ? "2026-10-15T13:16:11Z" : null } });
+      }
+      const body = route.request().postDataJSON();
+      if (body.action === "setup") { assert.equal(body.confirm, true); assert.equal(body.opening, "9373.17"); configured = true; return route.fulfill({ json: { configured: true } }); }
+      if (body.action === "sync") {
+        const added = entries.length ? 0 : 1;
+        entries = [{ id: "1", kind: "order", orderId: "K7306274", amount: "3.70", balance: "9369.47", occurredAt: "2026-10-15T13:16:11Z", details: { game: "Zepeto", pack: "7 Zems", paymentMethod: "CodashopUSD", invoice: "TX123", providerBalance: "9397.75", operator: "Bot" }, recordedBy: "khong" }];
+        return route.fulfill({ json: { added, checked: 1 } });
+      }
+      if (body.action === "deposit") {
+        assert.equal(body.amount, "100.10"); assert.equal(body.note, "receipt123"); assert.match(body.requestId, /^[0-9a-f-]{36}$/);
+        deposits = "100.10"; return route.fulfill({ json: { id: "2" } });
+      }
+      throw new Error("Unexpected mutation");
+    });
+    await page.goto(`http://127.0.0.1:${server.address().port}`);
+    await page.locator("[data-theme]").evaluate((e, t) => { e.dataset.theme = t; }, theme);
+    await page.getByRole("heading", { name: "เริ่มบัญชี USDCodashop" }).waitFor();
+    assert.equal(await page.getByRole("button", { name: "ยืนยันเริ่มบัญชี" }).isDisabled(), true);
+    await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: "ยืนยันเริ่มบัญชี" }).click();
+    await page.getByRole("button", { name: "ซิงก์ Orders", exact: true }).waitFor();
+    await page.getByRole("button", { name: "ซิงก์ Orders", exact: true }).click();
+    await page.getByRole("cell", { name: "K7306274", exact: true }).waitFor();
+    await page.getByRole("button", { name: "ซิงก์ Orders", exact: true }).click();
+    await page.getByRole("status").filter({ hasText: "เพิ่ม 0 รายการ" }).waitFor();
+    assert.equal(await page.getByRole("cell", { name: "K7306274", exact: true }).count(), 1);
+    await page.getByRole("button", { name: "บันทึก USD เข้า", exact: true }).click();
+    await page.getByRole("textbox", { name: "จำนวน USD", exact: true }).fill("100.10");
+    await page.getByRole("textbox", { name: "หมายเหตุ/เลขอ้างอิง", exact: true }).fill("receipt123");
+    await page.getByRole("button", { name: "ยืนยันบันทึก USD เข้า", exact: true }).click();
+    await page.getByRole("heading", { name: "บันทึก USD ที่เข้าบัญชีจริงแล้ว" }).waitFor({ state: "detached" });
+    await page.getByText("9,469.57", { exact: true }).waitFor();
+    await page.getByRole("textbox", { name: "ค้นหา Order / เกม / แพ็ก / ผู้ทำรายการ" }).fill("not-found");
+    await page.getByRole("button", { name: "ค้นหา", exact: true }).click();
+    await page.getByText("ไม่พบรายการที่ค้นหา", { exact: true }).waitFor();
+    await page.getByRole("textbox", { name: "ค้นหา Order / เกม / แพ็ก / ผู้ทำรายการ" }).fill("");
+    await page.getByRole("button", { name: "ค้นหา", exact: true }).click();
+    await page.getByRole("cell", { name: "K7306274", exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.screenshot({ path: path.join(output, `ledger-${width}-${theme}.png`), fullPage: true });
+    canManage = false; await page.getByRole("button", { name: "โหลดประวัติ", exact: true }).click();
+    await page.getByRole("button", { name: "ซิงก์ Orders", exact: true }).waitFor({ state: "detached" });
+    assert.equal(await page.getByRole("button", { name: "บันทึก USD เข้า", exact: true }).count(), 0);
+    offline = true; await page.getByRole("button", { name: "โหลดประวัติ", exact: true }).click();
+    await page.getByRole("alert").filter({ hasText: "จำลอง" }).waitFor();
+    assert.deepEqual(errors, []); await page.close();
+  }
+  console.log(`PASS: actual client, setup confirmation, sync replay, deposit, search, permissions, error handling, mobile/desktop light/dark. Screenshots: ${output}`);
+} finally { await browser?.close(); await new Promise((resolve) => server.close(resolve)); }

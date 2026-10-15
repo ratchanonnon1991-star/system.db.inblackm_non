@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/server/session-user";
 import { canViewUsdInventory } from "@/lib/usdcodashop-inventory";
 import { topupInventoryPath } from "@/lib/topup-inventory";
-import UsdCodashopInventory from "@/components/usdcodashop-inventory";
+import UsdCodashopInventory from "@/components/usdcodashop-ledger";
 
 export const metadata = { title: "USDCodashop | Topup Inventory" };
 export default async function UsdCodashopPage({ params }) {
