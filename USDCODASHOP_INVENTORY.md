@@ -16,7 +16,36 @@ Moniepoint ยังเป็น “เร็ว ๆ นี้”; iTune แล�
 - ยอดคงเหลือ = ยอดยกมา + USD เข้า − USD ออก; ยอดติดลบแสดงจริงพร้อมคำเตือน ไม่ซ่อนหรือบีบเป็นศูนย์
 - ยอดบอท `balance_after` เป็นข้อมูลเทียบเท่านั้น: ขณะตรวจ K7306171 บอทแสดง 9,401.45 ซึ่งต่างจากชีท 9,373.17 จึงไม่ใช้แทนยอดยกมา ไม่เติมส่วนต่างอัตโนมัติ
 - ไม่คำนวณกำไร/อัตราแลกเปลี่ยนจากการเดา และไม่บันทึก email/password/raw_data/provider_response ทั้งก้อน เก็บเฉพาะฟิลด์ที่จำเป็นและเลข orderId ของผู้ให้บริการ
-- ดึงข้อมูลเมื่อกดซิงก์เท่านั้น **ยังไม่มี worker ซิงก์เบื้องหลัง** และไม่เรียก API เติมเกม
+- มี **worker ซิงก์เบื้องหลัง** ทุก 60 วินาทีหลังรอบก่อนเสร็จ แม้ปิดหน้าเว็บ และยังกดซิงก์เองได้ ไม่เรียก API เติมเกม
+
+### ซิงก์อัตโนมัติบน server
+
+- PM2 process ใหม่ `usdcodashop-sync-worker` (fork, 1 instance) ใช้ `scripts/usdcodashop-sync-worker.mjs` เริ่มพร้อมเว็บผ่าน deploy-server.sh และ workflow deploy ที่อัปเดตแล้ว
+- ไม่ต้องเพิ่ม secret ใหม่ ใช้ PG_* ของฐานหลักกับ PROFIT_DATABASE_URL เดิม โหลด ENV จากโฟลเดอร์โปรเจกต์ ไม่ส่ง cookie/secret ผ่าน HTTP
+- ต้องยืนยันยอดยกมาบนหน้าเว็บครั้งแรกก่อน worker จะเริ่มนำเข้า ไม่สร้างบัญชีหรือเดายอดเอง
+- ผู้บันทึกอัตโนมัติเป็น `USDCodashop Auto Sync` (system actor id=0 ไม่ใช่พนักงาน) ใช้ transaction/unique source ID เดียวกับปุ่มซิงก์ จึงไม่หักซ้ำเมื่อกดพร้อม worker หรือ restart
+- อ่านฐานต้นทางผ่าน connection แยกที่บังคับ default_transaction_read_only=on และ timeout; เขียนเฉพาะ ledger/status ในฐานหลัก ไม่แก้ balance ของผู้ให้บริการ
+- ไม่มีรอบทับซ้อนใน process เดียว ถ้าฐานขัดข้อง/รายการไม่ชัดเจนจะหยุดชุดนั้นและลองใหม่ใน 60 วินาที ไม่ข้าม Order ผิดไปเงียบ ๆ
+- เก็บ heartbeat/ผลสำเร็จ/ข้อผิดพลาดที่ปลอดภัยใน `gamedb_coda_sync_status` หน้าเว็บแสดงสถานะและโหลด GET ใหม่ทุก 30 วินาทีขณะมองเห็นหน้า (ไม่โหลดระหว่างกรอกเงินเข้า) ปิดเว็บไม่กระทบ worker
+- ถ้า heartbeat หายเกิน 3 นาทีจะแจ้งให้ตรวจ worker; SIGTERM/SIGINT รอ transaction ที่กำลังทำก่อนปิด มีเวลาปิดสูงสุดและ PM2 restart เมื่อ process crash
+- ปิดชั่วคราวด้วย `pm2 stop usdcodashop-sync-worker` หรือกำหนด `CODASHOP_AUTO_SYNC_ENABLED=false` ใน ENV แล้ว restart worker (ไม่ต้องแก้ .env เพื่อเปิดตามปกติ)
+- เงินเข้า/ยอดเติมยังต้องบันทึกเอง เพราะไม่มีแหล่งธุรกรรมเติมเงินที่ยืนยันได้จากคำขอนี้
+
+ตรวจหลัง deploy บนเครื่องที่ให้บริการจริง:
+
+```bash
+pm2 ls
+pm2 logs usdcodashop-sync-worker --lines 30 --nostream
+```
+
+ถ้า deploy วิธีอื่นไม่ได้เรียก ecosystem พร้อม worker ให้เริ่มจากโฟลเดอร์โปรเจกต์:
+
+```bash
+pm2 startOrRestart ecosystem.config.cjs --only usdcodashop-sync-worker --update-env
+pm2 save
+```
+
+หมายเหตุ: workflow ที่มีอยู่ยังระบุ host 143.14.11.252:48995 แต่ server ที่ผู้ใช้แจ้งล่าสุดคือ 157.85.104.218:55025 จึงอย่าสรุปว่า Actions deploy มาที่เครื่องใหม่แล้ว ต้องตรวจ/ปรับปลายทางแยก หรือใช้ deploy-server.sh บนเครื่องจริง ไม่เปลี่ยน host/credential อัตโนมัติในงานนี้
 
 ### ฐานข้อมูลและ ENV ของประวัติ
 
@@ -31,6 +60,7 @@ Moniepoint ยังเป็น “เร็ว ๆ นี้”; iTune แล�
 
 ```bash
 node --import ./tests/register.mjs tests/usdcodashop-ledger-tests.mjs
+node --import ./tests/register.mjs tests/usdcodashop-auto-sync-tests.mjs
 node scripts/usdcodashop-ledger-smoke.mjs
 ```
 

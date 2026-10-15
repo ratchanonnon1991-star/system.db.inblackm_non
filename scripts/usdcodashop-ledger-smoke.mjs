@@ -38,13 +38,15 @@ try {
   for (const width of [375, 1536]) for (const theme of ["light", "dark"]) {
     const page = await browser.newPage({ viewport: { width, height: 1100 }, reducedMotion: "reduce" });
     let configured = false; let canManage = true; let offline = false; let entries = []; let deposits = "0.00";
+    let reads = 0; let autoSync = { state: "ok", heartbeat: new Date().toISOString(), last_success: new Date().toISOString() };
     const errors = []; page.on("pageerror", (e) => errors.push(e.message));
     await page.route("**/api/projectm/usdcodashop/ledger**", async (route) => {
       if (offline) return route.fulfill({ status: 503, json: { error: "จำลองเชื่อมต่อไม่สำเร็จ" } });
       if (route.request().method() === "GET") {
+        reads++;
         const search = new URL(route.request().url()).searchParams.get("search");
         const filtered = search ? entries.filter((e) => e.orderId.includes(search)) : entries;
-        return route.fulfill({ json: { configured, canManage, entries: filtered, boundary: "K7306171", opening: "9373.17", deposits, used: entries.length ? "3.70" : "0.00", remaining: entries.length ? (9369.47 + Number(deposits)).toFixed(2) : "9373.17", total: filtered.length, lastSync: configured ? "2026-10-15T13:16:11Z" : null } });
+        return route.fulfill({ json: { configured, canManage, autoSync, entries: filtered, boundary: "K7306171", opening: "9373.17", deposits, used: entries.length ? "3.70" : "0.00", remaining: entries.length ? (9369.47 + Number(deposits)).toFixed(2) : "9373.17", total: filtered.length, lastSync: configured ? "2026-10-15T13:16:11Z" : null } });
       }
       const body = route.request().postDataJSON();
       if (body.action === "setup") { assert.equal(body.confirm, true); assert.equal(body.opening, "9373.17"); configured = true; return route.fulfill({ json: { configured: true } }); }
@@ -66,12 +68,18 @@ try {
     await page.getByRole("checkbox").check();
     await page.getByRole("button", { name: "ยืนยันเริ่มบัญชี" }).click();
     await page.getByRole("button", { name: "ซิงก์ Orders", exact: true }).waitFor();
+    await page.getByText("ซิงก์อัตโนมัติทุก 60 วินาที · ทำงานปกติ", { exact: true }).waitFor();
     await page.getByRole("button", { name: "ซิงก์ Orders", exact: true }).click();
     await page.getByRole("cell", { name: "K7306274", exact: true }).waitFor();
     await page.getByRole("button", { name: "ซิงก์ Orders", exact: true }).click();
     await page.getByRole("status").filter({ hasText: "เพิ่ม 0 รายการ" }).waitFor();
     assert.equal(await page.getByRole("cell", { name: "K7306274", exact: true }).count(), 1);
     await page.getByRole("button", { name: "บันทึก USD เข้า", exact: true }).click();
+    await page.getByRole("textbox", { name: "จำนวน USD", exact: true }).waitFor();
+    await page.clock.install();
+    const beforeFormWait = reads;
+    await page.clock.fastForward(60_001);
+    assert.equal(reads, beforeFormWait, "do not refresh while entering a deposit");
     await page.getByRole("textbox", { name: "จำนวน USD", exact: true }).fill("100.10");
     await page.getByRole("textbox", { name: "หมายเหตุ/เลขอ้างอิง", exact: true }).fill("receipt123");
     await page.getByRole("button", { name: "ยืนยันบันทึก USD เข้า", exact: true }).click();
@@ -83,8 +91,16 @@ try {
     await page.getByRole("textbox", { name: "ค้นหา Order / เกม / แพ็ก / ผู้ทำรายการ" }).fill("");
     await page.getByRole("button", { name: "ค้นหา", exact: true }).click();
     await page.getByRole("cell", { name: "K7306274", exact: true }).waitFor();
+    const refresh = page.waitForResponse((r) => r.url().includes("/ledger?") && r.request().method() === "GET");
+    await page.clock.fastForward(30_001); await refresh;
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.screenshot({ path: path.join(output, `ledger-${width}-${theme}.png`), fullPage: true });
+    autoSync = { ...autoSync, state: "error", error_message: "ตรวจ Order K1" };
+    await page.getByRole("button", { name: "โหลดประวัติ", exact: true }).click();
+    await page.getByRole("alert").filter({ hasText: "ตรวจ Order K1" }).waitFor();
+    autoSync = { ...autoSync, heartbeat: "2020-01-01T00:00:00Z", error_message: null };
+    await page.getByRole("button", { name: "โหลดประวัติ", exact: true }).click();
+    await page.getByText("ซิงก์อัตโนมัติทุก 60 วินาที · ไม่ได้รับสถานะเกิน 3 นาที โปรดตรวจ worker", { exact: true }).waitFor();
     canManage = false; await page.getByRole("button", { name: "โหลดประวัติ", exact: true }).click();
     await page.getByRole("button", { name: "ซิงก์ Orders", exact: true }).waitFor({ state: "detached" });
     assert.equal(await page.getByRole("button", { name: "บันทึก USD เข้า", exact: true }).count(), 0);

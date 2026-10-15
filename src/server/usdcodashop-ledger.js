@@ -26,6 +26,10 @@ export async function ensureCodaLedger(pool) {
         recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         CHECK((kind='order' AND source_id IS NOT NULL AND request_id IS NULL) OR
           (kind='deposit' AND source_id IS NULL AND request_id IS NOT NULL)))`);
+      await c.query(`CREATE TABLE IF NOT EXISTS gamedb_coda_sync_status (
+        id INTEGER PRIMARY KEY CHECK(id=1), state TEXT NOT NULL,
+        heartbeat TIMESTAMPTZ NOT NULL DEFAULT NOW(), last_success TIMESTAMPTZ,
+        error_message TEXT, interval_seconds INTEGER NOT NULL)`);
       await c.query("COMMIT");
     } catch (e) { await c.query("ROLLBACK").catch(() => {}); throw e; }
     finally { c.release(); }
@@ -67,6 +71,7 @@ export function createCodaLedger(pool, source = createCodaSource()) {
           (SELECT COUNT(*)::int FROM filtered) AS total,
           COALESCE((SELECT jsonb_agg(to_jsonb(x) ORDER BY x.occurred_at DESC,x.id DESC) FROM
             (SELECT * FROM filtered ORDER BY occurred_at DESC,id DESC LIMIT 100 OFFSET $2) x),'[]'::jsonb) AS entries
+        , (SELECT row_to_json(s) FROM gamedb_coda_sync_status s WHERE s.id=1) AS auto_sync
         FROM gamedb_coda_wallet w WHERE w.id=1`, [term, (pageNumber - 1) * 100]);
       const r = rows[0];
       if (!r) return { configured: false, canManage: canManageUsdInventory(actor), entries: [] };
@@ -74,6 +79,7 @@ export function createCodaLedger(pool, source = createCodaSource()) {
       return { configured: true, canManage: canManageUsdInventory(actor), boundary: r.boundary_label,
         opening: centsUsd(opening), deposits: centsUsd(deposits), used: centsUsd(used),
         remaining: signedUsd(opening + deposits - used), lastSync: r.last_sync,
+        autoSync: r.auto_sync || null,
         page: pageNumber, total: r.total,
         entries: r.entries.map((e) => ({ id: String(e.id), kind: e.kind, orderId: e.order_label,
           amount: e.amount, balance: e.balance, occurredAt: e.occurred_at, recordedAt: e.recorded_at,
@@ -99,7 +105,7 @@ export function createCodaLedger(pool, source = createCodaSource()) {
     async sync(actor) {
       guard(actor, true); await ensureCodaLedger(pool);
       const wallet = (await pool.query("SELECT * FROM gamedb_coda_wallet WHERE id=1")).rows[0];
-      if (!wallet) throw inventoryError("ตั้งค่ายอดยกมาก่อนซิงก์", 409);
+      if (!wallet) throw Object.assign(inventoryError("ตั้งค่ายอดยกมาก่อนซิงก์", 409), { code: "CODA_NOT_CONFIGURED" });
       const boundaryId = await source.boundary();
       if (boundaryId !== String(wallet.boundary_id)) throw inventoryError("รายการอ้างอิงต้นทางเปลี่ยน จึงหยุดซิงก์เพื่อป้องกันยอดผิด", 409);
       const orders = (await source.orders(boundaryId)).map(normalizeCodaOrder);
@@ -119,6 +125,17 @@ export function createCodaLedger(pool, source = createCodaSource()) {
         await c.query("UPDATE gamedb_coda_wallet SET last_sync=NOW() WHERE id=1");
         return { added, checked: orders.length };
       });
+    },
+    async recordWorkerStatus(actor, { state, error = null, intervalSeconds = 60 }) {
+      guard(actor, true);
+      if (!["syncing", "ok", "waiting", "error", "stopped"].includes(state) || intervalSeconds !== 60) throw inventoryError("สถานะ worker ไม่ถูกต้อง");
+      await ensureCodaLedger(pool);
+      await pool.query(`INSERT INTO gamedb_coda_sync_status(id,state,error_message,interval_seconds,last_success)
+        VALUES(1,$1,$2,$3,CASE WHEN $1='ok' THEN NOW() ELSE NULL END)
+        ON CONFLICT(id) DO UPDATE SET state=EXCLUDED.state,error_message=EXCLUDED.error_message,
+          interval_seconds=EXCLUDED.interval_seconds,heartbeat=NOW(),
+          last_success=CASE WHEN EXCLUDED.state='ok' THEN NOW() ELSE gamedb_coda_sync_status.last_success END`,
+      [state, error == null ? null : String(error).slice(0, 400), intervalSeconds]);
     },
     async deposit(body, actor) {
       guard(actor, true); const value = depositInput(body); await ensureCodaLedger(pool);

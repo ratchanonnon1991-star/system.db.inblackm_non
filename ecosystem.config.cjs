@@ -1,6 +1,19 @@
 module.exports = {
   apps: [
     {
+      name: "usdcodashop-sync-worker",
+      script: "scripts/usdcodashop-sync-worker.mjs",
+      cwd: __dirname,
+      instances: 1,
+      exec_mode: "fork",
+      autorestart: true,
+      stop_exit_codes: [0],
+      restart_delay: 5000,
+      kill_timeout: 25000,
+      max_memory_restart: "256M",
+      env: { NODE_ENV: "production" },
+    },
+    {
       name: "system.db.inblackm",
       script: "node_modules/next/dist/bin/next",
       args: "start --port 5589",

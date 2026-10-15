@@ -19,18 +19,24 @@ export default function UsdCodashopLedger({ lang }) {
   const [opening, setOpening] = useState(CODA_OPENING); const [confirmed, setConfirmed] = useState(false);
   const [query, setQuery] = useState(""); const [search, setSearch] = useState(""); const [page, setPage] = useState(1);
   const [deposit, setDeposit] = useState(null);
+  const [observedAt, setObservedAt] = useState(null);
   const lock = useRef(false); const alive = useRef(false); const generation = useRef(0);
   const load = useCallback(async () => {
     const key = ++generation.current; setLoading(true); setError("");
     try {
       const result = await apiJson(`${endpoint}?${new URLSearchParams({ search, page: String(page) })}`, { cache: "no-store" });
       if (typeof result?.configured !== "boolean" || !Array.isArray(result.entries)) throw new Error("ข้อมูลไม่ครบ กรุณาโหลดใหม่");
-      if (alive.current && key === generation.current) setData(result);
+      if (alive.current && key === generation.current) { setData(result); setObservedAt(Date.now()); }
     } catch (e) { if (alive.current && key === generation.current) setError(e.message); }
     finally { if (alive.current && key === generation.current) setLoading(false); }
   }, [search, page]);
   const invalidate = useCallback(() => { generation.current++; }, []);
   useEffect(() => { alive.current = true; const timer = setTimeout(load, 0); return () => { alive.current = false; invalidate(); clearTimeout(timer); }; }, [load, invalidate]);
+  useEffect(() => {
+    if (!data?.configured || deposit) return;
+    const timer = setInterval(() => { if (!document.hidden && !lock.current) load(); }, 30_000);
+    return () => clearInterval(timer);
+  }, [data?.configured, deposit, load]);
   async function mutate(body) {
     if (lock.current) return;
     lock.current = true; generation.current++; setBusy(true); setError(""); setNotice("");
@@ -44,6 +50,10 @@ export default function UsdCodashopLedger({ lang }) {
     } catch (e) { if (alive.current) setError(e.message); }
     finally { lock.current = false; if (alive.current) setBusy(false); }
   }
+  const worker = data?.autoSync;
+  const workerFresh = worker && observedAt - new Date(worker.heartbeat).getTime() < 180_000;
+  const workerLabel = !worker ? "ยังไม่พบ worker" : !workerFresh ? "ไม่ได้รับสถานะเกิน 3 นาที โปรดตรวจ worker" :
+    ({ ok: "ทำงานปกติ", syncing: "กำลังซิงก์", error: "ซิงก์ติดขัด", waiting: "รอยืนยันยอดยกมา", stopped: "หยุดทำงาน" }[worker.state] || "รอตรวจสอบ");
   return <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-6 px-4 pb-14 pt-10 text-ll-ink sm:px-6">
     <header className="flex flex-wrap items-center justify-between gap-4 pr-12">
       <div><p className="text-xs text-ll-ink-tertiary">TOPUP INVENTORY · SINGLE USD WALLET</p><h1 className="mt-2 text-3xl font-semibold">USDCodashop</h1><p className="mt-2 text-sm text-ll-ink-subtle">บัญชีเดียว · ประวัติรับเข้า–จ่ายออกจาก codashop_orders</p></div>
@@ -72,7 +82,12 @@ export default function UsdCodashopLedger({ lang }) {
         {data.canManage && <><button disabled={busy || loading || Boolean(deposit)} onClick={() => mutate({ action: "sync" })} className={button}><RefreshCw size={16} aria-hidden />ซิงก์ Orders</button><button disabled={busy || Boolean(deposit)} onClick={() => { setDeposit({ amount: "", note: "", requestId: crypto.randomUUID() }); setError(""); }} className={button}><Plus size={16} aria-hidden />บันทึก USD เข้า</button></>}
         <p className="text-xs text-ll-ink-subtle">ซิงก์ล่าสุด: {date(data.lastSync)}</p>
       </div>
-      <p className="text-sm leading-6 text-ll-ink-subtle">ยอดยกมา + USD เข้า − USD ออก · ซิงก์เมื่อกดปุ่ม ไม่ส่งคำสั่งเติมเกม · บันทึกเฉพาะยอดตัดจริงจาก inventory_transactions ไม่ใช้ราคาแพ็กเดาแทน ยอดจากบอทเป็นข้อมูลเทียบ ไม่ใช่ยอดบัญชีนี้</p>
+      <section aria-label="สถานะซิงก์อัตโนมัติ" className="rounded-xl border border-ll-hairline bg-ll-surface-1 p-4 text-sm">
+        <p className="font-medium">ซิงก์อัตโนมัติทุก 60 วินาที · {workerLabel}</p>
+        <p className="mt-2 text-ll-ink-subtle">สำเร็จล่าสุด: {date(worker?.last_success)} · หน้านี้โหลดประวัติใหม่ทุก 30 วินาที (หยุดโหลดระหว่างกรอกเงินเข้า)</p>
+        {worker?.error_message && <p role="alert" className="mt-2">{worker.error_message}</p>}
+      </section>
+      <p className="text-sm leading-6 text-ll-ink-subtle">ยอดยกมา + USD เข้า − USD ออก · worker บันทึกได้แม้ปิดเว็บ และกดซิงก์เองได้โดยไม่ตัดซ้ำ · ไม่ส่งคำสั่งเติมเกม · บันทึกเฉพาะยอดตัดจริงจาก inventory_transactions ไม่ใช้ราคาแพ็กเดาแทน ยอดจากบอทเป็นข้อมูลเทียบ ไม่ใช่ยอดบัญชีนี้</p>
       {deposit && <form className="space-y-4 rounded-xl border border-ll-hairline bg-ll-surface-1 p-5" onSubmit={(e) => { e.preventDefault(); mutate({ action: "deposit", ...deposit }); }}>
         <h2 className="text-lg font-semibold">บันทึก USD ที่เข้าบัญชีจริงแล้ว</h2>
         <p className="text-sm text-ll-ink-subtle">เป็นการบันทึกบัญชีเท่านั้น ไม่ใช่การโอนเงิน และลงวันที่ปัจจุบัน</p>

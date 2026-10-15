@@ -187,7 +187,7 @@ if [ "$SKIP_VERIFY" -eq 0 ]; then
 fi
 npm run build
 
-"$PM2" startOrRestart ecosystem.config.cjs --only system.db.inblackm --update-env
+"$PM2" startOrRestart ecosystem.config.cjs --only system.db.inblackm,usdcodashop-sync-worker --update-env
 
 ready=""
 for _ in $(seq 1 45); do

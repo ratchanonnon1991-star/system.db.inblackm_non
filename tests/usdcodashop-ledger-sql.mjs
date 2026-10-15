@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 import { createCodaLedger } from "../src/server/usdcodashop-ledger.js";
+import { AUTO_SYNC_ACTOR } from "../scripts/lib/usdcodashop-auto-sync.mjs";
 const { PGlite } = await import(pathToFileURL(process.env.PGLITE_MODULE).href);
 const db = new PGlite();
 const client = { query: (sql, params) => db.query(sql, params), release() {} };
@@ -59,6 +60,21 @@ try {
   // Large real debit remains visible as a negative balance, never clamped to zero.
   orders = [{ ...orders[0], amount_used: "10000.00" }];
   await repo.sync(admin); assert.equal((await repo.list(admin)).remaining, "-530.53");
+  await repo.recordWorkerStatus(AUTO_SYNC_ACTOR, { state: "syncing" });
+  assert.equal((await repo.list(viewer)).autoSync.state, "syncing");
+  orders.push({ ...orders[0], id: 287502, source_order_id: "AUTO", amount_used: "0.01" });
+  await repo.sync(AUTO_SYNC_ACTOR);
+  assert.equal((await repo.list(viewer, { search: "AUTO" })).entries[0].recordedBy, "USDCodashop Auto Sync");
+  await repo.recordWorkerStatus(AUTO_SYNC_ACTOR, { state: "ok" });
+  const success = (await repo.list(admin)).autoSync.last_success;
+  assert.ok(success);
+  await repo.recordWorkerStatus(AUTO_SYNC_ACTOR, { state: "error", error: "ตรวจ Order K1" });
+  const status = (await repo.list(admin)).autoSync;
+  assert.equal(status.state, "error"); assert.equal(status.last_success, success);
+  assert.equal(status.error_message, "ตรวจ Order K1");
+  await assert.rejects(repo.recordWorkerStatus(viewer, { state: "ok" }), { status: 403 });
+  await repo.recordWorkerStatus(AUTO_SYNC_ACTOR, { state: "stopped" });
+  assert.equal((await repo.list(admin)).autoSync.state, "stopped");
   assert.equal((await repo.list(admin, { search: "no result" })).total, 0);
   assert.equal((await repo.list(admin, { page: 2 })).entries.length, 0);
   console.log("PASS: setup, fixed boundary, replay, late completion, exact cents, deposit retry, audit, search running balances, permissions, source deletion, rollback, negative balance");
