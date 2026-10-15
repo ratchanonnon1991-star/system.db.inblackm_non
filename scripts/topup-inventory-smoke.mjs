@@ -32,8 +32,9 @@ try {
     await page.goto(`http://127.0.0.1:${server.address().port}/projectm/th/topup-inventory`);
     await page.locator("[data-theme]").evaluate((element, value) => { element.dataset.theme = value; }, theme);
     assert.equal(await page.getByRole("heading", { name: "Topup Inventory", exact: true }).count(), 1);
-    assert.equal(await page.locator('[data-inventory-state="coming-soon"]').count(), 2);
-    assert.equal(await page.getByRole("link", { name: /Moniepoint|USDCodashop/ }).count(), 0);
+    assert.equal(await page.locator('[data-inventory-state="coming-soon"]').count(), 1);
+    assert.equal(await page.getByRole("link", { name: /Moniepoint/ }).count(), 0);
+    assert.equal(await page.getByRole("link", { name: /USDCodashop/ }).count(), 1);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await page.keyboard.press("Tab"); await page.keyboard.press("Tab");
     const entry = page.getByRole("link", { name: /iTune/ });

@@ -39,8 +39,9 @@ const html = renderToStaticMarkup(await hub.default({ params }));
 check(html.includes("Topup Inventory"), "hub title");
 check(html.includes(`href="${ituneInventoryPath("th")}"`), "iTune child link");
 check(html.includes("Moniepoint") && html.includes("USDCodashop"), "future services");
-check((html.match(/data-inventory-state="coming-soon"/g) || []).length === 2, "future services are informational, not broken links");
+check((html.match(/data-inventory-state="coming-soon"/g) || []).length === 1, "Moniepoint remains informational, not a broken link");
 check(!html.includes('href="/projectm/th/topup-inventory/moniepoint"'), "no broken future links");
+check(html.includes('href="/projectm/th/topup-inventory/usdcodashop"'), "USDCodashop is available");
 check(hub.metadata.title === "Topup Inventory", "hub browser title");
 check(itune.metadata.title === "iTune | Topup Inventory", "child browser title");
 for (const path of ["src/app/projectm/[lang]/page.js", "src/app/projectm/[lang]/itune/page.js"]) {
