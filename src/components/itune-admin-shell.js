@@ -17,6 +17,7 @@ import {
 import ItuneAdminSettingsDrawer from "@/components/itune-admin-settings-drawer";
 import { ItuneSettingsProvider } from "@/lib/itune-settings";
 import { useProjectmTheme } from "@/components/projectm-theme-context";
+import { ituneInventoryPath } from "@/lib/topup-inventory";
 
 export default function ItuneAdminShell({ lang, displayName, children }) {
   const pathname = usePathname();
@@ -93,7 +94,7 @@ export default function ItuneAdminShell({ lang, displayName, children }) {
                 <span className="hidden sm:inline">{isDark ? "ธีมสว่าง" : "ธีมมืด"}</span>
               </button>
               <Link
-                href={`/projectm/${lang}/itune`}
+                href={ituneInventoryPath(lang)}
                 className="flex h-10 items-center gap-2 rounded-lg border border-ll-hairline-strong bg-ll-surface-1 px-3 text-[12px] font-medium text-ll-ink hover:bg-ll-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ll-primary"
               >
                 <ArrowLeft size={14} aria-hidden="true" />

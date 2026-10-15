@@ -9,12 +9,13 @@ import {
   listClaimedItuneEntriesForUser,
 } from "@/server/itune-entries-repository";
 import ItuneTopupView from "@/components/itune-topup-view";
+import { ituneInventoryPath } from "@/lib/topup-inventory";
 
 export default async function ItuneTopupPage({ params }) {
   const { lang } = await params;
   const user = await getSessionUser();
   if (!user) redirect("/");
-  if (!hasPermission(user, "projectm.claim")) redirect(`/projectm/${lang}/itune`);
+  if (!hasPermission(user, "projectm.claim")) redirect(ituneInventoryPath(lang));
   const isProjectmAdmin = hasPermission(user, "projectm.admin");
 
   // Same "topup_inblackm" connection as itune/admin/page.js — show a notice
@@ -58,7 +59,7 @@ export default async function ItuneTopupPage({ params }) {
         </div>
         <div className="flex items-center gap-2">
           <Link
-            href={`/projectm/${lang}/itune`}
+            href={ituneInventoryPath(lang)}
             className="flex items-center gap-2 rounded-md border border-ll-hairline-strong px-3 py-2 text-[13px] font-medium text-ll-ink transition hover:bg-ll-surface-2"
           >
             <ArrowLeft size={14} /> กลับ

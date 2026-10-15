@@ -111,8 +111,8 @@ const SYSTEMS = [
   },
   {
     key: "projectm",
-    label: "Projectm",
-    desc: "Itune — ฝั่ง Admin และ Topup",
+    label: "Topup Inventory",
+    desc: "iTune, Moniepoint, USDCodashop และบริการอื่น ๆ",
     icon: Folders,
     href: "/projectm/th",
   },
