@@ -17,29 +17,58 @@ try {
   assert.equal((await repo.list(admin)).configured, false);
   await assert.rejects(repo.setup({ boundary: "K7306171", opening: "9373.17" }, admin), { status: 400 });
   await repo.setup({ boundary: "K7306171", opening: "9373.17", confirm: true }, admin);
+  assert.equal((await repo.list(admin)).remaining, null, "opening is not a provider wallet snapshot");
   await repo.setup({ boundary: "K7306171", opening: "9373.17", confirm: true }, admin);
   await assert.rejects(repo.setup({ boundary: "K7306171", opening: "9401.45", confirm: true }, admin), { status: 409 });
   assert.equal((await repo.sync(admin)).added, 1);
   assert.equal((await repo.sync(admin)).added, 0);
   let data = await repo.list(viewer);
-  assert.equal(data.used, "3.70"); assert.equal(data.remaining, "9369.47"); assert.equal(data.entries.length, 1);
-  assert.equal(data.canManage, false); assert.equal(Number(data.entries[0].balance), 9369.47);
+  assert.equal(data.used, "3.70"); assert.equal(data.calculatedRemaining, "9369.47"); assert.equal(data.entries.length, 1);
+  assert.equal(data.canManage, false); assert.equal(Number(data.entries[0].calculatedBalance), 9369.47);
+  assert.equal(data.remaining, "9397.75"); assert.equal(data.entries[0].balance, "9397.75");
+  assert.equal(data.balanceOrderId, "K7306274");
   assert.equal(data.entries[0].details.providerBalance, "9397.75");
   // A late completion with a smaller source id still appears on the next full scan.
   orders.push({ ...orders[0], id: 287400, source_order_id: "LATE", amount_used: "0.10", occurred_at: "2026-10-15T13:12:00Z" });
   assert.equal((await repo.sync(admin)).added, 1);
   data = await repo.list(admin, { search: "K7306274" });
-  assert.equal(data.total, 1); assert.equal(Number(data.entries[0].balance), 9369.37);
-  assert.equal(data.remaining, "9369.37");
+  assert.equal(data.total, 1); assert.equal(Number(data.entries[0].calculatedBalance), 9369.37);
+  assert.equal(data.calculatedRemaining, "9369.37"); assert.equal(data.remaining, "9397.75");
   // Source correction must not silently rewrite the persisted amount.
   orders[0] = { ...orders[0], amount_used: "4.00" };
   await assert.rejects(repo.sync(admin), { status: 409 });
-  assert.equal((await repo.list(admin)).remaining, "9369.37");
+  assert.equal((await repo.list(admin)).calculatedRemaining, "9369.37");
   orders[0] = { ...orders[0], amount_used: "3.70" };
+  // Corrections/backfilled balance_after update snapshots, with audit, never another debit.
+  orders[0].balance_after = "9400.00";
+  assert.equal((await repo.sync(admin)).balancesUpdated, 1);
+  assert.equal((await repo.list(admin)).remaining, "9400.00");
+  assert.equal((await repo.sync(admin)).balancesUpdated, 0);
+  const balanceAudit = (await db.query("SELECT * FROM gamedb_coda_balance_audit")).rows;
+  assert.equal(balanceAudit.length, 1); assert.equal(balanceAudit[0].previous_balance, "9397.75");
+  assert.equal(balanceAudit[0].new_balance, "9400.00");
+  orders[0].balance_after = null; await repo.sync(admin);
+  assert.equal((await repo.list(admin)).remaining, null, "do not fall back to an older order's wallet balance");
+  orders[0].balance_after = "0"; await repo.sync(admin);
+  assert.equal((await repo.list(admin)).remaining, "0.00", "zero is a valid source balance, not missing");
+  orders[0].balance_after = "9397.75"; await repo.sync(admin);
+  orders[0].sheet_fields = { saleThb: "147.25", customer: "Test buyer", playerId: "uid1", sheetOperator: "BoT AtOM" };
+  orders[0].cost_thb = "120.398";
+  orders[0].invoice_number = "SHARED, UNIQUE"; orders[1].invoice_number = "SHARED";
+  await repo.sync(admin);
+  const enriched = (await repo.list(admin, { search: "Test buyer" })).entries[0];
+  assert.equal(enriched.figures.profit, "26.85"); assert.equal(enriched.figures.margin, "18.23");
+  assert.equal(enriched.transactionDuplicate, true, "check each invoice even in multi-invoice orders");
+  const metadataCount = (await db.query("SELECT COUNT(*)::int n FROM gamedb_coda_details_audit")).rows[0].n;
+  await repo.sync(admin);
+  assert.equal((await db.query("SELECT COUNT(*)::int n FROM gamedb_coda_details_audit")).rows[0].n, metadataCount, "unchanged JSONB key order must not create audit rows every minute");
   const deposit = { requestId, amount: "100.10", note: "USD receipt" };
   await repo.deposit(deposit, admin); await repo.deposit(deposit, admin);
   assert.equal((await repo.list(admin)).deposits, "100.10");
-  assert.equal((await repo.list(admin)).remaining, "9469.47");
+  assert.equal((await repo.list(admin)).calculatedRemaining, "9469.47");
+  assert.equal((await repo.list(admin)).remaining, "9397.75", "manual deposit must not be added to balance_after");
+  assert.equal((await repo.list(admin, { search: "receipt" })).remaining, "9397.75");
+  assert.equal((await repo.list(admin, { search: "receipt" })).entries[0].balance, null);
   await assert.rejects(repo.deposit({ ...deposit, amount: "200" }, admin), { status: 409 });
   await assert.rejects(repo.deposit(deposit, viewer), { status: 403 });
   // The complete batch rolls back when any source order is ambiguous.
@@ -59,7 +88,8 @@ try {
   await assert.rejects(repo.sync(admin)); assert.equal((await repo.list(admin)).used, "3.80");
   // Large real debit remains visible as a negative balance, never clamped to zero.
   orders = [{ ...orders[0], amount_used: "10000.00" }];
-  await repo.sync(admin); assert.equal((await repo.list(admin)).remaining, "-530.53");
+  await repo.sync(admin); assert.equal((await repo.list(admin)).calculatedRemaining, "-530.53");
+  assert.equal((await repo.list(admin)).remaining, null);
   await repo.recordWorkerStatus(AUTO_SYNC_ACTOR, { state: "syncing" });
   assert.equal((await repo.list(viewer)).autoSync.state, "syncing");
   orders.push({ ...orders[0], id: 287502, source_order_id: "AUTO", amount_used: "0.01" });
@@ -77,5 +107,16 @@ try {
   assert.equal((await repo.list(admin)).autoSync.state, "stopped");
   assert.equal((await repo.list(admin, { search: "no result" })).total, 0);
   assert.equal((await repo.list(admin, { page: 2 })).entries.length, 0);
+  // Latest wallet snapshot is chosen independently of filters/pages and deterministic on equal timestamps.
+  orders.push({ ...orders[0], id: 287503, source_order_id: "NEWEST", amount_used: "0.02", balance_after: "9324.48" });
+  await repo.sync(admin);
+  assert.equal((await repo.list(admin, { search: "K7306274" })).remaining, "9324.48");
+  assert.equal((await repo.list(admin, { page: 2 })).balanceOrderId, "NEWEST");
+  assert.equal((await repo.list(admin, { search: "NEWEST" })).entries[0].balance, "9324.48");
+  // A failed correction audit rolls back the snapshot change, too.
+  await db.exec("ALTER TABLE gamedb_coda_balance_audit ADD CONSTRAINT test_balance_audit CHECK(new_balance <> '9999.00') NOT VALID");
+  orders.at(-1).balance_after = "9999.00";
+  await assert.rejects(repo.sync(admin));
+  assert.equal((await repo.list(admin)).remaining, "9324.48");
   console.log("PASS: setup, fixed boundary, replay, late completion, exact cents, deposit retry, audit, search running balances, permissions, source deletion, rollback, negative balance");
 } finally { await db.close(); }

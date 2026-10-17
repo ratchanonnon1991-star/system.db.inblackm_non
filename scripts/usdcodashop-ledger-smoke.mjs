@@ -38,6 +38,7 @@ try {
   for (const width of [375, 1536]) for (const theme of ["light", "dark"]) {
     const page = await browser.newPage({ viewport: { width, height: 1100 }, reducedMotion: "reduce" });
     let configured = false; let canManage = true; let offline = false; let entries = []; let deposits = "0.00";
+    let missingBalance = false;
     let reads = 0; let autoSync = { state: "ok", heartbeat: new Date().toISOString(), last_success: new Date().toISOString() };
     const errors = []; page.on("pageerror", (e) => errors.push(e.message));
     await page.route("**/api/projectm/usdcodashop/ledger**", async (route) => {
@@ -45,14 +46,14 @@ try {
       if (route.request().method() === "GET") {
         reads++;
         const search = new URL(route.request().url()).searchParams.get("search");
-        const filtered = search ? entries.filter((e) => e.orderId.includes(search)) : entries;
-        return route.fulfill({ json: { configured, canManage, autoSync, entries: filtered, boundary: "K7306171", opening: "9373.17", deposits, used: entries.length ? "3.70" : "0.00", remaining: entries.length ? (9369.47 + Number(deposits)).toFixed(2) : "9373.17", total: filtered.length, lastSync: configured ? "2026-10-15T13:16:11Z" : null } });
+        const filtered = (search ? entries.filter((e) => e.orderId.includes(search)) : entries).map((e) => missingBalance ? { ...e, balance: null } : e);
+        return route.fulfill({ json: { configured, canManage, autoSync, entries: filtered, boundary: "K7306171", opening: "9373.17", deposits, used: entries.length ? "3.70" : "0.00", remaining: entries.length && !missingBalance ? "9397.75" : null, calculatedRemaining: entries.length ? (9369.47 + Number(deposits)).toFixed(2) : "9373.17", balanceAsOf: entries[0]?.occurredAt || null, balanceOrderId: entries[0]?.orderId || null, total: filtered.length, lastSync: configured ? "2026-10-15T13:16:11Z" : null } });
       }
       const body = route.request().postDataJSON();
       if (body.action === "setup") { assert.equal(body.confirm, true); assert.equal(body.opening, "9373.17"); configured = true; return route.fulfill({ json: { configured: true } }); }
       if (body.action === "sync") {
         const added = entries.length ? 0 : 1;
-        entries = [{ id: "1", kind: "order", orderId: "K7306274", amount: "3.70", balance: "9369.47", occurredAt: "2026-10-15T13:16:11Z", details: { game: "Zepeto", pack: "7 Zems", paymentMethod: "CodashopUSD", invoice: "TX123", providerBalance: "9397.75", operator: "Bot" }, recordedBy: "khong" }];
+        entries = [{ id: "1", kind: "order", orderId: "K7306274", amount: "3.70", balance: "9397.75", calculatedBalance: "9369.47", occurredAt: "2026-10-15T13:16:11Z", details: { game: "Zepeto", pack: "7 Zems", paymentMethod: "CodashopUSD", invoice: "TX123", providerBalance: "9397.75", operator: "Bot", saleThb: "147.25", costThb: "120.398", customer: "Test buyer", playerId: "uid1", link: "https://example.com/order/1" }, recordedBy: "khong" }];
         return route.fulfill({ json: { added, checked: 1 } });
       }
       if (body.action === "deposit") {
@@ -71,6 +72,10 @@ try {
     await page.getByText("ซิงก์อัตโนมัติทุก 60 วินาที · ทำงานปกติ", { exact: true }).waitFor();
     await page.getByRole("button", { name: "ซิงก์ Orders", exact: true }).click();
     await page.getByRole("cell", { name: "K7306274", exact: true }).waitFor();
+    await page.getByRole("columnheader", { name: "ยอดโอน (THB)", exact: true }).waitFor();
+    await page.getByRole("cell", { name: "26.85", exact: true }).waitFor();
+    await page.getByRole("cell", { name: "18.23%", exact: true }).waitFor();
+    assert.equal(await page.getByRole("link", { name: "เปิดรายการ", exact: true }).getAttribute("href"), "https://example.com/order/1");
     await page.getByRole("button", { name: "ซิงก์ Orders", exact: true }).click();
     await page.getByRole("status").filter({ hasText: "เพิ่ม 0 รายการ" }).waitFor();
     assert.equal(await page.getByRole("cell", { name: "K7306274", exact: true }).count(), 1);
@@ -84,10 +89,13 @@ try {
     await page.getByRole("textbox", { name: "หมายเหตุ/เลขอ้างอิง", exact: true }).fill("receipt123");
     await page.getByRole("button", { name: "ยืนยันบันทึก USD เข้า", exact: true }).click();
     await page.getByRole("heading", { name: "บันทึก USD ที่เข้าบัญชีจริงแล้ว" }).waitFor({ state: "detached" });
-    await page.getByText("9,469.57", { exact: true }).waitFor();
+    await page.getByText("คงเหลือตามบัญชี (ตรวจสอบ): 9,469.57 USD", { exact: false }).waitFor();
+    assert.equal(await page.getByRole("region", { name: "สรุปยอด USD" }).getByText("9,397.75", { exact: true }).count(), 1);
+    assert.equal(await page.getByRole("cell", { name: "9,397.75", exact: true }).count(), 1);
     await page.getByRole("textbox", { name: "ค้นหา Order / เกม / แพ็ก / ผู้ทำรายการ" }).fill("not-found");
     await page.getByRole("button", { name: "ค้นหา", exact: true }).click();
     await page.getByText("ไม่พบรายการที่ค้นหา", { exact: true }).waitFor();
+    assert.equal(await page.getByRole("region", { name: "สรุปยอด USD" }).getByText("9,397.75", { exact: true }).count(), 1);
     await page.getByRole("textbox", { name: "ค้นหา Order / เกม / แพ็ก / ผู้ทำรายการ" }).fill("");
     await page.getByRole("button", { name: "ค้นหา", exact: true }).click();
     await page.getByRole("cell", { name: "K7306274", exact: true }).waitFor();
@@ -104,6 +112,9 @@ try {
     canManage = false; await page.getByRole("button", { name: "โหลดประวัติ", exact: true }).click();
     await page.getByRole("button", { name: "ซิงก์ Orders", exact: true }).waitFor({ state: "detached" });
     assert.equal(await page.getByRole("button", { name: "บันทึก USD เข้า", exact: true }).count(), 0);
+    missingBalance = true; await page.getByRole("button", { name: "โหลดประวัติ", exact: true }).click();
+    await page.getByRole("status").filter({ hasText: "ยังไม่มี balance_after" }).waitFor();
+    assert.equal(await page.getByRole("region", { name: "สรุปยอด USD" }).getByText("—", { exact: true }).count(), 1);
     offline = true; await page.getByRole("button", { name: "โหลดประวัติ", exact: true }).click();
     await page.getByRole("alert").filter({ hasText: "จำลอง" }).waitFor();
     assert.deepEqual(errors, []); await page.close();
