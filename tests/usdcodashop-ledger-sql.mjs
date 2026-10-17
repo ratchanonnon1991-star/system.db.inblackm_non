@@ -11,7 +11,10 @@ const admin = { id: 16, username: "khong", permissions: ["projectm.admin"] };
 const viewer = { id: 17, permissions: ["projectm.claim"] };
 let orders = [{ id: 287411, source_order_id: "K7306274", payment_method: "CodashopUSD", status: "completed", transaction_count: 1,
   amount_used: "3.70", occurred_at: "2026-10-15T13:16:11Z", game_name: "Zepeto", pack_name: "7 Zems", balance_after: "9397.75" }];
-const repo = createCodaLedger(pool, { boundary: async () => "287399", orders: async () => orders });
+let costRate = "32.54";
+const repo = createCodaLedger(pool, { boundary: async () => "287399", orders: async () => orders }, {
+  loadCostRate: async () => costRate ? { currency: "USD", rate: costRate, source: "test", rateAt: "2026-10-17T00:00:00Z" } : null,
+});
 const requestId = "00000000-0000-4000-8000-000000000001";
 try {
   assert.equal((await repo.list(admin)).configured, false);
@@ -147,15 +150,22 @@ try {
   await db.exec(`UPDATE gamedb_coda_ledger SET details=details || '{"saleThb":" 10.005 ","costThb":"6.004"}'::jsonb WHERE order_label LIKE 'REPORT-%'`);
   const overview = await repo.list(viewer, { ...options, kind: "order", page: 2 });
   assert.equal(overview.entries.length, 21); assert.equal(overview.summary.orders, 121);
-  assert.equal(Number(overview.summary.sale), 1211.21); assert.equal(Number(overview.summary.cost), 726);
-  assert.equal(Number(overview.summary.profit), 485.21); assert.equal(overview.summary.missingSales, 0);
+  assert.equal(Number(overview.summary.sale), 1211.21); assert.equal(Number(overview.summary.cost), 39.93);
+  assert.equal(Number(overview.summary.profit), 1171.28); assert.equal(overview.summary.missingSales, 0);
   assert.equal(overview.summary.duplicateTransactions, 121);
-  assert.equal(overview.entries[0].figures.profit, "4.01");
+  assert.equal(overview.entries[0].figures.profit, "9.68");
   assert.deepEqual((await repo.list(viewer, { ...options, exportAll: true, kind: "order" })).summary, overview.summary);
   await db.exec(`UPDATE gamedb_coda_ledger SET details=details || '{"saleThb":"oops","costThb":null}'::jsonb WHERE order_label='REPORT-1'`);
   const incomplete = await repo.list(viewer, { ...options, kind: "order" });
-  assert.equal(incomplete.summary.sale, null); assert.equal(incomplete.summary.cost, null); assert.equal(incomplete.summary.profit, null);
-  assert.equal(incomplete.summary.missingSales, 1); assert.equal(incomplete.summary.missingCosts, 1);
+  assert.equal(incomplete.summary.sale, null); assert.equal(Number(incomplete.summary.cost), 39.93); assert.equal(incomplete.summary.profit, null);
+  assert.equal(incomplete.summary.missingSales, 1); assert.equal(incomplete.summary.missingCosts, 0);
+  costRate = null;
+  const unavailable = await repo.list(viewer, { ...options, kind: "order" });
+  assert.equal(unavailable.summary.cost, null); assert.equal(unavailable.summary.profit, null);
+  assert.equal(unavailable.summary.missingCosts, 121); assert.equal(unavailable.entries[0].figures.cost, null);
+  assert.equal(unavailable.entries[0].details.costThb, "6.004", "preserve original database cost, never use as a hidden fallback");
+  assert.equal(unavailable.remaining, incomplete.remaining); assert.equal(unavailable.used, incomplete.used);
+  costRate = "32.54";
   const noEntries = await repo.list(viewer, { search: "never-exists", kind: "order" });
   assert.equal(Number(noEntries.summary.sale), 0); assert.equal(Number(noEntries.summary.profit), 0);
   const depositTab = await repo.list(viewer, { kind: "deposit", exportAll: true });
@@ -167,8 +177,23 @@ try {
   await db.exec(`UPDATE gamedb_coda_ledger SET details=details || '{"saleThb":"0","costThb":"1.005"}'::jsonb WHERE order_label='MIDNIGHT-END'`);
   const loss = await repo.list(viewer, { search: "MIDNIGHT-END", kind: "order" });
   assert.equal(loss.total, 1); assert.equal(loss.summary.missingSales, 0);
-  assert.equal(Number(loss.summary.sale), 0); assert.equal(Number(loss.summary.cost), 1.01);
-  assert.equal(Number(loss.summary.profit), -1.01); assert.equal(loss.entries[0].figures.profit, "-1.01");
+  assert.equal(Number(loss.summary.sale), 0); assert.equal(Number(loss.summary.cost), 0.33);
+  assert.equal(Number(loss.summary.profit), -0.33); assert.equal(loss.entries[0].figures.profit, "-0.33");
+  // User example: displayed cost/profit follows USD out * current USDTHB, without ledger writes.
+  await db.exec(`INSERT INTO gamedb_coda_ledger(kind,source_id,order_label,amount,occurred_at,details,actor_id,actor_label)
+    VALUES ('order',999002,'K7316994',0.92,'2026-10-17T13:00:00Z','{"saleThb":"33.25","costThb":"29.9368","providerBalance":"12998.29"}',16,'Test')`);
+  costRate = "33.45";
+  const example = await repo.list(viewer, { search: "K7316994", kind: "order" });
+  assert.deepEqual(example.entries[0].figures, { sale: "33.25", cost: "30.77", profit: "2.48", margin: "7.46" });
+  assert.equal(String(example.entries[0].amount), "0.92"); assert.equal(example.entries[0].balance, "12998.29");
+  assert.equal(example.entries[0].details.costThb, "29.9368");
+  assert.equal(Number(example.summary.profit), 2.48);
+  const stored = (await db.query("SELECT details,amount FROM gamedb_coda_ledger WHERE source_id=999002")).rows[0];
+  assert.equal(stored.details.costThb, "29.9368"); assert.equal(stored.details.costConversion, undefined);
+  costRate = "34";
+  const changed = await repo.list(viewer, { search: "K7316994", kind: "order", exportAll: true });
+  assert.equal(changed.entries[0].figures.cost, "31.28"); assert.equal(Number(changed.summary.cost), 31.28);
+  assert.equal(changed.entries[0].amount, example.entries[0].amount); assert.equal(changed.entries[0].balance, example.entries[0].balance);
   await assert.rejects(repo.list(viewer, { kind: "invalid" }), { status: 400 });
   console.log("PASS: setup, fixed boundary, replay, late completion, exact cents, deposit retry, audit, search running balances, permissions, source deletion, rollback, negative balance");
 } finally { await db.close(); }

@@ -43,7 +43,7 @@ function csvCell(value, numeric = false) {
 }
 
 export function codaReportCsv(entries) {
-  const header = [...CODA_SHEET_HEADINGS, "หมายเหตุ", "ยอดโอนสกุลเดิม", "สกุลเงิน", "เรท THB", "แหล่งเรท", "วันที่เรท", "วันที่ล็อกเรท", "ประเภทเรท"];
+  const header = [...CODA_SHEET_HEADINGS, "หมายเหตุ", "ยอดโอนสกุลเดิม", "สกุลเงิน", "เรท THB", "แหล่งเรท", "วันที่เรท", "วันที่ล็อกเรท", "ประเภทเรท", "ต้นทุนเดิมจากฐานข้อมูล (THB)", "เรทต้นทุน USDTHB", "แหล่งเรทต้นทุน", "วันที่เรทต้นทุน", "ดึงเรทต้นทุนเมื่อ", "ฐานคำนวณต้นทุน"];
   const lines = [header.map((value) => csvCell(value)).join(",")];
   for (const row of entries) {
     const d = row.details || {}; const f = row.figures || sheetFigures(d); const deposit = row.kind === "deposit";
@@ -56,8 +56,10 @@ export function codaReportCsv(entries) {
       deposit || !d.invoice ? "" : row.transactionDuplicate ? "พบธุรกรรมซ้ำ" : "ไม่ซ้ำ", row.recordedBy,
       d.note, d.saleNative, d.saleCurrency, quote.rate, quote.source, quote.rateAt, quote.capturedAt,
       quote.kind ? "เรทอ้างอิง ณ ซิงก์ครั้งแรก ไม่ใช่เรทรับเงินจริงย้อนหลัง" : "",
+      deposit ? null : d.costThb, d.costConversion?.rate, d.costConversion?.source, d.costConversion?.rateAt, d.costConversion?.fetchedAt,
+      !deposit ? "USD ออก × เรท USDTHB อ้างอิงล่าสุด (ไม่ใช่ GOOGLEFINANCE โดยตรง)" : "",
     ];
-    lines.push(values.map((value, index) => csvCell(value, (index >= 2 && index <= 8) || index === 21 || index === 23)).join(","));
+    lines.push(values.map((value, index) => csvCell(value, (index >= 2 && index <= 8) || index === 21 || index === 23 || index === 28 || index === 29)).join(","));
   }
   // BOM makes Thai text readable when opened directly in Excel.
   return `\uFEFF${lines.join("\r\n")}\r\n`;

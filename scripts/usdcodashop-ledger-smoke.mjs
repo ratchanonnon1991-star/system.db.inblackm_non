@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
 import { codaReportCsv, codaDateBounds } from "../src/lib/usdcodashop-report.js";
-import { sheetFigures } from "../src/lib/usdcodashop-sheet.js";
+import { codaCurrentCostFigures } from "../src/lib/usdcodashop-cost.js";
 import { codaQuickDates } from "../src/lib/usdcodashop-overview.js";
 const require = createRequire(import.meta.url);
 const { webpack } = require("next/dist/compiled/webpack/webpack");
@@ -43,6 +43,7 @@ try {
     await page.clock.install({ time: new Date("2026-10-17T08:00:00Z") });
     let configured = false; let canManage = true; let offline = false; let entries = []; let deposits = "0.00";
     let missingBalance = false;
+    let currentCostRate = "32.54";
     let reads = 0; let autoSync = { state: "ok", heartbeat: new Date().toISOString(), last_success: new Date().toISOString() };
     const errors = []; page.on("pageerror", (e) => errors.push(e.message));
     await page.route("**/api/projectm/usdcodashop/ledger**", async (route) => {
@@ -53,15 +54,19 @@ try {
         const search = params.get("search");
         const bounds = codaDateBounds({ dateFrom: params.get("dateFrom"), dateTo: params.get("dateTo") });
         const kind = params.get("kind") || "all";
-        const filtered = entries.filter((e) => (kind === "all" || e.kind === kind) && (!search || e.orderId.includes(search)) && (!bounds.start || new Date(e.occurredAt) >= new Date(bounds.start)) && (!bounds.end || new Date(e.occurredAt) < new Date(bounds.end))).map((e) => missingBalance ? { ...e, balance: null } : e);
+        const costQuote = kind !== "deposit" && currentCostRate ? { currency: "USD", rate: currentCostRate, source: "TestCost", rateAt: "2026-10-16T00:00:00Z", fetchedAt: "2026-10-17T08:00:00Z" } : null;
+        const filtered = entries.filter((e) => (kind === "all" || e.kind === kind) && (!search || e.orderId.includes(search)) && (!bounds.start || new Date(e.occurredAt) >= new Date(bounds.start)) && (!bounds.end || new Date(e.occurredAt) < new Date(bounds.end))).map((e) => ({ ...e,
+          balance: missingBalance ? null : e.balance,
+          figures: codaCurrentCostFigures(e, costQuote), details: { ...e.details, costConversion: e.kind === "order" ? costQuote : null },
+        }));
         const orders = filtered.filter((e) => e.kind === "order");
-        const figures = orders.map((e) => sheetFigures(e.details));
+        const figures = orders.map((e) => e.figures);
         const sum = (key) => figures.reduce((total, f) => total + Number(f[key]), 0).toFixed(2);
         const missingSales = figures.filter((f) => f.sale == null).length;
         const missingCosts = figures.filter((f) => f.cost == null).length;
         const summary = { orders: orders.length, deposits: filtered.length - orders.length, sale: missingSales ? null : sum("sale"), cost: missingCosts ? null : sum("cost"), profit: missingSales || missingCosts ? null : sum("profit"), missingSales, missingCosts, duplicateOrders: orders.filter((e) => e.orderDuplicate).length, duplicateTransactions: orders.filter((e) => e.transactionDuplicate).length, depositUsd: filtered.filter((e) => e.kind === "deposit").reduce((n, e) => n + Number(e.amount), 0).toFixed(2) };
         if (params.get("format") === "csv") return route.fulfill({ contentType: "text/csv; charset=utf-8", body: codaReportCsv(filtered) });
-        return route.fulfill({ json: { configured, canManage, autoSync, summary, entries: filtered, boundary: "K7306171", opening: "9373.17", deposits, used: entries.length ? "3.70" : "0.00", remaining: entries.length && !missingBalance ? "9397.75" : null, calculatedRemaining: entries.length ? (9369.47 + Number(deposits)).toFixed(2) : "9373.17", balanceAsOf: entries[0]?.occurredAt || null, balanceOrderId: entries[0]?.orderId || null, total: filtered.length, lastSync: configured ? "2026-10-15T13:16:11Z" : null } });
+        return route.fulfill({ json: { configured, canManage, autoSync, costQuote, summary, entries: filtered, boundary: "K7306171", opening: "9373.17", deposits, used: entries.length ? "3.70" : "0.00", remaining: entries.length && !missingBalance ? "9397.75" : null, calculatedRemaining: entries.length ? (9369.47 + Number(deposits)).toFixed(2) : "9373.17", balanceAsOf: entries[0]?.occurredAt || null, balanceOrderId: entries[0]?.orderId || null, total: filtered.length, lastSync: configured ? "2026-10-15T13:16:11Z" : null } });
       }
       const body = route.request().postDataJSON();
       if (body.action === "setup") { assert.equal(body.confirm, true); assert.equal(body.opening, "9373.17"); configured = true; return route.fulfill({ json: { configured: true } }); }
@@ -93,7 +98,11 @@ try {
     await page.getByRole("button", { name: "ซิงก์ Orders", exact: true }).click();
     const orderButton = () => page.getByRole("button", { name: "ดูรายละเอียด Order K7306274", exact: true });
     await orderButton().waitFor();
-    if (width >= 768) assert.equal(await page.getByRole("columnheader").count(), 7);
+    if (width >= 768) {
+      assert.equal(await page.getByRole("columnheader").count(), 8);
+      await page.getByRole("columnheader", { name: "USD ออก", exact: true }).waitFor();
+    }
+    assert.equal(await page.getByRole("table").first().getByText("3.70", { exact: true }).count(), 1, "USD debit is visible without expanding details");
     await page.getByRole("table").first().getByText("26.85", { exact: true }).waitFor();
     await page.getByRole("table").first().getByText("18.23%", { exact: true }).waitFor();
     assert.equal(await page.getByRole("region", { name: "สรุปยอด", exact: true }).getByText("147.25", { exact: true }).count(), 1);
@@ -191,6 +200,23 @@ try {
     canManage = false; await page.getByRole("button", { name: "โหลดประวัติ", exact: true }).click();
     await page.getByRole("button", { name: "ซิงก์ Orders", exact: true }).waitFor({ state: "detached" });
     assert.equal(await page.getByRole("button", { name: "บันทึก USD เข้า", exact: true }).count(), 0);
+    const beforeSample = entries;
+    currentCostRate = "33.45";
+    entries = [{ ...entries[0], id: "3", orderId: "K7316994", amount: "0.92", balance: "12998.29", details: { ...entries[0].details, saleThb: "33.25", costThb: "29.9368" } }];
+    await page.getByRole("button", { name: "โหลดประวัติ", exact: true }).click();
+    await page.getByRole("button", { name: "ดูรายละเอียด Order K7316994", exact: true }).waitFor();
+    const primaryTable = page.getByRole("table").first();
+    await primaryTable.getByText("0.92", { exact: true }).waitFor();
+    assert.equal(await primaryTable.getByText("30.77", { exact: true }).count(), 1);
+    assert.equal(await primaryTable.getByText("2.48", { exact: true }).count(), 1);
+    assert.equal(await primaryTable.getByText("7.46%", { exact: true }).count(), 1);
+    assert.equal(await page.getByRole("region", { name: "รายละเอียด Order K7316994", exact: true }).count(), 0);
+    await page.screenshot({ path: path.join(output, `usd-out-${width}-${theme}.png`), fullPage: true });
+    entries = beforeSample;
+    currentCostRate = null; await page.getByRole("button", { name: "โหลดประวัติ", exact: true }).click();
+    await page.getByRole("status").filter({ hasText: "ยังดึงเรทต้นทุน USD→THB ไม่สำเร็จ" }).waitFor();
+    assert.equal(await page.getByRole("region", { name: "สรุปยอด", exact: true }).getByText("—", { exact: true }).count(), 2);
+    currentCostRate = "32.54";
     missingBalance = true; await page.getByRole("button", { name: "โหลดประวัติ", exact: true }).click();
     await page.getByRole("status").filter({ hasText: "ยังไม่มี balance_after" }).waitFor();
     assert.equal(await page.getByRole("region", { name: "สรุปยอด", exact: true }).getByText("—", { exact: true }).count(), 1);

@@ -18,7 +18,7 @@ export default function UsdCodashopOverviewTable({ entries, emptyMessage = "ไ�
   return <div className="overflow-hidden rounded-xl border border-ll-hairline bg-ll-surface-1">
     <table className="block w-full text-left text-sm text-ll-ink md:table md:table-fixed">
       <caption className="sr-only">ประวัติ USDCodashop แบบย่อ กดเลข Order เพื่อดูรายละเอียด</caption>
-      <thead className="hidden bg-ll-surface-2 md:table-header-group"><tr>{["วันที่", "Order / รายการ", "เกม / แพ็ก", "ยอดโอน (THB)", "ต้นทุน (THB)", "กำไร (THB)", "USD คงเหลือ"].map((heading) => <th key={heading} scope="col" className="px-4 py-3 text-xs font-medium">{heading}</th>)}</tr></thead>
+      <thead className="hidden bg-ll-surface-2 md:table-header-group"><tr>{["วันที่", "Order / รายการ", "เกม / แพ็ก", "ยอดโอน (THB)", "ต้นทุน (THB)", "กำไร (THB)", "USD ออก", "USD คงเหลือ"].map((heading) => <th key={heading} scope="col" className="px-4 py-3 text-xs font-medium">{heading}</th>)}</tr></thead>
       <tbody className="block md:table-row-group">{entries.map((row) => {
         const d = row.details || {}; const f = row.figures || sheetFigures(d); const deposit = row.kind === "deposit";
         const warnings = codaEntryWarnings(row); const open = expanded.has(row.id); const link = orderLink(d.link);
@@ -30,9 +30,10 @@ export default function UsdCodashopOverviewTable({ entries, emptyMessage = "ไ�
             <td className={`${cell} tabular-nums`}><span className={label}>ยอดโอน (THB)</span><span>{money(f.sale)}</span></td>
             <td className={`${cell} tabular-nums`}><span className={label}>ต้นทุน (THB)</span><span>{money(f.cost)}</span></td>
             <td className={`${cell} tabular-nums`}><span className={label}>กำไร (THB)</span><span className={f.profit != null && Number(f.profit) < 0 ? "text-ll-primary-subtle-text" : "font-medium"}>{money(f.profit)}</span>{f.margin != null && <span className="mt-1 block text-xs text-ll-ink-subtle">{f.margin}%</span>}</td>
-            <td className={`${cell} font-semibold tabular-nums`}><span className={label}>USD คงเหลือ</span><span>{money(row.balance)}</span></td>
+            <td className={`${cell} tabular-nums`}><span className={label}>USD ออก</span><span>{deposit ? "—" : money(row.amount)}</span></td>
+            <td className={`${cell} col-span-2 font-semibold tabular-nums`}><span className={label}>USD คงเหลือ</span><span>{money(row.balance)}</span></td>
           </tr>
-          {open && <tr id={`coda-detail-${row.id}`} className="block border-t border-ll-hairline bg-ll-surface-2 md:table-row"><td colSpan={7} className="block p-5 md:table-cell">
+          {open && <tr id={`coda-detail-${row.id}`} className="block border-t border-ll-hairline bg-ll-surface-2 md:table-row"><td colSpan={8} className="block p-5 md:table-cell">
             <section aria-label={`รายละเอียด Order ${row.orderId}`}>
               <h3 className="font-semibold">รายละเอียด {row.orderId}</h3>
               {warnings.length > 0 && <p role="status" className="mt-2 rounded bg-ll-warning-bg p-2 text-ll-warning">ต้องตรวจสอบ: {warnings.join(" · ")}</p>}
@@ -40,10 +41,12 @@ export default function UsdCodashopOverviewTable({ entries, emptyMessage = "ไ�
                 ["ชื่อลูกค้า", d.customer], ["ผู้เติม", d.sheetOperator || d.operator], ["UID / บัญชีปลายทาง", d.playerId], ["Payment method", d.paymentMethod || (deposit ? "เติมเงิน" : null)],
                 ["เกม", d.game], ["สิ่งที่ซื้อ", d.pack], ["หมวดสินค้า", d.category], ["เลขธุรกรรม", d.invoice],
                 ["USD เข้า", deposit ? money(row.amount) : null], ["USD ออก", !deposit ? money(row.amount) : null],
+                ["ต้นทุนเดิมจากฐานข้อมูล (THB)", deposit ? null : money(d.costThb)],
                 ["คงเหลือตามบัญชี (ตรวจสอบ)", money(row.calculatedBalance)], ["ผู้บันทึก", row.recordedBy],
                 ["วันที่บันทึก", when(row.recordedAt)], ["หมายเหตุ", d.note],
               ].map(([heading, value]) => <div key={heading} className="min-w-0"><dt className="text-xs text-ll-ink-subtle">{heading}</dt><dd className="mt-1 whitespace-pre-wrap break-words">{value ?? "—"}</dd></div>)}</dl>
               {link && <a href={link} target="_blank" rel="noopener noreferrer" className="mt-4 inline-block py-2 underline underline-offset-4">เปิดรายการต้นทาง</a>}
+              {!deposit && <p className="mt-4 text-xs leading-6 text-ll-ink-subtle">{d.costConversion ? <>ต้นทุนที่แสดง: {row.amount} USD × {d.costConversion.rate} = {money(f.cost)} THB · {d.costConversion.source} · วันที่เรท {when(d.costConversion.rateAt)} · คำนวณด้วยเรทล่าสุด ไม่ใช่ต้นทุนเดิมหรือเรท GOOGLEFINANCE โดยตรง</> : "ต้นทุนแบบชีทต้องใช้เรท USD→THB ล่าสุด ไม่ใช้ต้นทุนเดิมแทนเมื่อดึงเรทไม่ได้"}</p>}
               {!deposit && <details className="mt-4 text-xs text-ll-ink-subtle"><summary className="cursor-pointer py-2">เรทที่ใช้</summary>{d.saleConversion ? <div className="space-y-2 pt-2"><p>{d.saleNative} {d.saleCurrency} × {d.saleConversion.rate} THB</p><p>{d.saleConversion.source} · วันที่เรท {when(d.saleConversion.rateAt)} · ล็อกเรท {when(d.saleConversion.capturedAt)}</p><p>เรทอ้างอิง ณ ซิงก์ครั้งแรก ไม่ใช่เรทรับเงินจริงย้อนหลัง</p></div> : <p className="pt-2">{d.saleNative != null ? `${d.saleNative} ${d.saleCurrency || "ไม่ทราบสกุล"}` : "ไม่มีข้อมูลยอดสกุลเดิม"} · {f.sale == null ? "ยังไม่มียอด THB ที่ยืนยันได้" : "ไม่พบข้อมูลเรทแปลงเงินในรายการนี้"}</p>}</details>}
             </section>
           </td></tr>}

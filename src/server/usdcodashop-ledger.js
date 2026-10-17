@@ -2,11 +2,12 @@ import { getPool } from "@/lib/db";
 import { canViewUsdInventory, canManageUsdInventory, inventoryError, usdCents, centsUsd } from "@/lib/usdcodashop-inventory";
 import { CODA_BOUNDARY, signedUsd, normalizeCodaOrder, depositInput, providerUsd } from "@/lib/usdcodashop-ledger";
 import { createCodaSource } from "@/server/usdcodashop-source";
-import { sheetFigures } from "@/lib/usdcodashop-sheet";
 import { retainSaleQuote, stableMetadata } from "@/lib/usdcodashop-sale-conversion";
 import { prepareCodaSales } from "@/server/usdcodashop-sale-rates";
 import { codaDateBounds, CODA_EXPORT_LIMIT } from "@/lib/usdcodashop-report";
 import { codaEntryKind } from "@/lib/usdcodashop-overview";
+import { codaCostQuote, codaCurrentCostFigures } from "@/lib/usdcodashop-cost";
+import { loadCodaCostRate } from "@/server/usdcodashop-cost-rate";
 
 const schemas = new WeakMap();
 export async function ensureCodaLedger(pool) {
@@ -50,7 +51,7 @@ export async function ensureCodaLedger(pool) {
   await schemas.get(pool);
 }
 
-export function createCodaLedger(pool, source = createCodaSource(), { prepareSales = prepareCodaSales } = {}) {
+export function createCodaLedger(pool, source = createCodaSource(), { prepareSales = prepareCodaSales, loadCostRate = loadCodaCostRate } = {}) {
   const guard = (actor, write = false) => {
     if (!(write ? canManageUsdInventory(actor) : canViewUsdInventory(actor))) throw inventoryError("ไม่มีสิทธิ์จัดการบัญชี USDCodashop", 403);
   };
@@ -73,6 +74,7 @@ export function createCodaLedger(pool, source = createCodaSource(), { prepareSal
       const entryKind = codaEntryKind(kind);
       const term = String(search ?? "").trim().slice(0, 200);
       const pageNumber = Math.max(1, Math.min(100000, Number.parseInt(page, 10) || 1));
+      const costQuote = entryKind === "deposit" ? null : codaCostQuote(await Promise.resolve().then(() => loadCostRate()).catch(() => null));
       // One SQL snapshot keeps totals and running balances consistent during concurrent syncs.
       const { rows } = await pool.query(`WITH duplicate_invoices AS (
           SELECT btrim(tx) AS invoice FROM gamedb_coda_ledger
@@ -93,8 +95,8 @@ export function createCodaLedger(pool, source = createCodaSource(), { prepareSal
           SELECT *,
             CASE WHEN btrim(details->>'saleThb') ~ '^[0-9]{1,12}([.][0-9]{1,20})?$'
               THEN round(btrim(details->>'saleThb')::numeric,2) END AS sale_thb,
-            CASE WHEN btrim(details->>'costThb') ~ '^[0-9]{1,12}([.][0-9]{1,20})?$'
-              THEN round(btrim(details->>'costThb')::numeric,2) END AS cost_thb
+            CASE WHEN kind='order' AND $7::numeric IS NOT NULL AND round(amount*$7::numeric,2)<=999999999999.99
+              THEN round(amount*$7::numeric,2) END AS cost_thb
           FROM filtered
         )
         SELECT w.*,
@@ -122,7 +124,7 @@ export function createCodaLedger(pool, source = createCodaSource(), { prepareSal
         , (SELECT row_to_json(s) FROM gamedb_coda_sync_status s WHERE s.id=1) AS auto_sync
         , (SELECT jsonb_build_object('balance',details->>'providerBalance','orderId',order_label,'occurredAt',occurred_at)
            FROM ordered WHERE kind='order' ORDER BY occurred_at DESC,source_id DESC LIMIT 1) AS latest_provider
-        FROM gamedb_coda_wallet w WHERE w.id=1`, [term, exportAll ? 0 : (pageNumber - 1) * 100, bounds.start, bounds.end, exportAll ? CODA_EXPORT_LIMIT + 1 : 100, entryKind]);
+        FROM gamedb_coda_wallet w WHERE w.id=1`, [term, exportAll ? 0 : (pageNumber - 1) * 100, bounds.start, bounds.end, exportAll ? CODA_EXPORT_LIMIT + 1 : 100, entryKind, costQuote?.rate || null]);
       const r = rows[0];
       if (!r) return { configured: false, canManage: canManageUsdInventory(actor), entries: [] };
       if (exportAll && r.total > CODA_EXPORT_LIMIT) throw inventoryError("Export ได้สูงสุด 50,000 รายการต่อครั้ง กรุณาลดช่วงวันที่ (ยังไม่ได้ส่งออกไฟล์)", 413);
@@ -134,12 +136,12 @@ export function createCodaLedger(pool, source = createCodaSource(), { prepareSal
         balanceAsOf: r.latest_provider?.occurredAt || null, balanceOrderId: r.latest_provider?.orderId || null,
         lastSync: r.last_sync,
         autoSync: r.auto_sync || null,
-        page: pageNumber, total: r.total, summary: r.summary,
+        page: pageNumber, total: r.total, summary: r.summary, costQuote,
         entries: r.entries.map((e) => ({ id: String(e.id), kind: e.kind, orderId: e.order_label,
           amount: e.amount, balance: e.kind === "order" ? providerUsd(e.details.providerBalance) : null,
           calculatedBalance: e.balance, occurredAt: e.occurred_at, recordedAt: e.recorded_at,
-          figures: sheetFigures(e.details), orderDuplicate: Number(e.order_occurrences) > 1, transactionDuplicate: Boolean(e.transaction_duplicate),
-          details: e.details, recordedBy: e.actor_label })) };
+          figures: codaCurrentCostFigures({ kind: e.kind, amount: e.amount, details: e.details }, costQuote), orderDuplicate: Number(e.order_occurrences) > 1, transactionDuplicate: Boolean(e.transaction_duplicate),
+          details: { ...e.details, costConversion: e.kind === "order" ? costQuote : null }, recordedBy: e.actor_label })) };
     },
     async setup(body, actor) {
       guard(actor, true);

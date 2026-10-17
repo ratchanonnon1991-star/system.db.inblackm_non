@@ -12,6 +12,7 @@ const rows = [{ id: 2, source_order_id: "IDR-ORDER", payment_method: "CodashopUS
   sheet_fields: { saleCurrency: "IDR", saleNative: "36005", saleThb: null } }];
 let rate = "0.0018441883"; let calls = 0; const at = "2026-10-17T07:00:00Z";
 const repo = createCodaLedger(pool, { boundary: async () => "1", orders: async () => rows }, {
+  loadCostRate: async () => ({ currency: "USD", rate: "32.54", source: "test" }),
   prepareSales: (orders, previous) => prepareCodaSales(orders, previous, {
     now: () => new Date(at), rateLoader: async (currency) => { calls++; return { currency, rate, source: "test", rateAt: at, fetchedAt: at }; },
   }),

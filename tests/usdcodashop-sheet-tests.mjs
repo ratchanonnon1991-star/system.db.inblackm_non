@@ -7,6 +7,11 @@ check(sheetCents("7.4842") === 748n); check(sheetCents("120.398") === 12040n);
 for (const invalid of [null, "", "=36005 * GOOGLEFINANCE(\"CURRENCY:IDRTHB\")", "1e5", "NaN", "-1"]) check(sheetCents(invalid) === null);
 const f = sheetFigures({ saleThb: "147.25", costThb: "120.398" });
 check(f.sale === "147.25" && f.cost === "120.40" && f.profit === "26.85" && f.margin === "18.23");
+// The same percentage formula yields different profit when the cost basis differs.
+const sourceExample = sheetFigures({ saleThb: "33.25", costThb: "29.9368" });
+check(sourceExample.cost === "29.94" && sourceExample.profit === "3.31" && sourceExample.margin === "9.95");
+const sheetExample = sheetFigures({ saleThb: "33.25", costThb: "30.77" });
+check(sheetExample.profit === "2.48" && sheetExample.margin === "7.46");
 check(sheetFigures({ saleThb: "0", costThb: "1" }).margin === null);
 check(sheetFigures({ saleThb: "1", costThb: "2" }).profit === "-1.00");
 check(sheetFigures({ costThb: "10" }).profit === null);
