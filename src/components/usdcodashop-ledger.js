@@ -7,7 +7,9 @@ import { apiJson } from "@/lib/api-json";
 import { topupInventoryPath } from "@/lib/topup-inventory";
 import { CODA_BOUNDARY, CODA_OPENING } from "@/lib/usdcodashop-ledger";
 import UsdCodashopSheetTable from "@/components/usdcodashop-sheet-table";
+import UsdCodashopOverviewTable from "@/components/usdcodashop-overview-table";
 import { codaPeriodDates } from "@/lib/usdcodashop-report";
+import { codaQuickDates } from "@/lib/usdcodashop-overview";
 
 const endpoint = "/api/projectm/usdcodashop/ledger";
 const button = "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-ll-hairline-strong bg-ll-surface-1 px-4 text-sm text-ll-ink hover:bg-ll-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ll-primary disabled:opacity-50";
@@ -22,18 +24,20 @@ export default function UsdCodashopLedger({ lang }) {
   const [query, setQuery] = useState(""); const [search, setSearch] = useState(""); const [page, setPage] = useState(1);
   const [periodMode, setPeriodMode] = useState("all"); const [periodValue, setPeriodValue] = useState(""); const [periodEnd, setPeriodEnd] = useState("");
   const [dates, setDates] = useState({ dateFrom: "", dateTo: "" }); const [exporting, setExporting] = useState(false);
+  const [kind, setKind] = useState("order");
   const [deposit, setDeposit] = useState(null);
   const [observedAt, setObservedAt] = useState(null);
   const lock = useRef(false); const alive = useRef(false); const generation = useRef(0);
   const load = useCallback(async () => {
     const key = ++generation.current; setLoading(true); setError("");
     try {
-      const result = await apiJson(`${endpoint}?${new URLSearchParams({ search, page: String(page), ...dates })}`, { cache: "no-store" });
+      const viewKey = new URLSearchParams({ search, page: String(page), ...dates, kind }).toString();
+      const result = await apiJson(`${endpoint}?${viewKey}`, { cache: "no-store" });
       if (typeof result?.configured !== "boolean" || !Array.isArray(result.entries)) throw new Error("ข้อมูลไม่ครบ กรุณาโหลดใหม่");
-      if (alive.current && key === generation.current) { setData(result); setObservedAt(Date.now()); }
+      if (alive.current && key === generation.current) { setData({ ...result, viewKey }); setObservedAt(Date.now()); }
     } catch (e) { if (alive.current && key === generation.current) setError(e.message); }
     finally { if (alive.current && key === generation.current) setLoading(false); }
-  }, [search, page, dates]);
+  }, [search, page, dates, kind]);
   const invalidate = useCallback(() => { generation.current++; }, []);
   useEffect(() => { alive.current = true; const timer = setTimeout(load, 0); return () => { alive.current = false; invalidate(); clearTimeout(timer); }; }, [load, invalidate]);
   useEffect(() => {
@@ -61,11 +65,16 @@ export default function UsdCodashopLedger({ lang }) {
       invalidate(); setError(""); setPage(1); setSearch(query); setDates(nextDates);
     } catch (e) { setError(e.message); }
   }
+  function quickFilter(preset) {
+    const nextDates = codaQuickDates(preset);
+    invalidate(); setError(""); setPage(1); setSearch(query); setDates(nextDates);
+    setPeriodMode("range"); setPeriodValue(nextDates.dateFrom); setPeriodEnd(nextDates.dateTo);
+  }
   async function exportCsv() {
     if (exporting) return;
     setExporting(true); setError("");
     try {
-      const response = await fetch(`${endpoint}?${new URLSearchParams({ search, ...dates, format: "csv" })}`, { cache: "no-store" });
+      const response = await fetch(`${endpoint}?${new URLSearchParams({ search, ...dates, kind, format: "csv" })}`, { cache: "no-store" });
       if (!response.ok || !response.headers.get("content-type")?.startsWith("text/csv")) {
         const body = await response.json().catch(() => null);
         throw new Error(body?.error || body?.message || "Export ไม่สำเร็จ กรุณาลองใหม่");
@@ -83,6 +92,32 @@ export default function UsdCodashopLedger({ lang }) {
   const workerFresh = worker && observedAt - new Date(worker.heartbeat).getTime() < 180_000;
   const workerLabel = !worker ? "ยังไม่พบ worker" : !workerFresh ? "ไม่ได้รับสถานะเกิน 3 นาที โปรดตรวจ worker" :
     ({ ok: "ทำงานปกติ", syncing: "กำลังซิงก์", error: "ซิงก์ติดขัด", waiting: "รอยืนยันยอดยกมา", stopped: "หยุดทำงาน" }[worker.state] || "รอตรวจสอบ");
+  const historyReady = data?.viewKey === new URLSearchParams({ search, page: String(page), ...dates, kind }).toString();
+  const summary = historyReady ? data?.summary : null;
+  const filteredLabel = dates.dateFrom ? `${dates.dateFrom} ถึง ${dates.dateTo} (ค.ศ.)` : "ทุกวันที่";
+  const pending = loading || busy;
+  const summaryCards = kind === "deposit" ? [
+    ["USD คงเหลือล่าสุด", data?.remaining, "USD · จากบอทล่าสุด ไม่ขึ้นกับตัวกรอง"],
+    ["USD เข้าตามตัวกรอง", summary?.depositUsd, "USD · เฉพาะยอดบันทึกยืนยันในระบบนี้"],
+  ] : [
+    ["USD คงเหลือล่าสุด", data?.remaining, "USD · จากบอทล่าสุด ไม่ขึ้นกับตัวกรอง"],
+    ["ยอดโอนลูกค้า", summary?.sale, "THB · ตามตัวกรอง รวมทุกหน้า"],
+    ["ต้นทุน", summary?.cost, "THB · ตามตัวกรอง รวมทุกหน้า"],
+    ["กำไร", summary?.profit, "THB · ยอดโอน − ต้นทุน ตามตัวกรอง"],
+  ];
+  const filters = <section aria-label="กรองประวัติ" className="space-y-4 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4">
+    <div className="flex flex-wrap items-center gap-2">{[["today", "วันนี้"], ["yesterday", "เมื่อวาน"], ["month", "เดือนนี้"]].map(([preset, text]) => <button key={preset} disabled={pending || exporting} onClick={() => quickFilter(preset)} className={button}>{text}</button>)}<span className="text-xs text-ll-ink-subtle">เวลาไทย</span></div>
+    <form onSubmit={applyFilters} className="flex flex-wrap items-end gap-3">
+      <label className="min-w-0 basis-full text-sm sm:flex-1 sm:basis-64">ค้นหา Order / เกม / แพ็ก / ผู้ทำรายการ<input value={query} onChange={(e) => setQuery(e.target.value)} className={input} /></label>
+      <label className="text-sm">กรองตาม<select aria-label="กรองตาม" value={periodMode} onChange={(e) => { setPeriodMode(e.target.value); setPeriodValue(""); setPeriodEnd(""); }} className={input}><option value="all">ทุกวันที่</option><option value="day">วันที่</option><option value="month">เดือน</option><option value="year">ปี</option><option value="range">ช่วงวันที่</option></select></label>
+      {periodMode !== "all" && <label className="text-sm">{({ day: "วันที่", month: "เดือน / ปี", year: "ปี (ค.ศ.)", range: "ตั้งแต่วันที่" })[periodMode]}<input required type={periodMode === "month" ? "month" : periodMode === "year" ? "number" : "date"} min={periodMode === "year" ? "1000" : periodMode === "month" ? "1000-01" : "1000-01-01"} max={periodMode === "year" ? "9998" : periodMode === "month" ? "9998-12" : "9998-12-31"} value={periodValue} onChange={(e) => setPeriodValue(e.target.value)} className={input} /></label>}
+      {periodMode === "range" && <label className="text-sm">ถึงวันที่<input required type="date" min={periodValue || "1000-01-01"} max="9998-12-31" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} className={input} /></label>}
+      <button disabled={pending || exporting} className={button}>ใช้ตัวกรอง</button>
+      <button type="button" disabled={pending || exporting} onClick={() => { invalidate(); setQuery(""); setSearch(""); setPeriodMode("all"); setPeriodValue(""); setPeriodEnd(""); setDates({ dateFrom: "", dateTo: "" }); setPage(1); setError(""); }} className={button}>ล้างตัวกรอง</button>
+      <button type="button" disabled={pending || exporting || !historyReady || !data?.total || Boolean(error)} onClick={exportCsv} className={button}><Download size={16} aria-hidden />{exporting ? "กำลัง Export…" : "Export CSV"}</button>
+    </form>
+    <p className="text-xs text-ll-ink-subtle">ตัวกรองที่ใช้: {filteredLabel}{search ? ` · ค้นหา: ${search}` : ""} · กดใช้ตัวกรองก่อน Export</p>
+  </section>;
   return <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-6 px-4 pb-14 pt-10 text-ll-ink sm:px-6">
     <header className="flex flex-wrap items-center justify-between gap-4 pr-12">
       <div><p className="text-xs text-ll-ink-tertiary">TOPUP INVENTORY · SINGLE USD WALLET</p><h1 className="mt-2 text-3xl font-semibold">USDCodashop</h1><p className="mt-2 text-sm text-ll-ink-subtle">บัญชีเดียว · ประวัติรับเข้า–จ่ายออกจาก codashop_orders</p></div>
@@ -102,10 +137,13 @@ export default function UsdCodashopLedger({ lang }) {
       </form> : <p className="mt-4 text-sm">ให้ Projectm Admin ยืนยันยอดยกมาก่อนใช้งาน</p>}
     </section>}
     {data?.configured && <>
-      <section aria-label="สรุปยอด USD" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {[["ยอดยกมา (บัญชี)", data.opening], ["USD เข้า (บันทึก)", data.deposits], ["USD ออก", data.used], ["USD คงเหลือ (บอท)", data.remaining]].map(([label, value]) => <div key={label} className="min-w-0 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4"><p className="text-sm text-ll-ink-subtle">{label}</p><p className="mt-2 break-words text-xl font-semibold tabular-nums">{money(value)}</p></div>)}
+      {filters}
+      <div role="group" aria-label="ประเภทประวัติ" className="flex flex-wrap gap-2">{[["order", "รายการใช้เงิน"], ["deposit", "รายการเติมเงิน"], ["all", "ทั้งหมด"]].map(([value, text]) => <button key={value} aria-pressed={kind === value} disabled={pending || exporting} onClick={() => { invalidate(); setKind(value); setPage(1); }} className={`${button} ${kind === value ? "border-ll-primary ring-1 ring-ll-primary" : ""}`}>{text}</button>)}</div>
+      <section aria-label="สรุปยอด" aria-busy={loading} className={`grid grid-cols-2 gap-3 ${kind === "deposit" ? "" : "lg:grid-cols-4"}`}>
+        {summaryCards.map(([heading, value, help]) => <div key={heading} className="min-w-0 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4"><p className="text-sm text-ll-ink-subtle">{heading}</p><p className="mt-2 break-words text-2xl font-semibold tabular-nums">{loading ? "…" : money(value)}</p><p className="mt-2 text-xs leading-5 text-ll-ink-subtle">{help}</p></div>)}
       </section>
-      <p className="text-sm text-ll-ink-subtle">ยอดบอท ณ {date(data.balanceAsOf)}{data.balanceOrderId ? ` · Order ${data.balanceOrderId}` : ""} · คงเหลือตามบัญชี (ตรวจสอบ): {money(data.calculatedRemaining)} USD</p>
+      <p className="text-xs text-ll-ink-subtle">ยอดบอท ณ {date(data.balanceAsOf)}{data.balanceOrderId ? ` · Order ${data.balanceOrderId}` : ""} · ยอดโอน/ต้นทุน/กำไรเป็นยอดตามแท็บและตัวกรอง ไม่ใช่ยอดคงเหลือ</p>
+      {!loading && summary && (summary.missingSales > 0 || summary.missingCosts > 0 || summary.duplicateOrders > 0 || summary.duplicateTransactions > 0) && <p role="status" className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-ll-ink">ต้องตรวจสอบตามตัวกรอง: ยอดโอนไม่ครบ {summary.missingSales} รายการ · ต้นทุนไม่ครบ {summary.missingCosts} รายการ · คิวซ้ำ {summary.duplicateOrders} รายการ · ธุรกรรมซ้ำ {summary.duplicateTransactions} รายการ{(summary.missingSales > 0 || summary.missingCosts > 0) && " · ยอดสรุปที่ข้อมูลไม่ครบแสดง — ไม่รวมเป็นศูนย์"}</p>}
       {data.remaining == null && <p role="status" className="rounded-xl border border-ll-hairline p-4 text-sm">ยังไม่มี balance_after ที่ถูกต้องของ Order ล่าสุด ยอดคงเหลือหลักแสดง — ไม่ใช้ยอดคำนวณหรือยอดบอทของ Order เก่าแทน</p>}
       {data.remaining != null && Number(data.remaining) < 0 && <p role="alert" className="rounded-xl border border-ll-hairline p-4 text-sm">ยอด balance_after จากบอทติดลบ กรุณาตรวจสอบต้นทาง</p>}
       <div className="flex flex-wrap items-center gap-3">
@@ -113,12 +151,10 @@ export default function UsdCodashopLedger({ lang }) {
         {data.canManage && <><button disabled={busy || loading || Boolean(deposit)} onClick={() => mutate({ action: "sync" })} className={button}><RefreshCw size={16} aria-hidden />ซิงก์ Orders</button><button disabled={busy || Boolean(deposit)} onClick={() => { setDeposit({ amount: "", note: "", requestId: crypto.randomUUID() }); setError(""); }} className={button}><Plus size={16} aria-hidden />บันทึก USD เข้า</button></>}
         <p className="text-xs text-ll-ink-subtle">ซิงก์ล่าสุด: {date(data.lastSync)}</p>
       </div>
-      <section aria-label="สถานะซิงก์อัตโนมัติ" className="rounded-xl border border-ll-hairline bg-ll-surface-1 p-4 text-sm">
+      <section aria-label="สถานะซิงก์อัตโนมัติ" className="text-xs text-ll-ink-subtle">
         <p className="font-medium">ซิงก์อัตโนมัติทุก 60 วินาที · {workerLabel}</p>
-        <p className="mt-2 text-ll-ink-subtle">สำเร็จล่าสุด: {date(worker?.last_success)} · หน้านี้โหลดประวัติใหม่ทุก 30 วินาที (หยุดโหลดระหว่างกรอกเงินเข้า)</p>
         {worker?.error_message && <p role="alert" className="mt-2">{worker.error_message}</p>}
       </section>
-      <p className="text-sm leading-6 text-ll-ink-subtle">USD คงเหลือใช้ balance_after จากบอทหลัง Order นั้น ส่วนยอดยกมา + USD เข้า − USD ออกเป็นยอดบัญชีสำหรับตรวจสอบ · ยอดบอทเป็นค่าที่บันทึก ณ เวลาทำรายการ ไม่ใช่ยอดสดจาก Codashop · worker ทำงานได้แม้ปิดเว็บ</p>
       {deposit && <form className="space-y-4 rounded-xl border border-ll-hairline bg-ll-surface-1 p-5" onSubmit={(e) => { e.preventDefault(); mutate({ action: "deposit", ...deposit }); }}>
         <h2 className="text-lg font-semibold">บันทึก USD ที่เข้าบัญชีจริงแล้ว</h2>
         <p className="text-sm text-ll-ink-subtle">เป็นการบันทึกบัญชีเท่านั้น ไม่ใช่การโอนเงิน ลงวันที่ปัจจุบัน และไม่บวกทับ balance_after จากบอท ยอดบอทจะเปลี่ยนตามข้อมูลต้นทางเมื่อซิงก์</p>
@@ -126,27 +162,21 @@ export default function UsdCodashopLedger({ lang }) {
         <div className="flex gap-3"><button disabled={busy} className={button}>ยืนยันบันทึก USD เข้า</button><button type="button" disabled={busy} onClick={() => setDeposit(null)} className={button}>ยกเลิก</button></div>
       </form>}
       <section className="min-w-0 space-y-4">
-        <h2 className="text-xl font-semibold">ประวัติแบบชีท · หลัง {data.boundary}</h2>
-        <p className="text-sm leading-6 text-ll-ink-subtle">ยอดโอนลูกค้าต่างสกุลแปลงเป็น THB ด้วยเรทอ้างอิง ณ ซิงก์ครั้งแรกและล็อกไว้กับ Order (ไม่ใช่เรทรับเงินจริงในวันขาย) กด “เรทที่ใช้” เพื่อดูรายละเอียด · ต้นทุน THB จาก inventory_transactions · กำไร = ยอดโอน − ต้นทุน และกำไร % = กำไร ÷ ยอดโอน × 100 · ไม่แปลง USD เข้า–ออกหรือ balance_after · ถ้ายังดึงเรทไม่ได้จะเว้นยอดบาทและกำไรไว้</p>
-        <p className="text-sm text-ll-ink-subtle">USD เข้าแสดงเฉพาะยอดที่บันทึกยืนยันในระบบนี้ ยังไม่เชื่อม prepayment ledger อัตโนมัติ สามารถบันทึกเงินเข้าที่ตรวจสอบแล้วด้วยปุ่มด้านบน</p>
-        <form onSubmit={applyFilters} className="flex flex-wrap items-end gap-3">
-          <label className="min-w-0 basis-full text-sm sm:flex-1 sm:basis-64">ค้นหา Order / เกม / แพ็ก / ผู้ทำรายการ<input value={query} onChange={(e) => setQuery(e.target.value)} className={input} /></label>
-          <label className="text-sm">กรองตาม<select aria-label="กรองตาม" value={periodMode} onChange={(e) => { setPeriodMode(e.target.value); setPeriodValue(""); setPeriodEnd(""); }} className={input}><option value="all">ทุกวันที่</option><option value="day">วันที่</option><option value="month">เดือน</option><option value="year">ปี</option><option value="range">ช่วงวันที่</option></select></label>
-          {periodMode !== "all" && <label className="text-sm">{({ day: "วันที่", month: "เดือน / ปี", year: "ปี (ค.ศ.)", range: "ตั้งแต่วันที่" })[periodMode]}<input required type={periodMode === "month" ? "month" : periodMode === "year" ? "number" : "date"} min={periodMode === "year" ? "1000" : periodMode === "month" ? "1000-01" : "1000-01-01"} max={periodMode === "year" ? "9998" : periodMode === "month" ? "9998-12" : "9998-12-31"} value={periodValue} onChange={(e) => setPeriodValue(e.target.value)} className={input} /></label>}
-          {periodMode === "range" && <label className="text-sm">ถึงวันที่<input required type="date" min={periodValue || "1000-01-01"} max="9998-12-31" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} className={input} /></label>}
-          <button disabled={busy || loading || exporting} className={button}>ใช้ตัวกรอง</button>
-          <button type="button" disabled={busy || loading || exporting} onClick={() => { invalidate(); setQuery(""); setSearch(""); setPeriodMode("all"); setPeriodValue(""); setPeriodEnd(""); setDates({ dateFrom: "", dateTo: "" }); setPage(1); setError(""); }} className={button}>ล้างตัวกรอง</button>
-          <button type="button" disabled={busy || loading || exporting || !data.total || Boolean(error)} onClick={exportCsv} className={button}><Download size={16} aria-hidden />{exporting ? "กำลัง Export…" : "Export CSV"}</button>
-        </form>
-        <p className="text-xs text-ll-ink-subtle">ช่วงวันที่ที่ใช้ (เวลาไทย): {dates.dateFrom ? `${dates.dateFrom} ถึง ${dates.dateTo} (ค.ศ.)` : "ทุกวันที่"} · กดใช้ตัวกรองก่อน Export · CSV รวมทุกหน้าตามตัวกรอง สูงสุด 50,000 รายการ เปิดด้วย Excel / Google Sheets ได้ · ยอดสรุปด้านบนเป็นยอดรวมทั้งหมด ไม่ใช่ยอดเฉพาะช่วง</p>
-        <p className="text-xs text-ll-ink-subtle">{data.total} รายการ · เลื่อนตารางแนวนอนเพื่อดูข้อมูลทั้งหมด · USD คงเหลือเป็นยอดบอทหลังแต่ละ Order ส่วนยอดสรุปใช้ Order ล่าสุด ไม่เปลี่ยนตามการค้นหาหรือเปลี่ยนหน้า</p>
-        <UsdCodashopSheetTable entries={data.entries} emptyMessage={search || dates.dateFrom ? "ไม่พบรายการตามตัวกรอง" : "ยังไม่มีประวัติ กดซิงก์ Orders เพื่อดึงรายการ"} />
-        <details className="text-sm"><summary className="cursor-pointer py-2">ดูตารางตรวจสอบบัญชี / Payment method</summary><div className="overflow-x-auto rounded-xl border border-ll-hairline bg-ll-surface-1">
-          <table className="w-full min-w-[1350px] text-left text-sm"><caption className="sr-only">บัญชี USDCodashop รับเข้า จ่ายออก และยอดคงเหลือจาก balance_after หน่วย USD</caption><thead className="bg-ll-surface-2"><tr>{["วันที่ (ไทย)", "Order / รายการ", "USD เข้า", "USD ออก", "USD คงเหลือ (บอท)", "เกม / แพ็ก", "ผู้ทำรายการ", "Payment method", "Transaction", "คงเหลือตามบัญชี (ตรวจสอบ)", "ผู้บันทึก"].map((v) => <th key={v} className="whitespace-nowrap px-4 py-3" scope="col">{v}</th>)}</tr></thead>
-            <tbody>{data.entries.map((row) => <tr key={row.id} className="border-t border-ll-hairline"><td className="whitespace-nowrap px-4 py-3">{date(row.occurredAt)}</td><td className="max-w-64 break-words px-4 py-3"><span className="font-medium">{row.orderId}</span>{row.details.note && <p className="mt-1 text-xs text-ll-ink-subtle">{row.details.note}</p>}</td><td className="px-4 py-3 tabular-nums">{row.kind === "deposit" ? money(row.amount) : "—"}</td><td className="px-4 py-3 tabular-nums">{row.kind === "order" ? money(row.amount) : "—"}</td><td className="px-4 py-3 font-semibold tabular-nums">{money(row.balance)}</td><td className="max-w-64 break-words px-4 py-3">{row.details.game || "—"}<p className="mt-1 text-xs text-ll-ink-subtle">{row.details.pack}</p></td><td className="max-w-48 break-words px-4 py-3">{row.details.operator || row.recordedBy}</td><td className="px-4 py-3">{row.details.paymentMethod || "เติมเงิน"}</td><td className="max-w-64 break-words px-4 py-3">{row.details.invoice || "—"}</td><td className="px-4 py-3 tabular-nums">{money(row.calculatedBalance)}</td><td className="max-w-48 break-words px-4 py-3">{row.recordedBy}</td></tr>)}</tbody></table>
-        </div></details>
+        <div className="flex flex-wrap items-end justify-between gap-2"><h2 className="text-xl font-semibold">{kind === "deposit" ? "รายการเติมเงิน" : kind === "order" ? "รายการใช้เงิน" : "ประวัติทั้งหมด"}</h2><p className="text-xs text-ll-ink-subtle">{loading ? "กำลังโหลด…" : historyReady ? `${data.total} รายการ` : "ยังโหลดตัวกรองนี้ไม่สำเร็จ"} · กด Order เพื่อดูรายละเอียด</p></div>
+        <div aria-busy={loading} className={loading ? "pointer-events-none opacity-50" : ""}>
+          <UsdCodashopOverviewTable entries={historyReady ? data.entries : []} emptyMessage={!historyReady ? loading ? "กำลังโหลดประวัติ…" : "โหลดประวัติไม่สำเร็จ กรุณาลองใหม่" : search || dates.dateFrom ? "ไม่พบรายการตามตัวกรอง" : kind === "deposit" ? "ยังไม่มีประวัติเติมเงินที่บันทึกในระบบนี้" : "ยังไม่มีประวัติ กดซิงก์ Orders เพื่อดึงรายการ"} />
+        </div>
         <nav aria-label="หน้าประวัติ" className="flex items-center justify-end gap-3 text-sm"><button disabled={busy || loading || page <= 1} onClick={() => setPage(page - 1)} className={button}>ก่อนหน้า</button><span>หน้า {page}</span><button disabled={busy || loading || page * 100 >= data.total} onClick={() => setPage(page + 1)} className={button}>ถัดไป</button></nav>
       </section>
+      <details className="rounded-xl border border-ll-hairline bg-ll-surface-1 p-4 text-sm"><summary className="cursor-pointer">รายละเอียดบัญชีและวิธีคำนวณ</summary><div className="mt-4 space-y-3 text-xs leading-6 text-ll-ink-subtle">
+        <p>นับหลัง {data.boundary} · ยอดยกมา {money(data.opening)} USD · USD เข้า {money(data.deposits)} · USD ออก {money(data.used)} (ยอดบัญชีทั้งหมด ไม่ขึ้นกับตัวกรอง)</p>
+        <p>คงเหลือตามบัญชี (ตรวจสอบ): {money(data.calculatedRemaining)} USD · USD คงเหลือหลักใช้ balance_after จากบอทหลัง Order ล่าสุด ไม่ใช่ยอดสดจาก Codashop และไม่บวกเงินเข้าทับยอดบอท</p>
+        <p>ยอดโอนลูกค้าต่างสกุลแปลงด้วยเรทอ้างอิง ณ ซิงก์ครั้งแรก ไม่ใช่เรทรับเงินจริงย้อนหลัง · ต้นทุน THB จาก inventory_transactions · กำไร = ยอดโอน − ต้นทุน · ถ้าข้อมูลไม่ครบจะแสดง — ไม่แทนด้วยศูนย์</p>
+        <p>USD เข้าแสดงเฉพาะยอดที่บันทึกยืนยันในระบบนี้ ยังไม่เชื่อม prepayment ledger อัตโนมัติ</p>
+        <p>สำเร็จล่าสุด: {date(worker?.last_success)} · worker ทำงานได้แม้ปิดเว็บ หน้านี้โหลดใหม่ทุก 30 วินาที หยุดโหลดระหว่างกรอกเงินเข้า</p>
+        <p>Export CSV รวมทุกหน้าตามแท็บ คำค้นหา และช่วงวันที่ สูงสุด 50,000 รายการ เปิดด้วย Excel / Google Sheets ได้</p>
+      </div></details>
+      <details className="min-w-0 text-sm"><summary className="cursor-pointer py-2">ดูตารางแบบชีท (ทุกคอลัมน์)</summary><div className="mt-3"><UsdCodashopSheetTable entries={historyReady ? data.entries : []} emptyMessage="ไม่พบรายการตามตัวกรอง" /></div></details>
     </>}
   </main>;
 }

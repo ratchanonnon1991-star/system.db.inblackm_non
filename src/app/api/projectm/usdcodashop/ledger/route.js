@@ -32,7 +32,7 @@ export async function GET(request) {
     const actor = await requireAdmin(request); const url = new URL(request.url);
     const exportAll = url.searchParams.get("format") === "csv";
     const dateFrom = url.searchParams.get("dateFrom"); const dateTo = url.searchParams.get("dateTo");
-    const result = await codaLedgerRepository().list(actor, { search: url.searchParams.get("search"), page: url.searchParams.get("page"), dateFrom, dateTo, exportAll });
+    const result = await codaLedgerRepository().list(actor, { search: url.searchParams.get("search"), page: url.searchParams.get("page"), dateFrom, dateTo, exportAll, kind: url.searchParams.get("kind") });
     if (exportAll) {
       if (!result.configured) throw inventoryError("กรุณาตั้งค่าบัญชีก่อน Export", 409);
       return new Response(codaReportCsv(result.entries), { headers: {

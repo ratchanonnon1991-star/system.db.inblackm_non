@@ -7,6 +7,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
 import { codaReportCsv, codaDateBounds } from "../src/lib/usdcodashop-report.js";
+import { sheetFigures } from "../src/lib/usdcodashop-sheet.js";
+import { codaQuickDates } from "../src/lib/usdcodashop-overview.js";
 const require = createRequire(import.meta.url);
 const { webpack } = require("next/dist/compiled/webpack/webpack");
 const root = process.cwd(); const output = await mkdtemp(path.join(tmpdir(), "coda-ledger-"));
@@ -38,6 +40,7 @@ try {
   browser = await chromium.launch({ channel: "chrome", headless: true });
   for (const width of [375, 1536]) for (const theme of ["light", "dark"]) {
     const page = await browser.newPage({ viewport: { width, height: 1100 }, reducedMotion: "reduce" });
+    await page.clock.install({ time: new Date("2026-10-17T08:00:00Z") });
     let configured = false; let canManage = true; let offline = false; let entries = []; let deposits = "0.00";
     let missingBalance = false;
     let reads = 0; let autoSync = { state: "ok", heartbeat: new Date().toISOString(), last_success: new Date().toISOString() };
@@ -49,15 +52,23 @@ try {
         const params = new URL(route.request().url()).searchParams;
         const search = params.get("search");
         const bounds = codaDateBounds({ dateFrom: params.get("dateFrom"), dateTo: params.get("dateTo") });
-        const filtered = entries.filter((e) => (!search || e.orderId.includes(search)) && (!bounds.start || new Date(e.occurredAt) >= new Date(bounds.start)) && (!bounds.end || new Date(e.occurredAt) < new Date(bounds.end))).map((e) => missingBalance ? { ...e, balance: null } : e);
+        const kind = params.get("kind") || "all";
+        const filtered = entries.filter((e) => (kind === "all" || e.kind === kind) && (!search || e.orderId.includes(search)) && (!bounds.start || new Date(e.occurredAt) >= new Date(bounds.start)) && (!bounds.end || new Date(e.occurredAt) < new Date(bounds.end))).map((e) => missingBalance ? { ...e, balance: null } : e);
+        const orders = filtered.filter((e) => e.kind === "order");
+        const figures = orders.map((e) => sheetFigures(e.details));
+        const sum = (key) => figures.reduce((total, f) => total + Number(f[key]), 0).toFixed(2);
+        const missingSales = figures.filter((f) => f.sale == null).length;
+        const missingCosts = figures.filter((f) => f.cost == null).length;
+        const summary = { orders: orders.length, deposits: filtered.length - orders.length, sale: missingSales ? null : sum("sale"), cost: missingCosts ? null : sum("cost"), profit: missingSales || missingCosts ? null : sum("profit"), missingSales, missingCosts, duplicateOrders: orders.filter((e) => e.orderDuplicate).length, duplicateTransactions: orders.filter((e) => e.transactionDuplicate).length, depositUsd: filtered.filter((e) => e.kind === "deposit").reduce((n, e) => n + Number(e.amount), 0).toFixed(2) };
         if (params.get("format") === "csv") return route.fulfill({ contentType: "text/csv; charset=utf-8", body: codaReportCsv(filtered) });
-        return route.fulfill({ json: { configured, canManage, autoSync, entries: filtered, boundary: "K7306171", opening: "9373.17", deposits, used: entries.length ? "3.70" : "0.00", remaining: entries.length && !missingBalance ? "9397.75" : null, calculatedRemaining: entries.length ? (9369.47 + Number(deposits)).toFixed(2) : "9373.17", balanceAsOf: entries[0]?.occurredAt || null, balanceOrderId: entries[0]?.orderId || null, total: filtered.length, lastSync: configured ? "2026-10-15T13:16:11Z" : null } });
+        return route.fulfill({ json: { configured, canManage, autoSync, summary, entries: filtered, boundary: "K7306171", opening: "9373.17", deposits, used: entries.length ? "3.70" : "0.00", remaining: entries.length && !missingBalance ? "9397.75" : null, calculatedRemaining: entries.length ? (9369.47 + Number(deposits)).toFixed(2) : "9373.17", balanceAsOf: entries[0]?.occurredAt || null, balanceOrderId: entries[0]?.orderId || null, total: filtered.length, lastSync: configured ? "2026-10-15T13:16:11Z" : null } });
       }
       const body = route.request().postDataJSON();
       if (body.action === "setup") { assert.equal(body.confirm, true); assert.equal(body.opening, "9373.17"); configured = true; return route.fulfill({ json: { configured: true } }); }
       if (body.action === "sync") {
         const added = entries.length ? 0 : 1;
-        entries = [{ id: "1", kind: "order", orderId: "K7306274", amount: "3.70", balance: "9397.75", calculatedBalance: "9369.47", occurredAt: "2026-10-15T13:16:11Z", details: { game: "Zepeto", pack: "7 Zems", paymentMethod: "CodashopUSD", invoice: "TX123", providerBalance: "9397.75", operator: "Bot", saleThb: "147.25", costThb: "120.398", customer: "Test buyer", playerId: "uid1", link: "https://example.com/order/1" }, recordedBy: "khong" }];
+        const previousDeposits = entries.filter((e) => e.kind === "deposit");
+        entries = [{ id: "1", kind: "order", orderId: "K7306274", amount: "3.70", balance: "9397.75", calculatedBalance: "9369.47", occurredAt: "2026-10-15T13:16:11Z", details: { game: "Zepeto", pack: "7 Zems", paymentMethod: "CodashopUSD", invoice: "TX123", providerBalance: "9397.75", operator: "Bot", saleThb: "147.25", costThb: "120.398", customer: "Test buyer", playerId: "uid1", link: "https://example.com/order/1" }, recordedBy: "khong" }, ...previousDeposits];
         entries[0].details = { ...entries[0].details, saleNative: "5", saleCurrency: "USDT", saleConversion: {
           currency: "USDT", rate: "29.45", source: "TestProvider", capturedAt: "2026-10-17T07:00:00Z", rateAt: "2026-10-17T06:00:00Z",
         } };
@@ -65,7 +76,9 @@ try {
       }
       if (body.action === "deposit") {
         assert.equal(body.amount, "100.10"); assert.equal(body.note, "receipt123"); assert.match(body.requestId, /^[0-9a-f-]{36}$/);
-        deposits = "100.10"; return route.fulfill({ json: { id: "2" } });
+        deposits = "100.10";
+        entries.push({ id: "2", kind: "deposit", orderId: "เติมเงิน", amount: "100.10", balance: null, occurredAt: "2026-10-15T13:17:11Z", details: { note: body.note }, recordedBy: "khong" });
+        return route.fulfill({ json: { id: "2" } });
       }
       throw new Error("Unexpected mutation");
     });
@@ -78,21 +91,26 @@ try {
     await page.getByRole("button", { name: "ซิงก์ Orders", exact: true }).waitFor();
     await page.getByText("ซิงก์อัตโนมัติทุก 60 วินาที · ทำงานปกติ", { exact: true }).waitFor();
     await page.getByRole("button", { name: "ซิงก์ Orders", exact: true }).click();
-    await page.getByRole("cell", { name: "K7306274", exact: true }).waitFor();
-    await page.getByRole("columnheader", { name: "ยอดโอน (THB)", exact: true }).waitFor();
-    await page.getByRole("cell", { name: "26.85", exact: true }).waitFor();
-    await page.getByRole("cell", { name: "18.23%", exact: true }).waitFor();
-    await page.getByText("เรทที่ใช้", { exact: true }).click();
-    await page.getByText("5 USDT × 29.45 THB", { exact: true }).waitFor();
-    await page.getByText("เรทอ้างอิง ณ ซิงก์ครั้งแรก ไม่ใช่เรทรับเงินจริงย้อนหลัง", { exact: true }).waitFor();
-    assert.equal(await page.getByRole("cell", { name: "3.70", exact: true }).count(), 1);
-    assert.equal(await page.getByRole("link", { name: "เปิดรายการ", exact: true }).getAttribute("href"), "https://example.com/order/1");
+    const orderButton = () => page.getByRole("button", { name: "ดูรายละเอียด Order K7306274", exact: true });
+    await orderButton().waitFor();
+    if (width >= 768) assert.equal(await page.getByRole("columnheader").count(), 7);
+    await page.getByRole("table").first().getByText("26.85", { exact: true }).waitFor();
+    await page.getByRole("table").first().getByText("18.23%", { exact: true }).waitFor();
+    assert.equal(await page.getByRole("region", { name: "สรุปยอด", exact: true }).getByText("147.25", { exact: true }).count(), 1);
+    await orderButton().click();
+    const detail = page.getByRole("region", { name: "รายละเอียด Order K7306274", exact: true });
+    await detail.getByText("Test buyer", { exact: true }).waitFor();
+    await detail.getByText("เรทที่ใช้", { exact: true }).click();
+    await detail.getByText("5 USDT × 29.45 THB", { exact: true }).waitFor();
+    await detail.getByText("เรทอ้างอิง ณ ซิงก์ครั้งแรก ไม่ใช่เรทรับเงินจริงย้อนหลัง", { exact: true }).waitFor();
+    assert.equal(await detail.getByText("3.70", { exact: true }).count(), 1);
+    assert.equal(await page.getByRole("link", { name: "เปิดรายการต้นทาง", exact: true }).getAttribute("href"), "https://example.com/order/1");
+    await page.getByRole("button", { name: "ซ่อนรายละเอียด Order K7306274", exact: true }).click();
     await page.getByRole("button", { name: "ซิงก์ Orders", exact: true }).click();
     await page.getByRole("status").filter({ hasText: "เพิ่ม 0 รายการ" }).waitFor();
-    assert.equal(await page.getByRole("cell", { name: "K7306274", exact: true }).count(), 1);
+    assert.equal(await orderButton().count(), 1);
     await page.getByRole("button", { name: "บันทึก USD เข้า", exact: true }).click();
     await page.getByRole("textbox", { name: "จำนวน USD", exact: true }).waitFor();
-    await page.clock.install();
     const beforeFormWait = reads;
     await page.clock.fastForward(60_001);
     assert.equal(reads, beforeFormWait, "do not refresh while entering a deposit");
@@ -100,26 +118,28 @@ try {
     await page.getByRole("textbox", { name: "หมายเหตุ/เลขอ้างอิง", exact: true }).fill("receipt123");
     await page.getByRole("button", { name: "ยืนยันบันทึก USD เข้า", exact: true }).click();
     await page.getByRole("heading", { name: "บันทึก USD ที่เข้าบัญชีจริงแล้ว" }).waitFor({ state: "detached" });
+    await page.getByText("รายละเอียดบัญชีและวิธีคำนวณ", { exact: true }).click();
     await page.getByText("คงเหลือตามบัญชี (ตรวจสอบ): 9,469.57 USD", { exact: false }).waitFor();
-    assert.equal(await page.getByRole("region", { name: "สรุปยอด USD" }).getByText("9,397.75", { exact: true }).count(), 1);
-    assert.equal(await page.getByRole("cell", { name: "9,397.75", exact: true }).count(), 1);
+    await page.getByText("รายละเอียดบัญชีและวิธีคำนวณ", { exact: true }).click();
+    assert.equal(await page.getByRole("region", { name: "สรุปยอด", exact: true }).getByText("9,397.75", { exact: true }).count(), 1);
+    assert.equal(await page.getByRole("table").first().getByText("9,397.75", { exact: true }).count(), 1);
     await page.getByRole("textbox", { name: "ค้นหา Order / เกม / แพ็ก / ผู้ทำรายการ" }).fill("not-found");
     await page.getByRole("button", { name: "ใช้ตัวกรอง", exact: true }).click();
-    await page.getByText("ไม่พบรายการตามตัวกรอง", { exact: true }).waitFor();
-    assert.equal(await page.getByRole("region", { name: "สรุปยอด USD" }).getByText("9,397.75", { exact: true }).count(), 1);
+    await page.getByText("ไม่พบรายการตามตัวกรอง", { exact: true }).filter({ visible: true }).waitFor();
+    assert.equal(await page.getByRole("region", { name: "สรุปยอด", exact: true }).getByText("9,397.75", { exact: true }).count(), 1);
     await page.getByRole("textbox", { name: "ค้นหา Order / เกม / แพ็ก / ผู้ทำรายการ" }).fill("");
     await page.getByRole("button", { name: "ใช้ตัวกรอง", exact: true }).click();
-    await page.getByRole("cell", { name: "K7306274", exact: true }).waitFor();
+    await orderButton().waitFor();
     await page.getByLabel("กรองตาม", { exact: true }).selectOption("day");
     await page.getByLabel("วันที่", { exact: true }).fill("2026-10-16");
     await page.getByRole("button", { name: "ใช้ตัวกรอง", exact: true }).click();
-    await page.getByText("ไม่พบรายการตามตัวกรอง", { exact: true }).waitFor();
+    await page.getByText("ไม่พบรายการตามตัวกรอง", { exact: true }).filter({ visible: true }).waitFor();
     assert.equal(await page.getByRole("button", { name: "Export CSV", exact: true }).isDisabled(), true);
     for (const [mode, label, value] of [["month", "เดือน / ปี", "2026-10"], ["year", "ปี (ค.ศ.)", "2026"]]) {
       await page.getByLabel("กรองตาม", { exact: true }).selectOption(mode);
       await page.getByLabel(label, { exact: true }).fill(value);
       await page.getByRole("button", { name: "ใช้ตัวกรอง", exact: true }).click();
-      await page.getByRole("cell", { name: "K7306274", exact: true }).waitFor();
+      await orderButton().waitFor();
     }
     const downloadPromise = page.waitForEvent("download");
     await page.getByRole("button", { name: "Export CSV", exact: true }).click();
@@ -128,11 +148,40 @@ try {
     const exported = await readFile(await download.path(), "utf8");
     assert.ok(exported.startsWith("\uFEFF")); assert.ok(exported.includes("K7306274")); assert.ok(exported.includes("9397.75"));
     await page.getByRole("button", { name: "ล้างตัวกรอง", exact: true }).click();
-    await page.getByRole("cell", { name: "K7306274", exact: true }).waitFor();
+    await orderButton().waitFor();
+    await page.getByRole("button", { name: "รายการเติมเงิน", exact: true }).click();
+    await page.getByRole("button", { name: "ดูรายละเอียด Order เติมเงิน", exact: true }).waitFor();
+    assert.equal(await orderButton().count(), 0);
+    assert.equal(await page.getByRole("region", { name: "สรุปยอด", exact: true }).getByText("100.10", { exact: true }).count(), 1);
+    const depositDownloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export CSV", exact: true }).click();
+    const depositDownload = await depositDownloadPromise;
+    const depositCsv = await readFile(await depositDownload.path(), "utf8");
+    assert.ok(depositCsv.includes("receipt123")); assert.ok(!depositCsv.includes("K7306274"));
+    await page.getByRole("button", { name: "รายการใช้เงิน", exact: true }).click();
+    await orderButton().waitFor();
+    for (const [name, preset] of [["วันนี้", "today"], ["เมื่อวาน", "yesterday"], ["เดือนนี้", "month"]]) {
+      const response = page.waitForResponse((r) => r.url().includes("/ledger?") && r.request().method() === "GET");
+      await page.getByRole("button", { name, exact: true }).click();
+      const url = new URL((await response).url()); const expected = codaQuickDates(preset, "2026-10-17T08:00:00Z");
+      assert.equal(url.searchParams.get("dateFrom"), expected.dateFrom); assert.equal(url.searchParams.get("dateTo"), expected.dateTo);
+      await page.getByRole("button", { name: "ใช้ตัวกรอง", exact: true }).waitFor({ state: "visible" });
+    }
+    await orderButton().waitFor();
     const refresh = page.waitForResponse((r) => r.url().includes("/ledger?") && r.request().method() === "GET");
     await page.clock.fastForward(30_001); await refresh;
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.screenshot({ path: path.join(output, `ledger-${width}-${theme}.png`), fullPage: true });
+    entries[0].details.saleThb = null; entries[0].orderDuplicate = true; entries[0].transactionDuplicate = true;
+    await page.getByRole("button", { name: "โหลดประวัติ", exact: true }).click();
+    await page.getByRole("status").filter({ hasText: "ยอดโอนไม่ครบ 1 รายการ" }).waitFor();
+    assert.equal(await page.getByRole("region", { name: "สรุปยอด", exact: true }).getByText("—", { exact: true }).count(), 2);
+    await orderButton().focus(); await page.keyboard.press("Enter");
+    await detail.getByRole("status").filter({ hasText: "คิวซ้ำ · ธุรกรรมซ้ำ" }).waitFor();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.screenshot({ path: path.join(output, `warning-${width}-${theme}.png`), fullPage: true });
+    await page.getByRole("button", { name: "ซ่อนรายละเอียด Order K7306274", exact: true }).click();
+    entries[0].details.saleThb = "147.25"; entries[0].orderDuplicate = false; entries[0].transactionDuplicate = false;
     autoSync = { ...autoSync, state: "error", error_message: "ตรวจ Order K1" };
     await page.getByRole("button", { name: "โหลดประวัติ", exact: true }).click();
     await page.getByRole("alert").filter({ hasText: "ตรวจ Order K1" }).waitFor();
@@ -144,9 +193,14 @@ try {
     assert.equal(await page.getByRole("button", { name: "บันทึก USD เข้า", exact: true }).count(), 0);
     missingBalance = true; await page.getByRole("button", { name: "โหลดประวัติ", exact: true }).click();
     await page.getByRole("status").filter({ hasText: "ยังไม่มี balance_after" }).waitFor();
-    assert.equal(await page.getByRole("region", { name: "สรุปยอด USD" }).getByText("—", { exact: true }).count(), 1);
+    assert.equal(await page.getByRole("region", { name: "สรุปยอด", exact: true }).getByText("—", { exact: true }).count(), 1);
     offline = true; await page.getByRole("button", { name: "โหลดประวัติ", exact: true }).click();
     await page.getByRole("alert").filter({ hasText: "จำลอง" }).waitFor();
+    await page.getByRole("textbox", { name: "ค้นหา Order / เกม / แพ็ก / ผู้ทำรายการ" }).fill("different-filter");
+    await page.getByRole("button", { name: "ใช้ตัวกรอง", exact: true }).click();
+    await page.getByText("โหลดประวัติไม่สำเร็จ กรุณาลองใหม่", { exact: true }).waitFor();
+    assert.equal(await orderButton().count(), 0, "never display stale rows under a new failed filter");
+    assert.equal(await page.getByRole("button", { name: "Export CSV", exact: true }).isDisabled(), true);
     assert.deepEqual(errors, []); await page.close();
   }
   console.log(`PASS: actual client, setup confirmation, sync replay, deposit, search, permissions, error handling, mobile/desktop light/dark. Screenshots: ${output}`);

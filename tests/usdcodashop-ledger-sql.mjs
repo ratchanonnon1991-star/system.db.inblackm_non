@@ -143,5 +143,32 @@ try {
            ('order',999001,'MIDNIGHT-END',0.01,'2027-01-01T17:00:00Z','{}',16,'Test')`);
   const midnights = await repo.list(viewer, { search: "MIDNIGHT", dateFrom: "2027-01-01", dateTo: "2027-01-01", exportAll: true });
   assert.deepEqual(midnights.entries.map((entry) => entry.orderId), ["MIDNIGHT-START"]);
+  // Summary is over the entire filtered result, not the current page. Decimal rounding matches each row.
+  await db.exec(`UPDATE gamedb_coda_ledger SET details=details || '{"saleThb":" 10.005 ","costThb":"6.004"}'::jsonb WHERE order_label LIKE 'REPORT-%'`);
+  const overview = await repo.list(viewer, { ...options, kind: "order", page: 2 });
+  assert.equal(overview.entries.length, 21); assert.equal(overview.summary.orders, 121);
+  assert.equal(Number(overview.summary.sale), 1211.21); assert.equal(Number(overview.summary.cost), 726);
+  assert.equal(Number(overview.summary.profit), 485.21); assert.equal(overview.summary.missingSales, 0);
+  assert.equal(overview.summary.duplicateTransactions, 121);
+  assert.equal(overview.entries[0].figures.profit, "4.01");
+  assert.deepEqual((await repo.list(viewer, { ...options, exportAll: true, kind: "order" })).summary, overview.summary);
+  await db.exec(`UPDATE gamedb_coda_ledger SET details=details || '{"saleThb":"oops","costThb":null}'::jsonb WHERE order_label='REPORT-1'`);
+  const incomplete = await repo.list(viewer, { ...options, kind: "order" });
+  assert.equal(incomplete.summary.sale, null); assert.equal(incomplete.summary.cost, null); assert.equal(incomplete.summary.profit, null);
+  assert.equal(incomplete.summary.missingSales, 1); assert.equal(incomplete.summary.missingCosts, 1);
+  const noEntries = await repo.list(viewer, { search: "never-exists", kind: "order" });
+  assert.equal(Number(noEntries.summary.sale), 0); assert.equal(Number(noEntries.summary.profit), 0);
+  const depositTab = await repo.list(viewer, { kind: "deposit", exportAll: true });
+  assert.equal(depositTab.total, 1); assert.equal(depositTab.entries[0].kind, "deposit");
+  assert.equal(depositTab.summary.orders, 0); assert.equal(Number(depositTab.summary.depositUsd), 100.10);
+  assert.equal(depositTab.remaining, noEntries.remaining, "tabs never change the authoritative latest wallet snapshot");
+  const noDeposits = await repo.list(viewer, { ...options, kind: "deposit" });
+  assert.equal(noDeposits.total, 0); assert.equal(Number(noDeposits.summary.depositUsd), 0);
+  await db.exec(`UPDATE gamedb_coda_ledger SET details=details || '{"saleThb":"0","costThb":"1.005"}'::jsonb WHERE order_label='MIDNIGHT-END'`);
+  const loss = await repo.list(viewer, { search: "MIDNIGHT-END", kind: "order" });
+  assert.equal(loss.total, 1); assert.equal(loss.summary.missingSales, 0);
+  assert.equal(Number(loss.summary.sale), 0); assert.equal(Number(loss.summary.cost), 1.01);
+  assert.equal(Number(loss.summary.profit), -1.01); assert.equal(loss.entries[0].figures.profit, "-1.01");
+  await assert.rejects(repo.list(viewer, { kind: "invalid" }), { status: 400 });
   console.log("PASS: setup, fixed boundary, replay, late completion, exact cents, deposit retry, audit, search running balances, permissions, source deletion, rollback, negative balance");
 } finally { await db.close(); }

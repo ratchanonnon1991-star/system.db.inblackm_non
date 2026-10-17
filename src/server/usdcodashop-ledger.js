@@ -6,6 +6,7 @@ import { sheetFigures } from "@/lib/usdcodashop-sheet";
 import { retainSaleQuote, stableMetadata } from "@/lib/usdcodashop-sale-conversion";
 import { prepareCodaSales } from "@/server/usdcodashop-sale-rates";
 import { codaDateBounds, CODA_EXPORT_LIMIT } from "@/lib/usdcodashop-report";
+import { codaEntryKind } from "@/lib/usdcodashop-overview";
 
 const schemas = new WeakMap();
 export async function ensureCodaLedger(pool) {
@@ -66,9 +67,10 @@ export function createCodaLedger(pool, source = createCodaSource(), { prepareSal
   };
   const actorLabel = (actor) => actor.displayName || actor.username || `User #${actor.id}`;
   return {
-    async list(actor, { search = "", page = 1, dateFrom = "", dateTo = "", exportAll = false } = {}) {
+    async list(actor, { search = "", page = 1, dateFrom = "", dateTo = "", exportAll = false, kind = "all" } = {}) {
       guard(actor); await ensureCodaLedger(pool);
       const bounds = codaDateBounds({ dateFrom, dateTo });
+      const entryKind = codaEntryKind(kind);
       const term = String(search ?? "").trim().slice(0, 200);
       const pageNumber = Math.max(1, Math.min(100000, Number.parseInt(page, 10) || 1));
       // One SQL snapshot keeps totals and running balances consistent during concurrent syncs.
@@ -86,17 +88,41 @@ export function createCodaLedger(pool, source = createCodaSource(), { prepareSal
         ), filtered AS (SELECT * FROM ordered WHERE ($1='' OR
           strpos(lower(concat_ws(' ',order_label,details->>'game',details->>'pack',details->>'operator',details->>'invoice',details->>'customer',details->>'playerId',details->>'note')),lower($1))>0)
           AND ($3::timestamptz IS NULL OR occurred_at >= $3::timestamptz)
-          AND ($4::timestamptz IS NULL OR occurred_at < $4::timestamptz))
+          AND ($4::timestamptz IS NULL OR occurred_at < $4::timestamptz)
+          AND ($6::text='all' OR kind=$6::text)), figures AS (
+          SELECT *,
+            CASE WHEN btrim(details->>'saleThb') ~ '^[0-9]{1,12}([.][0-9]{1,20})?$'
+              THEN round(btrim(details->>'saleThb')::numeric,2) END AS sale_thb,
+            CASE WHEN btrim(details->>'costThb') ~ '^[0-9]{1,12}([.][0-9]{1,20})?$'
+              THEN round(btrim(details->>'costThb')::numeric,2) END AS cost_thb
+          FROM filtered
+        )
         SELECT w.*,
           COALESCE((SELECT SUM(amount) FROM ordered WHERE kind='deposit'),0)::text AS deposits,
           COALESCE((SELECT SUM(amount) FROM ordered WHERE kind='order'),0)::text AS used,
           (SELECT COUNT(*)::int FROM filtered) AS total,
+          (SELECT jsonb_build_object(
+            'orders',COUNT(*) FILTER(WHERE kind='order'),
+            'deposits',COUNT(*) FILTER(WHERE kind='deposit'),
+            'sale',CASE WHEN COUNT(*) FILTER(WHERE kind='order' AND sale_thb IS NULL)=0
+              THEN COALESCE(SUM(sale_thb) FILTER(WHERE kind='order'),0)::text END,
+            'cost',CASE WHEN COUNT(*) FILTER(WHERE kind='order' AND cost_thb IS NULL)=0
+              THEN COALESCE(SUM(cost_thb) FILTER(WHERE kind='order'),0)::text END,
+            'profit',CASE WHEN COUNT(*) FILTER(WHERE kind='order' AND (sale_thb IS NULL OR cost_thb IS NULL))=0
+              THEN COALESCE(SUM(sale_thb-cost_thb) FILTER(WHERE kind='order'),0)::text END,
+            'missingSales',COUNT(*) FILTER(WHERE kind='order' AND sale_thb IS NULL),
+            'missingCosts',COUNT(*) FILTER(WHERE kind='order' AND cost_thb IS NULL),
+            'duplicateOrders',COUNT(*) FILTER(WHERE kind='order' AND order_occurrences>1),
+            'duplicateTransactions',COUNT(*) FILTER(WHERE kind='order' AND transaction_duplicate),
+            'depositUsd',COALESCE(SUM(amount) FILTER(WHERE kind='deposit'),0)::text,
+            'usedUsd',COALESCE(SUM(amount) FILTER(WHERE kind='order'),0)::text
+          ) FROM figures) AS summary,
           COALESCE((SELECT jsonb_agg(to_jsonb(x) ORDER BY x.occurred_at DESC,x.id DESC) FROM
             (SELECT * FROM filtered ORDER BY occurred_at DESC,id DESC LIMIT $5 OFFSET $2) x),'[]'::jsonb) AS entries
         , (SELECT row_to_json(s) FROM gamedb_coda_sync_status s WHERE s.id=1) AS auto_sync
         , (SELECT jsonb_build_object('balance',details->>'providerBalance','orderId',order_label,'occurredAt',occurred_at)
            FROM ordered WHERE kind='order' ORDER BY occurred_at DESC,source_id DESC LIMIT 1) AS latest_provider
-        FROM gamedb_coda_wallet w WHERE w.id=1`, [term, exportAll ? 0 : (pageNumber - 1) * 100, bounds.start, bounds.end, exportAll ? CODA_EXPORT_LIMIT + 1 : 100]);
+        FROM gamedb_coda_wallet w WHERE w.id=1`, [term, exportAll ? 0 : (pageNumber - 1) * 100, bounds.start, bounds.end, exportAll ? CODA_EXPORT_LIMIT + 1 : 100, entryKind]);
       const r = rows[0];
       if (!r) return { configured: false, canManage: canManageUsdInventory(actor), entries: [] };
       if (exportAll && r.total > CODA_EXPORT_LIMIT) throw inventoryError("Export ได้สูงสุด 50,000 รายการต่อครั้ง กรุณาลดช่วงวันที่ (ยังไม่ได้ส่งออกไฟล์)", 413);
@@ -108,7 +134,7 @@ export function createCodaLedger(pool, source = createCodaSource(), { prepareSal
         balanceAsOf: r.latest_provider?.occurredAt || null, balanceOrderId: r.latest_provider?.orderId || null,
         lastSync: r.last_sync,
         autoSync: r.auto_sync || null,
-        page: pageNumber, total: r.total,
+        page: pageNumber, total: r.total, summary: r.summary,
         entries: r.entries.map((e) => ({ id: String(e.id), kind: e.kind, orderId: e.order_label,
           amount: e.amount, balance: e.kind === "order" ? providerUsd(e.details.providerBalance) : null,
           calculatedBalance: e.balance, occurredAt: e.occurred_at, recordedAt: e.recorded_at,

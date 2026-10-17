@@ -33,5 +33,5 @@ const repo = createCodaLedger({ connect: async () => client, query: async (sql, 
   return { rows: [{ total: 50001 }] };
 } });
 await assert.rejects(repo.list({ id: 1, permissions: ["projectm.claim"] }, { exportAll: true, page: 9, dateFrom: "2026-10-17", dateTo: "2026-10-17" }), { status: 413 });
-assert.deepEqual(reportParams, ["", 0, "2026-10-16T17:00:00.000Z", "2026-10-17T17:00:00.000Z", 50001]);
+assert.deepEqual(reportParams, ["", 0, "2026-10-16T17:00:00.000Z", "2026-10-17T17:00:00.000Z", 50001, "all"]);
 console.log("passed: Thai calendar boundaries, periods, CSV escaping, BOM, formula safety, export limit and source values");
