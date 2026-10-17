@@ -3,6 +3,9 @@ import { canViewUsdInventory, canManageUsdInventory, inventoryError, usdCents, c
 import { CODA_BOUNDARY, signedUsd, normalizeCodaOrder, depositInput, providerUsd } from "@/lib/usdcodashop-ledger";
 import { createCodaSource } from "@/server/usdcodashop-source";
 import { sheetFigures } from "@/lib/usdcodashop-sheet";
+import { retainSaleQuote, stableMetadata } from "@/lib/usdcodashop-sale-conversion";
+import { prepareCodaSales } from "@/server/usdcodashop-sale-rates";
+import { codaDateBounds, CODA_EXPORT_LIMIT } from "@/lib/usdcodashop-report";
 
 const schemas = new WeakMap();
 export async function ensureCodaLedger(pool) {
@@ -46,7 +49,7 @@ export async function ensureCodaLedger(pool) {
   await schemas.get(pool);
 }
 
-export function createCodaLedger(pool, source = createCodaSource()) {
+export function createCodaLedger(pool, source = createCodaSource(), { prepareSales = prepareCodaSales } = {}) {
   const guard = (actor, write = false) => {
     if (!(write ? canManageUsdInventory(actor) : canViewUsdInventory(actor))) throw inventoryError("ไม่มีสิทธิ์จัดการบัญชี USDCodashop", 403);
   };
@@ -63,8 +66,9 @@ export function createCodaLedger(pool, source = createCodaSource()) {
   };
   const actorLabel = (actor) => actor.displayName || actor.username || `User #${actor.id}`;
   return {
-    async list(actor, { search = "", page = 1 } = {}) {
+    async list(actor, { search = "", page = 1, dateFrom = "", dateTo = "", exportAll = false } = {}) {
       guard(actor); await ensureCodaLedger(pool);
+      const bounds = codaDateBounds({ dateFrom, dateTo });
       const term = String(search ?? "").trim().slice(0, 200);
       const pageNumber = Math.max(1, Math.min(100000, Number.parseInt(page, 10) || 1));
       // One SQL snapshot keeps totals and running balances consistent during concurrent syncs.
@@ -79,20 +83,23 @@ export function createCodaLedger(pool, source = createCodaSource()) {
             w.opening + SUM(CASE WHEN kind='deposit' THEN amount ELSE -amount END)
             OVER(ORDER BY l.occurred_at,l.id ROWS UNBOUNDED PRECEDING) AS balance
           FROM gamedb_coda_ledger l CROSS JOIN gamedb_coda_wallet w
-        ), filtered AS (SELECT * FROM ordered WHERE $1='' OR
+        ), filtered AS (SELECT * FROM ordered WHERE ($1='' OR
           strpos(lower(concat_ws(' ',order_label,details->>'game',details->>'pack',details->>'operator',details->>'invoice',details->>'customer',details->>'playerId',details->>'note')),lower($1))>0)
+          AND ($3::timestamptz IS NULL OR occurred_at >= $3::timestamptz)
+          AND ($4::timestamptz IS NULL OR occurred_at < $4::timestamptz))
         SELECT w.*,
           COALESCE((SELECT SUM(amount) FROM ordered WHERE kind='deposit'),0)::text AS deposits,
           COALESCE((SELECT SUM(amount) FROM ordered WHERE kind='order'),0)::text AS used,
           (SELECT COUNT(*)::int FROM filtered) AS total,
           COALESCE((SELECT jsonb_agg(to_jsonb(x) ORDER BY x.occurred_at DESC,x.id DESC) FROM
-            (SELECT * FROM filtered ORDER BY occurred_at DESC,id DESC LIMIT 100 OFFSET $2) x),'[]'::jsonb) AS entries
+            (SELECT * FROM filtered ORDER BY occurred_at DESC,id DESC LIMIT $5 OFFSET $2) x),'[]'::jsonb) AS entries
         , (SELECT row_to_json(s) FROM gamedb_coda_sync_status s WHERE s.id=1) AS auto_sync
         , (SELECT jsonb_build_object('balance',details->>'providerBalance','orderId',order_label,'occurredAt',occurred_at)
            FROM ordered WHERE kind='order' ORDER BY occurred_at DESC,source_id DESC LIMIT 1) AS latest_provider
-        FROM gamedb_coda_wallet w WHERE w.id=1`, [term, (pageNumber - 1) * 100]);
+        FROM gamedb_coda_wallet w WHERE w.id=1`, [term, exportAll ? 0 : (pageNumber - 1) * 100, bounds.start, bounds.end, exportAll ? CODA_EXPORT_LIMIT + 1 : 100]);
       const r = rows[0];
       if (!r) return { configured: false, canManage: canManageUsdInventory(actor), entries: [] };
+      if (exportAll && r.total > CODA_EXPORT_LIMIT) throw inventoryError("Export ได้สูงสุด 50,000 รายการต่อครั้ง กรุณาลดช่วงวันที่ (ยังไม่ได้ส่งออกไฟล์)", 413);
       const opening = usdCents(r.opening); const deposits = usdCents(r.deposits); const used = usdCents(r.used);
       return { configured: true, canManage: canManageUsdInventory(actor), boundary: r.boundary_label,
         opening: centsUsd(opening), deposits: centsUsd(deposits), used: centsUsd(used),
@@ -131,7 +138,10 @@ export function createCodaLedger(pool, source = createCodaSource()) {
       if (!wallet) throw Object.assign(inventoryError("ตั้งค่ายอดยกมาก่อนซิงก์", 409), { code: "CODA_NOT_CONFIGURED" });
       const boundaryId = await source.boundary();
       if (boundaryId !== String(wallet.boundary_id)) throw inventoryError("รายการอ้างอิงต้นทางเปลี่ยน จึงหยุดซิงก์เพื่อป้องกันยอดผิด", 409);
-      const orders = (await source.orders(boundaryId)).map(normalizeCodaOrder);
+      const sourceOrders = (await source.orders(boundaryId)).map(normalizeCodaOrder);
+      const previousRows = (await pool.query("SELECT source_id,details FROM gamedb_coda_ledger WHERE kind='order'")).rows;
+      // Fetch reference rates before taking the financial write lock; rate failures do not block USD history.
+      const orders = await prepareSales(sourceOrders, previousRows);
       if (orders.some((o) => BigInt(o.sourceId) <= BigInt(boundaryId))) throw inventoryError("ต้นทางส่งรายการก่อนจุดเริ่มต้น จึงหยุดซิงก์", 409);
       return transaction(async (c) => {
         let added = 0; let balancesUpdated = 0;
@@ -143,6 +153,7 @@ export function createCodaLedger(pool, source = createCodaSource()) {
           else {
             const old = (await c.query("SELECT id,amount,details FROM gamedb_coda_ledger WHERE source_id=$1", [o.sourceId])).rows[0];
             if (!old || usdCents(old.amount) !== usdCents(o.amount)) throw inventoryError(`Order ${o.orderId}: ยอดต้นทางเปลี่ยน กรุณาตรวจสอบก่อนปรับยอด`, 409);
+            o.details = retainSaleQuote(o.details, old.details);
             if (providerUsd(old.details.providerBalance) !== o.details.providerBalance) {
               await c.query(`INSERT INTO gamedb_coda_balance_audit(entry_id,previous_balance,new_balance,actor_id,actor_label)
                 VALUES($1,$2,$3,$4,$5)`, [old.id, old.details.providerBalance ?? null, o.details.providerBalance, actor.id, actorLabel(actor)]);
@@ -152,7 +163,7 @@ export function createCodaLedger(pool, source = createCodaSource()) {
             }
             const beforeMetadata = { ...old.details }; const afterMetadata = { ...o.details };
             delete beforeMetadata.providerBalance; delete afterMetadata.providerBalance;
-            const stable = (value) => JSON.stringify(Object.keys(value).sort().map((key) => [key, value[key]]));
+            const stable = (value) => JSON.stringify(stableMetadata(value));
             if (stable(beforeMetadata) !== stable(afterMetadata)) {
               await c.query(`INSERT INTO gamedb_coda_details_audit(entry_id,before_data,after_data,actor_id,actor_label)
                 VALUES($1,$2::jsonb,$3::jsonb,$4,$5)`, [old.id, JSON.stringify(old.details), JSON.stringify(o.details), actor.id, actorLabel(actor)]);

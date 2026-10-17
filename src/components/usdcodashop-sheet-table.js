@@ -1,8 +1,8 @@
 import { orderLink, sheetFigures } from "@/lib/usdcodashop-sheet";
+import { CODA_SHEET_HEADINGS as headings } from "@/lib/usdcodashop-report";
 
 const money = (value) => value == null ? "—" : Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const cell = "border-r border-ll-hairline px-3 py-3 align-top";
-const headings = ["วันที่", "ลำดับคิว", "ยอดโอน (THB)", "ต้นทุน (THB)", "กำไร (THB)", "กำไร (%)", "USD เข้า", "USD ออก", "USD คงเหลือ", "คิวซ้ำ / ไม่ซ้ำ", "หมวดสินค้า", "ผู้เติม", "ชื่อลูกค้า", "ลิงก์", "เกม", "สิ่งที่ซื้อ", "transaction / UID", "เลขธุรกรรม", "ธุรกรรมซ้ำ / ไม่ซ้ำ", "ผู้บันทึก"];
 
 export default function UsdCodashopSheetTable({ entries, emptyMessage = "ไม่พบรายการ" }) {
   return <div className="max-h-[70vh] overflow-auto rounded-xl border border-ll-hairline bg-ll-surface-1">
@@ -15,7 +15,7 @@ export default function UsdCodashopSheetTable({ entries, emptyMessage = "ไม�
         return <tr key={row.id} className="border-t border-ll-hairline hover:bg-ll-surface-2">
           <td className={`${cell} whitespace-nowrap`}>{new Date(row.occurredAt).toLocaleDateString("en-GB", { timeZone: "Asia/Bangkok" })}<p className="mt-1 text-xs text-ll-ink-subtle">{new Date(row.occurredAt).toLocaleTimeString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" })}</p></td>
           <td className={`${cell} max-w-64 break-words font-medium`}>{row.orderId}{details.note && <p className="mt-1 text-xs font-normal text-ll-ink-subtle">{details.note}</p>}</td>
-          <td className={`${cell} tabular-nums`}>{money(figures.sale)}{!deposit && figures.sale == null && details.saleNative != null && <p className="mt-1 whitespace-nowrap text-xs text-ll-ink-subtle">{money(details.saleNative)} {details.saleCurrency || "ไม่ทราบสกุล"}<br />ยังไม่แปลงเป็น THB</p>}</td>
+          <td className={`${cell} tabular-nums`}>{money(figures.sale)}{!deposit && details.saleConversion && <details className="mt-2 text-xs text-ll-ink-subtle"><summary className="cursor-pointer whitespace-nowrap">เรทที่ใช้</summary><p className="mt-1">{details.saleNative} {details.saleCurrency} × {details.saleConversion.rate} THB</p><p className="mt-1">{details.saleConversion.source} · บันทึก {details.saleConversion.capturedAt ? new Date(details.saleConversion.capturedAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }) : "—"}</p><p className="mt-1">วันที่เรท: {details.saleConversion.rateAt ? new Date(details.saleConversion.rateAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }) : "—"}</p><p className="mt-1">เรทอ้างอิง ณ ซิงก์ครั้งแรก ไม่ใช่เรทรับเงินจริงย้อนหลัง</p></details>}{!deposit && figures.sale == null && details.saleNative != null && <p className="mt-1 whitespace-nowrap text-xs text-ll-ink-subtle">{money(details.saleNative)} {details.saleCurrency || "ไม่ทราบสกุล"}<br />รอเรทแปลงเป็น THB</p>}</td>
           <td className={`${cell} tabular-nums`}>{money(figures.cost)}</td>
           <td className={`${cell} tabular-nums`}>{money(figures.profit)}</td>
           <td className={`${cell} tabular-nums`}>{figures.margin == null ? "—" : `${figures.margin}%`}</td>

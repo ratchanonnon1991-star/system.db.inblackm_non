@@ -6,6 +6,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
+import { codaReportCsv, codaDateBounds } from "../src/lib/usdcodashop-report.js";
 const require = createRequire(import.meta.url);
 const { webpack } = require("next/dist/compiled/webpack/webpack");
 const root = process.cwd(); const output = await mkdtemp(path.join(tmpdir(), "coda-ledger-"));
@@ -45,8 +46,11 @@ try {
       if (offline) return route.fulfill({ status: 503, json: { error: "จำลองเชื่อมต่อไม่สำเร็จ" } });
       if (route.request().method() === "GET") {
         reads++;
-        const search = new URL(route.request().url()).searchParams.get("search");
-        const filtered = (search ? entries.filter((e) => e.orderId.includes(search)) : entries).map((e) => missingBalance ? { ...e, balance: null } : e);
+        const params = new URL(route.request().url()).searchParams;
+        const search = params.get("search");
+        const bounds = codaDateBounds({ dateFrom: params.get("dateFrom"), dateTo: params.get("dateTo") });
+        const filtered = entries.filter((e) => (!search || e.orderId.includes(search)) && (!bounds.start || new Date(e.occurredAt) >= new Date(bounds.start)) && (!bounds.end || new Date(e.occurredAt) < new Date(bounds.end))).map((e) => missingBalance ? { ...e, balance: null } : e);
+        if (params.get("format") === "csv") return route.fulfill({ contentType: "text/csv; charset=utf-8", body: codaReportCsv(filtered) });
         return route.fulfill({ json: { configured, canManage, autoSync, entries: filtered, boundary: "K7306171", opening: "9373.17", deposits, used: entries.length ? "3.70" : "0.00", remaining: entries.length && !missingBalance ? "9397.75" : null, calculatedRemaining: entries.length ? (9369.47 + Number(deposits)).toFixed(2) : "9373.17", balanceAsOf: entries[0]?.occurredAt || null, balanceOrderId: entries[0]?.orderId || null, total: filtered.length, lastSync: configured ? "2026-10-15T13:16:11Z" : null } });
       }
       const body = route.request().postDataJSON();
@@ -54,6 +58,9 @@ try {
       if (body.action === "sync") {
         const added = entries.length ? 0 : 1;
         entries = [{ id: "1", kind: "order", orderId: "K7306274", amount: "3.70", balance: "9397.75", calculatedBalance: "9369.47", occurredAt: "2026-10-15T13:16:11Z", details: { game: "Zepeto", pack: "7 Zems", paymentMethod: "CodashopUSD", invoice: "TX123", providerBalance: "9397.75", operator: "Bot", saleThb: "147.25", costThb: "120.398", customer: "Test buyer", playerId: "uid1", link: "https://example.com/order/1" }, recordedBy: "khong" }];
+        entries[0].details = { ...entries[0].details, saleNative: "5", saleCurrency: "USDT", saleConversion: {
+          currency: "USDT", rate: "29.45", source: "TestProvider", capturedAt: "2026-10-17T07:00:00Z", rateAt: "2026-10-17T06:00:00Z",
+        } };
         return route.fulfill({ json: { added, checked: 1 } });
       }
       if (body.action === "deposit") {
@@ -75,6 +82,10 @@ try {
     await page.getByRole("columnheader", { name: "ยอดโอน (THB)", exact: true }).waitFor();
     await page.getByRole("cell", { name: "26.85", exact: true }).waitFor();
     await page.getByRole("cell", { name: "18.23%", exact: true }).waitFor();
+    await page.getByText("เรทที่ใช้", { exact: true }).click();
+    await page.getByText("5 USDT × 29.45 THB", { exact: true }).waitFor();
+    await page.getByText("เรทอ้างอิง ณ ซิงก์ครั้งแรก ไม่ใช่เรทรับเงินจริงย้อนหลัง", { exact: true }).waitFor();
+    assert.equal(await page.getByRole("cell", { name: "3.70", exact: true }).count(), 1);
     assert.equal(await page.getByRole("link", { name: "เปิดรายการ", exact: true }).getAttribute("href"), "https://example.com/order/1");
     await page.getByRole("button", { name: "ซิงก์ Orders", exact: true }).click();
     await page.getByRole("status").filter({ hasText: "เพิ่ม 0 รายการ" }).waitFor();
@@ -93,11 +104,30 @@ try {
     assert.equal(await page.getByRole("region", { name: "สรุปยอด USD" }).getByText("9,397.75", { exact: true }).count(), 1);
     assert.equal(await page.getByRole("cell", { name: "9,397.75", exact: true }).count(), 1);
     await page.getByRole("textbox", { name: "ค้นหา Order / เกม / แพ็ก / ผู้ทำรายการ" }).fill("not-found");
-    await page.getByRole("button", { name: "ค้นหา", exact: true }).click();
-    await page.getByText("ไม่พบรายการที่ค้นหา", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "ใช้ตัวกรอง", exact: true }).click();
+    await page.getByText("ไม่พบรายการตามตัวกรอง", { exact: true }).waitFor();
     assert.equal(await page.getByRole("region", { name: "สรุปยอด USD" }).getByText("9,397.75", { exact: true }).count(), 1);
     await page.getByRole("textbox", { name: "ค้นหา Order / เกม / แพ็ก / ผู้ทำรายการ" }).fill("");
-    await page.getByRole("button", { name: "ค้นหา", exact: true }).click();
+    await page.getByRole("button", { name: "ใช้ตัวกรอง", exact: true }).click();
+    await page.getByRole("cell", { name: "K7306274", exact: true }).waitFor();
+    await page.getByLabel("กรองตาม", { exact: true }).selectOption("day");
+    await page.getByLabel("วันที่", { exact: true }).fill("2026-10-16");
+    await page.getByRole("button", { name: "ใช้ตัวกรอง", exact: true }).click();
+    await page.getByText("ไม่พบรายการตามตัวกรอง", { exact: true }).waitFor();
+    assert.equal(await page.getByRole("button", { name: "Export CSV", exact: true }).isDisabled(), true);
+    for (const [mode, label, value] of [["month", "เดือน / ปี", "2026-10"], ["year", "ปี (ค.ศ.)", "2026"]]) {
+      await page.getByLabel("กรองตาม", { exact: true }).selectOption(mode);
+      await page.getByLabel(label, { exact: true }).fill(value);
+      await page.getByRole("button", { name: "ใช้ตัวกรอง", exact: true }).click();
+      await page.getByRole("cell", { name: "K7306274", exact: true }).waitFor();
+    }
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export CSV", exact: true }).click();
+    const download = await downloadPromise;
+    assert.equal(download.suggestedFilename(), "usdcodashop-2026-01-01-2026-12-31.csv");
+    const exported = await readFile(await download.path(), "utf8");
+    assert.ok(exported.startsWith("\uFEFF")); assert.ok(exported.includes("K7306274")); assert.ok(exported.includes("9397.75"));
+    await page.getByRole("button", { name: "ล้างตัวกรอง", exact: true }).click();
     await page.getByRole("cell", { name: "K7306274", exact: true }).waitFor();
     const refresh = page.waitForResponse((r) => r.url().includes("/ledger?") && r.request().method() === "GET");
     await page.clock.fastForward(30_001); await refresh;

@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, RefreshCw, Plus } from "lucide-react";
+import { ArrowLeft, RefreshCw, Plus, Download } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { topupInventoryPath } from "@/lib/topup-inventory";
 import { CODA_BOUNDARY, CODA_OPENING } from "@/lib/usdcodashop-ledger";
 import UsdCodashopSheetTable from "@/components/usdcodashop-sheet-table";
+import { codaPeriodDates } from "@/lib/usdcodashop-report";
 
 const endpoint = "/api/projectm/usdcodashop/ledger";
 const button = "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-ll-hairline-strong bg-ll-surface-1 px-4 text-sm text-ll-ink hover:bg-ll-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ll-primary disabled:opacity-50";
@@ -19,18 +20,20 @@ export default function UsdCodashopLedger({ lang }) {
   const [error, setError] = useState(""); const [notice, setNotice] = useState("");
   const [opening, setOpening] = useState(CODA_OPENING); const [confirmed, setConfirmed] = useState(false);
   const [query, setQuery] = useState(""); const [search, setSearch] = useState(""); const [page, setPage] = useState(1);
+  const [periodMode, setPeriodMode] = useState("all"); const [periodValue, setPeriodValue] = useState(""); const [periodEnd, setPeriodEnd] = useState("");
+  const [dates, setDates] = useState({ dateFrom: "", dateTo: "" }); const [exporting, setExporting] = useState(false);
   const [deposit, setDeposit] = useState(null);
   const [observedAt, setObservedAt] = useState(null);
   const lock = useRef(false); const alive = useRef(false); const generation = useRef(0);
   const load = useCallback(async () => {
     const key = ++generation.current; setLoading(true); setError("");
     try {
-      const result = await apiJson(`${endpoint}?${new URLSearchParams({ search, page: String(page) })}`, { cache: "no-store" });
+      const result = await apiJson(`${endpoint}?${new URLSearchParams({ search, page: String(page), ...dates })}`, { cache: "no-store" });
       if (typeof result?.configured !== "boolean" || !Array.isArray(result.entries)) throw new Error("ข้อมูลไม่ครบ กรุณาโหลดใหม่");
       if (alive.current && key === generation.current) { setData(result); setObservedAt(Date.now()); }
     } catch (e) { if (alive.current && key === generation.current) setError(e.message); }
     finally { if (alive.current && key === generation.current) setLoading(false); }
-  }, [search, page]);
+  }, [search, page, dates]);
   const invalidate = useCallback(() => { generation.current++; }, []);
   useEffect(() => { alive.current = true; const timer = setTimeout(load, 0); return () => { alive.current = false; invalidate(); clearTimeout(timer); }; }, [load, invalidate]);
   useEffect(() => {
@@ -50,6 +53,31 @@ export default function UsdCodashopLedger({ lang }) {
       setDeposit(null); await load();
     } catch (e) { if (alive.current) setError(e.message); }
     finally { lock.current = false; if (alive.current) setBusy(false); }
+  }
+  function applyFilters(event) {
+    event.preventDefault();
+    try {
+      const nextDates = codaPeriodDates(periodMode, periodValue, periodEnd);
+      invalidate(); setError(""); setPage(1); setSearch(query); setDates(nextDates);
+    } catch (e) { setError(e.message); }
+  }
+  async function exportCsv() {
+    if (exporting) return;
+    setExporting(true); setError("");
+    try {
+      const response = await fetch(`${endpoint}?${new URLSearchParams({ search, ...dates, format: "csv" })}`, { cache: "no-store" });
+      if (!response.ok || !response.headers.get("content-type")?.startsWith("text/csv")) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || body?.message || "Export ไม่สำเร็จ กรุณาลองใหม่");
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement("a"); anchor.href = url;
+      anchor.download = `usdcodashop-${dates.dateFrom || "all"}-${dates.dateTo || "all"}.csv`;
+      document.body.appendChild(anchor); anchor.click(); anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      if (alive.current) setNotice("ส่งออก CSV แล้ว รวมทุกรายการตามตัวกรองที่ใช้ ไม่ใช่เฉพาะหน้าปัจจุบัน");
+    } catch (e) { if (alive.current) setError(e.message); }
+    finally { if (alive.current) setExporting(false); }
   }
   const worker = data?.autoSync;
   const workerFresh = worker && observedAt - new Date(worker.heartbeat).getTime() < 180_000;
@@ -99,11 +127,20 @@ export default function UsdCodashopLedger({ lang }) {
       </form>}
       <section className="min-w-0 space-y-4">
         <h2 className="text-xl font-semibold">ประวัติแบบชีท · หลัง {data.boundary}</h2>
-        <p className="text-sm leading-6 text-ll-ink-subtle">ยอดโอนคือยอดขายจากลูกค้า ไม่ใช่ USD เติมเข้าบัญชี · ต้นทุน THB จาก inventory_transactions · กำไร = ยอดโอน − ต้นทุน และกำไร % = กำไร ÷ ยอดโอน × 100 (ไม่ใช่อัตราคงที่ 5%) · รายการต่างสกุลที่ยังไม่มีเรทจะแสดงยอดต้นทางและเว้นกำไรไว้</p>
+        <p className="text-sm leading-6 text-ll-ink-subtle">ยอดโอนลูกค้าต่างสกุลแปลงเป็น THB ด้วยเรทอ้างอิง ณ ซิงก์ครั้งแรกและล็อกไว้กับ Order (ไม่ใช่เรทรับเงินจริงในวันขาย) กด “เรทที่ใช้” เพื่อดูรายละเอียด · ต้นทุน THB จาก inventory_transactions · กำไร = ยอดโอน − ต้นทุน และกำไร % = กำไร ÷ ยอดโอน × 100 · ไม่แปลง USD เข้า–ออกหรือ balance_after · ถ้ายังดึงเรทไม่ได้จะเว้นยอดบาทและกำไรไว้</p>
         <p className="text-sm text-ll-ink-subtle">USD เข้าแสดงเฉพาะยอดที่บันทึกยืนยันในระบบนี้ ยังไม่เชื่อม prepayment ledger อัตโนมัติ สามารถบันทึกเงินเข้าที่ตรวจสอบแล้วด้วยปุ่มด้านบน</p>
-        <form onSubmit={(e) => { e.preventDefault(); setPage(1); setSearch(query); }} className="flex flex-wrap items-end gap-3"><label className="min-w-0 flex-1 text-sm">ค้นหา Order / เกม / แพ็ก / ผู้ทำรายการ<input value={query} onChange={(e) => setQuery(e.target.value)} className={input} /></label><button disabled={busy || loading} className={button}>ค้นหา</button></form>
+        <form onSubmit={applyFilters} className="flex flex-wrap items-end gap-3">
+          <label className="min-w-0 basis-full text-sm sm:flex-1 sm:basis-64">ค้นหา Order / เกม / แพ็ก / ผู้ทำรายการ<input value={query} onChange={(e) => setQuery(e.target.value)} className={input} /></label>
+          <label className="text-sm">กรองตาม<select aria-label="กรองตาม" value={periodMode} onChange={(e) => { setPeriodMode(e.target.value); setPeriodValue(""); setPeriodEnd(""); }} className={input}><option value="all">ทุกวันที่</option><option value="day">วันที่</option><option value="month">เดือน</option><option value="year">ปี</option><option value="range">ช่วงวันที่</option></select></label>
+          {periodMode !== "all" && <label className="text-sm">{({ day: "วันที่", month: "เดือน / ปี", year: "ปี (ค.ศ.)", range: "ตั้งแต่วันที่" })[periodMode]}<input required type={periodMode === "month" ? "month" : periodMode === "year" ? "number" : "date"} min={periodMode === "year" ? "1000" : periodMode === "month" ? "1000-01" : "1000-01-01"} max={periodMode === "year" ? "9998" : periodMode === "month" ? "9998-12" : "9998-12-31"} value={periodValue} onChange={(e) => setPeriodValue(e.target.value)} className={input} /></label>}
+          {periodMode === "range" && <label className="text-sm">ถึงวันที่<input required type="date" min={periodValue || "1000-01-01"} max="9998-12-31" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} className={input} /></label>}
+          <button disabled={busy || loading || exporting} className={button}>ใช้ตัวกรอง</button>
+          <button type="button" disabled={busy || loading || exporting} onClick={() => { invalidate(); setQuery(""); setSearch(""); setPeriodMode("all"); setPeriodValue(""); setPeriodEnd(""); setDates({ dateFrom: "", dateTo: "" }); setPage(1); setError(""); }} className={button}>ล้างตัวกรอง</button>
+          <button type="button" disabled={busy || loading || exporting || !data.total || Boolean(error)} onClick={exportCsv} className={button}><Download size={16} aria-hidden />{exporting ? "กำลัง Export…" : "Export CSV"}</button>
+        </form>
+        <p className="text-xs text-ll-ink-subtle">ช่วงวันที่ที่ใช้ (เวลาไทย): {dates.dateFrom ? `${dates.dateFrom} ถึง ${dates.dateTo} (ค.ศ.)` : "ทุกวันที่"} · กดใช้ตัวกรองก่อน Export · CSV รวมทุกหน้าตามตัวกรอง สูงสุด 50,000 รายการ เปิดด้วย Excel / Google Sheets ได้ · ยอดสรุปด้านบนเป็นยอดรวมทั้งหมด ไม่ใช่ยอดเฉพาะช่วง</p>
         <p className="text-xs text-ll-ink-subtle">{data.total} รายการ · เลื่อนตารางแนวนอนเพื่อดูข้อมูลทั้งหมด · USD คงเหลือเป็นยอดบอทหลังแต่ละ Order ส่วนยอดสรุปใช้ Order ล่าสุด ไม่เปลี่ยนตามการค้นหาหรือเปลี่ยนหน้า</p>
-        <UsdCodashopSheetTable entries={data.entries} emptyMessage={search ? "ไม่พบรายการที่ค้นหา" : "ยังไม่มีประวัติ กดซิงก์ Orders เพื่อดึงรายการ"} />
+        <UsdCodashopSheetTable entries={data.entries} emptyMessage={search || dates.dateFrom ? "ไม่พบรายการตามตัวกรอง" : "ยังไม่มีประวัติ กดซิงก์ Orders เพื่อดึงรายการ"} />
         <details className="text-sm"><summary className="cursor-pointer py-2">ดูตารางตรวจสอบบัญชี / Payment method</summary><div className="overflow-x-auto rounded-xl border border-ll-hairline bg-ll-surface-1">
           <table className="w-full min-w-[1350px] text-left text-sm"><caption className="sr-only">บัญชี USDCodashop รับเข้า จ่ายออก และยอดคงเหลือจาก balance_after หน่วย USD</caption><thead className="bg-ll-surface-2"><tr>{["วันที่ (ไทย)", "Order / รายการ", "USD เข้า", "USD ออก", "USD คงเหลือ (บอท)", "เกม / แพ็ก", "ผู้ทำรายการ", "Payment method", "Transaction", "คงเหลือตามบัญชี (ตรวจสอบ)", "ผู้บันทึก"].map((v) => <th key={v} className="whitespace-nowrap px-4 py-3" scope="col">{v}</th>)}</tr></thead>
             <tbody>{data.entries.map((row) => <tr key={row.id} className="border-t border-ll-hairline"><td className="whitespace-nowrap px-4 py-3">{date(row.occurredAt)}</td><td className="max-w-64 break-words px-4 py-3"><span className="font-medium">{row.orderId}</span>{row.details.note && <p className="mt-1 text-xs text-ll-ink-subtle">{row.details.note}</p>}</td><td className="px-4 py-3 tabular-nums">{row.kind === "deposit" ? money(row.amount) : "—"}</td><td className="px-4 py-3 tabular-nums">{row.kind === "order" ? money(row.amount) : "—"}</td><td className="px-4 py-3 font-semibold tabular-nums">{money(row.balance)}</td><td className="max-w-64 break-words px-4 py-3">{row.details.game || "—"}<p className="mt-1 text-xs text-ll-ink-subtle">{row.details.pack}</p></td><td className="max-w-48 break-words px-4 py-3">{row.details.operator || row.recordedBy}</td><td className="px-4 py-3">{row.details.paymentMethod || "เติมเงิน"}</td><td className="max-w-64 break-words px-4 py-3">{row.details.invoice || "—"}</td><td className="px-4 py-3 tabular-nums">{money(row.calculatedBalance)}</td><td className="max-w-48 break-words px-4 py-3">{row.recordedBy}</td></tr>)}</tbody></table>

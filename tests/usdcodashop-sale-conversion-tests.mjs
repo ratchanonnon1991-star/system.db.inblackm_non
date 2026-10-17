@@ -1,0 +1,43 @@
+import assert from "node:assert/strict";
+import { convertSaleThb, applySaleQuote, retainSaleQuote, stableMetadata } from "../src/lib/usdcodashop-sale-conversion.js";
+import { prepareCodaSales, createCodaSaleRateLoader } from "../src/server/usdcodashop-sale-rates.js";
+let passed = 0; const check = (v) => { assert.ok(v); passed++; };
+check(convertSaleThb("36005", "0.0018441883") === "66.40");
+check(convertSaleThb("1.25", "33.43") === "41.79");
+check(convertSaleThb("0.001", "1000") === "1.00"); // no premature rounding of native amount
+check(convertSaleThb("1.005", "1") === "1.01");
+for (const rate of [null, "0", "-1", "Infinity", "NaN", "=1+2"]) check(convertSaleThb("100", rate) === null);
+check(convertSaleThb("0", "33.43") === "0.00");
+const now = () => new Date("2026-10-17T07:00:00Z");
+const quote = { currency: "IDR", rate: "0.0018441883", source: "test", rateAt: now().toISOString(), fetchedAt: now().toISOString(), capturedAt: now().toISOString() };
+const details = { saleCurrency: "IDR", saleNative: "36005", saleThb: null, providerBalance: "13390.34", costThb: "60.199" };
+const converted = applySaleQuote(details, quote);
+check(converted.saleThb === "66.40"); check(converted.providerBalance === details.providerBalance);
+check(converted.costThb === details.costThb); check(converted.saleConversion.rate === quote.rate);
+check(applySaleQuote({ ...details, saleCurrency: "THB" }, quote).saleThb === null);
+const frozen = retainSaleQuote(applySaleQuote(details, { ...quote, rate: "0.004" }), converted);
+check(frozen.saleThb === "66.40" && frozen.saleConversion.rate === quote.rate);
+check(retainSaleQuote({ ...details, saleNative: "72010" }, converted).saleThb === "132.80");
+check(retainSaleQuote({ ...details, saleNative: null }, converted).saleConversion.rate === quote.rate);
+check(JSON.stringify(stableMetadata({ x: { b: 1, a: 2 }, z: 3 })) === JSON.stringify(stableMetadata({ z: 3, x: { a: 2, b: 1 } })));
+
+let calls = 0;
+const inputs = [{ sourceId: "1", amount: "1.85", details }, { sourceId: "2", amount: "1.85", details }];
+const prepared = await prepareCodaSales(inputs, [], { now, rateLoader: async () => { calls++; return quote; } });
+check(calls === 1 && prepared[0].details.saleThb === "66.40"); check(prepared[0].amount === "1.85");
+const again = await prepareCodaSales(inputs, prepared.map((o) => ({ source_id: o.sourceId, details: o.details })), { now, rateLoader: () => { throw new Error("must reuse frozen quote"); } });
+check(again[0].details.saleThb === "66.40" && again[0].details.saleConversion.capturedAt === quote.capturedAt);
+const missing = await prepareCodaSales(inputs, [], { now, rateLoader: async () => { throw new Error("provider unavailable secret"); } });
+check(missing[0].details.saleThb === null && missing[0].amount === "1.85");
+
+let requests = 0;
+const loader = createCodaSaleRateLoader({ now, fetchRate: async (pair) => { requests++; assert.equal(pair, "IDRTHB"); return { rate: 0.0018441883, provider: "mock", providerTime: "2026-10-16T00:00:00Z" }; } });
+const quotes = await Promise.all([loader("IDR"), loader("IDR")]);
+check(requests === 1 && quotes[0].rate === quote.rate);
+check(await loader("THB") === null);
+const stale = createCodaSaleRateLoader({ now, fetchRate: async () => ({ rate: 1, providerTime: "2020-01-01" }) });
+check(await stale("USDT") === null);
+let fetchCount = 0;
+const rub = createCodaSaleRateLoader({ now, fetchImpl: async (url) => { fetchCount++; assert.equal(url, "https://api.frankfurter.dev/v2/rate/RUB/THB"); return { ok: true, json: async () => ({ rate: "0.4", date: "2026-10-16" }) }; } });
+check((await rub("RUB")).rate === "0.4" && fetchCount === 1);
+console.log(`${passed} passed`);

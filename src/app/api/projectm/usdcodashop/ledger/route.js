@@ -2,6 +2,7 @@ import { requireAdmin } from "@/server/auth";
 import { jsonOk, jsonError } from "@/lib/http";
 import { codaLedgerRepository } from "@/server/usdcodashop-ledger";
 import { inventoryError } from "@/lib/usdcodashop-inventory";
+import { codaReportCsv } from "@/lib/usdcodashop-report";
 
 async function bodyOf(request) {
   if (request.headers.get("sec-fetch-site") === "cross-site") throw inventoryError("ไม่อนุญาตคำขอข้ามเว็บไซต์", 403);
@@ -29,7 +30,17 @@ function failure(e) {
 export async function GET(request) {
   try {
     const actor = await requireAdmin(request); const url = new URL(request.url);
-    const result = await codaLedgerRepository().list(actor, { search: url.searchParams.get("search"), page: url.searchParams.get("page") });
+    const exportAll = url.searchParams.get("format") === "csv";
+    const dateFrom = url.searchParams.get("dateFrom"); const dateTo = url.searchParams.get("dateTo");
+    const result = await codaLedgerRepository().list(actor, { search: url.searchParams.get("search"), page: url.searchParams.get("page"), dateFrom, dateTo, exportAll });
+    if (exportAll) {
+      if (!result.configured) throw inventoryError("กรุณาตั้งค่าบัญชีก่อน Export", 409);
+      return new Response(codaReportCsv(result.entries), { headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="usdcodashop-${dateFrom || "all"}-${dateTo || "all"}.csv"`,
+        "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+      } });
+    }
     const response = jsonOk(result); response.headers.set("Cache-Control", "no-store"); return response;
   } catch (e) { return failure(e); }
 }

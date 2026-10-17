@@ -27,6 +27,12 @@ try {
   assert.equal(data.canManage, false); assert.equal(Number(data.entries[0].calculatedBalance), 9369.47);
   assert.equal(data.remaining, "9397.75"); assert.equal(data.entries[0].balance, "9397.75");
   assert.equal(data.balanceOrderId, "K7306274");
+  assert.equal((await repo.list(viewer, { dateFrom: "2026-10-15", dateTo: "2026-10-15" })).total, 1);
+  const outside = await repo.list(viewer, { dateFrom: "2026-10-16", dateTo: "2026-10-16" });
+  assert.equal(outside.total, 0); assert.equal(outside.remaining, "9397.75"); assert.equal(outside.used, "3.70");
+  await assert.rejects(repo.list(viewer, { dateFrom: "2026-02-30" }), { status: 400 });
+  assert.equal((await repo.list(viewer, { exportAll: true, page: 2 })).entries.length, 1);
+  await assert.rejects(repo.list({ id: 99, permissions: [] }, { exportAll: true }), { status: 403 });
   assert.equal(data.entries[0].details.providerBalance, "9397.75");
   // A late completion with a smaller source id still appears on the next full scan.
   orders.push({ ...orders[0], id: 287400, source_order_id: "LATE", amount_used: "0.10", occurred_at: "2026-10-15T13:12:00Z" });
@@ -118,5 +124,24 @@ try {
   orders.at(-1).balance_after = "9999.00";
   await assert.rejects(repo.sync(admin));
   assert.equal((await repo.list(admin)).remaining, "9324.48");
+  // Export must include every page from one snapshot, with Thai-day inclusive boundaries.
+  await db.exec(`INSERT INTO gamedb_coda_ledger(kind,source_id,order_label,amount,occurred_at,details,actor_id,actor_label)
+    SELECT 'order',900000+n,'REPORT-'||n,0.01,'2026-12-31T17:00:00Z'::timestamptz+n*interval '1 second',
+      '{"providerBalance":"9000.00","invoice":"SHARED"}'::jsonb,16,'Test'
+    FROM generate_series(1,121) n`);
+  const options = { search: "REPORT-", dateFrom: "2027-01-01", dateTo: "2027-01-01" };
+  assert.equal((await repo.list(viewer, options)).entries.length, 100);
+  assert.equal((await repo.list(viewer, { ...options, page: 2 })).entries.length, 21);
+  const fullReport = await repo.list(viewer, { ...options, page: 2, exportAll: true });
+  assert.equal(fullReport.entries.length, 121); assert.equal(fullReport.total, 121);
+  assert.equal(new Set(fullReport.entries.map((entry) => entry.id)).size, 121);
+  assert.equal(fullReport.entries[0].transactionDuplicate, true);
+  assert.equal(fullReport.entries.at(-1).balance, "9000.00");
+  assert.equal((await repo.list(viewer, { ...options, dateFrom: "2026-12-31", dateTo: "2026-12-31" })).total, 0);
+  await db.exec(`INSERT INTO gamedb_coda_ledger(kind,source_id,order_label,amount,occurred_at,details,actor_id,actor_label)
+    VALUES ('order',999000,'MIDNIGHT-START',0.01,'2026-12-31T17:00:00Z','{}',16,'Test'),
+           ('order',999001,'MIDNIGHT-END',0.01,'2027-01-01T17:00:00Z','{}',16,'Test')`);
+  const midnights = await repo.list(viewer, { search: "MIDNIGHT", dateFrom: "2027-01-01", dateTo: "2027-01-01", exportAll: true });
+  assert.deepEqual(midnights.entries.map((entry) => entry.orderId), ["MIDNIGHT-START"]);
   console.log("PASS: setup, fixed boundary, replay, late completion, exact cents, deposit retry, audit, search running balances, permissions, source deletion, rollback, negative balance");
 } finally { await db.close(); }

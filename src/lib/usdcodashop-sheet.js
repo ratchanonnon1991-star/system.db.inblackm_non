@@ -28,7 +28,7 @@ export function sheetFigures(details = {}) {
 }
 export function listingFields(row, listing = {}) {
   const source = String(row.source || row.telegram_source || "").toLowerCase();
-  const currency = ({ kaleoz: "THB", page: "THB", russia_reseller: "USDT", russia: "USDT", itemku: "IDR", playerok: "RUB" })[source] || null;
+  const currency = ({ kaleoz: "THB", page: "THB", russia_reseller: "USDT", russia: "USDT", itemku: "IDR", playerok: "RUB", "playerok-topupman": "RUB", playerok_topupman: "RUB" })[source] || null;
   // Known THB channels only. Itemku/Russia require a verified conversion rate, not today's guessed rate.
   const raw = row.sale_price;
   const listingSale = listing.listing_source === "kaleoz" ? listing.sale_amount : null;
