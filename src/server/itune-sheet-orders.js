@@ -45,7 +45,8 @@ export async function sheetPool(getPool = getReadyPool) {
       ADD COLUMN IF NOT EXISTS game TEXT, ADD COLUMN IF NOT EXISTS pack TEXT, ADD COLUMN IF NOT EXISTS player_id TEXT,
       ADD COLUMN IF NOT EXISTS note TEXT, ADD COLUMN IF NOT EXISTS created_by_username TEXT,
       ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS deleted_by_user_id INTEGER,
-      ADD COLUMN IF NOT EXISTS deleted_by_username TEXT`);
+      ADD COLUMN IF NOT EXISTS deleted_by_username TEXT, ADD COLUMN IF NOT EXISTS latest_sheet_amount NUMERIC(14,2),
+      ADD COLUMN IF NOT EXISTS restored_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS restored_by_username TEXT`);
     await pool.query(`CREATE TABLE IF NOT EXISTS projectm_itune_sheet_order_edits (
       id BIGSERIAL PRIMARY KEY, import_id BIGINT NOT NULL, entry_id INTEGER NOT NULL, old_amount NUMERIC(14,2) NOT NULL,
       new_amount NUMERIC(14,2) NOT NULL, reason TEXT, edited_by_user_id INTEGER, edited_by_username TEXT,
@@ -147,6 +148,9 @@ export async function importSheetOrder(client, order) {
         WHERE import_key=$1 AND deleted_at IS NULL
           AND (${DETAIL_COLUMNS.map((c, i) => `(${param(c, i)} IS NOT NULL AND ${param(c, i)} IS DISTINCT FROM ${c})`).join(" OR ")})`,
       [order.key, ...detailValues(order.details)]);
+      // The sheet's current amount, so a deleted order can be restored with a corrected value.
+      await client.query(`UPDATE projectm_itune_sheet_imports SET latest_sheet_amount=$2::numeric
+        WHERE import_key=$1 AND latest_sheet_amount IS DISTINCT FROM $2::numeric`, [order.key, order.amount]);
       await client.query("COMMIT"); return { status: "already" };
     }
     const entries = (await client.query(`SELECT id, email, currency, amount FROM projectm_itune_entries
@@ -247,7 +251,8 @@ export async function assertEntryAccess(pool, entryId, actor) {
 
 const ORDER_COLUMNS = `id, source, sheet_date::text AS sheet_date, order_time, order_id, channel, currency, email, entry_id,
   used_amount::text, amount_before::text, amount_after::text, cost_rate::text, cost_thb::text, sale_thb::text,
-  customer, link, game, pack, player_id, note, created_by_username, imported_at, deleted_at, deleted_by_username`;
+  customer, link, game, pack, player_id, note, created_by_username, imported_at, deleted_at, deleted_by_username,
+  latest_sheet_amount::text, restored_at, restored_by_username`;
 
 export async function entrySheetOrders(entryId, actor, getPool = getReadyPool) {
   const pool = await sheetPool(getPool);
@@ -332,6 +337,43 @@ export async function updateSheetOrderAmount(orderId, { usedAmount, reason }, ac
       amount_after=amount_before - $2::numeric WHERE id=$1`, [id, amount, costThb(amount, order.cost_rate)]);
     await client.query(`INSERT INTO projectm_itune_sheet_order_edits (import_id, entry_id, old_amount, new_amount, reason, edited_by_user_id, edited_by_username)
       VALUES ($1,$2,$3,$4,$5,$6,$7)`, [id, order.entry_id, order.used_amount, amount, field(reason, 500) || null, actor?.id ?? null, actorName(actor)]);
+    await client.query("COMMIT");
+    return { usedAmount: amount };
+  } catch (e) { await client.query("ROLLBACK").catch(() => {}); throw e; }
+  finally { client.release(); }
+}
+
+// Undo a delete, optionally with a corrected amount out (the reason it was deleted). The email is
+// deducted again; the order keeps its original cost multiplier; a changed amount is logged as an edit.
+export async function restoreSheetOrder(orderId, { usedAmount }, actor, getPool = getReadyPool) {
+  const id = String(orderId ?? "");
+  if (!/^[1-9]\d{0,17}$/.test(id)) fail("ไม่พบออเดอร์", 404);
+  const amount = sheetAmount(usedAmount);
+  if (!amount || !/^\d+(\.\d{1,2})?$/.test(String(usedAmount ?? "").trim())) fail("ยอดออกต้องเป็นตัวเลขมากกว่า 0 ทศนิยมไม่เกิน 2 ตำแหน่ง");
+  const pool = await sheetPool(getPool);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL lock_timeout = '5s'");
+    const order = (await client.query(`SELECT entry_id, order_id, used_amount::text, cost_rate::text, deleted_at
+      FROM projectm_itune_sheet_imports WHERE id=$1 FOR UPDATE`, [id])).rows[0];
+    if (!order) fail("ไม่พบออเดอร์", 404);
+    await assertEntryAccess(client, order.entry_id, actor);
+    if (!order.deleted_at) fail("ออเดอร์นี้ไม่ได้ถูกลบ", 409);
+    const entry = (await client.query("SELECT id, email, amount FROM projectm_itune_entries WHERE id=$1 FOR UPDATE", [order.entry_id])).rows[0];
+    if (!entry) fail("ไม่พบเมลนี้ (อาจถูกลบไปแล้ว)", 404);
+    const before = Number(entry.amount); const after = (Math.round(before * 100) - Math.round(Number(amount) * 100)) / 100;
+    await client.query("UPDATE projectm_itune_entries SET amount=$1, updated_at=NOW() WHERE id=$2", [after, entry.id]);
+    await client.query(`INSERT INTO projectm_itune_amount_log (entry_id, entry_email, old_amount, new_amount, changed_by_user_id, changed_by_username)
+      VALUES ($1,$2,$3,$4,$5,$6)`, [entry.id, entry.email, before, after, actor?.id ?? null,
+      `กู้คืนออเดอร์ ${order.order_id} · ${actorName(actor) || "-"}`.slice(0, 200)]);
+    await client.query(`UPDATE projectm_itune_sheet_imports SET deleted_at=NULL, deleted_by_user_id=NULL, deleted_by_username=NULL,
+      used_amount=$2, cost_thb=$3, amount_before=$4, amount_after=$5, restored_at=NOW(), restored_by_username=$6 WHERE id=$1`,
+    [id, amount, costThb(amount, order.cost_rate), amountText(before), amountText(after), actorName(actor)]);
+    if (Number(order.used_amount) !== Number(amount)) {
+      await client.query(`INSERT INTO projectm_itune_sheet_order_edits (import_id, entry_id, old_amount, new_amount, reason, edited_by_user_id, edited_by_username)
+        VALUES ($1,$2,$3,$4,$5,$6,$7)`, [id, order.entry_id, order.used_amount, amount, "กู้คืนพร้อมแก้ยอดออก", actor?.id ?? null, actorName(actor)]);
+    }
     await client.query("COMMIT");
     return { usedAmount: amount };
   } catch (e) { await client.query("ROLLBACK").catch(() => {}); throw e; }

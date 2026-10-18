@@ -65,6 +65,7 @@ const blankOrder = () => ({ orderId: "", usedAmount: "", saleThb: "", orderAt: l
 export function ItuneSheetOrderList({ entryId, currency }) {
   const [data, setData] = useState(null); const [error, setError] = useState(""); const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false); const [form, setForm] = useState(null); const [edit, setEdit] = useState(null);
+  const [restore, setRestore] = useState(null);
   const load = useCallback(async () => {
     try { setData(await apiJson(`/api/projectm/itune/${entryId}/sheet-orders`, { cache: "no-store" })); }
     catch (e) { setError(e.message); }
@@ -85,6 +86,15 @@ export function ItuneSheetOrderList({ entryId, currency }) {
       await apiJson(`/api/projectm/itune/sheet-orders/${edit.order.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ usedAmount: edit.amount, reason: edit.reason }) });
       setNotice(`แก้ยอดออก ${edit.order.order_id} เป็น ${edit.amount} แล้ว ยอดเมลปรับตามส่วนต่าง`); setEdit(null); await load();
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  }
+  async function saveRestore(event) {
+    event.preventDefault(); setBusy(true); setError(""); setNotice("");
+    try {
+      await apiJson(`/api/projectm/itune/sheet-orders/${restore.order.id}`, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "restore", usedAmount: restore.amount }) });
+      setNotice(`กู้คืนออเดอร์ ${restore.order.order_id} ยอดออก ${restore.amount} แล้ว หักยอดเมลอีกครั้ง`); setRestore(null); await load();
     } catch (e) { setError(e.message); }
     finally { setBusy(false); }
   }
@@ -138,9 +148,20 @@ export function ItuneSheetOrderList({ entryId, currency }) {
       <ul className="mt-2 space-y-1 text-xs text-ll-ink-subtle">{data.edits.map((e) => <li key={e.id}>
         {e.order_id} · {money2(e.old_amount)} → {money2(e.new_amount)} · {e.edited_by_username || "—"} เมื่อ {when(e.edited_at)}{e.reason ? ` · ${e.reason}` : ""}
       </li>)}</ul></details>}
+    {restore && <form onSubmit={saveRestore} className="space-y-3 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4">
+      <p className="font-medium">กู้คืนออเดอร์ {restore.order.order_id}</p>
+      <p className="text-xs text-ll-ink-subtle">ยอดออกตอนลบ {money2(restore.order.used_amount)} {restore.order.currency}
+        {restore.order.latest_sheet_amount != null && ` · ยอดในชีทล่าสุด ${money2(restore.order.latest_sheet_amount)}`} · หักยอดเมลอีกครั้งตามยอดที่ใส่</p>
+      <label className="block max-w-xs">ยอดออก ({restore.order.currency}) *<input required autoFocus inputMode="decimal" disabled={busy} value={restore.amount} onChange={(e) => setRestore({ ...restore, amount: e.target.value })} className={input} /></label>
+      <div className="flex gap-3"><button disabled={busy || !restore.amount} className={button}>กู้คืน</button><button type="button" disabled={busy} onClick={() => setRestore(null)} className={button}>ยกเลิก</button></div>
+    </form>}
     {data?.deleted.length > 0 && <details><summary className="cursor-pointer py-2">ประวัติการลบออเดอร์ ({data.deleted.length})</summary>
-      <ul className="mt-2 space-y-1 text-xs text-ll-ink-subtle">{data.deleted.map((o) => <li key={o.id}>
-        {itunesSourceLabel(o.source)} · {o.order_id} · {money2(o.used_amount)} {o.currency} (คืนยอดแล้ว) · ลบโดย {o.deleted_by_username || "—"} เมื่อ {when(o.deleted_at)}
+      <ul className="mt-2 space-y-2 text-xs text-ll-ink-subtle">{data.deleted.map((o) => <li key={o.id} className="flex flex-wrap items-center gap-2">
+        <span>{itunesSourceLabel(o.source)} · {o.order_id} · {money2(o.used_amount)} {o.currency} (คืนยอดแล้ว) · ลบโดย {o.deleted_by_username || "—"} เมื่อ {when(o.deleted_at)}
+          {o.latest_sheet_amount != null && Number(o.latest_sheet_amount) !== Number(o.used_amount) && ` · ในชีทตอนนี้ ${money2(o.latest_sheet_amount)}`}</span>
+        <button type="button" disabled={busy} onClick={() => { setEdit(null); setForm(null); setError(""); setNotice("");
+          setRestore({ order: o, amount: String(Number(o.latest_sheet_amount ?? o.used_amount)) }); }}
+          className="rounded-lg border border-ll-hairline-strong px-3 py-1 text-ll-ink hover:bg-ll-surface-2 disabled:opacity-50">กู้คืน</button>
       </li>)}</ul></details>}
   </section>;
 }
