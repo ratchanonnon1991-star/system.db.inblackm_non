@@ -15,6 +15,8 @@ const converted = applySaleQuote(details, quote);
 check(converted.saleThb === "66.40"); check(converted.providerBalance === details.providerBalance);
 check(converted.costThb === details.costThb); check(converted.saleConversion.rate === quote.rate);
 check(applySaleQuote({ ...details, saleCurrency: "THB" }, quote).saleThb === null);
+check(applySaleQuote({ ...details, saleNative: "72010", salePacks: 2 }, quote).saleThb === "66.40"); // FX total split per pack
+check(retainSaleQuote({ ...details, saleNative: "72010", salePacks: 2 }, converted).saleThb === "66.40");
 const frozen = retainSaleQuote(applySaleQuote(details, { ...quote, rate: "0.004" }), converted);
 check(frozen.saleThb === "66.40" && frozen.saleConversion.rate === quote.rate);
 check(retainSaleQuote({ ...details, saleNative: "72010" }, converted).saleThb === "132.80");

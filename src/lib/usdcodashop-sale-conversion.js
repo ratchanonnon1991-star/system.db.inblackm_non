@@ -1,4 +1,5 @@
 import { signedUsd } from "./usdcodashop-ledger.js";
+import { perPackCents, sheetCents } from "./usdcodashop-sheet.js";
 
 export const SALE_FX_CURRENCIES = ["IDR", "USDT", "RUB"];
 function decimal(value) {
@@ -16,8 +17,9 @@ export function convertSaleThb(amount, rate) {
 }
 export function applySaleQuote(details, quote) {
   if (!SALE_FX_CURRENCIES.includes(details.saleCurrency) || !quote || quote.currency !== details.saleCurrency) return details;
-  const sale = convertSaleThb(details.saleNative, quote.rate);
-  if (sale === null) return details;
+  const total = convertSaleThb(details.saleNative, quote.rate);
+  if (total === null) return details;
+  const sale = signedUsd(perPackCents(sheetCents(total), details.salePacks));
   return { ...details, saleThb: sale, saleConversion: {
     currency: quote.currency, rate: String(quote.rate), source: String(quote.source || "").slice(0, 80),
     rateAt: quote.rateAt || null, fetchedAt: quote.fetchedAt || null,

@@ -8,6 +8,12 @@ export function sheetCents(value) {
   const [whole, fraction = ""] = text.split(".");
   return BigInt(whole) * 100n + BigInt(fraction.slice(0, 2).padEnd(2, "0")) + (Number(fraction[2] || 0) >= 5 ? 1n : 0n);
 }
+// One customer payment covering N packs is split evenly so each pack's margin compares to its own cost.
+export const salePackCount = (value) => { const n = Number(value); return Number.isInteger(n) && n > 1 && n <= 100 ? n : 1; };
+export function perPackCents(cents, packs) {
+  const n = BigInt(salePackCount(packs));
+  return cents === null ? null : (cents + n / 2n) / n;
+}
 export function orderLink(value) {
   try {
     const url = new URL(value);
@@ -32,9 +38,12 @@ export function listingFields(row, listing = {}) {
   // Known THB channels only. Itemku/Russia require a verified conversion rate, not today's guessed rate.
   const raw = row.sale_price;
   const listingSale = listing.listing_source === "kaleoz" ? listing.sale_amount : null;
-  const sale = sheetCents(listingSale ?? (currency === "THB" ? raw : null));
+  const packs = salePackCount(row.pack_count);
+  const sale = perPackCents(sheetCents(listingSale ?? (currency === "THB" ? raw : null)), packs);
   return {
     saleThb: sale === null ? null : signedUsd(sale), saleNative: sheetCents(raw) === null ? null : String(raw), saleCurrency: currency,
+    // Only multi-pack orders carry the field, so single-pack details stay unchanged (no audit churn).
+    ...(packs > 1 ? { salePacks: packs } : {}),
     customer: String(listing.buyer || "").slice(0, 200), link: orderLink(listing.link),
     category: row.method === "uid" || row.method === "UID" ? "UID" : row.method === "idpass" ? "ID/Pass" : "",
     playerId: String(listing.player_id || row.player_id || "").slice(0, 200),

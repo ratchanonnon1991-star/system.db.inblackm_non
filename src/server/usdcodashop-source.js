@@ -32,6 +32,15 @@ export function createCodaSource(select = selectQuery) {
           WHERE c.id>$1 AND c.payment_method=$2 AND c.status='completed' ORDER BY c.id LIMIT 500`, [cursor, CODA_METHOD]);
         if (rows.length) {
           const keys = [...new Set(rows.map((r) => String(r.sale_order_id || r.source_order_id || r.id)))];
+          // A customer order with N packs becomes N completed Codashop rows sharing one sale price.
+          // Count across the whole table (not this page) so siblings on another page still split the sale.
+          const packs = await select(`SELECT COALESCE(NULLIF(t.order_id::text,''),NULLIF(c.source_order_id::text,''),c.id::text) AS sale_key,
+            COUNT(DISTINCT c.id)::int AS pack_count
+            FROM codashop_orders c
+            LEFT JOIN telegram_orders_dev t ON t.task_request_id=c.telegram_task_request_id
+            WHERE c.status='completed' AND (t.order_id::text=ANY($1::text[]) OR c.source_order_id::text=ANY($1::text[]))
+            GROUP BY 1`, [keys]);
+          const packCount = new Map(packs.map((p) => [String(p.sale_key), Number(p.pack_count)]));
           // Batch only approved fields, never passwords/raw payloads or receipt URLs.
           const listings = await select(`SELECT DISTINCT ON (order_id,source) order_id,source AS listing_source,
             payload->>'amount' AS sale_amount,payload->>'buyer' AS buyer,payload->>'link' AS link,
@@ -44,7 +53,7 @@ export function createCodaSource(select = selectQuery) {
             const matches = listings.filter((l) => String(l.order_id) === key);
             const listing = matches.find((l) => l.listing_source === String(row.source || "").toLowerCase()) || {};
             const filler = matches.find((l) => l.listing_source === "coda-worker")?.filler;
-            const fields = listingFields(row, { ...listing, filler });
+            const fields = listingFields({ ...row, pack_count: packCount.get(key) }, { ...listing, filler });
             all.push({ ...row, sheet_fields: fields });
           }
         }

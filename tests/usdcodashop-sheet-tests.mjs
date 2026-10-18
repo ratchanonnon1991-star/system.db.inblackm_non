@@ -21,16 +21,26 @@ const itemku = listingFields({ source: "itemku", sale_price: "36005" }, { listin
 check(itemku.saleThb === null && itemku.saleCurrency === "IDR" && itemku.saleNative === "36005");
 check(listingFields({ source: "russia_reseller", sale_price: "1.25" }).saleThb === null);
 check(listingFields({ source: "PAGE", sale_price: "290" }).saleThb === "290.00");
+// K7319737: one 750.50 THB transfer for 2 packs -> each pack row carries half the sale.
+const twoPacks = listingFields({ source: "kaleoz", sale_price: "750.5", pack_count: 2 }, { listing_source: "kaleoz", sale_amount: "750.5" });
+check(twoPacks.saleThb === "375.25" && twoPacks.salePacks === 2 && twoPacks.saleNative === "750.5");
+check(listingFields({ source: "PAGE", sale_price: "100", pack_count: 3 }).saleThb === "33.33");
+check(!("salePacks" in listingFields({ source: "PAGE", sale_price: "290", pack_count: 1 })));
+for (const bad of [0, -2, "x", 1.5, null]) check(listingFields({ source: "PAGE", sale_price: "290", pack_count: bad }).saleThb === "290.00");
 let queries = 0;
 const source = createCodaSource(async (sql) => {
-  queries++; if (sql.includes("FROM sheet_jobs")) return [
+  queries++;
+  if (sql.includes("pack_count")) return [{ sale_key: "K1", pack_count: 1 }, { sale_key: "K2", pack_count: 2 }];
+  if (sql.includes("FROM sheet_jobs")) return [
     { order_id: "K1", listing_source: "kaleoz", sale_amount: "17.10", buyer: "customer", link: "https://example.com/order/1", player_id: "uid1" },
     { order_id: "K1", listing_source: "coda-worker", filler: "BoT AtOM" },
   ];
-  return [{ id: 1, source_order_id: "K1", source: "kaleoz", sale_price: "17.10", player_id: "uid1", method: "UID" }];
+  return [{ id: 1, source_order_id: "K1", source: "kaleoz", sale_price: "17.10", player_id: "uid1", method: "UID" },
+    { id: 2, source_order_id: "K2", source: "PAGE", sale_price: "750.50" }, { id: 3, source_order_id: "K2", source: "PAGE", sale_price: "750.50" }];
 });
 const rows = await source.orders("0");
-check(queries === 2); check(rows[0].sheet_fields.saleThb === "17.10");
+check(queries === 3); check(rows[0].sheet_fields.saleThb === "17.10" && !("salePacks" in rows[0].sheet_fields));
+check(rows[1].sheet_fields.saleThb === "375.25" && rows[2].sheet_fields.saleThb === "375.25" && rows[2].sheet_fields.salePacks === 2);
 check(rows[0].sheet_fields.customer === "customer" && rows[0].sheet_fields.playerId === "uid1");
 check(rows[0].sheet_fields.sheetOperator === "BoT AtOM" && rows[0].sheet_fields.category === "UID");
 console.log(`${passed} passed`);

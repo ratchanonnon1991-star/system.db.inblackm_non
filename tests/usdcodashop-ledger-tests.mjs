@@ -23,12 +23,12 @@ for (const change of [{ requestId: "bad" }, { amount: "0" }, { amount: "-2" }, {
 const calls = []; let page = 0;
 const source = createCodaSource(async (sql, params) => {
   calls.push({ sql, params });
-  if (sql.includes("DISTINCT ON")) return [];
+  if (sql.includes("DISTINCT ON") || sql.includes("pack_count")) return [];
   if (sql.includes("SELECT DISTINCT")) return [{ id: 287399 }];
   page++; return page === 1 ? Array.from({ length: 500 }, (_, i) => ({ id: 287400 + i })) : [{ id: 288001 }];
 });
 check(await source.boundary() === "287399"); check((await source.orders("287399")).length === 501);
-check(calls[3].params[0] === "287899"); check(calls.every((c) => c.sql.trim().startsWith("SELECT")));
+check(calls[4].params[0] === "287899"); check(calls.every((c) => c.sql.trim().startsWith("SELECT")));
 check(calls[1].sql.includes("c.id>$1") && calls[1].params[1] === "CodashopUSD");
 for (const rows of [[], [{ id: 1 }, { id: 2 }]]) { await assert.rejects(createCodaSource(async () => rows).boundary(), { status: 409 }); passed++; }
 const repo = createCodaLedger({ connect() { throw new Error("must not connect"); } }, source);
