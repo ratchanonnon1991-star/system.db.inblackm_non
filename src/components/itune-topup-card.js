@@ -17,6 +17,7 @@ import ItuneAmountLogImage from "@/components/itune-amount-log-image";
 import ItunePasswordValue from "@/components/itune-password-value";
 import ItuneOrderHistory from "@/components/itune-order-history";
 import { ItuneBalancePhotos, ItuneSheetOrderList } from "@/components/itune-entry-sheet-panel";
+import { isOrderAmountLog } from "@/lib/itune-sheet-orders";
 
 // Same tone→class mapping as itune-admin-table.js's StatusBadge — kept as a
 // small local copy (see itune-issue-history.js for the same convention)
@@ -190,7 +191,7 @@ export default function ItuneTopupCard({ entry, now, releaseThreshold, onRelease
       apiJson(`/api/projectm/itune/${entry.id}/amount-log`, {
         fallbackError: "โหลดประวัติยอดไม่สำเร็จ",
       })
-        .then((data) => setAmountLog(data.logs || []))
+        .then((data) => setAmountLog((data.logs || []).filter((log) => !isOrderAmountLog(log))))
         .catch(() => setAmountLog([]))
         .finally(() => setLoadingLog(false));
     }

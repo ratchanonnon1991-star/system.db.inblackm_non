@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, createVerify } from "node:crypto";
-import { columnIndex, sheetDate, dailyFileDate, itunesCurrency, sheetAmount, extractItunesRows, daysToRead, costThb } from "../src/lib/itune-sheet-orders.js";
+import { isOrderAmountLog, columnIndex, sheetDate, dailyFileDate, itunesCurrency, sheetAmount, extractItunesRows, daysToRead, costThb } from "../src/lib/itune-sheet-orders.js";
 import { readSheetOrders, importSheetOrder, thaiToday, assertEntryAccess } from "../src/server/itune-sheet-orders.js";
 import { signServiceAccountJwt } from "../src/server/google-sheets.js";
 let passed = 0; const check = (v, m) => { assert.ok(v, m); passed++; };
@@ -130,4 +130,6 @@ check(await assertEntryAccess(holderPool(true), 9, { id: 5, permissions: ["proje
 await assert.rejects(assertEntryAccess(holderPool(true), 9, { id: 6, permissions: ["projectm.claim"] }), { status: 403 }); passed++;
 await assert.rejects(assertEntryAccess(holderPool(true), 9, { id: 5, permissions: [] }), { status: 403 }); passed++;
 await assert.rejects(assertEntryAccess(holderPool(true), "x", { id: 1, permissions: ["projectm.admin"] }), { status: 404 }); passed++;
+check(isOrderAmountLog({ changedByUsername: "ชีท Order Russia · 29886542" }) && isOrderAmountLog({ changedByUsername: "ลบออเดอร์ M1 คืนยอด · a" })
+  && !isOrderAmountLog({ changedByUsername: "somchai" }) && !isOrderAmountLog({}));
 console.log(`${passed} passed`);

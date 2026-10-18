@@ -108,3 +108,9 @@ export function costThb(amount, rate) {
   const cents = (a.units * r.units * 100n + den / 2n) / den;
   return `${cents / 100n}.${String(cents % 100n).padStart(2, "0")}`;
 }
+
+// Amount-log rows written by sheet imports, manual adds and order deletes. The orders table already
+// shows these, so the topup card's balance history leaves them out (they stay in the database).
+export function isOrderAmountLog(log) {
+  return /^(ชีท |เพิ่มเองโดย |ลบออเดอร์ )/.test(String(log?.changedByUsername || ""));
+}
