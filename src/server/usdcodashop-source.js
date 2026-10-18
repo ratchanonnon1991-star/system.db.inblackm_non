@@ -3,6 +3,35 @@ import { CODA_BOUNDARY, CODA_METHOD } from "@/lib/usdcodashop-ledger";
 import { inventoryError } from "@/lib/usdcodashop-inventory";
 import { listingFields } from "@/lib/usdcodashop-sheet";
 
+// Shared by every completed codashop_orders reader: sale fields from sheet_jobs plus the pack split.
+export async function attachSheetFields(select, rows) {
+  if (!rows.length) return [];
+  const keys = [...new Set(rows.map((r) => String(r.sale_order_id || r.source_order_id || r.id)))];
+  // A customer order with N packs becomes N completed Codashop rows sharing one sale price.
+  // Count across the whole table (not this page) so siblings on another page still split the sale.
+  const packs = await select(`SELECT COALESCE(NULLIF(t.order_id::text,''),NULLIF(c.source_order_id::text,''),c.id::text) AS sale_key,
+    COUNT(DISTINCT c.id)::int AS pack_count
+    FROM codashop_orders c
+    LEFT JOIN telegram_orders_dev t ON t.task_request_id=c.telegram_task_request_id
+    WHERE c.status='completed' AND (t.order_id::text=ANY($1::text[]) OR c.source_order_id::text=ANY($1::text[]))
+    GROUP BY 1`, [keys]);
+  const packCount = new Map(packs.map((p) => [String(p.sale_key), Number(p.pack_count)]));
+  // Batch only approved fields, never passwords/raw payloads or receipt URLs.
+  const listings = await select(`SELECT DISTINCT ON (order_id,source) order_id,source AS listing_source,
+    payload->>'amount' AS sale_amount,payload->>'buyer' AS buyer,payload->>'link' AS link,
+    payload->>'uid' AS player_id,payload->>'filler' AS filler
+    FROM sheet_jobs WHERE order_id=ANY($1::text[]) AND target='marketplace'
+      AND source IN ('kaleoz','itemku','playerok','playerok-topupman','g2g','coda-worker')
+    ORDER BY order_id,source,created_at DESC,id DESC`, [keys]);
+  return rows.map((row) => {
+    const key = String(row.sale_order_id || row.source_order_id || row.id);
+    const matches = listings.filter((l) => String(l.order_id) === key);
+    const listing = matches.find((l) => l.listing_source === String(row.source || "").toLowerCase()) || {};
+    const filler = matches.find((l) => l.listing_source === "coda-worker")?.filler;
+    return { ...row, sheet_fields: listingFields({ ...row, pack_count: packCount.get(key) }, { ...listing, filler }) };
+  });
+}
+
 export function createCodaSource(select = selectQuery) {
   return {
     async boundary() {
@@ -30,33 +59,7 @@ export function createCodaSource(select = selectQuery) {
             MIN(cost_thb) AS cost_thb,MIN(balance_after) AS balance_after,MIN(created_at) AS occurred_at
             FROM inventory_transactions WHERE order_id=c.id) inv ON TRUE
           WHERE c.id>$1 AND c.payment_method=$2 AND c.status='completed' ORDER BY c.id LIMIT 500`, [cursor, CODA_METHOD]);
-        if (rows.length) {
-          const keys = [...new Set(rows.map((r) => String(r.sale_order_id || r.source_order_id || r.id)))];
-          // A customer order with N packs becomes N completed Codashop rows sharing one sale price.
-          // Count across the whole table (not this page) so siblings on another page still split the sale.
-          const packs = await select(`SELECT COALESCE(NULLIF(t.order_id::text,''),NULLIF(c.source_order_id::text,''),c.id::text) AS sale_key,
-            COUNT(DISTINCT c.id)::int AS pack_count
-            FROM codashop_orders c
-            LEFT JOIN telegram_orders_dev t ON t.task_request_id=c.telegram_task_request_id
-            WHERE c.status='completed' AND (t.order_id::text=ANY($1::text[]) OR c.source_order_id::text=ANY($1::text[]))
-            GROUP BY 1`, [keys]);
-          const packCount = new Map(packs.map((p) => [String(p.sale_key), Number(p.pack_count)]));
-          // Batch only approved fields, never passwords/raw payloads or receipt URLs.
-          const listings = await select(`SELECT DISTINCT ON (order_id,source) order_id,source AS listing_source,
-            payload->>'amount' AS sale_amount,payload->>'buyer' AS buyer,payload->>'link' AS link,
-            payload->>'uid' AS player_id,payload->>'filler' AS filler
-            FROM sheet_jobs WHERE order_id=ANY($1::text[]) AND target='marketplace'
-              AND source IN ('kaleoz','itemku','playerok','playerok-topupman','g2g','coda-worker')
-            ORDER BY order_id,source,created_at DESC,id DESC`, [keys]);
-          for (const row of rows) {
-            const key = String(row.sale_order_id || row.source_order_id || row.id);
-            const matches = listings.filter((l) => String(l.order_id) === key);
-            const listing = matches.find((l) => l.listing_source === String(row.source || "").toLowerCase()) || {};
-            const filler = matches.find((l) => l.listing_source === "coda-worker")?.filler;
-            const fields = listingFields({ ...row, pack_count: packCount.get(key) }, { ...listing, filler });
-            all.push({ ...row, sheet_fields: fields });
-          }
-        }
+        all.push(...await attachSheetFields(select, rows));
         if (rows.length < 500) return all;
         cursor = String(rows.at(-1).id);
       }

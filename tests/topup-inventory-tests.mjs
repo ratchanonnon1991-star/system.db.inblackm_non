@@ -42,6 +42,7 @@ check(html.includes("Moniepoint") && html.includes("USDCodashop"), "future servi
 check((html.match(/data-inventory-state="coming-soon"/g) || []).length === 1, "Moniepoint remains informational, not a broken link");
 check(!html.includes('href="/projectm/th/topup-inventory/moniepoint"'), "no broken future links");
 check(html.includes('href="/projectm/th/topup-inventory/usdcodashop"'), "USDCodashop is available");
+check(html.includes('href="/projectm/th/topup-inventory/wavepay"') && html.includes("WavePay"), "WavePay is available");
 check(hub.metadata.title === "Topup Inventory", "hub browser title");
 check(itune.metadata.title === "iTune | Topup Inventory", "child browser title");
 for (const path of ["src/app/projectm/[lang]/page.js", "src/app/projectm/[lang]/itune/page.js"]) {
