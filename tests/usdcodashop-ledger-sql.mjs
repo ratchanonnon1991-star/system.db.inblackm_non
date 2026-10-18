@@ -195,5 +195,41 @@ try {
   assert.equal(changed.entries[0].figures.cost, "31.28"); assert.equal(Number(changed.summary.cost), 31.28);
   assert.equal(changed.entries[0].amount, example.entries[0].amount); assert.equal(changed.entries[0].balance, example.entries[0].balance);
   await assert.rejects(repo.list(viewer, { kind: "invalid" }), { status: 400 });
+  // Profit filters must run before pagination, counts, summaries and CSV selection.
+  await db.exec(`INSERT INTO gamedb_coda_ledger(kind,source_id,order_label,amount,occurred_at,details,actor_id,actor_label)
+    SELECT 'order',2000000+n,'PROFIT-FILTER-'||n,1,'2028-01-01T00:00:00Z'::timestamptz+n*interval '1 second',
+      jsonb_build_object('saleThb',CASE WHEN n=123 THEN '24' WHEN n=124 THEN '34'
+        WHEN n=125 THEN '0' WHEN n=126 THEN NULL ELSE '44' END,'providerBalance','9000.00'),16,'Test'
+    FROM generate_series(1,126) n`);
+  const filterBase = { search: "PROFIT-FILTER-", kind: "all" };
+  const allProfitRows = await repo.list(viewer, { ...filterBase, exportAll: true });
+  const gain = await repo.list(viewer, { ...filterBase, profitStatus: "profit", page: 2 });
+  assert.equal(gain.total, 122); assert.equal(gain.entries.length, 22);
+  assert.equal(Number(gain.summary.profit), 1220); assert.equal(gain.summary.orders, 122);
+  assert.equal(gain.remaining, allProfitRows.remaining); assert.equal(gain.used, allProfitRows.used);
+  assert.equal(gain.entries[0].calculatedBalance, allProfitRows.entries.find(e => e.id === gain.entries[0].id)?.calculatedBalance);
+  const exact = await repo.list(viewer, { ...filterBase, profitMin: "10", profitMax: "10", exportAll: true });
+  assert.equal(exact.total, 122); assert.equal(exact.entries.length, 122);
+  assert.deepEqual(exact.summary, gain.summary);
+  assert.ok(exact.entries.every(e => e.figures.profit === "10.00"));
+  const percent = await repo.list(viewer, { ...filterBase, profitUnit: "percent", profitMin: "22.73", profitMax: "22.73", exportAll: true });
+  assert.equal(percent.total, 122); assert.ok(percent.entries.every(e => e.figures.margin === "22.73"));
+  const losses = await repo.list(viewer, { ...filterBase, profitStatus: "loss", exportAll: true });
+  assert.equal(losses.total, 2); assert.equal(Number(losses.summary.profit), -44);
+  const onlyLoss = await repo.list(viewer, { ...filterBase, profitUnit: "percent", profitMax: "-41.67", exportAll: true });
+  assert.equal(onlyLoss.total, 1); assert.equal(onlyLoss.entries[0].figures.margin, "-41.67");
+  assert.equal((await repo.list(viewer, { ...filterBase, profitStatus: "breakeven" })).total, 1);
+  assert.equal((await repo.list(viewer, { ...filterBase, profitStatus: "missing" })).total, 1);
+  assert.equal((await repo.list(viewer, { ...filterBase, profitStatus: "missing", profitUnit: "percent" })).total, 2);
+  assert.equal((await repo.list(viewer, { ...filterBase, profitMin: "0", profitMax: "0" })).total, 1);
+  assert.equal((await repo.list(viewer, { ...filterBase, profitMin: "11" })).total, 0);
+  assert.equal((await repo.list(viewer, { kind: "all", profitStatus: "profit", exportAll: true })).entries.some(e => e.kind === "deposit"), false);
+  assert.equal((await repo.list(viewer, { kind: "deposit", profitStatus: "profit" })).total, 0);
+  await assert.rejects(repo.list(viewer, { profitMin: "20", profitMax: "10" }), { status: 400 });
+  await assert.rejects(repo.list(viewer, { profitStatus: "invalid" }), { status: 400 });
+  costRate = null;
+  assert.equal((await repo.list(viewer, { ...filterBase, profitStatus: "profit" })).total, 0);
+  assert.equal((await repo.list(viewer, { ...filterBase, profitStatus: "missing" })).total, 126);
+  assert.equal((await repo.list(viewer, { ...filterBase, profitStatus: "missing" })).remaining, allProfitRows.remaining);
   console.log("PASS: setup, fixed boundary, replay, late completion, exact cents, deposit retry, audit, search running balances, permissions, source deletion, rollback, negative balance");
 } finally { await db.close(); }

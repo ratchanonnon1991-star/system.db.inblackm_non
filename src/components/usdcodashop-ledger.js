@@ -10,6 +10,7 @@ import UsdCodashopSheetTable from "@/components/usdcodashop-sheet-table";
 import UsdCodashopOverviewTable from "@/components/usdcodashop-overview-table";
 import { codaPeriodDates } from "@/lib/usdcodashop-report";
 import { codaQuickDates } from "@/lib/usdcodashop-overview";
+import { codaProfitFilter, codaProfitLabel, CODA_PROFIT_OPTIONS } from "@/lib/usdcodashop-profit-filter";
 
 const endpoint = "/api/projectm/usdcodashop/ledger";
 const button = "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-ll-hairline-strong bg-ll-surface-1 px-4 text-sm text-ll-ink hover:bg-ll-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ll-primary disabled:opacity-50";
@@ -25,19 +26,21 @@ export default function UsdCodashopLedger({ lang }) {
   const [periodMode, setPeriodMode] = useState("all"); const [periodValue, setPeriodValue] = useState(""); const [periodEnd, setPeriodEnd] = useState("");
   const [dates, setDates] = useState({ dateFrom: "", dateTo: "" }); const [exporting, setExporting] = useState(false);
   const [kind, setKind] = useState("order");
+  const [profitDraft, setProfitDraft] = useState(() => codaProfitFilter());
+  const [profitFilter, setProfitFilter] = useState(() => codaProfitFilter());
   const [deposit, setDeposit] = useState(null);
   const [observedAt, setObservedAt] = useState(null);
   const lock = useRef(false); const alive = useRef(false); const generation = useRef(0);
   const load = useCallback(async () => {
     const key = ++generation.current; setLoading(true); setError("");
     try {
-      const viewKey = new URLSearchParams({ search, page: String(page), ...dates, kind }).toString();
+      const viewKey = new URLSearchParams({ search, page: String(page), ...dates, kind, ...profitFilter }).toString();
       const result = await apiJson(`${endpoint}?${viewKey}`, { cache: "no-store" });
       if (typeof result?.configured !== "boolean" || !Array.isArray(result.entries)) throw new Error("ข้อมูลไม่ครบ กรุณาโหลดใหม่");
       if (alive.current && key === generation.current) { setData({ ...result, viewKey }); setObservedAt(Date.now()); }
     } catch (e) { if (alive.current && key === generation.current) setError(e.message); }
     finally { if (alive.current && key === generation.current) setLoading(false); }
-  }, [search, page, dates, kind]);
+  }, [search, page, dates, kind, profitFilter]);
   const invalidate = useCallback(() => { generation.current++; }, []);
   useEffect(() => { alive.current = true; const timer = setTimeout(load, 0); return () => { alive.current = false; invalidate(); clearTimeout(timer); }; }, [load, invalidate]);
   useEffect(() => {
@@ -62,7 +65,10 @@ export default function UsdCodashopLedger({ lang }) {
     event.preventDefault();
     try {
       const nextDates = codaPeriodDates(periodMode, periodValue, periodEnd);
+      const nextProfit = codaProfitFilter(profitDraft);
       invalidate(); setError(""); setPage(1); setSearch(query); setDates(nextDates);
+      setProfitFilter(nextProfit);
+      if (kind === "deposit" && (nextProfit.profitStatus !== "all" || nextProfit.profitMin || nextProfit.profitMax)) setKind("order");
     } catch (e) { setError(e.message); }
   }
   function quickFilter(preset) {
@@ -74,7 +80,7 @@ export default function UsdCodashopLedger({ lang }) {
     if (exporting) return;
     setExporting(true); setError("");
     try {
-      const response = await fetch(`${endpoint}?${new URLSearchParams({ search, ...dates, kind, format: "csv" })}`, { cache: "no-store" });
+      const response = await fetch(`${endpoint}?${new URLSearchParams({ search, ...dates, kind, ...profitFilter, format: "csv" })}`, { cache: "no-store" });
       if (!response.ok || !response.headers.get("content-type")?.startsWith("text/csv")) {
         const body = await response.json().catch(() => null);
         throw new Error(body?.error || body?.message || "Export ไม่สำเร็จ กรุณาลองใหม่");
@@ -92,7 +98,7 @@ export default function UsdCodashopLedger({ lang }) {
   const workerFresh = worker && observedAt - new Date(worker.heartbeat).getTime() < 180_000;
   const workerLabel = !worker ? "ยังไม่พบ worker" : !workerFresh ? "ไม่ได้รับสถานะเกิน 3 นาที โปรดตรวจ worker" :
     ({ ok: "ทำงานปกติ", syncing: "กำลังซิงก์", error: "ซิงก์ติดขัด", waiting: "รอยืนยันยอดยกมา", stopped: "หยุดทำงาน" }[worker.state] || "รอตรวจสอบ");
-  const historyReady = data?.viewKey === new URLSearchParams({ search, page: String(page), ...dates, kind }).toString();
+  const historyReady = data?.viewKey === new URLSearchParams({ search, page: String(page), ...dates, kind, ...profitFilter }).toString();
   const summary = historyReady ? data?.summary : null;
   const filteredLabel = dates.dateFrom ? `${dates.dateFrom} ถึง ${dates.dateTo} (ค.ศ.)` : "ทุกวันที่";
   const pending = loading || busy;
@@ -112,11 +118,16 @@ export default function UsdCodashopLedger({ lang }) {
       <label className="text-sm">กรองตาม<select aria-label="กรองตาม" value={periodMode} onChange={(e) => { setPeriodMode(e.target.value); setPeriodValue(""); setPeriodEnd(""); }} className={input}><option value="all">ทุกวันที่</option><option value="day">วันที่</option><option value="month">เดือน</option><option value="year">ปี</option><option value="range">ช่วงวันที่</option></select></label>
       {periodMode !== "all" && <label className="text-sm">{({ day: "วันที่", month: "เดือน / ปี", year: "ปี (ค.ศ.)", range: "ตั้งแต่วันที่" })[periodMode]}<input required type={periodMode === "month" ? "month" : periodMode === "year" ? "number" : "date"} min={periodMode === "year" ? "1000" : periodMode === "month" ? "1000-01" : "1000-01-01"} max={periodMode === "year" ? "9998" : periodMode === "month" ? "9998-12" : "9998-12-31"} value={periodValue} onChange={(e) => setPeriodValue(e.target.value)} className={input} /></label>}
       {periodMode === "range" && <label className="text-sm">ถึงวันที่<input required type="date" min={periodValue || "1000-01-01"} max="9998-12-31" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} className={input} /></label>}
+      <label className="text-sm">กำไร<select aria-label="กรองกำไร" value={profitDraft.profitStatus} onChange={(e) => setProfitDraft({ ...profitDraft, profitStatus: e.target.value, ...(e.target.value === "missing" ? { profitMin: "", profitMax: "" } : {}) })} className={input}>{CODA_PROFIT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <label className="text-sm">หน่วยกำไร<select aria-label="หน่วยกำไร" value={profitDraft.profitUnit} onChange={(e) => setProfitDraft({ ...profitDraft, profitUnit: e.target.value })} className={input}><option value="thb">บาท (THB)</option><option value="percent">เปอร์เซ็นต์ (%)</option></select></label>
+      <label className="min-w-0 basis-36 text-sm">กำไรต่ำสุด<input aria-label="กำไรต่ำสุด" type="number" step="0.01" value={profitDraft.profitMin} disabled={profitDraft.profitStatus === "missing"} onChange={(e) => setProfitDraft({ ...profitDraft, profitMin: e.target.value })} placeholder="ไม่จำกัด" className={input} /></label>
+      <label className="min-w-0 basis-36 text-sm">กำไรสูงสุด<input aria-label="กำไรสูงสุด" type="number" step="0.01" value={profitDraft.profitMax} disabled={profitDraft.profitStatus === "missing"} onChange={(e) => setProfitDraft({ ...profitDraft, profitMax: e.target.value })} placeholder="ไม่จำกัด" className={input} /></label>
       <button disabled={pending || exporting} className={button}>ใช้ตัวกรอง</button>
-      <button type="button" disabled={pending || exporting} onClick={() => { invalidate(); setQuery(""); setSearch(""); setPeriodMode("all"); setPeriodValue(""); setPeriodEnd(""); setDates({ dateFrom: "", dateTo: "" }); setPage(1); setError(""); }} className={button}>ล้างตัวกรอง</button>
+      <button type="button" disabled={pending || exporting} onClick={() => { invalidate(); setQuery(""); setSearch(""); setPeriodMode("all"); setPeriodValue(""); setPeriodEnd(""); setDates({ dateFrom: "", dateTo: "" }); setProfitDraft(codaProfitFilter()); setProfitFilter(codaProfitFilter()); setPage(1); setError(""); }} className={button}>ล้างตัวกรอง</button>
       <button type="button" disabled={pending || exporting || !historyReady || !data?.total || Boolean(error)} onClick={exportCsv} className={button}><Download size={16} aria-hidden />{exporting ? "กำลัง Export…" : "Export CSV"}</button>
     </form>
-    <p className="text-xs text-ll-ink-subtle">ตัวกรองที่ใช้: {filteredLabel}{search ? ` · ค้นหา: ${search}` : ""} · กดใช้ตัวกรองก่อน Export</p>
+    <p className="text-xs text-ll-ink-subtle">ตัวกรองที่ใช้: {filteredLabel}{search ? ` · ค้นหา: ${search}` : ""} · {codaProfitLabel(profitFilter)} · กดใช้ตัวกรองก่อน Export</p>
+    <p className="text-xs text-ll-ink-subtle">กำไร % = กำไร ÷ ยอดโอน × 100 · ช่วงตัวเลขรวมค่าต่ำสุดและสูงสุด · ตัวกรองกำไรใช้เฉพาะ Order และเปลี่ยนตามเรทต้นทุนล่าสุด ยอดโอนศูนย์ไม่มีเปอร์เซ็นต์กำไร</p>
   </section>;
   return <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-6 px-4 pb-14 pt-10 text-ll-ink sm:px-6">
     <header className="flex flex-wrap items-center justify-between gap-4 pr-12">
@@ -138,7 +149,7 @@ export default function UsdCodashopLedger({ lang }) {
     </section>}
     {data?.configured && <>
       {filters}
-      <div role="group" aria-label="ประเภทประวัติ" className="flex flex-wrap gap-2">{[["order", "รายการใช้เงิน"], ["deposit", "รายการเติมเงิน"], ["all", "ทั้งหมด"]].map(([value, text]) => <button key={value} aria-pressed={kind === value} disabled={pending || exporting} onClick={() => { invalidate(); setKind(value); setPage(1); }} className={`${button} ${kind === value ? "border-ll-primary ring-1 ring-ll-primary" : ""}`}>{text}</button>)}</div>
+      <div role="group" aria-label="ประเภทประวัติ" className="flex flex-wrap gap-2">{[["order", "รายการใช้เงิน"], ["deposit", "รายการเติมเงิน"], ["all", "ทั้งหมด"]].map(([value, text]) => <button key={value} aria-pressed={kind === value} disabled={pending || exporting} onClick={() => { invalidate(); setKind(value); setPage(1); if (value === "deposit") { setProfitDraft(codaProfitFilter()); setProfitFilter(codaProfitFilter()); } }} className={`${button} ${kind === value ? "border-ll-primary ring-1 ring-ll-primary" : ""}`}>{text}</button>)}</div>
       <section aria-label="สรุปยอด" aria-busy={loading} className={`grid grid-cols-2 gap-3 ${kind === "deposit" ? "" : "lg:grid-cols-4"}`}>
         {summaryCards.map(([heading, value, help]) => <div key={heading} className="min-w-0 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4"><p className="text-sm text-ll-ink-subtle">{heading}</p><p className="mt-2 break-words text-2xl font-semibold tabular-nums">{loading ? "…" : money(value)}</p><p className="mt-2 text-xs leading-5 text-ll-ink-subtle">{help}</p></div>)}
       </section>
@@ -165,7 +176,7 @@ export default function UsdCodashopLedger({ lang }) {
       <section className="min-w-0 space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-2"><h2 className="text-xl font-semibold">{kind === "deposit" ? "รายการเติมเงิน" : kind === "order" ? "รายการใช้เงิน" : "ประวัติทั้งหมด"}</h2><p className="text-xs text-ll-ink-subtle">{loading ? "กำลังโหลด…" : historyReady ? `${data.total} รายการ` : "ยังโหลดตัวกรองนี้ไม่สำเร็จ"} · กด Order เพื่อดูรายละเอียด</p></div>
         <div aria-busy={loading} className={loading ? "pointer-events-none opacity-50" : ""}>
-          <UsdCodashopOverviewTable entries={historyReady ? data.entries : []} emptyMessage={!historyReady ? loading ? "กำลังโหลดประวัติ…" : "โหลดประวัติไม่สำเร็จ กรุณาลองใหม่" : search || dates.dateFrom ? "ไม่พบรายการตามตัวกรอง" : kind === "deposit" ? "ยังไม่มีประวัติเติมเงินที่บันทึกในระบบนี้" : "ยังไม่มีประวัติ กดซิงก์ Orders เพื่อดึงรายการ"} />
+          <UsdCodashopOverviewTable entries={historyReady ? data.entries : []} emptyMessage={!historyReady ? loading ? "กำลังโหลดประวัติ…" : "โหลดประวัติไม่สำเร็จ กรุณาลองใหม่" : search || dates.dateFrom || profitFilter.profitStatus !== "all" || profitFilter.profitMin || profitFilter.profitMax ? "ไม่พบรายการตามตัวกรอง" : kind === "deposit" ? "ยังไม่มีประวัติเติมเงินที่บันทึกในระบบนี้" : "ยังไม่มีประวัติ กดซิงก์ Orders เพื่อดึงรายการ"} />
         </div>
         <nav aria-label="หน้าประวัติ" className="flex items-center justify-end gap-3 text-sm"><button disabled={busy || loading || page <= 1} onClick={() => setPage(page - 1)} className={button}>ก่อนหน้า</button><span>หน้า {page}</span><button disabled={busy || loading || page * 100 >= data.total} onClick={() => setPage(page + 1)} className={button}>ถัดไป</button></nav>
       </section>

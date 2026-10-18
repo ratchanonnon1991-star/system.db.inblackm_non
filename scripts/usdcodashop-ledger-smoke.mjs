@@ -9,6 +9,7 @@ import { chromium } from "playwright";
 import { codaReportCsv, codaDateBounds } from "../src/lib/usdcodashop-report.js";
 import { codaCurrentCostFigures } from "../src/lib/usdcodashop-cost.js";
 import { codaQuickDates } from "../src/lib/usdcodashop-overview.js";
+import { codaProfitFilter } from "../src/lib/usdcodashop-profit-filter.js";
 const require = createRequire(import.meta.url);
 const { webpack } = require("next/dist/compiled/webpack/webpack");
 const root = process.cwd(); const output = await mkdtemp(path.join(tmpdir(), "coda-ledger-"));
@@ -44,6 +45,7 @@ try {
     let configured = false; let canManage = true; let offline = false; let entries = []; let deposits = "0.00";
     let missingBalance = false;
     let currentCostRate = "32.54";
+    let exportedProfit;
     let reads = 0; let autoSync = { state: "ok", heartbeat: new Date().toISOString(), last_success: new Date().toISOString() };
     const errors = []; page.on("pageerror", (e) => errors.push(e.message));
     await page.route("**/api/projectm/usdcodashop/ledger**", async (route) => {
@@ -54,18 +56,28 @@ try {
         const search = params.get("search");
         const bounds = codaDateBounds({ dateFrom: params.get("dateFrom"), dateTo: params.get("dateTo") });
         const kind = params.get("kind") || "all";
+        const profit = codaProfitFilter(Object.fromEntries(params));
         const costQuote = kind !== "deposit" && currentCostRate ? { currency: "USD", rate: currentCostRate, source: "TestCost", rateAt: "2026-10-16T00:00:00Z", fetchedAt: "2026-10-17T08:00:00Z" } : null;
         const filtered = entries.filter((e) => (kind === "all" || e.kind === kind) && (!search || e.orderId.includes(search)) && (!bounds.start || new Date(e.occurredAt) >= new Date(bounds.start)) && (!bounds.end || new Date(e.occurredAt) < new Date(bounds.end))).map((e) => ({ ...e,
           balance: missingBalance ? null : e.balance,
           figures: codaCurrentCostFigures(e, costQuote), details: { ...e.details, costConversion: e.kind === "order" ? costQuote : null },
-        }));
+        })).filter((e) => {
+          if (profit.profitStatus === "all" && !profit.profitMin && !profit.profitMax) return true;
+          if (e.kind !== "order") return false;
+          const value = profit.profitUnit === "percent" ? e.figures.margin : e.figures.profit;
+          const n = value == null ? null : Number(value);
+          const matches = ({ all: true, profit: n != null && n > 0, loss: n != null && n < 0,
+            breakeven: n === 0, missing: n == null })[profit.profitStatus];
+          return matches && (!profit.profitMin || n != null && n >= Number(profit.profitMin))
+            && (!profit.profitMax || n != null && n <= Number(profit.profitMax));
+        });
         const orders = filtered.filter((e) => e.kind === "order");
         const figures = orders.map((e) => e.figures);
         const sum = (key) => figures.reduce((total, f) => total + Number(f[key]), 0).toFixed(2);
         const missingSales = figures.filter((f) => f.sale == null).length;
         const missingCosts = figures.filter((f) => f.cost == null).length;
         const summary = { orders: orders.length, deposits: filtered.length - orders.length, sale: missingSales ? null : sum("sale"), cost: missingCosts ? null : sum("cost"), profit: missingSales || missingCosts ? null : sum("profit"), missingSales, missingCosts, duplicateOrders: orders.filter((e) => e.orderDuplicate).length, duplicateTransactions: orders.filter((e) => e.transactionDuplicate).length, depositUsd: filtered.filter((e) => e.kind === "deposit").reduce((n, e) => n + Number(e.amount), 0).toFixed(2) };
-        if (params.get("format") === "csv") return route.fulfill({ contentType: "text/csv; charset=utf-8", body: codaReportCsv(filtered) });
+        if (params.get("format") === "csv") { exportedProfit = profit; return route.fulfill({ contentType: "text/csv; charset=utf-8", body: codaReportCsv(filtered) }); }
         return route.fulfill({ json: { configured, canManage, autoSync, costQuote, summary, entries: filtered, boundary: "K7306171", opening: "9373.17", deposits, used: entries.length ? "3.70" : "0.00", remaining: entries.length && !missingBalance ? "9397.75" : null, calculatedRemaining: entries.length ? (9369.47 + Number(deposits)).toFixed(2) : "9373.17", balanceAsOf: entries[0]?.occurredAt || null, balanceOrderId: entries[0]?.orderId || null, total: filtered.length, lastSync: configured ? "2026-10-15T13:16:11Z" : null } });
       }
       const body = route.request().postDataJSON();
@@ -181,6 +193,41 @@ try {
     await page.clock.fastForward(30_001); await refresh;
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.screenshot({ path: path.join(output, `ledger-${width}-${theme}.png`), fullPage: true });
+    await page.getByLabel("กรองกำไร", { exact: true }).selectOption("loss");
+    await page.getByRole("button", { name: "ใช้ตัวกรอง", exact: true }).click();
+    await page.getByText("ไม่พบรายการตามตัวกรอง", { exact: true }).filter({ visible: true }).waitFor();
+    assert.equal(await page.getByRole("button", { name: "Export CSV", exact: true }).isDisabled(), true);
+    await page.getByLabel("กรองกำไร", { exact: true }).selectOption("profit");
+    await page.getByLabel("กำไรต่ำสุด", { exact: true }).fill("26.85");
+    await page.getByLabel("กำไรสูงสุด", { exact: true }).fill("26.85");
+    await page.getByRole("button", { name: "ใช้ตัวกรอง", exact: true }).click();
+    await orderButton().waitFor();
+    await page.getByLabel("หน่วยกำไร", { exact: true }).selectOption("percent");
+    await page.getByLabel("กำไรต่ำสุด", { exact: true }).fill("18.23");
+    await page.getByLabel("กำไรสูงสุด", { exact: true }).fill("18.23");
+    await page.getByRole("button", { name: "ใช้ตัวกรอง", exact: true }).click();
+    await orderButton().waitFor();
+    const profitDownloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export CSV", exact: true }).click();
+    const profitCsv = await readFile(await (await profitDownloadPromise).path(), "utf8");
+    assert.ok(profitCsv.includes('"26.85","18.23"'));
+    assert.deepEqual(exportedProfit, { profitStatus: "profit", profitUnit: "percent", profitMin: "18.23", profitMax: "18.23" });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.screenshot({ path: path.join(output, `profit-filter-${width}-${theme}.png`), fullPage: true });
+    await page.getByLabel("กำไรต่ำสุด", { exact: true }).fill("20");
+    await page.getByRole("button", { name: "ใช้ตัวกรอง", exact: true }).click();
+    await page.getByRole("alert").filter({ hasText: "กำไรต่ำสุดต้องไม่เกินกำไรสูงสุด" }).waitFor();
+    await page.getByRole("button", { name: "ล้างตัวกรอง", exact: true }).click();
+    await orderButton().waitFor();
+    assert.equal(await page.getByLabel("กำไรต่ำสุด", { exact: true }).inputValue(), "");
+    await page.getByLabel("กรองกำไร", { exact: true }).selectOption("profit");
+    await page.getByRole("button", { name: "ใช้ตัวกรอง", exact: true }).click();
+    await orderButton().waitFor();
+    await page.getByRole("button", { name: "รายการเติมเงิน", exact: true }).click();
+    await page.getByRole("button", { name: "ดูรายละเอียด Order เติมเงิน", exact: true }).waitFor();
+    assert.equal(await page.getByLabel("กรองกำไร", { exact: true }).inputValue(), "all");
+    await page.getByRole("button", { name: "รายการใช้เงิน", exact: true }).click();
+    await orderButton().waitFor();
     entries[0].details.saleThb = null; entries[0].orderDuplicate = true; entries[0].transactionDuplicate = true;
     await page.getByRole("button", { name: "โหลดประวัติ", exact: true }).click();
     await page.getByRole("status").filter({ hasText: "ยอดโอนไม่ครบ 1 รายการ" }).waitFor();
