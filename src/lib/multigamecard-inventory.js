@@ -7,11 +7,18 @@ export const MGC_MAX_ORDERS = 20000;
 export const MGC_LOW_POINTS = 50000n * 100n; // Reference: ตรวจสอบMultiGame Card!H4/T4.
 export const MGC_COST_DIVISOR = "33.31534305";
 // Fixed business conversion, not FX. Divide exact point cents and round half-up to THB cents.
-export function mgcBotCost(points) {
+export function mgcCostDivisor(value) {
+  const text = String(value ?? "").trim();
+  if (!/^\d{1,8}(?:\.\d{1,8})?$/.test(text) || !/[1-9]/.test(text)) throw inventoryError("ตัวหารต้องมากกว่า 0 ไม่เกิน 8 หลัก และทศนิยมไม่เกิน 8 ตำแหน่ง");
+  const [whole, fraction = ""] = text.split(".");
+  return `${BigInt(whole)}.${fraction.padEnd(8, "0")}`;
+}
+export function mgcBotCost(points, rate = MGC_COST_DIVISOR) {
   const amount = mgcPoints(points);
   if (amount === null) return null;
-  const divisor = BigInt(MGC_COST_DIVISOR.replace(".", ""));
-  return centsUsd((usdCents(amount) * 100000000n + divisor / 2n) / divisor);
+  const divisor = BigInt(mgcCostDivisor(rate).replace(".", ""));
+  const cents = (usdCents(amount) * 100000000n + divisor / 2n) / divisor;
+  return cents > 99999999999999n ? null : centsUsd(cents);
 }
 export function mgcPoints(value) {
   if (value == null || String(value).trim() === "") return null;
@@ -63,10 +70,10 @@ export function mgcManualInput(body) {
     playerId: text(body.playerId, 200), invoice: text(body.invoice, 200), operator: text(body.operator, 160) };
   return { ...common, cardId: String(body.cardId), orderId, details };
 }
-export function mgcOrder(row) {
+export function mgcOrder(row, costDivisor = MGC_COST_DIVISOR) {
   const details = { ...(row.sheet_fields || {}), game: text(row.game_name, 200), pack: text(row.pack_name),
     operator: text(row.operator || "Bot", 160), invoice: text(row.invoice_number, 1000),
-    costThb: mgcBotCost(row.redeem_points), costDivisor: MGC_COST_DIVISOR };
+    costThb: mgcBotCost(row.redeem_points, costDivisor), costDivisor: mgcCostDivisor(costDivisor) };
   return { id: String(row.id), serial: text(row.card_serial, 80), kind: "use",
     orderId: text(row.sale_order_id || row.source_order_id || row.id, 200),
     amount: mgcPoints(row.redeem_points), balance: mgcPoints(row.remaining_points),

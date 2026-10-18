@@ -18,7 +18,7 @@ try {
       (99,'REMOVED01','OLD-CARD','Oxide','Pack','PAGE','2026-10-18T00:03:00Z','TX-OLD','{"payment":{"molGameCard":{"redeemPoints":"1000","remainingBalance":"50000"}}}',NULL,'completed','u3'),
       (100,NULL,'NO-SERIAL','Oxide','Pack','PAGE','2026-10-18T00:04:00Z','TX-NO-SERIAL','{"payment":{"molGameCard":{"redeemPoints":"1000","remainingBalance":"50000"}}}',NULL,'completed','u3');`);
   let requests = 0;
-  const repo = createMultigamecardInventory({ select: async (sql, params) => {
+  const repo = createMultigamecardInventory({ settings: () => ({ read: async () => ({ version: "0", divisor: "33.31534305" }) }), select: async (sql, params) => {
     assert.ok(sql.trim().startsWith("SELECT")); requests++;
     const { rows } = await db.query(sql, params);
     assert.ok(!JSON.stringify(rows).includes("SECRET_TEST_PIN"));

@@ -51,12 +51,26 @@ function Entries({ entries }) {
   </div>;
 }
 
+function CostRateForm({ rate, disabled, save, editing }) {
+  const [divisor, setDivisor] = useState(rate.divisor);
+  return <form onSubmit={e => { e.preventDefault(); save(divisor, rate.version); }} className="space-y-3 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4">
+    <div className="flex flex-wrap items-end gap-3"><label className="min-w-0 text-sm">เรท / ตัวหารต้นทุน Bot
+      <input required type="number" min="0.00000001" max="99999999.99999999" step="0.00000001" value={divisor} disabled={disabled}
+        onChange={e => { setDivisor(e.target.value); editing(true); }} className={input} /></label>
+      <button disabled={disabled || divisor === rate.divisor} className={button}>บันทึกเรท</button>
+      <button type="button" disabled={disabled} className={button} onClick={() => { setDivisor(rate.divisor); editing(false); }}>คืนค่าที่บันทึก</button></div>
+    <p className="text-xs text-ll-ink-subtle">ต้นทุน = ยอดแต้มออก ÷ ตัวหาร · บันทึกแล้วใช้ร่วมกันทุกคน และคำนวณต้นทุน/กำไรย้อนหลังใหม่ทั้งหมด · ไม่เปลี่ยนยอดบัตรหรือรายการ Manual</p>
+    {rate.updatedAt && <p className="text-xs text-ll-ink-subtle">บันทึกโดย {rate.updatedBy} · {when(rate.updatedAt)}</p>}
+  </form>;
+}
+
 export default function MultigamecardInventory({ lang }) {
   const [mode, setMode] = useState("bot"), [dates, setDates] = useState(() => codaQuickDates("month"));
   const [draftDates, setDraftDates] = useState(dates), [serial, setSerial] = useState("");
   const [query, setQuery] = useState(""), [search, setSearch] = useState(""), [page, setPage] = useState(1);
   const [data, setData] = useState(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
   const [notice, setNotice] = useState(""), [form, setForm] = useState(null), [busy, setBusy] = useState(false), [exporting, setExporting] = useState(false);
+  const [rateEditing, setRateEditing] = useState(false);
   const generation = useRef(0), alive = useRef(false), lock = useRef(false);
   const viewKey = new URLSearchParams({ mode, ...dates, serial, search, page: String(page) }).toString();
   const load = useCallback(async () => {
@@ -71,10 +85,10 @@ export default function MultigamecardInventory({ lang }) {
   const invalidate = useCallback(() => { generation.current++; }, []);
   useEffect(() => { alive.current = true; const timer = setTimeout(load, 0); return () => { alive.current = false; invalidate(); clearTimeout(timer); }; }, [load, invalidate]);
   useEffect(() => {
-    if (form) return;
+    if (form || rateEditing) return;
     const timer = setInterval(() => { if (!document.hidden && !lock.current) load(); }, 30_000);
     return () => clearInterval(timer);
-  }, [load, form]);
+  }, [load, form, rateEditing]);
   const ready = data?.viewKey === viewKey;
   const disabled = loading || busy || exporting;
   const cards = ready ? data.cards : [], summary = ready ? data.summary : null;
@@ -115,12 +129,23 @@ export default function MultigamecardInventory({ lang }) {
     } catch (e) { if (alive.current) setError(e.message); }
     finally { if (alive.current) setExporting(false); }
   }
+  async function saveRate(divisor, version) {
+    if (lock.current || !window.confirm("เปลี่ยนตัวหารต้นทุน Bot สำหรับทุกคน รวมรายการย้อนหลังทั้งหมดใช่ไหม?")) return;
+    lock.current = true; generation.current++; setBusy(true); setError(""); setNotice("");
+    try {
+      const result = await apiJson(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "cost-rate", divisor, version }) });
+      if (!result?.version || !result.divisor) throw new Error("ยังยืนยันเรทไม่ได้ กรุณาโหลดใหม่ก่อนบันทึกซ้ำ");
+      if (!alive.current) return;
+      setRateEditing(false); setNotice("บันทึกตัวหารต้นทุน Bot แล้ว"); await load();
+    } catch (e) { if (alive.current) setError(e.message); }
+    finally { lock.current = false; if (alive.current) setBusy(false); }
+  }
   function field(label, key, required = false, type = "text") {
     return <label key={key} className="min-w-0 text-sm">{label}<input type={type} step={type === "number" ? "0.01" : undefined} min={type === "number" ? "0" : undefined} required={required} maxLength={300} value={form[key]} onChange={e => setForm({ ...form, [key]: e.target.value })} className={input} /></label>;
   }
   return <main className="mx-auto flex min-h-screen min-w-0 max-w-7xl flex-col gap-6 px-4 pb-14 pt-10 text-ll-ink sm:px-6">
     <header className="flex flex-wrap items-start justify-between gap-4 pr-12"><div><p className="text-xs text-ll-ink-tertiary">TOPUP INVENTORY · แยกตาม SERIAL</p><h1 className="mt-2 text-3xl font-semibold">Multigamecard</h1><p className="mt-2 text-sm text-ll-ink-subtle">ยอดบัตรและรายการใช้เงิน แยก Bot / Manual · ไม่แสดงหรือเก็บ PIN บัตร</p></div><Link href={topupInventoryPath(lang)} className={button}><ArrowLeft size={16} aria-hidden />กลับ Topup Inventory</Link></header>
-    <div role="group" aria-label="ประเภท Multigamecard" className="flex gap-2">{[["bot", "Bot"], ["manual", "Manual"]].map(([value, text]) => <button key={value} aria-pressed={mode === value} disabled={disabled || Boolean(form)} onClick={() => { generation.current++; setMode(value); setSerial(""); setPage(1); setNotice(""); }} className={`${button} ${mode === value ? "border-ll-primary ring-1 ring-ll-primary" : ""}`}>{text}</button>)}</div>
+    <div role="group" aria-label="ประเภท Multigamecard" className="flex gap-2">{[["bot", "Bot"], ["manual", "Manual"]].map(([value, text]) => <button key={value} aria-pressed={mode === value} disabled={disabled || Boolean(form) || rateEditing} onClick={() => { generation.current++; setMode(value); setSerial(""); setPage(1); setNotice(""); }} className={`${button} ${mode === value ? "border-ll-primary ring-1 ring-ll-primary" : ""}`}>{text}</button>)}</div>
     <section aria-label="กรอง Multigamecard" className="space-y-4 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4">
       <div className="flex flex-wrap gap-2">{[["today", "วันนี้"], ["yesterday", "เมื่อวาน"], ["month", "เดือนนี้"]].map(([value, text]) => <button key={value} disabled={disabled || Boolean(form)} onClick={() => apply(codaQuickDates(value))} className={button}>{text}</button>)}</div>
       <form onSubmit={e => { e.preventDefault(); apply(draftDates); }} className="flex flex-wrap items-end gap-3">
@@ -135,10 +160,13 @@ export default function MultigamecardInventory({ lang }) {
     {!loading && !data && <button onClick={load} className={button}>ลองโหลดใหม่</button>}
     <section aria-label="สรุป Multigamecard" className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[["ออเดอร์ตามตัวกรอง", summary?.orders], ["ยอดโอน (THB)", summary?.sale], ["ต้นทุน (THB)", summary?.cost], ["กำไร (THB)", summary?.profit]].map(([label, v]) => <div key={label} className="min-w-0 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4"><p className="text-sm text-ll-ink-subtle">{label}</p><p className="mt-2 break-words text-2xl font-semibold tabular-nums">{loading ? "…" : label === "ออเดอร์ตามตัวกรอง" && v != null ? Number(v).toLocaleString("en-US") : money(v)}</p></div>)}</section>
     {summary && (summary.missingSales > 0 || summary.missingCosts > 0) && <p role="status" className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm">ข้อมูลไม่ครบ: ยอดโอน {summary.missingSales} รายการ · ต้นทุน {summary.missingCosts} รายการ · ยอดรวมที่พึ่งข้อมูลนี้แสดง — ไม่แทนด้วยศูนย์</p>}
-    {mode === "bot" && <p className="text-sm text-ll-ink-subtle">ต้นทุน (THB) = ยอดแต้มออก ÷ 33.31534305 · ปัดทศนิยม 2 ตำแหน่งต่อออเดอร์ · ใช้ตัวหารคงที่ ไม่ใช่เรท GoogleFinance</p>}
+    {mode === "bot" && ready && data.costRate && <>
+      <p className="text-sm text-ll-ink-subtle">ต้นทุน (THB) = ยอดแต้มออก ÷ {data.costRate.divisor} · ปัดทศนิยม 2 ตำแหน่งต่อออเดอร์ · ไม่ใช่เรท GoogleFinance</p>
+      {data.canManage && <CostRateForm key={data.costRate.version} rate={data.costRate} disabled={disabled} save={saveRate} editing={setRateEditing} />}
+    </>}
     <section className="min-w-0 space-y-3"><h2 className="text-xl font-semibold">ยอดบัตร {mode === "bot" ? "Bot" : "Manual"}</h2><p className="text-xs text-ll-ink-subtle">เลื่อนตารางซ้าย–ขวาเพื่อดูยอดทั้งหมด · กดดูประวัติเพื่อเลือก Serial</p><CardTable cards={cards} serial={serial} select={value => { if (form || disabled) return; generation.current++; setSerial(serial === value ? "" : value); setPage(1); }} />
       <p className="text-xs leading-6 text-ll-ink-subtle">หน่วยบัตรเป็นแต้ม ไม่ใช่ USD · หมดแล้ว = 0 · เศษ = มากกว่า 0 แต่น้อยกว่า 50,000 · ปกติ = ตั้งแต่ 50,000 · ยอดบัตรรวมทั้งหมดไม่ขึ้นกับช่วงวันที่หรือคำค้นหา</p>
-      {mode === "bot" ? <p className="text-xs leading-6 text-ll-ink-subtle">Bot อ่านยอดล่าสุดจากพูลบัตรเดิม และแต้มที่ใช้จากหลักฐาน molGameCard ในออเดอร์ completed · ยอดเข้าแสดง — เพราะไม่มีประวัตินำเข้าที่ตรวจสอบได้ ไม่คำนวณย้อนเดา · คงเหลือหลังแต่ละ Order เป็นภาพยอดที่บอทอ่าน ณ ตอนนั้น ไม่รับประกันว่าจะต่อกันเมื่อหลายบอทใช้บัตรพร้อมกัน · ต้นทุน THB ใช้ inventory_transactions ที่ตรงเพียงหนึ่งรายการ ถ้าไม่ครบจะแสดง — · ไม่เปลี่ยนข้อมูลหรือสั่งจ่ายที่ฐาน Bot</p> : <p className="text-xs leading-6 text-ll-ink-subtle">Manual บันทึกบัญชีเท่านั้น ไม่เติมเกมหรือโอนเงินจริง · ตอนเพิ่มบัตรกรอกยอดคงเหลือที่ยืนยันแล้วเป็นยอดยกมา จากนั้นบันทึกแต้มเข้า/ใช้แต้มตามจริง · ต้นทุนกรอกเป็น THB ไม่เดาอัตราแต้มต่อบาท · วันที่บันทึกเป็นเวลาปัจจุบัน และไม่แก้ทับประวัติเดิม</p>}
+      {mode === "bot" ? <p className="text-xs leading-6 text-ll-ink-subtle">Bot อ่านยอดล่าสุดจากพูลบัตรเดิม และแต้มที่ใช้จากหลักฐาน molGameCard ในออเดอร์ completed · ยอดเข้าแสดง — เพราะไม่มีประวัตินำเข้าที่ตรวจสอบได้ ไม่คำนวณย้อนเดา · คงเหลือหลังแต่ละ Order เป็นภาพยอดที่บอทอ่าน ณ ตอนนั้น ไม่รับประกันว่าจะต่อกันเมื่อหลายบอทใช้บัตรพร้อมกัน · ต้นทุน THB = ยอดแต้มออก ÷ ตัวหารที่บันทึก ถ้าไม่มีข้อมูลยอดออกจะแสดง — · ไม่เปลี่ยนข้อมูลหรือสั่งจ่ายที่ฐาน Bot</p> : <p className="text-xs leading-6 text-ll-ink-subtle">Manual บันทึกบัญชีเท่านั้น ไม่เติมเกมหรือโอนเงินจริง · ตอนเพิ่มบัตรกรอกยอดคงเหลือที่ยืนยันแล้วเป็นยอดยกมา จากนั้นบันทึกแต้มเข้า/ใช้แต้มตามจริง · ต้นทุนกรอกเป็น THB ไม่เดาอัตราแต้มต่อบาท · วันที่บันทึกเป็นเวลาปัจจุบัน และไม่แก้ทับประวัติเดิม</p>}
     </section>
     {mode === "manual" && ready && data.canManage && <div className="flex flex-wrap gap-2">{[["card", "เพิ่มบัตร Manual"], ["deposit", "บันทึกแต้มเข้า"], ["use", "บันทึกใช้บัตร"]].map(([action, label]) => <button key={action} onClick={() => startForm(action)} disabled={disabled || Boolean(form) || (action !== "card" && !cards.length)} className={button}><Plus size={16} aria-hidden />{label}</button>)}</div>}
     {form && <form onSubmit={save} className="space-y-4 rounded-xl border border-ll-hairline bg-ll-surface-1 p-5"><h2 className="text-lg font-semibold">{({ card: "เพิ่มบัตร Manual", deposit: "บันทึกแต้มเข้า", use: "บันทึกใช้บัตร" })[form.action]}</h2><p className="text-sm text-ll-ink-subtle">กรอกเฉพาะรายการที่เกิดขึ้นจริง ไม่รับ PIN หรือรหัสผ่าน ยอดนี้ไม่ส่งไปแก้พูล Bot</p>

@@ -24,7 +24,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const actor = await requireAdmin(request);
-    if (!canManageUsdInventory(actor)) throw inventoryError("เฉพาะ Projectm Admin จึงบันทึก Manual ได้", 403);
+    if (!canManageUsdInventory(actor)) throw inventoryError("เฉพาะ Projectm Admin จึงบันทึกข้อมูลหรือเปลี่ยนเรทได้", 403);
     if (request.headers.get("sec-fetch-site") === "cross-site") throw inventoryError("ไม่อนุญาตคำขอข้ามเว็บไซต์", 403);
     if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json") throw inventoryError("ต้องส่ง JSON");
     const reader = request.body?.getReader(); if (!reader) throw inventoryError("ไม่พบข้อมูล");

@@ -6,7 +6,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
-import { mgcCsv, mgcSummary } from "../src/lib/multigamecard-inventory.js";
+import { mgcCsv, mgcSummary, mgcBotCost } from "../src/lib/multigamecard-inventory.js";
 import { sheetFigures } from "../src/lib/usdcodashop-sheet.js";
 const require = createRequire(import.meta.url), { webpack } = require("next/dist/compiled/webpack/webpack");
 const root = process.cwd(), output = await mkdtemp(path.join(tmpdir(), "mgc-inventory-"));
@@ -38,7 +38,8 @@ try {
   for (const width of [375, 1536]) for (const theme of ["light", "dark"]) {
     const page = await browser.newPage({ viewport: { width, height: 1100 }, reducedMotion: "reduce" });
     await page.clock.install({ time: new Date("2026-10-18T08:00:00Z") });
-    let offline = false, viewer = false, posts = 0, reads = 0;
+    let offline = false, viewer = false, posts = 0, reads = 0, rateSaves = 0;
+    let costRate = { version: "0", divisor: "33.31534305", updatedBy: null, updatedAt: null };
     const errors = []; page.on("pageerror", e => errors.push(e.message));
     const manualCards = [], manualEntries = [];
     const botCards = [{ id: "BOT01", serial: "BOT01", owner: "Bot", enabled: true, inTotal: null, outTotal: "51000.00", balance: "49000.00", status: "เศษ", balanceAt: "2026-10-18T07:00:00Z" }];
@@ -52,10 +53,17 @@ try {
         const mode = p.get("mode"), source = mode === "bot" ? botEntries : manualEntries;
         const entries = source.filter(e => (!p.get("serial") || p.get("serial") === e.serial) && (!p.get("search") || e.orderId.includes(p.get("search"))));
         if (p.get("format") === "csv") return route.fulfill({ contentType: "text/csv; charset=utf-8", body: mgcCsv(entries) });
-        return route.fulfill({ json: { mode, canManage: !viewer, cards: mode === "bot" ? botCards : manualCards, entries, total: entries.length, page: 1, pageSize: 100, summary: mgcSummary(entries) } });
+        return route.fulfill({ json: { mode, costRate: mode === "bot" ? costRate : null, canManage: !viewer, cards: mode === "bot" ? botCards : manualCards, entries, total: entries.length, page: 1, pageSize: 100, summary: mgcSummary(entries) } });
       }
-      posts++;
-      const body = route.request().postDataJSON(); assert.match(body.requestId, /^[0-9a-f-]{36}$/);
+      const body = route.request().postDataJSON();
+      if (body.action === "cost-rate") {
+        assert.equal(viewer, false); assert.equal(body.version, costRate.version); rateSaves++;
+        costRate = { version: String(rateSaves), divisor: body.divisor, updatedBy: "Tester", updatedAt: "2026-10-18T08:00:00Z" };
+        botEntries[0].details.costThb = mgcBotCost(botEntries[0].amount, body.divisor);
+        botEntries[0].details.costDivisor = body.divisor; botEntries[0].figures = sheetFigures(botEntries[0].details);
+        return route.fulfill({ status: 201, json: costRate });
+      }
+      posts++; assert.match(body.requestId, /^[0-9a-f-]{36}$/);
       let card;
       if (body.action === "card") {
         assert.equal(body.serial, "MANUAL01");
@@ -72,6 +80,15 @@ try {
     await page.locator("[data-theme]").evaluate((el, value) => el.dataset.theme = value, theme);
     await page.getByText("K-BOT", { exact: true }).waitFor();
     assert.equal(posts, 0);
+    await page.getByLabel("เรท / ตัวหารต้นทุน Bot", { exact: true }).fill("25");
+    const rateReadCount = reads; await page.clock.fastForward(60001); assert.equal(reads, rateReadCount);
+    page.once("dialog", dialog => dialog.dismiss());
+    await page.getByRole("button", { name: "บันทึกเรท", exact: true }).click(); assert.equal(rateSaves, 0);
+    page.once("dialog", dialog => dialog.accept());
+    await page.getByRole("button", { name: "บันทึกเรท", exact: true }).click();
+    await page.getByText("บันทึกตัวหารต้นทุน Bot แล้ว", { exact: true }).waitFor();
+    await page.getByText("40.00", { exact: true }).first().waitFor(); assert.equal(rateSaves, 1);
+    await page.screenshot({ path: path.join(output, `cost-rate-${width}-${theme}.png`), fullPage: true });
     await page.getByRole("button", { name: "Manual", exact: true }).click();
     await page.getByRole("button", { name: "เพิ่มบัตร Manual", exact: true }).click();
     const form = page.locator("form").filter({ has: page.getByRole("heading", { name: "เพิ่มบัตร Manual", exact: true }) });
@@ -101,6 +118,7 @@ try {
     await page.getByText("ดูประวัติได้ แต่ต้องมีสิทธิ์ Projectm Admin", { exact: false }).waitFor();
     assert.equal(await page.getByRole("button", { name: "บันทึกใช้บัตร", exact: true }).count(), 0);
     await page.getByRole("button", { name: "Bot", exact: true }).click(); await page.getByText("K-BOT", { exact: true }).waitFor();
+    assert.equal(await page.getByRole("button", { name: "บันทึกเรท", exact: true }).count(), 0);
     await page.screenshot({ path: path.join(output, `bot-${width}-${theme}.png`), fullPage: true });
     offline = true;
     await page.getByRole("textbox", { name: "ค้นหา Order / Serial / เกม / ลูกค้า", exact: true }).fill("new-filter");

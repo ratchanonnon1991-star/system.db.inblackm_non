@@ -15,7 +15,7 @@ const mocks = {
       const filters = mgc.mgcFilters(query); reads++; lastOptions = options;
       return { mode: filters.mode, dateFrom: filters.dateFrom, dateTo: filters.dateTo, entries: [], cards: [] };
     },
-    save: async (body) => { writes++; mgc.mgcManualInput(body); return { id: "1" }; },
+    save: async (body) => { writes++; if (body.action === "cost-rate") return { divisor: mgc.mgcCostDivisor(body.divisor), version: "1" }; mgc.mgcManualInput(body); return { id: "1" }; },
   }) },
 };
 const source = readFileSync(new URL("../src/app/api/projectm/multigamecard/route.js", import.meta.url), "utf8");
@@ -40,4 +40,10 @@ assert.equal((await post('"' + "x".repeat(8192) + '"')).status, 413);
 assert.equal(writes, 0);
 response = await post(JSON.stringify(body)); assert.equal(response.status, 201); assert.equal(writes, 1);
 assert.equal((await response.json()).id, "1");
+response = await post(JSON.stringify({ action: "cost-rate", divisor: "25", version: "0" }));
+assert.equal(response.status, 201); assert.equal((await response.json()).divisor, "25.00000000");
+actor.permissions = ["projectm.claim"];
+const beforeDenied = writes;
+assert.equal((await post(JSON.stringify({ action: "cost-rate", divisor: "25", version: "0" }))).status, 403);
+assert.equal(writes, beforeDenied);
 console.log("passed: MGC API authentication, scoped writes, cross-site denial, JSON/body size, CSV no-store and no pre-validation writes");

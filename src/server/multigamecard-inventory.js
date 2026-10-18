@@ -1,6 +1,7 @@
 import { selectQuery } from "@/lib/profit-remote-db";
 import { canViewUsdInventory, canManageUsdInventory, inventoryError } from "@/lib/usdcodashop-inventory";
 import { mgcManual } from "@/server/multigamecard-manual";
+import { mgcCostSettings } from "@/server/multigamecard-cost-settings";
 import { attachSheetFields } from "@/server/usdcodashop-source";
 import { prepareCodaSales } from "@/server/usdcodashop-sale-rates";
 import { mgcFilters, mgcPoints, mgcStatus, mgcOrder, mgcMatches, mgcSummary, MGC_PAGE_SIZE, MGC_MAX_ORDERS } from "@/lib/multigamecard-inventory";
@@ -11,8 +12,8 @@ const belongs = `c.phone_number=ANY($1::text[])`;
 const rawPoints = `btrim(c.provider_response->'payment'->'molGameCard'->>'redeemPoints')`;
 const numericPoints = `replace(${rawPoints},',','')`;
 const validPoints = `${rawPoints} ~ '^([0-9]{1,12}|[0-9]{1,3}(,[0-9]{3}){1,3})([.][0-9]{1,2})?$'`;
-export function createMultigamecardInventory({ select = selectQuery, manual = mgcManual, prepareSales = prepareCodaSales } = {}) {
-  async function bot(filters) {
+export function createMultigamecardInventory({ select = selectQuery, manual = mgcManual, settings = mgcCostSettings, prepareSales = prepareCodaSales } = {}) {
+  async function bot(filters, costDivisor) {
     // Allowlist inside PostgreSQL: cardPin and other redeemable secrets never leave the source DB.
     const poolCards = await select(`SELECT card->>'cardSerial' AS serial,card->>'balance' AS balance,
       card->>'enabled' AS enabled,card->>'balanceUpdatedAt' AS balance_at
@@ -48,7 +49,7 @@ export function createMultigamecardInventory({ select = selectQuery, manual = mg
     const prepared = await prepareSales(enriched.map(row => ({ sourceId: String(row.id), row, details: row.sheet_fields })), []);
     const counts = new Map();
     for (const c of poolCards) if (c.serial) counts.set(c.serial, (counts.get(c.serial) || 0) + 1);
-    return { entries: prepared.map(p => mgcOrder({ ...p.row, sheet_fields: p.details })),
+    return { entries: prepared.map(p => mgcOrder({ ...p.row, sheet_fields: p.details }, costDivisor)),
       cards: serials.map(serial => {
         const source = poolCards.find(c => c.serial === serial), duplicate = (counts.get(serial) || 0) > 1;
         const usage = totals.find(t => t.serial === serial);
@@ -63,15 +64,16 @@ export function createMultigamecardInventory({ select = selectQuery, manual = mg
     async list(actor, query = {}, { exportAll = false } = {}) {
       if (!canViewUsdInventory(actor)) throw inventoryError("ไม่มีสิทธิ์ดู Multigamecard", 403);
       const filters = mgcFilters(query);
-      const result = filters.mode === "bot" ? await bot(filters) : await manual().read(actor, filters);
+      const costRate = filters.mode === "bot" ? await settings().read(actor) : null;
+      const result = filters.mode === "bot" ? await bot(filters, costRate.divisor) : await manual().read(actor, filters);
       const matched = result.entries.filter(e => mgcMatches(e, filters))
         .sort((a, b) => String(b.occurredAt || "").localeCompare(String(a.occurredAt || "")) || Number(b.id) - Number(a.id));
       const offset = (filters.page - 1) * MGC_PAGE_SIZE;
       return { mode: filters.mode, canManage: canManageUsdInventory(actor), dateFrom: filters.dateFrom, dateTo: filters.dateTo,
-        cards: result.cards, summary: mgcSummary(matched), total: matched.length, page: filters.page, pageSize: MGC_PAGE_SIZE,
+        cards: result.cards, costRate, summary: mgcSummary(matched), total: matched.length, page: filters.page, pageSize: MGC_PAGE_SIZE,
         entries: exportAll ? matched : matched.slice(offset, offset + MGC_PAGE_SIZE), observedAt: new Date().toISOString() };
     },
-    save: (body, actor) => manual().save(body, actor),
+    save: (body, actor) => body?.action === "cost-rate" ? settings().save(body, actor) : manual().save(body, actor),
   };
 }
 let repo;

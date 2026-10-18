@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mgcPoints, mgcStatus, mgcSerial, mgcFilters, mgcManualInput, mgcOrder, mgcSummary, mgcCsv, mgcBotCost } from "../src/lib/multigamecard-inventory.js";
+import { mgcPoints, mgcStatus, mgcSerial, mgcFilters, mgcManualInput, mgcOrder, mgcSummary, mgcCsv, mgcBotCost, mgcCostDivisor } from "../src/lib/multigamecard-inventory.js";
 import { createMultigamecardInventory } from "../src/server/multigamecard-inventory.js";
 const admin = { id: 1, username: "Tester", permissions: ["projectm.admin"] };
 const dates = { dateFrom: "2026-10-01", dateTo: "2026-10-18" };
@@ -23,6 +23,10 @@ assert.equal(mgcBotCost("9990"), "299.86");
 assert.equal(mgcBotCost("2930"), "87.95");
 assert.equal(mgcBotCost("0"), "0.00");
 assert.equal(mgcBotCost("0.17"), "0.01");
+assert.equal(mgcBotCost("1000", "25"), "40.00");
+assert.equal(mgcBotCost("999999999999", "0.00000001"), null);
+assert.equal(mgcCostDivisor("0033.31"), "33.31000000");
+for (const bad of ["0", "-1", "NaN", "Infinity", "1e2", "1.123456789", "100000000", "", "0.00000000"]) assert.throws(() => mgcCostDivisor(bad));
 for (const bad of [null, "", "bad", "-1", "1,2"]) assert.equal(mgcBotCost(bad), null);
 assert.equal(mgcOrder({ ...source, remaining_points: null }).balance, null);
 assert.equal(mgcSummary([order, mgcOrder({ ...source, cost_thb: "40" })]).profit, "-0.04");
@@ -32,7 +36,9 @@ const csv = mgcCsv([{ ...order, orderId: "=EVIL()", details: { ...order.details,
 assert.ok(csv.startsWith("\uFEFF")); assert.ok(csv.includes("'=EVIL()")); assert.ok(csv.includes("'@formula")); assert.ok(!csv.includes("javascript:"));
 assert.ok(csv.includes('"30.02"')); assert.ok(csv.includes("ยอดออก / 33.31534305"));
 const calls = [];
+let divisor = "33.31534305";
 const repo = createMultigamecardInventory({
+  settings: () => ({ read: async () => ({ version: "0", divisor }), save: async () => ({ version: "1" }) }),
   manual: () => ({ read: async () => ({ cards: [], entries: [order] }), save: async () => ({ id: "1" }) }),
   prepareSales: async rows => rows,
   select: async (sql, params) => {
@@ -54,4 +60,9 @@ assert.ok(calls.every(c => c.sql.trim().startsWith("SELECT"))); assert.ok(calls.
 result = await repo.list(admin, { ...dates, serial: "REMOVED01" }); assert.equal(result.total, 0); assert.equal(result.cards.length, 2);
 await assert.rejects(repo.list({ id: 2, permissions: [] }, dates), { status: 403 });
 assert.equal((await repo.list(admin, { ...dates, mode: "manual" })).total, 1);
+divisor = "25.00000000";
+result = await repo.list(admin, dates, { exportAll: true });
+assert.equal(result.costRate.divisor, divisor); assert.equal(result.summary.cost, "40.00");
+assert.equal(result.entries[0].figures.profit, "-10.00"); assert.ok(mgcCsv(result.entries).includes("ยอดออก / 25.00000000"));
+assert.equal((await repo.save({ action: "cost-rate" }, admin)).version, "1");
 console.log("passed: Multigamecard sheet thresholds, exact points, nullable figures, PIN exclusion, readonly Bot, duplicate serials, filters and CSV");

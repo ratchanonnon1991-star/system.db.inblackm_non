@@ -15,7 +15,9 @@ The website deliberately labels card values as **points**, not USD: that is
 the unit returned by MOL redemption captures and the bot card pool. Do not
 apply an unverified USD/points conversion. The user-confirmed Bot cost formula
 is redeemed points / 33.31534305, rounded half-up to THB cents per order.
-This fixed divisor is not GoogleFinance or a live exchange rate and applies
+The initial divisor is 33.31534305. Projectm Admin can edit and save it in the
+Bot page; viewers can see the saved divisor but cannot change it.
+This divisor is not GoogleFinance or a live exchange rate and applies
 to all displayed Bot history; previous displayed costs/profits are recalculated.
 Profit = customer THB payment − THB cost;
 margin = profit / customer payment × 100. Zero sales have no percentage.
@@ -56,6 +58,11 @@ copied into the application or this document.
   overrides this formula. Telegram prices remain on the sale side.
   Summary and CSV use the same per-order rounded costs; CSV includes the formula.
   Manual entries retain their explicitly entered THB costs.
+- Saved divisors live in the tools application's own `gamedb_mgc_cost_rates`
+  append-only history, including actor and time. Tables are initialized automatically.
+  Saves compare the loaded version under an advisory lock (stale saves return 409).
+  Changing the shared divisor recalculates all displayed Bot history, totals and CSV;
+  it does not update the source orders, card balances or Manual entries. No new env required.
 
 ## Manual: local append-only accounting
 
