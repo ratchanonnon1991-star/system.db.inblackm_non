@@ -49,9 +49,11 @@ copied into the application or this document.
   and no arbitrary duplicate balance is selected.
 - Per-order redeemed/remaining points come from MOL captures. These are not
   guaranteed to form a sequential running balance under concurrent redemptions.
-- Sale fields reuse `attachSheetFields` and `prepareCodaSales`, including
-  splitting one customer's payment across completed packs. Foreign sales use
-  the existing current reference quote; unlike USDCodashop it is not frozen.
+- Sale fields reuse `attachSheetFields` and split one customer's payment across
+  completed packs. Russia (`russia` / `russia_reseller`) prices are explicitly USD,
+  converted with GoogleFinance USDTHB from the dedicated rate-only Google Sheet,
+  not USDT/CoinGecko. Other channels keep their existing conversion behavior.
+  Like the sheet, current quotes recalculate displayed historical sales/profits.
 - THB cost uses `payment.molGameCard.redeemPoints / 33.31534305`.
   Missing/malformed point readings keep cost/profit unavailable, not zero.
   Neither `inventory_transactions.cost_thb` nor `telegram_orders_dev.price`

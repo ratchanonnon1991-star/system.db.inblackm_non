@@ -39,7 +39,7 @@ function Entries({ entries }) {
         <td className={`${cell} min-w-52`}><details><summary className="cursor-pointer font-medium">{e.orderId}</summary><dl className="mt-3 space-y-2 break-words text-xs">
           {[["ผู้เติม", e.details.sheetOperator || e.details.operator], ["ลูกค้า", e.details.customer], ["UID", e.details.playerId], ["ธุรกรรม", e.details.invoice], ["หมายเหตุ", e.details.note], ["ผู้บันทึก", e.recordedBy]].map(([label, v]) => <div key={label}><dt className="text-ll-ink-subtle">{label}</dt><dd>{v || "—"}</dd></div>)}
           {e.details.salePacks > 1 && <p>ยอดโอนแบ่งจาก {e.details.salePacks} แพ็ก</p>}
-          {e.details.saleConversion && <p>ยอดโอนใช้เรทอ้างอิงวันนี้: {e.details.saleConversion.rate}</p>}
+          {e.details.saleConversion && <p>ยอดโอนใช้เรท: {e.details.saleConversion.rate} · {e.details.saleConversion.source} · อ่านเมื่อ {when(e.details.saleConversion.fetchedAt)}</p>}
           {orderLink(e.details.link) && <a href={orderLink(e.details.link)} target="_blank" rel="noopener noreferrer" className="block underline">เปิดรายการต้นทาง</a>}
         </dl></details></td>
         <td className={`${cell} whitespace-nowrap`}>{e.serial || "—"}</td><td className={`${cell} min-w-44`}>{e.details.game || "—"}<p className="mt-1 text-xs text-ll-ink-subtle">{e.details.pack}</p></td>
@@ -158,6 +158,7 @@ export default function MultigamecardInventory({ lang }) {
     </section>
     {error && <p role="alert" className="rounded-xl border border-ll-hairline p-4 text-sm">{error}</p>}{notice && <p role="status" className="text-sm">{notice}</p>}{loading && <p role="status" className="text-sm text-ll-ink-subtle">กำลังโหลด Multigamecard…</p>}
     {!loading && !data && <button onClick={load} className={button}>ลองโหลดใหม่</button>}
+    {mode === "bot" && <p className="text-sm text-ll-ink-subtle">ยอดโอน Russia = ยอด USD จากคิว × เรท GoogleFinance จากชีท · แคชเรท 5 นาที · ยอดโอนและกำไรย้อนหลังเปลี่ยนตามเรทที่อ่านได้ · ไม่กระทบตัวหารต้นทุน</p>}
     <section aria-label="สรุป Multigamecard" className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[["ออเดอร์ตามตัวกรอง", summary?.orders], ["ยอดโอน (THB)", summary?.sale], ["ต้นทุน (THB)", summary?.cost], ["กำไร (THB)", summary?.profit]].map(([label, v]) => <div key={label} className="min-w-0 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4"><p className="text-sm text-ll-ink-subtle">{label}</p><p className="mt-2 break-words text-2xl font-semibold tabular-nums">{loading ? "…" : label === "ออเดอร์ตามตัวกรอง" && v != null ? Number(v).toLocaleString("en-US") : money(v)}</p></div>)}</section>
     {summary && (summary.missingSales > 0 || summary.missingCosts > 0) && <p role="status" className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm">ข้อมูลไม่ครบ: ยอดโอน {summary.missingSales} รายการ · ต้นทุน {summary.missingCosts} รายการ · ยอดรวมที่พึ่งข้อมูลนี้แสดง — ไม่แทนด้วยศูนย์</p>}
     {mode === "bot" && ready && data.costRate && <>

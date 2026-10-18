@@ -104,13 +104,14 @@ export function mgcCsv(entries) {
     if (!(numeric && /^-?\d+(?:\.\d+)?$/.test(s)) && /^[\s\u0000-\u001f]*[=+@-]/.test(s)) s = `'${s}`;
     return `"${s.replaceAll('"', '""')}"`;
   };
-  const headers = ["วันที่ (ไทย)", "Order / รายการ", "Serial", "ประเภท", "ยอดโอน (THB)", "ต้นทุน (THB)", "กำไร (THB)", "กำไร (%)", "แต้มเข้า", "แต้มออก", "แต้มคงเหลือหลังรายการ", "ผู้เติม", "ลูกค้า", "เกม", "แพ็ก", "UID", "ธุรกรรม", "ลิงก์", "หมายเหตุ", "ผู้บันทึก", "สูตรต้นทุน"];
+  const headers = ["วันที่ (ไทย)", "Order / รายการ", "Serial", "ประเภท", "ยอดโอน (THB)", "ต้นทุน (THB)", "กำไร (THB)", "กำไร (%)", "แต้มเข้า", "แต้มออก", "แต้มคงเหลือหลังรายการ", "ผู้เติม", "ลูกค้า", "เกม", "แพ็ก", "UID", "ธุรกรรม", "ลิงก์", "หมายเหตุ", "ผู้บันทึก", "สูตรต้นทุน", "สกุลเงินยอดโอน", "เรทยอดโอน", "แหล่งเรท", "อ่านเรทเมื่อ"];
   return "\uFEFF" + [headers.map(x => cell(x)).join(","), ...entries.map(e => {
     const d = e.details, f = e.figures;
     return [e.occurredAt ? new Date(e.occurredAt).toLocaleString("sv-SE", { timeZone: "Asia/Bangkok" }) : "", e.orderId, e.serial, e.kind,
       f.sale, f.cost, f.profit, f.margin, e.kind === "use" ? null : e.amount, e.kind === "use" ? e.amount : null, e.balance,
       d.sheetOperator || d.operator, d.customer, d.game, d.pack, d.playerId, d.invoice, orderLink(d.link), d.note, e.recordedBy,
-      d.costDivisor ? `ยอดออก / ${d.costDivisor}` : "กรอกต้นทุน THB เอง"]
+      d.costDivisor ? `ยอดออก / ${d.costDivisor}` : "กรอกต้นทุน THB เอง",
+      d.saleCurrency, d.saleConversion?.rate, d.saleConversion?.source, d.saleConversion?.fetchedAt]
       .map((v, i) => cell(v, i >= 4 && i <= 10)).join(",");
   })].join("\r\n") + "\r\n";
 }

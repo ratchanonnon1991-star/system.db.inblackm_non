@@ -10,25 +10,25 @@ const DRIVE = "https://www.googleapis.com/drive/v3/files";
 
 const b64url = (value) => Buffer.from(value).toString("base64url");
 
-export function signServiceAccountJwt(account, now = Date.now()) {
+export function signServiceAccountJwt(account, now = Date.now(), scopes = SCOPES) {
   if (!account?.client_email || !account?.private_key) throw new Error("Service account key is missing client_email/private_key");
   const iat = Math.floor(now / 1000);
   const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const claims = b64url(JSON.stringify({ iss: account.client_email, scope: SCOPES,
+  const claims = b64url(JSON.stringify({ iss: account.client_email, scope: scopes,
     aud: account.token_uri || "https://oauth2.googleapis.com/token", iat, exp: iat + 3600 }));
   const signer = createSign("RSA-SHA256"); signer.update(`${header}.${claims}`);
   return `${header}.${claims}.${signer.sign(account.private_key).toString("base64url")}`;
 }
 
-export function createGoogleReader({ keyFile = process.env.ITUNE_SHEETS_CREDENTIALS, fetchImpl = fetch, now = () => Date.now() } = {}) {
+export function createGoogleReader({ keyFile = process.env.ITUNE_SHEETS_CREDENTIALS, fetchImpl = fetch, now = () => Date.now(), readOnly = false, readKeyFile = readFile } = {}) {
   let account; let token = null;
   async function accessToken() {
     if (token && token.expires > now() + 60_000) return token.value;
-    if (!keyFile) throw new Error("ITUNE_SHEETS_CREDENTIALS is not configured");
-    account ||= JSON.parse(await readFile(keyFile, "utf8"));
+    if (!keyFile) throw new Error("Google Sheets credentials are not configured");
+    account ||= JSON.parse(await readKeyFile(keyFile, "utf8"));
     const response = await fetchImpl(account.token_uri || "https://oauth2.googleapis.com/token", {
       method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: signServiceAccountJwt(account, now()) }),
+      body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: signServiceAccountJwt(account, now(), readOnly ? "https://www.googleapis.com/auth/spreadsheets.readonly" : SCOPES) }),
       signal: AbortSignal.timeout(15_000),
     });
     const body = await response.json().catch(() => ({}));
@@ -43,6 +43,11 @@ export function createGoogleReader({ keyFile = process.env.ITUNE_SHEETS_CREDENTI
     return body;
   }
   return {
+    async cell(spreadsheetId, range) {
+      const body = await get(`${SHEETS}/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?valueRenderOption=UNFORMATTED_VALUE`);
+      if (body.values?.length !== 1 || body.values[0]?.length !== 1) throw new Error("Expected one Google Sheets cell");
+      return body.values[0][0];
+    },
     async listSpreadsheets(query) {
       const files = []; let pageToken = "";
       do {
@@ -66,6 +71,7 @@ export function createGoogleReader({ keyFile = process.env.ITUNE_SHEETS_CREDENTI
     },
     // Literal values (RAW), one cell per update: { range: "'tab'!E12", value }.
     async writeRaw(spreadsheetId, updates) {
+      if (readOnly) throw new Error("This Google Sheets reader is read-only");
       if (!updates.length) return;
       await get(`${SHEETS}/${encodeURIComponent(spreadsheetId)}/values:batchUpdate`, {
         method: "POST", headers: { "Content-Type": "application/json" },

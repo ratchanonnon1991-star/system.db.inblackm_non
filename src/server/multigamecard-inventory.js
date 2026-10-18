@@ -3,7 +3,7 @@ import { canViewUsdInventory, canManageUsdInventory, inventoryError } from "@/li
 import { mgcManual } from "@/server/multigamecard-manual";
 import { mgcCostSettings } from "@/server/multigamecard-cost-settings";
 import { attachSheetFields } from "@/server/usdcodashop-source";
-import { prepareCodaSales } from "@/server/usdcodashop-sale-rates";
+import { prepareMgcSales } from "@/server/multigamecard-sale-rates";
 import { mgcFilters, mgcPoints, mgcStatus, mgcOrder, mgcMatches, mgcSummary, MGC_PAGE_SIZE, MGC_MAX_ORDERS } from "@/lib/multigamecard-inventory";
 
 const BATCH = 500;
@@ -12,7 +12,7 @@ const belongs = `c.phone_number=ANY($1::text[])`;
 const rawPoints = `btrim(c.provider_response->'payment'->'molGameCard'->>'redeemPoints')`;
 const numericPoints = `replace(${rawPoints},',','')`;
 const validPoints = `${rawPoints} ~ '^([0-9]{1,12}|[0-9]{1,3}(,[0-9]{3}){1,3})([.][0-9]{1,2})?$'`;
-export function createMultigamecardInventory({ select = selectQuery, manual = mgcManual, settings = mgcCostSettings, prepareSales = prepareCodaSales } = {}) {
+export function createMultigamecardInventory({ select = selectQuery, manual = mgcManual, settings = mgcCostSettings, prepareSales = prepareMgcSales } = {}) {
   async function bot(filters, costDivisor) {
     // Allowlist inside PostgreSQL: cardPin and other redeemable secrets never leave the source DB.
     const poolCards = await select(`SELECT card->>'cardSerial' AS serial,card->>'balance' AS balance,

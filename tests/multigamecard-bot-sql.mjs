@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 import { createMultigamecardInventory } from "../src/server/multigamecard-inventory.js";
+import { createMgcSalePreparer } from "../src/server/multigamecard-sale-rates.js";
+import { mgcCsv } from "../src/lib/multigamecard-inventory.js";
 const { PGlite } = await import(pathToFileURL(process.env.PGLITE_MODULE).href);
 const db = new PGlite();
 try {
@@ -50,5 +52,19 @@ try {
   assert.deepEqual(data.cards, []); assert.deepEqual(data.entries, []); assert.equal(data.total, 0);
   assert.equal(requests - beforeEmpty, 1, "empty pool does not scan historical cards");
   assert.equal((await db.query("SELECT COUNT(*)::int AS n FROM codashop_orders")).rows[0].n, historicalCount, "source history is untouched");
+  await db.query("UPDATE system_settings SET setting_value=$1 WHERE setting_key='oxide_payment_card'", [JSON.stringify({ cards: [{ cardSerial: "ABC123", balance: "49000" }] })]);
+  await db.exec(`INSERT INTO telegram_orders_dev VALUES ('russia-4','K-FX',2.03,'russia','uid','u4','Staff',NULL);
+    INSERT INTO codashop_orders VALUES (4,'ABC123','K-FX','Oxide','Pack','russia','2026-10-18T00:05:00Z','TX-FX',
+    '{"payment":{"molGameCard":{"redeemPoints":"4990","remainingBalance":"44010"}}}','russia-4','completed','u4');`);
+  const fxRepo = (quote) => createMultigamecardInventory({ settings: () => ({ read: async () => ({ divisor: "33.31534305", version: "0" }) }),
+    select: async (sql, params) => (await db.query(sql, params)).rows,
+    prepareSales: createMgcSalePreparer({ loadRate: async () => quote, prepareOthers: async rows => rows }) });
+  const converted = await fxRepo({ currency: "USD", rate: "33.4449838", source: "GoogleFinance/Google Sheets", fetchedAt: "2026-10-18T08:00:00Z" }).list(actor, { ...query, search: "K-FX" }, { exportAll: true });
+  assert.equal(converted.total, 1); assert.equal(converted.summary.sale, "67.89");
+  assert.equal(converted.summary.cost, "149.78"); assert.equal(converted.summary.profit, "-81.89");
+  assert.ok(mgcCsv(converted.entries).includes("GoogleFinance/Google Sheets"));
+  const unavailable = await fxRepo(null).list(actor, { ...query, search: "K-FX" });
+  assert.equal(unavailable.summary.sale, null); assert.equal(unavailable.summary.cost, "149.78");
+  assert.equal(unavailable.summary.profit, null);
   console.log("PASS: actual Bot SQL projections, no PIN disclosure, completed only, totals, nullable malformed amounts, source snapshots, sale/cost join");
 } finally { await db.close(); }
