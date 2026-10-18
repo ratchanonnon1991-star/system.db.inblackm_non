@@ -6,7 +6,8 @@ import { prepareCodaSales } from "@/server/usdcodashop-sale-rates";
 import { mgcFilters, mgcPoints, mgcStatus, mgcOrder, mgcMatches, mgcSummary, MGC_PAGE_SIZE, MGC_MAX_ORDERS } from "@/lib/multigamecard-inventory";
 
 const BATCH = 500;
-const belongs = `(jsonb_typeof(c.provider_response->'payment'->'molGameCard')='object' OR c.phone_number=ANY($1::text[]))`;
+// Pool membership is authoritative, even when old orders still contain MOL captures.
+const belongs = `c.phone_number=ANY($1::text[])`;
 const rawPoints = `btrim(c.provider_response->'payment'->'molGameCard'->>'redeemPoints')`;
 const numericPoints = `replace(${rawPoints},',','')`;
 const validPoints = `${rawPoints} ~ '^([0-9]{1,12}|[0-9]{1,3}(,[0-9]{3}){1,3})([.][0-9]{1,2})?$'`;
@@ -18,6 +19,7 @@ export function createMultigamecardInventory({ select = selectQuery, manual = mg
       FROM system_settings s CROSS JOIN LATERAL jsonb_array_elements(s.setting_value::jsonb->'cards') card
       WHERE s.setting_key=$1`, ["oxide_payment_card"]);
     const serials = [...new Set(poolCards.map(c => c.serial).filter(Boolean))];
+    if (!serials.length) return { cards: [], entries: [] };
     const totals = await select(`SELECT c.phone_number AS serial,
       CASE WHEN COUNT(*)=COUNT(CASE WHEN ${validPoints} THEN 1 END)
         THEN SUM(CASE WHEN ${validPoints} THEN (${numericPoints})::numeric END)::text END AS used
@@ -49,17 +51,15 @@ export function createMultigamecardInventory({ select = selectQuery, manual = mg
     const prepared = await prepareSales(enriched.map(row => ({ sourceId: String(row.id), row, details: row.sheet_fields })), []);
     const counts = new Map();
     for (const c of poolCards) if (c.serial) counts.set(c.serial, (counts.get(c.serial) || 0) + 1);
-    const allSerials = new Set([...serials, ...totals.map(t => t.serial).filter(Boolean)]);
-    if (rows.some(r => !r.card_serial)) allSerials.add("");
     return { entries: prepared.map(p => mgcOrder({ ...p.row, sheet_fields: p.details })),
-      cards: [...allSerials].map(serial => {
+      cards: serials.map(serial => {
         const source = poolCards.find(c => c.serial === serial), duplicate = (counts.get(serial) || 0) > 1;
         const usage = totals.find(t => t.serial === serial);
         const balance = source && !duplicate ? mgcPoints(source.balance) : null;
         return { id: serial, serial, owner: "Bot", inTotal: null,
           outTotal: mgcPoints(usage ? usage.used : source ? "0" : null),
           balance, balanceAt: source?.balance_at || null, enabled: Boolean(source && source.enabled !== "false"), duplicate,
-          status: duplicate ? "Serial ซ้ำ" : source ? mgcStatus(balance) : "ไม่อยู่ในพูลบัตร" };
+          status: duplicate ? "Serial ซ้ำ" : mgcStatus(balance) };
       }).sort((a, b) => a.serial.localeCompare(b.serial)) };
   }
   return {

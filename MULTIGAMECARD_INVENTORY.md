@@ -28,16 +28,19 @@ copied into the application or this document.
 - `PROFIT_DATABASE_URL` uses the existing remote SELECT adapter. No remote writes.
 - The `oxide_payment_card` setting is projected inside SQL to serial, balance,
   enabled and balance timestamp. `cardPin` and other setting fields are not fetched.
-- Successful `codashop_orders` are identified by real `payment.molGameCard`
-  capture or a serial present in the pool. History includes removed serials
-  when they retain MOL captures. Failed/pending rows are not counted.
+- Only serials currently present in `oxide_payment_card.cards` appear in Bot.
+  Successful `codashop_orders` must belong to one of those serials. Removed or
+  unknown serials are excluded from cards, history, summaries and CSV, even when
+  old MOL captures exist. Failed/pending rows are not counted. No history is deleted.
+  A card disabled but still present in the pool remains visible with its disabled label.
 - Card remaining is the pool's current snapshot and does not change with date
   filters. An absent timestamp is unknown, not replaced by the page read time.
 - Card usage totals all successful historical captures. Missing/malformed point
   readings make the total unknown. No-history cards may genuinely have zero usage.
 - Incoming total is unavailable because the current pool snapshot is not a
   verified incoming ledger. It is never inferred by adding balance and usage.
-- Removed cards have no current pool balance. Duplicate serials are flagged
+- An empty pool returns empty cards/history rather than showing historical cards.
+  Duplicate serials are flagged
   and no arbitrary duplicate balance is selected.
 - Per-order redeemed/remaining points come from MOL captures. These are not
   guaranteed to form a sequential running balance under concurrent redemptions.
