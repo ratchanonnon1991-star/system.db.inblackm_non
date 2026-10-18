@@ -16,6 +16,7 @@ import ItuneImagePreview from "@/components/itune-image-preview";
 import ItuneAmountLogImage from "@/components/itune-amount-log-image";
 import ItunePasswordValue from "@/components/itune-password-value";
 import ItuneOrderHistory from "@/components/itune-order-history";
+import { ItuneBalancePhotos, ItuneSheetOrderList } from "@/components/itune-entry-sheet-panel";
 
 // Same tone→class mapping as itune-admin-table.js's StatusBadge — kept as a
 // small local copy (see itune-issue-history.js for the same convention)
@@ -313,6 +314,8 @@ export default function ItuneTopupCard({ entry, now, releaseThreshold, onRelease
       {expanded && (
         <div className="flex flex-col gap-5 border-t border-ll-hairline p-4">
           <ItuneOrderHistory entryId={entry.id} />
+          <ItuneSheetOrderList entryId={entry.id} />
+          <ItuneBalancePhotos entryId={entry.id} />
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             <DetailField label="สถานะ">
               <span

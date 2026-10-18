@@ -148,7 +148,7 @@ jobs:
 
             echo "--- restart ---"
             "$PM2_BIN" startOrRestart ecosystem.config.cjs \
-              --only system.db.inblackm,usdcodashop-sync-worker \
+              --only system.db.inblackm,usdcodashop-sync-worker,itune-sheet-sync-worker \
               --update-env
 
             "$PM2_BIN" save

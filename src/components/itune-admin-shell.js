@@ -6,6 +6,8 @@ import { usePathname } from "next/navigation";
 import {
   ArrowLeft,
   BarChart3,
+  Camera,
+  FileSpreadsheet,
   History,
   Inbox,
   ListOrdered,
@@ -57,6 +59,13 @@ export default function ItuneAdminShell({ lang, displayName, children }) {
           href: `${base}/topup-log`,
           icon: Users,
         },
+      ],
+    },
+    {
+      label: "ชีท & เช็คยอด",
+      items: [
+        { label: "ออเดอร์จากชีท", href: `${base}/sheet-orders`, icon: FileSpreadsheet },
+        { label: "เช็คยอดจริง", href: `${base}/balance-check`, icon: Camera },
       ],
     },
     {
