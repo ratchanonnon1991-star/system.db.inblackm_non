@@ -5,6 +5,14 @@ import { sheetFigures, orderLink } from "./usdcodashop-sheet.js";
 export const MGC_PAGE_SIZE = 100;
 export const MGC_MAX_ORDERS = 20000;
 export const MGC_LOW_POINTS = 50000n * 100n; // Reference: ตรวจสอบMultiGame Card!H4/T4.
+export const MGC_COST_DIVISOR = "33.31534305";
+// Fixed business conversion, not FX. Divide exact point cents and round half-up to THB cents.
+export function mgcBotCost(points) {
+  const amount = mgcPoints(points);
+  if (amount === null) return null;
+  const divisor = BigInt(MGC_COST_DIVISOR.replace(".", ""));
+  return centsUsd((usdCents(amount) * 100000000n + divisor / 2n) / divisor);
+}
 export function mgcPoints(value) {
   if (value == null || String(value).trim() === "") return null;
   try { return centsUsd(usdCents(String(value).trim())); } catch { return null; }
@@ -58,7 +66,7 @@ export function mgcManualInput(body) {
 export function mgcOrder(row) {
   const details = { ...(row.sheet_fields || {}), game: text(row.game_name, 200), pack: text(row.pack_name),
     operator: text(row.operator || "Bot", 160), invoice: text(row.invoice_number, 1000),
-    costThb: Number(row.transaction_count) === 1 ? mgcPoints(row.cost_thb) : null };
+    costThb: mgcBotCost(row.redeem_points), costDivisor: MGC_COST_DIVISOR };
   return { id: String(row.id), serial: text(row.card_serial, 80), kind: "use",
     orderId: text(row.sale_order_id || row.source_order_id || row.id, 200),
     amount: mgcPoints(row.redeem_points), balance: mgcPoints(row.remaining_points),
@@ -89,12 +97,13 @@ export function mgcCsv(entries) {
     if (!(numeric && /^-?\d+(?:\.\d+)?$/.test(s)) && /^[\s\u0000-\u001f]*[=+@-]/.test(s)) s = `'${s}`;
     return `"${s.replaceAll('"', '""')}"`;
   };
-  const headers = ["วันที่ (ไทย)", "Order / รายการ", "Serial", "ประเภท", "ยอดโอน (THB)", "ต้นทุน (THB)", "กำไร (THB)", "กำไร (%)", "แต้มเข้า", "แต้มออก", "แต้มคงเหลือหลังรายการ", "ผู้เติม", "ลูกค้า", "เกม", "แพ็ก", "UID", "ธุรกรรม", "ลิงก์", "หมายเหตุ", "ผู้บันทึก"];
+  const headers = ["วันที่ (ไทย)", "Order / รายการ", "Serial", "ประเภท", "ยอดโอน (THB)", "ต้นทุน (THB)", "กำไร (THB)", "กำไร (%)", "แต้มเข้า", "แต้มออก", "แต้มคงเหลือหลังรายการ", "ผู้เติม", "ลูกค้า", "เกม", "แพ็ก", "UID", "ธุรกรรม", "ลิงก์", "หมายเหตุ", "ผู้บันทึก", "สูตรต้นทุน"];
   return "\uFEFF" + [headers.map(x => cell(x)).join(","), ...entries.map(e => {
     const d = e.details, f = e.figures;
     return [e.occurredAt ? new Date(e.occurredAt).toLocaleString("sv-SE", { timeZone: "Asia/Bangkok" }) : "", e.orderId, e.serial, e.kind,
       f.sale, f.cost, f.profit, f.margin, e.kind === "use" ? null : e.amount, e.kind === "use" ? e.amount : null, e.balance,
-      d.sheetOperator || d.operator, d.customer, d.game, d.pack, d.playerId, d.invoice, orderLink(d.link), d.note, e.recordedBy]
+      d.sheetOperator || d.operator, d.customer, d.game, d.pack, d.playerId, d.invoice, orderLink(d.link), d.note, e.recordedBy,
+      d.costDivisor ? `ยอดออก / ${d.costDivisor}` : "กรอกต้นทุน THB เอง"]
       .map((v, i) => cell(v, i >= 4 && i <= 10)).join(",");
   })].join("\r\n") + "\r\n";
 }

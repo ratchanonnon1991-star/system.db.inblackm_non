@@ -13,8 +13,11 @@ profit percentage, plus card usage and serials.
 
 The website deliberately labels card values as **points**, not USD: that is
 the unit returned by MOL redemption captures and the bot card pool. Do not
-apply an unverified USD/points conversion or copy the template's hardcoded
-currency divisors into production. Profit = customer THB payment − THB cost;
+apply an unverified USD/points conversion. The user-confirmed Bot cost formula
+is redeemed points / 33.31534305, rounded half-up to THB cents per order.
+This fixed divisor is not GoogleFinance or a live exchange rate and applies
+to all displayed Bot history; previous displayed costs/profits are recalculated.
+Profit = customer THB payment − THB cost;
 margin = profit / customer payment × 100. Zero sales have no percentage.
 Missing sales/costs make the dependent summary unavailable, not zero.
 
@@ -47,9 +50,12 @@ copied into the application or this document.
 - Sale fields reuse `attachSheetFields` and `prepareCodaSales`, including
   splitting one customer's payment across completed packs. Foreign sales use
   the existing current reference quote; unlike USDCodashop it is not frozen.
-- THB cost is accepted only from exactly one matching `inventory_transactions`
-  record. Without verified cost it remains unavailable; existing Profit-module
-  manual overrides and guessed points-to-USD conversions are NOT substituted.
+- THB cost uses `payment.molGameCard.redeemPoints / 33.31534305`.
+  Missing/malformed point readings keep cost/profit unavailable, not zero.
+  Neither `inventory_transactions.cost_thb` nor `telegram_orders_dev.price`
+  overrides this formula. Telegram prices remain on the sale side.
+  Summary and CSV use the same per-order rounded costs; CSV includes the formula.
+  Manual entries retain their explicitly entered THB costs.
 
 ## Manual: local append-only accounting
 

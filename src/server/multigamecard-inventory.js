@@ -32,11 +32,8 @@ export function createMultigamecardInventory({ select = selectQuery, manual = mg
         c.provider_response->'payment'->'molGameCard'->>'remainingBalance' AS remaining_points,
         t.order_id AS sale_order_id,t.price::text AS sale_price,t.source AS telegram_source,t.method,
         COALESCE(NULLIF(c.uid,''),t.uid) AS player_id,
-        COALESCE(NULLIF(t.admin,''),NULLIF(t.booked_by,''),'Bot') AS operator,
-        inv.transaction_count,inv.cost_thb
+        COALESCE(NULLIF(t.admin,''),NULLIF(t.booked_by,''),'Bot') AS operator
         FROM codashop_orders c LEFT JOIN telegram_orders_dev t ON t.task_request_id=c.telegram_task_request_id
-        LEFT JOIN LATERAL (SELECT COUNT(*)::int AS transaction_count,MIN(cost_thb) AS cost_thb
-          FROM inventory_transactions WHERE order_id=c.id) inv ON TRUE
         WHERE c.status='completed' AND ${belongs} AND c.id>$2::bigint
           AND c.created_at >= $3::timestamptz AND c.created_at < $4::timestamptz
         ORDER BY c.id LIMIT ${BATCH}`, [serials, cursor, filters.bounds.start, filters.bounds.end]);
