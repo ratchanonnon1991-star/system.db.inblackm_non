@@ -10,6 +10,7 @@ check(sheetDate("18/10/2026") === "2026-10-18" && sheetDate("1/9/2026") === "202
 check(dailyFileDate("0.1 Order Russia Reseller 18/10/2026 Bot2", "0.1 Order Russia Reseller ") === "2026-10-18");
 check(dailyFileDate("0.1 Order Russia Reseller 18/10/2026", "0.1 Order Russia Reseller ") === null);
 for (const [text, want] of [["itunes de", "DE"], ["DE", "DE"], ["iTunes USD", "USD"], [" usd ", "USD"], ["itune  usd", "USD"],
+  ["ITUNES(USD)", "USD"], ["ITUNES (DE)", "DE"], ["itunes(de)", "DE"],
   ["CodashopUSD", null], ["CODASHOP (USD)", null], ["( USD ) BoT MultiGame Card", null], ["WavePay", null], ["", null]]) {
   check(itunesCurrency(text) === want, `channel ${text}`);
 }
@@ -20,7 +21,7 @@ check(costThb("10.00", "35.25") === "352.50" && costThb("0.99", "34.123456") ===
 const row = (cells) => { const r = []; for (const [col, v] of Object.entries(cells)) r[columnIndex(col)] = v; return r; };
 const tab = [
   row({ D: "Order", T: "ช่องทาง", U: "สถานะ" }),
-  row({ D: "M1", T: "itunes usd", U: "รอเติม", V: "Buyer@Mail.com", O: "9.99", R: "14:35" }),
+  row({ D: "M1", T: "itunes usd", U: "รอเติม", V: "Buyer@Mail.com", O: "9.99", R: "14:35", G: "350", I: "Somchai", J: "https://shop/x", K: "Genshin", L: "Welkin", N: "800123" }),
   row({ D: "M1", T: "itunes usd", U: "รอเติม", V: "buyer@mail.com", O: "4.99", R: "14:36" }),   // second pack, same order
   row({ D: "M6", T: "itunes usd", U: "รอเติม", V: "late@mail.com", O: "3" }),       // no time yet: not moved
   row({ D: "M2", T: "CodashopUSD", U: "รอเติม", V: "", O: "5" }),                   // no email: not iTunes
@@ -31,6 +32,8 @@ const tab = [
 const found = extractItunesRows("marketplace", tab, { sheetDate: "2026-10-18", tab: "18/10/2026" });
 check(found.orders.length === 2 && found.issues.length === 1 && found.withoutTime === 1, "rows without a time wait");
 check(found.orders[0].time === "14:35");
+const d = found.orders[0].details;
+check(d.saleThb === "350.00" && d.customer === "Somchai" && d.link === "https://shop/x" && d.game === "Genshin" && d.pack === "Welkin" && d.playerId === "800123");
 check(found.orders[0].email === "buyer@mail.com" && found.orders[0].currency === "USD" && found.orders[0].amount === "9.99" && found.orders[0].row === 2);
 check(found.orders[0].key === "marketplace|2026-10-18|M1|1" && found.orders[1].key === "marketplace|2026-10-18|M1|2", "each pack row has its own key");
 check(found.issues[0].orderId === "M5");
@@ -50,7 +53,10 @@ check(daysToRead("2026-10-18", { includeOlder: true }).length === 1 && daysToRea
 check(thaiToday(new Date("2026-10-18T18:30:00Z")) === "2026-10-19", "Thai calendar day");
 
 // Reader: picks today's daily files and dated tabs, ignores other days; a failing source does not stop the rest.
-const russiaRows = [row({ I: "R1", Y: "itunes de", Z: "รอเติม", AA: "de@mail.com", T: "20", W: "09:10" })];
+// Russia: K (THB) is 0 until F is pasted into E; the reader pastes it once, then rereads.
+let russiaRows = [row({ I: "R1", Y: "ITUNES(DE)", Z: "รอเติม", AA: "de@mail.com", T: "20", W: "09:10", F: "1.5", K: "0" }),
+  row({ I: "R2", Y: "CodashopUSD", Z: "รอเติม", F: "3", K: "0" })];
+const writes = [];
 const reads = [];
 const reader = {
   async listSpreadsheets(q) {
@@ -62,12 +68,18 @@ const reader = {
   },
   async tabTitles(id) { return id === "page" ? ["17/10/2026", "template"] : ["18/10/2026", "01/9/2026"]; },
   async rows(id, tabName) { reads.push(`${id}:${tabName}`); return id === "r18" ? russiaRows : id === "mp" ? tab : []; },
+  async writeRaw(id, updates) {
+    writes.push({ id, updates });
+    russiaRows = russiaRows.map((r, i) => { const n = [...r]; if (i === 0) { n[columnIndex("E")] = "1.5"; n[columnIndex("K")] = "54.30"; } return n; });
+  },
 };
 const cfg = { russiaFolder: "RF", pageFolder: "PF", inblackmFolder: "IF", marketplaceIds: [] };
 const read = await readSheetOrders(reader, ["2026-10-18"], cfg);
 check(read.orders.length === 3 && read.withoutTime === 1 && read.orders.some((o) => o.source === "russia" && o.currency === "DE" && o.amount === "20.00" && o.time === "09:10"));
 check(!reads.some((r) => r.startsWith("r10") || r.includes("01/9/2026") || r.startsWith("page")), "other days are not read");
 check(read.errors.length === 1 && read.errors[0].source === "inblackm");
+check(writes.length === 1 && writes[0].updates.length === 1 && writes[0].updates[0].range === "'0.1 Order Russia Reseller 18/10/2026 Bot2'!E1" && writes[0].updates[0].value === "1.5", "only the iTunes row's empty E is written");
+check(read.filled === 1 && read.orders.find((o) => o.source === "russia").details.saleThb === "54.30", "THB read after the paste");
 
 // Import: deducts once, records cost at the multiplier in force, and skips unknown/mismatched emails.
 function fakeClient({ entries, rate = "35.5", existing = false }) {
@@ -77,6 +89,7 @@ function fakeClient({ entries, rate = "35.5", existing = false }) {
     if (sql.includes("SELECT 1 FROM projectm_itune_sheet_imports")) return { rows: existing ? [{}] : [] };
     if (sql.includes("FROM projectm_itune_entries")) return { rows: entries };
     if (sql.includes("FROM projectm_itune_cost_rates")) return { rows: rate ? [{ rate }] : [] };
+    if (sql.includes("RETURNING id")) return { rows: [{ id: 1 }] };
     return { rows: [], rowCount: 1 };
   } };
 }
@@ -93,10 +106,14 @@ client = fakeClient({ entries: [{ id: 7, email: "b", currency: "USD", amount: "5
 result = await importSheetOrder(client, order);
 check(result.negative && client.calls.find((c) => c.sql.includes("INSERT INTO projectm_itune_sheet_imports")).params[14] === null, "no multiplier yet: cost stays empty");
 for (const [setup, status] of [[{ entries: [] }, "no_email"], [{ entries: [{ id: 1 }, { id: 2 }] }, "duplicate_email"],
-  [{ entries: [{ id: 1, currency: "DE", amount: "5" }] }, "currency_mismatch"], [{ entries: [], existing: true }, "already"]]) {
+  [{ entries: [{ id: 1, currency: "DE", amount: "5" }] }, "currency_mismatch"]]) {
   client = fakeClient(setup); result = await importSheetOrder(client, order);
   check(result.status === status && !client.calls.some((c) => c.sql.startsWith("UPDATE")) && client.calls.at(-1).sql === "ROLLBACK", status);
 }
+client = fakeClient({ entries: [], existing: true }); result = await importSheetOrder(client, order);
+const refresh = client.calls.find((c) => c.sql.includes("UPDATE projectm_itune_sheet_imports SET"));
+check(result.status === "already" && refresh && refresh.params[1] === "350.00" && refresh.params[4] === "Genshin" && client.calls.at(-1).sql === "COMMIT"
+  && !client.calls.some((c) => c.sql.includes("projectm_itune_entries SET")), "a seen-again row only refreshes its details");
 
 // JWT: RS256 over header.claims with the read-only scopes.
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -105,7 +122,7 @@ const [h, c, sig] = jwt.split(".");
 const verify = createVerify("RSA-SHA256"); verify.update(`${h}.${c}`);
 check(verify.verify(publicKey, Buffer.from(sig, "base64url")));
 const claims = JSON.parse(Buffer.from(c, "base64url").toString());
-check(claims.scope.includes("spreadsheets.readonly") && !claims.scope.includes("auth/spreadsheets ") && claims.exp - claims.iat === 3600);
+check(claims.scope.includes("auth/spreadsheets ") && claims.scope.includes("drive.readonly") && !claims.scope.includes("auth/drive ") && claims.exp - claims.iat === 3600);
 // Access: admins see every email; topup users only the one they hold.
 const holderPool = (held) => ({ async query(sql, params) { return { rows: held && params[1] === 5 ? [{}] : [] }; } });
 check(await assertEntryAccess(holderPool(false), "9", { id: 1, permissions: ["projectm.admin"] }) === 9);

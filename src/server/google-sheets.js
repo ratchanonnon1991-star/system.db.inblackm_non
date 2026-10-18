@@ -1,9 +1,10 @@
 import { createSign } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
-// Read-only Google Sheets/Drive access with a service-account key (the same key auto-balance uses).
+// Google Sheets/Drive access with a service-account key (the same key auto-balance uses).
+// Drive is read-only; Sheets needs write only for the Russia E←F paste (writeRaw).
 // No googleapis dependency: one signed JWT exchanged for a short-lived token.
-const SCOPES = "https://www.googleapis.com/auth/spreadsheets.readonly https://www.googleapis.com/auth/drive.readonly";
+const SCOPES = "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly";
 const SHEETS = "https://sheets.googleapis.com/v4/spreadsheets";
 const DRIVE = "https://www.googleapis.com/drive/v3/files";
 
@@ -35,8 +36,8 @@ export function createGoogleReader({ keyFile = process.env.ITUNE_SHEETS_CREDENTI
     token = { value: body.access_token, expires: now() + Number(body.expires_in || 3600) * 1000 };
     return token.value;
   }
-  async function get(url) {
-    const response = await fetchImpl(url, { headers: { Authorization: `Bearer ${await accessToken()}` }, signal: AbortSignal.timeout(20_000) });
+  async function get(url, init = {}) {
+    const response = await fetchImpl(url, { ...init, headers: { Authorization: `Bearer ${await accessToken()}`, ...init.headers }, signal: AbortSignal.timeout(20_000) });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw Object.assign(new Error(`Google API HTTP ${response.status}: ${body?.error?.message || "request failed"}`), { status: response.status });
     return body;
@@ -62,6 +63,14 @@ export function createGoogleReader({ keyFile = process.env.ITUNE_SHEETS_CREDENTI
       const range = `'${tab.replaceAll("'", "''")}'!A:ZZ`;
       const body = await get(`${SHEETS}/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?valueRenderOption=FORMATTED_VALUE`);
       return body.values || [];
+    },
+    // Literal values (RAW), one cell per update: { range: "'tab'!E12", value }.
+    async writeRaw(spreadsheetId, updates) {
+      if (!updates.length) return;
+      await get(`${SHEETS}/${encodeURIComponent(spreadsheetId)}/values:batchUpdate`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ valueInputOption: "RAW", data: updates.map((u) => ({ range: u.range, values: [[u.value]] })) }),
+      });
     },
   };
 }

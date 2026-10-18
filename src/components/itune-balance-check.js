@@ -39,7 +39,7 @@ export default function ItuneBalanceCheck() {
           <p className="mt-1 text-sm">ยอดในเว็บตอนนี้ <span className="font-semibold tabular-nums">{num(selected.amount)} {selected.currency || ""}</span></p>
         </section>
         <ItuneBalancePhotos key={`p${selected.id}`} entryId={selected.id} />
-        <ItuneSheetOrderList key={`o${selected.id}`} entryId={selected.id} />
+        <ItuneSheetOrderList key={`o${selected.id}`} entryId={selected.id} currency={selected.currency} />
       </>}
     </main>
   </div>;

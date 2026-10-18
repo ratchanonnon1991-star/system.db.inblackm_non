@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { ITUNE_SHEET_SOURCES, ITUNE_SHEET_START_DATE } from "@/lib/itune-sheet-orders";
+import { ItuneOrdersTable } from "@/components/itune-entry-sheet-panel";
 
 const endpoint = "/api/projectm/itune/sheet-orders";
 const CURRENCIES = ["USD", "DE"];
@@ -69,7 +70,7 @@ export default function ItuneSheetOrdersAdmin() {
         <h2 className="text-lg font-semibold">สถานะการดึงชีท</h2>
         {!data.status ? <p className="mt-2 text-sm text-ll-ink-subtle">ยังไม่เคยดึง — ตรวจว่า worker itune-sheet-sync ทำงานอยู่</p> : <div className="mt-2 space-y-2 text-sm">
           <p>ดึงล่าสุด {when(data.status.last_run_at)} · สำเร็จล่าสุด {when(data.status.last_success_at)} · วันที่อ่าน {(summary.days || []).join(", ") || "—"}</p>
-          <p>พบ {summary.found ?? 0} แถว · รอใส่เวลา {summary.withoutTime ?? 0} · ย้ายใหม่ {counts.imported ?? 0} · เคยย้ายแล้ว {counts.already ?? 0} · รอเมล {counts.no_email ?? 0} · สกุลไม่ตรง {counts.currency_mismatch ?? 0} · เมลซ้ำ {counts.duplicate_email ?? 0}</p>
+          <p>พบ {summary.found ?? 0} แถว · วาง F→E (Russia) {summary.russiaFilled ?? 0} · รอใส่เวลา {summary.withoutTime ?? 0} · ย้ายใหม่ {counts.imported ?? 0} · เคยย้ายแล้ว {counts.already ?? 0} · รอเมล {counts.no_email ?? 0} · สกุลไม่ตรง {counts.currency_mismatch ?? 0} · เมลซ้ำ {counts.duplicate_email ?? 0}</p>
           {summary.errors?.length > 0 && <ul role="alert" className="space-y-1">{summary.errors.map((e, i) => <li key={i}>อ่าน {sourceLabel(e.source)} ไม่สำเร็จ: {e.message}</li>)}</ul>}
           {summary.negative?.length > 0 && <p role="alert">ยอดเมลติดลบหลังหัก: {summary.negative.map((n) => `${n.email} (${n.orderId})`).join(", ")}</p>}
         </div>}
@@ -83,19 +84,7 @@ export default function ItuneSheetOrdersAdmin() {
         <ul className="mt-2 space-y-1 text-xs">{summary.issues.map((s, i) => <li key={i}>{sourceLabel(s.source)} · {s.tab} แถว {s.row} · {s.orderId || "—"} · {s.email} — {s.reason}</li>)}</ul></details>}
       <section aria-label="ออเดอร์ที่ย้ายแล้ว" className="min-w-0 space-y-2">
         <h2 className="text-lg font-semibold">ย้ายล่าสุด ({data.imports.length})</h2>
-        <div className="max-h-[60vh] overflow-auto rounded-xl border border-ll-hairline bg-ll-surface-1">
-          <table className="w-full min-w-[1100px] text-left text-sm">
-            <thead className="sticky top-0 bg-ll-surface-2"><tr>{["ย้ายเมื่อ", "ชีท", "วันที่/เวลาชีท", "ออเดอร์", "เมล", "ยอดออก", "ยอดเมล ก่อน → หลัง", "ตัวคูณ", "ต้นทุน (THB)"].map((h) => <th key={h} scope="col" className="whitespace-nowrap px-3 py-2 font-semibold">{h}</th>)}</tr></thead>
-            <tbody>{data.imports.map((r) => <tr key={r.id} className="border-t border-ll-hairline">
-              <td className="whitespace-nowrap px-3 py-2">{when(r.imported_at)}</td><td className="px-3 py-2">{sourceLabel(r.source)}</td>
-              <td className="whitespace-nowrap px-3 py-2">{String(r.sheet_date).slice(0, 10)}{r.order_time ? ` ${r.order_time}` : ""}</td><td className="break-words px-3 py-2">{r.order_id}</td>
-              <td className="break-all px-3 py-2">{r.email}</td><td className="px-3 py-2 tabular-nums">{num(r.used_amount)} {r.currency}</td>
-              <td className="px-3 py-2 tabular-nums">{num(r.amount_before)} → {num(r.amount_after)}</td>
-              <td className="px-3 py-2 tabular-nums">{r.cost_rate ? num(r.cost_rate) : "ยังไม่ตั้ง"}</td><td className="px-3 py-2 tabular-nums">{num(r.cost_thb)}</td>
-            </tr>)}</tbody>
-          </table>
-          {!data.imports.length && <p className="p-6 text-center text-sm text-ll-ink-subtle">ยังไม่มีออเดอร์ที่ย้ายเข้ามา</p>}
-        </div>
+        <ItuneOrdersTable rows={data.imports.filter((r) => !r.deleted_at)} showEmail emptyMessage="ยังไม่มีออเดอร์ที่ย้ายเข้ามา" />
       </section>
     </>}
   </div>;

@@ -314,7 +314,7 @@ export default function ItuneTopupCard({ entry, now, releaseThreshold, onRelease
       {expanded && (
         <div className="flex flex-col gap-5 border-t border-ll-hairline p-4">
           <ItuneOrderHistory entryId={entry.id} />
-          <ItuneSheetOrderList entryId={entry.id} />
+          <ItuneSheetOrderList entryId={entry.id} currency={entry.currency} />
           <ItuneBalancePhotos entryId={entry.id} />
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             <DetailField label="สถานะ">

@@ -1,14 +1,21 @@
 // iTunes orders topped up by staff live only in the order sheets (bot orders are in the database).
 // A row is an iTunes order when its status is "รอเติม" and its email column holds the iTune email
 // that paid, and the row is only moved once its time cell is filled.
-// Columns follow auto-balance's README for each source; time columns are from the team.
+// Columns follow auto-balance's README for each source (sale/customer/link/game/pack/uid are the
+// columns it copies into the Codashop sheet); time and email columns are from the team.
 export const ITUNE_SHEET_START_DATE = "2026-10-18";
 export const ITUNE_SHEET_SOURCES = {
-  russia: { label: "Order Russia", order: "I", channel: "Y", status: "Z", amount: "T", time: "W", email: "AA", filePrefix: "0.1 Order Russia Reseller " },
-  marketplace: { label: "Marketplace", order: "D", channel: "T", status: "U", amount: "O", time: "R", email: "V" },
-  page: { label: "Order Page", order: "C", channel: "S", status: "Q", amount: "N", time: "M", email: "U" },
-  inblackm: { label: "Order inblackm", order: "C", channel: "S", status: "Q", amount: "N", time: "M", email: "U", filePrefix: "0.5 Order inblackm " },
+  // Russia's THB sale (K) is a formula over E; E stays empty until F is pasted into it (see russiaFill).
+  russia: { label: "Order Russia", order: "I", channel: "Y", status: "Z", amount: "T", time: "W", email: "AA",
+    sale: "K", customer: "N", link: "O", game: "P", pack: "Q", uid: "R", filePrefix: "0.1 Order Russia Reseller " },
+  marketplace: { label: "Marketplace", order: "D", channel: "T", status: "U", amount: "O", time: "R", email: "V",
+    sale: "G", customer: "I", link: "J", game: "K", pack: "L", uid: "N" },
+  page: { label: "Order Page", order: "C", channel: "S", status: "Q", amount: "N", time: "M", email: "U",
+    sale: "F", customer: "H", link: "I", game: "J", pack: "K", uid: "L" },
+  inblackm: { label: "Order inblackm", order: "C", channel: "S", status: "Q", amount: "N", time: "M", email: "U",
+    sale: "F", customer: "H", link: "I", game: "J", pack: "K", uid: "L", filePrefix: "0.5 Order inblackm " },
 };
+export const itunesSourceLabel = (key) => ITUNE_SHEET_SOURCES[key]?.label || (key === "manual" ? "เพิ่มเอง" : key);
 export const ITUNE_WAITING_STATUS = "รอเติม";
 
 export function columnIndex(letters) {
@@ -32,9 +39,10 @@ export function dailyFileDate(name, prefix) {
   return bot < 0 ? null : sheetDate(title.slice(prefix.length, bot));
 }
 
-// "itunes de" / "de" → DE, "itunes usd" / "usd" → USD (the iTune entries' own currency labels).
+// "itunes de" / "de" / "ITUNES(DE)" → DE, "itunes usd" / "usd" / "ITUNES (USD)" → USD
+// (the iTune entries' own currency labels).
 export function itunesCurrency(channel) {
-  const m = /^(?:itunes?\s*)?(de|usd)$/i.exec(String(channel ?? "").trim().replace(/\s+/g, " "));
+  const m = /^(?:itunes?\s*)?\(?\s*(de|usd)\s*\)?$/i.exec(String(channel ?? "").trim().replace(/\s+/g, " "));
   return m ? m[1].toUpperCase() : null;
 }
 
@@ -71,7 +79,13 @@ export function extractItunesRows(sourceKey, rows, { sheetDate: date, tab }) {
     if (!amount) return issues.push({ ...base, reason: `ยอดออกคอลัมน์ ${src.amount} ไม่ใช่ตัวเลข` });
     const time = at(row, src.time);
     if (!time) { withoutTime++; return; }
-    orders.push({ ...base, currency, amount, time: time.slice(0, 32), key: `${sourceKey}|${date}|${orderId}|${occurrence}` });
+    const text = (letter, max) => at(row, letter).slice(0, max);
+    const details = { saleThb: sheetAmount(at(row, src.sale)), customer: text(src.customer, 200), link: text(src.link, 500),
+      game: text(src.game, 200), pack: text(src.pack, 300), playerId: text(src.uid, 200) };
+    const order = { ...base, currency, amount, time: time.slice(0, 32), details, key: `${sourceKey}|${date}|${orderId}|${occurrence}` };
+    // Same step auto-balance takes for its rows: K stays 0 until F's displayed value is in E.
+    if (sourceKey === "russia" && !details.saleThb && at(row, "F") && !at(row, "E")) order.fillE = at(row, "F");
+    orders.push(order);
   });
   return { orders, issues, withoutTime };
 }
