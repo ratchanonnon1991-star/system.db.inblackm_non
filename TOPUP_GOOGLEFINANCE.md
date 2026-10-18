@@ -18,7 +18,7 @@ the saved cost divisor. No changes to Manual, iTune, USDCodashop or WavePay conv
 
 3. Enable Google Sheets API for that service account's Cloud project.
 4. Share this rate-only sheet with the JSON's `client_email` as Viewer:
-   https://docs.google.com/spreadsheets/d/15xM5Gz5UPhnc0Mt2ZCQxVhLGVAwVXxYVxVKf2WOPgR4/edit
+   https://docs.google.com/spreadsheets/d/1cyf6BPQa7pLgUzdIX38q85BfXC3jRql94Q5u4p3Lx6M/edit
 5. Keep `Rates!B2` as `=GOOGLEFINANCE("CURRENCY:USDTHB")`.
 6. After pulling the new code, check access without writing anything:
 
