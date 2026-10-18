@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ImagePlus, Plus, Trash2 } from "lucide-react";
+import { ImagePlus, Pencil, Plus, Trash2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import ItuneImagePickerModal from "@/components/itune-image-picker-modal";
 import { itunesSourceLabel } from "@/lib/itune-sheet-orders";
@@ -19,9 +19,9 @@ const cell = "border-r border-ll-hairline px-3 py-2 align-top";
 const money2 = (v) => v == null ? "—" : Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // Coda-style order table (sale, cost, profit, game, customer…), shared with the admin page.
-export function ItuneOrdersTable({ rows, showEmail = false, onDelete, busy, emptyMessage = "ยังไม่มีออเดอร์" }) {
+export function ItuneOrdersTable({ rows, showEmail = false, onDelete, onEdit, editedIds, busy, emptyMessage = "ยังไม่มีออเดอร์" }) {
   const headings = ["วันที่ / เวลา", "ลำดับคิว", "ที่มา", ...(showEmail ? ["เมล"] : []), "ยอดโอน (THB)", "ต้นทุน (THB)", "กำไร (THB)", "กำไร (%)",
-    "ยอดออก", "ยอดเมล ก่อน → หลัง", "ชื่อลูกค้า", "ลิงก์", "เกม", "สิ่งที่ซื้อ", "UID", "หมายเหตุ / ผู้เพิ่ม", ...(onDelete ? [""] : [])];
+    "ยอดออก", "ยอดเมล ก่อน → หลัง", "ชื่อลูกค้า", "ลิงก์", "เกม", "สิ่งที่ซื้อ", "UID", "หมายเหตุ / ผู้เพิ่ม", ...(onDelete || onEdit ? [""] : [])];
   return <div className="max-h-[60vh] overflow-auto rounded-xl border border-ll-hairline bg-ll-surface-1">
     <table className="w-full min-w-[1700px] text-left text-sm text-ll-ink">
       <thead className="sticky top-0 z-10 bg-ll-surface-2"><tr>{headings.map((h, i) => <th key={i} scope="col" className="whitespace-nowrap border-r border-ll-hairline px-3 py-2 font-semibold">{h}</th>)}</tr></thead>
@@ -36,7 +36,7 @@ export function ItuneOrdersTable({ rows, showEmail = false, onDelete, busy, empt
           <td className={`${cell} tabular-nums`}>{o.cost_thb == null ? "ยังไม่ตั้ง" : money2(o.cost_thb)}{o.cost_rate && <p className="text-xs text-ll-ink-subtle">× {Number(o.cost_rate)}</p>}</td>
           <td className={`${cell} tabular-nums ${f.profit != null && Number(f.profit) < 0 ? "text-ll-primary-subtle-text" : ""}`}>{money2(f.profit)}</td>
           <td className={`${cell} tabular-nums`}>{f.margin == null ? "—" : `${f.margin}%`}</td>
-          <td className={`${cell} whitespace-nowrap tabular-nums`}>{money2(o.used_amount)} {o.currency}</td>
+          <td className={`${cell} whitespace-nowrap tabular-nums`}>{money2(o.used_amount)} {o.currency}{editedIds?.has(String(o.id)) && <p className="text-xs text-ll-ink-subtle">แก้ไขแล้ว</p>}</td>
           <td className={`${cell} whitespace-nowrap tabular-nums`}>{money2(o.amount_before)} → {money2(o.amount_after)}</td>
           <td className={`${cell} max-w-48 break-words`}>{o.customer || "—"}</td>
           <td className={cell}>{link ? <a href={link} target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">เปิด</a> : "—"}</td>
@@ -44,7 +44,10 @@ export function ItuneOrdersTable({ rows, showEmail = false, onDelete, busy, empt
           <td className={`${cell} max-w-56 break-words`}>{o.pack || "—"}</td>
           <td className={`${cell} max-w-48 break-words`}>{o.player_id || "—"}</td>
           <td className={`${cell} max-w-56 break-words text-xs`}>{o.note || ""}{o.created_by_username ? <p className="text-ll-ink-subtle">เพิ่มโดย {o.created_by_username}</p> : null}</td>
-          {onDelete && <td className={cell}><button type="button" onClick={() => onDelete(o)} disabled={busy} aria-label={`ลบออเดอร์ ${o.order_id}`} className="rounded-lg p-2 hover:bg-ll-surface-2 disabled:opacity-50"><Trash2 size={16} aria-hidden /></button></td>}
+          {(onDelete || onEdit) && <td className={`${cell} whitespace-nowrap`}>
+            {onEdit && <button type="button" onClick={() => onEdit(o)} disabled={busy} aria-label={`แก้ยอดออก ${o.order_id}`} title="แก้ยอดออก" className="rounded-lg p-2 hover:bg-ll-surface-2 disabled:opacity-50"><Pencil size={16} aria-hidden /></button>}
+            {onDelete && <button type="button" onClick={() => onDelete(o)} disabled={busy} aria-label={`ลบออเดอร์ ${o.order_id}`} title="ลบออเดอร์" className="rounded-lg p-2 hover:bg-ll-surface-2 disabled:opacity-50"><Trash2 size={16} aria-hidden /></button>}
+          </td>}
         </tr>;
       })}</tbody>
     </table>
@@ -61,7 +64,7 @@ const blankOrder = () => ({ orderId: "", usedAmount: "", saleThb: "", orderAt: l
 
 export function ItuneSheetOrderList({ entryId, currency }) {
   const [data, setData] = useState(null); const [error, setError] = useState(""); const [notice, setNotice] = useState("");
-  const [busy, setBusy] = useState(false); const [form, setForm] = useState(null);
+  const [busy, setBusy] = useState(false); const [form, setForm] = useState(null); const [edit, setEdit] = useState(null);
   const load = useCallback(async () => {
     try { setData(await apiJson(`/api/projectm/itune/${entryId}/sheet-orders`, { cache: "no-store" })); }
     catch (e) { setError(e.message); }
@@ -73,6 +76,15 @@ export function ItuneSheetOrderList({ entryId, currency }) {
       await apiJson(`/api/projectm/itune/${entryId}/sheet-orders`, { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, orderAt: new Date(form.orderAt).toISOString() }) });
       setForm(null); setNotice("เพิ่มออเดอร์และหักยอดเมลแล้ว"); await load();
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  }
+  async function saveEdit(event) {
+    event.preventDefault(); setBusy(true); setError(""); setNotice("");
+    try {
+      await apiJson(`/api/projectm/itune/sheet-orders/${edit.order.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ usedAmount: edit.amount, reason: edit.reason }) });
+      setNotice(`แก้ยอดออก ${edit.order.order_id} เป็น ${edit.amount} แล้ว ยอดเมลปรับตามส่วนต่าง`); setEdit(null); await load();
     } catch (e) { setError(e.message); }
     finally { setBusy(false); }
   }
@@ -108,10 +120,24 @@ export function ItuneSheetOrderList({ entryId, currency }) {
       </fieldset>
       <div className="flex gap-3"><button disabled={busy} className={button}>บันทึกและหักยอด</button><button type="button" disabled={busy} onClick={() => setForm(null)} className={button}>ยกเลิก</button></div>
     </form>}
+    {edit && <form onSubmit={saveEdit} className="space-y-3 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4">
+      <p className="font-medium">แก้ยอดออก ออเดอร์ {edit.order.order_id} (เดิม {money2(edit.order.used_amount)} {edit.order.currency})</p>
+      <p className="text-xs text-ll-ink-subtle">ยอดเมลจะเพิ่ม/ลดตามส่วนต่าง ต้นทุนคิดใหม่ด้วยตัวคูณเดิมของออเดอร์นี้ และเก็บประวัติการแก้ไว้</p>
+      <fieldset disabled={busy} className="grid gap-3 sm:grid-cols-2">
+        <label>ยอดออกใหม่ ({edit.order.currency}) *<input required autoFocus inputMode="decimal" value={edit.amount} onChange={(e) => setEdit({ ...edit, amount: e.target.value })} className={input} /></label>
+        <label>เหตุผล<input maxLength={500} value={edit.reason} onChange={(e) => setEdit({ ...edit, reason: e.target.value })} className={input} /></label>
+      </fieldset>
+      <div className="flex gap-3"><button disabled={busy || !edit.amount} className={button}>บันทึก</button><button type="button" disabled={busy} onClick={() => setEdit(null)} className={button}>ยกเลิก</button></div>
+    </form>}
     {error && <p role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     {!data && !error && <p role="status" className="text-ll-ink-subtle">กำลังโหลด…</p>}
-    {data && <ItuneOrdersTable rows={orders} onDelete={remove} busy={busy} />}
+    {data && <ItuneOrdersTable rows={orders} onDelete={remove} busy={busy} editedIds={new Set((data.edits || []).map((e) => String(e.import_id)))}
+      onEdit={(o) => { setForm(null); setError(""); setNotice(""); setEdit({ order: o, amount: String(Number(o.used_amount)), reason: "" }); }} />}
+    {data?.edits?.length > 0 && <details><summary className="cursor-pointer py-2">ประวัติการแก้ยอดออก ({data.edits.length})</summary>
+      <ul className="mt-2 space-y-1 text-xs text-ll-ink-subtle">{data.edits.map((e) => <li key={e.id}>
+        {e.order_id} · {money2(e.old_amount)} → {money2(e.new_amount)} · {e.edited_by_username || "—"} เมื่อ {when(e.edited_at)}{e.reason ? ` · ${e.reason}` : ""}
+      </li>)}</ul></details>}
     {data?.deleted.length > 0 && <details><summary className="cursor-pointer py-2">ประวัติการลบออเดอร์ ({data.deleted.length})</summary>
       <ul className="mt-2 space-y-1 text-xs text-ll-ink-subtle">{data.deleted.map((o) => <li key={o.id}>
         {itunesSourceLabel(o.source)} · {o.order_id} · {money2(o.used_amount)} {o.currency} (คืนยอดแล้ว) · ลบโดย {o.deleted_by_username || "—"} เมื่อ {when(o.deleted_at)}

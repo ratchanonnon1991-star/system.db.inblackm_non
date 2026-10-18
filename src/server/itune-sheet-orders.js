@@ -46,6 +46,11 @@ export async function sheetPool(getPool = getReadyPool) {
       ADD COLUMN IF NOT EXISTS note TEXT, ADD COLUMN IF NOT EXISTS created_by_username TEXT,
       ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS deleted_by_user_id INTEGER,
       ADD COLUMN IF NOT EXISTS deleted_by_username TEXT`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS projectm_itune_sheet_order_edits (
+      id BIGSERIAL PRIMARY KEY, import_id BIGINT NOT NULL, entry_id INTEGER NOT NULL, old_amount NUMERIC(14,2) NOT NULL,
+      new_amount NUMERIC(14,2) NOT NULL, reason TEXT, edited_by_user_id INTEGER, edited_by_username TEXT,
+      edited_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+    await pool.query("CREATE INDEX IF NOT EXISTS itune_sheet_order_edits_entry ON projectm_itune_sheet_order_edits(entry_id, edited_at DESC)");
     await pool.query("CREATE INDEX IF NOT EXISTS itune_balance_photos_entry ON projectm_itune_balance_photos(entry_id, taken_at DESC)");
   })().catch((err) => { schemas.delete(pool); throw err; }));
   await schemas.get(pool);
@@ -249,7 +254,10 @@ export async function entrySheetOrders(entryId, actor, getPool = getReadyPool) {
   const id = await assertEntryAccess(pool, entryId, actor);
   const { rows } = await pool.query(`SELECT ${ORDER_COLUMNS} FROM projectm_itune_sheet_imports
     WHERE entry_id=$1 ORDER BY imported_at DESC, id DESC LIMIT 300`, [id]);
-  return { orders: rows.filter((r) => !r.deleted_at), deleted: rows.filter((r) => r.deleted_at) };
+  const edits = (await pool.query(`SELECT e.id, e.import_id, i.order_id, e.old_amount::text, e.new_amount::text, e.reason,
+    e.edited_by_username, e.edited_at FROM projectm_itune_sheet_order_edits e JOIN projectm_itune_sheet_imports i ON i.id = e.import_id
+    WHERE e.entry_id=$1 ORDER BY e.edited_at DESC, e.id DESC LIMIT 200`, [id])).rows;
+  return { orders: rows.filter((r) => !r.deleted_at), deleted: rows.filter((r) => r.deleted_at), edits };
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -288,6 +296,44 @@ export async function addManualOrder(body, actor, getPool = getReadyPool) {
     }, `เพิ่มเองโดย ${actorName(actor) || "-"}`);
     await client.query("COMMIT");
     return { id: result.id };
+  } catch (e) { await client.query("ROLLBACK").catch(() => {}); throw e; }
+  finally { client.release(); }
+}
+
+// Emergency correction of an order's amount out: the email moves by the difference, the cost is
+// recomputed with the multiplier locked on that order, and every change is kept as edit history.
+export async function updateSheetOrderAmount(orderId, { usedAmount, reason }, actor, getPool = getReadyPool) {
+  const id = String(orderId ?? "");
+  if (!/^[1-9]\d{0,17}$/.test(id)) fail("ไม่พบออเดอร์", 404);
+  const amount = sheetAmount(usedAmount);
+  if (!amount || !/^\d+(\.\d{1,2})?$/.test(String(usedAmount ?? "").trim())) fail("ยอดออกต้องเป็นตัวเลขมากกว่า 0 ทศนิยมไม่เกิน 2 ตำแหน่ง");
+  const pool = await sheetPool(getPool);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL lock_timeout = '5s'");
+    const order = (await client.query(`SELECT entry_id, order_id, used_amount::text, amount_before::text, cost_rate::text, deleted_at
+      FROM projectm_itune_sheet_imports WHERE id=$1 FOR UPDATE`, [id])).rows[0];
+    if (!order) fail("ไม่พบออเดอร์", 404);
+    await assertEntryAccess(client, order.entry_id, actor);
+    if (order.deleted_at) fail("ออเดอร์นี้ถูกลบไปแล้ว", 409);
+    if (Number(order.used_amount) === Number(amount)) fail("ยอดออกเท่าเดิม");
+    const cents = (v) => Math.round(Number(v) * 100);
+    const delta = cents(amount) - cents(order.used_amount);
+    const entry = (await client.query("SELECT id, email, amount FROM projectm_itune_entries WHERE id=$1 FOR UPDATE", [order.entry_id])).rows[0];
+    if (entry) {
+      const before = Number(entry.amount); const after = (cents(before) - delta) / 100;
+      await client.query("UPDATE projectm_itune_entries SET amount=$1, updated_at=NOW() WHERE id=$2", [after, entry.id]);
+      await client.query(`INSERT INTO projectm_itune_amount_log (entry_id, entry_email, old_amount, new_amount, changed_by_user_id, changed_by_username)
+        VALUES ($1,$2,$3,$4,$5,$6)`, [entry.id, entry.email, before, after, actor?.id ?? null,
+        `แก้ยอดออก ${order.order_id} ${order.used_amount}→${amount} · ${actorName(actor) || "-"}`.slice(0, 200)]);
+    }
+    await client.query(`UPDATE projectm_itune_sheet_imports SET used_amount=$2, cost_thb=$3,
+      amount_after=amount_before - $2::numeric WHERE id=$1`, [id, amount, costThb(amount, order.cost_rate)]);
+    await client.query(`INSERT INTO projectm_itune_sheet_order_edits (import_id, entry_id, old_amount, new_amount, reason, edited_by_user_id, edited_by_username)
+      VALUES ($1,$2,$3,$4,$5,$6,$7)`, [id, order.entry_id, order.used_amount, amount, field(reason, 500) || null, actor?.id ?? null, actorName(actor)]);
+    await client.query("COMMIT");
+    return { usedAmount: amount };
   } catch (e) { await client.query("ROLLBACK").catch(() => {}); throw e; }
   finally { client.release(); }
 }

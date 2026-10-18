@@ -109,8 +109,8 @@ export function costThb(amount, rate) {
   return `${cents / 100n}.${String(cents % 100n).padStart(2, "0")}`;
 }
 
-// Amount-log rows written by sheet imports, manual adds and order deletes. The orders table already
+// Amount-log rows written by sheet imports, manual adds, order edits and deletes. The orders table already
 // shows these, so the topup card's balance history leaves them out (they stay in the database).
 export function isOrderAmountLog(log) {
-  return /^(ชีท |เพิ่มเองโดย |ลบออเดอร์ )/.test(String(log?.changedByUsername || ""));
+  return /^(ชีท |เพิ่มเองโดย |ลบออเดอร์ |แก้ยอดออก )/.test(String(log?.changedByUsername || ""));
 }
