@@ -51,7 +51,7 @@ export default function ItuneSheetOrdersAdmin() {
   return <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-6 px-4 py-6 text-ll-ink sm:px-6">
     <header className="flex flex-wrap items-end justify-between gap-3">
       <div><h1 className="text-2xl font-semibold">ออเดอร์ iTunes จากชีท</h1>
-        <p className="mt-1 text-sm text-ll-ink-subtle">ย้ายแถว “รอเติม” ที่มีอีเมลในคอลัมน์ถัดจากสถานะและใส่เวลาแล้ว จาก {Object.values(ITUNE_SHEET_SOURCES).map((s) => s.label).join(", ")} ตั้งแต่ {ITUNE_SHEET_START_DATE} · หักยอดเมลทันที · ไม่เขียนกลับลงชีท</p></div>
+        <p className="mt-1 text-sm text-ll-ink-subtle">ย้ายแถว “รอเติม” ที่มีอีเมล (Russia AA, Marketplace V, Page/inblackm U) และใส่เวลาแล้ว จาก {Object.values(ITUNE_SHEET_SOURCES).map((s) => s.label).join(", ")} ตั้งแต่ {ITUNE_SHEET_START_DATE} · หักยอดเมลทันที · ไม่เขียนกลับลงชีท</p></div>
       <button onClick={load} disabled={loading} className={button}><RefreshCw size={16} aria-hidden />โหลดใหม่</button>
     </header>
     {error && <p role="alert" className="rounded-xl border border-ll-hairline p-4 text-sm">{error}</p>}

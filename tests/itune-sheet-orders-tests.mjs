@@ -35,6 +35,15 @@ check(found.orders[0].email === "buyer@mail.com" && found.orders[0].currency ===
 check(found.orders[0].key === "marketplace|2026-10-18|M1|1" && found.orders[1].key === "marketplace|2026-10-18|M1|2", "each pack row has its own key");
 check(found.issues[0].orderId === "M5");
 
+// Order Page / inblackm keep the email in U (status Q, amount N, time M); R is not read.
+const pageTab = [
+  row({ C: "P1", S: "itunes usd", Q: "รอเติม", U: "page@mail.com", N: "7", M: "10:00" }),
+  row({ C: "P2", S: "itunes usd", Q: "รอเติม", R: "wrong@mail.com", N: "7", M: "10:00" }),
+];
+for (const source of ["page", "inblackm"]) {
+  const got = extractItunesRows(source, pageTab, { sheetDate: "2026-10-18", tab: "18/10/2026" });
+  check(got.orders.length === 1 && got.orders[0].email === "page@mail.com" && got.orders[0].amount === "7.00", `${source} email in U`);
+}
 check(JSON.stringify(daysToRead("2026-10-20", { includeOlder: false })) === JSON.stringify(["2026-10-20", "2026-10-19"]));
 check(JSON.stringify(daysToRead("2026-10-20", { includeOlder: true })) === JSON.stringify(["2026-10-20", "2026-10-19", "2026-10-18"]));
 check(daysToRead("2026-10-18", { includeOlder: true }).length === 1 && daysToRead("2026-10-17", { includeOlder: true }).length === 0, "never before the start date");

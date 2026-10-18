@@ -1,13 +1,13 @@
 // iTunes orders topped up by staff live only in the order sheets (bot orders are in the database).
-// A row is an iTunes order when its status is "รอเติม" and the cell right of the status holds the
-// iTune email that paid, and the row is only moved once its time cell is filled.
+// A row is an iTunes order when its status is "รอเติม" and its email column holds the iTune email
+// that paid, and the row is only moved once its time cell is filled.
 // Columns follow auto-balance's README for each source; time columns are from the team.
 export const ITUNE_SHEET_START_DATE = "2026-10-18";
 export const ITUNE_SHEET_SOURCES = {
-  russia: { label: "Order Russia", order: "I", channel: "Y", status: "Z", amount: "T", time: "W", filePrefix: "0.1 Order Russia Reseller " },
-  marketplace: { label: "Marketplace", order: "D", channel: "T", status: "U", amount: "O", time: "R" },
-  page: { label: "Order Page", order: "C", channel: "S", status: "Q", amount: "N", time: "M" },
-  inblackm: { label: "Order inblackm", order: "C", channel: "S", status: "Q", amount: "N", time: "M", filePrefix: "0.5 Order inblackm " },
+  russia: { label: "Order Russia", order: "I", channel: "Y", status: "Z", amount: "T", time: "W", email: "AA", filePrefix: "0.1 Order Russia Reseller " },
+  marketplace: { label: "Marketplace", order: "D", channel: "T", status: "U", amount: "O", time: "R", email: "V" },
+  page: { label: "Order Page", order: "C", channel: "S", status: "Q", amount: "N", time: "M", email: "U" },
+  inblackm: { label: "Order inblackm", order: "C", channel: "S", status: "Q", amount: "N", time: "M", email: "U", filePrefix: "0.5 Order inblackm " },
 };
 export const ITUNE_WAITING_STATUS = "รอเติม";
 
@@ -55,7 +55,6 @@ export function sheetAmount(text) {
 export function extractItunesRows(sourceKey, rows, { sheetDate: date, tab }) {
   const src = ITUNE_SHEET_SOURCES[sourceKey];
   const at = (row, letter) => String(row[columnIndex(letter)] ?? "").trim();
-  const emailCol = columnIndex(src.status) + 1;
   const seen = new Map(); const orders = []; const issues = []; let withoutTime = 0;
   rows.forEach((row, index) => {
     const orderId = at(row, src.order);
@@ -63,7 +62,7 @@ export function extractItunesRows(sourceKey, rows, { sheetDate: date, tab }) {
     // distinct and a sibling changing status does not shift the others' keys.
     const occurrence = orderId ? (seen.get(orderId) || 0) + 1 : 0;
     if (orderId) seen.set(orderId, occurrence);
-    const email = String(row[emailCol] ?? "").trim().toLowerCase();
+    const email = at(row, src.email).toLowerCase();
     if (at(row, src.status) !== ITUNE_WAITING_STATUS || !EMAIL.test(email)) return;
     const base = { source: sourceKey, sheetDate: date, tab, row: index + 1, orderId, email, channel: at(row, src.channel) };
     const currency = itunesCurrency(base.channel); const amount = sheetAmount(at(row, src.amount));
