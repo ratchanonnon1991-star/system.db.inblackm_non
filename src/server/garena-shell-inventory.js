@@ -16,7 +16,9 @@ const columns = `c.id,c.source_order_id,c.game_name,c.pack_name,c.source,c.creat
   c.provider_response->>'shell_balance' AS shell_balance,
   c.invoice_txn_id AS invoice_number`;
 const usernames = SHELL_ACCOUNTS.map((account) => account.id);
-const sourceKey = (alias) => `split_part(split_part(${alias}.source_order_id::text,':',1),'/',1)`;
+// Strip only the provider dispatch suffix. /1 and /2 identify different purchased
+// units and must survive both the sale lookup and the pack-count grouping.
+const sourceKey = (alias) => `split_part(${alias}.source_order_id::text,':',1)`;
 const consistentSale = `COUNT(DISTINCT ROW(t.order_id,t.price,t.source))=1`;
 const saleJoin = `LEFT JOIN LATERAL (
   SELECT CASE WHEN ${consistentSale} THEN MIN(t.order_id::text) END AS order_id,

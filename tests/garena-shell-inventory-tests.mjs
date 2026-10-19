@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createGarenaShellInventory } from "../src/server/garena-shell-inventory.js";
+import { createGarenaShellInventory, enrichShellOrders } from "../src/server/garena-shell-inventory.js";
 import { SHELL_ACCOUNTS, shellAccount, shellFilters, shellUsage, shellCost, shellOrder, shellSummary, shellCsv } from "../src/lib/garena-shell-inventory.js";
 
 let passed = 0;
@@ -74,4 +74,18 @@ const many = await paged.list(actor, { ...dates, page: 2 });
 check(pages === 2 && many.total === 500 && many.entries.length === 100 && many.summary.orders === 500);
 const all = await paged.list(actor, dates, { exportAll: true });
 check(all.entries.length === 500 && all.total === 500, "CSV includes all matched pages");
+
+const slashId = "IN430910-6066-1/1";
+const slashFields = await enrichShellOrders(async (sql, params) => {
+  check(params[0].length === 1 && params[0][0] === slashId, "sale and pack count retain the complete purchased-unit ID");
+  if (sql.includes("AS sale_key")) {
+    check(sql.includes("split_part(c.source_order_id::text,':',1)") && !sql.includes("'/',1"), "SQL does not collapse sibling /1 and /2 units");
+    return [{ sale_key: slashId, pack_count: 1 }];
+  }
+  return [];
+}, [{ ...base, id: 292325, source_order_id: `${slashId}:dispatch-uuid:1`, source_base: slashId,
+  sale_order_id: slashId, sale_price: "475.00", source: "PAGE", shell_before: "69300", shell_after: "68550", shell_used: "750" }]);
+const slashEntry = shellOrder(slashFields[0]);
+check(slashEntry.figures.sale === "475.00" && slashEntry.figures.cost === "468.75");
+check(slashEntry.figures.profit === "6.25" && slashEntry.figures.margin === "1.32");
 console.log(`${passed} passed`);

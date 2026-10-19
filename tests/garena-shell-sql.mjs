@@ -50,5 +50,30 @@ try {
   assert.equal(one.summary.sale, '570.00');
   assert.equal(one.cards.length, 2);
   assert.ok(!JSON.stringify(one).includes('Old staff'));
+
+  // Regression: the /1 suffix belongs to the paid unit, not provider dispatch metadata.
+  // The same task may also contain a parent-ID row or a distinct /2 sale with a different price.
+  await db.exec(`INSERT INTO telegram_orders_dev VALUES
+    ('SLASH-REUSED','IN430910-6066-1',999999,'PAGE','uid','uid','Wrong parent',NULL),
+    ('SLASH-REUSED','IN430910-6066-1/1',475,'PAGE','uid','uid','Staff',NULL),
+    ('SLASH-REUSED','IN430910-6066-1/2',100,'PAGE','uid','uid','Staff',NULL),
+    ('SLASH-MULTI','IN430910-6066-1/9',570,'PAGE','uid','uid','Staff',NULL);`);
+  await insert(10, 'IN430910-6066-1/1:dispatch-uuid:1', 'SLASH-REUSED', 'InblackWFH1z', '2026-10-17T14:52:51Z', 'completed', 69300, 68550, 750);
+  await insert(11, 'IN430910-6066-1/2:dispatch-uuid:1', 'SLASH-REUSED', 'InblackWFH1z', '2026-10-17T14:53:00Z', 'completed', 68550, 68450, 100);
+  await insert(12, 'IN430910-6066-1/9:dispatch-uuid:1', 'SLASH-MULTI', 'InblackWFH1z', '2026-10-17T14:54:00Z');
+  await insert(13, 'IN430910-6066-1/9:dispatch-uuid:2', 'SLASH-MULTI', 'InblackWFH1z', '2026-10-17T14:55:00Z');
+  const slash = await repo.list(actor, { dateFrom: '2026-10-17', dateTo: '2026-10-17' });
+  assert.equal(slash.total, 4);
+  const real = slash.entries.find((entry) => entry.id === '10');
+  assert.equal(real.orderId, 'IN430910-6066-1/1');
+  assert.deepEqual(real.figures, { sale: '475.00', cost: '468.75', profit: '6.25', margin: '1.32' });
+  assert.equal(slash.entries.find((entry) => entry.id === '11').figures.sale, '100.00');
+  assert.equal(slash.entries.find((entry) => entry.id === '12').figures.sale, '285.00');
+  assert.equal(slash.entries.find((entry) => entry.id === '13').figures.sale, '285.00');
+  assert.equal(slash.summary.sale, '1145.00');
+  assert.ok(!JSON.stringify(slash).includes('Wrong parent'));
+  const exactSlash = await repo.list(actor, { dateFrom: '2026-10-17', dateTo: '2026-10-17', search: 'IN430910-6066-1/1' }, { exportAll: true });
+  assert.equal(exactSlash.total, 1);
+  assert.equal(exactSlash.summary.sale, '475.00');
   console.log('Garena Shell SQL: reused tasks, exact order matching, pack allocation, ambiguous evidence, account isolation, range-independent zero balance and secret projections passed');
 } finally { await db.close(); }

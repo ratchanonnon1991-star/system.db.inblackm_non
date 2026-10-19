@@ -21,7 +21,9 @@ Contradictory amounts or an increasing balance in a spend observation remain una
 `shell_cost_expected` is never used as actual usage. Cost = actual Shell out × 0.625 THB,
 rounded half up to satang. Profit = customer payment THB − cost; margin = profit / payment × 100.
 Customer payment fields reuse the existing inventory listing-field and sale-conversion helpers.
-Transport rows are first matched against the original order prefix (before `:` or `/`). If no
+Transport rows are first matched against the original order prefix (before `:`). Purchased-unit
+suffixes such as `/1` and `/2` are preserved for both sale identity and pack-count grouping; they
+must not be collapsed into a parent sale or each other. If no
 exact source match exists, a reused task with conflicting sale evidence stays unavailable.
 Multi-pack counts are calculated from distinct Codashop rows sharing that original order,
 not from a task-only join; duplicate transport records cannot multiply quantities or prices.
