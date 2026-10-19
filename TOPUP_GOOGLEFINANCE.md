@@ -19,7 +19,8 @@ the saved cost divisor. No changes to Manual, iTune, USDCodashop or WavePay conv
 3. Enable Google Sheets API for that service account's Cloud project.
 4. Share this rate-only sheet with the JSON's `client_email` as Viewer:
    https://docs.google.com/spreadsheets/d/1cyf6BPQa7pLgUzdIX38q85BfXC3jRql94Q5u4p3Lx6M/edit
-5. Keep `Rates!B2` as `=GOOGLEFINANCE("CURRENCY:USDTHB")`.
+5. Keep `'ชีต1'!B2` as `=GOOGLEFINANCE("CURRENCY:USDTHB")`.
+   The replacement sheet's actual tab name was confirmed by the server API.
 6. After pulling the new code, check access without writing anything:
 
    ```bash
@@ -37,7 +38,7 @@ Changing service-account keys requires an application restart.
 
 ## Read behavior
 
-- Reads exactly `'Rates'!B2` via Sheets values.get, UNFORMATTED_VALUE.
+- Reads exactly `'ชีต1'!B2` via Sheets values.get, UNFORMATTED_VALUE.
 - Dedicated credential, Sheets read-only OAuth scope. No fallback to iTune keys.
 - One shared request per process with a 5-minute cache; failed requests retry after
   30 seconds. Never silently substitutes CoinGecko, ECB, a manual rate or zero.

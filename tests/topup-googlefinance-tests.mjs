@@ -5,6 +5,7 @@ import { createTopupGoogleRateLoader, TOPUP_FX_SPREADSHEET_ID, TOPUP_FX_RANGE } 
 import { createMgcSalePreparer } from "../src/server/multigamecard-sale-rates.js";
 import { mgcOrder, mgcSummary, mgcCsv } from "../src/lib/multigamecard-inventory.js";
 assert.equal(TOPUP_FX_SPREADSHEET_ID, "1cyf6BPQa7pLgUzdIX38q85BfXC3jRql94Q5u4p3Lx6M", "uses the replacement sheet explicitly provided by the user");
+assert.equal(TOPUP_FX_RANGE, "'ชีต1'!B2", "uses the actual tab name confirmed by the server API");
 
 let clock = Date.parse("2026-10-18T08:00:00Z"), reads = 0, value = 33.4449838;
 const options = [];

@@ -2,7 +2,7 @@ import { createGoogleReader } from "@/server/google-sheets";
 
 // Rate-only spreadsheet created for this integration. No customer/order data is read.
 export const TOPUP_FX_SPREADSHEET_ID = "1cyf6BPQa7pLgUzdIX38q85BfXC3jRql94Q5u4p3Lx6M";
-export const TOPUP_FX_RANGE = "'Rates'!B2";
+export const TOPUP_FX_RANGE = "'ชีต1'!B2";
 export function createTopupGoogleRateLoader({ env = process.env, readerFactory = createGoogleReader, now = () => Date.now() } = {}) {
   let reader, cached;
   return async () => {
