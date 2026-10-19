@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createGarenaShellInventory, enrichShellOrders } from "../src/server/garena-shell-inventory.js";
-import { SHELL_ACCOUNTS, shellAccount, shellFilters, shellUsage, shellCost, shellOrder, shellSummary, shellCsv } from "../src/lib/garena-shell-inventory.js";
+import { SHELL_ACCOUNTS, shellAccount, shellFilters, shellUsage, shellCost, shellOrder, shellSummary, shellCsv, allocateShellSale, groupShellOrders } from "../src/lib/garena-shell-inventory.js";
 
 let passed = 0;
 const check = (value, message) => { assert.ok(value, message); passed++; };
@@ -80,7 +80,7 @@ const slashFields = await enrichShellOrders(async (sql, params) => {
   check(params[0].length === 1 && params[0][0] === slashId, "sale and pack count retain the complete purchased-unit ID");
   if (sql.includes("AS sale_key")) {
     check(sql.includes("split_part(c.source_order_id::text,':',1)") && !sql.includes("'/',1"), "SQL does not collapse sibling /1 and /2 units");
-    return [{ sale_key: slashId, pack_count: 1 }];
+    return [{ sale_key: slashId, pack_count: 1, pack_ids: [292325] }];
   }
   return [];
 }, [{ ...base, id: 292325, source_order_id: `${slashId}:dispatch-uuid:1`, source_base: slashId,
@@ -88,4 +88,24 @@ const slashFields = await enrichShellOrders(async (sql, params) => {
 const slashEntry = shellOrder(slashFields[0]);
 check(slashEntry.figures.sale === "475.00" && slashEntry.figures.cost === "468.75");
 check(slashEntry.figures.profit === "6.25" && slashEntry.figures.margin === "1.32");
+
+const part = (id, used, after, account = "InblackWFH1z", total = "620.00", position = id - 1) => shellOrder({
+  ...base, id, source: "PAGE", source_order_id: "216412", garena_username: account, shell_before: null, shell_after: after, shell_used: used,
+  observed_at: `2026-10-06T00:00:0${id}Z`, sheet_fields: allocateShellSale({ saleThb: total, saleAllocation: { count: 2, position } }),
+});
+const grouped = groupShellOrders([part(1, "750", "66970"), part(2, "225", "66745")]);
+check(grouped.length === 1 && grouped[0].fillCount === 2 && grouped[0].used === "975.00");
+check(grouped[0].figures.sale === "620.00" && grouped[0].figures.cost === "609.38");
+check(grouped[0].figures.profit === "10.62" && grouped[0].figures.margin === "1.71");
+check(grouped[0].balance === "66745.00" && grouped[0].fills.length === 2, "last bot observation, not a sum or initial balance");
+check(shellSummary(grouped).orders === 1 && shellSummary(grouped).fills === 2);
+check(shellCsv(grouped).split("\r\n").length === 2 && shellCsv(grouped).includes('"620.00"'), "one CSV row for the combined order");
+const thirds = [0, 1, 2].map((position) => allocateShellSale({ saleThb: "100.01", saleAllocation: { count: 3, position } }).saleThb);
+check(thirds.join() === "33.34,33.34,33.33", "remainder satang are allocated exactly once");
+check(groupShellOrders([part(1, "750", "66970"), part(2, "225", "66745", "InblackRB2c")]).length === 2, "never merge account balances");
+check(groupShellOrders([part(1, "750", "66970"), { ...part(2, "225", "66745"), saleSource: "other" }]).length === 2, "never merge unrelated sale channels");
+check(groupShellOrders([part(1, "750", "66970"), { ...part(2, "225", "66745"), orderId: "216412/2" }]).length === 2, "preserve exact slash identity");
+check(groupShellOrders([part(1, "750", "66970"), part(2, "225", "66745", "InblackWFH1z", "700.00")])[0].figures.sale === null, "contradictory full-payment evidence remains unknown");
+const small = groupShellOrders([part(1, "1", "10"), part(2, "1", "9")])[0];
+check(small.figures.cost === "1.25", "round cost once on the order's combined Shell, not twice per packet");
 console.log(`${passed} passed`);

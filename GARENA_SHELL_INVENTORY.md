@@ -20,6 +20,18 @@ Actual Shell usage is before minus after, with `shell_used` as fallback if that 
 Contradictory amounts or an increasing balance in a spend observation remain unavailable;
 `shell_cost_expected` is never used as actual usage. Cost = actual Shell out × 0.625 THB,
 rounded half up to satang. Profit = customer payment THB − cost; margin = profit / payment × 100.
+The report now combines completed packets into one row per exact sale order, account and source
+channel before filtering/pagination/export. Purchased `/1` versus `/2` IDs stay distinct. Every
+underlying packet remains available in the row details; Shell usage is summed, and ending balance
+comes from the last bot observation, never the sum of packet balances.
+Cost is rounded once on the combined Shell amount. Full customer payments are allocated across
+all completed packets in stable ID order with remainder satang distributed exactly once, so
+recombining a payment of 100.01 across three packets still totals 100.01. Packets on another
+account or outside the date range retain only their own share, not another copy of the full sale.
+Disagreeing full-payment evidence stays unavailable. Example 216412: 750 + 225 Shell = 975;
+620.00 THB received, 609.38 THB cost, 10.62 THB profit, 1.71% margin, final bot balance 66,745 Shell.
+Profit is retained at two decimals; the reference sheet's whole-baht display of 11 is not stored
+as the exact profit. Other providers and source order records are not modified.
 Customer payment fields reuse the existing inventory listing-field and sale-conversion helpers.
 Transport rows are first matched against the original order prefix (before `:`). Purchased-unit
 suffixes such as `/1` and `/2` are preserved for both sale identity and pack-count grouping; they

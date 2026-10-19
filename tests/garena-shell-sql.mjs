@@ -34,19 +34,19 @@ try {
   }, prepareSales: async (data) => data });
   const actor = { permissions: ['projectm.claim'] }, query = { dateFrom: '2026-10-18', dateTo: '2026-10-18' };
   const result = await repo.list(actor, query);
-  assert.equal(result.total, 3);
-  assert.deepEqual(result.entries.map((entry) => entry.id), ['6', '2', '1']);
-  assert.equal(result.entries.find((entry) => entry.id === '1').figures.sale, '285.00');
-  assert.equal(result.entries.find((entry) => entry.id === '2').figures.sale, '285.00');
+  assert.equal(result.total, 2);
+  assert.deepEqual(result.entries.map((entry) => entry.id), ['6', '1']);
+  assert.equal(result.entries.find((entry) => entry.id === '1').figures.sale, '570.00');
+  assert.equal(result.entries.find((entry) => entry.id === '1').fillCount, 2);
   assert.equal(result.entries.find((entry) => entry.id === '6').figures.sale, null);
   assert.equal(result.summary.sale, null);
   assert.equal(result.cards[0].balance, '0.00');
   assert.equal(result.cards[0].orders, 1);
-  assert.equal(result.cards[1].orders, 2);
+  assert.equal(result.cards[1].orders, 1);
   assert.equal(result.summary.used, '900.00');
   assert.equal(result.summary.cost, '562.50');
   const one = await repo.list(actor, { ...query, account: 'inblackwfh1z', search: 'NEW' });
-  assert.equal(one.total, 2);
+  assert.equal(one.total, 1);
   assert.equal(one.summary.sale, '570.00');
   assert.equal(one.cards.length, 2);
   assert.ok(!JSON.stringify(one).includes('Old staff'));
@@ -63,17 +63,39 @@ try {
   await insert(12, 'IN430910-6066-1/9:dispatch-uuid:1', 'SLASH-MULTI', 'InblackWFH1z', '2026-10-17T14:54:00Z');
   await insert(13, 'IN430910-6066-1/9:dispatch-uuid:2', 'SLASH-MULTI', 'InblackWFH1z', '2026-10-17T14:55:00Z');
   const slash = await repo.list(actor, { dateFrom: '2026-10-17', dateTo: '2026-10-17' });
-  assert.equal(slash.total, 4);
+  assert.equal(slash.total, 3);
   const real = slash.entries.find((entry) => entry.id === '10');
   assert.equal(real.orderId, 'IN430910-6066-1/1');
   assert.deepEqual(real.figures, { sale: '475.00', cost: '468.75', profit: '6.25', margin: '1.32' });
   assert.equal(slash.entries.find((entry) => entry.id === '11').figures.sale, '100.00');
-  assert.equal(slash.entries.find((entry) => entry.id === '12').figures.sale, '285.00');
-  assert.equal(slash.entries.find((entry) => entry.id === '13').figures.sale, '285.00');
+  assert.equal(slash.entries.find((entry) => entry.id === '12').figures.sale, '570.00');
+  assert.deepEqual(slash.entries.find((entry) => entry.id === '12').fills.map((fill) => fill.figures.sale), ['285.00', '285.00']);
   assert.equal(slash.summary.sale, '1145.00');
   assert.ok(!JSON.stringify(slash).includes('Wrong parent'));
   const exactSlash = await repo.list(actor, { dateFrom: '2026-10-17', dateTo: '2026-10-17', search: 'IN430910-6066-1/1' }, { exportAll: true });
   assert.equal(exactSlash.total, 1);
   assert.equal(exactSlash.summary.sale, '475.00');
+
+  await db.exec(`INSERT INTO telegram_orders_dev VALUES
+    ('PAGE-119022','216412',620,'PAGE','uid','uid','Bot AtOM',NULL),
+    ('ROUND','ROUND',100.01,'PAGE','uid','uid','Staff',NULL);`);
+  await insert(20, '216412:pack-a:1', 'PAGE-119022', 'InblackWFH1z', '2026-10-05T23:12:34Z', 'completed', 67720, 66970, 750);
+  await insert(21, '216412:pack-b:1', 'PAGE-119022', 'InblackWFH1z', '2026-10-05T23:12:35Z', 'completed', 66970, 66745, 225);
+  const combined = await repo.list(actor, { dateFrom: '2026-10-06', dateTo: '2026-10-06', search: '216412' });
+  assert.equal(combined.total, 1);
+  assert.equal(combined.entries[0].fillCount, 2);
+  assert.equal(combined.entries[0].used, '975.00');
+  assert.equal(combined.entries[0].balance, '66745.00');
+  assert.deepEqual(combined.entries[0].figures, { sale: '620.00', cost: '609.38', profit: '10.62', margin: '1.71' });
+  assert.equal(combined.summary.orders, 1);
+  assert.equal(combined.summary.fills, 2);
+  for (const [id, account] of [[30, 'InblackWFH1z'], [31, 'InblackWFH1z'], [32, 'InblackRB2c']]) {
+    await insert(id, 'ROUND:packet:' + id, 'ROUND', account, '2026-10-07T00:00:00Z');
+  }
+  const rounding = await repo.list(actor, { dateFrom: '2026-10-07', dateTo: '2026-10-07' });
+  assert.equal(rounding.total, 2);
+  assert.equal(rounding.summary.sale, '100.01');
+  assert.equal(rounding.entries.find((entry) => entry.account === 'inblackwfh1z').figures.sale, '66.68');
+  assert.equal(rounding.entries.find((entry) => entry.account === 'inblackrb2c').figures.sale, '33.33');
   console.log('Garena Shell SQL: reused tasks, exact order matching, pack allocation, ambiguous evidence, account isolation, range-independent zero balance and secret projections passed');
 } finally { await db.close(); }

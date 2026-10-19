@@ -6,7 +6,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
-import { SHELL_ACCOUNTS, shellOrder, shellSummary, shellCsv } from "../src/lib/garena-shell-inventory.js";
+import { SHELL_ACCOUNTS, shellOrder, shellSummary, shellCsv, allocateShellSale, groupShellOrders } from "../src/lib/garena-shell-inventory.js";
 
 const require = createRequire(import.meta.url), { webpack } = require("next/dist/compiled/webpack/webpack");
 const root = process.cwd(), output = await mkdtemp(path.join(tmpdir(), "garena-shell-ui-"));
@@ -43,6 +43,10 @@ await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const entries = Array.from({ length: 101 }, (_, i) => shellOrder({ id: i + 1, source_order_id: `ORDER-${i + 1}`,
   garena_username: i < 60 ? "InblackRB2c" : "InblackWFH1z", game_name: "ROV", pack_name: "300 Shell",
   shell_before: "1000", shell_after: "700", shell_used: "300", occurred_at: "2026-10-18T07:00:00Z", sheet_fields: { saleThb: "190" } }));
+entries[0] = groupShellOrders([750, 225].map((used, index) => shellOrder({ id: index ? 100001 : 1,
+  source_order_id: 'ORDER-1', source: 'PAGE', garena_username: 'InblackRB2c', game_name: 'Free Fire', pack_name: `${used} Shell`,
+  shell_used: String(used), shell_after: index ? '66745' : '66970', occurred_at: '2026-10-18T07:00:00Z',
+  observed_at: `2026-10-18T07:00:0${index}Z`, sheet_fields: allocateShellSale({ saleThb: '620', saleAllocation: { count: 2, position: index } }) })))[0];
 function filteredEntries(params) {
   return entries.filter((entry) => entry.occurredAt.slice(0, 10) >= params.get("dateFrom") && entry.occurredAt.slice(0, 10) <= params.get("dateTo")
     && (!params.get("account") || entry.account === params.get("account")) && (!params.get("search") || entry.orderId.includes(params.get("search"))));
@@ -70,6 +74,11 @@ try {
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     await page.locator("[data-theme]").evaluate((element, value) => element.dataset.theme = value, theme);
     await page.getByText("ORDER-1", { exact: true }).waitFor();
+    await page.getByText("รวม 2 รายการย่อย", { exact: true }).click();
+    await page.getByText(/คิวบอท 100001/).waitFor();
+    const combinedShell = page.getByRole("cell").filter({ hasText: "750.00 + 225.00" });
+    assert.match(await combinedShell.innerText(), /^975\.00\s+750\.00 \+ 225\.00$/);
+    assert.equal(await page.getByText("609.38", { exact: true }).count(), 1);
     assert.equal(await page.getByRole("heading", { name: /InblackShell[12]/ }).count(), 2);
     const readCount = reads;
     await page.clock.fastForward(60001);

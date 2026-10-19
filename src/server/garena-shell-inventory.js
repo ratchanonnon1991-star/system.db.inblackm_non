@@ -3,7 +3,7 @@ import { canViewUsdInventory, inventoryError } from "@/lib/usdcodashop-inventory
 import { listingFields } from "@/lib/usdcodashop-sheet";
 import { prepareCodaSales } from "@/server/usdcodashop-sale-rates";
 import { SHELL_ACCOUNTS, SHELL_METHOD, SHELL_MAX_ORDERS, SHELL_PAGE_SIZE,
-  shellFilters, shellAmount, shellOrder, shellSummary, shellMatches } from "@/lib/garena-shell-inventory";
+  shellFilters, shellAmount, shellOrder, shellSummary, shellMatches, allocateShellSale, groupShellOrders } from "@/lib/garena-shell-inventory";
 
 const BATCH = 500;
 const accountSql = `lower(btrim(c.provider_response->>'garena_username'))`;
@@ -40,7 +40,8 @@ const saleJoin = `LEFT JOIN LATERAL (
 export async function enrichShellOrders(select, rows) {
   if (!rows.length) return [];
   const keys = [...new Set(rows.map((row) => String(row.sale_order_id || row.source_base || row.id)))];
-  const counts = await select(`SELECT ${sourceKey("c")} AS sale_key,COUNT(DISTINCT c.id)::int AS pack_count
+  const counts = await select(`SELECT ${sourceKey("c")} AS sale_key,COUNT(DISTINCT c.id)::int AS pack_count,
+    ARRAY_AGG(DISTINCT c.id ORDER BY c.id) AS pack_ids
     FROM codashop_orders c WHERE c.status='completed' AND ${sourceKey("c")}=ANY($1::text[]) GROUP BY 1`, [keys]);
   const listings = await select(`SELECT DISTINCT ON (order_id,source) order_id,source AS listing_source,
     payload->>'amount' AS sale_amount,payload->>'buyer' AS buyer,payload->>'link' AS link,
@@ -48,14 +49,19 @@ export async function enrichShellOrders(select, rows) {
     FROM sheet_jobs WHERE order_id=ANY($1::text[]) AND target='marketplace'
       AND source IN ('kaleoz','itemku','playerok','playerok-topupman','g2g','coda-worker')
     ORDER BY order_id,source,created_at DESC,id DESC`, [keys]);
+  const packGroups = new Map(counts.map((item) => [String(item.sale_key), {
+    count: Number(item.pack_count), positions: new Map((item.pack_ids || []).map((id, index) => [String(id), index])),
+  }]));
   return rows.map((row) => {
     const key = String(row.sale_order_id || row.source_base || row.id);
-    const count = counts.find((item) => String(item.sale_key) === key)?.pack_count;
+    const group = packGroups.get(key), position = group?.positions.get(String(row.id));
     const matches = listings.filter((item) => String(item.order_id) === key);
     const listing = matches.find((item) => item.listing_source === String(row.source || row.telegram_source || "").toLowerCase()) || {};
     const filler = matches.find((item) => item.listing_source === "coda-worker")?.filler;
-    const fields = listingFields({ ...row, pack_count: count }, { ...listing, filler });
-    if (row.sale_ambiguous || count == null) {
+    // Convert the complete payment first; allocate exact satang only after FX preparation.
+    const fields = listingFields({ ...row, pack_count: 1 }, { ...listing, filler });
+    fields.saleAllocation = { count: group?.count || 0, position: position ?? -1 };
+    if (row.sale_ambiguous || position == null || !group || group.positions.size !== group.count) {
       fields.saleThb = null; fields.saleNative = null; fields.saleCurrency = null; fields.saleAmbiguous = true;
     }
     return { ...row, sheet_fields: fields };
@@ -88,7 +94,7 @@ export function createGarenaShellInventory({ select = selectQuery, enrich = enri
       const enriched = [];
       for (let i = 0; i < rows.length; i += BATCH) enriched.push(...await enrich(select, rows.slice(i, i + BATCH)));
       const prepared = await prepareSales(enriched.map((row) => ({ sourceId: String(row.id), row, details: row.sheet_fields })), []);
-      const entries = prepared.map((p) => shellOrder({ ...p.row, sheet_fields: p.details })).filter(Boolean);
+      const entries = groupShellOrders(prepared.map((p) => shellOrder({ ...p.row, sheet_fields: allocateShellSale(p.details) })).filter(Boolean));
       const cards = SHELL_ACCOUNTS.map((account) => {
         const row = latest.find((r) => String(r.garena_username || "").trim().toLowerCase() === account.id);
         return { ...account, ...shellSummary(entries.filter((e) => e.account === account.id)),
