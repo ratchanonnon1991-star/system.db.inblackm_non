@@ -20,7 +20,7 @@ const usernames = SHELL_ACCOUNTS.map((account) => account.id);
 // units and must survive both the sale lookup and the pack-count grouping.
 const sourceKey = (alias) => `split_part(${alias}.source_order_id::text,':',1)`;
 const consistentSale = `COUNT(DISTINCT ROW(t.order_id,t.price,t.source))=1`;
-const saleJoin = `LEFT JOIN LATERAL (
+export const saleJoin = `LEFT JOIN LATERAL (
   SELECT CASE WHEN ${consistentSale} THEN MIN(t.order_id::text) END AS order_id,
     CASE WHEN ${consistentSale} THEN MIN(t.price) END AS price,
     CASE WHEN ${consistentSale} THEN MIN(t.source) END AS source,
