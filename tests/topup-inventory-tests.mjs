@@ -44,6 +44,7 @@ check(!html.includes('href="/projectm/th/topup-inventory/moniepoint"'), "no brok
 check(html.includes('href="/projectm/th/topup-inventory/usdcodashop"'), "USDCodashop is available");
 check(html.includes('href="/projectm/th/topup-inventory/wavepay"') && html.includes("WavePay"), "WavePay is available");
 check(html.includes('href="/projectm/th/topup-inventory/multigamecard"') && html.includes("Multigamecard"), "Multigamecard is available");
+check(html.includes('href="/projectm/th/topup-inventory/garena-shell"') && html.includes("Garena Shell"), "Garena Shell is available");
 check(hub.metadata.title === "Topup Inventory", "hub browser title");
 check(itune.metadata.title === "iTune | Topup Inventory", "child browser title");
 for (const path of ["src/app/projectm/[lang]/page.js", "src/app/projectm/[lang]/itune/page.js"]) {
