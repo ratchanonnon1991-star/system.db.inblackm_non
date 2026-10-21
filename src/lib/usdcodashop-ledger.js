@@ -19,7 +19,7 @@ export function providerUsd(value) {
 
 // Cost is charged only from one unambiguous wallet transaction, never pack_price.
 export function normalizeCodaOrder(row) {
-  const label = row.sale_order_id || row.source_order_id || row.id;
+  const label = row.sale_order_id || row.source_base || row.source_order_id || row.id;
   const fail = () => { throw inventoryError(`Order ${label}: ยอดตัด USD ไม่ครบหรือมีหลายธุรกรรม กรุณาตรวจสอบต้นทางก่อนซิงก์`, 409); };
   if (row.payment_method !== CODA_METHOD || row.status !== "completed" || !/^[1-9]\d*$/.test(String(row.id))) fail();
   if (Number(row.transaction_count) !== 1) fail();

@@ -43,7 +43,7 @@ function csvCell(value, numeric = false) {
 }
 
 export function codaReportCsv(entries) {
-  const header = [...CODA_SHEET_HEADINGS, "หมายเหตุ", "ยอดโอนสกุลเดิม", "สกุลเงิน", "เรท THB", "แหล่งเรท", "วันที่เรท", "วันที่ล็อกเรท", "ประเภทเรท", "ต้นทุนเดิมจากฐานข้อมูล (THB)", "เรทต้นทุน USDTHB", "แหล่งเรทต้นทุน", "วันที่เรทต้นทุน", "ดึงเรทต้นทุนเมื่อ", "ฐานคำนวณต้นทุน"];
+  const header = [...CODA_SHEET_HEADINGS, "หมายเหตุ", "ยอดโอนสกุลเดิม", "สกุลเงิน", "เรท THB", "แหล่งเรท", "วันที่เรท", "วันที่ล็อกเรท", "ประเภทเรท", "ต้นทุนเดิมจากฐานข้อมูล (THB)", "เรทต้นทุน USDTHB", "แหล่งเรทต้นทุน", "วันที่เรทต้นทุน", "ดึงเรทต้นทุนเมื่อ", "ฐานคำนวณต้นทุน", "จำนวนรายการย่อย", "หลักฐานรายการย่อย (JSON)"];
   const lines = [header.map((value) => csvCell(value)).join(",")];
   for (const row of entries) {
     const d = row.details || {}; const f = row.figures || sheetFigures(d); const deposit = row.kind === "deposit";
@@ -58,6 +58,7 @@ export function codaReportCsv(entries) {
       quote.kind ? "เรทอ้างอิง ณ ซิงก์ครั้งแรก ไม่ใช่เรทรับเงินจริงย้อนหลัง" : "",
       deposit ? null : d.costThb, d.costConversion?.rate, d.costConversion?.source, d.costConversion?.rateAt, d.costConversion?.fetchedAt,
       !deposit ? "USD ออก × เรท USDTHB อ้างอิงล่าสุด (ไม่ใช่ GOOGLEFINANCE โดยตรง)" : "",
+      row.fillCount || 1, row.fillCount > 1 ? JSON.stringify(row.fills) : "",
     ];
     lines.push(values.map((value, index) => csvCell(value, (index >= 2 && index <= 8) || index === 21 || index === 23 || index === 28 || index === 29)).join(","));
   }

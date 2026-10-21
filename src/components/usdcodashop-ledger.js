@@ -174,6 +174,7 @@ export default function UsdCodashopLedger({ lang }) {
         <div className="flex gap-3"><button disabled={busy} className={button}>ยืนยันบันทึก USD เข้า</button><button type="button" disabled={busy} onClick={() => setDeposit(null)} className={button}>ยกเลิก</button></div>
       </form>}
       <section className="min-w-0 space-y-4">
+        {kind !== "deposit" && <p className="text-xs leading-6 text-ll-ink-subtle">Order เดียวกันและแหล่งเดียวกันรวมเป็น 1 แถว · วันที่อ้างอิงรายการเติมสุดท้าย รวมรายการย่อยทั้งหมดก่อนกรอง/แบ่งหน้า · ธุรกรรมซ้ำจริงยังแจ้งเตือนและเก็บยอดหักไว้ตรวจสอบ</p>}
         <div className="flex flex-wrap items-end justify-between gap-2"><h2 className="text-xl font-semibold">{kind === "deposit" ? "รายการเติมเงิน" : kind === "order" ? "รายการใช้เงิน" : "ประวัติทั้งหมด"}</h2><p className="text-xs text-ll-ink-subtle">{loading ? "กำลังโหลด…" : historyReady ? `${data.total} รายการ` : "ยังโหลดตัวกรองนี้ไม่สำเร็จ"} · กด Order เพื่อดูรายละเอียด</p></div>
         <div aria-busy={loading} className={loading ? "pointer-events-none opacity-50" : ""}>
           <UsdCodashopOverviewTable entries={historyReady ? data.entries : []} emptyMessage={!historyReady ? loading ? "กำลังโหลดประวัติ…" : "โหลดประวัติไม่สำเร็จ กรุณาลองใหม่" : search || dates.dateFrom || profitFilter.profitStatus !== "all" || profitFilter.profitMin || profitFilter.profitMax ? "ไม่พบรายการตามตัวกรอง" : kind === "deposit" ? "ยังไม่มีประวัติเติมเงินที่บันทึกในระบบนี้" : "ยังไม่มีประวัติ กดซิงก์ Orders เพื่อดึงรายการ"} />

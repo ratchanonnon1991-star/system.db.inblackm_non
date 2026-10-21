@@ -59,6 +59,7 @@ try {
         const profit = codaProfitFilter(Object.fromEntries(params));
         const costQuote = kind !== "deposit" && currentCostRate ? { currency: "USD", rate: currentCostRate, source: "TestCost", rateAt: "2026-10-16T00:00:00Z", fetchedAt: "2026-10-17T08:00:00Z" } : null;
         const filtered = entries.filter((e) => (kind === "all" || e.kind === kind) && (!search || e.orderId.includes(search)) && (!bounds.start || new Date(e.occurredAt) >= new Date(bounds.start)) && (!bounds.end || new Date(e.occurredAt) < new Date(bounds.end))).map((e) => ({ ...e,
+          fills: e.fills?.map((f) => ({ ...f, figures: codaCurrentCostFigures({ ...f, kind: "order" }, costQuote) })),
           balance: missingBalance ? null : e.balance,
           figures: codaCurrentCostFigures(e, costQuote), details: { ...e.details, costConversion: e.kind === "order" ? costQuote : null },
         })).filter((e) => {
@@ -86,6 +87,8 @@ try {
         const added = entries.length ? 0 : 1;
         const previousDeposits = entries.filter((e) => e.kind === "deposit");
         entries = [{ id: "1", kind: "order", orderId: "K7306274", amount: "3.70", balance: "9397.75", calculatedBalance: "9369.47", occurredAt: "2026-10-15T13:16:11Z", details: { game: "Zepeto", pack: "7 Zems", paymentMethod: "CodashopUSD", invoice: "TX123", providerBalance: "9397.75", operator: "Bot", saleThb: "147.25", costThb: "120.398", customer: "Test buyer", playerId: "uid1", link: "https://example.com/order/1" }, recordedBy: "khong" }, ...previousDeposits];
+        entries[0].fillCount = 2;
+        entries[0].fills = [1, 2].map((n) => ({ id: `fill-${n}`, sourceId: String(100 + n), amount: "1.85", occurredAt: "2026-10-15T13:16:11Z", balance: n === 2 ? "9397.75" : "9399.60", details: { game: "Zepeto", pack: "7 Zems", saleThb: n === 1 ? "73.63" : "73.62", invoice: `FILL-TX-${n}` } }));
         entries[0].details = { ...entries[0].details, saleNative: "5", saleCurrency: "USDT", saleConversion: {
           currency: "USDT", rate: "29.45", source: "TestProvider", capturedAt: "2026-10-17T07:00:00Z", rateAt: "2026-10-17T06:00:00Z",
         } };
@@ -121,6 +124,8 @@ try {
     await orderButton().click();
     const detail = page.getByRole("region", { name: "รายละเอียด Order K7306274", exact: true });
     await detail.getByText("Test buyer", { exact: true }).waitFor();
+    await detail.getByText("รายการเติมย่อย (2)", { exact: true }).waitFor();
+    await detail.getByText(/คิว 101/).waitFor(); await detail.getByText(/คิว 102/).waitFor();
     await detail.getByText("เรทที่ใช้", { exact: true }).click();
     await detail.getByText("5 USDT × 29.45 THB", { exact: true }).waitFor();
     await detail.getByText("เรทอ้างอิง ณ ซิงก์ครั้งแรก ไม่ใช่เรทรับเงินจริงย้อนหลัง", { exact: true }).waitFor();

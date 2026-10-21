@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { sheetCents, sheetFigures, listingFields, orderLink } from "../src/lib/usdcodashop-sheet.js";
 import { createCodaSource } from "../src/server/usdcodashop-source.js";
+import { allocateCodaReceipt } from "../src/lib/usdcodashop-group.js";
 let passed = 0; const check = (v) => { assert.ok(v); passed++; };
 check(sheetCents("972.9459999999999") === 97295n);
 check(sheetCents("7.4842") === 748n); check(sheetCents("120.398") === 12040n);
@@ -21,6 +22,8 @@ const itemku = listingFields({ source: "itemku", sale_price: "36005" }, { listin
 check(itemku.saleThb === null && itemku.saleCurrency === "IDR" && itemku.saleNative === "36005");
 check(listingFields({ source: "russia_reseller", sale_price: "1.25" }).saleThb === null);
 check(listingFields({ source: "PAGE", sale_price: "290" }).saleThb === "290.00");
+check(listingFields({ source: "inblackm_web", sale_price: "72.50" }).saleThb === "72.50");
+check(listingFields({ source: "unknown", sale_price: "72.50" }).saleThb === null);
 // K7319737: one 750.50 THB transfer for 2 packs -> each pack row carries half the sale.
 const twoPacks = listingFields({ source: "kaleoz", sale_price: "750.5", pack_count: 2 }, { listing_source: "kaleoz", sale_amount: "750.5" });
 check(twoPacks.saleThb === "375.25" && twoPacks.salePacks === 2 && twoPacks.saleNative === "750.5");
@@ -30,7 +33,7 @@ for (const bad of [0, -2, "x", 1.5, null]) check(listingFields({ source: "PAGE",
 let queries = 0;
 const source = createCodaSource(async (sql) => {
   queries++;
-  if (sql.includes("pack_count")) return [{ sale_key: "K1", pack_count: 1 }, { sale_key: "K2", pack_count: 2 }];
+  if (sql.includes("pack_count")) return [{ sale_key: "K1", sale_source: "kaleoz", pack_count: 1, pack_ids: [1] }, { sale_key: "K2", sale_source: "page", pack_count: 2, pack_ids: [2, 3] }];
   if (sql.includes("FROM sheet_jobs")) return [
     { order_id: "K1", listing_source: "kaleoz", sale_amount: "17.10", buyer: "customer", link: "https://example.com/order/1", player_id: "uid1" },
     { order_id: "K1", listing_source: "coda-worker", filler: "BoT AtOM" },
@@ -39,8 +42,13 @@ const source = createCodaSource(async (sql) => {
     { id: 2, source_order_id: "K2", source: "PAGE", sale_price: "750.50" }, { id: 3, source_order_id: "K2", source: "PAGE", sale_price: "750.50" }];
 });
 const rows = await source.orders("0");
+rows.forEach((r) => r.sheet_fields = allocateCodaReceipt(r.sheet_fields));
 check(queries === 3); check(rows[0].sheet_fields.saleThb === "17.10" && !("salePacks" in rows[0].sheet_fields));
 check(rows[1].sheet_fields.saleThb === "375.25" && rows[2].sheet_fields.saleThb === "375.25" && rows[2].sheet_fields.salePacks === 2);
 check(rows[0].sheet_fields.customer === "customer" && rows[0].sheet_fields.playerId === "uid1");
 check(rows[0].sheet_fields.sheetOperator === "BoT AtOM" && rows[0].sheet_fields.category === "UID");
+const split = [0, 1, 2].map((position) => allocateCodaReceipt({ saleThb: "100.00", saleAllocation: { count: 3, position } }));
+check(split.map((d) => d.saleThb).join() === "33.34,33.33,33.33");
+const fx = allocateCodaReceipt({ saleThb: "33.33", saleNative: "1000", saleConversion: { rate: "0.1" }, saleAllocation: { count: 3, position: 0 } });
+check(fx.saleThb === "33.34" && allocateCodaReceipt(fx).saleThb === "33.34");
 console.log(`${passed} passed`);

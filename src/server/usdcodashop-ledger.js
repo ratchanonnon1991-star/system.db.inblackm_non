@@ -9,6 +9,7 @@ import { codaEntryKind } from "@/lib/usdcodashop-overview";
 import { codaCostQuote, codaCurrentCostFigures } from "@/lib/usdcodashop-cost";
 import { loadCodaCostRate } from "@/server/usdcodashop-cost-rate";
 import { codaProfitFilter } from "@/lib/usdcodashop-profit-filter";
+import { allocateCodaReceipt } from "@/lib/usdcodashop-group";
 
 const schemas = new WeakMap();
 export async function ensureCodaLedger(pool) {
@@ -89,7 +90,34 @@ export function createCodaLedger(pool, source = createCodaSource(), { prepareSal
             w.opening + SUM(CASE WHEN kind='deposit' THEN amount ELSE -amount END)
             OVER(ORDER BY l.occurred_at,l.id ROWS UNBOUNDED PRECEDING) AS balance
           FROM gamedb_coda_ledger l CROSS JOIN gamedb_coda_wallet w
-        ), filtered AS (SELECT * FROM ordered WHERE ($1='' OR
+        ), rolled AS (
+          SELECT o.*,ROW_NUMBER() OVER customer_order AS group_rank,
+            COUNT(*) OVER customer_order AS fill_count,SUM(amount) OVER customer_order AS group_amount,
+            JSONB_AGG(to_jsonb(o)) OVER customer_order AS fills,
+            BOOL_OR(transaction_duplicate) OVER customer_order AS group_transaction_duplicate,
+            CASE WHEN COUNT(*) FILTER(WHERE NOT COALESCE(btrim(details->>'saleThb') ~ '^[0-9]{1,12}([.][0-9]{1,20})?$',FALSE)) OVER customer_order=0
+              THEN SUM(CASE WHEN btrim(details->>'saleThb') ~ '^[0-9]{1,12}([.][0-9]{1,20})?$' THEN round((details->>'saleThb')::numeric,2) END) OVER customer_order END AS group_sale,
+            CASE WHEN COUNT(*) FILTER(WHERE NOT COALESCE(btrim(details->>'costThb') ~ '^[0-9]{1,12}([.][0-9]{1,20})?$',FALSE)) OVER customer_order=0
+              THEN SUM(CASE WHEN btrim(details->>'costThb') ~ '^[0-9]{1,12}([.][0-9]{1,20})?$' THEN round((details->>'costThb')::numeric,2) END) OVER customer_order END AS group_original_cost
+          FROM ordered o WINDOW customer_order AS (
+            PARTITION BY kind,CASE WHEN kind='deposit' THEN id::text ELSE order_label END,
+              COALESCE(NULLIF(lower(details->>'source'),''),'unknown:'||source_id::text)
+            ORDER BY occurred_at DESC,source_id DESC NULLS LAST,id DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+        ), grouped AS (
+          SELECT id,kind,source_id,order_label,group_amount AS amount,occurred_at,recorded_at,actor_label,balance,
+            1 AS order_occurrences,group_transaction_duplicate AS transaction_duplicate,fill_count,fills,
+            CASE WHEN fill_count=1 THEN details ELSE
+              (details - 'salePacks' - 'saleNative' - 'saleCurrency' - 'saleConversion' - 'saleAllocation') || jsonb_build_object(
+                'saleThb',CASE WHEN (SELECT COUNT(DISTINCT ROW(
+                    COALESCE(f->'details'->>'saleTotalThb',f->'details'->>'saleNative'),f->'details'->>'saleCurrency'))
+                    FROM jsonb_array_elements(fills) f)>1 THEN NULL ELSE group_sale::text END,
+                'costThb',group_original_cost::text,
+                'game',(SELECT string_agg(DISTINCT f->'details'->>'game',' + ') FROM jsonb_array_elements(fills) f),
+                'pack',(SELECT string_agg(DISTINCT f->'details'->>'pack',' + ') FROM jsonb_array_elements(fills) f),
+                'invoice',(SELECT string_agg(DISTINCT f->'details'->>'invoice',', ') FROM jsonb_array_elements(fills) f)
+              ) END AS details
+          FROM rolled WHERE group_rank=1
+        ), filtered AS (SELECT * FROM grouped WHERE ($1='' OR
           strpos(lower(concat_ws(' ',order_label,details->>'game',details->>'pack',details->>'operator',details->>'invoice',details->>'customer',details->>'playerId',details->>'note')),lower($1))>0)
           AND ($3::timestamptz IS NULL OR occurred_at >= $3::timestamptz)
           AND ($4::timestamptz IS NULL OR occurred_at < $4::timestamptz)
@@ -158,6 +186,10 @@ export function createCodaLedger(pool, source = createCodaSource(), { prepareSal
           amount: e.amount, balance: e.kind === "order" ? providerUsd(e.details.providerBalance) : null,
           calculatedBalance: e.balance, occurredAt: e.occurred_at, recordedAt: e.recorded_at,
           figures: codaCurrentCostFigures({ kind: e.kind, amount: e.amount, details: e.details }, costQuote), orderDuplicate: Number(e.order_occurrences) > 1, transactionDuplicate: Boolean(e.transaction_duplicate),
+          fillCount: Number(e.fill_count || 1),
+          fills: (e.fills || []).map((f) => ({ id: String(f.id), sourceId: String(f.source_id || ""), amount: f.amount,
+            occurredAt: f.occurred_at, balance: providerUsd(f.details?.providerBalance), details: f.details,
+            figures: codaCurrentCostFigures({ kind: f.kind, amount: f.amount, details: f.details }, costQuote), transactionDuplicate: Boolean(f.transaction_duplicate) })),
           details: { ...e.details, costConversion: e.kind === "order" ? costQuote : null }, recordedBy: e.actor_label })) };
     },
     async setup(body, actor) {
@@ -186,7 +218,7 @@ export function createCodaLedger(pool, source = createCodaSource(), { prepareSal
       const sourceOrders = (await source.orders(boundaryId)).map(normalizeCodaOrder);
       const previousRows = (await pool.query("SELECT source_id,details FROM gamedb_coda_ledger WHERE kind='order'")).rows;
       // Fetch reference rates before taking the financial write lock; rate failures do not block USD history.
-      const orders = await prepareSales(sourceOrders, previousRows);
+      const orders = (await prepareSales(sourceOrders, previousRows)).map((o) => ({ ...o, details: allocateCodaReceipt(o.details) }));
       if (orders.some((o) => BigInt(o.sourceId) <= BigInt(boundaryId))) throw inventoryError("ต้นทางส่งรายการก่อนจุดเริ่มต้น จึงหยุดซิงก์", 409);
       return transaction(async (c) => {
         let added = 0; let balancesUpdated = 0;
@@ -198,7 +230,7 @@ export function createCodaLedger(pool, source = createCodaSource(), { prepareSal
           else {
             const old = (await c.query("SELECT id,amount,details FROM gamedb_coda_ledger WHERE source_id=$1", [o.sourceId])).rows[0];
             if (!old || usdCents(old.amount) !== usdCents(o.amount)) throw inventoryError(`Order ${o.orderId}: ยอดต้นทางเปลี่ยน กรุณาตรวจสอบก่อนปรับยอด`, 409);
-            o.details = retainSaleQuote(o.details, old.details);
+            o.details = allocateCodaReceipt(retainSaleQuote(o.details, old.details));
             if (providerUsd(old.details.providerBalance) !== o.details.providerBalance) {
               await c.query(`INSERT INTO gamedb_coda_balance_audit(entry_id,previous_balance,new_balance,actor_id,actor_label)
                 VALUES($1,$2,$3,$4,$5)`, [old.id, old.details.providerBalance ?? null, o.details.providerBalance, actor.id, actorLabel(actor)]);
