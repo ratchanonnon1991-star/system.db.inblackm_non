@@ -28,7 +28,10 @@ async function readCss(dir) {
 const css = (await readCss(path.join(root, ".next/static"))).join("\n"), bundle = await readFile(path.join(output, "preview.js"));
 const raw = Array.from({ length: 101 }, (_, i) => ({ id: i + 1, source_base: `ORDER-${i + 1}`, source: "PAGE", occurred_at: "2026-10-21T01:00:00Z", myr_used: "1", recorded_cost: null, game_name: "Game", pack_name: "Pack", ledger_slices: [], sheet_fields: { saleThb: "30", saleTotalThb: "30" } }));
 raw[0].sheet_fields.saleTotalThb = "60";
+Object.assign(raw[0], { wallet_after: "9789.33", wallet_before: "9790.33", wallet_source: "plsbuy_api", wallet_currency: "MYR", wallet_checked_at: "2026-10-21T01:00:00Z" });
 raw.push({ ...raw[0], id: 999, ledger_slices: [{ id: "test-ledger", used: "1", cost: "0", typed: false, balance: "100" }] });
+Object.assign(raw.at(-1), { wallet_after: "9788.33", wallet_before: "9789.33", wallet_checked_at: "2026-10-21T01:01:00Z" });
+Object.assign(raw[1], { wallet_after: "0", wallet_source: "plsbuy_api", wallet_currency: "MYR", wallet_checked_at: "2026-10-21T01:30:00Z" });
 let offline = false, malformed = false;
 function entriesFor(p) { return groupPlsOrders(raw.map((r) => plsOrder(r, p.get("rate") || "7.723"))).filter((e) => plsMatches(e, p.get("search"))); }
 const server = createServer((req, res) => {
@@ -56,6 +59,11 @@ try {
     await page.getByText("ORDER-1", { exact: true }).waitFor();
     await page.getByText("ยอด Plsbuy ที่บอทเช็กล่าสุด", { exact: true }).waitFor();
     await page.getByText("9,789.33 MYR", { exact: true }).waitFor();
+    await page.getByRole("columnheader", { name: "MYR คงเหลือ", exact: true }).waitFor();
+    const orderRow = (id) => page.getByRole("row").filter({ has: page.getByText(id, { exact: true }) });
+    await orderRow("ORDER-1").getByRole("cell").nth(6).getByText("9,788.33", { exact: true }).waitFor();
+    await orderRow("ORDER-2").getByRole("cell").nth(6).getByText("0.00", { exact: true }).waitFor();
+    await orderRow("ORDER-3").getByRole("cell").nth(6).getByText("ยังไม่มียอดที่บันทึก", { exact: true }).waitFor();
     await page.getByText("2 รายการย่อย", { exact: true }).click(); await page.getByText(/คิว 999/).waitFor();
     await page.getByRole("navigation").getByRole("button", { name: "ถัดไป" }).click(); await page.getByText("ORDER-101", { exact: true }).waitFor();
     await page.getByRole("navigation").getByRole("button", { name: "ก่อนหน้า" }).click(); await page.getByText("ORDER-1", { exact: true }).waitFor();
@@ -63,6 +71,7 @@ try {
     await page.getByText("ORDER-1", { exact: true }).waitFor(); assert.equal(await page.getByText("ORDER-2", { exact: true }).count(), 0);
     await page.getByLabel("เรทอ้างอิง THB ต่อ MYR", { exact: true }).fill("8"); await page.getByRole("button", { name: "ค้นหา / ใช้เรทนี้", exact: true }).click();
     await page.getByRole("cell").filter({ hasText: "อ้างอิงเรท 8" }).filter({ hasText: "16.00" }).first().waitFor();
+    await orderRow("ORDER-1").getByRole("cell").nth(6).getByText("9,788.33", { exact: true }).waitFor();
     const download = page.waitForEvent("download"); await page.getByRole("link", { name: "Export CSV" }).click(); assert.equal((await download).suggestedFilename(), "plsbuy-test.csv");
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
     if (process.env.PLSBUY_SMOKE_OUTPUT) await page.screenshot({ path: path.join(process.env.PLSBUY_SMOKE_OUTPUT, `plsbuy-${width}-${theme}.png`), fullPage: true });

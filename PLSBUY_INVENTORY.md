@@ -20,6 +20,8 @@ Access requires a signed-in user with `projectm.claim` or `projectm.admin`.
 
 Thai date range (up to 93 days), order/game/operator search, 100 customer orders per page, expandable fill evidence and CSV for all filtered results. CSV escapes untrusted formulas. Limits: 20,000 bot rows per report. Queries select explicit safe fields; no raw provider payloads, credentials or secrets are returned.
 
+The main history table includes MYR remaining for each customer order without expanding details, using the latest successful API observation inside that order's fills. It shows the check timestamp, never sums balances or copies the global balance into historical rows. Missing historical snapshots show —; real zero shows 0.00. Fill details retain each observation and CSV includes the selected before/after balance and UTC timestamp. These are account observations, not an inferred per-order debit; rate/filter changes do not recalculate them.
+
 No migration, new environment variable, worker, sheet import, provider request, stock mutation or automatic debit is added. Existing remote database access is reused. The reference workbook is not modified.
 
 Validation: `node --import ./tests/register.mjs tests/plsbuy-inventory-tests.mjs`, `npm test`, targeted ESLint, `npm run build`. After building CSS, `node --import ./tests/register.mjs scripts/plsbuy-inventory-smoke.mjs` tests mobile/desktop, both themes, pagination, search, rate changes, CSV downloads and failure recovery with synthetic data only.

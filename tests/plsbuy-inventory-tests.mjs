@@ -23,6 +23,14 @@ eq(normalize(raw(1, { ledger_slices: [{ id: 1, typed: false, used: "18", cost: "
 const pair = [1, 2].map((id) => normalize(raw(id, { myr_used: "0.01", sheet_fields: { saleThb: "0.50", saleTotalThb: "1" } })));
 const combined = lib.groupPlsOrders(pair)[0];
 eq(combined.used, "0.02"); eq(combined.figures.cost, "0.15"); eq(combined.figures.sale, "1.00"); eq(combined.fillCount, 2);
+const observed = (id, amount, time) => normalize(raw(id, { wallet_after: amount, wallet_before: "100", wallet_source: "plsbuy_api", wallet_currency: "MYR", wallet_checked_at: time }));
+const walletGroup = lib.groupPlsOrders([observed(1, "99", "2026-10-21T01:00:00Z"), observed(2, "98", "2026-10-21T01:01:00Z")])[0];
+eq(walletGroup.wallet.amount, "98.00"); eq(walletGroup.fills[0].wallet.amount, "99.00");
+eq(walletGroup.wallet.checkedAt, "2026-10-21T01:01:00.000Z");
+eq(lib.groupPlsOrders([observed(1, "0", "2026-10-21T01:00:00Z")])[0].wallet.amount, "0.00");
+eq(combined.wallet, null);
+const walletCsv = lib.plsCsv([walletGroup]);
+check(walletCsv.includes('"MYR คงเหลือ"')); check(walletCsv.includes('"100.00","98.00","2026-10-21T01:01:00.000Z"'));
 eq(lib.groupPlsOrders([pair[0], { ...pair[1], orderId: "ORDER/2" }]).length, 2);
 eq(lib.groupPlsOrders([pair[0], { ...pair[1], source: "other" }]).length, 2);
 eq(lib.groupPlsOrders([pair[0], normalize(raw(2, { sheet_fields: { saleThb: "1", saleTotalThb: "2" } }))])[0].figures.sale, null);

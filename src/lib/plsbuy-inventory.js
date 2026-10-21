@@ -70,9 +70,10 @@ export const plsMatches = (entry, search) => !search || [entry.orderId,
   ...Object.values(entry.details).filter((v) => typeof v === "string")].join(" ").toLowerCase().includes(search.toLowerCase());
 export function plsCsv(entries) {
   const quote = (v, numeric = false) => { let s = v == null ? "" : String(v); if (!(numeric && /^-?\d+(?:\.\d+)?$/.test(s)) && /^[\s\u0000-\u001f]*[=+@-]/.test(s)) s = `'${s}`; return `"${s.replaceAll('"', '""')}"`; };
-  const rows = [["วันที่ (ไทย)", "Order", "ยอดโอน THB", "ต้นทุน THB (อาจเป็นอ้างอิง)", "กำไร THB (อาจเป็นอ้างอิง)", "กำไร %", "MYR ออก", "ฐานต้นทุน", "เรทอ้างอิง", "เกม", "แพ็ก", "ผู้เติม", "เลขธุรกรรม", "รายการย่อย"]];
+  const rows = [["วันที่ (ไทย)", "Order", "ยอดโอน THB", "ต้นทุน THB (อาจเป็นอ้างอิง)", "กำไร THB (อาจเป็นอ้างอิง)", "กำไร %", "MYR ออก", "ฐานต้นทุน", "เรทอ้างอิง", "เกม", "แพ็ก", "ผู้เติม", "เลขธุรกรรม", "รายการย่อย", "MYR ก่อนเช็ก (รายการย่อยที่เช็กล่าสุด)", "MYR คงเหลือ", "เวลาเช็กยอด (UTC)"]];
   for (const e of entries) rows.push([new Date(e.occurredAt).toLocaleString("sv-SE", { timeZone: "Asia/Bangkok" }), e.orderId,
     e.figures.sale, e.figures.cost, e.figures.profit, e.figures.margin, e.used, e.details.costBasis, e.details.costRate,
-    e.details.game, e.details.pack, e.details.sheetOperator || e.details.operator, e.details.invoice, e.fillCount]);
-  return "\uFEFF" + rows.map((row, i) => row.map((v, c) => quote(v, i > 0 && ((c >= 2 && c <= 6) || c === 8))).join(",")).join("\r\n");
+    e.details.game, e.details.pack, e.details.sheetOperator || e.details.operator, e.details.invoice, e.fillCount,
+    e.wallet?.before, e.wallet?.amount, e.wallet?.checkedAt]);
+  return "\uFEFF" + rows.map((row, i) => row.map((v, c) => quote(v, i > 0 && ((c >= 2 && c <= 6) || c === 8 || c === 14 || c === 15))).join(",")).join("\r\n");
 }
