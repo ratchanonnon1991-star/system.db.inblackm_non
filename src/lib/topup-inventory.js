@@ -1,4 +1,5 @@
 export const TOPUP_INVENTORY_PROVIDERS = [
+  { key: "razer", name: "Razer Gold", description: "บัญชี SGD / CAD จาก Razer Stock พร้อม Gold / Silver และประวัติบอทแยกสกุลเงิน", ready: true },
   { key: "netease", name: "Netease", description: "Netease Pay และ Credit ตามชีท พร้อมยอดบอท ยอดออก ต้นทุน กำไร และประวัติรายการ", ready: true },
   { key: "garena-shell", name: "Garena Shell", description: "สองบัญชี Shell พร้อมยอดบอท ประวัติออเดอร์ ต้นทุน และกำไร แยกยอดอ้างอิงจากชีท", ready: true },
   { key: "itune", name: "iTune", description: "จัดการเมล สกุลเงิน ยอดคงเหลือ และการจองเมลสำหรับเติมเกม", ready: true },
