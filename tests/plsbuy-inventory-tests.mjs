@@ -36,11 +36,12 @@ function compile(file, mocks) {
   const output = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
   const exports = {}; new Function("require", "exports", output)((key) => { if (!mocks[key]) throw Error(`Unmocked ${key}`); return mocks[key]; }, exports); return exports;
 }
-let reads = 0, failure = false;
+let reads = 0, failure = false, walletRows = [];
 const select = async (sql, args) => {
   reads++; if (failure) throw Error("private password");
   check(!/SELECT \*|raw_data|password|session|UPDATE |INSERT |DELETE /i.test(sql)); eq(args[0], "PlsbuyMYR");
   if (sql.includes("lot_count")) return [{ lot_count: 0, remaining: null }];
+  if (sql.includes("LIMIT 1")) { check(!sql.includes("c.created_at >=")); return walletRows; }
   check(sql.includes("c.status='completed'")); return [raw(1), raw(2)];
 };
 const server = compile("src/server/plsbuy-inventory.js", {
@@ -53,6 +54,13 @@ await rejects(() => repository.list({}, dates), 403); eq(reads, 0);
 const result = await repository.list(actor, dates);
 eq(result.total, 1); eq(result.summary.sale, "622.43"); eq(result.summary.cost, "1108.10"); eq(result.balance, null); eq(result.lotCount, 0);
 eq((await repository.list(actor, { ...dates, search: "unmatched" })).total, 0);
+walletRows = [{ wallet_after: "9789.33", wallet_before: "9800", wallet_source: "plsbuy_api", wallet_currency: "MYR", wallet_checked_at: "2026-10-21T01:00:00.000Z", source_order_id: "ORDER-NEW" }];
+const withWallet = await repository.list(actor, { ...dates, search: "unmatched" });
+eq(withWallet.balance, "9789.33"); eq(withWallet.balanceSource, "plsbuy_api"); eq(withWallet.total, 0); eq(withWallet.lotBalance, null);
+eq(lib.plsWallet({ ...walletRows[0], wallet_after: null }), null);
+eq(lib.plsWallet({ ...walletRows[0], wallet_after: "0" }).amount, "0.00");
+eq(lib.plsWallet({ ...walletRows[0], wallet_source: "guess" }), null);
+eq(lib.plsWallet({ ...walletRows[0], wallet_checked_at: "invalid" }), null);
 check(server.plsLedgerJoin.includes("COALESCE(")); check(server.plsLedgerJoin.includes("p.currency='MYR'"));
 let current = actor;
 const route = compile("src/app/api/projectm/plsbuy/route.js", {

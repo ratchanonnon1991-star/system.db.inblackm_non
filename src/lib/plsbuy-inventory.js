@@ -9,6 +9,13 @@ export const PLSBUY_REFERENCE_RATE = "7.723";
 export const PLSBUY_SHEET_REFERENCE = { current: "14501.04", used: "4711.71", remaining: "9789.33", status: "ปกติ" };
 export const PLSBUY_PAGE_SIZE = 100;
 export const plsAmount = (v) => { const n = sheetCents(v); return n === null ? null : signedUsd(n); };
+export function plsWallet(row = {}) {
+  const amount = plsAmount(row.wallet_after);
+  if (row.wallet_currency !== "MYR" || row.wallet_source !== "plsbuy_api" || amount === null
+    || typeof row.wallet_checked_at !== "string" || !/^\d{4}-\d\d-\d\dT.*Z$/.test(row.wallet_checked_at)
+    || !Number.isFinite(Date.parse(row.wallet_checked_at))) return null;
+  return { amount, checkedAt: new Date(row.wallet_checked_at).toISOString(), before: plsAmount(row.wallet_before), orderId: String(row.source_order_id || row.id || "") };
+}
 export function plsFilters({ dateFrom, dateTo, search = "", page = 1, rate = PLSBUY_REFERENCE_RATE } = {}) {
   if (!dateFrom || !dateTo) throw inventoryError("กรุณาเลือกช่วงวันที่");
   const bounds = codaDateBounds({ dateFrom, dateTo });
@@ -25,7 +32,7 @@ export function plsOrder(row, rate) {
     pack: String(row.pack_name || "").slice(0, 200), invoice: String(row.provider_ref || "").slice(0, 200),
     operator: String(row.operator || "Bot").slice(0, 160) };
   return { id: String(row.id), orderId: String(row.sale_order_id || row.source_base || row.source_order_id || row.id),
-    source: String(row.source || row.telegram_source || "").toLowerCase(), used, recordedCost: recorded,
+    source: String(row.source || row.telegram_source || "").toLowerCase(), used, recordedCost: recorded, wallet: plsWallet(row),
     occurredAt: new Date(row.occurred_at).toISOString(), details, figures: sheetFigures(details),
     ledger: (row.ledger_slices || []).map((l) => ({ id: String(l.id), used: plsAmount(l.used), cost: l.typed ? plsAmount(l.cost) : null,
       balance: l.typed ? plsAmount(l.balance) : null, typed: l.typed === true })) };
@@ -49,7 +56,8 @@ export function groupPlsOrders(entries) {
       costThb: allReference && used !== null ? convertSaleThb(used, first.details.costRate) : plsSum(fills, (e) => e.figures.cost),
       costBasis: allReference ? "sheet-reference" : allRecorded ? "recorded" : "mixed",
       game: distinct("game"), pack: distinct("pack"), invoice: distinct("invoice") };
-    return { ...first, used, details, figures: sheetFigures(details), fillCount: fills.length, fills };
+    const wallet = fills.map((f) => f.wallet).filter(Boolean).sort((a, b) => a.checkedAt.localeCompare(b.checkedAt)).at(-1) || null;
+    return { ...first, used, details, wallet, figures: sheetFigures(details), fillCount: fills.length, fills };
   });
 }
 export function plsSummary(entries) {

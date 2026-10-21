@@ -40,7 +40,7 @@ const server = createServer((req, res) => {
     if (offline) { res.statusCode = 503; return res.end(JSON.stringify({ error: "ทดสอบเชื่อมต่อไม่ได้" })); }
     if (malformed) return res.end(JSON.stringify({ entries: [] }));
     const entries = entriesFor(p), page = Number(p.get("page") || 1);
-    return res.end(JSON.stringify({ entries: entries.slice((page - 1) * 100, page * 100), total: entries.length, page, pageSize: 100, summary: plsSummary(entries), reference: PLSBUY_SHEET_REFERENCE, balance: null, lotCount: 0 }));
+    return res.end(JSON.stringify({ entries: entries.slice((page - 1) * 100, page * 100), total: entries.length, page, pageSize: 100, summary: plsSummary(entries), reference: PLSBUY_SHEET_REFERENCE, balance: "9789.33", balanceSource: "plsbuy_api", balanceAt: "2026-10-21T01:00:00Z", balanceOrderId: "WALLET-LATEST", lotCount: 0 }));
   }
   if (url.pathname === "/preview.js") { res.setHeader("Content-Type", "text/javascript"); return res.end(bundle); }
   res.setHeader("Content-Type", "text/html; charset=utf-8"); res.end(`<!doctype html><html lang="th"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><body><div data-theme="light" class="min-h-screen bg-ll-canvas"><div id="root"></div></div><script src="/preview.js"></script></body></html>`);
@@ -54,6 +54,8 @@ try {
     const errors = []; page.on("pageerror", (e) => errors.push(e.message));
     await page.goto(`http://127.0.0.1:${server.address().port}`); await page.locator("[data-theme]").evaluate((el, t) => el.dataset.theme = t, theme);
     await page.getByText("ORDER-1", { exact: true }).waitFor();
+    await page.getByText("ยอด Plsbuy ที่บอทเช็กล่าสุด", { exact: true }).waitFor();
+    await page.getByText("9,789.33 MYR", { exact: true }).waitFor();
     await page.getByText("2 รายการย่อย", { exact: true }).click(); await page.getByText(/คิว 999/).waitFor();
     await page.getByRole("navigation").getByRole("button", { name: "ถัดไป" }).click(); await page.getByText("ORDER-101", { exact: true }).waitFor();
     await page.getByRole("navigation").getByRole("button", { name: "ก่อนหน้า" }).click(); await page.getByText("ORDER-1", { exact: true }).waitFor();
