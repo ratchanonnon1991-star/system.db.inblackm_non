@@ -7,6 +7,7 @@
 // a safe stand-in for it.
 import { getPoolForConnection } from "@/lib/db";
 import { findConnectionWithSecretByName } from "@/server/connections-repository";
+import { gamelistImageRawHref, isGamelistImageRawHref } from "@/lib/gameinfo-image-url";
 
 const CONNECTION_NAME = "gameinfo";
 
@@ -81,6 +82,16 @@ export async function saveGamelistImage(gameId, imageUrl, transactionClient = nu
   const client = transactionClient || await pool.connect();
   try {
     const normalized = String(imageUrl ?? "").trim();
+    // The list hands out this href in place of an uploaded image (see
+    // listGamelistImageByGame), so a picker saved without a change sends it
+    // back. Storing it would point the image at itself; keep what is there.
+    if (isGamelistImageRawHref(normalized, gameId)) {
+      const current = await client.query(
+        `SELECT image_url FROM gamelist_images WHERE game_id = $1`,
+        [gameId]
+      );
+      return { imageUrl: current.rows[0]?.image_url ?? "" };
+    }
     if (!normalized) {
       await client.query(`DELETE FROM gamelist_images WHERE game_id = $1`, [gameId]);
       return { imageUrl: "" };
@@ -110,15 +121,24 @@ export async function deleteGamelistImageForGame(gameId, transactionClient = nul
 }
 
 /** { [gameId]: imageUrl } for every game that has one set — one query for
- * the whole list table instead of one per row. */
+ * the whole list table instead of one per row. An uploaded (base64 data:)
+ * image comes back as its /image/raw href, versioned by an md5 of the stored
+ * value: inlined, a few uploads made the list page several MB. The data URL
+ * itself never leaves the database here. */
 export async function listGamelistImageByGame() {
   const pool = await getReadyPool();
   const client = await pool.connect();
   try {
-    const result = await client.query(`SELECT game_id, image_url FROM gamelist_images`);
+    const result = await client.query(
+      `SELECT game_id,
+              CASE WHEN image_url LIKE 'data:image/%;base64,%' THEN '' ELSE image_url END AS image_url,
+              CASE WHEN image_url LIKE 'data:image/%;base64,%' THEN md5(image_url) END AS inline_hash
+       FROM gamelist_images`
+    );
     const out = {};
     for (const row of result.rows) {
-      if (row.image_url) out[row.game_id] = row.image_url;
+      if (row.inline_hash) out[row.game_id] = gamelistImageRawHref(row.game_id, row.inline_hash.slice(0, 16));
+      else if (row.image_url) out[row.game_id] = row.image_url;
     }
     return out;
   } finally {

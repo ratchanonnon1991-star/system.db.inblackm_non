@@ -300,10 +300,14 @@ function CropStage({ source, onCancel, onDone }) {
       return;
     }
     context.drawImage(image, sx, sy, size, size, 0, 0, CROP_OUTPUT_SIZE, CROP_OUTPUT_SIZE);
-    // PNG keeps transparency (logos, icons); anything else is a photo-ish
-    // paste where JPEG keeps the data: URL far smaller.
-    const dataUrl =
-      source.type === "image/png"
+    // WebP keeps transparency (logos, icons) at a fraction of a PNG's size: a
+    // 512px photo saved as PNG was 400 KB+ of base64 in the database. A
+    // browser that cannot encode WebP hands back a PNG instead; then PNG keeps
+    // transparency and anything photo-ish goes to JPEG.
+    const webp = canvas.toDataURL("image/webp", 0.85);
+    const dataUrl = webp.startsWith("data:image/webp")
+      ? webp
+      : source.type === "image/png"
         ? canvas.toDataURL("image/png")
         : canvas.toDataURL("image/jpeg", 0.9);
     onDone(dataUrl);
