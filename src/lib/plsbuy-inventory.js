@@ -25,10 +25,22 @@ export function plsFilters({ dateFrom, dateTo, search = "", page = 1, rate = PLS
     page: Number.isSafeInteger(Number(page)) && Number(page) > 0 && Number(page) <= 10000 ? Number(page) : 1 };
 }
 export function plsOrder(row, rate) {
-  const used = plsAmount(row.myr_used), recorded = used === null ? null : plsAmount(row.recorded_cost);
+  let used = plsAmount(row.myr_used), usageBasis = "ledger", usageWarning = null;
+  const slices = row.ledger_slices || [];
+  const zeroPlaceholder = used === "0.00" && slices.length > 0 && slices.every((s) => s.typed === false && plsAmount(s.used) === "0.00");
+  if (zeroPlaceholder) {
+    const pack = /^MYR(\d{1,12}(?:\.\d{1,2})?)$/i.exec(String(row.worker_pack_price || "").trim());
+    const saved = plsAmount(row.worker_live_cost), price = pack ? plsAmount(pack[1]) : null;
+    // Corroborated worker price is an explicitly labelled reference only. Never
+    // rewrite a ledger, infer a debit from wallet delta, or hide a zero placeholder.
+    used = slices.length === 1 && price !== null && price !== "0.00" && saved === price ? price : null;
+    usageBasis = used === null ? "unknown" : "worker-reference";
+    usageWarning = used === null ? "ledger เป็นศูนย์ ยังยืนยันยอดออกไม่ได้" : "ledger เป็นศูนย์ ใช้ยอดอ้างอิงบอท ยังไม่ใช่ยอดตัดที่ยืนยันจาก ledger";
+  }
+  const recorded = used === null || zeroPlaceholder ? null : plsAmount(row.recorded_cost);
   const cost = recorded ?? (used === null ? null : convertSaleThb(used, rate));
   const details = { ...(row.sheet_fields || {}), costThb: cost, costBasis: recorded !== null ? "recorded" : "sheet-reference",
-    costRate: recorded !== null ? null : rate, game: String(row.game_name || "").slice(0, 200),
+    costRate: recorded !== null ? null : rate, usageBasis, usageWarning, game: String(row.game_name || "").slice(0, 200),
     pack: String(row.pack_name || "").slice(0, 200), invoice: String(row.provider_ref || "").slice(0, 200),
     operator: String(row.operator || "Bot").slice(0, 160) };
   return { id: String(row.id), orderId: String(row.sale_order_id || row.source_base || row.source_order_id || row.id),
@@ -55,6 +67,8 @@ export function groupPlsOrders(entries) {
     const details = { ...first.details, saleThb: payments.size > 1 ? null : plsSum(fills, (e) => e.figures.sale),
       costThb: allReference && used !== null ? convertSaleThb(used, first.details.costRate) : plsSum(fills, (e) => e.figures.cost),
       costBasis: allReference ? "sheet-reference" : allRecorded ? "recorded" : "mixed",
+      usageBasis: new Set(fills.map((e) => e.details.usageBasis)).size === 1 ? first.details.usageBasis : "mixed",
+      usageWarning: [...new Set(fills.map((e) => e.details.usageWarning).filter(Boolean))].join(" · ") || null,
       game: distinct("game"), pack: distinct("pack"), invoice: distinct("invoice") };
     const wallet = fills.map((f) => f.wallet).filter(Boolean).sort((a, b) => a.checkedAt.localeCompare(b.checkedAt)).at(-1) || null;
     return { ...first, used, details, wallet, figures: sheetFigures(details), fillCount: fills.length, fills };
@@ -70,10 +84,10 @@ export const plsMatches = (entry, search) => !search || [entry.orderId,
   ...Object.values(entry.details).filter((v) => typeof v === "string")].join(" ").toLowerCase().includes(search.toLowerCase());
 export function plsCsv(entries) {
   const quote = (v, numeric = false) => { let s = v == null ? "" : String(v); if (!(numeric && /^-?\d+(?:\.\d+)?$/.test(s)) && /^[\s\u0000-\u001f]*[=+@-]/.test(s)) s = `'${s}`; return `"${s.replaceAll('"', '""')}"`; };
-  const rows = [["วันที่ (ไทย)", "Order", "ยอดโอน THB", "ต้นทุน THB (อาจเป็นอ้างอิง)", "กำไร THB (อาจเป็นอ้างอิง)", "กำไร %", "MYR ออก", "ฐานต้นทุน", "เรทอ้างอิง", "เกม", "แพ็ก", "ผู้เติม", "เลขธุรกรรม", "รายการย่อย", "MYR ก่อนเช็ก (รายการย่อยที่เช็กล่าสุด)", "MYR คงเหลือ", "เวลาเช็กยอด (UTC)"]];
+  const rows = [["วันที่ (ไทย)", "Order", "ยอดโอน THB", "ต้นทุน THB (อาจเป็นอ้างอิง)", "กำไร THB (อาจเป็นอ้างอิง)", "กำไร %", "MYR ออก", "ฐานต้นทุน", "เรทอ้างอิง", "เกม", "แพ็ก", "ผู้เติม", "เลขธุรกรรม", "รายการย่อย", "MYR ก่อนเช็ก (รายการย่อยที่เช็กล่าสุด)", "MYR คงเหลือ", "เวลาเช็กยอด (UTC)", "แหล่งยอด MYR ออก", "คำเตือนยอดออก"]];
   for (const e of entries) rows.push([new Date(e.occurredAt).toLocaleString("sv-SE", { timeZone: "Asia/Bangkok" }), e.orderId,
     e.figures.sale, e.figures.cost, e.figures.profit, e.figures.margin, e.used, e.details.costBasis, e.details.costRate,
     e.details.game, e.details.pack, e.details.sheetOperator || e.details.operator, e.details.invoice, e.fillCount,
-    e.wallet?.before, e.wallet?.amount, e.wallet?.checkedAt]);
+    e.wallet?.before, e.wallet?.amount, e.wallet?.checkedAt, e.details.usageBasis, e.details.usageWarning]);
   return "\uFEFF" + rows.map((row, i) => row.map((v, c) => quote(v, i > 0 && ((c >= 2 && c <= 6) || c === 8 || c === 14 || c === 15))).join(",")).join("\r\n");
 }

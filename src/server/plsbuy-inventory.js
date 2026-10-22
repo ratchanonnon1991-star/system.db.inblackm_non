@@ -43,6 +43,7 @@ export function createPlsbuyInventory({ select = selectQuery, enrich = enrichShe
     const rows = []; let cursor = "0";
     for (;;) {
       const batch = await select(`SELECT c.id,c.source_order_id,c.source,c.created_at AS occurred_at,c.game_name,c.pack_name,
+        c.pack_price AS worker_pack_price,c.provider_response#>>'{_worker_meta,live_cost}' AS worker_live_cost,
         c.provider_response->>'reference' AS provider_ref,split_part(c.source_order_id::text,':',1) AS source_base,${walletColumns},
         ledger.myr_used::text,ledger.recorded_cost::text,ledger.ledger_slices,
         t.sale_ambiguous,t.order_id AS sale_order_id,t.price::text AS sale_price,t.source AS telegram_source,
