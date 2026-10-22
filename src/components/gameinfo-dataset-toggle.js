@@ -15,13 +15,14 @@ export default function GameinfoDatasetToggle({ basePath }) {
     return `${path}${query ? `?${query}` : ""}`;
   }
   return (
-    <div className="inline-flex rounded-lg border border-linear-hairline-strong bg-linear-surface-1 p-1 text-xs">
+    <div role="group" aria-label="ประเภทการเติม" className="inline-flex gap-1 rounded-full border border-linear-hairline bg-linear-surface-1 p-1 text-[13px]">
       {[['uid', 'UID'], ['idpass', 'IDPASS']].map(([value, label]) => (
         <Link
           key={value}
           href={href(value)}
           prefetch={false}
-          className={`rounded-md px-3 py-1.5 font-medium ${mode === value ? "bg-linear-primary text-white" : "text-linear-ink-muted hover:bg-linear-surface-2"}`}
+          aria-current={mode === value ? "true" : undefined}
+          className={`flex h-9 items-center rounded-full px-5 font-black tracking-[0.04em] transition ${mode === value ? "bg-[#D90005] text-white" : "text-linear-ink-muted hover:bg-linear-surface-2"}`}
         >
           {label}
         </Link>
