@@ -2,11 +2,17 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Eye, Settings } from "lucide-react";
+import { Eye, LayoutGrid, Pencil, Settings } from "lucide-react";
 import { gameinfoGameHref, gameinfoListHref, normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 
 // Everyone lands on the card dashboard. Admin/staff can open /manage;
-// role "user" only gets the dashboard link.
+// role "user" only gets the dashboard link. These sit on the red GameInfo
+// header: a solid white pill is the primary action, an outlined one the
+// secondary.
+const SOLID_PILL =
+  "flex h-[42px] items-center gap-2 whitespace-nowrap rounded-full bg-white/95 px-4 text-sm font-black text-[#D90005] transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white";
+const OUTLINE_PILL =
+  "flex h-[42px] items-center gap-2 whitespace-nowrap rounded-full border-[1.5px] border-white/70 px-4 text-sm font-bold text-white transition hover:bg-white/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white";
 export default function GameinfoModeToggle({ lang, editableRole }) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
@@ -16,7 +22,7 @@ export default function GameinfoModeToggle({ lang, editableRole }) {
 
   if (!editableRole) {
     return (
-      <Link href={gameinfoListHref(lang, dataMode)} className="text-linear-ink-muted hover:text-linear-primary">
+      <Link href={gameinfoListHref(lang, dataMode)} className={OUTLINE_PILL}>
         หน้าเว็บ
       </Link>
     );
@@ -43,9 +49,11 @@ export default function GameinfoModeToggle({ lang, editableRole }) {
     return (
       <Link
         href={adminHref}
-        className="flex h-10 items-center gap-2 rounded-lg border border-linear-ink bg-linear-ink px-3 text-xs font-medium text-linear-canvas hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-linear-primary"
+        className={SOLID_PILL}
+        aria-label="มุมมอง Admin"
+        title="มุมมอง Admin"
       >
-        <Settings size={14} aria-hidden="true" /> มุมมอง Admin
+        <Settings size={16} strokeWidth={2.4} aria-hidden="true" /> <span className="hidden md:inline">มุมมอง Admin</span>
       </Link>
     );
   }
@@ -53,9 +61,11 @@ export default function GameinfoModeToggle({ lang, editableRole }) {
   const topupButton = (
     <Link
       href={topupHref}
-      className="flex h-10 items-center gap-2 rounded-lg border border-linear-hairline-strong px-3 text-xs font-medium text-linear-ink-muted hover:bg-linear-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-linear-primary"
+      className={OUTLINE_PILL}
+      aria-label="มุมมอง Topup"
+      title="มุมมอง Topup"
     >
-      <Eye size={14} aria-hidden="true" /> มุมมอง Topup
+      <Eye size={16} strokeWidth={2.2} aria-hidden="true" /> <span className="hidden md:inline">มุมมอง Topup</span>
     </Link>
   );
   if (isBotAutoPage) return topupButton;
@@ -65,14 +75,12 @@ export default function GameinfoModeToggle({ lang, editableRole }) {
       {topupButton}
       <Link
         href={href}
-        className={`flex h-10 items-center rounded-lg border px-3 text-xs font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-linear-primary ${
-          isManageMode
-            ? "border-linear-hairline-strong text-linear-ink-muted hover:bg-linear-surface-2"
-            : "border-linear-ink bg-linear-ink text-linear-canvas hover:opacity-90"
-        }`}
+        className={SOLID_PILL}
+        aria-label={isManageMode ? "กลับหน้ารวมเกม" : "จัดการข้อมูล"}
         title={isManageMode ? "กลับหน้ารวมเกม" : "เปิดตารางจัดการข้อมูลเกม"}
       >
-        {isManageMode ? "กลับหน้ารวมเกม" : "จัดการข้อมูล"}
+        {isManageMode ? <LayoutGrid size={16} strokeWidth={2.4} aria-hidden="true" /> : <Pencil size={16} strokeWidth={2.4} aria-hidden="true" />}
+        <span className="hidden sm:inline">{isManageMode ? "กลับหน้ารวมเกม" : "จัดการข้อมูล"}</span>
       </Link>
     </>
   );

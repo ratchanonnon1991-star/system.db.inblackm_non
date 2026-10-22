@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
-import { Noto_Sans_Thai } from "next/font/google";
+import { Lato, Noto_Sans_Thai } from "next/font/google";
 import Link from "next/link";
-import { Gamepad2, LayoutGrid } from "lucide-react";
+import { ChevronRight, Gamepad2, LayoutGrid } from "lucide-react";
 import { isSupportedLang } from "@/lib/gameinfo-i18n";
 import { getSessionUser } from "@/server/session-user";
 import { canManageGameinfo, hasGameinfoAccess } from "@/server/auth";
@@ -13,9 +13,15 @@ const notoThai = Noto_Sans_Thai({
   subsets: ["thai", "latin"],
   variable: "--font-noto-thai",
 });
+const lato = Lato({
+  subsets: ["latin"],
+  weight: ["400", "700", "900"],
+  variable: "--font-ib-lato",
+});
 
-// Light-first Linear structure with the shared red GameInfo accent. Body copy
-// stays on Noto Sans Thai; negative tracking is applied only to headings.
+// Light-first Linear structure under an inblackm.com-style header: brand red
+// (the same in both themes), Lato for Latin copy and numbers, Noto Sans Thai
+// for the Thai.
 //
 // Topup and role "user" get the card dashboard only.
 export default async function GameinfoLangLayout({ children, params }) {
@@ -24,32 +30,44 @@ export default async function GameinfoLangLayout({ children, params }) {
   const user = await getSessionUser();
   if (!hasGameinfoAccess(user)) redirect("/");
   const editableRole = canManageGameinfo(user);
+  const initial = (user?.displayName || user?.username || "?").trim().slice(0, 1).toUpperCase();
 
   return (
     <GameinfoThemeRoot
-      className={`${notoThai.variable} flex min-h-screen flex-col bg-linear-canvas text-linear-ink antialiased`}
-      style={{ fontFamily: "var(--font-noto-thai), system-ui, sans-serif" }}
+      className={`${notoThai.variable} ${lato.variable} flex min-h-screen flex-col bg-linear-canvas text-linear-ink antialiased`}
+      style={{ fontFamily: "var(--font-ib-lato), var(--font-noto-thai), system-ui, sans-serif" }}
     >
-      <header className="sticky top-0 z-40 border-b border-linear-hairline bg-linear-surface-1">
-        <div className="flex min-h-16 items-center justify-between px-4 sm:px-6">
+      {/* Kept at h-16: the mobile filter drawer in gameinfo-gamelist-cards.js
+          opens below it at top-16. */}
+      <header className="sticky top-0 z-40 bg-[#D90005] shadow-[0_10px_30px_rgba(143,0,25,0.28)]">
+        <div className="mx-auto flex h-16 max-w-[1400px] items-center gap-3 px-4 sm:px-7">
           <Link
-            href={`/gameinfo/${lang}`}
-            className="flex items-center gap-2 text-lg font-semibold tracking-[-0.2px] text-linear-ink"
+            href="/"
+            title="กลับเมนู"
+            aria-label="กลับเมนู"
+            className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-white/95 text-[#D90005] transition hover:bg-white"
           >
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-linear-primary text-white"><Gamepad2 size={19} /></span>
-            <span>GameInfo</span>
+            <LayoutGrid size={18} strokeWidth={2.2} />
           </Link>
-          <nav className="flex items-center gap-3 text-sm">
-            <Link
-              href="/"
-              title="กลับเมนู"
-              aria-label="กลับเมนู"
-              className="flex h-8 w-8 items-center justify-center rounded-md border border-linear-hairline-strong text-linear-ink-muted hover:bg-linear-surface-2"
-            >
-              <LayoutGrid size={15} />
+          <div className="flex min-w-0 items-center gap-2.5 text-white">
+            <span className="hidden text-[22px] font-black leading-none tracking-[0.01em] sm:inline">INBLACKM</span>
+            <ChevronRight size={16} strokeWidth={2.4} className="hidden text-[#FFC9CB] sm:block" aria-hidden="true" />
+            <Link href={`/gameinfo/${lang}`} className="flex items-center gap-2 text-xl font-black text-white">
+              <Gamepad2 size={22} strokeWidth={2.2} aria-hidden="true" />
+              GameInfo
             </Link>
+          </div>
+          <nav className="ml-auto flex items-center gap-2">
             <GameinfoThemeToggle />
             <GameinfoModeToggle lang={lang} editableRole={editableRole} />
+            <span
+              role="img"
+              aria-label={user?.displayName || user?.username || ""}
+              title={user?.displayName || user?.username || ""}
+              className="hidden h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full border-2 border-white bg-[#18181B] text-[15px] font-black text-white sm:flex"
+            >
+              {initial}
+            </span>
           </nav>
         </div>
       </header>
