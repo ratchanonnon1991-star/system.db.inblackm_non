@@ -5,6 +5,7 @@ import * as lib from "../src/lib/gamepoint-inventory.js";
 import * as access from "../src/lib/usdcodashop-inventory.js";
 import { allocateShellSale } from "../src/lib/garena-shell-inventory.js";
 import { TOPUP_INVENTORY_PROVIDERS } from "../src/lib/topup-inventory.js";
+import { enrichShellOrders } from "../src/server/garena-shell-inventory.js";
 let passed = 0;
 const eq = (a, b) => { assert.deepEqual(a, b); passed++; };
 const check = (v) => { assert.ok(v); passed++; };
@@ -55,6 +56,39 @@ check(lib.gpMatches(combined, "crossfire")); check(!lib.gpMatches(combined, "unm
 check(lib.gpCsv([{ ...combined, orderId: '=HYPERLINK("x")' }]).includes("'="));
 check(lib.gpCsv([combined]).includes("คำนวณ ไม่ใช่ API หลังเติม"));
 check(TOPUP_INVENTORY_PROVIDERS.some((p) => p.key === "gamepoint" && p.ready));
+const identity = lib.gpSaleIdentity({ source: "PAGE", source_base: "218598", source_order_id: "218598:pack:1", sale_order_id: "218598:pack:1", sale_price: "1680" });
+eq(identity.sale_order_id, "218598"); eq(identity.sale_price, "1680"); eq(identity.sale_ambiguous, false);
+eq(lib.gpSaleIdentity({ ...identity, sale_order_id: "other:pack:1" }).sale_price, null);
+eq(lib.gpSaleIdentity({ ...identity, sale_order_id: "other:pack:1" }).sale_ambiguous, true);
+eq(lib.gpSaleIdentity({ ...identity, sale_ambiguous: true }).sale_ambiguous, true);
+eq(lib.gpSaleIdentity({ source: "PAGE", source_base: "ORDER/2", sale_order_id: "ORDER/2:pack:1" }).sale_order_id, "ORDER/2");
+const otherSource = { source: "itemku", source_base: "OD1#2", sale_order_id: "OD1", sale_price: "1000" };
+eq(lib.gpSaleIdentity(otherSource), otherSource);
+// Regression uses the REAL sale enricher: a unit-only mock missed this mismatch.
+const saleRows = [
+  { ...raw(299476), source_base: "218598", source_order_id: "218598:pack:1", sale_order_id: "218598:pack:1", sale_price: "1680" },
+  { ...raw(299401), source_base: "218594", source_order_id: "218594:pack:1", sale_order_id: "218594:pack:1", sale_price: "270" },
+  { ...raw(299271), source_base: "218586", source_order_id: "218586:pack:1", sale_order_id: "218586:pack:1", sale_price: "249.98" },
+  ...[1, 2].map((id) => ({ ...raw(id), source_base: "217947", source_order_id: `217947:pack:${id}`, sale_order_id: "217947:pack:2", sale_price: "2450" })),
+];
+const normalizedSales = saleRows.map(lib.gpSaleIdentity);
+const saleSelect = async (sql, args) => {
+  check(args[0].every((key) => !key.includes(":")));
+  if (sql.includes("AS sale_key")) return [
+    ...[299476, 299401, 299271].map((id, i) => ({ sale_key: ["218598", "218594", "218586"][i], pack_count: 1, pack_ids: [id] })),
+    { sale_key: "217947", pack_count: 2, pack_ids: [1, 2] },
+  ];
+  return [];
+};
+const saleEnriched = await enrichShellOrders(saleSelect, normalizedSales);
+const resolvedSales = lib.groupGpOrders(saleEnriched.map((r) => normalize({ ...r, sheet_fields: allocateShellSale(r.sheet_fields) })));
+eq(resolvedSales.find((r) => r.orderId === "218598").figures.sale, "1680.00");
+eq(resolvedSales.find((r) => r.orderId === "218594").figures.sale, "270.00");
+eq(resolvedSales.find((r) => r.orderId === "218586").figures.sale, "249.98");
+const multiSale = resolvedSales.find((r) => r.orderId === "217947");
+eq(multiSale.figures.sale, "2450.00"); eq(multiSale.fillCount, 2); eq(multiSale.fills.map((r) => r.figures.sale), ["1225.00", "1225.00"]);
+const unbound = await enrichShellOrders(saleSelect, [lib.gpSaleIdentity({ ...saleRows[0], sale_order_id: "DIFFERENT:pack:1" })]);
+eq(unbound[0].sheet_fields.saleThb, null);
 function compile(file, mocks) {
   const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
   const output = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;

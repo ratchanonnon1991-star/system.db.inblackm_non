@@ -11,6 +11,17 @@ export const GAMEPOINT_REFERENCE = { opening: "34509.58", remaining: "11236.81" 
 export const gpFilters = (query = {}) => plsFilters({ ...query, rate: query.rate ?? GAMEPOINT_RATE });
 export { plsMatches as gpMatches, plsSummary as gpSummary };
 
+// PAGE can reuse a transport task and mutate its displayed order_id to the last
+// dispatch. Keep the customer key for allocation; never bind a different order.
+export function gpSaleIdentity(row) {
+  if (String(row.source || row.telegram_source || "").toLowerCase() !== "page") return row;
+  const base = String(row.source_base || row.source_order_id || "").split(":", 1)[0];
+  const sale = row.sale_order_id == null ? "" : String(row.sale_order_id);
+  const matches = Boolean(base && sale && sale.split(":", 1)[0] === base);
+  return { ...row, source_base: base, sale_order_id: matches ? base : null,
+    sale_price: matches ? row.sale_price : null, sale_ambiguous: Boolean(row.sale_ambiguous || (sale && !matches)) };
+}
+
 export function gpDebit(row) {
   const savedLines = Array.isArray(row.lines) ? row.lines : [];
   const refs = Array.isArray(row.plan_refs) ? row.plan_refs : [];

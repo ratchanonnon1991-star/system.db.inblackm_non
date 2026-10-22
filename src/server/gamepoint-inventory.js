@@ -3,7 +3,7 @@ import { canViewUsdInventory, inventoryError } from "@/lib/usdcodashop-inventory
 import { enrichShellOrders, saleJoin } from "@/server/garena-shell-inventory";
 import { allocateShellSale } from "@/lib/garena-shell-inventory";
 import { prepareCodaSales } from "@/server/usdcodashop-sale-rates";
-import { GAMEPOINT_METHOD, GAMEPOINT_PAGE_SIZE, GAMEPOINT_REFERENCE, gpFilters, gpOrder, gpObservation, groupGpOrders, gpMatches, gpSummary } from "@/lib/gamepoint-inventory";
+import { GAMEPOINT_METHOD, GAMEPOINT_PAGE_SIZE, GAMEPOINT_REFERENCE, gpFilters, gpOrder, gpObservation, groupGpOrders, gpMatches, gpSummary, gpSaleIdentity } from "@/lib/gamepoint-inventory";
 
 const BATCH = 500;
 const orderKey = (alias) => `COALESCE(NULLIF(split_part(${alias}.source_order_id::text,':',1),''),${alias}.id::text)`;
@@ -46,7 +46,7 @@ export function createGamepointInventory({ select = selectQuery, enrich = enrich
         AND EXISTS (SELECT 1 FROM selected_orders s WHERE s.order_key=${orderKey("c")}
           AND s.source_key=COALESCE(c.source,'')) ORDER BY c.id LIMIT ${BATCH}`,
       [GAMEPOINT_METHOD, cursor, filters.bounds.start, filters.bounds.end]);
-      rows.push(...batch);
+      rows.push(...batch.map(gpSaleIdentity));
       if (rows.length > 20000) throw inventoryError("มีเกิน 20,000 รายการ กรุณาลดช่วงวันที่", 413);
       if (batch.length < BATCH) break;
       cursor = String(batch.at(-1).id);

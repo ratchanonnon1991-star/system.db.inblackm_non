@@ -22,3 +22,11 @@ Worker source `GamepointTopupWorker/src/orders/jobProcessor.js` sends `new_balan
 The new page displays saved pre-submit balance and its submission timestamp independently of report filters. Per-order remaining = saved before − verified debit is explicitly **calculated**, never claimed to be an observed API post-fill balance. Concurrent orders/top-ups can invalidate this estimate. No backfilling an API balance that was never saved. SYSTEM/NONE shared balances are never treated as a Gamepoint wallet. A future worker persistence change needs its own tests/deployment; this task does not modify or deploy that worker.
 
 Test: `node --import ./tests/register.mjs tests/gamepoint-inventory-tests.mjs`.
+
+## PAGE sale key correction
+
+For PAGE only, normalize a matched telegram order's `customer:dispatch:unit` to the same customer key used by the pack-count query before enrichment. A reused transport task may point to the final dispatch of the same customer order, so exact dispatch equality is not required. Different customer keys and ambiguous prices remain unavailable. `/1` and `/2` customer keys are not stripped. Other sources and shared provider reports are unchanged.
+
+Confirmed read-only examples: 218598 = 1,680.00 THB, 218594 = 270.00, 218586 = 249.98. For 217947 the original saved customer price is 2,450.00 shared across two completed dispatches; allocate 1,225.00 per dispatch and show 2,450.00 once, not twice. Regression tests exercise the real sale enricher and allocator, not only mocked normalized rows.
+
+October read-only comparison: same 814 fills, 568 customer orders and MYR debit/cost totals before and after this correction. Missing sales drop from 264 to 131. Remaining non-PAGE missing/ambiguous receipts and unavailable FX conversions are not fabricated or treated as zero by this fix.
