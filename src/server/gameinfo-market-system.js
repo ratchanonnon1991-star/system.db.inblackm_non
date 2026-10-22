@@ -11,7 +11,7 @@ import {
   selectGameinfoCompareSellerKeys,
 } from "@/lib/gameinfo-market-system";
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
-import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
+import { findConnectionWithSecretByName } from "@/server/connections-repository";
 import { fetchNormalizedGameinfoMarketCatalog, listGameinfoMarketGames } from "@/server/gameinfo-market-providers";
 import { getGamelistPacks } from "@/server/gameinfo-gamelist-packs";
 import { getGameinfoModeData } from "@/server/gameinfo-mode-data";
@@ -32,9 +32,7 @@ function httpError(message, status = 400) {
 }
 
 async function getConnection() {
-  const connections = await listConnections();
-  const match = connections.find((connection) => connection.name.trim().toLowerCase() === CONNECTION_NAME);
-  return match ? findConnectionWithSecret(match.id) : null;
+  return findConnectionWithSecretByName(CONNECTION_NAME);
 }
 
 async function ensureSchema(pool) {

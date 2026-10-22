@@ -1,5 +1,5 @@
 import { getPoolForConnection } from "@/lib/db";
-import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
+import { findConnectionWithSecretByName } from "@/server/connections-repository";
 
 const CONNECTION_NAME = "gameinfo";
 const schemaReadyByConnection = new Map();
@@ -11,9 +11,7 @@ function createHttpError(message, status) {
 }
 
 async function getGameinfoConnection() {
-  const connections = await listConnections();
-  const match = connections.find((connection) => connection.name.trim().toLowerCase() === CONNECTION_NAME);
-  return match ? findConnectionWithSecret(match.id) : null;
+  return findConnectionWithSecretByName(CONNECTION_NAME);
 }
 
 function ensureSchema(connection) {

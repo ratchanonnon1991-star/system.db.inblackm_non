@@ -6,7 +6,7 @@
 // (not one row per step) since steps are always read/written as a whole list
 // together from the popup editor — no need for a second table.
 import { getPoolForConnection } from "@/lib/db";
-import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
+import { findConnectionWithSecretByName } from "@/server/connections-repository";
 import { recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
 
 const CONNECTION_NAME = "gameinfo";
@@ -18,10 +18,7 @@ function createHttpError(message, status) {
 }
 
 async function getGameinfoConnection() {
-  const connections = await listConnections();
-  const match = connections.find((c) => c.name.trim().toLowerCase() === CONNECTION_NAME);
-  if (!match) return null;
-  return findConnectionWithSecret(match.id);
+  return findConnectionWithSecretByName(CONNECTION_NAME);
 }
 
 const schemaReadyByConnection = new Map();

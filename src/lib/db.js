@@ -49,7 +49,9 @@ export function getPoolForConnection(connection) {
     password: connection.password,
     database: connection.database,
     ssl: connection.ssl ? { rejectUnauthorized: false } : undefined,
-    max: 3,
+    // The GameInfo page runs ~17 queries in parallel on the "gameinfo"
+    // connection; at 3 they queued for several round trips each.
+    max: 10,
     connectionTimeoutMillis: 8000,
   });
   connectionPools.set(connection.id, { cacheKey, pool: nextPool });

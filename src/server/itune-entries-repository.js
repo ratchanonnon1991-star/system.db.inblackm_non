@@ -7,7 +7,7 @@
 // instead of a JOIN.
 import { getPool, getPoolForConnection } from "@/lib/db";
 import { hasPermission } from "@/lib/permissions";
-import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
+import { findConnectionWithSecretByName } from "@/server/connections-repository";
 import {
   DEFAULT_ITUNE_PRIORITY_AMOUNT_THRESHOLD,
   DEFAULT_ITUNE_RELEASE_THRESHOLD,
@@ -53,10 +53,7 @@ async function insertClaimLog(client, { entryId, entryEmail, action, actor, issu
 }
 
 async function getItuneConnection() {
-  const connections = await listConnections();
-  const match = connections.find((c) => c.name.trim().toLowerCase() === CONNECTION_NAME);
-  if (!match) return null;
-  return findConnectionWithSecret(match.id);
+  return findConnectionWithSecretByName(CONNECTION_NAME);
 }
 
 // Columns a client is ever allowed to write. id/added_at/created_by_user_id
