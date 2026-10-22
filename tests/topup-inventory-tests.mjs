@@ -37,6 +37,7 @@ let assertions = 0;
 const check = (condition, message) => { assert.ok(condition, message); assertions++; };
 const html = renderToStaticMarkup(await hub.default({ params }));
 check(html.includes("Topup Inventory"), "hub title");
+check(html.includes('href="/projectm/th/topup-inventory/gamepoint"') && html.includes("Gamepoint"), "Gamepoint is available");
 check(html.includes(`href="${ituneInventoryPath("th")}"`), "iTune child link");
 check(html.includes("Moniepoint") && html.includes("USDCodashop"), "future services");
 check((html.match(/data-inventory-state="coming-soon"/g) || []).length === 1, "Moniepoint remains informational, not a broken link");
