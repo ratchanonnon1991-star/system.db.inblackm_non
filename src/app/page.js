@@ -1,17 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
+  ArrowUpRight,
+  Copy,
   Database,
-  Folders,
   Gamepad2,
   History,
   Layers,
   Loader2,
   Lock,
   LogOut,
+  Moon,
   Radio,
+  Search,
+  Sun,
   Table2,
   User,
   Users,
@@ -19,7 +23,7 @@ import {
   X,
 } from "lucide-react";
 import NextLink from "next/link";
-import { Inter } from "next/font/google";
+import { Inter, Lato, Noto_Sans_Thai } from "next/font/google";
 import { apiJson } from "@/lib/api-json";
 import TurnstileWidget from "@/components/turnstile-widget";
 import { UsersModal } from "@/components/gamedb-modals";
@@ -29,7 +33,7 @@ import { hasPermission } from "@/lib/permissions";
 
 // Linear Light/Dark Mode type (see ~/.claude/skills/linear-light-dark-mode):
 // Inter at weight 400-700 substitutes for the proprietary Linear
-// Display/Text families, only on the login screen and this hub -- the
+// Display/Text families, only on the login screen -- the
 // authenticated workspace at /systemdb keeps its existing zinc/system-ui
 // look untouched. Light is the default theme (the `ll-` token block in
 // globals.css), with a user-toggleable dark mode that reuses Linear's
@@ -38,6 +42,19 @@ const linearSans = Inter({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
   variable: "--font-linear-sans",
+});
+
+// The post-login hub follows inblackm.com instead (see SystemHub): Lato for
+// the wordmark and Latin copy, Noto Sans Thai for the Thai.
+const ibLato = Lato({
+  subsets: ["latin"],
+  weight: ["400", "700", "900"],
+  variable: "--font-ib-lato",
+});
+const ibThai = Noto_Sans_Thai({
+  subsets: ["thai", "latin"],
+  weight: ["400", "500", "600", "700", "800", "900"],
+  variable: "--font-ib-thai",
 });
 
 // Public by design: it is only where the "เข้าสู่ระบบด้วยบัญชี experience" button
@@ -113,7 +130,7 @@ const SYSTEMS = [
     key: "projectm",
     label: "Topup Inventory",
     desc: "iTune, Moniepoint, USDCodashop และบริการอื่น ๆ",
-    icon: Folders,
+    icon: Copy,
     href: "/projectm/th",
   },
   {
@@ -132,6 +149,55 @@ const SYSTEMS = [
   },
 ];
 
+// The hub follows inblackm.com: a brand-red header (the same red in both
+// themes), Lato 900 for the wordmark and headline, Noto Sans Thai for Thai
+// copy. Everything below the header stays on the ll- tokens, so the dark
+// theme still works without a second palette.
+const BRAND_RED = "#D90005";
+
+function matchesQuery(query, ...fields) {
+  if (!query) return true;
+  return fields.some((field) => String(field || "").toLowerCase().includes(query));
+}
+
+// The 3×3 block beside the headline, the hub's stand-in for inblackm.com's
+// dice of game art: one cell per system, the rest left blank. Decoration only.
+function HeroCube() {
+  const cells = [
+    { label: "IB" },
+    { icon: Database },
+    {},
+    {},
+    { icon: Gamepad2 },
+    { icon: Wallet, dark: true },
+    { icon: Copy },
+    {},
+    { icon: Radio },
+  ];
+  return (
+    <div aria-hidden="true" className="hidden shrink-0 [perspective:900px] md:block">
+      <div className="grid grid-cols-3 gap-2 rounded-[18px] border border-ll-hairline bg-ll-surface-1 p-2.5 shadow-[-18px_24px_40px_-18px_rgba(143,0,25,0.35)] [transform:rotateY(22deg)_rotateX(8deg)_rotateZ(-2deg)]">
+        {cells.map((cell, index) => {
+          const Icon = cell.icon;
+          const tone = cell.label
+            ? "bg-[#D90005] text-white"
+            : cell.dark
+              ? "bg-ll-emphasis-bg text-ll-emphasis-text"
+              : Icon
+                ? "bg-ll-primary-subtle-bg text-ll-primary-subtle-text"
+                : "bg-ll-surface-3";
+          return (
+            <span key={index} className={`flex h-[72px] w-[72px] items-center justify-center rounded-xl ${tone}`}>
+              {cell.label && <span className="font-[family-name:var(--font-ib-lato)] text-xl font-black">{cell.label}</span>}
+              {Icon && <Icon size={28} strokeWidth={2} />}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function SystemHub({ me, onLoggedOut, onPermissionsChanged }) {
   const isSuperAdmin = me.role === "admin";
   const isTemplateUser = me.role === "user";
@@ -139,6 +205,8 @@ function SystemHub({ me, onLoggedOut, onPermissionsChanged }) {
   const [theme, toggleTheme] = useLLTheme();
   const [views, setViews] = useState([]);
   const [viewsLoading, setViewsLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const searchRef = useRef(null);
 
   // /api/views already filters to what this account can see (admins get
   // everything, everyone else gets public + shared-with-them + their
@@ -151,6 +219,18 @@ function SystemHub({ me, onLoggedOut, onPermissionsChanged }) {
       .finally(() => setViewsLoading(false));
   }, []);
 
+  // ⌘K / Ctrl+K jumps to the search box, as the hint inside it says.
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const logout = async () => {
     try {
       await apiJson("/api/auth/logout", { method: "POST" });
@@ -160,8 +240,10 @@ function SystemHub({ me, onLoggedOut, onPermissionsChanged }) {
     onLoggedOut();
   };
 
+  const isDark = theme === "dark";
   const roleLabel = isSuperAdmin ? "Admin" : isTemplateUser ? "User" : "Staff";
-  const initial = (me.displayName || me.username || "?").trim().slice(0, 1).toUpperCase();
+  const displayName = me.displayName || me.username;
+  const initial = (displayName || "?").trim().slice(0, 1).toUpperCase();
   const accessibleSystems = SYSTEMS.filter((system) => {
     if (system.key === "projectm") return true;
     if (system.key === "gameinfo") return hasPermission(me, "gameinfo.access");
@@ -169,156 +251,252 @@ function SystemHub({ me, onLoggedOut, onPermissionsChanged }) {
     return !isTemplateUser;
   });
 
+  const query = search.trim().toLowerCase();
+  const shownSystems = accessibleSystems.filter((system) => matchesQuery(query, system.label, system.desc));
+  const shownViews = views.filter((view) => matchesQuery(query, view.name, view.description));
+  const nothingFound = Boolean(query) && !viewsLoading && shownSystems.length === 0 && shownViews.length === 0;
+
+  const roundButton =
+    "flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/95 text-[#D90005] transition sm:h-11 sm:w-11 hover:bg-white focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-white";
+
   return (
     <div
       data-theme={theme}
-      className={`${linearSans.variable} min-h-screen bg-ll-canvas`}
-      style={{ fontFamily: "var(--font-linear-sans), sans-serif" }}
+      className={`${ibLato.variable} ${ibThai.variable} flex min-h-screen flex-col bg-ll-surface-2 text-[15px] leading-normal text-ll-ink`}
+      style={{ fontFamily: "var(--font-ib-lato), var(--font-ib-thai), system-ui, sans-serif" }}
     >
-      <LLThemeToggle theme={theme} onToggle={toggleTheme} />
-      <header className="border-b border-ll-hairline bg-ll-surface-1">
-        <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-ll-emphasis-bg text-sm font-semibold text-ll-emphasis-text">
-              {initial}
-            </span>
-            <div className="text-[11px] font-semibold leading-tight">
-              <p className="text-sm font-medium text-ll-ink">{me.displayName || me.username}</p>
-              <p
-                className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide ${
-                  isSuperAdmin
-                    ? "bg-ll-emphasis-bg text-ll-emphasis-text"
-                    : "bg-ll-surface-2 text-ll-ink-subtle"
-                }`}
-              >
-                {roleLabel}
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {isSuperAdmin && (
+      <header className="relative shadow-[0_10px_30px_rgba(143,0,25,0.28)]" style={{ background: BRAND_RED }}>
+        <div className="mx-auto flex max-w-[1200px] flex-col gap-3 px-4 pb-4 pt-3 sm:px-8">
+          <div className="flex min-h-12 items-center gap-3">
+            <NextLink href="/" className="flex min-w-0 items-center gap-2 text-white sm:gap-2.5">
+              <span className="font-[family-name:var(--font-ib-lato)] text-[22px] font-black leading-none tracking-[0.01em] sm:text-[26px]">
+                INBLACKM
+              </span>
+              <span className="rounded-md bg-white px-2 py-[3px] font-[family-name:var(--font-ib-lato)] text-[11px] font-black tracking-[0.12em] text-[#D90005]">
+                TOOLS
+              </span>
+            </NextLink>
+            <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-2.5">
               <button
                 type="button"
-                onClick={() => setUsersModal(true)}
-                className="flex items-center gap-1 rounded-md border border-ll-hairline-strong px-3 py-1.5 text-[12px] font-medium text-ll-ink transition hover:bg-ll-surface-2"
+                onClick={toggleTheme}
+                title={isDark ? "สลับเป็นโหมดสว่าง" : "สลับเป็นโหมดมืด"}
+                aria-label={isDark ? "สลับเป็นโหมดสว่าง" : "สลับเป็นโหมดมืด"}
+                className={roundButton}
               >
-                <Users size={13} /> จัดการสิทธิ์ผู้ใช้
+                {isDark ? <Sun size={19} strokeWidth={2.2} /> : <Moon size={19} strokeWidth={2.2} />}
               </button>
-            )}
-            {isSuperAdmin && (
-              <NextLink
-                href="/log"
-                className="flex items-center gap-1 rounded-md border border-ll-hairline-strong px-3 py-1.5 text-[12px] font-medium text-ll-ink transition hover:bg-ll-surface-2"
-                title="ประวัติการใช้งาน (การเข้าสู่ระบบ / แก้ไขข้อมูล)"
-              >
-                <History size={13} /> ประวัติการใช้งาน
-              </NextLink>
-            )}
-            {isSuperAdmin && (
-              <NextLink
-                href="/createdb"
-                className="flex items-center gap-1 rounded-md border border-ll-hairline-strong px-3 py-1.5 text-[12px] font-medium text-ll-ink transition hover:bg-ll-surface-2"
-                title="สร้างตารางใหม่ / เพิ่มคอลัมน์ในตารางเดิม"
-              >
-                <Table2 size={13} /> สร้างตาราง/คอลัมน์
-              </NextLink>
-            )}
-            <button
-              type="button"
-              onClick={logout}
-              title="ออกจากระบบ"
-              className="rounded-md border border-ll-hairline-strong p-2 text-ll-ink-subtle transition hover:bg-ll-primary-subtle-bg hover:text-ll-primary-subtle-text"
-            >
-              <LogOut size={14} />
-            </button>
+              <div className="flex items-center gap-2.5 rounded-full bg-black/15 py-1 pl-1 pr-1 sm:pr-3.5">
+                <span className="flex h-[38px] w-[38px] items-center justify-center rounded-full border-2 border-white bg-[#18181B] text-[15px] font-black text-white">
+                  {initial}
+                </span>
+                <span className="hidden flex-col leading-tight text-white sm:flex">
+                  <span className="max-w-[160px] truncate text-sm font-bold">{displayName}</span>
+                  <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#FFE4E4]">{roleLabel}</span>
+                </span>
+              </div>
+              <button type="button" onClick={logout} title="ออกจากระบบ" aria-label="ออกจากระบบ" className={roundButton}>
+                <LogOut size={19} strokeWidth={2.2} />
+              </button>
+            </div>
+          </div>
+          <div className="flex h-[46px] items-center gap-2.5 rounded-xl bg-white px-3.5">
+            <Search size={18} strokeWidth={2.2} className="shrink-0 text-[#D90005]" aria-hidden="true" />
+            <label htmlFor="hub-search" className="sr-only">
+              ค้นหา
+            </label>
+            <input
+              id="hub-search"
+              ref={searchRef}
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setSearch("");
+              }}
+              placeholder={isTemplateUser ? "ค้นหาหน้าจอ..." : "ค้นหาระบบ หรือเทมเพลต..."}
+              className="min-w-0 flex-1 border-0 bg-transparent text-[15px] text-[#18181B] outline-none placeholder:text-[#71717A]"
+            />
+            <kbd className="hidden rounded-md border border-[#E4E4E7] bg-[#F4F4F5] px-[7px] py-0.5 font-[family-name:var(--font-ib-lato)] text-[11px] font-bold text-[#3F3F46] sm:inline">
+              ⌘K
+            </kbd>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto flex max-w-3xl flex-col gap-8 px-4 py-12 sm:px-6">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-ll-ink">
-            สวัสดี, {me.displayName || me.username} 👋
-          </h1>
-          <p className="mt-1 text-sm text-ll-ink-subtle">
-            {isTemplateUser ? "เลือกหน้าจอที่ต้องการเข้าใช้งาน" : "เลือกระบบที่ต้องการเข้าใช้งาน"}
-          </p>
-        </div>
-
-        {accessibleSystems.length > 0 && (
-          <div className="grid gap-4 sm:grid-cols-2">
-            {accessibleSystems.map((system) => {
-              const Icon = system.icon;
-              const accent =
-                system.key === "systemdb"
-                  ? "bg-red-50 text-red-600 group-hover:bg-red-600 group-hover:text-white"
-                  : system.key === "feed-social"
-                    ? "bg-zinc-100 text-zinc-800 group-hover:bg-zinc-900 group-hover:text-white"
-                  : "bg-sky-50 text-sky-600 group-hover:bg-sky-600 group-hover:text-white";
-              return (
-                <NextLink
-                  key={system.key}
-                  href={system.href}
-                  className="group flex flex-col gap-3 rounded-lg border border-ll-hairline bg-ll-surface-1 p-5 shadow-[var(--ll-shadow-card)] transition hover:border-ll-hairline-strong hover:bg-ll-surface-2"
-                >
-                  <span
-                    className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${accent}`}
-                  >
-                    <Icon size={22} />
-                  </span>
-                  <span>
-                    <span className="block text-base font-medium text-ll-ink">{system.label}</span>
-                    <span className="mt-0.5 block text-[13px] leading-relaxed text-ll-ink-subtle">
-                      {system.desc}
-                    </span>
-                  </span>
-                </NextLink>
-              );
-            })}
+      <main className="mx-auto w-full max-w-[1200px] flex-1 px-4 pb-14 sm:px-8">
+        <section className="flex flex-wrap items-center justify-center gap-8 pb-12 pt-14 md:gap-24">
+          <HeroCube />
+          <div className="flex min-w-0 max-w-[520px] flex-col gap-3.5">
+            <div className="flex items-center gap-2.5">
+              <span aria-hidden="true" className="grid grid-cols-[repeat(3,6px)] grid-rows-[repeat(2,6px)]">
+                <span className="col-start-3 row-start-1 bg-[#D90005]" />
+                <span className="col-start-2 row-start-2 bg-[#D90005]" />
+                <span className="col-start-3 row-start-2 bg-[#D90005]" />
+              </span>
+              <span className="text-[15px] font-bold text-ll-ink-muted">สวัสดี, {displayName}</span>
+            </div>
+            <h1 className="m-0 font-[family-name:var(--font-ib-lato)] text-[clamp(42px,5.4vw,64px)] font-black leading-[0.98] tracking-[-0.025em] text-ll-ink">
+              <span className="block">ALL TOOLS</span>
+              <span className="block text-[#E30613]">ONE PLACE.</span>
+            </h1>
+            <p className="m-0 text-[17px] text-ll-ink-muted">
+              {isTemplateUser ? "เลือกหน้าจอที่ต้องการเข้าใช้งาน" : "เลือกระบบที่ต้องการเข้าใช้งาน"}
+            </p>
           </div>
+        </section>
+
+        {nothingFound && (
+          <p className="mb-8 rounded-xl border border-ll-hairline bg-ll-surface-1 px-4 py-6 text-center text-sm text-ll-ink-subtle">
+            ไม่พบระบบหรือเทมเพลตที่ตรงกับ “{search.trim()}”
+          </p>
         )}
 
-        {/* Deliberately not another tile in the SYSTEMS grid above: a template
-            is a saved arrangement of panels inside System DB, not a system of
-            its own the way GameInfo is, and this section is styled to read as
-            "shortcuts into System DB" (its own card, a lighter row style, an
-            explicit "เทมเพลต" tag) rather than a peer entry a user could
-            confuse for a third top-level system. For a "user" account these
-            are its assigned screens; Projectm remains separate when granted.
-            An empty list still renders for a "user" account (unlike everyone
-            else, where nothing here just means "no templates yet, nothing
-            worth mentioning") since a User with nothing assigned has no other
-            way in at all, and that is worth saying plainly rather than
-            leaving the page looking simply blank/broken. */}
-        {(viewsLoading || views.length > 0 || isTemplateUser) && (
-          <div>
-            <h2 className="mb-2.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-ll-ink-tertiary">
-              <Layers size={12} />{" "}
-              {isTemplateUser ? "หน้าจอของคุณ" : "ทางลัดเข้าเทมเพลตหน้าจอ (อยู่ใน System DB)"}
-            </h2>
-            <div className="rounded-lg border border-ll-hairline bg-ll-surface-1 p-2 shadow-[var(--ll-shadow-card)]">
+        {shownSystems.length > 0 && (
+          <section aria-labelledby="hub-systems" className="flex flex-col gap-[18px]">
+            <div className="flex flex-col gap-0.5">
+              <h2 id="hub-systems" className="m-0 text-2xl font-extrabold text-ll-ink">
+                ระบบทั้งหมด
+              </h2>
+              <p className="m-0 text-sm text-ll-ink-subtle">
+                {query ? `พบ ${shownSystems.length} จาก ${accessibleSystems.length} ระบบ` : `จำนวน ${accessibleSystems.length} ระบบ`}
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+              {shownSystems.map((system) => {
+                const Icon = system.icon;
+                const main = system.key === "systemdb";
+                return (
+                  <NextLink
+                    key={system.key}
+                    href={system.href}
+                    className={`group flex flex-col items-center gap-3 rounded-xl border px-4 pb-[22px] pt-7 text-center transition hover:-translate-y-[3px] hover:shadow-[0_14px_28px_-12px_rgba(143,0,25,0.45)] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-ll-ink ${
+                      main
+                        ? "border-[#D90005] bg-[#D90005] text-white shadow-[0_14px_28px_-14px_rgba(143,0,25,0.5)] hover:border-[#B80004] hover:bg-[#B80004]"
+                        : "border-ll-hairline bg-ll-surface-1 text-ll-ink shadow-[var(--ll-shadow-card)] hover:border-[#D90005] hover:bg-[#D90005] hover:text-white"
+                    }`}
+                  >
+                    <span
+                      className={`flex h-[60px] w-[60px] items-center justify-center rounded-2xl transition ${
+                        main
+                          ? "bg-white/20 text-white"
+                          : "bg-ll-primary-subtle-bg text-ll-primary-subtle-text group-hover:bg-white/20 group-hover:text-white"
+                      }`}
+                    >
+                      <Icon size={28} strokeWidth={2} />
+                    </span>
+                    <span className="text-[17px] font-black leading-tight">{system.label}</span>
+                    <span
+                      className={`text-[13px] leading-relaxed ${main ? "text-[#FFE4E4]" : "text-ll-ink-subtle group-hover:text-[#FFE4E4]"}`}
+                    >
+                      {system.desc}
+                    </span>
+                  </NextLink>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        <div className="mt-10 flex flex-wrap gap-4">
+          {isSuperAdmin && !query && (
+            <section
+              aria-labelledby="hub-admin"
+              className="flex min-w-0 flex-[1_1_420px] flex-col gap-3.5 rounded-xl border border-ll-hairline bg-ll-surface-1 p-5 shadow-[var(--ll-shadow-card)]"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <h2 id="hub-admin" className="m-0 text-[13px] font-extrabold text-ll-ink-muted">
+                  เครื่องมือผู้ดูแล
+                </h2>
+                <span className="rounded bg-ll-emphasis-bg px-[7px] py-0.5 text-[10px] font-black tracking-[0.12em] text-ll-emphasis-text">
+                  ADMIN
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { key: "users", label: "จัดการสิทธิ์ผู้ใช้", icon: Users, onClick: () => setUsersModal(true) },
+                  { key: "log", label: "ประวัติการใช้งาน", icon: History, href: "/log", title: "ประวัติการใช้งาน (การเข้าสู่ระบบ / แก้ไขข้อมูล)" },
+                  { key: "createdb", label: "สร้างตาราง/คอลัมน์", icon: Table2, href: "/createdb", title: "สร้างตารางใหม่ / เพิ่มคอลัมน์ในตารางเดิม" },
+                ].map((tool) => {
+                  const Icon = tool.icon;
+                  const className =
+                    "flex flex-col items-center gap-2 rounded-xl px-2 py-4 text-center text-ll-ink transition hover:bg-ll-primary-subtle-bg focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-ll-ink";
+                  const body = (
+                    <>
+                      <Icon size={30} strokeWidth={2} className="text-[#D90005]" aria-hidden="true" />
+                      <span className="text-[13px] font-semibold">{tool.label}</span>
+                    </>
+                  );
+                  return tool.href ? (
+                    <NextLink key={tool.key} href={tool.href} title={tool.title} className={className}>
+                      {body}
+                    </NextLink>
+                  ) : (
+                    <button key={tool.key} type="button" onClick={tool.onClick} className={className}>
+                      {body}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {/* Deliberately not another tile in the SYSTEMS grid above: a
+              template is a saved arrangement of panels inside System DB, not
+              a system of its own the way GameInfo is, so it gets its own card
+              labelled as a shortcut into System DB. For a "user" account these
+              are its assigned screens; an empty list still renders for them
+              (unlike everyone else) since a User with nothing assigned has no
+              other way in at all, and that is worth saying plainly. */}
+          {(viewsLoading || shownViews.length > 0 || (isTemplateUser && !query)) && (
+            <section
+              aria-labelledby="hub-templates"
+              className="flex min-w-0 flex-[1_1_420px] flex-col gap-3.5 rounded-xl border border-ll-hairline bg-ll-surface-1 p-5 shadow-[var(--ll-shadow-card)]"
+            >
+              <div className="flex flex-wrap items-baseline justify-between gap-3">
+                <div className="flex flex-wrap items-baseline gap-2">
+                  <h2 id="hub-templates" className="m-0 text-[13px] font-extrabold text-ll-ink-muted">
+                    {isTemplateUser ? "หน้าจอของคุณ" : "ทางลัดเทมเพลตหน้าจอ"}
+                  </h2>
+                  {!isTemplateUser && <span className="text-xs text-ll-ink-subtle">อยู่ใน System DB</span>}
+                </div>
+                {!isTemplateUser && (
+                  <NextLink
+                    href="/systemdb"
+                    className="flex items-center gap-1 text-[13px] font-bold text-[#D90005] hover:text-[#A80004]"
+                  >
+                    ดูทั้งหมด <ArrowUpRight size={13} strokeWidth={2.4} aria-hidden="true" />
+                  </NextLink>
+                )}
+              </div>
               {viewsLoading ? (
-                <p className="flex items-center gap-2 px-3 py-3 text-[13px] text-ll-ink-subtle">
+                <p className="m-0 flex items-center gap-2 py-3 text-[13px] text-ll-ink-subtle">
                   <Loader2 size={13} className="animate-spin" /> กำลังโหลด...
                 </p>
-              ) : views.length === 0 ? (
-                <p className="px-3 py-4 text-center text-[13px] text-ll-ink-subtle">
+              ) : shownViews.length === 0 ? (
+                <p className="m-0 py-4 text-center text-[13px] text-ll-ink-subtle">
                   ยังไม่มีหน้าจอที่กำหนดให้บัญชีนี้ — ติดต่อผู้ดูแลระบบ
                 </p>
               ) : (
-                <div className="divide-y divide-ll-hairline">
-                  {views.map((view) => (
+                <div className="flex flex-wrap gap-4">
+                  {shownViews.map((view) => (
                     <NextLink
                       key={view.id}
                       href={`/view/${view.id}`}
-                      className="flex items-center gap-2.5 rounded-md px-3 py-2.5 text-left transition hover:bg-ll-surface-2"
+                      title={view.description || `${view.config?.panels?.length || 0} ตาราง`}
+                      className="group flex w-[104px] flex-col items-center gap-2 text-center text-ll-ink focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-ll-ink"
                     >
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-ll-surface-2 text-ll-ink-subtle">
-                        <Layers size={14} />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-1.5 truncate text-[13px] font-medium text-ll-ink">
+                      <span className="flex h-24 w-24 flex-col items-center justify-center gap-1.5 rounded-xl bg-[#18181B] px-2 text-white shadow-[0_1px_3px_rgba(0,0,0,0.2)] transition group-hover:-translate-y-[3px]">
+                        <Layers size={22} strokeWidth={2} className="text-[#FF5A5F]" aria-hidden="true" />
+                        <span className="line-clamp-2 break-all font-[family-name:var(--font-ib-lato)] text-sm font-black leading-tight tracking-[0.04em]">
                           {view.name}
+                        </span>
+                      </span>
+                      <span className="line-clamp-2 text-xs leading-snug text-ll-ink-muted">
+                        {view.description || `${view.config?.panels?.length || 0} ตาราง`}
+                      </span>
+                      {(view.isDefault || view.isReadOnly) && (
+                        <span className="flex flex-wrap justify-center gap-1">
                           {view.isDefault && (
                             <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-black text-amber-700">
                               หน้าเริ่มต้น
@@ -330,21 +508,29 @@ function SystemHub({ me, onLoggedOut, onPermissionsChanged }) {
                             </span>
                           )}
                         </span>
-                        <span className="block truncate text-[11px] text-ll-ink-tertiary">
-                          {view.description || `${view.config?.panels?.length || 0} ตาราง`}
-                        </span>
-                      </span>
-                      <span className="shrink-0 rounded-full bg-ll-surface-2 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-ll-ink-subtle">
-                        เทมเพลต
-                      </span>
+                      )}
                     </NextLink>
                   ))}
                 </div>
               )}
-            </div>
-          </div>
-        )}
+            </section>
+          )}
+        </div>
       </main>
+
+      <footer className="border-t-2 border-[#D90005] bg-ll-surface-1">
+        <div className="mx-auto flex max-w-[1200px] flex-wrap items-center justify-between gap-4 px-4 py-7 sm:px-8">
+          <div className="flex flex-col gap-0.5">
+            <span className="font-[family-name:var(--font-ib-lato)] text-xl font-black tracking-[0.01em] text-[#D90005]">
+              INBLACKM <span className="text-ll-ink">TOOLS</span>
+            </span>
+            <span className="text-[13px] font-extrabold text-ll-ink">INBLACK GAMING CO., LTD.</span>
+          </div>
+          <span className="text-xs text-ll-ink-subtle">
+            © {new Date().getFullYear()} INBLACK GAMING CO., LTD. — All rights reserved.
+          </span>
+        </div>
+      </footer>
 
       {usersModal && <UsersModal me={me} onClose={() => setUsersModal(false)} onChanged={onPermissionsChanged} />}
     </div>
