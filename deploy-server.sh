@@ -18,7 +18,9 @@ REPO_URL="${DEPLOY_REPO_URL:-git@github.com:InblackM/system.db.inblackm.git}"
 DEPLOY_KEY="${DEPLOY_SSH_KEY:-/root/.ssh/github_gamedb}"
 NODE_VERSION="${DEPLOY_NODE_VERSION:-22}"
 NVM_DIR="${NVM_DIR:-/www/server/nvm}"
-HEALTH_URL="${DEPLOY_HEALTH_URL:-http://127.0.0.1:5589/api/health}"
+# /api/health needs an admin session and answers 401 to curl, so the check
+# uses a public route that answers 200 once the server is up.
+HEALTH_URL="${DEPLOY_HEALTH_URL:-http://127.0.0.1:5589/api/auth/config}"
 LOCK_FILE="${DEPLOY_LOCK_FILE:-/run/lock/gamedb-deploy.lock}"
 REQUESTED_SHA="${DEPLOY_SHA:-}"
 SKIP_VERIFY=0
