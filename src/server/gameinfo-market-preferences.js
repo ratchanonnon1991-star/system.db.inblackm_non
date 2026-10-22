@@ -1,5 +1,5 @@
 import { getPoolForConnection } from "@/lib/db";
-import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
+import { findConnectionWithSecretByName } from "@/server/connections-repository";
 
 const CONNECTION_NAME = "gameinfo";
 let schemaReady = null;
@@ -11,9 +11,7 @@ function createHttpError(message, status) {
 }
 
 async function getReadyPool() {
-  const connections = await listConnections();
-  const match = connections.find((connection) => connection.name.trim().toLowerCase() === CONNECTION_NAME);
-  const connection = match ? await findConnectionWithSecret(match.id) : null;
+  const connection = await findConnectionWithSecretByName(CONNECTION_NAME);
   if (!connection) throw createHttpError(`ยังไม่ได้ตั้งค่าฐานข้อมูล "${CONNECTION_NAME}"`, 503);
 
   if (!schemaReady) {

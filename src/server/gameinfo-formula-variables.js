@@ -1,5 +1,5 @@
 import { getPoolForConnection } from "@/lib/db";
-import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
+import { findConnectionWithSecretByName } from "@/server/connections-repository";
 import { recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
 import { GAMEINFO_FIELD_NAMES } from "@/lib/gameinfo-formula-fields";
 import {
@@ -19,9 +19,7 @@ function httpError(message, status) {
 }
 
 async function getConnection() {
-  const connections = await listConnections();
-  const match = connections.find((connection) => connection.name.trim().toLowerCase() === CONNECTION_NAME);
-  return match ? findConnectionWithSecret(match.id) : null;
+  return findConnectionWithSecretByName(CONNECTION_NAME);
 }
 
 function ensureSchema(connection) {

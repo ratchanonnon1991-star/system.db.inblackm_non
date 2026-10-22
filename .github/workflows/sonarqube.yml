@@ -1,0 +1,103 @@
+name: SonarQube
+
+# main only: Community Build has no branch or PR analysis, so scanning
+# another branch would overwrite main's results in the same project.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      test_notify:
+        description: Skip the scan and send a test Telegram alert
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# A test_notify run gets its own group so it never cancels a real scan.
+concurrency:
+  group: sonarqube-${{ github.ref }}${{ inputs.test_notify && '-test-notify' || '' }}
+  cancel-in-progress: true
+
+jobs:
+  # Runs on the org's CI VPS, where SonarQube listens on 127.0.0.1:9000, so
+  # the scan talks to it directly instead of going through sonar.inblackm.com
+  # and Cloudflare Access. sonar.qualitygate.wait makes this job fail when the
+  # quality gate is red. Skipped (with a notice) until SONAR_TOKEN exists.
+  scan:
+    name: Test with coverage and scan
+    if: ${{ !inputs.test_notify }}
+    runs-on: [self-hosted, ci]
+    timeout-minutes: 30
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: http://127.0.0.1:9000
+    steps:
+      - name: SONAR_TOKEN missing
+        if: env.SONAR_TOKEN == ''
+        run: echo "::notice::SONAR_TOKEN secret not set; skipping the SonarQube scan"
+
+      - name: Checkout
+        if: env.SONAR_TOKEN != ''
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0 # blame data for new-code detection
+          persist-credentials: false
+
+      - name: Set up Node.js
+        if: env.SONAR_TOKEN != ''
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22" # same as deploy.yml and the server
+          cache: npm
+
+      - name: Install dependencies
+        if: env.SONAR_TOKEN != ''
+        run: npm ci
+
+      - name: Test with coverage
+        if: env.SONAR_TOKEN != ''
+        run: npm run test:coverage
+
+      - name: SonarQube scan
+        if: env.SONAR_TOKEN != ''
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        with:
+          args: >
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=300
+
+  # Same bot and group as TopUp and bot-monitor (@inblackm_ci_bot,
+  # "[CI] InblackM"). Failures only: a red test run or a red quality gate.
+  # A manual run with test_notify skips the scan and sends a test message.
+  notify:
+    needs: [scan]
+    if: ${{ always() && (failure() || inputs.test_notify) }}
+    runs-on: [self-hosted, ci]
+    timeout-minutes: 5
+    steps:
+      - name: Telegram
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TEXT: |
+            ${{ inputs.test_notify && '🧪 Test alert (ignore)' || '❌ SonarQube failed' }}: ${{ github.repository }}@${{ github.sha }} (${{ github.ref_name }})
+            ${{ github.event.head_commit.message }}
+            by ${{ github.actor }}
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            https://sonar.inblackm.com/dashboard?id=inblackm_system-db-inblackm
+        run: |
+          if [ -z "$TOKEN" ] || [ -z "$CHAT" ]; then
+            echo "TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set; skipping"
+            exit 0
+          fi
+          # No -f: on a 4xx Telegram's JSON body says why (e.g. "chat not
+          # found"), and it never echoes the token back.
+          resp="$(curl -sS "https://api.telegram.org/bot$TOKEN/sendMessage" \
+            --data-urlencode "chat_id=$CHAT" --data-urlencode "text=$TEXT" \
+            --data-urlencode "disable_web_page_preview=true")"
+          case "$resp" in
+            *'"ok":true'*) echo "Telegram message sent" ;;
+            *) echo "::error::Telegram rejected the message: $resp"; exit 1 ;;
+          esac

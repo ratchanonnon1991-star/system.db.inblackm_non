@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { getPoolForConnection } from "@/lib/db";
-import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
+import { findConnectionWithSecretByName } from "@/server/connections-repository";
 import { decryptRussiaCheckSession, encryptRussiaCheckSession } from "@/server/crypto";
 import { getRussiaCheckSourceAvailability } from "@/lib/gameinfo-russia-check-source";
 import { getRussiaCheckDailyLog } from "@/server/gameinfo-russia-check-daily";
@@ -43,9 +43,7 @@ function optionalPositiveInt(value, label) {
 }
 
 async function getGameinfoConnection() {
-  const connections = await listConnections();
-  const match = connections.find((item) => item.name.trim().toLowerCase() === CONNECTION_NAME);
-  return match ? findConnectionWithSecret(match.id) : null;
+  return findConnectionWithSecretByName(CONNECTION_NAME);
 }
 
 async function ensureSchema(connection) {

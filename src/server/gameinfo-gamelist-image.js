@@ -6,7 +6,7 @@
 // comment on RowThumb in gameinfo-gamelist-table.js for why those were never
 // a safe stand-in for it.
 import { getPoolForConnection } from "@/lib/db";
-import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
+import { findConnectionWithSecretByName } from "@/server/connections-repository";
 
 const CONNECTION_NAME = "gameinfo";
 
@@ -17,10 +17,7 @@ function createHttpError(message, status) {
 }
 
 async function getGameinfoConnection() {
-  const connections = await listConnections();
-  const match = connections.find((c) => c.name.trim().toLowerCase() === CONNECTION_NAME);
-  if (!match) return null;
-  return findConnectionWithSecret(match.id);
+  return findConnectionWithSecretByName(CONNECTION_NAME);
 }
 
 const schemaReadyByConnection = new Map();

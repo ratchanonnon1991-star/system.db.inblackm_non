@@ -1,5 +1,5 @@
 import { getPoolForConnection } from "@/lib/db";
-import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
+import { findConnectionWithSecretByName } from "@/server/connections-repository";
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { normalizeGamelistLinks } from "@/server/gameinfo-gamelist-links";
 import { normalizeGamelistTutorialCategories } from "@/server/gameinfo-gamelist-tutorial";
@@ -74,9 +74,7 @@ function sanitizeData(raw) {
 }
 
 async function connection() {
-  const connections = await listConnections();
-  const match = connections.find((item) => item.name.trim().toLowerCase() === CONNECTION_NAME);
-  return match ? findConnectionWithSecret(match.id) : null;
+  return findConnectionWithSecretByName(CONNECTION_NAME);
 }
 
 async function readyPool() {

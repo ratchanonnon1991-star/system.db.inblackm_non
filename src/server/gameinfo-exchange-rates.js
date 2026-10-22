@@ -1,6 +1,6 @@
 import { getPoolForConnection } from "@/lib/db";
 import { GAMEINFO_RATE_CACHE_MS } from "@/lib/gameinfo-rate-schedule";
-import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
+import { findConnectionWithSecretByName } from "@/server/connections-repository";
 
 const CONNECTION_NAME = "gameinfo";
 const HISTORY_LIMIT = 48;
@@ -78,10 +78,7 @@ export async function fetchGameinfoRate(pair, { fetchImpl = fetch } = {}) {
 }
 
 async function getGameinfoConnection() {
-  const connections = await listConnections();
-  const match = connections.find((connection) => connection.name.trim().toLowerCase() === CONNECTION_NAME);
-  if (!match) return null;
-  return findConnectionWithSecret(match.id);
+  return findConnectionWithSecretByName(CONNECTION_NAME);
 }
 
 async function getReadyPool() {
