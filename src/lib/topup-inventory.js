@@ -1,5 +1,6 @@
 export const TOPUP_INVENTORY_PROVIDERS = [
   { key: "plsbuy", name: "(MYR) Plsbuy", description: "ประวัติ Plsbuy ยอด MYR ออก ต้นทุน กำไร และยอดอ้างอิงจากชีท", ready: true },
+  { key: "donshop", name: "(IDR) Donshop", description: "ประวัติ Donshop ทุกสถานะ ยอด IDR ออก ต้นทุน กำไร และยอดคงเหลือหลังออเดอร์สำเร็จล่าสุด", ready: true },
   { key: "razer", name: "Razer Gold", description: "บัญชี SGD / CAD จาก Razer Stock พร้อม Gold / Silver และประวัติบอทแยกสกุลเงิน", ready: true },
   { key: "netease", name: "Netease", description: "Netease Pay และ Credit ตามชีท พร้อมยอดบอท ยอดออก ต้นทุน กำไร และประวัติรายการ", ready: true },
   { key: "garena-shell", name: "Garena Shell", description: "สองบัญชี Shell พร้อมยอดบอท ประวัติออเดอร์ ต้นทุน และกำไร แยกยอดอ้างอิงจากชีท", ready: true },
