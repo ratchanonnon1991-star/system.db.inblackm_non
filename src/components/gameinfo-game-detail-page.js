@@ -21,7 +21,14 @@ import { gameinfoGameHref, gameinfoListHref, normalizeGameinfoDataMode } from "@
 import { getGameinfoModeData } from "@/server/gameinfo-mode-data";
 import GameinfoModeCloneButton from "@/components/gameinfo-mode-clone-button";
 import GameinfoGameManager from "@/components/gameinfo-game-manager";
-import { GameinfoManageNav } from "@/components/gameinfo-manage-section";
+import GameinfoTopupWebPanel from "@/components/gameinfo-topup-web-panel";
+import GameinfoTestAccounts, { GameinfoTestAccountsCard } from "@/components/gameinfo-test-accounts";
+import GameinfoPriorityStars, { GameinfoWebBadge } from "@/components/gameinfo-priority-stars";
+import { getGamelistGameSettings, listGamelistTestAccounts, maskGamelistTestAccount } from "@/server/gameinfo-game-settings";
+import { getTopupWebGame, isTopupWebConnected, topupWebAdminUrl } from "@/server/gameinfo-topup-web";
+import { GameinfoManageNav, GameinfoManageSection } from "@/components/gameinfo-manage-section";
+import GameinfoWebMargin from "@/components/gameinfo-web-margin";
+import { getGameinfoExchangeRates } from "@/server/gameinfo-exchange-rates";
 import {
   listGamelistPublisherImages,
   listGamelistPublishersByGame,
@@ -78,6 +85,10 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   let packLanguages = [];
   let packVersion = 1;
   let hiddenColumnKeys = [];
+  let settings = { priority: 0, topupGameId: null };
+  let topupGame = null;
+  let topupConnected = false;
+  let testAccounts = [];
   try {
     row = await getGameListRow(numericId);
     if (row) {
@@ -149,6 +160,19 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         reportCount: loadedReports.filter((report) => report.status === "open").length,
       };
       formulaVariables = variableData.variables;
+      // Website data and test accounts are extras: if they fail to load the
+      // game page still opens, just without them.
+      [settings, testAccounts, topupConnected] = await Promise.all([
+        getGamelistGameSettings(row.id).catch(() => settings),
+        listGamelistTestAccounts(row.id).catch(() => []),
+        isTopupWebConnected().catch(() => false),
+      ]);
+      topupGame = topupConnected ? await getTopupWebGame(settings.topupGameId).catch(() => null) : null;
+      row = {
+        ...row,
+        priority: settings.priority,
+        web: topupGame ? { isActive: topupGame.isActive, uidEnabled: topupGame.uidEnabled, idpassEnabled: topupGame.idpassEnabled } : null,
+      };
       hiddenColumnKeys = [...hiddenGameinfoColumnKeys(columnRoleRules, viewerRole, row.id)];
       // Enforced here rather than in the browser: a hidden column carries
       // its formula and its typed-in per-pack values, so leaving it in the
@@ -185,6 +209,15 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   };
 
   if (manageMode) {
+    // Today's stored USD rate only — no provider call while the page loads.
+    const usdThb = topupGame
+      ? await getGameinfoExchangeRates(["THBUSD"], { includeHistory: false, refreshStale: false })
+        .then(([rate]) => (rate?.rate > 0 ? 1 / Number(rate.rate) : null))
+        .catch(() => null)
+      : null;
+    const gameinfoPacks = currencies.flatMap((currency) => currency.categories.flatMap((category) =>
+      category.packs.map((pack) => ({ name: pack.name, price: pack.price ?? "" }))
+    ));
     return (
       <>
         {/* Sticks under the red header (h-16) so the game being edited and
@@ -198,6 +231,10 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
             <div className="flex min-w-0 flex-col leading-tight">
               <h1 className="truncate text-xl font-black text-linear-ink">แก้ไขเกม · {row.game}</h1>
               <span className="font-mono text-xs text-linear-ink-tertiary">ID: {row.id} · {dataMode === "idpass" ? "ID-PASS" : "UID"}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <GameinfoPriorityStars gameId={row.id} value={settings.priority} editable size={18} />
+              {topupConnected ? <GameinfoWebBadge web={row.web} /> : null}
             </div>
             <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
               <span className="rounded-md bg-[#18181B] px-2 py-0.5 text-[11px] font-black tracking-[0.08em] text-white dark:bg-white dark:text-[#18181B]">ADMIN</span>
@@ -213,6 +250,31 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
           <GameinfoManageNav sections={MANAGE_SECTIONS} />
           <div className="flex min-w-0 flex-1 flex-col gap-5">
             <GameinfoGameManager row={row} existingNames={existingNames} tagSuggestions={tagSuggestions} publisherSuggestions={publisherSuggestions} dataMode={dataMode} sectionNumbers={MANAGE_NUMBERS} />
+            <GameinfoManageSection
+              id="s-web"
+              number={MANAGE_NUMBERS.web}
+              title="เว็บ TopUp และข้อมูลลูกค้า"
+              description="เกมนี้คือเกมไหนบนเว็บ สถานะ Web ON และช่องที่ลูกค้าต้องกรอก ดึงจากเว็บโดยตรง"
+            >
+              <GameinfoTopupWebPanel
+                gameId={row.id}
+                gameName={row.game}
+                region={row.region}
+                connected={topupConnected}
+                topupGame={topupGame}
+                topupGameId={settings.topupGameId}
+                adminUrl={topupWebAdminUrl()}
+                dataMode={dataMode}
+              />
+            </GameinfoManageSection>
+            <GameinfoManageSection
+              id="s-test"
+              number={MANAGE_NUMBERS.test}
+              title="บัญชีทดสอบ"
+              description="ใช้ทดสอบเติมก่อนเปิด Web ON หรือหลังแก้ Bot · ห้ามใช้บัญชีลูกค้าจริง"
+            >
+              <GameinfoTestAccounts gameId={row.id} initialAccounts={testAccounts} />
+            </GameinfoManageSection>
             <GameinfoPackEditor
               key={dataMode}
               game={packGame}
@@ -226,6 +288,18 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
               exportUrl={`/api/gameinfo/import/export?gameId=${row.id}${dataMode === "idpass" ? "&mode=idpass" : ""}`}
               sectionNumbers={MANAGE_NUMBERS}
             />
+            <GameinfoManageSection
+              id="s-margin"
+              number={MANAGE_NUMBERS.margin}
+              title="ราคาเว็บและ Margin"
+              description={`ราคาขายและกำไรต่อชิ้นบนเว็บ TopUp (${dataMode === "idpass" ? "ID-PASS" : "UID"}) เทียบกับต้นทุนที่เว็บบันทึกไว้`}
+            >
+              {topupGame ? (
+                <GameinfoWebMargin packages={topupGame.packages} dataMode={dataMode} usdThb={usdThb} gameinfoPacks={gameinfoPacks} />
+              ) : (
+                <p className="text-sm text-linear-ink-tertiary">เชื่อมเกมกับเว็บ TopUp ในหัวข้อ {MANAGE_NUMBERS.web} ก่อน</p>
+              )}
+            </GameinfoManageSection>
             {/* Reports on the manage page are always resolvable: whoever
                 reaches it is an editor. */}
             <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage canReport id="s-report" number={MANAGE_NUMBERS.report} />
@@ -256,6 +330,13 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         hiddenColumnKeys={hiddenColumnKeys}
         editHref={editableRole && !topupView ? manageHref : null}
       />
+      <div className="mt-5">
+        <GameinfoTestAccountsCard
+          gameId={row.id}
+          accounts={editableRole && !topupView ? testAccounts : testAccounts.map(maskGamelistTestAccount)}
+          canReveal={editableRole && !topupView}
+        />
+      </div>
       <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage={editableRole} canReport={canReport} />
     </div>
   );
@@ -265,8 +346,11 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
 const MANAGE_SECTIONS = [
   { id: "s-info", label: "ข้อมูลเกม" },
   { id: "s-method", label: "วิธีเติมและคำแนะนำ" },
+  { id: "s-web", label: "เว็บและข้อมูลลูกค้า" },
+  { id: "s-test", label: "บัญชีทดสอบ" },
   { id: "s-cost", label: "ต้นทุนและเรต" },
   { id: "s-pack", label: "แพ็คและราคา" },
+  { id: "s-margin", label: "ราคาเว็บและ Margin" },
   { id: "s-report", label: "รายงานปัญหา" },
 ];
-const MANAGE_NUMBERS = { info: 1, method: 2, cost: 3, pack: 4, report: 5 };
+const MANAGE_NUMBERS = { info: 1, method: 2, web: 3, test: 4, cost: 5, pack: 6, margin: 7, report: 8 };

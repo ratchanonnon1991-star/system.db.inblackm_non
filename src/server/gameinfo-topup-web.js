@@ -1,0 +1,138 @@
+// Read-only view of the TopUp website's own catalogue (games, packages and
+// the forms customers fill in), through the external connection named
+// "topup_web". GameInfo never writes here: the website clears its caches and
+// keeps its audit log only when a change goes through its own admin, so a
+// direct write would leave the public site stale and unrecorded.
+import { getPoolForConnection } from "@/lib/db";
+import { findConnectionWithSecretByName } from "@/server/connections-repository";
+
+export const TOPUP_WEB_CONNECTION_NAME = "topup_web";
+
+async function getTopupWebPool() {
+  const connection = await findConnectionWithSecretByName(TOPUP_WEB_CONNECTION_NAME);
+  return connection ? getPoolForConnection(connection) : null;
+}
+
+// Where an editor goes to change what GameInfo only shows (Web ON, the
+// customer form). Unset means no link.
+export function topupWebAdminUrl() {
+  const url = String(process.env.GAMEINFO_TOPUP_ADMIN_URL || "").trim();
+  return /^https?:\/\//.test(url) ? url : null;
+}
+
+function bool(value, fallback = true) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function number(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function webStatus(row) {
+  return {
+    isActive: bool(row.is_active),
+    uidEnabled: bool(row.uid_topup_enabled),
+    idpassEnabled: bool(row.idpass_topup_enabled),
+  };
+}
+
+// The same columns can be missing on an older website schema; to_jsonb()
+// lets those read as absent instead of failing the query.
+const GAME_SUMMARY_SQL = `
+  SELECT jsonb_build_object(
+    'id', g.id, 'name', g.name, 'sort_order', g.sort_order,
+    'is_active', to_jsonb(g)->'is_active',
+    'uid_topup_enabled', to_jsonb(g)->'uid_topup_enabled',
+    'idpass_topup_enabled', to_jsonb(g)->'idpass_topup_enabled'
+  ) AS row
+  FROM games g
+  ORDER BY g.sort_order, g.name
+`;
+
+/** Every website game, light enough for a picker and the list page. Null when the connection is not set up. */
+export async function listTopupWebGames() {
+  const pool = await getTopupWebPool();
+  if (!pool) return null;
+  const result = await pool.query(GAME_SUMMARY_SQL);
+  return result.rows.map(({ row }) => ({ id: String(row.id), name: row.name, ...webStatus(row) }));
+}
+
+function normalizeField(field, fallbackKey) {
+  if (!field || typeof field !== "object" || field.enabled === false) return null;
+  const type = String(field.type || "text");
+  return {
+    key: String(field.key || fallbackKey || ""),
+    label: String(field.label || field.labelEn || field.key || fallbackKey || ""),
+    type,
+    required: field.required !== false,
+    masked: type === "password",
+    placeholder: String(field.placeholder || ""),
+    options: Array.isArray(field.options)
+      ? field.options.map((option) => String(option?.label || option?.value || "")).filter(Boolean)
+      : [],
+  };
+}
+
+// The UID form is its own field list plus the optional Zone ID and Server
+// boxes the website keeps separately; ID-PASS forms come as login methods.
+export function topupWebCustomerForms(row) {
+  const uidFields = [
+    ...((row.uid_form_config?.fields || []).map((field) => normalizeField(field))),
+    normalizeField(row.zone_id_config, "zoneId"),
+    row.server_config ? normalizeField({ type: "select", ...row.server_config }, "server") : null,
+  ].filter(Boolean);
+  const methods = (row.idpass_form_config?.methods || [])
+    .filter((method) => method && method.enabled !== false)
+    .sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0))
+    .map((method) => ({
+      id: String(method.id || ""),
+      label: String(method.label || method.labelEn || method.id || ""),
+      fields: (method.fields || []).map((field) => normalizeField(field)).filter(Boolean),
+    }))
+    .filter((method) => method.fields.length);
+  return { uid: uidFields, idpass: methods, defaultIdpassMethodId: row.idpass_form_config?.defaultMethodId || null };
+}
+
+/** One website game with its customer forms and live packages. Null when unknown or not connected. */
+export async function getTopupWebGame(topupGameId) {
+  if (!topupGameId) return null;
+  const pool = await getTopupWebPool();
+  if (!pool) return null;
+  const gameResult = await pool.query(
+    `SELECT to_jsonb(g) - 'thumbnail' - 'banner' - 'tag_icons' AS row FROM games g WHERE g.id = $1`,
+    [String(topupGameId)]
+  );
+  const row = gameResult.rows[0]?.row;
+  if (!row) return null;
+  const packResult = await pool.query(
+    `SELECT to_jsonb(p) - 'icon' AS row FROM packages p
+     WHERE p.game_id = $1 AND (to_jsonb(p)->>'archived_at') IS NULL
+     ORDER BY p.sort_order, p.id`,
+    [String(topupGameId)]
+  );
+  return {
+    id: String(row.id),
+    name: row.name,
+    ...webStatus(row),
+    forms: topupWebCustomerForms(row),
+    packages: packResult.rows.map(({ row: pack }) => ({
+      id: String(pack.id),
+      label: String(pack.label || ""),
+      amountDisplay: String(pack.amount_display || ""),
+      isActive: bool(pack.is_active),
+      uidActive: bool(pack.is_active_uid),
+      idpassActive: bool(pack.is_active_idpass),
+      price: number(pack.price),
+      priceIdpass: number(pack.price_idpass),
+      flashSalePrice: number(pack.flash_sale_price),
+      cost: number(pack.cost),
+      costUsd: number(pack.cost_usd),
+    })),
+  };
+}
+
+export async function isTopupWebConnected() {
+  return Boolean(await findConnectionWithSecretByName(TOPUP_WEB_CONNECTION_NAME));
+}

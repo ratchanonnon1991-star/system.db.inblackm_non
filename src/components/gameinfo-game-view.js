@@ -33,6 +33,7 @@ import { useGameinfoRates } from "./gameinfo-rate-panel";
 import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoTutorialButton, { GameinfoDetailsButton } from "./gameinfo-tutorial-modal";
 import { GameinfoGameLinkButtons } from "./gameinfo-game-links";
+import GameinfoPriorityStars, { GameinfoWebBadge } from "./gameinfo-priority-stars";
 import {
   GameinfoPackColumnControls,
   useGameinfoPackColumnLayout,
@@ -283,6 +284,7 @@ function GameHero({ row, dataMode, editHref }) {
               {row.region}
             </span>
           ) : null}
+          {row.priority ? <GameinfoPriorityStars value={row.priority} /> : null}
         </div>
         <span className="font-mono text-[13px] text-linear-ink-tertiary">{meta}</span>
         <div className="flex flex-wrap gap-2">
@@ -304,6 +306,7 @@ function GameHero({ row, dataMode, editHref }) {
           <span className={`rounded-full px-2.5 py-1 text-[13px] font-bold ${isGameinfoBotAuto(row.botManual) ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-400" : "bg-linear-surface-3 text-linear-ink-muted"}`}>
             {row.botManual || "Manual"}
           </span>
+          {row.web ? <GameinfoWebBadge web={row.web} /> : null}
           <span className={`rounded-full px-2.5 py-1 text-[13px] font-bold ${row.vpn === "YES" ? "bg-amber-500/15 text-amber-800 dark:text-amber-400" : "bg-linear-surface-3 text-linear-ink-muted"}`}>
             {row.vpn === "YES" ? "ใช้ VPN" : "NO VPN"}
           </span>

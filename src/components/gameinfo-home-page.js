@@ -38,6 +38,8 @@ import {
 } from "@/server/gameinfo-bot-channels";
 import { fetchKaleozPage, kaleozGameUrl, loadKaleozGames, normalizeKaleozGame, normalizeKaleozProductType } from "@/server/kaleoz-zepeto";
 import { fetchItemkuPage, itemkuGameUrl, loadItemkuGames, normalizeItemkuGame, normalizeItemkuGroup } from "@/server/itemku-prices";
+import { listGamelistGameSettings } from "@/server/gameinfo-game-settings";
+import { listTopupWebGames } from "@/server/gameinfo-topup-web";
 import { getGameinfoBaselineSeller } from "@/server/gameinfo-market-preferences";
 
 // Everyone lands on the card dashboard. Topup and role "user" stay read-only.
@@ -126,6 +128,13 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
       return counts;
     }, {});
     reports = openReports;
+    // Website data is extra: a missing or unreachable topup_web connection
+    // leaves the list as it was rather than failing it.
+    const [settingsByGame, topupWebGames] = await Promise.all([
+      listGamelistGameSettings().catch(() => ({})),
+      listTopupWebGames().catch(() => null),
+    ]);
+    const topupWebById = new Map((topupWebGames || []).map((game) => [game.id, game]));
     const modeDataByGame = dataMode === "idpass" ? await listGameinfoModeData(dataMode) : {};
     rows = gameListRows.map((r) => {
       const modeData = modeDataByGame[r.id];
@@ -166,6 +175,8 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
       publishers: publishersByGame[r.id] || [],
       reportCount: reportCountByGame[r.id] || 0,
       isFavorite: favoriteIdSet.has(r.id),
+      priority: settingsByGame[r.id]?.priority || 0,
+      web: topupWebById.get(settingsByGame[r.id]?.topupGameId) || null,
       });
     });
   } catch (err) {

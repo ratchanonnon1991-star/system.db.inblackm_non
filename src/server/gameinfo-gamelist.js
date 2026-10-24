@@ -10,6 +10,7 @@ import { deleteGamelistPacksForGame, recordGameinfoAudit } from "@/server/gamein
 import { deleteGamelistTutorialForGame } from "@/server/gameinfo-gamelist-tutorial";
 import { deleteGamelistImageForGame } from "@/server/gameinfo-gamelist-image";
 import { deleteGamelistLinksForGame } from "@/server/gameinfo-gamelist-links";
+import { deleteGamelistGameSettingsForGame } from "@/server/gameinfo-game-settings";
 import { deleteGamelistPublishersForGame, deleteGamelistTagsForGame } from "@/server/gameinfo-gamelist-tags";
 import { deleteGamelistReportsForGame } from "@/server/gameinfo-gamelist-reports";
 import { deleteGamelistFavoritesForGame } from "@/server/gameinfo-gamelist-favorites";
@@ -404,6 +405,7 @@ export async function deleteGameListRow(id, actor = null) {
     await deleteGamelistPublishersForGame(id, client);
     await deleteGamelistReportsForGame(id, client);
     await deleteGamelistFavoritesForGame(id, client);
+    await deleteGamelistGameSettingsForGame(id, client);
     await deleteGameinfoModeData(id, client);
     await client.query(`DELETE FROM game_list WHERE id = $1`, [id]);
     await client.query(`DELETE FROM gamelist_order WHERE game_id = $1`, [id]);
