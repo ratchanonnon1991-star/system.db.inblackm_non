@@ -42,6 +42,7 @@ import {
 } from "@/lib/gameinfo-dashboard";
 import { gameinfoGameHref, gameinfoListHref, gameinfoPacksHref } from "@/lib/gameinfo-data-mode";
 import { useGameinfoDialog } from "@/lib/use-gameinfo-dialog";
+import { gameinfoGameColor, gameinfoGameInitials } from "@/lib/gameinfo-game-initials";
 import {
   requestGameinfoDiscard,
   useGameinfoUnsavedChanges,
@@ -637,16 +638,6 @@ function StatCard({ label, count, icon: Icon, active, onClick, tone }) {
   );
 }
 
-// Card fallback when a game has no image of its own: its initials on a
-// colour picked by id, so the same game keeps the same colour.
-const THUMB_COLORS = ["#18181B", "#7F1D1D", "#1E3A8A", "#14532D", "#581C87", "#9A3412", "#0F766E", "#3F3F46"];
-
-function gameInitials(name) {
-  const words = String(name || "").trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return "?";
-  return (words[0].charAt(0) + (words[1] ? words[1].charAt(0) : words[0].charAt(1))).toUpperCase();
-}
-
 function GameThumb({ row, size }) {
   const dim = row.serviceStatus === "offline" ? "opacity-55" : "";
   if (row.image) {
@@ -659,9 +650,9 @@ function GameThumb({ row, size }) {
     <span
       aria-hidden="true"
       className={`flex shrink-0 items-center justify-center rounded-xl font-black tracking-[0.02em] text-white ${dim}`}
-      style={{ width: size, height: size, fontSize: size > 50 ? 22 : 13, background: THUMB_COLORS[Number(row.id) % THUMB_COLORS.length] || THUMB_COLORS[0] }}
+      style={{ width: size, height: size, fontSize: size > 50 ? 22 : 13, background: gameinfoGameColor(row.id) }}
     >
-      {gameInitials(row.game)}
+      {gameinfoGameInitials(row.game)}
     </span>
   );
 }

@@ -184,16 +184,16 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   };
 
   return (
-    <div className={`${manageMode ? "" : "mx-auto max-w-7xl"} px-4 py-8`}>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <div className={`${manageMode ? "" : "mx-auto max-w-[1400px]"} px-4 pb-16 pt-6 sm:px-7`}>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <GameinfoBackLink
-          className="flex items-center gap-1 text-sm text-linear-primary hover:underline"
+          className="flex h-10 items-center gap-1.5 rounded-full border border-linear-hairline bg-linear-surface-1 px-4 text-[13px] font-bold text-linear-ink transition hover:bg-linear-surface-2"
           href={manageMode ? viewHref : gameinfoListHref(lang, dataMode, false, topupView)}
         />
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {editableRole && !topupView ? (
-            <Link href={manageMode ? viewHref : manageHref} className="rounded-md border border-linear-hairline-strong px-3 py-1.5 text-xs font-medium text-linear-ink-muted hover:bg-linear-surface-2">
-              {manageMode ? "ดูหน้าผู้ใช้" : "จัดการเกม"}
+          {manageMode ? (
+            <Link href={viewHref} className="flex h-10 items-center rounded-full border border-linear-hairline bg-linear-surface-1 px-4 text-[13px] font-bold text-linear-ink transition hover:bg-linear-surface-2">
+              ดูหน้าผู้ใช้
             </Link>
           ) : null}
           {manageMode ? <GameinfoModeCloneButton gameId={row.id} currentMode={dataMode} /> : null}
@@ -230,6 +230,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
             userId={user.id}
             dataMode={dataMode}
             hiddenColumnKeys={hiddenColumnKeys}
+            editHref={editableRole && !topupView ? manageHref : null}
           />
           <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage={editableRole} canReport={canReport} />
         </>

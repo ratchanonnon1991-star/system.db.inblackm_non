@@ -120,6 +120,8 @@ export default function GameinfoTutorialButton({
   autoOpen = false,
   dataMode = "uid",
   compact = false,
+  className = "",
+  children = null,
 }) {
   const isWarning = variant === "warning";
   const isVpn = variant === "vpn";
@@ -146,7 +148,7 @@ export default function GameinfoTutorialButton({
         }}
         disabled={disabled}
         aria-label={isWarning ? "ข้อควรระวังของเกม" : isVpn ? "โน้ต VPN ของเกม" : undefined}
-        className={`border text-xs font-medium disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent ${compact
+        className={className || `border text-xs font-medium disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent ${compact
           ? isWarning
             ? "flex h-10 w-12 items-center justify-center rounded-lg border-linear-primary text-linear-primary hover:bg-linear-primary/10"
             : "flex h-10 min-w-20 items-center justify-center rounded-lg border-linear-primary px-3 text-linear-primary hover:bg-linear-primary/10"
@@ -156,7 +158,7 @@ export default function GameinfoTutorialButton({
         }`}
         title={disabled ? `บันทึกเกมนี้ก่อนถึงจะใส่${buttonLabel}ได้` : isWarning ? "ข้อควรระวังของเกม" : isVpn ? "โน้ตเกี่ยวกับการใช้ VPN" : "วิธีเติมเกม"}
       >
-        {compact && isWarning ? <TriangleAlert size={17} /> : buttonLabel}
+        {children || (compact && isWarning ? <TriangleAlert size={17} /> : buttonLabel)}
       </button>
       {open &&
         typeof document !== "undefined" &&
@@ -184,6 +186,8 @@ export function GameinfoDetailsButton({
   disabled,
   dataMode = "uid",
   compact = false,
+  className = "",
+  children = null,
 }) {
   const [open, setOpen] = useState(false);
   if (!editable && !hasTutorial && !hasVpnNote) return null;
@@ -203,13 +207,13 @@ export function GameinfoDetailsButton({
           if (!disabled) setOpen(true);
         }}
         disabled={disabled}
-        className={`border border-linear-hairline-strong text-xs font-medium text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink disabled:cursor-not-allowed disabled:opacity-60 ${compact
+        className={className || `border border-linear-hairline-strong text-xs font-medium text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink disabled:cursor-not-allowed disabled:opacity-60 ${compact
           ? "flex h-10 min-w-20 items-center justify-center rounded-lg px-3"
           : "rounded-md px-2 py-1"
         }`}
         title={disabled ? "บันทึกเกมนี้ก่อนเพิ่มข้อมูล" : "วิธีเติมและข้อมูลเกม"}
       >
-        ข้อมูลเกม
+        {children || "ข้อมูลเกม"}
       </button>
       {open && typeof document !== "undefined" && createPortal(
         <TutorialModal

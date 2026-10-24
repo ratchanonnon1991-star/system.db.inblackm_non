@@ -3,7 +3,7 @@
 export default function GameinfoFormulaModeToggle({ mode, onChange, disabled = false }) {
   return (
     <div
-      className={`inline-flex rounded-md border border-linear-hairline-strong bg-linear-surface-1 p-0.5 ${
+      className={`inline-flex gap-1 rounded-full bg-linear-surface-3 p-1 ${
         disabled ? "opacity-50" : ""
       }`}
       role="group"
@@ -19,10 +19,10 @@ export default function GameinfoFormulaModeToggle({ mode, onChange, disabled = f
           disabled={disabled}
           aria-pressed={mode === value}
           onClick={() => onChange(value)}
-          className={`rounded px-2.5 py-1 text-xs transition-colors disabled:cursor-not-allowed ${
+          className={`h-8 rounded-full px-3.5 text-xs font-extrabold transition-colors disabled:cursor-not-allowed ${
             mode === value
-              ? "bg-linear-primary text-white"
-              : "text-linear-ink-tertiary hover:bg-linear-surface-2 hover:text-linear-ink"
+              ? "bg-linear-surface-1 text-linear-ink shadow-[0_1px_2px_rgba(0,0,0,0.12)]"
+              : "text-linear-ink-muted hover:text-linear-ink"
           }`}
         >
           {label}
