@@ -26,6 +26,7 @@ export function GameinfoGameLinksButton({
   dataMode = "uid",
   disabled,
   onSaved,
+  className = "",
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(links);
@@ -86,7 +87,7 @@ export function GameinfoGameLinksButton({
           show();
         }}
         disabled={disabled}
-        className="rounded-md border border-linear-hairline-strong px-2 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
+        className={className || "rounded-md border border-linear-hairline-strong px-2 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-2 disabled:cursor-not-allowed disabled:opacity-50"}
       >
         {editable ? `จัดการลิงก์${links.length ? ` (${links.length})` : ""}` : `เลือกลิงก์ (${links.length})`}
       </button>

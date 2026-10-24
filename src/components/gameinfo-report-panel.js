@@ -4,7 +4,7 @@ import { useState } from "react";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
 
-export default function GameinfoReportPanel({ gameId, initialReports, canManage, canReport }) {
+export default function GameinfoReportPanel({ gameId, initialReports, canManage, canReport, id, number }) {
   const [reports, setReports] = useState(initialReports);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -48,12 +48,12 @@ export default function GameinfoReportPanel({ gameId, initialReports, canManage,
   const openCount = reports.filter((report) => report.status === "open").length;
 
   return (
-    <section className="mt-5 rounded-2xl border border-linear-hairline bg-linear-surface-1 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.08)]" aria-labelledby="game-reports-title">
+    <section id={id} className="mt-5 scroll-mt-40 rounded-2xl border border-linear-hairline bg-linear-surface-1 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.08)]" aria-labelledby="game-reports-title">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 id="game-reports-title" className="flex items-center gap-2 text-base font-black text-linear-ink">
             <AlertTriangle size={17} className={openCount ? "text-[#D90005]" : "text-linear-ink-tertiary"} />
-            รายงานปัญหา
+            {number ? `${number}. ` : ""}รายงานปัญหา
           </h2>
           <p className={`mt-1 text-[13px] ${openCount ? "font-bold text-[#D90005]" : "text-linear-ink-tertiary"}`}>ต้องตรวจสอบ {openCount} รายการ</p>
         </div>

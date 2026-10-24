@@ -29,6 +29,7 @@ import GameinfoBulkFormulaToolbar from "./gameinfo-bulk-formula-toolbar";
 import GameinfoFormulaVariablesButton, { GameinfoFormulaVariableSummary } from "./gameinfo-formula-variables";
 import GameinfoRatePanel, { useGameinfoRates } from "./gameinfo-rate-panel";
 import GameinfoMarketManager from "./gameinfo-market-manager";
+import { GameinfoManageSection } from "./gameinfo-manage-section";
 import GameinfoPackHistory from "./gameinfo-pack-history";
 import GameinfoConfirmDialog from "./gameinfo-confirm-dialog";
 import {
@@ -131,6 +132,7 @@ export default function GameinfoPackEditor({
   importPreviewUrl = `/api/gameinfo/import/preview?gameId=${game.id}`,
   exportUrl = `/api/gameinfo/import/export?gameId=${game.id}`,
   historyUrl = `/api/gameinfo/gamelist/${game.id}/packs/history?limit=200`,
+  sectionNumbers = null,
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -772,16 +774,20 @@ export default function GameinfoPackEditor({
   const someVisibleSelected = visibleSelectedCount > 0 && !allVisibleSelected;
 
   return (
-    <div className="space-y-6">
-      <details className="group/pack-tools rounded-xl border border-linear-hairline bg-linear-surface-1">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
+    <div className="flex flex-col gap-5">
+      <details id="s-cost" className="group/pack-tools scroll-mt-40 rounded-2xl border border-linear-hairline bg-linear-surface-1 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-5 sm:px-6 [&::-webkit-details-marker]:hidden">
           <div>
-            <p className="text-sm font-medium text-linear-ink">เครื่องมือข้อมูล Pack</p>
-            <p className="mt-0.5 text-xs text-linear-ink-tertiary">ตัวแปรสูตร · อัตราแลกเปลี่ยน · นำเข้า CSV</p>
+            <h2 className="text-xl font-black text-linear-ink">{sectionNumbers?.cost ? `${sectionNumbers.cost}. ` : ""}ต้นทุนและเรต</h2>
+            <p className="mt-0.5 text-sm text-linear-ink-tertiary">อัตราแลกเปลี่ยน Real-Time · ตัวแปรสูตร/ราคา · นำเข้า CSV</p>
           </div>
-          <ChevronDown size={16} className="text-linear-ink-tertiary transition-transform group-open/pack-tools:rotate-180" />
+          <span className="flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-linear-hairline px-3.5 text-[13px] font-bold text-linear-ink-muted">
+            <span className="group-open/pack-tools:hidden">แสดง</span>
+            <span className="hidden group-open/pack-tools:inline">ซ่อน</span>
+            <ChevronDown size={16} className="transition-transform group-open/pack-tools:rotate-180" />
+          </span>
         </summary>
-        <div className="space-y-4 border-t border-linear-hairline bg-linear-surface-2 p-4">
+        <div className="space-y-4 rounded-b-2xl border-t border-linear-hairline bg-linear-surface-2 p-4 sm:p-5">
       <section className="rounded-lg border border-linear-hairline bg-linear-surface-1 p-4">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-semibold text-linear-ink">นำเข้าแพ็กจาก CSV (เกมนี้)</h2>
@@ -1011,7 +1017,31 @@ export default function GameinfoPackEditor({
         </div>
       </details>
 
-      <section className="flex flex-nowrap items-center gap-2 overflow-x-auto py-3">
+      <GameinfoManageSection
+        id="s-pack"
+        number={sectionNumbers?.pack}
+        title="แพ็คและราคา"
+        description={`${currencies.length} สกุลเงิน · กดที่ช่องเพื่อแก้ไข คอลัมน์สูตรคำนวณให้อัตโนมัติ`}
+        actions={(
+          <>
+            <GameinfoMarketManager
+              gameId={game.id}
+              dataMode={dataMode}
+              columns={computedColumns}
+              onColumnsChange={setComputedColumns}
+            />
+            {canAddColumn ? (
+              <Button type="button" variant="outline" size="sm" onClick={() => setModalOpen(true)}>
+                <Plus data-icon="inline-start" /> เพิ่มสูตร
+              </Button>
+            ) : null}
+            <Button type="button" size="sm" onClick={addCurrency} className="bg-[#D90005] text-white hover:bg-[#B80004]">
+              <Plus data-icon="inline-start" /> สกุลเงิน
+            </Button>
+          </>
+        )}
+      >
+      <div className="mb-4 flex flex-nowrap items-center gap-2 overflow-x-auto rounded-xl bg-linear-surface-2 p-2.5">
         <div className="flex items-center gap-2 text-xs font-medium text-linear-ink-muted">
           <Languages size={14} className="text-linear-primary" />
           ภาษาชื่อ Pack
@@ -1117,7 +1147,7 @@ export default function GameinfoPackEditor({
         />
         <GameinfoPackHistory gameId={game.id} historyUrl={historyUrl} />
       </div>
-      </section>
+      </div>
 
       {selectedPacks.length > 0 ? (
         <GameinfoBulkFormulaToolbar
@@ -1132,27 +1162,7 @@ export default function GameinfoPackEditor({
         />
       ) : null}
 
-      <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-semibold text-linear-ink">สกุลเงิน ({currencies.length})</h2>
-          <div className="flex gap-2">
-            <GameinfoMarketManager
-              gameId={game.id}
-              dataMode={dataMode}
-              columns={computedColumns}
-              onColumnsChange={setComputedColumns}
-            />
-            {canAddColumn ? (
-              <Button type="button" variant="outline" size="sm" onClick={() => setModalOpen(true)}>
-                <Plus data-icon="inline-start" /> เพิ่มสูตร
-              </Button>
-            ) : null}
-            <Button type="button" variant="outline" size="sm" onClick={addCurrency}>
-              <Plus data-icon="inline-start" /> สกุลเงิน
-            </Button>
-          </div>
-        </div>
-
+      <div>
         {currencies.length === 0 && (
           <div className="rounded-lg border border-dashed border-linear-hairline-strong bg-linear-surface-1 p-8 text-center text-sm text-linear-ink-tertiary">
             ยังไม่มีสกุลเงิน — กด &quot;เพิ่มสกุลเงิน&quot; เพื่อเริ่มสร้างแพ็ก
@@ -1161,10 +1171,10 @@ export default function GameinfoPackEditor({
 
         <div className="space-y-4">
           {currencies.map((currency, cIdx) => (
-            <div key={currency.id} className="rounded-lg border border-linear-hairline bg-linear-surface-1 p-4">
+            <div key={currency.id} className="rounded-[14px] border border-linear-hairline bg-linear-surface-1 p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
-                  <span className="shrink-0 rounded-full bg-linear-primary/10 px-2 py-1 text-xs font-medium text-linear-primary">
+                  <span className="shrink-0 rounded-full bg-[#18181B] px-2.5 py-1 text-xs font-black text-white dark:bg-white dark:text-[#18181B]">
                     สกุลที่ {cIdx + 1}
                   </span>
                   <ImageUrlField
@@ -1259,7 +1269,8 @@ export default function GameinfoPackEditor({
             </div>
           ))}
         </div>
-      </section>
+      </div>
+      </GameinfoManageSection>
 
       {/* Same floating pill pattern as the game list table's ยกเลิก/เพิ่มเกม/
           บันทึก bar (see gameinfo-gamelist-table.js). Save becomes the solid
@@ -1288,7 +1299,12 @@ export default function GameinfoPackEditor({
             </span>
           </div>
         )}
-        <div className="flex h-11 items-center rounded-full border border-linear-hairline bg-linear-surface-1 shadow-lg">
+        {dirty && !pending ? (
+          <span className="flex items-center gap-1.5 rounded-full bg-linear-surface-1 px-3 py-1 text-[13px] font-bold text-amber-800 shadow-md dark:text-amber-400">
+            <span aria-hidden="true" className="h-2 w-2 rounded-full bg-amber-500" /> แพ็คมีการแก้ไขที่ยังไม่บันทึก
+          </span>
+        ) : null}
+        <div className="flex h-12 items-center rounded-full border border-linear-hairline bg-linear-surface-1 shadow-[0_16px_32px_-16px_rgba(0,0,0,0.45)]">
           <div
             className={`min-w-0 flex-none flex justify-center overflow-hidden transition-all duration-300 ease-out ${
               dirty ? "w-[92px] opacity-100" : "w-0 opacity-0"
@@ -1323,7 +1339,7 @@ export default function GameinfoPackEditor({
               type="button"
               onClick={save}
               disabled={pending || !dirty}
-              className="h-9 w-[86px] whitespace-nowrap rounded-full bg-linear-primary px-3 text-center text-sm font-medium text-white hover:bg-linear-primary-hover disabled:opacity-50"
+              className="h-9 w-[86px] whitespace-nowrap rounded-full bg-[#D90005] px-3 text-center text-sm font-extrabold text-white hover:bg-[#B80004] disabled:opacity-50"
             >
               {pending ? "กำลังบันทึก..." : "บันทึก"}
             </button>
@@ -1464,7 +1480,7 @@ function CategoryBlock({
   }
 
   return (
-    <div className={collapsed ? "rounded-md border border-linear-hairline bg-linear-surface-2 p-3" : "p-3"}>
+    <div className="rounded-xl border border-[#FBD5D6] bg-[#FFF5F5] p-3 dark:border-[#D90005]/30 dark:bg-[#D90005]/[0.06]">
       <div className="mb-2 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <button
@@ -1484,7 +1500,7 @@ function CategoryBlock({
               onChange={onRenameCategory}
               suggestions={suggestions?.categoryNames || []}
               placeholder="ชื่อหมวดหมู่ เช่น เติมปกติ"
-              className="w-full rounded-md border border-linear-hairline-strong bg-linear-surface-1 px-2 py-1.5 text-sm outline-none focus:border-linear-primary"
+              className="h-9 w-full rounded-lg border border-linear-hairline-strong bg-linear-surface-1 px-2.5 text-sm font-black text-[#B80004] outline-none focus:border-[#D90005] dark:text-[#FF8A8C]"
             />
           </div>
           <span className="shrink-0 text-xs text-linear-ink-tertiary">
@@ -1556,6 +1572,9 @@ function CategoryBlock({
                 />
               </span>
               <DndContext
+                // A stable id keeps dnd-kit's generated aria ids the same on
+                // the server and the client (no hydration mismatch).
+                id={`gameinfo-pack-editor-${game.id}-${category.id}`}
                 sensors={columnSensors}
                 collisionDetection={closestCenter}
                 onDragEnd={handleColumnDragEnd}

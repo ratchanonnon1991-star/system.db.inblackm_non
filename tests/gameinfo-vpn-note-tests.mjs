@@ -27,7 +27,7 @@ const modal = read("../src/components/gameinfo-tutorial-modal.js");
 const gameView = read("../src/components/gameinfo-game-view.js");
 assert.ok(!table.includes("onVpnToggledOn"), "VPN status no longer auto-opens the note");
 assert.ok(table.includes("<GameinfoDetailsButton") && table.includes("hasVpnNote={row.hasVpnNote}"), "manage table groups VPN notes under the game details button");
-assert.ok(manager.includes('value={draft.vpn}') && manager.includes("<GameinfoDetailsButton"), "detail manager separates VPN status from grouped game details");
+assert.ok(manager.includes('aria-checked={draft.vpn === "YES"}') && manager.includes("<GameinfoDetailsButton"), "detail manager separates VPN status from grouped game details");
 assert.ok(modal.includes('isVpn ? "โน้ต VPN"'), "VPN note has its own button label");
 assert.ok(modal.includes('label: "วิธีเติม"') && modal.includes('label: "VPN"'), "game details modal exposes tutorial and VPN tabs");
 assert.ok(!modal.includes("sessionStorage"), "warning opens on each game page visit");
