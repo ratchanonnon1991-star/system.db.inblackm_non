@@ -1,0 +1,70 @@
+# Workforce planning
+
+Entry: `/workforce`, also linked from the tools home page. Access requires an
+authenticated administrator or the `workforce.access` permission. The endpoint
+`/api/workforce` applies the same authorization independently.
+
+## Counts and shifts
+
+- Shows distinct customer orders and purchased work units separately. Staffing
+  uses work units, not distinct orders or payment attempts.
+- A workday runs 09:00–09:00 in Asia/Bangkok. Overnight shifts marked `+1` belong
+  to the following calendar date. Full time and Intern each have three shifts;
+  Part time has four overlapping shifts.
+- Productivity per person/hour, headcount by shift, productive-time percentage
+  and human-handled share are editable. Productivity starts at zero (unknown),
+  not an invented observed employee throughput.
+- Settings persist in this browser only, not as shared team settings.
+- Standalone headcount recommendations are alternatives for each shift. Do not
+  add recommendations for overlapping shifts: hourly capacity combines the
+  actual entered headcounts once and highlights remaining hourly gaps.
+
+## Read-only sources and identity
+
+The primary application database (`src/lib/db.js`) supplies paid web queue lines.
+`PROFIT_DATABASE_URL` supplies marketplace, reseller, Telegram and bot history:
+Kaleoz, Itemku, G2G, Playerok, Russia, InblackM reseller, PAGE and other Telegram
+sources. Missing or unavailable sources are disclosed, not silently represented
+as a complete zero-demand result. Bot-side web copies are a fallback only when
+the primary web source is unavailable.
+
+Queries use allowlisted schema discovery, bounded dates, statement timeouts and
+`BEGIN READ ONLY`. They return hourly aggregates, not customer credentials. No
+order creation, replay, payment, status mutation or queue dispatch is performed.
+
+Within each channel, customer references are normalized across transport prefixes
+and unit suffixes. Original source rows take precedence over Telegram and bot
+copies; stable unit identities prevent counting execution copies twice. Completed
+bot units can resolve a stale synced parent for backlog analytics. A source with
+no quantity column contributes one unit per stable source row; embedded bundle
+multipliers are not universally inferred, so those sources may undercount packs.
+
+Cancelled/refunded/unpaid records are excluded from incoming work. Backlog is
+limited to the queried 56-day history and reflects present statuses, not historical
+point-in-time snapshots. Unknown statuses are disclosed. Backlog is not silently
+added to next-day forecast demand.
+
+## Forecast
+
+Each channel is trained separately using completed workdays preceding the chosen
+date, with at most 56 days of history. Same-weekday hourly means require at least
+three samples; otherwise recent same-hour observations are used. The first partial
+coverage day is excluded. Insufficient history yields an unavailable forecast,
+not a fabricated zero. No current/future workday data enters training.
+
+The displayed low/high range is an empirical variation band, not a calibrated
+confidence interval. This baseline does not model holidays, promotions or unusual
+events. Source coverage and work-unit accuracy should be verified in production
+before using the suggestions as a final roster.
+
+## Checks
+
+```sh
+node tests/workforce-planning-tests.mjs
+npm test
+npm run build
+node scripts/workforce-smoke.mjs
+```
+
+The browser smoke test uses a local mocked aggregate response only; it does not
+connect to production databases or send work to bots.
