@@ -1,7 +1,18 @@
 import pg from "pg";
-import { getPool } from "@/lib/db";
 import { BOT_SOURCES, WEB_SOURCE, buildSourceQuery, aggregateSourceSql } from "./workforce-sources.js";
 let botPool;
+let webPool;
+export function getWorkforceWebPool() {
+  // The tools login database is NOT necessarily the storefront database.
+  // Never change or silently reuse PG_* just to load workforce analytics.
+  const connectionString = process.env.WORKFORCE_WEB_DATABASE_URL;
+  if (!connectionString) return null;
+  if (!webPool) {
+    webPool = new pg.Pool({ connectionString, max: 2, connectionTimeoutMillis: 8000 });
+    webPool.on("error", error => console.error("[workforce] web pool", error.code));
+  }
+  return webPool;
+}
 function getBotPool() {
   if (!process.env.PROFIT_DATABASE_URL) throw new Error("Bot database is not configured");
   if (!botPool) {
@@ -21,8 +32,9 @@ export async function readWorkforceSource(pool, definitions, range, { excludeWeb
     const { rows: schema } = await client.query(`SELECT table_name,column_name,data_type
       FROM information_schema.columns WHERE table_schema='public' AND table_name=ANY($1::text[])`, [definitions.map(d => d.table)]);
     const sources = definitions.map(def => {
-      const telegramAvailable = ["task_request_id", "order_id"].every(key => schema.some(c => c.table_name === "telegram_orders_dev" && c.column_name === key));
-      const sql = buildSourceQuery(def, schema.filter(c => c.table_name === def.table), { telegramAvailable });
+      const telegramColumns = schema.filter(c => c.table_name === "telegram_orders_dev");
+      const telegramAvailable = ["task_request_id", "order_id", "created_at"].every(key => telegramColumns.some(c => c.column_name === key));
+      const sql = buildSourceQuery(def, schema.filter(c => c.table_name === def.table), { telegramAvailable, telegramColumns });
       return { table: def.table, sql, available: Boolean(sql) };
     });
     const sql = aggregateSourceSql(sources.filter(s => s.sql).map(s => s.sql), { excludeWeb });
@@ -45,8 +57,14 @@ export async function loadWorkforceData(range) {
     const warnings = [];
     let web;
     try {
-      web = await readWorkforceSource(getPool(), [WEB_SOURCE], range);
-      if (!web.sources[0].available) warnings.push("ไม่พบ queue_bot_orders ในฐานเว็บ: ใช้ข้อมูลเว็บที่ส่งถึงฐานบอทเท่านั้น");
+      const pool = getWorkforceWebPool();
+      if (pool) {
+        web = await readWorkforceSource(pool, [WEB_SOURCE], range);
+        if (!web.sources[0].available) warnings.push("ไม่พบ queue_bot_orders ใน WORKFORCE_WEB_DATABASE_URL: ใช้ข้อมูลเว็บที่ส่งถึงฐานบอทเท่านั้น");
+      } else {
+        warnings.push("ยังไม่ได้ตั้ง WORKFORCE_WEB_DATABASE_URL: แสดงเว็บเฉพาะงานที่ส่งถึงฐานบอท งาน Human อาจไม่ครบ");
+        web = { rows: [], sources: [{ table: WEB_SOURCE.table, available: false }] };
+      }
     } catch (error) {
       console.error("[workforce] web source", error.code);
       warnings.push("อ่านฐานเว็บไม่สำเร็จ: จำนวนงาน Human ที่ยังไม่ส่งบอทอาจไม่ครบ");
@@ -60,7 +78,7 @@ export async function loadWorkforceData(range) {
       warnings.push("อ่านฐานบอท/Marketplace ไม่สำเร็จ: ข้อมูลช่องทางอื่นไม่ครบ");
     }
     if (!web?.sources.some(s => s.available) && !bot?.sources.some(s => s.available)) {
-      throw Object.assign(new Error("ยังอ่านแหล่งข้อมูลคิวไม่ได้ กรุณาตรวจการเชื่อมต่อฐานเว็บและ PROFIT_DATABASE_URL"), { status: 503 });
+      throw Object.assign(new Error("ยังอ่านแหล่งข้อมูลคิวไม่ได้ กรุณาตรวจ WORKFORCE_WEB_DATABASE_URL และ PROFIT_DATABASE_URL รวมถึง log [workforce]"), { status: 503 });
     }
     const data = { buckets: [...(web?.rows || []), ...(bot?.rows || [])], warnings,
       sources: [...(web?.sources || []).map(s => ({ ...s, database: "web" })), ...(bot?.sources || []).map(s => ({ ...s, database: "bot" }))],

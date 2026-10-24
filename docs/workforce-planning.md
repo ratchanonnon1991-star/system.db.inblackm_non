@@ -21,7 +21,12 @@ authenticated administrator or the `workforce.access` permission. The endpoint
 
 ## Read-only sources and identity
 
-The primary application database (`src/lib/db.js`) supplies paid web queue lines.
+`WORKFORCE_WEB_DATABASE_URL` supplies paid web queue lines from the storefront
+database containing `orders` and `queue_bot_orders`. Use a SELECT-only account.
+Do not replace the tools login connection (`PG_*`); it may be a different database.
+After setting this server-side variable, restart/redeploy the tools process.
+When unset, the dashboard still loads available bot/marketplace data and clearly
+warns that web Human work not yet dispatched to bots is missing.
 `PROFIT_DATABASE_URL` supplies marketplace, reseller, Telegram and bot history:
 Kaleoz, Itemku, G2G, Playerok, Russia, InblackM reseller, PAGE and other Telegram
 sources. Missing or unavailable sources are disclosed, not silently represented
@@ -31,6 +36,9 @@ the primary web source is unavailable.
 Queries use allowlisted schema discovery, bounded dates, statement timeouts and
 `BEGIN READ ONLY`. They return hourly aggregates, not customer credentials. No
 order creation, replay, payment, status mutation or queue dispatch is performed.
+Only individual schema-verified metadata columns are projected, never whole-row
+JSON conversions. Native timestamp lower bounds allow existing indexes to help;
+no new index or production schema mutation is needed for this change.
 
 Within each channel, customer references are normalized across transport prefixes
 and unit suffixes. Original source rows take precedence over Telegram and bot

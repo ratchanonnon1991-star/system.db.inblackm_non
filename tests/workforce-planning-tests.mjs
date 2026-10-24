@@ -76,7 +76,9 @@ try {
     INSERT INTO queue_bot_orders VALUES(10,'IN1-1','PENDING',1,'2026-10-24 10:00'),
       (11,'IN1-1','PENDING',2,'2026-10-24 10:00'),(12,'UNPAID','AWAITING_PAYMENT',100,'2026-10-24 10:00');`);
   const schema = (await db.query("SELECT table_name,column_name,data_type FROM information_schema.columns WHERE table_schema='public'")).rows;
-  const parts = sources => sources.map(d => buildSourceQuery(d, schema.filter(c => c.table_name === d.table), { telegramAvailable: true })).filter(Boolean);
+  const parts = sources => sources.map(d => buildSourceQuery(d, schema.filter(c => c.table_name === d.table), {
+    telegramAvailable: true, telegramColumns: schema.filter(c => c.table_name === "telegram_orders_dev"),
+  })).filter(Boolean);
   await db.exec("SET TIME ZONE 'Asia/Bangkok'");
   await check("SQL counts marketplace once across source, Telegram and multiple bot units", async () => {
     const rows = (await db.query(aggregateSourceSql(parts(BOT_SOURCES)), ["2026-10-24T09:00:00+07:00", "2026-10-25T09:00:00+07:00"])).rows;
@@ -99,6 +101,28 @@ try {
     const sql = aggregateSourceSql(parts(BOT_SOURCES));
     assert.equal(sql.includes('public."kaleoz_orders"'), false);
     assert.equal(/\b(INSERT|UPDATE|DELETE|ALTER|CREATE|DROP)\b/.test(sql), false);
+    assert.equal(sql.includes("to_jsonb"), false);
+    assert.ok(sql.includes('r."paid_at">=($1::timestamptz)'));
+    assert.ok(sql.includes('r."paid_at" IS NULL AND r."created_at">='));
+  });
+  await check("nullable preferred timestamps keep fallback rows and date boundaries", async () => {
+    await db.exec(`INSERT INTO itemku_orders VALUES
+      ('OD-FALLBACK',1,'new',NULL,'2026-10-24 09:00+07'),
+      ('OD-PREFERRED-OLD',9,'new','2026-10-23 23:00+07','2026-10-24 09:00+07'),
+      ('OD-UPPER-BOUND',9,'new',NULL,'2026-10-25 09:00+07');`);
+    const rows = (await db.query(aggregateSourceSql(parts([BOT_SOURCES.find(s => s.table === "itemku_orders")])),
+      ["2026-10-24T09:00:00+07:00", "2026-10-25T09:00:00+07:00"])).rows;
+    const fallback = rows.find(r => hourKey(r.hour) === "2026-10-24T09");
+    assert.equal(fallback.orders, 1); assert.equal(fallback.units, 1);
+    assert.equal(rows.reduce((n, r) => n + r.units, 0), 1);
+  });
+  await check("legacy bot source NULL still inherits the linked Telegram channel", async () => {
+    await db.exec(`INSERT INTO telegram_orders_dev VALUES('PAGE-1','218000','page',NULL,'processing','2026-10-24 08:59+07');
+      INSERT INTO codashop_orders VALUES(99,NULL,'transport-reference','PAGE-1','processing',1,'2026-10-24 09:01','{}');`);
+    const rows = (await db.query(aggregateSourceSql(parts([BOT_SOURCES.find(s => s.table === "codashop_orders")])),
+      ["2026-10-24T08:00:00+07:00", "2026-10-24T09:00:00+07:00"])).rows;
+    assert.equal(rows.length, 1); assert.equal(rows[0].channel, "page");
+    assert.equal(rows[0].units, 1); assert.equal(hourKey(rows[0].hour), "2026-10-24T08");
   });
   await check("Kaleoz Sending status 1003 remains open work, not a cancellation", async () => {
     await db.exec(`CREATE TABLE kaleoz_orders(order_id text,quantity int,status text,created_at timestamptz);
