@@ -39,11 +39,13 @@ import { listGamelistReports } from "@/server/gameinfo-gamelist-reports";
 import GameinfoReportPanel from "@/components/gameinfo-report-panel";
 import GameinfoPackEditor from "@/components/gameinfo-pack-editor";
 import { buildPackSuggestions } from "@/lib/gameinfo-suggestions";
-import { hasPermission, permissionRole } from "@/lib/permissions";
+import { hasPermission } from "@/lib/permissions";
 import {
   hiddenGameinfoColumnKeys,
   stripHiddenGameinfoColumns,
 } from "@/lib/gameinfo-column-roles";
+import { cookies } from "next/headers";
+import { GAMEINFO_VIEW_COOKIE, gameinfoViewColumnRole, resolveGameinfoView } from "@/lib/gameinfo-view";
 import { listGameinfoColumnRoleRules } from "@/server/gameinfo-column-roles";
 
 export default async function GameinfoGameDetailPage({ params, searchParams, manage = false }) {
@@ -56,12 +58,12 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   const canReport = hasPermission(user, "gameinfo.report");
   if (manage && !editableRole) redirect(gameinfoGameHref(lang, id, dataMode));
   const manageMode = manage && editableRole;
-  const topupView = !manageMode && rawView === "topup";
-  // Columns are shared by every game, so a role that works with only a few of
-  // them would otherwise meet all of them everywhere. Resolved here because
-  // the server is what knows the viewer's role; the topup preview deliberately
-  // resolves as topup so an admin sees what a topup user would.
-  const viewerRole = topupView ? "topup" : permissionRole(user.permissions, "gameinfo");
+  const view = resolveGameinfoView({ param: rawView, cookie: (await cookies()).get(GAMEINFO_VIEW_COOKIE)?.value, isAdmin: editableRole });
+  const topupView = !manageMode && view === "topup";
+  // Columns are shared by every game, so the Topup view, which works with
+  // only a few of them, would otherwise meet all of them everywhere. The view
+  // picks the column rules, not the viewer's role: anyone can switch.
+  const viewerRole = gameinfoViewColumnRole(topupView ? "topup" : "product");
 
   // A non-numeric segment here (e.g. a stale /admin bookmark from before that
   // path was removed) would otherwise reach getGameListRow() as NaN and blow
@@ -328,13 +330,13 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         userId={user.id}
         dataMode={dataMode}
         hiddenColumnKeys={hiddenColumnKeys}
-        editHref={editableRole && !topupView ? manageHref : null}
+        editHref={editableRole ? manageHref : null}
       />
       <div className="mt-5">
         <GameinfoTestAccountsCard
           gameId={row.id}
-          accounts={editableRole && !topupView ? testAccounts : testAccounts.map(maskGamelistTestAccount)}
-          canReveal={editableRole && !topupView}
+          accounts={editableRole ? testAccounts : testAccounts.map(maskGamelistTestAccount)}
+          canReveal={editableRole}
         />
       </div>
       <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage={editableRole} canReport={canReport} />

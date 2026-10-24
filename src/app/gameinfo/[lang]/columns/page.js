@@ -31,7 +31,7 @@ export default async function Page({ params }) {
       />
       <h1 className="mb-1 text-2xl font-bold text-linear-ink">สิทธิ์การเห็นคอลัมน์</h1>
       <p className="mb-6 max-w-2xl text-sm text-linear-ink-subtle">
-        คอลัมน์แพ็กเป็นของกลางทุกเกม หน้านี้กำหนดว่า role ไหนเห็นคอลัมน์ไหน
+        คอลัมน์แพ็กเป็นของกลางทุกเกม หน้านี้กำหนดว่ามุมมอง Topup และ Product เห็นคอลัมน์ไหน
         ตั้งเป็นค่ากลางใช้ทุกเกม แล้วค่อยตั้งเฉพาะบางเกมทับได้
       </p>
       <GameinfoColumnRolesPage

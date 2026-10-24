@@ -126,12 +126,13 @@ check("API reads require GameInfo access and writes require admin access", () =>
   assert.match(item, /PUT[\s\S]*requireGameinfoEditor/);
 });
 
-check("Topup view stays inside Game Bot Auto and hides editor controls", () => {
+check("Game Bot Auto keeps the header clear and edits by permission, not view", () => {
   const toggle = readFileSync(new URL("../src/components/gameinfo-mode-toggle.js", import.meta.url), "utf8");
   const home = readFileSync(new URL("../src/components/gameinfo-home-page.js", import.meta.url), "utf8");
-  assert.match(toggle, /section=game-bot-auto\$\{botAutoMode\}&view=topup/);
-  assert.match(toggle, /if \(isBotAutoPage\) return topupButton/);
-  assert.match(home, /editableRole && !topupView/);
+  const cards = readFileSync(new URL("../src/components/gameinfo-gamelist-cards.js", import.meta.url), "utf8");
+  assert.match(toggle, /if \(isBotAutoPage\) return null/);
+  assert.match(cards, /section=game-bot-auto\$\{dataMode === "uid" \? "" : `&mode=\$\{dataMode\}`\}\$\{topupView \? "&view=topup" : ""\}/);
+  assert.match(home, /editable=\{editableRole\} topupView=\{topupView\}/);
 });
 
 console.log(`\n${pass} passed`);

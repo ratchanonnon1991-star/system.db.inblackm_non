@@ -9,7 +9,9 @@ import {
   hiddenGameinfoColumnKeys,
 } from "@/lib/gameinfo-column-roles";
 
-const ROLE_LABELS = { admin: "Admin", topup: "Topup" };
+// The rules are stored per role key but apply per view: "admin" is the
+// Product view (gameinfo-view.js).
+const ROLE_LABELS = { admin: "มุมมอง Product", topup: "มุมมอง Topup" };
 
 export default function GameinfoColumnRolesPage({ columns, rules: initialRules, games }) {
   const [rules, setRules] = useState(initialRules);
@@ -146,7 +148,7 @@ export default function GameinfoColumnRolesPage({ columns, rules: initialRules, 
         <Lock size={14} className="mt-0.5 shrink-0" />
         <span>
           การตั้งค่านี้ซ่อนคอลัมน์บนหน้าจอเท่านั้น API ของแพ็กยังส่งข้อมูลครบ
-          ใช้จัดหน้าจอให้ตรงกับงานของแต่ละ role ไม่ใช่การกันข้อมูลลับ
+          ใช้จัดหน้าจอให้ตรงกับงานของแต่ละมุมมอง (ทุกคนสลับมุมมองได้) ไม่ใช่การกันข้อมูลลับ
         </span>
       </p>
     </div>
