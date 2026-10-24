@@ -77,7 +77,7 @@ export function legacyGamelistLinks(link) {
   const url = String(link || "").trim();
   if (!url) return [];
   try {
-    return normalizeGamelistLinks([{ id: "legacy", name: "เว็บเติมเกม", url }]);
+    return normalizeGamelistLinks([{ id: "legacy", name: "ข้อมูลเติมเกมส์", url }]);
   } catch {
     return [];
   }
