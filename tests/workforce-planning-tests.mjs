@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
-import { SHIFTS, SHIFT_TYPES, validDate, addDays, hourAt, hourKey, bangkokWorkday,
+import { validDate, addDays, hourAt, hourKey, bangkokWorkday,
   forecastHours, defaultStaffPlan, normalizeStaffPlan, calculateStaffing } from "../src/lib/workforce-planning.js";
 import { BOT_SOURCES, WEB_SOURCE, buildSourceQuery, aggregateSourceSql } from "../src/server/workforce-sources.js";
 import { buildWorkforceReport, planningRange } from "../src/server/workforce-report.js";
@@ -17,15 +17,6 @@ await check("strict dates and Bangkok workday remain correct across midnight", (
   assert.equal(hourKey(hourAt("2026-10-24", 27)), "2026-10-25T03");
   assert.throws(() => planningRange("2026-10-25", new Date("2026-10-24T12:00:00+07:00")));
   assert.throws(() => planningRange("bad", new Date()));
-});
-
-await check("Full time and Intern each cover 24 hours exactly, PT overlaps are intentional", () => {
-  assert.equal(SHIFTS.length, 10);
-  for (const type of ["fullTime", "intern"]) {
-    const shifts = SHIFTS.filter(s => s.type === type);
-    for (let h = 9; h < 33; h++) assert.equal(shifts.filter(s => h >= s.start && h < s.end).length, 1);
-  }
-  assert.equal(SHIFTS.filter(s => s.type === "partTime" && 25 >= s.start && 25 < s.end).length, 2);
 });
 
 const date = "2026-10-24";
@@ -47,18 +38,18 @@ await check("insufficient history is null and recent-hour fallback is explicit",
   const fallback = forecastHours(history, { ...options, coverageStart: hourAt(addDays(date, -6), 9).toISOString() });
   assert.equal(fallback[0].method, "recent-hour"); assert.equal(fallback[0].expected, 10);
 });
-await check("overlapping shifts add capacity, not forecast demand; utilization and human share are applied once", () => {
-  const forecast = Array.from({ length: 24 }, (_, i) => ({ hour: hourAt(date, i + 9).toISOString(), expected: 20 }));
-  const plan = defaultStaffPlan(); plan.rates.partTime = 10; plan.counts["partTime-late"] = 1; plan.counts["partTime-night"] = 1;
-  plan.humanShare = 50; plan.utilization = 80;
+await check("one productivity rate: utilization and human share applied once, unknown rate gives no headcount", () => {
+  const forecast = Array.from({ length: 24 }, (_, i) => ({ hour: hourAt(date, i + 9).toISOString(), expected: i === 5 ? 30 : 20 }));
+  forecast[23] = { ...forecast[23], expected: null };
+  const plan = { ...defaultStaffPlan(), rate: 10, humanShare: 50, utilization: 80 };
   const result = calculateStaffing(forecast, plan);
-  assert.equal(result.hours[16].capacity, 16); assert.equal(result.hours[16].demand, 10);
-  assert.equal(result.hours[16].gap, 0); assert.equal(result.hours[0].gap, 10);
-  assert.equal(result.shifts.find(s => s.id === "partTime-late").standalonePeople, 2);
-  assert.equal(result.shifts.find(s => s.type === "fullTime").standalonePeople, null);
-  assert.equal(result.hours.reduce((n, h) => n + h.expected, 0), 480);
-  assert.equal(normalizeStaffPlan({ rates: { fullTime: -9 }, utilization: 0 }).rates.fullTime, 0);
-  assert.equal(SHIFT_TYPES.length, 3);
+  assert.equal(result.hours[0].demand, 10); assert.equal(result.hours[0].people, 2);
+  assert.equal(result.hours[5].demand, 15); assert.equal(result.hours[5].people, 2);
+  assert.equal(result.hours[23].people, null); assert.equal(result.peakPeople, 2);
+  assert.equal(calculateStaffing(forecast, defaultStaffPlan()).peakPeople, null);
+  assert.equal(calculateStaffing(forecast, defaultStaffPlan()).hours[0].people, null);
+  assert.equal(normalizeStaffPlan({ rate: -9, utilization: 0 }).rate, 0);
+  assert.equal(normalizeStaffPlan({ rate: -9, utilization: 0 }).utilization, 1);
 });
 
 const db = new PGlite();
@@ -141,6 +132,9 @@ await check("report keeps channels separate and reports unknown/partial source s
   const report = buildWorkforceReport({ buckets: history, warnings: ["missing source"], sources: [], fetchedAt: new Date().toISOString() }, { date, now: hourAt(date, 12) });
   assert.equal(report.forecast.length, 24); assert.equal(report.forecastDate, "2026-10-25");
   assert.ok(report.summary.expectedUnits > 0); assert.ok(report.warnings.includes("missing source"));
+  const live = buildWorkforceReport({ buckets: [...history, { channel: "itemku", hour: hourAt(date, 9).toISOString(), orders: 4, units: 9 },
+    { channel: "itemku", hour: hourAt(date, 10).toISOString(), orders: 2, units: 3 }], warnings: [], sources: [], fetchedAt: "" }, { date, now: hourAt(date, 11) });
+  assert.equal(live.summary.orders, 6); assert.equal(live.summary.ordersPerHour, 3); assert.equal(live.summary.peakOrdersPerHour, 4);
   assert.throws(() => buildWorkforceReport({ buckets: [], warnings: [], sources: [] }, { date, channel: "injected" }));
 });
 await check("page and endpoint both gate access; SQL reads are database-enforced read-only", () => {

@@ -49,6 +49,7 @@ export function buildWorkforceReport(data, { date, now = new Date(), channel = "
       method: known ? values.every(v => v.method === "weekday-hour") ? "weekday-hour" : "recent-hour" : "insufficient" };
   });
   const units = actual.reduce((n, r) => n + (r.units || 0), 0);
+  const orders = actual.reduce((n, r) => n + (r.orders || 0), 0);
   const elapsedHours = Math.max(0, Math.min(24, (+now - start) / 3600000));
   const warnings = [...data.warnings];
   if (byChannel.some(c => c.coverageStart && !c.hasHistory)) warnings.push("บางช่องทางยังไม่มีวันย้อนหลังครบ จึงยังไม่รวมในการพยากรณ์");
@@ -56,9 +57,11 @@ export function buildWorkforceReport(data, { date, now = new Date(), channel = "
   if (byChannel.some(c => c.unknownStatus)) warnings.push("บางต้นทางไม่มีสถานะปิดงานที่ยืนยันได้: คงค้างอาจรวมงานที่เสร็จแล้ว ต้องตรวจต้นทาง");
   return { date, forecastDate: addDays(date, 1), timezone: "Asia/Bangkok", workday: "09:00–09:00 วันถัดไป",
     historyStart: addDays(date, -56), fetchedAt: data.fetchedAt, sources: data.sources, warnings,
-    summary: { orders: actual.reduce((n, r) => n + (r.orders || 0), 0), units,
+    summary: { orders, units,
       averagePerHour: elapsedHours ? units / elapsedHours : null,
       peakPerHour: Math.max(0, ...actual.map(r => r.units || 0)),
+      ordersPerHour: elapsedHours ? orders / elapsedHours : null,
+      peakOrdersPerHour: Math.max(0, ...actual.map(r => r.orders || 0)),
       openUnits: byChannel.reduce((n, c) => n + c.openUnits, 0),
       expectedUnits: forecast.every(h => h.expected != null) ? forecast.reduce((n, h) => n + h.expected, 0) : null },
     channels: byChannel.map(({ forecast: _forecast, ...c }) => c), actual, forecast };

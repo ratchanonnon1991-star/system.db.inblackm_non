@@ -55,26 +55,27 @@ try {
       return route.fulfill({ json: { report } });
     });
     await page.goto(`http://127.0.0.1:${server.address().port}`);
-    await page.getByRole("heading", { name: "แผนคนตามกะ", exact: true }).waitFor();
-    assert.equal(await page.getByRole("spinbutton", { name: /^จำนวนคน / }).count(), 10);
-    await page.getByLabel(/Full time ชิ้นงาน/).fill("8");
-    await page.getByRole("spinbutton", { name: "จำนวนคน fullTime 09:00–18:00", exact: true }).fill("3");
+    await page.getByRole("heading", { name: "รายชั่วโมง", exact: true }).waitFor();
+    assert.equal(await page.getByText(/Full time|Intern|Part time/).count(), 0);
+    assert.equal(await page.getByRole("spinbutton").count(), 3);
+    await page.getByLabel("ชิ้นงาน / คน / ชม.").fill("8");
     await page.reload();
-    await page.getByRole("heading", { name: "แผนคนตามกะ", exact: true }).waitFor();
-    assert.equal(await page.getByLabel(/Full time ชิ้นงาน/).inputValue(), "8");
-    assert.equal(await page.getByRole("spinbutton", { name: "จำนวนคน fullTime 09:00–18:00", exact: true }).inputValue(), "3");
-    await page.getByLabel("ช่องทางที่ใช้วางแผน").selectOption("itemku");
-    await page.getByRole("heading", { name: "สรุปแยกช่องทาง", exact: true }).waitFor();
+    await page.getByRole("heading", { name: "รายชั่วโมง", exact: true }).waitFor();
+    assert.equal(await page.getByLabel("ชิ้นงาน / คน / ชม.").inputValue(), "8");
+    await page.getByLabel("ช่องทาง", { exact: true }).selectOption("itemku");
+    await page.getByRole("heading", { name: "รายชั่วโมง", exact: true }).waitFor();
     await page.screenshot({ path: path.join(output, `workforce-${width}-${theme}.png`), fullPage: true });
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth ? [] :
+      [...document.querySelectorAll("body *")].filter(e => e.getBoundingClientRect().right > innerWidth + 1).slice(0, 5).map(e => `${e.tagName}.${e.className} ${Math.round(e.getBoundingClientRect().right)}`));
+    assert.deepEqual(overflow, [], `horizontal overflow at ${width}px ${theme}`);
     assert.deepEqual(errors, []);
     offline = true;
     await page.getByRole("button", { name: "อัปเดตข้อมูล", exact: true }).click();
     await page.getByRole("alert").filter({ hasText: "จำลองฐานข้อมูลขัดข้อง" }).waitFor();
     offline = false;
     await page.getByRole("button", { name: "ลองใหม่", exact: true }).click();
-    await page.getByRole("heading", { name: "แผนคนตามกะ", exact: true }).waitFor();
+    await page.getByRole("heading", { name: "รายชั่วโมง", exact: true }).waitFor();
     await context.close();
   }
-  console.log(`PASS: mobile/desktop, light/dark, 10 shifts, rates, saved plans, channel filter, failures and retry; no horizontal page overflow. Screenshots: ${output}`);
+  console.log(`PASS: mobile/desktop, light/dark, single rate, saved plan, channel filter, failures and retry; no horizontal page overflow. Screenshots: ${output}`);
 } finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); }

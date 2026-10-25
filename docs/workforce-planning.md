@@ -4,20 +4,18 @@ Entry: `/workforce`, also linked from the tools home page. Access requires an
 authenticated administrator or the `workforce.access` permission. The endpoint
 `/api/workforce` applies the same authorization independently.
 
-## Counts and shifts
+## Counts and staffing
 
-- Shows distinct customer orders and purchased work units separately. Staffing
-  uses work units, not distinct orders or payment attempts.
-- A workday runs 09:00–09:00 in Asia/Bangkok. Overnight shifts marked `+1` belong
-  to the following calendar date. Full time and Intern each have three shifts;
-  Part time has four overlapping shifts.
-- Productivity per person/hour, headcount by shift, productive-time percentage
-  and human-handled share are editable. Productivity starts at zero (unknown),
-  not an invented observed employee throughput.
+- Headline is orders per hour (average over elapsed hours and peak hour), with
+  work units per hour alongside. Staffing uses work units, not distinct orders
+  or payment attempts.
+- A workday runs 09:00–09:00 in Asia/Bangkok. Hours marked `+1` belong to the
+  following calendar date.
+- Staffing is not split by Full time / Intern / Part time. One productivity rate
+  (work units per person per hour), productive-time percentage and human-handled
+  share give hourly people needed = ceil(forecast × share ÷ (rate × productive%)).
+  The rate starts at zero (unknown), so no headcount is shown until it is entered.
 - Settings persist in this browser only, not as shared team settings.
-- Standalone headcount recommendations are alternatives for each shift. Do not
-  add recommendations for overlapping shifts: hourly capacity combines the
-  actual entered headcounts once and highlights remaining hourly gaps.
 
 ## Read-only sources and identity
 

@@ -1,18 +1,4 @@
 export const TIME_ZONE = "Asia/Bangkok";
-export const SHIFT_TYPES = [
-  { id: "fullTime", label: "Full time" }, { id: "intern", label: "Intern" }, { id: "partTime", label: "Part time" },
-];
-export const SHIFTS = [
-  ...["fullTime", "intern"].flatMap(type => [
-    { id: `${type}-day`, type, start: 9, end: 18, label: "09:00–18:00" },
-    { id: `${type}-evening`, type, start: 18, end: 27, label: "18:00–03:00 (+1)" },
-    { id: `${type}-night`, type, start: 27, end: 33, label: "03:00–09:00 (+1)" },
-  ]),
-  { id: "partTime-noon", type: "partTime", start: 12, end: 18, label: "12:00–18:00" },
-  { id: "partTime-evening", type: "partTime", start: 18, end: 24, label: "18:00–00:00 (+1)" },
-  { id: "partTime-late", type: "partTime", start: 21, end: 27, label: "21:00–03:00 (+1)" },
-  { id: "partTime-night", type: "partTime", start: 24, end: 30, label: "00:00–06:00 (+1)" },
-];
 
 export function validDate(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return false;
@@ -39,13 +25,12 @@ export function hourKey(date) {
 }
 
 export function defaultStaffPlan() {
-  return { rates: { fullTime: 0, intern: 0, partTime: 0 }, counts: Object.fromEntries(SHIFTS.map(s => [s.id, 0])), utilization: 80, humanShare: 100 };
+  return { rate: 0, utilization: 80, humanShare: 100 };
 }
 export function normalizeStaffPlan(raw) {
   const number = (value, max) => Number.isFinite(Number(value)) ? Math.max(0, Math.min(max, Number(value))) : 0;
   return {
-    rates: Object.fromEntries(SHIFT_TYPES.map(t => [t.id, number(raw?.rates?.[t.id], 1000)])),
-    counts: Object.fromEntries(SHIFTS.map(s => [s.id, Math.floor(number(raw?.counts?.[s.id], 1000))])),
+    rate: number(raw?.rate, 1000),
     utilization: Math.max(1, number(raw?.utilization ?? 80, 100)),
     humanShare: number(raw?.humanShare ?? 100, 100),
   };
@@ -89,26 +74,15 @@ export function forecastHours(buckets, { date, historyStart, coverageStart, days
   });
 }
 
+// One productivity rate for everyone: people = ceil(human work / effective rate).
+// people is null while the rate is unknown, never an invented headcount.
 export function calculateStaffing(forecast, rawPlan) {
   const plan = normalizeStaffPlan(rawPlan);
-  const factor = plan.utilization / 100;
-  const shiftRows = SHIFTS.map(shift => {
-    const hours = forecast.slice(shift.start - 9, shift.end - 9);
-    const known = hours.length === shift.end - shift.start && hours.every(h => h.expected != null);
-    const total = known ? hours.reduce((n, h) => n + h.expected, 0) : null;
-    const peak = known ? Math.max(...hours.map(h => h.expected * plan.humanShare / 100)) : null;
-    const rate = plan.rates[shift.type];
-    return { ...shift, hours: hours.length, units: total, averagePerHour: total == null ? null : total / hours.length,
-      peakPerHour: peak, count: plan.counts[shift.id], rate,
-      standalonePeople: peak == null || rate <= 0 ? null : Math.ceil(peak / (rate * factor)),
-      capacity: plan.counts[shift.id] * rate * factor * hours.length };
-  });
-  const hours = forecast.map((row, index) => {
-    const active = SHIFTS.filter(s => index + 9 >= s.start && index + 9 < s.end);
-    const capacity = active.reduce((n, s) => n + plan.counts[s.id] * plan.rates[s.type] * factor, 0);
+  const perPerson = plan.rate * plan.utilization / 100;
+  const hours = forecast.map(row => {
     const demand = row.expected == null ? null : row.expected * plan.humanShare / 100;
-    return { ...row, capacity, demand, gap: demand == null ? null : Math.max(0, demand - capacity),
-      people: active.reduce((n, s) => n + plan.counts[s.id], 0) };
+    return { ...row, demand, people: demand == null || perPerson <= 0 ? null : Math.ceil(demand / perPerson) };
   });
-  return { plan, shifts: shiftRows, hours };
+  const known = hours.filter(h => h.people != null);
+  return { plan, hours, peakPeople: known.length ? Math.max(...known.map(h => h.people)) : null };
 }
