@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Download, Link2, Search } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, DownloadCloud, Link2, Search } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { confidentNameMatch } from "@/lib/gameinfo-topup-match";
 import { gameinfoGameHref } from "@/lib/gameinfo-data-mode";
@@ -37,6 +37,7 @@ export default function GameinfoTopupWebLinker({ lang, games, webGames }) {
         {[
           { id: "link", label: `จับคู่เกม (ยังไม่เชื่อม ${unlinkedCount})`, icon: Link2 },
           { id: "import", label: `เกมบนเว็บที่ยังไม่มีใน GameInfo (${newWebGames.length})`, icon: Download },
+          { id: "fill", label: `ดึงรูปและแพ็คให้เกมที่เชื่อมแล้ว (${games.length - unlinkedCount})`, icon: DownloadCloud },
         ].map((item) => {
           const Icon = item.icon;
           return (
@@ -53,11 +54,9 @@ export default function GameinfoTopupWebLinker({ lang, games, webGames }) {
           );
         })}
       </div>
-      {tab === "link" ? (
-        <LinkGames lang={lang} games={games} webGames={webGames} webById={webById} />
-      ) : (
-        <ImportGames lang={lang} games={games} webGames={newWebGames} />
-      )}
+      {tab === "link" ? <LinkGames lang={lang} games={games} webGames={webGames} webById={webById} /> : null}
+      {tab === "import" ? <ImportGames lang={lang} games={games} webGames={newWebGames} /> : null}
+      {tab === "fill" ? <FillLinkedGames games={games.filter((game) => game.topupGameId)} /> : null}
     </div>
   );
 }
@@ -292,7 +291,7 @@ function ImportGames({ lang, games, webGames }) {
   return (
     <section aria-label="นำเข้าเกมจากเว็บ" className="flex flex-col gap-3 rounded-2xl border border-linear-hairline bg-linear-surface-1 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
       <p className="text-sm text-linear-ink-muted">
-        สร้างเกมใน GameInfo พร้อมชื่อ รูป หมวดหมู่ และการเชื่อมกับเว็บ — ที่เหลือ (Platform, Server, ช่องทางเติม, แพ็ค) แอดมินเติมต่อในหน้าแก้ไข
+        สร้างเกมใน GameInfo พร้อมชื่อ รูป หมวดหมู่ แพ็ค (ชื่อ ราคา รูป UID / ID-PASS) และการเชื่อมกับเว็บ — ที่เหลือ (Platform, Server, ช่องทางเติม, ยอดที่กด) แอดมินเติมต่อในหน้าแก้ไข
         <span className="block text-xs text-amber-700 dark:text-amber-400">จับคู่เกมที่มีอยู่แล้วก่อน ไม่อย่างนั้นจะได้เกมซ้ำ</span>
       </p>
       <label className="relative max-w-md">
@@ -342,6 +341,90 @@ function ImportGames({ lang, games, webGames }) {
         {error ? <span role="alert" className="mr-auto text-xs text-linear-danger">{error}</span> : null}
         <button type="button" disabled={busy || !selected.size} onClick={create} className="flex h-11 items-center gap-2 rounded-xl bg-[#D90005] px-5 text-sm font-extrabold text-white hover:bg-[#B80004] disabled:opacity-40">
           <Download size={16} aria-hidden="true" /> {busy ? "กำลังสร้าง…" : `สร้าง ${selected.size} เกมใน GameInfo`}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+const FILL_PARTS = [
+  { id: "image", label: "รูปเกม", detail: "เฉพาะเกมที่ยังไม่มีรูป" },
+  { id: "tags", label: "หมวดหมู่", detail: "เฉพาะเกมที่ยังไม่มีหมวดหมู่" },
+  { id: "packs", label: "แพ็ค + รูปแพ็ค (UID / ID-PASS)", detail: "เฉพาะโหมดที่เกมยังไม่มีแพ็คเลย — เกมที่มีแพ็คแล้วให้ใช้ “เติมจากเว็บ” ในหน้าแก้ไข" },
+];
+
+function FillLinkedGames({ games }) {
+  const router = useRouter();
+  const [parts, setParts] = useState(() => new Set(FILL_PARTS.map((part) => part.id)));
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+
+  async function run() {
+    setBusy(true);
+    setError("");
+    setResult(null);
+    try {
+      const data = await apiJson("/api/gameinfo/topup-web/fill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gameIds: games.map((game) => game.id), image: parts.has("image"), tags: parts.has("tags"), packs: parts.has("packs") }),
+        fallbackError: "ดึงข้อมูลจากเว็บไม่สำเร็จ",
+      });
+      setResult(data);
+      router.refresh();
+    } catch (runError) {
+      setError(runError instanceof Error ? runError.message : "ดึงข้อมูลจากเว็บไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section aria-label="ดึงรูปและแพ็คจากเว็บ" className="flex flex-col gap-4 rounded-2xl border border-linear-hairline bg-linear-surface-1 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
+      <p className="text-sm text-linear-ink-muted">
+        ดึงจากเว็บให้ทุกเกมที่เชื่อมแล้ว ({games.length} เกม) ทีเดียว เติมเฉพาะส่วนที่ GameInfo ยังว่าง ไม่เขียนทับข้อมูลที่แอดมินกรอกไว้
+      </p>
+      <ul className="flex flex-col gap-2">
+        {FILL_PARTS.map((part) => (
+          <li key={part.id}>
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-linear-hairline px-4 py-3 hover:bg-linear-surface-2">
+              <input
+                type="checkbox"
+                checked={parts.has(part.id)}
+                onChange={(event) => setParts((current) => {
+                  const next = new Set(current);
+                  if (event.target.checked) next.add(part.id);
+                  else next.delete(part.id);
+                  return next;
+                })}
+                className="mt-0.5 h-5 w-5 shrink-0 accent-[#D90005]"
+              />
+              <span>
+                <span className="block text-sm font-extrabold text-linear-ink">{part.label}</span>
+                <span className="block text-xs text-linear-ink-tertiary">{part.detail}</span>
+              </span>
+            </label>
+          </li>
+        ))}
+      </ul>
+      {result ? (
+        <div role="status" className="rounded-xl bg-emerald-500/10 p-3 text-sm text-emerald-800 dark:text-emerald-300">
+          <p className="font-extrabold">เติมแล้ว {result.summary.games} เกม</p>
+          <p>รูปเกม {result.summary.image} · หมวดหมู่ {result.summary.tags} · แพ็ค {result.summary.packs} เกม{result.summary.failed ? ` · ไม่สำเร็จ ${result.summary.failed}` : ""}</p>
+          {result.summary.failed ? (
+            <ul className="mt-1 text-xs text-linear-danger">
+              {result.results.filter((item) => item.error && item.error !== "ยังไม่ได้เชื่อมกับเว็บ").map((item) => (
+                <li key={item.gameId}>เกม #{item.gameId}: {item.error}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        {error ? <span role="alert" className="mr-auto text-xs text-linear-danger">{error}</span> : null}
+        <button type="button" disabled={busy || !parts.size || !games.length} onClick={run} className="flex h-11 items-center gap-2 rounded-xl bg-[#D90005] px-5 text-sm font-extrabold text-white hover:bg-[#B80004] disabled:opacity-40">
+          <DownloadCloud size={16} aria-hidden="true" /> {busy ? "กำลังดึงข้อมูล…" : `ดึงข้อมูลให้ ${games.length} เกม`}
         </button>
       </div>
     </section>

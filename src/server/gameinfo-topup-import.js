@@ -5,9 +5,12 @@
 import { createGameListRow } from "@/server/gameinfo-gamelist";
 import { getGamelistImage, saveGamelistImage } from "@/server/gameinfo-gamelist-image";
 import { getGamelistTags, saveGamelistTags } from "@/server/gameinfo-gamelist-tags";
-import { recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
+import { getGamelistPacks, recordGameinfoAudit, saveGamelistPacks } from "@/server/gameinfo-gamelist-packs";
+import { getGameinfoModeData, updateGameinfoModeData } from "@/server/gameinfo-mode-data";
+import { createBlankGameinfoPack } from "@/lib/gameinfo-pack-model";
+import { GAMEINFO_WEB_PACK_CATEGORY, gameinfoPackMatchKey } from "@/lib/gameinfo-topup-match";
 import { getGamelistGameSettings, listGamelistGameSettings, saveGamelistGameSettings } from "@/server/gameinfo-game-settings";
-import { getTopupWebGameAssets, listTopupWebGames } from "@/server/gameinfo-topup-web";
+import { getTopupWebGame, getTopupWebGameAssets, listTopupWebGames } from "@/server/gameinfo-topup-web";
 
 const MAX_BATCH = 100;
 // GameInfo keeps at most 10 categories per game.
@@ -53,7 +56,7 @@ export async function linkGamesToTopupWeb(links, actor = null) {
   return { saved, failed };
 }
 
-/** Creates a GameInfo game for each website game (name, image, categories, link). Packs are added later in the editor. */
+/** Creates a GameInfo game for each website game: name, image, categories, link and its packages. */
 export async function importTopupWebGames(topupGameIds, actor = null) {
   if (!Array.isArray(topupGameIds) || !topupGameIds.length) throw createHttpError("ยังไม่ได้เลือกเกมที่จะนำเข้า", 400);
   if (topupGameIds.length > MAX_BATCH) throw createHttpError(`นำเข้าได้ครั้งละไม่เกิน ${MAX_BATCH} เกม`, 400);
@@ -84,6 +87,7 @@ export async function importTopupWebGames(topupGameIds, actor = null) {
       }
       const tags = webTags(assets);
       if (tags.length) await saveGamelistTags(row.id, tags).then(() => extras.push("tags"), () => {});
+      await fillPacksFromTopupWeb(row.id, topupGameId, actor).then((modes) => extras.push(...modes.map((mode) => `packs:${mode}`)), () => {});
       await recordGameinfoAudit({ gameId: row.id, area: "topup-import", action: "create", actor, after: { topupGameId, filled: extras } });
       linked.add(topupGameId);
       created.push({ gameId: row.id, game: row.game, topupGameId, filled: extras });
@@ -130,4 +134,111 @@ export async function fillGameFromTopupWeb(gameId, { image = false, tags = false
     await recordGameinfoAudit({ gameId, area: "topup-import", action: "fill", actor, after: { topupGameId, filled } });
   }
   return { filled };
+}
+
+function newId(prefix) {
+  return `${prefix}_${Math.random().toString(36).slice(2, 9)}${Date.now().toString(36).slice(-4)}`;
+}
+
+function hasPacks(currencies) {
+  return (currencies || []).some((currency) => (currency.categories || []).some((category) => (category.packs || []).length));
+}
+
+// The website's packages for one mode as a GameInfo currency tree: one
+// unnamed currency, one category, name + price + picture + open/closed. The
+// same name and price twice (a website leftover) becomes one pack, since
+// GameInfo refuses duplicates.
+function webPackTree(packages, mode) {
+  const idpass = mode === "idpass";
+  const seen = new Set();
+  const packs = [];
+  for (const pkg of packages || []) {
+    const price = idpass ? pkg.priceIdpass : pkg.price;
+    if (price == null || !pkg.label) continue;
+    const key = `${gameinfoPackMatchKey(pkg.label)}|${price}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    packs.push({
+      ...createBlankGameinfoPack(newId("pk")),
+      name: pkg.label,
+      price: String(price),
+      image: pkg.image || "",
+      serviceEnabled: Boolean(pkg.isActive && (idpass ? pkg.idpassActive : pkg.uidActive)),
+    });
+  }
+  if (!packs.length) return null;
+  return [{ id: newId("c"), name: "", image: "", categories: [{ id: newId("cat"), name: GAMEINFO_WEB_PACK_CATEGORY, packs }] }];
+}
+
+/**
+ * Gives a linked game the website's packages, per mode, only where that
+ * mode has no packs at all yet. A game that already has packs is left to the
+ * pack editor's "เติมจากเว็บ", where an admin sees each addition first.
+ */
+export async function fillPacksFromTopupWeb(gameId, topupGameId, actor = null) {
+  const web = await getTopupWebGame(topupGameId);
+  if (!web) return [];
+  const filled = [];
+  const uidTree = webPackTree(web.packages, "uid");
+  if (uidTree) {
+    const current = await getGamelistPacks(gameId);
+    if (!hasPacks(current.currencies)) {
+      // The game's own formula columns and cost profiles go back unchanged.
+      await saveGamelistPacks(gameId, {
+        currencies: uidTree,
+        computedColumns: current.computedColumns,
+        costProfiles: current.costProfiles,
+        actor,
+        source: "import",
+        expectedVersion: current.version,
+      });
+      filled.push("uid");
+    }
+  }
+  const idpassTree = webPackTree(web.packages, "idpass");
+  if (idpassTree) {
+    const current = await getGameinfoModeData(gameId, "idpass");
+    if (!hasPacks(current.packs?.currencies)) {
+      await updateGameinfoModeData(gameId, "idpass", (data) => ({
+        ...data,
+        packs: { ...data.packs, currencies: idpassTree },
+      }), { area: "pack", actor, expectedVersion: current.version });
+      filled.push("idpass");
+    }
+  }
+  return filled;
+}
+
+/** "ดึงข้อมูลจากเว็บ" for many linked games at once: empty image and categories, and packs for modes with none. */
+export async function fillGamesFromTopupWeb(gameIds, { image = false, tags = false, packs = false } = {}, actor = null) {
+  if (!Array.isArray(gameIds) || !gameIds.length) throw createHttpError("ยังไม่ได้เลือกเกม", 400);
+  if (gameIds.length > 500) throw createHttpError("ดึงได้ครั้งละไม่เกิน 500 เกม", 400);
+  const settings = await listGamelistGameSettings();
+  const results = [];
+  for (const rawId of gameIds) {
+    const gameId = Number(rawId);
+    const topupGameId = settings[gameId]?.topupGameId;
+    if (!topupGameId) {
+      results.push({ gameId, filled: [], error: "ยังไม่ได้เชื่อมกับเว็บ" });
+      continue;
+    }
+    try {
+      const filled = [];
+      if (image || tags) filled.push(...(await fillGameFromTopupWeb(gameId, { image, tags }, actor)).filled);
+      if (packs) filled.push(...(await fillPacksFromTopupWeb(gameId, topupGameId, actor)).map((mode) => `packs:${mode}`));
+      results.push({ gameId, filled });
+    } catch (error) {
+      results.push({ gameId, filled: [], error: error instanceof Error ? error.message : "ดึงข้อมูลไม่สำเร็จ" });
+    }
+  }
+  return {
+    results,
+    summary: {
+      games: results.filter((item) => item.filled.length).length,
+      image: results.filter((item) => item.filled.includes("image")).length,
+      tags: results.filter((item) => item.filled.includes("tags")).length,
+      packs: results.filter((item) => item.filled.some((part) => part.startsWith("packs:"))).length,
+      failed: results.filter((item) => item.error && item.error !== "ยังไม่ได้เชื่อมกับเว็บ").length,
+    },
+  };
 }

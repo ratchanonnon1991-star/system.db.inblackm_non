@@ -56,6 +56,8 @@ check(topupWebSource.includes("to_jsonb(p) - 'icon'") && topupWebSource.includes
 const importer = read("../src/server/gameinfo-topup-import.js");
 check(importer.includes("!(await getGamelistImage(gameId)).imageUrl") && importer.includes("!current.length"), "filling never overwrites an image or categories already set");
 check(importer.includes("linked.has(topupGameId)"), "a website game already linked is never imported twice");
+check(importer.includes("if (!hasPacks(current.currencies))") && importer.includes("if (!hasPacks(current.packs?.currencies))"), "website packs are only written into a mode that has none");
+check(importer.includes("expectedVersion: current.version") && importer.includes("computedColumns: current.computedColumns"), "writing packs keeps the game's formula columns and refuses a concurrent edit");
 
 const topupWeb = read("../src/server/gameinfo-topup-web.js");
 check(!/\b(INSERT|UPDATE|DELETE)\b/.test(topupWeb), "GameInfo only ever reads the website database");
