@@ -45,8 +45,10 @@ export async function POST(request) {
       version: String(info.version || "").split(" on ")[0],
     });
   } catch (err) {
+    // A failed test is an answer, not a server fault: 502 here was swapped
+    // for Cloudflare's own error page in production, hiding the reason.
     if (!err.status) {
-      return jsonError(`เชื่อมต่อไม่ได้: ${err.message}`, 502);
+      return jsonError(`เชื่อมต่อไม่ได้: ${err.message}`, 422);
     }
     return handleApiError(err, "ทดสอบการเชื่อมต่อไม่สำเร็จ");
   }
