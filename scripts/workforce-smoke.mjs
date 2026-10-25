@@ -57,6 +57,8 @@ try {
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     await page.getByRole("heading", { name: "รายชั่วโมง", exact: true }).waitFor();
     assert.equal(await page.getByText(/Full time|Intern|Part time/).count(), 0);
+    assert.equal(await page.getByRole("cell", { name: "09:00–10:00" }).count(), 1);
+    assert.equal(await page.getByRole("row").filter({ hasText: "18:00–19:00" }).getByText("กำลังนับ").count(), 1);
     assert.equal(await page.getByRole("spinbutton").count(), 3);
     await page.getByLabel("ชิ้นงาน / คน / ชม.").fill("8");
     await page.reload();

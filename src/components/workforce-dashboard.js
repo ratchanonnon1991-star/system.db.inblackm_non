@@ -11,6 +11,8 @@ const STORAGE_KEY = "inblackm.workforce.plan.v2";
 const fmt = value => value == null ? "—" : new Intl.NumberFormat("th-TH", { maximumFractionDigits: 1 }).format(value);
 const dateLabel = value => new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", timeZone: "Asia/Bangkok" }).format(new Date(`${value}T12:00:00+07:00`));
 const timeLabel = value => new Intl.DateTimeFormat("th-TH", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok", hourCycle: "h23" }).format(new Date(value));
+const HOUR = 3600000;
+const rangeLabel = value => `${timeLabel(value)}–${timeLabel(+new Date(value) + HOUR)}`;
 const panel = "rounded-xl border border-ll-hairline bg-ll-surface-1";
 const input = "w-full rounded-lg border border-ll-hairline-strong bg-ll-surface-1 px-2.5 py-1.5 text-sm text-ll-ink outline-none focus-visible:ring-2 focus-visible:ring-ll-primary disabled:opacity-50";
 const CHANNEL_OPTIONS = [["all", "ทุกช่องทาง"], ["web", "เว็บ InblackM"], ["russia", "Russia"], ["inblackm_reseller", "InblackM Reseller"], ["page", "PAGE"], ["kaleoz", "Kaleoz"], ["itemku", "Itemku"], ["playerok", "PlayerOK"], ["g2g", "G2G"], ["telegram_other", "Telegram / อื่น ๆ"]];
@@ -27,7 +29,7 @@ function OrdersChart({ actual }) {
   const max = Math.max(1, ...actual.map(h => h.orders || 0));
   return <div className="overflow-x-auto"><div className="min-w-[560px]">
     <div className="flex h-32 items-end gap-1 border-b border-ll-hairline" role="img" aria-label="ออเดอร์จริงต่อชั่วโมง มีตัวเลขในตารางด้านล่าง">
-      {actual.map(h => <div key={h.hour} className="flex h-full flex-1 items-end" title={`${timeLabel(h.hour)} · ${fmt(h.orders)} ออเดอร์ · ${fmt(h.units)} ชิ้นงาน`}>
+      {actual.map(h => <div key={h.hour} className="flex h-full flex-1 items-end" title={`${rangeLabel(h.hour)} · ${fmt(h.orders)} ออเดอร์ · ${fmt(h.units)} ชิ้นงาน`}>
         <div className="w-full rounded-t bg-ll-primary" style={{ height: `${h.orders ? Math.max(2, h.orders / max * 100) : 0}%` }} />
       </div>)}
     </div>
@@ -71,6 +73,8 @@ export default function WorkforceDashboard() {
   };
   const reload = () => { setReport(null); setError(""); setRefresh(n => n + 1); };
   const s = report?.summary;
+  // The hour that contains the fetch time is still filling up, so its counts are partial.
+  const liveHour = hour => { const at = +new Date(report?.fetchedAt), start = +new Date(hour); return hour != null && at >= start && at < start + HOUR; };
 
   return <div data-theme={theme} className="min-h-screen bg-ll-canvas text-ll-ink">
     <header className="border-b border-ll-hairline bg-ll-surface-1"><div className="mx-auto flex max-w-[1280px] flex-wrap items-end gap-3 px-4 py-3 sm:px-6">
@@ -123,9 +127,10 @@ export default function WorkforceDashboard() {
         <section className={`${panel} overflow-hidden`}>
           <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-3"><h2 className="text-sm font-semibold">รายชั่วโมง</h2><p className="text-xs text-ll-ink-subtle">คาดการณ์ = {dateLabel(report.forecastDate)} · คนที่ต้องใช้คิดจากคาดการณ์</p></div>
           <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-left text-sm tabular-nums">
-            <thead className="bg-ll-surface-2 text-xs text-ll-ink-subtle"><tr>{["เวลา", "ออเดอร์", "ชิ้นงาน", "คาดการณ์", "ช่วงต่ำ–สูง", "คนที่ต้องใช้"].map(h => <th key={h} className="px-4 py-2 font-medium">{h}</th>)}</tr></thead>
+            <thead className="bg-ll-surface-2 text-xs text-ll-ink-subtle"><tr>{["ช่วงเวลา", "ออเดอร์", "ชิ้นงาน", "คาดการณ์", "ช่วงต่ำ–สูง", "คนที่ต้องใช้"].map(h => <th key={h} className="px-4 py-2 font-medium">{h}</th>)}</tr></thead>
             <tbody>{staffing.hours.map((h, i) => <tr key={h.hour} className="border-t border-ll-hairline">
-              <td className="px-4 py-1.5">{timeLabel(h.hour)}{i >= 15 && <span className="ml-1 text-[11px] text-ll-ink-tertiary">+1</span>}</td>
+              <td className="whitespace-nowrap px-4 py-1.5">{rangeLabel(h.hour)}{i >= 15 && <span className="ml-1 text-[11px] text-ll-ink-tertiary">+1</span>}
+                {liveHour(report.actual[i]?.hour) && <span className="ml-1.5 rounded bg-ll-primary/10 px-1 text-[11px] text-ll-primary">กำลังนับ</span>}</td>
               <td className="px-4 py-1.5 font-medium">{fmt(report.actual[i]?.orders)}</td>
               <td className="px-4 py-1.5">{fmt(report.actual[i]?.units)}</td>
               <td className="px-4 py-1.5">{fmt(h.expected)}</td>
