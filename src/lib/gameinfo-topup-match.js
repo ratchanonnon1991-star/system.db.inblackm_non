@@ -74,6 +74,8 @@ export function matchTopupWebPackages(packNames, packages) {
 // event, so they join the editor's unsaved draft instead of being written
 // behind its back.
 export const GAMEINFO_ADD_WEB_PACKS_EVENT = "gameinfo:add-web-packs";
+// Same idea for pictures of packs GameInfo already has: { images: [{ packId, image }] }.
+export const GAMEINFO_SET_WEB_PACK_IMAGES_EVENT = "gameinfo:set-web-pack-images";
 export const GAMEINFO_WEB_PACK_CATEGORY = "เพิ่มจากเว็บ TopUp";
 
 /** Website packages (for one mode) that no GameInfo pack is named after yet. */
@@ -85,6 +87,22 @@ export function missingTopupWebPacks(packages, gameinfoPackNames, dataMode = "ui
       name: pkg.label,
       price: idpass ? pkg.priceIdpass : pkg.price,
       active: pkg.isActive && (idpass ? pkg.idpassActive : pkg.uidActive),
+      image: pkg.image || "",
     }))
     .filter((pack) => pack.price != null && pack.name && !have.has(gameinfoPackMatchKey(pack.name)));
+}
+
+/** GameInfo packs with no picture whose website package of the same name has one. */
+export function topupWebPackImageFills(packages, gameinfoPacks) {
+  const imageByKey = new Map();
+  for (const pkg of packages || []) {
+    if (!pkg.image) continue;
+    for (const candidate of [pkg.label, pkg.amountDisplay]) {
+      const key = gameinfoPackMatchKey(candidate);
+      if (key && !imageByKey.has(key)) imageByKey.set(key, pkg.image);
+    }
+  }
+  return (gameinfoPacks || [])
+    .filter((pack) => !String(pack.image || "").trim() && imageByKey.has(gameinfoPackMatchKey(pack.name)))
+    .map((pack) => ({ packId: pack.id, name: pack.name, image: imageByKey.get(gameinfoPackMatchKey(pack.name)) }));
 }

@@ -30,7 +30,7 @@ import { GameinfoManageNav, GameinfoManageSection } from "@/components/gameinfo-
 import GameinfoWebMargin from "@/components/gameinfo-web-margin";
 import GameinfoMissingChecklist from "@/components/gameinfo-missing-checklist";
 import { gameinfoMissingItems } from "@/lib/gameinfo-completeness";
-import { missingTopupWebPacks } from "@/lib/gameinfo-topup-match";
+import { missingTopupWebPacks, topupWebPackImageFills } from "@/lib/gameinfo-topup-match";
 import { previewTopupWebFill } from "@/server/gameinfo-topup-import";
 import { getGameinfoExchangeRates } from "@/server/gameinfo-exchange-rates";
 import {
@@ -225,6 +225,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
     const gameinfoPacks = flatPacks.map((pack) => ({ name: pack.name, price: pack.price ?? "" }));
     const fillPreview = topupGame ? await previewTopupWebFill(row.id).catch(() => null) : null;
     const missingPacks = topupGame ? missingTopupWebPacks(topupGame.packages, flatPacks.map((pack) => pack.name), dataMode) : [];
+    const packImageFills = topupGame ? topupWebPackImageFills(topupGame.packages, flatPacks) : [];
     const missingItems = gameinfoMissingItems({ row, packs: flatPacks, testAccountCount: testAccounts.length, linked: Boolean(topupGame) });
     return (
       <>
@@ -278,6 +279,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
                 dataMode={dataMode}
                 fillPreview={fillPreview}
                 missingPacks={missingPacks}
+                packImageFills={packImageFills}
               />
             </GameinfoManageSection>
             <GameinfoManageSection

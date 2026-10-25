@@ -95,6 +95,18 @@ export function topupWebCustomerForms(row) {
   return { uid: uidFields, idpass: methods, defaultIdpassMethodId: row.idpass_form_config?.defaultMethodId || null };
 }
 
+export function topupWebPackageIconHref(packageId, version) {
+  return `/api/gameinfo/topup-web/package-icon/${encodeURIComponent(packageId)}?v=${encodeURIComponent(version)}`;
+}
+
+/** A website package's icon as stored: a data: URL, an http(s) URL, or "". */
+export async function getTopupWebPackageIcon(packageId) {
+  const pool = await getTopupWebPool();
+  if (!pool) return "";
+  const result = await pool.query(`SELECT to_jsonb(p)->>'icon' AS icon FROM packages p WHERE p.id::text = $1`, [String(packageId)]);
+  return String(result.rows[0]?.icon || "");
+}
+
 /** One website game with its customer forms and live packages. Null when unknown or not connected. */
 export async function getTopupWebGame(topupGameId) {
   if (!topupGameId) return null;
@@ -106,8 +118,14 @@ export async function getTopupWebGame(topupGameId) {
   );
   const row = gameResult.rows[0]?.row;
   if (!row) return null;
+  // The icon itself can be megabytes of base64, so only a link to it leaves
+  // here: the image's own URL when it is one, else GameInfo's icon route
+  // versioned by a hash of the stored value.
   const packResult = await pool.query(
-    `SELECT to_jsonb(p) - 'icon' AS row FROM packages p
+    `SELECT to_jsonb(p) - 'icon' AS row,
+            CASE WHEN to_jsonb(p)->>'icon' ~* '^https?://' THEN to_jsonb(p)->>'icon' END AS icon_href,
+            CASE WHEN to_jsonb(p)->>'icon' LIKE 'data:image/%' THEN left(md5(to_jsonb(p)->>'icon'), 12) END AS icon_hash
+     FROM packages p
      WHERE p.game_id = $1 AND (to_jsonb(p)->>'archived_at') IS NULL
      ORDER BY p.sort_order, p.id`,
     [String(topupGameId)]
@@ -117,8 +135,9 @@ export async function getTopupWebGame(topupGameId) {
     name: row.name,
     ...webStatus(row),
     forms: topupWebCustomerForms(row),
-    packages: packResult.rows.map(({ row: pack }) => ({
+    packages: packResult.rows.map(({ row: pack, icon_href: iconHref, icon_hash: iconHash }) => ({
       id: String(pack.id),
+      image: iconHref || (iconHash ? topupWebPackageIconHref(pack.id, iconHash) : ""),
       label: String(pack.label || ""),
       amountDisplay: String(pack.amount_display || ""),
       isActive: bool(pack.is_active),

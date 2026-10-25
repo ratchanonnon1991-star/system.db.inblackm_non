@@ -95,7 +95,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { GAMEINFO_ADD_WEB_PACKS_EVENT, GAMEINFO_WEB_PACK_CATEGORY } from "@/lib/gameinfo-topup-match";
+import { GAMEINFO_ADD_WEB_PACKS_EVENT, GAMEINFO_SET_WEB_PACK_IMAGES_EVENT, GAMEINFO_WEB_PACK_CATEGORY } from "@/lib/gameinfo-topup-match";
 import { Input } from "@/components/ui/input";
 
 const REQUIRED_PACK_FIELDS = ["name", "price", "amountChargedFee", "channelsMain"];
@@ -417,13 +417,39 @@ export default function GameinfoPackEditor({
           draft[0].categories.push(category);
         }
         for (const item of packs) {
-          category.packs.push({ ...createBlankGameinfoPack(genId("pk")), name: String(item.name || ""), price: String(item.price ?? ""), serviceEnabled: item.active !== false });
+          category.packs.push({
+            ...createBlankGameinfoPack(genId("pk")),
+            name: String(item.name || ""),
+            price: String(item.price ?? ""),
+            image: String(item.image || ""),
+            serviceEnabled: item.active !== false,
+          });
+        }
+        return draft;
+      });
+    }
+    // Only fills packs that still have no picture when the event arrives.
+    function setWebPackImages(event) {
+      const images = new Map((event.detail?.images || []).map((item) => [String(item.packId), String(item.image || "")]));
+      if (!images.size || (event.detail?.dataMode || "uid") !== dataMode) return;
+      setCurrencies((prev) => {
+        const draft = structuredClone(prev);
+        for (const currency of draft) {
+          for (const category of currency.categories) {
+            for (const pack of category.packs) {
+              if (!String(pack.image || "").trim() && images.get(String(pack.id))) pack.image = images.get(String(pack.id));
+            }
+          }
         }
         return draft;
       });
     }
     window.addEventListener(GAMEINFO_ADD_WEB_PACKS_EVENT, addWebPacks);
-    return () => window.removeEventListener(GAMEINFO_ADD_WEB_PACKS_EVENT, addWebPacks);
+    window.addEventListener(GAMEINFO_SET_WEB_PACK_IMAGES_EVENT, setWebPackImages);
+    return () => {
+      window.removeEventListener(GAMEINFO_ADD_WEB_PACKS_EVENT, addWebPacks);
+      window.removeEventListener(GAMEINFO_SET_WEB_PACK_IMAGES_EVENT, setWebPackImages);
+    };
   }, [dataMode]);
 
   function addCurrency() {

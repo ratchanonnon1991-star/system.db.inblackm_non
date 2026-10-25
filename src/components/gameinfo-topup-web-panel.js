@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, DownloadCloud, ExternalLink, Link2, Lock, Search, Unlink, X } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
-import { GAMEINFO_ADD_WEB_PACKS_EVENT, GAMEINFO_WEB_PACK_CATEGORY, rankTopupWebGames } from "@/lib/gameinfo-topup-match";
+import { GAMEINFO_ADD_WEB_PACKS_EVENT, GAMEINFO_SET_WEB_PACK_IMAGES_EVENT, GAMEINFO_WEB_PACK_CATEGORY, rankTopupWebGames } from "@/lib/gameinfo-topup-match";
 import { GameinfoWebBadge } from "./gameinfo-priority-stars";
 
 const FIELD_TYPE_LABELS = {
@@ -18,7 +18,7 @@ const FIELD_TYPE_LABELS = {
 
 // Which website game this is, and the form its customers fill in there.
 // Read-only: the website owns both, so changes go through its own admin.
-export default function GameinfoTopupWebPanel({ gameId, gameName, region, connected, topupGame, topupGameId, adminUrl, dataMode = "uid", fillPreview = null, missingPacks = [] }) {
+export default function GameinfoTopupWebPanel({ gameId, gameName, region, connected, topupGame, topupGameId, adminUrl, dataMode = "uid", fillPreview = null, missingPacks = [], packImageFills = [] }) {
   return (
     <div className="flex flex-col gap-5">
       <TopupLink
@@ -30,7 +30,7 @@ export default function GameinfoTopupWebPanel({ gameId, gameName, region, connec
         topupGameId={topupGameId}
         adminUrl={adminUrl}
       />
-      {topupGame ? <FillFromWeb gameId={gameId} preview={fillPreview} missingPacks={missingPacks} dataMode={dataMode} /> : null}
+      {topupGame ? <FillFromWeb gameId={gameId} preview={fillPreview} missingPacks={missingPacks} packImageFills={packImageFills} dataMode={dataMode} /> : null}
       {topupGame ? <CustomerForms forms={topupGame.forms} dataMode={dataMode} adminUrl={adminUrl} /> : null}
     </div>
   );
@@ -180,17 +180,19 @@ function TopupLink({ gameId, gameName, region, connected, topupGame, topupGameId
 // Only fields GameInfo has left empty are offered; nothing is overwritten.
 // Image and categories save straight away; packs go into the pack editor's
 // draft and wait for its save button.
-function FillFromWeb({ gameId, preview, missingPacks, dataMode }) {
+function FillFromWeb({ gameId, preview, missingPacks, packImageFills, dataMode }) {
   const router = useRouter();
   const options = [
     preview?.image ? { id: "image", label: "รูปเกม", detail: "ใช้รูปเดียวกับหน้าเว็บ" } : null,
     preview?.tags?.length ? { id: "tags", label: "หมวดหมู่", detail: preview.tags.join(", ") } : null,
-    missingPacks.length ? { id: "packs", label: `แพ็คที่ยังไม่มี ${missingPacks.length} แพ็ค (${dataMode === "idpass" ? "ID-PASS" : "UID"})`, detail: missingPacks.slice(0, 6).map((pack) => pack.name).join(", ") + (missingPacks.length > 6 ? " …" : "") } : null,
+    missingPacks.length ? { id: "packs", label: `แพ็คที่ยังไม่มี ${missingPacks.length} แพ็ค (${dataMode === "idpass" ? "ID-PASS" : "UID"}) พร้อมรูป`, detail: missingPacks.slice(0, 6).map((pack) => pack.name).join(", ") + (missingPacks.length > 6 ? " …" : "") } : null,
+    packImageFills.length ? { id: "packImages", label: `รูปแพ็ค ${packImageFills.length} แพ็คที่ยังไม่มีรูป`, detail: packImageFills.slice(0, 6).map((pack) => pack.name).join(", ") + (packImageFills.length > 6 ? " …" : "") } : null,
   ].filter(Boolean);
   const [chosen, setChosen] = useState(() => new Set(options.map((option) => option.id)));
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [packsSent, setPacksSent] = useState(false);
+  const [imagesSent, setImagesSent] = useState(false);
   const [error, setError] = useState("");
 
   if (!options.length) {
@@ -220,7 +222,15 @@ function FillFromWeb({ gameId, preview, missingPacks, dataMode }) {
       if (chosen.has("packs") && !packsSent) {
         window.dispatchEvent(new CustomEvent(GAMEINFO_ADD_WEB_PACKS_EVENT, { detail: { packs: missingPacks, dataMode } }));
         setPacksSent(true);
-        notes.push(`${missingPacks.length} แพ็คในหมวด “${GAMEINFO_WEB_PACK_CATEGORY}” (ยังไม่บันทึก — กดบันทึกที่แถบด้านล่าง)`);
+        notes.push(`${missingPacks.length} แพ็คในหมวด “${GAMEINFO_WEB_PACK_CATEGORY}”`);
+      }
+      if (chosen.has("packImages") && !imagesSent) {
+        window.dispatchEvent(new CustomEvent(GAMEINFO_SET_WEB_PACK_IMAGES_EVENT, { detail: { images: packImageFills, dataMode } }));
+        setImagesSent(true);
+        notes.push(`รูป ${packImageFills.length} แพ็ค`);
+      }
+      if ((chosen.has("packs") && !packsSent) || (chosen.has("packImages") && !imagesSent)) {
+        notes.push("แพ็คยังไม่บันทึก — กดบันทึกที่แถบด้านล่าง");
       }
       setMessage(notes.length ? `เติมแล้ว: ${notes.join(" · ")}` : "ไม่มีอะไรต้องเติม");
       if (chosen.has("image") || chosen.has("tags")) router.refresh();
@@ -244,7 +254,7 @@ function FillFromWeb({ gameId, preview, missingPacks, dataMode }) {
               <input
                 type="checkbox"
                 checked={chosen.has(option.id)}
-                disabled={option.id === "packs" && packsSent}
+                disabled={(option.id === "packs" && packsSent) || (option.id === "packImages" && imagesSent)}
                 onChange={(event) => setChosen((current) => {
                   const next = new Set(current);
                   if (event.target.checked) next.add(option.id);

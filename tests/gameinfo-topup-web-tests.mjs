@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { confidentNameMatch, gameinfoPackMatchKey, matchTopupWebPackages, missingTopupWebPacks, rankTopupWebGames } from "../src/lib/gameinfo-topup-match.js";
+import { confidentNameMatch, gameinfoPackMatchKey, matchTopupWebPackages, missingTopupWebPacks, rankTopupWebGames, topupWebPackImageFills } from "../src/lib/gameinfo-topup-match.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 let passed = 0;
@@ -37,6 +37,21 @@ const missingUid = missingTopupWebPacks(webPackages, ["65 B-Chips"], "uid");
 check(missingUid.map((pack) => pack.name).join() === "330 B-Chips,Monthly Card", "packs GameInfo already has are not offered again");
 check(missingUid[0].active === false, "a package closed for UID comes in closed");
 check(missingTopupWebPacks(webPackages, [], "idpass").map((pack) => pack.name).join() === "330 B-Chips", "ID-PASS only offers packages with an ID-PASS price");
+
+const withIcons = [
+  { label: "65 B-Chips", image: "/api/gameinfo/topup-web/package-icon/1?v=a" },
+  { label: "330 B-Chips", image: "" },
+  { label: "Monthly Card", image: "https://cdn.example/card.png", price: 120, isActive: true, uidActive: true },
+];
+const imageFills = topupWebPackImageFills(withIcons, [
+  { id: "p1", name: "65 B-Chips", image: "" },
+  { id: "p2", name: "330 B-Chips", image: "" },
+  { id: "p3", name: "Monthly Card", image: "data:image/png;base64,AAA" },
+]);
+check(imageFills.length === 1 && imageFills[0].packId === "p1", "only packs with no picture get one, and only when the website has one");
+check(missingTopupWebPacks(withIcons, [], "uid").find((pack) => pack.name === "Monthly Card").image === "https://cdn.example/card.png", "a new pack brings its website picture");
+const topupWebSource = read("../src/server/gameinfo-topup-web.js");
+check(topupWebSource.includes("to_jsonb(p) - 'icon'") && topupWebSource.includes("md5(to_jsonb(p)->>'icon')"), "package icons travel as versioned links, never as the base64 itself");
 
 const importer = read("../src/server/gameinfo-topup-import.js");
 check(importer.includes("!(await getGamelistImage(gameId)).imageUrl") && importer.includes("!current.length"), "filling never overwrites an image or categories already set");
