@@ -38,9 +38,14 @@ import {
 } from "@/server/gameinfo-bot-channels";
 import { fetchKaleozPage, kaleozGameUrl, loadKaleozGames, normalizeKaleozGame, normalizeKaleozProductType } from "@/server/kaleoz-zepeto";
 import { fetchItemkuPage, itemkuGameUrl, loadItemkuGames, normalizeItemkuGame, normalizeItemkuGroup } from "@/server/itemku-prices";
+import { listGamelistGameSettings } from "@/server/gameinfo-game-settings";
+import { listTopupWebGames } from "@/server/gameinfo-topup-web";
+import { cookies } from "next/headers";
+import { GAMEINFO_VIEW_COOKIE, resolveGameinfoView } from "@/lib/gameinfo-view";
 import { getGameinfoBaselineSeller } from "@/server/gameinfo-market-preferences";
 
-// Everyone lands on the card dashboard. Topup and role "user" stay read-only.
+// Everyone lands on the card dashboard. Only gameinfo.admin can edit, in
+// either view (see gameinfo-view.js).
 export default async function GameinfoHomePage({ params, searchParams, manage = false }) {
   const { lang } = await params;
   const { mode: rawMode, view: rawView, section, game, unit, market } = await searchParams;
@@ -65,7 +70,8 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
   const canReport = hasPermission(user, "gameinfo.report");
   if (manage && !editableRole) redirect(gameinfoListHref(lang, dataMode));
   const manageMode = manage && editableRole;
-  const topupView = !manageMode && rawView === "topup";
+  const view = resolveGameinfoView({ param: rawView, cookie: (await cookies()).get(GAMEINFO_VIEW_COOKIE)?.value, isAdmin: editableRole });
+  const topupView = !manageMode && view === "topup";
 
   let rows = null;
   let reports = [];
@@ -126,6 +132,13 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
       return counts;
     }, {});
     reports = openReports;
+    // Website data is extra: a missing or unreachable topup_web connection
+    // leaves the list as it was rather than failing it.
+    const [settingsByGame, topupWebGames] = await Promise.all([
+      listGamelistGameSettings().catch(() => ({})),
+      listTopupWebGames().catch(() => null),
+    ]);
+    const topupWebById = new Map((topupWebGames || []).map((game) => [game.id, game]));
     const modeDataByGame = dataMode === "idpass" ? await listGameinfoModeData(dataMode) : {};
     rows = gameListRows.map((r) => {
       const modeData = modeDataByGame[r.id];
@@ -166,6 +179,8 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
       publishers: publishersByGame[r.id] || [],
       reportCount: reportCountByGame[r.id] || 0,
       isFavorite: favoriteIdSet.has(r.id),
+      priority: Math.min(3, Number(r.rankStars) || 0),
+      web: topupWebById.get(settingsByGame[r.id]?.topupGameId) || null,
       });
     });
   } catch (err) {
@@ -173,7 +188,7 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
   }
 
   if (!manageMode && !loadError) {
-    return <GameinfoGamelistCards initial={rows} initialReports={reports} tagImages={tagImages} publisherImages={publisherImages} botChannels={botChannels} botCategoryImages={botCategoryImages} marketPage={marketPage} botCatalogActive={section === "game-bot-auto"} priceComparisonActive={priceComparison} editable={editableRole && !topupView} topupView={topupView} canReport={canReport} lang={lang} dataMode={dataMode} />;
+    return <GameinfoGamelistCards initial={rows} initialReports={reports} tagImages={tagImages} publisherImages={publisherImages} botChannels={botChannels} botCategoryImages={botCategoryImages} marketPage={marketPage} botCatalogActive={section === "game-bot-auto"} priceComparisonActive={priceComparison} editable={editableRole} topupView={topupView} canReport={canReport} lang={lang} dataMode={dataMode} />;
   }
 
   return (

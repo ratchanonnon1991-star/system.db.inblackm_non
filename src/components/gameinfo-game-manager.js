@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Image as ImageIcon } from "lucide-react";
+import { CheckCircle2, Image as ImageIcon, Save } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import {
   buildGameinfoStatusUpdate,
@@ -17,6 +17,8 @@ import GameinfoTutorialButton, { GameinfoDetailsButton } from "./gameinfo-tutori
 import { GameinfoGameLinksButton } from "./gameinfo-game-links";
 import GameinfoTagsInput from "./gameinfo-tags-input";
 import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
+import { gameinfoGameColor, gameinfoGameInitials } from "@/lib/gameinfo-game-initials";
+import { GameinfoManageSection } from "./gameinfo-manage-section";
 
 function fieldsFromRow(row) {
   return {
@@ -33,7 +35,7 @@ function statusFromRow(row) {
   return row.serviceEnabled === false ? "offline" : "online";
 }
 
-export default function GameinfoGameManager({ row, existingNames, tagSuggestions, publisherSuggestions, dataMode = "uid" }) {
+export default function GameinfoGameManager({ row, existingNames, tagSuggestions, publisherSuggestions, dataMode = "uid", sectionNumbers = null }) {
   const router = useRouter();
   const [saved, setSaved] = useState(() => fieldsFromRow(row));
   const [draft, setDraft] = useState(() => fieldsFromRow(row));
@@ -155,108 +157,178 @@ export default function GameinfoGameManager({ row, existingNames, tagSuggestions
     }
   }
 
-  const inputClass = "h-10 w-full rounded-lg border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm text-linear-ink outline-none focus:border-linear-primary focus:ring-2 focus:ring-linear-primary/20";
+  const inputClass = "h-11 w-full rounded-xl border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm text-linear-ink outline-none focus:border-[#D90005] focus:ring-2 focus:ring-[#D90005]/20";
 
   return (
-    <section className="mb-8 rounded-2xl border border-linear-hairline bg-linear-surface-1 p-5" style={{ boxShadow: "var(--ll-shadow-card)" }}>
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-medium text-linear-ink-tertiary">MANAGE GAME</p>
-          <h1 className="text-xl font-semibold tracking-[-0.3px] text-linear-ink">จัดการข้อมูลเกม</h1>
-        </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          {notice ? (
-            <span className="flex items-center gap-1.5 text-xs text-linear-success" role="status">
-              <CheckCircle2 size={15} aria-hidden="true" /> {notice}
-            </span>
-          ) : null}
-          <button type="button" onClick={cancel} disabled={!dirty || saving} className="h-10 rounded-lg border border-linear-hairline-strong px-4 text-sm text-linear-ink-muted disabled:opacity-40">ยกเลิก</button>
-          <button type="submit" form="gameinfo-manage-form" disabled={!dirty || duplicate || saving} className="h-10 rounded-lg bg-linear-primary px-4 text-sm font-medium text-white hover:bg-linear-primary-hover disabled:opacity-40">{saving ? "กำลังบันทึก…" : "บันทึก"}</button>
-        </div>
-      </div>
+    <>
+      <GameinfoManageSection
+        id="s-info"
+        number={sectionNumbers?.info}
+        title="ข้อมูลเกม"
+        description="ข้อมูลหลักที่แสดงในคลังเกมและหน้ารายละเอียด"
+        actions={(
+          <>
+            {notice ? (
+              <span className="flex items-center gap-1.5 text-xs text-linear-success" role="status">
+                <CheckCircle2 size={15} aria-hidden="true" /> {notice}
+              </span>
+            ) : dirty ? (
+              <span className="flex items-center gap-1.5 text-[13px] text-amber-800 dark:text-amber-400">
+                <span aria-hidden="true" className="h-2 w-2 rounded-full bg-amber-500" /> ยังไม่บันทึก
+              </span>
+            ) : null}
+            <button type="button" onClick={cancel} disabled={!dirty || saving} className="h-11 rounded-xl border border-linear-hairline bg-linear-surface-1 px-[18px] text-sm font-bold text-linear-ink transition hover:bg-linear-surface-2 disabled:opacity-40">ยกเลิก</button>
+            <button type="submit" form="gameinfo-manage-form" disabled={!dirty || duplicate || saving} className="flex h-11 items-center gap-2 rounded-xl bg-[#D90005] px-5 text-sm font-extrabold text-white transition hover:bg-[#B80004] disabled:opacity-40">
+              <Save size={16} aria-hidden="true" /> {saving ? "กำลังบันทึก…" : "บันทึก"}
+            </button>
+          </>
+        )}
+      >
+        <form id="gameinfo-manage-form" onSubmit={save} className="flex flex-col gap-5">
+          <div className="flex flex-wrap items-start gap-6">
+            <div className="flex w-[140px] flex-col items-center gap-2.5">
+              <button type="button" onClick={() => setPickerOpen(true)} className="flex h-32 w-32 items-center justify-center overflow-hidden rounded-[22px]" aria-label="เปลี่ยนรูปเกม">
+                {image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={image} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <span aria-hidden="true" className="flex h-full w-full items-center justify-center text-[38px] font-black text-white" style={{ background: gameinfoGameColor(row.id) }}>
+                    {gameinfoGameInitials(draft.game)}
+                  </span>
+                )}
+              </button>
+              <button type="button" onClick={() => setPickerOpen(true)} className="flex h-9 items-center gap-1.5 rounded-[10px] border border-linear-hairline bg-linear-surface-1 px-3 text-[13px] font-bold text-linear-ink transition hover:bg-linear-surface-2">
+                <ImageIcon size={14} aria-hidden="true" /> เปลี่ยนรูปเกม
+              </button>
+            </div>
 
-      <form id="gameinfo-manage-form" onSubmit={save} className="grid gap-5 lg:grid-cols-[160px_minmax(0,1fr)]">
-        <div>
-          <button type="button" onClick={() => setPickerOpen(true)} className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl border border-linear-hairline bg-linear-surface-2" aria-label="เปลี่ยนรูปเกม">
-            {image ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={image} alt="" className="h-full w-full object-cover" />
-            ) : <ImageIcon size={28} className="text-linear-ink-tertiary" />}
-          </button>
-          <button type="button" onClick={() => setPickerOpen(true)} className="mt-2 h-10 w-full rounded-lg border border-linear-hairline-strong text-xs text-linear-ink-muted hover:bg-linear-surface-2">เปลี่ยนรูป</button>
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          <Field label="ชื่อเกม" wide>
-            {dataMode === "idpass" ? (
-              <input value={draft.game} disabled className={`${inputClass} bg-linear-surface-2 opacity-70`} />
-            ) : (
-              <GameinfoNameInput value={draft.game} onChange={(value) => update("game", value)} existingNames={existingNames} onDuplicateChange={setDuplicate} className={inputClass} />
-            )}
-          </Field>
-          <Field label="สถานะบริการ">
-            <select value={status} onChange={(event) => setStatus(event.target.value)} className={inputClass}>
-              <option value="online">พร้อมใช้งาน</option>
-              <option value="offline">ปิดใช้งาน</option>
-            </select>
-          </Field>
-          <Field label="Region"><input value={draft.region} onChange={(event) => update("region", event.target.value)} className={inputClass} /></Field>
-          <Field label="Platform"><input value={draft.platform} onChange={(event) => update("platform", event.target.value)} className={inputClass} /></Field>
-          <Field label="Server"><input value={draft.server} onChange={(event) => update("server", event.target.value)} className={inputClass} /></Field>
-          <Field label="VPN">
-            <select value={draft.vpn} onChange={(event) => update("vpn", event.target.value)} className={inputClass}>
-              <option value="NO">ไม่ใช้ VPN</option>
-              <option value="YES">ใช้ VPN</option>
-            </select>
-          </Field>
-          <Field label="Bot / Manual"><input value={draft.botManual} onChange={(event) => update("botManual", event.target.value)} className={inputClass} /></Field>
-          <Field label="หมวดหมู่">
-            <GameinfoTagsInput
-              values={tags}
-              onChange={setTags}
-              suggestions={tagSuggestions}
-              placeholder="เพิ่มหมวดหมู่แล้วกด Enter"
-              max={10}
-              neutral
-              tagImages={tagImages}
-              onTagImageChange={saveTagImage}
-            />
-          </Field>
-          <Field label="ค่ายเกม">
-            <GameinfoTagsInput
-              values={publishers}
-              onChange={setPublishers}
-              suggestions={publisherSuggestions}
-              placeholder="เพิ่มค่ายเกมแล้วกด Enter"
-              max={10}
-              neutral
-              tagImages={publisherImages}
-              onTagImageChange={savePublisherImage}
-              imageLabel="ค่ายเกม"
-            />
-          </Field>
-          <div className="flex flex-wrap items-center gap-2 sm:col-span-2 xl:col-span-5">
-            <span className="mr-1 text-xs font-medium text-linear-ink-tertiary">เนื้อหาและลิงก์</span>
-            <GameinfoGameLinksButton gameId={row.id} gameName={draft.game} links={links} editable dataMode={dataMode} onSaved={setLinks} />
-            <GameinfoDetailsButton gameId={row.id} gameName={draft.game} editable hasTutorial={row.hasTutorial} hasVpnNote={row.hasVpnNote} dataMode={dataMode} />
-            <GameinfoTutorialButton gameId={row.id} gameName={draft.game} editable hasData={row.hasWarning} variant="warning" dataMode={dataMode} />
-            <span className="text-xs text-linear-ink-tertiary">ส่วนนี้บันทึกทันทีในหน้าต่างของตัวเอง</span>
+            <div className="grid min-w-0 flex-[1_1_480px] gap-4 sm:grid-cols-2">
+              <Field label="ชื่อเกม" wide>
+                {dataMode === "idpass" ? (
+                  <input value={draft.game} disabled className={`${inputClass} bg-linear-surface-2 opacity-70`} />
+                ) : (
+                  <GameinfoNameInput value={draft.game} onChange={(value) => update("game", value)} existingNames={existingNames} onDuplicateChange={setDuplicate} className={inputClass} />
+                )}
+              </Field>
+              <Field label="Region"><input value={draft.region} onChange={(event) => update("region", event.target.value)} className={inputClass} /></Field>
+              <Field label="Server"><input value={draft.server} onChange={(event) => update("server", event.target.value)} className={inputClass} /></Field>
+              <Field label="Platform"><input value={draft.platform} onChange={(event) => update("platform", event.target.value)} className={inputClass} /></Field>
+              <Field label="ระบบการเติม (Bot / Manual)"><input value={draft.botManual} onChange={(event) => update("botManual", event.target.value)} className={inputClass} /></Field>
+              <Field label="ค่ายเกม">
+                <GameinfoTagsInput
+                  values={publishers}
+                  onChange={setPublishers}
+                  suggestions={publisherSuggestions}
+                  placeholder="เพิ่มค่ายเกมแล้วกด Enter"
+                  max={10}
+                  neutral
+                  tagImages={publisherImages}
+                  onTagImageChange={savePublisherImage}
+                  imageLabel="ค่ายเกม"
+                />
+              </Field>
+              <Field label="ประเภทเกม (หมวดหมู่)">
+                <GameinfoTagsInput
+                  values={tags}
+                  onChange={setTags}
+                  suggestions={tagSuggestions}
+                  placeholder="เพิ่มหมวดหมู่แล้วกด Enter"
+                  max={10}
+                  neutral
+                  tagImages={tagImages}
+                  onTagImageChange={saveTagImage}
+                />
+              </Field>
+            </div>
           </div>
-        </div>
-      </form>
 
-      {duplicate ? <p role="alert" className="mt-3 text-xs text-linear-danger">มีเกมชื่อนี้อยู่แล้ว กรุณาใช้ชื่ออื่น</p> : null}
-      {error ? <p role="alert" className="mt-3 text-xs text-linear-danger">{error}</p> : null}
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="flex min-w-0 flex-[1_1_320px] flex-col gap-1.5">
+              <span id="gameinfo-service-label" className="text-[13px] font-bold text-linear-ink-muted">สถานะบริการ</span>
+              <div role="group" aria-labelledby="gameinfo-service-label" className="flex gap-1 rounded-xl bg-linear-surface-3 p-1">
+                {SERVICE_OPTIONS.map((option) => {
+                  const active = status === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setStatus(option.value)}
+                      className={`flex h-[38px] flex-1 items-center justify-center gap-1.5 rounded-[9px] px-3 text-[13px] font-extrabold transition ${active ? "bg-linear-surface-1 text-linear-ink shadow-[0_1px_3px_rgba(0,0,0,0.12)]" : "text-linear-ink-muted hover:text-linear-ink"}`}
+                    >
+                      <span aria-hidden="true" className={`h-2 w-2 rounded-full ${option.dot}`} />
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={draft.vpn === "YES"}
+              onClick={() => update("vpn", draft.vpn === "YES" ? "NO" : "YES")}
+              className="flex h-[46px] items-center gap-2.5 rounded-xl border border-linear-hairline bg-linear-surface-1 px-3.5 text-sm font-bold text-linear-ink transition hover:bg-linear-surface-2"
+            >
+              <span aria-hidden="true" className={`flex h-6 w-10 rounded-full p-0.5 transition ${draft.vpn === "YES" ? "justify-end bg-[#D90005]" : "justify-start bg-linear-hairline-strong"}`}>
+                <span className="h-5 w-5 rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.3)]" />
+              </span>
+              {draft.vpn === "YES" ? "ต้องใช้ VPN" : "ไม่ใช้ VPN"}
+            </button>
+          </div>
+        </form>
+
+        {duplicate ? <p role="alert" className="mt-3 text-xs text-linear-danger">มีเกมชื่อนี้อยู่แล้ว กรุณาใช้ชื่ออื่น</p> : null}
+        {error ? <p role="alert" className="mt-3 text-xs text-linear-danger">{error}</p> : null}
+      </GameinfoManageSection>
+
+      <GameinfoManageSection
+        id="s-method"
+        number={sectionNumbers?.method}
+        title="วิธีเติมและคำแนะนำ"
+        description="ลิงก์เว็บเติม วิธีเติม โน้ต VPN และข้อควรระวัง แต่ละส่วนบันทึกทันทีในหน้าต่างของตัวเอง"
+      >
+        <div className="grid gap-3 sm:grid-cols-3">
+          <ContentCard title="ลิงก์เว็บเติม" detail={links.length ? `${links.length} ลิงก์` : "ยังไม่มีลิงก์"}>
+            <GameinfoGameLinksButton gameId={row.id} gameName={draft.game} links={links} editable dataMode={dataMode} onSaved={setLinks} className={CONTENT_BUTTON} />
+          </ContentCard>
+          <ContentCard title="วิธีเติม / VPN" detail={[row.hasTutorial ? "มีวิธีเติม" : "ยังไม่มีวิธีเติม", row.hasVpnNote ? "มีโน้ต VPN" : null].filter(Boolean).join(" · ")}>
+            <GameinfoDetailsButton gameId={row.id} gameName={draft.game} editable hasTutorial={row.hasTutorial} hasVpnNote={row.hasVpnNote} dataMode={dataMode} className={CONTENT_BUTTON}>แก้ไขวิธีเติม / VPN</GameinfoDetailsButton>
+          </ContentCard>
+          <ContentCard title="ข้อควรระวัง (NOTICE)" detail={row.hasWarning ? "เด้งขึ้นเมื่อเปิดหน้าเกม" : "ยังไม่มีข้อควรระวัง"} warn={row.hasWarning}>
+            <GameinfoTutorialButton gameId={row.id} gameName={draft.game} editable hasData={row.hasWarning} variant="warning" dataMode={dataMode} className="flex h-10 items-center rounded-[10px] bg-[#D90005] px-4 text-[13px] font-extrabold text-white transition hover:bg-[#B80004]">แก้ไขข้อควรระวัง</GameinfoTutorialButton>
+          </ContentCard>
+        </div>
+      </GameinfoManageSection>
 
       {pickerOpen ? <GameinfoImagePickerModal value={image} onChange={setImage} onClose={() => setPickerOpen(false)} /> : null}
-    </section>
+    </>
+  );
+}
+
+const CONTENT_BUTTON = "flex h-10 items-center rounded-[10px] border border-linear-hairline bg-linear-surface-1 px-4 text-[13px] font-bold text-linear-ink transition hover:bg-linear-surface-2 disabled:opacity-50";
+
+const SERVICE_OPTIONS = [
+  { value: "online", label: "พร้อมใช้งาน", dot: "bg-emerald-500" },
+  { value: "offline", label: "ปิดใช้งาน", dot: "bg-linear-ink-tertiary" },
+];
+
+function ContentCard({ title, detail, warn = false, children }) {
+  return (
+    <div className={`flex flex-col gap-3 rounded-[14px] border p-4 ${warn ? "border-[#D90005]/40 bg-[#FFF5F5] dark:bg-[#D90005]/10" : "border-linear-hairline bg-linear-surface-2"}`}>
+      <div>
+        <p className="text-[15px] font-black text-linear-ink">{title}</p>
+        <p className="mt-0.5 text-[13px] text-linear-ink-tertiary">{detail}</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">{children}</div>
+    </div>
   );
 }
 
 function Field({ label, wide, children }) {
   return (
-    <label className={wide ? "sm:col-span-2 xl:col-span-3" : ""}>
-      <span className="mb-1.5 block text-xs font-medium text-linear-ink-subtle">{label}</span>
+    <label className={`flex flex-col gap-1.5 ${wide ? "sm:col-span-2" : ""}`}>
+      <span className="text-[13px] font-bold text-linear-ink-muted">{label}</span>
       {children}
     </label>
   );

@@ -7,6 +7,7 @@ const gameRoute = read("../src/app/gameinfo/[lang]/[id]/page.js");
 const gameManageRoute = read("../src/app/gameinfo/[lang]/[id]/manage/page.js");
 const homePage = read("../src/components/gameinfo-home-page.js");
 const detailPage = read("../src/components/gameinfo-game-detail-page.js");
+const viewSwitch = read("../src/components/gameinfo-view-switch.js");
 const backLink = read("../src/components/gameinfo-back-link.js");
 const packEditor = read("../src/components/gameinfo-pack-editor.js");
 const gamelistCards = read("../src/components/gameinfo-gamelist-cards.js");
@@ -23,13 +24,15 @@ const checks = [
   gamelistCards.includes('aria-controls="gameinfo-filter-sidebar"') &&
     gamelistCards.includes('sidebarOpen ? "visible translate-x-0" : "invisible -translate-x-full"') &&
     gamelistCards.includes('event.key === "Escape"'),
-  homePage.includes('rawView === "topup"') && homePage.includes("editableRole && !topupView"),
-  modeToggle.includes("มุมมอง Topup") && modeToggle.includes("มุมมอง Admin"),
+  // Topup / Product is for everyone; editing follows gameinfo.admin only.
+  homePage.includes("resolveGameinfoView({ param: rawView") && homePage.includes("editable={editableRole} topupView={topupView}"),
+  viewSwitch.includes("Topup") && viewSwitch.includes("Product") && viewSwitch.includes("GAMEINFO_VIEW_COOKIE") && !modeToggle.includes("มุมมอง Topup"),
   gamelistCards.includes('aria-label={`ดูข้อมูล ${row.game}`}') &&
     gamelistCards.includes('{editable ? "เปิดจัดการ" : "เปิดดู"}') &&
     gamelistCards.includes("bg-linear-primary px-3"),
-  detailPage.includes('rawView === "topup"') &&
-    detailPage.includes("editableRole && !topupView") &&
+  detailPage.includes("resolveGameinfoView({ param: rawView") &&
+    detailPage.includes("editHref={editableRole ? manageHref : null}") &&
+    detailPage.includes("gameinfoViewColumnRole(") &&
     detailPage.includes("gameinfoListHref(lang, dataMode, false, topupView)"),
 ];
 const failed = checks.filter((passed) => !passed).length;

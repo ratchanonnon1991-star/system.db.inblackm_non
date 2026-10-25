@@ -26,6 +26,9 @@ import {
   Send,
   Settings,
   Star,
+  Flame,
+  Globe,
+  Link2,
   X,
 } from "lucide-react";
 import GameinfoDatasetToggle from "./gameinfo-dataset-toggle";
@@ -42,12 +45,22 @@ import {
 } from "@/lib/gameinfo-dashboard";
 import { gameinfoGameHref, gameinfoListHref, gameinfoPacksHref } from "@/lib/gameinfo-data-mode";
 import { useGameinfoDialog } from "@/lib/use-gameinfo-dialog";
+import { gameinfoGameColor, gameinfoGameInitials } from "@/lib/gameinfo-game-initials";
+import GameinfoPriorityStars, { GameinfoWebBadge } from "./gameinfo-priority-stars";
 import {
   requestGameinfoDiscard,
   useGameinfoUnsavedChanges,
 } from "@/lib/gameinfo-unsaved-changes";
 
 const PAGE_SIZE = 12;
+
+const EXTRA_FILTER_LABELS = {
+  favorite: "รายการโปรด",
+  "bot-auto": "Bot Auto",
+  "priority-high": "สำคัญสูง ★★★",
+  "web-on": "Web ON",
+  "web-off": "Web OFF",
+};
 
 const STATUS_STYLE = {
   online: { label: "พร้อมใช้งาน", dot: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-400" },
@@ -126,14 +139,22 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
     const timer = window.setInterval(refreshReports, 15_000);
     return () => window.clearInterval(timer);
   }, [editable]);
+  // Stars set from the table apply to the filters and sort right away.
+  const [priorityById, setPriorityById] = useState(() => new Map());
   const rowsWithState = useMemo(
     () => {
       const reportCounts = new Map();
       for (const report of reports) reportCounts.set(report.gameId, (reportCounts.get(report.gameId) || 0) + 1);
-      return initial.map((row) => ({ ...row, isFavorite: favoriteIds.has(row.id), reportCount: reportCounts.get(row.id) || 0 }));
+      return initial.map((row) => ({
+        ...row,
+        isFavorite: favoriteIds.has(row.id),
+        reportCount: reportCounts.get(row.id) || 0,
+        priority: priorityById.has(row.id) ? priorityById.get(row.id) : row.priority || 0,
+      }));
     },
-    [favoriteIds, initial, reports]
+    [favoriteIds, initial, priorityById, reports]
   );
+  const hasWebData = useMemo(() => initial.some((row) => row.web), [initial]);
   const counts = useMemo(() => summarizeGameinfoRows(rowsWithState), [rowsWithState]);
   const tagOptions = useMemo(() => listGameinfoTags(initial), [initial]);
   const publisherOptions = useMemo(() => listGameinfoPublishers(initial), [initial]);
@@ -147,7 +168,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
   const activeFilters = useMemo(() => {
     const items = [];
     if (query) items.push({ id: "query", label: `ค้นหา: ${query}` });
-    if (status !== "all") items.push({ id: "status", label: STATUS_STYLE[status]?.label || status });
+    if (status !== "all") items.push({ id: "status", label: STATUS_STYLE[status]?.label || EXTRA_FILTER_LABELS[status] || status });
     if (tag) items.push({ id: "tag", label: `หมวดหมู่: ${tag}` });
     if (publisher) items.push({ id: "publisher", label: `ค่ายเกม: ${publisher}` });
     return items;
@@ -388,6 +409,25 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             <span>Bot Auto</span>
             <span className={navCountClass(!botCatalogActive && status === "bot-auto" && !priceComparisonActive)}>{counts.botAuto}</span>
           </button>
+          <button type="button" onClick={() => chooseStatus("priority-high")} className={navItemClass(!botCatalogActive && status === "priority-high" && !priceComparisonActive)}>
+            <Flame size={18} aria-hidden="true" />
+            <span>สำคัญสูง ★★★</span>
+            <span className={navCountClass(!botCatalogActive && status === "priority-high" && !priceComparisonActive)}>{counts.priorityHigh}</span>
+          </button>
+          {hasWebData ? (
+            <>
+              <button type="button" onClick={() => chooseStatus("web-on")} className={navItemClass(!botCatalogActive && status === "web-on" && !priceComparisonActive)}>
+                <Globe size={18} aria-hidden="true" />
+                <span>Web ON</span>
+                <span className={navCountClass(!botCatalogActive && status === "web-on" && !priceComparisonActive)}>{counts.webOn}</span>
+              </button>
+              <button type="button" onClick={() => chooseStatus("web-off")} className={navItemClass(!botCatalogActive && status === "web-off" && !priceComparisonActive)}>
+                <Globe size={18} aria-hidden="true" className="opacity-50" />
+                <span>Web OFF</span>
+                <span className={navCountClass(!botCatalogActive && status === "web-off" && !priceComparisonActive)}>{counts.webOff}</span>
+              </button>
+            </>
+          ) : null}
 
           <span className={sectionLabelClass}>เครื่องมือ</span>
           <Link
@@ -413,6 +453,9 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
           </Link>
           {editable ? (
             <>
+              <Link href={`/gameinfo/${lang}/topup-web`} className={navItemClass(false)}>
+                <Link2 size={18} aria-hidden="true" className="text-[#D90005]" /> เชื่อมเกมกับเว็บ TopUp
+              </Link>
               <span aria-hidden="true" className="mx-1 mb-1 mt-2.5 h-px bg-linear-hairline" />
               <Link href={gameinfoListHref(lang, dataMode, true)} className={`${navItemClass(false)} text-linear-ink-muted`}>
                 <Settings size={18} aria-hidden="true" /> ตั้งค่าระบบ
@@ -483,6 +526,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             <option value="order">ตามลำดับ</option>
             <option value="latest">ID ล่าสุด</option>
             <option value="name">ชื่อ A–Z</option>
+            <option value="priority">ความสำคัญ (สูง → ต่ำ)</option>
           </select>
           <div role="group" aria-label="รูปแบบการแสดงผล" className="flex h-[46px] gap-[3px] rounded-xl border border-linear-hairline bg-linear-surface-1 p-[3px]">
             {[
@@ -532,10 +576,10 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
         {pageRows.length ? (
           view === "list" ? (
             <div className="overflow-x-auto rounded-[14px] border border-linear-hairline bg-linear-surface-1 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
-              <table className="w-full min-w-[820px] border-collapse text-sm">
+              <table className="w-full min-w-[1000px] border-collapse text-sm">
                 <thead>
                   <tr className="bg-linear-surface-3 text-left">
-                    {["เกม", "สถานะ", "โหมด", "REGION", "PLATFORM", "SERVER"].map((heading) => (
+                    {["ความสำคัญ", "เกม", "สถานะ", "โหมด", "WEB", "REGION", "PLATFORM", "SERVER"].map((heading) => (
                       <th key={heading} scope="col" className="px-4 py-3 text-[11px] font-black tracking-[0.08em] text-linear-ink-muted">{heading}</th>
                     ))}
                     <th scope="col" className="px-4 py-3 text-right text-[11px] font-black tracking-[0.08em] text-linear-ink-muted">จัดการ</th>
@@ -543,7 +587,15 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
                 </thead>
                 <tbody>
                   {pageRows.map((row) => (
-                    <GameRow key={row.id} row={row} editable={editable} topupView={topupView} lang={lang} dataMode={dataMode} />
+                    <GameRow
+                      key={row.id}
+                      row={row}
+                      editable={editable}
+                      topupView={topupView}
+                      lang={lang}
+                      dataMode={dataMode}
+                      onPriorityChange={(value) => setPriorityById((current) => new Map(current).set(row.id, value))}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -637,16 +689,6 @@ function StatCard({ label, count, icon: Icon, active, onClick, tone }) {
   );
 }
 
-// Card fallback when a game has no image of its own: its initials on a
-// colour picked by id, so the same game keeps the same colour.
-const THUMB_COLORS = ["#18181B", "#7F1D1D", "#1E3A8A", "#14532D", "#581C87", "#9A3412", "#0F766E", "#3F3F46"];
-
-function gameInitials(name) {
-  const words = String(name || "").trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return "?";
-  return (words[0].charAt(0) + (words[1] ? words[1].charAt(0) : words[0].charAt(1))).toUpperCase();
-}
-
 function GameThumb({ row, size }) {
   const dim = row.serviceStatus === "offline" ? "opacity-55" : "";
   if (row.image) {
@@ -659,9 +701,9 @@ function GameThumb({ row, size }) {
     <span
       aria-hidden="true"
       className={`flex shrink-0 items-center justify-center rounded-xl font-black tracking-[0.02em] text-white ${dim}`}
-      style={{ width: size, height: size, fontSize: size > 50 ? 22 : 13, background: THUMB_COLORS[Number(row.id) % THUMB_COLORS.length] || THUMB_COLORS[0] }}
+      style={{ width: size, height: size, fontSize: size > 50 ? 22 : 13, background: gameinfoGameColor(row.id) }}
     >
-      {gameInitials(row.game)}
+      {gameinfoGameInitials(row.game)}
     </span>
   );
 }
@@ -704,10 +746,14 @@ function GameCard({ row, editable, topupView, canReport, lang, dataMode, favorit
             <h2 className="m-0 text-[15px] font-black uppercase leading-snug">
               <Link href={href} className="line-clamp-2 text-linear-ink hover:text-[#D90005]">{row.game}</Link>
             </h2>
-            <span className="font-mono text-xs text-linear-ink-subtle">ID: {row.id}</span>
+            <span className="flex items-center gap-2 font-mono text-xs text-linear-ink-subtle">
+              ID: {row.id}
+              {row.priority ? <GameinfoPriorityStars value={row.priority} size={13} /> : null}
+            </span>
             <div className="flex flex-wrap items-center gap-2">
               <StatusLabel status={status} />
               <ModeBadge value={row.botManual} />
+              {row.web ? <GameinfoWebBadge web={row.web} size="sm" /> : null}
             </div>
           </div>
           <details className="relative -mr-1.5 -mt-1.5 shrink-0">
@@ -754,12 +800,16 @@ function GameCard({ row, editable, topupView, canReport, lang, dataMode, favorit
   );
 }
 
-function GameRow({ row, editable, topupView, lang, dataMode }) {
+function GameRow({ row, editable, topupView, lang, dataMode, onPriorityChange }) {
   const status = STATUS_STYLE[row.serviceStatus] || STATUS_STYLE.online;
   const href = gameinfoGameHref(lang, row.id, dataMode, false, topupView);
   const actionHref = editable ? gameinfoGameHref(lang, row.id, dataMode, true) : href;
   return (
     <tr className="border-t border-linear-hairline transition hover:bg-[#D90005]/[0.03]">
+      <td className="px-3 py-2.5">
+        {/* key: a reset from elsewhere (none today) would show the new value. */}
+        <GameinfoPriorityStars key={row.priority} gameId={row.id} value={row.priority || 0} editable={editable} size={16} onSaved={onPriorityChange} />
+      </td>
       <td className="px-4 py-2.5">
         <div className="flex items-center gap-3">
           <GameThumb row={row} size={40} />
@@ -774,6 +824,7 @@ function GameRow({ row, editable, topupView, lang, dataMode }) {
       </td>
       <td className="px-4 py-2.5"><StatusLabel status={status} /></td>
       <td className="px-4 py-2.5"><ModeBadge value={row.botManual} /></td>
+      <td className="px-4 py-2.5"><GameinfoWebBadge web={row.web} size="sm" /></td>
       <td className="px-4 py-2.5 font-bold text-linear-ink">{row.region || "-"}</td>
       <td className="px-4 py-2.5 font-bold text-linear-ink">{row.platform || "-"}</td>
       <td className="px-4 py-2.5 font-bold text-linear-ink">{row.server || "-"}</td>

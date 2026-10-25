@@ -4,7 +4,7 @@ import { useState } from "react";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
 
-export default function GameinfoReportPanel({ gameId, initialReports, canManage, canReport }) {
+export default function GameinfoReportPanel({ gameId, initialReports, canManage, canReport, id, number }) {
   const [reports, setReports] = useState(initialReports);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -48,14 +48,14 @@ export default function GameinfoReportPanel({ gameId, initialReports, canManage,
   const openCount = reports.filter((report) => report.status === "open").length;
 
   return (
-    <section className="mt-8 rounded-2xl border border-linear-hairline bg-linear-surface-1 p-4 sm:p-5" aria-labelledby="game-reports-title">
+    <section id={id} className="mt-5 scroll-mt-40 rounded-2xl border border-linear-hairline bg-linear-surface-1 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.08)]" aria-labelledby="game-reports-title">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 id="game-reports-title" className="flex items-center gap-2 text-base font-semibold text-linear-ink">
-            <AlertTriangle size={17} className={openCount ? "text-linear-primary" : "text-linear-ink-tertiary"} />
-            รายงานปัญหา
+          <h2 id="game-reports-title" className="flex items-center gap-2 text-base font-black text-linear-ink">
+            <AlertTriangle size={17} className={openCount ? "text-[#D90005]" : "text-linear-ink-tertiary"} />
+            {number ? `${number}. ` : ""}รายงานปัญหา
           </h2>
-          <p className="mt-1 text-xs text-linear-ink-tertiary">ต้องตรวจสอบ {openCount} รายการ</p>
+          <p className={`mt-1 text-[13px] ${openCount ? "font-bold text-[#D90005]" : "text-linear-ink-tertiary"}`}>ต้องตรวจสอบ {openCount} รายการ</p>
         </div>
       </div>
 
@@ -69,10 +69,10 @@ export default function GameinfoReportPanel({ gameId, initialReports, canManage,
             maxLength={1000}
             rows={2}
             placeholder="แจ้งข้อมูลที่ผิดหรือปัญหาที่พบ..."
-            className="min-h-20 w-full resize-y rounded-lg border border-linear-hairline-strong bg-linear-canvas px-3 py-2 text-sm text-linear-ink outline-none placeholder:text-linear-ink-tertiary focus:border-linear-primary focus:ring-2 focus:ring-linear-primary/20"
+            className="min-h-20 w-full resize-y rounded-xl border border-linear-hairline-strong bg-linear-canvas px-3 py-2 text-sm text-linear-ink outline-none placeholder:text-linear-ink-tertiary focus:border-linear-primary focus:ring-2 focus:ring-linear-primary/20"
           />
         </label>
-        <button type="submit" disabled={busy || !message.trim()} className="h-10 rounded-lg bg-linear-ink px-4 text-sm font-medium text-linear-canvas disabled:opacity-40">
+        <button type="submit" disabled={busy || !message.trim()} className="h-11 rounded-xl bg-[#D90005] px-5 text-sm font-extrabold text-white transition hover:bg-[#B80004] disabled:opacity-40">
           ส่งรายงาน
         </button>
       </form> : null}

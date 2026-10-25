@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { Lato, Noto_Sans_Thai } from "next/font/google";
 import Link from "next/link";
@@ -8,6 +9,8 @@ import { canManageGameinfo, hasGameinfoAccess } from "@/server/auth";
 import GameinfoModeToggle from "@/components/gameinfo-mode-toggle";
 import GameinfoThemeRoot from "@/components/gameinfo-theme-root";
 import GameinfoThemeToggle from "@/components/gameinfo-theme-toggle";
+import GameinfoViewSwitch from "@/components/gameinfo-view-switch";
+import { GAMEINFO_VIEW_COOKIE, resolveGameinfoView } from "@/lib/gameinfo-view";
 
 const notoThai = Noto_Sans_Thai({
   subsets: ["thai", "latin"],
@@ -30,6 +33,8 @@ export default async function GameinfoLangLayout({ children, params }) {
   const user = await getSessionUser();
   if (!hasGameinfoAccess(user)) redirect("/");
   const editableRole = canManageGameinfo(user);
+  // The layout cannot see the URL's ?view=; the switch reads that itself.
+  const view = resolveGameinfoView({ cookie: (await cookies()).get(GAMEINFO_VIEW_COOKIE)?.value, isAdmin: editableRole });
   const initial = (user?.displayName || user?.username || "?").trim().slice(0, 1).toUpperCase();
 
   return (
@@ -71,6 +76,7 @@ export default async function GameinfoLangLayout({ children, params }) {
           </nav>
         </div>
       </header>
+      <GameinfoViewSwitch savedView={view} isAdmin={editableRole} />
       {/* min-w-0 overrides the flex item's default min-width:auto — without
           it, a wide pack table nested inside forces this whole column wider
           than the viewport instead of scrolling inside its own box. */}

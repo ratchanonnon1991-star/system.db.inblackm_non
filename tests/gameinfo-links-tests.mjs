@@ -21,7 +21,7 @@ function ok(name, value) {
 
 check("legacy single link becomes a named link", legacyGamelistLinks("https://example.com/topup"), [{
   id: "legacy",
-  name: "เว็บเติมเกม",
+  name: "ข้อมูลเติมเกมส์",
   url: "https://example.com/topup",
 }]);
 check("invalid legacy link is ignored safely", legacyGamelistLinks("javascript:alert(1)"), []);

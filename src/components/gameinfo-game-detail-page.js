@@ -21,6 +21,18 @@ import { gameinfoGameHref, gameinfoListHref, normalizeGameinfoDataMode } from "@
 import { getGameinfoModeData } from "@/server/gameinfo-mode-data";
 import GameinfoModeCloneButton from "@/components/gameinfo-mode-clone-button";
 import GameinfoGameManager from "@/components/gameinfo-game-manager";
+import GameinfoTopupWebPanel from "@/components/gameinfo-topup-web-panel";
+import GameinfoTestAccounts, { GameinfoTestAccountsCard } from "@/components/gameinfo-test-accounts";
+import GameinfoPriorityStars, { GameinfoWebBadge } from "@/components/gameinfo-priority-stars";
+import { getGamelistGameSettings, listGamelistTestAccounts, maskGamelistTestAccount } from "@/server/gameinfo-game-settings";
+import { getTopupWebGame, isTopupWebConnected, topupWebAdminUrl } from "@/server/gameinfo-topup-web";
+import { GameinfoManageNav, GameinfoManageSection } from "@/components/gameinfo-manage-section";
+import GameinfoWebMargin from "@/components/gameinfo-web-margin";
+import GameinfoMissingChecklist from "@/components/gameinfo-missing-checklist";
+import { gameinfoMissingItems } from "@/lib/gameinfo-completeness";
+import { missingTopupWebPacks, topupWebPackImageFills } from "@/lib/gameinfo-topup-match";
+import { previewTopupWebFill } from "@/server/gameinfo-topup-import";
+import { getGameinfoExchangeRates } from "@/server/gameinfo-exchange-rates";
 import {
   listGamelistPublisherImages,
   listGamelistPublishersByGame,
@@ -31,11 +43,13 @@ import { listGamelistReports } from "@/server/gameinfo-gamelist-reports";
 import GameinfoReportPanel from "@/components/gameinfo-report-panel";
 import GameinfoPackEditor from "@/components/gameinfo-pack-editor";
 import { buildPackSuggestions } from "@/lib/gameinfo-suggestions";
-import { hasPermission, permissionRole } from "@/lib/permissions";
+import { hasPermission } from "@/lib/permissions";
 import {
   hiddenGameinfoColumnKeys,
   stripHiddenGameinfoColumns,
 } from "@/lib/gameinfo-column-roles";
+import { cookies } from "next/headers";
+import { GAMEINFO_VIEW_COOKIE, gameinfoViewColumnRole, resolveGameinfoView } from "@/lib/gameinfo-view";
 import { listGameinfoColumnRoleRules } from "@/server/gameinfo-column-roles";
 
 export default async function GameinfoGameDetailPage({ params, searchParams, manage = false }) {
@@ -48,12 +62,12 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   const canReport = hasPermission(user, "gameinfo.report");
   if (manage && !editableRole) redirect(gameinfoGameHref(lang, id, dataMode));
   const manageMode = manage && editableRole;
-  const topupView = !manageMode && rawView === "topup";
-  // Columns are shared by every game, so a role that works with only a few of
-  // them would otherwise meet all of them everywhere. Resolved here because
-  // the server is what knows the viewer's role; the topup preview deliberately
-  // resolves as topup so an admin sees what a topup user would.
-  const viewerRole = topupView ? "topup" : permissionRole(user.permissions, "gameinfo");
+  const view = resolveGameinfoView({ param: rawView, cookie: (await cookies()).get(GAMEINFO_VIEW_COOKIE)?.value, isAdmin: editableRole });
+  const topupView = !manageMode && view === "topup";
+  // Columns are shared by every game, so the Topup view, which works with
+  // only a few of them, would otherwise meet all of them everywhere. The view
+  // picks the column rules, not the viewer's role: anyone can switch.
+  const viewerRole = gameinfoViewColumnRole(topupView ? "topup" : "product");
 
   // A non-numeric segment here (e.g. a stale /admin bookmark from before that
   // path was removed) would otherwise reach getGameListRow() as NaN and blow
@@ -77,6 +91,10 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   let packLanguages = [];
   let packVersion = 1;
   let hiddenColumnKeys = [];
+  let settings = { topupGameId: null };
+  let topupGame = null;
+  let topupConnected = false;
+  let testAccounts = [];
   try {
     row = await getGameListRow(numericId);
     if (row) {
@@ -148,6 +166,19 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         reportCount: loadedReports.filter((report) => report.status === "open").length,
       };
       formulaVariables = variableData.variables;
+      // Website data and test accounts are extras: if they fail to load the
+      // game page still opens, just without them.
+      [settings, testAccounts, topupConnected] = await Promise.all([
+        getGamelistGameSettings(row.id).catch(() => settings),
+        listGamelistTestAccounts(row.id).catch(() => []),
+        isTopupWebConnected().catch(() => false),
+      ]);
+      topupGame = topupConnected ? await getTopupWebGame(settings.topupGameId).catch(() => null) : null;
+      row = {
+        ...row,
+        priority: Math.min(3, Number(row.rankStars) || 0),
+        web: topupGame ? { isActive: topupGame.isActive, uidEnabled: topupGame.uidEnabled, idpassEnabled: topupGame.idpassEnabled } : null,
+      };
       hiddenColumnKeys = [...hiddenGameinfoColumnKeys(columnRoleRules, viewerRole, row.id)];
       // Enforced here rather than in the browser: a hidden column carries
       // its formula and its typed-in per-pack values, so leaving it in the
@@ -183,57 +214,158 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
     version: packVersion,
   };
 
-  return (
-    <div className={`${manageMode ? "" : "mx-auto max-w-7xl"} px-4 py-8`}>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <GameinfoBackLink
-          className="flex items-center gap-1 text-sm text-linear-primary hover:underline"
-          href={manageMode ? viewHref : gameinfoListHref(lang, dataMode, false, topupView)}
-        />
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {editableRole && !topupView ? (
-            <Link href={manageMode ? viewHref : manageHref} className="rounded-md border border-linear-hairline-strong px-3 py-1.5 text-xs font-medium text-linear-ink-muted hover:bg-linear-surface-2">
-              {manageMode ? "ดูหน้าผู้ใช้" : "จัดการเกม"}
-            </Link>
-          ) : null}
-          {manageMode ? <GameinfoModeCloneButton gameId={row.id} currentMode={dataMode} /> : null}
-          <GameinfoDatasetToggle basePath={gameinfoGameHref(lang, row.id, "uid", manageMode, topupView)} />
+  if (manageMode) {
+    // Today's stored USD rate only — no provider call while the page loads.
+    const usdThb = topupGame
+      ? await getGameinfoExchangeRates(["THBUSD"], { includeHistory: false, refreshStale: false })
+        .then(([rate]) => (rate?.rate > 0 ? 1 / Number(rate.rate) : null))
+        .catch(() => null)
+      : null;
+    const flatPacks = currencies.flatMap((currency) => currency.categories.flatMap((category) => category.packs));
+    const gameinfoPacks = flatPacks.map((pack) => ({ name: pack.name, price: pack.price ?? "" }));
+    const fillPreview = topupGame ? await previewTopupWebFill(row.id).catch(() => null) : null;
+    const missingPacks = topupGame ? missingTopupWebPacks(topupGame.packages, flatPacks.map((pack) => pack.name), dataMode) : [];
+    const packImageFills = topupGame ? topupWebPackImageFills(topupGame.packages, flatPacks) : [];
+    const missingItems = gameinfoMissingItems({ row, packs: flatPacks, testAccountCount: testAccounts.length, linked: Boolean(topupGame) });
+    return (
+      <>
+        {/* Sticks under the red header (h-16) so the game being edited and
+            the way back stay in view down a long pack table. */}
+        <div className="sticky top-16 z-30 border-b border-linear-hairline bg-linear-surface-1/95 shadow-[0_8px_20px_-16px_rgba(0,0,0,0.4)] backdrop-blur">
+          <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-3 px-4 py-3 sm:px-7">
+            <GameinfoBackLink
+              className="flex h-10 items-center gap-1.5 rounded-full border border-linear-hairline bg-linear-surface-1 px-4 text-[13px] font-bold text-linear-ink transition hover:bg-linear-surface-2"
+              href={viewHref}
+            />
+            <div className="flex min-w-0 flex-col leading-tight">
+              <h1 className="truncate text-xl font-black text-linear-ink">แก้ไขเกม · {row.game}</h1>
+              <span className="font-mono text-xs text-linear-ink-tertiary">ID: {row.id} · {dataMode === "idpass" ? "ID-PASS" : "UID"}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <GameinfoPriorityStars gameId={row.id} value={row.priority} editable size={18} />
+              {topupConnected ? <GameinfoWebBadge web={row.web} /> : null}
+            </div>
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+              <span className="rounded-md bg-[#18181B] px-2 py-0.5 text-[11px] font-black tracking-[0.08em] text-white dark:bg-white dark:text-[#18181B]">ADMIN</span>
+              <Link href={viewHref} className="flex h-10 items-center rounded-full border border-linear-hairline bg-linear-surface-1 px-4 text-[13px] font-bold text-linear-ink transition hover:bg-linear-surface-2">
+                ดูหน้าผู้ใช้
+              </Link>
+              <GameinfoModeCloneButton gameId={row.id} currentMode={dataMode} />
+              <GameinfoDatasetToggle basePath={gameinfoGameHref(lang, row.id, "uid", manageMode, topupView)} />
+            </div>
+          </div>
         </div>
+        <div className="mx-auto flex max-w-[1600px] flex-col gap-6 px-4 pb-28 pt-6 sm:px-7 lg:flex-row lg:items-start">
+          <GameinfoManageNav sections={MANAGE_SECTIONS} />
+          <div className="flex min-w-0 flex-1 flex-col gap-5">
+            <GameinfoMissingChecklist items={missingItems} />
+            {/* Keyed on the image and categories so "เติมจากเว็บ" filling them
+                shows up in the form instead of its stale first state. */}
+            <GameinfoGameManager key={`${row.image}|${(row.tags || []).join(",")}`} row={row} existingNames={existingNames} tagSuggestions={tagSuggestions} publisherSuggestions={publisherSuggestions} dataMode={dataMode} sectionNumbers={MANAGE_NUMBERS} />
+            <GameinfoManageSection
+              id="s-web"
+              number={MANAGE_NUMBERS.web}
+              title="เว็บ TopUp และข้อมูลลูกค้า"
+              description="เกมนี้คือเกมไหนบนเว็บ สถานะ Web ON และช่องที่ลูกค้าต้องกรอก ดึงจากเว็บโดยตรง"
+            >
+              <GameinfoTopupWebPanel
+                gameId={row.id}
+                gameName={row.game}
+                region={row.region}
+                connected={topupConnected}
+                topupGame={topupGame}
+                topupGameId={settings.topupGameId}
+                adminUrl={topupWebAdminUrl()}
+                dataMode={dataMode}
+                fillPreview={fillPreview}
+                missingPacks={missingPacks}
+                packImageFills={packImageFills}
+              />
+            </GameinfoManageSection>
+            <GameinfoManageSection
+              id="s-test"
+              number={MANAGE_NUMBERS.test}
+              title="บัญชีทดสอบ"
+              description="ใช้ทดสอบเติมก่อนเปิด Web ON หรือหลังแก้ Bot · ห้ามใช้บัญชีลูกค้าจริง"
+            >
+              <GameinfoTestAccounts gameId={row.id} initialAccounts={testAccounts} />
+            </GameinfoManageSection>
+            <GameinfoPackEditor
+              key={dataMode}
+              game={packGame}
+              userId={user.id}
+              suggestions={{ ...buildPackSuggestions(packGame), channels: allChannels }}
+              dataMode={dataMode}
+              backHref={viewHref}
+              historyUrl={`/api/gameinfo/gamelist/${row.id}/packs/history?limit=200${dataMode === "idpass" ? "&mode=idpass" : ""}`}
+              savePacksUrl={`/api/gameinfo/gamelist/${row.id}/packs${dataMode === "idpass" ? "?mode=idpass" : ""}`}
+              importPreviewUrl={`/api/gameinfo/import/preview?gameId=${row.id}`}
+              exportUrl={`/api/gameinfo/import/export?gameId=${row.id}${dataMode === "idpass" ? "&mode=idpass" : ""}`}
+              sectionNumbers={MANAGE_NUMBERS}
+            />
+            <GameinfoManageSection
+              id="s-margin"
+              number={MANAGE_NUMBERS.margin}
+              title="ราคาเว็บและ Margin"
+              description={`ราคาขายและกำไรต่อชิ้นบนเว็บ TopUp (${dataMode === "idpass" ? "ID-PASS" : "UID"}) เทียบกับต้นทุนที่เว็บบันทึกไว้`}
+            >
+              {topupGame ? (
+                <GameinfoWebMargin packages={topupGame.packages} dataMode={dataMode} usdThb={usdThb} gameinfoPacks={gameinfoPacks} />
+              ) : (
+                <p className="text-sm text-linear-ink-tertiary">เชื่อมเกมกับเว็บ TopUp ในหัวข้อ {MANAGE_NUMBERS.web} ก่อน</p>
+              )}
+            </GameinfoManageSection>
+            {/* Reports on the manage page are always resolvable: whoever
+                reaches it is an editor. */}
+            <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage canReport id="s-report" number={MANAGE_NUMBERS.report} />
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-[1400px] px-4 pb-16 pt-6 sm:px-7">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <GameinfoBackLink
+          className="flex h-10 items-center gap-1.5 rounded-full border border-linear-hairline bg-linear-surface-1 px-4 text-[13px] font-bold text-linear-ink transition hover:bg-linear-surface-2"
+          href={gameinfoListHref(lang, dataMode, false, topupView)}
+        />
+        <GameinfoDatasetToggle basePath={gameinfoGameHref(lang, row.id, "uid", false, topupView)} />
       </div>
-      {manageMode ? <GameinfoGameManager row={row} existingNames={existingNames} tagSuggestions={tagSuggestions} publisherSuggestions={publisherSuggestions} dataMode={dataMode} /> : null}
-      {manageMode ? <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage canReport /> : null}
-      {manageMode ? (
-        <section className="mt-8 border-t border-linear-hairline pt-6" aria-labelledby="pack-editor-title">
-          <h2 id="pack-editor-title" className="mb-4 text-lg font-semibold tracking-[-0.2px] text-linear-ink">แก้ไข Pack</h2>
-          <GameinfoPackEditor
-            key={dataMode}
-            game={packGame}
-            userId={user.id}
-            suggestions={{ ...buildPackSuggestions(packGame), channels: allChannels }}
-            dataMode={dataMode}
-            backHref={viewHref}
-            historyUrl={`/api/gameinfo/gamelist/${row.id}/packs/history?limit=200${dataMode === "idpass" ? "&mode=idpass" : ""}`}
-            savePacksUrl={`/api/gameinfo/gamelist/${row.id}/packs${dataMode === "idpass" ? "?mode=idpass" : ""}`}
-            importPreviewUrl={`/api/gameinfo/import/preview?gameId=${row.id}`}
-            exportUrl={`/api/gameinfo/import/export?gameId=${row.id}${dataMode === "idpass" ? "&mode=idpass" : ""}`}
-          />
-        </section>
-      ) : (
-        <>
-          <GameinfoGameView
-            key={dataMode}
-            row={row}
-            currencies={currencies}
-            computedColumns={computedColumns}
-            costProfiles={costProfiles}
-            formulaVariables={formulaVariables}
-            userId={user.id}
-            dataMode={dataMode}
-            hiddenColumnKeys={hiddenColumnKeys}
-          />
-          <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage={editableRole} canReport={canReport} />
-        </>
-      )}
+      <GameinfoGameView
+        key={dataMode}
+        row={row}
+        currencies={currencies}
+        computedColumns={computedColumns}
+        costProfiles={costProfiles}
+        formulaVariables={formulaVariables}
+        userId={user.id}
+        dataMode={dataMode}
+        hiddenColumnKeys={hiddenColumnKeys}
+        editHref={editableRole ? manageHref : null}
+      />
+      <div className="mt-5">
+        <GameinfoTestAccountsCard
+          gameId={row.id}
+          accounts={editableRole ? testAccounts : testAccounts.map(maskGamelistTestAccount)}
+          canReveal={editableRole}
+        />
+      </div>
+      <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage={editableRole} canReport={canReport} />
     </div>
   );
 }
+
+// The manage page's cards in page order; the nav numbers them the same way.
+const MANAGE_SECTIONS = [
+  { id: "s-info", label: "ข้อมูลเกม" },
+  { id: "s-method", label: "วิธีเติมและคำแนะนำ" },
+  { id: "s-web", label: "เว็บและข้อมูลลูกค้า" },
+  { id: "s-test", label: "บัญชีทดสอบ" },
+  { id: "s-cost", label: "ต้นทุนและเรต" },
+  { id: "s-pack", label: "แพ็คและราคา" },
+  { id: "s-margin", label: "ราคาเว็บและ Margin" },
+  { id: "s-report", label: "รายงานปัญหา" },
+];
+const MANAGE_NUMBERS = { info: 1, method: 2, web: 3, test: 4, cost: 5, pack: 6, margin: 7, report: 8 };
