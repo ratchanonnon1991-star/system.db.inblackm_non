@@ -179,7 +179,7 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
       publishers: publishersByGame[r.id] || [],
       reportCount: reportCountByGame[r.id] || 0,
       isFavorite: favoriteIdSet.has(r.id),
-      priority: settingsByGame[r.id]?.priority || 0,
+      priority: Math.min(3, Number(r.rankStars) || 0),
       web: topupWebById.get(settingsByGame[r.id]?.topupGameId) || null,
       });
     });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { gameinfoPackMatchKey, matchTopupWebPackages, rankTopupWebGames } from "../src/lib/gameinfo-topup-match.js";
+import { confidentNameMatch, gameinfoPackMatchKey, matchTopupWebPackages, missingTopupWebPacks, rankTopupWebGames } from "../src/lib/gameinfo-topup-match.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 let passed = 0;
@@ -24,6 +24,23 @@ check(gameinfoPackMatchKey("65 B-Chips") !== gameinfoPackMatchKey("65 Crystal"),
 const matched = matchTopupWebPackages(["330 B-Chips", "Monthly Card"], [{ id: "1", label: "330 B-Chips" }, { id: "2", label: "Other", amountDisplay: "" }]);
 check(matched.get("330 B-Chips")?.id === "1", "a pack matches its website package by name");
 check(matched.get("Monthly Card") === null, "an unmatched pack stays unmatched");
+
+check(confidentNameMatch("HONKAI IMPACT", webGames)?.id === "honkai-impact-3-eu-na" || confidentNameMatch("HONKAI IMPACT", webGames)?.id === "honkai-impact-3", "a confident match is pre-picked");
+check(confidentNameMatch("ROV", webGames) === null, "a weak match is not pre-picked");
+
+const webPackages = [
+  { label: "65 B-Chips", price: 15, priceIdpass: null, isActive: true, uidActive: true, idpassActive: false },
+  { label: "330 B-Chips", price: 75, priceIdpass: 80, isActive: true, uidActive: false, idpassActive: true },
+  { label: "Monthly Card", price: 120, priceIdpass: null, isActive: true, uidActive: true, idpassActive: true },
+];
+const missingUid = missingTopupWebPacks(webPackages, ["65 B-Chips"], "uid");
+check(missingUid.map((pack) => pack.name).join() === "330 B-Chips,Monthly Card", "packs GameInfo already has are not offered again");
+check(missingUid[0].active === false, "a package closed for UID comes in closed");
+check(missingTopupWebPacks(webPackages, [], "idpass").map((pack) => pack.name).join() === "330 B-Chips", "ID-PASS only offers packages with an ID-PASS price");
+
+const importer = read("../src/server/gameinfo-topup-import.js");
+check(importer.includes("!(await getGamelistImage(gameId)).imageUrl") && importer.includes("!current.length"), "filling never overwrites an image or categories already set");
+check(importer.includes("linked.has(topupGameId)"), "a website game already linked is never imported twice");
 
 const topupWeb = read("../src/server/gameinfo-topup-web.js");
 check(!/\b(INSERT|UPDATE|DELETE)\b/.test(topupWeb), "GameInfo only ever reads the website database");

@@ -28,6 +28,10 @@ import { getGamelistGameSettings, listGamelistTestAccounts, maskGamelistTestAcco
 import { getTopupWebGame, isTopupWebConnected, topupWebAdminUrl } from "@/server/gameinfo-topup-web";
 import { GameinfoManageNav, GameinfoManageSection } from "@/components/gameinfo-manage-section";
 import GameinfoWebMargin from "@/components/gameinfo-web-margin";
+import GameinfoMissingChecklist from "@/components/gameinfo-missing-checklist";
+import { gameinfoMissingItems } from "@/lib/gameinfo-completeness";
+import { missingTopupWebPacks } from "@/lib/gameinfo-topup-match";
+import { previewTopupWebFill } from "@/server/gameinfo-topup-import";
 import { getGameinfoExchangeRates } from "@/server/gameinfo-exchange-rates";
 import {
   listGamelistPublisherImages,
@@ -87,7 +91,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   let packLanguages = [];
   let packVersion = 1;
   let hiddenColumnKeys = [];
-  let settings = { priority: 0, topupGameId: null };
+  let settings = { topupGameId: null };
   let topupGame = null;
   let topupConnected = false;
   let testAccounts = [];
@@ -172,7 +176,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
       topupGame = topupConnected ? await getTopupWebGame(settings.topupGameId).catch(() => null) : null;
       row = {
         ...row,
-        priority: settings.priority,
+        priority: Math.min(3, Number(row.rankStars) || 0),
         web: topupGame ? { isActive: topupGame.isActive, uidEnabled: topupGame.uidEnabled, idpassEnabled: topupGame.idpassEnabled } : null,
       };
       hiddenColumnKeys = [...hiddenGameinfoColumnKeys(columnRoleRules, viewerRole, row.id)];
@@ -217,9 +221,11 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         .then(([rate]) => (rate?.rate > 0 ? 1 / Number(rate.rate) : null))
         .catch(() => null)
       : null;
-    const gameinfoPacks = currencies.flatMap((currency) => currency.categories.flatMap((category) =>
-      category.packs.map((pack) => ({ name: pack.name, price: pack.price ?? "" }))
-    ));
+    const flatPacks = currencies.flatMap((currency) => currency.categories.flatMap((category) => category.packs));
+    const gameinfoPacks = flatPacks.map((pack) => ({ name: pack.name, price: pack.price ?? "" }));
+    const fillPreview = topupGame ? await previewTopupWebFill(row.id).catch(() => null) : null;
+    const missingPacks = topupGame ? missingTopupWebPacks(topupGame.packages, flatPacks.map((pack) => pack.name), dataMode) : [];
+    const missingItems = gameinfoMissingItems({ row, packs: flatPacks, testAccountCount: testAccounts.length, linked: Boolean(topupGame) });
     return (
       <>
         {/* Sticks under the red header (h-16) so the game being edited and
@@ -235,7 +241,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
               <span className="font-mono text-xs text-linear-ink-tertiary">ID: {row.id} · {dataMode === "idpass" ? "ID-PASS" : "UID"}</span>
             </div>
             <div className="flex items-center gap-2">
-              <GameinfoPriorityStars gameId={row.id} value={settings.priority} editable size={18} />
+              <GameinfoPriorityStars gameId={row.id} value={row.priority} editable size={18} />
               {topupConnected ? <GameinfoWebBadge web={row.web} /> : null}
             </div>
             <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
@@ -251,7 +257,10 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         <div className="mx-auto flex max-w-[1600px] flex-col gap-6 px-4 pb-28 pt-6 sm:px-7 lg:flex-row lg:items-start">
           <GameinfoManageNav sections={MANAGE_SECTIONS} />
           <div className="flex min-w-0 flex-1 flex-col gap-5">
-            <GameinfoGameManager row={row} existingNames={existingNames} tagSuggestions={tagSuggestions} publisherSuggestions={publisherSuggestions} dataMode={dataMode} sectionNumbers={MANAGE_NUMBERS} />
+            <GameinfoMissingChecklist items={missingItems} />
+            {/* Keyed on the image and categories so "เติมจากเว็บ" filling them
+                shows up in the form instead of its stale first state. */}
+            <GameinfoGameManager key={`${row.image}|${(row.tags || []).join(",")}`} row={row} existingNames={existingNames} tagSuggestions={tagSuggestions} publisherSuggestions={publisherSuggestions} dataMode={dataMode} sectionNumbers={MANAGE_NUMBERS} />
             <GameinfoManageSection
               id="s-web"
               number={MANAGE_NUMBERS.web}
@@ -267,6 +276,8 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
                 topupGameId={settings.topupGameId}
                 adminUrl={topupWebAdminUrl()}
                 dataMode={dataMode}
+                fillPreview={fillPreview}
+                missingPacks={missingPacks}
               />
             </GameinfoManageSection>
             <GameinfoManageSection

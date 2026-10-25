@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ExternalLink, Link2, Lock, Search, Unlink, X } from "lucide-react";
+import { Check, DownloadCloud, ExternalLink, Link2, Lock, Search, Unlink, X } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
-import { rankTopupWebGames } from "@/lib/gameinfo-topup-match";
+import { GAMEINFO_ADD_WEB_PACKS_EVENT, GAMEINFO_WEB_PACK_CATEGORY, rankTopupWebGames } from "@/lib/gameinfo-topup-match";
 import { GameinfoWebBadge } from "./gameinfo-priority-stars";
 
 const FIELD_TYPE_LABELS = {
@@ -18,7 +18,7 @@ const FIELD_TYPE_LABELS = {
 
 // Which website game this is, and the form its customers fill in there.
 // Read-only: the website owns both, so changes go through its own admin.
-export default function GameinfoTopupWebPanel({ gameId, gameName, region, connected, topupGame, topupGameId, adminUrl, dataMode = "uid" }) {
+export default function GameinfoTopupWebPanel({ gameId, gameName, region, connected, topupGame, topupGameId, adminUrl, dataMode = "uid", fillPreview = null, missingPacks = [] }) {
   return (
     <div className="flex flex-col gap-5">
       <TopupLink
@@ -30,6 +30,7 @@ export default function GameinfoTopupWebPanel({ gameId, gameName, region, connec
         topupGameId={topupGameId}
         adminUrl={adminUrl}
       />
+      {topupGame ? <FillFromWeb gameId={gameId} preview={fillPreview} missingPacks={missingPacks} dataMode={dataMode} /> : null}
       {topupGame ? <CustomerForms forms={topupGame.forms} dataMode={dataMode} adminUrl={adminUrl} /> : null}
     </div>
   );
@@ -172,6 +173,101 @@ function TopupLink({ gameId, gameName, region, connected, topupGame, topupGameId
         </div>
       ) : null}
       {error ? <p role="alert" className="text-xs text-linear-danger">{error}</p> : null}
+    </div>
+  );
+}
+
+// Only fields GameInfo has left empty are offered; nothing is overwritten.
+// Image and categories save straight away; packs go into the pack editor's
+// draft and wait for its save button.
+function FillFromWeb({ gameId, preview, missingPacks, dataMode }) {
+  const router = useRouter();
+  const options = [
+    preview?.image ? { id: "image", label: "รูปเกม", detail: "ใช้รูปเดียวกับหน้าเว็บ" } : null,
+    preview?.tags?.length ? { id: "tags", label: "หมวดหมู่", detail: preview.tags.join(", ") } : null,
+    missingPacks.length ? { id: "packs", label: `แพ็คที่ยังไม่มี ${missingPacks.length} แพ็ค (${dataMode === "idpass" ? "ID-PASS" : "UID"})`, detail: missingPacks.slice(0, 6).map((pack) => pack.name).join(", ") + (missingPacks.length > 6 ? " …" : "") } : null,
+  ].filter(Boolean);
+  const [chosen, setChosen] = useState(() => new Set(options.map((option) => option.id)));
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [packsSent, setPacksSent] = useState(false);
+  const [error, setError] = useState("");
+
+  if (!options.length) {
+    return (
+      <p className="flex items-center gap-2 rounded-xl bg-emerald-500/10 px-4 py-3 text-[13px] font-bold text-emerald-800 dark:text-emerald-300">
+        <Check size={15} aria-hidden="true" /> ข้อมูลที่เว็บมี (รูป หมวดหมู่ แพ็ค) อยู่ใน GameInfo ครบแล้ว
+      </p>
+    );
+  }
+
+  async function fill() {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const notes = [];
+      if (chosen.has("image") || chosen.has("tags")) {
+        const data = await apiJson(`/api/gameinfo/gamelist/${gameId}/topup-fill`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: chosen.has("image"), tags: chosen.has("tags") }),
+          fallbackError: "เติมข้อมูลจากเว็บไม่สำเร็จ",
+        });
+        if (data.filled.includes("image")) notes.push("รูปเกม");
+        if (data.filled.includes("tags")) notes.push("หมวดหมู่");
+      }
+      if (chosen.has("packs") && !packsSent) {
+        window.dispatchEvent(new CustomEvent(GAMEINFO_ADD_WEB_PACKS_EVENT, { detail: { packs: missingPacks, dataMode } }));
+        setPacksSent(true);
+        notes.push(`${missingPacks.length} แพ็คในหมวด “${GAMEINFO_WEB_PACK_CATEGORY}” (ยังไม่บันทึก — กดบันทึกที่แถบด้านล่าง)`);
+      }
+      setMessage(notes.length ? `เติมแล้ว: ${notes.join(" · ")}` : "ไม่มีอะไรต้องเติม");
+      if (chosen.has("image") || chosen.has("tags")) router.refresh();
+    } catch (fillError) {
+      setError(fillError instanceof Error ? fillError.message : "เติมข้อมูลจากเว็บไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded-[14px] border border-sky-500/30 bg-sky-500/[0.06] p-4">
+      <div>
+        <h3 className="flex items-center gap-2 text-base font-black text-linear-ink"><DownloadCloud size={17} aria-hidden="true" /> เติมจากเว็บ</h3>
+        <p className="text-[13px] text-linear-ink-tertiary">เฉพาะช่องที่ GameInfo ยังว่าง ไม่เขียนทับข้อมูลที่แอดมินกรอกไว้</p>
+      </div>
+      <ul className="flex flex-col gap-1.5">
+        {options.map((option) => (
+          <li key={option.id}>
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg bg-linear-surface-1 px-3 py-2.5">
+              <input
+                type="checkbox"
+                checked={chosen.has(option.id)}
+                disabled={option.id === "packs" && packsSent}
+                onChange={(event) => setChosen((current) => {
+                  const next = new Set(current);
+                  if (event.target.checked) next.add(option.id);
+                  else next.delete(option.id);
+                  return next;
+                })}
+                className="mt-0.5 h-5 w-5 shrink-0 accent-[#D90005]"
+              />
+              <span className="min-w-0">
+                <span className="block text-sm font-extrabold text-linear-ink">{option.label}</span>
+                <span className="block truncate text-xs text-linear-ink-tertiary">{option.detail}</span>
+              </span>
+            </label>
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap items-center gap-3">
+        <button type="button" disabled={busy || !chosen.size} onClick={fill} className="flex h-10 items-center gap-1.5 rounded-[10px] bg-[#D90005] px-4 text-[13px] font-extrabold text-white hover:bg-[#B80004] disabled:opacity-40">
+          <DownloadCloud size={15} aria-hidden="true" /> {busy ? "กำลังเติม…" : "เติมที่เลือก"}
+        </button>
+        {message ? <span role="status" className="text-[13px] font-bold text-emerald-700 dark:text-emerald-400">{message}</span> : null}
+        {error ? <span role="alert" className="text-xs text-linear-danger">{error}</span> : null}
+      </div>
     </div>
   );
 }

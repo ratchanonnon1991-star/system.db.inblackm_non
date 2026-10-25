@@ -9,7 +9,6 @@ export async function PUT(request, { params }) {
     const { id } = await params;
     const body = await request.json();
     const patch = {};
-    if (Object.hasOwn(body, "priority")) patch.priority = body.priority;
     if (Object.hasOwn(body, "topupGameId")) patch.topupGameId = body.topupGameId;
     return jsonOk({ settings: await saveGamelistGameSettings(Number(id), patch, auditActor(user)) });
   } catch (error) {

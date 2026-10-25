@@ -133,6 +133,26 @@ export async function getTopupWebGame(topupGameId) {
   };
 }
 
+/** What a GameInfo game can take from its website game: the image and the categories. */
+export async function getTopupWebGameAssets(topupGameId) {
+  const pool = await getTopupWebPool();
+  if (!pool || !topupGameId) return null;
+  const result = await pool.query(
+    `SELECT jsonb_build_object('id', g.id, 'name', g.name, 'thumbnail', g.thumbnail, 'tags', to_jsonb(g)->'tags') AS row
+     FROM games g WHERE g.id = $1`,
+    [String(topupGameId)]
+  );
+  const row = result.rows[0]?.row;
+  if (!row) return null;
+  return {
+    id: String(row.id),
+    name: String(row.name || ""),
+    // Only an image the browser can show as-is; anything else is left out.
+    thumbnail: /^(data:image\/|https?:\/\/)/.test(String(row.thumbnail || "")) ? String(row.thumbnail) : "",
+    tags: Array.isArray(row.tags) ? row.tags.map((tag) => String(tag ?? "").trim()).filter(Boolean) : [],
+  };
+}
+
 export async function isTopupWebConnected() {
   return Boolean(await findConnectionWithSecretByName(TOPUP_WEB_CONNECTION_NAME));
 }

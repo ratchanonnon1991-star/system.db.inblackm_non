@@ -41,10 +41,11 @@ export default function GameinfoPriorityStars({ gameId, value = 0, editable = fa
     setSaving(true);
     setError("");
     try {
-      await apiJson(`/api/gameinfo/gamelist/${gameId}/settings`, {
+      // game_list.rank_stars, through the ordinary game update (audited).
+      await apiJson(`/api/gameinfo/gamelist/${gameId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ priority: next }),
+        body: JSON.stringify({ rankStars: next }),
         fallbackError: "บันทึกความสำคัญไม่สำเร็จ",
       });
       onSaved?.(next);

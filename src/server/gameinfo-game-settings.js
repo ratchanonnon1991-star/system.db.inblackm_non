@@ -1,5 +1,5 @@
-// Per-game settings GameInfo owns itself: how important the game is (0–3
-// stars), which game on the TopUp website it is, and its test accounts.
+// Per-game settings GameInfo owns itself: which game on the TopUp website it
+// is, and its test accounts. (Importance is game_list.rank_stars.)
 // Everything the website owns (Web ON, customer fields, web prices) is read
 // from the website's own database instead — see gameinfo-topup-web.js.
 import { getPoolForConnection } from "@/lib/db";
@@ -31,7 +31,6 @@ function ensureSchema(connection) {
       await client.query(`
         CREATE TABLE IF NOT EXISTS gamelist_game_settings (
           game_id       INTEGER PRIMARY KEY,
-          priority      SMALLINT NOT NULL DEFAULT 0 CHECK (priority BETWEEN 0 AND 3),
           topup_game_id TEXT,
           updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
@@ -74,62 +73,48 @@ function cleanText(value, maxLength) {
   return String(value ?? "").trim().slice(0, maxLength);
 }
 
-export function normalizeGameinfoPriority(value) {
-  const number = Number(value);
-  return Number.isInteger(number) && number >= 0 && number <= 3 ? number : 0;
-}
-
 function settingsFromRow(row) {
-  return {
-    priority: normalizeGameinfoPriority(row?.priority),
-    topupGameId: row?.topup_game_id || null,
-  };
+  return { topupGameId: row?.topup_game_id || null };
 }
 
 export async function getGamelistGameSettings(gameId) {
   const pool = await getReadyPool();
-  const result = await pool.query(`SELECT priority, topup_game_id FROM gamelist_game_settings WHERE game_id = $1`, [gameId]);
+  const result = await pool.query(`SELECT topup_game_id FROM gamelist_game_settings WHERE game_id = $1`, [gameId]);
   return settingsFromRow(result.rows[0]);
 }
 
 export async function listGamelistGameSettings() {
   const pool = await getReadyPool();
-  const result = await pool.query(`SELECT game_id, priority, topup_game_id FROM gamelist_game_settings`);
+  const result = await pool.query(`SELECT game_id, topup_game_id FROM gamelist_game_settings`);
   return Object.fromEntries(result.rows.map((row) => [row.game_id, settingsFromRow(row)]));
 }
 
-// Only the keys that are present change, so the stars and the web link can
-// be saved from different controls without overwriting each other.
-export async function saveGamelistGameSettings(gameId, patch, actor = null) {
+// Only the keys that are present change.
+export async function saveGamelistGameSettings(gameId, patch, actor = null, transactionClient = null) {
   const pool = await getReadyPool();
-  const client = await pool.connect();
+  const client = transactionClient || await pool.connect();
   try {
-    await client.query("BEGIN");
+    if (!transactionClient) await client.query("BEGIN");
     const game = await client.query(`SELECT id FROM game_list WHERE id = $1 FOR UPDATE`, [gameId]);
     if (game.rows.length !== 1) throw createHttpError("ไม่พบเกม", 404);
-    const existing = await client.query(`SELECT priority, topup_game_id FROM gamelist_game_settings WHERE game_id = $1`, [gameId]);
+    const existing = await client.query(`SELECT topup_game_id FROM gamelist_game_settings WHERE game_id = $1`, [gameId]);
     const before = settingsFromRow(existing.rows[0]);
     const next = { ...before };
-    if (Object.hasOwn(patch, "priority")) {
-      const priority = Number(patch.priority);
-      if (!Number.isInteger(priority) || priority < 0 || priority > 3) throw createHttpError("ความสำคัญต้องเป็น 0–3 ดาว", 400);
-      next.priority = priority;
-    }
     if (Object.hasOwn(patch, "topupGameId")) next.topupGameId = cleanText(patch.topupGameId, 64) || null;
     await client.query(
-      `INSERT INTO gamelist_game_settings (game_id, priority, topup_game_id, updated_at)
-       VALUES ($1, $2, $3, NOW())
-       ON CONFLICT (game_id) DO UPDATE SET priority = EXCLUDED.priority, topup_game_id = EXCLUDED.topup_game_id, updated_at = NOW()`,
-      [gameId, next.priority, next.topupGameId]
+      `INSERT INTO gamelist_game_settings (game_id, topup_game_id, updated_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (game_id) DO UPDATE SET topup_game_id = EXCLUDED.topup_game_id, updated_at = NOW()`,
+      [gameId, next.topupGameId]
     );
     await recordGameinfoAudit({ gameId, area: "settings", actor, before, after: next, client });
-    await client.query("COMMIT");
+    if (!transactionClient) await client.query("COMMIT");
     return next;
   } catch (error) {
-    await client.query("ROLLBACK");
+    if (!transactionClient) await client.query("ROLLBACK");
     throw error;
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
 }
 

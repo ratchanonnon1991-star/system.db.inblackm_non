@@ -95,6 +95,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { GAMEINFO_ADD_WEB_PACKS_EVENT, GAMEINFO_WEB_PACK_CATEGORY } from "@/lib/gameinfo-topup-match";
 import { Input } from "@/components/ui/input";
 
 const REQUIRED_PACK_FIELDS = ["name", "price", "amountChargedFee", "channelsMain"];
@@ -400,6 +401,30 @@ export default function GameinfoPackEditor({
       return draft;
     });
   }
+
+  // Packs offered by "เติมจากเว็บ" join this draft under their own category,
+  // unsaved, so the admin sees and saves them like any other edit.
+  useEffect(() => {
+    function addWebPacks(event) {
+      const packs = Array.isArray(event.detail?.packs) ? event.detail.packs : [];
+      if (!packs.length || (event.detail?.dataMode || "uid") !== dataMode) return;
+      setCurrencies((prev) => {
+        const draft = structuredClone(prev);
+        if (!draft.length) draft.push({ id: genId("c"), name: "", image: "", categories: [] });
+        let category = draft[0].categories.find((item) => item.name === GAMEINFO_WEB_PACK_CATEGORY);
+        if (!category) {
+          category = { id: genId("cat"), name: GAMEINFO_WEB_PACK_CATEGORY, packs: [] };
+          draft[0].categories.push(category);
+        }
+        for (const item of packs) {
+          category.packs.push({ ...createBlankGameinfoPack(genId("pk")), name: String(item.name || ""), price: String(item.price ?? ""), serviceEnabled: item.active !== false });
+        }
+        return draft;
+      });
+    }
+    window.addEventListener(GAMEINFO_ADD_WEB_PACKS_EVENT, addWebPacks);
+    return () => window.removeEventListener(GAMEINFO_ADD_WEB_PACKS_EVENT, addWebPacks);
+  }, [dataMode]);
 
   function addCurrency() {
     updateCurrencies((draft) => {
