@@ -12,7 +12,8 @@ import { GAMEINFO_WEB_PACK_CATEGORY, gameinfoPackMatchKey } from "@/lib/gameinfo
 import { getGamelistGameSettings, listGamelistGameSettings, saveGamelistGameSettings } from "@/server/gameinfo-game-settings";
 import { getTopupWebGame, getTopupWebGameAssets, listTopupWebGames } from "@/server/gameinfo-topup-web";
 
-const MAX_BATCH = 100;
+// Enough for every game at once ("เลือกทุกคู่ที่ระบบแนะนำ" can pick them all).
+const MAX_BATCH = 500;
 // GameInfo keeps at most 10 categories per game.
 const MAX_TAGS = 10;
 
