@@ -50,8 +50,13 @@ async function withSheetAccess(read) {
     return await read();
   } catch (error) {
     if (error?.status === 403 || error?.status === 404) {
+      // Google says which: not shared, API not enabled for the key's project, or no such sheet.
+      const reason = String(error.message || "").replace(/^Google API HTTP \d+: /, "");
+      if (/has not been used|is disabled|SERVICE_DISABLED/i.test(reason)) {
+        throw createHttpError(`อ่านชีตไม่ได้ — ยังไม่ได้เปิด Google Sheets API ในโปรเจกต์ของ service account (${reason})`, 503);
+      }
       const email = await gameinfoSheetServiceAccount();
-      throw createHttpError(`อ่านชีตไม่ได้ — แชร์ชีตให้ ${email || "service account"} แบบผู้มีสิทธิ์อ่านก่อน`, 403);
+      throw createHttpError(`อ่านชีตไม่ได้ — แชร์ชีตให้ ${email || "service account"} แบบผู้มีสิทธิ์อ่านก่อน (Google: ${reason})`, 403);
     }
     throw error;
   }
