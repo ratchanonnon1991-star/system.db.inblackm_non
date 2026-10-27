@@ -66,7 +66,10 @@ check(gameinfoMissingItems(complete).length === 0, "a complete game lacks nothin
 check(gameinfoMissingItems({ ...complete, salesChannelCount: 0, row: { ...complete.row, publishers: [] } }).map((item) => item.id).join() === "publishers,sales", "missing publisher and sales channels are listed");
 
 const importer = readFileSync(new URL("../src/server/gameinfo-sheet-import.js", import.meta.url), "utf8");
-check(importer.includes("createGoogleReader({ readOnly: true, exportAccess: true })"), "the sheet is read with read-only scopes (Drive read only for the export)");
+check(importer.includes("createGoogleReader({ readOnly: true, exportAccess })") && importer.includes("const openReader = () => openGameinfoSheetReader();"), "the sheet is read with read-only scopes; web requests never get the export's Drive access");
+const noticesImporter = readFileSync(new URL("../src/server/gameinfo-sheet-notices-import.js", import.meta.url), "utf8");
+const routes = ["../src/app/api/gameinfo/sheet-import/route.js"].map((path) => readFileSync(new URL(path, import.meta.url), "utf8"));
+check(noticesImporter.includes("openGameinfoSheetReader({ exportAccess: true })") && routes.every((route) => !route.includes("notices")), "the workbook export runs only from the script, never in a web request");
 check(importer.includes("const fills = proposalFor(sheetGame, {") && importer.includes("hasPublisher: publishers.length > 0"), "apply re-checks emptiness right before writing");
 check(importer.includes("hasPacks: gameinfoHasRealPacks(packs.currencies)") && importer.includes("expectedVersion: packs.version") && importer.includes("gameinfoSheetCostFormulaColumns(packs.computedColumns, costProfiles) || packs.computedColumns"), "sheet packs only go into a game with no real packs, keep its formula columns and refuse a concurrent edit");
 

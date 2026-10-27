@@ -55,15 +55,17 @@ function resolvePath(base, target) {
  * The workbook's sheets: [{ title, cells: [{ row, col, text }], images:
  * [{ row, col, media }] }] — rows 1-based, col a letter for cells and a
  * 0-based index for images (as the drawing stores it). `media(path)` returns
- * a picture's bytes.
+ * a picture's bytes. `titles` (a Set) reads only those sheets.
  */
-export function readXlsxSheetsWithImages(buffer) {
+export function readXlsxSheetsWithImages(buffer, { titles = null } = {}) {
   const zip = unzip(buffer);
   const strings = [...String(zip.text("xl/sharedStrings.xml") || "").matchAll(/<si>([\s\S]*?)<\/si>/g)]
     .map((m) => decodeXml([...m[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((t) => t[1]).join("")));
   const workbookRels = relationships(zip.text("xl/_rels/workbook.xml.rels"));
   const sheets = [];
   for (const match of String(zip.text("xl/workbook.xml") || "").matchAll(/<sheet\b[^>]*?name="([^"]+)"[^>]*?r:id="([^"]+)"/g)) {
+    // `titles` limits the work to the sheets wanted; the rest are never inflated.
+    if (titles && !titles.has(decodeXml(match[1]))) continue;
     const path = resolvePath("xl/workbook.xml", workbookRels[match[2]] || "");
     const xml = zip.text(path);
     if (!xml) continue;
