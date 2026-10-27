@@ -28,6 +28,8 @@ import { getGamelistGameSettings, listGamelistTestAccounts, maskGamelistTestAcco
 import { getTopupWebGame, isTopupWebConnected, topupWebAdminUrl } from "@/server/gameinfo-topup-web";
 import { GameinfoManageNav, GameinfoManageSection } from "@/components/gameinfo-manage-section";
 import GameinfoWebMargin from "@/components/gameinfo-web-margin";
+import GameinfoSalesChannelEditor, { GameinfoSalesChannelCards } from "@/components/gameinfo-sales-channels";
+import { listGamelistSalesChannels } from "@/server/gameinfo-sales-channels";
 import GameinfoMissingChecklist from "@/components/gameinfo-missing-checklist";
 import { gameinfoMissingItems } from "@/lib/gameinfo-completeness";
 import { missingTopupWebPacks, topupWebPackImageFills } from "@/lib/gameinfo-topup-match";
@@ -95,6 +97,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   let topupGame = null;
   let topupConnected = false;
   let testAccounts = [];
+  let salesChannels = [];
   try {
     row = await getGameListRow(numericId);
     if (row) {
@@ -168,10 +171,11 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
       formulaVariables = variableData.variables;
       // Website data and test accounts are extras: if they fail to load the
       // game page still opens, just without them.
-      [settings, testAccounts, topupConnected] = await Promise.all([
+      [settings, testAccounts, topupConnected, salesChannels] = await Promise.all([
         getGamelistGameSettings(row.id).catch(() => settings),
         listGamelistTestAccounts(row.id).catch(() => []),
         isTopupWebConnected().catch(() => false),
+        listGamelistSalesChannels(row.id).catch(() => []),
       ]);
       topupGame = topupConnected ? await getTopupWebGame(settings.topupGameId).catch(() => null) : null;
       row = {
@@ -226,7 +230,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
     const fillPreview = topupGame ? await previewTopupWebFill(row.id).catch(() => null) : null;
     const missingPacks = topupGame ? missingTopupWebPacks(topupGame.packages, flatPacks.map((pack) => pack.name), dataMode) : [];
     const packImageFills = topupGame ? topupWebPackImageFills(topupGame.packages, flatPacks) : [];
-    const missingItems = gameinfoMissingItems({ row, packs: flatPacks, testAccountCount: testAccounts.length, linked: Boolean(topupGame) });
+    const missingItems = gameinfoMissingItems({ row, packs: flatPacks, testAccountCount: testAccounts.length, linked: Boolean(topupGame), salesChannelCount: salesChannels.length });
     return (
       <>
         {/* Sticks under the red header (h-16) so the game being edited and
@@ -315,6 +319,14 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
                 <p className="text-sm text-linear-ink-tertiary">เชื่อมเกมกับเว็บ TopUp ในหัวข้อ {MANAGE_NUMBERS.web} ก่อน</p>
               )}
             </GameinfoManageSection>
+            <GameinfoManageSection
+              id="s-sales"
+              number={MANAGE_NUMBERS.sales}
+              title="ช่องทางขาย / Margin"
+              description="สถานะขาย ผลเทียบราคาตลาด และ Margin ของแต่ละช่องทาง — มุมมอง Topup ไม่เห็น Margin"
+            >
+              <GameinfoSalesChannelEditor gameId={row.id} initialChannels={salesChannels} />
+            </GameinfoManageSection>
             {/* Reports on the manage page are always resolvable: whoever
                 reaches it is an editor. */}
             <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage canReport id="s-report" number={MANAGE_NUMBERS.report} />
@@ -346,6 +358,9 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         editHref={editableRole ? manageHref : null}
       />
       <div className="mt-5">
+        <GameinfoSalesChannelCards channels={salesChannels} showMargin={!topupView} />
+      </div>
+      <div className="mt-5">
         <GameinfoTestAccountsCard
           gameId={row.id}
           accounts={editableRole ? testAccounts : testAccounts.map(maskGamelistTestAccount)}
@@ -366,6 +381,7 @@ const MANAGE_SECTIONS = [
   { id: "s-cost", label: "ต้นทุนและเรต" },
   { id: "s-pack", label: "แพ็คและราคา" },
   { id: "s-margin", label: "ราคาเว็บและ Margin" },
+  { id: "s-sales", label: "ช่องทางขาย" },
   { id: "s-report", label: "รายงานปัญหา" },
 ];
-const MANAGE_NUMBERS = { info: 1, method: 2, web: 3, test: 4, cost: 5, pack: 6, margin: 7, report: 8 };
+const MANAGE_NUMBERS = { info: 1, method: 2, web: 3, test: 4, cost: 5, pack: 6, margin: 7, sales: 8, report: 9 };

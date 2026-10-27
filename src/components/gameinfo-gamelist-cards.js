@@ -29,6 +29,7 @@ import {
   Flame,
   Globe,
   Link2,
+  FileSpreadsheet,
   X,
 } from "lucide-react";
 import GameinfoDatasetToggle from "./gameinfo-dataset-toggle";
@@ -455,6 +456,9 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             <>
               <Link href={`/gameinfo/${lang}/topup-web`} className={navItemClass(false)}>
                 <Link2 size={18} aria-hidden="true" className="text-[#D90005]" /> เชื่อมเกมกับเว็บ TopUp
+              </Link>
+              <Link href={`/gameinfo/${lang}/sheet-import`} className={navItemClass(false)}>
+                <FileSpreadsheet size={18} aria-hidden="true" className="text-[#D90005]" /> นำเข้าจาก Google Sheet
               </Link>
               <span aria-hidden="true" className="mx-1 mb-1 mt-2.5 h-px bg-linear-hairline" />
               <Link href={gameinfoListHref(lang, dataMode, true)} className={`${navItemClass(false)} text-linear-ink-muted`}>
