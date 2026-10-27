@@ -111,22 +111,51 @@ async function readPackTabs(reader, sheetGames) {
   });
 }
 
-// The export is tens of MB, so one download serves a preview and the applies after it.
-const WORKBOOK_TTL_MS = 10 * 60 * 1000;
+// The export is tens of MB and takes Google longer than a request may run
+// behind Cloudflare, so it loads in the background: a request either finds it
+// ready or starts it and says so. One download serves a preview and the
+// applies after it.
+const WORKBOOK_TTL_MS = 30 * 60 * 1000;
 let workbookCache = null;
+let workbookLoad = null;
 
-async function sourceWorkbook(reader) {
-  const sheetId = gameinfoSourceSheetId();
-  if (workbookCache && workbookCache.sheetId === sheetId && Date.now() - workbookCache.at < WORKBOOK_TTL_MS) return workbookCache.workbook;
-  const workbook = readXlsxSheetsWithImages(await withSheetAccess(() => reader.exportXlsx(sheetId)));
-  workbookCache = { sheetId, at: Date.now(), workbook };
-  return workbook;
+function startWorkbookLoad(reader, sheetId) {
+  if (workbookLoad?.sheetId === sheetId && !workbookLoad.error) return workbookLoad;
+  const load = { sheetId, error: null, startedAt: Date.now() };
+  load.promise = withSheetAccess(() => reader.exportXlsx(sheetId))
+    .then((buffer) => {
+      workbookCache = { sheetId, at: Date.now(), workbook: readXlsxSheetsWithImages(buffer) };
+      workbookLoad = null;
+    })
+    .catch((error) => {
+      load.error = error instanceof Error ? error.message : "โหลดไฟล์ชีตไม่สำเร็จ";
+    });
+  workbookLoad = load;
+  return load;
 }
 
-/** Each given sheet game's NOTICE sections: Map key → { tab, categories, media }. */
-async function readNoticeTabs(reader, sheetGames) {
+/** The exported workbook, or null while it is still loading (`wait` waits instead, for tests and scripts). */
+async function sourceWorkbook(reader, { wait = false } = {}) {
+  const sheetId = gameinfoSourceSheetId();
+  if (workbookCache && workbookCache.sheetId === sheetId && Date.now() - workbookCache.at < WORKBOOK_TTL_MS) return workbookCache.workbook;
+  const load = startWorkbookLoad(reader, sheetId);
+  if (wait) await load.promise;
+  if (load.error) {
+    workbookLoad = null; // the next request tries again
+    throw createHttpError(`โหลดรูปจากชีตไม่สำเร็จ: ${load.error}`, 502);
+  }
+  return wait ? workbookCache?.workbook ?? null : null;
+}
+
+/**
+ * Each given sheet game's NOTICE sections: Map key → { tab, categories, media },
+ * or null while the workbook is still loading.
+ */
+async function readNoticeTabs(reader, sheetGames, options = {}) {
   if (!sheetGames.length) return new Map();
-  const [wanted, workbook] = await Promise.all([withSheetAccess(() => gameTabs(reader, sheetGames)), sourceWorkbook(reader)]);
+  const workbook = await sourceWorkbook(reader, options);
+  if (!workbook) return null;
+  const wanted = await withSheetAccess(() => gameTabs(reader, sheetGames));
   const byTitle = new Map(workbook.sheets.map((sheet) => [sheet.title, sheet]));
   const out = new Map();
   for (const [key, tab] of wanted) {
@@ -202,7 +231,7 @@ function proposalFor(sheetGame, { hasPublisher, hasCategory, hasWarning, remark,
 
 /** Every GameInfo game the sheet can still add something to, plus what did not match. */
 // `source` (already-parsed sheet games) and `reader` are for tests; normally the sheet is read.
-export async function previewGameinfoSheetImport({ source: givenSource = null, reader: givenReader = null } = {}) {
+export async function previewGameinfoSheetImport({ source: givenSource = null, reader: givenReader = null, waitForPictures = false } = {}) {
   const reader = givenReader || (givenSource ? null : openReader());
   const [source, rows, publishersByGame, tagsByGame, warningPresence, channelKeysByGame, packCountByGame, tutorialPresence] = await Promise.all([
     givenSource || readSource(reader),
@@ -225,9 +254,12 @@ export async function previewGameinfoSheetImport({ source: givenSource = null, r
   // The notes need the whole workbook; if that export fails the rest of the preview still stands.
   let noticeTabs = new Map();
   let noticesError = null;
+  let noticesPending = false;
   if (reader?.exportXlsx) {
     try {
-      noticeTabs = await readNoticeTabs(reader, matched.filter(({ row }) => !tutorialPresence[row.id]).map(({ sheetGame }) => sheetGame));
+      const found = await readNoticeTabs(reader, matched.filter(({ row }) => !tutorialPresence[row.id]).map(({ sheetGame }) => sheetGame), { wait: waitForPictures });
+      if (found) noticeTabs = found;
+      else noticesPending = true;
     } catch (error) {
       noticesError = error instanceof Error ? error.message : "อ่านรูปจากชีตไม่สำเร็จ";
     }
@@ -257,6 +289,7 @@ export async function previewGameinfoSheetImport({ source: givenSource = null, r
     items,
     complete,
     noticesError,
+    noticesPending,
     unmatchedSheetGames: source.filter((game) => !matchedKeys.has(game.key)).map((game) => game.name),
   };
 }
@@ -265,7 +298,7 @@ export async function previewGameinfoSheetImport({ source: givenSource = null, r
  * Applies the chosen parts to the chosen games. Everything is re-read and
  * re-checked here, so a field someone filled since the preview stays theirs.
  */
-export async function applyGameinfoSheetImport(gameIds, parts, actor = null, { source = null, reader: givenReader = null } = {}) {
+export async function applyGameinfoSheetImport(gameIds, parts, actor = null, { source = null, reader: givenReader = null, waitForPictures = false } = {}) {
   if (!Array.isArray(gameIds) || !gameIds.length) throw createHttpError("ยังไม่ได้เลือกเกม", 400);
   if (gameIds.length > 500) throw createHttpError("นำเข้าได้ครั้งละไม่เกิน 500 เกม", 400);
   const wanted = new Set((parts || []).filter((part) => GAMEINFO_SHEET_IMPORT_PARTS.includes(part)));
@@ -279,7 +312,10 @@ export async function applyGameinfoSheetImport(gameIds, parts, actor = null, { s
     const chosen = (await listGameListRows()).filter((row) => ids.has(row.id));
     const chosenGames = chosen.map((row) => sheetByKey.get(gameinfoSheetGameKey(row.game))).filter(Boolean);
     if (wanted.has("packs")) packTabs = await readPackTabs(reader, chosenGames);
-    if (wanted.has("notices") && reader.exportXlsx) noticeTabs = await readNoticeTabs(reader, chosenGames);
+    if (wanted.has("notices") && reader.exportXlsx) {
+      noticeTabs = await readNoticeTabs(reader, chosenGames, { wait: waitForPictures });
+      if (!noticeTabs) throw createHttpError("กำลังโหลดรูปจากชีต (ไฟล์ใหญ่) — ลองใหม่ในอีก 1–2 นาที", 503);
+    }
   }
   const results = [];
   for (const rawId of gameIds) {
