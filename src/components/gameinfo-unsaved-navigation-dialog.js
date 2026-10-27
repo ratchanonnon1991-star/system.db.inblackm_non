@@ -6,6 +6,7 @@ import GameinfoConfirmDialog from "./gameinfo-confirm-dialog";
 import {
   GAMEINFO_NAVIGATION_REQUEST,
   allowGameinfoNavigation,
+  performGameinfoBack,
 } from "@/lib/gameinfo-unsaved-changes";
 
 export default function GameinfoUnsavedNavigationDialog() {
@@ -29,7 +30,11 @@ export default function GameinfoUnsavedNavigationDialog() {
       window.location.reload();
       return;
     }
-    const href = target.kind === "back" ? target.fallbackHref : target.href;
+    if (target.kind === "back") {
+      performGameinfoBack(target.fallbackHref);
+      return;
+    }
+    const href = target.href;
     const url = new URL(href, window.location.origin);
     allowGameinfoNavigation();
     if (url.origin === window.location.origin) router.push(`${url.pathname}${url.search}${url.hash}`);

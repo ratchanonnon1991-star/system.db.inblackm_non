@@ -56,11 +56,31 @@ export function hasGameinfoUnsavedChanges() {
   return dirtySources.size > 0;
 }
 
+// Same page as `href` (path and data mode; the view lives in a cookie).
+function isSameGameinfoPage(url, href) {
+  try {
+    const a = new URL(url, window.location.origin);
+    const b = new URL(href, window.location.origin);
+    return a.origin === b.origin && a.pathname === b.pathname && (a.searchParams.get("mode") || "uid") === (b.searchParams.get("mode") || "uid");
+  } catch {
+    return false;
+  }
+}
+
 // The back buttons go to a fixed place — a game page's goes to the game
 // list — rather than retracing every view switch, mode toggle and edit
-// visited on the way, which used to take many presses to get out.
+// visited on the way. When the page just before this one in the tab's
+// history is that place, it is a real step back, so the browser's own back
+// button does not then return to the game, and the list keeps its filters
+// and scroll; otherwise the place is opened.
 export function performGameinfoBack(href) {
   allowGameinfoNavigation();
+  const nav = window.navigation;
+  const previous = nav?.currentEntry ? nav.entries()[nav.currentEntry.index - 1] : null;
+  if (previous && isSameGameinfoPage(previous.url, href)) {
+    window.history.back();
+    return;
+  }
   window.location.assign(href);
 }
 
