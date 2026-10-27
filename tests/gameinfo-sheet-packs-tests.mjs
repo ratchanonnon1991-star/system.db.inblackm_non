@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { generateKeyPairSync } from "node:crypto";
+import { createGoogleReader } from "../src/server/google-sheets.js";
 import {
   countGameinfoSheetPacks,
   findGameinfoSheetPackHeader,
@@ -166,5 +168,33 @@ const games = parseGameinfoSourceSheet({
 check(games.find((game) => game.key === "honkai impact").tabGid === 627518256, "a #gid= link gives the tab");
 check(games.find((game) => game.key === "auto chess").tabGid === 215079588, "a ?gid= link gives the tab");
 check(games.find((game) => game.key === "no link").tabGid === null, "no link, no tab");
+
+// The reader: tabs with their gids, 20 tabs per batchGet, and a 429 waited out.
+const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+const urls = [];
+const waits = [];
+let throttled = 1;
+const reader = createGoogleReader({
+  keyFile: "/test/key.json",
+  readOnly: true,
+  readKeyFile: async () => JSON.stringify({ client_email: "fixture@example.invalid", private_key: privateKey.export({ type: "pkcs8", format: "pem" }) }),
+  wait: async (ms) => { waits.push(ms); },
+  fetchImpl: async (url) => {
+    if (url.includes("oauth2")) return { ok: true, status: 200, json: async () => ({ access_token: "t", expires_in: 3600 }) };
+    urls.push(url);
+    if (url.includes("batchGet") && throttled-- > 0) return { ok: false, status: 429, json: async () => ({ error: { message: "Quota exceeded" } }) };
+    if (url.includes("batchGet")) {
+      const ranges = new URL(url).searchParams.getAll("ranges");
+      return { ok: true, status: 200, json: async () => ({ valueRanges: ranges.map((range) => ({ range, values: [[range]] })) }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ sheets: [{ properties: { title: "GAMELIST", sheetId: 0 } }, { properties: { title: "U.HONKAI", sheetId: 627518256 } }] }) };
+  },
+});
+const tabs = await reader.tabs("sheet");
+check(tabs[1].title === "U.HONKAI" && tabs[1].gid === 627518256, "tabs come with their gids");
+const titles = Array.from({ length: 25 }, (_, i) => `U.GAME ${i}'s`);
+const byTab = await reader.batchRows("sheet", titles);
+check(Object.keys(byTab).length === 25 && byTab[titles[24]][0][0] === "'U.GAME 24''s'!A:ZZ", "every tab's rows come back under its title, quotes escaped");
+check(urls.filter((url) => url.includes("batchGet")).length === 3 && waits.join() === "20000", "25 tabs take two batchGets; a 429 is waited out and retried");
 
 console.log(`gameinfo-sheet-packs: ${passed} passed`);

@@ -20,7 +20,7 @@ export function signServiceAccountJwt(account, now = Date.now(), scopes = SCOPES
   return `${header}.${claims}.${signer.sign(account.private_key).toString("base64url")}`;
 }
 
-export function createGoogleReader({ keyFile = process.env.ITUNE_SHEETS_CREDENTIALS, fetchImpl = fetch, now = () => Date.now(), readOnly = false, readKeyFile = readFile } = {}) {
+export function createGoogleReader({ keyFile = process.env.ITUNE_SHEETS_CREDENTIALS, fetchImpl = fetch, now = () => Date.now(), readOnly = false, readKeyFile = readFile, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) } = {}) {
   let account; let token = null;
   async function accessToken() {
     if (token && token.expires > now() + 60_000) return token.value;
@@ -36,9 +36,14 @@ export function createGoogleReader({ keyFile = process.env.ITUNE_SHEETS_CREDENTI
     token = { value: body.access_token, expires: now() + Number(body.expires_in || 3600) * 1000 };
     return token.value;
   }
-  async function get(url, init = {}) {
+  async function get(url, init = {}, attempt = 0) {
     const response = await fetchImpl(url, { ...init, headers: { Authorization: `Bearer ${await accessToken()}`, ...init.headers }, signal: AbortSignal.timeout(20_000) });
     const body = await response.json().catch(() => ({}));
+    // The per-minute read quota is shared by everything using this key: wait it out, twice at most.
+    if (response.status === 429 && attempt < 2) {
+      await wait(attempt === 0 ? 20_000 : 40_000);
+      return get(url, init, attempt + 1);
+    }
     if (!response.ok) throw Object.assign(new Error(`Google API HTTP ${response.status}: ${body?.error?.message || "request failed"}`), { status: response.status });
     return body;
   }
