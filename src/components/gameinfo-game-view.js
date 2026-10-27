@@ -340,6 +340,9 @@ function GameHero({ row, dataMode, editHref }) {
         {editHref ? (
           <Link
             href={editHref}
+            // Same game, so it replaces this page in the history (see the
+            // manage page's ดูหน้าผู้ใช้): back from the editor is the list.
+            replace
             className="flex h-11 items-center gap-2 rounded-xl bg-[#D90005] px-[18px] text-sm font-extrabold text-white transition hover:bg-[#B80004]"
           >
             <Pencil size={17} strokeWidth={2.4} aria-hidden="true" /> แก้ไขข้อมูล

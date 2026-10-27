@@ -253,7 +253,9 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
             </div>
             <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
               <span className="rounded-md bg-[#18181B] px-2 py-0.5 text-[11px] font-black tracking-[0.08em] text-white dark:bg-white dark:text-[#18181B]">ADMIN</span>
-              <Link href={viewHref} className="flex h-10 items-center rounded-full border border-linear-hairline bg-linear-surface-1 px-4 text-[13px] font-bold text-linear-ink transition hover:bg-linear-surface-2">
+              {/* Viewing and editing one game are one stop in the tab's
+                  history (replace), so back from either goes to the list. */}
+              <Link href={viewHref} replace className="flex h-10 items-center rounded-full border border-linear-hairline bg-linear-surface-1 px-4 text-[13px] font-bold text-linear-ink transition hover:bg-linear-surface-2">
                 ดูหน้าผู้ใช้
               </Link>
               <GameinfoModeCloneButton gameId={row.id} currentMode={dataMode} />

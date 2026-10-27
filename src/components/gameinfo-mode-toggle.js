@@ -40,7 +40,8 @@ export default function GameinfoModeToggle({ lang, editableRole }) {
   const label = isManageMode ? (isGamePage ? "กลับหน้าเกม" : "กลับหน้ารวมเกม") : (isGamePage ? "แก้ไขเกมนี้" : "จัดการข้อมูล");
 
   return (
-    <Link href={href} className={SOLID_PILL} aria-label={label} title={label}>
+    // On a game, edit ↔ view is the same game: replace, so back is the list.
+    <Link href={href} replace={isGamePage} className={SOLID_PILL} aria-label={label} title={label}>
       {isManageMode ? <LayoutGrid size={16} strokeWidth={2.4} aria-hidden="true" /> : <Pencil size={16} strokeWidth={2.4} aria-hidden="true" />}
       <span className="hidden sm:inline">{label}</span>
     </Link>
