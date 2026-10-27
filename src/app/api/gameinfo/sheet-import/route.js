@@ -1,6 +1,6 @@
 import { handleApiError, jsonOk } from "@/lib/http";
 import { requireGameinfoEditor } from "@/server/auth";
-import { applyGameinfoSheetImport, gameinfoSheetServiceAccount, previewGameinfoSheetImport } from "@/server/gameinfo-sheet-import";
+import { applyGameinfoSheetCostFormulas, applyGameinfoSheetImport, gameinfoSheetServiceAccount, previewGameinfoSheetImport } from "@/server/gameinfo-sheet-import";
 import { auditActor } from "@/server/gameinfo-gamelist-packs";
 
 export async function GET(request) {
@@ -20,7 +20,9 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const user = await requireGameinfoEditor(request);
-    const { gameIds, parts } = await request.json();
+    const { gameIds, parts, action } = await request.json();
+    // A one-off catch-up for games imported before non-MMK cost formulas existed.
+    if (action === "cost-formulas") return jsonOk(await applyGameinfoSheetCostFormulas(auditActor(user)));
     return jsonOk(await applyGameinfoSheetImport(gameIds, parts, auditActor(user)));
   } catch (error) {
     return handleApiError(error, "นำเข้าข้อมูลจากชีตไม่สำเร็จ");

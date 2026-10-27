@@ -68,6 +68,6 @@ check(gameinfoMissingItems({ ...complete, salesChannelCount: 0, row: { ...comple
 const importer = readFileSync(new URL("../src/server/gameinfo-sheet-import.js", import.meta.url), "utf8");
 check(importer.includes("createGoogleReader({ readOnly: true })"), "the sheet is read with the read-only scope");
 check(importer.includes("const fills = proposalFor(sheetGame, {") && importer.includes("hasPublisher: publishers.length > 0"), "apply re-checks emptiness right before writing");
-check(importer.includes("hasPacks: gameinfoHasRealPacks(packs.currencies)") && importer.includes("expectedVersion: packs.version") && importer.includes("computedColumns: packs.computedColumns"), "sheet packs only go into a game with no real packs, keep its formula columns and refuse a concurrent edit");
+check(importer.includes("hasPacks: gameinfoHasRealPacks(packs.currencies)") && importer.includes("expectedVersion: packs.version") && importer.includes("gameinfoSheetCostFormulaColumns(packs.computedColumns, costProfiles) || packs.computedColumns"), "sheet packs only go into a game with no real packs, keep its formula columns and refuse a concurrent edit");
 
 console.log(`${passed} passed`);

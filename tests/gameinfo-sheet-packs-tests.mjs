@@ -4,12 +4,15 @@ import { createGoogleReader } from "../src/server/google-sheets.js";
 import {
   countGameinfoSheetPacks,
   findGameinfoSheetPackHeader,
+  GAMEINFO_SHEET_COST_FORMULA,
+  gameinfoSheetCostFormulaColumns,
   gameinfoSheetCostProfiles,
   gameinfoSheetPackTree,
   gameinfoSheetPackUnits,
   parseGameinfoSheetPackTab,
 } from "../src/lib/gameinfo-sheet-packs.js";
 import { gameinfoHasRealPacks } from "../src/lib/gameinfo-pack-model.js";
+import { evaluateGameinfoComputedColumn } from "../src/lib/gameinfo-computed-evaluator.js";
 import { parseGameinfoSourceSheet } from "../src/lib/gameinfo-sales-channels.js";
 
 let passed = 0;
@@ -172,6 +175,18 @@ check(razer[0].label.startsWith("Razer SGD") && razer[0].inputCurrency === "SGD"
 check(gameinfoHasRealPacks(currencies), "imported packs count as real packs");
 check(!gameinfoHasRealPacks([{ categories: [{ packs: [{ id: "p1", name: "", price: "" }] }] }]), "an empty placeholder pack is not a real pack");
 check(!gameinfoHasRealPacks([]), "no currencies, no packs");
+
+// Non-MMK games get a ต้นทุน formula of their own; MMK games keep the shared one.
+const columns = [{ key: "cost", label: "ต้นทุน", formula: "[ยอดที่กด + fee]/134.02", gameFormula: "" }, { key: "profit", label: "กำไร", formula: "[ราคา]-[ต้นทุน]", gameFormula: "" }];
+const usd = gameinfoSheetCostFormulaColumns(columns, [{ id: "sheet-usd", inputCurrency: "USD" }, { id: "sheet-mmk", inputCurrency: "MMK" }]);
+check(usd[0].gameFormula === GAMEINFO_SHEET_COST_FORMULA && usd[0].formula === columns[0].formula && usd[1] === columns[1], "a game with a USD profile computes ต้นทุน from its profiles; the shared formula and other columns stay");
+check(gameinfoSheetCostFormulaColumns(columns, [{ id: "sheet-mmk", inputCurrency: "MMK" }]) === null, "an MMK-only game keeps the shared formula");
+const usdPack = { id: "p1", name: "110 Cash", price: "70", amountChargedFee: "0.62", costProfileId: "sheet-usd" };
+const usdContext = { costProfiles: [{ id: "sheet-usd", label: "USD → THB (จากชีต)", inputCurrency: "USD", baseValue: "34.8495", rateFormula: "" }] };
+check(evaluateGameinfoComputedColumn(usd[0], usd, usdPack, {}, usdContext) === 21.61, "0.62 USD at 34.8495 costs 21.61 baht");
+check(evaluateGameinfoComputedColumn(usd[1], usd, usdPack, {}, usdContext) === 48.39, "and the profit follows: 70 − 21.61");
+check(gameinfoSheetCostFormulaColumns(columns, [{ id: "manual", inputCurrency: "USD" }]) === null, "profiles an admin made are not the import's business");
+check(gameinfoSheetCostFormulaColumns([{ ...columns[0], gameFormula: "[ยอดที่กด + fee]*35" }], [{ id: "sheet-usd", inputCurrency: "USD" }]) === null, "a formula the game already has is never replaced");
 
 // GAMELIST's LINK column gives each game's tab.
 const games = parseGameinfoSourceSheet({
