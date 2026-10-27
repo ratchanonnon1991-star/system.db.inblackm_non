@@ -70,7 +70,11 @@ export function readXlsxSheetsWithImages(buffer, { titles = null } = {}) {
     const xml = zip.text(path);
     if (!xml) continue;
     const cells = [];
-    for (const cell of xml.matchAll(/<c r="([A-Z]+)(\d+)"([^>]*)>([\s\S]*?)<\/c>/g)) {
+    // Google writes thousands of styled empty cells as <c …/>; matching them as
+    // such keeps this linear (a lazy scan to the next </c> from each one did
+    // not, and gave a later cell's text the empty cell's address).
+    for (const cell of xml.matchAll(/<c r="([A-Z]+)(\d+)"([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+      if (cell[4] == null) continue;
       const value = /<v>([\s\S]*?)<\/v>/.exec(cell[4])?.[1];
       let text = "";
       if (/t="s"/.test(cell[3]) && value != null) text = strings[Number(value)] || "";
