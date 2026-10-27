@@ -203,6 +203,7 @@ export default function GameinfoSheetImport({ lang, sheetUrl }) {
                         <dd className="text-linear-ink">
                           {item.fills.packs.count} แพ็ค{item.fills.packs.unit ? ` (${item.fills.packs.unit})` : ""}
                           <span className="ml-1.5 text-xs text-linear-ink-tertiary">จากแท็บ “{item.fills.packs.tab}”</span>
+                          {item.fills.packs.rates?.length ? <span className="block text-xs text-linear-ink-tertiary">อัตราต้นทุน: {item.fills.packs.rates.join(", ")} บาท</span> : null}
                         </dd>
                       </>
                     ) : null}

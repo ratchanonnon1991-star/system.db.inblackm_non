@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { generateKeyPairSync } from "node:crypto";
+import { createGoogleReader } from "../src/server/google-sheets.js";
 import {
   countGameinfoSheetPacks,
   findGameinfoSheetPackHeader,
-  gameinfoSheetPackCurrencies,
+  gameinfoSheetCostProfiles,
+  gameinfoSheetPackTree,
   gameinfoSheetPackUnits,
   parseGameinfoSheetPackTab,
 } from "../src/lib/gameinfo-sheet-packs.js";
@@ -146,10 +149,26 @@ const shopPack = shop.currencies[0].categories[0].packs[0];
 check(shop.currencies[0].categories[0].name === "แพ็คหลัก", "a label with no letters is not a category");
 check(shopPack.amountChargedFee === "2.99" && shopPack.channelsSecondary.join() === "GCASH", "USD ที่ออก is an amount; a bare สำรอง after ช่องทาง หลัก is the secondary channel");
 
-const currencies = gameinfoSheetPackCurrencies(poolParsed);
+const { currencies, costProfiles: poolProfiles } = gameinfoSheetPackTree(poolParsed);
 check(currencies.length === 2 && currencies[0].name === "Cash", "one GameInfo currency per unit");
 const tree = currencies[0].categories[0].packs[0];
 check(tree.id && tree.name === "25 Cash" && tree.serviceEnabled !== undefined, "packs are full GameInfo packs with ids");
+check(!("cost" in tree) && !("costCurrency" in tree), "the sheet's cost does not travel on the pack itself");
+check(poolProfiles.length === 0 && tree.costProfileId === "", "no ต้นทุน column, no cost profile");
+
+// ต้นทุน ÷ amount gives each cost currency its rate; GameInfo derives cost and profit from it.
+const hiProfiles = gameinfoSheetCostProfiles(parsed, "2026-10-27T00:00:00.000Z");
+check(hiProfiles.length === 1 && hiProfiles[0].id === "sheet-mmk" && hiProfiles[0].inputCurrency === "MMK", "one profile per cost currency");
+check(hiProfiles[0].baseValue === String(Number((37.2 / 4590).toPrecision(6))), "the rate is the sheet's cost over the amount, packs without a cost left out");
+const hiTree = gameinfoSheetPackTree(parsed);
+check(hiTree.currencies[0].categories.every((category) => category.packs.every((pack) => pack.costProfileId === "sheet-mmk")), "every pack with an amount points at its currency's profile");
+const razer = gameinfoSheetCostProfiles(parseGameinfoSheetPackTab([
+  ["ราคาขาย", "Gems ที่กด", "Razer SGD ที่กด", "ต้นทุน"],
+  ["30", "60", "1", "24"],
+  ["60", "120", "2", "50"],
+  ["90", "180", "3", "72"],
+]));
+check(razer[0].label.startsWith("Razer SGD") && razer[0].inputCurrency === "SGD" && razer[0].baseValue === "24", "Razer amounts get their own profile; the median rate ignores the odd row");
 check(gameinfoHasRealPacks(currencies), "imported packs count as real packs");
 check(!gameinfoHasRealPacks([{ categories: [{ packs: [{ id: "p1", name: "", price: "" }] }] }]), "an empty placeholder pack is not a real pack");
 check(!gameinfoHasRealPacks([]), "no currencies, no packs");
@@ -166,5 +185,33 @@ const games = parseGameinfoSourceSheet({
 check(games.find((game) => game.key === "honkai impact").tabGid === 627518256, "a #gid= link gives the tab");
 check(games.find((game) => game.key === "auto chess").tabGid === 215079588, "a ?gid= link gives the tab");
 check(games.find((game) => game.key === "no link").tabGid === null, "no link, no tab");
+
+// The reader: tabs with their gids, 20 tabs per batchGet, and a 429 waited out.
+const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+const urls = [];
+const waits = [];
+let throttled = 1;
+const reader = createGoogleReader({
+  keyFile: "/test/key.json",
+  readOnly: true,
+  readKeyFile: async () => JSON.stringify({ client_email: "fixture@example.invalid", private_key: privateKey.export({ type: "pkcs8", format: "pem" }) }),
+  wait: async (ms) => { waits.push(ms); },
+  fetchImpl: async (url) => {
+    if (url.includes("oauth2")) return { ok: true, status: 200, json: async () => ({ access_token: "t", expires_in: 3600 }) };
+    urls.push(url);
+    if (url.includes("batchGet") && throttled-- > 0) return { ok: false, status: 429, json: async () => ({ error: { message: "Quota exceeded" } }) };
+    if (url.includes("batchGet")) {
+      const ranges = new URL(url).searchParams.getAll("ranges");
+      return { ok: true, status: 200, json: async () => ({ valueRanges: ranges.map((range) => ({ range, values: [[range]] })) }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ sheets: [{ properties: { title: "GAMELIST", sheetId: 0 } }, { properties: { title: "U.HONKAI", sheetId: 627518256 } }] }) };
+  },
+});
+const tabs = await reader.tabs("sheet");
+check(tabs[1].title === "U.HONKAI" && tabs[1].gid === 627518256, "tabs come with their gids");
+const titles = Array.from({ length: 25 }, (_, i) => `U.GAME ${i}'s`);
+const byTab = await reader.batchRows("sheet", titles);
+check(Object.keys(byTab).length === 25 && byTab[titles[24]][0][0] === "'U.GAME 24''s'!A:ZZ", "every tab's rows come back under its title, quotes escaped");
+check(urls.filter((url) => url.includes("batchGet")).length === 3 && waits.join() === "20000", "25 tabs take two batchGets; a 429 is waited out and retried");
 
 console.log(`gameinfo-sheet-packs: ${passed} passed`);

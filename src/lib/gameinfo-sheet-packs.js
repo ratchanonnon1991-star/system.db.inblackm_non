@@ -10,6 +10,8 @@
 //   ช่องทาง [หลัก|สำรอง]                   the wallet (a plain ช่องทาง column can
 //                                        also hold the store or a link)
 //   ประเทศ / ประเทศหลัก                   the country, when it is stated
+//   ต้นทุน                                the pack's cost in THB, which gives
+//                                        each cost currency its rate
 // Rows under a header with a pack name and a price are packs. A label row
 // can also be a note ("ต้องเปิด VPN…"), which is not a category, or open a
 // VIP or price-comparison table ("ราคา VIP", "แพ็คเทียบราคา"), which is skipped.
@@ -91,7 +93,8 @@ function packColumn(header, keys) {
   return null;
 }
 
-// The charged-amount column: a fee-inclusive total first, then a total, then what is pressed.
+// The charged-amount column and its currency ("MMK", "Razer SGD"): a
+// fee-inclusive total first, then a total, then what is pressed.
 function amountColumn(keys) {
   let best = null;
   keys.forEach((key, col) => {
@@ -99,9 +102,12 @@ function amountColumn(keys) {
     if (!match || !isFiat(match[1])) return;
     if (!match[2] && !key.startsWith("ยอด")) return;
     const score = match[2] ? ["รวมfee", "รวม", "ที่กด", "ที่ออก"].indexOf(match[2]) : 4;
-    if (!best || score < best.score) best = { col, score };
+    if (!best || score < best.score) {
+      const code = fiatKey(match[1]).toUpperCase();
+      best = { col, score, currency: match[1].startsWith("razer") ? `Razer ${code}` : code };
+    }
   });
-  return best ? best.col : -1;
+  return best || { col: -1, currency: "" };
 }
 
 function isPriceHeader(key) {
@@ -127,7 +133,9 @@ function readHeader(row) {
     nameCol: pack.col,
     unit: pack.unit,
     category: pack.category,
-    amountCol: amountColumn(keys),
+    amountCol: amountColumn(keys).col,
+    amountCurrency: amountColumn(keys).currency,
+    costCol: keys.indexOf("ต้นทุน"),
     mainCol: keys.indexOf("ช่องทางหลัก"),
     plainChannelCols: keys.flatMap((key, col) => (key === "ช่องทาง" ? [col] : [])),
     // "ช่องทาง หลัก" is sometimes followed by a bare "สำรอง".
@@ -241,6 +249,8 @@ export function parseGameinfoSheetPackTab(rows) {
       channelsMain: wallet ? [wallet] : [],
       channelsSecondary: secondary && !isLink(secondary) ? [secondary] : [],
       country: cell(layout.countryCol) || layout.fallbackCountry,
+      costCurrency: layout.amountCurrency,
+      cost: number(cell(layout.costCol)),
     });
   }
   // PACK tables have no unit of their own: they join the tab's first named currency.
@@ -271,16 +281,59 @@ function newId(prefix) {
   return `${prefix}_${Math.random().toString(36).slice(2, 9)}${Date.now().toString(36).slice(-4)}`;
 }
 
-/** The parsed tab as a GameInfo currency tree (one currency per unit). */
-export function gameinfoSheetPackCurrencies(parsed) {
-  return parsed.currencies.map((currency) => ({
+function median(values) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+/**
+ * One cost profile per cost currency, its rate being the sheet's own
+ * ต้นทุน ÷ amount (the median over the packs, so one odd row cannot skew it).
+ * GameInfo works out cost and profit from amount × rate.
+ */
+export function gameinfoSheetCostProfiles(parsed, updatedAt = new Date().toISOString()) {
+  const rates = new Map();
+  for (const currency of parsed?.currencies || []) {
+    for (const category of currency.categories) {
+      for (const pack of category.packs) {
+        if (!pack.costCurrency || !Number(pack.amountChargedFee) || !Number(pack.cost)) continue;
+        if (!rates.has(pack.costCurrency)) rates.set(pack.costCurrency, []);
+        rates.get(pack.costCurrency).push(Number(pack.cost) / Number(pack.amountChargedFee));
+      }
+    }
+  }
+  return [...rates].map(([code, values]) => ({
+    id: `sheet-${code.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+    label: `${code} → THB (จากชีต)`,
+    inputCurrency: code.replace(/^Razer /, "").slice(0, 12),
+    baseValue: String(Number(median(values).toPrecision(6))),
+    rateFormula: "",
+    updatedAt,
+    updatedBy: null,
+  }));
+}
+
+/**
+ * The parsed tab as GameInfo packs: one currency per unit, plus the cost
+ * profiles its packs point at.
+ */
+export function gameinfoSheetPackTree(parsed) {
+  const costProfiles = gameinfoSheetCostProfiles(parsed);
+  const profileByCurrency = new Map(costProfiles.map((profile) => [profile.label.replace(/ → THB \(จากชีต\)$/, ""), profile.id]));
+  const currencies = parsed.currencies.map((currency) => ({
     id: newId("c"),
     name: currency.unit || "",
     image: "",
     categories: currency.categories.map((category) => ({
       id: newId("cat"),
       name: category.name,
-      packs: category.packs.map((pack) => ({ ...createBlankGameinfoPack(newId("pk")), ...pack })),
+      packs: category.packs.map(({ cost, costCurrency, ...pack }) => ({
+        ...createBlankGameinfoPack(newId("pk")),
+        ...pack,
+        costProfileId: pack.amountChargedFee ? profileByCurrency.get(costCurrency) || "" : "",
+      })),
     })),
   }));
+  return { currencies, costProfiles };
 }
