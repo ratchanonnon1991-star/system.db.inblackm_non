@@ -12,7 +12,7 @@ import { getGamelistPacks, listGamelistRealPackCountByGame, recordGameinfoAudit,
 import { listGamelistSalesChannelKeysByGame, listGamelistSalesChannels, saveGamelistSalesChannels } from "@/server/gameinfo-sales-channels";
 import { gameinfoSheetGameKey, parseGameinfoSourceSheet } from "@/lib/gameinfo-sales-channels";
 import { gameinfoHasRealPacks } from "@/lib/gameinfo-pack-model";
-import { countGameinfoSheetPacks, gameinfoSheetCostProfiles, gameinfoSheetPackTree, gameinfoSheetPackUnits, parseGameinfoSheetPackTab } from "@/lib/gameinfo-sheet-packs";
+import { countGameinfoSheetPacks, gameinfoSheetCostFormulaColumns, gameinfoSheetCostProfiles, gameinfoSheetPackTree, gameinfoSheetPackUnits, parseGameinfoSheetPackTab } from "@/lib/gameinfo-sheet-packs";
 
 const DEFAULT_SHEET_ID = "192YoswgJIVdU-XQtbEUQrRg-h7jqbEblrGvA4Jqdnks";
 export const GAMEINFO_SHEET_IMPORT_PARTS = ["publisher", "category", "warning", "remark", "channels", "packs"];
@@ -240,10 +240,11 @@ export async function applyGameinfoSheetImport(gameIds, parts, actor = null, { s
         // cost profiles stay, joined by one profile per cost currency in the tab.
         const tree = gameinfoSheetPackTree(packTabs.get(sheetGame.key).parsed);
         const kept = packs.costProfiles.filter((profile) => !tree.costProfiles.some((added) => added.id === profile.id));
+        const costProfiles = [...kept, ...tree.costProfiles];
         await saveGamelistPacks(gameId, {
           currencies: tree.currencies,
-          computedColumns: packs.computedColumns,
-          costProfiles: [...kept, ...tree.costProfiles],
+          computedColumns: gameinfoSheetCostFormulaColumns(packs.computedColumns, costProfiles) || packs.computedColumns,
+          costProfiles,
           actor,
           source: "import",
           expectedVersion: packs.version,
@@ -273,4 +274,33 @@ export async function applyGameinfoSheetImport(gameIds, parts, actor = null, { s
       failed: results.filter((item) => item.error).length,
     },
   };
+}
+
+/**
+ * For games already imported before the cost formula existed: every UID game
+ * with a sheet cost profile outside MMK and no ต้นทุน formula of its own gets
+ * one. Packs and everything else are saved back unchanged.
+ */
+export async function applyGameinfoSheetCostFormulas(actor = null) {
+  const updated = [];
+  const failed = [];
+  for (const row of await listGameListRows()) {
+    try {
+      const packs = await getGamelistPacks(row.id);
+      const computedColumns = gameinfoSheetCostFormulaColumns(packs.computedColumns, packs.costProfiles);
+      if (!computedColumns) continue;
+      await saveGamelistPacks(row.id, {
+        currencies: packs.currencies,
+        computedColumns,
+        costProfiles: packs.costProfiles,
+        actor,
+        source: "import",
+        expectedVersion: packs.version,
+      });
+      updated.push({ gameId: row.id, game: String(row.game).split("\n")[0] });
+    } catch (error) {
+      failed.push({ gameId: row.id, error: error instanceof Error ? error.message : "บันทึกไม่สำเร็จ" });
+    }
+  }
+  return { updated, failed };
 }
