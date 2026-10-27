@@ -20,7 +20,9 @@ export function signServiceAccountJwt(account, now = Date.now(), scopes = SCOPES
   return `${header}.${claims}.${signer.sign(account.private_key).toString("base64url")}`;
 }
 
-export function createGoogleReader({ keyFile = process.env.ITUNE_SHEETS_CREDENTIALS, fetchImpl = fetch, now = () => Date.now(), readOnly = false, readKeyFile = readFile, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) } = {}) {
+// `exportAccess` adds Drive read access, which exporting a whole spreadsheet needs.
+export function createGoogleReader({ keyFile = process.env.ITUNE_SHEETS_CREDENTIALS, fetchImpl = fetch, now = () => Date.now(), readOnly = false, exportAccess = false, readKeyFile = readFile, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) } = {}) {
+  const readScopes = ["https://www.googleapis.com/auth/spreadsheets.readonly", ...(exportAccess ? ["https://www.googleapis.com/auth/drive.readonly"] : [])].join(" ");
   let account; let token = null;
   async function accessToken() {
     if (token && token.expires > now() + 60_000) return token.value;
@@ -28,7 +30,7 @@ export function createGoogleReader({ keyFile = process.env.ITUNE_SHEETS_CREDENTI
     account ||= JSON.parse(await readKeyFile(keyFile, "utf8"));
     const response = await fetchImpl(account.token_uri || "https://oauth2.googleapis.com/token", {
       method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: signServiceAccountJwt(account, now(), readOnly ? "https://www.googleapis.com/auth/spreadsheets.readonly" : SCOPES) }),
+      body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: signServiceAccountJwt(account, now(), readOnly ? readScopes : SCOPES) }),
       signal: AbortSignal.timeout(15_000),
     });
     const body = await response.json().catch(() => ({}));
@@ -90,6 +92,16 @@ export function createGoogleReader({ keyFile = process.env.ITUNE_SHEETS_CREDENTI
         (body.valueRanges || []).forEach((range, index) => { out[chunk[index]] = range.values || []; });
       }
       return out;
+    },
+    // The whole spreadsheet as .xlsx — pictures placed over cells included,
+    // which the Sheets API does not return. Tens of MB for a big sheet.
+    async exportXlsx(spreadsheetId) {
+      const response = await fetchImpl(`https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/export?format=xlsx`, {
+        headers: { Authorization: `Bearer ${await accessToken()}` },
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (!response.ok) throw Object.assign(new Error(`Google export HTTP ${response.status}`), { status: response.status });
+      return Buffer.from(await response.arrayBuffer());
     },
     // Literal values (RAW), one cell per update: { range: "'tab'!E12", value }.
     async writeRaw(spreadsheetId, updates) {

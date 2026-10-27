@@ -21,7 +21,7 @@ export async function POST(request) {
   try {
     const user = await requireGameinfoEditor(request);
     const { gameIds, parts, action } = await request.json();
-    // A one-off catch-up for games imported before non-MMK cost formulas existed.
+    // A one-off catch-up for games imported before their cost formula existed.
     if (action === "cost-formulas") return jsonOk(await applyGameinfoSheetCostFormulas(auditActor(user)));
     return jsonOk(await applyGameinfoSheetImport(gameIds, parts, auditActor(user)));
   } catch (error) {

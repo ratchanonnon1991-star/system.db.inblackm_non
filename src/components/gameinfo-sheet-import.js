@@ -15,6 +15,7 @@ const PARTS = [
   { id: "remark", label: "หมายเหตุ" },
   { id: "channels", label: "ช่องทางขาย / Margin" },
   { id: "packs", label: "แพ็ค (จากแท็บของเกม)" },
+  { id: "notices", label: "ปัญหาและคำแนะนำ + รูป (วิธีเติม)" },
 ];
 const CHANNEL_LABEL = Object.fromEntries(GAMEINFO_SALES_CHANNELS.map((channel) => [channel.key, channel.label]));
 
@@ -121,6 +122,10 @@ export default function GameinfoSheetImport({ lang, sheetUrl }) {
         </button>
       </div>
 
+      {preview.noticesError ? (
+        <p role="alert" className="rounded-xl bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">อ่านรูปและคำแนะนำจากชีตไม่ได้: {preview.noticesError} — ข้อมูลส่วนอื่นนำเข้าได้ตามปกติ</p>
+      ) : null}
+
       <fieldset className="flex flex-wrap gap-2">
         <legend className="mb-2 text-[13px] font-bold text-linear-ink-muted">ข้อมูลที่จะนำเข้า (เฉพาะช่องที่ GameInfo ยังว่าง)</legend>
         {PARTS.map((part) => (
@@ -207,6 +212,15 @@ export default function GameinfoSheetImport({ lang, sheetUrl }) {
                         </dd>
                       </>
                     ) : null}
+                    {parts.has("notices") && item.fills.notices ? (
+                      <>
+                        <dt className="text-linear-ink-tertiary">วิธีเติม</dt>
+                        <dd className="text-linear-ink">
+                          {item.fills.notices.steps} ข้อ · รูป {item.fills.notices.images} รูป
+                          <span className="ml-1.5 text-xs text-linear-ink-tertiary">จาก NOTICE ในแท็บ “{item.fills.notices.tab}”</span>
+                        </dd>
+                      </>
+                    ) : null}
                   </dl>
                 </td>
               </tr>
@@ -225,7 +239,7 @@ export default function GameinfoSheetImport({ lang, sheetUrl }) {
       {result ? (
         <div role="status" className="rounded-xl bg-emerald-500/10 p-3 text-sm text-emerald-800 dark:text-emerald-300">
           <p className="flex items-center gap-1.5 font-extrabold"><CheckCircle2 size={16} aria-hidden="true" /> นำเข้าแล้ว {result.summary.games} เกม</p>
-          <p>ค่ายเกม {result.summary.publisher} · หมวดหมู่ {result.summary.category} · ข้อควรระวัง {result.summary.warning} · หมายเหตุ {result.summary.remark} · ช่องทางขาย {result.summary.channels} · แพ็ค {result.summary.packs}{result.summary.failed ? ` · ไม่สำเร็จ ${result.summary.failed}` : ""}</p>
+          <p>ค่ายเกม {result.summary.publisher} · หมวดหมู่ {result.summary.category} · ข้อควรระวัง {result.summary.warning} · หมายเหตุ {result.summary.remark} · ช่องทางขาย {result.summary.channels} · แพ็ค {result.summary.packs} · วิธีเติม {result.summary.notices}{result.summary.skippedImages ? ` (รูปเกิน 4MB ไม่ได้ใส่ ${result.summary.skippedImages} รูป)` : ""}{result.summary.failed ? ` · ไม่สำเร็จ ${result.summary.failed}` : ""}</p>
           {result.results.filter((item) => item.error).map((item) => (
             <p key={item.gameId} className="text-[#B80004] dark:text-[#FF8A8C]">ID {item.gameId}: {item.error}</p>
           ))}
