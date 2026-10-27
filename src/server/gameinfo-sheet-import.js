@@ -278,7 +278,7 @@ export async function applyGameinfoSheetImport(gameIds, parts, actor = null, { s
 
 /**
  * For games already imported before the cost formula existed: every UID game
- * with a sheet cost profile outside MMK and no ต้นทุน formula of its own gets
+ * with a cost profile from the sheet and no ต้นทุน formula of its own gets
  * one. Packs and everything else are saved back unchanged.
  */
 export async function applyGameinfoSheetCostFormulas(actor = null) {

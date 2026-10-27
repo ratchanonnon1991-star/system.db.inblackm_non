@@ -338,20 +338,19 @@ export function gameinfoSheetPackTree(parsed) {
   return { currencies, costProfiles };
 }
 
-// GameInfo's shared ต้นทุน formula divides the amount by a fixed MMK rate.
-// A game whose sheet amounts are in another currency (USD, Razer SGD…) gets
-// this formula of its own instead: each pack at its own profile's rate.
+// GameInfo's shared ต้นทุน formula divides the amount by one fixed MMK rate.
+// A game imported from the sheet gets a formula of its own instead, so its
+// cost and profit match the sheet: each pack at its own profile's rate
+// (the sheet's MMK rate with its bonus, USD, Razer SGD…).
 export const GAMEINFO_SHEET_COST_COLUMN = "ต้นทุน";
 export const GAMEINFO_SHEET_COST_FORMULA = "[ยอดที่กด + fee] * [อัตราต้นทุน]";
 
 /**
  * The game's columns with that per-game formula on ต้นทุน, or null when the
- * game needs none: no sheet profile outside MMK, or a formula of its own already.
+ * game needs none: no cost profile from the sheet, or a formula of its own already.
  */
 export function gameinfoSheetCostFormulaColumns(computedColumns, costProfiles) {
-  const foreign = (costProfiles || []).some((profile) =>
-    String(profile.id).startsWith("sheet-") && profile.inputCurrency && profile.inputCurrency !== "MMK");
-  if (!foreign) return null;
+  if (!(costProfiles || []).some((profile) => String(profile.id).startsWith("sheet-"))) return null;
   const index = (computedColumns || []).findIndex((column) => String(column.label || "").trim() === GAMEINFO_SHEET_COST_COLUMN);
   if (index < 0 || String(computedColumns[index].gameFormula || "").trim()) return null;
   return computedColumns.map((column, i) => (i === index ? { ...column, gameFormula: GAMEINFO_SHEET_COST_FORMULA } : column));

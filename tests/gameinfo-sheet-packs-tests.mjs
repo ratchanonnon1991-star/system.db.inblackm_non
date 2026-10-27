@@ -176,11 +176,11 @@ check(gameinfoHasRealPacks(currencies), "imported packs count as real packs");
 check(!gameinfoHasRealPacks([{ categories: [{ packs: [{ id: "p1", name: "", price: "" }] }] }]), "an empty placeholder pack is not a real pack");
 check(!gameinfoHasRealPacks([]), "no currencies, no packs");
 
-// Non-MMK games get a ต้นทุน formula of their own; MMK games keep the shared one.
+// Imported games get a ต้นทุน formula of their own, so cost matches the sheet.
 const columns = [{ key: "cost", label: "ต้นทุน", formula: "[ยอดที่กด + fee]/134.02", gameFormula: "" }, { key: "profit", label: "กำไร", formula: "[ราคา]-[ต้นทุน]", gameFormula: "" }];
 const usd = gameinfoSheetCostFormulaColumns(columns, [{ id: "sheet-usd", inputCurrency: "USD" }, { id: "sheet-mmk", inputCurrency: "MMK" }]);
-check(usd[0].gameFormula === GAMEINFO_SHEET_COST_FORMULA && usd[0].formula === columns[0].formula && usd[1] === columns[1], "a game with a USD profile computes ต้นทุน from its profiles; the shared formula and other columns stay");
-check(gameinfoSheetCostFormulaColumns(columns, [{ id: "sheet-mmk", inputCurrency: "MMK" }]) === null, "an MMK-only game keeps the shared formula");
+check(usd[0].gameFormula === GAMEINFO_SHEET_COST_FORMULA && usd[0].formula === columns[0].formula && usd[1] === columns[1], "a game with sheet profiles computes ต้นทุน from them; the shared formula and other columns stay");
+check(gameinfoSheetCostFormulaColumns(columns, [{ id: "sheet-mmk", inputCurrency: "MMK" }])[0].gameFormula === GAMEINFO_SHEET_COST_FORMULA, "an MMK game uses the sheet's own MMK rate too");
 const usdPack = { id: "p1", name: "110 Cash", price: "70", amountChargedFee: "0.62", costProfileId: "sheet-usd" };
 const usdContext = { costProfiles: [{ id: "sheet-usd", label: "USD → THB (จากชีต)", inputCurrency: "USD", baseValue: "34.8495", rateFormula: "" }] };
 check(evaluateGameinfoComputedColumn(usd[0], usd, usdPack, {}, usdContext) === 21.61, "0.62 USD at 34.8495 costs 21.61 baht");
