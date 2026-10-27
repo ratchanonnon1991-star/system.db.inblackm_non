@@ -22,7 +22,7 @@ export default async function Page({ params }) {
       />
       <h1 className="text-[28px] font-black text-linear-ink">นำเข้าจาก Google Sheet</h1>
       <p className="mb-5 max-w-3xl text-sm text-linear-ink-muted">
-        ดึงค่ายเกม หมวดหมู่ ข้อควรระวัง หมายเหตุ ช่องทางขาย/Margin และแพ็ค จาก
+        ดึงค่ายเกม หมวดหมู่ ข้อควรระวัง หมายเหตุ ช่องทางขาย/Margin และแพ็ค (พร้อมอัตราต้นทุนสำหรับคิดกำไร) จาก
         {" "}<a href={sheetUrl} target="_blank" rel="noopener noreferrer" className="font-bold text-[#D90005] hover:underline">ชีต “1.1 ข้อมูลเติมเกม UID”</a>{" "}
         (แท็บ GAMELIST, List Game เปิด-ปิด และแท็บของแต่ละเกม) เติมเฉพาะช่องที่ GameInfo ยังว่าง จับคู่เกมด้วยชื่อ — แพ็คนำเข้าเฉพาะเกมที่ยังไม่มีแพ็คจริง (โหมด UID)
       </p>

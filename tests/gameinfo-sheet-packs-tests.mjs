@@ -4,7 +4,8 @@ import { createGoogleReader } from "../src/server/google-sheets.js";
 import {
   countGameinfoSheetPacks,
   findGameinfoSheetPackHeader,
-  gameinfoSheetPackCurrencies,
+  gameinfoSheetCostProfiles,
+  gameinfoSheetPackTree,
   gameinfoSheetPackUnits,
   parseGameinfoSheetPackTab,
 } from "../src/lib/gameinfo-sheet-packs.js";
@@ -148,10 +149,26 @@ const shopPack = shop.currencies[0].categories[0].packs[0];
 check(shop.currencies[0].categories[0].name === "แพ็คหลัก", "a label with no letters is not a category");
 check(shopPack.amountChargedFee === "2.99" && shopPack.channelsSecondary.join() === "GCASH", "USD ที่ออก is an amount; a bare สำรอง after ช่องทาง หลัก is the secondary channel");
 
-const currencies = gameinfoSheetPackCurrencies(poolParsed);
+const { currencies, costProfiles: poolProfiles } = gameinfoSheetPackTree(poolParsed);
 check(currencies.length === 2 && currencies[0].name === "Cash", "one GameInfo currency per unit");
 const tree = currencies[0].categories[0].packs[0];
 check(tree.id && tree.name === "25 Cash" && tree.serviceEnabled !== undefined, "packs are full GameInfo packs with ids");
+check(!("cost" in tree) && !("costCurrency" in tree), "the sheet's cost does not travel on the pack itself");
+check(poolProfiles.length === 0 && tree.costProfileId === "", "no ต้นทุน column, no cost profile");
+
+// ต้นทุน ÷ amount gives each cost currency its rate; GameInfo derives cost and profit from it.
+const hiProfiles = gameinfoSheetCostProfiles(parsed, "2026-10-27T00:00:00.000Z");
+check(hiProfiles.length === 1 && hiProfiles[0].id === "sheet-mmk" && hiProfiles[0].inputCurrency === "MMK", "one profile per cost currency");
+check(hiProfiles[0].baseValue === String(Number((37.2 / 4590).toPrecision(6))), "the rate is the sheet's cost over the amount, packs without a cost left out");
+const hiTree = gameinfoSheetPackTree(parsed);
+check(hiTree.currencies[0].categories.every((category) => category.packs.every((pack) => pack.costProfileId === "sheet-mmk")), "every pack with an amount points at its currency's profile");
+const razer = gameinfoSheetCostProfiles(parseGameinfoSheetPackTab([
+  ["ราคาขาย", "Gems ที่กด", "Razer SGD ที่กด", "ต้นทุน"],
+  ["30", "60", "1", "24"],
+  ["60", "120", "2", "50"],
+  ["90", "180", "3", "72"],
+]));
+check(razer[0].label.startsWith("Razer SGD") && razer[0].inputCurrency === "SGD" && razer[0].baseValue === "24", "Razer amounts get their own profile; the median rate ignores the odd row");
 check(gameinfoHasRealPacks(currencies), "imported packs count as real packs");
 check(!gameinfoHasRealPacks([{ categories: [{ packs: [{ id: "p1", name: "", price: "" }] }] }]), "an empty placeholder pack is not a real pack");
 check(!gameinfoHasRealPacks([]), "no currencies, no packs");

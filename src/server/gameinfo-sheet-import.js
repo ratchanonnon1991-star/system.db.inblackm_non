@@ -12,7 +12,7 @@ import { getGamelistPacks, listGamelistRealPackCountByGame, recordGameinfoAudit,
 import { listGamelistSalesChannelKeysByGame, listGamelistSalesChannels, saveGamelistSalesChannels } from "@/server/gameinfo-sales-channels";
 import { gameinfoSheetGameKey, parseGameinfoSourceSheet } from "@/lib/gameinfo-sales-channels";
 import { gameinfoHasRealPacks } from "@/lib/gameinfo-pack-model";
-import { countGameinfoSheetPacks, gameinfoSheetPackCurrencies, gameinfoSheetPackUnits, parseGameinfoSheetPackTab } from "@/lib/gameinfo-sheet-packs";
+import { countGameinfoSheetPacks, gameinfoSheetCostProfiles, gameinfoSheetPackTree, gameinfoSheetPackUnits, parseGameinfoSheetPackTab } from "@/lib/gameinfo-sheet-packs";
 
 const DEFAULT_SHEET_ID = "192YoswgJIVdU-XQtbEUQrRg-h7jqbEblrGvA4Jqdnks";
 export const GAMEINFO_SHEET_IMPORT_PARTS = ["publisher", "category", "warning", "remark", "channels", "packs"];
@@ -114,7 +114,12 @@ function proposalFor(sheetGame, { hasPublisher, hasCategory, hasWarning, remark,
   const channels = Object.values(sheetGame.channels).filter((row) => !channelKeys.has(row.channel));
   if (channels.length) fills.channels = channels;
   if (packTab && !hasPacks) {
-    fills.packs = { tab: packTab.tab, count: countGameinfoSheetPacks(packTab.parsed), unit: gameinfoSheetPackUnits(packTab.parsed) };
+    fills.packs = {
+      tab: packTab.tab,
+      count: countGameinfoSheetPacks(packTab.parsed),
+      unit: gameinfoSheetPackUnits(packTab.parsed),
+      rates: gameinfoSheetCostProfiles(packTab.parsed).map((profile) => `${profile.inputCurrency} ${profile.baseValue}`),
+    };
   }
   return fills;
 }
@@ -231,11 +236,14 @@ export async function applyGameinfoSheetImport(gameIds, parts, actor = null, { s
         filled.push("channels");
       }
       if (wanted.has("packs") && fills.packs) {
-        // The empty placeholder pack goes; the game's formula columns and cost profiles stay.
+        // The empty placeholder pack goes; the game's formula columns and
+        // cost profiles stay, joined by one profile per cost currency in the tab.
+        const tree = gameinfoSheetPackTree(packTabs.get(sheetGame.key).parsed);
+        const kept = packs.costProfiles.filter((profile) => !tree.costProfiles.some((added) => added.id === profile.id));
         await saveGamelistPacks(gameId, {
-          currencies: gameinfoSheetPackCurrencies(packTabs.get(sheetGame.key).parsed),
+          currencies: tree.currencies,
           computedColumns: packs.computedColumns,
-          costProfiles: packs.costProfiles,
+          costProfiles: [...kept, ...tree.costProfiles],
           actor,
           source: "import",
           expectedVersion: packs.version,
