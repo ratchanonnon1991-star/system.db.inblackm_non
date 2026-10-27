@@ -49,8 +49,12 @@ export default function GameinfoSheetImport({ lang, sheetUrl }) {
         setLoadError({ message: data.error || `อ่านชีตไม่สำเร็จ (HTTP ${response.status})`, serviceAccount: data.serviceAccount || null });
         return;
       }
+      // A re-read keeps what was ticked and ticks only games that are new to the list.
+      const shown = new Set((preview?.items || []).map((item) => item.gameId));
       setPreview(data);
-      setSelected(new Set(data.items.map((item) => item.gameId)));
+      setSelected((current) => (preview
+        ? new Set([...[...current].filter((id) => data.items.some((item) => item.gameId === id)), ...data.items.filter((item) => !shown.has(item.gameId)).map((item) => item.gameId)])
+        : new Set(data.items.map((item) => item.gameId))));
     } catch (fetchError) {
       setLoadError({ message: fetchError instanceof Error ? fetchError.message : "อ่านชีตไม่สำเร็จ" });
     } finally {
@@ -62,6 +66,13 @@ export default function GameinfoSheetImport({ lang, sheetUrl }) {
     const timer = window.setTimeout(load, 0);
     return () => window.clearTimeout(timer);
   }, []);
+
+  // The pictures load in the background on the server; look again until they are in.
+  useEffect(() => {
+    if (!preview?.noticesPending || busy) return undefined;
+    const timer = window.setTimeout(load, 20000);
+    return () => window.clearTimeout(timer);
+  }, [preview, busy]);
 
   // Rows that still have something for the chosen parts.
   const rows = useMemo(() => (preview?.items || []).filter((item) => PARTS.some((part) => parts.has(part.id) && item.fills[part.id])), [parts, preview]);
@@ -122,6 +133,9 @@ export default function GameinfoSheetImport({ lang, sheetUrl }) {
         </button>
       </div>
 
+      {preview.noticesPending ? (
+        <p role="status" className="rounded-xl bg-sky-500/10 p-3 text-sm text-sky-800 dark:text-sky-300">กำลังโหลดรูปและคำแนะนำจากชีตอยู่เบื้องหลัง (ไฟล์ใหญ่ ใช้เวลา 1–2 นาที) — หน้านี้จะอ่านใหม่ให้เอง ข้อมูลส่วนอื่นนำเข้าได้เลย</p>
+      ) : null}
       {preview.noticesError ? (
         <p role="alert" className="rounded-xl bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">อ่านรูปและคำแนะนำจากชีตไม่ได้: {preview.noticesError} — ข้อมูลส่วนอื่นนำเข้าได้ตามปกติ</p>
       ) : null}
