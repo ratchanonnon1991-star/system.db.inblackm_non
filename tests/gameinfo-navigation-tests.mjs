@@ -33,7 +33,7 @@ const checks = [
   detailPage.includes("resolveGameinfoView({ param: rawView") &&
     detailPage.includes("editHref={editableRole ? manageHref : null}") &&
     detailPage.includes("gameinfoViewColumnRole(") &&
-    detailPage.includes("gameinfoListHref(lang, dataMode, false, topupView)"),
+    detailPage.includes("const listHref = gameinfoListHref(lang, dataMode, false);"),
 ];
 const failed = checks.filter((passed) => !passed).length;
 

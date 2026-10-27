@@ -8,18 +8,19 @@ export function gameinfoModeQuery(mode) {
   return normalizeGameinfoDataMode(mode) === "idpass" ? "?mode=idpass" : "";
 }
 
-export function gameinfoListHref(lang, mode, manage = false, topupView = false) {
+// The Topup / Product view is not part of these links: it is remembered in a
+// cookie (gameinfo-view.js), and a ?view= carried along pinned it, so going
+// back to a page could bring the other view back.
+export function gameinfoListHref(lang, mode, manage = false) {
   const params = new URLSearchParams();
   if (normalizeGameinfoDataMode(mode) === "idpass") params.set("mode", "idpass");
-  if (topupView && !manage) params.set("view", "topup");
   const query = params.toString();
   return `/gameinfo/${lang}${manage ? "/manage" : ""}${query ? `?${query}` : ""}`;
 }
 
-export function gameinfoGameHref(lang, gameId, mode, manage = false, topupView = false) {
+export function gameinfoGameHref(lang, gameId, mode, manage = false) {
   const params = new URLSearchParams();
   if (normalizeGameinfoDataMode(mode) === "idpass") params.set("mode", "idpass");
-  if (topupView && !manage) params.set("view", "topup");
   const query = params.toString();
   return `/gameinfo/${lang}/${gameId}${manage ? "/manage" : ""}${query ? `?${query}` : ""}`;
 }

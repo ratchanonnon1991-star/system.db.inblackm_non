@@ -202,10 +202,10 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   }
   if (!row) notFound();
 
-  const viewHref = gameinfoGameHref(lang, row.id, dataMode, false, topupView);
+  const viewHref = gameinfoGameHref(lang, row.id, dataMode, false);
   const manageHref = gameinfoGameHref(lang, row.id, dataMode, true);
   // Back from a game, viewed or edited, is always the game list.
-  const listHref = gameinfoListHref(lang, dataMode, false, topupView);
+  const listHref = gameinfoListHref(lang, dataMode, false);
   const packGame = {
     id: row.id,
     gameName: row.game,
@@ -257,7 +257,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
                 ดูหน้าผู้ใช้
               </Link>
               <GameinfoModeCloneButton gameId={row.id} currentMode={dataMode} />
-              <GameinfoDatasetToggle basePath={gameinfoGameHref(lang, row.id, "uid", manageMode, topupView)} />
+              <GameinfoDatasetToggle basePath={gameinfoGameHref(lang, row.id, "uid", manageMode)} />
             </div>
           </div>
         </div>
@@ -345,7 +345,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
           className="flex h-10 items-center gap-1.5 rounded-full border border-linear-hairline bg-linear-surface-1 px-4 text-[13px] font-bold text-linear-ink transition hover:bg-linear-surface-2"
           href={listHref}
         />
-        <GameinfoDatasetToggle basePath={gameinfoGameHref(lang, row.id, "uid", false, topupView)} />
+        <GameinfoDatasetToggle basePath={gameinfoGameHref(lang, row.id, "uid", false)} />
       </div>
       <GameinfoGameView
         key={dataMode}
