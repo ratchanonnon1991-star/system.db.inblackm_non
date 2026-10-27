@@ -20,6 +20,9 @@ export default function GameinfoDatasetToggle({ basePath }) {
         <Link
           key={value}
           href={href(value)}
+          // Switching mode stays on the same page, so it replaces the entry
+          // rather than adding one the browser's back button has to walk.
+          replace
           prefetch={false}
           aria-current={mode === value ? "true" : undefined}
           className={`flex h-9 items-center rounded-full px-5 font-black tracking-[0.04em] transition ${mode === value ? "bg-[#D90005] text-white" : "text-linear-ink-muted hover:bg-linear-surface-2"}`}

@@ -131,7 +131,7 @@ check("Game Bot Auto keeps the header clear and edits by permission, not view", 
   const home = readFileSync(new URL("../src/components/gameinfo-home-page.js", import.meta.url), "utf8");
   const cards = readFileSync(new URL("../src/components/gameinfo-gamelist-cards.js", import.meta.url), "utf8");
   assert.match(toggle, /if \(isBotAutoPage\) return null/);
-  assert.match(cards, /section=game-bot-auto\$\{dataMode === "uid" \? "" : `&mode=\$\{dataMode\}`\}\$\{topupView \? "&view=topup" : ""\}/);
+  assert.match(cards, /section=game-bot-auto\$\{dataMode === "uid" \? "" : `&mode=\$\{dataMode\}`\}`/);
   assert.match(home, /editable=\{editableRole\} topupView=\{topupView\}/);
 });
 

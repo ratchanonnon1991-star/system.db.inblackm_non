@@ -28,6 +28,8 @@ import { getGamelistGameSettings, listGamelistTestAccounts, maskGamelistTestAcco
 import { getTopupWebGame, isTopupWebConnected, topupWebAdminUrl } from "@/server/gameinfo-topup-web";
 import { GameinfoManageNav, GameinfoManageSection } from "@/components/gameinfo-manage-section";
 import GameinfoWebMargin from "@/components/gameinfo-web-margin";
+import GameinfoSalesChannelEditor, { GameinfoSalesChannelCards } from "@/components/gameinfo-sales-channels";
+import { listGamelistSalesChannels } from "@/server/gameinfo-sales-channels";
 import GameinfoMissingChecklist from "@/components/gameinfo-missing-checklist";
 import { gameinfoMissingItems } from "@/lib/gameinfo-completeness";
 import { missingTopupWebPacks, topupWebPackImageFills } from "@/lib/gameinfo-topup-match";
@@ -95,6 +97,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   let topupGame = null;
   let topupConnected = false;
   let testAccounts = [];
+  let salesChannels = [];
   try {
     row = await getGameListRow(numericId);
     if (row) {
@@ -168,10 +171,11 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
       formulaVariables = variableData.variables;
       // Website data and test accounts are extras: if they fail to load the
       // game page still opens, just without them.
-      [settings, testAccounts, topupConnected] = await Promise.all([
+      [settings, testAccounts, topupConnected, salesChannels] = await Promise.all([
         getGamelistGameSettings(row.id).catch(() => settings),
         listGamelistTestAccounts(row.id).catch(() => []),
         isTopupWebConnected().catch(() => false),
+        listGamelistSalesChannels(row.id).catch(() => []),
       ]);
       topupGame = topupConnected ? await getTopupWebGame(settings.topupGameId).catch(() => null) : null;
       row = {
@@ -198,8 +202,10 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   }
   if (!row) notFound();
 
-  const viewHref = gameinfoGameHref(lang, row.id, dataMode, false, topupView);
+  const viewHref = gameinfoGameHref(lang, row.id, dataMode, false);
   const manageHref = gameinfoGameHref(lang, row.id, dataMode, true);
+  // Back from a game, viewed or edited, is always the game list.
+  const listHref = gameinfoListHref(lang, dataMode, false);
   const packGame = {
     id: row.id,
     gameName: row.game,
@@ -226,7 +232,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
     const fillPreview = topupGame ? await previewTopupWebFill(row.id).catch(() => null) : null;
     const missingPacks = topupGame ? missingTopupWebPacks(topupGame.packages, flatPacks.map((pack) => pack.name), dataMode) : [];
     const packImageFills = topupGame ? topupWebPackImageFills(topupGame.packages, flatPacks) : [];
-    const missingItems = gameinfoMissingItems({ row, packs: flatPacks, testAccountCount: testAccounts.length, linked: Boolean(topupGame) });
+    const missingItems = gameinfoMissingItems({ row, packs: flatPacks, testAccountCount: testAccounts.length, linked: Boolean(topupGame), salesChannelCount: salesChannels.length });
     return (
       <>
         {/* Sticks under the red header (h-16) so the game being edited and
@@ -235,7 +241,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
           <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-3 px-4 py-3 sm:px-7">
             <GameinfoBackLink
               className="flex h-10 items-center gap-1.5 rounded-full border border-linear-hairline bg-linear-surface-1 px-4 text-[13px] font-bold text-linear-ink transition hover:bg-linear-surface-2"
-              href={viewHref}
+              href={listHref}
             />
             <div className="flex min-w-0 flex-col leading-tight">
               <h1 className="truncate text-xl font-black text-linear-ink">แก้ไขเกม · {row.game}</h1>
@@ -247,11 +253,13 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
             </div>
             <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
               <span className="rounded-md bg-[#18181B] px-2 py-0.5 text-[11px] font-black tracking-[0.08em] text-white dark:bg-white dark:text-[#18181B]">ADMIN</span>
-              <Link href={viewHref} className="flex h-10 items-center rounded-full border border-linear-hairline bg-linear-surface-1 px-4 text-[13px] font-bold text-linear-ink transition hover:bg-linear-surface-2">
+              {/* Viewing and editing one game are one stop in the tab's
+                  history (replace), so back from either goes to the list. */}
+              <Link href={viewHref} replace className="flex h-10 items-center rounded-full border border-linear-hairline bg-linear-surface-1 px-4 text-[13px] font-bold text-linear-ink transition hover:bg-linear-surface-2">
                 ดูหน้าผู้ใช้
               </Link>
               <GameinfoModeCloneButton gameId={row.id} currentMode={dataMode} />
-              <GameinfoDatasetToggle basePath={gameinfoGameHref(lang, row.id, "uid", manageMode, topupView)} />
+              <GameinfoDatasetToggle basePath={gameinfoGameHref(lang, row.id, "uid", manageMode)} />
             </div>
           </div>
         </div>
@@ -296,7 +304,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
               userId={user.id}
               suggestions={{ ...buildPackSuggestions(packGame), channels: allChannels }}
               dataMode={dataMode}
-              backHref={viewHref}
+              backHref={listHref}
               historyUrl={`/api/gameinfo/gamelist/${row.id}/packs/history?limit=200${dataMode === "idpass" ? "&mode=idpass" : ""}`}
               savePacksUrl={`/api/gameinfo/gamelist/${row.id}/packs${dataMode === "idpass" ? "?mode=idpass" : ""}`}
               importPreviewUrl={`/api/gameinfo/import/preview?gameId=${row.id}`}
@@ -315,6 +323,14 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
                 <p className="text-sm text-linear-ink-tertiary">เชื่อมเกมกับเว็บ TopUp ในหัวข้อ {MANAGE_NUMBERS.web} ก่อน</p>
               )}
             </GameinfoManageSection>
+            <GameinfoManageSection
+              id="s-sales"
+              number={MANAGE_NUMBERS.sales}
+              title="ช่องทางขาย / Margin"
+              description="สถานะขาย ผลเทียบราคาตลาด และ Margin ของแต่ละช่องทาง — มุมมอง Topup ไม่เห็น Margin"
+            >
+              <GameinfoSalesChannelEditor gameId={row.id} initialChannels={salesChannels} />
+            </GameinfoManageSection>
             {/* Reports on the manage page are always resolvable: whoever
                 reaches it is an editor. */}
             <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage canReport id="s-report" number={MANAGE_NUMBERS.report} />
@@ -329,9 +345,9 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <GameinfoBackLink
           className="flex h-10 items-center gap-1.5 rounded-full border border-linear-hairline bg-linear-surface-1 px-4 text-[13px] font-bold text-linear-ink transition hover:bg-linear-surface-2"
-          href={gameinfoListHref(lang, dataMode, false, topupView)}
+          href={listHref}
         />
-        <GameinfoDatasetToggle basePath={gameinfoGameHref(lang, row.id, "uid", false, topupView)} />
+        <GameinfoDatasetToggle basePath={gameinfoGameHref(lang, row.id, "uid", false)} />
       </div>
       <GameinfoGameView
         key={dataMode}
@@ -345,6 +361,9 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         hiddenColumnKeys={hiddenColumnKeys}
         editHref={editableRole ? manageHref : null}
       />
+      <div className="mt-5">
+        <GameinfoSalesChannelCards channels={salesChannels} showMargin={!topupView} />
+      </div>
       <div className="mt-5">
         <GameinfoTestAccountsCard
           gameId={row.id}
@@ -366,6 +385,7 @@ const MANAGE_SECTIONS = [
   { id: "s-cost", label: "ต้นทุนและเรต" },
   { id: "s-pack", label: "แพ็คและราคา" },
   { id: "s-margin", label: "ราคาเว็บและ Margin" },
+  { id: "s-sales", label: "ช่องทางขาย" },
   { id: "s-report", label: "รายงานปัญหา" },
 ];
-const MANAGE_NUMBERS = { info: 1, method: 2, web: 3, test: 4, cost: 5, pack: 6, margin: 7, report: 8 };
+const MANAGE_NUMBERS = { info: 1, method: 2, web: 3, test: 4, cost: 5, pack: 6, margin: 7, sales: 8, report: 9 };

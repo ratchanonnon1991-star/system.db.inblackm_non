@@ -29,6 +29,7 @@ import {
   Flame,
   Globe,
   Link2,
+  FileSpreadsheet,
   X,
 } from "lucide-react";
 import GameinfoDatasetToggle from "./gameinfo-dataset-toggle";
@@ -191,21 +192,21 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
   }
 
   function chooseStatus(nextStatus) {
-    if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false, topupView));
+    if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false));
     setStatus(nextStatus);
     setPage(0);
     setSidebarOpen(false);
   }
 
   function chooseTag(nextTag) {
-    if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false, topupView));
+    if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false));
     setTag(nextTag);
     setPage(0);
     setSidebarOpen(false);
   }
 
   function choosePublisher(nextPublisher) {
-    if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false, topupView));
+    if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false));
     setPublisher(nextPublisher);
     setPage(0);
     setSidebarOpen(false);
@@ -325,7 +326,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             onClick={() => {
               clearFilters();
               setSidebarOpen(false);
-              if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false, topupView));
+              if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false));
             }}
             className={`${navItemClass(!botCatalogActive && status === "all" && !tag && !publisher && !priceComparisonActive)} min-h-11 font-bold`}
           >
@@ -431,7 +432,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
 
           <span className={sectionLabelClass}>เครื่องมือ</span>
           <Link
-            href={`/gameinfo/${lang}?section=game-bot-auto${dataMode === "uid" ? "" : `&mode=${dataMode}`}${topupView ? "&view=topup" : ""}`}
+            href={`/gameinfo/${lang}?section=game-bot-auto${dataMode === "uid" ? "" : `&mode=${dataMode}`}`}
             onClick={() => setSidebarOpen(false)}
             className={navItemClass(botCatalogActive)}
           >
@@ -455,6 +456,9 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             <>
               <Link href={`/gameinfo/${lang}/topup-web`} className={navItemClass(false)}>
                 <Link2 size={18} aria-hidden="true" className="text-[#D90005]" /> เชื่อมเกมกับเว็บ TopUp
+              </Link>
+              <Link href={`/gameinfo/${lang}/sheet-import`} className={navItemClass(false)}>
+                <FileSpreadsheet size={18} aria-hidden="true" className="text-[#D90005]" /> นำเข้าจาก Google Sheet
               </Link>
               <span aria-hidden="true" className="mx-1 mb-1 mt-2.5 h-px bg-linear-hairline" />
               <Link href={gameinfoListHref(lang, dataMode, true)} className={`${navItemClass(false)} text-linear-ink-muted`}>
@@ -727,7 +731,7 @@ function ModeBadge({ value }) {
 
 function GameCard({ row, editable, topupView, canReport, lang, dataMode, favoriteBusy, onToggleFavorite, onReport }) {
   const status = STATUS_STYLE[row.serviceStatus] || STATUS_STYLE.online;
-  const href = gameinfoGameHref(lang, row.id, dataMode, false, topupView);
+  const href = gameinfoGameHref(lang, row.id, dataMode, false);
   const packsHref = gameinfoPacksHref(lang, row.id, dataMode);
   const actionHref = editable ? gameinfoGameHref(lang, row.id, dataMode, true) : href;
   return (
@@ -802,7 +806,7 @@ function GameCard({ row, editable, topupView, canReport, lang, dataMode, favorit
 
 function GameRow({ row, editable, topupView, lang, dataMode, onPriorityChange }) {
   const status = STATUS_STYLE[row.serviceStatus] || STATUS_STYLE.online;
-  const href = gameinfoGameHref(lang, row.id, dataMode, false, topupView);
+  const href = gameinfoGameHref(lang, row.id, dataMode, false);
   const actionHref = editable ? gameinfoGameHref(lang, row.id, dataMode, true) : href;
   return (
     <tr className="border-t border-linear-hairline transition hover:bg-[#D90005]/[0.03]">

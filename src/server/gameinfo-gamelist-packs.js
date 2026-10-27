@@ -1827,6 +1827,19 @@ export async function listGamelistPackCountByGame() {
   }
 }
 
+/** { [gameId]: count } of packs that have a name or a price — the empty
+ * placeholder row a new game starts with doesn't count. */
+export async function listGamelistRealPackCountByGame() {
+  const pool = await getReadyPool();
+  const result = await pool.query(
+    `SELECT game_id, COUNT(*)::int AS pack_count FROM gamelist_packs
+     WHERE pack_id != $1 AND (COALESCE(TRIM(data->>'name'), '') <> '' OR COALESCE(TRIM(data->>'price'), '') <> '')
+     GROUP BY game_id`,
+    [COMPUTED_SENTINEL]
+  );
+  return Object.fromEntries(result.rows.map((row) => [row.game_id, row.pack_count]));
+}
+
 /** Disabled-pack count used to derive the orange game service light. Old
  * rows without serviceEnabled are treated as enabled for compatibility. */
 export async function listGamelistPackServiceByGame() {

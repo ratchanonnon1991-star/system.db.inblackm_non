@@ -54,6 +54,13 @@ export function createBlankGameinfoPack(id) {
   return sanitizeGameinfoPack({ id });
 }
 
+/** A GameInfo pack tree with at least one pack that has a name or a price (an empty placeholder row does not count). */
+export function gameinfoHasRealPacks(currencies) {
+  return (currencies || []).some((currency) => (currency.categories || []).some((category) =>
+    (category.packs || []).some((pack) => String(pack.name || "").trim() || String(pack.price || "").trim())
+  ));
+}
+
 export function duplicateGameinfoPack(pack, newId) {
   const copy = sanitizeGameinfoPack(pack);
   copy.id = text(newId);

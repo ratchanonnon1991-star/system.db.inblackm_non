@@ -1,12 +1,6 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import {
-  GAMEINFO_HISTORY_KEY,
-  getGameinfoReturnHref,
-  normalizeGameinfoHistoryStack,
-  updateGameinfoHistoryStack,
-} from "@/lib/gameinfo-navigation-history";
 
 export const GAMEINFO_NAVIGATION_REQUEST = "gameinfo:navigation-request";
 const dirtySources = new Set();
@@ -62,37 +56,32 @@ export function hasGameinfoUnsavedChanges() {
   return dirtySources.size > 0;
 }
 
-function readGameinfoHistory() {
+// Same page as `href` (path and data mode; the view lives in a cookie).
+function isSameGameinfoPage(url, href) {
   try {
-    return normalizeGameinfoHistoryStack(JSON.parse(window.sessionStorage.getItem(GAMEINFO_HISTORY_KEY) || "[]"));
+    const a = new URL(url, window.location.origin);
+    const b = new URL(href, window.location.origin);
+    return a.origin === b.origin && a.pathname === b.pathname && (a.searchParams.get("mode") || "uid") === (b.searchParams.get("mode") || "uid");
   } catch {
-    return [];
+    return false;
   }
 }
 
-function writeGameinfoHistory(stack) {
-  try {
-    window.sessionStorage.setItem(GAMEINFO_HISTORY_KEY, JSON.stringify(stack));
-  } catch {
-    // Navigation still uses the supplied fallback when browser storage is unavailable.
-  }
-}
-
-export function rememberGameinfoLocation(href) {
-  writeGameinfoHistory(updateGameinfoHistoryStack(readGameinfoHistory(), href));
-}
-
-export function consumeGameinfoBackHref(fallbackHref) {
-  const stack = readGameinfoHistory();
-  const returnHref = getGameinfoReturnHref(stack, fallbackHref);
-  if (stack.length > 1) writeGameinfoHistory(stack.slice(0, -1));
-  return returnHref;
-}
-
-export function performGameinfoBack(fallbackHref) {
-  const returnHref = consumeGameinfoBackHref(fallbackHref);
+// The back buttons go to a fixed place — a game page's goes to the game
+// list — rather than retracing every view switch, mode toggle and edit
+// visited on the way. When the page just before this one in the tab's
+// history is that place, it is a real step back, so the browser's own back
+// button does not then return to the game, and the list keeps its filters
+// and scroll; otherwise the place is opened.
+export function performGameinfoBack(href) {
   allowGameinfoNavigation();
-  window.location.assign(returnHref);
+  const nav = window.navigation;
+  const previous = nav?.currentEntry ? nav.entries()[nav.currentEntry.index - 1] : null;
+  if (previous && isSameGameinfoPage(previous.url, href)) {
+    window.history.back();
+    return;
+  }
+  window.location.assign(href);
 }
 
 export function requestGameinfoBack(fallbackHref) {

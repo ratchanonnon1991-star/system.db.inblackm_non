@@ -3,7 +3,7 @@
 // Only things the website cannot supply are checked here as "for the admin";
 // the web-fillable ones (image, categories, packs) are offered by
 // "เติมจากเว็บ" first and listed here only while still empty.
-export function gameinfoMissingItems({ row, packs = [], testAccountCount = 0, linked = false }) {
+export function gameinfoMissingItems({ row, packs = [], testAccountCount = 0, linked = false, salesChannelCount = null }) {
   const items = [];
   const add = (id, label, section) => items.push({ id, label, section });
   const blank = (value) => !String(value ?? "").trim();
@@ -15,10 +15,13 @@ export function gameinfoMissingItems({ row, packs = [], testAccountCount = 0, li
   if (blank(row.botManual)) add("botManual", "ระบบการเติม (Bot / Manual)", "s-info");
   if (!row.image) add("image", "รูปเกม", "s-info");
   if (!(row.tags || []).length) add("tags", "หมวดหมู่", "s-info");
+  if (row.publishers && !row.publishers.length) add("publishers", "ค่ายเกม", "s-info");
   if (!(row.links || []).length) add("links", "ลิงก์ข้อมูลเติมเกมส์", "s-method");
   if (!row.hasTutorial) add("tutorial", "วิธีเติม", "s-method");
   if (!linked) add("web", "เชื่อมกับเกมบนเว็บ TopUp", "s-web");
   if (!testAccountCount) add("testAccount", "บัญชีทดสอบ", "s-test");
+  // null = not checked (pages without the sales-channel card).
+  if (salesChannelCount === 0) add("sales", "ช่องทางขาย", "s-sales");
   if (!packs.length) {
     add("packs", "แพ็ค", "s-pack");
   } else {

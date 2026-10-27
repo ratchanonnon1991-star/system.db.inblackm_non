@@ -7,7 +7,7 @@ import { getGamelistImage, saveGamelistImage } from "@/server/gameinfo-gamelist-
 import { getGamelistTags, saveGamelistTags } from "@/server/gameinfo-gamelist-tags";
 import { getGamelistPacks, recordGameinfoAudit, saveGamelistPacks } from "@/server/gameinfo-gamelist-packs";
 import { getGameinfoModeData, updateGameinfoModeData } from "@/server/gameinfo-mode-data";
-import { createBlankGameinfoPack } from "@/lib/gameinfo-pack-model";
+import { createBlankGameinfoPack, gameinfoHasRealPacks } from "@/lib/gameinfo-pack-model";
 import { GAMEINFO_WEB_PACK_CATEGORY, gameinfoPackMatchKey } from "@/lib/gameinfo-topup-match";
 import { getGamelistGameSettings, listGamelistGameSettings, saveGamelistGameSettings } from "@/server/gameinfo-game-settings";
 import { getTopupWebGame, getTopupWebGameAssets, listTopupWebGames } from "@/server/gameinfo-topup-web";
@@ -141,10 +141,6 @@ function newId(prefix) {
   return `${prefix}_${Math.random().toString(36).slice(2, 9)}${Date.now().toString(36).slice(-4)}`;
 }
 
-function hasPacks(currencies) {
-  return (currencies || []).some((currency) => (currency.categories || []).some((category) => (category.packs || []).length));
-}
-
 // The website's packages for one mode as a GameInfo currency tree: one
 // unnamed currency, one category, name + price + picture + open/closed. The
 // same name and price twice (a website leftover) becomes one pack, since
@@ -183,7 +179,7 @@ export async function fillPacksFromTopupWeb(gameId, topupGameId, actor = null) {
   const uidTree = webPackTree(web.packages, "uid");
   if (uidTree) {
     const current = await getGamelistPacks(gameId);
-    if (!hasPacks(current.currencies)) {
+    if (!gameinfoHasRealPacks(current.currencies)) {
       // The game's own formula columns and cost profiles go back unchanged.
       await saveGamelistPacks(gameId, {
         currencies: uidTree,
@@ -199,7 +195,7 @@ export async function fillPacksFromTopupWeb(gameId, topupGameId, actor = null) {
   const idpassTree = webPackTree(web.packages, "idpass");
   if (idpassTree) {
     const current = await getGameinfoModeData(gameId, "idpass");
-    if (!hasPacks(current.packs?.currencies)) {
+    if (!gameinfoHasRealPacks(current.packs?.currencies)) {
       await updateGameinfoModeData(gameId, "idpass", (data) => ({
         ...data,
         packs: { ...data.packs, currencies: idpassTree },

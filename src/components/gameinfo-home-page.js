@@ -195,7 +195,7 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
     <div className="px-4 py-8">
       <div className="mb-6 flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-linear-ink">GameInfo</h1>
-        <GameinfoDatasetToggle basePath={gameinfoListHref(lang, "uid", manageMode, topupView)} />
+        <GameinfoDatasetToggle basePath={gameinfoListHref(lang, "uid", manageMode)} />
       </div>
       {loadError ? (
         <GameinfoErrorNotice message={loadError} />
