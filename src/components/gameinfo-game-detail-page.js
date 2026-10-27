@@ -204,6 +204,8 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
 
   const viewHref = gameinfoGameHref(lang, row.id, dataMode, false, topupView);
   const manageHref = gameinfoGameHref(lang, row.id, dataMode, true);
+  // Back from a game, viewed or edited, is always the game list.
+  const listHref = gameinfoListHref(lang, dataMode, false, topupView);
   const packGame = {
     id: row.id,
     gameName: row.game,
@@ -239,7 +241,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
           <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-3 px-4 py-3 sm:px-7">
             <GameinfoBackLink
               className="flex h-10 items-center gap-1.5 rounded-full border border-linear-hairline bg-linear-surface-1 px-4 text-[13px] font-bold text-linear-ink transition hover:bg-linear-surface-2"
-              href={viewHref}
+              href={listHref}
             />
             <div className="flex min-w-0 flex-col leading-tight">
               <h1 className="truncate text-xl font-black text-linear-ink">แก้ไขเกม · {row.game}</h1>
@@ -300,7 +302,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
               userId={user.id}
               suggestions={{ ...buildPackSuggestions(packGame), channels: allChannels }}
               dataMode={dataMode}
-              backHref={viewHref}
+              backHref={listHref}
               historyUrl={`/api/gameinfo/gamelist/${row.id}/packs/history?limit=200${dataMode === "idpass" ? "&mode=idpass" : ""}`}
               savePacksUrl={`/api/gameinfo/gamelist/${row.id}/packs${dataMode === "idpass" ? "?mode=idpass" : ""}`}
               importPreviewUrl={`/api/gameinfo/import/preview?gameId=${row.id}`}
@@ -341,7 +343,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <GameinfoBackLink
           className="flex h-10 items-center gap-1.5 rounded-full border border-linear-hairline bg-linear-surface-1 px-4 text-[13px] font-bold text-linear-ink transition hover:bg-linear-surface-2"
-          href={gameinfoListHref(lang, dataMode, false, topupView)}
+          href={listHref}
         />
         <GameinfoDatasetToggle basePath={gameinfoGameHref(lang, row.id, "uid", false, topupView)} />
       </div>

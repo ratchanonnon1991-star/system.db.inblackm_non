@@ -1,12 +1,6 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import {
-  GAMEINFO_HISTORY_KEY,
-  getGameinfoReturnHref,
-  normalizeGameinfoHistoryStack,
-  updateGameinfoHistoryStack,
-} from "@/lib/gameinfo-navigation-history";
 
 export const GAMEINFO_NAVIGATION_REQUEST = "gameinfo:navigation-request";
 const dirtySources = new Set();
@@ -62,37 +56,12 @@ export function hasGameinfoUnsavedChanges() {
   return dirtySources.size > 0;
 }
 
-function readGameinfoHistory() {
-  try {
-    return normalizeGameinfoHistoryStack(JSON.parse(window.sessionStorage.getItem(GAMEINFO_HISTORY_KEY) || "[]"));
-  } catch {
-    return [];
-  }
-}
-
-function writeGameinfoHistory(stack) {
-  try {
-    window.sessionStorage.setItem(GAMEINFO_HISTORY_KEY, JSON.stringify(stack));
-  } catch {
-    // Navigation still uses the supplied fallback when browser storage is unavailable.
-  }
-}
-
-export function rememberGameinfoLocation(href) {
-  writeGameinfoHistory(updateGameinfoHistoryStack(readGameinfoHistory(), href));
-}
-
-export function consumeGameinfoBackHref(fallbackHref) {
-  const stack = readGameinfoHistory();
-  const returnHref = getGameinfoReturnHref(stack, fallbackHref);
-  if (stack.length > 1) writeGameinfoHistory(stack.slice(0, -1));
-  return returnHref;
-}
-
-export function performGameinfoBack(fallbackHref) {
-  const returnHref = consumeGameinfoBackHref(fallbackHref);
+// The back buttons go to a fixed place — a game page's goes to the game
+// list — rather than retracing every view switch, mode toggle and edit
+// visited on the way, which used to take many presses to get out.
+export function performGameinfoBack(href) {
   allowGameinfoNavigation();
-  window.location.assign(returnHref);
+  window.location.assign(href);
 }
 
 export function requestGameinfoBack(fallbackHref) {
