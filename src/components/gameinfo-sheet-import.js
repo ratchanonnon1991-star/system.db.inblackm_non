@@ -14,6 +14,7 @@ const PARTS = [
   { id: "warning", label: "ข้อควรระวัง (⚠️)" },
   { id: "remark", label: "หมายเหตุ" },
   { id: "channels", label: "ช่องทางขาย / Margin" },
+  { id: "packs", label: "แพ็ค (จากแท็บของเกม)" },
 ];
 const CHANNEL_LABEL = Object.fromEntries(GAMEINFO_SALES_CHANNELS.map((channel) => [channel.key, channel.label]));
 
@@ -196,6 +197,15 @@ export default function GameinfoSheetImport({ lang, sheetUrl }) {
                         </dd>
                       </>
                     ) : null}
+                    {parts.has("packs") && item.fills.packs ? (
+                      <>
+                        <dt className="text-linear-ink-tertiary">แพ็ค</dt>
+                        <dd className="text-linear-ink">
+                          {item.fills.packs.count} แพ็ค{item.fills.packs.unit ? ` (${item.fills.packs.unit})` : ""}
+                          <span className="ml-1.5 text-xs text-linear-ink-tertiary">จากแท็บ “{item.fills.packs.tab}”</span>
+                        </dd>
+                      </>
+                    ) : null}
                   </dl>
                 </td>
               </tr>
@@ -214,7 +224,10 @@ export default function GameinfoSheetImport({ lang, sheetUrl }) {
       {result ? (
         <div role="status" className="rounded-xl bg-emerald-500/10 p-3 text-sm text-emerald-800 dark:text-emerald-300">
           <p className="flex items-center gap-1.5 font-extrabold"><CheckCircle2 size={16} aria-hidden="true" /> นำเข้าแล้ว {result.summary.games} เกม</p>
-          <p>ค่ายเกม {result.summary.publisher} · หมวดหมู่ {result.summary.category} · ข้อควรระวัง {result.summary.warning} · หมายเหตุ {result.summary.remark} · ช่องทางขาย {result.summary.channels}{result.summary.failed ? ` · ไม่สำเร็จ ${result.summary.failed}` : ""}</p>
+          <p>ค่ายเกม {result.summary.publisher} · หมวดหมู่ {result.summary.category} · ข้อควรระวัง {result.summary.warning} · หมายเหตุ {result.summary.remark} · ช่องทางขาย {result.summary.channels} · แพ็ค {result.summary.packs}{result.summary.failed ? ` · ไม่สำเร็จ ${result.summary.failed}` : ""}</p>
+          {result.results.filter((item) => item.error).map((item) => (
+            <p key={item.gameId} className="text-[#B80004] dark:text-[#FF8A8C]">ID {item.gameId}: {item.error}</p>
+          ))}
         </div>
       ) : null}
 

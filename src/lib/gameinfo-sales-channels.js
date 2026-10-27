@@ -107,6 +107,12 @@ export function isEmptyGameinfoSalesChannel(row) {
 // --- the sheet ---------------------------------------------------------
 
 /** The key two spellings of one game name share ("HONKAI IMPACT " = "Honkai Impact"). */
+// The GAMELIST LINK cell points at the game's own tab: "…/edit#gid=627518256".
+function sheetTabGid(link) {
+  const match = /[#?&]gid=(\d+)/.exec(String(link || ""));
+  return match ? Number(match[1]) : null;
+}
+
 export function gameinfoSheetGameKey(name) {
   return String(name ?? "").split("\n")[0].replace(/\s+/g, " ").trim().toLocaleLowerCase("en");
 }
@@ -166,6 +172,7 @@ export function parseGameinfoSourceSheet({ gamelist = [], onoff = [] }) {
     const publisherCol = col("ค่ายเกม");
     const categoryCol = col("ประเภทเกม");
     const remarkCol = col("หมายเหตุ");
+    const linkCol = col("LINK");
     const statusCols = Object.fromEntries(Object.entries(GAMELIST_STATUS_COLUMNS).map(([key, label]) => [key, col(label)]));
     const marginCols = Object.fromEntries(Object.entries(GAMELIST_MARGIN_COLUMNS).map(([key, label]) => [key, col(label)]));
     for (const row of gamelist.slice(1)) {
@@ -191,6 +198,7 @@ export function parseGameinfoSourceSheet({ gamelist = [], onoff = [] }) {
         publisher: cell(publisherCol),
         category: cell(categoryCol),
         remark: cell(remarkCol),
+        tabGid: sheetTabGid(cell(linkCol)),
         channels,
       });
     }
@@ -206,7 +214,7 @@ export function parseGameinfoSourceSheet({ gamelist = [], onoff = [] }) {
       const { name } = splitGameCell(row[pageCol - 1]);
       const key = gameinfoSheetGameKey(name);
       if (!key) continue;
-      const game = games.get(key) || { key, name, warning: "", publisher: "", category: "", remark: "", channels: {} };
+      const game = games.get(key) || { key, name, warning: "", publisher: "", category: "", remark: "", tabGid: null, channels: {} };
       for (const [channel, label] of Object.entries(ONOFF_COLUMNS)) {
         const status = normalizeGameinfoSalesStatus(row[columnIndex(onoffHeader, label)]);
         if (!status) continue;

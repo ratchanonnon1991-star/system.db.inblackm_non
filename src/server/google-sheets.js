@@ -69,6 +69,23 @@ export function createGoogleReader({ keyFile = process.env.ITUNE_SHEETS_CREDENTI
       const body = await get(`${SHEETS}/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?valueRenderOption=FORMATTED_VALUE`);
       return body.values || [];
     },
+    // [{ title, gid }] — gid is what a "#gid=" link to the tab carries.
+    async tabs(spreadsheetId) {
+      const body = await get(`${SHEETS}/${encodeURIComponent(spreadsheetId)}?fields=sheets.properties(title,sheetId)`);
+      return (body.sheets || []).map((s) => ({ title: s.properties.title, gid: Number(s.properties.sheetId) }));
+    },
+    // rows() for many tabs: { [title]: rows }, 20 tabs per request.
+    async batchRows(spreadsheetId, tabs) {
+      const out = {};
+      for (let i = 0; i < tabs.length; i += 20) {
+        const chunk = tabs.slice(i, i + 20);
+        const params = new URLSearchParams({ valueRenderOption: "FORMATTED_VALUE" });
+        for (const tab of chunk) params.append("ranges", `'${tab.replaceAll("'", "''")}'!A:ZZ`);
+        const body = await get(`${SHEETS}/${encodeURIComponent(spreadsheetId)}/values:batchGet?${params}`);
+        (body.valueRanges || []).forEach((range, index) => { out[chunk[index]] = range.values || []; });
+      }
+      return out;
+    },
     // Literal values (RAW), one cell per update: { range: "'tab'!E12", value }.
     async writeRaw(spreadsheetId, updates) {
       if (readOnly) throw new Error("This Google Sheets reader is read-only");

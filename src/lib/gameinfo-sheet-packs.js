@@ -1,0 +1,286 @@
+// Reading one game's packs out of its tab in the "1.1 ข้อมูลเติมเกม UID"
+// sheet. The tabs were built by hand over years and no two are quite alike:
+// a tab can hold several tables (Cash, Coins, Bundles…), each under its own
+// header row and often under a one-cell label row. A header row names its
+// columns a few known ways:
+//   ราคาขาย / PAGE / ราคาขาย เพจ|เรท      the selling price
+//   <unit> ที่กด / <unit> ที่ได้ / PACK    the pack ("B-Chips ที่กด"), or a bare
+//                                        "<unit>" followed by "<unit> รวม"
+//   [ยอด] <fiat> รวม FEE / รวม / ที่กด / ที่ออก   what is charged, in the cost currency
+//   ช่องทาง [หลัก|สำรอง]                   the wallet (a plain ช่องทาง column can
+//                                        also hold the store or a link)
+//   ประเทศ / ประเทศหลัก                   the country, when it is stated
+// Rows under a header with a pack name and a price are packs. A label row
+// can also be a note ("ต้องเปิด VPN…"), which is not a category, or open a
+// VIP or price-comparison table ("ราคา VIP", "แพ็คเทียบราคา"), which is skipped.
+import { createBlankGameinfoPack } from "@/lib/gameinfo-pack-model";
+import { normalizeGameinfoNumericInput } from "@/lib/gameinfo-pack-validation";
+
+const FIAT = new Set([
+  "mmk", "lak", "thb", "usd", "idr", "php", "myr", "vnd", "sgd", "jpy", "krw", "twd", "hkd",
+  "try", "brl", "ngn", "inr", "eur", "gbp", "aud", "cad", "cny", "rub", "khr", "pkr", "bdt",
+  "mxn", "ars", "clp", "cop", "pen", "zar", "egp", "sar", "aed", "uah", "kzt", "usdt",
+]);
+// Columns that end in ที่ได้/รวม but are money, not packs ("กำไรที่ได้").
+const NOT_PACK = ["กำไร", "ต้นทุน", "ราคา", "ยอด", "usdt", "kaleoz", "playerok", "russia", "page", "razer", "notice", "link", "ช่องทาง", "ระบบ", "ประเทศ", "date", "rate", "bonus", "fee"];
+// iTunes regions: "UK ที่กด" counts gift-card value, not a unit ("UC" is one).
+const REGIONS = new Set(["uk", "de", "us", "jp", "kr", "tw", "hk", "fr", "it", "es", "br", "tr", "ph", "id", "my", "sg", "th", "vn", "au", "ca", "cn", "ru", "in", "mx"]);
+const NOTE = /ต้อง|สามารถ|ใช้|ระวัง|กรณี|vpn|region|ครับ|ค่ะ|⚠/i;
+const NOT_FOR_SALE = /เทียบราคา|vip/i;
+// Shops and top-up sites: a channel column holding these is the store, not the wallet.
+const STORES = ["codashop", "seagm", "unipin", "lapakgaming", "midasbuy", "itemku", "gamekub", "jollymax"];
+// Cost currency → the country GameInfo files the pack under.
+const CURRENCY_COUNTRY = {
+  mmk: "Myanmar", lak: "Laos", thb: "Thailand", idr: "Indonesia", php: "Philippines",
+  myr: "Malaysia", vnd: "Vietnam", sgd: "Singapore", jpy: "Japan", krw: "South Korea",
+  twd: "Taiwan", hkd: "Hong Kong", try: "Turkey", brl: "Brazil", ngn: "Nigeria", inr: "India",
+  khr: "Cambodia", pkr: "Pakistan", bdt: "Bangladesh", ars: "Argentina", mxn: "Mexico",
+};
+
+export const GAMEINFO_SHEET_DEFAULT_CATEGORY = "แพ็คหลัก";
+
+function squash(value) {
+  return String(value ?? "").replace(/\s+/g, "").toLocaleLowerCase("en");
+}
+
+function clean(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+// "Razer (SGD)" and "Razer SGD" count as SGD.
+function fiatKey(unit) {
+  return squash(unit).replace(/^razer/, "").replace(/[^a-z]/g, "");
+}
+
+function isFiat(unit) {
+  return FIAT.has(fiatKey(unit));
+}
+
+function isPackUnit(unit) {
+  const key = squash(unit);
+  return Boolean(key) && !REGIONS.has(key) && !isFiat(unit) && !NOT_PACK.some((word) => key.startsWith(word));
+}
+
+function number(value) {
+  const normalized = normalizeGameinfoNumericInput(String(value ?? "").replace(/,/g, ""));
+  return normalized && Number(normalized) > 0 ? normalized : "";
+}
+
+function isLink(value) {
+  return /^(https?:\/\/|www\.)/i.test(value);
+}
+
+// The pack column of a header row: { col, unit, category } — unit "" for a
+// column that names packs rather than counting a unit.
+function packColumn(header, keys) {
+  for (let col = 0; col < header.length; col += 1) {
+    const match = /^(.+?)\s*(ที่กด|ที่ได้)$/.exec(header[col]);
+    if (keys[col] === "pack" || (match && squash(match[1]) === "pack")) return { col, unit: "", category: "" };
+    if (match && isPackUnit(match[1])) return { col, unit: match[1].trim(), category: "" };
+    // "Donuts" followed somewhere by "Donuts รวม".
+    if (header[col] && isPackUnit(header[col]) && keys.includes(`${keys[col]}รวม`)) return { col, unit: header[col], category: "" };
+  }
+  // A bare title before the money columns names the table's packs: "Growth Pack", "Ticket Shop".
+  const firstFiat = keys.findIndex((key) => {
+    const match = /^(.+?)(รวมfee|รวม|ที่กด)$/.exec(key);
+    return Boolean(match) && isFiat(match[1]);
+  });
+  for (let col = 0; col < (firstFiat < 0 ? header.length : firstFiat); col += 1) {
+    if (header[col] && isPackUnit(header[col]) && !/(รวม|ที่กด|ที่ได้)$/.test(keys[col])) return { col, unit: "", category: header[col] };
+  }
+  return null;
+}
+
+// The charged-amount column: a fee-inclusive total first, then a total, then what is pressed.
+function amountColumn(keys) {
+  let best = null;
+  keys.forEach((key, col) => {
+    const match = /^(?:ยอด)?(.+?)(รวมfee|รวม|ที่กด|ที่ออก)?$/.exec(key);
+    if (!match || !isFiat(match[1])) return;
+    if (!match[2] && !key.startsWith("ยอด")) return;
+    const score = match[2] ? ["รวมfee", "รวม", "ที่กด", "ที่ออก"].indexOf(match[2]) : 4;
+    if (!best || score < best.score) best = { col, score };
+  });
+  return best ? best.col : -1;
+}
+
+function isPriceHeader(key) {
+  return key === "page" || /^ราคาขาย(page|เพจ|เรท|\(page\))?$/.test(key);
+}
+
+/**
+ * The column layout of a header row; { unreadable: true } for a table header
+ * with no pack column we know; null when the row is not a header at all.
+ */
+function readHeader(row) {
+  const header = (row || []).map(clean);
+  const keys = header.map(squash);
+  const priceCol = keys.findIndex(isPriceHeader);
+  if (priceCol < 0) return null;
+  const pack = packColumn(header, keys);
+  if (!pack) return { unreadable: true };
+  // The route's own currency (the first fiat that is pressed) says the country.
+  const pressed = keys.map((key) => /^(.+?)ที่กด$/.exec(key)?.[1]).find((unit) => unit && isFiat(unit));
+  return {
+    unreadable: false,
+    priceCol,
+    nameCol: pack.col,
+    unit: pack.unit,
+    category: pack.category,
+    amountCol: amountColumn(keys),
+    mainCol: keys.indexOf("ช่องทางหลัก"),
+    plainChannelCols: keys.flatMap((key, col) => (key === "ช่องทาง" ? [col] : [])),
+    // "ช่องทาง หลัก" is sometimes followed by a bare "สำรอง".
+    secondaryCol: keys.indexOf("ช่องทางสำรอง") >= 0 ? keys.indexOf("ช่องทางสำรอง") : keys.indexOf("สำรอง"),
+    countryCol: keys.findIndex((key) => key === "ประเทศ" || key === "ประเทศหลัก"),
+    fallbackCountry: CURRENCY_COUNTRY[fiatKey(pressed)] || "",
+  };
+}
+
+/** Index of the first header row, or -1. */
+export function findGameinfoSheetPackHeader(rows) {
+  return (rows || []).findIndex((row) => readHeader(row)?.unreadable === false);
+}
+
+// The wallet of one pack row: ช่องทาง หลัก when there is one, else the first
+// plain ช่องทาง that is neither a link nor a store, else the first that is not a link.
+function walletOf(cell, layout) {
+  if (layout.mainCol >= 0) return cell(layout.mainCol);
+  const values = layout.plainChannelCols.map(cell).filter((value) => value && !isLink(value));
+  return values.find((value) => !STORES.some((store) => squash(value).includes(store))) || values[0] || "";
+}
+
+// "150" under "Premium Credits ที่กด" → "150 Premium Credits".
+function packName(name, unit) {
+  return unit && /^[\d,.]+$/.test(name) ? `${name} ${unit}` : name;
+}
+
+function isLabel(cells) {
+  return cells.length === 1 && /\p{L}/u.test(cells[0]) && !isLink(cells[0]) && cells[0].length <= 60 && !cells[0].includes(">>")
+    && (!/\d/.test(cells[0]) || NOT_FOR_SALE.test(cells[0]));
+}
+
+/**
+ * One tab's rows (cells as displayed) → { currencies: [{ unit, categories:
+ * [{ name, packs: [{ name, price, amountChargedFee, channelsMain,
+ * channelsSecondary, country }] }] }] }, or null when no pack is found.
+ * The same name and price twice (another route for the same pack, or a
+ * repeated table) keeps the first.
+ */
+export function parseGameinfoSheetPackTab(rows) {
+  const currencies = [];
+  const currencyFor = (unit) => {
+    let currency = currencies.find((item) => squash(item.unit) === squash(unit));
+    if (!currency) {
+      currency = { unit, categories: [] };
+      currencies.push(currency);
+    }
+    return currency;
+  };
+  const seen = new Set();
+  let layout = null;
+  let category = null;
+  let label = "";
+  // A VIP/comparison label covers the table under it, or the rest of the
+  // table it sits in when packs come right after it.
+  let skipping = false;
+  let skipNextTable = false;
+  for (const row of rows || []) {
+    const next = readHeader(row);
+    if (next) {
+      // A table we cannot read must not be read with the previous table's columns.
+      layout = next.unreadable ? null : next;
+      category = null;
+      skipping = skipNextTable;
+      skipNextTable = false;
+      continue;
+    }
+    const filled = (row || []).map(clean).filter(Boolean);
+    if (!filled.length) continue;
+    if (isLabel(filled)) {
+      if (NOTE.test(filled[0]) && !NOT_FOR_SALE.test(filled[0])) continue;
+      skipping = NOT_FOR_SALE.test(filled[0]);
+      skipNextTable = skipping;
+      label = skipping ? "" : filled[0];
+      category = null;
+      continue;
+    }
+    if (skipping) {
+      skipNextTable = false;
+      continue;
+    }
+    const cell = (index) => (index >= 0 ? clean(row[index]) : "");
+    const name = layout ? cell(layout.nameCol) : "";
+    const price = layout ? number(cell(layout.priceCol)) : "";
+    if (!name || !price || isLink(name)) {
+      // Anything else (a rate block, a note) ends a label's reach.
+      label = "";
+      continue;
+    }
+    const fullName = packName(name, layout.unit);
+    // NFKC like GameInfo's own duplicate check (not in squash: it splits Thai "ำ").
+    const key = `${squash(fullName).normalize("NFKC")}|${Number(price)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (!category) {
+      const categoryName = (label && squash(label) !== squash(layout.unit) ? label : "") || layout.category || GAMEINFO_SHEET_DEFAULT_CATEGORY;
+      const currency = currencyFor(layout.unit);
+      category = currency.categories.find((item) => item.name === categoryName);
+      if (!category) {
+        category = { name: categoryName, packs: [] };
+        currency.categories.push(category);
+      }
+      label = "";
+    }
+    const wallet = walletOf(cell, layout);
+    const secondary = cell(layout.secondaryCol);
+    category.packs.push({
+      name: fullName,
+      price,
+      amountChargedFee: number(cell(layout.amountCol)),
+      channelsMain: wallet ? [wallet] : [],
+      channelsSecondary: secondary && !isLink(secondary) ? [secondary] : [],
+      country: cell(layout.countryCol) || layout.fallbackCountry,
+    });
+  }
+  // PACK tables have no unit of their own: they join the tab's first named currency.
+  const unnamed = currencies.find((currency) => !currency.unit);
+  const named = currencies.find((currency) => currency.unit);
+  if (unnamed && named) {
+    for (const item of unnamed.categories) {
+      const same = named.categories.find((existing) => existing.name === item.name);
+      if (same) same.packs.push(...item.packs);
+      else named.categories.push(item);
+    }
+    currencies.splice(currencies.indexOf(unnamed), 1);
+  }
+  return currencies.length ? { currencies } : null;
+}
+
+export function countGameinfoSheetPacks(parsed) {
+  return (parsed?.currencies || []).reduce((total, currency) =>
+    total + currency.categories.reduce((sum, category) => sum + category.packs.length, 0), 0);
+}
+
+/** The units of a parsed tab, for the preview ("B-Chips, Crystals"). */
+export function gameinfoSheetPackUnits(parsed) {
+  return (parsed?.currencies || []).map((currency) => currency.unit).filter(Boolean).join(", ");
+}
+
+function newId(prefix) {
+  return `${prefix}_${Math.random().toString(36).slice(2, 9)}${Date.now().toString(36).slice(-4)}`;
+}
+
+/** The parsed tab as a GameInfo currency tree (one currency per unit). */
+export function gameinfoSheetPackCurrencies(parsed) {
+  return parsed.currencies.map((currency) => ({
+    id: newId("c"),
+    name: currency.unit || "",
+    image: "",
+    categories: currency.categories.map((category) => ({
+      id: newId("cat"),
+      name: category.name,
+      packs: category.packs.map((pack) => ({ ...createBlankGameinfoPack(newId("pk")), ...pack })),
+    })),
+  }));
+}
