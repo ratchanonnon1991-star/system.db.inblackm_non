@@ -106,17 +106,22 @@ function zip(files) {
   end.writeUInt32LE(dir.length, 12); end.writeUInt32LE(offset, 16);
   return Buffer.concat([...chunks, dir, end]);
 }
+// The long run of styled empty cells Google writes at the end of every tab.
+let tail = "";
+for (let row = 8; row <= 2000; row += 1) tail += `<row r="${row}">${"ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((col) => `<c r="${col}${row}" s="3"/>`).join("")}</row>`;
+const started = Date.now();
 const workbook = readXlsxSheetsWithImages(zip({
   "xl/workbook.xml": '<workbook><sheets><sheet name="U.LOVE &amp; DEEPSPACE" sheetId="1" r:id="rId3"/></sheets></workbook>',
   "xl/_rels/workbook.xml.rels": '<Relationships><Relationship Id="rId3" Type="ws" Target="worksheets/sheet1.xml"/></Relationships>',
   "xl/sharedStrings.xml": "<sst><si><t>NOTICE (ปัญหาเเละคำเเนะนำ) UID</t></si><si><r><t>1.หากเกิด </t></r><r><t>Error 312</t></r></si></sst>",
-  "xl/worksheets/sheet1.xml": '<worksheet><sheetData><row r="5"><c r="B5" t="s"><v>0</v></c></row><row r="7"><c r="A7" t="s"><v>1</v></c><c r="C7"><v>42</v></c></row></sheetData></worksheet>',
+  "xl/worksheets/sheet1.xml": `<worksheet><sheetData><row r="5"><c r="A5" s="3"/><c r="B5" t="s"><v>0</v></c></row><row r="7"><c r="A7" t="s"><v>1</v></c><c r="C7"><v>42</v></c></row>${tail}</sheetData></worksheet>`,
   "xl/worksheets/_rels/sheet1.xml.rels": '<Relationships><Relationship Id="rId1" Type="drawing" Target="../drawings/drawing1.xml"/></Relationships>',
   "xl/drawings/drawing1.xml": '<xdr:wsDr><xdr:oneCellAnchor><xdr:from><xdr:col>4</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>8</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:pic><a:blip r:embed="rId1"/></xdr:pic></xdr:oneCellAnchor></xdr:wsDr>',
   "xl/drawings/_rels/drawing1.xml.rels": '<Relationships><Relationship Id="rId1" Type="image" Target="../media/image1.png"/></Relationships>',
   "xl/media/image1.png": "PNGBYTES",
 }));
 const sheet = workbook.sheets[0];
+check(Date.now() - started < 1000, "thousands of empty styled cells read in well under a second");
 check(sheet.title === "U.LOVE & DEEPSPACE", "sheet titles are unescaped");
 check(sheet.cells.map((cell) => `${cell.col}${cell.row}:${cell.text}`).join("|") === "B5:NOTICE (ปัญหาเเละคำเเนะนำ) UID|A7:1.หากเกิด Error 312", "text cells, rich text joined; numbers are not text");
 check(sheet.images.length === 1 && sheet.images[0].row === 9 && sheet.images[0].col === 4 && sheet.images[0].media === "xl/media/image1.png", "a picture's anchor row is 1-based and its file resolved");
