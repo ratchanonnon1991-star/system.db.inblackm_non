@@ -8,11 +8,14 @@ Built from the Donshop inventory design (branch `donshop-inventory`): AgenH2H bo
 ## Sources and accounting
 
 - `codashop_orders` with exact payment method `AgenH2HIDR`, every status (`completed`, `manual`, `failed`, `pending`, `wait`), filterable by one status.
-- IDR out comes from `provider_response._worker_meta.live_cost_total`, falling back to `live_cost × quantity`. Only `completed` fills count as IDR out, cost, sale or profit; other statuses are listed for review with the bot's quoted price, never summed.
+- IDR out comes from `provider_response._worker_meta.live_cost_total`, falling back to `live_cost × quantity`, then the provider's `data.total` (older rows), the same order as `/profit/agenh2h-history`. Only `completed` fills count as IDR out, cost, sale or profit; other statuses are listed for review with the bot's quoted price, never summed.
 - Cost THB = IDR out × selected THB/IDR reference rate (default `0.0019`). It is a reference, not a locked purchase rate; changing it changes only the screen/CSV.
 - Customer receipts reuse the Plsbuy / Garena Shell matching (`telegram_orders_dev`, `sheet_jobs` marketplace rows, sale FX). Unknown or conflicting receipts show — and are not guessed.
 - Balance card: the latest completed order's `balance_before − IDR out`, independent of filters. `balance_after` is not read (live rows often store 0). It is the wallet after that order, not a live provider read, and does not include later top-ups.
-- Orders filled by hand outside the bot are not in `codashop_orders` and do not appear. There is no top-up record, so a rise shows as a `topup` check (hidden by default).
+- `codashop_orders.source` is often `telegram` (the queue channel) on AgenH2H rows. It is treated as empty so the sales platform comes from `telegram_orders_dev.source`; otherwise those orders would show no customer receipt.
+- Invoice: `provider_response.data.invoice` (the Agen H2H API), then the Codashop invoice fields.
+- Not read: `profit_agenh2h_overrides` (sale/cost/platform corrections typed on the Profit pages, in the system DB), so a corrected order can show a different sale or cost there.
+- Orders filled by hand outside the bot are not in `codashop_orders` and do not appear. That includes the Profit "Manual · Agenh2h (IDR)" games kept in Google Sheets. There is no top-up record, so a rise shows as a `topup` check (hidden by default).
 - The existing `/profit/agenh2h-history` page is unchanged.
 
 ## Balance checks

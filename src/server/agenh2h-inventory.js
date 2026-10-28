@@ -3,7 +3,7 @@ import { canViewUsdInventory, inventoryError } from "@/lib/usdcodashop-inventory
 import { enrichShellOrders, saleJoin } from "@/server/garena-shell-inventory";
 import { allocateShellSale } from "@/lib/garena-shell-inventory";
 import { prepareCodaSales } from "@/server/usdcodashop-sale-rates";
-import { AGENH2H_METHOD, AGENH2H_PAGE_SIZE, ahFilters, ahOrder, groupDsOrders, ahMatches, ahSummary, ahWallet, ahWalletChecks } from "@/lib/agenh2h-inventory";
+import { AGENH2H_METHOD, AGENH2H_PAGE_SIZE, ahFilters, ahOrder, groupAhOrders, ahMatches, ahSummary, ahWallet, ahWalletChecks } from "@/lib/agenh2h-inventory";
 
 const BATCH = 500;
 const meta = "c.provider_response->'_worker_meta'";
@@ -12,12 +12,15 @@ const balanceOk = `(${meta}->>'balance_before') ~ '^[0-9]{1,12}(\\.[0-9]{1,20})?
 // DB reads them for the date filter, so displayed times do not depend on the Node process time zone.
 const instant = (column) => `(${column} AT TIME ZONE current_setting('TimeZone'))`;
 const chainColumns = `c.id,c.source_order_id,c.status,${instant("c.created_at")} AS occurred_at,${instant("c.updated_at")} AS updated_at,${meta}->>'balance_before' AS balance_before,
-  ${meta}->>'live_cost_total' AS live_cost_total,${meta}->>'live_cost' AS live_cost,${meta}->>'quantity' AS quantity`;
+  ${meta}->>'live_cost_total' AS live_cost_total,${meta}->>'live_cost' AS live_cost,${meta}->>'quantity' AS quantity,
+  c.provider_response->'data'->>'total' AS data_total`;
 // Explicit projections only: provider_response also carries buyer/user payloads that must stay in PG.
-const columns = `c.id,c.source_order_id,c.source,c.status,${instant("c.created_at")} AS occurred_at,c.game_name,c.pack_name,
-  COALESCE(c.provider_response->>'main_invoice_number',c.provider_response->'invoices'->0->>'invoice_number') AS provider_ref,
+// AgenH2H often stores source='telegram' (the queue channel, not the sales platform); leave it empty so the sale
+// falls back to telegram_orders_dev.source, as /profit/agenh2h-history does. The Agen H2H invoice lives in data.invoice.
+const columns = `c.id,c.source_order_id,NULLIF(lower(c.source),'telegram') AS source,c.status,${instant("c.created_at")} AS occurred_at,c.game_name,c.pack_name,
+  COALESCE(c.provider_response->'data'->>'invoice',c.provider_response->>'main_invoice_number',c.provider_response->'invoices'->0->>'invoice_number') AS provider_ref,
   ${meta}->>'balance_before' AS balance_before,${meta}->>'live_cost_total' AS live_cost_total,
-  ${meta}->>'live_cost' AS live_cost,${meta}->>'quantity' AS quantity`;
+  ${meta}->>'live_cost' AS live_cost,${meta}->>'quantity' AS quantity,c.provider_response->'data'->>'total' AS data_total`;
 export function createAgenh2hInventory({ select = selectQuery, enrich = enrichShellOrders, prepareSales = prepareCodaSales } = {}) {
   return { async list(actor, query = {}, { exportAll = false } = {}) {
     if (!canViewUsdInventory(actor)) throw inventoryError("ไม่มีสิทธิ์ดู AgenH2H Inventory", 403);
@@ -47,7 +50,7 @@ export function createAgenh2hInventory({ select = selectQuery, enrich = enrichSh
     const enriched = [];
     for (let i = 0; i < rows.length; i += BATCH) enriched.push(...await enrich(select, rows.slice(i, i + BATCH)));
     const prepared = await prepareSales(enriched.map((row) => ({ sourceId: String(row.id), row, details: row.sheet_fields })), []);
-    const entries = groupDsOrders(prepared.map(({ row, details }) => ahOrder({ ...row, sheet_fields: allocateShellSale(details) }, filters.rate)), filters.rate)
+    const entries = groupAhOrders(prepared.map(({ row, details }) => ahOrder({ ...row, sheet_fields: allocateShellSale(details) }, filters.rate)), filters.rate)
       .filter((e) => ahMatches(e, filters.search)).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || Number(b.id) - Number(a.id));
     // Wallet continuity covers every status in the date range (independent of status/search filters). Fills are chained in
     // the order the bot started them (fill_started_at, which is when balance_before was read), not creation order. A fill

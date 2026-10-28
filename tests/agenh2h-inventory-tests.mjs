@@ -5,6 +5,7 @@ import * as lib from "../src/lib/agenh2h-inventory.js";
 import * as access from "../src/lib/usdcodashop-inventory.js";
 import { allocateShellSale } from "../src/lib/garena-shell-inventory.js";
 import { TOPUP_INVENTORY_PROVIDERS } from "../src/lib/topup-inventory.js";
+import { listingFields } from "../src/lib/usdcodashop-sheet.js";
 let passed = 0;
 const eq = (a, b) => { assert.deepEqual(a, b); passed++; };
 const check = (v) => { assert.ok(v); passed++; };
@@ -25,6 +26,17 @@ eq(lib.ahUsed({ live_cost: "1000", quantity: "3" }), "3000.00");
 eq(lib.ahUsed({ live_cost: "1000" }), "1000.00");
 eq(lib.ahUsed({ live_cost: "1000", quantity: "0" }), null);
 eq(lib.ahUsed({}), null);
+// Older AgenH2H rows only carry the provider's data.total; it is used last, never ahead of the worker's own figures.
+eq(lib.ahUsed({ data_total: "254613" }), "254613.00");
+eq(lib.ahUsed({ live_cost_total: "81333", data_total: "999" }), "81333.00");
+eq(lib.ahUsed({ live_cost: "1000", quantity: "2", data_total: "999" }), "2000.00");
+eq(lib.ahUsed({ live_cost: "1000", quantity: "0", data_total: "999" }), null);
+eq(lib.ahUsed({ data_total: "Rp 1.000" }), null);
+// With the "telegram" queue source dropped in SQL, a Kaleoz sale is priced from telegram_orders_dev; "telegram" itself prices nothing.
+eq(listingFields({ source: null, telegram_source: "kaleoz", sale_price: "250" }).saleThb, "250.00");
+eq(listingFields({ source: "telegram", telegram_source: "kaleoz", sale_price: "250" }).saleThb, null);
+eq(lib.ahOrder(raw(8, { source: null, telegram_source: "kaleoz" }), rate).source, "kaleoz");
+eq(lib.ahWallet({ status: "completed", balance_before: "1000000", data_total: "254613", occurred_at: "2026-10-20T01:00:00Z", id: 7 }).amount, "745387.00");
 
 const done = normalize(raw(1));
 eq(done.figures, { sale: "200.00", cost: "154.53", profit: "45.47", margin: "22.74" });
@@ -35,24 +47,24 @@ eq(lib.ahOrder(raw(1), "0.002").figures.cost, "162.67");
 const manual = normalize(raw(2, { status: "manual" }));
 eq(manual.used, null); eq(manual.quoted, "81333.00"); eq(manual.wallet, null); eq(manual.figures.sale, null); eq(manual.figures.cost, null);
 
-const [retry] = lib.groupDsOrders([normalize(raw(3, { status: "failed" })), normalize(raw(4))], rate);
+const [retry] = lib.groupAhOrders([normalize(raw(3, { status: "failed" })), normalize(raw(4))], rate);
 eq(retry.fillCount, 2); eq(retry.completedCount, 1); eq(retry.statuses, { failed: 1, completed: 1 });
 eq(retry.used, "81333.00"); eq(retry.figures.sale, "200.00"); eq(retry.figures.cost, "154.53");
-const [onlyFailed] = lib.groupDsOrders([normalize(raw(5, { status: "failed", source_base: "ORDER/2" }))], rate);
+const [onlyFailed] = lib.groupAhOrders([normalize(raw(5, { status: "failed", source_base: "ORDER/2" }))], rate);
 eq(onlyFailed.used, null); eq(onlyFailed.figures.sale, null); eq(onlyFailed.wallet, null);
 
-const pair = lib.groupDsOrders([1, 2].map((id) => normalize(raw(id, { live_cost_total: "10", sheet_fields: { saleThb: "0.50", saleTotalThb: "1" } }))), rate)[0];
+const pair = lib.groupAhOrders([1, 2].map((id) => normalize(raw(id, { live_cost_total: "10", sheet_fields: { saleThb: "0.50", saleTotalThb: "1" } }))), rate)[0];
 eq(pair.used, "20.00"); eq(pair.figures.sale, "1.00"); eq(pair.figures.cost, "0.04");
-eq(lib.groupDsOrders([normalize(raw(1)), normalize(raw(2, { sheet_fields: { saleThb: "1", saleTotalThb: "2" } }))], rate)[0].figures.sale, null);
-eq(lib.groupDsOrders([normalize(raw(1)), { ...normalize(raw(2)), source: "other" }], rate).length, 2);
-const walletGroup = lib.groupDsOrders([normalize(raw(1)), normalize(raw(2, { occurred_at: "2026-10-20T02:00:00Z", balance_before: "12411611" }))], rate)[0];
+eq(lib.groupAhOrders([normalize(raw(1)), normalize(raw(2, { sheet_fields: { saleThb: "1", saleTotalThb: "2" } }))], rate)[0].figures.sale, null);
+eq(lib.groupAhOrders([normalize(raw(1)), { ...normalize(raw(2)), source: "other" }], rate).length, 2);
+const walletGroup = lib.groupAhOrders([normalize(raw(1)), normalize(raw(2, { occurred_at: "2026-10-20T02:00:00Z", balance_before: "12411611" }))], rate)[0];
 eq(walletGroup.wallet.amount, "12330278.00");
 
 const summary = lib.ahSummary([retry, onlyFailed]);
 eq(summary.orders, 2); eq(summary.delivered, 1); eq(summary.fills, 3); eq(summary.statuses, { failed: 2, completed: 1 });
 eq(summary.sale, "200.00"); eq(summary.used, "81333.00"); eq(summary.missingSales, 0);
 eq(lib.ahSummary([onlyFailed]).sale, "0.00");
-eq(lib.ahSummary([lib.groupDsOrders([normalize(raw(6, { sheet_fields: {} }))], rate)[0]]).profit, null);
+eq(lib.ahSummary([lib.groupAhOrders([normalize(raw(6, { sheet_fields: {} }))], rate)[0]]).profit, null);
 
 // Wallet continuity: each completed balance_before must equal the previous completed balance_before − IDR out.
 const fill = (id, status, bb, cost, minute) => ({ id, source_order_id: `K${id}`, status, balance_before: bb, live_cost_total: cost, occurred_at: `2026-10-20T01:${String(minute).padStart(2, "0")}:00Z` });
@@ -114,6 +126,9 @@ const select = async (sql, args) => {
   check(!/SELECT \*|raw_data|password|session|UPDATE |INSERT |DELETE /i.test(sql)); eq(args[0], "AgenH2HIDR");
   // Zone-less timestamps leave SQL as instants, so the Node time zone cannot shift displayed times.
   check(sql.includes("(c.created_at AT TIME ZONE current_setting('TimeZone')) AS occurred_at")); check(!/c\.(created|updated)_at AS/.test(sql));
+  // Every read carries the data.total fallback; the order rows also drop the "telegram" queue source and read the Agen H2H invoice.
+  check(sql.includes("c.provider_response->'data'->>'total' AS data_total"));
+  if (sql.includes("c.game_name")) { check(sql.includes("NULLIF(lower(c.source),'telegram') AS source")); check(sql.includes("COALESCE(c.provider_response->'data'->>'invoice',")); }
   if (sql.includes("LIMIT 1")) { check(!sql.includes("c.created_at >=")); check(sql.includes("c.status='completed'")); return walletRows; }
   if (sql.includes("in_range")) { chainSql = sql; chainArgs = args; return chainResult; }
   lastArgs = args; return [raw(1), raw(2, { status: "failed" })];

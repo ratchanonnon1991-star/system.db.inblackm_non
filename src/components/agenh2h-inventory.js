@@ -25,8 +25,10 @@ function WalletCard({ data }) {
   </article>;
 }
 function StatusCard({ summary }) {
+  // Any status outside the known five (e.g. rejected) is still counted, so the total always matches the fills listed.
+  const extra = Object.keys(summary.statuses).filter((key) => !AGENH2H_STATUSES.some(([known]) => known === key)).map((key) => [key, ahStatusLabel(key)]);
   return <article className="rounded-xl border border-ll-hairline bg-ll-surface-1 p-5"><h2 className="font-semibold">รายการย่อยตามสถานะ (ตามตัวกรอง)</h2>
-    <dl className="mt-4 grid grid-cols-3 gap-3 text-sm sm:grid-cols-5">{AGENH2H_STATUSES.map(([key, title]) => <div key={key}><dt className="text-ll-ink-subtle">{title}</dt><dd className="mt-2 font-semibold tabular-nums">{summary.statuses[key] || 0}</dd></div>)}</dl>
+    <dl className="mt-4 grid grid-cols-3 gap-3 text-sm sm:grid-cols-5">{[...AGENH2H_STATUSES, ...extra].map(([key, title]) => <div key={key}><dt className="text-ll-ink-subtle">{title}</dt><dd className="mt-2 font-semibold tabular-nums">{summary.statuses[key] || 0}</dd></div>)}</dl>
     <p className="mt-4 text-xs text-ll-ink-subtle">ยอดโอน ต้นทุน กำไร และ IDR ออก นับเฉพาะรายการสำเร็จ · Manual / Failed / Pending / Wait แสดงเพื่อตรวจสอบเท่านั้น</p>
   </article>;
 }
@@ -162,7 +164,7 @@ export default function Agenh2hInventory({ lang }) {
     {ready && <>
       <ChecksPanel alerts={data.alerts || []} fresh={data.fresh} resolved={data.resolved} rate={data.rate} settings={settings} onSettings={saveSettings} />
       <section className="grid gap-4 sm:grid-cols-2" aria-label="ยอดคงเหลือและสถานะ"><WalletCard data={data} /><StatusCard summary={data.summary} /></section>
-      <p className="rounded-xl border border-ll-hairline bg-ll-surface-1 p-4 text-sm">IDR ออกใช้ live_cost_total ที่บอทบันทึก (หรือ live_cost × จำนวน) ของรายการสำเร็จ ต้นทุน THB = IDR ออก × เรทที่เลือก เป็นค่าอ้างอิง ไม่ใช่ต้นทุนซื้อจริงย้อนหลัง · ล็อต SYSTEM/NONE ต้นทุน 0 ไม่ถูกนำมาใช้</p>
+      <p className="rounded-xl border border-ll-hairline bg-ll-surface-1 p-4 text-sm">IDR ออกใช้ live_cost_total ที่บอทบันทึก (หรือ live_cost × จำนวน หรือ data.total ของรายการเก่า) ของรายการสำเร็จ ต้นทุน THB = IDR ออก × เรทที่เลือก เป็นค่าอ้างอิง ไม่ใช่ต้นทุนซื้อจริงย้อนหลัง · ล็อต SYSTEM/NONE ต้นทุน 0 ไม่ถูกนำมาใช้</p>
       <section className="space-y-4" aria-label="ผลการค้นหา"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold">ประวัติ AgenH2H · {data.total} ออเดอร์</h2><p className="text-sm text-ll-ink-subtle">{data.summary.delivered} ออเดอร์สำเร็จ · {data.summary.fills} รายการย่อย</p></div><dl className="grid gap-3 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4 sm:grid-cols-2 lg:grid-cols-4">{[["ยอดโอน THB", data.summary.sale], ["ต้นทุน THB (อ้างอิง)", data.summary.cost], ["กำไร THB (อ้างอิง)", data.summary.profit], ["IDR ออกตามตัวกรอง", data.summary.used]].map(([title, v]) => <div key={title}><dt className="text-xs text-ll-ink-subtle">{title}</dt><dd className="mt-2 text-xl font-semibold tabular-nums">{money(v)}</dd></div>)}</dl>
         <p className="text-xs text-ll-ink-subtle">กำไร % = (ยอดโอน − ต้นทุน) ÷ ยอดโอน × 100 · ค่าอ้างอิงจะเปลี่ยนเมื่อปรับเรท</p>
         {(data.summary.missingSales > 0 || data.summary.missingCosts > 0) && <p role="status" className="text-sm text-ll-ink-subtle">ข้อมูลไม่ครบ: ยอดโอน {data.summary.missingSales} · ยอดออก {data.summary.missingUsage} · ต้นทุน {data.summary.missingCosts} ออเดอร์ ยอดรวมที่ข้อมูลไม่ครบแสดง — ไม่แทนด้วยศูนย์</p>}
