@@ -3,17 +3,12 @@
 import { useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Boxes, Eye, Layers } from "lucide-react";
-import { GAMEINFO_VIEW_COOKIE, normalizeGameinfoView } from "@/lib/gameinfo-view";
+import { normalizeGameinfoView, rememberGameinfoView } from "@/lib/gameinfo-view";
 
 const VIEWS = [
   { id: "topup", label: "Topup", icon: Eye, note: "สำหรับทีมเติม: ราคา ช่องทาง และคำแนะนำ · ไม่แสดงคอลัมน์ที่ตั้งซ่อนไว้สำหรับ Topup" },
   { id: "product", label: "Product", icon: Boxes, note: "แสดงราคา ต้นทุน กำไร และทุกคอลัมน์" },
 ];
-
-// A year, so the choice outlives sessions; the server reads it on every page.
-function rememberView(view) {
-  document.cookie = `${GAMEINFO_VIEW_COOKIE}=${view}; path=/; max-age=31536000; samesite=lax`;
-}
 
 // The bar under the GameInfo header: anyone can switch between the two
 // views; whether they can edit is shown beside it and depends only on the
@@ -33,7 +28,7 @@ export default function GameinfoViewSwitch({ savedView, isAdmin }) {
 
   function choose(view) {
     if (view === current) return;
-    rememberView(view);
+    rememberGameinfoView(view);
     // Drop a ?view= so the URL does not pin the old view over the cookie.
     const params = new URLSearchParams(searchParams.toString());
     params.delete("view");
