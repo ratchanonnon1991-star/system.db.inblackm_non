@@ -136,7 +136,10 @@ export const LEDGER_CHECK_LOADERS = {
       const balances = "CASE WHEN jsonb_typeof(c.provider_response)='object' THEN c.provider_response->'balances' END";
       const chain = await codashopChain(select, clipped, {
         method: WAVEPAY_METHOD, wallet: WAVE_PHONE_SQL,
-        columns: `c.pack_price, ${WAVE_PHONE_SQL} AS phone_key, ${balances}->>'oldBalance' AS old_balance, ${balances}->>'newBalance' AS new_balance`,
+        columns: `c.pack_price, ${WAVE_PHONE_SQL} AS phone_key, ${balances}->>'oldBalance' AS old_balance, ${balances}->>'newBalance' AS new_balance,
+          CASE WHEN jsonb_typeof(c.provider_response)='object' THEN c.provider_response->>'status' END AS bot_status,
+          CASE WHEN jsonb_typeof(c.provider_response->'error')='object' THEN c.provider_response->'error'->>'code' END AS bot_error_code,
+          CASE WHEN jsonb_typeof(c.provider_response->'error')='object' THEN left(c.provider_response->'error'->>'message', 300) END AS bot_error_message`,
         anchorWhere: `${balances}->>'newBalance' IS NOT NULL`,
       });
       return { rows: chain.inRange, since: clipped.start, ...groupWallets(chain.all, { wallet: waveWallet, receipt: waveReceipt, quote: waveQuote }) };
