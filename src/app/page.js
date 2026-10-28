@@ -204,20 +204,20 @@ function SystemHub({ me, onLoggedOut, onPermissionsChanged }) {
   const [usersModal, setUsersModal] = useState(false);
   const [theme, toggleTheme] = useLLTheme();
   const [views, setViews] = useState([]);
-  const [viewsLoading, setViewsLoading] = useState(true);
+  const [viewsLoading, setViewsLoading] = useState(isTemplateUser);
   const [search, setSearch] = useState("");
   const searchRef = useRef(null);
 
-  // /api/views already filters to what this account can see (admins get
-  // everything, everyone else gets public + shared-with-them + their
-  // assigned default) -- the hub just links straight into /view/<id> for
-  // each one instead of making people open System DB first.
+  // Screens are listed on the hub only for a "user" account, for which they
+  // are the only way in; everyone else reaches them through System DB.
+  // /api/views already filters to what this account can see.
   useEffect(() => {
+    if (!isTemplateUser) return;
     apiJson("/api/views", { fallbackError: "โหลดเทมเพลตหน้าจอไม่สำเร็จ" })
       .then((data) => setViews((data.views || []).filter((view) => view.config?.panels?.length)))
       .catch(() => setViews([]))
       .finally(() => setViewsLoading(false));
-  }, []);
+  }, [isTemplateUser]);
 
   // ⌘K / Ctrl+K jumps to the search box, as the hint inside it says.
   useEffect(() => {
@@ -314,7 +314,7 @@ function SystemHub({ me, onLoggedOut, onPermissionsChanged }) {
               onKeyDown={(event) => {
                 if (event.key === "Escape") setSearch("");
               }}
-              placeholder={isTemplateUser ? "ค้นหาหน้าจอ..." : "ค้นหาระบบ หรือเทมเพลต..."}
+              placeholder={isTemplateUser ? "ค้นหาหน้าจอ..." : "ค้นหาระบบ..."}
               className="min-w-0 flex-1 border-0 bg-transparent text-[15px] text-[#18181B] outline-none placeholder:text-[#71717A]"
             />
             <kbd className="hidden rounded-md border border-[#E4E4E7] bg-[#F4F4F5] px-[7px] py-0.5 font-[family-name:var(--font-ib-lato)] text-[11px] font-bold text-[#3F3F46] sm:inline">
@@ -441,14 +441,11 @@ function SystemHub({ me, onLoggedOut, onPermissionsChanged }) {
             </section>
           )}
 
-          {/* Deliberately not another tile in the SYSTEMS grid above: a
-              template is a saved arrangement of panels inside System DB, not
-              a system of its own the way GameInfo is, so it gets its own card
-              labelled as a shortcut into System DB. For a "user" account these
-              are its assigned screens; an empty list still renders for them
-              (unlike everyone else) since a User with nothing assigned has no
-              other way in at all, and that is worth saying plainly. */}
-          {(viewsLoading || shownViews.length > 0 || (isTemplateUser && !query)) && (
+          {/* Only for a "user" account: its assigned screens are its only way
+              in, so the card shows even when empty, to say so plainly. Staff
+              and admins open screens from System DB; the hub no longer lists
+              them as shortcuts. */}
+          {isTemplateUser && (viewsLoading || shownViews.length > 0 || !query) && (
             <section
               aria-labelledby="hub-templates"
               className="flex min-w-0 flex-[1_1_420px] flex-col gap-3.5 rounded-xl border border-ll-hairline bg-ll-surface-1 p-5 shadow-[var(--ll-shadow-card)]"
