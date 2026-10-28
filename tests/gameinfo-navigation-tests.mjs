@@ -27,6 +27,8 @@ const checks = [
   // Topup / Product is for everyone; editing follows gameinfo.admin only.
   homePage.includes("resolveGameinfoView({ param: rawView") && homePage.includes("editable={editableRole} topupView={topupView}"),
   viewSwitch.includes("Topup") && viewSwitch.includes("Product") && viewSwitch.includes("GAMEINFO_VIEW_COOKIE") && !modeToggle.includes("มุมมอง Topup"),
+  // The bar shows only on a game's detail page (/gameinfo/<lang>/<id>).
+  viewSwitch.includes("segments.length !== 3 || !/^\\d+$/.test(segments[2])"),
   gamelistCards.includes('aria-label={`ดูข้อมูล ${row.game}`}') &&
     gamelistCards.includes('{editable ? "เปิดจัดการ" : "เปิดดู"}') &&
     gamelistCards.includes("bg-linear-primary px-3"),
