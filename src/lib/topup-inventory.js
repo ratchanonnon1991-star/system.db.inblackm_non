@@ -1,6 +1,7 @@
 export const TOPUP_INVENTORY_PROVIDERS = [
   { key: "gamepoint", name: "(MYR) Gamepoint", description: "ยอดตัด MYR จากผลบอทและ ledger พร้อมต้นทุน กำไร และยอดคงเหลือคำนวณแยกจากยอดที่บันทึก", ready: true },
   { key: "plsbuy", name: "(MYR) Plsbuy", description: "ประวัติ Plsbuy ยอด MYR ออก ต้นทุน กำไร และยอดอ้างอิงจากชีท", ready: true },
+  { key: "donshop", name: "(IDR) Donshop", description: "ประวัติ Donshop ทุกสถานะ ยอด IDR ออก ต้นทุน กำไร และยอดคงเหลือหลังออเดอร์สำเร็จล่าสุด", ready: true },
   { key: "agenh2h", name: "(IDR) AgenH2H", description: "ประวัติ AgenH2H ทุกสถานะ ยอด IDR ออก ต้นทุน กำไร และยอดคงเหลือหลังออเดอร์สำเร็จล่าสุด", ready: true },
   { key: "razer", name: "Razer Gold", description: "บัญชี SGD / CAD จาก Razer Stock พร้อม Gold / Silver และประวัติบอทแยกสกุลเงิน", ready: true },
   { key: "netease", name: "Netease", description: "Netease Pay และ Credit ตามชีท พร้อมยอดบอท ยอดออก ต้นทุน กำไร และประวัติรายการ", ready: true },
