@@ -28,7 +28,7 @@ const sourceBase = "split_part(c.source_order_id::text, ':', 1) AS source_base";
 // Zone-less timestamps hold the DB's local time (TimeZone = Asia/Bangkok). Turn them into exact
 // instants in SQL so nothing depends on the Node process time zone; a timestamptz passes through
 // unchanged (::timestamp renders it in that same zone first).
-const at = column => `(${column}::timestamp AT TIME ZONE current_setting('TimeZone'))`;
+export const at = column => `(${column}::timestamp AT TIME ZONE current_setting('TimeZone'))`;
 // When the bot took the queue (for Donshop: when balance_before was read).
 const started = `COALESCE(c.fill_started_at, ${at("c.created_at")})`;
 const iso = value => new Date(value).toISOString();

@@ -127,7 +127,7 @@ await check("receipt chain: before/after balances and one bot spend each, same-s
   assert.deepEqual(evidence.botMovements.map(m => m.amount), ["10.0000", "20.0000", "10.0000", "2.0000"]);
   assert.deepEqual(evidence.hints, [{ at: "2026-10-20T06:00:00.000Z", status: "failed", ref: "K3", amount: null }]);
   assert.deepEqual(evidence.problems, []);
-  assert.equal(receiptRef({}, 9), "receipt-9");
+  assert.equal(receiptRef({}, 9), "#9");
 });
 
 await check("missing numbers, negative balances and overlapping purchases are reported, not guessed", () => {
