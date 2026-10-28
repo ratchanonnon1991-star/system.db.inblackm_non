@@ -4,7 +4,7 @@
 import { accountKey } from "./inventory-ledger.js";
 import { razerWalletKey, razerEmail } from "./razer-inventory.js";
 import { resolveNeteaseAccount, NETEASE_ACCOUNTS } from "./netease-inventory.js";
-import { kyat, WAVEPAY_START_DATE } from "./wavepay-inventory.js";
+import { kyat, waveUsage, waveShortBalance, WAVE_NOT_CHARGED_CODE, WAVEPAY_START_DATE } from "./wavepay-inventory.js";
 import { shellAccount } from "./garena-shell-inventory.js";
 import { dsUsed } from "./donshop-inventory.js";
 
@@ -57,9 +57,13 @@ export function waveWallet(row) {
 }
 export function waveReceipt(row) {
   const before = kyat(row.old_balance), after = kyat(row.new_balance);
-  // pack_price is only a fallback for a missing balance pair, like the WavePay page.
+  if (before == null && after == null && row.bot_error_code === WAVE_NOT_CHARGED_CODE) {
+    // The bot read the balance, found it short and paid nothing: a real reading, no spend.
+    return { ref: receiptRef(row, row.id), startAt: startOf(row), endAt: null, before: waveShortBalance(row.bot_error_message), after: null, spent: "0" };
+  }
+  // Same usage rule as the WavePay page (pack price only as a fallback; a failed bot fill is unknown).
   return { ref: receiptRef(row, row.id), startAt: startOf(row), endAt: null, before, after,
-    spent: before != null && after != null ? null : kyat(row.pack_price) };
+    spent: before != null && after != null ? null : waveUsage(row).usedMmk };
 }
 export const waveQuote = row => kyat(row.pack_price);
 export const WAVE_CHECK_START = `${WAVEPAY_START_DATE}T00:00:00+07:00`;

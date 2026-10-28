@@ -18,12 +18,22 @@ const ks = (v) => v == null ? "—" : Number(v).toLocaleString("en-US", { maximu
 const when = (v) => v ? new Date(v).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "short", timeStyle: "short" }) : "—";
 const headings = ["วันที่", "ลำดับคิว", "ยอดโอน (THB)", "ต้นทุน (THB)", "กำไร (THB)", "กำไร (%)", "MMK ออก", "MMK คงเหลือ", "หมวดสินค้า", "ผู้เติม", "ชื่อลูกค้า", "ลิงก์", "เกม", "สิ่งที่ซื้อ", "transaction / UID", "เลขธุรกรรม"];
 
+// The reading above is from an older order: say what happened after it.
+function LaterNote({ line }) {
+  const uncharged = line.laterUncharged === line.laterOrders;
+  return <p className={`mt-1 text-xs ${uncharged ? "text-ll-ink-subtle" : "text-ll-warning"}`}>
+    {uncharged
+      ? `หลังจากนั้นมี ${line.laterOrders} ออเดอร์ที่บอทไม่ได้ตัดเงิน (ยอดไม่พอ เติมทางอื่น) ยอดนี้จึงยังใช้ได้`
+      : `หลังจากนั้นมี ${line.laterOrders} ออเดอร์ที่ไม่ได้บันทึกยอด${line.laterUncharged ? ` (บอทไม่ได้ตัดเงิน ${line.laterUncharged})` : ""} ล่าสุด ${when(line.laterAt)} ยอดจริงอาจต่ำกว่านี้`}
+  </p>;
+}
+
 function LineCard({ line, active, onSelect }) {
   const incomplete = line.missingSales > 0 || line.missingCosts > 0;
   return <button type="button" aria-pressed={active} onClick={onSelect}
     className={`flex min-w-0 flex-col gap-3 rounded-xl border bg-ll-surface-1 p-4 text-left text-ll-ink hover:bg-ll-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ll-primary ${active ? "border-ll-primary ring-1 ring-ll-primary" : "border-ll-hairline"}`}>
     <div className="flex items-start justify-between gap-2"><p className="break-all font-semibold tabular-nums">{wavePhoneLabel(line.phone)}</p><span className="shrink-0 rounded-full bg-ll-surface-2 px-2 py-1 text-xs text-ll-ink-subtle">{line.orders.toLocaleString("en-US")} ออเดอร์</span></div>
-    <div><p className="text-xs text-ll-ink-subtle">คงเหลือล่าสุด (บอท)</p><p className="mt-1 text-2xl font-semibold tabular-nums">{ks(line.balance)} <span className="text-sm font-normal text-ll-ink-subtle">Ks</span></p><p className="mt-1 text-xs text-ll-ink-subtle">ณ {when(line.balanceAt)}</p></div>
+    <div><p className="text-xs text-ll-ink-subtle">คงเหลือล่าสุด (บอท)</p><p className="mt-1 text-2xl font-semibold tabular-nums">{ks(line.balance)} <span className="text-sm font-normal text-ll-ink-subtle">Ks</span></p><p className="mt-1 text-xs text-ll-ink-subtle">ณ {when(line.balanceAt)}</p>{line.laterOrders > 0 && <LaterNote line={line} />}</div>
     <dl className="grid grid-cols-2 gap-x-3 gap-y-2 border-t border-ll-hairline pt-3 text-xs">
       <div><dt className="text-ll-ink-subtle">MMK ออก</dt><dd className="tabular-nums">{ks(line.used)}</dd></div>
       <div><dt className="text-ll-ink-subtle">ยอดโอน (THB)</dt><dd className="tabular-nums">{money(line.sale)}</dd></div>
@@ -48,7 +58,7 @@ function OrdersTable({ entries, emptyMessage }) {
           <td className={`${cell} tabular-nums`}>{money(f.cost)}</td>
           <td className={`${cell} tabular-nums`}>{money(f.profit)}</td>
           <td className={`${cell} tabular-nums`}>{f.margin == null ? "—" : `${f.margin}%`}</td>
-          <td className={`${cell} tabular-nums`}>{ks(row.usedMmk)}{row.usedSource === "pack" && <p className="mt-1 whitespace-nowrap text-xs text-ll-ink-subtle">ตามราคาแพ็ก (ไม่มียอดก่อน/หลัง)</p>}</td>
+          <td className={`${cell} tabular-nums`}>{ks(row.usedMmk)}{row.usedSource === "pack" && <p className="mt-1 whitespace-nowrap text-xs text-ll-ink-subtle">ตามราคาแพ็ก (ไม่มียอดก่อน/หลัง)</p>}{row.usedSource === "not-charged" && <p className="mt-1 whitespace-nowrap text-xs text-ll-ink-subtle">บอทไม่ได้ตัดเงิน (ยอดไม่พอ)<br />เติมทางอื่น ต้นทุนไม่ทราบ</p>}{row.usedSource === "bot-failed" && <p className="mt-1 whitespace-nowrap text-xs text-ll-warning">บอทเติมไม่สำเร็จ<br />ไม่ทราบว่าตัดเงินไหม</p>}</td>
           <td className={`${cell} font-semibold tabular-nums`}>{ks(row.balanceMmk)}</td>
           <td className={cell}>{d.category || "—"}</td>
           <td className={`${cell} max-w-44 break-words`}>{d.sheetOperator || d.operator || "—"}</td>

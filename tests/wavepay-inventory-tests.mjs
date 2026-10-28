@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { kyat, waveUsage, wavePhoneKey, waveFilters, normalizeWaveOrder, summarizeWaveLines, waveMatches, waveCostThb, waveDefaultDates } from "../src/lib/wavepay-inventory.js";
+import { kyat, waveUsage, wavePhoneKey, waveFilters, normalizeWaveOrder, summarizeWaveLines, waveMatches, waveCostThb, waveDefaultDates, waveShortBalance } from "../src/lib/wavepay-inventory.js";
 import { createWavePayInventory } from "../src/server/wavepay-inventory.js";
 let passed = 0; const check = (v, message) => { assert.ok(v, message); passed++; };
 
@@ -68,4 +68,21 @@ check(result.total === 2 && result.entries.every((e) => e.phone === "09781106479
 check(result.entries[0].orderId === "K101", "newest first");
 check(result.entries[1].details.saleThb === "30.00" && result.entries[1].details.salePacks === 2, "multi-pack sale split per pack");
 await assert.rejects(repo.list({ id: 2, permissions: [] }, month), { status: 403 }); passed++;
+// The bot stopped before the PIN because the SIM was short (order 307174): nothing left this SIM.
+// A person then filled it another way, so the cost is unknown here, never the pack price.
+const short = normalizeWaveOrder({ ...base, id: 20, old_balance: null, new_balance: null, pack_price: "Ks249,203",
+  bot_status: "failed", bot_error_code: "INSUFFICIENT_BALANCE" });
+check(short.usedMmk === "0.00" && short.usedSource === "not-charged" && short.details.costThb === null, "short balance is not MMK out");
+const failed = normalizeWaveOrder({ ...base, id: 21, old_balance: null, new_balance: null, bot_status: "failed", bot_error_code: "TIMEOUT" });
+check(failed.usedMmk === null && failed.usedSource === "bot-failed", "another bot failure is unknown, not the pack price");
+check(normalizeWaveOrder({ ...base, id: 22, bot_status: "failed", bot_error_code: "INSUFFICIENT_BALANCE" }).usedSource === "balances", "a balance pair still wins");
+check(waveShortBalance("WavePay balance 202487 Ks insufficient for pack 249203 Ks — top up or switch SIM before PIN") === "202487.00");
+check(waveShortBalance("timeout") === null && waveShortBalance(null) === null);
+const shortLines = summarizeWaveLines([one, short], [{ ...base, id: 98, new_balance: "202487", later_orders: 1, later_uncharged: 1, later_at: "2026-10-26T06:26:26Z" }]);
+check(shortLines[0].used === "5000.00" && shortLines[0].cost === null && shortLines[0].missingCosts === 1, "the unknown cost shows as incomplete");
+check(shortLines[0].balance === "202487.00" && shortLines[0].laterOrders === 1 && shortLines[0].laterUncharged === 1
+  && shortLines[0].laterAt === "2026-10-26T06:26:26.000Z", "older reading plus what came after it");
+const latestSql = calls.find((c) => c.sql.includes("later_orders"));
+check(latestSql && latestSql.sql.includes("'newBalance'),'') IS NOT NULL") && latestSql.params[1] === "INSUFFICIENT_BALANCE",
+  "the card uses the latest order that recorded a balance");
 console.log(`${passed} passed`);

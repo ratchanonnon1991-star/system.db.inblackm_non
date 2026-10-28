@@ -46,6 +46,10 @@ const wave = [
   // no balance read: pack price is the fallback debit, the chain continues through it
   { id: 14, status: "completed", phone_key: "0977000111", old_balance: null, new_balance: null, pack_price: "Ks2,000", occurred_at: at("05:00"), source_base: "W4" },
   { id: 15, status: "completed", phone_key: "0977000111", old_balance: "78000", new_balance: "77000", pack_price: "Ks1,000", occurred_at: at("06:00"), source_base: "W5" },
+  // order 307174's pattern: the bot found the SIM short and paid nothing; a person completed it another way
+  { id: 16, status: "completed", phone_key: "0977000111", old_balance: null, new_balance: null, pack_price: "Ks249,203", occurred_at: at("07:00"), source_base: "W6",
+    bot_status: "failed", bot_error_code: "INSUFFICIENT_BALANCE", bot_error_message: "WavePay balance 77000 Ks insufficient for pack 249203 Ks — top up or switch SIM before PIN" },
+  { id: 17, status: "completed", phone_key: "0977000111", old_balance: "77000", new_balance: "76000", pack_price: "Ks1,000", occurred_at: at("08:00"), source_base: "W7" },
 ];
 const shell = [
   { id: 21, status: "completed", garena_username: "InblackRB2c", shell_before: "1000", shell_used: "100", shell_after: "900", occurred_at: at("03:00"), source_base: "G1" },
@@ -177,11 +181,13 @@ await check("WavePay: per SIM, through a pack-price-only fill, failed order as a
   const report = await run("wavepay");
   const [sim] = report.wallets;
   assert.equal(sim.key, "wavepay:0977000111");
-  assert.equal(sim.receipts, 4); assert.equal(sim.unobserved, 1);
+  assert.equal(sim.receipts, 6); assert.equal(sim.unobserved, 1);
   assert.deepEqual(sim.gaps.map(g => [g.direction, g.amount, g.hints.map(h => `${h.status} ${h.ref}`)]), [["out", "5000.0000", ["manual W2"]]]);
   // W2 was not completed but its pack price is exactly what went missing
   assert.deepEqual([sim.gaps[0].likely, sim.gaps[0].suspects.map(h => h.ref), sim.charged], ["charged", ["W2"], 1]);
-  assert.equal(sim.botSpent, "18000.0000");
+  // W6 took nothing (its pack price is not counted) and its short-balance reading chains cleanly
+  assert.equal(sim.botSpent, "19000.0000");
+  assert.equal(sim.lastBalance, "76000.0000");
   assert.match(report.note, /2026-10-15/);
 });
 
