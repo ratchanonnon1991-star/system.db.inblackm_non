@@ -13,10 +13,21 @@ export function normalizeGameinfoView(value) {
 
 /** The view to show: the URL's, else the remembered one, else Product for admins and Topup for everyone else. */
 export function resolveGameinfoView({ param, cookie, isAdmin }) {
-  return normalizeGameinfoView(param) || normalizeGameinfoView(cookie) || (isAdmin ? "product" : "topup");
+  return normalizeGameinfoView(param) || normalizeGameinfoView(cookie) || gameinfoRoleView(isAdmin);
 }
 
 /** Which column-visibility rule set a view uses (the rules are still stored under these keys). */
 export function gameinfoViewColumnRole(view) {
   return view === "topup" ? "topup" : "admin";
+}
+
+/** The view a role starts in: Product for admins, Topup for everyone else. */
+export function gameinfoRoleView(isAdmin) {
+  return isAdmin ? "product" : "topup";
+}
+
+// A year, so the choice outlives sessions; the server reads it on every page.
+export function rememberGameinfoView(view) {
+  const normalized = normalizeGameinfoView(view);
+  if (normalized) document.cookie = `${GAMEINFO_VIEW_COOKIE}=${normalized}; path=/; max-age=31536000; samesite=lax`;
 }
