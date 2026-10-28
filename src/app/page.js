@@ -57,21 +57,22 @@ const ibThai = Noto_Sans_Thai({
   variable: "--font-ib-thai",
 });
 
-// Public by design: it is only where the "เข้าสู่ระบบด้วยบัญชี experience" button
-// points the browser, never anything the server trusts on its own.
-const HIRING_BASE_URL = (process.env.NEXT_PUBLIC_HIRING_BASE_URL || "").replace(/\/+$/, "");
+// Public by design: it is only where the "เข้าสู่ระบบด้วยบัญชี TopUp" button
+// points the browser, never anything the server trusts on its own. The
+// hiring ("experience") sign-in is no longer offered; its route stays.
+const TOPUP_BASE_URL = (process.env.NEXT_PUBLIC_TOPUP_BASE_URL || "").replace(/\/+$/, "");
 const MOCK_SSO_ENABLED = process.env.NODE_ENV !== "production";
 
-// Keyed by the ?ssoError= codes /api/sso/from-hiring redirects back with
-// (see src/lib/hiring-sso.js and src/app/api/sso/from-hiring/route.js for
-// where each one is produced). Kept as its own copy here, not imported from
-// hiring-sso.js, so this client bundle never pulls in that module's
-// server-only secret getters.
+// Keyed by the ?ssoError= codes /api/sso/from-topup (and from-hiring)
+// redirect back with. Kept as its own copy here, not imported from the
+// server modules, so this client bundle never pulls in their secret getters.
 const SSO_ERROR_MESSAGES = {
-  missing_code: 'ลิงก์เข้าสู่ระบบไม่สมบูรณ์ กรุณาลองใหม่จากปุ่ม "เข้าสู่ระบบด้วยบัญชี experience"',
+  missing_code: 'ลิงก์เข้าสู่ระบบไม่สมบูรณ์ กรุณาลองใหม่จากปุ่ม "เข้าสู่ระบบด้วยบัญชี TopUp"',
   code_rejected: "รหัสเข้าสู่ระบบหมดอายุหรือถูกใช้ไปแล้ว กรุณาลองใหม่",
-  exchange_failed: "ติดต่อระบบ experience ไม่สำเร็จ กรุณาลองใหม่ภายหลัง",
-  provision_failed: "สร้างบัญชี gamedb ให้อัตโนมัติไม่สำเร็จ กรุณาลองใหม่ หรือแจ้ง Admin",
+  exchange_failed: "ติดต่อเว็บ TopUp ไม่สำเร็จ กรุณาลองใหม่ภายหลัง",
+  topup_unavailable: "เว็บ TopUp ยืนยันบัญชีไม่สำเร็จ กรุณาลองใหม่ภายหลัง",
+  not_staff: "บัญชี TopUp นี้ไม่ใช่ทีมงาน — ใช้ได้เฉพาะบัญชี admin หรือ staff",
+  provision_failed: "สร้างบัญชีให้อัตโนมัติไม่สำเร็จ กรุณาลองใหม่ หรือแจ้ง Admin",
 };
 
 export default function GamedbPage() {
@@ -589,7 +590,7 @@ function LoginScreen({ onLoggedIn }) {
     const code = params.get("ssoError");
     if (!code) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reading a one-shot URL param is exactly what an effect is for
-    setSsoError(SSO_ERROR_MESSAGES[code] || "เข้าสู่ระบบด้วยบัญชี experience ไม่สำเร็จ");
+    setSsoError(SSO_ERROR_MESSAGES[code] || "เข้าสู่ระบบด้วยบัญชี TopUp ไม่สำเร็จ");
     window.history.replaceState(null, "", window.location.pathname);
   }, []);
 
@@ -597,13 +598,15 @@ function LoginScreen({ onLoggedIn }) {
   // it during the server render (this component ships to the client, but
   // still renders once on the server first) would throw on the missing
   // `window`.
-  const [hiringSsoUrl, setHiringSsoUrl] = useState("");
+  // TopUp's /admin/tools-sso is behind its admin gate: it sends the person
+  // through TopUp's own OTP and PIN first, then back here with a code.
+  const [topupSsoUrl, setTopupSsoUrl] = useState("");
   useEffect(() => {
-    if (!HIRING_BASE_URL) return;
+    if (!TOPUP_BASE_URL) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- window.location is only known once mounted on the client
-    setHiringSsoUrl(
-      `${HIRING_BASE_URL}/api/sso/gamedb?return=${encodeURIComponent(
-        `${window.location.origin}/api/sso/from-hiring`
+    setTopupSsoUrl(
+      `${TOPUP_BASE_URL}/admin/tools-sso?return=${encodeURIComponent(
+        `${window.location.origin}/api/sso/from-topup`
       )}`
     );
   }, []);
@@ -723,19 +726,29 @@ function LoginScreen({ onLoggedIn }) {
           เข้าสู่ระบบ
         </button>
 
-        {(hiringSsoUrl || MOCK_SSO_ENABLED) && (
+        {(topupSsoUrl || MOCK_SSO_ENABLED) && (
           <>
             <div className="my-4 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-ll-ink-tertiary">
               <span className="h-px flex-1 bg-ll-hairline" />
               หรือ
               <span className="h-px flex-1 bg-ll-hairline" />
             </div>
-            <a
-              href={hiringSsoUrl || "/api/sso/mock"}
-              className="flex h-10 w-full items-center justify-center gap-1.5 rounded-md border border-ll-hairline-strong text-[14px] font-medium text-ll-ink transition hover:bg-ll-surface-2"
-            >
-              เข้าสู่ระบบด้วยบัญชี experience{hiringSsoUrl ? "" : " (Mock)"}
-            </a>
+            {topupSsoUrl ? (
+              <a
+                href={topupSsoUrl}
+                className="flex h-10 w-full items-center justify-center gap-1.5 rounded-md border border-ll-hairline-strong text-[14px] font-medium text-ll-ink transition hover:bg-ll-surface-2"
+              >
+                เข้าสู่ระบบด้วยบัญชี TopUp
+              </a>
+            ) : null}
+            {MOCK_SSO_ENABLED ? (
+              <a
+                href="/api/sso/mock"
+                className="mt-2 flex h-10 w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-ll-hairline-strong text-[13px] font-medium text-ll-ink-subtle transition hover:bg-ll-surface-2"
+              >
+                เข้าสู่ระบบด้วยบัญชีทดสอบ (Mock)
+              </a>
+            ) : null}
           </>
         )}
       </form>
@@ -746,7 +759,7 @@ function LoginScreen({ onLoggedIn }) {
             <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-md bg-ll-primary-subtle-bg text-ll-primary-subtle-text">
               <AlertTriangle size={22} />
             </div>
-            <h2 className="mb-1 text-[15px] font-semibold text-ll-ink">เข้าสู่ระบบด้วยบัญชี experience ไม่สำเร็จ</h2>
+            <h2 className="mb-1 text-[15px] font-semibold text-ll-ink">เข้าสู่ระบบไม่สำเร็จ</h2>
             <p className="mb-4 text-[13px] leading-relaxed text-ll-ink-subtle">{ssoError}</p>
             <button
               type="button"
