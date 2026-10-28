@@ -8,7 +8,7 @@ export const AGENH2H_METHOD = "AgenH2HIDR";
 // THB per IDR used only for the on-screen reference cost; not a locked purchase rate.
 export const AGENH2H_REFERENCE_RATE = "0.0019";
 export const AGENH2H_PAGE_SIZE = 100;
-export const AGENH2H_STATUSES = [["completed", "สำเร็จ"], ["manual", "Manual"], ["failed", "Failed"], ["pending", "Pending"], ["wait", "Wait"]];
+export const AGENH2H_STATUSES = [["completed", "สำเร็จ"], ["manual", "Manual"], ["manual_pending", "รอเติมมือ"], ["failed", "Failed"], ["rejected", "Rejected"], ["pending", "Pending"], ["wait", "Wait"]];
 export const ahStatusLabel = (status) => AGENH2H_STATUSES.find(([key]) => key === status)?.[1] || String(status || "ไม่ระบุ");
 export const ahAmount = (v) => { const n = sheetCents(v); return n === null ? null : signedUsd(n); };
 // Wallet drawdown: live_cost_total matches the sequential balance_before; fall back to live_cost × quantity, then the

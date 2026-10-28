@@ -8,6 +8,9 @@ import { AGENH2H_METHOD, AGENH2H_PAGE_SIZE, ahFilters, ahOrder, groupAhOrders, a
 const BATCH = 500;
 const meta = "c.provider_response->'_worker_meta'";
 const balanceOk = `(${meta}->>'balance_before') ~ '^[0-9]{1,12}(\\.[0-9]{1,20})?$'`;
+// Bot-run rows only: the worker writes _worker_meta when it takes a queue. Rows a person filled or re-marked without the
+// bot (provider_response empty, manual_fulfillment only, staff backlog notes) carry no IDR evidence and are left out.
+const botRun = `jsonb_typeof(${meta})='object'`;
 // created_at/updated_at are zone-less (stored in the DB's local time). Turn them into instants in SQL, the same way the
 // DB reads them for the date filter, so displayed times do not depend on the Node process time zone.
 const instant = (column) => `(${column} AT TIME ZONE current_setting('TimeZone'))`;
@@ -27,7 +30,7 @@ export function createAgenh2hInventory({ select = selectQuery, enrich = enrichSh
     const filters = ahFilters(query);
     // Latest completed fill is independent of report filters; it reads stored worker evidence, never the provider.
     const walletRows = await select(`SELECT ${columns} FROM codashop_orders c
-      WHERE c.payment_method=$1 AND c.status='completed' AND ${balanceOk}
+      WHERE c.payment_method=$1 AND ${botRun} AND c.status='completed' AND ${balanceOk}
       ORDER BY c.created_at DESC,c.id DESC LIMIT 1`, [AGENH2H_METHOD]);
     const wallet = walletRows[0] ? ahWallet(walletRows[0]) : null;
     const rows = []; let cursor = "0";
@@ -37,7 +40,7 @@ export function createAgenh2hInventory({ select = selectQuery, enrich = enrichSh
         t.method,COALESCE(NULLIF(c.uid,''),t.uid) AS player_id,
         COALESCE(NULLIF(t.admin,''),NULLIF(t.booked_by,''),'Bot') AS operator
         FROM codashop_orders c ${saleJoin}
-        WHERE c.payment_method=$1 AND c.id>$2::bigint
+        WHERE c.payment_method=$1 AND ${botRun} AND c.id>$2::bigint
           AND c.created_at >= $3::timestamptz AND c.created_at < $4::timestamptz
           AND ($5::text IS NULL OR c.status=$5::text)
         ORDER BY c.id LIMIT ${BATCH}`, [AGENH2H_METHOD, cursor, filters.bounds.start, filters.bounds.end, filters.status]);
@@ -57,11 +60,11 @@ export function createAgenh2hInventory({ select = selectQuery, enrich = enrichSh
     // starts at most a few hours after creation (max 4h17m seen on Donshop; not measured on AgenH2H), so one day of earlier rows is fetched as context through
     // the created_at index, plus the last completed fill before that as the anchor.
     const [anchor] = await select(`SELECT ${chainColumns} FROM codashop_orders c
-      WHERE c.payment_method=$1 AND c.status='completed' AND c.created_at < ($2::timestamptz - interval '1 day') AND ${balanceOk}
+      WHERE c.payment_method=$1 AND ${botRun} AND c.status='completed' AND c.created_at < ($2::timestamptz - interval '1 day') AND ${balanceOk}
       ORDER BY c.created_at DESC,c.id DESC LIMIT 1`, [AGENH2H_METHOD, filters.bounds.start]);
     // The DB decides which rows are inside the range, so the cut does not depend on the Node process time zone.
     const chain = await select(`SELECT ${chainColumns},(c.created_at >= $4::timestamptz) AS in_range FROM codashop_orders c
-      WHERE c.payment_method=$1 AND c.created_at < $3::timestamptz
+      WHERE c.payment_method=$1 AND ${botRun} AND c.created_at < $3::timestamptz
         AND ${anchor ? "(c.created_at,c.id) > (SELECT a.created_at,a.id FROM codashop_orders a WHERE a.id=$2::bigint)" : "c.created_at >= ($2::timestamptz - interval '1 day')"}
       ORDER BY COALESCE(c.fill_started_at,${instant("c.created_at")}),c.id LIMIT 20001`, [AGENH2H_METHOD, anchor ? String(anchor.id) : filters.bounds.start, filters.bounds.end, filters.bounds.start]);
     if (chain.length > 20000) throw inventoryError("มีเกิน 20,000 รายการ กรุณาลดช่วงวันที่", 413);

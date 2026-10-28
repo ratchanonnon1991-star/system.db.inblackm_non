@@ -7,7 +7,7 @@ Built from the Donshop inventory design (branch `donshop-inventory`): AgenH2H bo
 
 ## Sources and accounting
 
-- `codashop_orders` with exact payment method `AgenH2HIDR`, every status (`completed`, `manual`, `failed`, `pending`, `wait`), filterable by one status.
+- `codashop_orders` with exact payment method `AgenH2HIDR`, bot-run rows only (`provider_response._worker_meta` is an object, written when the worker takes a queue), every status (`completed`, `manual`, `manual_pending`, `failed`, `rejected`, `pending`, `wait`), filterable by one status. Rows a person filled or re-marked without the bot carry no IDR evidence and are left out of the list, totals, balance card and checks, as on Donshop.
 - IDR out comes from `provider_response._worker_meta.live_cost_total`, falling back to `live_cost × quantity`, then the provider's `data.total` (older rows), the same order as `/profit/agenh2h-history`. Only `completed` fills count as IDR out, cost, sale or profit; other statuses are listed for review with the bot's quoted price, never summed.
 - Cost THB = IDR out × selected THB/IDR reference rate (default `0.0019`). It is a reference, not a locked purchase rate; changing it changes only the screen/CSV.
 - Customer receipts reuse the Plsbuy / Garena Shell matching (`telegram_orders_dev`, `sheet_jobs` marketplace rows, sale FX). Unknown or conflicting receipts show — and are not guessed.

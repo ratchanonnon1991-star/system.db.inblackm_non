@@ -128,6 +128,8 @@ const select = async (sql, args) => {
   check(sql.includes("(c.created_at AT TIME ZONE current_setting('TimeZone')) AS occurred_at")); check(!/c\.(created|updated)_at AS/.test(sql));
   // Every read carries the data.total fallback; the order rows also drop the "telegram" queue source and read the Agen H2H invoice.
   check(sql.includes("c.provider_response->'data'->>'total' AS data_total"));
+  // Bot-run rows only: every query (balance card, history, anchor, chain) requires the worker's _worker_meta object.
+  check(sql.includes("c.payment_method=$1 AND jsonb_typeof(c.provider_response->'_worker_meta')='object'"));
   if (sql.includes("c.game_name")) { check(sql.includes("NULLIF(lower(c.source),'telegram') AS source")); check(sql.includes("COALESCE(c.provider_response->'data'->>'invoice',")); }
   if (sql.includes("LIMIT 1")) { check(!sql.includes("c.created_at >=")); check(sql.includes("c.status='completed'")); return walletRows; }
   if (sql.includes("in_range")) { chainSql = sql; chainArgs = args; return chainResult; }
