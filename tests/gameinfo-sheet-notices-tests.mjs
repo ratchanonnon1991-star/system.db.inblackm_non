@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { deflateRawSync } from "node:zlib";
-import { countGameinfoSheetNotices, maskGameinfoNoticeSecrets, parseGameinfoSheetNotices } from "../src/lib/gameinfo-sheet-notices.js";
+import { countGameinfoSheetNotices, gameinfoNoticeStepText, maskGameinfoNoticeSecrets, parseGameinfoSheetNotices } from "../src/lib/gameinfo-sheet-notices.js";
 import { readXlsxSheetsWithImages } from "../src/server/xlsx-reader.js";
 
 let passed = 0;
@@ -80,6 +80,11 @@ const junk = parseGameinfoSheetNotices({ cells: [
   { row: 6, col: "A", text: "Monthly Subscription" },
 ], images: [] });
 check(junk[0].steps.map((step) => step.description).join() === "ห้ามส่งใบเสร็จทุกกรณี", "unnumbered notes come in; placeholders and a PACK table do not");
+
+// A note becomes a step: its first line, without the sheet's own number, is the title.
+check(JSON.stringify(gameinfoNoticeStepText("1. Login ID ให้เรียบร้อย")) === JSON.stringify({ title: "Login ID ให้เรียบร้อย", description: "" }), "the number goes; the guide numbers its steps itself");
+check(JSON.stringify(gameinfoNoticeStepText("2.วิธีแจ้ง\n- E-mail\n- UID")) === JSON.stringify({ title: "วิธีแจ้ง", description: "- E-mail\n- UID" }), "further lines stay as the description");
+check(JSON.stringify(gameinfoNoticeStepText("")) === JSON.stringify({ title: "", description: "" }), "a pictures-only step has neither");
 
 // A small workbook built the way Google's export lays one out, deflated.
 function zip(files) {
