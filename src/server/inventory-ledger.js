@@ -233,6 +233,19 @@ export function createInventoryLedger(pool, { now = () => new Date() } = {}) {
       return insertSnapshot(snapshotInput({ ...body, source: "api", requestId: null }), null);
     },
 
+    /** Which of these order refs already have a hand "use" that was not reversed. */
+    async recordedOrderRefs(actor, refs) {
+      requireView(actor);
+      const list = [...new Set((refs ?? []).map(r => String(r ?? "").slice(0, 120)).filter(Boolean))];
+      if (!list.length) return new Set();
+      if (list.length > MAX_ROWS) throw ledgerError("รายการเกิน 20,000 รายการ กรุณาลดช่วงเวลา", 413);
+      await ensure(pool);
+      const { rows } = await pool.query(`SELECT DISTINCT e.order_ref FROM gamedb_inv_entries e
+        WHERE e.kind='use' AND e.order_ref = ANY($1::text[])
+          AND NOT EXISTS (SELECT 1 FROM gamedb_inv_entries r WHERE r.reverses_entry_id = e.id)`, [list]);
+      return new Set(rows.map(r => r.order_ref));
+    },
+
     async listAccounts(actor) {
       requireView(actor);
       await ensure(pool);

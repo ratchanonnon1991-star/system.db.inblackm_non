@@ -15,7 +15,8 @@ export const LEDGER_CHECK_PROVIDERS = Object.freeze(["razer", "netease", "wavepa
 const startOf = row => row.started_at ?? row.occurred_at;
 
 /** Order id a person would type for a bot row. */
-export const receiptRef = (row, fallbackId) => String(row.source_base || row.source_order_id || `receipt-${fallbackId}`);
+// Rows without a customer order id are named by queue id, the way the Donshop page names them.
+export const receiptRef = (row, fallbackId) => String(row.source_base || row.source_order_id || `#${fallbackId}`);
 const lower = value => String(value ?? "").trim().toLowerCase();
 const plusMs = (iso, ms) => new Date(new Date(iso).getTime() + ms).toISOString();
 
