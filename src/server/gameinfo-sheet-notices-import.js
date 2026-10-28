@@ -6,7 +6,7 @@
 import { listGameListRows } from "@/server/gameinfo-gamelist";
 import { getGamelistTutorial, listGamelistTutorialPresence, saveGamelistTutorial } from "@/server/gameinfo-gamelist-tutorial";
 import { gameinfoSheetGameKey } from "@/lib/gameinfo-sales-channels";
-import { countGameinfoSheetNotices, parseGameinfoSheetNotices } from "@/lib/gameinfo-sheet-notices";
+import { countGameinfoSheetNotices, gameinfoNoticeStepText, parseGameinfoSheetNotices } from "@/lib/gameinfo-sheet-notices";
 import { MAX_STEP_IMAGE_DATA_BYTES } from "@/lib/gameinfo-step-image-size";
 import { readXlsxSheetsWithImages } from "@/server/xlsx-reader";
 import { gameinfoSheetGameTabs, gameinfoSourceSheetId, openGameinfoSheetReader, readSource, withSheetAccess } from "@/server/gameinfo-sheet-import";
@@ -26,6 +26,8 @@ async function pictureDataUrl(bytes, path) {
   }
 }
 
+const IMPORTED_STEP = /^sheet_c\d+_s\d+$/;
+
 /** Parsed notes → tutorial categories with pictures inlined, kept under the editor's 4MB limit. */
 export async function buildGameinfoNoticeTutorial(categories, media) {
   let budget = MAX_STEP_IMAGE_DATA_BYTES;
@@ -43,7 +45,7 @@ export async function buildGameinfoNoticeTutorial(categories, media) {
           budget -= url.length;
         } else skipped += 1;
       }
-      steps.push({ id: `sheet_c${categoryIndex + 1}_s${stepIndex + 1}`, title: "", description: step.description, imageUrls, videoUrl: "" });
+      steps.push({ id: `sheet_c${categoryIndex + 1}_s${stepIndex + 1}`, ...gameinfoNoticeStepText(step.description), imageUrls, videoUrl: "" });
     }
     out.push({ id: `sheet_c${categoryIndex + 1}`, name: category.name, steps });
   }
@@ -53,12 +55,15 @@ export async function buildGameinfoNoticeTutorial(categories, media) {
 /**
  * Every GameInfo game with no วิธีเติม yet whose tab has NOTICE notes gets
  * them. Without `apply` nothing is written: the result says what would be.
+ * `replaceGameIds` are games whose guide is replaced even though they have
+ * one (a placeholder someone asked to have swapped for the sheet's notes).
  */
-export async function importGameinfoSheetNotices({ apply = false, actor = null, reader = openGameinfoSheetReader({ exportAccess: true }), log = () => {} } = {}) {
+export async function importGameinfoSheetNotices({ apply = false, actor = null, replaceGameIds = [], reader = openGameinfoSheetReader({ exportAccess: true }), log = () => {} } = {}) {
+  const replacing = new Set(replaceGameIds.map(Number));
   const [source, rows, tutorialPresence] = await Promise.all([readSource(reader), listGameListRows(), listGamelistTutorialPresence()]);
   const sheetByKey = new Map(source.map((game) => [game.key, game]));
   const candidates = rows
-    .filter((row) => !tutorialPresence[row.id])
+    .filter((row) => !tutorialPresence[row.id] || replacing.has(row.id))
     .map((row) => ({ row, sheetGame: sheetByKey.get(gameinfoSheetGameKey(row.game)) }))
     .filter((item) => item.sheetGame);
   const tabs = await withSheetAccess(() => gameinfoSheetGameTabs(reader, candidates.map((item) => item.sheetGame)));
@@ -80,7 +85,7 @@ export async function importGameinfoSheetNotices({ apply = false, actor = null, 
       try {
         // Someone may have written a guide since the list was read.
         const current = await getGamelistTutorial(row.id);
-        if (current.categories.some((category) => category.steps.length)) {
+        if (!replacing.has(row.id) && current.categories.some((category) => category.steps.length)) {
           item.skippedReason = "มีวิธีเติมแล้ว";
         } else {
           const built = await buildGameinfoNoticeTutorial(categories, workbook.media);
@@ -99,6 +104,46 @@ export async function importGameinfoSheetNotices({ apply = false, actor = null, 
     games: results.length,
     steps: results.reduce((total, item) => total + item.steps, 0),
     images: results.reduce((total, item) => total + item.images, 0),
+    saved: results.filter((item) => item.saved).length,
+    failed: results.filter((item) => item.error).length,
+    results,
+  };
+}
+
+/**
+ * Guides imported before notes became step titles: each imported step with
+ * no title gets its note as the title. Steps an admin wrote or has since
+ * given a title are left as they are.
+ */
+export async function retitleGameinfoSheetNotices({ apply = false, actor = null, log = () => {} } = {}) {
+  const results = [];
+  for (const row of await listGameListRows()) {
+    const tutorial = await getGamelistTutorial(row.id);
+    let changed = 0;
+    const categories = tutorial.categories.map((category) => ({
+      ...category,
+      steps: category.steps.map((step) => {
+        if (!IMPORTED_STEP.test(step.id) || step.title || !step.description) return step;
+        changed += 1;
+        return { ...step, ...gameinfoNoticeStepText(step.description) };
+      }),
+    }));
+    if (!changed) continue;
+    const item = { gameId: row.id, game: String(row.game).split("\n")[0], steps: changed };
+    if (apply) {
+      try {
+        await saveGamelistTutorial(row.id, categories, null, actor);
+        item.saved = true;
+      } catch (error) {
+        item.error = error instanceof Error ? error.message : "บันทึกไม่สำเร็จ";
+      }
+    }
+    log(`${item.saved ? "✓" : item.error ? "✗" : "·"} ${item.game} — ${changed} ข้อ${item.error ? ` — ${item.error}` : ""}`);
+    results.push(item);
+  }
+  return {
+    games: results.length,
+    steps: results.reduce((total, item) => total + item.steps, 0),
     saved: results.filter((item) => item.saved).length,
     failed: results.filter((item) => item.error).length,
     results,
