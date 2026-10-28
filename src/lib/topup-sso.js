@@ -1,3 +1,5 @@
+import { PERMISSION_PRESETS } from "@/lib/permissions";
+
 // gamedb's half of "sign in with TopUp" (see /api/sso/from-topup, and on the
 // TopUp side src/server/tools-sso/tools-sso-service.js). TopUp verifies the
 // person — OTP to a real inbox, PIN, admin/staff status — and hands out a
@@ -21,3 +23,11 @@ export function getTopupBaseUrl(env = process.env) {
 
 // Only TopUp's own staff may come in this way; customers have TopUp accounts too.
 export const TOPUP_SSO_ROLES = Object.freeze(["admin", "staff"]);
+
+// A first sign-in from TopUp gets an account of its own: TopUp has already
+// checked this is its admin or staff, so the account is Staff and can view
+// GameInfo the way the top-up team does. An Admin can change it afterwards.
+export const TOPUP_SSO_NEW_ACCOUNT = Object.freeze({
+  role: "staff",
+  permissions: PERMISSION_PRESETS.gameinfoTopup,
+});
