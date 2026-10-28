@@ -26,8 +26,10 @@ export default function GameinfoViewSwitch({ savedView, isAdmin }) {
   const current = normalizeGameinfoView(searchParams.get("view")) || savedView;
   const active = VIEWS.find((view) => view.id === current) || VIEWS[0];
 
-  // Editing pages are the same for both views.
-  if (pathname.split("/").includes("manage")) return null;
+  // Only a game's detail page (/gameinfo/<lang>/<id>) differs between the
+  // views; everywhere else the bar would switch nothing visible.
+  const segments = pathname.split("/").filter(Boolean);
+  if (segments.length !== 3 || !/^\d+$/.test(segments[2])) return null;
 
   function choose(view) {
     if (view === current) return;
