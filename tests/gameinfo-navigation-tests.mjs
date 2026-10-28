@@ -26,12 +26,13 @@ const checks = [
     gamelistCards.includes('event.key === "Escape"'),
   // Topup / Product is for everyone; editing follows gameinfo.admin only.
   homePage.includes("resolveGameinfoView({ param: rawView") && homePage.includes("editable={editableRole} topupView={topupView}"),
-  viewSwitch.includes("Topup") && viewSwitch.includes("Product") && viewSwitch.includes("GAMEINFO_VIEW_COOKIE") && !modeToggle.includes("มุมมอง Topup"),
+  viewSwitch.includes("Topup") && viewSwitch.includes("Product") && viewSwitch.includes("rememberGameinfoView(view)") && !modeToggle.includes("มุมมอง Topup"),
   // The bar shows only on a game's detail page (/gameinfo/<lang>/<id>).
   viewSwitch.includes("segments.length !== 3 || !/^\\d+$/.test(segments[2])"),
-  gamelistCards.includes('aria-label={`ดูข้อมูล ${row.game}`}') &&
-    gamelistCards.includes('{editable ? "เปิดจัดการ" : "เปิดดู"}') &&
-    gamelistCards.includes("bg-linear-primary px-3"),
+  // No eye button: "ข้อมูลเกม" opens the game page, in Product for admins and Topup for everyone else.
+  !gamelistCards.includes("<Eye") && !gamelistCards.includes("GameinfoDetailsButton") &&
+    gamelistCards.includes("rememberGameinfoView(gameinfoRoleView(editable))") &&
+    gamelistCards.includes("ข้อมูลเกม") && gamelistCards.includes("bg-linear-primary px-3"),
   detailPage.includes("resolveGameinfoView({ param: rawView") &&
     detailPage.includes("editHref={editableRole ? manageHref : null}") &&
     detailPage.includes("gameinfoViewColumnRole(") &&
