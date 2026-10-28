@@ -13,6 +13,7 @@ const packEditor = read("../src/components/gameinfo-pack-editor.js");
 const gamelistCards = read("../src/components/gameinfo-gamelist-cards.js");
 const modeToggle = read("../src/components/gameinfo-mode-toggle.js");
 const gameLayout = read("../src/app/gameinfo/[lang]/layout.js");
+const profileMenu = read("../src/components/gameinfo-profile-menu.js");
 
 const checks = [
   homeRoute.includes('query.manage === "1"') && homeRoute.includes("gameinfoListHref(lang, dataMode, true)"),
@@ -39,6 +40,10 @@ const checks = [
     detailPage.includes("editHref={editableRole ? manageHref : null}") &&
     detailPage.includes("gameinfoViewColumnRole(") &&
     detailPage.includes("const listHref = gameinfoListHref(lang, dataMode, false);"),
+  // The header avatar opens a menu with a sign-out back to the hub's login.
+  gameLayout.includes("<GameinfoProfileMenu") &&
+    profileMenu.includes('apiJson("/api/auth/logout", { method: "POST" })') &&
+    profileMenu.includes('router.replace("/")') && profileMenu.includes('event.key === "Escape"'),
 ];
 const failed = checks.filter((passed) => !passed).length;
 
