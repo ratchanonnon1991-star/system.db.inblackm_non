@@ -586,7 +586,8 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
                     {["ความสำคัญ", "เกม", "สถานะ", "โหมด", "WEB", "REGION", "PLATFORM", "SERVER"].map((heading) => (
                       <th key={heading} scope="col" className="px-4 py-3 text-[11px] font-black tracking-[0.08em] text-linear-ink-muted">{heading}</th>
                     ))}
-                    <th scope="col" className="px-4 py-3 text-right text-[11px] font-black tracking-[0.08em] text-linear-ink-muted">จัดการ</th>
+                    {/* Pinned to the right edge, so the buttons stay in view while a narrow screen scrolls the table. */}
+                    <th scope="col" className="sticky right-0 bg-linear-surface-3 px-4 py-3 text-right text-[11px] font-black tracking-[0.08em] text-linear-ink-muted shadow-[-8px_0_12px_-10px_rgba(0,0,0,0.25)]">จัดการ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -733,8 +734,10 @@ function ModeBadge({ value }) {
 // Product for admins, Topup for everyone else; the switch on the game page
 // still changes it from there. Set as the cookie on the way out, so the URL
 // stays free of a ?view= that back/forward would bring back.
+// Not prefetched: a prefetch would render the page with whatever view the
+// cookie held before the click.
 function DetailLink({ editable, onClick, ...props }) {
-  return <Link {...props} onClick={(event) => { rememberGameinfoView(gameinfoRoleView(editable)); onClick?.(event); }} />;
+  return <Link {...props} prefetch={false} onClick={(event) => { rememberGameinfoView(gameinfoRoleView(editable)); onClick?.(event); }} />;
 }
 
 function GameCard({ row, editable, topupView, canReport, lang, dataMode, favoriteBusy, onToggleFavorite, onReport }) {
@@ -839,7 +842,7 @@ function GameRow({ row, editable, topupView, lang, dataMode, onPriorityChange })
       <td className="px-4 py-2.5 font-bold text-linear-ink">{row.region || "-"}</td>
       <td className="px-4 py-2.5 font-bold text-linear-ink">{row.platform || "-"}</td>
       <td className="px-4 py-2.5 font-bold text-linear-ink">{row.server || "-"}</td>
-      <td className="px-4 py-2.5">
+      <td className="sticky right-0 bg-linear-surface-1 px-4 py-2.5 shadow-[-8px_0_12px_-10px_rgba(0,0,0,0.25)]">
         <div className="flex justify-end gap-1.5">
           {editable ? (
             <Link href={actionHref} className="flex h-9 items-center whitespace-nowrap rounded-[9px] bg-[#D90005] px-3.5 text-[13px] font-extrabold text-white hover:bg-[#B80004]">

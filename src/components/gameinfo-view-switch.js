@@ -10,7 +10,8 @@ const VIEWS = [
   { id: "product", label: "Product", icon: Boxes, note: "แสดงราคา ต้นทุน กำไร และทุกคอลัมน์" },
 ];
 
-// The bar under the GameInfo header: anyone can switch between the two
+// The bar under the GameInfo header, on a game's detail page only (the one
+// page the views change; it renders the bar itself): anyone can switch between the two
 // views; whether they can edit is shown beside it and depends only on the
 // gameinfo.admin permission.
 export default function GameinfoViewSwitch({ savedView, isAdmin }) {
@@ -21,10 +22,6 @@ export default function GameinfoViewSwitch({ savedView, isAdmin }) {
   const current = normalizeGameinfoView(searchParams.get("view")) || savedView;
   const active = VIEWS.find((view) => view.id === current) || VIEWS[0];
 
-  // Only a game's detail page (/gameinfo/<lang>/<id>) differs between the
-  // views; everywhere else the bar would switch nothing visible.
-  const segments = pathname.split("/").filter(Boolean);
-  if (segments.length !== 3 || !/^\d+$/.test(segments[2])) return null;
 
   function choose(view) {
     if (view === current) return;

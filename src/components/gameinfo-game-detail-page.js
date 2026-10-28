@@ -14,6 +14,7 @@ import { getGamelistImage } from "@/server/gameinfo-gamelist-image";
 import { getGamelistLinks, legacyGamelistLinks } from "@/server/gameinfo-gamelist-links";
 import { getGameinfoFormulaVariables } from "@/server/gameinfo-formula-variables";
 import GameinfoGameView from "@/components/gameinfo-game-view";
+import GameinfoViewSwitch from "@/components/gameinfo-view-switch";
 import GameinfoErrorNotice from "@/components/gameinfo-error-notice";
 import GameinfoBackLink from "@/components/gameinfo-back-link";
 import GameinfoDatasetToggle from "@/components/gameinfo-dataset-toggle";
@@ -341,6 +342,11 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   }
 
   return (
+    <>
+    {/* Rendered here, not in the layout: a layout is not re-rendered on a
+        client-side navigation, so its bar kept showing the view the first
+        page was opened in. */}
+    <GameinfoViewSwitch savedView={view} isAdmin={editableRole} />
     <div className="mx-auto max-w-[1400px] px-4 pb-16 pt-6 sm:px-7">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <GameinfoBackLink
@@ -373,6 +379,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
       </div>
       <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage={editableRole} canReport={canReport} />
     </div>
+    </>
   );
 }
 
