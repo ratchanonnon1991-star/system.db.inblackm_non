@@ -1855,10 +1855,11 @@ export function UsersModal({ me, onClose, onChanged }) {
             </div>
             {editingId && (
               <form onSubmit={addSsoMapping} className="mt-3 flex flex-wrap items-center gap-2 text-xs text-ll-ink-subtle">
-                <Link2 size={13} /><span>Experience:</span>
+                <Link2 size={13} /><span>อีเมล TopUp:</span>
                 {mappings.map((item) => <span key={item.id} className="rounded-full border border-ll-hairline px-2 py-1">{item.hiringEmail}<button type="button" onClick={() => removeSsoMapping(item.id)} className="ml-1 text-ll-ink-tertiary" aria-label={`เลิกเชื่อม ${item.hiringEmail}`}>×</button></span>)}
                 <input type="email" value={ssoEmail} onChange={(event) => setSsoEmail(event.target.value)} placeholder="เพิ่มอีเมล" className={`${inputClass} h-8`} />
                 <button type="submit" disabled={!ssoEmail.trim()} className="h-8 rounded-md border border-ll-hairline-strong px-3 font-medium text-ll-ink disabled:opacity-40">เชื่อม</button>
+                <p className="w-full text-ll-ink-tertiary">คนที่กด &quot;เข้าสู่ระบบด้วย TopUp&quot; ด้วยอีเมลนี้จะเข้าบัญชีนี้ · ถ้าไม่ได้ผูกไว้ ระบบจะสร้างบัญชีใหม่สิทธิ์ User ให้</p>
               </form>
             )}
             <div className="mt-3 flex justify-end gap-2">
