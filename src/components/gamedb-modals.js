@@ -1601,6 +1601,7 @@ export function UsersModal({ me, onClose, onChanged }) {
   const [views, setViews] = useState([]);
   const [ssoMappings, setSsoMappings] = useState([]);
   const [drafts, setDrafts] = useState({});
+  const [roleDrafts, setRoleDrafts] = useState({});
   const [dirtyIds, setDirtyIds] = useState(new Set());
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
@@ -1617,6 +1618,7 @@ export function UsersModal({ me, onClose, onChanged }) {
       const data = await apiJson("/api/users", { fallbackError: "โหลดรายชื่อผู้ใช้ไม่สำเร็จ" });
       setUsers(data.users || []);
       setDrafts(Object.fromEntries((data.users || []).map((user) => [user.id, normalizePermissions(user.permissions)])));
+      setRoleDrafts(Object.fromEntries((data.users || []).map((user) => [user.id, user.role])));
       setDirtyIds(new Set());
     } catch (err) {
       setError(err.message);
@@ -1673,6 +1675,11 @@ export function UsersModal({ me, onClose, onChanged }) {
     setDirtyIds((current) => new Set(current).add(user.id));
   };
 
+  const changeRole = (user, role) => {
+    setRoleDrafts((current) => ({ ...current, [user.id]: role }));
+    setDirtyIds((current) => new Set(current).add(user.id));
+  };
+
   const savePermissions = async () => {
     setSaving(true);
     setError("");
@@ -1680,7 +1687,12 @@ export function UsersModal({ me, onClose, onChanged }) {
       await Promise.all([...dirtyIds].map((id) => apiJson(`/api/users/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ permissions: drafts[id] || [] }),
+        // The role goes only when it changed, so a permissions-only save
+        // never trips the "keep one admin" checks.
+        body: JSON.stringify({
+          permissions: drafts[id] || [],
+          ...(roleDrafts[id] && roleDrafts[id] !== users.find((user) => user.id === id)?.role ? { role: roleDrafts[id] } : {}),
+        }),
         fallbackError: "บันทึกสิทธิ์ไม่สำเร็จ",
       })));
       await loadUsers();
@@ -1773,7 +1785,7 @@ export function UsersModal({ me, onClose, onChanged }) {
         <header className="flex items-center justify-between border-b border-ll-hairline px-5 py-4">
           <div>
             <h2 className="flex items-center gap-2 text-lg font-semibold tracking-[-0.2px]"><Users size={18} /> จัดสิทธิ์ผู้ใช้</h2>
-            <p className="mt-0.5 text-xs text-ll-ink-subtle">ติ๊กสิทธิ์ตามเว็บและ path แล้วบันทึกพร้อมกัน</p>
+            <p className="mt-0.5 text-xs text-ll-ink-subtle">เลือก Role และติ๊กสิทธิ์ตามเว็บและ path แล้วบันทึกพร้อมกัน</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-md border border-ll-hairline-strong p-2 text-ll-ink-subtle hover:bg-ll-surface-2" aria-label="ปิด"><X size={16} /></button>
         </header>
@@ -1821,10 +1833,24 @@ export function UsersModal({ me, onClose, onChanged }) {
                       <span className="block truncate text-xs text-ll-ink-tertiary">{user.username}</span>
                     </button>
                   </td>
-                  <td className="border-b border-r border-ll-hairline px-3 py-3 text-xs text-ll-ink-subtle">{roleLabel(user.role)}</td>
+                  <td className="border-b border-r border-ll-hairline px-2 py-2 text-xs">
+                    {user.id === me.id ? (
+                      <span className="px-1 text-ll-ink-subtle" title="เปลี่ยน Role ของตัวเองไม่ได้">{roleLabel(user.role)}</span>
+                    ) : (
+                      <select
+                        value={roleDrafts[user.id] || user.role}
+                        onChange={(event) => changeRole(user, event.target.value)}
+                        aria-label={`${user.username}: Role`}
+                        className={`h-8 rounded-md border bg-ll-surface-1 px-2 text-xs ${(roleDrafts[user.id] || user.role) !== user.role ? "border-ll-ink font-semibold" : "border-ll-hairline-strong"}`}
+                      >
+                        <option value="admin">Admin</option><option value="staff">Staff</option><option value="user">User</option>
+                      </select>
+                    )}
+                  </td>
                   {PERMISSIONS.map((permission) => {
-                    const implicitAdmin = user.role === "admin" && permission.key.startsWith("systemdb.");
-                    const disabled = permission.key.startsWith("systemdb.") && user.role !== "staff";
+                    const role = roleDrafts[user.id] || user.role;
+                    const implicitAdmin = role === "admin" && permission.key.startsWith("systemdb.");
+                    const disabled = permission.key.startsWith("systemdb.") && role !== "staff";
                     const checked = implicitAdmin || (drafts[user.id] || []).includes(permission.key);
                     return (
                       <td key={permission.key} className="border-b border-r border-ll-hairline px-3 py-3 text-center">
