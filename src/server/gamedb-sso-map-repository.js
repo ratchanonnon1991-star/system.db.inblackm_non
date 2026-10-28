@@ -127,3 +127,28 @@ export async function provisionSsoUser(email) {
   await upsertSsoMapping({ hiringEmail: email, gamedbUsername: user.username });
   return user;
 }
+
+/**
+ * The gamedb account a verified email signs in as: the one it is already
+ * mapped to, else the one whose username or display name is that email
+ * (then mapped, so the next sign-in is a plain lookup), else a new
+ * least-privileged account. Used by the TopUp sign-in; an email matching
+ * more than one account is never guessed between.
+ */
+export async function findOrProvisionSsoUser(email) {
+  const normalized = String(email || "").trim().toLowerCase();
+  const mapped = await findGamedbUsernameByHiringEmail(normalized);
+  const mappedUser = mapped ? await findUserByUsername(mapped) : null;
+  if (mappedUser) return { user: mappedUser, linked: "mapped" };
+  const result = await getPool().query(
+    `SELECT username FROM gamedb_users
+      WHERE LOWER(username) = $1 OR LOWER(COALESCE(display_name, '')) = $1
+      LIMIT 2`,
+    [normalized]
+  );
+  if (result.rows.length === 1) {
+    await upsertSsoMapping({ hiringEmail: normalized, gamedbUsername: result.rows[0].username });
+    return { user: await findUserByUsername(result.rows[0].username), linked: "matched" };
+  }
+  return { user: await provisionSsoUser(normalized), linked: "created" };
+}
