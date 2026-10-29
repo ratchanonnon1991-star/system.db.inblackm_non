@@ -118,6 +118,28 @@ node scripts/inventory-manual-fills.mjs --from 2026-10-21 --to 2026-10-27
 node scripts/inventory-manual-fills.mjs --from 2026-10-26 --channel wavepay
 ```
 
+## หน้ายกยอด (ทดลอง ยังไม่อยู่ในเมนู)
+
+`/projectm/th/topup-inventory/ledger`: ใช้แทนการยกยอดในชีท Center ทุกบัญชีที่ล็อกอินใช้ได้ (ตัดสินใจ 29/10/2026 ส่วนเรื่องสิทธิ์ไว้ทีหลัง)
+
+1. เลือกบัญชีที่ใช้เติม (ค้นหาได้ จัดกลุ่มตามไฟล์ Center ระบบจำบัญชีล่าสุดไว้)
+2. พิมพ์ หรือกด "วางจากชีท" (เลขออเดอร์ [Tab] ยอด [Tab] Invoice) กด Enter ที่ช่องยอดเพื่อขึ้นแถวใหม่
+3. ระบบค้นเลขออเดอร์ใน `telegram_orders_dev` / `codashop_orders` (รวม `#เลขคิว`) / `kaleoz_orders` / `itemku_orders` / `g2g_orders` (อ่านอย่างเดียว) แล้วเตือนเมื่อ
+   - ไม่พบออเดอร์ (ยังบันทึกได้)
+   - เคยยกยอดแล้ว
+   - บอทเติมสำเร็จเองแล้ว (กันนับซ้ำ ไม่นับคิวที่บอทรายงาน failed แล้วคนกดปิด)
+4. กดบันทึกทีเดียวทั้งชุด: แต่ละแถวมีรหัสคำขอของตัวเอง กดซ้ำหรือเน็ตหลุดก็ไม่บันทึกซ้ำ แถวที่ผิดจะแจ้งเหตุผล แถวอื่นยังบันทึก
+5. ประวัติรายวัน: ดูของตัวเองหรือทั้งหมด รายบัญชีหรือทุกบัญชี กด "ยกเลิก" ได้เฉพาะรายการของตัวเองที่บันทึกวันนี้ (เวลาไทย) Admin ยกเลิกได้ทุกรายการ การยกเลิกเป็นรายการกลับ ไม่ลบประวัติ
+
+API: `GET /api/projectm/ledger?view=accounts|entries|summary`, `POST /api/projectm/ledger` (`action: debit | reverse`), `POST /api/projectm/ledger/lookup`
+
+นำเข้าทะเบียนบัญชีจาก CSV (1 แถว = 1 แท็บบัญชีในชีท Center):
+```bash
+node scripts/inventory-ledger-import-accounts.mjs inventory-channels-draft-v2.csv          # ลองดูก่อน ไม่บันทึก
+node scripts/inventory-ledger-import-accounts.mjs inventory-channels-draft-v2.csv --apply  # บันทึกจริง
+```
+แท็บที่ชื่อมี "ปิด", "ระงับ" หรือ "ใช้แล้วทิ้ง" จะนำเข้าเป็นปิดใช้งาน สกุลเงินที่ว่างจะเป็น `UNKNOWN` ควรแก้ใน CSV ก่อนนำเข้า รันซ้ำได้ บัญชีที่มีอยู่แล้วไม่ถูกแก้ (ยกเว้นหมวด)
+
 ## ขั้นต่อไป (ยังไม่ได้ทำ)
 
 1. Script ลงทะเบียนบัญชีจากแหล่งที่มีอยู่ (dry-run ก่อน)
