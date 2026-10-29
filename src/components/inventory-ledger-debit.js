@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ClipboardPaste, Plus, RefreshCw, Save, Trash2, Undo2 } from "lucide-react";
+import { ArrowLeft, ClipboardPaste, ListChecks, Plus, RefreshCw, Save, Trash2, Undo2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { topupInventoryPath } from "@/lib/topup-inventory";
 import { parseDebitPaste } from "@/lib/inventory-ledger";
@@ -194,7 +194,10 @@ export default function InventoryLedgerDebit({ lang }) {
     <header className="flex flex-wrap items-center justify-between gap-4 pr-12">
       <div><p className="text-xs text-ll-ink-tertiary">TOPUP INVENTORY · ยกยอดเติมมือ</p><h1 className="mt-2 text-3xl font-semibold">ยกยอด</h1>
         <p className="mt-2 text-sm text-ll-ink-subtle">เลือกบัญชีที่ใช้เติม แล้วใส่เลขออเดอร์กับยอดที่ตัด ระบบหักยอดของบัญชีนั้นให้ ใช้แทนการยกยอดในชีท</p></div>
-      <Link href={topupInventoryPath(lang)} className={button}><ArrowLeft size={16} aria-hidden />กลับ Topup Inventory</Link>
+      <div className="flex flex-wrap gap-2">
+        <Link href={`${topupInventoryPath(lang)}/channels`} className={button}><ListChecks size={16} aria-hidden />ยอดเติมมือรายบัญชี</Link>
+        <Link href={topupInventoryPath(lang)} className={button}><ArrowLeft size={16} aria-hidden />กลับ Topup Inventory</Link>
+      </div>
     </header>
 
     <section aria-label="เลือกบัญชี" className="space-y-3 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4">
