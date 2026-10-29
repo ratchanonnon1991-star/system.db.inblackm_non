@@ -6,6 +6,7 @@ import { isSupportedLang } from "@/lib/gameinfo-i18n";
 import { getSessionUser } from "@/server/session-user";
 import { canManageGameinfo, hasGameinfoAccess } from "@/server/auth";
 import GameinfoModeToggle from "@/components/gameinfo-mode-toggle";
+import GameinfoProfileMenu from "@/components/gameinfo-profile-menu";
 import GameinfoThemeRoot from "@/components/gameinfo-theme-root";
 import GameinfoThemeToggle from "@/components/gameinfo-theme-toggle";
 
@@ -13,6 +14,7 @@ const notoThai = Noto_Sans_Thai({
   subsets: ["thai", "latin"],
   variable: "--font-noto-thai",
 });
+const ROLE_LABELS = { admin: "Admin", staff: "Staff", user: "User" };
 const lato = Lato({
   subsets: ["latin"],
   weight: ["400", "700", "900"],
@@ -30,7 +32,6 @@ export default async function GameinfoLangLayout({ children, params }) {
   const user = await getSessionUser();
   if (!hasGameinfoAccess(user)) redirect("/");
   const editableRole = canManageGameinfo(user);
-  const initial = (user?.displayName || user?.username || "?").trim().slice(0, 1).toUpperCase();
 
   return (
     <GameinfoThemeRoot
@@ -52,22 +53,16 @@ export default async function GameinfoLangLayout({ children, params }) {
           <div className="flex min-w-0 items-center gap-2.5 text-white">
             <span className="hidden text-[22px] font-black leading-none tracking-[0.01em] sm:inline">INBLACKM</span>
             <ChevronRight size={16} strokeWidth={2.4} className="hidden text-[#FFC9CB] sm:block" aria-hidden="true" />
-            <Link href={`/gameinfo/${lang}`} className="flex items-center gap-2 text-xl font-black text-white">
+            <Link href={`/gameinfo/${lang}`} aria-label="GameInfo" className="flex items-center gap-2 text-xl font-black text-white">
               <Gamepad2 size={22} strokeWidth={2.2} aria-hidden="true" />
-              GameInfo
+              {/* Phones need the room for the header buttons and the profile menu. */}
+              <span className="hidden sm:inline">GameInfo</span>
             </Link>
           </div>
           <nav className="ml-auto flex items-center gap-2">
             <GameinfoThemeToggle />
             <GameinfoModeToggle lang={lang} editableRole={editableRole} />
-            <span
-              role="img"
-              aria-label={user?.displayName || user?.username || ""}
-              title={user?.displayName || user?.username || ""}
-              className="hidden h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full border-2 border-white bg-[#18181B] text-[15px] font-black text-white sm:flex"
-            >
-              {initial}
-            </span>
+            <GameinfoProfileMenu name={user?.displayName || user?.username || ""} role={ROLE_LABELS[user?.role] || ""} />
           </nav>
         </div>
       </header>

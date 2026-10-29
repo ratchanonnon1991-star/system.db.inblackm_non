@@ -116,13 +116,14 @@ async function uniqueUsernameFromEmail(email) {
  * upgrade the account afterward from "จัดการสิทธิ์ผู้ใช้" the same as any
  * account created by hand.
  */
-export async function provisionSsoUser(email) {
+export async function provisionSsoUser(email, { role = "user", permissions } = {}) {
   const username = await uniqueUsernameFromEmail(email);
   const user = await insertUser({
     username,
     displayName: email,
     password: crypto.randomBytes(24).toString("base64url"),
-    role: "user",
+    role,
+    permissions,
   });
   await upsertSsoMapping({ hiringEmail: email, gamedbUsername: user.username });
   return user;
@@ -131,11 +132,11 @@ export async function provisionSsoUser(email) {
 /**
  * The gamedb account a verified email signs in as: the one it is already
  * mapped to, else the one whose username or display name is that email
- * (then mapped, so the next sign-in is a plain lookup), else a new
- * least-privileged account. Used by the TopUp sign-in; an email matching
- * more than one account is never guessed between.
+ * (then mapped, so the next sign-in is a plain lookup), else a new account
+ * with `newAccount`'s role and permissions. Used by the TopUp sign-in; an
+ * email matching more than one account is never guessed between.
  */
-export async function findOrProvisionSsoUser(email) {
+export async function findOrProvisionSsoUser(email, newAccount = {}) {
   const normalized = String(email || "").trim().toLowerCase();
   const mapped = await findGamedbUsernameByHiringEmail(normalized);
   const mappedUser = mapped ? await findUserByUsername(mapped) : null;
@@ -150,5 +151,5 @@ export async function findOrProvisionSsoUser(email) {
     await upsertSsoMapping({ hiringEmail: normalized, gamedbUsername: result.rows[0].username });
     return { user: await findUserByUsername(result.rows[0].username), linked: "matched" };
   }
-  return { user: await provisionSsoUser(normalized), linked: "created" };
+  return { user: await provisionSsoUser(normalized, newAccount), linked: "created" };
 }

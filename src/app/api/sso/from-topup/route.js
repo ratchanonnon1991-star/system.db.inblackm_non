@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionCookieOptions, SESSION_COOKIE, signSessionToken } from "@/lib/session";
 import { getGamedbBaseUrl } from "@/lib/hiring-sso";
-import { getTopupBaseUrl, getTopupSsoSecret, TOPUP_SSO_ROLES } from "@/lib/topup-sso";
+import { getTopupBaseUrl, getTopupSsoSecret, TOPUP_SSO_NEW_ACCOUNT, TOPUP_SSO_ROLES } from "@/lib/topup-sso";
 import { findOrProvisionSsoUser } from "@/server/gamedb-sso-map-repository";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,7 @@ export const revalidate = 0;
  * one-time code (or ?ssoError= when TopUp refused). The code is exchanged
  * for the account's email and role server-to-server. TopUp admin/staff only;
  * the email signs in as the gamedb account it is mapped to or named after,
- * or a new "user"-role account an Admin can upgrade later.
+ * or a new Staff account that can view GameInfo (TOPUP_SSO_NEW_ACCOUNT).
  */
 export async function GET(request) {
   const url = new URL(request.url);
@@ -50,7 +50,7 @@ export async function GET(request) {
 
   let user;
   try {
-    ({ user } = await findOrProvisionSsoUser(email));
+    ({ user } = await findOrProvisionSsoUser(email, TOPUP_SSO_NEW_ACCOUNT));
   } catch (err) {
     console.error("failed to find or provision a gamedb account for TopUp SSO", err);
     return failure("provision_failed");

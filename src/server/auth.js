@@ -169,6 +169,30 @@ export function canManageProfit(user) {
   return hasPermission(user, "profit.admin");
 }
 
+export function hasStockAccess(user) {
+  return hasPermission(user, "stock.access");
+}
+
+export async function requireStockAccess(request) {
+  const user = await requireAdmin(request);
+  if (!hasStockAccess(user)) {
+    throw createHttpError("บัญชีนี้ไม่มีสิทธิ์เข้า Stock", 403);
+  }
+  return user;
+}
+
+export function canManageStock(user) {
+  return hasPermission(user, "stock.admin");
+}
+
+export async function requireStockEditor(request) {
+  const user = await requireStockAccess(request);
+  if (!canManageStock(user)) {
+    throw createHttpError("บัญชีนี้ไม่มีสิทธิ์รับเข้าหรือตัด Stock", 403);
+  }
+  return user;
+}
+
 export async function requireProfitEditor(request) {
   const user = await requireProfitAccess(request);
   if (!canManageProfit(user)) {
