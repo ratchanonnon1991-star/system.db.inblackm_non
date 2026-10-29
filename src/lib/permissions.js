@@ -78,5 +78,7 @@ export function hasPermission(user, key) {
   if (!user) return false;
   if (key === "systemdb.data.insert_delete" && user.role === "admin") return true;
   if (key === "systemdb.data.update" && user.role === "admin") return true;
+  // Admins see and run Stock without a grant; everyone else is ticked per account.
+  if (key.startsWith("stock.") && user.role === "admin") return true;
   return (user.permissions || legacyPermissions(user)).includes(key);
 }

@@ -42,7 +42,8 @@ check(Boolean(validateStockMove({ kind: "in", lines: [] }, balances).error), "a 
 check(PERMISSIONS.some((item) => item.key === "stock.access") && PERMISSIONS.some((item) => item.key === "stock.admin"), "Stock has view and edit permissions");
 check(normalizePermissions(["stock.admin"]).includes("stock.access"), "editing stock implies seeing it");
 check(!togglePermission(["stock.access", "stock.admin"], "stock.access", false).includes("stock.admin"), "removing view also removes edit");
-check(!hasPermission({ role: "admin", permissions: [] }, "stock.access"), "Stock is granted per account, not by role");
+check(hasPermission({ role: "admin", permissions: [] }, "stock.access") && hasPermission({ role: "admin", permissions: [] }, "stock.admin"), "an Admin sees and runs Stock without a grant");
+check(!hasPermission({ role: "staff", permissions: [] }, "stock.access"), "Staff need Stock ticked");
 
 const repository = read("../src/server/stock-repository.js");
 check(repository.includes("FOR UPDATE") && repository.includes("validateStockMove"), "a move is checked against balances read under a lock");

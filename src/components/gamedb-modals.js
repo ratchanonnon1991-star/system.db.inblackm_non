@@ -1849,8 +1849,9 @@ export function UsersModal({ me, onClose, onChanged }) {
                   </td>
                   {PERMISSIONS.map((permission) => {
                     const role = roleDrafts[user.id] || user.role;
-                    const implicitAdmin = role === "admin" && permission.key.startsWith("systemdb.");
-                    const disabled = permission.key.startsWith("systemdb.") && role !== "staff";
+                    // Admins hold System DB writes and Stock by role, not by a tick.
+                    const implicitAdmin = role === "admin" && (permission.key.startsWith("systemdb.") || permission.key.startsWith("stock."));
+                    const disabled = implicitAdmin || (permission.key.startsWith("systemdb.") && role !== "staff");
                     const checked = implicitAdmin || (drafts[user.id] || []).includes(permission.key);
                     return (
                       <td key={permission.key} className="border-b border-r border-ll-hairline px-3 py-3 text-center">
