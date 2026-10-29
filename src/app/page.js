@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowUpRight,
+  Boxes,
   Copy,
   Database,
   Gamepad2,
@@ -148,6 +149,13 @@ const SYSTEMS = [
     icon: Wallet,
     href: "/profit",
   },
+  {
+    key: "stock",
+    label: "Stock",
+    desc: "ของที่ซื้อตุนไว้ รับเข้า ตัดออก และยอดคงเหลือ",
+    icon: Boxes,
+    href: "/stock",
+  },
 ];
 
 // The hub follows inblackm.com: a brand-red header (the same red in both
@@ -249,6 +257,7 @@ function SystemHub({ me, onLoggedOut, onPermissionsChanged }) {
     if (system.key === "projectm") return true;
     if (system.key === "gameinfo") return hasPermission(me, "gameinfo.access");
     if (system.key === "profit") return hasPermission(me, "profit.access");
+    if (system.key === "stock") return hasPermission(me, "stock.access");
     return !isTemplateUser;
   });
 

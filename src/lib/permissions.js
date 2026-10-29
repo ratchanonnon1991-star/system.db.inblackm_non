@@ -9,6 +9,8 @@ export const PERMISSIONS = [
   { key: "gameinfo.admin", site: "GameInfo", label: "Admin", path: "/gameinfo/[lang]" },
   { key: "profit.access", site: "Profit", label: "ดูข้อมูล", path: "/profit" },
   { key: "profit.admin", site: "Profit", label: "แก้ไขข้อมูล", path: "/profit" },
+  { key: "stock.access", site: "Stock", label: "ดูข้อมูล", path: "/stock" },
+  { key: "stock.admin", site: "Stock", label: "รับเข้า/ตัดออก", path: "/stock" },
 ];
 
 export const PERMISSION_KEYS = new Set(PERMISSIONS.map(({ key }) => key));
@@ -19,6 +21,7 @@ export const PERMISSION_PRESETS = {
   gameinfoTopup: ["gameinfo.access", "gameinfo.report"],
   gameinfoAdmin: ["gameinfo.access", "gameinfo.report", "gameinfo.market_check", "gameinfo.admin"],
   profitAdmin: ["profit.access", "profit.admin"],
+  stockAdmin: ["stock.access", "stock.admin"],
 };
 
 export function normalizePermissions(values = []) {
@@ -28,6 +31,7 @@ export function normalizePermissions(values = []) {
   if (permissions.has("gameinfo.report")) permissions.add("gameinfo.access");
   if (permissions.has("gameinfo.market_check")) permissions.add("gameinfo.access");
   if (permissions.has("profit.admin")) PERMISSION_PRESETS.profitAdmin.forEach((key) => permissions.add(key));
+  if (permissions.has("stock.admin")) PERMISSION_PRESETS.stockAdmin.forEach((key) => permissions.add(key));
   return [...permissions].sort();
 }
 
@@ -41,6 +45,7 @@ export function togglePermission(values, key, checked) {
     if (key === "gameinfo.report") permissions.delete("gameinfo.admin");
     if (key === "gameinfo.market_check") permissions.delete("gameinfo.admin");
     if (key === "profit.access") permissions.delete("profit.admin");
+    if (key === "stock.access") permissions.delete("stock.admin");
   }
   return normalizePermissions([...permissions]);
 }
