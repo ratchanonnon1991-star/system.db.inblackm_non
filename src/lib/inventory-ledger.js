@@ -87,6 +87,10 @@ export function accountInput(body) {
   return {
     key: accountKey(body.provider, body.ref), provider: text(body.provider, 40).toLowerCase(),
     label, currency, referenceRateThb: rate, costMethod,
+    // The workbook / group the account belongs to (e.g. "1.2 UID ( MMK )"), only for grouping on screen.
+    category: text(body.category, 120) || null,
+    // Only used when the account is first registered; later changes are an admin action.
+    status: body.status === "disabled" ? "disabled" : "active",
   };
 }
 
@@ -120,10 +124,44 @@ export function entryInput(body) {
     ...input, accountId,
     amount: fromUnits(toUnits(body.amount)),
     orderRef,
+    // Provider receipt / transaction number, when the person has one.
+    invoice: text(body.invoice, 200) || null,
     // use: explicit THB cost (else reference rate); deposit: THB paid for the lot.
     thbAmount: optionalThb(body.thbAmount, "ยอดบาท"),
     saleThb: kind === "use" ? optionalThb(body.saleThb, "ราคาขาย") : null,
   };
+}
+
+export const LEDGER_MAX_BATCH = 200;
+
+/**
+ * Rows typed or pasted on the debit page for one account. Each row carries its own
+ * request id from the browser, so a retried save never records a row twice.
+ */
+export function debitBatchInput(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw ledgerError("รูปแบบข้อมูลไม่ถูกต้อง");
+  const accountId = String(body.accountId ?? "").trim();
+  if (!/^\d{1,18}$/.test(accountId)) throw ledgerError("กรุณาเลือกบัญชี");
+  if (!Array.isArray(body.rows) || !body.rows.length) throw ledgerError("ยังไม่มีรายการ");
+  if (body.rows.length > LEDGER_MAX_BATCH) throw ledgerError(`บันทึกได้ครั้งละไม่เกิน ${LEDGER_MAX_BATCH} รายการ`);
+  return { accountId, rows: body.rows.map(r => ({ ...r, kind: "use", accountId, note: text(r?.note, 500) || "ยกยอด" })) };
+}
+
+/**
+ * Split pasted sheet text into rows: "order<TAB>amount[<TAB>invoice]" per line, or
+ * "order amount" separated by spaces. Thousands separators are removed; blank lines skipped.
+ */
+export function parseDebitPaste(textValue) {
+  const rows = [];
+  for (const raw of String(textValue ?? "").split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const cells = line.includes("\t") ? line.split("\t").map(c => c.trim()) : line.split(/\s+/);
+    const [orderRef = "", amount = "", invoice = ""] = cells;
+    // "Ks5,000" / "1 000" -> "5000" / "1000"
+    rows.push({ orderRef, amount: amount.replace(/[,\s]/g, "").replace(/^[^\d.]+/, ""), invoice });
+  }
+  return rows;
 }
 
 export function snapshotInput(body) {
