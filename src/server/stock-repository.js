@@ -69,7 +69,7 @@ async function ensureSchema() {
         CREATE TABLE IF NOT EXISTS stock_move_lines (
           id          BIGSERIAL PRIMARY KEY,
           move_id     BIGINT NOT NULL REFERENCES stock_moves(id) ON DELETE CASCADE,
-          item_id     INTEGER NOT NULL REFERENCES stock_items(id),
+          item_id     INTEGER NOT NULL REFERENCES stock_items(id) ON DELETE CASCADE,
           qty         INTEGER NOT NULL CHECK (qty <> 0),
           unit_cost   NUMERIC(14, 2)
         )
@@ -396,24 +396,35 @@ export async function recordStockMove({ accountId, kind, queue, note, sellPrice,
   }
 }
 
-/** One game's stocked packs by GameInfo pack name: { [packName]: { left, tone, code } }. */
+/**
+ * One game's stock for its GameInfo page: the open accounts filed under it
+ * ({ code, status, leftTotal }) and, by GameInfo pack name, what is left
+ * across them ({ left, tone, codes }). A pack is matched by its exact name.
+ */
 export async function listStockForGame(gameId, dataMode = "uid") {
   await ensureSchema();
   const result = await getPool().query(
-    `SELECT a.code, ${ITEM_COLUMNS}
-       FROM stock_items i
-       JOIN stock_accounts a ON a.id = i.account_id ${ITEM_JOINS}
-      WHERE a.game_id = $1 AND a.data_mode = $2 AND a.status <> 'closed' AND i.pack_name <> ''
-      GROUP BY i.id, a.code
-      ORDER BY i.sort_order, i.id`,
+    `SELECT a.code, a.status AS account_status, ${ITEM_COLUMNS}
+       FROM stock_accounts a
+       LEFT JOIN stock_items i ON i.account_id = a.id ${ITEM_JOINS}
+      WHERE a.game_id = $1 AND a.data_mode = $2 AND a.status <> 'closed'
+      GROUP BY a.id, i.id
+      ORDER BY a.code, i.sort_order, i.id`,
     [Number(gameId), dataMode === "idpass" ? "idpass" : "uid"]
   );
+  const accounts = new Map();
   const byPack = {};
   for (const row of result.rows) {
+    const account = accounts.get(row.code) || { code: row.code, status: row.account_status, leftTotal: 0 };
+    accounts.set(row.code, account);
+    if (row.id == null) continue;
     const item = mapItem(row);
+    account.leftTotal += Math.max(item.left, 0);
+    if (!item.packName) continue;
     const current = byPack[item.packName];
     const left = (current?.left ?? 0) + Math.max(item.left, 0);
-    byPack[item.packName] = { left, lowAt: item.lowAt, tone: stockTone(left, item.lowAt), codes: [...(current?.codes || []), row.code] };
+    const lowAt = Math.max(current?.lowAt ?? 0, item.lowAt);
+    byPack[item.packName] = { left, lowAt, tone: stockTone(left, lowAt), codes: [...(current?.codes || []), row.code] };
   }
-  return byPack;
+  return { accounts: [...accounts.values()], byPack };
 }
