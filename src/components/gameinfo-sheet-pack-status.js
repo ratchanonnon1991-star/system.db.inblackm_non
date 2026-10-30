@@ -3,10 +3,11 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Palette, RefreshCw } from "lucide-react";
+import { CheckCircle2, Palette, Plus, RefreshCw } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { gameinfoGameHref } from "@/lib/gameinfo-data-mode";
 import { GAMEINFO_PACK_STATUS_LABELS } from "@/lib/gameinfo-pack-model";
+import { GAMEINFO_SHEET_ADDED_CATEGORY } from "@/lib/gameinfo-sheet-packs";
 
 const STATUS_TONE = {
   open: "text-emerald-700 dark:text-emerald-400",
@@ -49,7 +50,8 @@ export default function GameinfoSheetPackStatus({ lang }) {
   }
 
   const changing = useMemo(() => (preview?.items || []).filter((item) => item.changes.length), [preview]);
-  const onlyUnmatched = useMemo(() => (preview?.items || []).filter((item) => !item.changes.length), [preview]);
+  const onlyMissing = useMemo(() => (preview?.items || []).filter((item) => !item.changes.length), [preview]);
+  const missingGames = (preview?.items || []).filter((item) => item.missing.length).length;
   const chosen = changing.filter((item) => selected.has(item.gameId));
   const packCount = chosen.reduce((sum, item) => sum + item.changes.length, 0);
 
@@ -68,6 +70,26 @@ export default function GameinfoSheetPackStatus({ lang }) {
       await load();
     } catch (applyError) {
       setError(applyError instanceof Error ? applyError.message : "ปรับสถานะแพ็คไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addPacks(gameId, keys) {
+    setBusy(true);
+    setError("");
+    try {
+      const data = await apiJson("/api/gameinfo/sheet-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "add-packs", items: [{ gameId, keys }] }),
+        fallbackError: "เพิ่มแพ็คไม่สำเร็จ",
+      });
+      setResult({ added: data });
+      router.refresh();
+      await load();
+    } catch (addError) {
+      setError(addError instanceof Error ? addError.message : "เพิ่มแพ็คไม่สำเร็จ");
     } finally {
       setBusy(false);
     }
@@ -100,7 +122,14 @@ export default function GameinfoSheetPackStatus({ lang }) {
 
       {error ? <p role="alert" className="text-sm font-bold text-linear-danger">{error}</p> : null}
 
-      {result ? (
+      {result?.added ? (
+        <div role="status" className="rounded-xl bg-emerald-500/10 p-3 text-sm text-emerald-800 dark:text-emerald-300">
+          <p className="flex items-center gap-1.5 font-extrabold"><CheckCircle2 size={16} aria-hidden="true" /> เพิ่มแล้ว {result.added.summary.packs} แพ็ค ไว้ในหมวด “{GAMEINFO_SHEET_ADDED_CATEGORY}”{result.added.summary.failed ? ` · ไม่สำเร็จ ${result.added.summary.failed}` : ""}</p>
+          {result.added.results.map((item) => (item.error
+            ? <p key={item.gameId} className="text-[#B80004] dark:text-[#FF8A8C]">ID {item.gameId}: {item.error}</p>
+            : item.names?.length ? <p key={item.gameId}>ID {item.gameId}: {item.names.join(", ")}</p> : null))}
+        </div>
+      ) : result ? (
         <div role="status" className="rounded-xl bg-emerald-500/10 p-3 text-sm text-emerald-800 dark:text-emerald-300">
           <p className="flex items-center gap-1.5 font-extrabold"><CheckCircle2 size={16} aria-hidden="true" /> ปรับแล้ว {result.summary.packs} แพ็ค ใน {result.summary.games} เกม{result.summary.failed ? ` · ไม่สำเร็จ ${result.summary.failed}` : ""}</p>
           {result.results.filter((item) => item.error).map((item) => (
@@ -112,7 +141,8 @@ export default function GameinfoSheetPackStatus({ lang }) {
       {preview ? (
         <>
           <p className="text-sm text-linear-ink-muted">
-            ตรวจ {preview.checked} เกมที่มีแพ็คแล้ว · ต้องปรับ <strong className="text-linear-ink">{changing.length}</strong> เกม
+            ตรวจ {preview.checked} เกมที่มีแพ็คแล้ว · ต้องปรับสถานะ <strong className="text-linear-ink">{changing.length}</strong> เกม ·
+            ชีตมีแพ็คที่ GameInfo ยังไม่มี <strong className="text-linear-ink">{missingGames}</strong> เกม
           </p>
           {changing.length ? (
             <ul className="flex flex-col divide-y divide-linear-hairline rounded-xl border border-linear-hairline">
@@ -137,20 +167,21 @@ export default function GameinfoSheetPackStatus({ lang }) {
                         </li>
                       ))}
                     </ul>
-                    {item.unmatched.length ? <Unmatched rows={item.unmatched} /> : null}
+                    {item.missing.length ? <Missing key={missingKey(item)} item={item} busy={busy} onAdd={addPacks} /> : null}
                   </div>
                 </li>
               ))}
             </ul>
           ) : null}
-          {onlyUnmatched.length ? (
+          {onlyMissing.length ? (
             <details className="rounded-xl border border-linear-hairline p-3 text-sm">
-              <summary className="cursor-pointer font-bold text-linear-ink-muted">เกมที่สถานะตรงแล้ว แต่ชีตมีแถวสีที่ GameInfo ไม่มีแพ็คชื่อนั้น ({onlyUnmatched.length})</summary>
-              <ul className="mt-2 flex flex-col gap-2">
-                {onlyUnmatched.map((item) => (
+              <summary className="cursor-pointer font-bold text-linear-ink-muted">เกมที่สถานะตรงแล้ว แต่ชีตมีแพ็คที่ GameInfo ยังไม่มี ({onlyMissing.length})</summary>
+              <ul className="mt-2 flex flex-col gap-3">
+                {onlyMissing.map((item) => (
                   <li key={item.gameId}>
                     <Link href={gameinfoGameHref(lang, item.gameId, "uid", true)} className="font-bold text-linear-ink hover:text-[#D90005]">{String(item.game).split("\n")[0]}</Link>
-                    <Unmatched rows={item.unmatched} />
+                    <span className="ml-2 text-xs text-linear-ink-tertiary">ID {item.gameId} · แท็บ “{item.tab}”</span>
+                    <Missing key={missingKey(item)} item={item} busy={busy} onAdd={addPacks} />
                   </li>
                 ))}
               </ul>
@@ -167,13 +198,51 @@ export default function GameinfoSheetPackStatus({ lang }) {
   );
 }
 
-function Unmatched({ rows }) {
+// Remounts a game's list (and its ticks) when the preview is read again.
+const missingKey = (item) => `${item.gameId}:${item.missing.map((row) => row.key).join()}`;
+
+// The sheet's packs this game has no pack of that name for in their mode, to
+// tick and add. A red row has expired, so it is listed but cannot be added.
+function Missing({ item, busy, onAdd }) {
+  const rows = item.missing;
+  const [ticked, setTicked] = useState(() => new Set(rows.filter((row) => row.tone !== "red").map((row) => row.key)));
+  const addable = rows.filter((row) => row.tone !== "red").length;
   return (
-    <p className="mt-1.5 flex flex-wrap items-center gap-1 text-xs text-linear-ink-tertiary">
-      ชีตมีแต่ GameInfo ไม่มี:
-      {rows.map((row) => (
-        <span key={row.name} className={`rounded px-1.5 py-0.5 ${SHEET_TONE[row.tone]?.className || ""}`}>{row.name} ({SHEET_TONE[row.tone]?.label})</span>
-      ))}
-    </p>
+    <details className="mt-1.5 text-xs">
+      <summary className="cursor-pointer text-linear-ink-tertiary">ชีตมีแต่ GameInfo ไม่มี {rows.length} แพ็ค{addable < rows.length ? ` (หมดอายุแล้ว ${rows.length - addable})` : ""}</summary>
+      <ul className="mt-1.5 grid gap-1 sm:grid-cols-2">
+        {rows.map((row) => (
+          <li key={row.key}>
+            <label className={`flex min-w-0 items-center gap-1.5 rounded px-1.5 py-1 ${SHEET_TONE[row.tone]?.className || "bg-linear-surface-3 text-linear-ink-muted"} ${row.tone === "red" ? "opacity-70" : "cursor-pointer"}`}>
+              <input
+                type="checkbox"
+                disabled={row.tone === "red"}
+                checked={ticked.has(row.key)}
+                onChange={(event) => setTicked((current) => {
+                  const next = new Set(current);
+                  if (event.target.checked) next.add(row.key);
+                  else next.delete(row.key);
+                  return next;
+                })}
+                className="h-4 w-4 shrink-0 accent-[#D90005]"
+              />
+              <span className="shrink-0 rounded bg-black/5 px-1 text-[10px] font-bold dark:bg-white/10">{MODE_LABEL[row.mode]}</span>
+              <span className="min-w-0 break-words font-bold">{row.name}</span>
+              <span className="ml-auto shrink-0 opacity-70">{[row.price && `฿${row.price}`, row.channel, SHEET_TONE[row.tone]?.label && `แถว${SHEET_TONE[row.tone].label}`].filter(Boolean).join(" · ")}</span>
+            </label>
+          </li>
+        ))}
+      </ul>
+      {addable ? (
+        <button
+          type="button"
+          disabled={busy || !ticked.size}
+          onClick={() => onAdd(item.gameId, [...ticked])}
+          className="mt-2 flex h-9 items-center gap-1.5 rounded-[10px] border border-[#D90005] px-3 text-[13px] font-bold text-[#D90005] hover:bg-[#D90005]/5 disabled:opacity-40"
+        >
+          <Plus size={14} aria-hidden="true" /> เพิ่ม {ticked.size} แพ็คเข้า GameInfo
+        </button>
+      ) : null}
+    </details>
   );
 }

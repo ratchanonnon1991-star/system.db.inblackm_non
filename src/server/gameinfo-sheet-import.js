@@ -14,15 +14,16 @@ import { gameinfoSheetGameKey, parseGameinfoSourceSheet } from "@/lib/gameinfo-s
 import { gameinfoHasRealPacks } from "@/lib/gameinfo-pack-model";
 import { getGameinfoModeData, listGameinfoModeData, updateGameinfoModeData } from "@/server/gameinfo-mode-data";
 import {
+  addGameinfoSheetPacks,
   applyGameinfoSheetStatusChanges,
   countGameinfoSheetPacks,
   gameinfoSheetCostFormulaColumns,
   gameinfoSheetCostProfiles,
+  gameinfoSheetMissingPacks,
   gameinfoSheetPackNameColumns,
   gameinfoSheetPackTree,
   gameinfoSheetPackUnits,
   gameinfoSheetStatusChanges,
-  gameinfoSheetUnmatchedTones,
   parseGameinfoSheetPackTab,
   withGameinfoSheetTones,
 } from "@/lib/gameinfo-sheet-packs";
@@ -330,8 +331,8 @@ async function readStatusTabs(reader, onlyIds = null) {
 /**
  * Packs whose status the sheet's row colours would change, game by game, in
  * both modes: red rows → หมดอายุ, green → ใหม่ (gameinfoSheetStatusChanges).
- * Also lists coloured rows with no pack of that name, so a pack missing from
- * GameInfo shows up too.
+ * Also lists the sheet's packs GameInfo has no pack of that name for, so a
+ * pack still to be added shows up too.
  */
 export async function previewGameinfoSheetPackStatus({ reader: givenReader = null } = {}) {
   const reader = givenReader || openReader();
@@ -348,8 +349,8 @@ export async function previewGameinfoSheetPackStatus({ reader: givenReader = nul
       ...gameinfoSheetStatusChanges(uid, packTab.parsed).map((change) => ({ ...change, mode: "uid" })),
       ...gameinfoSheetStatusChanges(idpass, packTab.parsed).map((change) => ({ ...change, mode: "idpass" })),
     ];
-    const unmatched = gameinfoSheetUnmatchedTones(packTab.parsed, [uid, idpass]);
-    if (changes.length || unmatched.length) items.push({ gameId: row.id, game: row.game, tab: packTab.tab, changes, unmatched });
+    const missing = gameinfoSheetMissingPacks(packTab.parsed, { uid, idpass });
+    if (changes.length || missing.length) items.push({ gameId: row.id, game: row.game, tab: packTab.tab, changes, missing });
   }
   return { sheetId: gameinfoSourceSheetId(), checked, items };
 }
@@ -400,6 +401,64 @@ export async function applyGameinfoSheetPackStatus(gameIds, actor = null, { read
     summary: {
       games: results.filter((item) => item.changed).length,
       packs: results.reduce((sum, item) => sum + item.changed, 0),
+      failed: results.filter((item) => item.error).length,
+    },
+  };
+}
+
+/**
+ * Adds the chosen missing sheet packs to their games, each in its own mode
+ * (addGameinfoSheetPacks). `items` is [{ gameId, keys }] with keys as the
+ * preview's missing list gives them; everything is worked out again from
+ * the sheet as it is now, so a pack someone added meanwhile is not doubled.
+ */
+export async function addGameinfoSheetMissingPacks(items, actor = null, { reader: givenReader = null } = {}) {
+  const chosen = new Map((Array.isArray(items) ? items : []).map((item) => [Number(item?.gameId), new Set(Array.isArray(item?.keys) ? item.keys.map(String) : [])]));
+  for (const [gameId, keys] of chosen) if (!Number.isInteger(gameId) || !keys.size) chosen.delete(gameId);
+  if (!chosen.size) throw createHttpError("ยังไม่ได้เลือกแพ็คที่จะเพิ่ม", 400);
+  if (chosen.size > 200) throw createHttpError("เพิ่มได้ครั้งละไม่เกิน 200 เกม", 400);
+  const reader = givenReader || openReader();
+  const { games, packTabs } = await readStatusTabs(reader, new Set(chosen.keys()));
+  const results = [];
+  for (const { row, sheetGame } of games) {
+    const keys = [...chosen.get(row.id)];
+    try {
+      const packTab = packTabs.get(sheetGame.key);
+      if (!packTab) {
+        results.push({ gameId: row.id, added: 0, error: "ไม่พบแท็บของเกมนี้ในชีต" });
+        continue;
+      }
+      // The uid read also readies the shared pack tables before an idpass save holds them.
+      const uid = await getGamelistPacks(row.id);
+      const uidAdd = addGameinfoSheetPacks(uid, packTab.parsed, "uid", keys);
+      if (uidAdd.added.length) {
+        await saveGamelistPacks(row.id, {
+          currencies: uidAdd.currencies,
+          computedColumns: uid.computedColumns,
+          costProfiles: uidAdd.costProfiles,
+          actor,
+          source: "import",
+          expectedVersion: uid.version,
+        });
+      }
+      let idpassAdded = [];
+      if (keys.some((key) => key.startsWith("idpass|"))) {
+        await updateGameinfoModeData(row.id, "idpass", (data) => {
+          const next = addGameinfoSheetPacks(data.packs, packTab.parsed, "idpass", keys);
+          idpassAdded = next.added;
+          return { ...data, packs: { ...data.packs, currencies: next.currencies, costProfiles: next.costProfiles } };
+        }, { area: "pack", actor });
+      }
+      results.push({ gameId: row.id, added: uidAdd.added.length + idpassAdded.length, names: [...uidAdd.added, ...idpassAdded] });
+    } catch (error) {
+      results.push({ gameId: row.id, added: 0, error: error instanceof Error ? error.message : "เพิ่มแพ็คไม่สำเร็จ" });
+    }
+  }
+  return {
+    results,
+    summary: {
+      games: results.filter((item) => item.added).length,
+      packs: results.reduce((sum, item) => sum + item.added, 0),
       failed: results.filter((item) => item.error).length,
     },
   };

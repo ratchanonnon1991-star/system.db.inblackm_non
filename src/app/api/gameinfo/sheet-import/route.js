@@ -1,6 +1,6 @@
 import { handleApiError, jsonOk } from "@/lib/http";
 import { requireGameinfoEditor } from "@/server/auth";
-import { applyGameinfoSheetCostFormulas, applyGameinfoSheetImport, applyGameinfoSheetPackStatus, gameinfoSheetServiceAccount, previewGameinfoSheetImport, previewGameinfoSheetPackStatus } from "@/server/gameinfo-sheet-import";
+import { addGameinfoSheetMissingPacks, applyGameinfoSheetCostFormulas, applyGameinfoSheetImport, applyGameinfoSheetPackStatus, gameinfoSheetServiceAccount, previewGameinfoSheetImport, previewGameinfoSheetPackStatus } from "@/server/gameinfo-sheet-import";
 import { auditActor } from "@/server/gameinfo-gamelist-packs";
 
 export async function GET(request) {
@@ -22,10 +22,11 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const user = await requireGameinfoEditor(request);
-    const { gameIds, parts, action } = await request.json();
+    const { gameIds, parts, action, items } = await request.json();
     // A one-off catch-up for games imported before their cost formula existed.
     if (action === "cost-formulas") return jsonOk(await applyGameinfoSheetCostFormulas(auditActor(user)));
     if (action === "pack-status") return jsonOk(await applyGameinfoSheetPackStatus(gameIds, auditActor(user)));
+    if (action === "add-packs") return jsonOk(await addGameinfoSheetMissingPacks(items, auditActor(user)));
     return jsonOk(await applyGameinfoSheetImport(gameIds, parts, auditActor(user)));
   } catch (error) {
     return handleApiError(error, "นำเข้าข้อมูลจากชีตไม่สำเร็จ");
