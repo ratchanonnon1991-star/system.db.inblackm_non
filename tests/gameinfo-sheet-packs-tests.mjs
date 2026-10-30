@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import { createGoogleReader } from "../src/server/google-sheets.js";
 import {
+  addGameinfoSheetPacks,
   applyGameinfoSheetStatusChanges,
   countGameinfoSheetPacks,
   findGameinfoSheetPackHeader,
@@ -9,6 +10,7 @@ import {
   gameinfoSheetCostFormulaColumns,
   gameinfoSheetCostProfiles,
   gameinfoSheetMissingPacks,
+  gameinfoSheetPackKey,
   gameinfoSheetPackTree,
   gameinfoSheetPackNameColumns,
   gameinfoSheetPackUnits,
@@ -272,9 +274,51 @@ const twoWays = parseGameinfoSheetPackTab(honkai);
 withGameinfoSheetTones(twoWays, { 3: nameColumn });
 twoWays.currencies[0].categories[0].packs.push({ name: "60 B-Chips", tone: "green" });
 check(!gameinfoSheetStatusChanges(gameTree, twoWays).some((change) => change.packId === "a"), "a name coloured two ways is left alone");
-const missing = gameinfoSheetMissingPacks(toned, [[{ categories: [{ packs: [{ name: "60 B-Chips" }] }] }]]);
+const missing = gameinfoSheetMissingPacks(toned, { uid: [{ categories: [{ packs: [{ name: "60 B-Chips" }] }] }] });
 check(missing.map((row) => `${row.name}:${row.tone}`).join() === "300 B-Chips:green,Monthly Card:", "every sheet pack with no pack of that name is listed, coloured or not");
 check(missing[1].price === "170" && missing[1].channel === "ATOM", "with its price and wallet, to find it in the sheet");
+
+// A tab in sections, like "U.LOVE AND DEEPSPACE": a UID table, then an ID-PASS one.
+const sectioned = [
+  ["1.Love and Deepspace UID - ( Page / Market Place ) - ช่องทางหลัก", "", "", "", "ต้นทุน MMK", "MMK"],
+  ["ราคาขาย", "USDT", "Crystals ที่ได้", "MMK ที่กด", "ช่องทาง", "ต้นทุน"],
+  ["20", "0.59", "60 Crystals", "1,905", "Wavepay", "13.5"],
+  ["2.Love and Deepspace ID - PASS\n( PAGE / Kaleoz / Market Place )"],
+  ["ราคาขาย", "USDT", "PACK", "NGN ที่กด", "ช่องทาง", "ต้นทุน"],
+  ["30", "0.89", "Association Special LV.10", "1070", "GOOGLE NGN", "25.72"],
+  ["45", "1.19", "Weekly Home Pack", "1.5", "ITUNES(DE)", "38.98"],
+  ["290", "8.01", "Promise Pack ( Caleb )", "11000", "GOOGLE NGN", "264.41"],
+  ["30", "0.89", "Entangled Hearts Pack I", "1070", "GOOGLE NGN", "25.72"],
+];
+const sections = parseGameinfoSheetPackTab(sectioned);
+const sectionColors = [];
+sectionColors[7] = rgb("00ff00");
+sectionColors[8] = rgb("ff0000");
+withGameinfoSheetTones(sections, { 2: sectionColors });
+const sectionPacks = sections.currencies.flatMap((currency) => currency.categories.flatMap((category) => category.packs));
+check(sectionPacks.map((pack) => pack.mode).join() === "uid,idpass,idpass,idpass,idpass", "packs under an ID - PASS title are ID-PASS, the rest UID");
+const ldsIdpass = [{ id: "g", name: "Google", categories: [{ id: "k", name: "PACK", packs: [
+  { id: "p1", name: "Association Special LV.10", channelsMain: ["GOOGLE NGN"], costProfileId: "sheet-google-ngn" },
+] }] }];
+const ldsMissing = gameinfoSheetMissingPacks(sections, { uid: [], idpass: ldsIdpass });
+check(ldsMissing.map((row) => `${row.mode}:${row.name}:${row.tone}`).join() === "uid:60 Crystals:,idpass:Weekly Home Pack:,idpass:Promise Pack ( Caleb ):green,idpass:Entangled Hearts Pack I:red",
+  "missing packs are looked for in their own mode");
+const addedIdpass = addGameinfoSheetPacks({ currencies: ldsIdpass, costProfiles: [{ id: "sheet-google-ngn" }] }, sections, "idpass", ldsMissing.map((row) => row.key));
+check(addedIdpass.added.join() === "Weekly Home Pack,Promise Pack ( Caleb )", "the chosen packs are added, never a red (expired) one");
+const google = addedIdpass.currencies.find((currency) => currency.name === "Google");
+const caleb = google.categories.find((category) => category.name === "เพิ่มจากชีต").packs[0];
+check(caleb.name === "Promise Pack ( Caleb )" && caleb.serviceStatus === "new" && caleb.costProfileId === "sheet-google-ngn" && caleb.price === "290",
+  "a pack joins the currency holding its wallet's packs, comes in ใหม่ from a green row, and takes that wallet's cost profile");
+const itunes = addedIdpass.currencies.find((currency) => currency.name === "ITUNES(DE)");
+check(itunes?.categories[0].packs[0].name === "Weekly Home Pack" && itunes.categories[0].packs[0].serviceStatus === "", "a wallet GameInfo has no packs for gets a currency of its own");
+const deProfile = addedIdpass.costProfiles.find((profile) => profile.id === itunes.categories[0].packs[0].costProfileId);
+check(deProfile?.id === "sheet-itunesde" && Math.abs(Number(deProfile.baseValue) - 38.98 / 1.5) < 0.001,
+  "with that wallet's own rate from its sheet rows when no pack of the wallet has one (not the NGN of the amount header)");
+const uidAdded = addGameinfoSheetPacks({ currencies: [{ id: "c1", name: "Crystals", categories: [{ id: "k", name: "แพ็คหลัก", packs: [{ id: "x", name: "Old", channelsMain: [] }] }] }], costProfiles: [] }, sections, "uid", [gameinfoSheetPackKey("uid", "60 Crystals")]);
+check(uidAdded.currencies.length === 1 && uidAdded.currencies[0].categories[1].packs[0].name === "60 Crystals", "a UID pack joins the game's own currency, not a new one named after its wallet");
+check(ldsIdpass[0].categories[0].packs.length === 1, "the tree given is not changed in place");
+check(addGameinfoSheetPacks({ currencies: addedIdpass.currencies, costProfiles: addedIdpass.costProfiles }, sections, "idpass", ldsMissing.map((row) => row.key)).added.length === 0, "a pack GameInfo already has is not added twice");
+check(addGameinfoSheetPacks({ currencies: [], costProfiles: [] }, sections, "uid", [gameinfoSheetPackKey("idpass", "Weekly Home Pack")]).added.length === 0, "a pack is added only to its own mode");
 
 // columnColors: one A1 column range per wanted column, grouped back by tab title.
 const colorUrls = [];

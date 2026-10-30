@@ -163,6 +163,12 @@ function packName(name, unit) {
   return unit && /^[\d,.]+$/.test(name) ? `${name} ${unit}` : name;
 }
 
+// A section title's mode: "idpass", "uid", or "" when the text is no title.
+function sectionMode(text) {
+  if (/\bID\s*-?\s*PASS\b|IDPASS/i.test(text)) return "idpass";
+  return /\bUID\b/i.test(text) ? "uid" : "";
+}
+
 function isLabel(cells) {
   return cells.length === 1 && /\p{L}/u.test(cells[0]) && !isLink(cells[0]) && cells[0].length <= 60 && !cells[0].includes(">>")
     && (!/\d/.test(cells[0]) || NOT_FOR_SALE.test(cells[0]));
@@ -193,7 +199,11 @@ export function parseGameinfoSheetPackTab(rows) {
   // table it sits in when packs come right after it.
   let skipping = false;
   let skipNextTable = false;
+  // Which GameInfo mode the packs below belong to, from the tab's section
+  // titles ("1.… UID - …", "2.… ID - PASS …"); a tab without them is UID.
+  let mode = "uid";
   for (const [rowIndex, row] of (rows || []).entries()) {
+    mode = sectionMode(clean((row || []).find((value) => clean(value)))) || mode;
     const next = readHeader(row);
     if (next) {
       // A table we cannot read must not be read with the previous table's columns.
@@ -254,6 +264,7 @@ export function parseGameinfoSheetPackTab(rows) {
       // Where the name sits, for reading the row's colour (withGameinfoSheetTones).
       sheetRow: rowIndex,
       sheetCol: layout.nameCol,
+      mode,
     });
   }
   // PACK tables have no unit of their own: they join the tab's first named currency.
@@ -331,7 +342,7 @@ export function gameinfoSheetPackTree(parsed) {
     categories: currency.categories.map((category) => ({
       id: newId("cat"),
       name: category.name,
-      packs: category.packs.map(({ cost, costCurrency, sheetRow, sheetCol, tone, ...pack }) => ({
+      packs: category.packs.map(({ cost, costCurrency, sheetRow, sheetCol, tone, mode, ...pack }) => ({
         ...createBlankGameinfoPack(newId("pk")),
         ...pack,
         ...gameinfoPackStatusPatch(TONE_STATUS[tone] || "open"),
@@ -361,7 +372,7 @@ export function gameinfoSheetTone(color) {
 
 function eachSheetPack(parsed, visit) {
   for (const currency of parsed?.currencies || []) {
-    for (const category of currency.categories) category.packs.forEach(visit);
+    for (const category of currency.categories) category.packs.forEach((pack) => visit(pack, currency));
   }
 }
 
@@ -427,20 +438,133 @@ export function applyGameinfoSheetStatusChanges(currencies, changes) {
   }));
 }
 
+/** One sheet pack among a game's: its mode and name, as the missing list and the add button pass it. */
+export function gameinfoSheetPackKey(mode, name) {
+  return `${mode}|${gameinfoSheetPackNameKey(name)}`;
+}
+
 /**
- * Sheet packs no tree has a pack of that name for, coloured or not:
- * [{ name, tone, price, channel }] — what is still to be added to GameInfo
- * (or, when red, what has expired before it ever was).
+ * Sheet packs the GameInfo tree of their own mode has no pack of that name
+ * for, coloured or not: [{ key, mode, name, tone, price, channel }]. A red
+ * one has expired before it was ever added; the rest are still to be added.
+ * `trees` is { uid: currencies, idpass: currencies }.
  */
 export function gameinfoSheetMissingPacks(parsed, trees) {
-  const names = new Set();
-  for (const currencies of trees) eachTreePack(currencies, (pack) => names.add(gameinfoSheetPackNameKey(pack.name)));
+  const names = { uid: new Set(), idpass: new Set() };
+  for (const mode of Object.keys(names)) eachTreePack(trees?.[mode], (pack) => names[mode].add(gameinfoSheetPackNameKey(pack.name)));
   const out = new Map();
   eachSheetPack(parsed, (pack) => {
-    const key = gameinfoSheetPackNameKey(pack.name);
-    if (!names.has(key) && !out.has(key)) out.set(key, { name: pack.name, tone: pack.tone || "", price: pack.price, channel: pack.channelsMain[0] || "" });
+    const mode = pack.mode === "idpass" ? "idpass" : "uid";
+    const key = gameinfoSheetPackKey(mode, pack.name);
+    if (names[mode].has(gameinfoSheetPackNameKey(pack.name)) || out.has(key)) return;
+    out.set(key, { key, mode, name: pack.name, tone: pack.tone || "", price: pack.price, channel: pack.channelsMain[0] || "" });
   });
   return [...out.values()];
+}
+
+// Where added packs go in their currency, for someone to sort later.
+export const GAMEINFO_SHEET_ADDED_CATEGORY = "เพิ่มจากชีต";
+
+function mostCommon(values) {
+  const counts = new Map();
+  for (const value of values) if (value) counts.set(value, (counts.get(value) || 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+}
+
+// A wallet's cost profile id, the one scripts/set-channel-costs.mjs gives it
+// too ("ITUNES (USD)" → "sheet-itunesusd"), so a later run there replaces it.
+function walletProfileId(channel) {
+  return `sheet-${String(channel ?? "").replace(/[\s()]+/g, "").toLocaleLowerCase("en").replace(/[^a-z0-9]+/g, "-")}`;
+}
+
+/**
+ * A cost profile for one wallet at the sheet's own rate: its rows' ต้นทุน ÷
+ * amount (the median), read per wallet because one amount column can hold
+ * NGN on Google rows and euros on iTunes rows. Null without a usable row.
+ */
+function walletProfile(parsed, mode, wallet, updatedAt = new Date().toISOString()) {
+  const rates = [];
+  eachSheetPack(parsed, (pack) => {
+    if ((pack.mode === "idpass" ? "idpass" : "uid") !== mode || squash(pack.channelsMain[0]) !== squash(wallet)) return;
+    if (Number(pack.cost) > 0 && Number(pack.amountChargedFee) > 0) rates.push(Number(pack.cost) / Number(pack.amountChargedFee));
+  });
+  if (!rates.length) return null;
+  const currency = String(wallet).split(/[\s()]+/).find((word) => FIAT.has(word.toLocaleLowerCase("en"))) || "";
+  return {
+    id: walletProfileId(wallet),
+    label: `${wallet} → THB (จากชีต)`,
+    inputCurrency: currency.toUpperCase().slice(0, 12),
+    baseValue: String(Number(median(rates).toPrecision(6))),
+    rateFormula: "",
+    updatedAt,
+    updatedBy: null,
+  };
+}
+
+/**
+ * The chosen missing packs of one mode added to that mode's GameInfo packs
+ * ({ currencies, costProfiles }), under "เพิ่มจากชีต" in the currency already
+ * holding packs of their wallet, else the one named after their unit, else
+ * (UID) the first currency or (ID-PASS, whose currencies are wallets) a new
+ * one named after the wallet. A pack takes the cost profile its wallet's
+ * packs use, else one at the sheet's rate for that wallet. Green rows come
+ * in ใหม่; red rows (expired) and names GameInfo already has are never added.
+ * → { currencies, costProfiles, added: [name] }
+ */
+export function addGameinfoSheetPacks(packs, parsed, mode, keys) {
+  const wanted = new Set(keys);
+  const have = new Set();
+  eachTreePack(packs.currencies, (pack) => have.add(gameinfoSheetPackNameKey(pack.name)));
+  const currencies = structuredClone(packs.currencies || []);
+  const costProfiles = [...(packs.costProfiles || [])];
+  const added = [];
+  eachSheetPack(parsed, (pack, sheetCurrency) => {
+    const nameKey = gameinfoSheetPackNameKey(pack.name);
+    if ((pack.mode === "idpass" ? "idpass" : "uid") !== mode || !wanted.has(gameinfoSheetPackKey(mode, pack.name))) return;
+    if (pack.tone === "red" || have.has(nameKey)) return;
+    have.add(nameKey);
+    const walletName = pack.channelsMain[0] || "";
+    const wallet = squash(walletName);
+    const sameWallet = (item) => wallet && squash(item.channelsMain?.[0]) === wallet;
+    const walletCount = (currency) => (currency.categories || []).reduce((sum, category) => sum + (category.packs || []).filter(sameWallet).length, 0);
+    let currency = [...currencies].sort((a, b) => walletCount(b) - walletCount(a)).find((item) => walletCount(item) > 0)
+      || currencies.find((item) => sheetCurrency.unit && squash(item.name) === squash(sheetCurrency.unit))
+      || (mode === "uid" ? currencies[0] : currencies.find((item) => wallet && squash(item.name) === wallet));
+    if (!currency) {
+      const name = mode === "uid" ? sheetCurrency.unit || walletName : walletName || sheetCurrency.unit;
+      currency = { id: newId("c"), name: name || GAMEINFO_SHEET_ADDED_CATEGORY, image: "", categories: [] };
+      currencies.push(currency);
+    }
+    let category = currency.categories.find((item) => item.name === GAMEINFO_SHEET_ADDED_CATEGORY);
+    if (!category) {
+      category = { id: newId("cat"), name: GAMEINFO_SHEET_ADDED_CATEGORY, packs: [] };
+      currency.categories.push(category);
+    }
+    const walletPacks = [];
+    eachTreePack(currencies, (item) => { if (sameWallet(item)) walletPacks.push(item); });
+    let costProfileId = mostCommon(walletPacks.map((item) => item.costProfileId));
+    if (!costProfileId && wallet) {
+      const existing = costProfiles.find((item) => item.id === walletProfileId(walletName));
+      const profile = existing || walletProfile(parsed, mode, walletName);
+      if (profile) {
+        if (!existing) costProfiles.push(profile);
+        costProfileId = profile.id;
+      }
+    }
+    category.packs.push({
+      ...createBlankGameinfoPack(newId("pk")),
+      name: pack.name,
+      price: pack.price,
+      amountChargedFee: pack.amountChargedFee,
+      channelsMain: pack.channelsMain,
+      channelsSecondary: pack.channelsSecondary,
+      country: pack.country,
+      ...gameinfoPackStatusPatch(TONE_STATUS[pack.tone] || "open"),
+      costProfileId,
+    });
+    added.push(pack.name);
+  });
+  return { currencies, costProfiles, added };
 }
 
 // GameInfo's shared ต้นทุน formula divides the amount by one fixed MMK rate.
