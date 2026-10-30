@@ -9,6 +9,14 @@ const SHEETS = "https://sheets.googleapis.com/v4/spreadsheets";
 const DRIVE = "https://www.googleapis.com/drive/v3/files";
 
 const b64url = (value) => Buffer.from(value).toString("base64url");
+const quoteTab = (tab) => `'${tab.replaceAll("'", "''")}'`;
+
+// 0 → "A", 26 → "AA".
+function columnLetter(index) {
+  let letters = "";
+  for (let n = index + 1; n > 0; n = Math.floor((n - 1) / 26)) letters = String.fromCharCode(65 + ((n - 1) % 26)) + letters;
+  return letters;
+}
 
 export function signServiceAccountJwt(account, now = Date.now(), scopes = SCOPES) {
   if (!account?.client_email || !account?.private_key) throw new Error("Service account key is missing client_email/private_key");
@@ -90,6 +98,25 @@ export function createGoogleReader({ keyFile = process.env.ITUNE_SHEETS_CREDENTI
         for (const tab of chunk) params.append("ranges", `'${tab.replaceAll("'", "''")}'!A:ZZ`);
         const body = await get(`${SHEETS}/${encodeURIComponent(spreadsheetId)}/values:batchGet?${params}`);
         (body.valueRanges || []).forEach((range, index) => { out[chunk[index]] = range.values || []; });
+      }
+      return out;
+    },
+    // The background colour of every cell in some columns, which the values
+    // API does not give: { [title]: { [col]: [{ red, green, blue } | null per row] } }.
+    // `wanted` is [{ tab, cols: [0-based column] }]; 40 columns per request.
+    async columnColors(spreadsheetId, wanted) {
+      const ranges = wanted.flatMap(({ tab, cols }) => cols.map((col) => `${quoteTab(tab)}!${columnLetter(col)}:${columnLetter(col)}`));
+      const out = {};
+      for (let i = 0; i < ranges.length; i += 40) {
+        const params = new URLSearchParams({ fields: "sheets(properties(title),data(startColumn,rowData(values(effectiveFormat(backgroundColor)))))" });
+        for (const range of ranges.slice(i, i + 40)) params.append("ranges", range);
+        const body = await get(`${SHEETS}/${encodeURIComponent(spreadsheetId)}?${params}`);
+        for (const sheet of body.sheets || []) {
+          const byCol = (out[sheet.properties?.title] ||= {});
+          for (const grid of sheet.data || []) {
+            byCol[Number(grid.startColumn) || 0] = (grid.rowData || []).map((row) => row.values?.[0]?.effectiveFormat?.backgroundColor || null);
+          }
+        }
       }
       return out;
     },

@@ -30,6 +30,27 @@ export function getGameinfoPackName(pack, languageId = "") {
   return text(pack?.name);
 }
 
+// serviceStatus on top of serviceEnabled: "new" (just added, on sale) and
+// "expired" (gone from the game: the sheet's red rows). "" is plain open/closed.
+export const GAMEINFO_PACK_SERVICE_STATUSES = ["new", "expired"];
+
+export const GAMEINFO_PACK_STATUS_LABELS = { open: "เปิด", closed: "ปิด", new: "ใหม่", expired: "หมดอายุ" };
+
+/** open | closed | new | expired */
+export function gameinfoPackStatus(pack) {
+  if (pack?.serviceStatus === "expired") return "expired";
+  if (pack?.serviceEnabled === false) return "closed";
+  return pack?.serviceStatus === "new" ? "new" : "open";
+}
+
+/** The fields that give a pack one of the statuses above. */
+export function gameinfoPackStatusPatch(status) {
+  if (status === "expired") return { serviceEnabled: false, serviceStatus: "expired" };
+  if (status === "closed") return { serviceEnabled: false, serviceStatus: "" };
+  if (status === "new") return { serviceEnabled: true, serviceStatus: "new" };
+  return { serviceEnabled: true, serviceStatus: "" };
+}
+
 export function sanitizeGameinfoPack(pack) {
   const source = pack && typeof pack === "object" ? pack : {};
   const result = {
@@ -38,8 +59,9 @@ export function sanitizeGameinfoPack(pack) {
     image: text(source.image),
     price: normalizeGameinfoNumericInput(source.price),
     amountChargedFee: normalizeGameinfoNumericInput(source.amountChargedFee),
-    serviceEnabled: source.serviceEnabled !== false,
-    serviceStatus: source.serviceStatus === "new" ? "new" : "",
+    // An expired pack is gone from the game, so it is never on sale.
+    serviceEnabled: source.serviceStatus === "expired" ? false : source.serviceEnabled !== false,
+    serviceStatus: GAMEINFO_PACK_SERVICE_STATUSES.includes(source.serviceStatus) ? source.serviceStatus : "",
     costProfileId: text(source.costProfileId),
     channelsMain: stringList(source.channelsMain),
     channelsSecondary: stringList(source.channelsSecondary),

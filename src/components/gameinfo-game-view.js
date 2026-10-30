@@ -28,6 +28,7 @@ import { gameinfoStableColorStyle } from "@/lib/gameinfo-stable-color";
 import { gameinfoCountryDisplayName } from "@/lib/gameinfo-countries";
 import { isGameinfoBotAuto } from "@/lib/gameinfo-dashboard";
 import { gameinfoGameColor, gameinfoGameInitials } from "@/lib/gameinfo-game-initials";
+import { GAMEINFO_PACK_STATUS_LABELS, gameinfoPackStatus } from "@/lib/gameinfo-pack-model";
 import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
 import { useGameinfoRates } from "./gameinfo-rate-panel";
 import GameinfoImagePreview from "./gameinfo-image-preview";
@@ -56,6 +57,12 @@ const NO_COLUMNS = [];
 // listStockForGame), read by the pack name cell.
 const StockContext = createContext({});
 const NO_STOCK = { accounts: [], byPack: {} };
+const PACK_STATUS_TONES = {
+  open: { text: "text-emerald-700 dark:text-emerald-400", dot: "bg-emerald-500" },
+  new: { text: "text-[#D90005] dark:text-red-400", dot: "bg-[#D90005]" },
+  closed: { text: "text-linear-ink-tertiary", dot: "bg-zinc-500" },
+  expired: { text: "text-amber-700 dark:text-amber-400", dot: "bg-amber-500" },
+};
 
 export default function GameinfoGameView({ row, currencies, computedColumns = NO_COLUMNS, costProfiles = [], formulaVariables = [], userId, dataMode = "uid", hiddenColumnKeys = [], editHref = null, stock = NO_STOCK, stockLinks = false }) {
   const [formulaMode, setFormulaMode] = useState("result");
@@ -585,13 +592,13 @@ function PackViewCell({
   computedColumns,
 }) {
   if (column.id === "serviceEnabled") {
-    const enabled = pack.serviceEnabled !== false;
-    const isNew = pack.serviceStatus === "new";
+    const status = gameinfoPackStatus(pack);
+    const tone = PACK_STATUS_TONES[status];
     return (
-      <td className={`px-3 py-2.5 first:pl-5 tabular-nums text-xs font-bold ${isNew ? "text-[#D90005] dark:text-red-400" : enabled ? "text-emerald-700 dark:text-emerald-400" : "text-linear-ink-tertiary"}`}>
-        <span className="inline-flex items-center gap-1.5">
-          <span className={`h-2 w-2 rounded-full ${isNew ? "bg-[#D90005]" : enabled ? "bg-emerald-500" : "bg-zinc-500"}`} />
-          {isNew ? "ใหม่" : enabled ? "เปิด" : "ปิด"}
+      <td className={`px-3 py-2.5 first:pl-5 tabular-nums text-xs font-bold ${tone.text}`}>
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+          <span className={`h-2 w-2 rounded-full ${tone.dot}`} />
+          {GAMEINFO_PACK_STATUS_LABELS[status]}
         </span>
       </td>
     );

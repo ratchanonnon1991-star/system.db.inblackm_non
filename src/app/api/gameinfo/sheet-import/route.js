@@ -1,11 +1,13 @@
 import { handleApiError, jsonOk } from "@/lib/http";
 import { requireGameinfoEditor } from "@/server/auth";
-import { applyGameinfoSheetCostFormulas, applyGameinfoSheetImport, gameinfoSheetServiceAccount, previewGameinfoSheetImport } from "@/server/gameinfo-sheet-import";
+import { applyGameinfoSheetCostFormulas, applyGameinfoSheetImport, applyGameinfoSheetPackStatus, gameinfoSheetServiceAccount, previewGameinfoSheetImport, previewGameinfoSheetPackStatus } from "@/server/gameinfo-sheet-import";
 import { auditActor } from "@/server/gameinfo-gamelist-packs";
 
 export async function GET(request) {
   try {
     await requireGameinfoEditor(request);
+    // ?part=pack-status: the packs whose status the sheet's row colours would change.
+    if (new URL(request.url).searchParams.get("part") === "pack-status") return jsonOk(await previewGameinfoSheetPackStatus());
     return jsonOk(await previewGameinfoSheetImport());
   } catch (error) {
     // The address to share the sheet with travels with the error, so the
@@ -23,6 +25,7 @@ export async function POST(request) {
     const { gameIds, parts, action } = await request.json();
     // A one-off catch-up for games imported before their cost formula existed.
     if (action === "cost-formulas") return jsonOk(await applyGameinfoSheetCostFormulas(auditActor(user)));
+    if (action === "pack-status") return jsonOk(await applyGameinfoSheetPackStatus(gameIds, auditActor(user)));
     return jsonOk(await applyGameinfoSheetImport(gameIds, parts, auditActor(user)));
   } catch (error) {
     return handleApiError(error, "นำเข้าข้อมูลจากชีตไม่สำเร็จ");

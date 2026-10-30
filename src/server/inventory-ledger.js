@@ -193,10 +193,11 @@ export function createInventoryLedger(pool, { now = () => new Date() } = {}) {
         }
         const { rows } = await c.query(`INSERT INTO gamedb_inv_entries
           (account_id, request_id, request_hash, kind, direction, amount, order_ref, thb_amount, sale_thb,
-           reverses_entry_id, note, actor_id, actor_label, occurred_at, invoice)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id::text`,
+           reverses_entry_id, note, actor_id, actor_label, occurred_at, invoice, recorded_at)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id::text`,
+        // recorded_at from the same clock as the same-day cancel rule, not the database's NOW().
         [row.accountId, input.requestId, hash, input.kind, row.direction, row.amount, row.orderRef, row.thb, row.sale,
-          input.reversesEntryId ?? null, input.note, actor.id, actorLabel(actor), iso(at), row.invoice ?? null]);
+          input.reversesEntryId ?? null, input.note, actor.id, actorLabel(actor), iso(at), row.invoice ?? null, iso(now())]);
         return { id: rows[0].id, replayed: false };
       });
     } catch (e) {

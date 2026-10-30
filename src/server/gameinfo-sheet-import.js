@@ -12,7 +12,20 @@ import { getGamelistPacks, listGamelistRealPackCountByGame, recordGameinfoAudit,
 import { listGamelistSalesChannelKeysByGame, listGamelistSalesChannels, saveGamelistSalesChannels } from "@/server/gameinfo-sales-channels";
 import { gameinfoSheetGameKey, parseGameinfoSourceSheet } from "@/lib/gameinfo-sales-channels";
 import { gameinfoHasRealPacks } from "@/lib/gameinfo-pack-model";
-import { countGameinfoSheetPacks, gameinfoSheetCostFormulaColumns, gameinfoSheetCostProfiles, gameinfoSheetPackTree, gameinfoSheetPackUnits, parseGameinfoSheetPackTab } from "@/lib/gameinfo-sheet-packs";
+import { getGameinfoModeData, listGameinfoModeData, updateGameinfoModeData } from "@/server/gameinfo-mode-data";
+import {
+  applyGameinfoSheetStatusChanges,
+  countGameinfoSheetPacks,
+  gameinfoSheetCostFormulaColumns,
+  gameinfoSheetCostProfiles,
+  gameinfoSheetPackNameColumns,
+  gameinfoSheetPackTree,
+  gameinfoSheetPackUnits,
+  gameinfoSheetStatusChanges,
+  gameinfoSheetUnmatchedTones,
+  parseGameinfoSheetPackTab,
+  withGameinfoSheetTones,
+} from "@/lib/gameinfo-sheet-packs";
 
 const DEFAULT_SHEET_ID = "192YoswgJIVdU-XQtbEUQrRg-h7jqbEblrGvA4Jqdnks";
 export const GAMEINFO_SHEET_IMPORT_PARTS = ["publisher", "category", "warning", "remark", "channels", "packs"];
@@ -95,8 +108,13 @@ export async function gameinfoSheetGameTabs(reader, sheetGames) {
   return wanted;
 }
 
-/** The pack table of each given sheet game's own tab: Map key → { tab, parsed }. */
-async function readPackTabs(reader, sheetGames) {
+/**
+ * The pack table of each given sheet game's own tab: Map key → { tab, parsed },
+ * each pack with the `tone` of its row (red expired, green new). Colours are a
+ * second read; when it fails a pack import goes ahead without them, unless
+ * `requireTones` (the status check is nothing without them).
+ */
+async function readPackTabs(reader, sheetGames, { requireTones = false } = {}) {
   if (!sheetGames.length) return new Map();
   const sheetId = gameinfoSourceSheetId();
   return withSheetAccess(async () => {
@@ -106,6 +124,15 @@ async function readPackTabs(reader, sheetGames) {
     for (const [key, tab] of wanted) {
       const parsed = parseGameinfoSheetPackTab(rowsByTab[tab] || []);
       if (parsed) out.set(key, { tab, parsed });
+    }
+    const columns = new Map();
+    for (const { tab, parsed } of out.values()) columns.set(tab, [...new Set([...(columns.get(tab) || []), ...gameinfoSheetPackNameColumns(parsed)])]);
+    try {
+      const colors = await reader.columnColors(sheetId, [...columns].map(([tab, cols]) => ({ tab, cols })));
+      for (const { tab, parsed } of out.values()) withGameinfoSheetTones(parsed, colors[tab]);
+    } catch (error) {
+      if (requireTones) throw error;
+      console.warn("GameInfo sheet import: row colours unread, packs come in open", error instanceof Error ? error.message : error);
     }
     return out;
   });
@@ -278,6 +305,101 @@ export async function applyGameinfoSheetImport(gameIds, parts, actor = null, { s
       remark: count("remark"),
       channels: count("channels"),
       packs: count("packs"),
+      failed: results.filter((item) => item.error).length,
+    },
+  };
+}
+
+// The sheet's tab per GameInfo game that has packs in either mode, read with colours.
+async function readStatusTabs(reader, onlyIds = null) {
+  const [source, rows, packCountByGame, idpassByGame] = await Promise.all([
+    readSource(reader),
+    listGameListRows(),
+    listGamelistRealPackCountByGame(),
+    listGameinfoModeData("idpass"),
+  ]);
+  const sheetByKey = new Map(source.map((game) => [game.key, game]));
+  const games = rows
+    .filter((row) => !onlyIds || onlyIds.has(row.id))
+    .map((row) => ({ row, sheetGame: sheetByKey.get(gameinfoSheetGameKey(row.game)) }))
+    .filter(({ row, sheetGame }) => sheetGame && (packCountByGame[row.id] || gameinfoHasRealPacks(idpassByGame[row.id]?.packs?.currencies)));
+  const packTabs = await readPackTabs(reader, games.map(({ sheetGame }) => sheetGame), { requireTones: true });
+  return { games, packTabs, packCountByGame, idpassByGame };
+}
+
+/**
+ * Packs whose status the sheet's row colours would change, game by game, in
+ * both modes: red rows → หมดอายุ, green → ใหม่ (gameinfoSheetStatusChanges).
+ * Also lists coloured rows with no pack of that name, so a pack missing from
+ * GameInfo shows up too.
+ */
+export async function previewGameinfoSheetPackStatus({ reader: givenReader = null } = {}) {
+  const reader = givenReader || openReader();
+  const { games, packTabs, packCountByGame, idpassByGame } = await readStatusTabs(reader);
+  const items = [];
+  let checked = 0;
+  for (const { row, sheetGame } of games) {
+    const packTab = packTabs.get(sheetGame.key);
+    if (!packTab) continue;
+    checked += 1;
+    const uid = packCountByGame[row.id] ? (await getGamelistPacks(row.id)).currencies : [];
+    const idpass = idpassByGame[row.id]?.packs?.currencies || [];
+    const changes = [
+      ...gameinfoSheetStatusChanges(uid, packTab.parsed).map((change) => ({ ...change, mode: "uid" })),
+      ...gameinfoSheetStatusChanges(idpass, packTab.parsed).map((change) => ({ ...change, mode: "idpass" })),
+    ];
+    const unmatched = gameinfoSheetUnmatchedTones(packTab.parsed, [uid, idpass]);
+    if (changes.length || unmatched.length) items.push({ gameId: row.id, game: row.game, tab: packTab.tab, changes, unmatched });
+  }
+  return { sheetId: gameinfoSourceSheetId(), checked, items };
+}
+
+/** Makes the status changes for the chosen games, worked out again from the sheet as it is now. */
+export async function applyGameinfoSheetPackStatus(gameIds, actor = null, { reader: givenReader = null } = {}) {
+  if (!Array.isArray(gameIds) || !gameIds.length) throw createHttpError("ยังไม่ได้เลือกเกม", 400);
+  if (gameIds.length > 500) throw createHttpError("ปรับได้ครั้งละไม่เกิน 500 เกม", 400);
+  const reader = givenReader || openReader();
+  const { games, packTabs } = await readStatusTabs(reader, new Set(gameIds.map(Number)));
+  const results = [];
+  for (const { row, sheetGame } of games) {
+    try {
+      const packTab = packTabs.get(sheetGame.key);
+      if (!packTab) {
+        results.push({ gameId: row.id, changed: 0, error: "ไม่พบแท็บของเกมนี้ในชีต" });
+        continue;
+      }
+      // The uid read also readies the shared pack tables before an idpass save holds them.
+      const uid = await getGamelistPacks(row.id);
+      const uidChanges = gameinfoSheetStatusChanges(uid.currencies, packTab.parsed);
+      if (uidChanges.length) {
+        await saveGamelistPacks(row.id, {
+          currencies: applyGameinfoSheetStatusChanges(uid.currencies, uidChanges),
+          computedColumns: uid.computedColumns,
+          costProfiles: uid.costProfiles,
+          actor,
+          source: "import",
+          expectedVersion: uid.version,
+        });
+      }
+      let idpassChanged = 0;
+      const idpass = await getGameinfoModeData(row.id, "idpass");
+      if (gameinfoSheetStatusChanges(idpass.packs.currencies, packTab.parsed).length) {
+        await updateGameinfoModeData(row.id, "idpass", (data) => {
+          const changes = gameinfoSheetStatusChanges(data.packs.currencies, packTab.parsed);
+          idpassChanged = changes.length;
+          return { ...data, packs: { ...data.packs, currencies: applyGameinfoSheetStatusChanges(data.packs.currencies, changes) } };
+        }, { area: "pack", actor });
+      }
+      results.push({ gameId: row.id, changed: uidChanges.length + idpassChanged });
+    } catch (error) {
+      results.push({ gameId: row.id, changed: 0, error: error instanceof Error ? error.message : "ปรับสถานะไม่สำเร็จ" });
+    }
+  }
+  return {
+    results,
+    summary: {
+      games: results.filter((item) => item.changed).length,
+      packs: results.reduce((sum, item) => sum + item.changed, 0),
       failed: results.filter((item) => item.error).length,
     },
   };

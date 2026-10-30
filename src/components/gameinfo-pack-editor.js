@@ -84,6 +84,9 @@ import {
 import {
   createBlankGameinfoPack,
   duplicateGameinfoPack,
+  GAMEINFO_PACK_STATUS_LABELS,
+  gameinfoPackStatus,
+  gameinfoPackStatusPatch,
   getGameinfoPackName,
 } from "@/lib/gameinfo-pack-model";
 import {
@@ -99,6 +102,14 @@ import { GAMEINFO_ADD_WEB_PACKS_EVENT, GAMEINFO_SET_WEB_PACK_IMAGES_EVENT, GAMEI
 import { Input } from "@/components/ui/input";
 
 const REQUIRED_PACK_FIELDS = ["name", "price", "amountChargedFee", "channelsMain"];
+// A click on a pack's status moves it on: เปิด → ปิด → ใหม่ → หมดอายุ → เปิด.
+const EDITOR_STATUS_NEXT = { open: "closed", closed: "new", new: "expired", expired: "open" };
+const EDITOR_STATUS_TONES = {
+  open: { text: "text-emerald-400", dot: "bg-emerald-400" },
+  closed: { text: "text-linear-ink-tertiary", dot: "bg-zinc-500" },
+  new: { text: "text-red-400", dot: "bg-red-500" },
+  expired: { text: "text-amber-500", dot: "bg-amber-500" },
+};
 
 function genId(prefix) {
   return `${prefix}_${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-4)}`;
@@ -1849,23 +1860,17 @@ function PackEditorColumn({
   onEditCategoryFormula,
 }) {
   if (column.id === "serviceEnabled") {
-    const enabled = pack.serviceEnabled !== false;
-    const isNew = pack.serviceStatus === "new";
-    const color = isNew ? "bg-red-500" : enabled ? "bg-emerald-400" : "bg-zinc-500";
-    const label = isNew ? "ใหม่" : enabled ? "เปิด" : "ปิด";
-    const nextPatch = isNew
-      ? { serviceEnabled: true, serviceStatus: "" }
-      : enabled
-        ? { serviceEnabled: false, serviceStatus: "" }
-        : { serviceEnabled: true, serviceStatus: "new" };
+    const status = gameinfoPackStatus(pack);
+    const tone = EDITOR_STATUS_TONES[status];
+    const label = GAMEINFO_PACK_STATUS_LABELS[status];
     return (
       <button
         type="button"
-        onClick={() => onUpdate(nextPatch)}
-        title={`${label} — กดเพื่อเปลี่ยนสถานะ เปิด → ปิด → ใหม่`}
-        className={`flex items-center gap-1.5 rounded px-1.5 py-2 text-[10px] ${isNew ? "text-red-400" : enabled ? "text-emerald-400" : "text-linear-ink-tertiary"}`}
+        onClick={() => onUpdate(gameinfoPackStatusPatch(EDITOR_STATUS_NEXT[status]))}
+        title={`${label} — กดเพื่อเปลี่ยนสถานะ เปิด → ปิด → ใหม่ → หมดอายุ`}
+        className={`flex items-center gap-1.5 whitespace-nowrap rounded px-1.5 py-2 text-[10px] ${tone.text}`}
       >
-        <span className={`h-2.5 w-2.5 rounded-full ${color}`} />
+        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${tone.dot}`} />
         {label}
       </button>
     );
