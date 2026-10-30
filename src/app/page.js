@@ -115,6 +115,13 @@ export default function GamedbPage() {
 // bookmark, and the browser's back button all agree on where you are.
 const SYSTEMS = [
   {
+    key: "workforce",
+    label: "Workforce Planning",
+    desc: "คิวทุกช่องทาง พยากรณ์วันถัดไป และวางแผนคนตามกะ",
+    icon: Users,
+    href: "/workforce",
+  },
+  {
     key: "systemdb",
     label: "System DB",
     desc: "ฐานข้อมูลหลัก จัดการตาราง คิวรี และมุมมอง",
@@ -254,6 +261,7 @@ function SystemHub({ me, onLoggedOut, onPermissionsChanged }) {
   const displayName = me.displayName || me.username;
   const initial = (displayName || "?").trim().slice(0, 1).toUpperCase();
   const accessibleSystems = SYSTEMS.filter((system) => {
+    if (system.key === "workforce") return me.role === "admin" || hasPermission(me, "workforce.access");
     if (system.key === "projectm") return true;
     if (system.key === "gameinfo") return hasPermission(me, "gameinfo.access");
     if (system.key === "profit") return hasPermission(me, "profit.access");

@@ -1,4 +1,5 @@
 export const PERMISSIONS = [
+  { key: "workforce.access", site: "Workforce", label: "ดูคิวและวางกำลังคน", path: "/workforce" },
   { key: "systemdb.data.insert_delete", site: "System DB", label: "เพิ่ม/ลบแถว", path: "/systemdb" },
   { key: "systemdb.data.update", site: "System DB", label: "แก้ไขข้อมูล", path: "/systemdb" },
   { key: "projectm.claim", site: "Projectm", label: "Topup", path: "/projectm/[lang]/itune/topup" },

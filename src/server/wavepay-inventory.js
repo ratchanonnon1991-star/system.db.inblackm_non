@@ -3,7 +3,7 @@ import { canViewUsdInventory, inventoryError } from "@/lib/usdcodashop-inventory
 import { prepareCodaSales } from "@/server/usdcodashop-sale-rates";
 import { attachSheetFields } from "@/server/usdcodashop-source";
 import {
-  WAVEPAY_MAX_ORDERS, WAVEPAY_METHOD, WAVEPAY_PAGE_SIZE, WAVE_PHONE_SQL,
+  WAVEPAY_MAX_ORDERS, WAVEPAY_METHOD, WAVEPAY_PAGE_SIZE, WAVE_PHONE_SQL, WAVE_NOT_CHARGED_CODE, wavePhoneSql,
   normalizeWaveOrder, summarizeWaveLines, waveFilters, waveMatches,
 } from "@/lib/wavepay-inventory";
 
@@ -17,6 +17,9 @@ const orderColumns = `c.id,c.source_order_id,c.game_name,c.pack_name,c.pack_pric
   COALESCE(NULLIF(t.admin,''),NULLIF(t.booked_by,''),'Bot') AS operator,
   CASE WHEN jsonb_typeof(c.provider_response)='object' THEN c.provider_response->'balances'->>'oldBalance' END AS old_balance,
   CASE WHEN jsonb_typeof(c.provider_response)='object' THEN c.provider_response->'balances'->>'newBalance' END AS new_balance,
+  CASE WHEN jsonb_typeof(c.provider_response)='object' THEN c.provider_response->>'status' END AS bot_status,
+  CASE WHEN jsonb_typeof(c.provider_response)='object' AND jsonb_typeof(c.provider_response->'error')='object'
+    THEN c.provider_response->'error'->>'code' END AS bot_error_code,
   c.created_at AS occurred_at,c.invoice_txn_id AS invoice_number`;
 const orderJoins = `LEFT JOIN telegram_orders_dev t ON t.task_request_id=c.telegram_task_request_id`;
 
@@ -37,12 +40,22 @@ export function createWavePayInventory(select = selectQuery, { prepareSales = pr
       cursor = String(rows.at(-1).id);
     }
   }
-  // Latest order per SIM, whatever the date range: its newBalance is the bot's last known balance.
+  // Latest completed order per SIM that recorded a balance, whatever the date range: its newBalance is the bot's last
+  // known balance. Completed orders after it without a balance are counted (and which of them the bot stopped before
+  // paying), so the card can say how far that reading can be trusted instead of showing nothing.
   async function latestBalances() {
-    return select(`SELECT ${orderColumns}
+    return select(`SELECT ${orderColumns},later.later_orders,later.later_uncharged,later.later_at
       FROM (SELECT DISTINCT ON (${WAVE_PHONE_SQL}) c.* FROM codashop_orders c
-        WHERE c.payment_method=$1 AND c.status='completed' ORDER BY ${WAVE_PHONE_SQL}, c.created_at DESC, c.id DESC) c
-      ${orderJoins}`, [WAVEPAY_METHOD]);
+        WHERE c.payment_method=$1 AND c.status='completed' AND jsonb_typeof(c.provider_response)='object'
+          AND NULLIF(btrim(c.provider_response->'balances'->>'newBalance'),'') IS NOT NULL
+        ORDER BY ${WAVE_PHONE_SQL}, c.created_at DESC, c.id DESC) c
+      LEFT JOIN LATERAL (SELECT COUNT(*)::int AS later_orders,
+          COUNT(*) FILTER (WHERE jsonb_typeof(x.provider_response->'error')='object'
+            AND x.provider_response->'error'->>'code'=$2)::int AS later_uncharged,
+          MAX(x.created_at) AS later_at
+        FROM codashop_orders x WHERE x.payment_method=$1 AND x.status='completed'
+          AND ${wavePhoneSql("x")}=${WAVE_PHONE_SQL} AND (x.created_at,x.id)>(c.created_at,c.id)) later ON TRUE
+      ${orderJoins}`, [WAVEPAY_METHOD, WAVE_NOT_CHARGED_CODE]);
   }
   return {
     async list(actor, query = {}) {
