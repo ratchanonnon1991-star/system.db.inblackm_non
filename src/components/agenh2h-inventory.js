@@ -25,7 +25,7 @@ function WalletCard({ data }) {
   </article>;
 }
 function StatusCard({ summary }) {
-  // Any status outside the known five (e.g. rejected) is still counted, so the total always matches the fills listed.
+  // Any status outside AGENH2H_STATUSES is still counted, so the total always matches the fills listed.
   const extra = Object.keys(summary.statuses).filter((key) => !AGENH2H_STATUSES.some(([known]) => known === key)).map((key) => [key, ahStatusLabel(key)]);
   return <article className="rounded-xl border border-ll-hairline bg-ll-surface-1 p-5"><h2 className="font-semibold">รายการย่อยตามสถานะ (ตามตัวกรอง)</h2>
     <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">{[...AGENH2H_STATUSES, ...extra].map(([key, title]) => <div key={key}><dt className="text-ll-ink-subtle">{title}</dt><dd className="mt-2 font-semibold tabular-nums">{summary.statuses[key] || 0}</dd></div>)}</dl>

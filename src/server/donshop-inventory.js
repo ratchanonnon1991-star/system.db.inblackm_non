@@ -23,8 +23,8 @@ const columns = `c.id,c.source_order_id,c.source,c.status,${instant("c.created_a
   ${meta}->>'balance_before' AS balance_before,${meta}->>'live_cost_total' AS live_cost_total,
   ${meta}->>'live_cost' AS live_cost,${meta}->>'quantity' AS quantity`;
 // Web/PAGE sale allocation (see dsPageSales): reads the parts of split PAGE orders from telegram and the completed queues
-// of each task. Other inventories keep the shared lookup unchanged.
-async function withPageSales(select, rows) {
+// of each task. Donshop and AgenH2H use it; other inventories keep the shared lookup unchanged.
+export async function withPageSales(select, rows) {
   const targets = rows.filter(dsPageSaleTarget);
   if (!targets.length) return rows;
   const roots = [...new Set(targets.map(dsPageRoot).filter(Boolean))];

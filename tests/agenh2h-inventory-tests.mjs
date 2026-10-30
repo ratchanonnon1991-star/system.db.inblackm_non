@@ -131,18 +131,37 @@ const select = async (sql, args) => {
   // Bot-run rows only: every query (balance card, history, anchor, chain) requires the worker's _worker_meta object.
   check(sql.includes("c.payment_method=$1 AND jsonb_typeof(c.provider_response->'_worker_meta')='object'"));
   if (sql.includes("c.game_name")) { check(sql.includes("NULLIF(lower(c.source),'telegram') AS source")); check(sql.includes("COALESCE(c.provider_response->'data'->>'invoice',")); }
-  if (sql.includes("LIMIT 1")) { check(!sql.includes("c.created_at >=")); check(sql.includes("c.status='completed'")); return walletRows; }
+  if (sql.includes("source_base")) { check(sql.includes("c.telegram_task_request_id AS task_id")); check(sql.includes("AS source_group")); }
+  if (sql.includes("LIMIT 1")) {
+    check(sql.includes("c.status='completed'"));
+    // The balance card ignores the date range; the anchor looks back one more week only, so an old anchor cannot flood the chain.
+    if (sql.includes("interval '1 day'")) check(sql.includes("c.created_at >= ($2::timestamptz - interval '8 days')")); else check(!sql.includes("c.created_at >="));
+    return walletRows;
+  }
   if (sql.includes("in_range")) { chainSql = sql; chainArgs = args; return chainResult; }
   lastArgs = args; return [raw(1), raw(2, { status: "failed" })];
 };
+const profit = compile("src/server/profit-agenh2h.js", { "@/lib/profit-remote-db": { selectQuery: async () => [] } });
+let pageSalesRows = null;
 const server = compile("src/server/agenh2h-inventory.js", {
+  "@/server/donshop-inventory": { withPageSales: async (_s, rows) => rows }, "@/server/profit-agenh2h": profit,
   "@/lib/profit-remote-db": { selectQuery: select }, "@/lib/usdcodashop-inventory": access, "@/lib/agenh2h-inventory": lib,
   "@/server/garena-shell-inventory": { saleJoin: "", enrichShellOrders: async (_s, r) => r },
   "@/lib/garena-shell-inventory": { allocateShellSale }, "@/server/usdcodashop-sale-rates": { prepareCodaSales: async (r) => r },
 });
-const repository = server.createAgenh2hInventory({ select, enrich: async (_s, rows) => rows, prepareSales: async (r) => r });
+// A queue named only "telegram" takes its platform from the chat title, so a Russia queue's USDT price gets converted.
+const russia = server.withChatPlatform({ source: null, telegram_source: "telegram", source_group: " UID RUSSIAN ORDER ", sale_price: "5" });
+eq(russia.source, "russia_reseller"); eq(listingFields(russia).saleCurrency, "USDT");
+eq(server.withChatPlatform({ source: null, telegram_source: null, source_group: "Kaleoz" }).source, "kaleoz");
+eq(server.withChatPlatform({ source: null, telegram_source: "kaleoz", source_group: "UID RUSSIAN ORDER" }).source, null); // a named platform wins
+eq(server.withChatPlatform({ source: "page", telegram_source: "telegram", source_group: "UID RUSSIAN ORDER" }).source, "page");
+eq(server.withChatPlatform({ source: null, telegram_source: "telegram", source_group: "ทีมเติมไทย" }).source, null); // unknown chats stay unpriced
+const repository = server.createAgenh2hInventory({ select, enrich: async (_s, rows) => rows, prepareSales: async (r) => r,
+  pageSales: async (_s, rows) => { pageSalesRows = rows; return rows; } });
 await rejects(() => repository.list({}, dates), 403); eq(reads, 0);
 const result = await repository.list(actor, dates);
+// Split web/PAGE orders get their sale spread over the task's queues, the same allocation Donshop uses.
+eq(pageSalesRows.map((r) => r.id), [1, 2]);
 eq(lastArgs[4], null); eq(result.total, 1); eq(result.summary.statuses, { completed: 1, failed: 1 }); eq(result.summary.sale, "200.00"); eq(result.balance, null);
 await repository.list(actor, { ...dates, status: "manual" }); eq(lastArgs[4], "manual");
 eq((await repository.list(actor, { ...dates, search: "unmatched" })).total, 0);
