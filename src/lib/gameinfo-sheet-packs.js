@@ -15,7 +15,7 @@
 // Rows under a header with a pack name and a price are packs. A label row
 // can also be a note ("ต้องเปิด VPN…"), which is not a category, or open a
 // VIP or price-comparison table ("ราคา VIP", "แพ็คเทียบราคา"), which is skipped.
-import { createBlankGameinfoPack } from "@/lib/gameinfo-pack-model";
+import { createBlankGameinfoPack, gameinfoPackStatus, gameinfoPackStatusPatch } from "@/lib/gameinfo-pack-model";
 import { normalizeGameinfoNumericInput } from "@/lib/gameinfo-pack-validation";
 
 const FIAT = new Set([
@@ -193,7 +193,7 @@ export function parseGameinfoSheetPackTab(rows) {
   // table it sits in when packs come right after it.
   let skipping = false;
   let skipNextTable = false;
-  for (const row of rows || []) {
+  for (const [rowIndex, row] of (rows || []).entries()) {
     const next = readHeader(row);
     if (next) {
       // A table we cannot read must not be read with the previous table's columns.
@@ -251,6 +251,9 @@ export function parseGameinfoSheetPackTab(rows) {
       country: cell(layout.countryCol) || layout.fallbackCountry,
       costCurrency: layout.amountCurrency,
       cost: number(cell(layout.costCol)),
+      // Where the name sits, for reading the row's colour (withGameinfoSheetTones).
+      sheetRow: rowIndex,
+      sheetCol: layout.nameCol,
     });
   }
   // PACK tables have no unit of their own: they join the tab's first named currency.
@@ -328,14 +331,116 @@ export function gameinfoSheetPackTree(parsed) {
     categories: currency.categories.map((category) => ({
       id: newId("cat"),
       name: category.name,
-      packs: category.packs.map(({ cost, costCurrency, ...pack }) => ({
+      packs: category.packs.map(({ cost, costCurrency, sheetRow, sheetCol, tone, ...pack }) => ({
         ...createBlankGameinfoPack(newId("pk")),
         ...pack,
+        ...gameinfoPackStatusPatch(TONE_STATUS[tone] || "open"),
         costProfileId: pack.amountChargedFee ? profileByCurrency.get(costCurrency) || "" : "",
       })),
     })),
   }));
   return { currencies, costProfiles };
+}
+
+// The sheet colours a pack's row: red when the pack has expired in the game,
+// green when it is new. Shades differ from tab to tab, so it goes by hue.
+const TONE_STATUS = { red: "expired", green: "new" };
+
+/** A cell background ({ red, green, blue } 0–1, zeros left out) → "red" | "green" | "". */
+export function gameinfoSheetTone(color) {
+  if (!color || typeof color !== "object") return "";
+  const r = Number(color.red) || 0;
+  const g = Number(color.green) || 0;
+  const b = Number(color.blue) || 0;
+  const max = Math.max(r, g, b);
+  const delta = max - Math.min(r, g, b);
+  // White, greys and black.
+  if (delta < 0.06) return "";
+  let hue = max === r ? 60 * (((g - b) / delta) % 6) : max === g ? 60 * ((b - r) / delta + 2) : 60 * ((r - g) / delta + 4);
+  if (hue < 0) hue += 360;
+  if (hue < 20 || hue >= 330) return "red";
+  if (hue >= 75 && hue <= 165) return "green";
+  return "";
+}
+
+function eachSheetPack(parsed, visit) {
+  for (const currency of parsed?.currencies || []) {
+    for (const category of currency.categories) category.packs.forEach(visit);
+  }
+}
+
+/** The columns a parsed tab's pack names sit in: the cells whose colour says a pack's status. */
+export function gameinfoSheetPackNameColumns(parsed) {
+  const cols = new Set();
+  eachSheetPack(parsed, (pack) => { if (pack.sheetCol >= 0) cols.add(pack.sheetCol); });
+  return [...cols].sort((a, b) => a - b);
+}
+
+/** Gives each pack of a parsed tab its `tone`, from colours[col][row] (the reader's columnColors for that tab). */
+export function withGameinfoSheetTones(parsed, colors) {
+  eachSheetPack(parsed, (pack) => { pack.tone = gameinfoSheetTone(colors?.[pack.sheetCol]?.[pack.sheetRow]); });
+  return parsed;
+}
+
+/** Pack names compared the way the sheet and GameInfo can both spell them. */
+export function gameinfoSheetPackNameKey(name) {
+  return squash(name).normalize("NFKC");
+}
+
+function eachTreePack(currencies, visit) {
+  for (const currency of currencies || []) {
+    for (const category of currency.categories || []) (category.packs || []).forEach(visit);
+  }
+}
+
+/**
+ * What the sheet's colours change in one GameInfo pack tree, by pack name:
+ * red → หมดอายุ, green → ใหม่, and an uncoloured row takes a pack the sheet
+ * had marked back to เปิด. A pack closed by hand stays closed (green does not
+ * reopen it), and a name the sheet colours two ways is left alone.
+ * → [{ packId, name, from, to }] with statuses as gameinfoPackStatus gives them.
+ */
+export function gameinfoSheetStatusChanges(currencies, parsed) {
+  const tones = new Map();
+  eachSheetPack(parsed, (pack) => {
+    const key = gameinfoSheetPackNameKey(pack.name);
+    if (!tones.has(key)) tones.set(key, new Set());
+    tones.get(key).add(pack.tone || "");
+  });
+  const changes = [];
+  eachTreePack(currencies, (pack) => {
+    const seen = tones.get(gameinfoSheetPackNameKey(pack.name));
+    if (!seen || seen.size !== 1) return;
+    const from = gameinfoPackStatus(pack);
+    let to = TONE_STATUS[[...seen][0]] || (from === "new" || from === "expired" ? "open" : from);
+    if (to === "new" && from === "closed") to = from;
+    if (to !== from) changes.push({ packId: pack.id, name: pack.name, from, to });
+  });
+  return changes;
+}
+
+/** The tree with the given changes made: only the status of the packs they name. */
+export function applyGameinfoSheetStatusChanges(currencies, changes) {
+  const byId = new Map(changes.map((change) => [change.packId, change.to]));
+  return (currencies || []).map((currency) => ({
+    ...currency,
+    categories: (currency.categories || []).map((category) => ({
+      ...category,
+      packs: (category.packs || []).map((pack) => (byId.has(pack.id) ? { ...pack, ...gameinfoPackStatusPatch(byId.get(pack.id)) } : pack)),
+    })),
+  }));
+}
+
+/** Packs the sheet colours that no tree has a pack of that name for: [{ name, tone }]. */
+export function gameinfoSheetUnmatchedTones(parsed, trees) {
+  const names = new Set();
+  for (const currencies of trees) eachTreePack(currencies, (pack) => names.add(gameinfoSheetPackNameKey(pack.name)));
+  const out = new Map();
+  eachSheetPack(parsed, (pack) => {
+    const key = gameinfoSheetPackNameKey(pack.name);
+    if (pack.tone && !names.has(key) && !out.has(key)) out.set(key, { name: pack.name, tone: pack.tone });
+  });
+  return [...out.values()];
 }
 
 // GameInfo's shared ต้นทุน formula divides the amount by one fixed MMK rate.

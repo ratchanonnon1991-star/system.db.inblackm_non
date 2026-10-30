@@ -3,6 +3,8 @@
 import {
   createBlankGameinfoPack,
   duplicateGameinfoPack,
+  gameinfoPackStatus,
+  gameinfoPackStatusPatch,
   sanitizeGameinfoPack,
 } from "@/lib/gameinfo-pack-model.js";
 
@@ -89,6 +91,16 @@ check("blank pack has only the current editable fields", blank, {
   channelsSecondary: [],
   country: "",
 });
+
+// Statuses: expired (the sheet's red rows) is never on sale; unknown ones drop.
+check("an expired pack is closed", sanitizeGameinfoPack({ id: "a", serviceEnabled: true, serviceStatus: "expired" }).serviceEnabled, false);
+check("an unknown status drops", sanitizeGameinfoPack({ id: "a", serviceStatus: "sold-out" }).serviceStatus, "");
+check(
+  "the four statuses",
+  [{}, { serviceEnabled: false }, { serviceStatus: "new" }, { serviceEnabled: false, serviceStatus: "expired" }].map(gameinfoPackStatus),
+  ["open", "closed", "new", "expired"]
+);
+check("each status round-trips", ["open", "closed", "new", "expired"].map((status) => gameinfoPackStatus(gameinfoPackStatusPatch(status))), ["open", "closed", "new", "expired"]);
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);

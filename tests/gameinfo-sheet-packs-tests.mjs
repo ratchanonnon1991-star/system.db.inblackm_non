@@ -2,14 +2,20 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import { createGoogleReader } from "../src/server/google-sheets.js";
 import {
+  applyGameinfoSheetStatusChanges,
   countGameinfoSheetPacks,
   findGameinfoSheetPackHeader,
   GAMEINFO_SHEET_COST_FORMULA,
   gameinfoSheetCostFormulaColumns,
   gameinfoSheetCostProfiles,
   gameinfoSheetPackTree,
+  gameinfoSheetPackNameColumns,
   gameinfoSheetPackUnits,
+  gameinfoSheetStatusChanges,
+  gameinfoSheetTone,
+  gameinfoSheetUnmatchedTones,
   parseGameinfoSheetPackTab,
+  withGameinfoSheetTones,
 } from "../src/lib/gameinfo-sheet-packs.js";
 import { gameinfoHasRealPacks } from "../src/lib/gameinfo-pack-model.js";
 import { evaluateGameinfoComputedColumn } from "../src/lib/gameinfo-computed-evaluator.js";
@@ -228,5 +234,61 @@ const titles = Array.from({ length: 25 }, (_, i) => `U.GAME ${i}'s`);
 const byTab = await reader.batchRows("sheet", titles);
 check(Object.keys(byTab).length === 25 && byTab[titles[24]][0][0] === "'U.GAME 24''s'!A:ZZ", "every tab's rows come back under its title, quotes escaped");
 check(urls.filter((url) => url.includes("batchGet")).length === 3 && waits.join() === "20000", "25 tabs take two batchGets; a 429 is waited out and retried");
+
+// Row colours: red = the pack expired in the game, green = new, by hue so any shade counts.
+const rgb = (hex) => Object.fromEntries(["red", "green", "blue"].map((key, i) => [key, parseInt(hex.slice(i * 2, i * 2 + 2), 16) / 255]).filter(([, value]) => value > 0));
+check(["f4cccc", "ea9999", "e06666", "ff0000", "cc0000"].every((hex) => gameinfoSheetTone(rgb(hex)) === "red"), "light to dark reds read as red");
+check(["d9ead3", "b6d7a8", "93c47d", "00ff00", "6aa84f"].every((hex) => gameinfoSheetTone(rgb(hex)) === "green"), "light to dark greens read as green");
+check(["ffffff", "f3f3f3", "000000", "fff2cc", "fce5cd", "cfe2f3", "d0e0e3"].every((hex) => gameinfoSheetTone(rgb(hex)) === "") && gameinfoSheetTone(null) === "", "white, greys, yellow, orange and blue are no status");
+
+const toned = parseGameinfoSheetPackTab(honkai);
+check(gameinfoSheetPackNameColumns(toned).join() === "3", "colours are read from the pack-name column");
+// Row 4 (60 B-Chips) red, row 5 (300 B-Chips) green, row 8 (Monthly Card) white.
+const nameColumn = [];
+nameColumn[4] = rgb("f4cccc");
+nameColumn[5] = rgb("d9ead3");
+nameColumn[8] = rgb("ffffff");
+withGameinfoSheetTones(toned, { 3: nameColumn });
+const tonedPacks = toned.currencies.flatMap((currency) => currency.categories.flatMap((category) => category.packs));
+check(tonedPacks.map((pack) => `${pack.name}:${pack.tone}`).join() === "60 B-Chips:red,300 B-Chips:green,Monthly Card:", "each pack takes its row's colour");
+const tonedTree = gameinfoSheetPackTree(toned).currencies.flatMap((currency) => currency.categories.flatMap((category) => category.packs));
+check(tonedTree.map((pack) => `${pack.serviceEnabled}/${pack.serviceStatus}`).join() === "false/expired,true/new,true/", "an import brings red rows in expired and green rows new");
+check(tonedTree.every((pack) => !("sheetRow" in pack) && !("tone" in pack)), "the sheet position and colour are not stored on the pack");
+
+const gameTree = [{ id: "c", categories: [{ id: "cat", packs: [
+  { id: "a", name: "60  b-chips", serviceEnabled: true, serviceStatus: "" },
+  { id: "b", name: "300 B-Chips", serviceEnabled: false, serviceStatus: "" },
+  { id: "c", name: "Monthly Card", serviceEnabled: true, serviceStatus: "new" },
+  { id: "d", name: "Only in GameInfo", serviceEnabled: true, serviceStatus: "" },
+] }] }];
+const changes = gameinfoSheetStatusChanges(gameTree, toned);
+check(changes.map((change) => `${change.packId}:${change.from}>${change.to}`).join() === "a:open>expired,c:new>open", "red expires, an uncoloured row ends ใหม่, green does not reopen a pack closed by hand");
+const changed = applyGameinfoSheetStatusChanges(gameTree, changes)[0].categories[0].packs;
+check(changed[0].serviceEnabled === false && changed[0].serviceStatus === "expired" && changed[2].serviceStatus === "" && changed[3] === gameTree[0].categories[0].packs[3], "only the named packs change");
+check(gameinfoSheetStatusChanges(applyGameinfoSheetStatusChanges(gameTree, changes), toned).length === 0, "a second run changes nothing");
+const twoWays = parseGameinfoSheetPackTab(honkai);
+withGameinfoSheetTones(twoWays, { 3: nameColumn });
+twoWays.currencies[0].categories[0].packs.push({ name: "60 B-Chips", tone: "green" });
+check(!gameinfoSheetStatusChanges(gameTree, twoWays).some((change) => change.packId === "a"), "a name coloured two ways is left alone");
+check(gameinfoSheetUnmatchedTones(toned, [[{ categories: [{ packs: [{ name: "60 B-Chips" }] }] }]]).map((row) => `${row.name}:${row.tone}`).join() === "300 B-Chips:green", "coloured rows with no pack of that name are listed");
+
+// columnColors: one A1 column range per wanted column, grouped back by tab title.
+const colorUrls = [];
+const colorReader = createGoogleReader({
+  keyFile: "/test/key.json",
+  readOnly: true,
+  readKeyFile: async () => JSON.stringify({ client_email: "fixture@example.invalid", private_key: privateKey.export({ type: "pkcs8", format: "pem" }) }),
+  fetchImpl: async (url) => {
+    if (url.includes("oauth2")) return { ok: true, status: 200, json: async () => ({ access_token: "t", expires_in: 3600 }) };
+    colorUrls.push(url);
+    return { ok: true, status: 200, json: async () => ({ sheets: [{ properties: { title: "U.PES" }, data: [
+      { startColumn: 3, rowData: [{}, { values: [{ effectiveFormat: { backgroundColor: { red: 1 } } }] }] },
+      { startColumn: 27, rowData: [{ values: [{ effectiveFormat: { backgroundColor: { green: 1 } } }] }] },
+    ] }] }) };
+  },
+});
+const colors = await colorReader.columnColors("sheet", [{ tab: "U.PES", cols: [3, 27] }]);
+check(new URL(colorUrls[0]).searchParams.getAll("ranges").join() === "'U.PES'!D:D,'U.PES'!AB:AB", "columns are asked for as A1 ranges");
+check(colors["U.PES"][3][0] === null && colors["U.PES"][3][1].red === 1 && colors["U.PES"][27][0].green === 1, "colours come back by tab, column and row");
 
 console.log(`gameinfo-sheet-packs: ${passed} passed`);
