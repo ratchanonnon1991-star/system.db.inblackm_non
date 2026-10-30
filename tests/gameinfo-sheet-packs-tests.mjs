@@ -235,18 +235,20 @@ const byTab = await reader.batchRows("sheet", titles);
 check(Object.keys(byTab).length === 25 && byTab[titles[24]][0][0] === "'U.GAME 24''s'!A:ZZ", "every tab's rows come back under its title, quotes escaped");
 check(urls.filter((url) => url.includes("batchGet")).length === 3 && waits.join() === "20000", "25 tabs take two batchGets; a 429 is waited out and retried");
 
-// Row colours: red = the pack expired in the game, green = new, by hue so any shade counts.
+// Row marks: bright red = the pack expired in the game, bright green = new.
+// The colours "U.LOVE AND DEEPSPACE" and "U.AFK JOURNEY" decorate with are not marks.
 const rgb = (hex) => Object.fromEntries(["red", "green", "blue"].map((key, i) => [key, parseInt(hex.slice(i * 2, i * 2 + 2), 16) / 255]).filter(([, value]) => value > 0));
-check(["f4cccc", "ea9999", "e06666", "ff0000", "cc0000"].every((hex) => gameinfoSheetTone(rgb(hex)) === "red"), "light to dark reds read as red");
-check(["d9ead3", "b6d7a8", "93c47d", "00ff00", "6aa84f"].every((hex) => gameinfoSheetTone(rgb(hex)) === "green"), "light to dark greens read as green");
-check(["ffffff", "f3f3f3", "000000", "fff2cc", "fce5cd", "cfe2f3", "d0e0e3"].every((hex) => gameinfoSheetTone(rgb(hex)) === "") && gameinfoSheetTone(null) === "", "white, greys, yellow, orange and blue are no status");
+check(gameinfoSheetTone(rgb("ff0000")) === "red" && gameinfoSheetTone(rgb("ee1111")) === "red", "bright red is the expired mark");
+check(gameinfoSheetTone(rgb("00ff00")) === "green" && gameinfoSheetTone(rgb("22ee22")) === "green", "bright green is the new mark");
+check(["990000", "cc0000", "e06666", "e6b8af", "f4cccc", "b6d7a8", "d9ead3", "93c47d", "fce5cd", "ffffff", "000000", "fff2cc", "cfe2f3"].every((hex) => gameinfoSheetTone(rgb(hex)) === "") && gameinfoSheetTone(null) === "",
+  "dark red, pink, pale green, peach, white, black, yellow and blue decorate: no status");
 
 const toned = parseGameinfoSheetPackTab(honkai);
 check(gameinfoSheetPackNameColumns(toned).join() === "3", "colours are read from the pack-name column");
 // Row 4 (60 B-Chips) red, row 5 (300 B-Chips) green, row 8 (Monthly Card) white.
 const nameColumn = [];
-nameColumn[4] = rgb("f4cccc");
-nameColumn[5] = rgb("d9ead3");
+nameColumn[4] = rgb("ff0000");
+nameColumn[5] = rgb("00ff00");
 nameColumn[8] = rgb("ffffff");
 withGameinfoSheetTones(toned, { 3: nameColumn });
 const tonedPacks = toned.currencies.flatMap((currency) => currency.categories.flatMap((category) => category.packs));

@@ -342,8 +342,10 @@ export function gameinfoSheetPackTree(parsed) {
   return { currencies, costProfiles };
 }
 
-// The sheet colours a pack's row: red when the pack has expired in the game,
-// green when it is new. Shades differ from tab to tab, so it goes by hue.
+// The sheet marks a pack's row bright red (#ff0000) when the pack has expired
+// in the game and bright green (#00ff00) when it is new. The tabs also use
+// red and green to decorate — dark red channel cells and pack names, pale
+// green price cells, pink Russia columns — so only the bright marks count.
 const TONE_STATUS = { red: "expired", green: "new" };
 
 /** A cell background ({ red, green, blue } 0–1, zeros left out) → "red" | "green" | "". */
@@ -352,14 +354,8 @@ export function gameinfoSheetTone(color) {
   const r = Number(color.red) || 0;
   const g = Number(color.green) || 0;
   const b = Number(color.blue) || 0;
-  const max = Math.max(r, g, b);
-  const delta = max - Math.min(r, g, b);
-  // White, greys and black.
-  if (delta < 0.06) return "";
-  let hue = max === r ? 60 * (((g - b) / delta) % 6) : max === g ? 60 * ((b - r) / delta + 2) : 60 * ((r - g) / delta + 4);
-  if (hue < 0) hue += 360;
-  if (hue < 20 || hue >= 330) return "red";
-  if (hue >= 75 && hue <= 165) return "green";
+  if (r >= 0.85 && g <= 0.35 && b <= 0.35) return "red";
+  if (g >= 0.75 && r <= 0.5 && b <= 0.5) return "green";
   return "";
 }
 
