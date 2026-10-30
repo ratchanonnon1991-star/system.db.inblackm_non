@@ -14,6 +14,7 @@ import { getGamelistImage } from "@/server/gameinfo-gamelist-image";
 import { getGamelistLinks, legacyGamelistLinks } from "@/server/gameinfo-gamelist-links";
 import { getGameinfoFormulaVariables } from "@/server/gameinfo-formula-variables";
 import GameinfoGameView from "@/components/gameinfo-game-view";
+import GameinfoViewSwitch from "@/components/gameinfo-view-switch";
 import GameinfoErrorNotice from "@/components/gameinfo-error-notice";
 import GameinfoBackLink from "@/components/gameinfo-back-link";
 import GameinfoDatasetToggle from "@/components/gameinfo-dataset-toggle";
@@ -30,6 +31,7 @@ import { GameinfoManageNav, GameinfoManageSection } from "@/components/gameinfo-
 import GameinfoWebMargin from "@/components/gameinfo-web-margin";
 import GameinfoSalesChannelEditor, { GameinfoSalesChannelCards } from "@/components/gameinfo-sales-channels";
 import { listGamelistSalesChannels } from "@/server/gameinfo-sales-channels";
+import { listStockForGame } from "@/server/stock-repository";
 import GameinfoMissingChecklist from "@/components/gameinfo-missing-checklist";
 import { gameinfoMissingItems } from "@/lib/gameinfo-completeness";
 import { missingTopupWebPacks, topupWebPackImageFills } from "@/lib/gameinfo-topup-match";
@@ -98,6 +100,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   let topupConnected = false;
   let testAccounts = [];
   let salesChannels = [];
+  let stock = { accounts: [], byPack: {} };
   try {
     row = await getGameListRow(numericId);
     if (row) {
@@ -171,11 +174,12 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
       formulaVariables = variableData.variables;
       // Website data and test accounts are extras: if they fail to load the
       // game page still opens, just without them.
-      [settings, testAccounts, topupConnected, salesChannels] = await Promise.all([
+      [settings, testAccounts, topupConnected, salesChannels, stock] = await Promise.all([
         getGamelistGameSettings(row.id).catch(() => settings),
         listGamelistTestAccounts(row.id).catch(() => []),
         isTopupWebConnected().catch(() => false),
         listGamelistSalesChannels(row.id).catch(() => []),
+        listStockForGame(row.id, dataMode).catch(() => stock),
       ]);
       topupGame = topupConnected ? await getTopupWebGame(settings.topupGameId).catch(() => null) : null;
       row = {
@@ -341,6 +345,11 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   }
 
   return (
+    <>
+    {/* Rendered here, not in the layout: a layout is not re-rendered on a
+        client-side navigation, so its bar kept showing the view the first
+        page was opened in. */}
+    <GameinfoViewSwitch savedView={view} isAdmin={editableRole} />
     <div className="mx-auto max-w-[1400px] px-4 pb-16 pt-6 sm:px-7">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <GameinfoBackLink
@@ -360,6 +369,8 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         dataMode={dataMode}
         hiddenColumnKeys={hiddenColumnKeys}
         editHref={editableRole ? manageHref : null}
+        stock={stock}
+        stockLinks={hasPermission(user, "stock.access")}
       />
       <div className="mt-5">
         <GameinfoSalesChannelCards channels={salesChannels} showMargin={!topupView} />
@@ -373,6 +384,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
       </div>
       <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage={editableRole} canReport={canReport} />
     </div>
+    </>
   );
 }
 

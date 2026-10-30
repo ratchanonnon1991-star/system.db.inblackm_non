@@ -98,3 +98,12 @@ export function countGameinfoSheetNotices(categories) {
     images: categories.reduce((total, category) => total + category.steps.reduce((sum, step) => sum + step.images.length, 0), 0),
   };
 }
+
+/**
+ * A note as a step: its first line (without the "1." the guide numbers
+ * itself) is the step's title, any further lines its description.
+ */
+export function gameinfoNoticeStepText(note) {
+  const [first = "", ...rest] = String(note || "").split("\n");
+  return { title: first.replace(/^\s*\d+\s*[.)]\s*/, "").trim(), description: rest.join("\n").trim() };
+}

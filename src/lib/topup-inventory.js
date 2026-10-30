@@ -1,4 +1,6 @@
 export const TOPUP_INVENTORY_PROVIDERS = [
+  { key: "ledger", name: "ยกยอดเติมมือ", description: "เลือกบัญชีที่ใช้เติม ใส่หรือวางเลขออเดอร์กับยอดที่ตัด ระบบหักยอดให้ ใช้แทนการยกยอดในชีท Center", ready: true },
+  { key: "channels", name: "ยอดเติมมือรายบัญชี", description: "สรุปยอดที่ยกจากหน้ายกยอด แยกตามบัญชีและกลุ่ม (Moniepoint, iTunes, Bitcash, Laos Telecom ฯลฯ) พร้อมรายการของแต่ละบัญชี", ready: true },
   { key: "gamepoint", name: "(MYR) Gamepoint", description: "ยอดตัด MYR จากผลบอทและ ledger พร้อมต้นทุน กำไร และยอดคงเหลือคำนวณแยกจากยอดที่บันทึก", ready: true },
   { key: "plsbuy", name: "(MYR) Plsbuy", description: "ประวัติ Plsbuy ยอด MYR ออก ต้นทุน กำไร และยอดอ้างอิงจากชีท", ready: true },
   { key: "donshop", name: "(IDR) Donshop", description: "ประวัติ Donshop ทุกสถานะ ยอด IDR ออก ต้นทุน กำไร และยอดคงเหลือหลังออเดอร์สำเร็จล่าสุด", ready: true },

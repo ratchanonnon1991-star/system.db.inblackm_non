@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { createContext, useContext, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeftRight, BookOpen, Image as ImageIcon, Lock, Pencil, TriangleAlert } from "lucide-react";
+import { ArrowLeftRight, BookOpen, Boxes, Image as ImageIcon, Lock, Pencil, TriangleAlert } from "lucide-react";
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -52,7 +52,12 @@ const NO_COLUMNS = [];
 // a tree nothing ever read — on top of the parse the evaluator did per cell.
 // The evaluator caches by formula text now (gameinfo-computed-evaluator.js)
 // and a broken formula is reported in the cell, where a reader can see it.
-export default function GameinfoGameView({ row, currencies, computedColumns = NO_COLUMNS, costProfiles = [], formulaVariables = [], userId, dataMode = "uid", hiddenColumnKeys = [], editHref = null }) {
+// What is left in stock per GameInfo pack name (src/server/stock-repository.js
+// listStockForGame), read by the pack name cell.
+const StockContext = createContext({});
+const NO_STOCK = { accounts: [], byPack: {} };
+
+export default function GameinfoGameView({ row, currencies, computedColumns = NO_COLUMNS, costProfiles = [], formulaVariables = [], userId, dataMode = "uid", hiddenColumnKeys = [], editHref = null, stock = NO_STOCK, stockLinks = false }) {
   const [formulaMode, setFormulaMode] = useState("result");
   const rateState = useGameinfoRates();
   // Same field set the pack editor's formulas can reference (see
@@ -208,12 +213,14 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
             </div>
           </div>
           <ChannelSummary channels={row.channels} botManual={row.botManual} />
+          <StockSummary accounts={stock.accounts} links={stockLinks} />
         </div>
         {!activeCurrency ? (
           <p className="border-t border-linear-hairline p-8 text-center text-linear-ink-tertiary">
             ยังไม่มีข้อมูลแพ็กสำหรับเกมนี้
           </p>
         ) : (
+          <StockContext.Provider value={stock.byPack}>
           <PackCurrency
             key={activeCurrency.id}
             gameId={row.id}
@@ -233,6 +240,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
               setChannelView((current) => (current === "secondary" ? "main" : "secondary"))
             }
           />
+          </StockContext.Provider>
         )}
       </section>
     </div>
@@ -679,6 +687,7 @@ function PackViewCell({
     );
   }
 
+  if (column.id === "name") return <PackNameCell pack={pack} />;
   const raw = pack[column.field];
   const value = Array.isArray(raw) ? (raw.length ? raw.join(", ") : "-") : raw || "-";
   // The pack name and the price are what a reader scans down the table for.
@@ -709,6 +718,52 @@ function StableTag({ value, label = value, className = "text-xs" }) {
 // Main and secondary channels labeled separately (not merged into one
 // list), and secondary explicitly says "ไม่มี" when empty instead of just
 // disappearing, so it's clear that side was checked and found empty.
+const STOCK_PILL = {
+  ok: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300",
+  low: "bg-amber-500/20 text-amber-900 dark:text-amber-300",
+  empty: "bg-red-500/15 text-red-800 dark:text-red-300",
+};
+
+// The name, plus what is left in stock when a stock account carries this pack.
+function PackNameCell({ pack }) {
+  const stock = useContext(StockContext)[pack.name];
+  return (
+    <td className="max-w-[260px] px-3 py-2.5 first:pl-5 tabular-nums font-extrabold text-linear-ink">
+      <span className="flex items-center gap-2">
+        <span className="truncate">{pack.name || "-"}</span>
+        {stock ? (
+          <span
+            title={`stock: ${stock.codes.join(", ")}`}
+            className={`shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-black ${STOCK_PILL[stock.tone]}`}
+          >
+            {stock.tone === "empty" ? "stock หมด" : `stock ${stock.left}`}
+          </span>
+        ) : null}
+      </span>
+    </td>
+  );
+}
+
+function StockSummary({ accounts, links }) {
+  if (!accounts?.length) return null;
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[13px]">
+      <span className="flex items-center gap-1.5 text-linear-ink-tertiary">
+        <Boxes size={15} aria-hidden="true" /> Stock ของเกมนี้
+      </span>
+      {accounts.map((account) => {
+        const label = `${account.code} · ${account.leftTotal ? `คงเหลือ ${account.leftTotal} ชิ้น` : "ว่าง"}`;
+        const className = "rounded-full border border-linear-hairline bg-linear-surface-1 px-3 py-1 font-bold text-linear-ink";
+        return links ? (
+          <Link key={account.code} href={`/stock/${account.code}`} className={`${className} hover:bg-linear-surface-3`}>{label}</Link>
+        ) : (
+          <span key={account.code} className={className}>{label}</span>
+        );
+      })}
+    </div>
+  );
+}
+
 function ChannelSummary({ channels, botManual }) {
   const main = channels?.main || [];
   const secondary = channels?.secondary || [];

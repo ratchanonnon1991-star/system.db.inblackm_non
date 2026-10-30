@@ -50,6 +50,8 @@ check(html.includes('href="/projectm/th/topup-inventory/netease"') && html.inclu
 check(html.includes('href="/projectm/th/topup-inventory/razer"') && html.includes("Razer Gold"), "Razer Gold is available");
 check(hub.metadata.title === "Topup Inventory", "hub browser title");
 check(itune.metadata.title === "iTune | Topup Inventory", "child browser title");
+check(html.includes('href="/projectm/th/topup-inventory/ledger"') && html.includes("ยกยอดเติมมือ"), "debit page card");
+check(html.includes('href="/projectm/th/topup-inventory/channels"') && html.includes("ยอดเติมมือรายบัญชี"), "per-account hand use card");
 for (const path of ["src/app/projectm/[lang]/page.js", "src/app/projectm/[lang]/itune/page.js"]) {
   await assert.rejects(compile(path).default({ params }), { path: topupInventoryPath("th") }); assertions++;
 }

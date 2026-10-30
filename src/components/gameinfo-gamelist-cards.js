@@ -16,7 +16,6 @@ import {
   Flag,
   Gamepad2,
   GitBranch,
-  Eye,
   LayoutGrid,
   List,
   Menu,
@@ -35,7 +34,7 @@ import {
 import GameinfoDatasetToggle from "./gameinfo-dataset-toggle";
 import GameinfoBotCatalog from "./gameinfo-bot-catalog";
 import GameinfoPackPriceCompare from "./gameinfo-pack-price-compare";
-import GameinfoTutorialButton, { GameinfoDetailsButton } from "./gameinfo-tutorial-modal";
+import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
 import {
   GAMEINFO_STATUSES,
   filterGameinfoRows,
@@ -45,6 +44,7 @@ import {
   isGameinfoBotAuto,
 } from "@/lib/gameinfo-dashboard";
 import { gameinfoGameHref, gameinfoListHref, gameinfoPacksHref } from "@/lib/gameinfo-data-mode";
+import { gameinfoRoleView, rememberGameinfoView } from "@/lib/gameinfo-view";
 import { useGameinfoDialog } from "@/lib/use-gameinfo-dialog";
 import { gameinfoGameColor, gameinfoGameInitials } from "@/lib/gameinfo-game-initials";
 import GameinfoPriorityStars, { GameinfoWebBadge } from "./gameinfo-priority-stars";
@@ -586,7 +586,8 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
                     {["ความสำคัญ", "เกม", "สถานะ", "โหมด", "WEB", "REGION", "PLATFORM", "SERVER"].map((heading) => (
                       <th key={heading} scope="col" className="px-4 py-3 text-[11px] font-black tracking-[0.08em] text-linear-ink-muted">{heading}</th>
                     ))}
-                    <th scope="col" className="px-4 py-3 text-right text-[11px] font-black tracking-[0.08em] text-linear-ink-muted">จัดการ</th>
+                    {/* Pinned to the right edge, so the buttons stay in view while a narrow screen scrolls the table. */}
+                    <th scope="col" className="sticky right-0 bg-linear-surface-3 px-4 py-3 text-right text-[11px] font-black tracking-[0.08em] text-linear-ink-muted shadow-[-8px_0_12px_-10px_rgba(0,0,0,0.25)]">จัดการ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -729,6 +730,16 @@ function ModeBadge({ value }) {
   );
 }
 
+// Opening a game from the list starts it in the view for the reader's role —
+// Product for admins, Topup for everyone else; the switch on the game page
+// still changes it from there. Set as the cookie on the way out, so the URL
+// stays free of a ?view= that back/forward would bring back.
+// Not prefetched: a prefetch would render the page with whatever view the
+// cookie held before the click.
+function DetailLink({ editable, onClick, ...props }) {
+  return <Link {...props} prefetch={false} onClick={(event) => { rememberGameinfoView(gameinfoRoleView(editable)); onClick?.(event); }} />;
+}
+
 function GameCard({ row, editable, topupView, canReport, lang, dataMode, favoriteBusy, onToggleFavorite, onReport }) {
   const status = STATUS_STYLE[row.serviceStatus] || STATUS_STYLE.online;
   const href = gameinfoGameHref(lang, row.id, dataMode, false);
@@ -743,12 +754,12 @@ function GameCard({ row, editable, topupView, canReport, lang, dataMode, favorit
       ) : null}
       <div className="flex flex-1 flex-col gap-3.5 p-4">
         <div className="flex items-start gap-3.5">
-          <Link href={href} tabIndex={-1} aria-hidden="true" className="shrink-0">
+          <DetailLink href={href} editable={editable} tabIndex={-1} aria-hidden="true" className="shrink-0">
             <GameThumb row={row} size={76} />
-          </Link>
+          </DetailLink>
           <div className="flex min-w-0 flex-1 flex-col gap-1.5">
             <h2 className="m-0 text-[15px] font-black uppercase leading-snug">
-              <Link href={href} className="line-clamp-2 text-linear-ink hover:text-[#D90005]">{row.game}</Link>
+              <DetailLink href={href} editable={editable} className="line-clamp-2 text-linear-ink hover:text-[#D90005]">{row.game}</DetailLink>
             </h2>
             <span className="flex items-center gap-2 font-mono text-xs text-linear-ink-subtle">
               ID: {row.id}
@@ -784,20 +795,19 @@ function GameCard({ row, editable, topupView, canReport, lang, dataMode, favorit
       </div>
       <div className="flex items-center gap-2 px-4 pb-4">
         {editable ? (
-          <Link
-            href={href}
-            aria-label={`ดูข้อมูล ${row.game}`}
-            title="ดูข้อมูล"
-            className="flex h-[42px] w-11 shrink-0 items-center justify-center rounded-[10px] border border-linear-hairline bg-linear-surface-1 text-linear-ink hover:bg-linear-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D90005]"
-          >
-            <Eye size={18} aria-hidden="true" />
+          <Link href={actionHref} className="inline-flex h-[42px] min-w-0 flex-1 items-center justify-center rounded-[10px] bg-linear-primary px-3 text-sm font-extrabold text-white hover:bg-linear-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D90005]">
+            เปิดจัดการ
           </Link>
         ) : null}
-        <Link href={actionHref} className="inline-flex h-[42px] min-w-0 flex-1 items-center justify-center rounded-[10px] bg-linear-primary px-3 text-sm font-extrabold text-white hover:bg-linear-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D90005]">
-          {!editable ? <Eye size={16} className="mr-2" aria-hidden="true" /> : null}
-          {editable ? "เปิดจัดการ" : "เปิดดู"}
-        </Link>
-        <GameinfoDetailsButton gameId={row.id} gameName={row.game} editable={false} hasTutorial={row.hasTutorial} hasVpnNote={row.hasVpnNote} dataMode={dataMode} compact />
+        <DetailLink
+          href={href}
+          editable={editable}
+          className={editable
+            ? "flex h-[42px] min-w-20 shrink-0 items-center justify-center rounded-[10px] border border-linear-hairline-strong px-3 text-xs font-medium text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D90005]"
+            : "inline-flex h-[42px] min-w-0 flex-1 items-center justify-center rounded-[10px] bg-linear-primary px-3 text-sm font-extrabold text-white hover:bg-linear-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D90005]"}
+        >
+          ข้อมูลเกม
+        </DetailLink>
         <GameinfoTutorialButton gameId={row.id} gameName={row.game} editable={false} hasData={row.hasWarning} variant="warning" dataMode={dataMode} compact />
       </div>
     </article>
@@ -818,7 +828,7 @@ function GameRow({ row, editable, topupView, lang, dataMode, onPriorityChange })
         <div className="flex items-center gap-3">
           <GameThumb row={row} size={40} />
           <div className="flex min-w-0 flex-col">
-            <Link href={href} className="font-black uppercase text-linear-ink hover:text-[#D90005]">{row.game}</Link>
+            <DetailLink href={href} editable={editable} className="font-black uppercase text-linear-ink hover:text-[#D90005]">{row.game}</DetailLink>
             <span className="font-mono text-xs text-linear-ink-subtle">ID: {row.id}</span>
           </div>
           {row.reportCount > 0 ? (
@@ -832,16 +842,22 @@ function GameRow({ row, editable, topupView, lang, dataMode, onPriorityChange })
       <td className="px-4 py-2.5 font-bold text-linear-ink">{row.region || "-"}</td>
       <td className="px-4 py-2.5 font-bold text-linear-ink">{row.platform || "-"}</td>
       <td className="px-4 py-2.5 font-bold text-linear-ink">{row.server || "-"}</td>
-      <td className="px-4 py-2.5">
+      <td className="sticky right-0 bg-linear-surface-1 px-4 py-2.5 shadow-[-8px_0_12px_-10px_rgba(0,0,0,0.25)]">
         <div className="flex justify-end gap-1.5">
           {editable ? (
-            <Link href={href} aria-label={`ดูข้อมูล ${row.game}`} title="ดูข้อมูล" className="flex h-9 w-[38px] items-center justify-center rounded-[9px] border border-linear-hairline bg-linear-surface-1 text-linear-ink hover:bg-linear-surface-2">
-              <Eye size={16} aria-hidden="true" />
+            <Link href={actionHref} className="flex h-9 items-center whitespace-nowrap rounded-[9px] bg-[#D90005] px-3.5 text-[13px] font-extrabold text-white hover:bg-[#B80004]">
+              เปิดจัดการ
             </Link>
           ) : null}
-          <Link href={actionHref} className="flex h-9 items-center whitespace-nowrap rounded-[9px] bg-[#D90005] px-3.5 text-[13px] font-extrabold text-white hover:bg-[#B80004]">
-            {editable ? "เปิดจัดการ" : "เปิดดู"}
-          </Link>
+          <DetailLink
+            href={href}
+            editable={editable}
+            className={editable
+              ? "flex h-9 items-center whitespace-nowrap rounded-[9px] border border-linear-hairline-strong px-3 text-[13px] font-medium text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink"
+              : "flex h-9 items-center whitespace-nowrap rounded-[9px] bg-[#D90005] px-3.5 text-[13px] font-extrabold text-white hover:bg-[#B80004]"}
+          >
+            ข้อมูลเกม
+          </DetailLink>
         </div>
       </td>
     </tr>

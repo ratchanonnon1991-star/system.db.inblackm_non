@@ -16,7 +16,7 @@ APP_DIR="${DEPLOY_APP_DIR:-/www/wwwroot/system.db.inblackm}"
 BRANCH="${DEPLOY_BRANCH:-main}"
 REPO_URL="${DEPLOY_REPO_URL:-git@github.com:InblackM/system.db.inblackm.git}"
 DEPLOY_KEY="${DEPLOY_SSH_KEY:-/root/.ssh/github_gamedb}"
-NODE_VERSION="${DEPLOY_NODE_VERSION:-22}"
+NODE_VERSION="${DEPLOY_NODE_VERSION:-24}"
 NVM_DIR="${NVM_DIR:-/www/server/nvm}"
 # /api/health needs an admin session and answers 401 to curl, so the check
 # uses a public route that answers 200 once the server is up.
@@ -189,6 +189,14 @@ if [ "$SKIP_VERIFY" -eq 0 ]; then
 fi
 npm run build
 
+# A restart keeps the Node a process was started with: an app still on an
+# older Node is deleted and started again (a few seconds down, once per Node change).
+stale_apps="$("$PM2" jlist 2>/dev/null | node scripts/pm2-stale-node.cjs || true)"
+if [ -n "$stale_apps" ]; then
+  echo "Moving to Node $(node --version): $stale_apps"
+  # shellcheck disable=SC2086
+  "$PM2" delete $stale_apps
+fi
 "$PM2" startOrRestart ecosystem.config.cjs --only system.db.inblackm,usdcodashop-sync-worker,itune-sheet-sync-worker --update-env
 
 ready=""

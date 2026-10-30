@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { ArrowLeft, ArrowUpRight, Boxes, Landmark, Smartphone, Wallet, CreditCard } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Boxes, Landmark, Smartphone, Wallet, CreditCard, ClipboardList, ListChecks } from "lucide-react";
 import { TOPUP_INVENTORY_PROVIDERS, topupInventoryPath } from "@/lib/topup-inventory";
 
-const icons = { plsbuy: Wallet, donshop: Wallet, agenh2h: Wallet, razer: Wallet, netease: Wallet, "garena-shell": Wallet, itune: Wallet, moniepoint: Landmark, wavepay: Smartphone, usdcodashop: Boxes, multigamecard: CreditCard };
+const icons = { ledger: ClipboardList, channels: ListChecks, plsbuy: Wallet, donshop: Wallet, agenh2h: Wallet, razer: Wallet, netease: Wallet, "garena-shell": Wallet, itune: Wallet, moniepoint: Landmark, wavepay: Smartphone, usdcodashop: Boxes, multigamecard: CreditCard };
 const cardClass = "flex min-w-0 flex-col gap-5 rounded-xl border border-ll-hairline bg-ll-surface-1 p-5 text-ll-ink shadow-[var(--ll-shadow-card)]";
 
 export default function TopupInventoryHome({ lang }) {
