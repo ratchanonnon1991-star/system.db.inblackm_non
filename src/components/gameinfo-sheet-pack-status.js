@@ -49,7 +49,8 @@ export default function GameinfoSheetPackStatus({ lang }) {
   }
 
   const changing = useMemo(() => (preview?.items || []).filter((item) => item.changes.length), [preview]);
-  const onlyUnmatched = useMemo(() => (preview?.items || []).filter((item) => !item.changes.length), [preview]);
+  const onlyMissing = useMemo(() => (preview?.items || []).filter((item) => !item.changes.length), [preview]);
+  const missingGames = (preview?.items || []).filter((item) => item.missing.length).length;
   const chosen = changing.filter((item) => selected.has(item.gameId));
   const packCount = chosen.reduce((sum, item) => sum + item.changes.length, 0);
 
@@ -112,7 +113,8 @@ export default function GameinfoSheetPackStatus({ lang }) {
       {preview ? (
         <>
           <p className="text-sm text-linear-ink-muted">
-            ตรวจ {preview.checked} เกมที่มีแพ็คแล้ว · ต้องปรับ <strong className="text-linear-ink">{changing.length}</strong> เกม
+            ตรวจ {preview.checked} เกมที่มีแพ็คแล้ว · ต้องปรับสถานะ <strong className="text-linear-ink">{changing.length}</strong> เกม ·
+            ชีตมีแพ็คที่ GameInfo ยังไม่มี <strong className="text-linear-ink">{missingGames}</strong> เกม
           </p>
           {changing.length ? (
             <ul className="flex flex-col divide-y divide-linear-hairline rounded-xl border border-linear-hairline">
@@ -137,20 +139,21 @@ export default function GameinfoSheetPackStatus({ lang }) {
                         </li>
                       ))}
                     </ul>
-                    {item.unmatched.length ? <Unmatched rows={item.unmatched} /> : null}
+                    {item.missing.length ? <Missing rows={item.missing} /> : null}
                   </div>
                 </li>
               ))}
             </ul>
           ) : null}
-          {onlyUnmatched.length ? (
+          {onlyMissing.length ? (
             <details className="rounded-xl border border-linear-hairline p-3 text-sm">
-              <summary className="cursor-pointer font-bold text-linear-ink-muted">เกมที่สถานะตรงแล้ว แต่ชีตมีแถวสีที่ GameInfo ไม่มีแพ็คชื่อนั้น ({onlyUnmatched.length})</summary>
-              <ul className="mt-2 flex flex-col gap-2">
-                {onlyUnmatched.map((item) => (
+              <summary className="cursor-pointer font-bold text-linear-ink-muted">เกมที่สถานะตรงแล้ว แต่ชีตมีแพ็คที่ GameInfo ยังไม่มี ({onlyMissing.length})</summary>
+              <ul className="mt-2 flex flex-col gap-3">
+                {onlyMissing.map((item) => (
                   <li key={item.gameId}>
                     <Link href={gameinfoGameHref(lang, item.gameId, "uid", true)} className="font-bold text-linear-ink hover:text-[#D90005]">{String(item.game).split("\n")[0]}</Link>
-                    <Unmatched rows={item.unmatched} />
+                    <span className="ml-2 text-xs text-linear-ink-tertiary">ID {item.gameId} · แท็บ “{item.tab}”</span>
+                    <Missing rows={item.missing} />
                   </li>
                 ))}
               </ul>
@@ -167,13 +170,19 @@ export default function GameinfoSheetPackStatus({ lang }) {
   );
 }
 
-function Unmatched({ rows }) {
+// The sheet's packs this game has no pack of that name for, in either mode.
+function Missing({ rows }) {
   return (
-    <p className="mt-1.5 flex flex-wrap items-center gap-1 text-xs text-linear-ink-tertiary">
-      ชีตมีแต่ GameInfo ไม่มี:
-      {rows.map((row) => (
-        <span key={row.name} className={`rounded px-1.5 py-0.5 ${SHEET_TONE[row.tone]?.className || ""}`}>{row.name} ({SHEET_TONE[row.tone]?.label})</span>
-      ))}
-    </p>
+    <details className="mt-1.5 text-xs">
+      <summary className="cursor-pointer text-linear-ink-tertiary">ชีตมีแต่ GameInfo ไม่มี {rows.length} แพ็ค</summary>
+      <ul className="mt-1 flex flex-wrap gap-1">
+        {rows.map((row) => (
+          <li key={row.name} className={`rounded px-1.5 py-0.5 ${SHEET_TONE[row.tone]?.className || "bg-linear-surface-3 text-linear-ink-muted"}`}>
+            {row.name}
+            <span className="ml-1 opacity-70">{[row.price && `฿${row.price}`, row.channel, SHEET_TONE[row.tone]?.label && `แถว${SHEET_TONE[row.tone].label}`].filter(Boolean).join(" · ")}</span>
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }

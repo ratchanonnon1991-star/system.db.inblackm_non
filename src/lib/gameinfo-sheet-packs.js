@@ -427,14 +427,18 @@ export function applyGameinfoSheetStatusChanges(currencies, changes) {
   }));
 }
 
-/** Packs the sheet colours that no tree has a pack of that name for: [{ name, tone }]. */
-export function gameinfoSheetUnmatchedTones(parsed, trees) {
+/**
+ * Sheet packs no tree has a pack of that name for, coloured or not:
+ * [{ name, tone, price, channel }] — what is still to be added to GameInfo
+ * (or, when red, what has expired before it ever was).
+ */
+export function gameinfoSheetMissingPacks(parsed, trees) {
   const names = new Set();
   for (const currencies of trees) eachTreePack(currencies, (pack) => names.add(gameinfoSheetPackNameKey(pack.name)));
   const out = new Map();
   eachSheetPack(parsed, (pack) => {
     const key = gameinfoSheetPackNameKey(pack.name);
-    if (pack.tone && !names.has(key) && !out.has(key)) out.set(key, { name: pack.name, tone: pack.tone });
+    if (!names.has(key) && !out.has(key)) out.set(key, { name: pack.name, tone: pack.tone || "", price: pack.price, channel: pack.channelsMain[0] || "" });
   });
   return [...out.values()];
 }

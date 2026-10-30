@@ -18,11 +18,11 @@ import {
   countGameinfoSheetPacks,
   gameinfoSheetCostFormulaColumns,
   gameinfoSheetCostProfiles,
+  gameinfoSheetMissingPacks,
   gameinfoSheetPackNameColumns,
   gameinfoSheetPackTree,
   gameinfoSheetPackUnits,
   gameinfoSheetStatusChanges,
-  gameinfoSheetUnmatchedTones,
   parseGameinfoSheetPackTab,
   withGameinfoSheetTones,
 } from "@/lib/gameinfo-sheet-packs";
@@ -330,8 +330,8 @@ async function readStatusTabs(reader, onlyIds = null) {
 /**
  * Packs whose status the sheet's row colours would change, game by game, in
  * both modes: red rows → หมดอายุ, green → ใหม่ (gameinfoSheetStatusChanges).
- * Also lists coloured rows with no pack of that name, so a pack missing from
- * GameInfo shows up too.
+ * Also lists the sheet's packs GameInfo has no pack of that name for, so a
+ * pack still to be added shows up too.
  */
 export async function previewGameinfoSheetPackStatus({ reader: givenReader = null } = {}) {
   const reader = givenReader || openReader();
@@ -348,8 +348,8 @@ export async function previewGameinfoSheetPackStatus({ reader: givenReader = nul
       ...gameinfoSheetStatusChanges(uid, packTab.parsed).map((change) => ({ ...change, mode: "uid" })),
       ...gameinfoSheetStatusChanges(idpass, packTab.parsed).map((change) => ({ ...change, mode: "idpass" })),
     ];
-    const unmatched = gameinfoSheetUnmatchedTones(packTab.parsed, [uid, idpass]);
-    if (changes.length || unmatched.length) items.push({ gameId: row.id, game: row.game, tab: packTab.tab, changes, unmatched });
+    const missing = gameinfoSheetMissingPacks(packTab.parsed, [uid, idpass]);
+    if (changes.length || missing.length) items.push({ gameId: row.id, game: row.game, tab: packTab.tab, changes, missing });
   }
   return { sheetId: gameinfoSourceSheetId(), checked, items };
 }

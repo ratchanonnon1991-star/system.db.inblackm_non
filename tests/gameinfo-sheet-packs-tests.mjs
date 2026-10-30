@@ -8,12 +8,12 @@ import {
   GAMEINFO_SHEET_COST_FORMULA,
   gameinfoSheetCostFormulaColumns,
   gameinfoSheetCostProfiles,
+  gameinfoSheetMissingPacks,
   gameinfoSheetPackTree,
   gameinfoSheetPackNameColumns,
   gameinfoSheetPackUnits,
   gameinfoSheetStatusChanges,
   gameinfoSheetTone,
-  gameinfoSheetUnmatchedTones,
   parseGameinfoSheetPackTab,
   withGameinfoSheetTones,
 } from "../src/lib/gameinfo-sheet-packs.js";
@@ -272,7 +272,9 @@ const twoWays = parseGameinfoSheetPackTab(honkai);
 withGameinfoSheetTones(twoWays, { 3: nameColumn });
 twoWays.currencies[0].categories[0].packs.push({ name: "60 B-Chips", tone: "green" });
 check(!gameinfoSheetStatusChanges(gameTree, twoWays).some((change) => change.packId === "a"), "a name coloured two ways is left alone");
-check(gameinfoSheetUnmatchedTones(toned, [[{ categories: [{ packs: [{ name: "60 B-Chips" }] }] }]]).map((row) => `${row.name}:${row.tone}`).join() === "300 B-Chips:green", "coloured rows with no pack of that name are listed");
+const missing = gameinfoSheetMissingPacks(toned, [[{ categories: [{ packs: [{ name: "60 B-Chips" }] }] }]]);
+check(missing.map((row) => `${row.name}:${row.tone}`).join() === "300 B-Chips:green,Monthly Card:", "every sheet pack with no pack of that name is listed, coloured or not");
+check(missing[1].price === "170" && missing[1].channel === "ATOM", "with its price and wallet, to find it in the sheet");
 
 // columnColors: one A1 column range per wanted column, grouped back by tab title.
 const colorUrls = [];
