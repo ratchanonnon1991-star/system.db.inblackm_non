@@ -34,6 +34,7 @@ export const GAMEINFO_PACK_BASE_COLUMNS = [
     maxWidth: 720,
   },
   { id: "country", label: "ประเทศ", field: "country", track: "minmax(80px, 0.8fr)", minWidth: 100, maxWidth: 220, required: true },
+  { id: "priceUsd", label: "USD", field: "priceUsd", track: "minmax(60px, 0.6fr)", minWidth: 80, maxWidth: 140 },
   { id: "link", label: "ลิงก์", field: "link", track: "minmax(70px, 0.6fr)", minWidth: 90, maxWidth: 320 },
 ];
 

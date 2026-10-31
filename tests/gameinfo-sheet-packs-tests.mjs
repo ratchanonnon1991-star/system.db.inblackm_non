@@ -356,6 +356,17 @@ check(lovePacks[1].amountBeforeFee === "236155 X 2", "a pre-fee amount the sheet
 check(lovePacks[2].amountReceived === "" && lovePacks[2].link === "", "a blank cell gives a blank field");
 check(parseGameinfoSheetPackTab([["ราคาขาย", "Diamonds ที่กด", "ช่องทาง"], ["30", "86", "https://x.example/a"]]).currencies[0].categories[0].packs[0].amountReceived === "86", "a bare count under the pack column is the count");
 
+// The ID-PASS table of the same tab: bare currencies, and a wallet column with no header.
+const idpassRows = [
+  ["2.Love and Deepspace ID - PASS ( PAGE / Kaleoz / Market Place )"],
+  ["ราคาขาย", "USDT", "Kaleoz", "Russia", "USDT", "PACK", "", "", "USD", "NGN", "ต้นทุน\n( cost )", "กำไร THB\n( profit THB )", "กำไร %"],
+  ["30", "0.84", "29", "28", "0.84", "Association Special LV.10", "", "GOOGLE NGN", "1", "1070", "25.72", "4.28", "14.27"],
+];
+const idpassPack = parseGameinfoSheetPackTab(idpassRows).currencies[0].categories[0].packs[0];
+check(idpassPack.mode === "idpass" && idpassPack.amountChargedFee === "1070" && idpassPack.costCurrency === "NGN" && idpassPack.cost === "25.72", "a bare currency before the cost is the charge, and ต้นทุน (cost) is the cost");
+check(idpassPack.channelsMain[0] === "GOOGLE NGN" && idpassPack.priceUsd === "1", "the wallet under no header is read, and the USD price with it");
+check(parseGameinfoSheetPackTab(loveRows).currencies[0].categories[0].packs[0].channelsMain[0] === "Wavepay", "a named ช่องทาง column still wins");
+
 const detailParsed = parseGameinfoSheetPackTab(loveRows);
 const detailTree = [{ id: "c", categories: [{ id: "k", packs: [
   { id: "a", name: " 60 crystals ", amountReceived: "", amountBeforeFee: "", link: "" },

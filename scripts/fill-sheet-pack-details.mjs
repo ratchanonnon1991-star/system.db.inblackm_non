@@ -3,7 +3,7 @@ import env from "@next/env";
 import { fileURLToPath } from "node:url";
 
 // Fills what the "1.1 ข้อมูลเติมเกม UID" sheet knows and existing packs leave
-// blank: จำนวนที่ได้, ยอดที่กดก่อน fee and ลิงก์. Packs match by name, per mode, and
+// blank: จำนวนที่ได้, ยอดที่กดก่อน fee, USD and ลิงก์. Packs match by name, per mode, and
 // nothing a pack already has is touched. Run on the server, from the app folder:
 //   node scripts/fill-sheet-pack-details.mjs              (dry run, every game)
 //   node scripts/fill-sheet-pack-details.mjs --game=3     (dry run, one game)

@@ -125,6 +125,13 @@ function readHeader(row) {
   if (priceCol < 0) return null;
   const pack = packColumn(header, keys);
   if (!pack) return { unreadable: true };
+  const costCol = keys.findIndex((key) => key === "ต้นทุน" || key.startsWith("ต้นทุน("));
+  // "USD | NGN | ต้นทุน": with no ที่กด or รวม to go by, a bare currency right
+  // before the cost is what is charged.
+  const found = amountColumn(keys);
+  const amount = found.col < 0 && costCol > 0 && isFiat(keys[costCol - 1])
+    ? { col: costCol - 1, currency: fiatKey(keys[costCol - 1]).toUpperCase() }
+    : found;
   // The route's own currency (the first fiat that is pressed) says the country.
   const pressed = keys.map((key) => /^(.+?)ที่กด$/.exec(key)?.[1]).find((unit) => unit && isFiat(unit));
   return {
@@ -133,14 +140,17 @@ function readHeader(row) {
     nameCol: pack.col,
     unit: pack.unit,
     category: pack.category,
-    amountCol: amountColumn(keys).col,
-    amountCurrency: amountColumn(keys).currency,
+    amountCol: amount.col,
+    amountCurrency: amount.currency,
     // "MMK ที่กด" beside "MMK รวม Fee"; the header of the pack column twice is
     // the name, then the count ("Crystals ที่ได้": 60 Crystals | 60).
     chargedCol: keys.findIndex((key) => isFiat(/^(.+?)ที่กด$/.exec(key)?.[1] || "")),
     receivedCol: keys.findIndex((key, col) => key && key === keys[pack.col] && col !== pack.col),
     linkCol: keys.indexOf("link"),
-    costCol: keys.indexOf("ต้นทุน"),
+    usdCol: keys.indexOf("usd"),
+    // The wallet can sit under no header at all: "PACK | (blank) | USD | NGN".
+    blankCols: keys.flatMap((key, col) => (!key && col > pack.col && (amount.col < 0 || col < amount.col) ? [col] : [])),
+    costCol,
     mainCol: keys.indexOf("ช่องทางหลัก"),
     plainChannelCols: keys.flatMap((key, col) => (key === "ช่องทาง" ? [col] : [])),
     // "ช่องทาง หลัก" is sometimes followed by a bare "สำรอง".
@@ -160,7 +170,8 @@ export function findGameinfoSheetPackHeader(rows) {
 function walletOf(cell, layout) {
   if (layout.mainCol >= 0) return cell(layout.mainCol);
   const values = layout.plainChannelCols.map(cell).filter((value) => value && !isLink(value));
-  return values.find((value) => !STORES.some((store) => squash(value).includes(store))) || values[0] || "";
+  return values.find((value) => !STORES.some((store) => squash(value).includes(store))) || values[0]
+    || layout.blankCols.map(cell).find((value) => value && !isLink(value)) || "";
 }
 
 // "150" under "Premium Credits ที่กด" → "150 Premium Credits".
@@ -264,6 +275,7 @@ export function parseGameinfoSheetPackTab(rows) {
       amountChargedFee: number(cell(layout.amountCol)),
       amountBeforeFee: /^[\d,.]+$/.test(charged) ? number(charged) : charged,
       amountReceived: number(cell(layout.receivedCol)) || (layout.unit && /^[\d,.]+$/.test(name) ? number(name) : ""),
+      priceUsd: number(cell(layout.usdCol)),
       link: [cell(layout.linkCol), ...layout.plainChannelCols.map(cell)].find(isLink) || "",
       channelsMain: wallet ? [wallet] : [],
       channelsSecondary: secondary && !isLink(secondary) ? [secondary] : [],
@@ -385,7 +397,7 @@ function eachSheetPack(parsed, visit) {
   }
 }
 
-const SHEET_DETAIL_FIELDS = ["amountReceived", "amountBeforeFee", "link"];
+const SHEET_DETAIL_FIELDS = ["amountReceived", "amountBeforeFee", "priceUsd", "link"];
 
 /**
  * What the sheet can fill in one mode's pack tree: by name, only fields a pack
@@ -600,6 +612,7 @@ export function addGameinfoSheetPacks(packs, parsed, mode, keys) {
       amountChargedFee: pack.amountChargedFee,
       amountBeforeFee: pack.amountBeforeFee,
       amountReceived: pack.amountReceived,
+      priceUsd: pack.priceUsd,
       link: pack.link,
       channelsMain: pack.channelsMain,
       channelsSecondary: pack.channelsSecondary,

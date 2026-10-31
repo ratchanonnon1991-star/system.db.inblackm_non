@@ -127,6 +127,7 @@ function flattenCurrencies(gameId, currencies) {
             amountChargedFee: cleanPack.amountChargedFee,
             amountBeforeFee: cleanPack.amountBeforeFee,
             amountReceived: cleanPack.amountReceived,
+            priceUsd: cleanPack.priceUsd,
             link: cleanPack.link,
             serviceEnabled: cleanPack.serviceEnabled,
             serviceStatus: cleanPack.serviceStatus,
