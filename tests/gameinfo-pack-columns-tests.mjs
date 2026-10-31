@@ -486,6 +486,17 @@ check(
 );
 check("and the cap is still a cap", GAMEINFO_PACK_COLUMN_LIMIT > GAMEDB_QUERY_COLUMN_LIMIT, true);
 
+check(
+  "the sheet's price columns follow the price, in the sheet's order",
+  buildGameinfoPackColumns([
+    { key: "cost", label: "ต้นทุน", formula: "1" },
+    { key: "ru", label: "ราคาRussia", formula: "" },
+    { key: "kz", label: " ราคาขาย(KALEOZ) ", formula: "" },
+    { key: "usd", label: "ราคาUSD (PAGE)", formula: "1" },
+  ]).map((column) => column.id).slice(3, 8),
+  ["amountReceived", "price", "computed:usd", "computed:kz", "computed:ru"]
+);
+
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);
 process.exit(failures.length ? 1 : 0);

@@ -48,8 +48,12 @@ export function isGameinfoPackColumnPinned(column) {
 
 export const GAMEINFO_PACK_SYMBOLS = ["", "$", "฿", "%"];
 
+// The source sheet keeps these beside the selling price, in this order. They
+// are columns people made, so they are found by name, wherever they were added.
+const COLUMNS_AFTER_PRICE = ["ราคาusd (page)", "ราคาขาย(kaleoz)", "ราคาrussia"];
+
 export function buildGameinfoPackColumns(computedColumns = []) {
-  return [
+  const columns = [
     ...GAMEINFO_PACK_BASE_COLUMNS.map((column) => ({ ...column, kind: "base" })),
     ...(computedColumns || []).filter((computed) => computed.kind !== "market" || computed.enabled !== false).map((computed) => ({
       id: `computed:${computed.key}`,
@@ -63,6 +67,12 @@ export function buildGameinfoPackColumns(computedColumns = []) {
       symbol: typeof computed.symbol === "string" ? computed.symbol.slice(0, 24) : "",
     })),
   ];
+  const afterPrice = COLUMNS_AFTER_PRICE
+    .map((label) => columns.find((column) => column.kind === "computed" && String(column.label ?? "").trim().toLowerCase() === label))
+    .filter(Boolean);
+  const rest = columns.filter((column) => !afterPrice.includes(column));
+  rest.splice(rest.findIndex((column) => column.id === "price") + 1, 0, ...afterPrice);
+  return rest;
 }
 
 export function gameinfoPackColumnWidth(column, values = []) {
