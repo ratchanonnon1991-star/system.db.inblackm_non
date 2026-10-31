@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { getPool } from "@/lib/db";
 import { canViewUsdInventory, canManageUsdInventory } from "@/lib/usdcodashop-inventory";
 import {
-  LEDGER_DIRECTION, accountInput, entryInput, snapshotInput, debitBatchInput, ledgerError,
+  LEDGER_DIRECTION, LEDGER_MAX_BATCH, accountInput, entryInput, snapshotInput, debitBatchInput, ledgerError,
   toUnits, fromUnits, reconcile, costOfUse, profitThb,
 } from "@/lib/inventory-ledger";
 
@@ -140,16 +140,18 @@ export function createInventoryLedger(pool, { now = () => new Date() } = {}) {
   /**
    * `staff`: the debit page path. Any signed-in account may record a "use", and may
    * reverse only its own "use" on the same Bangkok day. Everything else needs projectm.admin.
+   * `historical`: an admin import of an old sheet. No backdate limit and no balance bound
+   * (the bound is today's balance, which says nothing about a months-old row).
    */
-  async function recordEntry(body, actor, { staff = false } = {}) {
-    if (staff) requireSignedIn(actor); else requireManage(actor);
+  async function recordEntry(body, actor, { staff = false, historical = false } = {}) {
+    if (staff && !historical) requireSignedIn(actor); else requireManage(actor);
     const input = entryInput(body);
     if (staff && input.kind !== "use" && input.kind !== "reversal") throw ledgerError("บันทึกได้เฉพาะยอดที่ใช้", 403);
     const hash = hashOf(input);
     const at = input.occurredAt ? new Date(input.occurredAt) : now();
     const current = now().getTime();
     if (at.getTime() > current + CLOCK_SKEW_MS) throw ledgerError("เวลาที่ทำรายการต้องไม่อยู่ในอนาคต");
-    if (at.getTime() < current - BACKDATE_DAYS * 86400000) throw ledgerError(`บันทึกย้อนหลังได้ไม่เกิน ${BACKDATE_DAYS} วัน`);
+    if (!historical && at.getTime() < current - BACKDATE_DAYS * 86400000) throw ledgerError(`บันทึกย้อนหลังได้ไม่เกิน ${BACKDATE_DAYS} วัน`);
     await ensure(pool);
     try {
       return await inTransaction(pool, async c => {
@@ -181,7 +183,7 @@ export function createInventoryLedger(pool, { now = () => new Date() } = {}) {
           if (!account) throw ledgerError("ไม่พบบัญชี", 404);
           if (account.status !== "active") throw ledgerError("บัญชีนี้ปิดใช้งานแล้ว", 409);
           const direction = LEDGER_DIRECTION[input.kind];
-          if (direction < 0) {
+          if (direction < 0 && !historical) {
             // Bots only ever lower the balance, so this bound is safe: spending past it
             // means a deposit or a newer snapshot is missing.
             const bound = await upperBoundBalance(c, account.id);
@@ -262,6 +264,25 @@ export function createInventoryLedger(pool, { now = () => new Date() } = {}) {
         }
       }
       return { accountId: batch.accountId, saved: results.filter(r => r.ok).length, failed: results.filter(r => !r.ok).length, results };
+    },
+
+    /**
+     * Admin import of old sheet rows (deposits and uses), oldest first. Like recordDebits,
+     * a bad row is reported back and the rest are still recorded; each row is idempotent.
+     */
+    async importEntries(rows, actor) {
+      requireManage(actor);
+      if (!Array.isArray(rows) || !rows.length || rows.length > LEDGER_MAX_BATCH) throw ledgerError(`นำเข้าได้ครั้งละ 1–${LEDGER_MAX_BATCH} รายการ`);
+      const results = [];
+      for (const [index, row] of rows.entries()) {
+        try {
+          results.push({ index, ok: true, ...(await recordEntry(row, actor, { historical: true })) });
+        } catch (e) {
+          if (!e.status || e.status >= 500) throw e;
+          results.push({ index, ok: false, status: e.status, error: e.message });
+        }
+      }
+      return results;
     },
 
     /** Undo a debit with a reversal row (history is never edited). */
