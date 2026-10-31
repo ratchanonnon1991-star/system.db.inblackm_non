@@ -70,11 +70,21 @@ export function applyGameinfoChannelCosts(packs, rates, updatedAt = new Date().t
       ...packs,
       currencies,
       costProfiles,
-      computedColumns: gameinfoSheetCostFormulaColumns(packs.computedColumns, costProfiles) || packs.computedColumns,
+      // A rate set here has to reach the cost, whatever formula the game had.
+      computedColumns: gameinfoSheetCostFormulaColumns(packs.computedColumns, costProfiles, { replace: true }) || packs.computedColumns,
     },
     assigned,
     unmatched,
   };
+}
+
+/** The one currency a tab's packs are charged in ("MMK"), or "" for none or several. */
+export function gameinfoChargeUnit(currency, costProfiles) {
+  const units = new Set((currency?.categories || [])
+    .flatMap((category) => category.packs || [])
+    .map((pack) => getGameinfoCostProfile(costProfiles, pack.costProfileId)?.inputCurrency)
+    .filter(Boolean));
+  return units.size === 1 ? [...units][0] : "";
 }
 
 /** The ตัวแปรผสม a rate formula reads: "1/[Rate_MMK]" → ["Rate_MMK"]. */

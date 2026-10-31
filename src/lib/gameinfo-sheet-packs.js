@@ -621,11 +621,13 @@ export const GAMEINFO_SHEET_COST_FORMULA = "[ยอดที่กด + fee] * [
 
 /**
  * The game's columns with that per-game formula on ต้นทุน, or null when the
- * game needs none: no cost profile from the sheet, or a formula of its own already.
+ * game needs none: no cost profile from the sheet, or a formula of its own
+ * already, which `replace` overrules for someone setting the game's rates.
  */
-export function gameinfoSheetCostFormulaColumns(computedColumns, costProfiles) {
+export function gameinfoSheetCostFormulaColumns(computedColumns, costProfiles, { replace = false } = {}) {
   if (!(costProfiles || []).some((profile) => String(profile.id).startsWith("sheet-"))) return null;
   const index = (computedColumns || []).findIndex((column) => String(column.label || "").trim() === GAMEINFO_SHEET_COST_COLUMN);
-  if (index < 0 || String(computedColumns[index].gameFormula || "").trim()) return null;
+  const current = index < 0 ? "" : String(computedColumns[index].gameFormula || "").trim();
+  if (index < 0 || current === GAMEINFO_SHEET_COST_FORMULA || (current && !replace)) return null;
   return computedColumns.map((column, i) => (i === index ? { ...column, gameFormula: GAMEINFO_SHEET_COST_FORMULA } : column));
 }

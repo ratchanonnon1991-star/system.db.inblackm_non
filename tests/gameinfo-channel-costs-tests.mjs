@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { applyGameinfoChannelCosts, gameinfoChannelKey, gameinfoCostRatePacks, gameinfoCostRateRows, gameinfoRateVariables, parseGameinfoChannelRate } from "../src/lib/gameinfo-channel-costs.js";
+import { applyGameinfoChannelCosts, gameinfoChannelKey, gameinfoChargeUnit, gameinfoCostRatePacks, gameinfoCostRateRows, gameinfoRateVariables, parseGameinfoChannelRate } from "../src/lib/gameinfo-channel-costs.js";
 import { resolveGameinfoField } from "../src/lib/gameinfo-formula-fields.js";
 import { GAMEINFO_SHEET_COST_FORMULA } from "../src/lib/gameinfo-sheet-packs.js";
 
@@ -50,6 +50,9 @@ check(shown[0].updatedAt === "2026-10-31T00:00:00.000Z", "a row dates from the v
 const fixed = gameinfoCostRateRows(result.packs.currencies, result.packs.costProfiles);
 check(fixed.length === 3 && fixed.find((row) => row.channel === "ITUNES(DE)").rate === 26.13 && fixed[0].source === "เรทคงที่", "a fixed rate is shown as fixed, one row per wallet");
 check(gameinfoCostRateRows(packs.currencies, packs.costProfiles).length === 0, "packs with no profile show nothing");
+const owned = { ...packs, computedColumns: [{ key: "cost", label: "ต้นทุน", formula: "[ยอดที่กด + fee]/134.02", gameFormula: "[ยอดที่กด + fee]/134.02" }] };
+check(applyGameinfoChannelCosts(owned, rates).packs.computedColumns[0].gameFormula === GAMEINFO_SHEET_COST_FORMULA, "a game with its own ต้นทุน formula still ends up costed at its rates");
+check(gameinfoChargeUnit(followed.packs.currencies[0], followed.packs.costProfiles) === "NGN" && gameinfoChargeUnit(result.packs.currencies[1], result.packs.costProfiles) === "", "a tab names its charge currency only when there is one");
 const inverse = parseGameinfoChannelRate("WAVEPAY=1/[Rate_MMK]:MMK");
 check(inverse.rateFormula === "1/[Rate_MMK]" && gameinfoRateVariables(inverse.rateFormula).join() === "Rate_MMK", "a rate kept as units per baht reads through its variable");
 const mmkVariables = [{ id: "v2", name: "Rate_MMK", value: "141.69", formula: "", updatedAt: "2026-10-31T00:00:00.000Z" }];

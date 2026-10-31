@@ -18,6 +18,7 @@ import {
   matchesGameinfoPackFilters,
 } from "@/lib/gameinfo-pack-columns";
 import { getGameinfoFormulaDisplay } from "@/lib/gameinfo-formula-overrides";
+import { gameinfoChargeUnit } from "@/lib/gameinfo-channel-costs";
 import { filterGameinfoColumnsForRole } from "@/lib/gameinfo-column-roles";
 import {
   evaluateGameinfoComputedColumn,
@@ -132,6 +133,13 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
   const currencyList = currencies || [];
   const [currencyId, setCurrencyId] = useState(currencyList[0]?.id);
   const activeCurrency = currencyList.find((currency) => currency.id === currencyId) || currencyList[0];
+  // The sheet heads these with the currency ("MMK ที่กด", "MMK รวม Fee"); so
+  // does this table when the tab's packs are all charged in one.
+  const chargeUnit = gameinfoChargeUnit(activeCurrency, costProfiles);
+  const withChargeUnit = (columns) => (chargeUnit ? columns.map((column) => {
+    if (column.id === "amountBeforeFee") return { ...column, label: `${chargeUnit} ที่กด` };
+    return column.id === "amountChargedFee" ? { ...column, label: `${chargeUnit} รวม Fee` } : column;
+  }) : columns);
 
   return (
     <div className="flex flex-col gap-5">
@@ -241,8 +249,8 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
             gameId={row.id}
             currency={activeCurrency}
             game={formulaGame}
-            columns={packLayout.visibleColumns}
-            allColumns={packLayout.orderedColumns}
+            columns={withChargeUnit(packLayout.visibleColumns)}
+            allColumns={withChargeUnit(packLayout.orderedColumns)}
             filters={packLayout.layout.filters}
             formulaMode={formulaMode}
             costProfiles={costProfiles}
