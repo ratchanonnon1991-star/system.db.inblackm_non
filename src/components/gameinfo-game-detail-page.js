@@ -34,6 +34,7 @@ import { listGamelistSalesChannels } from "@/server/gameinfo-sales-channels";
 import { listStockForGame } from "@/server/stock-repository";
 import GameinfoMissingChecklist from "@/components/gameinfo-missing-checklist";
 import { gameinfoMissingItems } from "@/lib/gameinfo-completeness";
+import { gameinfoCostRatePacks } from "@/lib/gameinfo-channel-costs";
 import { missingTopupWebPacks, topupWebPackImageFills } from "@/lib/gameinfo-topup-match";
 import { previewTopupWebFill } from "@/server/gameinfo-topup-import";
 import { getGameinfoExchangeRates } from "@/server/gameinfo-exchange-rates";
@@ -101,6 +102,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   let testAccounts = [];
   let salesChannels = [];
   let stock = { accounts: [], byPack: {} };
+  let costRatesOther = null;
   try {
     row = await getGameListRow(numericId);
     if (row) {
@@ -110,6 +112,12 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
       currencies = packs.currencies;
       computedColumns = packs.computedColumns;
       costProfiles = packs.costProfiles;
+      // Rates state costs, so the Topup view goes without them. Null is that,
+      // and a store that will not load only costs this page its other mode.
+      if (!topupView) {
+        const otherPacks = dataMode === "idpass" ? getGamelistPacks(row.id) : getGameinfoModeData(row.id, "idpass").then((data) => data.packs);
+        costRatesOther = gameinfoCostRatePacks(await otherPacks.catch(() => ({})));
+      }
       const packDisabledCount = currencies.reduce(
         (total, currency) => total + currency.categories.reduce(
           (categoryTotal, category) => categoryTotal + category.packs.filter((pack) => pack.serviceEnabled === false).length,
@@ -185,6 +193,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
       row = {
         ...row,
         priority: Math.min(3, Number(row.rankStars) || 0),
+        sourceNote: (dataMode === "idpass" ? settings.sourceIdpass : settings.sourceUid) || "",
         web: topupGame ? { isActive: topupGame.isActive, uidEnabled: topupGame.uidEnabled, idpassEnabled: topupGame.idpassEnabled } : null,
       };
       hiddenColumnKeys = [...hiddenGameinfoColumnKeys(columnRoleRules, viewerRole, row.id)];
@@ -222,6 +231,8 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
     formulaVariables,
     packLanguages,
     version: packVersion,
+    costRatesOther,
+    sourceNote: row.sourceNote,
   };
 
   if (manageMode) {
@@ -371,6 +382,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         editHref={editableRole ? manageHref : null}
         stock={stock}
         stockLinks={hasPermission(user, "stock.access")}
+        costRatesOther={costRatesOther}
       />
       <div className="mt-5">
         <GameinfoSalesChannelCards channels={salesChannels} showMargin={!topupView} />

@@ -12,9 +12,11 @@ import { getGamelistPacks, listGamelistRealPackCountByGame, recordGameinfoAudit,
 import { listGamelistSalesChannelKeysByGame, listGamelistSalesChannels, saveGamelistSalesChannels } from "@/server/gameinfo-sales-channels";
 import { gameinfoSheetGameKey, parseGameinfoSourceSheet } from "@/lib/gameinfo-sales-channels";
 import { gameinfoHasRealPacks } from "@/lib/gameinfo-pack-model";
+import { getGamelistGameSettings, saveGamelistGameSettings } from "@/server/gameinfo-game-settings";
 import { getGameinfoModeData, listGameinfoModeData, updateGameinfoModeData } from "@/server/gameinfo-mode-data";
 import {
   addGameinfoSheetPacks,
+  applyGameinfoSheetDetailFills,
   applyGameinfoSheetStatusChanges,
   countGameinfoSheetPacks,
   gameinfoSheetCostFormulaColumns,
@@ -23,6 +25,7 @@ import {
   gameinfoSheetPackNameColumns,
   gameinfoSheetPackTree,
   gameinfoSheetPackUnits,
+  gameinfoSheetDetailFills,
   gameinfoSheetStatusChanges,
   parseGameinfoSheetPackTab,
   withGameinfoSheetTones,
@@ -326,6 +329,61 @@ async function readStatusTabs(reader, onlyIds = null) {
     .filter(({ row, sheetGame }) => sheetGame && (packCountByGame[row.id] || gameinfoHasRealPacks(idpassByGame[row.id]?.packs?.currencies)));
   const packTabs = await readPackTabs(reader, games.map(({ sheetGame }) => sheetGame), { requireTones: true });
   return { games, packTabs, packCountByGame, idpassByGame };
+}
+
+/**
+ * Fills the blanks the sheet can answer (gameinfoSheetDetailFills) in both
+ * modes of every game with packs, or of `gameIds`. Writes only with `apply`.
+ */
+export async function fillGameinfoSheetPackDetails({ gameIds = null, apply = false, actor = null, log = () => {}, reader: givenReader = null } = {}) {
+  const reader = givenReader || openReader();
+  const { games, packTabs } = await readStatusTabs(reader, gameIds ? new Set(gameIds.map(Number)) : null);
+  const summary = { games: 0, packs: 0, sources: 0, failed: 0 };
+  for (const { row, sheetGame } of games) {
+    const parsed = packTabs.get(sheetGame.key)?.parsed;
+    if (!parsed) continue;
+    try {
+      // The uid read also readies the shared pack tables before an idpass save holds them.
+      const uid = await getGamelistPacks(row.id);
+      const uidFills = gameinfoSheetDetailFills(uid.currencies, parsed, "uid");
+      const idpass = await getGameinfoModeData(row.id, "idpass");
+      const idpassFills = gameinfoSheetDetailFills(idpass.packs.currencies, parsed, "idpass");
+      const count = uidFills.length + idpassFills.length;
+      // The bracket on the sheet's table title, for a mode with packs and none set.
+      const settings = await getGamelistGameSettings(row.id);
+      const sources = {};
+      if (parsed.sources?.uid && !settings.sourceUid && gameinfoHasRealPacks(uid.currencies)) sources.sourceUid = parsed.sources.uid;
+      if (parsed.sources?.idpass && !settings.sourceIdpass && gameinfoHasRealPacks(idpass.packs.currencies)) sources.sourceIdpass = parsed.sources.idpass;
+      const sourceCount = Object.keys(sources).length;
+      if (!count && !sourceCount) continue;
+      log(`${row.game}: UID ${uidFills.length} แพ็ค, ID-PASS ${idpassFills.length} แพ็ค${sourceCount ? `, แหล่งที่มา ${Object.values(sources).join(" | ")}` : ""}`);
+      summary.games += 1;
+      summary.packs += count;
+      summary.sources += sourceCount;
+      if (!apply) continue;
+      if (sourceCount) await saveGamelistGameSettings(row.id, sources, actor);
+      if (uidFills.length) {
+        await saveGamelistPacks(row.id, {
+          currencies: applyGameinfoSheetDetailFills(uid.currencies, uidFills),
+          computedColumns: uid.computedColumns,
+          costProfiles: uid.costProfiles,
+          actor,
+          source: "import",
+          expectedVersion: uid.version,
+        });
+      }
+      if (idpassFills.length) {
+        await updateGameinfoModeData(row.id, "idpass", (data) => ({
+          ...data,
+          packs: { ...data.packs, currencies: applyGameinfoSheetDetailFills(data.packs.currencies, gameinfoSheetDetailFills(data.packs.currencies, parsed, "idpass")) },
+        }), { area: "pack", actor });
+      }
+    } catch (error) {
+      summary.failed += 1;
+      log(`${row.game}: ไม่สำเร็จ — ${error instanceof Error ? error.message : error}`);
+    }
+  }
+  return summary;
 }
 
 /**

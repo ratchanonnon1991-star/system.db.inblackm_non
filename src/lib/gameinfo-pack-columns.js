@@ -4,7 +4,9 @@ export const GAMEINFO_PACK_BASE_COLUMNS = [
   { id: "serviceEnabled", label: "สถานะ", field: "serviceEnabled", track: "70px", minWidth: 70, maxWidth: 90 },
   { id: "image", label: "รูป", field: "image", track: "40px", minWidth: 40, maxWidth: 56 },
   { id: "name", label: "ชื่อ pack", field: "name", track: "minmax(110px, 1.6fr)", minWidth: 140, maxWidth: 360, required: true },
+  { id: "amountReceived", label: "จำนวนที่ได้", field: "amountReceived", track: "minmax(70px, 0.7fr)", minWidth: 100, maxWidth: 160 },
   { id: "price", label: "ราคา", field: "price", track: "minmax(60px, 0.7fr)", minWidth: 80, maxWidth: 140, required: true },
+  { id: "amountBeforeFee", label: "ยอดที่กด (ก่อน fee)", field: "amountBeforeFee", track: "minmax(70px, 0.8fr)", minWidth: 130, maxWidth: 180 },
   {
     id: "amountChargedFee",
     label: "ยอดที่กด + fee",
@@ -32,6 +34,8 @@ export const GAMEINFO_PACK_BASE_COLUMNS = [
     maxWidth: 720,
   },
   { id: "country", label: "ประเทศ", field: "country", track: "minmax(80px, 0.8fr)", minWidth: 100, maxWidth: 220, required: true },
+  { id: "priceUsd", label: "USD", field: "priceUsd", track: "minmax(60px, 0.6fr)", minWidth: 80, maxWidth: 140 },
+  { id: "link", label: "ลิงก์", field: "link", track: "minmax(70px, 0.6fr)", minWidth: 90, maxWidth: 320 },
 ];
 
 /* The status column doubles as the row-select checkbox, so it stays pinned
@@ -44,8 +48,12 @@ export function isGameinfoPackColumnPinned(column) {
 
 export const GAMEINFO_PACK_SYMBOLS = ["", "$", "฿", "%"];
 
+// The source sheet keeps these beside the selling price, in this order. They
+// are columns people made, so they are found by name, wherever they were added.
+const COLUMNS_AFTER_PRICE = ["ราคาusd (page)", "ราคาขาย(kaleoz)", "ราคาrussia"];
+
 export function buildGameinfoPackColumns(computedColumns = []) {
-  return [
+  const columns = [
     ...GAMEINFO_PACK_BASE_COLUMNS.map((column) => ({ ...column, kind: "base" })),
     ...(computedColumns || []).filter((computed) => computed.kind !== "market" || computed.enabled !== false).map((computed) => ({
       id: `computed:${computed.key}`,
@@ -59,6 +67,12 @@ export function buildGameinfoPackColumns(computedColumns = []) {
       symbol: typeof computed.symbol === "string" ? computed.symbol.slice(0, 24) : "",
     })),
   ];
+  const afterPrice = COLUMNS_AFTER_PRICE
+    .map((label) => columns.find((column) => column.kind === "computed" && String(column.label ?? "").trim().toLowerCase() === label))
+    .filter(Boolean);
+  const rest = columns.filter((column) => !afterPrice.includes(column));
+  rest.splice(rest.findIndex((column) => column.id === "price") + 1, 0, ...afterPrice);
+  return rest;
 }
 
 export function gameinfoPackColumnWidth(column, values = []) {

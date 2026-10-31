@@ -45,11 +45,15 @@ check(
     "serviceEnabled",
     "image",
     "name",
+    "amountReceived",
     "price",
+    "amountBeforeFee",
     "amountChargedFee",
     "channelsMain",
     "channelsSecondary",
     "country",
+    "priceUsd",
+    "link",
     "computed:profit",
   ]
 );
@@ -68,10 +72,14 @@ check("layout pins the service status column to the front", normalized.order, [
   "price",
   "image",
   "name",
+  "amountReceived",
+  "amountBeforeFee",
   "amountChargedFee",
   "channelsMain",
   "channelsSecondary",
   "country",
+  "priceUsd",
+  "link",
 ]);
 check("layout drops unknown, duplicate, and hidden status ids", normalized.hidden, ["country"]);
 check("layout defaults to no row filters", normalized.filters, []);
@@ -106,7 +114,7 @@ const stampedLayout = normalizeGameinfoPackLayout(
   },
   stampedColumns
 );
-check("a preset hides columns registered after it was saved", stampedLayout.hidden, ["computed:late"]);
+check("a preset hides columns registered after it was saved", stampedLayout.hidden, ["amountReceived", "amountBeforeFee", "priceUsd", "link", "computed:late"]);
 check(
   "a preset still shows every column it was saved with",
   stampedLayout.order.filter((id) => !stampedLayout.hidden.includes(id)).includes("computed:old"),
@@ -190,11 +198,15 @@ check(
     "computed:profit",
     "image",
     "name",
+    "amountReceived",
+    "amountBeforeFee",
     "amountChargedFee",
     "channelsMain",
     "price",
     "channelsSecondary",
     "country",
+    "priceUsd",
+    "link",
   ]
 );
 
@@ -473,6 +485,17 @@ check(
   120
 );
 check("and the cap is still a cap", GAMEINFO_PACK_COLUMN_LIMIT > GAMEDB_QUERY_COLUMN_LIMIT, true);
+
+check(
+  "the sheet's price columns follow the price, in the sheet's order",
+  buildGameinfoPackColumns([
+    { key: "cost", label: "ต้นทุน", formula: "1" },
+    { key: "ru", label: "ราคาRussia", formula: "" },
+    { key: "kz", label: " ราคาขาย(KALEOZ) ", formula: "" },
+    { key: "usd", label: "ราคาUSD (PAGE)", formula: "1" },
+  ]).map((column) => column.id).slice(3, 8),
+  ["amountReceived", "price", "computed:usd", "computed:kz", "computed:ru"]
+);
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);

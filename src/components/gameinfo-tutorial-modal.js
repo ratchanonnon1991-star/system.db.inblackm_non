@@ -117,7 +117,6 @@ export default function GameinfoTutorialButton({
   hasData,
   disabled,
   variant = "tutorial",
-  autoOpen = false,
   dataMode = "uid",
   compact = false,
   className = "",
@@ -127,11 +126,6 @@ export default function GameinfoTutorialButton({
   const isVpn = variant === "vpn";
   const [open, setOpen] = useState(false);
   const buttonLabel = isWarning ? "ข้อควรระวัง" : isVpn ? "โน้ต VPN" : "Tutorial";
-  useEffect(() => {
-    if (!isWarning || !autoOpen || !hasData) return;
-    const timer = window.setTimeout(() => setOpen(true), 0);
-    return () => window.clearTimeout(timer);
-  }, [autoOpen, hasData, isWarning, gameId]);
 
   // View-only (role "user") gets nothing to click if there's no tutorial to
   // show — editable users always keep the button so they can add one.

@@ -27,6 +27,8 @@ import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
 import GameinfoFormulaMemory from "./gameinfo-formula-memory";
 import GameinfoBulkFormulaToolbar from "./gameinfo-bulk-formula-toolbar";
 import GameinfoFormulaVariablesButton, { GameinfoFormulaVariableSummary } from "./gameinfo-formula-variables";
+import GameinfoCostRates from "./gameinfo-cost-rates";
+import GameinfoPackSource from "./gameinfo-pack-source";
 import GameinfoRatePanel, { useGameinfoRates } from "./gameinfo-rate-panel";
 import GameinfoMarketManager from "./gameinfo-market-manager";
 import { GameinfoManageSection } from "./gameinfo-manage-section";
@@ -850,6 +852,13 @@ export default function GameinfoPackEditor({
           </span>
         </summary>
         <div className="space-y-4 rounded-b-2xl border-t border-linear-hairline bg-linear-surface-2 p-4 sm:p-5">
+      <GameinfoCostRates
+        currencies={currencies}
+        costProfiles={costProfiles}
+        formulaVariables={formulaVariables}
+        externalValues={rateState.externalValues}
+        other={game.costRatesOther}
+      />
       <section className="rounded-lg border border-linear-hairline bg-linear-surface-1 p-4">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-semibold text-linear-ink">นำเข้าแพ็กจาก CSV (เกมนี้)</h2>
@@ -1103,6 +1112,7 @@ export default function GameinfoPackEditor({
           </>
         )}
       >
+      <GameinfoPackSource gameId={game.id} dataMode={dataMode} initial={game.sourceNote} />
       <div className="mb-4 flex flex-nowrap items-center gap-2 overflow-x-auto rounded-xl bg-linear-surface-2 p-2.5">
         <div className="flex items-center gap-2 text-xs font-medium text-linear-ink-muted">
           <Languages size={14} className="text-linear-primary" />
@@ -2018,6 +2028,8 @@ function PackEditorColumn({
   }
 
   const isName = column.id === "name";
+  // Free text, unlike the numeric fields below: a URL, or "236155 X 2".
+  const isText = column.id === "link" || column.id === "amountBeforeFee";
   const value = isName
     ? getGameinfoPackName(pack, packNameLanguageId)
     : pack[column.field] ?? "";
@@ -2044,13 +2056,12 @@ function PackEditorColumn({
     >
       <input
         autoFocus
-        inputMode={isName ? undefined : "decimal"}
+        inputMode={isName || isText ? undefined : "decimal"}
         value={value}
-        onChange={(event) =>
-          isName
-            ? updateName(event.target.value)
-            : onUpdate({ [column.field]: cleanGameinfoNumericInput(event.target.value) })
-        }
+        onChange={(event) => {
+          if (isName) updateName(event.target.value);
+          else onUpdate({ [column.field]: isText ? event.target.value : cleanGameinfoNumericInput(event.target.value) });
+        }}
         onBlur={
           isName
             ? (event) => {
@@ -2058,7 +2069,7 @@ function PackEditorColumn({
                 if (normalized !== event.target.value) updateName(normalized);
               }
             : (event) => {
-                const normalized = normalizeGameinfoNumericInput(event.target.value);
+                const normalized = isText ? event.target.value.trim() : normalizeGameinfoNumericInput(event.target.value);
                 if (normalized !== event.target.value) onUpdate({ [column.field]: normalized });
               }
         }

@@ -69,6 +69,16 @@ export function sanitizeGameinfoPack(pack) {
   };
   const localizedNames = sanitizeGameinfoPackLocalizedNames(source.localizedNames);
   if (Object.keys(localizedNames).length) result.localizedNames = localizedNames;
+  // Only when set, so packs without them save exactly as they did. As written:
+  // the sheet has "236155 X 2" before the fee as well as plain numbers.
+  const amountBeforeFee = text(source.amountBeforeFee).trim().slice(0, 120);
+  const amountReceived = normalizeGameinfoNumericInput(source.amountReceived);
+  const priceUsd = normalizeGameinfoNumericInput(source.priceUsd);
+  const link = text(source.link).trim().slice(0, 2048);
+  if (amountBeforeFee) result.amountBeforeFee = amountBeforeFee;
+  if (amountReceived) result.amountReceived = amountReceived;
+  if (priceUsd) result.priceUsd = priceUsd;
+  if (link) result.link = link;
   return result;
 }
 

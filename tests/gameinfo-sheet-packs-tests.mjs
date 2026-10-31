@@ -3,12 +3,14 @@ import { generateKeyPairSync } from "node:crypto";
 import { createGoogleReader } from "../src/server/google-sheets.js";
 import {
   addGameinfoSheetPacks,
+  applyGameinfoSheetDetailFills,
   applyGameinfoSheetStatusChanges,
   countGameinfoSheetPacks,
   findGameinfoSheetPackHeader,
   GAMEINFO_SHEET_COST_FORMULA,
   gameinfoSheetCostFormulaColumns,
   gameinfoSheetCostProfiles,
+  gameinfoSheetDetailFills,
   gameinfoSheetMissingPacks,
   gameinfoSheetPackKey,
   gameinfoSheetPackTree,
@@ -338,5 +340,49 @@ const colorReader = createGoogleReader({
 const colors = await colorReader.columnColors("sheet", [{ tab: "U.PES", cols: [3, 27] }]);
 check(new URL(colorUrls[0]).searchParams.getAll("ranges").join() === "'U.PES'!D:D,'U.PES'!AB:AB", "columns are asked for as A1 ranges");
 check(colors["U.PES"][3][0] === null && colors["U.PES"][3][1].red === 1 && colors["U.PES"][27][0].green === 1, "colours come back by tab, column and row");
+
+// The UID table of U.LOVE AND DEEPSPACE: the name, then the count, under one header.
+const loveRows = [
+  ["1.Love and Deepspace UID - ( Page / Market Place ) - ช่องทางหลัก"],
+  ["ราคาขาย", "USDT", "KALEOZ", "Russia", "Crystals\nที่ได้", "Crystals\nที่ได้", "MMK\nที่กด", "MMK\nรวม Fee", "LINK", "ช่องทาง", "ระบบการเติม", "KALEOZ 5%", "ต้นทุน"],
+  ["20", "0.59", "20", "18.50", "60 Crystals", "60", "1,905", "2,000", "https://www.codashop.com/my-mm/love", "Wavepay", "Bot Auto", "19.00", "14.11"],
+  ["4000", "118.61", "4100", "4020", "6480 Crystals+1600 Diamonds X 2", "16160", "236155 X 2", "495926", "https://www.codashop.com/my-mm/love", "Wavepay", "Bot Auto", "3895.00", "3499.96"],
+  ["95", "2.82", "88.5", "87.50", "Aurum Pass (30 Days)", "", "10,476", "11,000", "", "Wavepay", "Bot Auto", "84.08", "77.63"],
+];
+const lovePacks = parseGameinfoSheetPackTab(loveRows).currencies[0].categories[0].packs;
+check(lovePacks[0].name === "60 Crystals" && lovePacks[0].amountChargedFee === "2000", "the first of two like headers is the name; the fee total stays the charge");
+check(lovePacks[0].amountReceived === "60" && lovePacks[0].amountBeforeFee === "1905" && lovePacks[0].link === "https://www.codashop.com/my-mm/love", "the count, the pre-fee amount and the link come with a pack");
+check(lovePacks[1].amountBeforeFee === "236155 X 2", "a pre-fee amount the sheet writes as a sum stays as written");
+check(lovePacks[2].amountReceived === "" && lovePacks[2].link === "", "a blank cell gives a blank field");
+check(parseGameinfoSheetPackTab([["ราคาขาย", "Diamonds ที่กด", "ช่องทาง"], ["30", "86", "https://x.example/a"]]).currencies[0].categories[0].packs[0].amountReceived === "86", "a bare count under the pack column is the count");
+
+// The ID-PASS table of the same tab: bare currencies, and a wallet column with no header.
+const idpassRows = [
+  ["2.Love and Deepspace ID - PASS ( PAGE / Kaleoz / Market Place )"],
+  ["ราคาขาย", "USDT", "Kaleoz", "Russia", "USDT", "PACK", "", "", "USD", "NGN", "ต้นทุน\n( cost )", "กำไร THB\n( profit THB )", "กำไร %"],
+  ["30", "0.84", "29", "28", "0.84", "Association Special LV.10", "", "GOOGLE NGN", "1", "1070", "25.72", "4.28", "14.27"],
+];
+const idpassPack = parseGameinfoSheetPackTab(idpassRows).currencies[0].categories[0].packs[0];
+check(idpassPack.mode === "idpass" && idpassPack.amountChargedFee === "1070" && idpassPack.costCurrency === "NGN" && idpassPack.cost === "25.72", "a bare currency before the cost is the charge, and ต้นทุน (cost) is the cost");
+check(idpassPack.channelsMain[0] === "GOOGLE NGN" && idpassPack.priceUsd === "1", "the wallet under no header is read, and the USD price with it");
+check(parseGameinfoSheetPackTab(loveRows).currencies[0].categories[0].packs[0].channelsMain[0] === "Wavepay", "a named ช่องทาง column still wins");
+
+const bothTitles = parseGameinfoSheetPackTab([...loveRows, ...idpassRows]);
+check(bothTitles.sources.uid === "Page / Market Place" && bothTitles.sources.idpass === "PAGE / Kaleoz / Market Place", "each mode takes the bracket of its table title, without what follows it");
+check(!parseGameinfoSheetPackTab([["ราคาขาย", "Diamonds ที่กด"], ["30", "86"]]).sources.uid, "a tab with no title has no source");
+const noBracket = parseGameinfoSheetPackTab([["2.Game ID - PASS"], ...loveRows.slice(1, 3)]);
+check(noBracket.sources.idpass === undefined, "a title with no bracket leaves it blank");
+
+const detailParsed = parseGameinfoSheetPackTab(loveRows);
+const detailTree = [{ id: "c", categories: [{ id: "k", packs: [
+  { id: "a", name: " 60 crystals ", amountReceived: "", amountBeforeFee: "", link: "" },
+  { id: "b", name: "Aurum Pass (30 Days)", amountBeforeFee: "แก้เอง", amountReceived: "", link: "" },
+  { id: "c", name: "ไม่มีในชีต" },
+] }] }];
+const detailFills = gameinfoSheetDetailFills(detailTree, detailParsed, "uid");
+check(detailFills.length === 1 && detailFills[0].packId === "a" && detailFills[0].patch.amountBeforeFee === "1905", "packs match by name and a pack with nothing new is left out");
+check(gameinfoSheetDetailFills(detailTree, detailParsed, "idpass").length === 0, "a uid table fills no idpass pack");
+const detailApplied = applyGameinfoSheetDetailFills(detailTree, detailFills)[0].categories[0].packs;
+check(detailApplied[0].link === "https://www.codashop.com/my-mm/love" && detailApplied[1].amountBeforeFee === "แก้เอง" && gameinfoSheetDetailFills(applyGameinfoSheetDetailFills(detailTree, detailFills), detailParsed, "uid").length === 0, "what a pack has stays, and a second run finds nothing");
 
 console.log(`gameinfo-sheet-packs: ${passed} passed`);

@@ -30,7 +30,7 @@ assert.ok(table.includes("<GameinfoDetailsButton") && table.includes("hasVpnNote
 assert.ok(manager.includes('aria-checked={draft.vpn === "YES"}') && manager.includes("<GameinfoDetailsButton"), "detail manager separates VPN status from grouped game details");
 assert.ok(modal.includes('isVpn ? "โน้ต VPN"'), "VPN note has its own button label");
 assert.ok(modal.includes('label: "วิธีเติม"') && modal.includes('label: "VPN"'), "game details modal exposes tutorial and VPN tabs");
-assert.ok(!modal.includes("sessionStorage"), "warning opens on each game page visit");
-assert.match(gameView, /variant="warning"\s+autoOpen/, "game detail opens warnings whenever they exist");
+assert.ok(!modal.includes("autoOpen"), "no popup opens by itself");
+assert.match(gameView, /variant="warning"\s+dataMode/, "game detail opens warnings from the strip's button only");
 
 console.log("9 passed");

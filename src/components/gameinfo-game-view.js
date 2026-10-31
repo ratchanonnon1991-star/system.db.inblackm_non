@@ -18,6 +18,7 @@ import {
   matchesGameinfoPackFilters,
 } from "@/lib/gameinfo-pack-columns";
 import { getGameinfoFormulaDisplay } from "@/lib/gameinfo-formula-overrides";
+import { gameinfoChargeUnit } from "@/lib/gameinfo-channel-costs";
 import { filterGameinfoColumnsForRole } from "@/lib/gameinfo-column-roles";
 import {
   evaluateGameinfoComputedColumn,
@@ -30,6 +31,7 @@ import { isGameinfoBotAuto } from "@/lib/gameinfo-dashboard";
 import { gameinfoGameColor, gameinfoGameInitials } from "@/lib/gameinfo-game-initials";
 import { GAMEINFO_PACK_STATUS_LABELS, gameinfoPackStatus } from "@/lib/gameinfo-pack-model";
 import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
+import GameinfoCostRates from "./gameinfo-cost-rates";
 import { useGameinfoRates } from "./gameinfo-rate-panel";
 import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoTutorialButton, { GameinfoDetailsButton } from "./gameinfo-tutorial-modal";
@@ -64,7 +66,7 @@ const PACK_STATUS_TONES = {
   expired: { text: "text-amber-700 dark:text-amber-400", dot: "bg-amber-500" },
 };
 
-export default function GameinfoGameView({ row, currencies, computedColumns = NO_COLUMNS, costProfiles = [], formulaVariables = [], userId, dataMode = "uid", hiddenColumnKeys = [], editHref = null, stock = NO_STOCK, stockLinks = false }) {
+export default function GameinfoGameView({ row, currencies, computedColumns = NO_COLUMNS, costProfiles = [], formulaVariables = [], userId, dataMode = "uid", hiddenColumnKeys = [], editHref = null, stock = NO_STOCK, stockLinks = false, costRatesOther = null }) {
   const [formulaMode, setFormulaMode] = useState("result");
   const rateState = useGameinfoRates();
   // Same field set the pack editor's formulas can reference (see
@@ -131,13 +133,19 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
   const currencyList = currencies || [];
   const [currencyId, setCurrencyId] = useState(currencyList[0]?.id);
   const activeCurrency = currencyList.find((currency) => currency.id === currencyId) || currencyList[0];
+  // The sheet heads these with the currency ("MMK ที่กด", "MMK รวม Fee"); so
+  // does this table when the tab's packs are all charged in one.
+  const chargeUnit = gameinfoChargeUnit(activeCurrency, costProfiles);
+  const withChargeUnit = (columns) => (chargeUnit ? columns.map((column) => {
+    if (column.id === "amountBeforeFee") return { ...column, label: `${chargeUnit} ที่กด` };
+    return column.id === "amountChargedFee" ? { ...column, label: `${chargeUnit} รวม Fee` } : column;
+  }) : columns);
 
   return (
     <div className="flex flex-col gap-5">
       <GameHero row={row} dataMode={dataMode} editHref={editHref} />
 
-      {/* The full warning still opens by itself; the strip keeps it one
-          click away after it has been closed. */}
+      {/* The full warning opens only from this strip's button. */}
       {row.hasWarning ? (
         <div role="alert" className="flex flex-wrap items-center gap-3 rounded-[14px] bg-[#D90005] px-[18px] py-3.5 text-white shadow-[0_12px_24px_-16px_rgba(143,0,25,0.6)]">
           <TriangleAlert size={22} strokeWidth={2.4} aria-hidden="true" className="shrink-0" />
@@ -148,7 +156,6 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
             editable={false}
             hasData={row.hasWarning}
             variant="warning"
-            autoOpen
             dataMode={dataMode}
             className="ml-auto h-9 rounded-full bg-white px-4 text-[13px] font-extrabold text-[#D90005] transition hover:bg-white/90"
           >
@@ -166,6 +173,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
                 {dataMode === "idpass" ? "ID-PASS" : "UID"} {row.game}
                 {activeCurrency ? ` — ${activeCurrency.name || "(ไม่มีชื่อสกุลเงิน)"}` : ""}
               </span>
+              {row.sourceNote ? <span className="text-[13px] text-linear-ink-tertiary">แหล่งที่มา: {row.sourceNote}</span> : null}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {currencyList.length > 1 ? (
@@ -221,6 +229,15 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
           </div>
           <ChannelSummary channels={row.channels} botManual={row.botManual} />
           <StockSummary accounts={stock.accounts} links={stockLinks} />
+          {costRatesOther ? (
+            <GameinfoCostRates
+              currencies={currencies}
+              costProfiles={costProfiles}
+              formulaVariables={formulaVariables}
+              externalValues={rateState.externalValues}
+              other={costRatesOther}
+            />
+          ) : null}
         </div>
         {!activeCurrency ? (
           <p className="border-t border-linear-hairline p-8 text-center text-linear-ink-tertiary">
@@ -233,8 +250,8 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
             gameId={row.id}
             currency={activeCurrency}
             game={formulaGame}
-            columns={packLayout.visibleColumns}
-            allColumns={packLayout.orderedColumns}
+            columns={withChargeUnit(packLayout.visibleColumns)}
+            allColumns={withChargeUnit(packLayout.orderedColumns)}
             filters={packLayout.layout.filters}
             formulaMode={formulaMode}
             costProfiles={costProfiles}
@@ -695,6 +712,14 @@ function PackViewCell({
   }
 
   if (column.id === "name") return <PackNameCell pack={pack} />;
+  if (column.id === "link") {
+    const href = /^https?:\/\//i.test(pack.link || "") ? pack.link : /^www\./i.test(pack.link || "") ? `https://${pack.link}` : "";
+    return (
+      <td className="max-w-[220px] truncate px-3 py-2.5 first:pl-5 text-linear-ink-muted">
+        {href ? <a href={href} target="_blank" rel="noreferrer" title={pack.link} className="font-bold text-[#D90005] underline dark:text-red-400">เปิดลิงก์</a> : pack.link || "-"}
+      </td>
+    );
+  }
   const raw = pack[column.field];
   const value = Array.isArray(raw) ? (raw.length ? raw.join(", ") : "-") : raw || "-";
   // The pack name and the price are what a reader scans down the table for.

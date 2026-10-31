@@ -3,6 +3,9 @@
 // source sheet works it out. This gives each wallet a cost profile at its rate,
 // points every pack at its wallet's profile, and puts the sheet's own ต้นทุน
 // formula on the game, so cost = amount × that wallet's rate.
+import { evaluateGameinfoPackCost, getGameinfoCostProfile } from "@/lib/gameinfo-cost-profiles";
+import { resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
+import { evaluateGameinfoFormulaVariable } from "@/lib/gameinfo-formula-variables";
 import { gameinfoSheetCostFormulaColumns } from "@/lib/gameinfo-sheet-packs";
 
 // "ITUNES (USD)" and "ITUNES(USD)" are one wallet.
@@ -13,26 +16,30 @@ export function gameinfoChannelKey(channel) {
 /**
  * "GOOGLE NGN=0.024037:NGN" → { channel, rate, currency }. The currency is
  * what the amount is in (shown on the profile); the rate is THB per unit.
+ * "GOOGLE NGN=[Rate_NGN]:NGN" follows a ตัวแปรผสม instead, so one edit to the
+ * variable moves the cost of every pack on that wallet. A rate kept the other
+ * way up, as MMK to the baht is, reads "WAVEPAY=1/[Rate_MMK]:MMK".
  */
 export function parseGameinfoChannelRate(text) {
-  const match = /^(.+?)=([\d.]+)(?::([A-Za-z]{2,12}))?$/.exec(String(text ?? "").trim());
-  if (!match || !(Number(match[2]) > 0)) throw new Error(`อ่านเรทไม่ออก: "${text}" (รูปแบบ: ช่องทาง=เรท:สกุลเงิน)`);
-  return { channel: match[1].trim(), rate: match[2], currency: (match[3] || "").toUpperCase() };
+  const match = /^(.+?)=([^=:]*\[[^[\]]+\][^=:]*|[\d.]+)(?::([A-Za-z]{2,12}))?$/.exec(String(text ?? "").trim());
+  const variable = match?.[2].includes("[") ? match[2] : "";
+  if (!match || !(variable || Number(match[2]) > 0)) throw new Error(`อ่านเรทไม่ออก: "${text}" (รูปแบบ: ช่องทาง=เรท:สกุลเงิน)`);
+  return { channel: match[1].trim(), rate: variable ? "" : match[2], rateFormula: variable, currency: (match[3] || "").toUpperCase() };
 }
 
 /**
  * The game's packs with a profile per given wallet and each pack on its
  * wallet's profile. Packs on a wallet with no rate keep what they had and are
  * listed in `unmatched`. Profiles the game already has stay; one for the same
- * wallet is replaced.
+ * wallet is replaced. `formulaVariables` only give `assigned` its rates.
  */
-export function applyGameinfoChannelCosts(packs, rates, updatedAt = new Date().toISOString()) {
-  const profiles = rates.map(({ channel, rate, currency }) => ({
+export function applyGameinfoChannelCosts(packs, rates, updatedAt = new Date().toISOString(), formulaVariables = []) {
+  const profiles = rates.map(({ channel, rate, rateFormula = "", currency }) => ({
     id: `sheet-${gameinfoChannelKey(channel).replace(/[^a-z0-9]+/g, "-")}`,
     label: `${channel} → THB (จากชีต)`,
     inputCurrency: currency.slice(0, 12),
     baseValue: String(rate),
-    rateFormula: "",
+    rateFormula,
     updatedAt,
     updatedBy: null,
   }));
@@ -50,7 +57,8 @@ export function applyGameinfoChannelCosts(packs, rates, updatedAt = new Date().t
           unmatched.push({ name: pack.name, channel });
           return pack;
         }
-        assigned.push({ name: pack.name, channel, amount: pack.amountChargedFee, rate: Number(profile.baseValue) });
+        const { rate } = evaluateGameinfoPackCost(pack, profile, (label) => evaluateGameinfoFormulaVariable(formulaVariables, label));
+        assigned.push({ name: pack.name, channel, amount: pack.amountChargedFee, rate });
         return { ...pack, costProfileId: profile.id };
       }),
     })),
@@ -62,9 +70,74 @@ export function applyGameinfoChannelCosts(packs, rates, updatedAt = new Date().t
       ...packs,
       currencies,
       costProfiles,
-      computedColumns: gameinfoSheetCostFormulaColumns(packs.computedColumns, costProfiles) || packs.computedColumns,
+      // A rate set here has to reach the cost, whatever formula the game had.
+      computedColumns: gameinfoSheetCostFormulaColumns(packs.computedColumns, costProfiles, { replace: true }) || packs.computedColumns,
     },
     assigned,
     unmatched,
   };
+}
+
+/** The one currency a tab's packs are charged in ("MMK"), or "" for none or several. */
+export function gameinfoChargeUnit(currency, costProfiles) {
+  const units = new Set((currency?.categories || [])
+    .flatMap((category) => category.packs || [])
+    .map((pack) => getGameinfoCostProfile(costProfiles, pack.costProfileId)?.inputCurrency)
+    .filter(Boolean));
+  return units.size === 1 ? [...units][0] : "";
+}
+
+/** The ตัวแปรผสม a rate formula reads: "1/[Rate_MMK]" → ["Rate_MMK"]. */
+export function gameinfoRateVariables(formula) {
+  return [...String(formula ?? "").matchAll(/\[([^[\]]+)\]/g)].map((match) => match[1]);
+}
+
+/** Only what the rate rows read from a mode's packs, to keep the page light. */
+export function gameinfoCostRatePacks({ currencies, costProfiles } = {}) {
+  const packs = (currencies || [])
+    .flatMap((currency) => (currency.categories || []).flatMap((category) => category.packs || []))
+    .filter((pack) => pack.costProfileId)
+    .map(({ channelsMain, costProfileId, amountChargedFee }) => ({ channelsMain, costProfileId, amountChargedFee }));
+  return { currencies: [{ categories: [{ packs }] }], costProfiles: costProfiles || [] };
+}
+
+/**
+ * One row per cost profile the game's packs are on: the wallet, the rate it
+ * works out to now, where that rate comes from and when it last changed.
+ * `other` is the game's other mode: a game's rates are the game's, as on its
+ * sheet tab, so both modes' wallets show whichever mode is open.
+ */
+export function gameinfoCostRateRows(currencies, costProfiles, { formulaVariables = [], externalValues = {}, other = null } = {}) {
+  const rows = new Map();
+  for (const source of [{ currencies, costProfiles }, other]) {
+    const context = { costProfiles: source?.costProfiles, formulaVariables, externalValues };
+    for (const currency of source?.currencies || []) {
+      for (const category of currency.categories || []) {
+        for (const pack of category.packs || []) {
+          const profile = getGameinfoCostProfile(source.costProfiles, pack.costProfileId);
+          if (!profile) continue;
+          const row = rows.get(profile.id);
+          if (row) {
+            row.packs += 1;
+            continue;
+          }
+          const formula = String(profile.rateFormula || "").trim();
+          const variables = gameinfoRateVariables(formula).map((name) => (formulaVariables || []).find((item) => item.name === name)).filter(Boolean);
+          const direct = `[${variables[0]?.name}]` === formula;
+          rows.set(profile.id, {
+            id: profile.id,
+            channel: pack.channelsMain?.[0] || profile.label,
+            currency: profile.inputCurrency || "",
+            rate: resolveGameinfoField(pack, {}, "อัตราต้นทุน", context),
+            source: direct
+              ? variables[0].formula || variables[0].name
+              : formula.replace(/\[([^[\]]+)\]/g, (text, name) => variables.find((item) => item.name === name)?.value || text) || "เรทคงที่",
+            updatedAt: variables[0]?.updatedAt || profile.updatedAt || "",
+            packs: 1,
+          });
+        }
+      }
+    }
+  }
+  return [...rows.values()];
 }
