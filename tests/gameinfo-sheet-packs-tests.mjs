@@ -367,6 +367,12 @@ check(idpassPack.mode === "idpass" && idpassPack.amountChargedFee === "1070" && 
 check(idpassPack.channelsMain[0] === "GOOGLE NGN" && idpassPack.priceUsd === "1", "the wallet under no header is read, and the USD price with it");
 check(parseGameinfoSheetPackTab(loveRows).currencies[0].categories[0].packs[0].channelsMain[0] === "Wavepay", "a named ช่องทาง column still wins");
 
+const bothTitles = parseGameinfoSheetPackTab([...loveRows, ...idpassRows]);
+check(bothTitles.sources.uid === "Page / Market Place" && bothTitles.sources.idpass === "PAGE / Kaleoz / Market Place", "each mode takes the bracket of its table title, without what follows it");
+check(!parseGameinfoSheetPackTab([["ราคาขาย", "Diamonds ที่กด"], ["30", "86"]]).sources.uid, "a tab with no title has no source");
+const noBracket = parseGameinfoSheetPackTab([["2.Game ID - PASS"], ...loveRows.slice(1, 3)]);
+check(noBracket.sources.idpass === undefined, "a title with no bracket leaves it blank");
+
 const detailParsed = parseGameinfoSheetPackTab(loveRows);
 const detailTree = [{ id: "c", categories: [{ id: "k", packs: [
   { id: "a", name: " 60 crystals ", amountReceived: "", amountBeforeFee: "", link: "" },

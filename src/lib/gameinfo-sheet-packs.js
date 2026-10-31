@@ -218,8 +218,14 @@ export function parseGameinfoSheetPackTab(rows) {
   // Which GameInfo mode the packs below belong to, from the tab's section
   // titles ("1.… UID - …", "2.… ID - PASS …"); a tab without them is UID.
   let mode = "uid";
+  // The bracket of each mode's first title: "… UID - ( Page / Market Place ) - …".
+  const sources = {};
   for (const [rowIndex, row] of (rows || []).entries()) {
-    mode = sectionMode(clean((row || []).find((value) => clean(value)))) || mode;
+    const firstCell = clean((row || []).find((value) => clean(value)));
+    const titleMode = sectionMode(firstCell);
+    mode = titleMode || mode;
+    const source = (row || []).filter((value) => clean(value)).length === 1 ? /\(([^()]+)\)/.exec(firstCell)?.[1].trim() : "";
+    if (titleMode && source && !sources[titleMode]) sources[titleMode] = source;
     const next = readHeader(row);
     if (next) {
       // A table we cannot read must not be read with the previous table's columns.
@@ -299,7 +305,7 @@ export function parseGameinfoSheetPackTab(rows) {
     }
     currencies.splice(currencies.indexOf(unnamed), 1);
   }
-  return currencies.length ? { currencies } : null;
+  return currencies.length ? { currencies, sources } : null;
 }
 
 export function countGameinfoSheetPacks(parsed) {

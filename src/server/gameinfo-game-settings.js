@@ -1,5 +1,6 @@
 // Per-game settings GameInfo owns itself: which game on the TopUp website it
-// is, and its test accounts. (Importance is game_list.rank_stars.)
+// is, where each mode's packs are sold from, and its test accounts.
+// (Importance is game_list.rank_stars.)
 // Everything the website owns (Web ON, customer fields, web prices) is read
 // from the website's own database instead — see gameinfo-topup-web.js.
 import { getPoolForConnection } from "@/lib/db";
@@ -35,6 +36,8 @@ function ensureSchema(connection) {
           updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
+      await client.query(`ALTER TABLE gamelist_game_settings ADD COLUMN IF NOT EXISTS source_uid TEXT NOT NULL DEFAULT ''`);
+      await client.query(`ALTER TABLE gamelist_game_settings ADD COLUMN IF NOT EXISTS source_idpass TEXT NOT NULL DEFAULT ''`);
       await client.query(`
         CREATE TABLE IF NOT EXISTS gamelist_test_accounts (
           id             BIGSERIAL PRIMARY KEY,
@@ -74,18 +77,18 @@ function cleanText(value, maxLength) {
 }
 
 function settingsFromRow(row) {
-  return { topupGameId: row?.topup_game_id || null };
+  return { topupGameId: row?.topup_game_id || null, sourceUid: row?.source_uid || "", sourceIdpass: row?.source_idpass || "" };
 }
 
 export async function getGamelistGameSettings(gameId) {
   const pool = await getReadyPool();
-  const result = await pool.query(`SELECT topup_game_id FROM gamelist_game_settings WHERE game_id = $1`, [gameId]);
+  const result = await pool.query(`SELECT topup_game_id, source_uid, source_idpass FROM gamelist_game_settings WHERE game_id = $1`, [gameId]);
   return settingsFromRow(result.rows[0]);
 }
 
 export async function listGamelistGameSettings() {
   const pool = await getReadyPool();
-  const result = await pool.query(`SELECT game_id, topup_game_id FROM gamelist_game_settings`);
+  const result = await pool.query(`SELECT game_id, topup_game_id, source_uid, source_idpass FROM gamelist_game_settings`);
   return Object.fromEntries(result.rows.map((row) => [row.game_id, settingsFromRow(row)]));
 }
 
@@ -97,15 +100,19 @@ export async function saveGamelistGameSettings(gameId, patch, actor = null, tran
     if (!transactionClient) await client.query("BEGIN");
     const game = await client.query(`SELECT id FROM game_list WHERE id = $1 FOR UPDATE`, [gameId]);
     if (game.rows.length !== 1) throw createHttpError("ไม่พบเกม", 404);
-    const existing = await client.query(`SELECT topup_game_id FROM gamelist_game_settings WHERE game_id = $1`, [gameId]);
+    const existing = await client.query(`SELECT topup_game_id, source_uid, source_idpass FROM gamelist_game_settings WHERE game_id = $1`, [gameId]);
     const before = settingsFromRow(existing.rows[0]);
     const next = { ...before };
     if (Object.hasOwn(patch, "topupGameId")) next.topupGameId = cleanText(patch.topupGameId, 64) || null;
+    if (Object.hasOwn(patch, "sourceUid")) next.sourceUid = cleanText(patch.sourceUid, 200);
+    if (Object.hasOwn(patch, "sourceIdpass")) next.sourceIdpass = cleanText(patch.sourceIdpass, 200);
     await client.query(
-      `INSERT INTO gamelist_game_settings (game_id, topup_game_id, updated_at)
-       VALUES ($1, $2, NOW())
-       ON CONFLICT (game_id) DO UPDATE SET topup_game_id = EXCLUDED.topup_game_id, updated_at = NOW()`,
-      [gameId, next.topupGameId]
+      `INSERT INTO gamelist_game_settings (game_id, topup_game_id, source_uid, source_idpass, updated_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (game_id) DO UPDATE SET
+         topup_game_id = EXCLUDED.topup_game_id, source_uid = EXCLUDED.source_uid,
+         source_idpass = EXCLUDED.source_idpass, updated_at = NOW()`,
+      [gameId, next.topupGameId, next.sourceUid, next.sourceIdpass]
     );
     await recordGameinfoAudit({ gameId, area: "settings", actor, before, after: next, client });
     if (!transactionClient) await client.query("COMMIT");

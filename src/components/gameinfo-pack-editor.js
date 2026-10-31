@@ -28,6 +28,7 @@ import GameinfoFormulaMemory from "./gameinfo-formula-memory";
 import GameinfoBulkFormulaToolbar from "./gameinfo-bulk-formula-toolbar";
 import GameinfoFormulaVariablesButton, { GameinfoFormulaVariableSummary } from "./gameinfo-formula-variables";
 import GameinfoCostRates from "./gameinfo-cost-rates";
+import GameinfoPackSource from "./gameinfo-pack-source";
 import GameinfoRatePanel, { useGameinfoRates } from "./gameinfo-rate-panel";
 import GameinfoMarketManager from "./gameinfo-market-manager";
 import { GameinfoManageSection } from "./gameinfo-manage-section";
@@ -1111,6 +1112,7 @@ export default function GameinfoPackEditor({
           </>
         )}
       >
+      <GameinfoPackSource gameId={game.id} dataMode={dataMode} initial={game.sourceNote} />
       <div className="mb-4 flex flex-nowrap items-center gap-2 overflow-x-auto rounded-xl bg-linear-surface-2 p-2.5">
         <div className="flex items-center gap-2 text-xs font-medium text-linear-ink-muted">
           <Languages size={14} className="text-linear-primary" />

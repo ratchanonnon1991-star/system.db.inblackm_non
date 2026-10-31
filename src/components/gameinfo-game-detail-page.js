@@ -193,6 +193,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
       row = {
         ...row,
         priority: Math.min(3, Number(row.rankStars) || 0),
+        sourceNote: (dataMode === "idpass" ? settings.sourceIdpass : settings.sourceUid) || "",
         web: topupGame ? { isActive: topupGame.isActive, uidEnabled: topupGame.uidEnabled, idpassEnabled: topupGame.idpassEnabled } : null,
       };
       hiddenColumnKeys = [...hiddenGameinfoColumnKeys(columnRoleRules, viewerRole, row.id)];
@@ -231,6 +232,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
     packLanguages,
     version: packVersion,
     costRatesOther,
+    sourceNote: row.sourceNote,
   };
 
   if (manageMode) {

@@ -173,6 +173,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
                 {dataMode === "idpass" ? "ID-PASS" : "UID"} {row.game}
                 {activeCurrency ? ` — ${activeCurrency.name || "(ไม่มีชื่อสกุลเงิน)"}` : ""}
               </span>
+              {row.sourceNote ? <span className="text-[13px] text-linear-ink-tertiary">แหล่งที่มา: {row.sourceNote}</span> : null}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {currencyList.length > 1 ? (
