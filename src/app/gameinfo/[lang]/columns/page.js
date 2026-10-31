@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { canManageGameinfo } from "@/server/auth";
 import { getSessionUser } from "@/server/session-user";
 import { listGameinfoColumnRoleRules } from "@/server/gameinfo-column-roles";
+import { listGameinfoColumnOrders } from "@/server/gameinfo-column-order";
+import { buildGameinfoPackColumns, isGameinfoPackColumnPinned } from "@/lib/gameinfo-pack-columns";
 import { listGamelistPackColumnRegistry } from "@/server/gameinfo-gamelist-packs";
 import { listGameListRows } from "@/server/gameinfo-gamelist";
 import GameinfoColumnRolesPage from "@/components/gameinfo-column-roles-page";
@@ -17,11 +19,16 @@ export default async function Page({ params }) {
   // same way the pack editor is rather than by plain GameInfo access.
   if (!canManageGameinfo(user)) redirect(`/gameinfo/${lang}`);
 
-  const [columns, rules, games] = await Promise.all([
+  const [columns, rules, games, columnOrders] = await Promise.all([
     listGamelistPackColumnRegistry(),
     listGameinfoColumnRoleRules(),
     listGameListRows(),
+    listGameinfoColumnOrders(),
   ]);
+  // Every column a pack table can have. The status column is pinned first, so it has no place to move to.
+  const orderColumns = buildGameinfoPackColumns(columns.map((column) => ({ key: column.columnKey, label: column.label })))
+    .filter((column) => !isGameinfoPackColumnPinned(column))
+    .map(({ id, label, kind }) => ({ id, label, kind }));
 
   return (
     <div className="px-4 py-8 pb-24">
@@ -38,6 +45,8 @@ export default async function Page({ params }) {
         columns={columns.map((column) => ({ key: column.columnKey, label: column.label }))}
         rules={rules}
         games={games.map((game) => ({ id: game.id, game: game.game }))}
+        orderColumns={orderColumns}
+        columnOrders={columnOrders}
       />
     </div>
   );

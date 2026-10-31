@@ -48,11 +48,36 @@ export function isGameinfoPackColumnPinned(column) {
 
 export const GAMEINFO_PACK_SYMBOLS = ["", "$", "฿", "%"];
 
-// The source sheet keeps these beside the selling price, in this order. They
-// are columns people made, so they are found by name, wherever they were added.
-const COLUMNS_AFTER_PRICE = ["ราคาusd (page)", "ราคาขาย(kaleoz)", "ราคาrussia"];
+// The order every game starts from: the LOVE AND DEEPSPACE tab of the source
+// sheet, with the name first. Built-in columns go by id; columns people made
+// go by name, wherever they were added. Anything not listed follows, as it was.
+const COLUMN_ORDER = [
+  "serviceEnabled", "image", "name", "amountReceived", "price",
+  "ราคาusd (page)", "ราคาขาย(kaleoz)", "ราคาrussia",
+  "amountBeforeFee", "amountChargedFee", "link",
+  "channelsMain", "channelsSecondary", "country",
+  "kaleoz 5%", "ต้นทุน", "กำไร (kaleoz 5%)", "%กำไร (kaleoz 5%)",
+  "priceUsd", "itemku (idr)", "itemku (usdt)", "g2g", "g2g usd",
+];
 
-export function buildGameinfoPackColumns(computedColumns = []) {
+function columnRank(column) {
+  const rank = COLUMN_ORDER.indexOf(column.kind === "computed" ? String(column.label ?? "").trim().toLowerCase() : column.id);
+  return rank < 0 ? COLUMN_ORDER.length : rank;
+}
+
+/** The order an admin set for this game, else for every game (key 0), else none. */
+export function gameinfoColumnOrderFor(orders, gameId) {
+  return orders?.[gameId] || orders?.[0] || null;
+}
+
+/** Columns in an admin's order; those it does not name follow, in the default order. */
+export function sortGameinfoPackColumns(columns, order = null) {
+  const position = new Map((order || []).map((id, index) => [id, index]));
+  const rank = (column) => position.get(column.id) ?? position.size + columnRank(column);
+  return [...columns].sort((left, right) => rank(left) - rank(right));
+}
+
+export function buildGameinfoPackColumns(computedColumns = [], order = null) {
   const columns = [
     ...GAMEINFO_PACK_BASE_COLUMNS.map((column) => ({ ...column, kind: "base" })),
     ...(computedColumns || []).filter((computed) => computed.kind !== "market" || computed.enabled !== false).map((computed) => ({
@@ -67,12 +92,7 @@ export function buildGameinfoPackColumns(computedColumns = []) {
       symbol: typeof computed.symbol === "string" ? computed.symbol.slice(0, 24) : "",
     })),
   ];
-  const afterPrice = COLUMNS_AFTER_PRICE
-    .map((label) => columns.find((column) => column.kind === "computed" && String(column.label ?? "").trim().toLowerCase() === label))
-    .filter(Boolean);
-  const rest = columns.filter((column) => !afterPrice.includes(column));
-  rest.splice(rest.findIndex((column) => column.id === "price") + 1, 0, ...afterPrice);
-  return rest;
+  return sortGameinfoPackColumns(columns, order);
 }
 
 export function gameinfoPackColumnWidth(column, values = []) {

@@ -306,7 +306,7 @@ export default function GameinfoPackEditor({
       }),
     [computedColumns]
   );
-  const packColumns = useMemo(() => buildGameinfoPackColumns(parsedColumns), [parsedColumns]);
+  const packColumns = useMemo(() => buildGameinfoPackColumns(parsedColumns, game.columnOrder), [parsedColumns, game.columnOrder]);
   // Columns are shared by every game, so this editor shows columns this game
   // has never filled in. It shows them all by default — that is how a column
   // gets its first value here — with a toggle to clear the empty ones away.

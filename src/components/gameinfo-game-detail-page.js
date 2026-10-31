@@ -56,6 +56,8 @@ import {
 import { cookies } from "next/headers";
 import { GAMEINFO_VIEW_COOKIE, gameinfoViewColumnRole, resolveGameinfoView } from "@/lib/gameinfo-view";
 import { listGameinfoColumnRoleRules } from "@/server/gameinfo-column-roles";
+import { listGameinfoColumnOrders } from "@/server/gameinfo-column-order";
+import { gameinfoColumnOrderFor } from "@/lib/gameinfo-pack-columns";
 
 export default async function GameinfoGameDetailPage({ params, searchParams, manage = false }) {
   const { lang, id } = await params;
@@ -103,6 +105,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   let salesChannels = [];
   let stock = { accounts: [], byPack: {} };
   let costRatesOther = null;
+  let columnOrder = null;
   try {
     row = await getGameListRow(numericId);
     if (row) {
@@ -182,6 +185,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
       formulaVariables = variableData.variables;
       // Website data and test accounts are extras: if they fail to load the
       // game page still opens, just without them.
+      columnOrder = gameinfoColumnOrderFor(await listGameinfoColumnOrders().catch(() => ({})), row.id);
       [settings, testAccounts, topupConnected, salesChannels, stock] = await Promise.all([
         getGamelistGameSettings(row.id).catch(() => settings),
         listGamelistTestAccounts(row.id).catch(() => []),
@@ -233,6 +237,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
     version: packVersion,
     costRatesOther,
     sourceNote: row.sourceNote,
+    columnOrder,
   };
 
   if (manageMode) {
@@ -383,6 +388,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         stock={stock}
         stockLinks={hasPermission(user, "stock.access")}
         costRatesOther={costRatesOther}
+        columnOrder={columnOrder}
       />
       <div className="mt-5">
         <GameinfoSalesChannelCards channels={salesChannels} showMargin={!topupView} />

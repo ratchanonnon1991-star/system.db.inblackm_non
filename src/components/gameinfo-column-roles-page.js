@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Check, LoaderCircle, Lock } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import GameinfoColumnOrder from "./gameinfo-column-order";
 import {
   GAMEINFO_COLUMN_ROLES,
   GAMEINFO_COLUMN_ROLE_ALL_GAMES,
@@ -13,8 +14,9 @@ import {
 // Product view (gameinfo-view.js).
 const ROLE_LABELS = { admin: "มุมมอง Product", topup: "มุมมอง Topup" };
 
-export default function GameinfoColumnRolesPage({ columns, rules: initialRules, games }) {
+export default function GameinfoColumnRolesPage({ columns, rules: initialRules, games, orderColumns = [], columnOrders = {} }) {
   const [rules, setRules] = useState(initialRules);
+  const [orders, setOrders] = useState(columnOrders);
   const [gameId, setGameId] = useState(GAMEINFO_COLUMN_ROLE_ALL_GAMES);
   const [saving, setSaving] = useState("");
   const [error, setError] = useState("");
@@ -69,7 +71,7 @@ export default function GameinfoColumnRolesPage({ columns, rules: initialRules, 
     }
   }
 
-  if (!columns.length) {
+  if (!columns.length && !orderColumns.length) {
     return (
       <p className="rounded-xl border border-linear-hairline bg-linear-surface-2 p-4 text-sm text-linear-ink-muted">
         ยังไม่มีคอลัมน์ที่สร้างเอง — สร้างคอลัมน์ในหน้าแก้ไขแพ็กหรือนำเข้าด้วย CSV ก่อน
@@ -102,6 +104,8 @@ export default function GameinfoColumnRolesPage({ columns, rules: initialRules, 
       {error ? (
         <p className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">{error}</p>
       ) : null}
+
+      <GameinfoColumnOrder key={gameId} columns={orderColumns} orders={orders} gameId={gameId} onSaved={setOrders} />
 
       <div className="overflow-x-auto rounded-xl border border-linear-hairline">
         <table className="w-full min-w-[420px] text-sm">
