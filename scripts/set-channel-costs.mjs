@@ -5,14 +5,16 @@ import { fileURLToPath } from "node:url";
 // One game's cost at one rate per wallet, as its sheet tab works it out
 // (src/lib/gameinfo-channel-costs.js). Run on the server, from the app folder:
 //   node scripts/set-channel-costs.mjs --game=3 --mode=idpass \
-//     --rate="GOOGLE NGN=0.024037:NGN" --rate="ITUNES(DE)=26.13:EUR" --rate="ITUNES (USD)=28.57:USD"
-// A dry run until --apply is added. --mode is uid or idpass (default uid).
+//     --rate="GOOGLE NGN=[Rate_NGN]:NGN" --rate="ITUNES(DE)=[Rate_Itune_DE]:EUR" --rate="ITUNES (USD)=[Rate_Itune_USD]:USD"
+// [ชื่อ] follows a ตัวแปรผสม, so editing it later moves these packs' cost; a plain
+// number fixes the rate. A dry run until --apply is added. --mode is uid or idpass (default uid).
 env.loadEnvConfig(fileURLToPath(new URL("../", import.meta.url)));
 const arg = (name) => process.argv.find((item) => item.startsWith(`--${name}=`))?.slice(name.length + 3);
 const apply = process.argv.includes("--apply");
 const gameId = Number(arg("game"));
 const mode = arg("mode") === "idpass" ? "idpass" : "uid";
 const { applyGameinfoChannelCosts, parseGameinfoChannelRate } = await import("../src/lib/gameinfo-channel-costs.js");
+const { getGameinfoFormulaVariables } = await import("../src/server/gameinfo-formula-variables.js");
 const { getGameinfoModeData, updateGameinfoModeData } = await import("../src/server/gameinfo-mode-data.js");
 const { getGamelistPacks, saveGamelistPacks } = await import("../src/server/gameinfo-gamelist-packs.js");
 const actor = { id: null, name: "set-channel-costs" };
@@ -21,13 +23,17 @@ try {
   if (!Number.isInteger(gameId) || gameId <= 0) throw new Error("ใส่ --game=<id ของเกม>");
   const rates = process.argv.filter((item) => item.startsWith("--rate=")).map((item) => parseGameinfoChannelRate(item.slice(7)));
   if (!rates.length) throw new Error('ใส่ --rate="ช่องทาง=เรท:สกุลเงิน" อย่างน้อยหนึ่งช่องทาง');
+  const { variables } = await getGameinfoFormulaVariables(0);
+  for (const { rateFormula } of rates) {
+    if (rateFormula && !variables.some((variable) => `[${variable.name}]` === rateFormula)) throw new Error(`ไม่พบตัวแปรผสม ${rateFormula}`);
+  }
 
   // Read the uid store first even for idpass: it readies the shared pack
   // tables, which an idpass save would otherwise ready from a second
   // connection while its own transaction holds them, and wait on itself.
   const uid = await getGamelistPacks(gameId);
   const current = mode === "idpass" ? (await getGameinfoModeData(gameId, mode)).packs : uid;
-  const result = applyGameinfoChannelCosts(current, rates);
+  const result = applyGameinfoChannelCosts(current, rates, undefined, variables);
   for (const pack of result.assigned) {
     const cost = Number(pack.amount) * pack.rate;
     console.log(`${pack.name} | ${pack.channel} | ${pack.amount} × ${pack.rate} = ${Number.isFinite(cost) ? cost.toFixed(2) : "-"}`);

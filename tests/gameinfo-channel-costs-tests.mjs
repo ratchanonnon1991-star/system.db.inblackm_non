@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { applyGameinfoChannelCosts, gameinfoChannelKey, parseGameinfoChannelRate } from "../src/lib/gameinfo-channel-costs.js";
+import { resolveGameinfoField } from "../src/lib/gameinfo-formula-fields.js";
 import { GAMEINFO_SHEET_COST_FORMULA } from "../src/lib/gameinfo-sheet-packs.js";
 
 let passed = 0;
@@ -11,6 +12,8 @@ function check(condition, message) {
 check(gameinfoChannelKey("ITUNES (USD)") === gameinfoChannelKey("ITUNES(USD)"), "spacing and brackets do not split a wallet");
 const ngn = parseGameinfoChannelRate("GOOGLE NGN=0.024037:NGN");
 check(ngn.channel === "GOOGLE NGN" && ngn.rate === "0.024037" && ngn.currency === "NGN", "a rate reads as wallet, THB rate and currency");
+const linked = parseGameinfoChannelRate("GOOGLE NGN=[Rate_NGN]:NGN");
+check(linked.rate === "" && linked.rateFormula === "[Rate_NGN]" && ngn.rateFormula === "", "[ชื่อ] follows a variable; a number does not");
 assert.throws(() => parseGameinfoChannelRate("GOOGLE NGN"), /อ่านเรทไม่ออก/);
 passed += 1;
 assert.throws(() => parseGameinfoChannelRate("GOOGLE NGN=0"), /อ่านเรทไม่ออก/);
@@ -33,5 +36,12 @@ check(result.packs.costProfiles.find((profile) => profile.id === "keep") && resu
 check(result.packs.computedColumns[0].gameFormula === GAMEINFO_SHEET_COST_FORMULA, "the game's ต้นทุน becomes amount × its wallet's rate");
 check(Math.abs(Number(result.assigned.find((item) => item.name === "Weekly Home").amount) * 26.13 - 38.93) < 0.01, "1.49 EUR at 26.13 is the sheet's 38.93");
 check(packs.currencies[0].categories[0].packs[0].costProfileId === "", "the input is not changed in place");
+
+const variables = [{ id: "v1", name: "Rate_NGN", value: "0.024037", formula: "" }];
+const followed = applyGameinfoChannelCosts(packs, [linked], "2026-10-29T00:00:00.000Z", variables);
+const profile = followed.packs.costProfiles.find((item) => item.id === "sheet-googlengn");
+check(profile.rateFormula === "[Rate_NGN]" && profile.baseValue === "" && followed.assigned[0].rate === 0.024037, "the profile keeps the reference and reports the variable's rate");
+const cost = (rate) => resolveGameinfoField({ amountChargedFee: "1070", costProfileId: profile.id }, {}, "อัตราต้นทุน", { costProfiles: followed.packs.costProfiles, formulaVariables: [{ ...variables[0], value: rate }] });
+check(cost("0.024037") === 0.024037 && cost("0.03") === 0.03, "editing the variable changes the rate packs are costed at");
 
 console.log(`gameinfo-channel-costs: ${passed} passed`);
