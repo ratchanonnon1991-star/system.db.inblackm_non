@@ -218,16 +218,21 @@ export function parseGameinfoSheetPackTab(rows) {
   // Which GameInfo mode the packs below belong to, from the tab's section
   // titles ("1.… UID - …", "2.… ID - PASS …"); a tab without them is UID.
   let mode = "uid";
-  // The bracket of each mode's first title: "… UID - ( Page / Market Place ) - …".
+  // The bracket of the title right above each mode's first table: "… UID -
+  // ( Page / Market Place ) - …". A tab's other rows can mention a mode and
+  // have brackets too, so a title only counts once a table follows it.
   const sources = {};
+  let titled = null;
   for (const [rowIndex, row] of (rows || []).entries()) {
     const firstCell = clean((row || []).find((value) => clean(value)));
     const titleMode = sectionMode(firstCell);
     mode = titleMode || mode;
-    const source = (row || []).filter((value) => clean(value)).length === 1 ? /\(([^()]+)\)/.exec(firstCell)?.[1].trim() : "";
-    if (titleMode && source && !sources[titleMode]) sources[titleMode] = source;
+    const alone = (row || []).filter((value) => clean(value)).length === 1;
+    if (titleMode && alone) titled = { mode: titleMode, source: /\(([^()]+)\)/.exec(firstCell)?.[1].trim() || "" };
     const next = readHeader(row);
     if (next) {
+      if (!next.unreadable && titled?.source && !sources[titled.mode]) sources[titled.mode] = titled.source;
+      titled = null;
       // A table we cannot read must not be read with the previous table's columns.
       layout = next.unreadable ? null : next;
       category = null;

@@ -370,6 +370,8 @@ check(parseGameinfoSheetPackTab(loveRows).currencies[0].categories[0].packs[0].c
 const bothTitles = parseGameinfoSheetPackTab([...loveRows, ...idpassRows]);
 check(bothTitles.sources.uid === "Page / Market Place" && bothTitles.sources.idpass === "PAGE / Kaleoz / Market Place", "each mode takes the bracket of its table title, without what follows it");
 check(!parseGameinfoSheetPackTab([["ราคาขาย", "Diamonds ที่กด"], ["30", "86"]]).sources.uid, "a tab with no title has no source");
+const noted = parseGameinfoSheetPackTab([["วิธีเติม UID ( ปัญหาเเละคำเเนะนำ )"], ["ติดต่อแอดมิน"], ...loveRows]);
+check(noted.sources.uid === "Page / Market Place", "only the title right above a table gives the source, not a note that mentions the mode");
 const noBracket = parseGameinfoSheetPackTab([["2.Game ID - PASS"], ...loveRows.slice(1, 3)]);
 check(noBracket.sources.idpass === undefined, "a title with no bracket leaves it blank");
 
