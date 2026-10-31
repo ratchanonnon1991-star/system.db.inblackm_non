@@ -1206,7 +1206,6 @@ export default function GameinfoPackEditor({
           saving={packLayout.saving}
           error={packLayout.error}
           notice={packLayout.notice}
-          legacyDraft={packLayout.legacyDraft}
           emptyColumnIds={emptyColumnIds}
           hideEmptyColumns={hideEmptyColumns}
           onHideEmptyColumnsChange={setHideEmptyColumns}

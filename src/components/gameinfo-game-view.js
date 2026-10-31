@@ -217,7 +217,6 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
                 saving={packLayout.saving}
                 error={packLayout.error}
                 notice={packLayout.notice}
-                legacyDraft={packLayout.legacyDraft}
                 onSetVisible={packLayout.setVisible}
                 onFiltersChange={packLayout.setFilters}
                 onReset={packLayout.reset}

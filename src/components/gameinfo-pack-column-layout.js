@@ -8,11 +8,9 @@ import { requestGameinfoDiscard } from "@/lib/gameinfo-unsaved-changes";
 import { Badge } from "@/components/ui/badge";
 import {
   gameinfoPackLayoutKnownIds,
-  gameinfoPackLayoutStorageKey,
   isGameinfoPackColumnPinned,
   normalizeGameinfoPackLayout,
   orderGameinfoPackColumns,
-  reorderGameinfoPackColumns,
 } from "@/lib/gameinfo-pack-columns";
 
 function normalizeLayoutForScreen(layout, columns) {
@@ -23,22 +21,16 @@ function sameLayout(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-// `localStorage` was the pre-Task-15 home for this setting. It is now read
-// only as a migration draft when a user has not saved any DB preset yet; no
-// column drag/toggle writes there any more.
-function readLegacyLayout(storageKey) {
-  try {
-    const raw = JSON.parse(window.localStorage.getItem(storageKey) || "null");
-    if (!raw || (!Array.isArray(raw.order) && !Array.isArray(raw.hidden))) return null;
-    return raw;
-  } catch {
-    return null;
-  }
+// Everyone opens a pack table in the order and with the columns an admin set.
+// A preset is a personal view picked on top of that: it may hide columns and
+// keep filters, but the order stays the shared one, and nothing is applied
+// until its owner picks it.
+function presetView(layout) {
+  return { hidden: layout?.hidden || [], filters: layout?.filters || [] };
 }
 
 export function useGameinfoPackColumnLayout({
   columns,
-  userId,
   gameId,
   surface,
   // Ids of columns no pack in this game fills. The read-only view always drops
@@ -46,7 +38,6 @@ export function useGameinfoPackColumnLayout({
   emptyColumnIds = null,
   hideEmptyColumns = false,
 }) {
-  const storageKey = gameinfoPackLayoutStorageKey({ userId, gameId, surface });
   const presetsUrl = `/api/gameinfo/gamelist/${gameId}/packs/presets?surface=${encodeURIComponent(surface)}`;
   const [layout, setLayout] = useState(null);
   const [baselineLayout, setBaselineLayout] = useState(null);
@@ -54,7 +45,6 @@ export function useGameinfoPackColumnLayout({
   const [selectedPresetId, setSelectedPresetId] = useState("");
   const [presetName, setPresetName] = useState("");
   const [baselineName, setBaselineName] = useState("");
-  const [legacyDraft, setLegacyDraft] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -79,14 +69,12 @@ export function useGameinfoPackColumnLayout({
     let cancelled = false;
     queueMicrotask(() => {
       if (cancelled) return;
-      const legacy = readLegacyLayout(storageKey);
-      setLayout(legacy);
-      setBaselineLayout(legacy);
+      setLayout(null);
+      setBaselineLayout(null);
       setPresets([]);
       setSelectedPresetId("");
       setPresetName("");
       setBaselineName("");
-      setLegacyDraft(Boolean(legacy));
       setLoading(true);
       setError("");
       setNotice("");
@@ -97,17 +85,7 @@ export function useGameinfoPackColumnLayout({
             fallbackError: "โหลด preset การแสดงคอลัมน์ไม่สำเร็จ",
           });
           if (cancelled) return;
-          const nextPresets = Array.isArray(data?.presets) ? data.presets : [];
-          const selected = nextPresets[0] || null;
-          setPresets(nextPresets);
-          if (selected) {
-            setLayout(selected.layout);
-            setBaselineLayout(selected.layout);
-            setSelectedPresetId(String(selected.id));
-            setPresetName(selected.name || "");
-            setBaselineName(selected.name || "");
-            setLegacyDraft(false);
-          }
+          setPresets(Array.isArray(data?.presets) ? data.presets : []);
         } catch (loadError) {
           if (!cancelled) {
             setError(
@@ -126,7 +104,7 @@ export function useGameinfoPackColumnLayout({
     return () => {
       cancelled = true;
     };
-  }, [presetsUrl, storageKey]);
+  }, [presetsUrl]);
 
   const orderedColumns = useMemo(
     () => orderGameinfoPackColumns(columns, normalizedLayout),
@@ -156,16 +134,9 @@ export function useGameinfoPackColumnLayout({
     setNotice("");
   }
 
-  function reorder(activeId, overId) {
-    if (loading || saving) return;
-    setLayout((current) =>
-      reorderGameinfoPackColumns(
-        normalizeLayoutForScreen(current, columns),
-        activeId,
-        overId
-      )
-    );
-    setNotice("");
+  // The order is the admin's, set on the column settings page.
+  function reorder() {
+    setNotice("ลำดับคอลัมน์ตั้งได้ที่หน้า สิทธิ์คอลัมน์");
   }
 
   function setFilters(filters) {
@@ -179,20 +150,25 @@ export function useGameinfoPackColumnLayout({
 
   function reset() {
     if (loading || saving) return;
-    setLayout(normalizeLayoutForScreen(null, columns));
+    setLayout(null);
+    setBaselineLayout(null);
+    setSelectedPresetId("");
+    setPresetName("");
+    setBaselineName("");
+    setError("");
     setNotice("");
   }
 
   function selectPreset(presetId) {
+    if (String(presetId) === selectedPresetId) return;
     const selected = presets.find((preset) => String(preset.id) === String(presetId));
-    if (!selected || String(selected.id) === selectedPresetId) return;
     const applySelectedPreset = () => {
-      setLayout(selected.layout);
-      setBaselineLayout(selected.layout);
-      setSelectedPresetId(String(selected.id));
-      setPresetName(selected.name || "");
-      setBaselineName(selected.name || "");
-      setLegacyDraft(false);
+      const view = selected ? presetView(selected.layout) : null;
+      setLayout(view);
+      setBaselineLayout(view);
+      setSelectedPresetId(selected ? String(selected.id) : "");
+      setPresetName(selected?.name || "");
+      setBaselineName(selected?.name || "");
       setError("");
       setNotice("");
     };
@@ -242,12 +218,11 @@ export function useGameinfoPackColumnLayout({
         saved,
         ...current.filter((preset) => String(preset.id) !== String(saved.id)),
       ]);
-      setLayout(saved.layout);
-      setBaselineLayout(saved.layout);
+      setLayout(presetView(saved.layout));
+      setBaselineLayout(presetView(saved.layout));
       setSelectedPresetId(String(saved.id));
       setPresetName(saved.name || name);
       setBaselineName(saved.name || name);
-      setLegacyDraft(false);
       setNotice(asNew ? "สร้าง preset ใหม่แล้ว" : "บันทึก preset แล้ว");
       return true;
     } catch (saveError) {
@@ -275,7 +250,6 @@ export function useGameinfoPackColumnLayout({
     saving,
     error,
     notice,
-    legacyDraft,
     presetLocked,
     surface,
     setVisible,
@@ -309,7 +283,6 @@ export function GameinfoPackColumnControls({
   saving,
   error,
   notice,
-  legacyDraft,
   onSetVisible,
   onFiltersChange,
   onReset,
@@ -419,15 +392,12 @@ export function GameinfoPackColumnControls({
                 aria-label="preset ที่บันทึกไว้"
                 className="min-w-0 flex-1 rounded-md border border-linear-hairline-strong bg-linear-surface-2 px-2 py-1.5 text-xs font-normal normal-case tracking-normal text-linear-ink outline-none focus:border-linear-primary"
               >
-                {presets.length === 0 ? (
-                  <option value="">ยังไม่มี preset ที่บันทึกไว้</option>
-                ) : (
-                  presets.map((preset) => (
-                    <option key={preset.id} value={String(preset.id)}>
-                      {preset.name}{preset.locked ? " (อ่านอย่างเดียว)" : ""}
-                    </option>
-                  ))
-                )}
+                <option value="">ตามที่แอดมินตั้ง</option>
+                {presets.map((preset) => (
+                  <option key={preset.id} value={String(preset.id)}>
+                    {preset.name}{preset.locked ? " (อ่านอย่างเดียว)" : ""}
+                  </option>
+                ))}
               </select>
               <button
                 type="button"
@@ -629,14 +599,9 @@ export function GameinfoPackColumnControls({
           </div>
 
           <p className="mt-3 text-[10px] text-linear-ink-tertiary">
-            ลากหัวตารางเพื่อเรียงคอลัมน์ แล้วกดบันทึกเพื่อใช้กับทุกตารางในหน้านี้
+            ลำดับคอลัมน์แอดมินตั้งที่หน้าสิทธิ์คอลัมน์ · preset ใช้ซ่อนคอลัมน์และตัวกรองของตัวเอง
           </p>
-          {legacyDraft ? (
-            <p className="mt-1 text-[10px] text-linear-primary">
-              พบการตั้งค่าเดิมจากเครื่องนี้ — ตั้งชื่อแล้วบันทึกเพื่อย้ายเข้า preset
-            </p>
-          ) : null}
-          {dirty && !legacyDraft ? (
+          {dirty ? (
             <p className="mt-1 text-[10px] text-linear-primary">มีการเปลี่ยนแปลงที่ยังไม่บันทึก</p>
           ) : null}
           {error ? <p className="mt-2 text-xs text-linear-danger">{error}</p> : null}

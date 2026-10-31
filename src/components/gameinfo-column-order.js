@@ -56,7 +56,7 @@ export default function GameinfoColumnOrder({ columns, orders, gameId, onSaved }
         <h2 id="column-order-title" className="font-bold text-linear-ink">ลำดับคอลัมน์</h2>
         <p className="mt-0.5 text-xs text-linear-ink-tertiary">
           {everyGame ? "ลำดับที่ทุกเกมใช้ เว้นแต่เกมที่ตั้งเฉพาะไว้" : ownOrder ? "เกมนี้ตั้งลำดับของตัวเองไว้" : "เกมนี้ใช้ค่ากลางอยู่ บันทึกแล้วจะเป็นลำดับเฉพาะเกมนี้"}
-          {" · "}ใครบันทึกชุดคอลัมน์ไว้เองจะยังเห็นลำดับของตัวเอง จนกว่าจะรีเซ็ต
+          {" · "}ทุกคนเห็นลำดับนี้เหมือนกัน
         </p>
       </div>
       <ol className="divide-y divide-linear-hairline rounded-lg border border-linear-hairline">
