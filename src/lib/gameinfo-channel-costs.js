@@ -3,7 +3,8 @@
 // source sheet works it out. This gives each wallet a cost profile at its rate,
 // points every pack at its wallet's profile, and puts the sheet's own ต้นทุน
 // formula on the game, so cost = amount × that wallet's rate.
-import { evaluateGameinfoPackCost } from "@/lib/gameinfo-cost-profiles";
+import { evaluateGameinfoPackCost, getGameinfoCostProfile } from "@/lib/gameinfo-cost-profiles";
+import { resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
 import { evaluateGameinfoFormulaVariable } from "@/lib/gameinfo-formula-variables";
 import { gameinfoSheetCostFormulaColumns } from "@/lib/gameinfo-sheet-packs";
 
@@ -73,4 +74,38 @@ export function applyGameinfoChannelCosts(packs, rates, updatedAt = new Date().t
     assigned,
     unmatched,
   };
+}
+
+/**
+ * One row per cost profile the game's packs are on: the wallet, the rate it
+ * works out to now, where that rate comes from and when it last changed.
+ */
+export function gameinfoCostRateRows(currencies, costProfiles, { formulaVariables = [], externalValues = {} } = {}) {
+  const rows = new Map();
+  const context = { costProfiles, formulaVariables, externalValues };
+  for (const currency of currencies || []) {
+    for (const category of currency.categories || []) {
+      for (const pack of category.packs || []) {
+        const profile = getGameinfoCostProfile(costProfiles, pack.costProfileId);
+        if (!profile) continue;
+        const row = rows.get(profile.id);
+        if (row) {
+          row.packs += 1;
+          continue;
+        }
+        const formula = String(profile.rateFormula || "").trim();
+        const variable = (formulaVariables || []).find((item) => `[${item.name}]` === formula);
+        rows.set(profile.id, {
+          id: profile.id,
+          channel: pack.channelsMain?.[0] || profile.label,
+          currency: profile.inputCurrency || "",
+          rate: resolveGameinfoField(pack, {}, "อัตราต้นทุน", context),
+          source: variable ? (variable.formula || variable.name) : (formula || "เรทคงที่"),
+          updatedAt: variable?.updatedAt || profile.updatedAt || "",
+          packs: 1,
+        });
+      }
+    }
+  }
+  return [...rows.values()];
 }

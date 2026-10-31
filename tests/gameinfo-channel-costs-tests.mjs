@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { applyGameinfoChannelCosts, gameinfoChannelKey, parseGameinfoChannelRate } from "../src/lib/gameinfo-channel-costs.js";
+import { applyGameinfoChannelCosts, gameinfoChannelKey, gameinfoCostRateRows, parseGameinfoChannelRate } from "../src/lib/gameinfo-channel-costs.js";
 import { resolveGameinfoField } from "../src/lib/gameinfo-formula-fields.js";
 import { GAMEINFO_SHEET_COST_FORMULA } from "../src/lib/gameinfo-sheet-packs.js";
 
@@ -43,5 +43,12 @@ const profile = followed.packs.costProfiles.find((item) => item.id === "sheet-go
 check(profile.rateFormula === "[Rate_NGN]" && profile.baseValue === "" && followed.assigned[0].rate === 0.024037, "the profile keeps the reference and reports the variable's rate");
 const cost = (rate) => resolveGameinfoField({ amountChargedFee: "1070", costProfileId: profile.id }, {}, "อัตราต้นทุน", { costProfiles: followed.packs.costProfiles, formulaVariables: [{ ...variables[0], value: rate }] });
 check(cost("0.024037") === 0.024037 && cost("0.03") === 0.03, "editing the variable changes the rate packs are costed at");
+
+const shown = gameinfoCostRateRows(followed.packs.currencies, followed.packs.costProfiles, { formulaVariables: [{ ...variables[0], updatedAt: "2026-10-31T00:00:00.000Z" }] });
+check(shown.length === 1 && shown[0].channel === "GOOGLE NGN" && shown[0].rate === 0.024037 && shown[0].source === "Rate_NGN" && shown[0].currency === "NGN", "a wallet's row states its rate and the variable behind it");
+check(shown[0].updatedAt === "2026-10-31T00:00:00.000Z", "a row dates from the variable's last edit, not the profile's");
+const fixed = gameinfoCostRateRows(result.packs.currencies, result.packs.costProfiles);
+check(fixed.length === 3 && fixed.find((row) => row.channel === "ITUNES(DE)").rate === 26.13 && fixed[0].source === "เรทคงที่", "a fixed rate is shown as fixed, one row per wallet");
+check(gameinfoCostRateRows(packs.currencies, packs.costProfiles).length === 0, "packs with no profile show nothing");
 
 console.log(`gameinfo-channel-costs: ${passed} passed`);

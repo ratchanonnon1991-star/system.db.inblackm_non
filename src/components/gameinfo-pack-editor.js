@@ -27,6 +27,7 @@ import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
 import GameinfoFormulaMemory from "./gameinfo-formula-memory";
 import GameinfoBulkFormulaToolbar from "./gameinfo-bulk-formula-toolbar";
 import GameinfoFormulaVariablesButton, { GameinfoFormulaVariableSummary } from "./gameinfo-formula-variables";
+import GameinfoCostRates from "./gameinfo-cost-rates";
 import GameinfoRatePanel, { useGameinfoRates } from "./gameinfo-rate-panel";
 import GameinfoMarketManager from "./gameinfo-market-manager";
 import { GameinfoManageSection } from "./gameinfo-manage-section";
@@ -850,6 +851,12 @@ export default function GameinfoPackEditor({
           </span>
         </summary>
         <div className="space-y-4 rounded-b-2xl border-t border-linear-hairline bg-linear-surface-2 p-4 sm:p-5">
+      <GameinfoCostRates
+        currencies={currencies}
+        costProfiles={costProfiles}
+        formulaVariables={formulaVariables}
+        externalValues={rateState.externalValues}
+      />
       <section className="rounded-lg border border-linear-hairline bg-linear-surface-1 p-4">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-semibold text-linear-ink">นำเข้าแพ็กจาก CSV (เกมนี้)</h2>

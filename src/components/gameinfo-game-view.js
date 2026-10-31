@@ -19,6 +19,7 @@ import {
 } from "@/lib/gameinfo-pack-columns";
 import { getGameinfoFormulaDisplay } from "@/lib/gameinfo-formula-overrides";
 import { filterGameinfoColumnsForRole } from "@/lib/gameinfo-column-roles";
+import { GAMEINFO_SHEET_COST_COLUMN } from "@/lib/gameinfo-sheet-packs";
 import {
   evaluateGameinfoComputedColumn,
   gameinfoColumnsWithDataInGame,
@@ -30,6 +31,7 @@ import { isGameinfoBotAuto } from "@/lib/gameinfo-dashboard";
 import { gameinfoGameColor, gameinfoGameInitials } from "@/lib/gameinfo-game-initials";
 import { GAMEINFO_PACK_STATUS_LABELS, gameinfoPackStatus } from "@/lib/gameinfo-pack-model";
 import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
+import GameinfoCostRates from "./gameinfo-cost-rates";
 import { useGameinfoRates } from "./gameinfo-rate-panel";
 import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoTutorialButton, { GameinfoDetailsButton } from "./gameinfo-tutorial-modal";
@@ -101,6 +103,9 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
           }
         : column));
   }, [computedColumns, hiddenColumnKeys, channelView]);
+  // Rates say what a pack costs, so they follow the ต้นทุน column: a view that
+  // hides it (Topup) hides them too.
+  const showsCost = packColumns.some((column) => column.kind === "computed" && String(column.computed?.label ?? "").trim() === GAMEINFO_SHEET_COST_COLUMN);
   const hasSecondaryChannels = useMemo(
     () => currencies.some((currency) => currency.categories.some((category) =>
       category.packs.some((pack) => (pack.channelsSecondary || []).length > 0)
@@ -219,6 +224,14 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
           </div>
           <ChannelSummary channels={row.channels} botManual={row.botManual} />
           <StockSummary accounts={stock.accounts} links={stockLinks} />
+          {showsCost ? (
+            <GameinfoCostRates
+              currencies={currencies}
+              costProfiles={costProfiles}
+              formulaVariables={formulaVariables}
+              externalValues={rateState.externalValues}
+            />
+          ) : null}
         </div>
         {!activeCurrency ? (
           <p className="border-t border-linear-hairline p-8 text-center text-linear-ink-tertiary">
