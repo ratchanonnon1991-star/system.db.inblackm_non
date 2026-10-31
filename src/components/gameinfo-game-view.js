@@ -66,7 +66,7 @@ const PACK_STATUS_TONES = {
   expired: { text: "text-amber-700 dark:text-amber-400", dot: "bg-amber-500" },
 };
 
-export default function GameinfoGameView({ row, currencies, computedColumns = NO_COLUMNS, costProfiles = [], formulaVariables = [], userId, dataMode = "uid", hiddenColumnKeys = [], editHref = null, stock = NO_STOCK, stockLinks = false, costRatesOther = null }) {
+export default function GameinfoGameView({ row, currencies, computedColumns = NO_COLUMNS, costProfiles = [], formulaVariables = [], userId, dataMode = "uid", hiddenColumnKeys = [], editHref = null, stock = NO_STOCK, stockLinks = false, costRatesOther = null, columnOrder = null }) {
   const [formulaMode, setFormulaMode] = useState("result");
   const rateState = useGameinfoRates();
   // Same field set the pack editor's formulas can reference (see
@@ -86,7 +86,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
   const [channelView, setChannelView] = useState("main");
   const packColumns = useMemo(() => {
     const roleColumns = filterGameinfoColumnsForRole(
-      buildGameinfoPackColumns(computedColumns),
+      buildGameinfoPackColumns(computedColumns, columnOrder),
       new Set(hiddenColumnKeys)
     );
     const secondary = channelView === "secondary";
@@ -102,7 +102,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
             channelToggle: true,
           }
         : column));
-  }, [computedColumns, hiddenColumnKeys, channelView]);
+  }, [computedColumns, columnOrder, hiddenColumnKeys, channelView]);
   const hasSecondaryChannels = useMemo(
     () => currencies.some((currency) => currency.categories.some((category) =>
       category.packs.some((pack) => (pack.channelsSecondary || []).length > 0)

@@ -333,6 +333,13 @@ function ensureSchema(connection) {
           PRIMARY KEY (role, game_id, column_key)
         )
       `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS gamelist_pack_column_order (
+          game_id    INTEGER PRIMARY KEY,
+          column_ids JSONB NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
     } finally {
       client.release();
     }

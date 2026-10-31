@@ -65,7 +65,19 @@ function columnRank(column) {
   return rank < 0 ? COLUMN_ORDER.length : rank;
 }
 
-export function buildGameinfoPackColumns(computedColumns = []) {
+/** The order an admin set for this game, else for every game (key 0), else none. */
+export function gameinfoColumnOrderFor(orders, gameId) {
+  return orders?.[gameId] || orders?.[0] || null;
+}
+
+/** Columns in an admin's order; those it does not name follow, in the default order. */
+export function sortGameinfoPackColumns(columns, order = null) {
+  const position = new Map((order || []).map((id, index) => [id, index]));
+  const rank = (column) => position.get(column.id) ?? position.size + columnRank(column);
+  return [...columns].sort((left, right) => rank(left) - rank(right));
+}
+
+export function buildGameinfoPackColumns(computedColumns = [], order = null) {
   const columns = [
     ...GAMEINFO_PACK_BASE_COLUMNS.map((column) => ({ ...column, kind: "base" })),
     ...(computedColumns || []).filter((computed) => computed.kind !== "market" || computed.enabled !== false).map((computed) => ({
@@ -80,7 +92,7 @@ export function buildGameinfoPackColumns(computedColumns = []) {
       symbol: typeof computed.symbol === "string" ? computed.symbol.slice(0, 24) : "",
     })),
   ];
-  return columns.sort((left, right) => columnRank(left) - columnRank(right));
+  return sortGameinfoPackColumns(columns, order);
 }
 
 export function gameinfoPackColumnWidth(column, values = []) {
