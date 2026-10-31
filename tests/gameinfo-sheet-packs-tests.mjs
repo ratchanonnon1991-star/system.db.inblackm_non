@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import { createGoogleReader } from "../src/server/google-sheets.js";
+import { withGameinfoSheetColumns } from "../src/lib/gameinfo-sheet-columns.js";
 import {
   addGameinfoSheetPacks,
   applyGameinfoSheetDetailFills,
@@ -370,6 +371,8 @@ check(parseGameinfoSheetPackTab(loveRows).currencies[0].categories[0].packs[0].c
 const bothTitles = parseGameinfoSheetPackTab([...loveRows, ...idpassRows]);
 check(bothTitles.sources.uid === "Page / Market Place" && bothTitles.sources.idpass === "PAGE / Kaleoz / Market Place", "each mode takes the bracket of its table title, without what follows it");
 check(!parseGameinfoSheetPackTab([["ราคาขาย", "Diamonds ที่กด"], ["30", "86"]]).sources.uid, "a tab with no title has no source");
+const noted = parseGameinfoSheetPackTab([["วิธีเติม UID ( ปัญหาเเละคำเเนะนำ )"], ["ติดต่อแอดมิน"], ...loveRows]);
+check(noted.sources.uid === "Page / Market Place", "only the title right above a table gives the source, not a note that mentions the mode");
 const noBracket = parseGameinfoSheetPackTab([["2.Game ID - PASS"], ...loveRows.slice(1, 3)]);
 check(noBracket.sources.idpass === undefined, "a title with no bracket leaves it blank");
 
@@ -384,5 +387,12 @@ check(detailFills.length === 1 && detailFills[0].packId === "a" && detailFills[0
 check(gameinfoSheetDetailFills(detailTree, detailParsed, "idpass").length === 0, "a uid table fills no idpass pack");
 const detailApplied = applyGameinfoSheetDetailFills(detailTree, detailFills)[0].categories[0].packs;
 check(detailApplied[0].link === "https://www.codashop.com/my-mm/love" && detailApplied[1].amountBeforeFee === "แก้เอง" && gameinfoSheetDetailFills(applyGameinfoSheetDetailFills(detailTree, detailFills), detailParsed, "uid").length === 0, "what a pack has stays, and a second run finds nothing");
+
+const addedColumns = withGameinfoSheetColumns([{ key: "c1", label: "ต้นทุน", formula: "1" }, { key: "mine", label: " g2g ", formula: "[ราคา]" }]);
+check(addedColumns.added.join() === "KALEOZ 5%,กำไร (KALEOZ 5%),%กำไร (KALEOZ 5%),G2G USD" && addedColumns.columns.length === 6, "only the missing columns are added, by name");
+check(addedColumns.keys.includes("mine") && addedColumns.keys.length === 5, "a column added by hand is the one hidden from Topup");
+check(withGameinfoSheetColumns(addedColumns.columns).added.length === 0, "a second run adds nothing");
+check(addedColumns.columns.find((column) => column.label === "KALEOZ 5%").formula === "" && addedColumns.columns.find((column) => column.label === "KALEOZ 5%").gameFormula === "[ราคาขาย(KALEOZ)]*0.95", "the formula is this game's, so other games are left alone");
+check(!addedColumns.columns.some((column) => column.version !== undefined && column.key.startsWith("col_sheet")), "a new column carries no version, so it can only be created");
 
 console.log(`gameinfo-sheet-packs: ${passed} passed`);
