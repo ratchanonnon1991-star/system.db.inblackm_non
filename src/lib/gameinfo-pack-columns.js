@@ -48,9 +48,22 @@ export function isGameinfoPackColumnPinned(column) {
 
 export const GAMEINFO_PACK_SYMBOLS = ["", "$", "฿", "%"];
 
-// The source sheet keeps these beside the selling price, in this order. They
-// are columns people made, so they are found by name, wherever they were added.
-const COLUMNS_AFTER_PRICE = ["ราคาusd (page)", "ราคาขาย(kaleoz)", "ราคาrussia"];
+// The order every game starts from: the LOVE AND DEEPSPACE tab of the source
+// sheet, with the name first. Built-in columns go by id; columns people made
+// go by name, wherever they were added. Anything not listed follows, as it was.
+const COLUMN_ORDER = [
+  "serviceEnabled", "image", "name", "amountReceived", "price",
+  "ราคาusd (page)", "ราคาขาย(kaleoz)", "ราคาrussia",
+  "amountBeforeFee", "amountChargedFee", "link",
+  "channelsMain", "channelsSecondary", "country",
+  "kaleoz 5%", "ต้นทุน", "กำไร (kaleoz 5%)", "%กำไร (kaleoz 5%)",
+  "priceUsd", "itemku (idr)", "itemku (usdt)", "g2g", "g2g usd",
+];
+
+function columnRank(column) {
+  const rank = COLUMN_ORDER.indexOf(column.kind === "computed" ? String(column.label ?? "").trim().toLowerCase() : column.id);
+  return rank < 0 ? COLUMN_ORDER.length : rank;
+}
 
 export function buildGameinfoPackColumns(computedColumns = []) {
   const columns = [
@@ -67,12 +80,7 @@ export function buildGameinfoPackColumns(computedColumns = []) {
       symbol: typeof computed.symbol === "string" ? computed.symbol.slice(0, 24) : "",
     })),
   ];
-  const afterPrice = COLUMNS_AFTER_PRICE
-    .map((label) => columns.find((column) => column.kind === "computed" && String(column.label ?? "").trim().toLowerCase() === label))
-    .filter(Boolean);
-  const rest = columns.filter((column) => !afterPrice.includes(column));
-  rest.splice(rest.findIndex((column) => column.id === "price") + 1, 0, ...afterPrice);
-  return rest;
+  return columns.sort((left, right) => columnRank(left) - columnRank(right));
 }
 
 export function gameinfoPackColumnWidth(column, values = []) {

@@ -49,11 +49,11 @@ check(
     "price",
     "amountBeforeFee",
     "amountChargedFee",
+    "link",
     "channelsMain",
     "channelsSecondary",
     "country",
     "priceUsd",
-    "link",
     "computed:profit",
   ]
 );
@@ -75,11 +75,11 @@ check("layout pins the service status column to the front", normalized.order, [
   "amountReceived",
   "amountBeforeFee",
   "amountChargedFee",
+  "link",
   "channelsMain",
   "channelsSecondary",
   "country",
   "priceUsd",
-  "link",
 ]);
 check("layout drops unknown, duplicate, and hidden status ids", normalized.hidden, ["country"]);
 check("layout defaults to no row filters", normalized.filters, []);
@@ -114,7 +114,7 @@ const stampedLayout = normalizeGameinfoPackLayout(
   },
   stampedColumns
 );
-check("a preset hides columns registered after it was saved", stampedLayout.hidden, ["amountReceived", "amountBeforeFee", "priceUsd", "link", "computed:late"]);
+check("a preset hides columns registered after it was saved", stampedLayout.hidden, ["amountReceived", "amountBeforeFee", "link", "priceUsd", "computed:late"]);
 check(
   "a preset still shows every column it was saved with",
   stampedLayout.order.filter((id) => !stampedLayout.hidden.includes(id)).includes("computed:old"),
@@ -201,12 +201,12 @@ check(
     "amountReceived",
     "amountBeforeFee",
     "amountChargedFee",
+    "link",
     "channelsMain",
     "price",
     "channelsSecondary",
     "country",
     "priceUsd",
-    "link",
   ]
 );
 
@@ -495,6 +495,17 @@ check(
     { key: "usd", label: "ราคาUSD (PAGE)", formula: "1" },
   ]).map((column) => column.id).slice(3, 8),
   ["amountReceived", "price", "computed:usd", "computed:kz", "computed:ru"]
+);
+check(
+  "every game starts from the LOVE AND DEEPSPACE tab's order; other columns follow",
+  buildGameinfoPackColumns([
+    { key: "x", label: "อื่นๆ", formula: "1" },
+    { key: "g", label: "G2G", formula: "1" },
+    { key: "p", label: "กำไร (KALEOZ 5%)", formula: "1" },
+    { key: "c", label: "ต้นทุน", formula: "1" },
+    { key: "k", label: "KALEOZ 5%", formula: "1" },
+  ]).map((column) => column.id).slice(-6),
+  ["computed:k", "computed:c", "computed:p", "priceUsd", "computed:g", "computed:x"]
 );
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
