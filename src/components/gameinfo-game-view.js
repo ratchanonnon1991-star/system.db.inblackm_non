@@ -19,7 +19,6 @@ import {
 } from "@/lib/gameinfo-pack-columns";
 import { getGameinfoFormulaDisplay } from "@/lib/gameinfo-formula-overrides";
 import { filterGameinfoColumnsForRole } from "@/lib/gameinfo-column-roles";
-import { GAMEINFO_SHEET_COST_COLUMN } from "@/lib/gameinfo-sheet-packs";
 import {
   evaluateGameinfoComputedColumn,
   gameinfoColumnsWithDataInGame,
@@ -66,7 +65,7 @@ const PACK_STATUS_TONES = {
   expired: { text: "text-amber-700 dark:text-amber-400", dot: "bg-amber-500" },
 };
 
-export default function GameinfoGameView({ row, currencies, computedColumns = NO_COLUMNS, costProfiles = [], formulaVariables = [], userId, dataMode = "uid", hiddenColumnKeys = [], editHref = null, stock = NO_STOCK, stockLinks = false }) {
+export default function GameinfoGameView({ row, currencies, computedColumns = NO_COLUMNS, costProfiles = [], formulaVariables = [], userId, dataMode = "uid", hiddenColumnKeys = [], editHref = null, stock = NO_STOCK, stockLinks = false, costRatesOther = null }) {
   const [formulaMode, setFormulaMode] = useState("result");
   const rateState = useGameinfoRates();
   // Same field set the pack editor's formulas can reference (see
@@ -103,9 +102,6 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
           }
         : column));
   }, [computedColumns, hiddenColumnKeys, channelView]);
-  // Rates say what a pack costs, so they follow the ต้นทุน column: a view that
-  // hides it (Topup) hides them too.
-  const showsCost = packColumns.some((column) => column.kind === "computed" && String(column.computed?.label ?? "").trim() === GAMEINFO_SHEET_COST_COLUMN);
   const hasSecondaryChannels = useMemo(
     () => currencies.some((currency) => currency.categories.some((category) =>
       category.packs.some((pack) => (pack.channelsSecondary || []).length > 0)
@@ -224,12 +220,13 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
           </div>
           <ChannelSummary channels={row.channels} botManual={row.botManual} />
           <StockSummary accounts={stock.accounts} links={stockLinks} />
-          {showsCost ? (
+          {costRatesOther ? (
             <GameinfoCostRates
               currencies={currencies}
               costProfiles={costProfiles}
               formulaVariables={formulaVariables}
               externalValues={rateState.externalValues}
+              other={costRatesOther}
             />
           ) : null}
         </div>

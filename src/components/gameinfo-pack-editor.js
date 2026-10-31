@@ -856,6 +856,7 @@ export default function GameinfoPackEditor({
         costProfiles={costProfiles}
         formulaVariables={formulaVariables}
         externalValues={rateState.externalValues}
+        other={game.costRatesOther}
       />
       <section className="rounded-lg border border-linear-hairline bg-linear-surface-1 p-4">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">

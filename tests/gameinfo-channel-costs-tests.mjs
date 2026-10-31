@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { applyGameinfoChannelCosts, gameinfoChannelKey, gameinfoCostRateRows, parseGameinfoChannelRate } from "../src/lib/gameinfo-channel-costs.js";
+import { applyGameinfoChannelCosts, gameinfoChannelKey, gameinfoCostRatePacks, gameinfoCostRateRows, parseGameinfoChannelRate } from "../src/lib/gameinfo-channel-costs.js";
 import { resolveGameinfoField } from "../src/lib/gameinfo-formula-fields.js";
 import { GAMEINFO_SHEET_COST_FORMULA } from "../src/lib/gameinfo-sheet-packs.js";
 
@@ -50,5 +50,10 @@ check(shown[0].updatedAt === "2026-10-31T00:00:00.000Z", "a row dates from the v
 const fixed = gameinfoCostRateRows(result.packs.currencies, result.packs.costProfiles);
 check(fixed.length === 3 && fixed.find((row) => row.channel === "ITUNES(DE)").rate === 26.13 && fixed[0].source === "เรทคงที่", "a fixed rate is shown as fixed, one row per wallet");
 check(gameinfoCostRateRows(packs.currencies, packs.costProfiles).length === 0, "packs with no profile show nothing");
+const other = gameinfoCostRatePacks(followed.packs);
+check(other.currencies[0].categories[0].packs.length === 1 && !("name" in other.currencies[0].categories[0].packs[0]), "the other mode sends only what a rate row reads");
+const bothModes = gameinfoCostRateRows(packs.currencies, packs.costProfiles, { formulaVariables: variables, other });
+check(bothModes.length === 1 && bothModes[0].channel === "GOOGLE NGN" && bothModes[0].rate === 0.024037, "a mode with no profiles still shows the game's other mode's rates");
+check(gameinfoCostRateRows(followed.packs.currencies, followed.packs.costProfiles, { formulaVariables: variables, other })[0].packs === 2, "one wallet in both modes is one row");
 
 console.log(`gameinfo-channel-costs: ${passed} passed`);

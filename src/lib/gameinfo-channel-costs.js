@@ -76,34 +76,47 @@ export function applyGameinfoChannelCosts(packs, rates, updatedAt = new Date().t
   };
 }
 
+/** Only what the rate rows read from a mode's packs, to keep the page light. */
+export function gameinfoCostRatePacks({ currencies, costProfiles } = {}) {
+  const packs = (currencies || [])
+    .flatMap((currency) => (currency.categories || []).flatMap((category) => category.packs || []))
+    .filter((pack) => pack.costProfileId)
+    .map(({ channelsMain, costProfileId, amountChargedFee }) => ({ channelsMain, costProfileId, amountChargedFee }));
+  return { currencies: [{ categories: [{ packs }] }], costProfiles: costProfiles || [] };
+}
+
 /**
  * One row per cost profile the game's packs are on: the wallet, the rate it
  * works out to now, where that rate comes from and when it last changed.
+ * `other` is the game's other mode: a game's rates are the game's, as on its
+ * sheet tab, so both modes' wallets show whichever mode is open.
  */
-export function gameinfoCostRateRows(currencies, costProfiles, { formulaVariables = [], externalValues = {} } = {}) {
+export function gameinfoCostRateRows(currencies, costProfiles, { formulaVariables = [], externalValues = {}, other = null } = {}) {
   const rows = new Map();
-  const context = { costProfiles, formulaVariables, externalValues };
-  for (const currency of currencies || []) {
-    for (const category of currency.categories || []) {
-      for (const pack of category.packs || []) {
-        const profile = getGameinfoCostProfile(costProfiles, pack.costProfileId);
-        if (!profile) continue;
-        const row = rows.get(profile.id);
-        if (row) {
-          row.packs += 1;
-          continue;
+  for (const source of [{ currencies, costProfiles }, other]) {
+    const context = { costProfiles: source?.costProfiles, formulaVariables, externalValues };
+    for (const currency of source?.currencies || []) {
+      for (const category of currency.categories || []) {
+        for (const pack of category.packs || []) {
+          const profile = getGameinfoCostProfile(source.costProfiles, pack.costProfileId);
+          if (!profile) continue;
+          const row = rows.get(profile.id);
+          if (row) {
+            row.packs += 1;
+            continue;
+          }
+          const formula = String(profile.rateFormula || "").trim();
+          const variable = (formulaVariables || []).find((item) => `[${item.name}]` === formula);
+          rows.set(profile.id, {
+            id: profile.id,
+            channel: pack.channelsMain?.[0] || profile.label,
+            currency: profile.inputCurrency || "",
+            rate: resolveGameinfoField(pack, {}, "อัตราต้นทุน", context),
+            source: variable ? (variable.formula || variable.name) : (formula || "เรทคงที่"),
+            updatedAt: variable?.updatedAt || profile.updatedAt || "",
+            packs: 1,
+          });
         }
-        const formula = String(profile.rateFormula || "").trim();
-        const variable = (formulaVariables || []).find((item) => `[${item.name}]` === formula);
-        rows.set(profile.id, {
-          id: profile.id,
-          channel: pack.channelsMain?.[0] || profile.label,
-          currency: profile.inputCurrency || "",
-          rate: resolveGameinfoField(pack, {}, "อัตราต้นทุน", context),
-          source: variable ? (variable.formula || variable.name) : (formula || "เรทคงที่"),
-          updatedAt: variable?.updatedAt || profile.updatedAt || "",
-          packs: 1,
-        });
       }
     }
   }

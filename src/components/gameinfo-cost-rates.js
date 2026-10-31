@@ -15,10 +15,10 @@ function dateText(value) {
 
 // What a game's packs are costed at, wallet by wallet, the way the source
 // sheet lays its rates out. Read-only; rates are edited under ตัวแปรผสม.
-export default function GameinfoCostRates({ currencies, costProfiles, formulaVariables, externalValues, className = "" }) {
+export default function GameinfoCostRates({ currencies, costProfiles, formulaVariables, externalValues, other, className = "" }) {
   const rows = useMemo(
-    () => gameinfoCostRateRows(currencies, costProfiles, { formulaVariables, externalValues }),
-    [currencies, costProfiles, formulaVariables, externalValues]
+    () => gameinfoCostRateRows(currencies, costProfiles, { formulaVariables, externalValues, other }),
+    [currencies, costProfiles, formulaVariables, externalValues, other]
   );
   if (!rows.length) return null;
   return (
