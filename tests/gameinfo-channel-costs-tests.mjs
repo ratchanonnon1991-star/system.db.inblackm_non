@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { applyGameinfoChannelCosts, gameinfoChannelKey, gameinfoCostRatePacks, gameinfoCostRateRows, parseGameinfoChannelRate } from "../src/lib/gameinfo-channel-costs.js";
+import { applyGameinfoChannelCosts, gameinfoChannelKey, gameinfoCostRatePacks, gameinfoCostRateRows, gameinfoRateVariables, parseGameinfoChannelRate } from "../src/lib/gameinfo-channel-costs.js";
 import { resolveGameinfoField } from "../src/lib/gameinfo-formula-fields.js";
 import { GAMEINFO_SHEET_COST_FORMULA } from "../src/lib/gameinfo-sheet-packs.js";
 
@@ -50,6 +50,13 @@ check(shown[0].updatedAt === "2026-10-31T00:00:00.000Z", "a row dates from the v
 const fixed = gameinfoCostRateRows(result.packs.currencies, result.packs.costProfiles);
 check(fixed.length === 3 && fixed.find((row) => row.channel === "ITUNES(DE)").rate === 26.13 && fixed[0].source === "เรทคงที่", "a fixed rate is shown as fixed, one row per wallet");
 check(gameinfoCostRateRows(packs.currencies, packs.costProfiles).length === 0, "packs with no profile show nothing");
+const inverse = parseGameinfoChannelRate("WAVEPAY=1/[Rate_MMK]:MMK");
+check(inverse.rateFormula === "1/[Rate_MMK]" && gameinfoRateVariables(inverse.rateFormula).join() === "Rate_MMK", "a rate kept as units per baht reads through its variable");
+const mmkVariables = [{ id: "v2", name: "Rate_MMK", value: "141.69", formula: "", updatedAt: "2026-10-31T00:00:00.000Z" }];
+const mmk = applyGameinfoChannelCosts({ currencies: [{ categories: [{ packs: [pack("60 Crystals", "Wavepay", "2000")] }] }], computedColumns: [], costProfiles: [] }, [inverse], "2026-10-29T00:00:00.000Z", mmkVariables);
+check(Math.abs(mmk.assigned[0].rate * 2000 - 14.11) < 0.01, "2000 MMK at 141.69 is the sheet's 14.11");
+const mmkRow = gameinfoCostRateRows(mmk.packs.currencies, mmk.packs.costProfiles, { formulaVariables: mmkVariables })[0];
+check(mmkRow.source === "1/141.69" && mmkRow.updatedAt === "2026-10-31T00:00:00.000Z", "the row shows the sheet's 141.69 and the variable's date");
 const other = gameinfoCostRatePacks(followed.packs);
 check(other.currencies[0].categories[0].packs.length === 1 && !("name" in other.currencies[0].categories[0].packs[0]), "the other mode sends only what a rate row reads");
 const bothModes = gameinfoCostRateRows(packs.currencies, packs.costProfiles, { formulaVariables: variables, other });

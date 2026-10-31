@@ -45,11 +45,14 @@ check(
     "serviceEnabled",
     "image",
     "name",
+    "amountReceived",
     "price",
+    "amountBeforeFee",
     "amountChargedFee",
     "channelsMain",
     "channelsSecondary",
     "country",
+    "link",
     "computed:profit",
   ]
 );
@@ -68,10 +71,13 @@ check("layout pins the service status column to the front", normalized.order, [
   "price",
   "image",
   "name",
+  "amountReceived",
+  "amountBeforeFee",
   "amountChargedFee",
   "channelsMain",
   "channelsSecondary",
   "country",
+  "link",
 ]);
 check("layout drops unknown, duplicate, and hidden status ids", normalized.hidden, ["country"]);
 check("layout defaults to no row filters", normalized.filters, []);
@@ -106,7 +112,7 @@ const stampedLayout = normalizeGameinfoPackLayout(
   },
   stampedColumns
 );
-check("a preset hides columns registered after it was saved", stampedLayout.hidden, ["computed:late"]);
+check("a preset hides columns registered after it was saved", stampedLayout.hidden, ["amountReceived", "amountBeforeFee", "link", "computed:late"]);
 check(
   "a preset still shows every column it was saved with",
   stampedLayout.order.filter((id) => !stampedLayout.hidden.includes(id)).includes("computed:old"),
@@ -190,11 +196,14 @@ check(
     "computed:profit",
     "image",
     "name",
+    "amountReceived",
+    "amountBeforeFee",
     "amountChargedFee",
     "channelsMain",
     "price",
     "channelsSecondary",
     "country",
+    "link",
   ]
 );
 

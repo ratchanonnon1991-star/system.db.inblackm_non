@@ -102,6 +102,10 @@ check(
 );
 check("each status round-trips", ["open", "closed", "new", "expired"].map((status) => gameinfoPackStatus(gameinfoPackStatusPatch(status))), ["open", "closed", "new", "expired"]);
 
+const detailed = sanitizeGameinfoPack({ ...source, amountBeforeFee: " 236155 X 2 ", amountReceived: "16,160", link: " https://x.example " });
+ok("sanitize keeps the sheet's detail fields", detailed.amountBeforeFee === "236155 X 2" && detailed.amountReceived === "16160" && detailed.link === "https://x.example");
+ok("a pack without them stores no new keys", !("amountBeforeFee" in sanitized) && !("amountReceived" in sanitized) && !("link" in sanitized));
+
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);
 process.exit(failures.length ? 1 : 0);

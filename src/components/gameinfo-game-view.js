@@ -703,6 +703,14 @@ function PackViewCell({
   }
 
   if (column.id === "name") return <PackNameCell pack={pack} />;
+  if (column.id === "link") {
+    const href = /^https?:\/\//i.test(pack.link || "") ? pack.link : /^www\./i.test(pack.link || "") ? `https://${pack.link}` : "";
+    return (
+      <td className="max-w-[220px] truncate px-3 py-2.5 first:pl-5 text-linear-ink-muted">
+        {href ? <a href={href} target="_blank" rel="noreferrer" title={pack.link} className="font-bold text-[#D90005] underline dark:text-red-400">เปิดลิงก์</a> : pack.link || "-"}
+      </td>
+    );
+  }
   const raw = pack[column.field];
   const value = Array.isArray(raw) ? (raw.length ? raw.join(", ") : "-") : raw || "-";
   // The pack name and the price are what a reader scans down the table for.

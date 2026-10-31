@@ -135,6 +135,11 @@ function readHeader(row) {
     category: pack.category,
     amountCol: amountColumn(keys).col,
     amountCurrency: amountColumn(keys).currency,
+    // "MMK ที่กด" beside "MMK รวม Fee"; the header of the pack column twice is
+    // the name, then the count ("Crystals ที่ได้": 60 Crystals | 60).
+    chargedCol: keys.findIndex((key) => isFiat(/^(.+?)ที่กด$/.exec(key)?.[1] || "")),
+    receivedCol: keys.findIndex((key, col) => key && key === keys[pack.col] && col !== pack.col),
+    linkCol: keys.indexOf("link"),
     costCol: keys.indexOf("ต้นทุน"),
     mainCol: keys.indexOf("ช่องทางหลัก"),
     plainChannelCols: keys.flatMap((key, col) => (key === "ช่องทาง" ? [col] : [])),
@@ -252,10 +257,14 @@ export function parseGameinfoSheetPackTab(rows) {
     }
     const wallet = walletOf(cell, layout);
     const secondary = cell(layout.secondaryCol);
+    const charged = cell(layout.chargedCol);
     category.packs.push({
       name: fullName,
       price,
       amountChargedFee: number(cell(layout.amountCol)),
+      amountBeforeFee: /^[\d,.]+$/.test(charged) ? number(charged) : charged,
+      amountReceived: number(cell(layout.receivedCol)) || (layout.unit && /^[\d,.]+$/.test(name) ? number(name) : ""),
+      link: [cell(layout.linkCol), ...layout.plainChannelCols.map(cell)].find(isLink) || "",
       channelsMain: wallet ? [wallet] : [],
       channelsSecondary: secondary && !isLink(secondary) ? [secondary] : [],
       country: cell(layout.countryCol) || layout.fallbackCountry,
@@ -374,6 +383,39 @@ function eachSheetPack(parsed, visit) {
   for (const currency of parsed?.currencies || []) {
     for (const category of currency.categories) category.packs.forEach((pack) => visit(pack, currency));
   }
+}
+
+const SHEET_DETAIL_FIELDS = ["amountReceived", "amountBeforeFee", "link"];
+
+/**
+ * What the sheet can fill in one mode's pack tree: by name, only fields a pack
+ * leaves blank. → [{ packId, name, patch }]
+ */
+export function gameinfoSheetDetailFills(currencies, parsed, mode) {
+  const sheet = new Map();
+  eachSheetPack(parsed, (pack) => {
+    const key = gameinfoSheetPackNameKey(pack.name);
+    if ((pack.mode === "idpass" ? "idpass" : "uid") === mode && !sheet.has(key)) sheet.set(key, pack);
+  });
+  const fills = [];
+  eachTreePack(currencies, (pack) => {
+    const from = sheet.get(gameinfoSheetPackNameKey(pack.name));
+    const fields = SHEET_DETAIL_FIELDS.filter((field) => from?.[field] && !String(pack[field] ?? "").trim());
+    if (fields.length) fills.push({ packId: pack.id, name: pack.name, patch: Object.fromEntries(fields.map((field) => [field, from[field]])) });
+  });
+  return fills;
+}
+
+/** The tree with those fills in. */
+export function applyGameinfoSheetDetailFills(currencies, fills) {
+  const byId = new Map(fills.map((fill) => [String(fill.packId), fill.patch]));
+  return (currencies || []).map((currency) => ({
+    ...currency,
+    categories: (currency.categories || []).map((category) => ({
+      ...category,
+      packs: (category.packs || []).map((pack) => ({ ...pack, ...byId.get(String(pack.id)) })),
+    })),
+  }));
 }
 
 /** The columns a parsed tab's pack names sit in: the cells whose colour says a pack's status. */
@@ -556,6 +598,9 @@ export function addGameinfoSheetPacks(packs, parsed, mode, keys) {
       name: pack.name,
       price: pack.price,
       amountChargedFee: pack.amountChargedFee,
+      amountBeforeFee: pack.amountBeforeFee,
+      amountReceived: pack.amountReceived,
+      link: pack.link,
       channelsMain: pack.channelsMain,
       channelsSecondary: pack.channelsSecondary,
       country: pack.country,

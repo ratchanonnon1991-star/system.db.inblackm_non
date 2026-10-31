@@ -2026,6 +2026,8 @@ function PackEditorColumn({
   }
 
   const isName = column.id === "name";
+  // Free text, unlike the numeric fields below: a URL, or "236155 X 2".
+  const isText = column.id === "link" || column.id === "amountBeforeFee";
   const value = isName
     ? getGameinfoPackName(pack, packNameLanguageId)
     : pack[column.field] ?? "";
@@ -2052,13 +2054,12 @@ function PackEditorColumn({
     >
       <input
         autoFocus
-        inputMode={isName ? undefined : "decimal"}
+        inputMode={isName || isText ? undefined : "decimal"}
         value={value}
-        onChange={(event) =>
-          isName
-            ? updateName(event.target.value)
-            : onUpdate({ [column.field]: cleanGameinfoNumericInput(event.target.value) })
-        }
+        onChange={(event) => {
+          if (isName) updateName(event.target.value);
+          else onUpdate({ [column.field]: isText ? event.target.value : cleanGameinfoNumericInput(event.target.value) });
+        }}
         onBlur={
           isName
             ? (event) => {
@@ -2066,7 +2067,7 @@ function PackEditorColumn({
                 if (normalized !== event.target.value) updateName(normalized);
               }
             : (event) => {
-                const normalized = normalizeGameinfoNumericInput(event.target.value);
+                const normalized = isText ? event.target.value.trim() : normalizeGameinfoNumericInput(event.target.value);
                 if (normalized !== event.target.value) onUpdate({ [column.field]: normalized });
               }
         }

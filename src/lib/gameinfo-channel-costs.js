@@ -17,11 +17,12 @@ export function gameinfoChannelKey(channel) {
  * "GOOGLE NGN=0.024037:NGN" → { channel, rate, currency }. The currency is
  * what the amount is in (shown on the profile); the rate is THB per unit.
  * "GOOGLE NGN=[Rate_NGN]:NGN" follows a ตัวแปรผสม instead, so one edit to the
- * variable moves the cost of every pack on that wallet.
+ * variable moves the cost of every pack on that wallet. A rate kept the other
+ * way up, as MMK to the baht is, reads "WAVEPAY=1/[Rate_MMK]:MMK".
  */
 export function parseGameinfoChannelRate(text) {
-  const match = /^(.+?)=(\[[^[\]]+\]|[\d.]+)(?::([A-Za-z]{2,12}))?$/.exec(String(text ?? "").trim());
-  const variable = match?.[2].startsWith("[") ? match[2] : "";
+  const match = /^(.+?)=([^=:]*\[[^[\]]+\][^=:]*|[\d.]+)(?::([A-Za-z]{2,12}))?$/.exec(String(text ?? "").trim());
+  const variable = match?.[2].includes("[") ? match[2] : "";
   if (!match || !(variable || Number(match[2]) > 0)) throw new Error(`อ่านเรทไม่ออก: "${text}" (รูปแบบ: ช่องทาง=เรท:สกุลเงิน)`);
   return { channel: match[1].trim(), rate: variable ? "" : match[2], rateFormula: variable, currency: (match[3] || "").toUpperCase() };
 }
@@ -76,6 +77,11 @@ export function applyGameinfoChannelCosts(packs, rates, updatedAt = new Date().t
   };
 }
 
+/** The ตัวแปรผสม a rate formula reads: "1/[Rate_MMK]" → ["Rate_MMK"]. */
+export function gameinfoRateVariables(formula) {
+  return [...String(formula ?? "").matchAll(/\[([^[\]]+)\]/g)].map((match) => match[1]);
+}
+
 /** Only what the rate rows read from a mode's packs, to keep the page light. */
 export function gameinfoCostRatePacks({ currencies, costProfiles } = {}) {
   const packs = (currencies || [])
@@ -106,14 +112,17 @@ export function gameinfoCostRateRows(currencies, costProfiles, { formulaVariable
             continue;
           }
           const formula = String(profile.rateFormula || "").trim();
-          const variable = (formulaVariables || []).find((item) => `[${item.name}]` === formula);
+          const variables = gameinfoRateVariables(formula).map((name) => (formulaVariables || []).find((item) => item.name === name)).filter(Boolean);
+          const direct = `[${variables[0]?.name}]` === formula;
           rows.set(profile.id, {
             id: profile.id,
             channel: pack.channelsMain?.[0] || profile.label,
             currency: profile.inputCurrency || "",
             rate: resolveGameinfoField(pack, {}, "อัตราต้นทุน", context),
-            source: variable ? (variable.formula || variable.name) : (formula || "เรทคงที่"),
-            updatedAt: variable?.updatedAt || profile.updatedAt || "",
+            source: direct
+              ? variables[0].formula || variables[0].name
+              : formula.replace(/\[([^[\]]+)\]/g, (text, name) => variables.find((item) => item.name === name)?.value || text) || "เรทคงที่",
+            updatedAt: variables[0]?.updatedAt || profile.updatedAt || "",
             packs: 1,
           });
         }

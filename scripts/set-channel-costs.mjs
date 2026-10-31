@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 // (src/lib/gameinfo-channel-costs.js). Run on the server, from the app folder:
 //   node scripts/set-channel-costs.mjs --game=3 --mode=idpass \
 //     --rate="GOOGLE NGN=[Rate_NGN]:NGN" --rate="ITUNES(DE)=[Rate_Itune_DE]:EUR" --rate="ITUNES (USD)=[Rate_Itune_USD]:USD"
+//   node scripts/set-channel-costs.mjs --game=3 --rate="Wavepay=1/[Rate_MMK]:MMK"
 // [ชื่อ] follows a ตัวแปรผสม, so editing it later moves these packs' cost; a plain
 // number fixes the rate. A dry run until --apply is added. --mode is uid or idpass (default uid).
 env.loadEnvConfig(fileURLToPath(new URL("../", import.meta.url)));
@@ -13,7 +14,7 @@ const arg = (name) => process.argv.find((item) => item.startsWith(`--${name}=`))
 const apply = process.argv.includes("--apply");
 const gameId = Number(arg("game"));
 const mode = arg("mode") === "idpass" ? "idpass" : "uid";
-const { applyGameinfoChannelCosts, parseGameinfoChannelRate } = await import("../src/lib/gameinfo-channel-costs.js");
+const { applyGameinfoChannelCosts, gameinfoRateVariables, parseGameinfoChannelRate } = await import("../src/lib/gameinfo-channel-costs.js");
 const { getGameinfoFormulaVariables } = await import("../src/server/gameinfo-formula-variables.js");
 const { getGameinfoModeData, updateGameinfoModeData } = await import("../src/server/gameinfo-mode-data.js");
 const { getGamelistPacks, saveGamelistPacks } = await import("../src/server/gameinfo-gamelist-packs.js");
@@ -25,7 +26,8 @@ try {
   if (!rates.length) throw new Error('ใส่ --rate="ช่องทาง=เรท:สกุลเงิน" อย่างน้อยหนึ่งช่องทาง');
   const { variables } = await getGameinfoFormulaVariables(0);
   for (const { rateFormula } of rates) {
-    if (rateFormula && !variables.some((variable) => `[${variable.name}]` === rateFormula)) throw new Error(`ไม่พบตัวแปรผสม ${rateFormula}`);
+    const missing = gameinfoRateVariables(rateFormula).find((name) => !variables.some((variable) => variable.name === name));
+    if (missing) throw new Error(`ไม่พบตัวแปรผสม [${missing}]`);
   }
 
   // Read the uid store first even for idpass: it readies the shared pack
