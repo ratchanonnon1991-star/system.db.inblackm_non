@@ -136,8 +136,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
     <div className="flex flex-col gap-5">
       <GameHero row={row} dataMode={dataMode} editHref={editHref} />
 
-      {/* The full warning still opens by itself; the strip keeps it one
-          click away after it has been closed. */}
+      {/* The full warning opens only from this strip's button. */}
       {row.hasWarning ? (
         <div role="alert" className="flex flex-wrap items-center gap-3 rounded-[14px] bg-[#D90005] px-[18px] py-3.5 text-white shadow-[0_12px_24px_-16px_rgba(143,0,25,0.6)]">
           <TriangleAlert size={22} strokeWidth={2.4} aria-hidden="true" className="shrink-0" />
@@ -148,7 +147,6 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
             editable={false}
             hasData={row.hasWarning}
             variant="warning"
-            autoOpen
             dataMode={dataMode}
             className="ml-auto h-9 rounded-full bg-white px-4 text-[13px] font-extrabold text-[#D90005] transition hover:bg-white/90"
           >
