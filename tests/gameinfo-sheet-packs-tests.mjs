@@ -17,8 +17,10 @@ import {
   gameinfoSheetPackTree,
   gameinfoSheetPackNameColumns,
   gameinfoSheetPackUnits,
+  formatGameinfoSheetSyncTime,
   gameinfoSheetAutoChange,
   gameinfoSheetStatusChanges,
+  gameinfoSheetSyncProblem,
   nextGameinfoSheetSyncAt,
   gameinfoSheetTone,
   parseGameinfoSheetPackTab,
@@ -333,6 +335,16 @@ twoDates.currencies[0].categories[0].packs.push({ name: expiryNoted.currencies[0
 check(gameinfoSheetStatusChanges(datedTree(), twoDates).length === 0, "two dates for one name are left alone");
 check(gameinfoSheetStatusChanges(datedTree({ expiresAt: "2099-01-01" }), toned).every((change) => !change.expiresAt), "with no note a pack keeps its date");
 
+const syncRun = (fields = {}) => ({ finishedAt: "2026-11-01T23:00:00Z", error: "", failed: 0, ...fields });
+const nextMorning = new Date("2026-11-02T00:00:00Z");
+check(gameinfoSheetSyncProblem(null) === "", "before the first run there is nothing to warn of");
+check(gameinfoSheetSyncProblem(syncRun(), nextMorning) === "", "a clean run from this morning is fine");
+check(gameinfoSheetSyncProblem(syncRun({ error: "no key" }), nextMorning) === "failed", "a run that failed outright is flagged");
+check(gameinfoSheetSyncProblem(syncRun({ failed: 2 }), nextMorning) === "partial", "as is one where some games failed");
+check(gameinfoSheetSyncProblem(syncRun(), new Date("2026-11-03T00:59:00Z")) === "", "a run due today but a little slow is not late");
+check(gameinfoSheetSyncProblem(syncRun(), new Date("2026-11-03T01:01:00Z")) === "late", "a run that never came is");
+check(gameinfoSheetSyncProblem(syncRun({ error: "no key" }), new Date("2026-11-09T00:00:00Z")) === "failed", "a failure stays a failure however old");
+check(formatGameinfoSheetSyncTime("2026-11-01T23:00:00Z") === "2/11/2026 06:00 น.", "the time reads in Bangkok, day first");
 check(!gameinfoSheetAutoChange({ from: "expired", to: "open" }), "the daily run does not put an expired pack back on sale");
 check(["new", "expired"].every((to) => gameinfoSheetAutoChange({ from: "open", to })) && gameinfoSheetAutoChange({ from: "new", to: "open" }), "it makes what the sheet marks, and ends ใหม่");
 check(gameinfoSheetAutoChange({ from: "expired", to: "new", expiresAt: "2099-01-01" }), "a green row with a later date does bring a pack back");

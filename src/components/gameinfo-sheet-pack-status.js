@@ -7,7 +7,7 @@ import { CheckCircle2, Palette, Plus, RefreshCw } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { gameinfoGameHref } from "@/lib/gameinfo-data-mode";
 import { formatGameinfoPackExpiry, GAMEINFO_PACK_STATUS_LABELS } from "@/lib/gameinfo-pack-model";
-import { GAMEINFO_SHEET_ADDED_CATEGORY, nextGameinfoSheetSyncAt } from "@/lib/gameinfo-sheet-packs";
+import { formatGameinfoSheetSyncTime, GAMEINFO_SHEET_ADDED_CATEGORY, gameinfoSheetSyncProblem, nextGameinfoSheetSyncAt } from "@/lib/gameinfo-sheet-packs";
 
 const STATUS_TONE = {
   open: "text-emerald-700 dark:text-emerald-400",
@@ -198,30 +198,25 @@ export default function GameinfoSheetPackStatus({ lang, lastRun = null }) {
   );
 }
 
-// Written out by hand rather than in the th-TH locale, whose format differs
-// between the server's Node and the browser.
-function bangkokTime(value) {
-  const [date, time] = new Date(value).toLocaleString("sv-SE", { timeZone: "Asia/Bangkok" }).split(" ");
-  return `${formatGameinfoPackExpiry(date)} ${time.slice(0, 5)} น.`;
-}
-
 // What the daily read last did. When it could not run at all it changed
 // nothing, which is the case this panel is here to make visible.
 function LastSyncRun({ lang, run }) {
-  const next = `รอบถัดไป ${bangkokTime(nextGameinfoSheetSyncAt())}`;
+  const next = `รอบถัดไป ${formatGameinfoSheetSyncTime(nextGameinfoSheetSyncAt())}`;
   if (!run) return <p className="rounded-xl bg-linear-surface-2 p-3 text-sm text-linear-ink-muted">ระบบยังไม่เคยอ่านชีตเอง · {next}</p>;
+  const problem = gameinfoSheetSyncProblem(run);
   const details = run.details || [];
   const failedGames = details.filter((item) => item.error);
   const changedGames = details.filter((item) => item.changes?.length);
   return (
-    <div role="status" className={`rounded-xl p-3 text-sm ${run.error || run.failed ? "bg-red-500/10" : "bg-linear-surface-2"}`}>
+    <div role="status" className={`rounded-xl p-3 text-sm ${problem ? "bg-red-500/10" : "bg-linear-surface-2"}`}>
       <p className="text-linear-ink-muted">
-        <strong className="text-linear-ink">ระบบอ่านชีตเองล่าสุด {bangkokTime(run.finishedAt)}</strong>
+        <strong className="text-linear-ink">ระบบอ่านชีตเองล่าสุด {formatGameinfoSheetSyncTime(run.finishedAt)}</strong>
         {" · "}
         {run.error
           ? <span className="font-bold text-[#B80004] dark:text-[#FF8A8C]">ไม่สำเร็จ ไม่ได้ปรับอะไร</span>
           : run.packs ? `ปรับ ${run.packs} แพ็คใน ${run.games} เกม` : "ไม่มีอะไรต้องปรับ"}
         {run.failed ? <span className="font-bold text-[#B80004] dark:text-[#FF8A8C]"> · ไม่สำเร็จ {run.failed} เกม</span> : null}
+        {problem === "late" ? <span className="font-bold text-[#B80004] dark:text-[#FF8A8C]"> · ไม่ได้รันตามเวลา</span> : null}
         {" · "}{next}
       </p>
       {run.error ? <p className="mt-1 break-words text-[#B80004] dark:text-[#FF8A8C]">{run.error}</p> : null}

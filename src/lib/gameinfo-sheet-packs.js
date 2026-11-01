@@ -15,7 +15,7 @@
 // Rows under a header with a pack name and a price are packs. A label row
 // can also be a note ("ต้องเปิด VPN…"), which is not a category, or open a
 // VIP or price-comparison table ("ราคา VIP", "แพ็คเทียบราคา"), which is skipped.
-import { createBlankGameinfoPack, gameinfoPackDatePassed, gameinfoPackStatus, gameinfoPackStatusPatch, sanitizeGameinfoPackExpiry } from "@/lib/gameinfo-pack-model";
+import { createBlankGameinfoPack, formatGameinfoPackExpiry, gameinfoPackDatePassed, gameinfoPackStatus, gameinfoPackStatusPatch, sanitizeGameinfoPackExpiry } from "@/lib/gameinfo-pack-model";
 import { normalizeGameinfoNumericInput } from "@/lib/gameinfo-pack-validation";
 
 const FIAT = new Set([
@@ -553,6 +553,31 @@ export function nextGameinfoSheetSyncAt(now = new Date()) {
   next.setUTCHours(23, 0, 0, 0);
   if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
   return next;
+}
+
+// A day and two hours: long enough for a run that is merely slow.
+const SHEET_SYNC_LATE_MS = 26 * 60 * 60 * 1000;
+
+/**
+ * What is wrong with the daily read, going by its last run ("failed" |
+ * "partial" | "late"), or "" when nothing is. "late" is a run that never
+ * happened, which leaves no failure behind; before the first run there is
+ * nothing to go by.
+ */
+export function gameinfoSheetSyncProblem(run, now = new Date()) {
+  if (!run) return "";
+  if (run.error) return "failed";
+  if (run.failed) return "partial";
+  return new Date(now).getTime() - new Date(run.finishedAt).getTime() > SHEET_SYNC_LATE_MS ? "late" : "";
+}
+
+/**
+ * A moment as 2/11/2026 06:00 น. in Bangkok. Written out by hand rather than
+ * in the th-TH locale, whose format differs between the server and the browser.
+ */
+export function formatGameinfoSheetSyncTime(value) {
+  const [date, time] = new Date(value).toLocaleString("sv-SE", { timeZone: "Asia/Bangkok" }).split(" ");
+  return `${formatGameinfoPackExpiry(date)} ${time.slice(0, 5)} น.`;
 }
 
 /** The tree with the given changes made: only the status of the packs they name. */

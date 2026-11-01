@@ -5,10 +5,12 @@ import { ChevronRight, Gamepad2, LayoutGrid } from "lucide-react";
 import { isSupportedLang } from "@/lib/gameinfo-i18n";
 import { getSessionUser } from "@/server/session-user";
 import { canManageGameinfo, hasGameinfoAccess } from "@/server/auth";
+import { getLatestGameinfoSheetSyncRun } from "@/server/gameinfo-sheet-sync-runs";
 import GameinfoModeToggle from "@/components/gameinfo-mode-toggle";
 import GameinfoProfileMenu from "@/components/gameinfo-profile-menu";
 import GameinfoThemeRoot from "@/components/gameinfo-theme-root";
 import GameinfoThemeToggle from "@/components/gameinfo-theme-toggle";
+import GameinfoSheetSyncAlert from "@/components/gameinfo-sheet-sync-alert";
 
 const notoThai = Noto_Sans_Thai({
   subsets: ["thai", "latin"],
@@ -32,6 +34,8 @@ export default async function GameinfoLangLayout({ children, params }) {
   const user = await getSessionUser();
   if (!hasGameinfoAccess(user)) redirect("/");
   const editableRole = canManageGameinfo(user);
+  // Only those who can open the sheet-import page can act on a failed run.
+  const lastSheetRun = editableRole ? await getLatestGameinfoSheetSyncRun().catch(() => null) : null;
 
   return (
     <GameinfoThemeRoot
@@ -66,6 +70,7 @@ export default async function GameinfoLangLayout({ children, params }) {
           </nav>
         </div>
       </header>
+      <GameinfoSheetSyncAlert lang={lang} run={lastSheetRun} />
       {/* min-w-0 overrides the flex item's default min-width:auto — without
           it, a wide pack table nested inside forces this whole column wider
           than the viewport instead of scrolling inside its own box. */}
