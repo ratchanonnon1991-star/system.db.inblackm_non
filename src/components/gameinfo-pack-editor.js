@@ -86,7 +86,11 @@ import {
 import {
   createBlankGameinfoPack,
   duplicateGameinfoPack,
+  formatGameinfoPackExpiry,
   GAMEINFO_PACK_STATUS_LABELS,
+  GAMEINFO_PACK_STATUS_TONES,
+  gameinfoPackDatePassed,
+  gameinfoPackExpiryWarning,
   gameinfoPackStatus,
   gameinfoPackStatusPatch,
   getGameinfoPackName,
@@ -106,12 +110,6 @@ import { Input } from "@/components/ui/input";
 const REQUIRED_PACK_FIELDS = ["name", "price", "amountChargedFee", "channelsMain"];
 // A click on a pack's status moves it on: เปิด → ปิด → ใหม่ → หมดอายุ → เปิด.
 const EDITOR_STATUS_NEXT = { open: "closed", closed: "new", new: "expired", expired: "open" };
-const EDITOR_STATUS_TONES = {
-  open: { text: "text-emerald-400", dot: "bg-emerald-400" },
-  closed: { text: "text-linear-ink-tertiary", dot: "bg-zinc-500" },
-  new: { text: "text-red-400", dot: "bg-red-500" },
-  expired: { text: "text-amber-500", dot: "bg-amber-500" },
-};
 
 function genId(prefix) {
   return `${prefix}_${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-4)}`;
@@ -1870,12 +1868,16 @@ function PackEditorColumn({
 }) {
   if (column.id === "serviceEnabled") {
     const status = gameinfoPackStatus(pack);
-    const tone = EDITOR_STATUS_TONES[status];
+    const tone = GAMEINFO_PACK_STATUS_TONES[status];
     const label = GAMEINFO_PACK_STATUS_LABELS[status];
     return (
       <button
         type="button"
-        onClick={() => onUpdate(gameinfoPackStatusPatch(EDITOR_STATUS_NEXT[status]))}
+        // A passed date would hold the pack at หมดอายุ, so moving it on drops the date.
+        onClick={() => onUpdate({
+          ...gameinfoPackStatusPatch(EDITOR_STATUS_NEXT[status]),
+          ...(gameinfoPackDatePassed(pack) ? { expiresAt: "" } : {}),
+        })}
         title={`${label} — กดเพื่อเปลี่ยนสถานะ เปิด → ปิด → ใหม่ → หมดอายุ`}
         className={`flex items-center gap-1.5 whitespace-nowrap rounded px-1.5 py-2 text-[10px] ${tone.text}`}
       >
@@ -2023,6 +2025,34 @@ function PackEditorColumn({
           <span className="text-linear-ink-tertiary">ใส่ค่า/สูตร</span>
         ) : formatGameinfoPackColumnValue(value, column)}
       </button>
+    );
+  }
+
+  if (column.id === "expiresAt") {
+    const warning = gameinfoPackExpiryWarning(pack);
+    const date = formatGameinfoPackExpiry(pack.expiresAt);
+    return (
+      <PackCell
+        editing={editing}
+        value={warning ? (
+          <span className="inline-flex flex-wrap items-center gap-1.5">
+            {date}
+            <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[11px] font-black text-amber-800 dark:text-amber-300">{warning}</span>
+          </span>
+        ) : date}
+        placeholder={column.label}
+        invalid={invalid[column.id]}
+        onStartEdit={onStartEdit}
+        onCommit={onCommit}
+      >
+        <input
+          autoFocus
+          type="date"
+          value={pack.expiresAt ?? ""}
+          onChange={(event) => onUpdate({ expiresAt: event.target.value })}
+          className="h-9 w-full rounded border border-linear-primary/40 px-2 text-sm outline-none"
+        />
+      </PackCell>
     );
   }
 

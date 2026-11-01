@@ -25,6 +25,7 @@ import {
   gameinfoSheetPackNameColumns,
   gameinfoSheetPackTree,
   gameinfoSheetPackUnits,
+  gameinfoSheetAutoChange,
   gameinfoSheetDetailFills,
   gameinfoSheetStatusChanges,
   parseGameinfoSheetPackTab,
@@ -413,23 +414,20 @@ export async function previewGameinfoSheetPackStatus({ reader: givenReader = nul
   return { sheetId: gameinfoSourceSheetId(), checked, items };
 }
 
-/** Makes the status changes for the chosen games, worked out again from the sheet as it is now. */
-export async function applyGameinfoSheetPackStatus(gameIds, actor = null, { reader: givenReader = null } = {}) {
-  if (!Array.isArray(gameIds) || !gameIds.length) throw createHttpError("ยังไม่ได้เลือกเกม", 400);
-  if (gameIds.length > 500) throw createHttpError("ปรับได้ครั้งละไม่เกิน 500 เกม", 400);
-  const reader = givenReader || openReader();
-  const { games, packTabs } = await readStatusTabs(reader, new Set(gameIds.map(Number)));
+/** Makes the status changes `keep` lets through in these games, worked out from their tabs as just read. */
+async function applyStatusChanges({ games, packTabs }, actor, keep = () => true) {
+  const statusChanges = (currencies, parsed) => gameinfoSheetStatusChanges(currencies, parsed).filter(keep);
   const results = [];
   for (const { row, sheetGame } of games) {
     try {
       const packTab = packTabs.get(sheetGame.key);
       if (!packTab) {
-        results.push({ gameId: row.id, changed: 0, error: "ไม่พบแท็บของเกมนี้ในชีต" });
+        results.push({ gameId: row.id, game: row.game, changed: 0, error: "ไม่พบแท็บของเกมนี้ในชีต" });
         continue;
       }
       // The uid read also readies the shared pack tables before an idpass save holds them.
       const uid = await getGamelistPacks(row.id);
-      const uidChanges = gameinfoSheetStatusChanges(uid.currencies, packTab.parsed);
+      const uidChanges = statusChanges(uid.currencies, packTab.parsed);
       if (uidChanges.length) {
         await saveGamelistPacks(row.id, {
           currencies: applyGameinfoSheetStatusChanges(uid.currencies, uidChanges),
@@ -440,18 +438,22 @@ export async function applyGameinfoSheetPackStatus(gameIds, actor = null, { read
           expectedVersion: uid.version,
         });
       }
-      let idpassChanged = 0;
+      let idpassChanges = [];
       const idpass = await getGameinfoModeData(row.id, "idpass");
-      if (gameinfoSheetStatusChanges(idpass.packs.currencies, packTab.parsed).length) {
+      if (statusChanges(idpass.packs.currencies, packTab.parsed).length) {
         await updateGameinfoModeData(row.id, "idpass", (data) => {
-          const changes = gameinfoSheetStatusChanges(data.packs.currencies, packTab.parsed);
-          idpassChanged = changes.length;
+          const changes = statusChanges(data.packs.currencies, packTab.parsed);
+          idpassChanges = changes;
           return { ...data, packs: { ...data.packs, currencies: applyGameinfoSheetStatusChanges(data.packs.currencies, changes) } };
         }, { area: "pack", actor });
       }
-      results.push({ gameId: row.id, changed: uidChanges.length + idpassChanged });
+      const changes = [
+        ...uidChanges.map((change) => ({ ...change, mode: "uid" })),
+        ...idpassChanges.map((change) => ({ ...change, mode: "idpass" })),
+      ];
+      results.push({ gameId: row.id, game: row.game, changed: changes.length, changes });
     } catch (error) {
-      results.push({ gameId: row.id, changed: 0, error: error instanceof Error ? error.message : "ปรับสถานะไม่สำเร็จ" });
+      results.push({ gameId: row.id, game: row.game, changed: 0, error: error instanceof Error ? error.message : "ปรับสถานะไม่สำเร็จ" });
     }
   }
   return {
@@ -462,6 +464,28 @@ export async function applyGameinfoSheetPackStatus(gameIds, actor = null, { read
       failed: results.filter((item) => item.error).length,
     },
   };
+}
+
+/** Makes the status changes for the chosen games, worked out again from the sheet as it is now. */
+export async function applyGameinfoSheetPackStatus(gameIds, actor = null, { reader: givenReader = null } = {}) {
+  if (!Array.isArray(gameIds) || !gameIds.length) throw createHttpError("ยังไม่ได้เลือกเกม", 400);
+  if (gameIds.length > 500) throw createHttpError("ปรับได้ครั้งละไม่เกิน 500 เกม", 400);
+  const reader = givenReader || openReader();
+  return applyStatusChanges(await readStatusTabs(reader, new Set(gameIds.map(Number))), actor);
+}
+
+/**
+ * The daily run: every game's status and expiry changes from the sheet, less
+ * what is left to a person (gameinfoSheetAutoChange). It never adds packs.
+ */
+export async function syncGameinfoSheetPackStatus({ reader: givenReader = null } = {}) {
+  const reader = givenReader || openReader();
+  const { games, packTabs } = await readStatusTabs(reader);
+  return applyStatusChanges(
+    { games: games.filter(({ sheetGame }) => packTabs.has(sheetGame.key)), packTabs },
+    { id: null, name: "ระบบอ่านชีทรายวัน" },
+    gameinfoSheetAutoChange,
+  );
 }
 
 /**

@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Clock,
   ChevronsLeft,
   ChevronsRight,
   CircleOff,
@@ -56,6 +57,7 @@ import {
 const PAGE_SIZE = 12;
 
 const EXTRA_FILTER_LABELS = {
+  expiring: "ใกล้หมดอายุ",
   favorite: "รายการโปรด",
   "bot-auto": "Bot Auto",
   "priority-high": "สำคัญสูง ★★★",
@@ -400,6 +402,11 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
           </details>
 
           <span aria-hidden="true" className="mx-1 mb-1 mt-3.5 h-px bg-linear-hairline" />
+          <button type="button" onClick={() => chooseStatus("expiring")} className={navItemClass(!botCatalogActive && status === "expiring" && !priceComparisonActive)}>
+            <Clock size={18} aria-hidden="true" />
+            <span>ใกล้หมดอายุ</span>
+            <span className={navCountClass(!botCatalogActive && status === "expiring" && !priceComparisonActive)}>{counts.expiring}</span>
+          </button>
           <button type="button" onClick={() => chooseStatus("favorite")} className={navItemClass(!botCatalogActive && status === "favorite" && !priceComparisonActive)}>
             <Star size={18} aria-hidden="true" />
             <span>รายการโปรด</span>
@@ -752,6 +759,11 @@ function GameCard({ row, editable, topupView, canReport, lang, dataMode, favorit
           <AlertTriangle size={15} strokeWidth={2.4} aria-hidden="true" /> ต้องตรวจสอบ {row.reportCount} รายการ
         </div>
       ) : null}
+      {row.packExpiringCount > 0 ? (
+        <div className="flex items-center gap-2 bg-amber-500/15 px-4 py-2 text-[13px] font-bold text-amber-800 dark:text-amber-300">
+          <Clock size={15} strokeWidth={2.4} aria-hidden="true" /> แพ็คใกล้หมดอายุ {row.packExpiringCount} แพ็ค
+        </div>
+      ) : null}
       <div className="flex flex-1 flex-col gap-3.5 p-4">
         <div className="flex items-start gap-3.5">
           <DetailLink href={href} editable={editable} tabIndex={-1} aria-hidden="true" className="shrink-0">
@@ -831,6 +843,9 @@ function GameRow({ row, editable, topupView, lang, dataMode, onPriorityChange })
             <DetailLink href={href} editable={editable} className="font-black uppercase text-linear-ink hover:text-[#D90005]">{row.game}</DetailLink>
             <span className="font-mono text-xs text-linear-ink-subtle">ID: {row.id}</span>
           </div>
+          {row.packExpiringCount > 0 ? (
+            <span className="whitespace-nowrap rounded-md bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-800 dark:text-amber-300">ใกล้หมดอายุ {row.packExpiringCount}</span>
+          ) : null}
           {row.reportCount > 0 ? (
             <span className="whitespace-nowrap rounded-md bg-[#D90005] px-2 py-0.5 text-xs font-bold text-white">ต้องตรวจสอบ {row.reportCount} รายการ</span>
           ) : null}

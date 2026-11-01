@@ -1,7 +1,7 @@
 const FIELD_LABELS = {
   name: "ชื่อ", game: "ชื่อเกม", image: "รูป", price: "ราคาขาย",
   amountChargedFee: "ยอดที่กดรวม fee", amountBeforeFee: "ยอดที่กดก่อน fee", amountReceived: "จำนวนที่ได้", priceUsd: "USD", serviceEnabled: "เปิดให้บริการ",
-  serviceStatus: "สถานะบริการ", costProfileId: "โปรไฟล์ต้นทุน",
+  serviceStatus: "สถานะบริการ", expiresAt: "วันหมดอายุ", costProfileId: "โปรไฟล์ต้นทุน",
   channelsMain: "ช่องทางหลัก", channelsSecondary: "ช่องทางสำรอง",
   country: "ประเทศ", currencyName: "ชื่อสกุลเงิน", currencyImage: "รูปสกุลเงิน",
   categoryName: "ชื่อหมวดหมู่", region: "Region", platform: "Platform",

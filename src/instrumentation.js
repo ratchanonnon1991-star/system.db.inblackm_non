@@ -9,5 +9,7 @@ export async function register() {
     startGameinfoMarketScheduler();
     const { startGameinfoRussiaCheckScheduler } = await import("@/server/gameinfo-russia-check-scheduler");
     startGameinfoRussiaCheckScheduler();
+    const { startGameinfoSheetStatusScheduler } = await import("@/server/gameinfo-sheet-status-scheduler");
+    startGameinfoSheetStatusScheduler();
   }
 }

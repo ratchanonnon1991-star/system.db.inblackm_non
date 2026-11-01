@@ -15,7 +15,7 @@
 // Rows under a header with a pack name and a price are packs. A label row
 // can also be a note ("ต้องเปิด VPN…"), which is not a category, or open a
 // VIP or price-comparison table ("ราคา VIP", "แพ็คเทียบราคา"), which is skipped.
-import { createBlankGameinfoPack, gameinfoPackStatus, gameinfoPackStatusPatch } from "@/lib/gameinfo-pack-model";
+import { createBlankGameinfoPack, formatGameinfoPackExpiry, gameinfoPackDatePassed, gameinfoPackStatus, gameinfoPackStatusPatch, sanitizeGameinfoPackExpiry } from "@/lib/gameinfo-pack-model";
 import { normalizeGameinfoNumericInput } from "@/lib/gameinfo-pack-validation";
 
 const FIAT = new Set([
@@ -29,6 +29,8 @@ const NOT_PACK = ["กำไร", "ต้นทุน", "ราคา", "ยอ�
 const REGIONS = new Set(["uk", "de", "us", "jp", "kr", "tw", "hk", "fr", "it", "es", "br", "tr", "ph", "id", "my", "sg", "th", "vn", "au", "ca", "cn", "ru", "in", "mx"]);
 const NOTE = /ต้อง|สามารถ|ใช้|ระวัง|กรณี|vpn|region|ครับ|ค่ะ|⚠/i;
 const NOT_FOR_SALE = /เทียบราคา|vip/i;
+// "แพ็กใหม่หมดอายุ 4/11/2026" alone on a row: day first, as the sheet writes dates.
+const EXPIRY_NOTE = /หมด(?:อายุ|เขต)\D*(\d{1,2})\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*(\d{2,4})/;
 // Shops and top-up sites: a channel column holding these is the store, not the wallet.
 const STORES = ["codashop", "seagm", "unipin", "lapakgaming", "midasbuy", "itemku", "gamekub", "jollymax"];
 // Cost currency → the country GameInfo files the pack under.
@@ -190,6 +192,15 @@ function isLabel(cells) {
     && (!/\d/.test(cells[0]) || NOT_FOR_SALE.test(cells[0]));
 }
 
+/** The YYYY-MM-DD an expiry note gives; a two-digit or Buddhist-era year is read as the sheet means it. */
+function sheetExpiryNoteDate(text) {
+  const match = EXPIRY_NOTE.exec(text);
+  if (!match) return "";
+  const [, day, month, written] = match;
+  const year = written.length === 2 ? 2000 + Number(written) : Number(written) >= 2400 ? Number(written) - 543 : Number(written);
+  return sanitizeGameinfoPackExpiry(`${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`);
+}
+
 /**
  * One tab's rows (cells as displayed) → { currencies: [{ unit, categories:
  * [{ name, packs: [{ name, price, amountChargedFee, channelsMain,
@@ -209,8 +220,12 @@ export function parseGameinfoSheetPackTab(rows) {
   };
   const seen = new Set();
   let layout = null;
+  let tableRow = -1;
   let category = null;
   let label = "";
+  // Each note's date goes to the green rows above it, once colours are known
+  // (withGameinfoSheetTones).
+  const expiryNotes = [];
   // A VIP/comparison label covers the table under it, or the rest of the
   // table it sits in when packs come right after it.
   let skipping = false;
@@ -235,6 +250,7 @@ export function parseGameinfoSheetPackTab(rows) {
       titled = null;
       // A table we cannot read must not be read with the previous table's columns.
       layout = next.unreadable ? null : next;
+      tableRow = rowIndex;
       category = null;
       skipping = skipNextTable;
       skipNextTable = false;
@@ -242,6 +258,8 @@ export function parseGameinfoSheetPackTab(rows) {
     }
     const filled = (row || []).map(clean).filter(Boolean);
     if (!filled.length) continue;
+    const expiryDate = filled.length === 1 ? sheetExpiryNoteDate(filled[0]) : "";
+    if (expiryDate) expiryNotes.push({ date: expiryDate, row: rowIndex, table: tableRow });
     if (isLabel(filled)) {
       if (NOTE.test(filled[0]) && !NOT_FOR_SALE.test(filled[0])) continue;
       skipping = NOT_FOR_SALE.test(filled[0]);
@@ -296,6 +314,7 @@ export function parseGameinfoSheetPackTab(rows) {
       // Where the name sits, for reading the row's colour (withGameinfoSheetTones).
       sheetRow: rowIndex,
       sheetCol: layout.nameCol,
+      sheetTable: tableRow,
       mode,
     });
   }
@@ -310,7 +329,7 @@ export function parseGameinfoSheetPackTab(rows) {
     }
     currencies.splice(currencies.indexOf(unnamed), 1);
   }
-  return currencies.length ? { currencies, sources } : null;
+  return currencies.length ? { currencies, sources, expiryNotes } : null;
 }
 
 export function countGameinfoSheetPacks(parsed) {
@@ -374,7 +393,7 @@ export function gameinfoSheetPackTree(parsed) {
     categories: currency.categories.map((category) => ({
       id: newId("cat"),
       name: category.name,
-      packs: category.packs.map(({ cost, costCurrency, sheetRow, sheetCol, tone, mode, ...pack }) => ({
+      packs: category.packs.map(({ cost, costCurrency, sheetRow, sheetCol, sheetTable, tone, mode, ...pack }) => ({
         ...createBlankGameinfoPack(newId("pk")),
         ...pack,
         ...gameinfoPackStatusPatch(TONE_STATUS[tone] || "open"),
@@ -448,9 +467,22 @@ export function gameinfoSheetPackNameColumns(parsed) {
   return [...cols].sort((a, b) => a - b);
 }
 
-/** Gives each pack of a parsed tab its `tone`, from colours[col][row] (the reader's columnColors for that tab). */
+/**
+ * Gives each pack of a parsed tab its `tone`, from colours[col][row] (the
+ * reader's columnColors for that tab), and its `expiresAt` when an expiry note
+ * sits under it: a note covers the green rows right above it in its table.
+ */
 export function withGameinfoSheetTones(parsed, colors) {
   eachSheetPack(parsed, (pack) => { pack.tone = gameinfoSheetTone(colors?.[pack.sheetCol]?.[pack.sheetRow]); });
+  for (const note of parsed?.expiryNotes || []) {
+    const above = [];
+    eachSheetPack(parsed, (pack) => { if (pack.sheetTable === note.table && pack.sheetRow < note.row) above.push(pack); });
+    above.sort((left, right) => right.sheetRow - left.sheetRow);
+    for (const pack of above) {
+      if (pack.tone !== "green") break;
+      pack.expiresAt = note.date;
+    }
+  }
   return parsed;
 }
 
@@ -469,36 +501,94 @@ function eachTreePack(currencies, visit) {
  * What the sheet's colours change in one GameInfo pack tree, by pack name:
  * red → หมดอายุ, green → ใหม่, and an uncoloured row takes a pack the sheet
  * had marked back to เปิด. A pack closed by hand stays closed (green does not
- * reopen it), and a name the sheet colours two ways is left alone.
- * → [{ packId, name, from, to }] with statuses as gameinfoPackStatus gives them.
+ * reopen it), a pack past its expiry date stays expired (a row left green does
+ * not revive it), and a name the sheet colours two ways is left alone. A date
+ * from an expiry note replaces the pack's, and is left alone if one name has
+ * two; with no note the pack keeps the date it has.
+ * → [{ packId, name, from, to, expiresAt? }] with statuses as gameinfoPackStatus
+ * gives them; `to` can equal `from` when only the date changes.
  */
 export function gameinfoSheetStatusChanges(currencies, parsed) {
   const tones = new Map();
+  const dates = new Map();
   eachSheetPack(parsed, (pack) => {
     const key = gameinfoSheetPackNameKey(pack.name);
     if (!tones.has(key)) tones.set(key, new Set());
     tones.get(key).add(pack.tone || "");
+    if (!pack.expiresAt) return;
+    if (!dates.has(key)) dates.set(key, new Set());
+    dates.get(key).add(pack.expiresAt);
   });
   const changes = [];
   eachTreePack(currencies, (pack) => {
-    const seen = tones.get(gameinfoSheetPackNameKey(pack.name));
+    const key = gameinfoSheetPackNameKey(pack.name);
+    const seen = tones.get(key);
     if (!seen || seen.size !== 1) return;
+    const sheetDates = dates.get(key);
+    const expiresAt = sheetDates?.size === 1 && !sheetDates.has(pack.expiresAt) ? [...sheetDates][0] : "";
     const from = gameinfoPackStatus(pack);
+    if (gameinfoPackDatePassed(expiresAt ? { expiresAt } : pack)) {
+      if (expiresAt) changes.push({ packId: pack.id, name: pack.name, from, to: "expired", expiresAt });
+      return;
+    }
     let to = TONE_STATUS[[...seen][0]] || (from === "new" || from === "expired" ? "open" : from);
     if (to === "new" && from === "closed") to = from;
-    if (to !== from) changes.push({ packId: pack.id, name: pack.name, from, to });
+    if (to !== from || expiresAt) changes.push({ packId: pack.id, name: pack.name, from, to, ...(expiresAt ? { expiresAt } : {}) });
   });
   return changes;
 }
 
+/**
+ * Whether the daily run makes a change on its own. A row with no colour says
+ * nothing about a pack someone marked หมดอายุ by hand, so putting it back on
+ * sale is left to a person pressing the button.
+ */
+export function gameinfoSheetAutoChange(change) {
+  return !(change.from === "expired" && change.to === "open");
+}
+
+/** The next 06:00 in Bangkok: before the day's work, after yesterday's edits to the sheet. */
+export function nextGameinfoSheetSyncAt(now = new Date()) {
+  const next = new Date(now);
+  next.setUTCHours(23, 0, 0, 0);
+  if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
+  return next;
+}
+
+// A day and two hours: long enough for a run that is merely slow.
+const SHEET_SYNC_LATE_MS = 26 * 60 * 60 * 1000;
+
+/**
+ * What is wrong with the daily read, going by its last run ("failed" |
+ * "partial" | "late"), or "" when nothing is. "late" is a run that never
+ * happened, which leaves no failure behind; before the first run there is
+ * nothing to go by.
+ */
+export function gameinfoSheetSyncProblem(run, now = new Date()) {
+  if (!run) return "";
+  if (run.error) return "failed";
+  if (run.failed) return "partial";
+  return new Date(now).getTime() - new Date(run.finishedAt).getTime() > SHEET_SYNC_LATE_MS ? "late" : "";
+}
+
+/**
+ * A moment as 2/11/2026 06:00 น. in Bangkok. Written out by hand rather than
+ * in the th-TH locale, whose format differs between the server and the browser.
+ */
+export function formatGameinfoSheetSyncTime(value) {
+  const [date, time] = new Date(value).toLocaleString("sv-SE", { timeZone: "Asia/Bangkok" }).split(" ");
+  return `${formatGameinfoPackExpiry(date)} ${time.slice(0, 5)} น.`;
+}
+
 /** The tree with the given changes made: only the status of the packs they name. */
 export function applyGameinfoSheetStatusChanges(currencies, changes) {
-  const byId = new Map(changes.map((change) => [change.packId, change.to]));
+  const byId = new Map(changes.map((change) => [change.packId, change]));
+  const applied = (pack, { to, expiresAt }) => ({ ...pack, ...gameinfoPackStatusPatch(to), ...(expiresAt ? { expiresAt } : {}) });
   return (currencies || []).map((currency) => ({
     ...currency,
     categories: (currency.categories || []).map((category) => ({
       ...category,
-      packs: (category.packs || []).map((pack) => (byId.has(pack.id) ? { ...pack, ...gameinfoPackStatusPatch(byId.get(pack.id)) } : pack)),
+      packs: (category.packs || []).map((pack) => (byId.has(pack.id) ? applied(pack, byId.get(pack.id)) : pack)),
     })),
   }));
 }
@@ -629,6 +719,7 @@ export function addGameinfoSheetPacks(packs, parsed, mode, keys) {
       channelsSecondary: pack.channelsSecondary,
       country: pack.country,
       ...gameinfoPackStatusPatch(TONE_STATUS[pack.tone] || "open"),
+      expiresAt: pack.expiresAt,
       costProfileId,
     });
     added.push(pack.name);

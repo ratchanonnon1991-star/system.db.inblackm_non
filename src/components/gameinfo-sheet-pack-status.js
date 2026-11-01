@@ -6,27 +6,21 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, Palette, Plus, RefreshCw } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { gameinfoGameHref } from "@/lib/gameinfo-data-mode";
-import { GAMEINFO_PACK_STATUS_LABELS } from "@/lib/gameinfo-pack-model";
-import { GAMEINFO_SHEET_ADDED_CATEGORY } from "@/lib/gameinfo-sheet-packs";
+import { formatGameinfoPackExpiry, GAMEINFO_PACK_STATUS_LABELS, GAMEINFO_PACK_STATUS_TONES } from "@/lib/gameinfo-pack-model";
+import { formatGameinfoSheetSyncTime, GAMEINFO_SHEET_ADDED_CATEGORY, gameinfoSheetSyncProblem, nextGameinfoSheetSyncAt } from "@/lib/gameinfo-sheet-packs";
 
-const STATUS_TONE = {
-  open: "text-emerald-700 dark:text-emerald-400",
-  new: "text-[#D90005] dark:text-red-400",
-  closed: "text-linear-ink-tertiary",
-  expired: "text-amber-700 dark:text-amber-400",
-};
 const SHEET_TONE = { red: { label: "แดง", className: "bg-red-500/15 text-red-700 dark:text-red-300" }, green: { label: "เขียว", className: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" } };
 const MODE_LABEL = { uid: "UID", idpass: "ID-PASS" };
 
 function Status({ status }) {
-  return <span className={`font-bold ${STATUS_TONE[status]}`}>{GAMEINFO_PACK_STATUS_LABELS[status]}</span>;
+  return <span className={`font-bold ${GAMEINFO_PACK_STATUS_TONES[status].text}`}>{GAMEINFO_PACK_STATUS_LABELS[status]}</span>;
 }
 
 /**
  * The sheet's row colours as pack statuses: red rows → หมดอายุ, green → ใหม่.
  * Read on demand (every game's tab, twice), then applied game by game.
  */
-export default function GameinfoSheetPackStatus({ lang }) {
+export default function GameinfoSheetPackStatus({ lang, lastRun = null }) {
   const router = useRouter();
   const [preview, setPreview] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -112,13 +106,17 @@ export default function GameinfoSheetPackStatus({ lang }) {
           <h2 className="text-lg font-black text-linear-ink">สถานะแพ็คตามสีในชีต</h2>
           <p className="text-sm text-linear-ink-muted">
             แถวสีแดง = <Status status="expired" /> · สีเขียว = <Status status="new" /> · แถวไม่มีสี คืนแพ็คที่เคยเป็นใหม่/หมดอายุ เป็น <Status status="open" />.
-            จับคู่ด้วยชื่อแพ็ค ทั้งโหมด UID และ ID-PASS — แพ็คที่ปิดเองไว้ไม่ถูกเปิดคืน
+            ข้อความ “หมดอายุ 4/11/2026” ใต้แถวสีเขียว ตั้งวันหมดอายุให้แถวเขียวที่อยู่ติดกันเหนือข้อความ.
+            จับคู่ด้วยชื่อแพ็ค ทั้งโหมด UID และ ID-PASS — แพ็คที่ปิดเองไว้ไม่ถูกเปิดคืน.
+            ระบบอ่านชีตและปรับให้เองทุกวัน 06:00 น. ยกเว้นการคืนแพ็คหมดอายุเป็นเปิด ซึ่งต้องกดปรับจากหน้านี้
           </p>
         </div>
         <button type="button" onClick={load} disabled={loading || busy} className="flex h-10 items-center gap-1.5 rounded-[10px] border border-linear-hairline px-4 text-[13px] font-bold text-linear-ink hover:bg-linear-surface-2 disabled:opacity-50">
           <RefreshCw size={14} aria-hidden="true" className={loading ? "animate-spin" : ""} /> {loading ? "กำลังอ่านสีในชีต…" : preview ? "อ่านใหม่" : "ตรวจสีในชีต"}
         </button>
       </div>
+
+      <LastSyncRun lang={lang} run={lastRun} />
 
       {error ? <p role="alert" className="text-sm font-bold text-linear-danger">{error}</p> : null}
 
@@ -160,11 +158,7 @@ export default function GameinfoSheetPackStatus({ lang }) {
                     <span className="ml-2 text-xs text-linear-ink-tertiary">ID {item.gameId} · แท็บ “{item.tab}”</span>
                     <ul className="mt-1.5 grid gap-x-6 gap-y-1 text-[13px] sm:grid-cols-2">
                       {item.changes.map((change) => (
-                        <li key={`${change.mode}-${change.packId}`} className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
-                          <span className="rounded bg-linear-surface-3 px-1.5 text-[10px] font-bold text-linear-ink-muted">{MODE_LABEL[change.mode]}</span>
-                          <span className="min-w-0 break-words text-linear-ink">{change.name}</span>
-                          <span className="whitespace-nowrap text-xs"><Status status={change.from} /> → <Status status={change.to} /></span>
-                        </li>
+                        <SyncChange key={`${change.mode}-${change.packId}`} change={change} />
                       ))}
                     </ul>
                     {item.missing.length ? <Missing key={missingKey(item)} item={item} busy={busy} onAdd={addPacks} /> : null}
@@ -195,6 +189,61 @@ export default function GameinfoSheetPackStatus({ lang }) {
         </>
       ) : null}
     </section>
+  );
+}
+
+// What the daily read last did. When it could not run at all it changed
+// nothing, which is the case this panel is here to make visible.
+function LastSyncRun({ lang, run }) {
+  const next = `รอบถัดไป ${formatGameinfoSheetSyncTime(nextGameinfoSheetSyncAt())}`;
+  if (!run) return <p className="rounded-xl bg-linear-surface-2 p-3 text-sm text-linear-ink-muted">ระบบยังไม่เคยอ่านชีตเอง · {next}</p>;
+  const problem = gameinfoSheetSyncProblem(run);
+  const details = run.details || [];
+  const failedGames = details.filter((item) => item.error);
+  const changedGames = details.filter((item) => item.changes?.length);
+  return (
+    <div role="status" className={`rounded-xl p-3 text-sm ${problem ? "bg-red-500/10" : "bg-linear-surface-2"}`}>
+      <p className="text-linear-ink-muted">
+        <strong className="text-linear-ink">ระบบอ่านชีตเองล่าสุด {formatGameinfoSheetSyncTime(run.finishedAt)}</strong>
+        {" · "}
+        {run.error
+          ? <span className="font-bold text-[#B80004] dark:text-[#FF8A8C]">ไม่สำเร็จ ไม่ได้ปรับอะไร</span>
+          : run.packs ? `ปรับ ${run.packs} แพ็คใน ${run.games} เกม` : "ไม่มีอะไรต้องปรับ"}
+        {run.failed ? <span className="font-bold text-[#B80004] dark:text-[#FF8A8C]"> · ไม่สำเร็จ {run.failed} เกม</span> : null}
+        {problem === "late" ? <span className="font-bold text-[#B80004] dark:text-[#FF8A8C]"> · ไม่ได้รันตามเวลา</span> : null}
+        {" · "}{next}
+      </p>
+      {run.error ? <p className="mt-1 break-words text-[#B80004] dark:text-[#FF8A8C]">{run.error}</p> : null}
+      {failedGames.map((item) => (
+        <p key={item.gameId} className="mt-1 break-words text-[#B80004] dark:text-[#FF8A8C]">{String(item.game).split("\n")[0]} (ID {item.gameId}): {item.error}</p>
+      ))}
+      {changedGames.length ? (
+        <details className="mt-1.5 text-[13px]">
+          <summary className="cursor-pointer font-bold text-linear-ink-muted">ดูแพ็คที่ปรับ</summary>
+          <ul className="mt-2 flex flex-col gap-2">
+            {changedGames.map((item) => (
+              <li key={item.gameId}>
+                <Link href={gameinfoGameHref(lang, item.gameId, "uid", true)} className="font-bold text-linear-ink hover:text-[#D90005]">{String(item.game).split("\n")[0]}</Link>
+                <ul className="mt-1 grid gap-x-6 gap-y-1 sm:grid-cols-2">
+                  {item.changes.map((change) => <SyncChange key={`${change.mode}-${change.packId}`} change={change} />)}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+function SyncChange({ change }) {
+  return (
+    <li className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+      <span className="rounded bg-linear-surface-3 px-1.5 text-[10px] font-bold text-linear-ink-muted">{MODE_LABEL[change.mode]}</span>
+      <span className="min-w-0 break-words text-linear-ink">{change.name}</span>
+      {change.from !== change.to ? <span className="whitespace-nowrap text-xs"><Status status={change.from} /> → <Status status={change.to} /></span> : null}
+      {change.expiresAt ? <span className="whitespace-nowrap text-xs text-linear-ink-muted">หมดอายุ {formatGameinfoPackExpiry(change.expiresAt)}</span> : null}
+    </li>
   );
 }
 

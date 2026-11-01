@@ -17,7 +17,11 @@ import {
   gameinfoSheetPackTree,
   gameinfoSheetPackNameColumns,
   gameinfoSheetPackUnits,
+  formatGameinfoSheetSyncTime,
+  gameinfoSheetAutoChange,
   gameinfoSheetStatusChanges,
+  gameinfoSheetSyncProblem,
+  nextGameinfoSheetSyncAt,
   gameinfoSheetTone,
   parseGameinfoSheetPackTab,
   withGameinfoSheetTones,
@@ -277,6 +281,76 @@ const twoWays = parseGameinfoSheetPackTab(honkai);
 withGameinfoSheetTones(twoWays, { 3: nameColumn });
 twoWays.currencies[0].categories[0].packs.push({ name: "60 B-Chips", tone: "green" });
 check(!gameinfoSheetStatusChanges(gameTree, twoWays).some((change) => change.packId === "a"), "a name coloured two ways is left alone");
+const pastDate = gameTree.map((currency) => ({ ...currency, categories: currency.categories.map((category) => ({ ...category, packs: category.packs.map((pack) => ({ ...pack, expiresAt: "2020-01-01" })) })) }));
+check(gameinfoSheetStatusChanges(pastDate, toned).length === 0, "a pack past its date stays expired, whatever colour its row is");
+
+// An expiry note under the green rows, as LOVE AND DEEPSPACE writes it (with the doubled vowel).
+const notedRow = (price, name) => [price, "0.99", "1.10", name, "60", "4,500", "4,590", "", "Wavepay", "", "", "", ""];
+const notedRows = (note) => [
+  honkai[3],
+  notedRow("10", "Plain Pack"),
+  notedRow("20", "Green One"),
+  notedRow("30", "Plain Middle"),
+  notedRow("40", "Green Two"),
+  notedRow("50", "Green Three"),
+  ["", "", "", note, "", "", "", "", "", "", "", "", ""],
+  notedRow("60", "After Note"),
+];
+const noteColours = () => {
+  const column = [];
+  for (const row of [2, 4, 5, 7]) column[row] = rgb("00ff00");
+  return column;
+};
+const expiryNoted = parseGameinfoSheetPackTab(notedRows("แพ็กใหม่หมดอายุุ 4/11/2026"));
+check(expiryNoted.currencies.flatMap((currency) => currency.categories).length === 1, "the note does not start a category of its own");
+const nameCol = expiryNoted.currencies[0].categories[0].packs[0].sheetCol;
+withGameinfoSheetTones(expiryNoted, { [nameCol]: noteColours() });
+const notedPacks = expiryNoted.currencies[0].categories[0].packs;
+check(
+  notedPacks.map((pack) => `${pack.name.replace(" B-Chips", "")}:${pack.expiresAt || "-"}`).join() === "Plain Pack:-,Green One:-,Plain Middle:-,Green Two:2026-11-04,Green Three:2026-11-04,After Note:-",
+  "a note covers the green rows right above it, and stops at the first row that is not green"
+);
+check(gameinfoSheetPackTree(expiryNoted).currencies[0].categories[0].packs.find((pack) => pack.name.startsWith("Green Two")).expiresAt === "2026-11-04", "an import keeps the date");
+for (const [note, date] of [["หมดเขต 04-11-26", "2026-11-04"], ["หมดอายุ 4.11.2569", "2026-11-04"], ["หมดอายุ 31/2/2026", undefined], ["ราคา 4/11/2026", undefined]]) {
+  const parsedNote = parseGameinfoSheetPackTab(notedRows(note));
+  withGameinfoSheetTones(parsedNote, { [nameCol]: noteColours() });
+  check(parsedNote.currencies[0].categories[0].packs.find((pack) => pack.name.startsWith("Green Two")).expiresAt === date, `"${note}" gives ${date}`);
+}
+const datedTree = (fields = {}) => [{ id: "c", categories: [{ id: "cat", packs: [{ id: "g", name: expiryNoted.currencies[0].categories[0].packs[3].name, serviceEnabled: true, serviceStatus: "new", ...fields }] }] }];
+const future = gameinfoSheetStatusChanges(datedTree(), expiryNoted);
+check(future.length === 1 && future[0].expiresAt === "2026-11-04", "the note's date is a change even when the status stays");
+check(applyGameinfoSheetStatusChanges(datedTree(), future)[0].categories[0].packs[0].expiresAt === "2026-11-04", "and is applied to the pack");
+check(gameinfoSheetStatusChanges(applyGameinfoSheetStatusChanges(datedTree(), future), expiryNoted).length === 0, "a second run changes nothing");
+check(gameinfoSheetStatusChanges(datedTree({ expiresAt: "2099-01-01" }), expiryNoted)[0]?.expiresAt === "2026-11-04", "the sheet's date replaces the pack's");
+const pastNote = parseGameinfoSheetPackTab(notedRows("หมดอายุ 1/1/2020"));
+withGameinfoSheetTones(pastNote, { [nameCol]: noteColours() });
+const pastChange = gameinfoSheetStatusChanges(datedTree(), pastNote);
+check(pastChange[0]?.to === "expired" && pastChange[0]?.expiresAt === "2020-01-01", "a date already gone by reads as expired");
+check(gameinfoSheetStatusChanges(applyGameinfoSheetStatusChanges(datedTree(), pastChange), pastNote).length === 0, "and is not raised again");
+const laterNote = parseGameinfoSheetPackTab(notedRows("หมดอายุ 1/1/2099"));
+withGameinfoSheetTones(laterNote, { [nameCol]: noteColours() });
+check(gameinfoSheetStatusChanges(datedTree({ expiresAt: "2020-01-01" }), laterNote)[0]?.to === "new", "a later date in the sheet brings a passed pack back");
+const twoDates = structuredClone(expiryNoted);
+twoDates.currencies[0].categories[0].packs.push({ name: expiryNoted.currencies[0].categories[0].packs[3].name, tone: "green", expiresAt: "2026-12-01" });
+check(gameinfoSheetStatusChanges(datedTree(), twoDates).length === 0, "two dates for one name are left alone");
+check(gameinfoSheetStatusChanges(datedTree({ expiresAt: "2099-01-01" }), toned).every((change) => !change.expiresAt), "with no note a pack keeps its date");
+
+const syncRun = (fields = {}) => ({ finishedAt: "2026-11-01T23:00:00Z", error: "", failed: 0, ...fields });
+const nextMorning = new Date("2026-11-02T00:00:00Z");
+check(gameinfoSheetSyncProblem(null) === "", "before the first run there is nothing to warn of");
+check(gameinfoSheetSyncProblem(syncRun(), nextMorning) === "", "a clean run from this morning is fine");
+check(gameinfoSheetSyncProblem(syncRun({ error: "no key" }), nextMorning) === "failed", "a run that failed outright is flagged");
+check(gameinfoSheetSyncProblem(syncRun({ failed: 2 }), nextMorning) === "partial", "as is one where some games failed");
+check(gameinfoSheetSyncProblem(syncRun(), new Date("2026-11-03T00:59:00Z")) === "", "a run due today but a little slow is not late");
+check(gameinfoSheetSyncProblem(syncRun(), new Date("2026-11-03T01:01:00Z")) === "late", "a run that never came is");
+check(gameinfoSheetSyncProblem(syncRun({ error: "no key" }), new Date("2026-11-09T00:00:00Z")) === "failed", "a failure stays a failure however old");
+check(formatGameinfoSheetSyncTime("2026-11-01T23:00:00Z") === "2/11/2026 06:00 น.", "the time reads in Bangkok, day first");
+check(!gameinfoSheetAutoChange({ from: "expired", to: "open" }), "the daily run does not put an expired pack back on sale");
+check(["new", "expired"].every((to) => gameinfoSheetAutoChange({ from: "open", to })) && gameinfoSheetAutoChange({ from: "new", to: "open" }), "it makes what the sheet marks, and ends ใหม่");
+check(gameinfoSheetAutoChange({ from: "expired", to: "new", expiresAt: "2099-01-01" }), "a green row with a later date does bring a pack back");
+check(nextGameinfoSheetSyncAt(new Date("2026-11-01T22:59:00Z")).toISOString() === "2026-11-01T23:00:00.000Z", "the next run is 06:00 in Bangkok, the same evening in UTC");
+check(nextGameinfoSheetSyncAt(new Date("2026-11-01T23:00:00Z")).toISOString() === "2026-11-02T23:00:00.000Z", "and a run at that moment waits for tomorrow's");
+
 const missing = gameinfoSheetMissingPacks(toned, { uid: [{ categories: [{ packs: [{ name: "60 B-Chips" }] }] }] });
 check(missing.map((row) => `${row.name}:${row.tone}`).join() === "300 B-Chips:green,Monthly Card:", "every sheet pack with no pack of that name is listed, coloured or not");
 check(missing[1].price === "170" && missing[1].channel === "ATOM", "with its price and wallet, to find it in the sheet");

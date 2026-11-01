@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
+import { gameinfoPackOffSale } from "@/lib/gameinfo-pack-model";
 import { getSessionUser } from "@/server/session-user";
 import { canManageGameinfo } from "@/server/auth";
 import { getGameListRow, listGameListRows } from "@/server/gameinfo-gamelist";
@@ -123,7 +124,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
       }
       const packDisabledCount = currencies.reduce(
         (total, currency) => total + currency.categories.reduce(
-          (categoryTotal, category) => categoryTotal + category.packs.filter((pack) => pack.serviceEnabled === false).length,
+          (categoryTotal, category) => categoryTotal + category.packs.filter((pack) => gameinfoPackOffSale(pack)).length,
           0
         ),
         0

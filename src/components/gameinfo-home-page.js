@@ -32,6 +32,7 @@ import {
 import { listOpenGamelistReports } from "@/server/gameinfo-gamelist-reports";
 import { listGamelistFavoriteIds } from "@/server/gameinfo-gamelist-favorites";
 import { hasPermission } from "@/lib/permissions";
+import { gameinfoPackDaysLeft, gameinfoPackOffSale } from "@/lib/gameinfo-pack-model";
 import {
   listGameinfoBotCategoryImages,
   listGameinfoBotChannels,
@@ -155,14 +156,18 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
         secondary: [...new Set(flatModePacks.flatMap((pack) => pack.channelsSecondary || []))],
       };
       const disabledPackCount = dataMode === "idpass"
-        ? flatModePacks.filter((pack) => pack.serviceEnabled === false).length
+        ? flatModePacks.filter((pack) => gameinfoPackOffSale(pack)).length
         : packServiceByGame[r.id]?.disabled || 0;
+      const expiringPackCount = dataMode === "idpass"
+        ? flatModePacks.filter((pack) => gameinfoPackDaysLeft(pack) !== null).length
+        : packServiceByGame[r.id]?.expiring || 0;
       return ({
       ...r,
       ...(dataMode === "idpass" ? modeFields : {}),
       channels: dataMode === "idpass" ? modeChannels : channelsByGame[r.id] || { main: [], secondary: [] },
       packCount: dataMode === "idpass" ? flatModePacks.length : packCountByGame[r.id] || 0,
       packDisabledCount: disabledPackCount,
+      packExpiringCount: expiringPackCount,
       serviceStatus: !r.serviceEnabled
         ? "offline"
         : disabledPackCount > 0

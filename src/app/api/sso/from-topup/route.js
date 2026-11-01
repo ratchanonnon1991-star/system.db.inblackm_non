@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSessionCookieOptions, SESSION_COOKIE, signSessionToken } from "@/lib/session";
 import { getGamedbBaseUrl } from "@/lib/hiring-sso";
-import { getTopupBaseUrl, getTopupSsoSecret, TOPUP_SSO_NEW_ACCOUNT, TOPUP_SSO_ROLES } from "@/lib/topup-sso";
+import { getTopupBaseUrl, getTopupSsoSecret, topupAdminGrant, TOPUP_SSO_NEW_ACCOUNT, TOPUP_SSO_ROLES } from "@/lib/topup-sso";
 import { findOrProvisionSsoUser } from "@/server/gamedb-sso-map-repository";
+import { updateUser } from "@/server/users-repository";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -12,7 +13,9 @@ export const revalidate = 0;
  * one-time code (or ?ssoError= when TopUp refused). The code is exchanged
  * for the account's email and role server-to-server. TopUp admin/staff only;
  * the email signs in as the gamedb account it is mapped to or named after,
- * or a new Staff account that can view GameInfo (TOPUP_SSO_NEW_ACCOUNT).
+ * or a new Staff account that can view GameInfo (TOPUP_SSO_NEW_ACCOUNT). A
+ * TopUp admin's account is also given a view of every system (topupAdminGrant)
+ * each time, so one made or demoted here before still gets it.
  */
 export async function GET(request) {
   const url = new URL(request.url);
@@ -46,11 +49,14 @@ export async function GET(request) {
 
   const email = String(account?.email || "").trim().toLowerCase();
   if (!email) return failure("code_rejected");
-  if (!TOPUP_SSO_ROLES.includes(String(account?.role || "").toLowerCase())) return failure("not_staff");
+  const topupRole = String(account?.role || "").toLowerCase();
+  if (!TOPUP_SSO_ROLES.includes(topupRole)) return failure("not_staff");
 
   let user;
   try {
     ({ user } = await findOrProvisionSsoUser(email, TOPUP_SSO_NEW_ACCOUNT));
+    const grant = user && topupRole === "admin" ? topupAdminGrant(user) : null;
+    if (grant) user = await updateUser(user.id, grant);
   } catch (err) {
     console.error("failed to find or provision a gamedb account for TopUp SSO", err);
     return failure("provision_failed");
