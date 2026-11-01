@@ -29,7 +29,7 @@ import { gameinfoStableColorStyle } from "@/lib/gameinfo-stable-color";
 import { gameinfoCountryDisplayName } from "@/lib/gameinfo-countries";
 import { isGameinfoBotAuto } from "@/lib/gameinfo-dashboard";
 import { gameinfoGameColor, gameinfoGameInitials } from "@/lib/gameinfo-game-initials";
-import { formatGameinfoPackExpiry, GAMEINFO_PACK_STATUS_LABELS, gameinfoPackDatePassed, gameinfoPackStatus } from "@/lib/gameinfo-pack-model";
+import { formatGameinfoPackExpiry, GAMEINFO_PACK_STATUS_LABELS, GAMEINFO_PACK_STATUS_TONES, gameinfoPackDatePassed, gameinfoPackStatus } from "@/lib/gameinfo-pack-model";
 import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
 import GameinfoCostRates from "./gameinfo-cost-rates";
 import { useGameinfoRates } from "./gameinfo-rate-panel";
@@ -59,12 +59,6 @@ const NO_COLUMNS = [];
 // listStockForGame), read by the pack name cell.
 const StockContext = createContext({});
 const NO_STOCK = { accounts: [], byPack: {} };
-const PACK_STATUS_TONES = {
-  open: { text: "text-emerald-700 dark:text-emerald-400", dot: "bg-emerald-500" },
-  new: { text: "text-[#D90005] dark:text-red-400", dot: "bg-[#D90005]" },
-  closed: { text: "text-linear-ink-tertiary", dot: "bg-zinc-500" },
-  expired: { text: "text-amber-700 dark:text-amber-400", dot: "bg-amber-500" },
-};
 
 export default function GameinfoGameView({ row, currencies, computedColumns = NO_COLUMNS, costProfiles = [], formulaVariables = [], userId, dataMode = "uid", hiddenColumnKeys = [], editHref = null, stock = NO_STOCK, stockLinks = false, costRatesOther = null, columnOrder = null }) {
   const [formulaMode, setFormulaMode] = useState("result");
@@ -609,7 +603,7 @@ function PackViewCell({
 }) {
   if (column.id === "serviceEnabled") {
     const status = gameinfoPackStatus(pack);
-    const tone = PACK_STATUS_TONES[status];
+    const tone = GAMEINFO_PACK_STATUS_TONES[status];
     return (
       <td className={`px-3 py-2.5 first:pl-5 tabular-nums text-xs font-bold ${tone.text}`}>
         <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
@@ -621,7 +615,7 @@ function PackViewCell({
   }
   if (column.id === "expiresAt") {
     return (
-      <td className={`whitespace-nowrap px-3 py-2.5 first:pl-5 tabular-nums ${gameinfoPackDatePassed(pack) ? PACK_STATUS_TONES.expired.text : "text-linear-ink-muted"}`}>
+      <td className={`whitespace-nowrap px-3 py-2.5 first:pl-5 tabular-nums ${gameinfoPackDatePassed(pack) ? GAMEINFO_PACK_STATUS_TONES.expired.text : "text-linear-ink-muted"}`}>
         {formatGameinfoPackExpiry(pack.expiresAt) || "-"}
       </td>
     );

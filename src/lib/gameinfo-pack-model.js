@@ -36,6 +36,15 @@ export const GAMEINFO_PACK_SERVICE_STATUSES = ["new", "expired"];
 
 export const GAMEINFO_PACK_STATUS_LABELS = { open: "เปิด", closed: "ปิด", new: "ใหม่", expired: "หมดอายุ" };
 
+// New is green and expired red, as the sheet marks its rows. Open is blue so it
+// does not read as new; the sheet leaves those rows uncoloured.
+export const GAMEINFO_PACK_STATUS_TONES = {
+  open: { text: "text-sky-700 dark:text-sky-400", dot: "bg-sky-500" },
+  new: { text: "text-green-700 dark:text-green-400", dot: "bg-green-500" },
+  closed: { text: "text-linear-ink-tertiary", dot: "bg-zinc-500" },
+  expired: { text: "text-[#D90005] dark:text-red-400", dot: "bg-[#D90005]" },
+};
+
 export function sanitizeGameinfoPackExpiry(value) {
   const date = text(value).trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return "";

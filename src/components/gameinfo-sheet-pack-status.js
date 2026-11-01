@@ -6,20 +6,14 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, Palette, Plus, RefreshCw } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { gameinfoGameHref } from "@/lib/gameinfo-data-mode";
-import { formatGameinfoPackExpiry, GAMEINFO_PACK_STATUS_LABELS } from "@/lib/gameinfo-pack-model";
+import { formatGameinfoPackExpiry, GAMEINFO_PACK_STATUS_LABELS, GAMEINFO_PACK_STATUS_TONES } from "@/lib/gameinfo-pack-model";
 import { formatGameinfoSheetSyncTime, GAMEINFO_SHEET_ADDED_CATEGORY, gameinfoSheetSyncProblem, nextGameinfoSheetSyncAt } from "@/lib/gameinfo-sheet-packs";
 
-const STATUS_TONE = {
-  open: "text-emerald-700 dark:text-emerald-400",
-  new: "text-[#D90005] dark:text-red-400",
-  closed: "text-linear-ink-tertiary",
-  expired: "text-amber-700 dark:text-amber-400",
-};
 const SHEET_TONE = { red: { label: "แดง", className: "bg-red-500/15 text-red-700 dark:text-red-300" }, green: { label: "เขียว", className: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" } };
 const MODE_LABEL = { uid: "UID", idpass: "ID-PASS" };
 
 function Status({ status }) {
-  return <span className={`font-bold ${STATUS_TONE[status]}`}>{GAMEINFO_PACK_STATUS_LABELS[status]}</span>;
+  return <span className={`font-bold ${GAMEINFO_PACK_STATUS_TONES[status].text}`}>{GAMEINFO_PACK_STATUS_LABELS[status]}</span>;
 }
 
 /**

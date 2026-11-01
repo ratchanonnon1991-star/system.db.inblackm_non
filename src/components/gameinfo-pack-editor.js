@@ -88,6 +88,7 @@ import {
   duplicateGameinfoPack,
   formatGameinfoPackExpiry,
   GAMEINFO_PACK_STATUS_LABELS,
+  GAMEINFO_PACK_STATUS_TONES,
   gameinfoPackDatePassed,
   gameinfoPackStatus,
   gameinfoPackStatusPatch,
@@ -108,12 +109,6 @@ import { Input } from "@/components/ui/input";
 const REQUIRED_PACK_FIELDS = ["name", "price", "amountChargedFee", "channelsMain"];
 // A click on a pack's status moves it on: เปิด → ปิด → ใหม่ → หมดอายุ → เปิด.
 const EDITOR_STATUS_NEXT = { open: "closed", closed: "new", new: "expired", expired: "open" };
-const EDITOR_STATUS_TONES = {
-  open: { text: "text-emerald-400", dot: "bg-emerald-400" },
-  closed: { text: "text-linear-ink-tertiary", dot: "bg-zinc-500" },
-  new: { text: "text-red-400", dot: "bg-red-500" },
-  expired: { text: "text-amber-500", dot: "bg-amber-500" },
-};
 
 function genId(prefix) {
   return `${prefix}_${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-4)}`;
@@ -1872,7 +1867,7 @@ function PackEditorColumn({
 }) {
   if (column.id === "serviceEnabled") {
     const status = gameinfoPackStatus(pack);
-    const tone = EDITOR_STATUS_TONES[status];
+    const tone = GAMEINFO_PACK_STATUS_TONES[status];
     const label = GAMEINFO_PACK_STATUS_LABELS[status];
     return (
       <button
