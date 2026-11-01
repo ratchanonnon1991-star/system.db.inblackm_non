@@ -74,3 +74,11 @@ node scripts/workforce-smoke.mjs
 
 The browser smoke test uses a local mocked aggregate response only; it does not
 connect to production databases or send work to bots.
+
+## TopUp admin dashboard
+
+The Workforce tab on TopUp's `/admin` reads this report through
+`POST /api/integrations/inblackm/workforce`, so TopUp never holds these database
+connections. It is signed with `ITUNE_ORDER_BRIDGE_SECRET` over
+`timestamp\nworkforce\nbody`, the iTune bridge's scheme with its own prefix. The
+endpoint takes `{ date, channel }`, returns the same report and changes nothing.

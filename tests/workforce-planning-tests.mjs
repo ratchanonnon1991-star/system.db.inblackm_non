@@ -5,6 +5,7 @@ import { validDate, addDays, hourAt, hourKey, bangkokWorkday,
   forecastHours, defaultStaffPlan, normalizeStaffPlan, calculateStaffing } from "../src/lib/workforce-planning.js";
 import { BOT_SOURCES, WEB_SOURCE, buildSourceQuery, aggregateSourceSql } from "../src/server/workforce-sources.js";
 import { buildWorkforceReport, planningRange } from "../src/server/workforce-report.js";
+import { bridgeSignature, verifyBridgeRequest } from "../src/server/itune-order-bridge-auth.js";
 
 let passed = 0;
 async function check(name, fn) { await fn(); passed++; console.log(`ok ${name}`); }
@@ -145,5 +146,13 @@ await check("page and endpoint both gate access; SQL reads are database-enforced
   assert.ok(page.includes("getSessionUser")); assert.ok(page.includes('"workforce.access"'));
   assert.ok(repository.includes("BEGIN READ ONLY")); assert.ok(repository.includes("statement_timeout"));
   assert.ok(!repository.includes("SELECT *"));
+});
+await check("the TopUp bridge is signed before anything is read, and an iTune signature does not open it", () => {
+  const route = readFileSync("src/app/api/integrations/inblackm/workforce/route.js", "utf8");
+  assert.ok(route.indexOf("verifyBridgeRequest(") < route.indexOf("loadWorkforceReport({"));
+  const secret = "test-secret-not-for-production-123456789", now = 1791800000000, raw = '{"date":"2026-10-24"}';
+  const signed = (body) => new Headers({ "x-itune-timestamp": String(now), "x-itune-signature": bridgeSignature(secret, String(now), body) });
+  assert.doesNotThrow(() => verifyBridgeRequest(signed(`workforce\n${raw}`), `workforce\n${raw}`, secret, now));
+  assert.throws(() => verifyBridgeRequest(signed(raw), `workforce\n${raw}`, secret, now), { status: 401 });
 });
 console.log(`\n${passed} passed, 0 failed`);
