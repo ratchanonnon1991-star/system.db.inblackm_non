@@ -422,7 +422,7 @@ async function applyStatusChanges({ games, packTabs }, actor, keep = () => true)
     try {
       const packTab = packTabs.get(sheetGame.key);
       if (!packTab) {
-        results.push({ gameId: row.id, changed: 0, error: "ไม่พบแท็บของเกมนี้ในชีต" });
+        results.push({ gameId: row.id, game: row.game, changed: 0, error: "ไม่พบแท็บของเกมนี้ในชีต" });
         continue;
       }
       // The uid read also readies the shared pack tables before an idpass save holds them.
@@ -438,18 +438,22 @@ async function applyStatusChanges({ games, packTabs }, actor, keep = () => true)
           expectedVersion: uid.version,
         });
       }
-      let idpassChanged = 0;
+      let idpassChanges = [];
       const idpass = await getGameinfoModeData(row.id, "idpass");
       if (statusChanges(idpass.packs.currencies, packTab.parsed).length) {
         await updateGameinfoModeData(row.id, "idpass", (data) => {
           const changes = statusChanges(data.packs.currencies, packTab.parsed);
-          idpassChanged = changes.length;
+          idpassChanges = changes;
           return { ...data, packs: { ...data.packs, currencies: applyGameinfoSheetStatusChanges(data.packs.currencies, changes) } };
         }, { area: "pack", actor });
       }
-      results.push({ gameId: row.id, changed: uidChanges.length + idpassChanged });
+      const changes = [
+        ...uidChanges.map((change) => ({ ...change, mode: "uid" })),
+        ...idpassChanges.map((change) => ({ ...change, mode: "idpass" })),
+      ];
+      results.push({ gameId: row.id, game: row.game, changed: changes.length, changes });
     } catch (error) {
-      results.push({ gameId: row.id, changed: 0, error: error instanceof Error ? error.message : "ปรับสถานะไม่สำเร็จ" });
+      results.push({ gameId: row.id, game: row.game, changed: 0, error: error instanceof Error ? error.message : "ปรับสถานะไม่สำเร็จ" });
     }
   }
   return {

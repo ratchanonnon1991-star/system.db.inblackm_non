@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { canManageGameinfo } from "@/server/auth";
 import { getSessionUser } from "@/server/session-user";
 import { gameinfoSourceSheetId } from "@/server/gameinfo-sheet-import";
+import { getLatestGameinfoSheetSyncRun } from "@/server/gameinfo-sheet-sync-runs";
 import GameinfoSheetImport from "@/components/gameinfo-sheet-import";
 import GameinfoSheetPackStatus from "@/components/gameinfo-sheet-pack-status";
 import GameinfoBackLink from "@/components/gameinfo-back-link";
@@ -14,6 +15,8 @@ export default async function Page({ params }) {
   if (!user) redirect("/");
   if (!canManageGameinfo(user)) redirect(`/gameinfo/${lang}`);
   const sheetUrl = `https://docs.google.com/spreadsheets/d/${gameinfoSourceSheetId()}/edit`;
+  // The page is still of use without this; the panel then reads as no run yet.
+  const lastRun = await getLatestGameinfoSheetSyncRun().catch(() => null);
 
   return (
     <div className="mx-auto max-w-[1400px] px-4 pb-16 pt-6 sm:px-7">
@@ -29,7 +32,7 @@ export default async function Page({ params }) {
       </p>
       <div className="flex flex-col gap-8">
         <GameinfoSheetImport lang={lang} sheetUrl={sheetUrl} />
-        <GameinfoSheetPackStatus lang={lang} />
+        <GameinfoSheetPackStatus lang={lang} lastRun={lastRun} />
       </div>
     </div>
   );

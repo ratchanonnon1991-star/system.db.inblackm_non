@@ -7,7 +7,7 @@ import { CheckCircle2, Palette, Plus, RefreshCw } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { gameinfoGameHref } from "@/lib/gameinfo-data-mode";
 import { formatGameinfoPackExpiry, GAMEINFO_PACK_STATUS_LABELS } from "@/lib/gameinfo-pack-model";
-import { GAMEINFO_SHEET_ADDED_CATEGORY } from "@/lib/gameinfo-sheet-packs";
+import { GAMEINFO_SHEET_ADDED_CATEGORY, nextGameinfoSheetSyncAt } from "@/lib/gameinfo-sheet-packs";
 
 const STATUS_TONE = {
   open: "text-emerald-700 dark:text-emerald-400",
@@ -26,7 +26,7 @@ function Status({ status }) {
  * The sheet's row colours as pack statuses: red rows → หมดอายุ, green → ใหม่.
  * Read on demand (every game's tab, twice), then applied game by game.
  */
-export default function GameinfoSheetPackStatus({ lang }) {
+export default function GameinfoSheetPackStatus({ lang, lastRun = null }) {
   const router = useRouter();
   const [preview, setPreview] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -122,6 +122,8 @@ export default function GameinfoSheetPackStatus({ lang }) {
         </button>
       </div>
 
+      <LastSyncRun lang={lang} run={lastRun} />
+
       {error ? <p role="alert" className="text-sm font-bold text-linear-danger">{error}</p> : null}
 
       {result?.added ? (
@@ -162,12 +164,7 @@ export default function GameinfoSheetPackStatus({ lang }) {
                     <span className="ml-2 text-xs text-linear-ink-tertiary">ID {item.gameId} · แท็บ “{item.tab}”</span>
                     <ul className="mt-1.5 grid gap-x-6 gap-y-1 text-[13px] sm:grid-cols-2">
                       {item.changes.map((change) => (
-                        <li key={`${change.mode}-${change.packId}`} className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
-                          <span className="rounded bg-linear-surface-3 px-1.5 text-[10px] font-bold text-linear-ink-muted">{MODE_LABEL[change.mode]}</span>
-                          <span className="min-w-0 break-words text-linear-ink">{change.name}</span>
-                          {change.from !== change.to ? <span className="whitespace-nowrap text-xs"><Status status={change.from} /> → <Status status={change.to} /></span> : null}
-                          {change.expiresAt ? <span className="whitespace-nowrap text-xs text-linear-ink-muted">หมดอายุ {formatGameinfoPackExpiry(change.expiresAt)}</span> : null}
-                        </li>
+                        <SyncChange key={`${change.mode}-${change.packId}`} change={change} />
                       ))}
                     </ul>
                     {item.missing.length ? <Missing key={missingKey(item)} item={item} busy={busy} onAdd={addPacks} /> : null}
@@ -198,6 +195,66 @@ export default function GameinfoSheetPackStatus({ lang }) {
         </>
       ) : null}
     </section>
+  );
+}
+
+// Written out by hand rather than in the th-TH locale, whose format differs
+// between the server's Node and the browser.
+function bangkokTime(value) {
+  const [date, time] = new Date(value).toLocaleString("sv-SE", { timeZone: "Asia/Bangkok" }).split(" ");
+  return `${formatGameinfoPackExpiry(date)} ${time.slice(0, 5)} น.`;
+}
+
+// What the daily read last did. When it could not run at all it changed
+// nothing, which is the case this panel is here to make visible.
+function LastSyncRun({ lang, run }) {
+  const next = `รอบถัดไป ${bangkokTime(nextGameinfoSheetSyncAt())}`;
+  if (!run) return <p className="rounded-xl bg-linear-surface-2 p-3 text-sm text-linear-ink-muted">ระบบยังไม่เคยอ่านชีตเอง · {next}</p>;
+  const details = run.details || [];
+  const failedGames = details.filter((item) => item.error);
+  const changedGames = details.filter((item) => item.changes?.length);
+  return (
+    <div role="status" className={`rounded-xl p-3 text-sm ${run.error || run.failed ? "bg-red-500/10" : "bg-linear-surface-2"}`}>
+      <p className="text-linear-ink-muted">
+        <strong className="text-linear-ink">ระบบอ่านชีตเองล่าสุด {bangkokTime(run.finishedAt)}</strong>
+        {" · "}
+        {run.error
+          ? <span className="font-bold text-[#B80004] dark:text-[#FF8A8C]">ไม่สำเร็จ ไม่ได้ปรับอะไร</span>
+          : run.packs ? `ปรับ ${run.packs} แพ็คใน ${run.games} เกม` : "ไม่มีอะไรต้องปรับ"}
+        {run.failed ? <span className="font-bold text-[#B80004] dark:text-[#FF8A8C]"> · ไม่สำเร็จ {run.failed} เกม</span> : null}
+        {" · "}{next}
+      </p>
+      {run.error ? <p className="mt-1 break-words text-[#B80004] dark:text-[#FF8A8C]">{run.error}</p> : null}
+      {failedGames.map((item) => (
+        <p key={item.gameId} className="mt-1 break-words text-[#B80004] dark:text-[#FF8A8C]">{String(item.game).split("\n")[0]} (ID {item.gameId}): {item.error}</p>
+      ))}
+      {changedGames.length ? (
+        <details className="mt-1.5 text-[13px]">
+          <summary className="cursor-pointer font-bold text-linear-ink-muted">ดูแพ็คที่ปรับ</summary>
+          <ul className="mt-2 flex flex-col gap-2">
+            {changedGames.map((item) => (
+              <li key={item.gameId}>
+                <Link href={gameinfoGameHref(lang, item.gameId, "uid", true)} className="font-bold text-linear-ink hover:text-[#D90005]">{String(item.game).split("\n")[0]}</Link>
+                <ul className="mt-1 grid gap-x-6 gap-y-1 sm:grid-cols-2">
+                  {item.changes.map((change) => <SyncChange key={`${change.mode}-${change.packId}`} change={change} />)}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+function SyncChange({ change }) {
+  return (
+    <li className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+      <span className="rounded bg-linear-surface-3 px-1.5 text-[10px] font-bold text-linear-ink-muted">{MODE_LABEL[change.mode]}</span>
+      <span className="min-w-0 break-words text-linear-ink">{change.name}</span>
+      {change.from !== change.to ? <span className="whitespace-nowrap text-xs"><Status status={change.from} /> → <Status status={change.to} /></span> : null}
+      {change.expiresAt ? <span className="whitespace-nowrap text-xs text-linear-ink-muted">หมดอายุ {formatGameinfoPackExpiry(change.expiresAt)}</span> : null}
+    </li>
   );
 }
 
