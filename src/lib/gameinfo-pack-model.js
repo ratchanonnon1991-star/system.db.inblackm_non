@@ -36,7 +36,7 @@ export const GAMEINFO_PACK_SERVICE_STATUSES = ["new", "expired"];
 
 export const GAMEINFO_PACK_STATUS_LABELS = { open: "เปิด", closed: "ปิด", new: "ใหม่", expired: "หมดอายุ" };
 
-function sanitizeGameinfoPackExpiry(value) {
+export function sanitizeGameinfoPackExpiry(value) {
   const date = text(value).trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return "";
   const parsed = new Date(`${date}T00:00:00Z`);

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, Palette, Plus, RefreshCw } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { gameinfoGameHref } from "@/lib/gameinfo-data-mode";
-import { GAMEINFO_PACK_STATUS_LABELS } from "@/lib/gameinfo-pack-model";
+import { formatGameinfoPackExpiry, GAMEINFO_PACK_STATUS_LABELS } from "@/lib/gameinfo-pack-model";
 import { GAMEINFO_SHEET_ADDED_CATEGORY } from "@/lib/gameinfo-sheet-packs";
 
 const STATUS_TONE = {
@@ -112,6 +112,7 @@ export default function GameinfoSheetPackStatus({ lang }) {
           <h2 className="text-lg font-black text-linear-ink">สถานะแพ็คตามสีในชีต</h2>
           <p className="text-sm text-linear-ink-muted">
             แถวสีแดง = <Status status="expired" /> · สีเขียว = <Status status="new" /> · แถวไม่มีสี คืนแพ็คที่เคยเป็นใหม่/หมดอายุ เป็น <Status status="open" />.
+            ข้อความ “หมดอายุ 4/11/2026” ใต้แถวสีเขียว ตั้งวันหมดอายุให้แถวเขียวที่อยู่ติดกันเหนือข้อความ.
             จับคู่ด้วยชื่อแพ็ค ทั้งโหมด UID และ ID-PASS — แพ็คที่ปิดเองไว้ไม่ถูกเปิดคืน
           </p>
         </div>
@@ -163,7 +164,8 @@ export default function GameinfoSheetPackStatus({ lang }) {
                         <li key={`${change.mode}-${change.packId}`} className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
                           <span className="rounded bg-linear-surface-3 px-1.5 text-[10px] font-bold text-linear-ink-muted">{MODE_LABEL[change.mode]}</span>
                           <span className="min-w-0 break-words text-linear-ink">{change.name}</span>
-                          <span className="whitespace-nowrap text-xs"><Status status={change.from} /> → <Status status={change.to} /></span>
+                          {change.from !== change.to ? <span className="whitespace-nowrap text-xs"><Status status={change.from} /> → <Status status={change.to} /></span> : null}
+                          {change.expiresAt ? <span className="whitespace-nowrap text-xs text-linear-ink-muted">หมดอายุ {formatGameinfoPackExpiry(change.expiresAt)}</span> : null}
                         </li>
                       ))}
                     </ul>
