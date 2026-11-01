@@ -538,6 +538,23 @@ export function gameinfoSheetStatusChanges(currencies, parsed) {
   return changes;
 }
 
+/**
+ * Whether the daily run makes a change on its own. A row with no colour says
+ * nothing about a pack someone marked หมดอายุ by hand, so putting it back on
+ * sale is left to a person pressing the button.
+ */
+export function gameinfoSheetAutoChange(change) {
+  return !(change.from === "expired" && change.to === "open");
+}
+
+/** The next 06:00 in Bangkok: before the day's work, after yesterday's edits to the sheet. */
+export function nextGameinfoSheetSyncAt(now = new Date()) {
+  const next = new Date(now);
+  next.setUTCHours(23, 0, 0, 0);
+  if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
+  return next;
+}
+
 /** The tree with the given changes made: only the status of the packs they name. */
 export function applyGameinfoSheetStatusChanges(currencies, changes) {
   const byId = new Map(changes.map((change) => [change.packId, change]));

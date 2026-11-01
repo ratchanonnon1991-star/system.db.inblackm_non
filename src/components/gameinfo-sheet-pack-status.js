@@ -113,7 +113,8 @@ export default function GameinfoSheetPackStatus({ lang }) {
           <p className="text-sm text-linear-ink-muted">
             แถวสีแดง = <Status status="expired" /> · สีเขียว = <Status status="new" /> · แถวไม่มีสี คืนแพ็คที่เคยเป็นใหม่/หมดอายุ เป็น <Status status="open" />.
             ข้อความ “หมดอายุ 4/11/2026” ใต้แถวสีเขียว ตั้งวันหมดอายุให้แถวเขียวที่อยู่ติดกันเหนือข้อความ.
-            จับคู่ด้วยชื่อแพ็ค ทั้งโหมด UID และ ID-PASS — แพ็คที่ปิดเองไว้ไม่ถูกเปิดคืน
+            จับคู่ด้วยชื่อแพ็ค ทั้งโหมด UID และ ID-PASS — แพ็คที่ปิดเองไว้ไม่ถูกเปิดคืน.
+            ระบบอ่านชีตและปรับให้เองทุกวัน 06:00 น. ยกเว้นการคืนแพ็คหมดอายุเป็นเปิด ซึ่งต้องกดปรับจากหน้านี้
           </p>
         </div>
         <button type="button" onClick={load} disabled={loading || busy} className="flex h-10 items-center gap-1.5 rounded-[10px] border border-linear-hairline px-4 text-[13px] font-bold text-linear-ink hover:bg-linear-surface-2 disabled:opacity-50">
