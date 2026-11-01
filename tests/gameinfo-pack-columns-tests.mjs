@@ -46,6 +46,7 @@ check(
     "serviceEnabled",
     "image",
     "name",
+    "expiresAt",
     "amountReceived",
     "price",
     "amountBeforeFee",
@@ -73,6 +74,7 @@ check("layout pins the service status column to the front", normalized.order, [
   "price",
   "image",
   "name",
+  "expiresAt",
   "amountReceived",
   "amountBeforeFee",
   "amountChargedFee",
@@ -115,7 +117,7 @@ const stampedLayout = normalizeGameinfoPackLayout(
   },
   stampedColumns
 );
-check("a preset hides columns registered after it was saved", stampedLayout.hidden, ["amountReceived", "amountBeforeFee", "link", "priceUsd", "computed:late"]);
+check("a preset hides columns registered after it was saved", stampedLayout.hidden, ["expiresAt", "amountReceived", "amountBeforeFee", "link", "priceUsd", "computed:late"]);
 check(
   "a preset still shows every column it was saved with",
   stampedLayout.order.filter((id) => !stampedLayout.hidden.includes(id)).includes("computed:old"),
@@ -199,6 +201,7 @@ check(
     "computed:profit",
     "image",
     "name",
+    "expiresAt",
     "amountReceived",
     "amountBeforeFee",
     "amountChargedFee",
@@ -494,7 +497,7 @@ check(
     { key: "ru", label: "ราคาRussia", formula: "" },
     { key: "kz", label: " ราคาขาย(KALEOZ) ", formula: "" },
     { key: "usd", label: "ราคาUSD (PAGE)", formula: "1" },
-  ]).map((column) => column.id).slice(3, 8),
+  ]).map((column) => column.id).slice(4, 9),
   ["amountReceived", "price", "computed:usd", "computed:kz", "computed:ru"]
 );
 check(

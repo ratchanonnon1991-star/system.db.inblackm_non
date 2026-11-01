@@ -4,6 +4,7 @@ export const GAMEINFO_PACK_BASE_COLUMNS = [
   { id: "serviceEnabled", label: "สถานะ", field: "serviceEnabled", track: "70px", minWidth: 70, maxWidth: 90 },
   { id: "image", label: "รูป", field: "image", track: "40px", minWidth: 40, maxWidth: 56 },
   { id: "name", label: "ชื่อ pack", field: "name", track: "minmax(110px, 1.6fr)", minWidth: 140, maxWidth: 360, required: true },
+  { id: "expiresAt", label: "วันหมดอายุ", field: "expiresAt", track: "minmax(90px, 0.7fr)", minWidth: 130, maxWidth: 160 },
   { id: "amountReceived", label: "จำนวนที่ได้", field: "amountReceived", track: "minmax(70px, 0.7fr)", minWidth: 100, maxWidth: 160 },
   { id: "price", label: "ราคา", field: "price", track: "minmax(60px, 0.7fr)", minWidth: 80, maxWidth: 140, required: true },
   { id: "amountBeforeFee", label: "ยอดที่กด (ก่อน fee)", field: "amountBeforeFee", track: "minmax(70px, 0.8fr)", minWidth: 130, maxWidth: 180 },
@@ -52,7 +53,7 @@ export const GAMEINFO_PACK_SYMBOLS = ["", "$", "฿", "%"];
 // sheet, with the name first. Built-in columns go by id; columns people made
 // go by name, wherever they were added. Anything not listed follows, as it was.
 const COLUMN_ORDER = [
-  "serviceEnabled", "image", "name", "amountReceived", "price",
+  "serviceEnabled", "image", "name", "expiresAt", "amountReceived", "price",
   "ราคาusd (page)", "ราคาขาย(kaleoz)", "ราคาrussia",
   "amountBeforeFee", "amountChargedFee", "link",
   "channelsMain", "channelsSecondary", "country",

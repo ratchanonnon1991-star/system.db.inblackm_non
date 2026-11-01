@@ -15,7 +15,7 @@
 // Rows under a header with a pack name and a price are packs. A label row
 // can also be a note ("ต้องเปิด VPN…"), which is not a category, or open a
 // VIP or price-comparison table ("ราคา VIP", "แพ็คเทียบราคา"), which is skipped.
-import { createBlankGameinfoPack, gameinfoPackStatus, gameinfoPackStatusPatch } from "@/lib/gameinfo-pack-model";
+import { createBlankGameinfoPack, gameinfoPackDatePassed, gameinfoPackStatus, gameinfoPackStatusPatch } from "@/lib/gameinfo-pack-model";
 import { normalizeGameinfoNumericInput } from "@/lib/gameinfo-pack-validation";
 
 const FIAT = new Set([
@@ -469,7 +469,8 @@ function eachTreePack(currencies, visit) {
  * What the sheet's colours change in one GameInfo pack tree, by pack name:
  * red → หมดอายุ, green → ใหม่, and an uncoloured row takes a pack the sheet
  * had marked back to เปิด. A pack closed by hand stays closed (green does not
- * reopen it), and a name the sheet colours two ways is left alone.
+ * reopen it), a pack past its expiry date stays expired (a row left green does
+ * not revive it), and a name the sheet colours two ways is left alone.
  * → [{ packId, name, from, to }] with statuses as gameinfoPackStatus gives them.
  */
 export function gameinfoSheetStatusChanges(currencies, parsed) {
@@ -482,7 +483,7 @@ export function gameinfoSheetStatusChanges(currencies, parsed) {
   const changes = [];
   eachTreePack(currencies, (pack) => {
     const seen = tones.get(gameinfoSheetPackNameKey(pack.name));
-    if (!seen || seen.size !== 1) return;
+    if (!seen || seen.size !== 1 || gameinfoPackDatePassed(pack)) return;
     const from = gameinfoPackStatus(pack);
     let to = TONE_STATUS[[...seen][0]] || (from === "new" || from === "expired" ? "open" : from);
     if (to === "new" && from === "closed") to = from;

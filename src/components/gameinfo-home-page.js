@@ -32,6 +32,7 @@ import {
 import { listOpenGamelistReports } from "@/server/gameinfo-gamelist-reports";
 import { listGamelistFavoriteIds } from "@/server/gameinfo-gamelist-favorites";
 import { hasPermission } from "@/lib/permissions";
+import { gameinfoPackOffSale } from "@/lib/gameinfo-pack-model";
 import {
   listGameinfoBotCategoryImages,
   listGameinfoBotChannels,
@@ -155,7 +156,7 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
         secondary: [...new Set(flatModePacks.flatMap((pack) => pack.channelsSecondary || []))],
       };
       const disabledPackCount = dataMode === "idpass"
-        ? flatModePacks.filter((pack) => pack.serviceEnabled === false).length
+        ? flatModePacks.filter((pack) => gameinfoPackOffSale(pack)).length
         : packServiceByGame[r.id]?.disabled || 0;
       return ({
       ...r,

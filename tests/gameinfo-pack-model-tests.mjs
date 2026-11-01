@@ -3,6 +3,9 @@
 import {
   createBlankGameinfoPack,
   duplicateGameinfoPack,
+  formatGameinfoPackExpiry,
+  gameinfoPackDatePassed,
+  gameinfoPackOffSale,
   gameinfoPackStatus,
   gameinfoPackStatusPatch,
   sanitizeGameinfoPack,
@@ -101,6 +104,22 @@ check(
   ["open", "closed", "new", "expired"]
 );
 check("each status round-trips", ["open", "closed", "new", "expired"].map((status) => gameinfoPackStatus(gameinfoPackStatusPatch(status))), ["open", "closed", "new", "expired"]);
+
+// expiresAt: the last day on sale, by the Bangkok calendar.
+const bangkok = (iso) => new Date(iso);
+check("a real date is kept", sanitizeGameinfoPack({ id: "a", expiresAt: " 2026-11-04 " }).expiresAt, "2026-11-04");
+check("no date stays off the pack", "expiresAt" in sanitizeGameinfoPack({ id: "a", expiresAt: "" }), false);
+check("a date that does not exist drops", "expiresAt" in sanitizeGameinfoPack({ id: "a", expiresAt: "2026-02-30" }), false);
+check("free text drops", "expiresAt" in sanitizeGameinfoPack({ id: "a", expiresAt: "4/11/2026" }), false);
+check("the date reads as the sheet writes it", formatGameinfoPackExpiry("2026-11-04"), "4/11/2026");
+check("no date reads as nothing", formatGameinfoPackExpiry(undefined), "");
+const dated = { serviceStatus: "new", expiresAt: "2026-11-04" };
+check("the last day is still on sale", gameinfoPackStatus(dated, bangkok("2026-11-04T16:59:00Z")), "new");
+check("the day after in Bangkok it has expired", gameinfoPackStatus(dated, bangkok("2026-11-04T17:00:00Z")), "expired");
+check("a passed date counts as off sale", gameinfoPackOffSale(dated, bangkok("2026-11-05T00:00:00Z")), true);
+check("a date to come does not", gameinfoPackOffSale(dated, bangkok("2026-11-01T00:00:00Z")), false);
+check("a closed pack is off sale without a date", gameinfoPackOffSale({ serviceEnabled: false }), true);
+check("a pack with no date never passes", gameinfoPackDatePassed({}), false);
 
 const detailed = sanitizeGameinfoPack({ ...source, amountBeforeFee: " 236155 X 2 ", amountReceived: "16,160", priceUsd: "400", link: " https://x.example " });
 ok("sanitize keeps the sheet's detail fields", detailed.amountBeforeFee === "236155 X 2" && detailed.amountReceived === "16160" && detailed.priceUsd === "400" && detailed.link === "https://x.example");

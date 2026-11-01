@@ -277,6 +277,8 @@ const twoWays = parseGameinfoSheetPackTab(honkai);
 withGameinfoSheetTones(twoWays, { 3: nameColumn });
 twoWays.currencies[0].categories[0].packs.push({ name: "60 B-Chips", tone: "green" });
 check(!gameinfoSheetStatusChanges(gameTree, twoWays).some((change) => change.packId === "a"), "a name coloured two ways is left alone");
+const pastDate = gameTree.map((currency) => ({ ...currency, categories: currency.categories.map((category) => ({ ...category, packs: category.packs.map((pack) => ({ ...pack, expiresAt: "2020-01-01" })) })) }));
+check(gameinfoSheetStatusChanges(pastDate, toned).length === 0, "a pack past its date stays expired, whatever colour its row is");
 const missing = gameinfoSheetMissingPacks(toned, { uid: [{ categories: [{ packs: [{ name: "60 B-Chips" }] }] }] });
 check(missing.map((row) => `${row.name}:${row.tone}`).join() === "300 B-Chips:green,Monthly Card:", "every sheet pack with no pack of that name is listed, coloured or not");
 check(missing[1].price === "170" && missing[1].channel === "ATOM", "with its price and wallet, to find it in the sheet");

@@ -29,7 +29,7 @@ import { gameinfoStableColorStyle } from "@/lib/gameinfo-stable-color";
 import { gameinfoCountryDisplayName } from "@/lib/gameinfo-countries";
 import { isGameinfoBotAuto } from "@/lib/gameinfo-dashboard";
 import { gameinfoGameColor, gameinfoGameInitials } from "@/lib/gameinfo-game-initials";
-import { GAMEINFO_PACK_STATUS_LABELS, gameinfoPackStatus } from "@/lib/gameinfo-pack-model";
+import { formatGameinfoPackExpiry, GAMEINFO_PACK_STATUS_LABELS, gameinfoPackDatePassed, gameinfoPackStatus } from "@/lib/gameinfo-pack-model";
 import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
 import GameinfoCostRates from "./gameinfo-cost-rates";
 import { useGameinfoRates } from "./gameinfo-rate-panel";
@@ -616,6 +616,13 @@ function PackViewCell({
           <span className={`h-2 w-2 rounded-full ${tone.dot}`} />
           {GAMEINFO_PACK_STATUS_LABELS[status]}
         </span>
+      </td>
+    );
+  }
+  if (column.id === "expiresAt") {
+    return (
+      <td className={`whitespace-nowrap px-3 py-2.5 first:pl-5 tabular-nums ${gameinfoPackDatePassed(pack) ? PACK_STATUS_TONES.expired.text : "text-linear-ink-muted"}`}>
+        {formatGameinfoPackExpiry(pack.expiresAt) || "-"}
       </td>
     );
   }

@@ -11,7 +11,7 @@
 // shape the whole way through.
 import { createHash } from "node:crypto";
 import { getPoolForConnection } from "@/lib/db";
-import { sanitizeGameinfoPack } from "@/lib/gameinfo-pack-model";
+import { gameinfoPackToday, sanitizeGameinfoPack } from "@/lib/gameinfo-pack-model";
 import { findDuplicateGameinfoPackNamePrices } from "@/lib/gameinfo-pack-validation";
 import {
   sanitizeGameinfoCostProfiles,
@@ -131,6 +131,7 @@ function flattenCurrencies(gameId, currencies) {
             link: cleanPack.link,
             serviceEnabled: cleanPack.serviceEnabled,
             serviceStatus: cleanPack.serviceStatus,
+            expiresAt: cleanPack.expiresAt,
             costProfileId: cleanPack.costProfileId,
             channelsMain: cleanPack.channelsMain,
             channelsSecondary: cleanPack.channelsSecondary,
@@ -1860,11 +1861,11 @@ export async function listGamelistPackServiceByGame() {
     const result = await client.query(
       `SELECT game_id,
               COUNT(*)::int AS total_count,
-              COUNT(*) FILTER (WHERE data->>'serviceEnabled' = 'false')::int AS disabled_count
+              COUNT(*) FILTER (WHERE data->>'serviceEnabled' = 'false' OR data->>'expiresAt' < $2)::int AS disabled_count
          FROM gamelist_packs
         WHERE pack_id != $1
         GROUP BY game_id`,
-      [COMPUTED_SENTINEL]
+      [COMPUTED_SENTINEL, gameinfoPackToday()]
     );
     return Object.fromEntries(
       result.rows.map((row) => [row.game_id, { total: row.total_count, disabled: row.disabled_count }])

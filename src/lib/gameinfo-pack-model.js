@@ -36,9 +36,32 @@ export const GAMEINFO_PACK_SERVICE_STATUSES = ["new", "expired"];
 
 export const GAMEINFO_PACK_STATUS_LABELS = { open: "เปิด", closed: "ปิด", new: "ใหม่", expired: "หมดอายุ" };
 
+function sanitizeGameinfoPackExpiry(value) {
+  const date = text(value).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return "";
+  const parsed = new Date(`${date}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(date) ? date : "";
+}
+
+/** Today in Bangkok as YYYY-MM-DD, the form expiresAt is kept in. */
+export function gameinfoPackToday(now = new Date()) {
+  return new Date(now).toLocaleDateString("sv-SE", { timeZone: "Asia/Bangkok" });
+}
+
+/** expiresAt is the pack's last day on sale: past it the pack is expired, whatever else was set. */
+export function gameinfoPackDatePassed(pack, now = new Date()) {
+  return Boolean(pack?.expiresAt) && pack.expiresAt < gameinfoPackToday(now);
+}
+
+/** "2026-11-04" as the sheet writes it: 4/11/2026. */
+export function formatGameinfoPackExpiry(value) {
+  const [year, month, day] = text(value).split("-");
+  return day ? `${Number(day)}/${Number(month)}/${year}` : "";
+}
+
 /** open | closed | new | expired */
-export function gameinfoPackStatus(pack) {
-  if (pack?.serviceStatus === "expired") return "expired";
+export function gameinfoPackStatus(pack, now = new Date()) {
+  if (pack?.serviceStatus === "expired" || gameinfoPackDatePassed(pack, now)) return "expired";
   if (pack?.serviceEnabled === false) return "closed";
   return pack?.serviceStatus === "new" ? "new" : "open";
 }
@@ -49,6 +72,11 @@ export function gameinfoPackStatusPatch(status) {
   if (status === "closed") return { serviceEnabled: false, serviceStatus: "" };
   if (status === "new") return { serviceEnabled: true, serviceStatus: "new" };
   return { serviceEnabled: true, serviceStatus: "" };
+}
+
+/** Closed or expired: what a game's service light counts as a pack that is off. */
+export function gameinfoPackOffSale(pack, now = new Date()) {
+  return pack?.serviceEnabled === false || gameinfoPackDatePassed(pack, now);
 }
 
 export function sanitizeGameinfoPack(pack) {
@@ -75,10 +103,12 @@ export function sanitizeGameinfoPack(pack) {
   const amountReceived = normalizeGameinfoNumericInput(source.amountReceived);
   const priceUsd = normalizeGameinfoNumericInput(source.priceUsd);
   const link = text(source.link).trim().slice(0, 2048);
+  const expiresAt = sanitizeGameinfoPackExpiry(source.expiresAt);
   if (amountBeforeFee) result.amountBeforeFee = amountBeforeFee;
   if (amountReceived) result.amountReceived = amountReceived;
   if (priceUsd) result.priceUsd = priceUsd;
   if (link) result.link = link;
+  if (expiresAt) result.expiresAt = expiresAt;
   return result;
 }
 
