@@ -90,6 +90,7 @@ import {
   GAMEINFO_PACK_STATUS_LABELS,
   GAMEINFO_PACK_STATUS_TONES,
   gameinfoPackDatePassed,
+  gameinfoPackExpiryWarning,
   gameinfoPackStatus,
   gameinfoPackStatusPatch,
   getGameinfoPackName,
@@ -2028,10 +2029,17 @@ function PackEditorColumn({
   }
 
   if (column.id === "expiresAt") {
+    const warning = gameinfoPackExpiryWarning(pack);
+    const date = formatGameinfoPackExpiry(pack.expiresAt);
     return (
       <PackCell
         editing={editing}
-        value={formatGameinfoPackExpiry(pack.expiresAt)}
+        value={warning ? (
+          <span className="inline-flex flex-wrap items-center gap-1.5">
+            {date}
+            <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[11px] font-black text-amber-800 dark:text-amber-300">{warning}</span>
+          </span>
+        ) : date}
         placeholder={column.label}
         invalid={invalid[column.id]}
         onStartEdit={onStartEdit}

@@ -11,7 +11,7 @@
 // shape the whole way through.
 import { createHash } from "node:crypto";
 import { getPoolForConnection } from "@/lib/db";
-import { gameinfoPackToday, sanitizeGameinfoPack } from "@/lib/gameinfo-pack-model";
+import { gameinfoPackToday, gameinfoPackWarnUntil, sanitizeGameinfoPack } from "@/lib/gameinfo-pack-model";
 import { findDuplicateGameinfoPackNamePrices } from "@/lib/gameinfo-pack-validation";
 import {
   sanitizeGameinfoCostProfiles,
@@ -1852,8 +1852,9 @@ export async function listGamelistRealPackCountByGame() {
   return Object.fromEntries(result.rows.map((row) => [row.game_id, row.pack_count]));
 }
 
-/** Disabled-pack count used to derive the orange game service light. Old
- * rows without serviceEnabled are treated as enabled for compatibility. */
+/** Disabled-pack count used to derive the orange game service light, and how
+ * many on sale are about to expire. Old rows without serviceEnabled are
+ * treated as enabled for compatibility. */
 export async function listGamelistPackServiceByGame() {
   const pool = await getReadyPool();
   const client = await pool.connect();
@@ -1861,14 +1862,15 @@ export async function listGamelistPackServiceByGame() {
     const result = await client.query(
       `SELECT game_id,
               COUNT(*)::int AS total_count,
-              COUNT(*) FILTER (WHERE data->>'serviceEnabled' = 'false' OR data->>'expiresAt' < $2)::int AS disabled_count
+              COUNT(*) FILTER (WHERE data->>'serviceEnabled' = 'false' OR data->>'expiresAt' < $2)::int AS disabled_count,
+              COUNT(*) FILTER (WHERE data->>'serviceEnabled' IS DISTINCT FROM 'false' AND data->>'expiresAt' BETWEEN $2 AND $3)::int AS expiring_count
          FROM gamelist_packs
         WHERE pack_id != $1
         GROUP BY game_id`,
-      [COMPUTED_SENTINEL, gameinfoPackToday()]
+      [COMPUTED_SENTINEL, gameinfoPackToday(), gameinfoPackWarnUntil()]
     );
     return Object.fromEntries(
-      result.rows.map((row) => [row.game_id, { total: row.total_count, disabled: row.disabled_count }])
+      result.rows.map((row) => [row.game_id, { total: row.total_count, disabled: row.disabled_count, expiring: row.expiring_count }])
     );
   } finally {
     client.release();

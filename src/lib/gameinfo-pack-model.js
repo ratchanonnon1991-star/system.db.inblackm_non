@@ -62,6 +62,30 @@ export function gameinfoPackDatePassed(pack, now = new Date()) {
   return Boolean(pack?.expiresAt) && pack.expiresAt < gameinfoPackToday(now);
 }
 
+// How many days ahead a pack on sale starts to warn that it is about to expire.
+const GAMEINFO_PACK_EXPIRY_WARN_DAYS = 3;
+
+/** The last date that still warns, in the form expiresAt is kept in. */
+export function gameinfoPackWarnUntil(now = new Date()) {
+  const date = new Date(`${gameinfoPackToday(now)}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + GAMEINFO_PACK_EXPIRY_WARN_DAYS);
+  return date.toISOString().slice(0, 10);
+}
+
+/** Days until a pack on sale reaches its last day (0 on the day), or null when it does not warn. */
+export function gameinfoPackDaysLeft(pack, now = new Date()) {
+  if (!pack?.expiresAt || pack.expiresAt > gameinfoPackWarnUntil(now)) return null;
+  if (gameinfoPackOffSale(pack, now) || pack.serviceStatus === "expired") return null;
+  return Math.round((Date.parse(pack.expiresAt) - Date.parse(gameinfoPackToday(now))) / 86_400_000);
+}
+
+/** "เหลือ 2 วัน", "วันสุดท้าย", or "" when the pack does not warn. */
+export function gameinfoPackExpiryWarning(pack, now = new Date()) {
+  const days = gameinfoPackDaysLeft(pack, now);
+  if (days === null) return "";
+  return days === 0 ? "วันสุดท้าย" : `เหลือ ${days} วัน`;
+}
+
 /** "2026-11-04" as the sheet writes it: 4/11/2026. */
 export function formatGameinfoPackExpiry(value) {
   const [year, month, day] = text(value).split("-");

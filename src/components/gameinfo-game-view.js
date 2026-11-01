@@ -29,7 +29,7 @@ import { gameinfoStableColorStyle } from "@/lib/gameinfo-stable-color";
 import { gameinfoCountryDisplayName } from "@/lib/gameinfo-countries";
 import { isGameinfoBotAuto } from "@/lib/gameinfo-dashboard";
 import { gameinfoGameColor, gameinfoGameInitials } from "@/lib/gameinfo-game-initials";
-import { formatGameinfoPackExpiry, GAMEINFO_PACK_STATUS_LABELS, GAMEINFO_PACK_STATUS_TONES, gameinfoPackDatePassed, gameinfoPackStatus } from "@/lib/gameinfo-pack-model";
+import { formatGameinfoPackExpiry, gameinfoPackExpiryWarning, GAMEINFO_PACK_STATUS_LABELS, GAMEINFO_PACK_STATUS_TONES, gameinfoPackDatePassed, gameinfoPackStatus } from "@/lib/gameinfo-pack-model";
 import GameinfoFormulaModeToggle from "./gameinfo-formula-mode-toggle";
 import GameinfoCostRates from "./gameinfo-cost-rates";
 import { useGameinfoRates } from "./gameinfo-rate-panel";
@@ -616,7 +616,10 @@ function PackViewCell({
   if (column.id === "expiresAt") {
     return (
       <td className={`whitespace-nowrap px-3 py-2.5 first:pl-5 tabular-nums ${gameinfoPackDatePassed(pack) ? GAMEINFO_PACK_STATUS_TONES.expired.text : "text-linear-ink-muted"}`}>
-        {formatGameinfoPackExpiry(pack.expiresAt) || "-"}
+        <span className="inline-flex items-center gap-1.5">
+          {formatGameinfoPackExpiry(pack.expiresAt) || "-"}
+          <GameinfoPackExpiryWarning pack={pack} />
+        </span>
       </td>
     );
   }
@@ -733,6 +736,12 @@ function PackViewCell({
       {value}
     </td>
   );
+}
+
+function GameinfoPackExpiryWarning({ pack }) {
+  const warning = gameinfoPackExpiryWarning(pack);
+  if (!warning) return null;
+  return <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[11px] font-black text-amber-800 dark:text-amber-300">{warning}</span>;
 }
 
 function StableTag({ value, label = value, className = "text-xs" }) {

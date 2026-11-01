@@ -7,7 +7,10 @@ const rows = [
   { id: 2, game: "Beta", region: "TH", serviceStatus: "partial", tags: ["rpg", "Casual"], publishers: ["garena"] },
 ];
 
-assert.deepEqual(summarizeGameinfoRows(rows), { all: 3, online: 1, review: 1, partial: 1, offline: 1, botAuto: 1, favorite: 1, priorityHigh: 1, webOn: 1, webOff: 1 });
+assert.deepEqual(summarizeGameinfoRows(rows), { all: 3, online: 1, review: 1, partial: 1, offline: 1, expiring: 0, botAuto: 1, favorite: 1, priorityHigh: 1, webOn: 1, webOff: 1 });
+const expiringRows = [{ id: 1, packExpiringCount: 2 }, { id: 2, packExpiringCount: 0 }, { id: 3 }];
+assert.equal(summarizeGameinfoRows(expiringRows).expiring, 1);
+assert.deepEqual(filterGameinfoRows(expiringRows, { status: "expiring" }).map((row) => row.id), [1]);
 assert.deepEqual(filterGameinfoRows(rows, { query: "th" }).map((row) => row.id), [1, 2]);
 assert.deepEqual(filterGameinfoRows(rows, { status: "offline" }).map((row) => row.id), [3]);
 assert.deepEqual(filterGameinfoRows(rows, { status: "review" }).map((row) => row.id), [1]);

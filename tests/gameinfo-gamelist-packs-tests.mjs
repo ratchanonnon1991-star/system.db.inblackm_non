@@ -364,15 +364,16 @@ async function run() {
   reset();
   setResponder((text) => {
     if (/disabled_count/.test(text)) {
-      return { rows: [{ game_id: 5, total_count: 3, disabled_count: 1 }] };
+      return { rows: [{ game_id: 5, total_count: 3, disabled_count: 1, expiring_count: 2 }] };
     }
     return null;
   });
   check("service summary: returns disabled packs per game", await listGamelistPackServiceByGame(), {
-    5: { total: 3, disabled: 1 },
+    5: { total: 3, disabled: 1, expiring: 2 },
   });
   const serviceStmt = find(/disabled_count/);
   ok("service summary: a passed expiry date counts as disabled", /data->>'expiresAt' < \$2/.test(serviceStmt?.text || ""));
+  ok("service summary: a pack on sale due within the warning counts as expiring", /IS DISTINCT FROM 'false' AND data->>'expiresAt' BETWEEN \$2 AND \$3/.test(serviceStmt?.text || ""));
   ok("service summary: binds today as the date to compare", /^\d{4}-\d{2}-\d{2}$/.test(serviceStmt?.params?.[1] || ""));
 
   // --- listAllGamelistChannels: merges main+secondary across every game -----
