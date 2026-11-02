@@ -15,6 +15,7 @@ export default function TopupInventoryHome({ lang }) {
       </div>
       <Link href="/" className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-ll-hairline-strong px-3 text-sm text-ll-ink hover:bg-ll-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ll-primary"><ArrowLeft size={16} aria-hidden />กลับเมนูหลัก</Link>
     </header>
+    <Link href={`${topupInventoryPath(lang)}/alerts`} className="rounded-xl border border-ll-hairline-strong p-4 text-sm font-medium text-ll-ink underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ll-primary">ตั้งค่าแจ้งเตือนสต็อกต่ำกว่า 50% ผ่าน Telegram</Link>
     <section aria-label="บริการ Topup Inventory" className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {TOPUP_INVENTORY_PROVIDERS.map((provider) => {
         const Icon = icons[provider.key] || Boxes;

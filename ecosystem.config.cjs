@@ -5,6 +5,20 @@
 module.exports = {
   apps: [
     {
+      name: "inventory-alert-worker",
+      script: "scripts/inventory-alert-worker.mjs",
+      cwd: __dirname,
+      interpreter: process.execPath,
+      instances: 1,
+      exec_mode: "fork",
+      autorestart: true,
+      stop_exit_codes: [0],
+      restart_delay: 10000,
+      kill_timeout: 25000,
+      max_memory_restart: "256M",
+      env: { NODE_ENV: "production" },
+    },
+    {
       name: "usdcodashop-sync-worker",
       script: "scripts/usdcodashop-sync-worker.mjs",
       cwd: __dirname,

@@ -153,7 +153,7 @@ jobs:
               "$PM2_BIN" delete $stale_apps
             fi
             "$PM2_BIN" startOrRestart ecosystem.config.cjs \
-              --only system.db.inblackm,usdcodashop-sync-worker,itune-sheet-sync-worker \
+              --only system.db.inblackm,usdcodashop-sync-worker,itune-sheet-sync-worker,inventory-alert-worker \
               --update-env
 
             "$PM2_BIN" save

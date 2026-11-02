@@ -266,6 +266,10 @@ npm run dev            # http://localhost:4183
 3. เพิ่ม site ใน aaPanel/nginx: subdomain ชั้นเดียว เช่น `systemdb.inblackm.com` → reverse proxy `http://127.0.0.1:5589` (subdomain ซ้อน 2 ชั้นจะติดปัญหา cert ของ Cloudflare)
 4. ใน Cloudflare Turnstile เพิ่ม hostname `systemdb.inblackm.com` ให้ widget แล้วกำหนด `TURNSTILE_ENABLED=true` พร้อม Site Key/Secret Key ใน `.env` ก่อน restart PM2
 
+## แจ้งเตือนสต็อก Telegram
+
+ดู [คู่มือตั้งค่าบอทและ worker](TOPUP_TELEGRAM_SETUP.md) และ `.env.inventory-alerts.example` ตั้งยอดได้จากหน้า Topup Inventory → ตั้งค่าแจ้งเตือน
+
 ## ให้สิทธิ์
 ```bash
 GRANT USAGE, SELECT ON SEQUENCE gamedb_queries_id_seq TO system_database;
