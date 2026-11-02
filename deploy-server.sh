@@ -197,7 +197,7 @@ if [ -n "$stale_apps" ]; then
   # shellcheck disable=SC2086
   "$PM2" delete $stale_apps
 fi
-"$PM2" startOrRestart ecosystem.config.cjs --only system.db.inblackm,usdcodashop-sync-worker,itune-sheet-sync-worker --update-env
+"$PM2" startOrRestart ecosystem.config.cjs --only system.db.inblackm,usdcodashop-sync-worker,itune-sheet-sync-worker,inventory-alert-worker --update-env
 
 ready=""
 for _ in $(seq 1 45); do

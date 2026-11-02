@@ -21,3 +21,5 @@ AGENTS.md
 browser-extension/*
 !browser-extension/social-feed-collector/
 coverage/
+
+.env.local
