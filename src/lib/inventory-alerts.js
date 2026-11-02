@@ -10,7 +10,11 @@ export function alertTarget(value) {
 
 export function isLowStock(balance, target) {
   if (balance == null || target == null) return null;
-  try { return usdCents(balance) * 2n < usdCents(target); }
+  try {
+    const text = String(balance).trim(), negative = text.startsWith("-");
+    const cents = usdCents(negative ? text.slice(1) : text);
+    return (negative ? -cents : cents) * 2n < usdCents(target);
+  }
   catch { return null; }
 }
 

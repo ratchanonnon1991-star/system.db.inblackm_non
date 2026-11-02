@@ -38,7 +38,9 @@ export function createInventoryAlerts({ pool = getPool(), balances = loadAlertBa
       for (const row of rows) if (!keys.has(row.channel_key)) channels.push({ key: row.channel_key, provider: row.provider,
         label: row.label, currency: row.currency, balance: null, balanceAt: null, source: "unavailable",
         target: row.target, lastSentAt: row.last_sent_at, lastCheckedAt: row.last_checked_at,
-        lastError: row.last_error || "ไม่พบยอดล่าสุด บัญชีอาจถูกปิดหรืออ่านข้อมูลไม่สำเร็จ" });
+        lastError: row.provider === "usdcodashop" && row.channel_key !== "usdcodashop:USD"
+          ? "รายการยอดกรอกมือเดิม: กรุณาตั้งเป้าหมายที่ USDCodashop Bot แล้วล้างเป้าหมายรายการนี้"
+          : row.last_error || "ไม่พบยอดล่าสุด บัญชีอาจถูกปิดหรืออ่านข้อมูลไม่สำเร็จ" });
       return { channels, errors: snapshot.errors, telegramConfigured: telegramConfigured(), workerEnabled: process.env.TOPUP_INVENTORY_ALERTS_ENABLED === "true" };
     },
     async save(body, actor) {
@@ -51,7 +53,7 @@ export function createInventoryAlerts({ pool = getPool(), balances = loadAlertBa
         return;
       }
       const provider = body.key.split(":", 1)[0];
-      if (!["gamepoint", "plsbuy", "razer", "netease", "garena-shell", "itune", "wavepay", "usdcodashop", "multigamecard"].includes(provider)) throw inventoryError("ช่องทางไม่ถูกต้อง");
+      if (!["gamepoint", "plsbuy", "donshop", "agenh2h", "razer", "netease", "garena-shell", "itune", "wavepay", "usdcodashop", "multigamecard"].includes(provider)) throw inventoryError("ช่องทางไม่ถูกต้อง");
       const snapshot = await balances([provider]), c = snapshot.channels.find(c => c.key === body.key);
       if (!c) throw inventoryError("ไม่พบช่องทาง กรุณาโหลดข้อมูลใหม่", 409);
       // Editing the same target preserves the latch; changing it starts a new alert cycle.

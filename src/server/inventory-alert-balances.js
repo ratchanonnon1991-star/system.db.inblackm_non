@@ -10,6 +10,9 @@ import { WAVE_PHONE_SQL, WAVEPAY_METHOD, kyat } from "@/lib/wavepay-inventory";
 import { mgcPoints } from "@/lib/multigamecard-inventory";
 import { getReadyPool } from "@/server/itune-entries-repository";
 import { ITUNE_UNAVAILABLE_STATUS } from "@/lib/itune-status";
+import { providerUsd } from "@/lib/usdcodashop-ledger";
+import { loadDonshopWallet } from "@/server/donshop-inventory";
+import { loadAgenh2hWallet } from "@/server/agenh2h-inventory";
 
 const channel = (provider, id, label, currency, balance, balanceAt, source) => ({
   key: `${provider}:${id}`, provider, label: label.slice(0, 300), currency, balance,
@@ -20,6 +23,14 @@ const queryPool = (pool) => async (sql, params) => (await pool.query(sql, params
 
 // Balance projections only: never read account passwords, PINs or full provider payloads.
 export const balanceReaders = {
+  async donshop(select) {
+    const wallet = await loadDonshopWallet(select);
+    return [channel("donshop", "IDR", "Donshop", "IDR", wallet?.amount ?? null, wallet?.checkedAt, "codashop_orders: before − debit")];
+  },
+  async agenh2h(select) {
+    const wallet = await loadAgenh2hWallet(select);
+    return [channel("agenh2h", "IDR", "AgenH2H", "IDR", wallet?.amount ?? null, wallet?.checkedAt, "codashop_orders: before − debit")];
+  },
   async gamepoint(select) {
     const rows = await select(`SELECT c.id,c.source_order_id,c.created_at AS occurred_at,${gpColumns}
       FROM codashop_orders c WHERE c.payment_method=$1 AND c.status='completed'
@@ -98,15 +109,19 @@ export const balanceReaders = {
       `Multigamecard Manual ${r.serial}`, "Points", mgcPoints(r.balance_points), r.balance_at || r.created_at, "manual_ledger"))];
   },
   async usdcodashop() {
-    const rows = await queryPool(getPool())(`SELECT id,account_name,
-      (current_amount-used_amount)::text AS balance,updated_at FROM gamedb_usdcodashop_inventory WHERE status=$1`, ["ปกติ"]);
-    return rows.map(r => channel("usdcodashop", r.id, `USDCodashop ${r.account_name}`, "USD", plsAmount(r.balance), r.updated_at, "inventory_ledger"));
+    const rows = await queryPool(getPool())(`SELECT latest.balance,latest.occurred_at AS balance_at,w.last_sync
+      FROM gamedb_coda_wallet w LEFT JOIN LATERAL (
+        SELECT l.details->>'providerBalance' AS balance,l.occurred_at FROM gamedb_coda_ledger l
+        WHERE l.wallet_id=w.id AND l.kind='order' ORDER BY l.occurred_at DESC,l.source_id DESC LIMIT 1
+      ) latest ON TRUE WHERE w.id=1`);
+    return [{ ...channel("usdcodashop", "USD", "USDCodashop Bot", "USD", providerUsd(rows[0]?.balance), rows[0]?.balance_at,
+      "codashop_orders / inventory_transactions → gamedb_coda_ledger"), syncedAt: rows[0]?.last_sync ?? null }];
   },
   async itune() {
-    const rows = await queryPool(await getReadyPool())(`SELECT id,email,currency,amount,added_at FROM projectm_itune_entries
+    const rows = await queryPool(await getReadyPool())(`SELECT id,email,currency,amount,updated_at FROM projectm_itune_entries
       WHERE COALESCE(status,'')<>$1 AND btrim(COALESCE(currency,''))<>''`, [ITUNE_UNAVAILABLE_STATUS]);
     return rows.map(r => channel("itune", `${r.id}:${r.currency}`, `iTune ${r.email}`, r.currency, plsAmount(r.amount),
-      null, "inventory_ledger (ไม่ระบุเวลาอัปเดตยอด)"));
+      r.updated_at, "itune_ledger (เวลาแก้ไขบัญชีล่าสุด)"));
   },
 };
 

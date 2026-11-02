@@ -29,7 +29,7 @@ Remove-Variable stockBotToken,stockBotSecret,stockBotUpdates -ErrorAction Silent
 
 ## 2. ตั้งค่าบนเซิร์ฟเวอร์
 
-เพิ่มค่าตาม `.env.inventory-alerts.example` ลง `.env.local` ของโปรเจกต์:
+เพิ่มค่าตาม `.env.inventory-alerts.example` ลง `.env` ของโปรเจกต์:
 
 ```dotenv
 TOPUP_INVENTORY_ALERTS_ENABLED=true
@@ -50,14 +50,14 @@ npx pm2 start ecosystem.config.cjs --only inventory-alert-worker
 npx pm2 save
 ```
 
-ถ้า worker มีอยู่แล้ว หลังแก้ `.env.local`:
+ถ้า worker มีอยู่แล้ว หลังแก้ `.env`:
 
 ```sh
 npx pm2 restart inventory-alert-worker --update-env
 npx pm2 logs inventory-alert-worker --lines 30
 ```
 
-รีสตาร์ตแอปเว็บด้วยเพื่อให้สถานะ config บนหน้าเว็บตรงกัน Worker ทำงานได้โดยไม่ต้องเปิดหน้าเว็บ และตรวจใหม่ 60 วินาทีหลังจบรอบก่อนหน้า
+รีสตาร์ตแอปเว็บด้วยเพื่อให้สถานะ config บนหน้าเว็บตรงกัน Worker ทำงานได้โดยไม่ต้องเปิดหน้าเว็บ และตรวจใหม่ 60 วินาทีหลังจบรอบก่อนหน้า หน้า settings รีเฟรชยอดทุก 30 วินาทีโดยคงช่องทางที่เลือกและยอดเป้าหมายที่กำลังพิมพ์ไว้
 
 ## 3. ตั้งยอดและตรวจการทำงาน
 
@@ -73,11 +73,13 @@ npx pm2 logs inventory-alert-worker --lines 30
 - แยกบัญชี/กระเป๋าและสกุลเงิน ไม่รวมยอดข้ามสกุลเงิน อ่านจากแหล่งข้อมูลเดียวกับ Inventory ของแต่ละช่องทาง
 - ใช้ยอดล่าสุดที่ระบบบันทึกไว้ ไม่เรียกผู้ให้บริการเติมเกมเพื่อรีเฟรชยอด หากข้อมูลต้นทางเก่า การเตือนก็อ้างอิงข้อมูลเก่านั้น โดยข้อความแสดงเวลาและแหล่งข้อมูล
 - Gamepoint ใช้ยอดก่อนทำรายการล่าสุดลบยอดตัดที่ยืนยันได้ เป็นยอดคำนวณ; Plsbuy ใช้ API snapshot หรือยอด lot ตาม Inventory เดิม
-- Netease บัญชีที่ระบุแยกกระเป๋าไม่ได้ไม่เดายอด; Razer ใช้ Gold แยก SGD/CAD และไม่รวมบัญชี hidden; WavePay แยกเบอร์; Multigamecard แยก Bot/Manual และ Serial ซ้ำไม่ใช้ยอด; USDCodashop ไม่รวมบัญชีระงับ; iTune แยกเมลและสกุลเงิน ไม่รวมเมลไม่พร้อมใช้งาน (ยังไม่แสดงเวลาอัปเดตยอด)
+- Netease บัญชีที่ระบุแยกกระเป๋าไม่ได้ไม่เดายอด; Razer ใช้ Gold แยก SGD/CAD และไม่รวมบัญชี hidden; WavePay แยกเบอร์; Multigamecard แยก Bot/Manual และ Serial ซ้ำไม่ใช้ยอด; USDCodashop ใช้ providerBalance ของธุรกรรมบอทจาก gamedb_coda_ledger เช่นเดียวกับหน้าหลัก; iTune แยกเมลและสกุลเงิน ไม่รวมเมลไม่พร้อมใช้งาน (แสดงเวลาแก้ไขบัญชีล่าสุด)
 - Moniepoint ยังไม่เปิด Inventory จึงยังไม่รองรับ
 - อ่านยอดไม่ได้/ไม่พบบัญชี/ยอดไม่ถูกต้อง → ไม่ส่งและไม่รีเซ็ตรอบเตือน ข้อผิดพลาดแสดงในหน้า settings เมื่อ worker ตรวจ; ตรวจตารางสถานะและ logs ได้
 - ส่งไม่สำเร็จ → ยังไม่ถือว่าส่งแล้วและลองรอบถัดไป ข้อความหลายบัญชีอาจถูกรวมกัน หากเกินความยาว Telegram จะแบ่งข้อความ
 - เก็บสถานะกันซ้ำใน PostgreSQL จึงอยู่ข้ามการ restart และมี advisory lock กัน worker ซ้อนกัน
 - `shortcut: Telegram ไม่มี idempotency key สำหรับ sendMessage; หาก Telegram รับข้อความแล้วแต่การตอบกลับขาดหาย หรือ DB commit ล้มเหลว อาจมีข้อความซ้ำในการ retry ต้องใช้การยืนยันจากปลายทางหากต้องการรับประกันมากกว่านี้`
+
+หลังอัปเดตตัวอ่านยอด USDCodashop ให้ตั้งเป้าหมายในรายการ **USDCodashop Bot** และล้างเป้าหมายรายการยอดกรอกมือเดิม ระบบไม่ย้ายเป้าหมายข้ามบัญชีให้อัตโนมัติ ใช้ `providerBalance` ล่าสุดจากบอท ไม่ใช้ยอดตั้งต้นหรือยอดคำนวณแทน ต้องให้ `usdcodashop-sync-worker` ทำงานเพื่อซิงก์รายการใหม่ทุก 1 นาที Donshop/AgenH2H อ่านจาก `codashop_orders` ด้วยตัวอ่านเดียวกับหน้า Inventory และถ้ารายการบอทล่าสุดยืนยันยอดไม่ได้ จะแสดงไม่ทราบยอดแทนการถอยไปยอดเก่า
 
 หากไม่ได้รับข้อความ: ตรวจ Token/Chat ID, สิทธิ์ Post Messages, การเชื่อมต่อออกไป `api.telegram.org`, config เปิด worker, เวลาตรวจล่าสุด และ error ในหน้า settings ก่อน

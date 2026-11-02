@@ -21,7 +21,8 @@ check(isLowStock("49.99", "100") === true);
 check(isLowStock("50", "100") === false, "exact 50% does not alert");
 check(isLowStock("0", "0.01") === true);
 check(isLowStock("499999999999.99", "999999999999.99") === true, "large decimals stay exact");
-for (const value of [null, undefined, "", "bad", "-1"]) check(isLowStock(value, "100") === null);
+for (const value of [null, undefined, "", "bad", "--1"]) check(isLowStock(value, "100") === null);
+check(isLowStock("-1.00", "100") === true, "a confirmed negative balance must alert");
 check(isLowStock("1", null) === null);
 const c = { key: "plsbuy:MYR", provider: "plsbuy", label: "Plsbuy", currency: "MYR", balance: "49.99", balanceAt: "2026-11-02T00:00:00Z", source: "plsbuy_api" };
 check(stockAlertText(c, "100").includes("49.99 MYR") && stockAlertText(c, "100").includes(c.balanceAt));
@@ -122,8 +123,8 @@ setResponder(sql => {
     { id: 2, email: "hidden@example.com", zone: "CAD", gold_balance: "1", hidden: true, last_synced_at: at },
   ] };
   if (sql.includes("FROM gamedb_mgc_cards c")) return { rows: [{ id: 1, serial: "CARD", balance_points: "2", created_at: at }] };
-  if (sql.includes("FROM gamedb_usdcodashop_inventory")) return { rows: [{ id: 1, account_name: "USD wallet", balance: "3", updated_at: at }] };
-  if (sql.startsWith("SELECT id,email,currency,amount")) return { rows: [{ id: 1, email: "one@example.com", currency: "USD", amount: "4" }] };
+  if (sql.includes("FROM gamedb_coda_wallet")) return { rows: [{ balance: "3.000000", balance_at: at }] };
+  if (sql.startsWith("SELECT id,email,currency,amount")) return { rows: [{ id: 1, email: "one@example.com", currency: "USD", amount: "4", updated_at: at }] };
   return null;
 });
 const razer = await balanceReaders.razer(async () => [{ purchase_email: "one@example.com", currency_code: "SGD", new_balance_gold: "5", occurred_at: "2026-11-02T01:00:00Z" }]);
@@ -134,7 +135,8 @@ const mgc = await balanceReaders.multigamecard(async () => [
 ]);
 check(mgc.length === 3 && mgc.find(c => c.key.endsWith("DUPLICATE")).balance === null, "duplicate serial cannot alert on an arbitrary balance");
 check(mgc.find(c => c.key === "multigamecard:bot:CARD").balance === "3.00" && mgc.find(c => c.key === "multigamecard:manual:1").balance === "2.00", "bot and manual balances stay separate");
-check((await balanceReaders.usdcodashop())[0].balance === "3.00");
+const usdBot = (await balanceReaders.usdcodashop())[0];
+check(usdBot.balance === "3.00" && usdBot.key === "usdcodashop:USD" && usdBot.balanceAt === new Date(at).toISOString());
 const itune = await balanceReaders.itune();
 check(itune[0].key === "itune:1:USD" && itune[0].balance === "4.00" && !JSON.stringify(itune).includes("password"));
 check(log.filter(r => /^(SELECT|WITH)/.test(r.text) && (r.text.includes("profit_razer_accounts") || r.text.includes("SELECT id,email,currency,amount"))).every(r => !/SELECT \*/.test(r.text)), "wallet reads use safe projections");

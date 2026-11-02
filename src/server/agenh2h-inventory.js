@@ -36,15 +36,18 @@ export function withChatPlatform(row) {
   const platform = named ? null : platformFromSourceGroup(row.source_group);
   return platform ? { ...row, source: platform } : row;
 }
+export async function loadAgenh2hWallet(select = selectQuery) {
+  const rows = await select(`SELECT ${columns} FROM codashop_orders c
+    WHERE c.payment_method=$1 AND ${botRun} AND c.status='completed'
+    ORDER BY c.created_at DESC,c.id DESC LIMIT 1`, [AGENH2H_METHOD]);
+  return rows[0] ? ahWallet(rows[0]) : null;
+}
 export function createAgenh2hInventory({ select = selectQuery, enrich = enrichShellOrders, prepareSales = prepareCodaSales, pageSales = withPageSales } = {}) {
   return { async list(actor, query = {}, { exportAll = false } = {}) {
     if (!canViewUsdInventory(actor)) throw inventoryError("ไม่มีสิทธิ์ดู AgenH2H Inventory", 403);
     const filters = ahFilters(query);
     // Latest completed fill is independent of report filters; it reads stored worker evidence, never the provider.
-    const walletRows = await select(`SELECT ${columns} FROM codashop_orders c
-      WHERE c.payment_method=$1 AND ${botRun} AND c.status='completed' AND ${balanceOk}
-      ORDER BY c.created_at DESC,c.id DESC LIMIT 1`, [AGENH2H_METHOD]);
-    const wallet = walletRows[0] ? ahWallet(walletRows[0]) : null;
+    const wallet = await loadAgenh2hWallet(select);
     const rows = []; let cursor = "0";
     for (;;) {
       const batch = await select(`SELECT ${columns},split_part(c.source_order_id::text,':',1) AS source_base,c.telegram_task_request_id AS task_id,
