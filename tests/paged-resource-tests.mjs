@@ -14,16 +14,16 @@ const react = {
   useCallback(fn, deps) { const index = cursor++; if (!same(slots[index]?.deps, deps)) slots[index] = { fn, deps }; return slots[index].fn; },
   useEffect(effect, deps) { const index = cursor++; if (!same(slots[index]?.deps, deps)) { const cleanup = slots[index]?.cleanup; slots[index] = { deps }; pendingEffects.push(() => { cleanup?.(); slots[index].cleanup = effect(); }); } },
 };
-const module = {};
+const hookExports = {};
 const js = ts.transpileModule(readFileSync(new URL("../src/lib/use-paged-resource.js", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
 new Function("require", "exports", "setTimeout", "clearTimeout", js)((key) => {
   if (key === "react") return react;
   if (key === "@/lib/inventory-read-session") return { createInventoryReadSession: () => createInventoryReadSession({ request: (url, options) => new Promise((resolve, reject) => calls.push({ url, signal: options.signal, resolve, reject })) }) };
   throw Error(key);
-}, module, (fn, delay) => { const id = ++sequence; timers.set(id, { fn, delay }); return id; }, (id) => timers.delete(id));
+}, hookExports, (fn, delay) => { const id = ++sequence; timers.set(id, { fn, delay }); return id; }, (id) => timers.delete(id));
 const eq = (a, b, why) => { assert.deepEqual(a, b, why); passed++; };
 let endpoint = "/history", params = { page: 1, search: "" }, resource;
-const render = () => { cursor = 0; resource = module.usePagedResource(endpoint, params); return resource; };
+const render = () => { cursor = 0; resource = hookExports.usePagedResource(endpoint, params); return resource; };
 const commit = () => { for (const effect of pendingEffects.splice(0)) effect(); };
 const tick = async () => { const [id, timer] = [...timers][0]; timers.delete(id); void timer.fn(); await Promise.resolve(); await Promise.resolve(); };
 const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
