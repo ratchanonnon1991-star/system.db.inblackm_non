@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, DownloadCloud, ExternalLink, Link2, Lock, Search, Unlink, X } from "lucide-react";
@@ -332,7 +333,7 @@ function CustomerForms({ forms, dataMode, adminUrl }) {
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="overflow-x-auto rounded-xl border border-linear-hairline">
-          <table className="w-full min-w-[620px] text-left text-sm">
+          <PaginatedTable items={tab.fields} resetKey={tab.id}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[620px] text-left text-sm">
             <thead className="bg-linear-surface-2 text-[11px] font-black uppercase tracking-[0.06em] text-linear-ink-muted">
               <tr>
                 <th scope="col" className="px-4 py-3">Key</th>
@@ -344,7 +345,7 @@ function CustomerForms({ forms, dataMode, adminUrl }) {
               </tr>
             </thead>
             <tbody>
-              {tab.fields.map((field) => (
+              {tablePageItems.map((tableItem, tableIndex) => ((field) => (
                 <tr key={field.key} className="border-t border-linear-hairline">
                   <td className="px-4 py-2.5 font-mono text-xs text-linear-ink-muted">{field.key}</td>
                   <td className="px-3 py-2.5 font-bold text-linear-ink">{field.label}</td>
@@ -355,9 +356,9 @@ function CustomerForms({ forms, dataMode, adminUrl }) {
                   <td className="px-3 py-2.5 text-center"><YesNo on={field.required} /></td>
                   <td className="px-3 py-2.5 text-center"><YesNo on={field.masked} icon={Lock} /></td>
                 </tr>
-              ))}
+              ))(tableItem, tablePageStart + tableIndex, tableAllItems))}
             </tbody>
-          </table>
+          </table>)}</PaginatedTable>
         </div>
 
         <aside aria-label="ตัวอย่างฟอร์มลูกค้า" className="flex flex-col gap-3 rounded-xl border border-linear-hairline bg-linear-surface-2 p-4">

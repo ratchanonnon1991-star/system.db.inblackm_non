@@ -1,9 +1,10 @@
 "use client";
 
+import { createInventoryPageSession } from "@/lib/inventory-page-session";
+import { TablePagination } from "@/components/table-pagination";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, RefreshCw } from "lucide-react";
-import { apiJson } from "@/lib/api-json";
 import { topupInventoryPath } from "@/lib/topup-inventory";
 import { codaQuickDates } from "@/lib/usdcodashop-overview";
 import { orderLink, sheetFigures } from "@/lib/usdcodashop-sheet";
@@ -82,17 +83,20 @@ export default function WavePayInventory({ lang }) {
   const [page, setPage] = useState(1); const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true); const [error, setError] = useState("");
   const alive = useRef(false); const generation = useRef(0);
-  const viewKey = new URLSearchParams({ ...dates, search, page: String(page), ...(phone == null ? {} : { phone }) }).toString();
+
+  const [pageSize, setPageSize] = useState(25);
+  const viewKey = new URLSearchParams({ ...dates, search, page: String(page), pageSize: String(pageSize), ...(phone == null ? {} : { phone }) }).toString();
+  const [pageReader] = useState(() => createInventoryPageSession());
   const load = useCallback(async () => {
     const key = ++generation.current; setLoading(true); setError("");
     try {
-      const result = await apiJson(`${endpoint}?${viewKey}`, { cache: "no-store" });
+      const result = await pageReader.run(endpoint, viewKey);
       if (!Array.isArray(result?.lines) || !Array.isArray(result.entries)) throw new Error("ข้อมูลไม่ครบ กรุณาโหลดใหม่");
       if (alive.current && key === generation.current) setData({ ...result, viewKey });
-    } catch (e) { if (alive.current && key === generation.current) setError(e.message); }
+    } catch (e) { if (alive.current && key === generation.current && e.name !== "AbortError") setError(e.message); }
     finally { if (alive.current && key === generation.current) setLoading(false); }
-  }, [viewKey]);
-  const invalidate = useCallback(() => { generation.current++; }, []);
+  }, [viewKey, pageReader]);
+  const invalidate = useCallback(() => { generation.current++; pageReader.cancel(); }, [pageReader]);
   useEffect(() => { alive.current = true; const timer = setTimeout(load, 0); return () => { alive.current = false; invalidate(); clearTimeout(timer); }; }, [load, invalidate]);
   function apply(next) { setError(""); setPage(1); setDates(next); setDraft(next); setSearch(query); }
   function selectPhone(value) { setPage(1); setPhone((previous) => previous === value ? null : value); }
@@ -117,6 +121,7 @@ export default function WavePayInventory({ lang }) {
     {error && <p role="alert" className="rounded-xl border border-ll-hairline p-4 text-sm">{error}</p>}
     {loading && <p role="status" className="text-sm text-ll-ink-subtle">กำลังโหลด… (ช่วงวันที่ยาวอาจใช้เวลาสักครู่)</p>}
     {data && <>
+      <p className="text-xs text-ll-ink-subtle">ข้อมูลเมื่อ {when(data.observedAt)}{error ? " · แสดงข้อมูลเดิม เนื่องจากโหลดล่าสุดไม่สำเร็จ" : ""}</p>
       <section aria-label="ยอดแต่ละเบอร์" aria-busy={loading} className={`grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 ${loading ? "opacity-50" : ""}`}>
         {data.lines.map((line) => <LineCard key={line.phone || "unknown"} line={line} active={phone === line.phone} onSelect={() => selectPhone(line.phone)} />)}
       </section>
@@ -127,7 +132,7 @@ export default function WavePayInventory({ lang }) {
           <p className="text-xs text-ll-ink-subtle">{ready ? `${data.total.toLocaleString("en-US")} รายการ` : "กำลังโหลด…"}{phone != null && <> · <button type="button" onClick={() => selectPhone(phone)} className="underline underline-offset-4">ดูทุกเบอร์</button></>}{selected == null && phone != null && ready && " · ไม่มีออเดอร์ในช่วงนี้"}</p>
         </div>
         <div aria-busy={loading} className={loading ? "pointer-events-none opacity-50" : ""}><OrdersTable entries={ready ? data.entries : []} emptyMessage={ready ? "ไม่พบออเดอร์ตามตัวกรอง" : "กำลังโหลด…"} /></div>
-        <nav aria-label="หน้าออเดอร์" className="flex items-center justify-end gap-3 text-sm"><button disabled={loading || page <= 1} onClick={() => setPage(page - 1)} className={button}>ก่อนหน้า</button><span>หน้า {page}</span><button disabled={loading || !ready || page * data.pageSize >= data.total} onClick={() => setPage(page + 1)} className={button}>ถัดไป</button></nav>
+        <TablePagination page={data.page} pageSize={data.pageSize} total={data.total} totalPages={Math.max(1, Math.ceil(data.total / data.pageSize))} observedAt={data.pagination?.observedAt} loading={loading} onPage={(nextPage) => { invalidate(); setPage(nextPage); }} onPageSize={(size) => { invalidate(); setPageSize(size); setPage(1); }} label="แบ่งหน้าประวัติ" />
       </section>
     </>}
   </main>;

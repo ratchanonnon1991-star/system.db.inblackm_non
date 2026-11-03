@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import { useEffect, useState } from "react";
 import { apiJson } from "@/lib/api-json";
 import ItunePasswordValue from "@/components/itune-password-value";
@@ -95,7 +96,7 @@ export default function ItuneIssueHistory() {
         )}
         {!error && !loading && issues.length > 0 && (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1100px] text-left text-[12px]">
+            <PaginatedTable items={issues} resetKey={JSON.stringify([filter])}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[1100px] text-left text-[12px]">
               <thead className="bg-ll-surface-2 text-[11px] font-medium uppercase tracking-wide text-ll-ink-subtle">
                 <tr>
                   <th className="px-3 py-2">เวลาแจ้ง</th>
@@ -113,7 +114,7 @@ export default function ItuneIssueHistory() {
                 </tr>
               </thead>
               <tbody>
-                {issues.map((issue) => (
+                {tablePageItems.map((tableItem, tableIndex) => ((issue) => (
                   <tr key={issue.id} className="border-t border-ll-hairline">
                     <td className="whitespace-nowrap px-3 py-2 text-ll-ink-subtle">
                       {formatIssueLogTime(issue.reportedAt)}
@@ -161,9 +162,9 @@ export default function ItuneIssueHistory() {
                         : "—"}
                     </td>
                   </tr>
-                ))}
+                ))(tableItem, tablePageStart + tableIndex, tableAllItems))}
               </tbody>
-            </table>
+            </table>)}</PaginatedTable>
           </div>
         )}
       </div>

@@ -1,3 +1,4 @@
+import { readInventoryPage } from "@/server/inventory-page";
 import { requireAdmin } from "@/server/auth";
 import { jsonOk, jsonError } from "@/lib/http";
 import { multigamecardInventory } from "@/server/multigamecard-inventory";
@@ -13,7 +14,9 @@ export async function GET(request) {
   try {
     const actor = await requireAdmin(request), p = new URL(request.url).searchParams;
     const exportAll = p.get("format") === "csv";
-    const result = await multigamecardInventory().list(actor, Object.fromEntries(p), { exportAll });
+    const result = !exportAll && p.has("pageSize")
+      ? await readInventoryPage(request, actor, "multigamecard", () => multigamecardInventory().list(actor, { ...Object.fromEntries(p), page: "1" }, { exportAll: true }))
+      : await multigamecardInventory().list(actor, Object.fromEntries(p), { exportAll });
     if (exportAll) return new Response(mgcCsv(result.entries), { headers: {
       "Content-Type": "text/csv; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
       "Content-Disposition": `attachment; filename="multigamecard-${result.mode}-${result.dateFrom}-${result.dateTo}.csv"`,

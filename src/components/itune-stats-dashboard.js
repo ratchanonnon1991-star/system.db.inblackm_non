@@ -1,3 +1,6 @@
+"use client";
+
+import PaginatedTable from "@/components/table-pagination";
 function money(value) {
   return Number(value || 0).toLocaleString("th-TH", {
     minimumFractionDigits: 2,
@@ -98,12 +101,12 @@ export default function ItuneStatsDashboard({ stats }) {
         <div className="rounded-lg border border-ll-hairline bg-ll-surface-1 p-5">
           <h2 className="text-sm font-semibold text-ll-ink">เปรียบเทียบช่วง Amount</h2>
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-left text-[11px]">
+            <PaginatedTable items={bands}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full text-left text-[11px]">
               <thead className="text-ll-ink-tertiary"><tr><th className="py-2">ช่วง</th><th className="py-2 text-right">Sessions</th><th className="py-2 text-right">ใช้หมด</th><th className="py-2 text-right">เวลาเฉลี่ย</th><th className="py-2 text-right">ยอดใช้</th></tr></thead>
-              <tbody>{bands.map((band) => (
+              <tbody>{tablePageItems.map((tableItem, tableIndex) => ((band) => (
                 <tr key={band.band} className="border-t border-ll-hairline"><td className="py-2.5 font-medium text-ll-ink">{band.band}</td><td className="py-2.5 text-right text-ll-ink-subtle">{band.sessions}</td><td className="py-2.5 text-right text-ll-ink-subtle">{band.depletedCount}</td><td className="py-2.5 text-right text-ll-ink-subtle">{hours(band.avgHoldHours)}</td><td className="py-2.5 text-right font-medium text-ll-ink">{"$" + money(band.amountUsed)}</td></tr>
-              ))}</tbody>
-            </table>
+              ))(tableItem, tablePageStart + tableIndex, tableAllItems))}</tbody>
+            </table>)}</PaginatedTable>
             {bands.length === 0 && <p className="py-8 text-center text-[12px] text-ll-ink-tertiary">ยังไม่มีข้อมูล</p>}
           </div>
         </div>

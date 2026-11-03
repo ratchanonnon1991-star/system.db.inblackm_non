@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, CheckCircle2, Columns3, ExternalLink, GripVertical, Image as ImageIcon, Minus, PackageSearch, Plus, RefreshCw, Search, Settings2, Store, Trash2, X } from "lucide-react";
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
@@ -610,7 +611,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
 
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSellerDragEnd}>
                   <SortableContext items={visibleSellers} strategy={horizontalListSortingStrategy}>
-                    <Table className="w-auto table-fixed" containerClassName="max-h-[37.5rem] overflow-auto rounded-md border">
+                    <PaginatedTable items={groups} resetKey={JSON.stringify([provider, currentGame, currentProductType, query])}>{(tablePageItems, tablePageStart, tableAllItems) => (<Table className="w-auto table-fixed" containerClassName="max-h-[37.5rem] overflow-auto rounded-md border">
                       <TableHeader><TableRow>
                         <TableHead className="sticky left-0 top-0 z-30 h-12 w-80 bg-card px-3">ชื่อ Pack</TableHead>
                         {visibleSellers.map((seller) => <SortableSellerHeader key={seller} seller={seller} isBaseline={seller === activeBaselineSeller} />)}
@@ -619,7 +620,7 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
                         {showDetails ? <TableHead className="sticky top-0 z-20 h-12 w-36 bg-card px-3">ตรวจชื่อ</TableHead> : null}
                       </TableRow></TableHeader>
                       <TableBody>
-                        {groups.map((group) => {
+                        {tablePageItems.map((tableItem, tableIndex) => ((group) => {
                           const cheapest = group.offers[0];
                           const mostExpensive = group.offers.at(-1);
                           const offersBySeller = new Map();
@@ -637,10 +638,10 @@ export default function GameinfoPackPriceCompare({ page: serverPage, editable = 
                               {showDetails ? <TableCell className="px-3"><Button type="button" variant="outline" size="sm" onClick={() => setSelectedGroup(group)}>ดูรายการ</Button></TableCell> : null}
                             </TableRow>
                           );
-                        })}
+                        })(tableItem, tablePageStart + tableIndex, tableAllItems))}
                         {!groups.length ? <TableRow><TableCell colSpan={visibleColumnCount}><Empty><EmptyHeader><EmptyMedia variant="icon"><PackageSearch /></EmptyMedia><EmptyTitle>ไม่พบแพ็คที่ตรงกับคำค้นหา</EmptyTitle><EmptyDescription>ค้นหาเทียบกับชื่อแพ็คในคอลัมน์แรกเท่านั้น</EmptyDescription></EmptyHeader>{query ? <Button type="button" variant="outline" size="sm" onClick={() => setQuery("")}><X data-icon="inline-start" /> ล้างคำค้นหา</Button> : null}</Empty></TableCell></TableRow> : null}
                       </TableBody>
-                    </Table>
+                    </Table>)}</PaginatedTable>
                   </SortableContext>
                 </DndContext>
               </CardContent>

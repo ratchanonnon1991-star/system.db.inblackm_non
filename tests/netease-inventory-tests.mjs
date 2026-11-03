@@ -1,3 +1,4 @@
+import * as paginationDependency0 from "../src/server/inventory-page.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
@@ -50,7 +51,7 @@ check(csv.startsWith("\uFEFF")); check(csv.includes("'=")); check(csv.includes('
 const read = (file) => readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
 function compile(file, mocks) {
   const output = ts.transpileModule(read(file), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  const result = {}; new Function("require", "exports", output)((key) => { if (!mocks[key]) throw new Error(`Unmocked ${key}`); return mocks[key]; }, result); return result;
+  const result = {}; new Function("require", "exports", output)((key) => { if (key === "@/server/inventory-page") return paginationDependency0; if (!mocks[key]) throw new Error(`Unmocked ${key}`); return mocks[key]; }, result); return result;
 }
 let reads = 0, crash = false;
 const select = async (sql) => {

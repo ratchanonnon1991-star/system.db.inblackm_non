@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ClipboardList, RefreshCw } from "lucide-react";
@@ -35,16 +36,16 @@ function AccountEntries({ account, range }) {
     <h2 className="text-lg font-semibold">{account.label} <span className="text-sm font-normal text-ll-ink-subtle">· {account.currency}{account.category ? ` · ${account.category}` : ""}</span></h2>
     {error && <p role="alert" className="text-sm text-ll-warning">{error}</p>}
     <p className="text-xs text-ll-ink-subtle">{data ? `${data.entries.length} รายการ${data.truncated ? " (แสดง 500 รายการล่าสุด)" : ""}` : "กำลังโหลด…"}</p>
-    <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm">
+    <div className="overflow-x-auto"><PaginatedTable items={(data?.entries ?? [])} resetKey={JSON.stringify([account.id, range.from, range.to])}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[680px] text-left text-sm">
       <thead><tr className="text-xs text-ll-ink-subtle">{["เวลา", "เลขออเดอร์", "ยอด", "Invoice", "ผู้บันทึก"].map(h => <th key={h} className={`${cell} font-medium`}>{h}</th>)}</tr></thead>
-      <tbody>{(data?.entries ?? []).map(e => <tr key={e.id} className={e.reversedBy || e.kind === "reversal" ? "text-ll-ink-subtle" : ""}>
+      <tbody>{tablePageItems.map((tableItem, tableIndex) => (e => <tr key={e.id} className={e.reversedBy || e.kind === "reversal" ? "text-ll-ink-subtle" : ""}>
         <td className={`${cell} whitespace-nowrap`}>{when(e.recordedAt)}</td>
         <td className={`${cell} font-medium`}>{e.orderRef}{e.kind === "reversal" && <span className="ml-1 text-xs">(รายการกลับ)</span>}{e.reversedBy && <span className="ml-1 text-xs">(ยกเลิกแล้ว)</span>}</td>
         <td className={`${cell} tabular-nums`}>{Number(e.direction) < 0 ? "−" : "+"}{num(e.amount)}</td>
         <td className={cell}>{e.invoice || "—"}</td>
         <td className={cell}>{e.recordedBy}</td>
-      </tr>)}</tbody>
-    </table></div>
+      </tr>)(tableItem, tablePageStart + tableIndex, tableAllItems))}</tbody>
+    </table>)}</PaginatedTable></div>
   </section>;
 }
 
@@ -123,16 +124,16 @@ export default function InventoryLedgerChannels({ lang }) {
 
     {groups.map(([group, list]) => <section key={group} aria-label={group} className="space-y-2">
       <h2 className="text-sm font-semibold text-ll-ink-subtle">{group}</h2>
-      <div className="overflow-x-auto rounded-xl border border-ll-hairline bg-ll-surface-1"><table className="w-full min-w-[640px] text-left text-sm">
+      <div className="overflow-x-auto rounded-xl border border-ll-hairline bg-ll-surface-1"><PaginatedTable items={list} resetKey={JSON.stringify([range.from, range.to, query, showAll])}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[640px] text-left text-sm">
         <thead><tr className="text-xs text-ll-ink-subtle">{["บัญชี", "ยอดใช้สุทธิ", "รายการ", "ยกเลิก", "ล่าสุด"].map(h => <th key={h} className={`${cell} font-medium`}>{h}</th>)}</tr></thead>
-        <tbody>{list.map(r => <tr key={r.accountId} className={selected?.id === r.accountId ? "bg-ll-surface-2" : "hover:bg-ll-surface-2"}>
+        <tbody>{tablePageItems.map((tableItem, tableIndex) => (r => <tr key={r.accountId} className={selected?.id === r.accountId ? "bg-ll-surface-2" : "hover:bg-ll-surface-2"}>
           <td className={cell}><button type="button" onClick={() => setSelected({ id: r.accountId, label: r.label, currency: r.currency, category: r.category })} className="min-h-11 text-left font-medium underline-offset-4 hover:underline">{r.label}</button>{r.status && r.status !== "active" && <span className="ml-2 text-xs text-ll-ink-subtle">ปิดใช้งาน</span>}</td>
           <td className={`${cell} tabular-nums`}>{num(r.netUsed)} {r.currency}</td>
           <td className={`${cell} tabular-nums`}>{r.uses}</td>
           <td className={`${cell} tabular-nums`}>{r.reversals || "—"}</td>
           <td className={`${cell} whitespace-nowrap`}>{when(r.lastAt)}</td>
-        </tr>)}</tbody>
-      </table></div>
+        </tr>)(tableItem, tablePageStart + tableIndex, tableAllItems))}</tbody>
+      </table>)}</PaginatedTable></div>
     </section>)}
 
     {selected && <AccountEntries key={`${selected.id}:${range.from}:${range.to}`} account={selected} range={range} />}

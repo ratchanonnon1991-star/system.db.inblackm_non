@@ -1,3 +1,4 @@
+import * as paginationDependency0 from "../src/server/inventory-page.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
@@ -47,7 +48,7 @@ check(csv.includes('"20"'));
 function compile(file, mocks) {
   const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
   const output = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  const result = {}; new Function("require", "exports", output)((key) => { if (!mocks[key]) throw new Error(`Unmocked ${key}`); return mocks[key]; }, result); return result;
+  const result = {}; new Function("require", "exports", output)((key) => { if (key === "@/server/inventory-page") return paginationDependency0; if (!mocks[key]) throw new Error(`Unmocked ${key}`); return mocks[key]; }, result); return result;
 }
 let reads = 0, failure = false, stockFailure = false, stockReads = 0;
 let stockRows = [stock];

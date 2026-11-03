@@ -1,4 +1,6 @@
 "use client";
+import { createInventoryPageSession } from "@/lib/inventory-page-session";
+import { TablePagination } from "@/components/table-pagination";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Download, Radio, RefreshCw } from "lucide-react";
@@ -117,7 +119,8 @@ export default function Agenh2hInventory({ lang }) {
   const [live, setLive] = useState(true), [updatedAt, setUpdatedAt] = useState(null), [stale, setStale] = useState("");
   const [settings, setSettings] = useState(AGENH2H_CHECK_DEFAULTS);
   const generation = useRef(0), alive = useRef(false), busy = useRef(0), viewKey = new URLSearchParams(filters).toString();
-  const invalidate = useCallback(() => { generation.current++; }, []);
+  const [pageReader] = useState(() => createInventoryPageSession());
+  const invalidate = useCallback(() => { generation.current++; pageReader.cancel(); }, [pageReader]);
   useEffect(() => {
     const timer = setTimeout(() => { try { const saved = localStorage.getItem(SETTINGS_KEY); if (saved) setSettings(ahCheckSettings(JSON.parse(saved))); } catch { /* defaults */ } }, 0);
     return () => clearTimeout(timer);
@@ -128,7 +131,7 @@ export default function Agenh2hInventory({ lang }) {
     const version = ++generation.current; busy.current++;
     if (!silent) { setLoading(true); setError(""); }
     try {
-      const result = await apiJson(`${endpoint}?${viewKey}`, { cache: "no-store" });
+      const result = await pageReader.run(endpoint, viewKey);
       if (!Array.isArray(result?.entries) || !result.summary || !Number.isFinite(result.total)) throw new Error("ข้อมูลไม่ครบ กรุณาโหลดใหม่");
       // Every refresh re-checks the whole range, so rows filled in late change the result. Within this page session (same view),
       // alerts that appear are marked "new" and alerts that disappear are kept as "resolved"; nothing is stored anywhere.
@@ -141,7 +144,7 @@ export default function Agenh2hInventory({ lang }) {
     } catch (e) {
       if (alive.current && generation.current === version) { if (silent) setStale(e.message || "อัปเดตอัตโนมัติไม่สำเร็จ"); else setError(e.message || "โหลดข้อมูลไม่สำเร็จ"); }
     } finally { busy.current--; if (alive.current && generation.current === version && !silent) setLoading(false); }
-  }, [viewKey]);
+  }, [viewKey, pageReader]);
   useEffect(() => { alive.current = true; const timer = setTimeout(load, 0); return () => { alive.current = false; invalidate(); clearTimeout(timer); }; }, [load, invalidate]);
   useEffect(() => {
     if (!live) return undefined;
@@ -168,7 +171,7 @@ export default function Agenh2hInventory({ lang }) {
       <section className="space-y-4" aria-label="ผลการค้นหา"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold">ประวัติ AgenH2H · {data.total} ออเดอร์</h2><p className="text-sm text-ll-ink-subtle">{data.summary.delivered} ออเดอร์สำเร็จ · {data.summary.fills} รายการย่อย</p></div><dl className="grid gap-3 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4 sm:grid-cols-2 lg:grid-cols-4">{[["ยอดโอน THB", data.summary.sale], ["ต้นทุน THB (อ้างอิง)", data.summary.cost], ["กำไร THB (อ้างอิง)", data.summary.profit], ["IDR ออกตามตัวกรอง", data.summary.used]].map(([title, v]) => <div key={title}><dt className="text-xs text-ll-ink-subtle">{title}</dt><dd className="mt-2 text-xl font-semibold tabular-nums">{money(v)}</dd></div>)}</dl>
         <p className="text-xs text-ll-ink-subtle">กำไร % = (ยอดโอน − ต้นทุน) ÷ ยอดโอน × 100 · ค่าอ้างอิงจะเปลี่ยนเมื่อปรับเรท</p>
         {(data.summary.missingSales > 0 || data.summary.missingCosts > 0) && <p role="status" className="text-sm text-ll-ink-subtle">ข้อมูลไม่ครบ: ยอดโอน {data.summary.missingSales} · ยอดออก {data.summary.missingUsage} · ต้นทุน {data.summary.missingCosts} ออเดอร์ ยอดรวมที่ข้อมูลไม่ครบแสดง — ไม่แทนด้วยศูนย์</p>}
-        <History entries={data.entries} /><nav aria-label="เปลี่ยนหน้าประวัติ" className="flex items-center justify-end gap-3"><button type="button" className={button} disabled={data.page <= 1} onClick={() => apply({ ...filters, page: String(data.page - 1) })}>ก่อนหน้า</button><span className="text-sm">หน้า {data.page} / {Math.max(1, Math.ceil(data.total / data.pageSize))}</span><button type="button" className={button} disabled={data.page * data.pageSize >= data.total} onClick={() => apply({ ...filters, page: String(data.page + 1) })}>ถัดไป</button></nav>
+        <History entries={data.entries} /><TablePagination page={data.page} pageSize={data.pageSize} total={data.total} totalPages={Math.max(1, Math.ceil(data.total / data.pageSize))} observedAt={data.pagination?.observedAt} loading={loading} onPage={(page) => apply({ ...filters, page: String(page) })} onPageSize={(size) => apply({ ...filters, page: "1", pageSize: String(size) })} label="แบ่งหน้าประวัติ" />
       </section>
     </>}
   </main>;

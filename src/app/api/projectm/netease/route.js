@@ -1,3 +1,4 @@
+import { readInventoryPage } from "@/server/inventory-page";
 import { requireAdmin } from "@/server/auth";
 import { jsonOk, jsonError } from "@/lib/http";
 import { neteaseInventory } from "@/server/netease-inventory";
@@ -7,7 +8,9 @@ export async function GET(request) {
   try {
     const actor = await requireAdmin(request), params = new URL(request.url).searchParams;
     const exportAll = params.get("format") === "csv";
-    const result = await neteaseInventory().list(actor, Object.fromEntries(params), { exportAll });
+    const result = !exportAll && params.has("pageSize")
+      ? await readInventoryPage(request, actor, "netease", () => neteaseInventory().list(actor, { ...Object.fromEntries(params), page: "1" }, { exportAll: true }))
+      : await neteaseInventory().list(actor, Object.fromEntries(params), { exportAll });
     if (exportAll) return new Response(neteaseCsv(result.entries), { headers: {
       "Content-Type": "text/csv; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
       "Content-Disposition": `attachment; filename="netease-${result.dateFrom}-${result.dateTo}.csv"`,

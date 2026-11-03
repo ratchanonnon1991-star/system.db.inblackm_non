@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
@@ -1807,7 +1808,7 @@ export function UsersModal({ me, onClose, onChanged }) {
         {error && <p className="border-b border-ll-hairline bg-ll-primary-subtle-bg px-5 py-2 text-sm text-ll-primary-subtle-text">{error}</p>}
 
         <div className="min-h-0 flex-1 overflow-auto">
-          <table className="w-full min-w-[1100px] border-separate border-spacing-0 text-sm">
+          <PaginatedTable items={filteredUsers} resetKey={JSON.stringify([search, roleFilter])}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[1100px] border-separate border-spacing-0 text-sm">
             <thead className="sticky top-0 z-20 bg-ll-surface-2">
               <tr>
                 <th rowSpan={2} className="sticky left-0 z-30 min-w-56 border-b border-r border-ll-hairline bg-ll-surface-2 px-4 py-3 text-left font-medium">ผู้ใช้</th>
@@ -1825,7 +1826,7 @@ export function UsersModal({ me, onClose, onChanged }) {
             <tbody>
               {loading ? (
                 <tr><td colSpan={PERMISSIONS.length + 2} className="px-4 py-10 text-center text-ll-ink-subtle"><Loader2 size={16} className="mr-2 inline animate-spin" />กำลังโหลด...</td></tr>
-              ) : filteredUsers.map((user) => (
+              ) : tablePageItems.map((tableItem, tableIndex) => ((user) => (
                 <tr key={user.id} className="hover:bg-ll-surface-2">
                   <td className="sticky left-0 z-10 border-b border-r border-ll-hairline bg-ll-surface-1 px-4 py-3">
                     <button type="button" onClick={() => startEdit(user)} className="block max-w-52 text-left">
@@ -1860,9 +1861,9 @@ export function UsersModal({ me, onClose, onChanged }) {
                     );
                   })}
                 </tr>
-              ))}
+              ))(tableItem, tablePageStart + tableIndex, tableAllItems))}
             </tbody>
-          </table>
+          </table>)}</PaginatedTable>
         </div>
 
         {editingId !== undefined && (

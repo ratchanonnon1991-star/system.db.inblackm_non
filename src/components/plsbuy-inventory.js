@@ -1,4 +1,6 @@
 "use client";
+import { createInventoryPageSession } from "@/lib/inventory-page-session";
+import { TablePagination } from "@/components/table-pagination";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Download, RefreshCw } from "lucide-react";
@@ -48,16 +50,17 @@ export default function PlsbuyInventory({ lang }) {
   const [filters, setFilters] = useState(() => ({ ...codaQuickDates("month"), search: "", rate: PLSBUY_REFERENCE_RATE, page: "1" }));
   const [draft, setDraft] = useState(filters), [data, setData] = useState(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
   const generation = useRef(0), alive = useRef(false), viewKey = new URLSearchParams(filters).toString();
-  const invalidate = useCallback(() => { generation.current++; }, []);
+  const [pageReader] = useState(() => createInventoryPageSession());
+  const invalidate = useCallback(() => { generation.current++; pageReader.cancel(); }, [pageReader]);
   const load = useCallback(async () => {
     const version = ++generation.current; setLoading(true); setError("");
     try {
-      const result = await apiJson(`${endpoint}?${viewKey}`, { cache: "no-store" });
+      const result = await pageReader.run(endpoint, viewKey);
       if (!Array.isArray(result?.entries) || !result.summary || !result.reference || !Number.isFinite(result.total)) throw new Error("ข้อมูลไม่ครบ กรุณาโหลดใหม่");
       if (alive.current && generation.current === version) setData({ ...result, viewKey });
     } catch (e) { if (alive.current && generation.current === version) setError(e.message || "โหลดข้อมูลไม่สำเร็จ"); }
     finally { if (alive.current && generation.current === version) setLoading(false); }
-  }, [viewKey]);
+  }, [viewKey, pageReader]);
   useEffect(() => { alive.current = true; const timer = setTimeout(load, 0); return () => { alive.current = false; invalidate(); clearTimeout(timer); }; }, [load, invalidate]);
   function apply(next) { invalidate(); setError(""); setFilters(next); setDraft(next); if (new URLSearchParams(next).toString() === viewKey) void load(); }
   const ready = data?.viewKey === viewKey && !loading && !error;
@@ -75,7 +78,7 @@ export default function PlsbuyInventory({ lang }) {
       <section className="space-y-4" aria-label="ผลการค้นหา"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold">ประวัติ Plsbuy · {data.total} ออเดอร์</h2><p className="text-sm text-ll-ink-subtle">{data.summary.fills} รายการย่อย</p></div><dl className="grid gap-3 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4 sm:grid-cols-2 lg:grid-cols-4">{[["ยอดโอน THB", data.summary.sale], ["ต้นทุน THB (รวมค่าอ้างอิง)", data.summary.cost], ["กำไร THB (รวมค่าอ้างอิง)", data.summary.profit], ["MYR ออก (รวมยอดอ้างอิงบอทถ้ามี)", data.summary.used]].map(([title, v]) => <div key={title}><dt className="text-xs text-ll-ink-subtle">{title}</dt><dd className="mt-2 text-xl font-semibold tabular-nums">{money(v)}</dd></div>)}</dl>
         <p className="text-xs text-ll-ink-subtle">กำไร % = (ยอดโอน − ต้นทุน) ÷ ยอดโอน × 100 · ค่าอ้างอิงจะเปลี่ยนเมื่อปรับเรท ไม่ใช่ต้นทุนซื้อจริงย้อนหลัง · ไม่นับรายการ Failed/Manual ว่าเติมสำเร็จ</p>
         {(data.summary.missingSales > 0 || data.summary.missingCosts > 0) && <p role="status" className="text-sm text-ll-ink-subtle">ข้อมูลไม่ครบ: ยอดโอน {data.summary.missingSales} · ยอดออก {data.summary.missingUsage} · ต้นทุน {data.summary.missingCosts} รายการ ยอดรวมที่ข้อมูลไม่ครบแสดง — ไม่แทนด้วยศูนย์</p>}
-        <p className="text-xs text-ll-ink-subtle">เลื่อนตารางแนวนอนเพื่อดู MYR คงเหลือ · ใช้ยอดบัญชีที่บอทเช็กล่าสุดภายใน Order นั้น ไม่ใช่ยอดสดหรือผลรวมยอดคงเหลือ · รายการเก่าที่ไม่เคยบันทึกจะแสดง —</p><History entries={data.entries} /><nav aria-label="เปลี่ยนหน้าประวัติ" className="flex items-center justify-end gap-3"><button type="button" className={button} disabled={data.page <= 1} onClick={() => apply({ ...filters, page: String(data.page - 1) })}>ก่อนหน้า</button><span className="text-sm">หน้า {data.page} / {Math.max(1, Math.ceil(data.total / data.pageSize))}</span><button type="button" className={button} disabled={data.page * data.pageSize >= data.total} onClick={() => apply({ ...filters, page: String(data.page + 1) })}>ถัดไป</button></nav>
+        <p className="text-xs text-ll-ink-subtle">เลื่อนตารางแนวนอนเพื่อดู MYR คงเหลือ · ใช้ยอดบัญชีที่บอทเช็กล่าสุดภายใน Order นั้น ไม่ใช่ยอดสดหรือผลรวมยอดคงเหลือ · รายการเก่าที่ไม่เคยบันทึกจะแสดง —</p><History entries={data.entries} /><TablePagination page={data.page} pageSize={data.pageSize} total={data.total} totalPages={Math.max(1, Math.ceil(data.total / data.pageSize))} observedAt={data.pagination?.observedAt} loading={loading} onPage={(page) => apply({ ...filters, page: String(page) })} onPageSize={(size) => apply({ ...filters, page: "1", pageSize: String(size) })} label="แบ่งหน้าประวัติ" />
       </section>
     </>}
   </main>;

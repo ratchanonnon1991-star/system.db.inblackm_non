@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -184,7 +185,7 @@ function ProfitSalePricePlatformContent({ platform }) {
       />
 
       <div className="flex flex-wrap items-center gap-3">
-        <select
+        <select aria-label="กรองระบบบัตร"
           value={source}
           onChange={(e) => { setSource(e.target.value); setGame(""); }}
           className="h-9 rounded-md border border-ll-hairline-strong bg-ll-surface-2 px-2.5 text-[13px] text-ll-ink outline-none focus:border-ll-primary focus:bg-ll-surface-1"
@@ -192,7 +193,7 @@ function ProfitSalePricePlatformContent({ platform }) {
           <option value="">บัตร: ทั้งหมด</option>
           {sources.map((s) => <option key={s} value={s}>{SOURCE_LABELS[s] || s}</option>)}
         </select>
-        <select
+        <select aria-label="กรองเกม"
           value={game}
           onChange={(e) => setGame(e.target.value)}
           className="h-9 rounded-md border border-ll-hairline-strong bg-ll-surface-2 px-2.5 text-[13px] text-ll-ink outline-none focus:border-ll-primary focus:bg-ll-surface-1"
@@ -200,7 +201,7 @@ function ProfitSalePricePlatformContent({ platform }) {
           <option value="">เกม: ทั้งหมด</option>
           {games.map((g) => <option key={g} value={g}>{g}</option>)}
         </select>
-        <select
+        <select aria-label="กรองการตั้งราคา"
           value={priced}
           onChange={(e) => setPriced(e.target.value)}
           className="h-9 rounded-md border border-ll-hairline-strong bg-ll-surface-2 px-2.5 text-[13px] text-ll-ink outline-none focus:border-ll-primary focus:bg-ll-surface-1"
@@ -221,7 +222,7 @@ function ProfitSalePricePlatformContent({ platform }) {
 
       <section className="rounded-lg border border-ll-hairline bg-ll-surface-1">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-[13px] text-ll-ink">
+          <PaginatedTable items={filtered} resetKey={JSON.stringify([platform, q, source, game, priced])}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[720px] text-[13px] text-ll-ink">
             <thead>
               <tr className="border-b border-ll-hairline text-left text-[11px] text-ll-ink-subtle">
                 <th className="px-4 py-2 font-medium">เกม</th>
@@ -240,7 +241,7 @@ function ProfitSalePricePlatformContent({ platform }) {
             </thead>
             <tbody>
               {filtered.length ? (
-                filtered.map((p) => (
+                tablePageItems.map((tableItem, tableIndex) => ((p) => (
                   <tr key={`${p.source}:${p.packName}`} className="border-b border-ll-hairline last:border-0 hover:bg-ll-surface-2">
                     <td className="px-4 py-2.5 text-ll-ink">{p.game}</td>
                     <td className="px-3 py-2.5 text-ll-ink">{p.packName}</td>
@@ -257,14 +258,14 @@ function ProfitSalePricePlatformContent({ platform }) {
                       </td>
                     )}
                   </tr>
-                ))
+                ))(tableItem, tablePageStart + tableIndex, tableAllItems))
               ) : (
                 <tr><td colSpan={feePct > 0 ? 6 : 5} className="px-4 py-8 text-center text-ll-ink-subtle">
                   {q || source || game ? "ไม่พบแพ็กที่ค้นหา" : "ยังไม่มีข้อมูล"}
                 </td></tr>
               )}
             </tbody>
-          </table>
+          </table>)}</PaginatedTable>
         </div>
       </section>
 

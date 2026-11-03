@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -160,7 +161,7 @@ function LinkGames({ lang, games, webGames, webById }) {
       </datalist>
 
       <div className="overflow-x-auto rounded-xl border border-linear-hairline">
-        <table className="w-full min-w-[860px] text-left text-sm">
+        <PaginatedTable items={rows} resetKey={JSON.stringify([filter, query])}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[860px] text-left text-sm">
           <thead className="bg-linear-surface-2 text-[11px] font-black uppercase tracking-[0.06em] text-linear-ink-muted">
             <tr>
               <th scope="col" className="w-12 px-4 py-3"><span className="sr-only">เลือก</span></th>
@@ -170,7 +171,7 @@ function LinkGames({ lang, games, webGames, webById }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((game) => {
+            {tablePageItems.map((tableItem, tableIndex) => ((game) => {
               const chosenId = choices[game.id] || game.topupGameId || "";
               const chosen = webById.get(chosenId);
               const sharedWith = (usage.get(chosenId) || []).filter((name) => name !== game.game);
@@ -229,9 +230,9 @@ function LinkGames({ lang, games, webGames, webById }) {
                   </td>
                 </tr>
               );
-            })}
+            })(tableItem, tablePageStart + tableIndex, tableAllItems))}
           </tbody>
-        </table>
+        </table>)}</PaginatedTable>
       </div>
 
       <div className="sticky bottom-4 flex flex-wrap items-center justify-end gap-3 rounded-2xl border border-linear-hairline bg-linear-surface-1 p-3 shadow-[0_16px_32px_-16px_rgba(0,0,0,0.45)]">

@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import { useEffect, useRef, useState } from "react";
 import { isLowStock } from "@/lib/inventory-alerts";
 import { TOPUP_INVENTORY_PROVIDERS } from "@/lib/topup-inventory";
@@ -86,10 +87,10 @@ export default function InventoryAlertSettings() {
         </select>
       </label>
       {providerErrors.length > 0 && <p role="alert" className="text-sm">อ่านยอดไม่สำเร็จ: {providerErrors.map(e => e.provider).join(", ")} — ไม่ใช้ยอดอ้างอิงแทนยอดจริง</p>}
-      {channels.length > 0 && <div className="overflow-x-auto rounded-lg border border-ll-hairline"><table className="w-full min-w-[760px] text-left text-sm">
+      {channels.length > 0 && <div className="overflow-x-auto rounded-lg border border-ll-hairline"><PaginatedTable items={channels} resetKey={provider}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[760px] text-left text-sm">
         <thead className="bg-ll-surface-2"><tr>{["ช่องทาง / บัญชี", "ยอดคงเหลือที่บันทึกล่าสุด", "ยอดเป้าหมาย", "สถานะแจ้งเตือน"].map(label => <th key={label} scope="col" className="p-3">{label}</th>)}</tr></thead>
-        <tbody>{channels.map(channel => <ChannelRow key={`${revision}:${channel.key}`} channel={channel} canManage={data.canManage} onSaved={onSaved} />)}</tbody>
-      </table></div>}
+        <tbody>{tablePageItems.map((tableItem, tableIndex) => (channel => <ChannelRow key={`${revision}:${channel.key}`} channel={channel} canManage={data.canManage} onSaved={onSaved} />)(tableItem, tablePageStart + tableIndex, tableAllItems))}</tbody>
+      </table>)}</PaginatedTable></div>}
       {!provider ? <p className="text-sm" role="status">เลือกช่องทางเพื่อดูบัญชีและตั้งค่าแจ้งเตือน</p>
         : !channels.length && <p className="text-sm" role="status">ยังไม่พบบัญชีในช่องทางนี้</p>}
       <p className="text-xs text-ll-ink-subtle">Moniepoint ยังไม่เปิด Inventory จึงยังไม่รองรับแจ้งเตือน บัญชีที่แยกยอดไม่ได้จะแสดงว่าไม่ทราบยอด</p>

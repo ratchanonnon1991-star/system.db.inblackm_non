@@ -1,3 +1,4 @@
+import * as paginationDependency0 from "../src/server/inventory-page.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
@@ -118,7 +119,7 @@ check(TOPUP_INVENTORY_PROVIDERS.some((p) => p.key === "agenh2h" && p.ready));
 function compile(file, mocks) {
   const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
   const output = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
-  const exports = {}; new Function("require", "exports", output)((key) => { if (!mocks[key]) throw Error(`Unmocked ${key}`); return mocks[key]; }, exports); return exports;
+  const exports = {}; new Function("require", "exports", output)((key) => { if (key === "@/server/inventory-page") return paginationDependency0; if (!mocks[key]) throw Error(`Unmocked ${key}`); return mocks[key]; }, exports); return exports;
 }
 let reads = 0, failure = false, walletRows = [], lastArgs = null, chainSql = "", chainArgs = null, chainResult = [];
 const select = async (sql, args) => {

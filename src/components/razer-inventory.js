@@ -1,4 +1,6 @@
 "use client";
+import { createInventoryPageSession } from "@/lib/inventory-page-session";
+import { TablePagination } from "@/components/table-pagination";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Download, RefreshCw } from "lucide-react";
@@ -40,17 +42,18 @@ export default function RazerInventory({ lang }) {
   const [draft, setDraft] = useState(filters), [rates, setRates] = useState({ SGD: "", CAD: "" });
   const [data, setData] = useState(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
   const generation = useRef(0), alive = useRef(false);
-  const invalidate = useCallback(() => { generation.current++; }, []);
+  const [pageReader] = useState(() => createInventoryPageSession());
+  const invalidate = useCallback(() => { generation.current++; pageReader.cancel(); }, [pageReader]);
   const viewKey = new URLSearchParams(filters).toString();
   const load = useCallback(async () => {
     const version = ++generation.current; setLoading(true); setError("");
     try {
-      const result = await apiJson(`${endpoint}?${viewKey}`, { cache: "no-store" });
+      const result = await pageReader.run(endpoint, viewKey);
       if (!Array.isArray(result?.zones) || result.zones.length !== 2 || !Array.isArray(result.accounts) || !Array.isArray(result.accountChoices) || !Array.isArray(result.entries) || !result.summary) throw new Error("ข้อมูลไม่ครบ กรุณาโหลดใหม่");
       if (alive.current && generation.current === version) setData({ ...result, viewKey });
     } catch (e) { if (alive.current && generation.current === version) setError(e.message || "โหลดข้อมูลไม่สำเร็จ"); }
     finally { if (alive.current && generation.current === version) setLoading(false); }
-  }, [viewKey]);
+  }, [viewKey, pageReader]);
   useEffect(() => { alive.current = true; const timer = setTimeout(load, 0); return () => { alive.current = false; invalidate(); clearTimeout(timer); }; }, [load, invalidate]);
   function apply(next) { invalidate(); setError(""); setFilters(next); setDraft(next); if (new URLSearchParams(next).toString() === viewKey) void load(); }
   function applyDraft(next = draft) { apply({ ...next, rates: JSON.stringify(Object.fromEntries(Object.entries(rates).filter(([, v]) => v !== ""))), page: "1", accountPage: "1" }); }
@@ -71,7 +74,7 @@ export default function RazerInventory({ lang }) {
       <p className="text-xs text-ll-ink-subtle">Gold / Silver แยก SGD กับ CAD ไม่บวกรวมต่างสกุล · ยอดคงเหลือคือค่าบันทึกล่าสุด ไม่ใช่ยอดตรวจสด และไม่เปลี่ยนตามวันที่/คำค้น · ยอดออกนับตามตัวกรอง</p>
       <section className="space-y-4" aria-label="บัญชีสต็อก"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold">บัญชี Razer · {data.accountTotal} บัญชี</h2>{data.canOpenStock && <Link className={button} href="/profit/razer-stock">จัดการ Razer Stock เดิม</Link>}</div><AccountTable accounts={data.accounts} onChoose={(key) => apply({ ...filters, account: key, search: "", page: "1", accountPage: "1" })} /><PageButtons label="เปลี่ยนหน้าบัญชี" page={data.accountPage} size={50} total={data.accountTotal} onChange={(page) => apply({ ...filters, accountPage: String(page) })} /></section>
       <section className="space-y-4" aria-label="รายการใช้ Gold"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold">ประวัติออเดอร์ · {data.total} ออเดอร์</h2><p className="text-sm text-ll-ink-subtle">{data.summary.fills} รายการย่อย</p></div><dl className="grid gap-3 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4 sm:grid-cols-3">{[["ยอดโอน THB", data.summary.sale], ["ต้นทุนอ้างอิง THB", data.summary.cost], ["กำไรอ้างอิง THB", data.summary.profit]].map(([title, value]) => <div key={title}><dt className="text-sm text-ll-ink-subtle">{title}</dt><dd className="mt-2 text-xl font-semibold tabular-nums">{money(value)}</dd></div>)}</dl><p className="text-xs text-ll-ink-subtle">ต้นทุนอ้างอิง = Gold ออก × เรทที่เลือก/เรทใน Stock ปัจจุบัน กำไรอ้างอิงจะเปลี่ยนหากเรทเปลี่ยน ไม่ใช่ต้นทุนซื้อจริงย้อนหลัง · ไม่ได้ลดยอดบัญชีซ้ำ</p>
-        {(data.summary.missingSales > 0 || data.summary.missingCosts > 0) && <p role="status" className="text-sm text-ll-ink-subtle">ข้อมูลไม่ครบ: ยอดโอน {data.summary.missingSales} · ต้นทุน {data.summary.missingCosts} รายการ ยอดรวมที่คำนวณไม่ครบแสดง — ไม่แทนด้วยศูนย์</p>}<OrderTable entries={data.entries} /><PageButtons label="เปลี่ยนหน้าออเดอร์" page={data.page} size={data.pageSize} total={data.total} onChange={(page) => apply({ ...filters, page: String(page) })} />
+        {(data.summary.missingSales > 0 || data.summary.missingCosts > 0) && <p role="status" className="text-sm text-ll-ink-subtle">ข้อมูลไม่ครบ: ยอดโอน {data.summary.missingSales} · ต้นทุน {data.summary.missingCosts} รายการ ยอดรวมที่คำนวณไม่ครบแสดง — ไม่แทนด้วยศูนย์</p>}<OrderTable entries={data.entries} /><TablePagination page={data.page} pageSize={data.pageSize} total={data.total} totalPages={Math.max(1, Math.ceil(data.total / data.pageSize))} observedAt={data.pagination?.observedAt} loading={loading} onPage={(page) => apply({ ...filters, page: String(page) })} onPageSize={(size) => apply({ ...filters, page: "1", pageSize: String(size) })} label="แบ่งหน้าประวัติ" />
       </section>
     </>}
   </main>;

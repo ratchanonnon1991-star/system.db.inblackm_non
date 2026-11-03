@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { BarChart3, Loader2, RefreshCw, ShoppingCart, Wallet } from "lucide-react";
@@ -137,7 +138,7 @@ export default function ProfitDashboardPage() {
           <span className="text-[12px] text-ll-ink-subtle">{categories.length} หมวด</span>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-[13px] text-ll-ink">
+          <PaginatedTable items={categories}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[720px] text-[13px] text-ll-ink">
             <thead>
               <tr className="border-b border-ll-hairline text-left text-[11px] text-ll-ink-subtle">
                 <th className="px-4 py-2 font-medium">หมวดหมู่</th>
@@ -153,7 +154,7 @@ export default function ProfitDashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {categories.map((c) => {
+              {tablePageItems.map((tableItem, tableIndex) => ((c) => {
                 const isUsd = c.source === "gocash" || c.source === "gocash-dust";
                 return (
                   <tr key={c.id} className="border-b border-ll-hairline last:border-0 hover:bg-ll-surface-2">
@@ -183,9 +184,9 @@ export default function ProfitDashboardPage() {
                     <td className="px-3 py-2.5"><DupBadge n={c.duplicateCardCount} /></td>
                   </tr>
                 );
-              })}
+              })(tableItem, tablePageStart + tableIndex, tableAllItems))}
             </tbody>
-          </table>
+          </table>)}</PaginatedTable>
         </div>
       </section>
     </div>

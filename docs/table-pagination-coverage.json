@@ -1,0 +1,566 @@
+[
+  {
+    "file": "src/app/profit/agenh2h-history/page.js",
+    "index": 0,
+    "line": 180,
+    "mode": "server-snapshot"
+  },
+  {
+    "file": "src/app/profit/atom-history/page.js",
+    "index": 0,
+    "line": 166,
+    "mode": "server-snapshot"
+  },
+  {
+    "file": "src/app/profit/category/[categoryId]/card/[cardId]/page.js",
+    "index": 0,
+    "line": 514,
+    "mode": "server-snapshot"
+  },
+  {
+    "file": "src/app/profit/category/[categoryId]/card/[cardId]/page.js",
+    "index": 1,
+    "line": 1059,
+    "mode": "server-snapshot"
+  },
+  {
+    "file": "src/app/profit/category/[categoryId]/card/[cardId]/page.js",
+    "index": 2,
+    "line": 1201,
+    "mode": "server-snapshot"
+  },
+  {
+    "file": "src/app/profit/category/[categoryId]/card/[cardId]/page.js",
+    "index": 3,
+    "line": 1297,
+    "mode": "server-snapshot"
+  },
+  {
+    "file": "src/app/profit/category/[categoryId]/card/[cardId]/page.js",
+    "index": 4,
+    "line": 1436,
+    "mode": "server-snapshot"
+  },
+  {
+    "file": "src/app/profit/category/[categoryId]/card/[cardId]/page.js",
+    "index": 5,
+    "line": 1583,
+    "mode": "server-snapshot"
+  },
+  {
+    "file": "src/app/profit/category/[categoryId]/card/[cardId]/page.js",
+    "index": 6,
+    "line": 1727,
+    "mode": "server-snapshot"
+  },
+  {
+    "file": "src/app/profit/category/[categoryId]/card/[cardId]/page.js",
+    "index": 7,
+    "line": 1874,
+    "mode": "server-snapshot"
+  },
+  {
+    "file": "src/app/profit/category/[categoryId]/card/[cardId]/page.js",
+    "index": 8,
+    "line": 2021,
+    "mode": "server-snapshot"
+  },
+  {
+    "file": "src/app/profit/category/[categoryId]/card/[cardId]/page.js",
+    "index": 9,
+    "line": 2173,
+    "mode": "server-snapshot"
+  },
+  {
+    "file": "src/app/profit/category/[categoryId]/page.js",
+    "index": 0,
+    "line": 1353,
+    "mode": "parent-pager"
+  },
+  {
+    "file": "src/app/profit/category/[categoryId]/page.js",
+    "index": 1,
+    "line": 1401,
+    "mode": "parent-pager"
+  },
+  {
+    "file": "src/app/profit/category/[categoryId]/page.js",
+    "index": 2,
+    "line": 1475,
+    "mode": "parent-pager"
+  },
+  {
+    "file": "src/app/profit/category/[categoryId]/page.js",
+    "index": 3,
+    "line": 1525,
+    "mode": "parent-pager"
+  },
+  {
+    "file": "src/app/profit/category/[categoryId]/page.js",
+    "index": 4,
+    "line": 1575,
+    "mode": "parent-pager"
+  },
+  {
+    "file": "src/app/profit/category/[categoryId]/page.js",
+    "index": 5,
+    "line": 1625,
+    "mode": "parent-pager"
+  },
+  {
+    "file": "src/app/profit/category/[categoryId]/page.js",
+    "index": 6,
+    "line": 1673,
+    "mode": "parent-pager"
+  },
+  {
+    "file": "src/app/profit/category/[categoryId]/page.js",
+    "index": 7,
+    "line": 1721,
+    "mode": "parent-pager"
+  },
+  {
+    "file": "src/app/profit/category/[categoryId]/page.js",
+    "index": 8,
+    "line": 1769,
+    "mode": "parent-pager"
+  },
+  {
+    "file": "src/app/profit/category/[categoryId]/page.js",
+    "index": 9,
+    "line": 1817,
+    "mode": "parent-pager"
+  },
+  {
+    "file": "src/app/profit/category/[categoryId]/page.js",
+    "index": 10,
+    "line": 1866,
+    "mode": "parent-pager"
+  },
+  {
+    "file": "src/app/profit/codareseller-history/page.js",
+    "index": 0,
+    "line": 176,
+    "mode": "server-snapshot"
+  },
+  {
+    "file": "src/app/profit/donshop-history/page.js",
+    "index": 0,
+    "line": 180,
+    "mode": "server-snapshot"
+  },
+  {
+    "file": "src/app/profit/gamepoint-history/page.js",
+    "index": 0,
+    "line": 180,
+    "mode": "server-snapshot"
+  },
+  {
+    "file": "src/app/profit/gocash-history/page.js",
+    "index": 0,
+    "line": 195,
+    "mode": "server-snapshot"
+  },
+  {
+    "file": "src/app/profit/netease-history/page.js",
+    "index": 0,
+    "line": 175,
+    "mode": "server-snapshot"
+  },
+  {
+    "file": "src/app/profit/oxide-history/page.js",
+    "index": 0,
+    "line": 179,
+    "mode": "server-snapshot"
+  },
+  {
+    "file": "src/app/profit/pack-costs/page.js",
+    "index": 0,
+    "line": 179,
+    "mode": "client"
+  },
+  {
+    "file": "src/app/profit/page.js",
+    "index": 0,
+    "line": 141,
+    "mode": "client"
+  },
+  {
+    "file": "src/app/profit/sale-prices/[platform]/page.js",
+    "index": 0,
+    "line": 225,
+    "mode": "client"
+  },
+  {
+    "file": "src/app/profit/smartsun-history/page.js",
+    "index": 0,
+    "line": 166,
+    "mode": "server-snapshot"
+  },
+  {
+    "file": "src/app/profit/truemoney-history/page.js",
+    "index": 0,
+    "line": 166,
+    "mode": "server-snapshot"
+  },
+  {
+    "file": "src/app/profit/u9-history/page.js",
+    "index": 0,
+    "line": 181,
+    "mode": "server-snapshot"
+  },
+  {
+    "file": "src/app/profit/wavepay-history/page.js",
+    "index": 0,
+    "line": 181,
+    "mode": "server-snapshot"
+  },
+  {
+    "file": "src/components/admin-modals.js",
+    "index": 0,
+    "line": 235,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/agenh2h-inventory.js",
+    "index": 0,
+    "line": 95,
+    "mode": "existing-pager"
+  },
+  {
+    "file": "src/components/donshop-inventory.js",
+    "index": 0,
+    "line": 93,
+    "mode": "existing-pager"
+  },
+  {
+    "file": "src/components/gamedb-modals.js",
+    "index": 0,
+    "line": 1264,
+    "mode": "bounded-single-page"
+  },
+  {
+    "file": "src/components/gamedb-modals.js",
+    "index": 1,
+    "line": 1811,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/gameinfo-column-roles-page.js",
+    "index": 0,
+    "line": 112,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/gameinfo-cost-rates.js",
+    "index": 0,
+    "line": 27,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/gameinfo-game-view.js",
+    "index": 0,
+    "line": 421,
+    "mode": "client-per-category"
+  },
+  {
+    "file": "src/components/gameinfo-gamelist-cards.js",
+    "index": 0,
+    "line": 590,
+    "mode": "existing-pager"
+  },
+  {
+    "file": "src/components/gameinfo-market-compare-page.js",
+    "index": 0,
+    "line": 92,
+    "mode": "server"
+  },
+  {
+    "file": "src/components/gameinfo-market-competitor-compare-page.js",
+    "index": 0,
+    "line": 250,
+    "mode": "server"
+  },
+  {
+    "file": "src/components/gameinfo-market-mapping-page.js",
+    "index": 0,
+    "line": 309,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/gameinfo-market-mapping-page.js",
+    "index": 1,
+    "line": 326,
+    "mode": "server"
+  },
+  {
+    "file": "src/components/gameinfo-market-mapping-page.js",
+    "index": 2,
+    "line": 335,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/gameinfo-pack-editor.js",
+    "index": 0,
+    "line": 896,
+    "mode": "bounded-single-page"
+  },
+  {
+    "file": "src/components/gameinfo-pack-price-compare.js",
+    "index": 0,
+    "line": 614,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/gameinfo-price-alerts-page.js",
+    "index": 0,
+    "line": 139,
+    "mode": "server"
+  },
+  {
+    "file": "src/components/gameinfo-russia-check-game-logs-page.js",
+    "index": 0,
+    "line": 57,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/gameinfo-russia-check-page.js",
+    "index": 0,
+    "line": 537,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/gameinfo-sales-channels.js",
+    "index": 0,
+    "line": 125,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/gameinfo-sheet-import.js",
+    "index": 0,
+    "line": 146,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/gameinfo-test-accounts.js",
+    "index": 0,
+    "line": 208,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/gameinfo-topup-web-linker.js",
+    "index": 0,
+    "line": 164,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/gameinfo-topup-web-panel.js",
+    "index": 0,
+    "line": 336,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/gameinfo-web-margin.js",
+    "index": 0,
+    "line": 78,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/gamepoint-inventory.js",
+    "index": 0,
+    "line": 18,
+    "mode": "existing-pager"
+  },
+  {
+    "file": "src/components/garena-shell-inventory.js",
+    "index": 0,
+    "line": 37,
+    "mode": "existing-pager"
+  },
+  {
+    "file": "src/components/inventory-alert-settings.js",
+    "index": 0,
+    "line": 90,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/inventory-ledger-channels.js",
+    "index": 0,
+    "line": 39,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/inventory-ledger-channels.js",
+    "index": 1,
+    "line": 127,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/inventory-ledger-debit.js",
+    "index": 0,
+    "line": 94,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/inventory-ledger-debit.js",
+    "index": 1,
+    "line": 242,
+    "mode": "client-controlled"
+  },
+  {
+    "file": "src/components/itune-dev-queue-simulator.js",
+    "index": 0,
+    "line": 118,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/itune-entry-sheet-panel.js",
+    "index": 0,
+    "line": 27,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/itune-issue-history.js",
+    "index": 0,
+    "line": 99,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/itune-stats-dashboard.js",
+    "index": 0,
+    "line": 104,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/itune-topup-log.js",
+    "index": 0,
+    "line": 275,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/itune-topup-log.js",
+    "index": 1,
+    "line": 323,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/log-page.js",
+    "index": 0,
+    "line": 257,
+    "mode": "existing-pager"
+  },
+  {
+    "file": "src/components/log-page.js",
+    "index": 1,
+    "line": 580,
+    "mode": "existing-pager"
+  },
+  {
+    "file": "src/components/multigamecard-inventory.js",
+    "index": 0,
+    "line": 24,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/multigamecard-inventory.js",
+    "index": 1,
+    "line": 38,
+    "mode": "server-snapshot"
+  },
+  {
+    "file": "src/components/netease-inventory.js",
+    "index": 0,
+    "line": 34,
+    "mode": "existing-pager"
+  },
+  {
+    "file": "src/components/panel-config-modals.js",
+    "index": 0,
+    "line": 1195,
+    "mode": "bounded-single-page"
+  },
+  {
+    "file": "src/components/panel-config-modals.js",
+    "index": 1,
+    "line": 3093,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/panel-table.js",
+    "index": 0,
+    "line": 1507,
+    "mode": "existing-pager"
+  },
+  {
+    "file": "src/components/plsbuy-inventory.js",
+    "index": 0,
+    "line": 29,
+    "mode": "existing-pager"
+  },
+  {
+    "file": "src/components/profit-razer-stock-page.js",
+    "index": 0,
+    "line": 1067,
+    "mode": "existing-pager"
+  },
+  {
+    "file": "src/components/razer-inventory.js",
+    "index": 0,
+    "line": 24,
+    "mode": "server"
+  },
+  {
+    "file": "src/components/razer-inventory.js",
+    "index": 1,
+    "line": 32,
+    "mode": "server"
+  },
+  {
+    "file": "src/components/stock-account-view.js",
+    "index": 0,
+    "line": 83,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/stock-account-view.js",
+    "index": 1,
+    "line": 139,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/usdcodashop-inventory.js",
+    "index": 0,
+    "line": 85,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/usdcodashop-overview-table.js",
+    "index": 0,
+    "line": 19,
+    "mode": "existing-pager"
+  },
+  {
+    "file": "src/components/usdcodashop-sheet-table.js",
+    "index": 0,
+    "line": 9,
+    "mode": "existing-pager"
+  },
+  {
+    "file": "src/components/wavepay-inventory.js",
+    "index": 0,
+    "line": 50,
+    "mode": "existing-pager"
+  },
+  {
+    "file": "src/components/workforce-dashboard.js",
+    "index": 0,
+    "line": 130,
+    "mode": "client"
+  },
+  {
+    "file": "src/components/workforce-dashboard.js",
+    "index": 1,
+    "line": 146,
+    "mode": "client"
+  }
+]

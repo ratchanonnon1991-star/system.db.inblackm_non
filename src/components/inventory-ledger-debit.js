@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable, { TablePagination, useTablePagination } from "@/components/table-pagination";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ClipboardPaste, ListChecks, Plus, RefreshCw, Save, Trash2, Undo2 } from "lucide-react";
@@ -90,9 +91,9 @@ function History({ accounts, accountId, refreshKey, onReversed }) {
     </div>
     {error && <p role="alert" className="text-sm text-ll-warning">{error}</p>}
     <p className="text-xs text-ll-ink-subtle">{data ? `${data.entries.length} รายการ` : "กำลังโหลด…"}{Object.keys(total).length ? ` · ยอดใช้สุทธิ ${Object.entries(total).map(([c, v]) => `${num(v)} ${c}`).join(" · ")}` : ""}{data?.truncated ? " · แสดงเฉพาะ 500 รายการล่าสุด" : ""}</p>
-    <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm">
+    <div className="overflow-x-auto"><PaginatedTable items={(data?.entries ?? [])} resetKey={JSON.stringify([day, mine, onlyAccount, accountId])}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[760px] text-left text-sm">
       <thead><tr className="text-xs text-ll-ink-subtle">{["เวลา", "บัญชี", "เลขออเดอร์", "ยอด", "Invoice", "ผู้บันทึก", ""].map(h => <th key={h} className={`${cell} font-medium`}>{h}</th>)}</tr></thead>
-      <tbody>{(data?.entries ?? []).map(e => <tr key={e.id} className={e.reversedBy || e.kind === "reversal" ? "text-ll-ink-subtle" : ""}>
+      <tbody>{tablePageItems.map((tableItem, tableIndex) => (e => <tr key={e.id} className={e.reversedBy || e.kind === "reversal" ? "text-ll-ink-subtle" : ""}>
         <td className={`${cell} whitespace-nowrap`}>{when(e.recordedAt)}</td>
         <td className={cell}>{e.accountLabel}</td>
         <td className={`${cell} font-medium`}>{e.orderRef}{e.kind === "reversal" && <span className="ml-1 text-xs">(รายการกลับ)</span>}{e.reversedBy && <span className="ml-1 text-xs">(ยกเลิกแล้ว)</span>}</td>
@@ -100,8 +101,8 @@ function History({ accounts, accountId, refreshKey, onReversed }) {
         <td className={cell}>{e.invoice || "—"}</td>
         <td className={cell}>{e.recordedBy}</td>
         <td className={cell}>{e.canReverse && <button type="button" disabled={busy === e.id} onClick={() => reverse(e)} className={button}><Undo2 size={14} aria-hidden />ยกเลิก</button>}</td>
-      </tr>)}</tbody>
-    </table></div>
+      </tr>)(tableItem, tablePageStart + tableIndex, tableAllItems))}</tbody>
+    </table>)}</PaginatedTable></div>
   </section>;
 }
 
@@ -109,6 +110,7 @@ export default function InventoryLedgerDebit({ lang }) {
   const [accounts, setAccounts] = useState([]);
   const [accountId, setAccountId] = useState("");
   const [rows, setRows] = useState(() => [blankRow()]);
+  const draftPagination = useTablePagination(rows);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [lookups, setLookups] = useState({});
@@ -116,7 +118,13 @@ export default function InventoryLedgerDebit({ lang }) {
   const [saving, setSaving] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const orderInputs = useRef(new Map());
+  const focusAfterPage = useRef(null);
   const asked = useRef(new Set());
+
+  useEffect(() => {
+    const input = orderInputs.current.get(focusAfterPage.current);
+    if (input) { input.focus(); focusAfterPage.current = null; }
+  }, [rows, draftPagination.page, draftPagination.pageSize]);
 
   useEffect(() => {
     apiJson(`${endpoint}?view=accounts`, { cache: "no-store" })
@@ -154,8 +162,21 @@ export default function InventoryLedgerDebit({ lang }) {
   const update = (key, patch) => setRows(rs => rs.map(r => (r.key === key ? { ...r, ...patch, ...(r.state === "error" ? { state: "draft", error: "" } : {}) } : r)));
   function addRow(focus = true) {
     const row = blankRow();
+    if (focus) {
+      focusAfterPage.current = row.key;
+      draftPagination.onPage(Math.floor(rows.length / draftPagination.pageSize) + 1);
+    }
     setRows(rs => [...rs, row]);
-    if (focus) setTimeout(() => orderInputs.current.get(row.key)?.focus(), 0);
+  }
+  function focusRow(index) {
+    const row = rows[index];
+    if (!row) return;
+    const input = orderInputs.current.get(row.key);
+    if (input) input.focus();
+    else {
+      focusAfterPage.current = row.key;
+      draftPagination.onPage(Math.floor(index / draftPagination.pageSize) + 1);
+    }
   }
   function applyPaste() {
     const parsed = parseDebitPaste(pasteText);
@@ -218,15 +239,17 @@ export default function InventoryLedgerDebit({ lang }) {
           <textarea rows={6} value={pasteText} onChange={e => setPasteText(e.target.value)} className={`${input} mt-2 py-2 font-mono`} placeholder={"K7366363\t11000\nK7366348\t5500"} /></label>
         <button type="button" onClick={applyPaste} className={button}>เพิ่ม {parseDebitPaste(pasteText).length} แถว</button>
       </div>}
-      <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm">
+      <div className="overflow-x-auto"><><table className="w-full min-w-[720px] text-left text-sm">
         <thead><tr className="text-xs text-ll-ink-subtle"><th className={`${cell} w-8`}>#</th><th className={cell}>เลขออเดอร์</th><th className={cell}>ยอดที่ตัด{account ? ` (${account.currency})` : ""}</th><th className={cell}>Invoice (ถ้ามี)</th><th className={cell}>ตรวจสอบ</th><th className={cell}></th></tr></thead>
-        <tbody>{rows.map((r, i) => {
+        <tbody>{draftPagination.items.map((r, tableIndex) => {
+          const i = draftPagination.start + tableIndex;
+
           const locked = r.state === "saved" || r.state === "saving";
           return <tr key={r.key} className={r.state === "saved" ? "bg-ll-surface-2" : ""}>
             <td className={`${cell} text-xs text-ll-ink-subtle`}>{i + 1}</td>
-            <td className={cell}><input aria-label={`เลขออเดอร์แถว ${i + 1}`} ref={el => (el ? orderInputs.current.set(r.key, el) : orderInputs.current.delete(r.key))} disabled={locked} value={r.orderRef} onChange={e => update(r.key, { orderRef: e.target.value })} className={input} /></td>
+            <td className={cell}><input aria-label={`เลขออเดอร์แถว ${i + 1}`} ref={el => { if (el) orderInputs.current.set(r.key, el); else orderInputs.current.delete(r.key); }} disabled={locked} value={r.orderRef} onChange={e => update(r.key, { orderRef: e.target.value })} className={input} /></td>
             <td className={cell}><input aria-label={`ยอดแถว ${i + 1}`} inputMode="decimal" disabled={locked} value={r.amount} onChange={e => update(r.key, { amount: e.target.value.replace(/[,\s]/g, "") })}
-              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); if (i === rows.length - 1) addRow(); else orderInputs.current.get(rows[i + 1].key)?.focus(); } }}
+              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); if (i === rows.length - 1) addRow(); else focusRow(i + 1); } }}
               className={`${input} tabular-nums ${r.amount && !amountOk(r.amount) ? "border-ll-warning" : ""}`} /></td>
             <td className={cell}><input aria-label={`Invoice แถว ${i + 1}`} disabled={locked} value={r.invoice} onChange={e => update(r.key, { invoice: e.target.value })} className={input} /></td>
             <td className={`${cell} min-w-56`}>
@@ -237,8 +260,9 @@ export default function InventoryLedgerDebit({ lang }) {
             </td>
             <td className={cell}>{!locked && rows.length > 1 && <button type="button" aria-label={`ลบแถว ${i + 1}`} onClick={() => setRows(rs => rs.filter(x => x.key !== r.key))} className="min-h-11 px-2 text-ll-ink-subtle hover:text-ll-ink">×</button>}</td>
           </tr>;
+
         })}</tbody>
-      </table></div>
+      </table>{draftPagination.showControls && <TablePagination {...draftPagination} loading={saving} label="แบ่งหน้ารายการยกยอด" />}</></div>
       {error && <p role="alert" className="text-sm text-ll-warning">{error}</p>}
       <div className="flex flex-wrap items-center justify-end gap-3">
         {invalid.length > 0 && <span className="text-xs text-ll-warning">{invalid.length} แถวยังไม่ครบ (ต้องมีเลขออเดอร์และยอดเป็นตัวเลข)</span>}

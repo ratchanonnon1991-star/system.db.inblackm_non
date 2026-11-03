@@ -58,21 +58,24 @@ export function createWavePayInventory(select = selectQuery, { prepareSales = pr
       ${orderJoins}`, [WAVEPAY_METHOD, WAVE_NOT_CHARGED_CODE]);
   }
   return {
-    async list(actor, query = {}) {
+    async list(actor, query = {}, { onTiming = () => {}, exportAll = false } = {}) {
       if (!canViewUsdInventory(actor)) throw inventoryError("ไม่มีสิทธิ์ดู WavePay Inventory", 403);
       const filters = waveFilters(query);
-      const [rows, latest] = await Promise.all([rangeOrders(filters.bounds), latestBalances()]);
+      const timed = async (name, run) => { const start = performance.now(); try { return await run(); } finally { onTiming(name, performance.now() - start); } };
+      const [rows, latest] = await Promise.all([timed("orders", () => rangeOrders(filters.bounds)), timed("balances", latestBalances)]);
+      const metadataStart = performance.now();
       const enriched = [];
       for (let i = 0; i < rows.length; i += BATCH) enriched.push(...await attachSheetFields(select, rows.slice(i, i + BATCH)));
+      onTiming("metadata", performance.now() - metadataStart);
       // Same sale conversion as USDCodashop, but nothing is stored: foreign-currency sales use today's reference rate.
-      const prepared = await prepareSales(enriched.map((row) => ({ sourceId: String(row.id), row, details: row.sheet_fields })), []);
+      const prepared = await timed("rates", () => prepareSales(enriched.map((row) => ({ sourceId: String(row.id), row, details: row.sheet_fields })), []));
       const entries = prepared.map((p) => normalizeWaveOrder({ ...p.row, sheet_fields: p.details }));
       const lines = summarizeWaveLines(entries, latest);
       const shown = entries.filter((e) => (filters.phone == null || e.phone === filters.phone) && waveMatches(e, filters.search))
         .sort((a, b) => (b.occurredAt || "").localeCompare(a.occurredAt || "") || Number(b.id) - Number(a.id));
       const offset = (filters.page - 1) * WAVEPAY_PAGE_SIZE;
       return { dateFrom: filters.dateFrom, dateTo: filters.dateTo, lines, phone: filters.phone, total: shown.length, page: filters.page, pageSize: WAVEPAY_PAGE_SIZE,
-        entries: shown.slice(offset, offset + WAVEPAY_PAGE_SIZE), observedAt: new Date().toISOString() };
+        entries: exportAll ? shown : shown.slice(offset, offset + WAVEPAY_PAGE_SIZE), observedAt: new Date().toISOString() };
     },
   };
 }

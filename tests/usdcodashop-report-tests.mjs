@@ -27,11 +27,12 @@ assert.ok(csv.includes('"3.70","0.00"')); assert.ok(!csv.includes("javascript:")
 assert.equal(CODA_SHEET_HEADINGS.length, 20);
 assert.ok(codaReportCsv([]).endsWith("\r\n"));
 let reportParams;
-const client = { query: async () => ({ rows: [] }), release() {} };
-const repo = createCodaLedger({ connect: async () => client, query: async (sql, params) => {
+const client = { release() {}, query: async (sql, params) => {
+  if (!sql.startsWith("WITH duplicate_invoices")) return { rows: [] };
   reportParams = params; assert.ok(sql.includes("occurred_at < $4::timestamptz"));
   return { rows: [{ total: 50001 }] };
-} }, undefined, { loadCostRate: async () => null });
+} };
+const repo = createCodaLedger({ connect: async () => client, query: client.query }, undefined, { loadCostRate: async () => null });
 await assert.rejects(repo.list({ id: 1, permissions: ["projectm.claim"] }, { exportAll: true, page: 9, dateFrom: "2026-10-17", dateTo: "2026-10-17" }), { status: 413 });
 assert.deepEqual(reportParams, ["", 0, "2026-10-16T17:00:00.000Z", "2026-10-17T17:00:00.000Z", 50001, "all", null, "all", "thb", null, null]);
 console.log("passed: Thai calendar boundaries, periods, CSV escaping, BOM, formula safety, export limit and source values");

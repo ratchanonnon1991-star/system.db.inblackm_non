@@ -24,27 +24,32 @@ async function bodyOf(request) {
 function failure(e) {
   // Do not return database errors/connection strings to the browser.
   if (e.status && e.status < 500) return jsonError(e.message, e.status);
+  if (e.status === 504) return jsonError(e.message, 504);
   console.error("[coda-ledger]", e.code || "INTERNAL_ERROR");
   return jsonError("เชื่อมต่อประวัติไม่สำเร็จ กรุณาตรวจ PROFIT_DATABASE_URL และฐานข้อมูลของระบบ", 503);
 }
 export async function GET(request) {
+  const start = performance.now(); const timing = [];
+  const measure = (name, duration) => timing.push(`${name};dur=${duration.toFixed(1)}`);
+  const finish = (response) => { measure("total", performance.now() - start); response.headers.set("Server-Timing", timing.join(", ")); response.headers.set("Cache-Control", "no-store"); return response; };
   try {
     const actor = await requireAdmin(request); const url = new URL(request.url);
+    measure("auth", performance.now() - start);
     const exportAll = url.searchParams.get("format") === "csv";
     const dateFrom = url.searchParams.get("dateFrom"); const dateTo = url.searchParams.get("dateTo");
-    const result = await codaLedgerRepository().list(actor, { search: url.searchParams.get("search"), page: url.searchParams.get("page"), dateFrom, dateTo, exportAll, kind: url.searchParams.get("kind"),
+    const result = await codaLedgerRepository().list(actor, { search: url.searchParams.get("search"), page: url.searchParams.get("page"), pageSize: url.searchParams.get("pageSize") || 100, dateFrom, dateTo, exportAll, kind: url.searchParams.get("kind"),
       profitStatus: url.searchParams.get("profitStatus"), profitUnit: url.searchParams.get("profitUnit"),
-      profitMin: url.searchParams.get("profitMin"), profitMax: url.searchParams.get("profitMax") });
+      profitMin: url.searchParams.get("profitMin"), profitMax: url.searchParams.get("profitMax"), signal: request.signal, onTiming: measure });
     if (exportAll) {
       if (!result.configured) throw inventoryError("กรุณาตั้งค่าบัญชีก่อน Export", 409);
-      return new Response(codaReportCsv(result.entries), { headers: {
+      return finish(new Response(codaReportCsv(result.entries), { headers: {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="usdcodashop-${dateFrom || "all"}-${dateTo || "all"}.csv"`,
         "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
-      } });
+      } }));
     }
-    const response = jsonOk(result); response.headers.set("Cache-Control", "no-store"); return response;
-  } catch (e) { return failure(e); }
+    return finish(jsonOk(result));
+  } catch (e) { return finish(failure(e)); }
 }
 export async function POST(request) {
   try {

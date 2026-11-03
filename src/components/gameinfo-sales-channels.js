@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import { useState } from "react";
 import { CheckCircle2, Save, Store } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
@@ -121,7 +122,7 @@ export default function GameinfoSalesChannelEditor({ gameId, initialChannels }) 
   return (
     <div className="flex flex-col gap-3">
       <div className="overflow-x-auto rounded-xl border border-linear-hairline">
-        <table className="w-full min-w-[820px] text-left text-sm">
+        <PaginatedTable items={rows}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[820px] text-left text-sm">
           <thead className="bg-linear-surface-2 text-[11px] font-black uppercase tracking-[0.06em] text-linear-ink-muted">
             <tr>
               <th scope="col" className="px-4 py-3">ช่องทาง</th>
@@ -132,7 +133,7 @@ export default function GameinfoSalesChannelEditor({ gameId, initialChannels }) 
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, index) => (
+            {tablePageItems.map((tableItem, tableIndex) => ((row, index) => (
               <tr key={row.channel} className="border-t border-linear-hairline">
                 <th scope="row" className="px-4 py-2 text-left font-extrabold text-linear-ink">{LABEL[row.channel]}</th>
                 <td className="px-3 py-2">
@@ -154,9 +155,9 @@ export default function GameinfoSalesChannelEditor({ gameId, initialChannels }) 
                   <input aria-label={`หมายเหตุ ${LABEL[row.channel]}`} value={row.note} maxLength={200} onChange={(e) => update(index, "note", e.target.value)} className={fieldClass} />
                 </td>
               </tr>
-            ))}
+            ))(tableItem, tablePageStart + tableIndex, tableAllItems))}
           </tbody>
-        </table>
+        </table>)}</PaginatedTable>
       </div>
       <div className="flex flex-wrap items-center justify-end gap-3">
         {notice ? <span role="status" className="mr-auto flex items-center gap-1.5 text-xs text-linear-success"><CheckCircle2 size={15} aria-hidden="true" /> {notice}</span> : null}

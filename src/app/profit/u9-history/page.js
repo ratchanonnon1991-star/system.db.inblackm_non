@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { TablePagination } from "@/components/table-pagination";
+import { usePagedResource } from "@/lib/use-paged-resource";
 import { useRouter } from "next/navigation";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
@@ -9,12 +11,6 @@ import { fmtDate, fmtKyat, fmtMoney, fmtPct, netSaleDisplay } from "@/lib/profit
 import { commitOverrideEdit } from "@/lib/profit-conflict";
 import { useProfitCanEdit } from "@/components/profit-capabilities-context";
 import PlatformSelect, { platformLabel } from "@/components/profit-platform-select";
-
-function matchesQuery(q, parts) {
-  if (!q) return true;
-  const hay = parts.filter((p) => p != null && p !== "").join(" ").toLowerCase();
-  return hay.includes(q);
-}
 
 function toLocalInput(d) {
   const pad = (n) => String(n).padStart(2, "0");
@@ -24,27 +20,29 @@ function toLocalInput(d) {
 export default function ProfitU9HistoryPage() {
   const router = useRouter();
   const canEdit = useProfitCanEdit();
-  const [rows, setRows] = useState(null);
-  const [error, setError] = useState("");
   const [q, setQ] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [gameFilter, setGameFilter] = useState("");
   const [platformFilter, setPlatformFilter] = useState("");
   const [sortDir, setSortDir] = useState("desc");
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(25);
   const [page, setPage] = useState(1);
   const [platforms, setPlatforms] = useState([]);
 
-  const load = useCallback(() => {
-    apiJson("/api/profit/u9/history", { fallbackError: "โหลดประวัติ U9 ไม่สำเร็จ" })
-      .then((res) => setRows(res.history || []))
-      .catch((err) => setError(err.message));
-  }, []);
+  const { data: historyPage, error, loading, reload: load } = usePagedResource("/api/profit/u9/history", {
+    page, pageSize, search: q, fromMs: from ? new Date(from).getTime() : "", toMs: to ? new Date(to).getTime() : "",
+    platform: platformFilter, sort: sortDir, game: gameFilter,
+  }, { setPage });
+  const rows = historyPage?.history || null;
+  const pageRows = rows || [];
+  const totalCount = historyPage?.pagination.total || 0;
+  const totalPages = historyPage?.pagination.totalPages || 1;
+  const safePage = historyPage?.pagination.page || 1;
+  const start = (safePage - 1) * pageSize;
+  const games = historyPage?.games || [];
+  const filterPlatforms = [...new Set([...platforms, ...(historyPage?.platforms || [])])].sort();
 
-  useEffect(() => {
-    load();
-  }, [load]);
 
   // Platform names for the filter + per-row dropdown -- non-critical, so a
   // failed fetch just leaves the filter/dropdown showing only "-".
@@ -73,47 +71,6 @@ export default function ProfitU9HistoryPage() {
     setPage(1);
   };
 
-  const filtered = useMemo(() => {
-    if (!rows) return [];
-    const query = q.trim().toLowerCase();
-    const fromTs = from ? new Date(from).getTime() : null;
-    const toTs = to ? new Date(to).getTime() : null;
-    let list = rows.filter((o) => {
-      const t = new Date(o.createdAt).getTime();
-      if (fromTs && t < fromTs) return false;
-      if (toTs && t > toTs) return false;
-      if (gameFilter === "__none__" ? o.gameName : gameFilter && o.gameName !== gameFilter) return false;
-      if (platformFilter === "__none__" ? o.platform : platformFilter && o.platform !== platformFilter) return false;
-      if (!matchesQuery(query, [o.txid, o.saleOrderId, o.packName, o.gameName, o.cardName, o.account])) return false;
-      return true;
-    });
-    list.sort((a, b) => {
-      const d = new Date(a.createdAt) - new Date(b.createdAt);
-      return sortDir === "asc" ? d : -d;
-    });
-    return list;
-  }, [rows, q, from, to, gameFilter, platformFilter, sortDir]);
-
-  const games = useMemo(() => {
-    const set = new Set();
-    for (const o of rows || []) if (o.gameName) set.add(o.gameName);
-    return [...set].sort();
-  }, [rows]);
-
-  // Every platform actually seen in the data (mostly auto-tagged from
-  // telegram_task_request_id's prefix) unioned with the reference-price
-  // platforms -- covers platforms nobody has set up a price sheet for yet.
-  const filterPlatforms = useMemo(() => {
-    const set = new Set(platforms);
-    for (const o of rows || []) if (o.platform) set.add(o.platform);
-    return [...set].sort();
-  }, [rows, platforms]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage = Math.min(page, totalPages);
-  const start = (safePage - 1) * pageSize;
-  const pageRows = filtered.slice(start, start + pageSize);
-
   // Which raw override field (see u9OrderView) backs each editable
   // column -- the baseline sent as `expected` so the server can tell if
   // someone else already changed this exact field (see commitOverrideEdit).
@@ -135,7 +92,7 @@ export default function ProfitU9HistoryPage() {
   };
 
   if (error) {
-    return <div className="rounded-lg border border-ll-hairline bg-ll-surface-1 p-6 text-sm text-ll-primary-subtle-text">เกิดข้อผิดพลาด: {error}</div>;
+    return <div className="rounded-lg border border-ll-hairline bg-ll-surface-1 p-6 text-sm text-ll-primary-subtle-text">เกิดข้อผิดพลาด: {error} <button type="button" onClick={load} className="ml-3 underline">ลองโหลดใหม่</button></div>;
   }
   if (!rows) {
     return (
@@ -210,7 +167,7 @@ export default function ProfitU9HistoryPage() {
         <label className="flex flex-col gap-1 text-[11px] text-ll-ink-subtle">
           แถว
           <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }} className={inputClass}>
-            {[20, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
+            {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
       </section>
@@ -218,10 +175,10 @@ export default function ProfitU9HistoryPage() {
       <section className="rounded-lg border border-ll-hairline bg-ll-surface-1">
         <div className="flex items-center justify-between border-b border-ll-hairline px-4 py-3">
           <h2 className="text-sm font-semibold text-ll-ink">รายการ</h2>
-          <span className="text-[12px] text-ll-ink-subtle">{filtered.length} รายการ · หน้า {safePage}/{totalPages}</span>
+          <span className="text-[12px] text-ll-ink-subtle">{totalCount} รายการ · หน้า {safePage}/{totalPages}{loading ? " · กำลังโหลด…" : ""} · ข้อมูลเมื่อ {historyPage?.pagination.observedAt ? new Date(historyPage.pagination.observedAt).toLocaleTimeString("th-TH") : "—"} <button type="button" disabled={loading} onClick={load} className="ml-2 underline underline-offset-4">อัปเดตข้อมูล</button></span>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1400px] text-[13px] text-ll-ink">
+          <table aria-busy={loading} inert={loading || undefined} className="w-full min-w-[1400px] text-[13px] text-ll-ink">
             <thead>
               <tr className="border-b border-ll-hairline text-left text-[11px] text-ll-ink-subtle">
                 <th className="px-4 py-2 font-medium">QUEUE #</th>
@@ -336,11 +293,7 @@ export default function ProfitU9HistoryPage() {
             </tbody>
           </table>
         </div>
-        <div className="flex items-center justify-between border-t border-ll-hairline px-4 py-3 text-[12px] text-ll-ink-subtle">
-          <button type="button" disabled={safePage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="rounded-md border border-ll-hairline-strong px-3 py-1.5 font-medium text-ll-ink hover:bg-ll-surface-2 disabled:opacity-50">ก่อนหน้า</button>
-          <span>{filtered.length ? start + 1 : 0}–{Math.min(start + pageSize, filtered.length)} จาก {filtered.length}</span>
-          <button type="button" disabled={safePage >= totalPages} onClick={() => setPage((p) => p + 1)} className="rounded-md border border-ll-hairline-strong px-3 py-1.5 font-medium text-ll-ink hover:bg-ll-surface-2 disabled:opacity-50">ถัดไป</button>
-        </div>
+        <TablePagination page={safePage} pageSize={pageSize} total={totalCount} totalPages={totalPages} loading={loading} onPage={setPage} label="แบ่งหน้าประวัติ Profit" />
       </section>
     </div>
   );

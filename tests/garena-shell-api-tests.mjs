@@ -1,3 +1,4 @@
+import * as paginationDependency0 from "../src/server/inventory-page.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
@@ -29,7 +30,7 @@ const mocks = {
 function compile(file) {
   const js = ts.transpileModule(read(file), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const result = {};
-  new Function("require", "exports", js)((key) => { if (!mocks[key]) throw new Error(`Unmocked module: ${key}`); return mocks[key]; }, result);
+  new Function("require", "exports", js)((key) => { if (key === "@/server/inventory-page") return paginationDependency0; if (!mocks[key]) throw new Error(`Unmocked module: ${key}`); return mocks[key]; }, result);
   return result;
 }
 const route = compile("src/app/api/projectm/garena-shell/route.js");
