@@ -71,23 +71,31 @@ export function parseAccountWorkbook(sheets, file, today) {
     };
     // 1.4 LAK leaves the date header blank; every tab keeps the date just left of the queue.
     col.date = find("วันที่", "วันที่สั่งซื้อ") ?? col.queue - 1;
+    const dataRows = order.filter((n) => n > headerRow);
+    // A staff column holds a few nicknames. Hundreds of names (CONSOLE) means customers were
+    // typed there; those never go into the ledger.
+    const staffColumn = new Set(dataRows.map((r) => byRow.get(r).get(col.operator)).filter(Boolean)).size <= 60;
     const rows = [];
     let lastDay = null;
-    for (const r of order.filter((n) => n > headerRow)) {
+    for (const r of dataRows) {
       const cells = byRow.get(r), get = (c) => (c == null ? "" : cells.get(c) ?? "");
-      const amounts = Object.entries(kinds).map(([kind, c]) => [kind, money(get(c))]).filter(([, a]) => a);
+      let amounts = Object.entries(kinds).map(([kind, c]) => [kind, money(get(c))]).filter(([, a]) => a);
       if (!amounts.length) continue;
       const rawDay = get(col.date), day = sheetDay(rawDay) ?? (rawDay ? null : lastDay);
       if (!day || day < FIRST_DAY || day > today) { skipped.push({ where: `${where} แถว ${r}`, reason: rawDay ? `วันที่ผิด (${rawDay})` : "ไม่มีวันที่" }); continue; }
       lastDay = day;
-      const operator = get(col.operator);
-      if (isBotOperator(operator)) { skipped.push({ where: `${where} แถว ${r}`, reason: "บอท" }); continue; }
+      const operator = staffColumn ? get(col.operator) : "";
+      // Bot spending is read from the bot database; money put in is not, so it stays.
+      if (isBotOperator(get(col.operator))) {
+        amounts = amounts.filter(([kind]) => kind === "deposit" || kind === "adjust_in");
+        if (!amounts.length) { skipped.push({ where: `${where} แถว ${r}`, reason: "บอท" }); continue; }
+      }
       const detail = [operator && `ผู้เติม ${operator}`, [get(col.game), get(col.item)].filter(Boolean).join(" ")].filter(Boolean);
       for (const [kind, amount] of amounts) rows.push({
-        kind, amount, day, queue: get(col.queue), invoice: get(col.invoice).slice(0, 200) || null, blankOperator: !operator,
+        kind, amount, day, queue: get(col.queue), invoice: get(col.invoice).slice(0, 200) || null, operator, blankOperator: !operator,
         sale: kind === "use" ? money(get(col.sale)) : null, cost: kind === "use" ? money(get(col.cost)) : null,
-        // No row number: the sheets are cleaned monthly, so a row's position is not stable.
-        note: [`ชีต ${where}`, ...detail].join(" · ").slice(0, 500),
+        // No row number (rows move when the sheet is cleaned) and spaces collapsed (tabs get renamed).
+        note: [`ชีต ${clean(where)}`, ...detail].join(" · ").slice(0, 500),
       });
     }
     tabs.set(`${category} :: ${tab}`, { category, tab, rows });
@@ -109,6 +117,15 @@ export function mergeSnapshots(snapshots) {
     for (const [k, list] of counts) if ((best.get(k)?.length ?? 0) < list.length) best.set(k, list);
   }
   return [...best.values()].flat().sort((a, b) => a.day.localeCompare(b.day));
+}
+
+/**
+ * Uses a person already recorded on the debit page for the same account and order are left
+ * out, so a fill typed in both places is counted once. `debited`: Set of "accountId|orderRef".
+ */
+export function dropDebited(bodies, debited) {
+  const kept = bodies.filter((b) => b.kind !== "use" || b.orderRef === "ไม่มีคิว" || !debited.has(`${b.accountId}|${b.orderRef}`));
+  return { kept, dropped: bodies.length - kept.length };
 }
 
 /** Ledger entry bodies for one registered account; ids come from content, not row position. */
