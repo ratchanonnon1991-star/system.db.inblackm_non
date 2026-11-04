@@ -165,6 +165,8 @@ export default function GameinfoPackEditor({
     return () => clearTimeout(hideTimer);
   }, [savedAt]);
   const [error, setError] = useState("");
+  // Which kind of column the add window opens on: "manual" (a column filled
+  // in per pack) or "formula" (one formula for the whole column); false when shut.
   const [modalOpen, setModalOpen] = useState(false);
   const [editingComputedColumn, setEditingComputedColumn] = useState(null);
   const [formulaMode, setFormulaMode] = useState("result");
@@ -1201,9 +1203,14 @@ export default function GameinfoPackEditor({
               onColumnsChange={setComputedColumns}
             />
             {canAddColumn ? (
-              <Button type="button" variant="outline" size="sm" onClick={() => setModalOpen(true)}>
-                <Plus data-icon="inline-start" /> เพิ่มสูตร
-              </Button>
+              <>
+                <Button type="button" variant="outline" size="sm" onClick={() => setModalOpen("manual")} title="คอลัมน์ว่าง กรอกค่าเองแต่ละแพ็ค">
+                  <Plus data-icon="inline-start" /> เพิ่ม column
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => setModalOpen("formula")} title="คอลัมน์ที่ใช้สูตรเดียวกับทุกแพ็ค">
+                  <Plus data-icon="inline-start" /> เพิ่มสูตร
+                </Button>
+              </>
             ) : null}
             <Button type="button" size="sm" onClick={addCurrency} className="bg-[#D90005] text-white hover:bg-[#B80004]">
               <Plus data-icon="inline-start" /> สกุลเงิน
@@ -1570,6 +1577,8 @@ export default function GameinfoPackEditor({
       ) : null}
       {modalOpen && (
         <GameinfoComputedEditor
+          key={modalOpen}
+          defaultEntryMode={modalOpen === "manual" ? "manual" : "formula"}
           sampleRow={sampleRow}
           otherColumns={computedColumns}
           extraFieldNames={formulaVariables.map((variable) => variable.name)}
