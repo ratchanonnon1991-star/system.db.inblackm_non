@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   gameinfoListingChannels,
+  gameinfoListingChanges,
   gameinfoListingEffective,
+  gameinfoListingSnapshot,
+  sanitizeGameinfoListingSnapshot,
   isGameinfoListingUrl,
   parseGameinfoListingPrice,
   summarizeGameinfoPackListings,
@@ -81,15 +84,29 @@ await assert.rejects(reviewGamelistPackListing(3, "uid", { packId: "a", channel:
 inTime = false;
 await assert.rejects(reviewGamelistPackListing(3, "uid", { packId: "a", channel: "kaleoz", status: "ok" }, "tan"), /หมดเวลา/, "a round closes after its hour");
 inTime = true;
-await reviewGamelistPackListing(3, "uid", { packId: "a", channel: "kaleoz", status: "wrong", checkedPrice: "99", referencePrice: 90, note: "ราคาเก่า" }, "tan");
+await reviewGamelistPackListing(3, "uid", { packId: "a", channel: "kaleoz", status: "wrong", checkedPrice: "99", referencePrice: 90, snapshot: { price: "90", name: "60 Crystals", secret: "x" }, note: "ราคาเก่า" }, "tan");
 const review = queries.find((query) => /UPDATE gamelist_pack_listings/.test(query.text) && query.params[2] === "a");
-assert.deepEqual(review.params, [3, "uid", "a", "kaleoz", "wrong", 99, 90, "tan", "ราคาเก่า"], "the check keeps the price it was made against");
+assert.deepEqual(review.params.slice(0, 9), [3, "uid", "a", "kaleoz", "wrong", 99, 90, "tan", "ราคาเก่า"], "the check keeps the price it was made against");
+assert.deepEqual(JSON.parse(review.params[9]), { price: "90", name: "60 Crystals" }, "and the pack's values, known fields only");
 
 const passed = { status: "ok", checkedReference: 90 };
 assert.equal(gameinfoListingEffective(passed, 90).status, "ok", "a check holds while the price stays");
 assert.equal(gameinfoListingEffective(passed, 95).status, "pending", "a moved price asks for a new round");
 assert.ok(gameinfoListingEffective(passed, 95).stale);
 assert.equal(gameinfoListingEffective({ status: "wrong", checkedReference: 90 }, 95).status, "wrong", "a wrong price stays wrong until it is sent again");
+// Any edit to the pack's checked values asks for a new round, on every channel.
+const pack = { name: "300 + 30 Crystals", amountReceived: "330", price: "90", amountBeforeFee: "10476", amountChargedFee: "11000", costProfileId: "sheet-wavepay", image: "a.png" };
+const checked = { status: "ok", checkedReference: null, checkedSnapshot: gameinfoListingSnapshot(pack) };
+assert.equal(gameinfoListingEffective(checked, null, Date.now(), pack).status, "ok", "an unchanged pack keeps its check");
+assert.equal(gameinfoListingEffective(checked, null, Date.now(), { ...pack, image: "b.png" }).status, "ok", "a new picture is not a number");
+assert.equal(gameinfoListingEffective(checked, null, Date.now(), { ...pack, price: "90.00" }).status, "ok", "the same number written differently");
+const costEdit = gameinfoListingEffective(checked, null, Date.now(), { ...pack, amountChargedFee: "11500" });
+assert.equal(costEdit.status, "pending", "a cost edit asks for a new round even where GameInfo has no price to compare");
+assert.ok(costEdit.stale);
+assert.deepEqual(costEdit.changes.map((change) => [change.key, change.from, change.to]), [["amountChargedFee", "11000", "11500"]]);
+assert.equal(gameinfoListingChanges(checked.checkedSnapshot, { ...pack, name: "300+30 Crystals", costProfileId: "sheet-kbz" }).length, 2, "a renamed pack and another cost rate");
+assert.equal(gameinfoListingEffective({ status: "ok", checkedReference: 90 }, 90, Date.now(), { ...pack, price: "95" }).status, "ok", "a check made before snapshots holds");
+assert.equal(sanitizeGameinfoListingSnapshot("x"), null);
 const sentAt = Date.parse("2026-11-04T05:00:00Z");
 assert.equal(gameinfoListingEffective({ status: "pending", listedAt: "2026-11-04T05:00:00Z" }, null, sentAt + 59 * 60_000).status, "pending");
 assert.equal(gameinfoListingEffective({ status: "pending", listedAt: "2026-11-04T05:00:00Z" }, null, sentAt + 61 * 60_000).status, "late", "an hour without a check closes the round");
@@ -100,4 +117,4 @@ assert.ok(route.includes("requireGameinfoReporter(request)") && route.includes("
 const packs = readFileSync(new URL("../src/server/gameinfo-gamelist-packs.js", import.meta.url), "utf8");
 assert.ok(packs.includes("CREATE TABLE IF NOT EXISTS gamelist_pack_listings"), "the table is created with the others");
 
-console.log("49 passed");
+console.log("60 passed");

@@ -35,11 +35,64 @@ export function gameinfoListingActor(user) {
  * A check holds only for the price it was made against: once the pack's own
  * price for that channel moves, a passed listing is `stale` and needs a new round.
  */
-export function gameinfoListingEffective(listing, reference = null, now = Date.now()) {
+export function gameinfoListingEffective(listing, reference = null, now = Date.now(), pack = null) {
   if (listing.status === "pending" && now > gameinfoListingDeadline(listing)) return { ...listing, status: "late" };
-  const moved = listing.status === "ok" && listing.checkedReference !== null && listing.checkedReference !== undefined
+  if (listing.status !== "ok") return listing;
+  const moved = listing.checkedReference !== null && listing.checkedReference !== undefined
     && reference !== null && reference !== undefined && Math.abs(Number(reference) - Number(listing.checkedReference)) > 0.005;
-  return moved ? { ...listing, status: "pending", stale: true } : listing;
+  const changes = pack ? gameinfoListingChanges(listing.checkedSnapshot, pack) : [];
+  return moved || changes.length ? { ...listing, status: "pending", stale: true, changes } : listing;
+}
+
+// What a check holds the pack to: what the customer sees (name, amount,
+// price) and what its cost is worked out from. Editing any of them after the
+// check sends every channel of the pack back for a new one, whether or not
+// GameInfo has a price for that channel to compare.
+export const GAMEINFO_LISTING_SNAPSHOT_FIELDS = [
+  { key: "name", label: "ชื่อแพ็ค" },
+  { key: "amountReceived", label: "จำนวนที่ได้รับ" },
+  { key: "price", label: "ราคาขาย" },
+  { key: "priceUsd", label: "ราคา USD" },
+  { key: "amountBeforeFee", label: "ยอดที่กด" },
+  { key: "amountChargedFee", label: "ยอดรวมค่าธรรมเนียม" },
+  { key: "costProfileId", label: "เรทต้นทุนที่ใช้" },
+];
+const SNAPSHOT_KEYS = new Set(GAMEINFO_LISTING_SNAPSHOT_FIELDS.map((field) => field.key));
+
+function snapshotValue(value) {
+  return String(value ?? "").trim().slice(0, 200);
+}
+
+/** A pack's checked values, as stored with a check. */
+export function gameinfoListingSnapshot(pack) {
+  return Object.fromEntries(GAMEINFO_LISTING_SNAPSHOT_FIELDS.map(({ key }) => [key, snapshotValue(pack?.[key])]));
+}
+
+/** Only the known fields, as text: what the server keeps from a client's snapshot. */
+export function sanitizeGameinfoListingSnapshot(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const result = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (SNAPSHOT_KEYS.has(key) && (typeof item === "string" || typeof item === "number")) result[key] = snapshotValue(item);
+  }
+  return Object.keys(result).length ? result : null;
+}
+
+// "1,000" and "1000.00" are the same number; other text is compared as typed.
+function sameValue(a, b) {
+  const x = a.replace(/,/g, "");
+  const y = b.replace(/,/g, "");
+  if (x !== "" && y !== "" && Number.isFinite(Number(x)) && Number.isFinite(Number(y))) return Math.abs(Number(x) - Number(y)) < 0.000001;
+  return a === b;
+}
+
+/** The checked values that differ in the pack now: [{ key, label, from, to }]. None for a check without a snapshot. */
+export function gameinfoListingChanges(snapshot, pack) {
+  if (!snapshot || typeof snapshot !== "object") return [];
+  return GAMEINFO_LISTING_SNAPSHOT_FIELDS
+    .filter(({ key }) => Object.hasOwn(snapshot, key))
+    .map(({ key, label }) => ({ key, label, from: snapshotValue(snapshot[key]), to: snapshotValue(pack?.[key]) }))
+    .filter((change) => !sameValue(change.from, change.to));
 }
 
 export function isGameinfoListingChannel(key) {

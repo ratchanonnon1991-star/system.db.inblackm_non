@@ -8,6 +8,7 @@ import {
   GAMEINFO_LISTING_PRICE_CHANNEL,
   GAMEINFO_LISTING_REVIEW_MINUTES,
   gameinfoListingDeadline,
+  gameinfoListingSnapshot,
   summarizeGameinfoPackListings,
 } from "@/lib/gameinfo-pack-listings";
 import { gameinfoJudgeNotice, gameinfoSendNotice, useGameinfoNoticeChain } from "./gameinfo-notice-chain";
@@ -175,6 +176,12 @@ function useNow() {
   return now;
 }
 
+// "ราคาขาย 90 → 95"; the cost rate is named, not shown by its id.
+function describeChange(change) {
+  if (change.key === "costProfileId") return `${change.label}เปลี่ยน`;
+  return `${change.label} ${change.from || "ว่าง"} → ${change.to || "ว่าง"}`;
+}
+
 function ChannelListing({ gameId, dataMode, pack, channel, listing, reference, cost, product, canList, canReview, viewer, nameOf, notices, onListingsChange, onSend }) {
   const now = useNow();
   const [checkedPrice, setCheckedPrice] = useState(listing?.listedPrice ?? "");
@@ -191,7 +198,7 @@ function ChannelListing({ gameId, dataMode, pack, channel, listing, reference, c
       const data = await apiJson(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ packId: pack.id, channel: channel.key, status: ok ? "ok" : "wrong", checkedPrice, referencePrice: reference, note }),
+        body: JSON.stringify({ packId: pack.id, channel: channel.key, status: ok ? "ok" : "wrong", checkedPrice, referencePrice: reference, snapshot: gameinfoListingSnapshot(pack), note }),
         fallbackError: "บันทึกผลตรวจไม่สำเร็จ",
       });
       onListingsChange(data.listings);
@@ -247,7 +254,9 @@ function ChannelListing({ gameId, dataMode, pack, channel, listing, reference, c
   const fraction = Math.max(0, Math.min(1, (deadline - now) / (GAMEINFO_LISTING_REVIEW_MINUTES * 60_000)));
   const round = listing.round || 1;
   const reviewerName = nameOf(listing.reviewedBy || listing.reviewer);
-  const banner = listing.stale
+  const banner = listing.stale && listing.changes?.length
+    ? { tone: "pending", Icon: Clock, title: `ข้อมูลแพ็คถูกแก้หลังตรวจ · รอบที่ ${round}`, detail: `${listing.changes.map(describeChange).join(" · ")} ต้องส่งตรวจรอบใหม่` }
+    : listing.stale
     ? { tone: "pending", Icon: Clock, title: `ราคาในระบบเปลี่ยน · รอบที่ ${round}`, detail: `ตอนนี้ ${baht(reference)} แต่ตรวจไว้ที่ ${baht(listing.checkedReference)} ต้องส่งตรวจรอบใหม่` }
     : {
       wrong: { tone: "wrong", Icon: CircleAlert, title: `ราคาผิด · รอบที่ ${round}`, detail: `ลงไว้ ${baht(listing.checkedPrice ?? listing.listedPrice)}${reference !== null ? ` แต่ควรเป็น ${baht(reference)}` : ""}${listing.note ? ` · ${listing.note}` : ""}` },

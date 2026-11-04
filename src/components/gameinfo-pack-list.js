@@ -152,7 +152,7 @@ export default function GameinfoPackList({
   const soldOn = new Set((verify?.channels || []).map((item) => item.key));
   const listingsFor = (row) => (listingsByPack.get(String(row.pack.id)) || []).filter((listing) => soldOn.has(listing.channel)).map((listing) => {
     const key = GAMEINFO_LISTING_PRICE_CHANNEL[listing.channel];
-    return gameinfoListingEffective(listing, key ? row.channels[key]?.price ?? null : null, now);
+    return gameinfoListingEffective(listing, key ? row.channels[key]?.price ?? null : null, now, row.pack);
   });
 
   const inCategory = categoryTab === "all" ? rows : rows.filter((row) => String(row.category.id) === categoryTab);
@@ -364,13 +364,13 @@ export default function GameinfoPackList({
                   return (
                     <section key={category.id} className="gd-cgroup">
                       <h4 className="gd-cgtitle">{category.name || "(ไม่มีชื่อหมวดหมู่)"}<span>{items.length} แพ็ค</span></h4>
-                      <div className="gd-cards">{items.map(card)}</div>
+                      <div className="gd-packcards">{items.map(card)}</div>
                     </section>
                   );
                 })}
               </div>
             ) : (
-              <div className="gd-cards">{visible.map(card)}</div>
+              <div className="gd-packcards">{visible.map(card)}</div>
             )
           ) : (
           <div className="gd-list">
@@ -595,35 +595,35 @@ function PackCard({ row, product, channel, gotField, stock, listings, channelCou
   const price = product ? figures.price : gameinfoListNumber(pack.price);
   const got = gotField ? String(pack[gotField] ?? "").trim() : "";
   const classes = [
-    "gd-card",
+    "gd-packcard",
     row.status === "closed" ? "off" : "",
     row.status === "expired" ? "exp" : "",
     (gameinfoListNumber(pack.price) ?? 0) >= HIGH_PRICE ? "hi" : "",
   ].filter(Boolean).join(" ");
   return (
     <div className={classes}>
-      <button type="button" className="gd-card-hit" onClick={onOpen} aria-label={`รายละเอียด ${pack.name || ""}`} />
-      <span className="gd-card-tags">
+      <button type="button" className="gd-packcard-hit" onClick={onOpen} aria-label={`รายละเอียด ${pack.name || ""}`} />
+      <span className="gd-packcard-tags">
         {row.auto ? <span className="gd-botb" title="Bot Auto"><Bot size={12} aria-hidden="true" />BOT</span> : null}
         {row.status === "new" ? <span className="gd-stg new">NEW</span> : row.status === "expired" ? <span className="gd-stg exp">EXPIRED</span> : null}
       </span>
-      <span className={`gd-card-img${pack.image ? "" : " none"}`}>
+      <span className={`gd-packcard-img${pack.image ? "" : " none"}`}>
         {pack.image ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={pack.image} alt="" loading="lazy" />
         ) : <ImageIcon size={28} aria-hidden="true" />}
       </span>
-      <span className="gd-card-nm" title={pack.name}>{pack.name || "-"}</span>
-      {got ? <span className="gd-card-sub">{gotField === "priceUsd" ? `$${got}` : `ได้รับ ${got}`}</span> : null}
-      <span className="gd-card-price num">{baht(price)}</span>
+      <span className="gd-packcard-nm" title={pack.name}>{pack.name || "-"}</span>
+      {got ? <span className="gd-packcard-sub">{gotField === "priceUsd" ? `$${got}` : `ได้รับ ${got}`}</span> : null}
+      <span className="gd-packcard-price num">{baht(price)}</span>
       {product && (figures.profit !== null || figures.margin !== null) ? (
-        <span className="gd-card-sub">
+        <span className="gd-packcard-sub">
           <span className={`num ${figures.profit === null ? "" : figures.profit >= 0 ? "pos" : "neg"}`}>{signedBaht(figures.profit)}</span>
           <MarginPill margin={figures.margin} />
         </span>
       ) : null}
-      <span className="gd-card-notes"><PackNotes row={row} stock={stock} /></span>
-      {listings ? <span className="gd-card-verify"><GameinfoPackVerifyButton packName={pack.name} listings={listings} channelCount={channelCount} onOpen={onVerify} /></span> : null}
+      <span className="gd-packcard-notes"><PackNotes row={row} stock={stock} /></span>
+      {listings ? <span className="gd-packcard-verify"><GameinfoPackVerifyButton packName={pack.name} listings={listings} channelCount={channelCount} onOpen={onVerify} /></span> : null}
     </div>
   );
 }

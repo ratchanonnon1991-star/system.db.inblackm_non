@@ -13,9 +13,10 @@ import {
   isGameinfoListingChannel,
   isGameinfoListingUrl,
   parseGameinfoListingPrice,
+  sanitizeGameinfoListingSnapshot,
 } from "@/lib/gameinfo-pack-listings";
 
-const COLUMNS = `pack_id, channel, url, listed_price, listed_by, listed_at, status, checked_price, checked_reference,
+const COLUMNS = `pack_id, channel, url, listed_price, listed_by, listed_at, status, checked_price, checked_reference, checked_snapshot,
   reviewed_by, reviewed_at, note, round, assigned_reviewer, send_note, history`;
 const MAX_HISTORY = 20;
 
@@ -39,6 +40,7 @@ function toListing(row) {
     status: row.status,
     checkedPrice: toNumber(row.checked_price),
     checkedReference: toNumber(row.checked_reference),
+    checkedSnapshot: row.checked_snapshot && typeof row.checked_snapshot === "object" ? row.checked_snapshot : null,
     reviewedBy: row.reviewed_by,
     reviewedAt: toTime(row.reviewed_at),
     note: row.note,
@@ -125,7 +127,7 @@ export async function saveGamelistPackListing(gameId, dataMode, { packId, channe
      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), 'pending', $8, $9, $10, $11)
      ON CONFLICT (game_id, data_mode, pack_id, channel) DO UPDATE SET
        url = EXCLUDED.url, listed_price = EXCLUDED.listed_price, listed_by = EXCLUDED.listed_by, listed_at = NOW(),
-       status = 'pending', checked_price = NULL, checked_reference = NULL, reviewed_by = '', reviewed_at = NULL, note = '',
+       status = 'pending', checked_price = NULL, checked_reference = NULL, checked_snapshot = NULL, reviewed_by = '', reviewed_at = NULL, note = '',
        round = EXCLUDED.round, assigned_reviewer = EXCLUDED.assigned_reviewer, send_note = EXCLUDED.send_note, history = EXCLUDED.history`,
     [gameId, dataMode, id, channel, link, price, lister, previous ? (Number(previous.round) || 1) + 1 : 1, checker, message || "ลงแพ็คใหม่", JSON.stringify(history)]
   );
@@ -135,10 +137,11 @@ export async function saveGamelistPackListing(gameId, dataMode, { packId, channe
 /**
  * A check of a listed price, right ("ok") or wrong, by the admin it was sent
  * to and within the round's hour; it keeps the price seen, a note, and the
- * pack's own price it was checked against (`referencePrice`), so a later
- * change to that price asks for a new round.
+ * pack's own price it was checked against (`referencePrice`) and the pack's
+ * values at the time (`snapshot`), so a later change to either asks for a
+ * new round.
  */
-export async function reviewGamelistPackListing(gameId, dataMode, { packId, channel, status, checkedPrice = null, referencePrice = null, note = "" }, actor) {
+export async function reviewGamelistPackListing(gameId, dataMode, { packId, channel, status, checkedPrice = null, referencePrice = null, snapshot = null, note = "" }, actor) {
   const id = packKey(packId, channel);
   if (!GAMEINFO_LISTING_STATUSES.includes(status) || status === "pending") throw badRequest("ผลการตรวจไม่ถูกต้อง");
   const price = parseGameinfoListingPrice(checkedPrice);
@@ -159,9 +162,9 @@ export async function reviewGamelistPackListing(gameId, dataMode, { packId, chan
   if (!row.in_time) throw badRequest("หมดเวลาตรวจแล้ว ต้องให้ผู้ลงส่งตรวจรอบใหม่");
   await pool.query(
     `UPDATE gamelist_pack_listings
-       SET status = $5, checked_price = $6, checked_reference = $7, reviewed_by = $8, reviewed_at = NOW(), note = $9
+       SET status = $5, checked_price = $6, checked_reference = $7, reviewed_by = $8, reviewed_at = NOW(), note = $9, checked_snapshot = $10
      WHERE game_id = $1 AND data_mode = $2 AND pack_id = $3 AND channel = $4`,
-    [gameId, dataMode, id, channel, status, price, Number.isNaN(reference) ? null : reference, reviewer, String(note ?? "").trim().slice(0, 500)]
+    [gameId, dataMode, id, channel, status, price, Number.isNaN(reference) ? null : reference, reviewer, String(note ?? "").trim().slice(0, 500), JSON.stringify(sanitizeGameinfoListingSnapshot(snapshot))]
   );
   return listGamelistPackListings(gameId, dataMode);
 }

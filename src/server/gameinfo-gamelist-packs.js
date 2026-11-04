@@ -362,6 +362,7 @@ function ensureSchema(connection) {
         )
       `);
       await client.query(`ALTER TABLE gamelist_pack_listings ADD COLUMN IF NOT EXISTS checked_reference NUMERIC`);
+      await client.query(`ALTER TABLE gamelist_pack_listings ADD COLUMN IF NOT EXISTS checked_snapshot JSONB`);
       await client.query(`
         ALTER TABLE gamelist_pack_listings
           ADD COLUMN IF NOT EXISTS round INTEGER NOT NULL DEFAULT 1,
