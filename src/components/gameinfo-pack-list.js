@@ -144,7 +144,9 @@ export default function GameinfoPackList({
     ...(product ? ["88px", "96px", "96px", "78px"] : ["96px", "170px", "120px"]),
     "28px",
   ].filter(Boolean).join(" ");
-  const grouped = sort === "default" && chip === "all" && status === "all" && !query.trim() && categories.length > 1;
+  // Packs stay under their category headings through search, chips and status
+  // tabs; only a sort by margin or price lists them as one run.
+  const grouped = sort === "default";
 
   const shownIds = new Set([costColumn?.id, ...channels.map((item) => item.priceColumn?.id)].filter(Boolean));
   const otherColumns = (columns || []).filter((column) => !shownIds.has(column.id) && !(column.kind !== "computed" && SHOWN_FIELDS.has(column.id)));

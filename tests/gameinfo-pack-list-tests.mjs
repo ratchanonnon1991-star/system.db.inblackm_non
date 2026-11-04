@@ -94,4 +94,6 @@ assert.ok(editor.includes("GAMEINFO_PACK_LIST_STATUS_TABS.map") && editor.includ
 
 assert.ok(editor.includes("if (!changed(p)) continue;") && editor.includes('setStatusTab("all");'), "saving checks only the packs added or changed, and shows every pack when one needs filling in");
 
-console.log("39 passed");
+assert.ok(list.includes('const grouped = sort === "default";'), "filtered packs keep their category headings");
+
+console.log("40 passed");
