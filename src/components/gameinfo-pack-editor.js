@@ -618,13 +618,26 @@ export default function GameinfoPackEditor({
     revealAdded(id, { focus: false });
   }
   // Drag-and-drop within one category; the order is saved with the rest of the draft.
-  function reorderPack(cIdx, catIdx, activeId, overId) {
+  // groupIds (the dragged pack plus the other ticked packs of this category) move
+  // as one block, in their current order, to where the dragged pack was dropped.
+  function reorderPack(cIdx, catIdx, activeId, overId, groupIds = [activeId]) {
     updateCurrencies((draft) => {
       const category = draft[cIdx].categories[catIdx];
       const from = category.packs.findIndex((pack) => String(pack.id) === String(activeId));
       const to = category.packs.findIndex((pack) => String(pack.id) === String(overId));
       if (from < 0 || to < 0 || from === to) return;
-      category.packs = arrayMove(category.packs, from, to);
+      const group = new Set(groupIds.map(String));
+      if (group.size <= 1) {
+        category.packs = arrayMove(category.packs, from, to);
+        return;
+      }
+      if (group.has(String(overId))) return;
+      const moving = category.packs.filter((pack) => group.has(String(pack.id)));
+      const rest = category.packs.filter((pack) => !group.has(String(pack.id)));
+      const overIndex = rest.findIndex((pack) => String(pack.id) === String(overId));
+      // Dragged downwards lands after the pack it was dropped on, upwards before it.
+      rest.splice(from < to ? overIndex + 1 : overIndex, 0, ...moving);
+      category.packs = rest;
     });
   }
   function duplicatePack(cIdx, catIdx, pkIdx) {
@@ -1514,7 +1527,7 @@ export default function GameinfoPackEditor({
                     onUpdatePack={(pkIdx, patch) => updatePack(cIdx, catIdx, pkIdx, patch)}
                     onDuplicatePack={(pkIdx) => duplicatePack(cIdx, catIdx, pkIdx)}
                     onRemovePack={(pkIdx) => removePack(cIdx, catIdx, pkIdx)}
-                    onReorderPack={(activeId, overId) => reorderPack(cIdx, catIdx, activeId, overId)}
+                    onReorderPack={(activeId, overId, groupIds) => reorderPack(cIdx, catIdx, activeId, overId, groupIds)}
                   />
                 ))}
               </div>
@@ -1828,9 +1841,16 @@ function CategoryBlock({
     );
   }, [category.id, categoryPackIdsKey, collapsed, onVisiblePacksChange, visiblePackIdsKey]);
 
+  // Grabbing a ticked pack drags every ticked pack of this category with it.
+  const [draggingPackId, setDraggingPackId] = useState(null);
+  const dragGroupIds = draggingPackId !== null && selectedPackIds.has(String(draggingPackId))
+    ? category.packs.map((pack) => String(pack.id)).filter((packId) => selectedPackIds.has(packId))
+    : draggingPackId !== null ? [String(draggingPackId)] : [];
   function handlePackDragEnd({ active, over }) {
+    const groupIds = dragGroupIds;
+    setDraggingPackId(null);
     if (!over || active.id === over.id) return;
-    onReorderPack(active.id, over.id);
+    onReorderPack(active.id, over.id, groupIds);
   }
 
   function handleColumnDragEnd(e) {
@@ -1995,6 +2015,8 @@ function CategoryBlock({
               id={`gameinfo-pack-rows-${game.id}-${category.id}`}
               sensors={columnSensors}
               collisionDetection={closestCenter}
+              onDragStart={({ active }) => setDraggingPackId(active.id)}
+              onDragCancel={() => setDraggingPackId(null)}
               onDragEnd={handlePackDragEnd}
             >
             <SortableContext
@@ -2007,6 +2029,8 @@ function CategoryBlock({
                 pack={pack}
                 categoryId={category.id}
                 selected={selectedPackIds.has(String(pack.id))}
+                dragGroupCount={String(draggingPackId) === String(pack.id) ? dragGroupIds.length : 0}
+                draggedWithGroup={dragGroupIds.length > 1 && String(draggingPackId) !== String(pack.id) && dragGroupIds.includes(String(pack.id))}
                 rowIndex={visibleIndex}
                 onToggleSelected={(checked) => onTogglePackSelection(pack.id, checked)}
                 game={game}
@@ -2084,6 +2108,8 @@ function PackRow({
   onSetFormulaOverride,
   onEditMainFormula,
   onEditCategoryFormula,
+  dragGroupCount = 0,
+  draggedWithGroup = false,
 }) {
   const [editing, setEditing] = useState(null);
   const [overrideColumn, setOverrideColumn] = useState(null);
@@ -2102,15 +2128,20 @@ function PackRow({
       }}
       className={`grid items-center gap-2 border-b border-linear-hairline px-2 py-2 text-sm last:border-b-0 ${
         selected ? "bg-linear-hairline" : rowIndex % 2 === 0 ? "bg-linear-surface-1" : "bg-linear-surface-3"
-      } ${isDragging ? "relative z-10 shadow-lg opacity-90" : ""}`}
+      } ${isDragging ? "relative z-10 shadow-lg opacity-90" : ""} ${draggedWithGroup ? "opacity-35" : ""}`}
     >
-      <span className="flex items-center justify-end gap-0.5 pr-1">
+      <span className="relative flex items-center justify-end gap-0.5 pr-1">
+        {dragGroupCount > 1 ? (
+          <span className="absolute -left-1 -top-2 rounded-full bg-[#D90005] px-1.5 text-[10px] font-bold leading-4 text-white shadow">
+            {dragGroupCount} แพ็ค
+          </span>
+        ) : null}
         <button
           type="button"
           ref={setActivatorNodeRef}
           {...attributes}
           {...listeners}
-          title="ลากเพื่อจัดลำดับ"
+          title={selected ? "ลากเพื่อจัดลำดับ (แพ็คที่ติ๊กในหมวดนี้ย้ายไปด้วยกัน)" : "ลากเพื่อจัดลำดับ"}
           aria-label={`ลากเพื่อจัดลำดับ ${pack.name || pack.id}`}
           className="flex h-6 w-5 cursor-grab touch-none items-center justify-center rounded text-linear-ink-tertiary hover:bg-linear-surface-4 hover:text-linear-ink-muted active:cursor-grabbing"
         >
