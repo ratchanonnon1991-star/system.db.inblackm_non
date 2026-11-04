@@ -4,7 +4,7 @@
 // Password columns are never read. Customer names and links are left out.
 import { createHash } from "node:crypto";
 
-const ZONES = ["CAD", "SGD", "MYR", "VND", "AUD", "BRL", "MXN", "THB", "PHP", "TRY"];
+export const RAZER_SHEET_ZONES = ["CAD", "SGD", "MYR", "VND", "AUD", "BRL", "MXN", "THB", "PHP", "TRY"];
 // Columns by exact header (spaces collapsed). "วันที่ ตรวจสอบงาน" is a review date, not this one.
 const COLUMNS = {
   date: ["วันที่"], queue: ["ลำดับคิว"], sale: ["ยอดโอน"], cost: ["ต้นทุน"],
@@ -18,7 +18,7 @@ const clean = text => String(text ?? "").replace(/\s+/g, " ").trim();
 
 export function sheetZone(title) {
   const upper = String(title).toUpperCase();
-  return ZONES.find(z => new RegExp(`\\b${z}\\b`).test(upper)) ?? "OTHER";
+  return RAZER_SHEET_ZONES.find(z => new RegExp(`\\b${z}\\b`).test(upper)) ?? "OTHER";
 }
 
 /** Excel day serial (1900 system) -> "YYYY-MM-DD", or null. */

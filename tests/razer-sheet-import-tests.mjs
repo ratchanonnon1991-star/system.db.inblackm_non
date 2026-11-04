@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { parseRazerWorkbook, dropCopies, walletAccounts, excelDay, sheetZone, rowRequestId } from "../scripts/lib/razer-sheet-import.mjs";
+import { parseRazerWorkbook, dropCopies, walletAccounts, excelDay, sheetZone, rowRequestId, RAZER_SHEET_ZONES } from "../scripts/lib/razer-sheet-import.mjs";
 import { entryInput, accountInput } from "../src/lib/inventory-ledger.js";
+import { RAZER_INVENTORY_ZONES } from "../src/lib/razer-inventory.js";
 
 let passed = 0;
 const check = (name, fn) => { fn(); passed++; console.log(`ok ${name}`); };
@@ -14,6 +15,8 @@ check("excel days and zones", () => {
   assert.equal(excelDay("abc"), null);
   assert.equal(sheetZone("RAZER SGD 26 - 50"), "SGD");
   assert.equal(sheetZone("Razer Other"), "OTHER");
+  // Every zone an imported row can get must show on the Razer page, or its rows silently drop out.
+  for (const zone of [...RAZER_SHEET_ZONES, sheetZone("Razer Other")]) assert.ok(RAZER_INVENTORY_ZONES.includes(zone), zone);
   assert.match(rowRequestId("a", 1), /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   assert.notEqual(rowRequestId("a", 1), rowRequestId("a", 2));
 });
