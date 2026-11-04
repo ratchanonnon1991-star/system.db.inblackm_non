@@ -63,4 +63,8 @@ assert.ok(view.includes('useState("list")') && view.includes("ตารางเ
 assert.ok(list.includes('event.target.closest("a, button, input")'), "a row click leaves its links and buttons alone");
 assert.ok(list.includes("aria-expanded={open}"), "each row's details open from a real button");
 
-console.log("27 passed");
+const editor = read("../src/components/gameinfo-pack-editor.js");
+const detailPage = read("../src/components/gameinfo-game-detail-page.js");
+assert.ok(view.includes("<GameinfoBotPriceWarning botManual={row.botManual}") && editor.includes("botManual={game.botManual}") && detailPage.includes("botManual: row.botManual,"), "Bot Auto games warn about prices on the game page and in the pack editor");
+
+console.log("28 passed");

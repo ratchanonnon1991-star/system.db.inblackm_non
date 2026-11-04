@@ -32,6 +32,7 @@ import GameinfoPackSource from "./gameinfo-pack-source";
 import GameinfoRatePanel, { useGameinfoRates } from "./gameinfo-rate-panel";
 import GameinfoMarketManager from "./gameinfo-market-manager";
 import { GameinfoManageSection } from "./gameinfo-manage-section";
+import GameinfoBotPriceWarning from "./gameinfo-bot-price-warning";
 import GameinfoPackHistory from "./gameinfo-pack-history";
 import GameinfoConfirmDialog from "./gameinfo-confirm-dialog";
 import {
@@ -1110,6 +1111,10 @@ export default function GameinfoPackEditor({
           </>
         )}
       >
+      <GameinfoBotPriceWarning
+        botManual={game.botManual}
+        className="mb-3 flex items-center gap-2 rounded-xl bg-amber-500/15 px-3.5 py-2.5 text-[13px] text-amber-900 dark:text-amber-300"
+      />
       <GameinfoPackSource gameId={game.id} dataMode={dataMode} initial={game.sourceNote} />
       <div className="mb-4 flex flex-nowrap items-center gap-2 overflow-x-auto rounded-xl bg-linear-surface-2 p-2.5">
         <div className="flex items-center gap-2 text-xs font-medium text-linear-ink-muted">

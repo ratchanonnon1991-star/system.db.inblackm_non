@@ -42,6 +42,7 @@ import {
   useGameinfoPackColumnLayout,
 } from "./gameinfo-pack-column-layout";
 import GameinfoFold from "./gameinfo-fold";
+import GameinfoBotPriceWarning from "./gameinfo-bot-price-warning";
 import GameinfoPackList from "./gameinfo-pack-list";
 import "./gameinfo-game-detail.css";
 
@@ -352,6 +353,7 @@ function GameHero({ row, dataMode, editHref }) {
         {row.web ? <GameinfoWebBadge web={row.web} size="sm" /> : null}
         <span className={`gd-pill ${row.vpn === "YES" ? "amber" : ""}`}>{row.vpn === "YES" ? "ใช้ VPN" : "NO VPN"}</span>
       </div>
+      <GameinfoBotPriceWarning botManual={row.botManual} className="gd-hero-warn" />
       <div className="gd-hero-act">
         {/* Always view-only here regardless of role — editing the
             tutorial happens on the manage page. */}

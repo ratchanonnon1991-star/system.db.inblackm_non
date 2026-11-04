@@ -238,6 +238,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
     costRatesOther,
     sourceNote: row.sourceNote,
     columnOrder,
+    botManual: row.botManual,
   };
 
   if (manageMode) {
