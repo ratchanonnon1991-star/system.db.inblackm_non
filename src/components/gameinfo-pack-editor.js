@@ -521,6 +521,18 @@ export default function GameinfoPackEditor({
     });
     revealAdded(id);
   }
+  // A game with no packs yet starts from a category; the currency it needs
+  // to sit in is made with it and stays out of sight.
+  function addFirstCategory() {
+    const id = genId("cat");
+    updateCurrencies((draft) => {
+      draft.push({ id: genId("c"), name: "", image: "", categories: [{ id, name: "", packs: [] }] });
+    });
+    revealAdded(id);
+  }
+  // Most games have one in-game currency; its box, name and picture only show
+  // once a game is split into several.
+  const singleCurrency = currencies.length <= 1;
   function removeCurrency(cIdx) {
     setConfirmRequest({
       title: "ลบสกุลเงิน",
@@ -1276,9 +1288,11 @@ export default function GameinfoPackEditor({
                 </Button>
               </>
             ) : null}
-            <Button type="button" size="sm" onClick={addCurrency} className="bg-[#D90005] text-white hover:bg-[#B80004]">
-              <Plus data-icon="inline-start" /> สกุลเงิน
-            </Button>
+            {singleCurrency ? null : (
+              <Button type="button" size="sm" onClick={addCurrency} className="bg-[#D90005] text-white hover:bg-[#B80004]">
+                <Plus data-icon="inline-start" /> สกุลเงิน
+              </Button>
+            )}
           </>
         )}
       >
@@ -1435,14 +1449,22 @@ export default function GameinfoPackEditor({
 
       <div>
         {currencies.length === 0 && (
-          <div className="rounded-lg border border-dashed border-linear-hairline-strong bg-linear-surface-1 p-8 text-center text-sm text-linear-ink-tertiary">
-            ยังไม่มีสกุลเงิน — กด &quot;เพิ่มสกุลเงิน&quot; เพื่อเริ่มสร้างแพ็ก
+          <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-linear-hairline-strong bg-linear-surface-1 p-8 text-center text-sm text-linear-ink-tertiary">
+            ยังไม่มีแพ็ค — เริ่มจากเพิ่มหมวดหมู่ แล้วเพิ่มแพ็คในหมวด
+            <button
+              type="button"
+              onClick={addFirstCategory}
+              className="flex items-center gap-1 rounded-md border border-linear-hairline-strong px-3 py-1.5 text-xs font-bold text-linear-ink hover:bg-linear-surface-2"
+            >
+              <Plus size={13} /> หมวดหมู่
+            </button>
           </div>
         )}
 
         <div className="space-y-4">
           {currencies.map((currency, cIdx) => (
-            <div key={currency.id} data-reveal-key={currency.id} className="rounded-[14px] border border-linear-hairline bg-linear-surface-1 p-4">
+            <div key={currency.id} data-reveal-key={currency.id} className={singleCurrency ? "" : "rounded-[14px] border border-linear-hairline bg-linear-surface-1 p-4"}>
+              {singleCurrency ? null : (
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
                   <span className="shrink-0 rounded-full bg-[#18181B] px-2.5 py-1 text-xs font-black text-white dark:bg-white dark:text-[#18181B]">
@@ -1479,10 +1501,21 @@ export default function GameinfoPackEditor({
                   <Trash2 size={13} />
                 </button>
               </div>
+              )}
 
               <div className="mb-2 flex items-center justify-between">
                 <h3 className="text-sm font-medium text-linear-ink-muted">หมวดหมู่ pack</h3>
                 <div className="flex items-center gap-2">
+                  {singleCurrency ? (
+                    <button
+                      type="button"
+                      onClick={addCurrency}
+                      title="สำหรับเกมที่มีหลายหน่วยเงินในเกม เช่น เพชรกับทอง แต่ละสกุลมีหมวดหมู่ของตัวเอง"
+                      className="px-1 text-xs text-linear-ink-tertiary underline-offset-2 hover:text-linear-ink hover:underline"
+                    >
+                      แยกหลายสกุลเงิน
+                    </button>
+                  ) : null}
                   {webPackages.length ? (
                     <button
                       type="button"
