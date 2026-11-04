@@ -766,6 +766,14 @@ function LoginScreen({ onLoggedIn }) {
                 เข้าสู่ระบบด้วยบัญชีทดสอบ (Mock)
               </a>
             ) : null}
+            {MOCK_SSO_ENABLED ? (
+              <a
+                href="/api/sso/mock?as=reviewer"
+                className="mt-2 flex h-10 w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-ll-hairline-strong text-[13px] font-medium text-ll-ink-subtle transition hover:bg-ll-surface-2"
+              >
+                เข้าสู่ระบบด้วยบัญชีทดสอบ (Mock Admin 2)
+              </a>
+            ) : null}
           </>
         )}
       </form>
