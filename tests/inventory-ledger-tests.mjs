@@ -172,6 +172,10 @@ try {
     await rejects(ledger.importEntries([{ ...row, requestId: uuid(43) }], viewer), 403);
     // the normal path still refuses the same row
     await rejects(ledger.recordEntry({ ...row, requestId: uuid(44) }, admin), 400, /ย้อนหลัง/);
+    // a closed account keeps its old history; new movements are still refused
+    const [{ id: closed }] = await ledger.registerAccounts([{ provider: "channel", ref: "closed-tab", label: "ปิดแล้ว", currency: "PHP", status: "disabled" }], admin);
+    assert.equal((await ledger.importEntries([{ ...row, requestId: uuid(45), accountId: closed }], admin))[0].ok, true);
+    await rejects(ledger.recordEntry({ ...row, requestId: uuid(46), accountId: closed, occurredAt: undefined }, admin), 409, /ปิดใช้งาน/);
   });
 
   await check("history is append-only: no update, delete or truncate", async () => {
@@ -237,7 +241,7 @@ try {
 
   await check("schema setup is safe to run again", async () => {
     const again = createInventoryLedger(pool, { now: () => clock });
-    assert.equal((await again.listAccounts(viewer)).length, 4);
+    assert.equal((await again.listAccounts(viewer)).length, 5);
   });
 } finally {
   await db.close();
