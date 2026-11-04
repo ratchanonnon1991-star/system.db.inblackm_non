@@ -5,7 +5,9 @@ import { gpOrder, GAMEPOINT_METHOD, GAMEPOINT_RATE } from "@/lib/gamepoint-inven
 import { plsAmount, plsWallet, PLSBUY_METHOD } from "@/lib/plsbuy-inventory";
 import { SHELL_ACCOUNTS, SHELL_METHOD, shellAmount } from "@/lib/garena-shell-inventory";
 import { NETEASE_ACCOUNTS, resolveNeteaseAccount, neteaseAmount } from "@/lib/netease-inventory";
-import { RAZER_INVENTORY_ZONES, razerStockAccounts } from "@/lib/razer-inventory";
+import { razerStockAccounts } from "@/lib/razer-inventory";
+// Stock alerts stay on the zones they were set up for; the Razer page itself covers every zone.
+const RAZER_ALERT_ZONES = ["SGD", "CAD"];
 import { WAVE_PHONE_SQL, WAVEPAY_METHOD, kyat } from "@/lib/wavepay-inventory";
 import { mgcPoints } from "@/lib/multigamecard-inventory";
 import { getReadyPool } from "@/server/itune-entries-repository";
@@ -87,11 +89,11 @@ export const balanceReaders = {
     const stockSelect = queryPool(getPool());
     // Purchase history can still supply balances when the stock table is unavailable.
     const stock = await stockSelect(`SELECT id,email,zone,rate,status,gold_balance,silver_balance,hidden,bot_enabled,last_synced_at,in_use_order_id
-      FROM profit_razer_accounts WHERE zone=ANY($1::text[])`, [RAZER_INVENTORY_ZONES]).catch(() => []);
+      FROM profit_razer_accounts WHERE zone=ANY($1::text[])`, [RAZER_ALERT_ZONES]).catch(() => []);
     const latest = await select(`SELECT DISTINCT ON (lower(btrim(purchase_email)),currency_code)
       purchase_email,currency_code,new_balance_gold,new_balance_silver,balance_received_at,completed_at,created_at AS occurred_at
       FROM razer_purchase_history WHERE status='completed' AND currency_code=ANY($1::text[])
-      ORDER BY lower(btrim(purchase_email)),currency_code,COALESCE(balance_received_at,completed_at,created_at) DESC,id DESC`, [RAZER_INVENTORY_ZONES]);
+      ORDER BY lower(btrim(purchase_email)),currency_code,COALESCE(balance_received_at,completed_at,created_at) DESC,id DESC`, [RAZER_ALERT_ZONES]);
     return razerStockAccounts(stock, latest).filter(a => !a.hidden)
       .map(a => channel("razer", a.key, `Razer ${a.email}`, a.zone, a.gold, a.balanceAt, a.balanceSource));
   },

@@ -5,7 +5,9 @@ import { signedUsd } from "./usdcodashop-ledger.js";
 import { convertSaleThb } from "./usdcodashop-sale-conversion.js";
 import { RAZER_STATUSES } from "./profit-razer-status.js";
 
-export const RAZER_INVENTORY_ZONES = ["SGD", "CAD"];
+// Every zone the bot, Razer Stock or the imported sheets use. OTHER mixes unknown currencies.
+export const RAZER_INVENTORY_ZONES = ["SGD", "CAD", "PHP", "VND", "THB", "MYR", "AUD", "BRL", "TRY", "MXN", "OTHER"];
+export const RAZER_MIXED_ZONE = "OTHER";
 export const RAZER_INVENTORY_PAGE_SIZE = 100;
 export const razerEmail = (v) => String(v || "").trim().toLowerCase();
 export const razerWalletKey = (email, zone) => `${zone}:${razerEmail(email)}`;
@@ -14,7 +16,7 @@ export function razerFilters({ dateFrom, dateTo, zone = "", account = "", status
   if (!dateFrom || !dateTo) throw inventoryError("กรุณาเลือกช่วงวันที่");
   const bounds = codaDateBounds({ dateFrom, dateTo });
   if (Date.parse(bounds.end) - Date.parse(bounds.start) > 93 * 86400000) throw inventoryError("เลือกช่วงวันที่ได้ไม่เกิน 93 วัน");
-  if (zone && !RAZER_INVENTORY_ZONES.includes(zone)) throw inventoryError("รองรับ SGD และ CAD ก่อน");
+  if (zone && !RAZER_INVENTORY_ZONES.includes(zone)) throw inventoryError("สกุลเงินไม่ถูกต้อง");
   if (status && ![...RAZER_STATUSES, "READY", "UNVERIFIED"].includes(status)) throw inventoryError("สถานะไม่ถูกต้อง");
   if (typeof account !== "string" || account.length > 300) throw inventoryError("บัญชีไม่ถูกต้อง");
   let overrides;
@@ -96,14 +98,26 @@ export function groupRazerOrders(entries) {
       conflict: fills.some((e) => e.conflict), fillCount: fills.length, fills, details, figures: sheetFigures(details) };
   });
 }
-/**
- * A hand-fill "use" from the inventory ledger (debit page or sheet import) as one list row.
- * Only wallet accounts keyed "razer:<zone>:<email>" in a page zone; anything else is null.
- */
+/** A ledger account key "razer:<zone>:<email>" in a page zone -> { zone, email }, else null (groups, PIN cards ...). */
+export function razerLedgerWallet(accountKey) {
+  const match = /^razer:([A-Z]+):(.+@.+)$/.exec(String(accountKey || ""));
+  return match && RAZER_INVENTORY_ZONES.includes(match[1]) ? { zone: match[1], email: razerEmail(match[2]) } : null;
+}
+/** Wallets registered only in the ledger (sheet import, debit page) join the list with no balance. */
+export function razerWithLedgerWallets(accounts, rows) {
+  const byKey = new Map(accounts.map((a) => [a.key, a]));
+  for (const row of rows) {
+    const wallet = razerLedgerWallet(row.account_key), key = wallet && razerWalletKey(wallet.email, wallet.zone);
+    if (key && !byKey.has(key)) byKey.set(key, { key, ...wallet, stockId: null, status: "UNVERIFIED", hidden: false, botEnabled: null,
+      rate: null, gold: null, silver: null, balanceAt: null, balanceSource: "ledger", inUse: false });
+  }
+  return [...byKey.values()].sort((a, b) => a.zone.localeCompare(b.zone) || a.email.localeCompare(b.email));
+}
+/** A hand-fill "use" from the inventory ledger (debit page or sheet import) as one list row, or null. */
 export function razerLedgerOrder(row, account, rates = {}) {
-  const match = /^razer:([A-Z]+):(.+@.+)$/.exec(String(row.account_key || ""));
-  if (!match || !RAZER_INVENTORY_ZONES.includes(match[1])) return null;
-  const zone = match[1], email = razerEmail(match[2]), used = razerAmount(row.amount), entered = row.thb_amount != null;
+  const wallet = razerLedgerWallet(row.account_key);
+  if (!wallet) return null;
+  const { zone, email } = wallet, used = razerAmount(row.amount), entered = row.thb_amount != null;
   const rate = entered ? null : rates[zone] ?? account?.rate ?? null;
   const note = String(row.note || "").slice(0, 500);
   const details = { saleThb: row.sale_thb ?? null, costThb: entered ? row.thb_amount : rate && used !== null ? convertSaleThb(used, rate) : null,
