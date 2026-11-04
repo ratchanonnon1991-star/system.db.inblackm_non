@@ -508,10 +508,12 @@ export default function GameinfoPackEditor({
   }
 
   // Moves the ticked packs, in their order, to the end of one category; "new:<currency index>"
-  // makes a fresh, unnamed category in that currency for them.
-  function moveSelectedPacks(target) {
+  // makes a fresh category in that currency for them, named newName (or unnamed).
+  function moveSelectedPacks(target, newName = "") {
     const ids = new Set(selectedPackIds);
     if (!ids.size || !target) return;
+    const isNew = target.startsWith("new:");
+    const destinationId = isNew ? genId("cat") : target;
     updateCurrencies((draft) => {
       const moving = [];
       for (const currency of draft) {
@@ -524,8 +526,8 @@ export default function GameinfoPackEditor({
         }
       }
       let destination = null;
-      if (target.startsWith("new:")) {
-        destination = { id: genId("cat"), name: "", packs: [] };
+      if (isNew) {
+        destination = { id: destinationId, name: newName.trim(), packs: [] };
         draft[Number(target.slice(4))].categories.push(destination);
       } else {
         destination = draft.flatMap((currency) => currency.categories).find((category) => category.id === target);
@@ -533,6 +535,8 @@ export default function GameinfoPackEditor({
       destination.packs.push(...moving);
     });
     setSelectedPackIds(new Set());
+    // Show where the packs went; an unnamed new category gets the cursor in its name.
+    revealAdded(destinationId, { focus: isNew && !newName.trim() });
   }
   // What "จัดหมวดตามเว็บ TopUp" would make of one currency; null when it
   // would change nothing.
@@ -1357,9 +1361,6 @@ export default function GameinfoPackEditor({
       </div>
 
       {selectedPacks.length > 0 ? (
-        <MovePacksBar count={selectedPacks.length} currencies={currencies} onMove={moveSelectedPacks} />
-      ) : null}
-      {selectedPacks.length > 0 ? (
         <GameinfoBulkFormulaToolbar
           computedColumns={computedColumns}
           selectedPacks={selectedPacks}
@@ -1509,6 +1510,14 @@ export default function GameinfoPackEditor({
           the bottom of a long pack list, out of view, used to look like the
           save button just silently did nothing. */}
       <div className="fixed bottom-6 left-1/2 z-30 flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 flex-col items-center gap-2">
+        {selectedPacks.length > 0 ? (
+          <MovePacksBar
+            count={selectedPacks.length}
+            currencies={currencies}
+            onMove={moveSelectedPacks}
+            onClear={() => setSelectedPackIds(new Set())}
+          />
+        ) : null}
         {error && (
           <p role="alert" className="max-w-full rounded-full border border-linear-danger/40 bg-linear-surface-1 px-3 py-1.5 text-center text-xs text-linear-danger shadow-lg">
             {error}
@@ -1613,41 +1622,79 @@ export default function GameinfoPackEditor({
   );
 }
 
-// Sends the ticked packs to another category, or to a new one to name after.
-function MovePacksBar({ count, currencies, onMove }) {
+// Floats above the save buttons while packs are ticked, so the ticked packs can be
+// sent to another category, or to a new one named here, from wherever the list
+// is scrolled.
+function MovePacksBar({ count, currencies, onMove, onClear }) {
   const [target, setTarget] = useState("");
+  const [newName, setNewName] = useState("");
   const several = currencies.length > 1;
+  const creating = target.startsWith("new:");
+  function move() {
+    if (!target) return;
+    onMove(target, creating ? newName : "");
+    setTarget("");
+    setNewName("");
+  }
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-linear-hairline bg-linear-surface-1 p-2.5 text-[13px]">
-      <span className="font-bold text-linear-ink">ย้าย {count} แพ็คที่เลือกไปหมวด</span>
-      <span className="relative">
-        <select
-          aria-label="หมวดที่จะย้ายไป"
-          value={target}
-          onChange={(event) => setTarget(event.target.value)}
-          className="h-9 min-w-48 cursor-pointer appearance-none rounded-[10px] border border-linear-hairline-strong bg-linear-surface-1 pl-3.5 pr-10 text-sm text-linear-ink outline-none focus:border-[#D90005]"
+    <div
+      role="region"
+      aria-label="ย้ายแพ็คที่เลือก"
+      className="w-full rounded-2xl border border-linear-hairline bg-linear-surface-1 p-3 text-[13px] shadow-[0_16px_32px_-16px_rgba(0,0,0,0.45)]"
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="font-bold text-linear-ink">เลือกแล้ว {count} แพ็ค · ย้ายไปหมวด</span>
+        <button
+          type="button"
+          onClick={onClear}
+          className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-linear-ink-tertiary hover:bg-linear-surface-3 hover:text-linear-ink"
         >
-          <option value="">เลือกหมวด…</option>
-          {currencies.map((currency, cIdx) => (
-            <optgroup key={currency.id} label={several ? currency.name || `สกุลที่ ${cIdx + 1}` : "หมวดหมู่"}>
-              {currency.categories.map((category) => (
-                <option key={category.id} value={category.id}>{category.name || "(ไม่มีชื่อหมวดหมู่)"}</option>
-              ))}
-              <option value={`new:${cIdx}`}>+ หมวดใหม่ (ตั้งชื่อทีหลัง)</option>
-            </optgroup>
-          ))}
-        </select>
-        <ChevronDown size={16} aria-hidden="true" className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-linear-ink-muted" />
-      </span>
-      <button
-        type="button"
-        disabled={!target}
-        onClick={() => { onMove(target); setTarget(""); }}
-        className="h-9 rounded-[10px] bg-[#D90005] px-4 text-sm font-bold text-white hover:bg-[#B80004] disabled:opacity-40"
-      >
-        ย้าย
-      </button>
-      <span className="text-xs text-linear-ink-tertiary">ย้ายแล้วกดบันทึกด้านล่างเพื่อเก็บ</span>
+          <X size={13} aria-hidden="true" /> ล้างที่เลือก
+        </button>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="relative min-w-0 flex-1">
+          <select
+            aria-label="หมวดที่จะย้ายไป"
+            value={target}
+            onChange={(event) => setTarget(event.target.value)}
+            className="h-9 w-full cursor-pointer appearance-none rounded-[10px] border border-linear-hairline-strong bg-linear-surface-1 pl-3 pr-9 text-sm text-linear-ink outline-none focus:border-[#D90005]"
+          >
+            <option value="">เลือกหมวด…</option>
+            {currencies.map((currency, cIdx) => (
+              <optgroup key={currency.id} label={several ? currency.name || `สกุลที่ ${cIdx + 1}` : "หมวดหมู่"}>
+                {currency.categories.map((category) => (
+                  <option key={category.id} value={category.id}>{category.name || "(ไม่มีชื่อหมวดหมู่)"}</option>
+                ))}
+                <option value={`new:${cIdx}`}>+ หมวดใหม่…</option>
+              </optgroup>
+            ))}
+          </select>
+          <ChevronDown size={16} aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-linear-ink-muted" />
+        </span>
+        <button
+          type="button"
+          disabled={!target}
+          onClick={move}
+          className="h-9 shrink-0 rounded-[10px] bg-[#D90005] px-4 text-sm font-bold text-white hover:bg-[#B80004] disabled:opacity-40"
+        >
+          {creating ? "สร้างหมวดและย้าย" : "ย้าย"}
+        </button>
+        {creating ? (
+          <input
+            autoFocus
+            value={newName}
+            onChange={(event) => setNewName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") move();
+            }}
+            placeholder="ชื่อหมวดใหม่ (เว้นว่างได้ ตั้งชื่อทีหลัง)"
+            aria-label="ชื่อหมวดใหม่"
+            className="h-9 w-full rounded-[10px] border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm text-linear-ink outline-none focus:border-[#D90005]"
+          />
+        ) : null}
+      </div>
+      <p className="mt-1.5 text-[11px] text-linear-ink-tertiary">ย้ายแล้วกดบันทึกด้านล่างเพื่อเก็บ</p>
     </div>
   );
 }
