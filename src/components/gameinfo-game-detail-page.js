@@ -48,8 +48,6 @@ import {
   listGamelistTagImages,
   listGamelistTagsByGame,
 } from "@/server/gameinfo-gamelist-tags";
-import { listGamelistReports } from "@/server/gameinfo-gamelist-reports";
-import GameinfoReportPanel from "@/components/gameinfo-report-panel";
 import GameinfoFold from "@/components/gameinfo-fold";
 import GameinfoEditGate, { GameinfoCeoButton } from "@/components/gameinfo-edit-gate";
 import { isGameinfoBotAuto } from "@/lib/gameinfo-dashboard";
@@ -102,7 +100,6 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   let tagImages = {};
   let publisherSuggestions = [];
   let publisherImages = {};
-  let reports = [];
   let allChannels = [];
   let packLanguages = [];
   let packVersion = 1;
@@ -146,7 +143,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         main: [...new Set(flatModePacks.flatMap((pack) => pack.channelsMain || []))],
         secondary: [...new Set(flatModePacks.flatMap((pack) => pack.channelsSecondary || []))],
       };
-      const [channelsByGame, allRows, tutorial, warning, vpnNote, image, storedLinks, variableData, tagsByGame, publishersByGame, loadedReports, sharedChannels, languages, loadedTagImages, loadedPublisherImages, columnRoleRules] = await Promise.all([
+      const [channelsByGame, allRows, tutorial, warning, vpnNote, image, storedLinks, variableData, tagsByGame, publishersByGame, sharedChannels, languages, loadedTagImages, loadedPublisherImages, columnRoleRules] = await Promise.all([
         listGamelistChannelsByGame(),
         listGameListRows(),
         dataMode === "idpass" ? Promise.resolve(modeData.tutorial) : getGamelistTutorial(row.id),
@@ -157,7 +154,6 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         getGameinfoFormulaVariables(row.id),
         listGamelistTagsByGame(),
         listGamelistPublishersByGame(),
-        listGamelistReports(row.id),
         manageMode ? listAllGamelistChannels() : Promise.resolve([]),
         manageMode ? listGamelistPackLanguages() : Promise.resolve([]),
         manageMode ? listGamelistTagImages() : Promise.resolve({}),
@@ -170,7 +166,6 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
       existingNames = allRows.filter((item) => item.id !== row.id).map((item) => item.game);
       tagSuggestions = [...new Set(Object.values(tagsByGame).flat())].sort((a, b) => a.localeCompare(b, "th"));
       publisherSuggestions = [...new Set(Object.values(publishersByGame).flat())].sort((a, b) => a.localeCompare(b, "th"));
-      reports = loadedReports;
       allChannels = sharedChannels;
       packLanguages = languages;
       tagImages = loadedTagImages;
@@ -374,9 +369,6 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
             >
               <GameinfoSalesChannelEditor gameId={row.id} initialChannels={salesChannels} />
             </GameinfoManageSection>
-            {/* Reports on the manage page are always resolvable: whoever
-                reaches it is an editor. */}
-            <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage canReport id="s-report" number={MANAGE_NUMBERS.report} />
           </div>
         </div>
       </>
@@ -448,7 +440,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
           addHref={editableRole ? `${manageHref}#s-test` : null}
         />
       </GameinfoFold>
-      {/* Reports are hidden here for now (2026-11-04); the manage page keeps them. */}
+      {/* Reports are hidden on both game pages for now (2026-11-04); the game list still takes them. */}
     </div>
     </div>
   );
@@ -464,6 +456,5 @@ const MANAGE_SECTIONS = [
   { id: "s-pack", label: "แพ็คและราคา" },
   { id: "s-margin", label: "ราคาเว็บและ Margin" },
   { id: "s-sales", label: "ช่องทางขาย" },
-  { id: "s-report", label: "รายงานปัญหา" },
 ];
-const MANAGE_NUMBERS = { info: 1, method: 2, web: 3, test: 4, cost: 5, pack: 6, margin: 7, sales: 8, report: 9 };
+const MANAGE_NUMBERS = { info: 1, method: 2, web: 3, test: 4, cost: 5, pack: 6, margin: 7, sales: 8 };
