@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { LayoutGrid, Pencil } from "lucide-react";
 import { gameinfoGameHref, gameinfoListHref, normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
-import { requestGameinfoEdit } from "./gameinfo-edit-gate";
 
 // Everyone lands on the card dashboard. Admins can open /manage; everyone
 // else only gets the dashboard link. These sit on the red GameInfo
@@ -35,22 +34,16 @@ export default function GameinfoModeToggle({ lang, editableRole }) {
   if (isBotAutoPage) return null;
   const gameId = parts[3];
   const isGamePage = /^\d+$/.test(gameId || "");
+  // A game's own page has แก้ไขข้อมูล on its card, behind the day's notices.
+  if (isGamePage && !isManageMode) return null;
   const href = isGamePage
     ? gameinfoGameHref(lang, gameId, dataMode, !isManageMode)
     : gameinfoListHref(lang, dataMode, !isManageMode);
-  const label = isManageMode ? (isGamePage ? "กลับหน้าเกม" : "กลับหน้ารวมเกม") : (isGamePage ? "แก้ไขเกมนี้" : "จัดการข้อมูล");
+  const label = isManageMode ? (isGamePage ? "กลับหน้าเกม" : "กลับหน้ารวมเกม") : "จัดการข้อมูล";
 
   return (
     // On a game, edit ↔ view is the same game: replace, so back is the list.
-    <Link
-      href={href}
-      replace={isGamePage}
-      className={SOLID_PILL}
-      aria-label={label}
-      title={label}
-      // Into editing a game: the game page's notices come first (gameinfo-edit-gate.js).
-      onClick={isGamePage && !isManageMode ? (event) => requestGameinfoEdit(event, href) : undefined}
-    >
+    <Link href={href} replace={isGamePage} className={SOLID_PILL} aria-label={label} title={label}>
       {isManageMode ? <LayoutGrid size={16} strokeWidth={2.4} aria-hidden="true" /> : <Pencil size={16} strokeWidth={2.4} aria-hidden="true" />}
       <span className="hidden sm:inline">{label}</span>
     </Link>

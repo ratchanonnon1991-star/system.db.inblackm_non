@@ -12,9 +12,8 @@ import {
 
 // Going from a game's page into editing it passes through the day's notices:
 // the CEO's, the Bot Auto warning for a bot game, and the reminder to check
-// every platform afterwards. The way in is a link in the header or on the
-// game card; either asks the gate on the page, which navigates once they are
-// answered. Without a gate (any other page) the link just works.
+// every platform afterwards. The way in is the game card's link, which asks
+// the gate on the page; the gate navigates once they are answered.
 const EDIT_REQUEST = "gameinfo:edit-request";
 const CEO_REQUEST = "gameinfo:ceo";
 
