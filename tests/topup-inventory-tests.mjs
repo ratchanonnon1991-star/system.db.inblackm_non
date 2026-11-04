@@ -60,8 +60,8 @@ const service = renderToStaticMarkup(await sectionLayout({ params, children: "se
 check(service.includes('class="tiv-back" href="/projectm/th/topup-inventory"') && !service.includes("กลับเมนูหลัก"), "a service page's bar leads back to the home");
 check(html.includes('href="/projectm/th/topup-inventory/alerts"') && html.includes("แจ้งเตือนสต็อก"), "stock alerts card");
 check(html.includes('aria-busy="true"') && !html.includes("ปักหมุดไว้"), "counts load after mount; nothing pinned before storage is read");
-check((html.match(/class="tiv-chip"/g) || []).length === 7 && html.includes("ทั้งหมด <span class=\"n\">15</span>"), "currency chips with the number of cards");
-for (const [group, keys] of [["tools", ["ledger", "channels", "alerts"]], ["asia", ["gamepoint", "plsbuy", "donshop", "agenh2h"]], ["wallet", ["wavepay", "moniepoint"]]]) {
+check((html.match(/class="tiv-chip"/g) || []).length === 7 && html.includes("ทั้งหมด <span class=\"n\">16</span>"), "currency chips with the number of cards");
+for (const [group, keys] of [["tools", ["reservations", "ledger", "channels", "alerts"]], ["asia", ["gamepoint", "plsbuy", "donshop", "agenh2h"]], ["wallet", ["wavepay", "moniepoint"]]]) {
   check(keys.every((key) => TOPUP_INVENTORY_PROVIDERS.find((p) => p.key === key)?.group === group), `${group} section`);
 }
 check(TOPUP_INVENTORY_PROVIDERS.filter((p) => p.logo).every((p) => existsSync(new URL(`../public/topup-inventory/${p.logo}`, import.meta.url))), "every logo file exists");
