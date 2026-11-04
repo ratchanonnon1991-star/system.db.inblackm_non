@@ -181,7 +181,8 @@ export function createInventoryLedger(pool, { now = () => new Date() } = {}) {
         } else {
           const account = (await c.query("SELECT id, status FROM gamedb_inv_accounts WHERE id=$1 FOR UPDATE", [input.accountId])).rows[0];
           if (!account) throw ledgerError("ไม่พบบัญชี", 404);
-          if (account.status !== "active") throw ledgerError("บัญชีนี้ปิดใช้งานแล้ว", 409);
+          // A closed account still has its old history; only new movements are refused.
+          if (account.status !== "active" && !historical) throw ledgerError("บัญชีนี้ปิดใช้งานแล้ว", 409);
           const direction = LEDGER_DIRECTION[input.kind];
           if (direction < 0 && !historical) {
             // Bots only ever lower the balance, so this bound is safe: spending past it
