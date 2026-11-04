@@ -190,6 +190,9 @@ export default function GameinfoPackEditor({
   const [invalidFields, setInvalidFields] = useState(new Set());
   const [confirmRequest, setConfirmRequest] = useState(null);
   const [selectedPackIds, setSelectedPackIds] = useState(() => new Set());
+  // "แก้สูตรหลาย Pack" opens on request for the selection it was opened with;
+  // any change to the ticked packs (apply, cancel, move) closes it.
+  const [bulkFormulaSelection, setBulkFormulaSelection] = useState(null);
   const [visiblePackIdsByCategory, setVisiblePackIdsByCategory] = useState({});
 
   const [importing, setImporting] = useState(false);
@@ -1360,18 +1363,27 @@ export default function GameinfoPackEditor({
       </div>
       </div>
 
-      {selectedPacks.length > 0 ? (
-        <GameinfoBulkFormulaToolbar
-          computedColumns={computedColumns}
-          selectedPacks={selectedPacks}
-          formulaVariables={formulaVariables}
-          game={game}
-          formulaContext={formulaContext}
-          onApply={applyBulkFormula}
-          onClear={clearBulkFormula}
-          onCancel={() => setSelectedPackIds(new Set())}
-        />
-      ) : null}
+      <Dialog
+        open={selectedPacks.length > 0 && bulkFormulaSelection === selectedPackIds}
+        onOpenChange={(open) => {
+          if (!open) setBulkFormulaSelection(null);
+        }}
+      >
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogTitle className="sr-only">แก้สูตรหลาย Pack</DialogTitle>
+          <DialogDescription className="sr-only">ใส่สูตรเดียวกันให้ทุก Pack ที่เลือก</DialogDescription>
+          <GameinfoBulkFormulaToolbar
+            computedColumns={computedColumns}
+            selectedPacks={selectedPacks}
+            formulaVariables={formulaVariables}
+            game={game}
+            formulaContext={formulaContext}
+            onApply={applyBulkFormula}
+            onClear={clearBulkFormula}
+            onCancel={() => setSelectedPackIds(new Set())}
+          />
+        </DialogContent>
+      </Dialog>
 
       <div>
         {currencies.length === 0 && (
@@ -1516,6 +1528,7 @@ export default function GameinfoPackEditor({
             currencies={currencies}
             onMove={moveSelectedPacks}
             onClear={() => setSelectedPackIds(new Set())}
+            onEditFormula={() => setBulkFormulaSelection(selectedPackIds)}
           />
         ) : null}
         {error && (
@@ -1625,7 +1638,7 @@ export default function GameinfoPackEditor({
 // Floats above the save buttons while packs are ticked, so the ticked packs can be
 // sent to another category, or to a new one named here, from wherever the list
 // is scrolled.
-function MovePacksBar({ count, currencies, onMove, onClear }) {
+function MovePacksBar({ count, currencies, onMove, onClear, onEditFormula }) {
   const [target, setTarget] = useState("");
   const [newName, setNewName] = useState("");
   const several = currencies.length > 1;
@@ -1643,15 +1656,25 @@ function MovePacksBar({ count, currencies, onMove, onClear }) {
       className="w-full rounded-2xl border border-linear-hairline bg-linear-surface-1 p-3 text-[13px] shadow-[0_16px_32px_-16px_rgba(0,0,0,0.45)]"
     >
       <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="font-bold text-linear-ink">เลือกแล้ว {count} แพ็ค · ย้ายไปหมวด</span>
-        <button
-          type="button"
-          onClick={onClear}
-          className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-linear-ink-tertiary hover:bg-linear-surface-3 hover:text-linear-ink"
-        >
-          <X size={13} aria-hidden="true" /> ล้างที่เลือก
-        </button>
+        <span className="font-bold text-linear-ink">เลือกแล้ว {count} แพ็ค</span>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onEditFormula}
+            className="flex items-center gap-1 rounded-md border border-linear-hairline-strong px-2 py-1 text-xs font-medium text-linear-ink-muted hover:bg-linear-surface-3 hover:text-linear-ink"
+          >
+            <Pencil size={12} aria-hidden="true" /> แก้สูตร
+          </button>
+          <button
+            type="button"
+            onClick={onClear}
+            className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-linear-ink-tertiary hover:bg-linear-surface-3 hover:text-linear-ink"
+          >
+            <X size={13} aria-hidden="true" /> ล้างที่เลือก
+          </button>
+        </div>
       </div>
+      <p className="mb-1 text-xs text-linear-ink-muted">ย้ายไปหมวด</p>
       <div className="flex flex-wrap items-center gap-2">
         <span className="relative min-w-0 flex-1">
           <select
