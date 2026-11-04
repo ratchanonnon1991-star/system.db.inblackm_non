@@ -9,6 +9,7 @@ import {
   allowGameinfoNavigation,
   useGameinfoUnsavedChanges,
 } from "@/lib/gameinfo-unsaved-changes";
+import { revealAdded } from "@/lib/reveal-added";
 
 const blankChannel = {
   category: "BOT",
@@ -126,10 +127,13 @@ export default function GameinfoBotChannelForm({ lang, initial = null }) {
           <h2 className="text-lg font-semibold tracking-[-0.1px] text-linear-ink">สกุลเงินและชื่อเกม</h2>
           <button
             type="button"
-            onClick={() => setForm((current) => ({
-              ...current,
-              currencies: [...current.currencies, { name: "", games: [""] }],
-            }))}
+            onClick={() => {
+              setForm((current) => ({
+                ...current,
+                currencies: [...current.currencies, { name: "", games: [""] }],
+              }));
+              revealAdded(`bot-currency:${form.currencies.length}`);
+            }}
             className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm font-medium text-linear-ink hover:bg-linear-surface-2"
           >
             <Plus size={15} /> เพิ่มสกุลเงิน
@@ -138,7 +142,7 @@ export default function GameinfoBotChannelForm({ lang, initial = null }) {
 
         <div className="space-y-4">
           {form.currencies.map((currency, currencyIndex) => (
-            <section key={currencyIndex} className="rounded-xl border border-linear-hairline bg-linear-surface-1 p-4">
+            <section key={currencyIndex} data-reveal-key={`bot-currency:${currencyIndex}`} className="rounded-xl border border-linear-hairline bg-linear-surface-1 p-4">
               <div className="flex items-end gap-2">
                 <label className="flex-1">
                   <span className="sr-only">สกุลเงิน</span>
@@ -167,7 +171,7 @@ export default function GameinfoBotChannelForm({ lang, initial = null }) {
               <div className="mt-4 pl-4">
                 <div className="space-y-2">
                   {currency.games.map((game, gameIndex) => (
-                    <div key={gameIndex} className="flex items-center gap-2">
+                    <div key={gameIndex} data-reveal-key={`bot-game:${currencyIndex}:${gameIndex}`} className="flex items-center gap-2">
                       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-linear-ink-tertiary" />
                       <input
                         required
@@ -194,7 +198,10 @@ export default function GameinfoBotChannelForm({ lang, initial = null }) {
                 </div>
                 <button
                   type="button"
-                  onClick={() => updateCurrency(currencyIndex, { games: [...currency.games, ""] })}
+                  onClick={() => {
+                    updateCurrency(currencyIndex, { games: [...currency.games, ""] });
+                    revealAdded(`bot-game:${currencyIndex}:${currency.games.length}`);
+                  }}
                   className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink"
                 >
                   <Plus size={15} /> เพิ่มชื่อเกม

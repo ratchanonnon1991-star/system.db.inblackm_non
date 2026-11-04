@@ -225,6 +225,7 @@ export default function GameinfoGameManager({ row, existingNames, tagSuggestions
                   tagImages={publisherImages}
                   onTagImageChange={savePublisherImage}
                   imageLabel="ค่ายเกม"
+                  wrap
                 />
               </Field>
               <Field label="ประเภทเกม (หมวดหมู่)">
@@ -237,6 +238,7 @@ export default function GameinfoGameManager({ row, existingNames, tagSuggestions
                   neutral
                   tagImages={tagImages}
                   onTagImageChange={saveTagImage}
+                  wrap
                 />
               </Field>
             </div>
@@ -327,7 +329,7 @@ function ContentCard({ title, detail, warn = false, children }) {
 
 function Field({ label, wide, children }) {
   return (
-    <label className={`flex flex-col gap-1.5 ${wide ? "sm:col-span-2" : ""}`}>
+    <label className={`flex min-w-0 flex-col gap-1.5 ${wide ? "sm:col-span-2" : ""}`}>
       <span className="text-[13px] font-bold text-linear-ink-muted">{label}</span>
       {children}
     </label>

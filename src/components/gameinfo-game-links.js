@@ -9,6 +9,7 @@ import {
   requestGameinfoDiscard,
   useGameinfoUnsavedChanges,
 } from "@/lib/gameinfo-unsaved-changes";
+import { revealAdded } from "@/lib/reveal-added";
 
 function newLink() {
   return {
@@ -25,6 +26,8 @@ export function GameinfoGameLinksButton({
   editable,
   dataMode = "uid",
   disabled,
+  // Hands the links to onSaved without saving them: for a game not created yet.
+  stageOnly = false,
   onSaved,
   className = "",
 }) {
@@ -60,6 +63,11 @@ export function GameinfoGameLinksButton({
   }
 
   async function save() {
+    if (stageOnly) {
+      onSaved?.(draft.filter((link) => String(link.url || "").trim()));
+      setOpen(false);
+      return;
+    }
     setSaving(true);
     setError("");
     try {
@@ -107,7 +115,7 @@ export function GameinfoGameLinksButton({
             </div>
             <div className="max-h-[65vh] space-y-2 overflow-y-auto p-4">
               {editable ? draft.map((link, index) => (
-                <div key={link.id} className="grid grid-cols-[minmax(100px,0.8fr)_minmax(180px,1.5fr)_32px] gap-2">
+                <div key={link.id} data-reveal-key={link.id} className="grid grid-cols-[minmax(100px,0.8fr)_minmax(180px,1.5fr)_32px] gap-2">
                   <input
                     value={link.name}
                     onChange={(event) => setDraft((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))}
@@ -149,7 +157,11 @@ export function GameinfoGameLinksButton({
               <div className="flex items-center gap-2 border-t border-linear-hairline px-4 py-3">
                 <button
                   type="button"
-                  onClick={() => setDraft((current) => [...current, newLink()])}
+                  onClick={() => {
+                    const link = newLink();
+                    setDraft((current) => [...current, link]);
+                    revealAdded(link.id);
+                  }}
                   disabled={draft.length >= 20}
                   className="flex items-center gap-1 rounded-md border border-linear-hairline-strong px-2 py-1.5 text-xs text-linear-ink-muted hover:bg-linear-surface-2 disabled:opacity-40"
                 >
@@ -175,19 +187,17 @@ export function GameinfoGameLinksButton({
 const OLD_DEFAULT_LINK_NAME = "เว็บเติมเกม";
 const DEFAULT_LINK_NAME = "ข้อมูลเติมเกมส์";
 
-export function GameinfoGameLinkButtons({ links = [] }) {
+export function GameinfoGameLinkButtons({
+  links = [],
+  className = "inline-flex h-11 items-center gap-2 rounded-xl border border-linear-hairline bg-linear-surface-1 px-4 text-sm font-bold text-linear-ink transition hover:bg-linear-surface-2",
+  emptyClassName = "inline-block text-[13px] text-linear-ink-tertiary",
+}) {
   if (links.length === 0) {
-    return <span className="inline-block text-[13px] text-linear-ink-tertiary">ยังไม่มีลิงก์ข้อมูลเติมเกมส์</span>;
+    return <span className={emptyClassName}>ยังไม่มีลิงก์ข้อมูลเติมเกมส์</span>;
   }
   return links.map((link) => (
-    <a
-      key={link.id}
-      href={link.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-flex h-11 items-center gap-2 rounded-xl border border-linear-hairline bg-linear-surface-1 px-4 text-sm font-bold text-linear-ink transition hover:bg-linear-surface-2"
-    >
-      <ExternalLink size={17} aria-hidden="true" /> {link.name === OLD_DEFAULT_LINK_NAME ? DEFAULT_LINK_NAME : link.name}
+    <a key={link.id} href={link.url} target="_blank" rel="noopener noreferrer" className={className}>
+      <ExternalLink size={15} aria-hidden="true" /> {link.name === OLD_DEFAULT_LINK_NAME ? DEFAULT_LINK_NAME : link.name}
     </a>
   ));
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { confidentNameMatch, gameinfoPackMatchKey, matchTopupWebPackages, missingTopupWebPacks, rankTopupWebGames, topupWebPackImageFills } from "../src/lib/gameinfo-topup-match.js";
+import { confidentNameMatch, gameinfoPackMatchKey, matchTopupWebPackages, missingTopupWebPacks, rankTopupWebGames, regroupByTopupWebCategories, topupWebPackCategories, topupWebPackImageFills } from "../src/lib/gameinfo-topup-match.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 let passed = 0;
@@ -71,5 +71,39 @@ const listRoute = read("../src/app/api/gameinfo/gamelist/[id]/test-accounts/rout
 check(listRoute.includes("canManageGameinfo(user) ? accounts : accounts.map(maskGamelistTestAccount)"), "readers who cannot manage see masked logins");
 const revealRoute = read("../src/app/api/gameinfo/gamelist/[id]/test-accounts/[accountId]/reveal/route.js");
 check(revealRoute.includes("requireGameinfoEditor") && revealRoute.includes("export async function POST"), "reveal is editor-only and never a GET");
+
+// Website categories: packs go where the website shows them.
+const ladsWeb = [
+  { label: "60 Crystals", amountDisplay: "60 Crystals", category: "Crystals" },
+  { label: "300 + 30 Crystals", amountDisplay: "330 Crystals", category: "Crystals" },
+  { label: "Aurum Pass", amountDisplay: "Aurum Pass", category: "Aurum Pass" },
+  { label: "Gentle Sip Pack VI", amountDisplay: "Account Limit 1/1", category: "แพ็กเกจจำกัดเวลา" },
+  { label: "Cozy Home Pack I", amountDisplay: "Account Limit 1/1", category: "Home" },
+];
+const ladsCategories = topupWebPackCategories(["300 + 30 Crystals", "Gentle Sip Pack VI X 10", "Account Limit 1/1", "Mystery"], ladsWeb);
+check(ladsCategories.get("300 + 30 Crystals") === "Crystals", "a pack takes its website package's category");
+check(ladsCategories.get("Gentle Sip Pack VI X 10") === "แพ็กเกจจำกัดเวลา", "a pack bought several times goes with its base pack");
+check(ladsCategories.get("Account Limit 1/1") === "", "a shown amount shared by several categories decides nothing");
+check(ladsCategories.get("Mystery") === "", "a pack the website lacks has no category");
+
+let regroupIds = 0;
+const regrouped = regroupByTopupWebCategories([{
+  id: "c1",
+  name: "",
+  categories: [
+    { id: "cat-web", name: "เพิ่มจากเว็บ TopUp", packs: [{ id: "p1", name: "Aurum Pass" }, { id: "p2", name: "300 + 30 Crystals" }, { id: "p3", name: "Mystery" }] },
+    { id: "cat-crystals", name: "Crystals", packs: [{ id: "p4", name: "60 Crystals" }, { id: "p5", name: "Old Crystal Bundle" }] },
+    { id: "cat-empty", name: "ว่างอยู่แล้ว", packs: [] },
+  ],
+}], ladsWeb, () => `new-${(regroupIds += 1)}`);
+const regroupedCategories = regrouped.currencies[0].categories;
+check(regroupedCategories.map((category) => category.name).join("|") === "Crystals|Aurum Pass|เพิ่มจากเว็บ TopUp|ว่างอยู่แล้ว", "categories follow the website's order, leftovers after");
+check(regroupedCategories[0].id === "cat-crystals" && regroupedCategories[0].packs.map((pack) => pack.id).join() === "p4,p2,p5", "an existing category of the same name keeps its id; packs in the website's order, its own extras last");
+check(regroupedCategories[1].id === "new-1", "a missing website category is made");
+check(regroupedCategories[2].packs.map((pack) => pack.id).join() === "p3", "a pack the website lacks stays where it was");
+check(regroupedCategories[3].packs.length === 0, "a category that was already empty is left alone");
+check(regrouped.matched === 3 && regrouped.unmatched === 2 && regrouped.moved === 2, "the plan counts what moves");
+const allWeb = regroupByTopupWebCategories([{ id: "c1", categories: [{ id: "x", name: "เพิ่มจากเว็บ TopUp", packs: [{ id: "a", name: "Aurum Pass" }] }] }], ladsWeb, () => "n");
+check(allWeb.currencies[0].categories.map((category) => category.name).join() === "Aurum Pass", "a category emptied by the move goes");
 
 console.log(`${passed} passed`);

@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { Prompt } from "next/font/google";
 import Link from "next/link";
 import { gameinfoPackOffSale } from "@/lib/gameinfo-pack-model";
 import { getSessionUser } from "@/server/session-user";
@@ -24,6 +25,8 @@ import { getGameinfoModeData } from "@/server/gameinfo-mode-data";
 import GameinfoModeCloneButton from "@/components/gameinfo-mode-clone-button";
 import GameinfoGameManager from "@/components/gameinfo-game-manager";
 import GameinfoTopupWebPanel from "@/components/gameinfo-topup-web-panel";
+import { GameinfoPriceChannelSection } from "@/components/gameinfo-price-channel-editor";
+import GameinfoViewColumnsSection from "@/components/gameinfo-view-columns-editor";
 import GameinfoTestAccounts, { GameinfoTestAccountsCard } from "@/components/gameinfo-test-accounts";
 import GameinfoPriorityStars, { GameinfoWebBadge } from "@/components/gameinfo-priority-stars";
 import { getGamelistGameSettings, listGamelistTestAccounts, maskGamelistTestAccount } from "@/server/gameinfo-game-settings";
@@ -32,6 +35,8 @@ import { GameinfoManageNav, GameinfoManageSection } from "@/components/gameinfo-
 import GameinfoWebMargin from "@/components/gameinfo-web-margin";
 import GameinfoSalesChannelEditor, { GameinfoSalesChannelCards } from "@/components/gameinfo-sales-channels";
 import { listGamelistSalesChannels } from "@/server/gameinfo-sales-channels";
+import { listGameinfoListingReviewers, listGamelistPackChannelsOff, listGamelistPackListings } from "@/server/gameinfo-pack-listings";
+import { gameinfoListingActor, gameinfoListingChannels } from "@/lib/gameinfo-pack-listings";
 import { listStockForGame } from "@/server/stock-repository";
 import GameinfoMissingChecklist from "@/components/gameinfo-missing-checklist";
 import { gameinfoMissingItems } from "@/lib/gameinfo-completeness";
@@ -45,8 +50,8 @@ import {
   listGamelistTagImages,
   listGamelistTagsByGame,
 } from "@/server/gameinfo-gamelist-tags";
-import { listGamelistReports } from "@/server/gameinfo-gamelist-reports";
-import GameinfoReportPanel from "@/components/gameinfo-report-panel";
+import GameinfoFold from "@/components/gameinfo-fold";
+import GameinfoEditGate, { GameinfoCeoButton } from "@/components/gameinfo-edit-gate";
 import GameinfoPackEditor from "@/components/gameinfo-pack-editor";
 import { buildPackSuggestions } from "@/lib/gameinfo-suggestions";
 import { hasPermission } from "@/lib/permissions";
@@ -60,6 +65,9 @@ import { listGameinfoColumnRoleRules } from "@/server/gameinfo-column-roles";
 import { listGameinfoColumnOrders } from "@/server/gameinfo-column-order";
 import { gameinfoColumnOrderFor } from "@/lib/gameinfo-pack-columns";
 
+// The game page's typeface, from its design; the rest of GameInfo keeps its own.
+const prompt = Prompt({ subsets: ["thai", "latin"], weight: ["400", "500", "600", "700"], variable: "--gd-font" });
+
 export default async function GameinfoGameDetailPage({ params, searchParams, manage = false }) {
   const { lang, id } = await params;
   const { mode: rawMode, view: rawView } = await searchParams;
@@ -67,7 +75,6 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   const user = await getSessionUser();
   if (!user) redirect("/");
   const editableRole = canManageGameinfo(user);
-  const canReport = hasPermission(user, "gameinfo.report");
   if (manage && !editableRole) redirect(gameinfoGameHref(lang, id, dataMode));
   const manageMode = manage && editableRole;
   const view = resolveGameinfoView({ param: rawView, cookie: (await cookies()).get(GAMEINFO_VIEW_COOKIE)?.value, isAdmin: editableRole });
@@ -94,7 +101,6 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   let tagImages = {};
   let publisherSuggestions = [];
   let publisherImages = {};
-  let reports = [];
   let allChannels = [];
   let packLanguages = [];
   let packVersion = 1;
@@ -107,6 +113,9 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   let stock = { accounts: [], byPack: {} };
   let costRatesOther = null;
   let columnOrder = null;
+  let listings = [];
+  let listingReviewers = [];
+  let channelsOff = [];
   try {
     row = await getGameListRow(numericId);
     if (row) {
@@ -136,7 +145,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         main: [...new Set(flatModePacks.flatMap((pack) => pack.channelsMain || []))],
         secondary: [...new Set(flatModePacks.flatMap((pack) => pack.channelsSecondary || []))],
       };
-      const [channelsByGame, allRows, tutorial, warning, vpnNote, image, storedLinks, variableData, tagsByGame, publishersByGame, loadedReports, sharedChannels, languages, loadedTagImages, loadedPublisherImages, columnRoleRules] = await Promise.all([
+      const [channelsByGame, allRows, tutorial, warning, vpnNote, image, storedLinks, variableData, tagsByGame, publishersByGame, sharedChannels, languages, loadedTagImages, loadedPublisherImages, columnRoleRules] = await Promise.all([
         listGamelistChannelsByGame(),
         listGameListRows(),
         dataMode === "idpass" ? Promise.resolve(modeData.tutorial) : getGamelistTutorial(row.id),
@@ -147,7 +156,6 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         getGameinfoFormulaVariables(row.id),
         listGamelistTagsByGame(),
         listGamelistPublishersByGame(),
-        listGamelistReports(row.id),
         manageMode ? listAllGamelistChannels() : Promise.resolve([]),
         manageMode ? listGamelistPackLanguages() : Promise.resolve([]),
         manageMode ? listGamelistTagImages() : Promise.resolve({}),
@@ -160,7 +168,6 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
       existingNames = allRows.filter((item) => item.id !== row.id).map((item) => item.game);
       tagSuggestions = [...new Set(Object.values(tagsByGame).flat())].sort((a, b) => a.localeCompare(b, "th"));
       publisherSuggestions = [...new Set(Object.values(publishersByGame).flat())].sort((a, b) => a.localeCompare(b, "th"));
-      reports = loadedReports;
       allChannels = sharedChannels;
       packLanguages = languages;
       tagImages = loadedTagImages;
@@ -181,7 +188,6 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         tagImages,
         publishers: publishersByGame[row.id] || [],
         publisherImages,
-        reportCount: loadedReports.filter((report) => report.status === "open").length,
       };
       formulaVariables = variableData.variables;
       // Website data and test accounts are extras: if they fail to load the
@@ -193,6 +199,12 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         isTopupWebConnected().catch(() => false),
         listGamelistSalesChannels(row.id).catch(() => []),
         listStockForGame(row.id, dataMode).catch(() => stock),
+      ]);
+      // Listing checks are an extra too; without them the badges just read "ยังไม่ลง".
+      [listings, listingReviewers, channelsOff] = manageMode ? [[], [], []] : await Promise.all([
+        listGamelistPackListings(row.id, dataMode).catch(() => []),
+        listGameinfoListingReviewers().catch(() => []),
+        listGamelistPackChannelsOff(row.id, dataMode).catch(() => []),
       ]);
       topupGame = topupConnected ? await getTopupWebGame(settings.topupGameId).catch(() => null) : null;
       row = {
@@ -222,7 +234,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
 
   const viewHref = gameinfoGameHref(lang, row.id, dataMode, false);
   const manageHref = gameinfoGameHref(lang, row.id, dataMode, true);
-  // Back from a game, viewed or edited, is always the game list.
+  // Back from a game's page is the game list; back from editing it is its page.
   const listHref = gameinfoListHref(lang, dataMode, false);
   const packGame = {
     id: row.id,
@@ -239,6 +251,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
     costRatesOther,
     sourceNote: row.sourceNote,
     columnOrder,
+    botManual: row.botManual,
   };
 
   if (manageMode) {
@@ -256,13 +269,15 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
     const missingItems = gameinfoMissingItems({ row, packs: flatPacks, testAccountCount: testAccounts.length, linked: Boolean(topupGame), salesChannelCount: salesChannels.length });
     return (
       <>
+        {/* The CEO's notice before editing, whichever way someone came in. */}
+        <GameinfoEditGate className={prompt.variable} />
         {/* Sticks under the red header (h-16) so the game being edited and
             the way back stay in view down a long pack table. */}
         <div className="sticky top-16 z-30 border-b border-linear-hairline bg-linear-surface-1/95 shadow-[0_8px_20px_-16px_rgba(0,0,0,0.4)] backdrop-blur">
           <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-3 px-4 py-3 sm:px-7">
             <GameinfoBackLink
               className="flex h-10 items-center gap-1.5 rounded-full border border-linear-hairline bg-linear-surface-1 px-4 text-[13px] font-bold text-linear-ink transition hover:bg-linear-surface-2"
-              href={listHref}
+              href={viewHref}
             />
             <div className="flex min-w-0 flex-col leading-tight">
               <h1 className="truncate text-xl font-black text-linear-ink">แก้ไขเกม · {row.game}</h1>
@@ -325,12 +340,13 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
               userId={user.id}
               suggestions={{ ...buildPackSuggestions(packGame), channels: allChannels }}
               dataMode={dataMode}
-              backHref={listHref}
+              backHref={viewHref}
               historyUrl={`/api/gameinfo/gamelist/${row.id}/packs/history?limit=200${dataMode === "idpass" ? "&mode=idpass" : ""}`}
               savePacksUrl={`/api/gameinfo/gamelist/${row.id}/packs${dataMode === "idpass" ? "?mode=idpass" : ""}`}
               importPreviewUrl={`/api/gameinfo/import/preview?gameId=${row.id}`}
               exportUrl={`/api/gameinfo/import/export?gameId=${row.id}${dataMode === "idpass" ? "&mode=idpass" : ""}`}
               sectionNumbers={MANAGE_NUMBERS}
+              webPackages={(topupGame?.packages || []).filter((pkg) => pkg.category).map(({ label, amountDisplay, category }) => ({ label, amountDisplay, category }))}
             />
             <GameinfoManageSection
               id="s-margin"
@@ -352,29 +368,45 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
             >
               <GameinfoSalesChannelEditor gameId={row.id} initialChannels={salesChannels} />
             </GameinfoManageSection>
-            {/* Reports on the manage page are always resolvable: whoever
-                reaches it is an editor. */}
-            <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage canReport id="s-report" number={MANAGE_NUMBERS.report} />
+            <GameinfoManageSection
+              id="s-profit"
+              number={MANAGE_NUMBERS.profit}
+              title="ช่องทางดูกำไร"
+              description="ช่องทางในแถบ “ดูกำไรของช่องทาง” ของหน้าเกม และคอลัมน์ที่เก็บราคาขายของแต่ละช่องทาง — UID กับ ID-PASS ตั้งแยกกัน"
+            >
+              <GameinfoPriceChannelSection
+                gameId={row.id}
+                dataMode={dataMode}
+                configured={settings.priceChannels?.[dataMode] ?? null}
+                computedColumns={computedColumns}
+              />
+            </GameinfoManageSection>
+            <GameinfoManageSection
+              id="s-view"
+              number={MANAGE_NUMBERS.view}
+              title="มุมมองหน้าเกม"
+              description="คอลัมน์ที่มุมมอง Product และ Topup ของหน้าเกมนี้แสดง และคอลัมน์ที่ขึ้นในแถวรายการ"
+            >
+              <GameinfoViewColumnsSection gameId={row.id} listColumns={settings.listColumns ?? null} />
+            </GameinfoManageSection>
           </div>
         </div>
       </>
     );
   }
 
+  const openSalesChannels = salesChannels.filter((channel) => channel.status === "open").length;
   return (
-    <>
-    {/* Rendered here, not in the layout: a layout is not re-rendered on a
-        client-side navigation, so its bar kept showing the view the first
-        page was opened in. */}
-    <GameinfoViewSwitch savedView={view} isAdmin={editableRole} />
-    <div className="mx-auto max-w-[1400px] px-4 pb-16 pt-6 sm:px-7">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <GameinfoBackLink
-          className="flex h-10 items-center gap-1.5 rounded-full border border-linear-hairline bg-linear-surface-1 px-4 text-[13px] font-bold text-linear-ink transition hover:bg-linear-surface-2"
-          href={listHref}
-        />
-        <GameinfoDatasetToggle basePath={gameinfoGameHref(lang, row.id, "uid", false)} />
-      </div>
+    // One column of folding cards (gameinfo-game-detail.css, loaded by the view).
+    <div className={`gd ${prompt.variable} min-h-[calc(100vh-4rem)]`}>
+    <div className="gd-wrap">
+      {/* Rendered here, not in the layout: a layout is not re-rendered on a
+          client-side navigation, so its bar kept showing the view the first
+          page was opened in. */}
+      <GameinfoViewSwitch savedView={view} isAdmin={editableRole} backHref={listHref}>
+        <GameinfoCeoButton />
+        <GameinfoDatasetToggle variant="seg" basePath={gameinfoGameHref(lang, row.id, "uid", false)} />
+      </GameinfoViewSwitch>
       <GameinfoGameView
         key={dataMode}
         row={row}
@@ -386,24 +418,56 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         dataMode={dataMode}
         hiddenColumnKeys={hiddenColumnKeys}
         editHref={editableRole ? manageHref : null}
+        priceChannels={settings.priceChannels?.[dataMode] ?? null}
+        canEditChannels={editableRole}
+        rowColumnChoice={settings.listColumns ?? null}
         stock={stock}
         stockLinks={hasPermission(user, "stock.access")}
         costRatesOther={costRatesOther}
         columnOrder={columnOrder}
+        topupView={topupView}
+        verify={{
+          gameId: row.id,
+          dataMode,
+          listings,
+          channelsOff,
+          channels: gameinfoListingChannels(salesChannels),
+          setupHref: editableRole ? `${manageHref}#s-sales` : null,
+          canList: hasPermission(user, "gameinfo.report"),
+          canReview: editableRole,
+          viewer: gameinfoListingActor(user),
+          reviewers: listingReviewers,
+          // The window opens outside the page, so it takes the page's typeface along.
+          className: prompt.variable,
+        }}
       />
-      <div className="mt-5">
+      <GameinfoFold
+        id="channels"
+        icon="store"
+        tone="green"
+        title={topupView ? "ช่องทางขาย" : "ช่องทางขายและกำไร"}
+        subtitle={salesChannels.length ? `${openSalesChannels} ช่องทางเปิดขายแล้ว` : "ยังไม่มีข้อมูลช่องทางขาย"}
+      >
         <GameinfoSalesChannelCards channels={salesChannels} showMargin={!topupView} />
-      </div>
-      <div className="mt-5">
+      </GameinfoFold>
+      <GameinfoFold
+        id="test"
+        icon="key"
+        tone="violet"
+        title="บัญชีทดสอบ (TESTID)"
+        subtitle={testAccounts.length ? `${testAccounts.length} บัญชี` : "ยังไม่มีบัญชีทดสอบ"}
+      >
         <GameinfoTestAccountsCard
+          bare
           gameId={row.id}
           accounts={editableRole ? testAccounts : testAccounts.map(maskGamelistTestAccount)}
           canReveal={editableRole}
+          addHref={editableRole ? `${manageHref}#s-test` : null}
         />
-      </div>
-      <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage={editableRole} canReport={canReport} />
+      </GameinfoFold>
+      {/* Reports are hidden on both game pages for now (2026-11-04); the game list still takes them. */}
     </div>
-    </>
+    </div>
   );
 }
 
@@ -417,6 +481,7 @@ const MANAGE_SECTIONS = [
   { id: "s-pack", label: "แพ็คและราคา" },
   { id: "s-margin", label: "ราคาเว็บและ Margin" },
   { id: "s-sales", label: "ช่องทางขาย" },
-  { id: "s-report", label: "รายงานปัญหา" },
+  { id: "s-profit", label: "ช่องทางดูกำไร" },
+  { id: "s-view", label: "มุมมองหน้าเกม" },
 ];
-const MANAGE_NUMBERS = { info: 1, method: 2, web: 3, test: 4, cost: 5, pack: 6, margin: 7, sales: 8, report: 9 };
+const MANAGE_NUMBERS = { info: 1, method: 2, web: 3, test: 4, cost: 5, pack: 6, margin: 7, sales: 8, profit: 9, view: 10 };

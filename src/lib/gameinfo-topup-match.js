@@ -106,3 +106,97 @@ export function topupWebPackImageFills(packages, gameinfoPacks) {
     .filter((pack) => !String(pack.image || "").trim() && imageByKey.has(gameinfoPackMatchKey(pack.name)))
     .map((pack) => ({ packId: pack.id, name: pack.name, image: imageByKey.get(gameinfoPackMatchKey(pack.name)) }));
 }
+
+// "Weekly Protocore Pack I x3" is the website's "Weekly Protocore Pack I"
+// bought several times, so it belongs where that pack does.
+function withoutTimes(name) {
+  return String(name ?? "").replace(/\s*[x×✕]\s*\d+\s*$/i, "");
+}
+
+/**
+ * The website category ("Crystals", "Aurum Pass"...) of each GameInfo pack name,
+ * by the website package of the same name; "" when no package matches.
+ * A package's shown amount ("Account Limit 1/1") only counts when it points
+ * at one category, since many packages share one.
+ */
+export function topupWebPackCategories(packNames, packages) {
+  const byLabel = new Map();
+  const byAmount = new Map();
+  for (const pkg of packages || []) {
+    const category = String(pkg.category || "").trim();
+    if (!category) continue;
+    const label = gameinfoPackMatchKey(pkg.label);
+    if (label && !byLabel.has(label)) byLabel.set(label, category);
+    const amount = gameinfoPackMatchKey(pkg.amountDisplay);
+    if (amount) byAmount.set(amount, byAmount.has(amount) && byAmount.get(amount) !== category ? null : category);
+  }
+  const find = (name) => {
+    const key = gameinfoPackMatchKey(name);
+    return byLabel.get(key) || byAmount.get(key) || "";
+  };
+  return new Map((packNames || []).map((name) => [name, find(name) || find(withoutTimes(name))]));
+}
+
+/**
+ * Regroups every currency's packs into the website's categories, in the
+ * website's order, packs in the website's order inside each. Categories keep
+ * their id when one of the same name exists already. Packs the website does
+ * not have stay in the category they were in; a category left empty by the
+ * move goes, one that was empty already stays.
+ */
+export function regroupByTopupWebCategories(currencies, packages, makeId) {
+  const categoryOrder = [];
+  const rankByKey = new Map();
+  (packages || []).forEach((pkg, index) => {
+    const category = String(pkg.category || "").trim();
+    if (category && !categoryOrder.includes(category)) categoryOrder.push(category);
+    for (const candidate of [pkg.label, pkg.amountDisplay]) {
+      const key = gameinfoPackMatchKey(candidate);
+      if (key && !rankByKey.has(key)) rankByKey.set(key, index);
+    }
+  });
+  const rank = (name) => rankByKey.get(gameinfoPackMatchKey(name)) ?? rankByKey.get(gameinfoPackMatchKey(withoutTimes(name))) ?? Infinity;
+  let moved = 0;
+  let matched = 0;
+  let unmatched = 0;
+  const next = (currencies || []).map((currency) => {
+    const packs = currency.categories.flatMap((category) => category.packs.map((pack) => ({ pack, from: category })));
+    const webCategory = topupWebPackCategories(packs.map(({ pack }) => pack.name), packages);
+    const byName = new Map();
+    for (const category of currency.categories) {
+      const name = String(category.name || "").trim();
+      if (categoryOrder.includes(name) && !byName.has(name)) byName.set(name, category);
+    }
+    const webBuckets = new Map(categoryOrder.map((name) => [name, []]));
+    const stay = new Map(currency.categories.map((category) => [category, []]));
+    for (const entry of packs) {
+      const target = webCategory.get(entry.pack.name);
+      if (target) {
+        matched += 1;
+        if (String(entry.from.name || "").trim() !== target) moved += 1;
+        webBuckets.get(target).push(entry.pack);
+      } else {
+        unmatched += 1;
+        // Already in a category the website has: it stays there, after the website's packs.
+        const fromName = String(entry.from.name || "").trim();
+        if (byName.get(fromName) === entry.from) webBuckets.get(fromName).push(entry.pack);
+        else stay.get(entry.from).push(entry.pack);
+      }
+    }
+    const categories = [];
+    for (const name of categoryOrder) {
+      const bucket = webBuckets.get(name);
+      if (!bucket.length) continue;
+      const sorted = bucket.map((pack, index) => ({ pack, index })).sort((a, b) => rank(a.pack.name) - rank(b.pack.name) || a.index - b.index).map(({ pack }) => pack);
+      const existing = byName.get(name);
+      categories.push(existing ? { ...existing, packs: sorted } : { id: makeId(), name, packs: sorted });
+    }
+    for (const category of currency.categories) {
+      if (byName.get(String(category.name || "").trim()) === category) continue;
+      const kept = stay.get(category);
+      if (kept.length || !category.packs.length) categories.push({ ...category, packs: kept });
+    }
+    return { ...currency, categories };
+  });
+  return { currencies: next, moved, matched, unmatched, categories: categoryOrder };
+}

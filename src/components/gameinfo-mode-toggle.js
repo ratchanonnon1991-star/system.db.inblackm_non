@@ -34,10 +34,12 @@ export default function GameinfoModeToggle({ lang, editableRole }) {
   if (isBotAutoPage) return null;
   const gameId = parts[3];
   const isGamePage = /^\d+$/.test(gameId || "");
+  // A game's own page has แก้ไขข้อมูล on its card, behind the day's notices.
+  if (isGamePage && !isManageMode) return null;
   const href = isGamePage
     ? gameinfoGameHref(lang, gameId, dataMode, !isManageMode)
     : gameinfoListHref(lang, dataMode, !isManageMode);
-  const label = isManageMode ? (isGamePage ? "กลับหน้าเกม" : "กลับหน้ารวมเกม") : (isGamePage ? "แก้ไขเกมนี้" : "จัดการข้อมูล");
+  const label = isManageMode ? (isGamePage ? "กลับหน้าเกม" : "กลับหน้ารวมเกม") : "จัดการข้อมูล";
 
   return (
     // On a game, edit ↔ view is the same game: replace, so back is the list.

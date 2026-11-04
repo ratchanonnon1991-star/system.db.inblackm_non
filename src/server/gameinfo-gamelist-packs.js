@@ -341,6 +341,48 @@ function ensureSchema(connection) {
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
+      // Where each pack is listed for sale and whether its price was checked
+      // (src/server/gameinfo-pack-listings.js).
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS gamelist_pack_listings (
+          game_id       INTEGER NOT NULL,
+          data_mode     TEXT NOT NULL,
+          pack_id       TEXT NOT NULL,
+          channel       TEXT NOT NULL,
+          url           TEXT NOT NULL DEFAULT '',
+          listed_price  NUMERIC,
+          listed_by     TEXT NOT NULL DEFAULT '',
+          listed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          status        TEXT NOT NULL DEFAULT 'pending',
+          checked_price NUMERIC,
+          reviewed_by   TEXT NOT NULL DEFAULT '',
+          reviewed_at   TIMESTAMPTZ,
+          note          TEXT NOT NULL DEFAULT '',
+          PRIMARY KEY (game_id, data_mode, pack_id, channel)
+        )
+      `);
+      await client.query(`ALTER TABLE gamelist_pack_listings ADD COLUMN IF NOT EXISTS checked_reference NUMERIC`);
+      await client.query(`ALTER TABLE gamelist_pack_listings ADD COLUMN IF NOT EXISTS checked_snapshot JSONB`);
+      // Channels a pack is not sold on although its game is: no listing, no
+      // check, and not counted in the pack's "ตรวจแล้ว x/y".
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS gamelist_pack_channels_off (
+          game_id   INTEGER NOT NULL,
+          data_mode TEXT NOT NULL,
+          pack_id   TEXT NOT NULL,
+          channel   TEXT NOT NULL,
+          set_by    TEXT NOT NULL DEFAULT '',
+          set_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (game_id, data_mode, pack_id, channel)
+        )
+      `);
+      await client.query(`
+        ALTER TABLE gamelist_pack_listings
+          ADD COLUMN IF NOT EXISTS round INTEGER NOT NULL DEFAULT 1,
+          ADD COLUMN IF NOT EXISTS assigned_reviewer TEXT NOT NULL DEFAULT '',
+          ADD COLUMN IF NOT EXISTS send_note TEXT NOT NULL DEFAULT '',
+          ADD COLUMN IF NOT EXISTS history JSONB NOT NULL DEFAULT '[]'::jsonb
+      `);
     } finally {
       client.release();
     }

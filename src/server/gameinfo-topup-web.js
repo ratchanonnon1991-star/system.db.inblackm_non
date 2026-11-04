@@ -148,6 +148,8 @@ export async function getTopupWebGame(topupGameId) {
       flashSalePrice: number(pack.flash_sale_price),
       cost: number(pack.cost),
       costUsd: number(pack.cost_usd),
+      // The website's category for the pack ("Crystals", "Aurum Pass"...).
+      category: String(pack.package_type || "").trim(),
     })),
   };
 }

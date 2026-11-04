@@ -82,20 +82,41 @@ function PasswordCell({ account, revealed, canReveal, onToggle }) {
 }
 
 /** Read-only card for the game page: who may see logins sees them, passwords stay behind a logged reveal. */
-export function GameinfoTestAccountsCard({ gameId, accounts, canReveal }) {
+// `bare` drops the card and its title for the game page, whose folding card
+// carries them; `addHref` is where an editor adds the first account.
+export function GameinfoTestAccountsCard({ gameId, accounts, canReveal, bare = false, addHref = null }) {
   const { revealed, toggle, error } = useReveal(gameId);
+  const Wrapper = bare ? "div" : "section";
   return (
-    <section aria-labelledby="test-accounts-title" className="rounded-2xl border border-linear-hairline bg-linear-surface-1 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 id="test-accounts-title" className="flex items-center gap-2 text-base font-black text-linear-ink">
-          <KeyRound size={17} aria-hidden="true" /> บัญชีทดสอบ (TESTID)
-        </h2>
-        {!canReveal ? (
-          <span className="flex items-center gap-1 text-xs font-bold text-linear-ink-muted"><Lock size={13} aria-hidden="true" /> ซ่อนอยู่</span>
-        ) : null}
-      </div>
+    <Wrapper
+      aria-labelledby={bare ? undefined : "test-accounts-title"}
+      className={bare ? "" : "rounded-2xl border border-linear-hairline bg-linear-surface-1 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.08)]"}
+    >
+      {bare ? (
+        !canReveal && accounts.length ? (
+          <p className="mb-2 flex items-center gap-1 text-xs font-bold text-linear-ink-muted"><Lock size={13} aria-hidden="true" /> รหัสผ่านซ่อนอยู่</p>
+        ) : null
+      ) : (
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 id="test-accounts-title" className="flex items-center gap-2 text-base font-black text-linear-ink">
+            <KeyRound size={17} aria-hidden="true" /> บัญชีทดสอบ (TESTID)
+          </h2>
+          {!canReveal ? (
+            <span className="flex items-center gap-1 text-xs font-bold text-linear-ink-muted"><Lock size={13} aria-hidden="true" /> ซ่อนอยู่</span>
+          ) : null}
+        </div>
+      )}
       {accounts.length === 0 ? (
-        <p className="text-sm text-linear-ink-tertiary">ยังไม่มีบัญชีทดสอบ</p>
+        bare ? (
+          <div className="gd-empty">
+            <span className="eic"><KeyRound size={22} aria-hidden="true" /></span>
+            <b>ยังไม่มีบัญชีทดสอบ</b>
+            <span>เพิ่มบัญชีสำหรับทดสอบเติม เพื่อให้ทีมใช้ตรวจเกมนี้ได้ทันที</span>
+            {addHref ? <a className="gd-btn sm" href={addHref}>เพิ่มบัญชีทดสอบ</a> : null}
+          </div>
+        ) : (
+          <p className="text-sm text-linear-ink-tertiary">ยังไม่มีบัญชีทดสอบ</p>
+        )
       ) : (
         <ul className="flex flex-col gap-2">
           {accounts.map((account) => (
@@ -125,7 +146,7 @@ export function GameinfoTestAccountsCard({ gameId, accounts, canReveal }) {
         </ul>
       )}
       {error ? <p role="alert" className="mt-2 text-xs text-linear-danger">{error}</p> : null}
-    </section>
+    </Wrapper>
   );
 }
 

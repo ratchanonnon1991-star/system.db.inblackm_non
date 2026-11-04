@@ -31,7 +31,7 @@ const checks = [
   viewSwitch.includes("Topup") && viewSwitch.includes("Product") && viewSwitch.includes("rememberGameinfoView(view)") && !modeToggle.includes("มุมมอง Topup"),
   // The bar shows only on a game's detail page, which renders it with the view
   // it resolved itself — a layout would keep the first page's view.
-  detailPage.includes("<GameinfoViewSwitch savedView={view} isAdmin={editableRole} />") && !gameLayout.includes("GameinfoViewSwitch"),
+  detailPage.includes("<GameinfoViewSwitch savedView={view} isAdmin={editableRole} backHref={listHref}>") && !gameLayout.includes("GameinfoViewSwitch"),
   // No eye button: "ข้อมูลเกม" opens the game page, in Product for admins and Topup for everyone else.
   !gamelistCards.includes("<Eye") && !gamelistCards.includes("GameinfoDetailsButton") &&
     gamelistCards.includes("rememberGameinfoView(gameinfoRoleView(editable))") && gamelistCards.includes("prefetch={false}") &&

@@ -12,6 +12,7 @@ import {
 } from "@/lib/gameinfo-unsaved-changes";
 import GameinfoImagePreview from "./gameinfo-image-preview";
 import GameinfoMemoryInput from "./gameinfo-memory-input";
+import { revealAdded } from "@/lib/reveal-added";
 
 function genId(prefix) {
   return `${prefix}_${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-4)}`;
@@ -329,6 +330,7 @@ export function TutorialModal({ gameId, gameName, editable, variant, contentVari
     const next = emptyCategory();
     setCategories((prev) => [...prev, next]);
     setActiveCatId(next.id);
+    revealAdded(`tab:${next.id}`, { focus: false });
   }
   function removeCategory(catId) {
     const category = categories.find((item) => item.id === catId);
@@ -350,9 +352,11 @@ export function TutorialModal({ gameId, gameName, editable, variant, contentVari
     );
   }
   function addStep(catId) {
+    const step = emptyStep();
     setCategories((prev) =>
-      prev.map((c) => (c.id === catId ? { ...c, steps: [...c.steps, emptyStep()] } : c))
+      prev.map((c) => (c.id === catId ? { ...c, steps: [...c.steps, step] } : c))
     );
+    revealAdded(step.id);
   }
   function removeStep(catId, stepIdx) {
     const category = categories.find((item) => item.id === catId);
@@ -524,6 +528,7 @@ function QuickWarningList({ categories, editable, onCategoriesChange, onUploadSt
 
   function addItem() {
     const next = emptyStep();
+    revealAdded(next.id);
     if (categories.length === 0) {
       onCategoriesChange([{ id: genId("warning"), name: "ข้อควรระวัง", steps: [next] }]);
       return;
@@ -553,6 +558,7 @@ function QuickWarningList({ categories, editable, onCategoriesChange, onUploadSt
     const item = categories.find((category) => category.id === categoryId)?.steps[stepIndex];
     if (!item) return;
     updateItem(categoryId, stepIndex, { imageUrls: [...item.imageUrls, ""] });
+    revealAdded(`${item.id}:image:${item.imageUrls.length}`);
   }
 
   function removeImage(categoryId, stepIndex, imageIndex) {
@@ -590,7 +596,7 @@ function QuickWarningList({ categories, editable, onCategoriesChange, onUploadSt
       ) : (
         <ul className={editable ? "space-y-2" : "space-y-8"}>
           {items.map(({ category, step, stepIndex }, index) => (
-            <li key={`${category.id}-${step.id}`} className={editable ? "flex items-start gap-3 rounded-lg border border-linear-hairline bg-linear-surface-2 p-3" : "flex items-start gap-4 rounded-[26px] border border-[#e8e8e8] bg-[#f8f9fb] p-4 sm:gap-6 sm:p-6"}>
+            <li key={`${category.id}-${step.id}`} data-reveal-key={step.id} className={editable ? "flex items-start gap-3 rounded-lg border border-linear-hairline bg-linear-surface-2 p-3" : "flex items-start gap-4 rounded-[26px] border border-[#e8e8e8] bg-[#f8f9fb] p-4 sm:gap-6 sm:p-6"}>
               <span className={editable ? "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-linear-surface-3 text-[11px] font-semibold text-linear-ink-tertiary" : "flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eceef0] text-xl font-bold text-[#1d1d1d] sm:h-12 sm:w-12"}>{index + 1}</span>
               <div className="min-w-0 flex-1">
                 {editable ? (
@@ -622,7 +628,7 @@ function QuickWarningList({ categories, editable, onCategoriesChange, onUploadSt
                 {editable ? (
                   <div className="mt-2 space-y-2">
                     {step.imageUrls.map((imageUrl, imageIndex) => (
-                      <div key={imageIndex} className="flex items-center gap-2">
+                      <div key={imageIndex} data-reveal-key={`${step.id}:image:${imageIndex}`} className="flex items-center gap-2">
                         {imageUrl ? (
                           <GameinfoImagePreview src={imageUrl} alt="">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -708,6 +714,7 @@ function CategoryTabs({ categories, activeCatId, onSelect, editable, onAddCatego
         return (
           <div
             key={cat.id}
+            data-reveal-key={`tab:${cat.id}`}
             onClick={() => onSelect(cat.id)}
             className={featured
               ? `group flex h-11 shrink-0 cursor-pointer items-center justify-center gap-2 border px-4 text-sm font-semibold transition ${idx === 0 ? "rounded-l-full" : ""} ${idx === categories.length - 1 ? "rounded-r-full" : ""} ${active ? "border-red-600 bg-red-600 text-white" : "border-gray-200 bg-white text-gray-900 hover:bg-red-50"}`
@@ -907,7 +914,7 @@ function EditableCategory({
 
       <div className="space-y-3">
         {category.steps.map((step, stepIdx) => (
-          <div key={step.id} className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
+          <div key={step.id} data-reveal-key={step.id} className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-xs font-medium text-linear-primary">ข้อที่ {stepIdx + 1}</span>
               <button
@@ -935,7 +942,7 @@ function EditableCategory({
               <div className="space-y-1.5">
                 <p className="text-xs font-medium text-linear-ink-muted">รูปภาพ (ใส่กี่รูปก็ได้)</p>
                 {step.imageUrls.map((url, imgIdx) => (
-                  <div key={imgIdx} className="flex items-center gap-1.5">
+                  <div key={imgIdx} data-reveal-key={`${step.id}:image:${imgIdx}`} className="flex items-center gap-1.5">
                     {url ? (
                       <GameinfoImagePreview src={url} alt="">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -980,7 +987,10 @@ function EditableCategory({
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => onUpdateStep(stepIdx, { imageUrls: [...step.imageUrls, ""] })}
+                    onClick={() => {
+                      onUpdateStep(stepIdx, { imageUrls: [...step.imageUrls, ""] });
+                      revealAdded(`${step.id}:image:${step.imageUrls.length}`);
+                    }}
                     className="flex items-center gap-1 rounded-md border border-dashed border-linear-hairline-strong px-3 py-1.5 text-xs text-linear-ink-tertiary hover:bg-linear-surface-3"
                   >
                     <Plus size={12} /> เพิ่ม URL รูป

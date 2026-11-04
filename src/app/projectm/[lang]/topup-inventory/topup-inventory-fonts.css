@@ -1,0 +1,8 @@
+/* Fonts of the Topup Inventory design for the whole section. :where keeps the heading
+   rule as weak as a tag, so a page that picks a font class (font-mono) still gets it. */
+.tiv-fonts {
+  font-family: var(--tiv-font-body), var(--tiv-font-display), -apple-system, "Segoe UI", sans-serif;
+}
+.tiv-fonts :where(h1, h2, h3) {
+  font-family: var(--tiv-font-display), var(--tiv-font-body), -apple-system, "Segoe UI", sans-serif;
+}

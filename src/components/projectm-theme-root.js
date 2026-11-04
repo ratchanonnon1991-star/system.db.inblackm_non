@@ -14,10 +14,11 @@ const linearSans = Inter({
 });
 
 export default function ProjectmThemeRoot({ children }) {
-  const [theme, toggleTheme] = useLLTheme();
+  const [theme, toggleTheme, choice, setChoice] = useLLTheme();
   const pathname = usePathname();
   const router = useRouter();
-  const hasAdminThemeControl = /\/itune\/admin(?:\/|$)/.test(pathname);
+  // The iTune admin and every Topup Inventory page draw their own theme switch.
+  const hasOwnThemeControl = /\/itune\/admin(?:\/|$)/.test(pathname) || /^\/projectm\/[^/]+\/topup-inventory(?:\/|$)/.test(pathname);
 
   useEffect(() => {
     const refreshPermissions = () => router.refresh();
@@ -26,13 +27,13 @@ export default function ProjectmThemeRoot({ children }) {
   }, [router]);
 
   return (
-    <ProjectmThemeProvider theme={theme} toggleTheme={toggleTheme}>
+    <ProjectmThemeProvider theme={theme} toggleTheme={toggleTheme} choice={choice} setChoice={setChoice}>
       <div
         data-theme={theme}
         className={`${linearSans.variable} min-h-screen bg-ll-canvas`}
         style={{ fontFamily: "var(--font-linear-sans), sans-serif" }}
       >
-        {!hasAdminThemeControl && <LLThemeToggle theme={theme} onToggle={toggleTheme} />}
+        {!hasOwnThemeControl && <LLThemeToggle theme={theme} onToggle={toggleTheme} />}
         {children}
       </div>
     </ProjectmThemeProvider>

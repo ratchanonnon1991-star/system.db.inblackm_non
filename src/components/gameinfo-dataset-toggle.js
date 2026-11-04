@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
-export default function GameinfoDatasetToggle({ basePath }) {
+// `seg` is the game page's softer look; elsewhere the red pill stays.
+export default function GameinfoDatasetToggle({ basePath, variant = "" }) {
   const searchParams = useSearchParams();
   const mode = searchParams.get("mode") === "idpass" ? "idpass" : "uid";
   function href(nextMode) {
@@ -13,6 +14,17 @@ export default function GameinfoDatasetToggle({ basePath }) {
     else params.delete("mode");
     const query = params.toString();
     return `${path}${query ? `?${query}` : ""}`;
+  }
+  if (variant === "seg") {
+    return (
+      <div role="group" aria-label="ประเภทการเติม" className="gd-seg">
+        {[["uid", "UID"], ["idpass", "ID-Pass"]].map(([value, label]) => (
+          <Link key={value} href={href(value)} replace prefetch={false} aria-current={mode === value ? "true" : undefined}>
+            {label}
+          </Link>
+        ))}
+      </div>
+    );
   }
   return (
     <div role="group" aria-label="ประเภทการเติม" className="inline-flex gap-1 rounded-full border border-linear-hairline bg-linear-surface-1 p-1 text-[13px]">

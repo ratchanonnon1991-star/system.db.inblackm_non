@@ -3,67 +3,64 @@
 import { createInventoryPageSession } from "@/lib/inventory-page-session";
 import { TablePagination } from "@/components/table-pagination";
 import PaginatedTable from "@/components/table-pagination";
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Download, Plus, RefreshCw } from "lucide-react";
+import { Download, Plus, RefreshCw } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
-import { topupInventoryPath } from "@/lib/topup-inventory";
+import TopupInventoryPage from "@/components/topup-inventory-page";
+import { tivButton as button, tivField, tivInput as input, tivPrimary, tivTable, tivTableBox } from "@/lib/topup-inventory-ui";
 import { codaQuickDates } from "@/lib/usdcodashop-overview";
 import { codaDateBounds } from "@/lib/usdcodashop-report";
 import { orderLink } from "@/lib/usdcodashop-sheet";
 
 const endpoint = "/api/projectm/multigamecard";
-const button = "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-ll-hairline-strong bg-ll-surface-1 px-4 text-sm hover:bg-ll-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ll-primary disabled:opacity-50";
-const input = "mt-2 min-h-11 w-full rounded-lg border border-ll-hairline-strong bg-ll-surface-1 px-3 text-sm text-ll-ink focus-visible:outline-2 focus-visible:outline-ll-primary";
-const cell = "px-4 py-3 align-top";
 const money = v => v == null ? "—" : Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const when = v => v ? new Date(v).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "short", timeStyle: "short" }) : "—";
 
 function CardTable({ cards, serial, select, resetKey }) {
-  return <div className="relative max-w-full overflow-x-auto rounded-xl border border-ll-hairline bg-ll-surface-1">
-    <PaginatedTable items={cards} resetKey={resetKey}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full text-left text-sm"><caption className="sr-only">ยอดบัตร Multigamecard แยก Serial หน่วยแต้ม</caption>
-      <thead className="bg-ll-surface-2"><tr>{["Serial", "สถานะ", "ผู้ใช้งาน", "แต้มเข้า (ทั้งหมด)", "ใช้ไป (ทั้งหมด)", "คงเหลือล่าสุด", "จัดการ"].map(h => <th key={h} className={`${cell} whitespace-nowrap font-medium`}>{h}</th>)}</tr></thead>
-      <tbody>{tablePageItems.map((tableItem, tableIndex) => (c => <tr key={c.id} className={`border-t border-ll-hairline ${serial === c.serial ? "bg-ll-surface-2" : ""}`}>
-        <td className={`${cell} whitespace-nowrap font-medium`}>{c.serial || "ไม่ทราบ Serial"}{c.duplicate && <p className="text-xs text-amber-600">พบ Serial ซ้ำ ต้องตรวจสอบ</p>}</td>
-        <td className={`${cell} whitespace-nowrap`}>{c.status}{!c.enabled && <p className="text-xs text-ll-ink-subtle">ไม่เปิดใช้งานในพูล</p>}</td>
-        <td className={cell}>{c.owner}</td><td className={`${cell} tabular-nums`}>{money(c.inTotal)}</td><td className={`${cell} tabular-nums`}>{money(c.outTotal)}</td>
-        <td className={`${cell} whitespace-nowrap font-semibold tabular-nums`}>{money(c.balance)}<p className="mt-1 text-xs font-normal text-ll-ink-subtle">{when(c.balanceAt)}</p></td>
-        <td className={cell}>{c.serial && <button type="button" onClick={() => select(c.serial)} aria-label={`${serial === c.serial ? "ยกเลิกเลือก" : "ดูประวัติ"} ${c.serial}`} aria-pressed={serial === c.serial} className={button}>{serial === c.serial ? "ยกเลิกเลือก" : "ดูประวัติ"}</button>}</td>
+  return <div className={`${tivTableBox} relative max-w-full`}>
+    <PaginatedTable items={cards} resetKey={resetKey}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className={tivTable}><caption className="sr-only">ยอดบัตร Multigamecard แยก Serial หน่วยแต้ม</caption>
+      <thead><tr>{["Serial", "สถานะ", "ผู้ใช้งาน", "แต้มเข้า (ทั้งหมด)", "ใช้ไป (ทั้งหมด)", "คงเหลือล่าสุด", "จัดการ"].map((h, i) => <th key={h} className={i >= 3 && i <= 5 ? "r" : ""}>{h}</th>)}</tr></thead>
+      <tbody>{tablePageItems.map((tableItem, tableIndex) => (c => <tr key={c.id} className={serial === c.serial ? "sel" : ""}>
+        <td className="whitespace-nowrap font-medium">{c.serial || "ไม่ทราบ Serial"}{c.duplicate && <span className="tiv-warn block text-xs">พบ Serial ซ้ำ ต้องตรวจสอบ</span>}</td>
+        <td className="whitespace-nowrap">{c.status}{!c.enabled && <span className="sm">ไม่เปิดใช้งานในพูล</span>}</td>
+        <td>{c.owner}</td><td className="r">{money(c.inTotal)}</td><td className="r">{money(c.outTotal)}</td>
+        <td className="r b whitespace-nowrap">{money(c.balance)}<span className="sm font-normal">{when(c.balanceAt)}</span></td>
+        <td>{c.serial && <button type="button" onClick={() => select(c.serial)} aria-label={`${serial === c.serial ? "ยกเลิกเลือก" : "ดูประวัติ"} ${c.serial}`} aria-pressed={serial === c.serial} className={`${button}${serial === c.serial ? " on" : ""}`}>{serial === c.serial ? "ยกเลิกเลือก" : "ดูประวัติ"}</button>}</td>
       </tr>)(tableItem, tablePageStart + tableIndex, tableAllItems))}</tbody>
-    </table>)}</PaginatedTable>{!cards.length && <p className="p-6 text-center text-sm text-ll-ink-subtle">ยังไม่มีบัตรในระบบนี้</p>}
+    </table>)}</PaginatedTable>{!cards.length && <div className="tiv-dempty m-4"><strong>ยังไม่มีบัตรในระบบนี้</strong></div>}
   </div>;
 }
 function Entries({ entries }) {
-  return <div className="relative max-w-full overflow-x-auto rounded-xl border border-ll-hairline bg-ll-surface-1">
-    <table className="w-full text-left text-sm"><caption className="sr-only">รายการ Multigamecard ตามตัวกรอง</caption>
-      <thead className="bg-ll-surface-2"><tr>{["วันที่", "Order / รายการ", "Serial", "เกม / แพ็ก", "ยอดโอน (THB)", "ต้นทุน (THB)", "กำไร (THB)", "แต้มเข้า", "แต้มออก", "แต้มหลังรายการ"].map(h => <th key={h} className={`${cell} whitespace-nowrap font-medium`}>{h}</th>)}</tr></thead>
-      <tbody>{entries.map(e => <tr key={e.id} className="border-t border-ll-hairline">
-        <td className={`${cell} whitespace-nowrap`}>{when(e.occurredAt)}</td>
-        <td className={`${cell} min-w-52`}><details><summary className="cursor-pointer font-medium">{e.orderId}</summary><dl className="mt-3 space-y-2 break-words text-xs">
+  return <div className={`${tivTableBox} relative max-w-full`}>
+    <table className={tivTable}><caption className="sr-only">รายการ Multigamecard ตามตัวกรอง</caption>
+      <thead><tr>{["วันที่", "Order / รายการ", "Serial", "เกม / แพ็ก", "ยอดโอน (THB)", "ต้นทุน (THB)", "กำไร (THB)", "แต้มเข้า", "แต้มออก", "แต้มหลังรายการ"].map((h, i) => <th key={h} className={i >= 4 ? "r" : ""}>{h}</th>)}</tr></thead>
+      <tbody>{entries.map(e => <tr key={e.id}>
+        <td className="whitespace-nowrap">{when(e.occurredAt)}</td>
+        <td className="min-w-52"><details><summary>{e.orderId}</summary><dl className="tiv-subbox space-y-2 break-words">
           {[["ผู้เติม", e.details.sheetOperator || e.details.operator], ["ลูกค้า", e.details.customer], ["UID", e.details.playerId], ["ธุรกรรม", e.details.invoice], ["หมายเหตุ", e.details.note], ["ผู้บันทึก", e.recordedBy]].map(([label, v]) => <div key={label}><dt className="text-ll-ink-subtle">{label}</dt><dd>{v || "—"}</dd></div>)}
           {e.details.salePacks > 1 && <p>ยอดโอนแบ่งจาก {e.details.salePacks} แพ็ก</p>}
           {e.details.saleConversion && <p>ยอดโอนใช้เรท: {e.details.saleConversion.rate} · {e.details.saleConversion.source} · อ่านเมื่อ {when(e.details.saleConversion.fetchedAt)}</p>}
-          {orderLink(e.details.link) && <a href={orderLink(e.details.link)} target="_blank" rel="noopener noreferrer" className="block underline">เปิดรายการต้นทาง</a>}
+          {orderLink(e.details.link) && <a href={orderLink(e.details.link)} target="_blank" rel="noopener noreferrer" className="tiv-lnk block">เปิดรายการต้นทาง</a>}
         </dl></details></td>
-        <td className={`${cell} whitespace-nowrap`}>{e.serial || "—"}</td><td className={`${cell} min-w-44`}>{e.details.game || "—"}<p className="mt-1 text-xs text-ll-ink-subtle">{e.details.pack}</p></td>
-        <td className={`${cell} tabular-nums`}>{money(e.figures.sale)}</td><td className={`${cell} tabular-nums`}>{money(e.figures.cost)}</td>
-        <td className={`${cell} tabular-nums`}>{money(e.figures.profit)}<p className="mt-1 text-xs text-ll-ink-subtle">{e.figures.margin == null ? "—" : `${e.figures.margin}%`}</p></td>
-        <td className={`${cell} tabular-nums`}>{e.kind !== "use" ? money(e.amount) : "—"}</td><td className={`${cell} tabular-nums`}>{e.kind === "use" ? money(e.amount) : "—"}</td><td className={`${cell} tabular-nums`}>{money(e.balance)}</td>
+        <td className="whitespace-nowrap">{e.serial || "—"}</td><td className="min-w-44">{e.details.game || "—"}<span className="sm">{e.details.pack}</span></td>
+        <td className="r">{money(e.figures.sale)}</td><td className="r">{money(e.figures.cost)}</td>
+        <td className="r">{money(e.figures.profit)}<span className="sm">{e.figures.margin == null ? "—" : `${e.figures.margin}%`}</span></td>
+        <td className="r">{e.kind !== "use" ? money(e.amount) : "—"}</td><td className="r">{e.kind === "use" ? money(e.amount) : "—"}</td><td className="r">{money(e.balance)}</td>
       </tr>)}</tbody>
-    </table>{!entries.length && <p className="p-6 text-center text-sm text-ll-ink-subtle">ไม่พบรายการตามตัวกรอง</p>}
+    </table>{!entries.length && <div className="tiv-dempty m-4"><strong>ไม่พบรายการตามตัวกรอง</strong></div>}
   </div>;
 }
 
 function CostRateForm({ rate, disabled, save, editing }) {
   const [divisor, setDivisor] = useState(rate.divisor);
-  return <form onSubmit={e => { e.preventDefault(); save(divisor, rate.version); }} className="space-y-3 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4">
-    <div className="flex flex-wrap items-end gap-3"><label className="min-w-0 text-sm">เรท / ตัวหารต้นทุน Bot
+  return <form onSubmit={e => { e.preventDefault(); save(divisor, rate.version); }} className="tiv-card">
+    <div className="flex flex-wrap items-end gap-3"><label className={`${tivField} w-full sm:w-64`}><span>เรท / ตัวหารต้นทุน Bot</span>
       <input required type="number" min="0.00000001" max="99999999.99999999" step="0.00000001" value={divisor} disabled={disabled}
-        onChange={e => { setDivisor(e.target.value); editing(true); }} className={input} /></label>
-      <button disabled={disabled || divisor === rate.divisor} className={button}>บันทึกเรท</button>
+        onChange={e => { setDivisor(e.target.value); editing(true); }} className={`${input} num`} /></label>
+      <button disabled={disabled || divisor === rate.divisor} className={tivPrimary}>บันทึกเรท</button>
       <button type="button" disabled={disabled} className={button} onClick={() => { setDivisor(rate.divisor); editing(false); }}>คืนค่าที่บันทึก</button></div>
-    <p className="text-xs text-ll-ink-subtle">ต้นทุน = ยอดแต้มออก ÷ ตัวหาร · บันทึกแล้วใช้ร่วมกันทุกคน และคำนวณต้นทุน/กำไรย้อนหลังใหม่ทั้งหมด · ไม่เปลี่ยนยอดบัตรหรือรายการ Manual</p>
-    {rate.updatedAt && <p className="text-xs text-ll-ink-subtle">บันทึกโดย {rate.updatedBy} · {when(rate.updatedAt)}</p>}
+    <p className="tiv-hint">ต้นทุน = ยอดแต้มออก ÷ ตัวหาร · บันทึกแล้วใช้ร่วมกันทุกคน และคำนวณต้นทุน/กำไรย้อนหลังใหม่ทั้งหมด · ไม่เปลี่ยนยอดบัตรหรือรายการ Manual</p>
+    {rate.updatedAt && <p className="tiv-hint mt-1!">บันทึกโดย {rate.updatedBy} · {when(rate.updatedAt)}</p>}
   </form>;
 }
 
@@ -146,45 +143,49 @@ export default function MultigamecardInventory({ lang }) {
     finally { lock.current = false; if (alive.current) setBusy(false); }
   }
   function field(label, key, required = false, type = "text") {
-    return <label key={key} className="min-w-0 text-sm">{label}<input type={type} step={type === "number" ? "0.01" : undefined} min={type === "number" ? "0" : undefined} required={required} maxLength={300} value={form[key]} onChange={e => setForm({ ...form, [key]: e.target.value })} className={input} /></label>;
+    return <label key={key} className={tivField}><span>{label}</span><input type={type} step={type === "number" ? "0.01" : undefined} min={type === "number" ? "0" : undefined} required={required} maxLength={300} value={form[key]} onChange={e => setForm({ ...form, [key]: e.target.value })} className={type === "number" ? `${input} num` : input} /></label>;
   }
-  return <main className="mx-auto flex min-h-screen min-w-0 max-w-7xl flex-col gap-6 px-4 pb-14 pt-10 text-ll-ink sm:px-6">
-    <header className="flex flex-wrap items-start justify-between gap-4 pr-12"><div><p className="text-xs text-ll-ink-tertiary">TOPUP INVENTORY · แยกตาม SERIAL</p><h1 className="mt-2 text-3xl font-semibold">Multigamecard</h1><p className="mt-2 text-sm text-ll-ink-subtle">ยอดบัตรและรายการใช้เงิน แยก Bot / Manual · ไม่แสดงหรือเก็บ PIN บัตร</p></div><Link href={topupInventoryPath(lang)} className={button}><ArrowLeft size={16} aria-hidden />กลับ Topup Inventory</Link></header>
-    <div role="group" aria-label="ประเภท Multigamecard" className="flex gap-2">{[["bot", "Bot"], ["manual", "Manual"]].map(([value, text]) => <button key={value} aria-pressed={mode === value} disabled={disabled || Boolean(form) || rateEditing} onClick={() => { generation.current++; setMode(value); setSerial(""); setPage(1); setNotice(""); }} className={`${button} ${mode === value ? "border-ll-primary ring-1 ring-ll-primary" : ""}`}>{text}</button>)}</div>
-    <section aria-label="กรอง Multigamecard" className="space-y-4 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4">
-      <div className="flex flex-wrap gap-2">{[["today", "วันนี้"], ["yesterday", "เมื่อวาน"], ["month", "เดือนนี้"]].map(([value, text]) => <button key={value} disabled={disabled || Boolean(form)} onClick={() => apply(codaQuickDates(value))} className={button}>{text}</button>)}</div>
-      <form onSubmit={e => { e.preventDefault(); apply(draftDates); }} className="flex flex-wrap items-end gap-3">
-        <label className="text-sm">ตั้งแต่วันที่<input required type="date" value={draftDates.dateFrom} onChange={e => setDraftDates({ ...draftDates, dateFrom: e.target.value })} className={input} /></label>
-        <label className="text-sm">ถึงวันที่<input required type="date" min={draftDates.dateFrom} value={draftDates.dateTo} onChange={e => setDraftDates({ ...draftDates, dateTo: e.target.value })} className={input} /></label>
-        <label className="min-w-0 basis-full text-sm sm:flex-1 sm:basis-64">ค้นหา Order / Serial / เกม / ลูกค้า<input value={query} onChange={e => setQuery(e.target.value)} className={input} /></label>
-        <button disabled={disabled || Boolean(form)} className={button}>ใช้ตัวกรอง</button><button type="button" onClick={load} disabled={disabled || Boolean(form)} className={button}><RefreshCw size={16} aria-hidden />โหลดใหม่</button>
-        <button type="button" onClick={exportCsv} disabled={disabled || Boolean(form) || !ready || Boolean(error) || !data?.total} className={button}><Download size={16} aria-hidden />Export CSV</button>
-      </form><p className="text-xs text-ll-ink-subtle">ตัวกรองที่ใช้: {dates.dateFrom} ถึง {dates.dateTo} (ค.ศ.) · เวลาไทย ไม่เกิน 93 วัน{serial ? ` · Serial ${serial}` : ""}{search ? ` · ${search}` : ""} · Export รวมทุกหน้าตามตัวกรอง</p>
+  const quick = Object.entries({ today: "วันนี้", yesterday: "เมื่อวาน", month: "เดือนนี้" }).map(([value, text]) => ({ value, text, on: Object.entries(codaQuickDates(value)).every(([k, v]) => dates[k] === v) }));
+  return <TopupInventoryPage provider="multigamecard" description="ยอดบัตรและรายการใช้เงิน แยก Bot / Manual · ไม่แสดงหรือเก็บ PIN บัตร">
+    <div role="group" aria-label="ประเภท Multigamecard" className="tiv-tools">{[["bot", "Bot"], ["manual", "Manual"]].map(([value, text]) => <button key={value} aria-pressed={mode === value} disabled={disabled || Boolean(form) || rateEditing} onClick={() => { generation.current++; setMode(value); setSerial(""); setPage(1); setNotice(""); }} className={`${button}${mode === value ? " on" : ""}`}>{text}</button>)}</div>
+    <section aria-label="กรอง Multigamecard" className="tiv-card">
+      <div className="tiv-tools">{quick.map(({ value, text, on }) => <button key={value} aria-pressed={on} disabled={disabled || Boolean(form)} onClick={() => apply(codaQuickDates(value))} className={`${button}${on ? " on" : ""}`}>{text}</button>)}</div>
+      <form onSubmit={e => { e.preventDefault(); apply(draftDates); }} className="mt-4">
+        <div className="tiv-fields">
+          <label className={tivField}><span>ตั้งแต่วันที่</span><input required type="date" value={draftDates.dateFrom} onChange={e => setDraftDates({ ...draftDates, dateFrom: e.target.value })} className={input} /></label>
+          <label className={tivField}><span>ถึงวันที่</span><input required type="date" min={draftDates.dateFrom} value={draftDates.dateTo} onChange={e => setDraftDates({ ...draftDates, dateTo: e.target.value })} className={input} /></label>
+          <label className={tivField}><span>ค้นหา Order / Serial / เกม / ลูกค้า</span><input value={query} onChange={e => setQuery(e.target.value)} className={input} /></label>
+        </div>
+        <div className="tiv-tools mt-4">
+          <button disabled={disabled || Boolean(form)} className={tivPrimary}>ใช้ตัวกรอง</button><button type="button" onClick={load} disabled={disabled || Boolean(form)} className={button}><RefreshCw size={16} aria-hidden />โหลดใหม่</button>
+          <button type="button" onClick={exportCsv} disabled={disabled || Boolean(form) || !ready || Boolean(error) || !data?.total} className={button}><Download size={16} aria-hidden />Export CSV</button>
+        </div>
+      </form><p className="tiv-hint">ตัวกรองที่ใช้: {dates.dateFrom} ถึง {dates.dateTo} (ค.ศ.) · เวลาไทย ไม่เกิน 93 วัน{serial ? ` · Serial ${serial}` : ""}{search ? ` · ${search}` : ""} · Export รวมทุกหน้าตามตัวกรอง</p>
     </section>
-    {error && <p role="alert" className="rounded-xl border border-ll-hairline p-4 text-sm">{error}</p>}{notice && <p role="status" className="text-sm">{notice}</p>}{loading && <p role="status" className="text-sm text-ll-ink-subtle">กำลังโหลด Multigamecard…</p>}
-    {!loading && !data && <button onClick={load} className={button}>ลองโหลดใหม่</button>}
-    {mode === "bot" && <p className="text-sm text-ll-ink-subtle">ยอดโอน Russia = ยอด USD จากคิว × เรท GoogleFinance จากชีท · แคชเรท 5 นาที · ยอดโอนและกำไรย้อนหลังเปลี่ยนตามเรทที่อ่านได้ · ไม่กระทบตัวหารต้นทุน</p>}
-    <section aria-label="สรุป Multigamecard" className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[["ออเดอร์ตามตัวกรอง", summary?.orders], ["ยอดโอน (THB)", summary?.sale], ["ต้นทุน (THB)", summary?.cost], ["กำไร (THB)", summary?.profit]].map(([label, v]) => <div key={label} className="min-w-0 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4"><p className="text-sm text-ll-ink-subtle">{label}</p><p className="mt-2 break-words text-2xl font-semibold tabular-nums">{loading ? "…" : label === "ออเดอร์ตามตัวกรอง" && v != null ? Number(v).toLocaleString("en-US") : money(v)}</p></div>)}</section>
-    {summary && (summary.missingSales > 0 || summary.missingCosts > 0) && <p role="status" className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm">ข้อมูลไม่ครบ: ยอดโอน {summary.missingSales} รายการ · ต้นทุน {summary.missingCosts} รายการ · ยอดรวมที่พึ่งข้อมูลนี้แสดง — ไม่แทนด้วยศูนย์</p>}
+    {error && <p role="alert" className="tiv-alert">{error}</p>}{notice && <p role="status" className="tiv-banner">{notice}</p>}{loading && <p role="status" className="tiv-muted">กำลังโหลด Multigamecard…</p>}
+    {!loading && !data && <div><button onClick={load} className={button}>ลองโหลดใหม่</button></div>}
+    {mode === "bot" && <p className="tiv-banner">ยอดโอน Russia = ยอด USD จากคิว × เรท GoogleFinance จากชีท · แคชเรท 5 นาที · ยอดโอนและกำไรย้อนหลังเปลี่ยนตามเรทที่อ่านได้ · ไม่กระทบตัวหารต้นทุน</p>}
+    <section aria-label="สรุป Multigamecard" className="tiv-kpis">{[["ออเดอร์ตามตัวกรอง", summary?.orders], ["ยอดโอน (THB)", summary?.sale], ["ต้นทุน (THB)", summary?.cost], ["กำไร (THB)", summary?.profit]].map(([label, v]) => <div key={label} className="tiv-kpi"><small>{label}</small><b className={!loading && v == null ? "mut" : ""}>{loading ? "…" : label === "ออเดอร์ตามตัวกรอง" && v != null ? Number(v).toLocaleString("en-US") : money(v)}</b></div>)}</section>
+    {summary && (summary.missingSales > 0 || summary.missingCosts > 0) && <p role="status" className="tiv-banner"><span className="tiv-warn">ข้อมูลไม่ครบ: ยอดโอน {summary.missingSales} รายการ · ต้นทุน {summary.missingCosts} รายการ · ยอดรวมที่พึ่งข้อมูลนี้แสดง — ไม่แทนด้วยศูนย์</span></p>}
     {mode === "bot" && ready && data.costRate && <>
-      <p className="text-sm text-ll-ink-subtle">ต้นทุน (THB) = ยอดแต้มออก ÷ {data.costRate.divisor} · ปัดทศนิยม 2 ตำแหน่งต่อออเดอร์ · ไม่ใช่เรท GoogleFinance</p>
+      <p className="tiv-muted">ต้นทุน (THB) = ยอดแต้มออก ÷ {data.costRate.divisor} · ปัดทศนิยม 2 ตำแหน่งต่อออเดอร์ · ไม่ใช่เรท GoogleFinance</p>
       {data.canManage && <CostRateForm key={data.costRate.version} rate={data.costRate} disabled={disabled} save={saveRate} editing={setRateEditing} />}
     </>}
-    <section className="min-w-0 space-y-3"><h2 className="text-xl font-semibold">ยอดบัตร {mode === "bot" ? "Bot" : "Manual"}</h2><p className="text-xs text-ll-ink-subtle">เลื่อนตารางซ้าย–ขวาเพื่อดูยอดทั้งหมด · กดดูประวัติเพื่อเลือก Serial</p><CardTable cards={cards} serial={serial} resetKey={mode} select={value => { if (form || disabled) return; generation.current++; setSerial(serial === value ? "" : value); setPage(1); }} />
-      <p className="text-xs leading-6 text-ll-ink-subtle">หน่วยบัตรเป็นแต้ม ไม่ใช่ USD · หมดแล้ว = 0 · เศษ = มากกว่า 0 แต่น้อยกว่า 50,000 · ปกติ = ตั้งแต่ 50,000 · ยอดบัตรรวมทั้งหมดไม่ขึ้นกับช่วงวันที่หรือคำค้นหา</p>
-      {mode === "bot" ? <p className="text-xs leading-6 text-ll-ink-subtle">Bot อ่านยอดล่าสุดจากพูลบัตรเดิม และแต้มที่ใช้จากหลักฐาน molGameCard ในออเดอร์ completed · ยอดเข้าแสดง — เพราะไม่มีประวัตินำเข้าที่ตรวจสอบได้ ไม่คำนวณย้อนเดา · คงเหลือหลังแต่ละ Order เป็นภาพยอดที่บอทอ่าน ณ ตอนนั้น ไม่รับประกันว่าจะต่อกันเมื่อหลายบอทใช้บัตรพร้อมกัน · ต้นทุน THB = ยอดแต้มออก ÷ ตัวหารที่บันทึก ถ้าไม่มีข้อมูลยอดออกจะแสดง — · ไม่เปลี่ยนข้อมูลหรือสั่งจ่ายที่ฐาน Bot</p> : <p className="text-xs leading-6 text-ll-ink-subtle">Manual บันทึกบัญชีเท่านั้น ไม่เติมเกมหรือโอนเงินจริง · ตอนเพิ่มบัตรกรอกยอดคงเหลือที่ยืนยันแล้วเป็นยอดยกมา จากนั้นบันทึกแต้มเข้า/ใช้แต้มตามจริง · ต้นทุนกรอกเป็น THB ไม่เดาอัตราแต้มต่อบาท · วันที่บันทึกเป็นเวลาปัจจุบัน และไม่แก้ทับประวัติเดิม</p>}
+    <section className="flex min-w-0 flex-col gap-3"><div className="tiv-sect-h"><h2>ยอดบัตร {mode === "bot" ? "Bot" : "Manual"}</h2><span>เลื่อนตารางซ้าย–ขวาเพื่อดูยอดทั้งหมด · กดดูประวัติเพื่อเลือก Serial</span></div><CardTable cards={cards} serial={serial} resetKey={mode} select={value => { if (form || disabled) return; generation.current++; setSerial(serial === value ? "" : value); setPage(1); }} />
+      <div className="tiv-foots"><span className="leading-6">หน่วยบัตรเป็นแต้ม ไม่ใช่ USD · หมดแล้ว = 0 · เศษ = มากกว่า 0 แต่น้อยกว่า 50,000 · ปกติ = ตั้งแต่ 50,000 · ยอดบัตรรวมทั้งหมดไม่ขึ้นกับช่วงวันที่หรือคำค้นหา</span>
+        {mode === "bot" ? <span className="leading-6">Bot อ่านยอดล่าสุดจากพูลบัตรเดิม และแต้มที่ใช้จากหลักฐาน molGameCard ในออเดอร์ completed · ยอดเข้าแสดง — เพราะไม่มีประวัตินำเข้าที่ตรวจสอบได้ ไม่คำนวณย้อนเดา · คงเหลือหลังแต่ละ Order เป็นภาพยอดที่บอทอ่าน ณ ตอนนั้น ไม่รับประกันว่าจะต่อกันเมื่อหลายบอทใช้บัตรพร้อมกัน · ต้นทุน THB = ยอดแต้มออก ÷ ตัวหารที่บันทึก ถ้าไม่มีข้อมูลยอดออกจะแสดง — · ไม่เปลี่ยนข้อมูลหรือสั่งจ่ายที่ฐาน Bot</span> : <span className="leading-6">Manual บันทึกบัญชีเท่านั้น ไม่เติมเกมหรือโอนเงินจริง · ตอนเพิ่มบัตรกรอกยอดคงเหลือที่ยืนยันแล้วเป็นยอดยกมา จากนั้นบันทึกแต้มเข้า/ใช้แต้มตามจริง · ต้นทุนกรอกเป็น THB ไม่เดาอัตราแต้มต่อบาท · วันที่บันทึกเป็นเวลาปัจจุบัน และไม่แก้ทับประวัติเดิม</span>}</div>
     </section>
-    {mode === "manual" && ready && data.canManage && <div className="flex flex-wrap gap-2">{[["card", "เพิ่มบัตร Manual"], ["deposit", "บันทึกแต้มเข้า"], ["use", "บันทึกใช้บัตร"]].map(([action, label]) => <button key={action} onClick={() => startForm(action)} disabled={disabled || Boolean(form) || (action !== "card" && !cards.length)} className={button}><Plus size={16} aria-hidden />{label}</button>)}</div>}
-    {form && <form onSubmit={save} className="space-y-4 rounded-xl border border-ll-hairline bg-ll-surface-1 p-5"><h2 className="text-lg font-semibold">{({ card: "เพิ่มบัตร Manual", deposit: "บันทึกแต้มเข้า", use: "บันทึกใช้บัตร" })[form.action]}</h2><p className="text-sm text-ll-ink-subtle">กรอกเฉพาะรายการที่เกิดขึ้นจริง ไม่รับ PIN หรือรหัสผ่าน ยอดนี้ไม่ส่งไปแก้พูล Bot</p>
-      <fieldset disabled={busy} className="grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {form.action === "card" ? <>{field("Serial", "serial", true)}{field("ผู้ใช้งานบัตร", "owner", true)}</> : <label className="min-w-0 text-sm">บัตร Manual<select required value={form.cardId} onChange={e => setForm({ ...form, cardId: e.target.value })} className={input}>{cards.map(c => <option key={c.id} value={c.id}>{c.serial} · {money(c.balance)} แต้ม</option>)}</select></label>}
+    {mode === "manual" && ready && data.canManage && <div className="tiv-tools">{[["card", "เพิ่มบัตร Manual"], ["deposit", "บันทึกแต้มเข้า"], ["use", "บันทึกใช้บัตร"]].map(([action, label]) => <button key={action} onClick={() => startForm(action)} disabled={disabled || Boolean(form) || (action !== "card" && !cards.length)} className={button}><Plus size={16} aria-hidden />{label}</button>)}</div>}
+    {form && <form onSubmit={save} className="tiv-card"><div className="tiv-card-h"><h2>{({ card: "เพิ่มบัตร Manual", deposit: "บันทึกแต้มเข้า", use: "บันทึกใช้บัตร" })[form.action]}</h2></div><p className="tiv-muted -mt-2 mb-4">กรอกเฉพาะรายการที่เกิดขึ้นจริง ไม่รับ PIN หรือรหัสผ่าน ยอดนี้ไม่ส่งไปแก้พูล Bot</p>
+      <fieldset disabled={busy} className="tiv-fields">
+        {form.action === "card" ? <>{field("Serial", "serial", true)}{field("ผู้ใช้งานบัตร", "owner", true)}</> : <label className={tivField}><span>บัตร Manual</span><select required value={form.cardId} onChange={e => setForm({ ...form, cardId: e.target.value })} className={input}>{cards.map(c => <option key={c.id} value={c.id}>{c.serial} · {money(c.balance)} แต้ม</option>)}</select></label>}
         {field(form.action === "card" ? "ยอดยกมา (แต้ม)" : "จำนวนแต้ม", "amount", true, "number")}
         {form.action === "use" && <>{field("Order ID", "orderId", true)}{field("ยอดโอน (THB)", "saleThb", false, "number")}{field("ต้นทุน (THB)", "costThb", false, "number")}{field("เกม", "game")}{field("แพ็ก", "pack")}{field("ลูกค้า", "customer")}{field("UID", "playerId")}{field("เลขธุรกรรม / หลักฐาน", "invoice")}{field("ผู้เติม", "operator")}</>}
         {field("หมายเหตุ / อ้างอิง", "note", true)}
-      </fieldset><div className="flex gap-2"><button disabled={busy} className={button}>ยืนยันบันทึก</button><button type="button" disabled={busy} onClick={() => setForm(null)} className={button}>ยกเลิก</button></div></form>}
-    {mode === "manual" && ready && !data.canManage && <p className="text-sm text-ll-ink-subtle">ดูประวัติได้ แต่ต้องมีสิทธิ์ Projectm Admin เพื่อเพิ่มรายการ Manual</p>}
-    <section className="min-w-0 space-y-3"><div className="flex flex-wrap items-end justify-between gap-2"><h2 className="text-xl font-semibold">ประวัติ {serial || (mode === "bot" ? "Bot" : "Manual")}</h2><p className="text-xs text-ll-ink-subtle">{ready ? `${data.total} รายการ` : "ยังโหลดตัวกรองนี้ไม่สำเร็จ"}{serial && <button disabled={disabled || Boolean(form)} onClick={() => { generation.current++; setSerial(""); setPage(1); }} className="ml-3 underline">ดูทุก Serial</button>}</p></div><Entries entries={ready ? data.entries : []} />
+      </fieldset><div className="tiv-tools mt-4"><button disabled={busy} className={tivPrimary}>ยืนยันบันทึก</button><button type="button" disabled={busy} onClick={() => setForm(null)} className={button}>ยกเลิก</button></div></form>}
+    {mode === "manual" && ready && !data.canManage && <p className="tiv-muted">ดูประวัติได้ แต่ต้องมีสิทธิ์ Projectm Admin เพื่อเพิ่มรายการ Manual</p>}
+    <section className="flex min-w-0 flex-col gap-3"><div className="tiv-sect-h"><h2>ประวัติ {serial || (mode === "bot" ? "Bot" : "Manual")}</h2><span>{ready ? `${data.total} รายการ` : "ยังโหลดตัวกรองนี้ไม่สำเร็จ"}{serial && <button disabled={disabled || Boolean(form)} onClick={() => { generation.current++; setSerial(""); setPage(1); }} className="tiv-lnk ml-3">ดูทุก Serial</button>}</span></div><Entries entries={ready ? data.entries : []} />
       <TablePagination page={data?.page || page} pageSize={data?.pageSize || pageSize} total={Number(data?.total || 0)} totalPages={Math.max(1, Math.ceil(Number(data?.total || 0) / (data?.pageSize || pageSize)))} observedAt={data?.pagination?.observedAt} loading={disabled || Boolean(form) || !ready} onPage={(nextPage) => { invalidate(); setPage(nextPage); }} onPageSize={(size) => { invalidate(); setPageSize(size); setPage(1); }} label="แบ่งหน้าประวัติ" />
-    </section><p className="text-xs text-ll-ink-subtle">กำไร = ยอดโอน − ต้นทุน · กำไร % = กำไร ÷ ยอดโอน × 100 · ยอดโอนศูนย์ไม่มีเปอร์เซ็นต์ · โหลดใหม่ทุก 30 วินาที หยุดระหว่างกรอก Manual</p>
-  </main>;
+    </section><div className="tiv-foots"><span>กำไร = ยอดโอน − ต้นทุน · กำไร % = กำไร ÷ ยอดโอน × 100 · ยอดโอนศูนย์ไม่มีเปอร์เซ็นต์ · โหลดใหม่ทุก 30 วินาที หยุดระหว่างกรอก Manual</span></div>
+  </TopupInventoryPage>;
 }

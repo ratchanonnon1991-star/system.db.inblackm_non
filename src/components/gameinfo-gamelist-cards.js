@@ -321,6 +321,45 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             <X size={20} />
           </button>
         </div>
+        {/* Above the filters: the tag and publisher lists run long enough to bury anything under them. */}
+        <nav aria-label="เครื่องมือ" className="mb-3 flex flex-col gap-1 border-b border-linear-hairline pb-3">
+          <h2 className="mx-2 mb-2 mt-0.5 text-[13px] font-extrabold text-linear-ink-muted">เครื่องมือ</h2>
+          <Link
+            href={`/gameinfo/${lang}?section=game-bot-auto${dataMode === "uid" ? "" : `&mode=${dataMode}`}`}
+            onClick={() => setSidebarOpen(false)}
+            className={navItemClass(botCatalogActive)}
+          >
+            <GitBranch size={18} aria-hidden="true" className={botCatalogActive ? "" : "text-[#D90005]"} /> Game Bot Auto
+          </Link>
+          <Link
+            href={`/gameinfo/${lang}/pack-price-compare${dataMode === "uid" ? "" : `?mode=${dataMode}`}`}
+            onClick={() => setSidebarOpen(false)}
+            className={navItemClass(priceComparisonActive)}
+          >
+            <ArrowLeftRight size={18} aria-hidden="true" className={priceComparisonActive ? "" : "text-[#D90005]"} /> เทียบราคาแพ็ค
+          </Link>
+          <Link
+            href={`/gameinfo/${lang}/russia-check`}
+            onClick={() => setSidebarOpen(false)}
+            className={navItemClass(false)}
+          >
+            <PackageSearch size={18} aria-hidden="true" className="text-[#D90005]" /> Russia Check
+          </Link>
+          {editable ? (
+            <>
+              <Link href={`/gameinfo/${lang}/topup-web`} className={navItemClass(false)}>
+                <Link2 size={18} aria-hidden="true" className="text-[#D90005]" /> เชื่อมเกมกับเว็บ TopUp
+              </Link>
+              <Link href={`/gameinfo/${lang}/sheet-import`} className={navItemClass(false)}>
+                <FileSpreadsheet size={18} aria-hidden="true" className="text-[#D90005]" /> นำเข้าจาก Google Sheet
+              </Link>
+              <span aria-hidden="true" className="mx-1 mb-1 mt-2.5 h-px bg-linear-hairline" />
+              <Link href={gameinfoListHref(lang, dataMode, true)} className={`${navItemClass(false)} text-linear-ink-muted`}>
+                <Settings size={18} aria-hidden="true" /> ตั้งค่าระบบ
+              </Link>
+            </>
+          ) : null}
+        </nav>
         <nav aria-label="ตัวกรองเกม" className="flex flex-col gap-1">
           <h2 className="mx-2 mb-2 mt-0.5 hidden text-[13px] font-extrabold text-linear-ink-muted lg:block">ตัวกรองเกม</h2>
           <button
@@ -434,43 +473,6 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
                 <span>Web OFF</span>
                 <span className={navCountClass(!botCatalogActive && status === "web-off" && !priceComparisonActive)}>{counts.webOff}</span>
               </button>
-            </>
-          ) : null}
-
-          <span className={sectionLabelClass}>เครื่องมือ</span>
-          <Link
-            href={`/gameinfo/${lang}?section=game-bot-auto${dataMode === "uid" ? "" : `&mode=${dataMode}`}`}
-            onClick={() => setSidebarOpen(false)}
-            className={navItemClass(botCatalogActive)}
-          >
-            <GitBranch size={18} aria-hidden="true" className={botCatalogActive ? "" : "text-[#D90005]"} /> Game Bot Auto
-          </Link>
-          <Link
-            href={`/gameinfo/${lang}/pack-price-compare${dataMode === "uid" ? "" : `?mode=${dataMode}`}`}
-            onClick={() => setSidebarOpen(false)}
-            className={navItemClass(priceComparisonActive)}
-          >
-            <ArrowLeftRight size={18} aria-hidden="true" className={priceComparisonActive ? "" : "text-[#D90005]"} /> เทียบราคาแพ็ค
-          </Link>
-          <Link
-            href={`/gameinfo/${lang}/russia-check`}
-            onClick={() => setSidebarOpen(false)}
-            className={navItemClass(false)}
-          >
-            <PackageSearch size={18} aria-hidden="true" className="text-[#D90005]" /> Russia Check
-          </Link>
-          {editable ? (
-            <>
-              <Link href={`/gameinfo/${lang}/topup-web`} className={navItemClass(false)}>
-                <Link2 size={18} aria-hidden="true" className="text-[#D90005]" /> เชื่อมเกมกับเว็บ TopUp
-              </Link>
-              <Link href={`/gameinfo/${lang}/sheet-import`} className={navItemClass(false)}>
-                <FileSpreadsheet size={18} aria-hidden="true" className="text-[#D90005]" /> นำเข้าจาก Google Sheet
-              </Link>
-              <span aria-hidden="true" className="mx-1 mb-1 mt-2.5 h-px bg-linear-hairline" />
-              <Link href={gameinfoListHref(lang, dataMode, true)} className={`${navItemClass(false)} text-linear-ink-muted`}>
-                <Settings size={18} aria-hidden="true" /> ตั้งค่าระบบ
-              </Link>
             </>
           ) : null}
         </nav>
