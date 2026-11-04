@@ -41,6 +41,9 @@ import {
   GameinfoPackColumnControls,
   useGameinfoPackColumnLayout,
 } from "./gameinfo-pack-column-layout";
+import GameinfoFold from "./gameinfo-fold";
+import GameinfoPackList from "./gameinfo-pack-list";
+import "./gameinfo-game-detail.css";
 
 // One game's game_list row, read-only (editing region/platform/server/etc.
 // happens on the list table or the pack editor, not here — see
@@ -60,8 +63,11 @@ const NO_COLUMNS = [];
 const StockContext = createContext({});
 const NO_STOCK = { accounts: [], byPack: {} };
 
-export default function GameinfoGameView({ row, currencies, computedColumns = NO_COLUMNS, costProfiles = [], formulaVariables = [], userId, dataMode = "uid", hiddenColumnKeys = [], editHref = null, stock = NO_STOCK, stockLinks = false, costRatesOther = null, columnOrder = null }) {
+export default function GameinfoGameView({ row, currencies, computedColumns = NO_COLUMNS, costProfiles = [], formulaVariables = [], userId, dataMode = "uid", hiddenColumnKeys = [], editHref = null, stock = NO_STOCK, stockLinks = false, costRatesOther = null, columnOrder = null, topupView = false }) {
   const [formulaMode, setFormulaMode] = useState("result");
+  // The list is the page; the full table stays one switch away for the
+  // columns, presets and formulas it carries.
+  const [packLayoutMode, setPackLayoutMode] = useState("list");
   const rateState = useGameinfoRates();
   // Same field set the pack editor's formulas can reference (see
   // gameinfo-formula-fields.js) — built from the game_list row, not the
@@ -134,65 +140,89 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
     if (column.id === "amountBeforeFee") return { ...column, label: `${chargeUnit} ที่กด` };
     return column.id === "amountChargedFee" ? { ...column, label: `${chargeUnit} รวม Fee` } : column;
   }) : columns);
+  // The list reads every column this view may see and that this game fills,
+  // in the admin's order; presets only shape the full table.
+  const listColumns = useMemo(
+    () => packLayout.orderedColumns.filter((column) => !emptyColumnIds.has(column.id)),
+    [packLayout.orderedColumns, emptyColumnIds]
+  );
+  const listContext = useMemo(
+    () => ({ costProfiles, formulaVariables, externalValues: rateState.externalValues }),
+    [costProfiles, formulaVariables, rateState.externalValues]
+  );
+  const packCount = activeCurrency ? countPacks(activeCurrency) : 0;
+  const packWallets = (row.channels?.main || []).join(", ");
+  const listMode = packLayoutMode === "list";
+  const costRates = costRatesOther ? (
+    <GameinfoCostRates
+      currencies={currencies}
+      costProfiles={costProfiles}
+      formulaVariables={formulaVariables}
+      externalValues={rateState.externalValues}
+      other={costRatesOther}
+      caption={!listMode}
+    />
+  ) : null;
 
   return (
-    <div className="flex flex-col gap-5">
+    <>
       <GameHero row={row} dataMode={dataMode} editHref={editHref} />
 
-      {/* The full warning opens only from this strip's button. */}
+      {/* The full warning opens only from this strip. */}
       {row.hasWarning ? (
-        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-[14px] bg-[#D90005] px-[18px] py-3.5 text-white shadow-[0_12px_24px_-16px_rgba(143,0,25,0.6)]">
-          <TriangleAlert size={22} strokeWidth={2.4} aria-hidden="true" className="shrink-0" />
-          <span className="text-[15px] font-extrabold">เกมนี้มีข้อควรระวัง อ่านก่อนทำรายการทุกครั้ง</span>
-          <GameinfoTutorialButton
-            gameId={row.id}
-            gameName={row.game}
-            editable={false}
-            hasData={row.hasWarning}
-            variant="warning"
-            dataMode={dataMode}
-            className="ml-auto h-9 rounded-full bg-white px-4 text-[13px] font-extrabold text-[#D90005] transition hover:bg-white/90"
-          >
-            อ่านข้อควรระวัง
-          </GameinfoTutorialButton>
-        </div>
+        <GameinfoTutorialButton
+          gameId={row.id}
+          gameName={row.game}
+          editable={false}
+          hasData={row.hasWarning}
+          variant="warning"
+          dataMode={dataMode}
+          className="gd-alert"
+        >
+          <span className="a-ic"><TriangleAlert size={18} strokeWidth={2.2} aria-hidden="true" /></span>
+          <span className="a-tx">
+            <b>เกมนี้มีข้อควรระวัง อ่านก่อนทำรายการทุกครั้ง</b>
+            <small>กดเพื่ออ่านและทำตามขั้นตอนก่อนทำรายการ</small>
+          </span>
+          <span className="go">อ่านข้อควรระวัง</span>
+        </GameinfoTutorialButton>
       ) : null}
 
-      <section aria-labelledby="pack-title" className="overflow-hidden rounded-2xl border border-linear-hairline bg-linear-surface-1 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
-        <div className="flex flex-col gap-4 px-5 pb-4 pt-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5">
-              <h2 id="pack-title" className="text-xl font-black text-linear-ink">แพ็คและราคา</h2>
-              <span className="text-[13px] text-linear-ink-tertiary">
-                {dataMode === "idpass" ? "ID-PASS" : "UID"} {row.game}
-                {activeCurrency ? ` — ${activeCurrency.name || "(ไม่มีชื่อสกุลเงิน)"}` : ""}
-              </span>
-              {row.sourceNote ? <span className="text-[13px] text-linear-ink-tertiary">แหล่งที่มา: {row.sourceNote}</span> : null}
+      <GameinfoFold
+        id="price"
+        icon="layers"
+        tone="red"
+        title="แพ็คและราคา"
+        subtitle={[`${packCount} แพ็ค`, packWallets, row.sourceNote ? `แหล่งที่มา: ${row.sourceNote}` : ""].filter(Boolean).join(" · ")}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {currencyList.length > 1 ? (
+              <div role="group" aria-label="สกุลที่เติม" className="gd-seg red">
+                {currencyList.map((currency) => (
+                  <button
+                    key={currency.id}
+                    type="button"
+                    aria-pressed={currency.id === activeCurrency?.id}
+                    onClick={() => setCurrencyId(currency.id)}
+                  >
+                    {currency.image ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={currency.image} alt="" className="h-5 w-5 rounded object-cover" />
+                    ) : null}
+                    {currency.name || "(ไม่มีชื่อสกุลเงิน)"}
+                    <span className="text-[11px] opacity-80">{countPacks(currency)}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <div role="group" aria-label="รูปแบบการแสดงแพ็ค" className="gd-seg">
+              <button type="button" aria-pressed={listMode} onClick={() => setPackLayoutMode("list")}>รายการ</button>
+              <button type="button" aria-pressed={!listMode} onClick={() => setPackLayoutMode("table")}>ตารางเต็ม</button>
             </div>
+          </div>
+          {listMode ? null : (
             <div className="flex flex-wrap items-center gap-2">
-              {currencyList.length > 1 ? (
-                <div role="group" aria-label="สกุลที่เติม" className="flex flex-wrap gap-1 rounded-full bg-linear-surface-3 p-1">
-                  {currencyList.map((currency) => {
-                    const active = currency.id === activeCurrency?.id;
-                    return (
-                      <button
-                        key={currency.id}
-                        type="button"
-                        aria-pressed={active}
-                        onClick={() => setCurrencyId(currency.id)}
-                        className={`flex h-9 items-center gap-1.5 rounded-full px-4 text-[13px] font-extrabold transition ${active ? "bg-[#D90005] text-white" : "text-linear-ink-muted hover:bg-linear-surface-1"}`}
-                      >
-                        {currency.image ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={currency.image} alt="" className="h-5 w-5 rounded object-cover" />
-                        ) : null}
-                        {currency.name || "(ไม่มีชื่อสกุลเงิน)"}
-                        <span className="text-[11px] opacity-80">{countPacks(currency)}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : null}
               <GameinfoFormulaModeToggle
                 mode={formulaMode}
                 onChange={setFormulaMode}
@@ -219,24 +249,32 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
                 onSavePreset={packLayout.savePreset}
               />
             </div>
-          </div>
-          <ChannelSummary channels={row.channels} botManual={row.botManual} />
-          <StockSummary accounts={stock.accounts} links={stockLinks} />
-          {costRatesOther ? (
-            <GameinfoCostRates
-              currencies={currencies}
-              costProfiles={costProfiles}
-              formulaVariables={formulaVariables}
-              externalValues={rateState.externalValues}
-              other={costRatesOther}
-            />
-          ) : null}
+          )}
         </div>
+        {listMode ? null : <ChannelSummary channels={row.channels} botManual={row.botManual} />}
+        <StockSummary accounts={stock.accounts} links={stockLinks} />
         {!activeCurrency ? (
-          <p className="border-t border-linear-hairline p-8 text-center text-linear-ink-tertiary">
-            ยังไม่มีข้อมูลแพ็กสำหรับเกมนี้
-          </p>
+          <p className="gd-empty">ยังไม่มีข้อมูลแพ็กสำหรับเกมนี้</p>
+        ) : listMode ? (
+          <GameinfoPackList
+            key={activeCurrency.id}
+            currency={activeCurrency}
+            columns={listColumns}
+            game={formulaGame}
+            context={listContext}
+            topupView={topupView}
+            chargeUnit={chargeUnit}
+            stock={stock.byPack}
+            beforeList={costRates ? (
+              <GameinfoFold sub id="rates" title="เรทต้นทุนที่ใช้" subtitle="เรทที่ใช้คิดต้นทุนของแพ็คในเกมนี้" defaultClosed>
+                {costRates}
+              </GameinfoFold>
+            ) : null}
+          />
         ) : (
+          <>
+          {costRates}
+          <div className="overflow-hidden rounded-2xl border border-[color:var(--gd-line2)] bg-linear-surface-1">
           <StockContext.Provider value={stock.byPack}>
           <PackCurrency
             key={activeCurrency.id}
@@ -258,9 +296,11 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
             }
           />
           </StockContext.Provider>
+          </div>
+          </>
         )}
-      </section>
-    </div>
+      </GameinfoFold>
+    </>
   );
 }
 
@@ -269,86 +309,51 @@ function countPacks(currency) {
 }
 
 const HERO_STATUS = {
-  online: { label: "พร้อมใช้งาน", className: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-400", dot: "bg-emerald-500" },
-  partial: { label: "เปิดบางแพ็ค", className: "bg-amber-500/15 text-amber-800 dark:text-amber-400", dot: "bg-amber-500" },
-  offline: { label: "ปิดใช้งาน", className: "bg-linear-surface-3 text-linear-ink-muted", dot: "bg-linear-ink-tertiary" },
+  online: { label: "พร้อมใช้งาน", tone: "green" },
+  partial: { label: "เปิดบางแพ็ค", tone: "amber" },
+  offline: { label: "ปิดใช้งาน", tone: "" },
 };
 
 // Image (or initials), name with region and the status badges, and the
 // game's own links — what a topup person checks before anything else.
 function GameHero({ row, dataMode, editHref }) {
   const status = HERO_STATUS[row.serviceStatus] || HERO_STATUS.online;
-  const meta = [`ID: ${row.id}`, row.orderPosition ? `ลำดับ ${row.orderPosition}` : null, row.platform, row.server ? `Server ${row.server}` : null]
+  const meta = [`ID ${row.id}`, row.orderPosition ? `ลำดับ ${row.orderPosition}` : null, row.platform, row.server ? `Server ${row.server}` : null, ...(row.tags || []), ...(row.publishers || [])]
     .filter(Boolean)
     .join(" · ");
   return (
-    <section aria-labelledby="game-title" className="flex flex-wrap items-center gap-6 rounded-2xl border border-linear-hairline bg-linear-surface-1 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.08)] sm:p-6">
-      <div className={`h-24 w-24 shrink-0 overflow-hidden rounded-[20px] sm:h-28 sm:w-28 ${row.serviceStatus === "offline" ? "opacity-55" : ""}`}>
+    <section aria-labelledby="game-title" className="gd-card gd-hero">
+      <div className={`gd-cover${row.serviceStatus === "offline" ? " off" : ""}`} style={row.image ? undefined : { background: gameinfoGameColor(row.id) }}>
         {row.image ? (
           <GameinfoImagePreview src={row.image} alt="" wrapperClassName="block h-full w-full">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={row.image} alt="" className="h-full w-full object-cover" />
           </GameinfoImagePreview>
         ) : (
-          <span
-            aria-hidden="true"
-            className="flex h-full w-full items-center justify-center text-[34px] font-black tracking-[0.02em] text-white"
-            style={{ background: gameinfoGameColor(row.id) }}
-          >
-            {gameinfoGameInitials(row.game)}
-          </span>
+          <span aria-hidden="true">{gameinfoGameInitials(row.game)}</span>
         )}
       </div>
-      <div className="flex min-w-0 flex-[1_1_380px] flex-col gap-2.5">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <h1 id="game-title" className="text-[26px] font-black uppercase leading-tight tracking-[-0.01em] text-linear-ink sm:text-[34px]">
-            {row.game}
-          </h1>
-          {row.region ? (
-            <span className="rounded-md bg-[#18181B] px-2.5 py-0.5 text-xs font-black tracking-[0.1em] text-white dark:bg-white dark:text-[#18181B]">
-              {row.region}
-            </span>
-          ) : null}
+      <div className="gd-hero-main">
+        <div className="gd-title">
+          <h1 id="game-title">{row.game}</h1>
+          {row.region ? <span className="gd-pill dark">{row.region}</span> : null}
           {row.priority ? <GameinfoPriorityStars value={row.priority} /> : null}
         </div>
-        <span className="font-mono text-[13px] text-linear-ink-tertiary">{meta}</span>
-        <div className="flex flex-wrap gap-2">
-          <span
-            className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[13px] font-bold ${status.className}`}
-            title={row.serviceStatus === "partial" ? `ปิดอยู่ ${row.packDisabledCount} แพ็ค` : undefined}
-          >
-            <span aria-hidden="true" className={`h-2 w-2 rounded-full ${status.dot}`} />
-            {status.label}
+        <div className="gd-meta">
+          <span className={`gd-pill ${status.tone}`} title={row.serviceStatus === "partial" ? `ปิดอยู่ ${row.packDisabledCount} แพ็ค` : undefined}>
+            <i className="d" aria-hidden="true" />{status.label}
           </span>
-          {row.reportCount > 0 ? (
-            <span className="rounded-full bg-[#D90005] px-2.5 py-1 text-[13px] font-bold text-white">
-              ต้องตรวจสอบ {row.reportCount} รายการ
-            </span>
-          ) : null}
-          <span className="rounded-full bg-[#18181B] px-2.5 py-1 text-[13px] font-extrabold text-white dark:bg-white dark:text-[#18181B]">
-            {dataMode === "idpass" ? "ID-PASS" : "UID"}
-          </span>
-          <span className={`rounded-full px-2.5 py-1 text-[13px] font-bold ${isGameinfoBotAuto(row.botManual) ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-400" : "bg-linear-surface-3 text-linear-ink-muted"}`}>
-            {row.botManual || "Manual"}
-          </span>
-          {row.web ? <GameinfoWebBadge web={row.web} /> : null}
-          <span className={`rounded-full px-2.5 py-1 text-[13px] font-bold ${row.vpn === "YES" ? "bg-amber-500/15 text-amber-800 dark:text-amber-400" : "bg-linear-surface-3 text-linear-ink-muted"}`}>
-            {row.vpn === "YES" ? "ใช้ VPN" : "NO VPN"}
-          </span>
+          {row.reportCount > 0 ? <span className="gd-pill red">ต้องตรวจสอบ {row.reportCount} รายการ</span> : null}
+          <span>{meta}</span>
         </div>
-        {(row.tags || []).length || (row.publishers || []).length ? (
-          <div className="flex flex-wrap items-center gap-1.5">
-            {(row.publishers || []).map((publisher) => (
-              <span key={`p-${publisher}`} className="rounded-md border border-linear-hairline px-2 py-0.5 text-xs font-semibold text-linear-ink-muted">{publisher}</span>
-            ))}
-            {(row.tags || []).map((tag) => (
-              <span key={`t-${tag}`} className="rounded-md bg-linear-surface-3 px-2 py-0.5 text-xs text-linear-ink-muted">{tag}</span>
-            ))}
-          </div>
-        ) : null}
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <GameinfoGameLinkButtons links={row.links || []} />
+      <div className="gd-tags">
+        <span className="gd-pill dark">{dataMode === "idpass" ? "ID-PASS" : "UID"}</span>
+        <span className={`gd-pill ${isGameinfoBotAuto(row.botManual) ? "green" : ""}`}>{row.botManual || "Manual"}</span>
+        {row.web ? <GameinfoWebBadge web={row.web} size="sm" /> : null}
+        <span className={`gd-pill ${row.vpn === "YES" ? "amber" : ""}`}>{row.vpn === "YES" ? "ใช้ VPN" : "NO VPN"}</span>
+      </div>
+      <div className="gd-hero-act">
         {/* Always view-only here regardless of role — editing the
             tutorial happens on the manage page. */}
         <GameinfoDetailsButton
@@ -358,19 +363,20 @@ function GameHero({ row, dataMode, editHref }) {
           hasTutorial={row.hasTutorial}
           hasVpnNote={row.hasVpnNote}
           dataMode={dataMode}
-          className="flex h-11 items-center gap-2 rounded-xl border border-linear-hairline bg-linear-surface-1 px-4 text-sm font-bold text-linear-ink transition hover:bg-linear-surface-2"
+          className="gd-btn red"
         >
-          <BookOpen size={17} aria-hidden="true" /> วิธีเติม / ข้อมูลเกม
+          <BookOpen size={15} aria-hidden="true" /> วิธีเติม / ข้อมูลเกม
         </GameinfoDetailsButton>
+        <GameinfoGameLinkButtons links={row.links || []} className="gd-btn" emptyClassName="gd-note" />
         {editHref ? (
           <Link
             href={editHref}
             // Same game, so it replaces this page in the history (see the
             // manage page's ดูหน้าผู้ใช้): back from the editor is the list.
             replace
-            className="flex h-11 items-center gap-2 rounded-xl bg-[#D90005] px-[18px] text-sm font-extrabold text-white transition hover:bg-[#B80004]"
+            className="gd-btn"
           >
-            <Pencil size={17} strokeWidth={2.4} aria-hidden="true" /> แก้ไขข้อมูล
+            <Pencil size={15} aria-hidden="true" /> แก้ไขข้อมูล
           </Link>
         ) : null}
       </div>

@@ -15,7 +15,7 @@ function dateText(value) {
 
 // What a game's packs are costed at, wallet by wallet, the way the source
 // sheet lays its rates out. Read-only; rates are edited under ตัวแปรผสม.
-export default function GameinfoCostRates({ currencies, costProfiles, formulaVariables, externalValues, other, className = "" }) {
+export default function GameinfoCostRates({ currencies, costProfiles, formulaVariables, externalValues, other, className = "", caption = true }) {
   const rows = useMemo(
     () => gameinfoCostRateRows(currencies, costProfiles, { formulaVariables, externalValues, other }),
     [currencies, costProfiles, formulaVariables, externalValues, other]
@@ -24,7 +24,7 @@ export default function GameinfoCostRates({ currencies, costProfiles, formulaVar
   return (
     <div className={`overflow-x-auto rounded-xl border border-linear-hairline bg-linear-surface-1 ${className}`}>
       <table className="w-full min-w-[520px] text-left text-[13px]">
-        <caption className="px-3 pt-2.5 pb-1 text-left text-sm font-extrabold text-linear-ink">เรทต้นทุน</caption>
+        <caption className={caption ? "px-3 pt-2.5 pb-1 text-left text-sm font-extrabold text-linear-ink" : "sr-only"}>เรทต้นทุน</caption>
         <thead className="text-xs text-linear-ink-tertiary">
           <tr>
             <th scope="col" className="px-3 py-1.5 font-semibold">ช่องทาง</th>

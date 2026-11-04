@@ -47,6 +47,7 @@ import {
 } from "@/server/gameinfo-gamelist-tags";
 import { listGamelistReports } from "@/server/gameinfo-gamelist-reports";
 import GameinfoReportPanel from "@/components/gameinfo-report-panel";
+import GameinfoFold from "@/components/gameinfo-fold";
 import GameinfoPackEditor from "@/components/gameinfo-pack-editor";
 import { buildPackSuggestions } from "@/lib/gameinfo-suggestions";
 import { hasPermission } from "@/lib/permissions";
@@ -361,20 +362,18 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
     );
   }
 
+  const openSalesChannels = salesChannels.filter((channel) => channel.status === "open").length;
+  const openReports = reports.filter((report) => report.status === "open").length;
   return (
-    <>
-    {/* Rendered here, not in the layout: a layout is not re-rendered on a
-        client-side navigation, so its bar kept showing the view the first
-        page was opened in. */}
-    <GameinfoViewSwitch savedView={view} isAdmin={editableRole} />
-    <div className="mx-auto max-w-[1400px] px-4 pb-16 pt-6 sm:px-7">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <GameinfoBackLink
-          className="flex h-10 items-center gap-1.5 rounded-full border border-linear-hairline bg-linear-surface-1 px-4 text-[13px] font-bold text-linear-ink transition hover:bg-linear-surface-2"
-          href={listHref}
-        />
-        <GameinfoDatasetToggle basePath={gameinfoGameHref(lang, row.id, "uid", false)} />
-      </div>
+    // One column of folding cards (gameinfo-game-detail.css, loaded by the view).
+    <div className="gd min-h-[calc(100vh-4rem)]">
+    <div className="gd-wrap">
+      {/* Rendered here, not in the layout: a layout is not re-rendered on a
+          client-side navigation, so its bar kept showing the view the first
+          page was opened in. */}
+      <GameinfoViewSwitch savedView={view} isAdmin={editableRole} backHref={listHref}>
+        <GameinfoDatasetToggle variant="seg" basePath={gameinfoGameHref(lang, row.id, "uid", false)} />
+      </GameinfoViewSwitch>
       <GameinfoGameView
         key={dataMode}
         row={row}
@@ -390,20 +389,43 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         stockLinks={hasPermission(user, "stock.access")}
         costRatesOther={costRatesOther}
         columnOrder={columnOrder}
+        topupView={topupView}
       />
-      <div className="mt-5">
+      <GameinfoFold
+        id="channels"
+        icon="store"
+        tone="green"
+        title={topupView ? "ช่องทางขาย" : "ช่องทางขายและกำไร"}
+        subtitle={salesChannels.length ? `${openSalesChannels} ช่องทางเปิดขายแล้ว` : "ยังไม่มีข้อมูลช่องทางขาย"}
+      >
         <GameinfoSalesChannelCards channels={salesChannels} showMargin={!topupView} />
-      </div>
-      <div className="mt-5">
+      </GameinfoFold>
+      <GameinfoFold
+        id="test"
+        icon="key"
+        tone="violet"
+        title="บัญชีทดสอบ (TESTID)"
+        subtitle={testAccounts.length ? `${testAccounts.length} บัญชี` : "ยังไม่มีบัญชีทดสอบ"}
+      >
         <GameinfoTestAccountsCard
+          bare
           gameId={row.id}
           accounts={editableRole ? testAccounts : testAccounts.map(maskGamelistTestAccount)}
           canReveal={editableRole}
+          addHref={editableRole ? `${manageHref}#s-test` : null}
         />
-      </div>
-      <GameinfoReportPanel gameId={row.id} initialReports={reports} canManage={editableRole} canReport={canReport} />
+      </GameinfoFold>
+      <GameinfoFold
+        id="reports"
+        icon="alert"
+        tone="amber"
+        title="รายงานปัญหา"
+        subtitle={openReports ? `ต้องตรวจสอบ ${openReports} รายการ` : "ไม่มีเรื่องที่ต้องตรวจสอบ"}
+      >
+        <GameinfoReportPanel bare gameId={row.id} initialReports={reports} canManage={editableRole} canReport={canReport} />
+      </GameinfoFold>
     </div>
-    </>
+    </div>
   );
 }
 

@@ -175,19 +175,17 @@ export function GameinfoGameLinksButton({
 const OLD_DEFAULT_LINK_NAME = "เว็บเติมเกม";
 const DEFAULT_LINK_NAME = "ข้อมูลเติมเกมส์";
 
-export function GameinfoGameLinkButtons({ links = [] }) {
+export function GameinfoGameLinkButtons({
+  links = [],
+  className = "inline-flex h-11 items-center gap-2 rounded-xl border border-linear-hairline bg-linear-surface-1 px-4 text-sm font-bold text-linear-ink transition hover:bg-linear-surface-2",
+  emptyClassName = "inline-block text-[13px] text-linear-ink-tertiary",
+}) {
   if (links.length === 0) {
-    return <span className="inline-block text-[13px] text-linear-ink-tertiary">ยังไม่มีลิงก์ข้อมูลเติมเกมส์</span>;
+    return <span className={emptyClassName}>ยังไม่มีลิงก์ข้อมูลเติมเกมส์</span>;
   }
   return links.map((link) => (
-    <a
-      key={link.id}
-      href={link.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-flex h-11 items-center gap-2 rounded-xl border border-linear-hairline bg-linear-surface-1 px-4 text-sm font-bold text-linear-ink transition hover:bg-linear-surface-2"
-    >
-      <ExternalLink size={17} aria-hidden="true" /> {link.name === OLD_DEFAULT_LINK_NAME ? DEFAULT_LINK_NAME : link.name}
+    <a key={link.id} href={link.url} target="_blank" rel="noopener noreferrer" className={className}>
+      <ExternalLink size={15} aria-hidden="true" /> {link.name === OLD_DEFAULT_LINK_NAME ? DEFAULT_LINK_NAME : link.name}
     </a>
   ));
 }

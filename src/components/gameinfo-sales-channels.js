@@ -4,6 +4,7 @@ import { useState } from "react";
 import { CheckCircle2, Save, Store } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
+import { gameinfoMarginTone } from "@/lib/gameinfo-pack-list";
 import {
   GAMEINFO_MARKET_RESULTS,
   GAMEINFO_SALES_CHANNELS,
@@ -26,44 +27,33 @@ function marginText(margin) {
 }
 
 /** The game page's cards. Margins only in the Product view. */
+// The game page's folding card carries the title; these are its rows, in the
+// page's own look (gameinfo-game-detail.css).
+const PILL_TONE = { ok: "green", info: "blue", warn: "amber", bad: "red", muted: "" };
+
 export function GameinfoSalesChannelCards({ channels, showMargin }) {
+  if (channels.length === 0) return <p className="gd-note">ยังไม่มีข้อมูลช่องทางขาย</p>;
   return (
-    <section aria-labelledby="sales-title" className="rounded-2xl border border-linear-hairline bg-linear-surface-1 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
-      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 id="sales-title" className="flex items-center gap-2 text-xl font-black text-linear-ink">
-          <Store size={19} aria-hidden="true" /> {showMargin ? "ช่องทางขายและ Margin" : "ช่องทางขาย"}
-        </h2>
-        <span className="text-[13px] text-linear-ink-tertiary">สถานะขายและผลเทียบราคาตลาดของแต่ละช่องทาง</span>
-      </div>
-      {channels.length === 0 ? (
-        <p className="text-sm text-linear-ink-tertiary">ยังไม่มีข้อมูลช่องทางขาย</p>
-      ) : (
-        <ul className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(200px,1fr))]">
-          {channels.map((row) => {
-            const status = gameinfoSalesStatus(row.status);
-            const market = gameinfoMarketResult(row.market);
-            return (
-              <li key={row.channel} className="flex flex-col gap-2.5 rounded-xl border border-linear-hairline p-3.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[15px] font-black text-linear-ink">{LABEL[row.channel]}</span>
-                  {status ? <span className={`rounded-md px-2 py-0.5 text-xs font-extrabold ${TONE[status.tone]}`}>{status.label}</span> : null}
-                </div>
-                {showMargin ? (
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-xs text-linear-ink-tertiary">Margin</span>
-                    <span className={`text-[22px] font-black ${row.margin == null ? "text-linear-ink-tertiary" : "text-linear-ink"}`}>{marginText(row.margin)}</span>
-                  </div>
-                ) : null}
-                {market ? (
-                  <span className={`self-start rounded-md px-2 py-1 text-xs font-bold ${TONE[market.tone]}`}>ราคาตลาด: {market.label}</span>
-                ) : null}
-                {row.note ? <span className="text-xs text-linear-ink-muted">{row.note}</span> : null}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </section>
+    <ul className="gd-chan m-0 list-none p-0">
+      {channels.map((row) => {
+        const status = gameinfoSalesStatus(row.status);
+        const market = gameinfoMarketResult(row.market);
+        const margin = row.margin == null ? null : Number(row.margin);
+        return (
+          <li key={row.channel} className="gd-ch">
+            <div className="gd-chl">
+              <b title={LABEL[row.channel]}>{LABEL[row.channel]}</b>
+              <p className={market ? PILL_TONE[market.tone] : ""}>{market ? `ราคาตลาด: ${market.label}` : "ไม่เทียบราคาตลาด"}</p>
+              {row.note ? <p>{row.note}</p> : null}
+            </div>
+            {showMargin ? (
+              <span className={`gd-chm ${margin === null ? "na" : gameinfoMarginTone(margin)}`} title="Margin">{marginText(row.margin)}</span>
+            ) : null}
+            {status ? <span className={`gd-pill ${PILL_TONE[status.tone]}`}>{status.label}</span> : null}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
