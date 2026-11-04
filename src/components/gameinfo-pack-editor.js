@@ -1242,19 +1242,22 @@ export default function GameinfoPackEditor({
           <Languages size={14} className="text-linear-primary" />
           ภาษาชื่อ Pack
         </div>
-        <select
-          value={activeLanguageId}
-          onChange={(event) => setActiveLanguageId(event.target.value)}
-          className="h-9 min-w-44 rounded-md border border-linear-hairline-strong bg-linear-surface-1 px-2 text-xs text-linear-ink outline-none focus:border-linear-primary"
-          aria-label="เลือกภาษาของชื่อ Pack"
-        >
-          <option value="">ชื่อหลัก</option>
-          {packLanguages.map((language) => (
-            <option key={language.id} value={String(language.id)}>
-              {language.name}
-            </option>
-          ))}
-        </select>
+        <span className="relative shrink-0">
+          <select
+            value={activeLanguageId}
+            onChange={(event) => setActiveLanguageId(event.target.value)}
+            className="h-9 min-w-44 cursor-pointer appearance-none rounded-md border border-linear-hairline-strong bg-linear-surface-1 pl-3 pr-9 text-xs text-linear-ink outline-none focus:border-linear-primary"
+            aria-label="เลือกภาษาของชื่อ Pack"
+          >
+            <option value="">ชื่อหลัก</option>
+            {packLanguages.map((language) => (
+              <option key={language.id} value={String(language.id)}>
+                {language.name}
+              </option>
+            ))}
+          </select>
+          <ChevronDown size={15} aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-linear-ink-muted" />
+        </span>
         {addingLanguage ? (
           <form onSubmit={addPackLanguage} className="flex flex-wrap items-center gap-2">
             <input
@@ -1608,22 +1611,25 @@ function MovePacksBar({ count, currencies, onMove }) {
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-linear-hairline bg-linear-surface-1 p-2.5 text-[13px]">
       <span className="font-bold text-linear-ink">ย้าย {count} แพ็คที่เลือกไปหมวด</span>
-      <select
-        aria-label="หมวดที่จะย้ายไป"
-        value={target}
-        onChange={(event) => setTarget(event.target.value)}
-        className="h-9 min-w-48 rounded-[10px] border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm text-linear-ink outline-none focus:border-[#D90005]"
-      >
-        <option value="">เลือกหมวด…</option>
-        {currencies.map((currency, cIdx) => (
-          <optgroup key={currency.id} label={several ? currency.name || `สกุลที่ ${cIdx + 1}` : "หมวดหมู่"}>
-            {currency.categories.map((category) => (
-              <option key={category.id} value={category.id}>{category.name || "(ไม่มีชื่อหมวดหมู่)"}</option>
-            ))}
-            <option value={`new:${cIdx}`}>+ หมวดใหม่ (ตั้งชื่อทีหลัง)</option>
-          </optgroup>
-        ))}
-      </select>
+      <span className="relative">
+        <select
+          aria-label="หมวดที่จะย้ายไป"
+          value={target}
+          onChange={(event) => setTarget(event.target.value)}
+          className="h-9 min-w-48 cursor-pointer appearance-none rounded-[10px] border border-linear-hairline-strong bg-linear-surface-1 pl-3.5 pr-10 text-sm text-linear-ink outline-none focus:border-[#D90005]"
+        >
+          <option value="">เลือกหมวด…</option>
+          {currencies.map((currency, cIdx) => (
+            <optgroup key={currency.id} label={several ? currency.name || `สกุลที่ ${cIdx + 1}` : "หมวดหมู่"}>
+              {currency.categories.map((category) => (
+                <option key={category.id} value={category.id}>{category.name || "(ไม่มีชื่อหมวดหมู่)"}</option>
+              ))}
+              <option value={`new:${cIdx}`}>+ หมวดใหม่ (ตั้งชื่อทีหลัง)</option>
+            </optgroup>
+          ))}
+        </select>
+        <ChevronDown size={16} aria-hidden="true" className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-linear-ink-muted" />
+      </span>
       <button
         type="button"
         disabled={!target}
