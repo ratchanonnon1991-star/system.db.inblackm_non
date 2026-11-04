@@ -85,6 +85,9 @@ export function gameinfoColumnIsSellingPrice(column) {
 // source sheet brought in.
 export const GAMEINFO_LIST_COLUMN_VIEWS = ["product", "topup"];
 export const GAMEINFO_LIST_COLUMN_MAX = 8;
+// Unset, only the first few added columns: a game with many would otherwise
+// push the figures off the row.
+export const GAMEINFO_LIST_COLUMN_DEFAULT = 3;
 
 /** Up to GAMEINFO_LIST_COLUMN_MAX distinct column keys, or null for "use the default". */
 export function sanitizeGameinfoListColumnKeys(keys) {
@@ -95,10 +98,18 @@ export function sanitizeGameinfoListColumnKeys(keys) {
 
 export const isGameinfoUserAddedColumnKey = (key) => /^col_/.test(String(key || ""));
 
+/** The default row columns from column keys in their order: the first added ones. */
+export function gameinfoDefaultListColumnKeys(keys) {
+  return (keys || []).filter(isGameinfoUserAddedColumnKey).slice(0, GAMEINFO_LIST_COLUMN_DEFAULT);
+}
+
 /** The computed columns a view's rows show, in the chosen order (or the default). */
 export function gameinfoListRowColumns(columns, keys = null) {
   const computed = (columns || []).filter((column) => column.kind === "computed" && column.computed?.key);
-  if (!Array.isArray(keys)) return computed.filter((column) => isGameinfoUserAddedColumnKey(column.computed.key)).slice(0, GAMEINFO_LIST_COLUMN_MAX);
+  if (!Array.isArray(keys)) {
+    const defaults = new Set(gameinfoDefaultListColumnKeys(computed.map((column) => column.computed.key)));
+    return computed.filter((column) => defaults.has(column.computed.key));
+  }
   return keys.map((key) => computed.find((column) => column.computed.key === key)).filter(Boolean);
 }
 
