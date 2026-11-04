@@ -1,11 +1,10 @@
 "use client";
 import { createInventoryPageSession } from "@/lib/inventory-page-session";
 import { TablePagination } from "@/components/table-pagination";
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Download, Radio, RefreshCw } from "lucide-react";
-import { apiJson } from "@/lib/api-json";
-import { topupInventoryPath } from "@/lib/topup-inventory";
+import { Download, Radio, RefreshCw } from "lucide-react";
+import TopupInventoryPage from "@/components/topup-inventory-page";
+import { tivButton as button, tivCard, tivCheck, tivField, tivInput as input, tivPrimary, tivTable, tivTableBox } from "@/lib/topup-inventory-ui";
 import { codaQuickDates } from "@/lib/usdcodashop-overview";
 import { DONSHOP_CHECK_DEFAULTS, DONSHOP_CHECK_KINDS, DONSHOP_LATE_MINUTES, DONSHOP_REFERENCE_RATE, DONSHOP_STATUSES, dsCheckSettings, dsStatusLabel, dsSum, dsVisibleAlerts } from "@/lib/donshop-inventory";
 const endpoint = "/api/projectm/donshop";
@@ -13,23 +12,21 @@ const endpoint = "/api/projectm/donshop";
 const LIVE_MS = 30_000;
 // Check settings live in this browser only; nothing about the checks is written to any database.
 const SETTINGS_KEY = "donshop-check-settings";
-const button = "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-ll-hairline-strong bg-ll-surface-1 px-4 text-sm text-ll-ink hover:bg-ll-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ll-primary disabled:opacity-50";
-const input = "min-h-11 w-full min-w-0 rounded-lg border border-ll-hairline-strong bg-ll-surface-1 px-3 text-sm text-ll-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ll-primary";
 const money = (v) => v == null ? "—" : Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const when = (v) => v ? new Date(v).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "short", timeStyle: "short" }) : "ไม่ระบุเวลา";
 const statusText = (statuses) => Object.entries(statuses).map(([key, n]) => `${dsStatusLabel(key)}${n > 1 ? ` ×${n}` : ""}`).join(" · ");
 function WalletCard({ data }) {
-  return <article className="rounded-xl border border-ll-hairline bg-ll-surface-1 p-5">
-    <h2 className="font-semibold">ยอด Donshop หลังออเดอร์สำเร็จล่าสุด</h2>
-    <p className="mt-3 text-3xl font-semibold tabular-nums">{money(data.balance)} IDR</p>
-    <p className="mt-2 text-xs text-ll-ink-subtle">{data.balance == null ? "ยังไม่มีออเดอร์สำเร็จที่บันทึกยอดก่อนตัด ไม่ใช่ยอดศูนย์" : `คำนวณเมื่อ ${when(data.balanceAt)} · ยอดก่อนตัด − ยอดตัด ของ ${data.balanceOrderId}`}</p>
-    <p className="mt-2 text-xs text-ll-ink-subtle">ไม่ใช่ยอดสดตอนเปิดหน้า ไม่เปลี่ยนตามตัวกรอง และไม่นับการเติมเงินเข้าที่เกิดหลังออเดอร์นั้น</p>
+  return <article className="tiv-kpi">
+    <small>ยอด Donshop หลังออเดอร์สำเร็จล่าสุด</small>
+    <b className={data.balance == null ? "mut" : ""}>{money(data.balance)} IDR</b>
+    <p className="break-all">{data.balance == null ? "ยังไม่มีออเดอร์สำเร็จที่บันทึกยอดก่อนตัด ไม่ใช่ยอดศูนย์" : `คำนวณเมื่อ ${when(data.balanceAt)} · ยอดก่อนตัด − ยอดตัด ของ ${data.balanceOrderId}`}</p>
+    <p>ไม่ใช่ยอดสดตอนเปิดหน้า ไม่เปลี่ยนตามตัวกรอง และไม่นับการเติมเงินเข้าที่เกิดหลังออเดอร์นั้น</p>
   </article>;
 }
 function StatusCard({ summary }) {
-  return <article className="rounded-xl border border-ll-hairline bg-ll-surface-1 p-5"><h2 className="font-semibold">รายการย่อยตามสถานะ (ตามตัวกรอง)</h2>
-    <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">{DONSHOP_STATUSES.map(([key, title]) => <div key={key}><dt className="text-ll-ink-subtle">{title}</dt><dd className="mt-2 font-semibold tabular-nums">{summary.statuses[key] || 0}</dd></div>)}</dl>
-    <p className="mt-4 text-xs text-ll-ink-subtle">ยอดโอน ต้นทุน กำไร และ IDR ออก นับเฉพาะรายการสำเร็จ · สถานะอื่นแสดงเพื่อตรวจสอบเท่านั้น</p>
+  return <article className="tiv-kpi"><small>รายการย่อยตามสถานะ (ตามตัวกรอง)</small>
+    <dl className="mt-1 grid grid-cols-2 gap-3 sm:grid-cols-4">{DONSHOP_STATUSES.map(([key, title]) => <div key={key} className="min-w-0"><dt className="text-xs text-ll-ink-subtle">{title}</dt><dd className="mt-1 text-lg font-bold tabular-nums">{summary.statuses[key] || 0}</dd></div>)}</dl>
+    <p>ยอดโอน ต้นทุน กำไร และ IDR ออก นับเฉพาะรายการสำเร็จ · สถานะอื่นแสดงเพื่อตรวจสอบเท่านั้น</p>
   </article>;
 }
 // Alert wording only: IDR without decimals plus an approximate THB at the page's reference rate.
@@ -59,56 +56,55 @@ function AlertBody({ alert, rate, children }) {
 }
 const ALERT_LIMIT = 100;
 function CheckSettings({ settings, onChange }) {
-  const box = "flex min-h-11 items-center gap-2 text-sm";
-  return <details className="rounded-lg border border-ll-hairline p-3"><summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-ll-primary">ตั้งค่าการเช็ค</summary>
-    <div className="mt-2 grid gap-x-4 sm:grid-cols-2 lg:grid-cols-3">
-      <label className={box}><input type="checkbox" checked={settings.enabled} onChange={(e) => onChange({ ...settings, enabled: e.target.checked })} />เปิดการเช็คยอด</label>
-      {DONSHOP_CHECK_KINDS.map(([key, title]) => <label key={key} className={box}><input type="checkbox" disabled={!settings.enabled} checked={settings.kinds[key]} onChange={(e) => onChange({ ...settings, kinds: { ...settings.kinds, [key]: e.target.checked } })} />{title}</label>)}
-      <label className="space-y-2 text-sm"><span>ไม่แจ้งยอดที่ต่างน้อยกว่า (IDR)</span><input type="number" min="0" step="1" disabled={!settings.enabled} value={settings.minIdr} className={input} onChange={(e) => onChange({ ...settings, minIdr: e.target.value })} /></label>
+  return <details className="rounded-[18px] border border-ll-hairline px-4 py-1"><summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold">ตั้งค่าการเช็ค</summary>
+    <div className="mt-2 grid items-end gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+      <label className={tivCheck}><input type="checkbox" checked={settings.enabled} onChange={(e) => onChange({ ...settings, enabled: e.target.checked })} />เปิดการเช็คยอด</label>
+      {DONSHOP_CHECK_KINDS.map(([key, title]) => <label key={key} className={tivCheck}><input type="checkbox" disabled={!settings.enabled} checked={settings.kinds[key]} onChange={(e) => onChange({ ...settings, kinds: { ...settings.kinds, [key]: e.target.checked } })} />{title}</label>)}
+      <label className={tivField}><span>ไม่แจ้งยอดที่ต่างน้อยกว่า (IDR)</span><input type="number" min="0" step="1" disabled={!settings.enabled} value={settings.minIdr} className={`${input} num`} onChange={(e) => onChange({ ...settings, minIdr: e.target.value })} /></label>
     </div>
-    <p className="mt-2 text-xs text-ll-ink-subtle">บันทึกไว้ในเบราว์เซอร์นี้เท่านั้น ไม่บันทึกลงฐานข้อมูล</p>
+    <p className="tiv-hint mb-3">บันทึกไว้ในเบราว์เซอร์นี้เท่านั้น ไม่บันทึกลงฐานข้อมูล</p>
   </details>;
 }
 function ChecksPanel({ alerts, fresh, resolved, rate, settings, onSettings }) {
   const visible = dsVisibleAlerts(alerts, settings), lost = visible.filter((a) => a.kind === "gap" || a.kind === "charged");
   const total = (list) => dsSum(list, (a) => a.amount), isNew = new Set(fresh), newCount = visible.filter((a) => isNew.has(a.key)).length;
   const goneKeys = new Set(dsVisibleAlerts(resolved.map((r) => r.alert), settings).map((a) => a.key)), gone = resolved.filter((r) => goneKeys.has(r.alert.key));
-  return <section aria-label="เช็คยอด Donshop" className="space-y-3 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4">
-    <h2 className="text-lg font-semibold">เช็คยอดเงินไม่ตรง</h2>
+  return <section aria-label="เช็คยอด Donshop" className={`${tivCard} flex flex-col gap-3`}>
+    <div className="tiv-card-h mb-0"><h2>เช็คยอดเงินไม่ตรง</h2></div>
     <CheckSettings settings={settings} onChange={onSettings} />
-    {!settings.enabled ? <p className="text-sm text-ll-ink-subtle">ปิดการเช็คอยู่</p> : !visible.length ? <p role="status" className="text-sm">ไม่พบยอดเงินไม่ตรงในช่วงวันที่นี้ตามที่ตั้งค่าไว้</p> : <>
-      <p role={lost.length ? "alert" : "status"} className="text-sm font-semibold">พบ {visible.length} จุดที่ยอดเงินไม่ตรง{newCount > 0 && ` · ใหม่ ${newCount} จุดตั้งแต่เปิดหน้านี้`}{lost.length > 0 && ` · เงินหายรวม ${withBaht(total(lost), rate)} · ไม่ทราบสาเหตุ ${idr(total(lost.filter((a) => a.kind === "gap")))} · คิวไม่สำเร็จแต่โดนหัก ${idr(total(lost.filter((a) => a.kind === "charged")))}`}</p>
-      <ul className="max-h-128 overflow-auto rounded-lg border border-ll-hairline">{visible.slice(0, ALERT_LIMIT).map((a) => <li key={a.key} className="border-t border-ll-hairline px-3 py-3 text-sm first:border-t-0">
+    {!settings.enabled ? <p className="tiv-muted">ปิดการเช็คอยู่</p> : !visible.length ? <p role="status" className="text-sm tiv-good">ไม่พบยอดเงินไม่ตรงในช่วงวันที่นี้ตามที่ตั้งค่าไว้</p> : <>
+      <p role={lost.length ? "alert" : "status"} className={`text-sm font-semibold${lost.length ? " tiv-bad" : ""}`}>พบ {visible.length} จุดที่ยอดเงินไม่ตรง{newCount > 0 && ` · ใหม่ ${newCount} จุดตั้งแต่เปิดหน้านี้`}{lost.length > 0 && ` · เงินหายรวม ${withBaht(total(lost), rate)} · ไม่ทราบสาเหตุ ${idr(total(lost.filter((a) => a.kind === "gap")))} · คิวไม่สำเร็จแต่โดนหัก ${idr(total(lost.filter((a) => a.kind === "charged")))}`}</p>
+      <ul className={`${tivTableBox} max-h-128 overflow-auto`}>{visible.slice(0, ALERT_LIMIT).map((a) => <li key={a.key} className="border-t border-ll-hairline px-4 py-3 text-sm first:border-t-0">
         <AlertBody alert={a} rate={rate}>{isNew.has(a.key) && <span className="inline-block rounded-full bg-ll-primary px-2 py-0.5 text-xs text-ll-on-primary">ใหม่</span>}</AlertBody></li>)}</ul>
-      {visible.length > ALERT_LIMIT && <p className="text-xs text-ll-ink-subtle">แสดง {ALERT_LIMIT} จาก {visible.length} จุดล่าสุด · ลดช่วงวันที่เพื่อดูส่วนที่เหลือ</p>}
+      {visible.length > ALERT_LIMIT && <p className="tiv-muted">แสดง {ALERT_LIMIT} จาก {visible.length} จุดล่าสุด · ลดช่วงวันที่เพื่อดูส่วนที่เหลือ</p>}
     </>}
-    {gone.length > 0 && <details className="rounded-lg border border-ll-hairline p-3"><summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-ll-primary">หายไประหว่างเปิดหน้านี้ {gone.length} จุด · ข้อมูลถูกกรอกเพิ่มหรือแก้ภายหลังจนยอดต่อกันแล้ว</summary>
+    {gone.length > 0 && <details className="rounded-[18px] border border-ll-hairline px-4 py-1"><summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold">หายไประหว่างเปิดหน้านี้ {gone.length} จุด · ข้อมูลถูกกรอกเพิ่มหรือแก้ภายหลังจนยอดต่อกันแล้ว</summary>
       <ul className="max-h-72 overflow-auto">{gone.map(({ alert, at }) => <li key={alert.key} className="border-t border-ll-hairline py-3 text-sm first:border-t-0">
         <AlertBody alert={alert} rate={rate}><span className="text-xs text-ll-ink-subtle">หายไปตอน {when(at)} · ก่อนหน้านี้:</span></AlertBody></li>)}</ul></details>}
-    <p className="text-xs text-ll-ink-subtle">เทียบเงินในบัญชีของคิวที่สำเร็จต่อกันตามเวลา: เงินก่อนหักของคิวถัดไปควรเท่ากับเงินก่อนหัก − ยอดที่หัก ของคิวก่อนหน้า · ค่าเงินบาทคิดจากเรทอ้างอิง {rate} THB ต่อ IDR ที่เลือกด้านบน เป็นค่าประมาณ · เช็คทุกสถานะในช่วงวันที่ ไม่ขึ้นกับตัวกรองสถานะ/ค้นหา และเช็คใหม่ทั้งช่วงทุกครั้งที่รีเฟรช ถ้ามีคนกรอกเพิ่มหรือแก้ย้อนหลังผลจะเปลี่ยนตาม · “แก้ข้อมูลภายหลัง” = แก้หลังสร้างเกิน {DONSHOP_LATE_MINUTES} นาที ระบบไม่รู้ว่าใครแก้หรือแก้อะไร · อ่านจากข้อมูลบอทอย่างเดียว ไม่แก้หรือบันทึกอะไร</p>
+    <p className="tiv-hint mt-0">เทียบเงินในบัญชีของคิวที่สำเร็จต่อกันตามเวลา: เงินก่อนหักของคิวถัดไปควรเท่ากับเงินก่อนหัก − ยอดที่หัก ของคิวก่อนหน้า · ค่าเงินบาทคิดจากเรทอ้างอิง {rate} THB ต่อ IDR ที่เลือกด้านบน เป็นค่าประมาณ · เช็คทุกสถานะในช่วงวันที่ ไม่ขึ้นกับตัวกรองสถานะ/ค้นหา และเช็คใหม่ทั้งช่วงทุกครั้งที่รีเฟรช ถ้ามีคนกรอกเพิ่มหรือแก้ย้อนหลังผลจะเปลี่ยนตาม · “แก้ข้อมูลภายหลัง” = แก้หลังสร้างเกิน {DONSHOP_LATE_MINUTES} นาที ระบบไม่รู้ว่าใครแก้หรือแก้อะไร · อ่านจากข้อมูลบอทอย่างเดียว ไม่แก้หรือบันทึกอะไร</p>
   </section>;
 }
 function History({ entries }) {
-  return <div role="region" aria-label="ประวัติ Donshop" tabIndex={0} className="max-h-[70vh] overflow-auto rounded-xl border border-ll-hairline">
-    <table className="w-full min-w-[1360px] text-left text-sm"><caption className="sr-only">ประวัติ Donshop ทุกสถานะ พร้อมยอด IDR คงเหลือหลังรายการสำเร็จ</caption><thead className="sticky top-0 bg-ll-surface-2"><tr>{["วันที่ (ไทย)", "Order / เกม / แพ็ก", "สถานะ", "ยอดโอน THB", "ต้นทุน THB", "กำไร THB / %", "IDR ออก", "IDR คงเหลือ", "รายละเอียด"].map((h, i) => <th key={h} scope="col" className={`whitespace-nowrap px-3 py-3 ${i >= 3 && i <= 7 ? "text-right" : ""}`}>{h}</th>)}</tr></thead>
-      <tbody>{entries.map((e) => <tr key={`${e.source}:${e.orderId}`} className="border-t border-ll-hairline bg-ll-surface-1 align-top">
-        <td className="whitespace-nowrap px-3 py-3">{when(e.occurredAt)}</td>
-        <td className="max-w-64 break-words px-3 py-3"><p className="break-all font-semibold">{e.orderId}</p><p className="mt-1">{e.details.game}</p><p className="mt-1 text-xs text-ll-ink-subtle">{e.details.pack}</p><p className="mt-1 text-xs text-ll-ink-subtle">ผู้เติม: {e.details.sheetOperator || e.details.operator}</p></td>
-        <td className="px-3 py-3"><span className={`inline-block rounded-full px-2 py-1 text-xs ${e.completedCount ? "bg-ll-surface-2" : "border border-ll-hairline-strong"}`}>{statusText(e.statuses)}</span></td>
-        <td className="px-3 py-3 text-right tabular-nums">{money(e.figures.sale)}{e.completedCount > 1 && <p className="mt-1 text-xs text-ll-ink-subtle">รวมแล้ว ไม่คิดซ้ำ</p>}</td>
-        <td className="px-3 py-3 text-right tabular-nums">{money(e.figures.cost)}<p className="mt-1 text-xs text-ll-ink-subtle">{e.completedCount ? `อ้างอิงเรท ${e.details.costRate}` : "ไม่นับ"}</p></td>
-        <td className="px-3 py-3 text-right tabular-nums">{money(e.figures.profit)}<p className="mt-1 text-xs text-ll-ink-subtle">{e.figures.margin == null ? "—" : `${e.figures.margin}%`}</p></td>
-        <td className="px-3 py-3 text-right font-semibold tabular-nums">{money(e.used)}</td>
-        <td className="px-3 py-3 text-right tabular-nums"><p className="font-semibold">{money(e.wallet?.amount)}</p><p className="mt-1 text-xs text-ll-ink-subtle">{e.wallet ? `ก่อนตัด ${money(e.wallet.before)}` : "ไม่มียอดก่อนตัด"}</p></td>
-        <td className="max-w-72 break-words px-3 py-3"><details><summary className="min-h-11 cursor-pointer py-3 text-xs focus-visible:outline-2 focus-visible:outline-ll-primary">{e.fillCount} รายการย่อย</summary><p className="text-xs">ลูกค้า: {e.details.customer || "—"} · UID: {e.details.playerId || "—"}</p><ul className="mt-2 space-y-2 text-xs">{e.fills.map((f) => <li key={f.id} className="border-t border-ll-hairline py-2">
+  return <div role="region" aria-label="ประวัติ Donshop" tabIndex={0} className={`${tivTableBox} max-h-[70vh] overflow-auto`}>
+    <table className={`${tivTable} min-w-[1360px]`}><caption className="sr-only">ประวัติ Donshop ทุกสถานะ พร้อมยอด IDR คงเหลือหลังรายการสำเร็จ</caption><thead className="sticky top-0 z-10 backdrop-blur"><tr>{["วันที่ (ไทย)", "Order / เกม / แพ็ก", "สถานะ", "ยอดโอน THB", "ต้นทุน THB", "กำไร THB / %", "IDR ออก", "IDR คงเหลือ", "รายละเอียด"].map((h, i) => <th key={h} scope="col" className={i >= 3 && i <= 7 ? "r" : ""}>{h}</th>)}</tr></thead>
+      <tbody>{entries.map((e) => <tr key={`${e.source}:${e.orderId}`}>
+        <td className="whitespace-nowrap">{when(e.occurredAt)}</td>
+        <td className="max-w-64 break-words"><span className="oid">{e.orderId}</span>{e.details.game}<span className="sm">{e.details.pack}</span><span className="sm">ผู้เติม: {e.details.sheetOperator || e.details.operator}</span></td>
+        <td><span className={`inline-block rounded-full px-2 py-1 text-xs ${e.completedCount ? "bg-ll-surface-2" : "border border-ll-hairline-strong"}`}>{statusText(e.statuses)}</span></td>
+        <td className="r">{money(e.figures.sale)}{e.completedCount > 1 && <span className="sm">รวมแล้ว ไม่คิดซ้ำ</span>}</td>
+        <td className="r">{money(e.figures.cost)}<span className="sm">{e.completedCount ? `อ้างอิงเรท ${e.details.costRate}` : "ไม่นับ"}</span></td>
+        <td className="r"><span className={Number(e.figures.profit) > 0 ? "tiv-pos" : Number(e.figures.profit) < 0 ? "tiv-neg" : ""}>{money(e.figures.profit)}</span><span className="sm">{e.figures.margin == null ? "—" : `${e.figures.margin}%`}</span></td>
+        <td className="r b">{money(e.used)}</td>
+        <td className="r b">{money(e.wallet?.amount)}<span className="sm font-normal">{e.wallet ? `ก่อนตัด ${money(e.wallet.before)}` : "ไม่มียอดก่อนตัด"}</span></td>
+        <td className="max-w-72 break-words"><details><summary>{e.fillCount} รายการย่อย</summary><div className="tiv-subbox"><p>ลูกค้า: {e.details.customer || "—"} · UID: {e.details.playerId || "—"}</p><ul className="mt-2 space-y-2">{e.fills.map((f) => <li key={f.id} className="border-t border-ll-hairline pt-2">
           <p>คิว {f.id} · {dsStatusLabel(f.status)} · {f.details.pack}</p>
-          <p className="mt-1">{f.status === "completed" ? `IDR ออก ${money(f.used)}` : `ราคาที่บอทเสนอ ${money(f.quoted)} IDR · ไม่นับเป็นยอดออก`}</p>
-          {f.wallet && <p className="mt-1">ก่อนตัด {money(f.wallet.before)} · หลังตัด {money(f.wallet.amount)} IDR</p>}
-          <p className="mt-1 text-ll-ink-subtle">{when(f.occurredAt)}</p>
-          <p className="mt-1 break-all text-ll-ink-subtle">{f.details.invoice || "ไม่มีเลขธุรกรรม"}</p>
-        </li>)}</ul></details></td>
+          <p>{f.status === "completed" ? `IDR ออก ${money(f.used)}` : `ราคาที่บอทเสนอ ${money(f.quoted)} IDR · ไม่นับเป็นยอดออก`}</p>
+          {f.wallet && <p>ก่อนตัด {money(f.wallet.before)} · หลังตัด {money(f.wallet.amount)} IDR</p>}
+          <p>{when(f.occurredAt)}</p>
+          <p className="break-all">{f.details.invoice || "ไม่มีเลขธุรกรรม"}</p>
+        </li>)}</ul></div></details></td>
       </tr>)}</tbody>
-    </table>{!entries.length && <p className="p-6 text-center text-sm text-ll-ink-subtle">ไม่พบรายการตามตัวกรอง</p>}
+    </table>{!entries.length && <div className="tiv-dempty m-4"><strong>ยังไม่มีรายการ</strong>ไม่พบรายการตามตัวกรอง</div>}
   </div>;
 }
 export default function DonshopInventory({ lang }) {
@@ -153,24 +149,24 @@ export default function DonshopInventory({ lang }) {
   }, [live, load]);
   function apply(next) { invalidate(); setError(""); setFilters(next); setDraft(next); if (new URLSearchParams(next).toString() === viewKey) void load(); }
   const ready = data?.viewKey === viewKey && !loading && !error;
-  return <main className="mx-auto flex min-h-screen min-w-0 max-w-[1600px] flex-col gap-6 px-4 pb-14 pt-10 text-ll-ink sm:px-6">
-    <header className="flex flex-wrap items-center justify-between gap-4 pr-12"><div><p className="text-xs text-ll-ink-tertiary">TOPUP INVENTORY</p><h1 className="mt-2 text-3xl font-semibold">(IDR) Donshop</h1><p className="mt-2 text-sm text-ll-ink-subtle">เฉพาะคิวที่บอทเป็นคนทำ ทุกสถานะ · ไม่รวมคิวที่คนเติมหรือแก้เองโดยไม่มีข้อมูลบอท · อ่านอย่างเดียว ไม่สั่งเติมและไม่หักยอดซ้ำ</p></div><Link href={topupInventoryPath(lang)} className={button}><ArrowLeft size={16} aria-hidden />กลับ Topup Inventory</Link></header>
-    <form className="space-y-4 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4" aria-label="กรอง Donshop" onSubmit={(e) => { e.preventDefault(); apply({ ...draft, page: "1" }); }}>
-      <div className="flex flex-wrap gap-2">{[["today", "วันนี้"], ["yesterday", "เมื่อวาน"], ["month", "เดือนนี้"]].map(([key, title]) => <button type="button" key={key} className={button} onClick={() => apply({ ...draft, ...codaQuickDates(key), page: "1" })}>{title}</button>)}</div>
-      <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-5"><label className="space-y-2 text-sm"><span>วันที่เริ่มต้น</span><input type="date" required value={draft.dateFrom} className={input} onChange={(e) => setDraft({ ...draft, dateFrom: e.target.value })} /></label><label className="space-y-2 text-sm"><span>วันที่สิ้นสุด</span><input type="date" required value={draft.dateTo} className={input} onChange={(e) => setDraft({ ...draft, dateTo: e.target.value })} /></label><label className="space-y-2 text-sm"><span>สถานะ</span><select value={draft.status} className={input} onChange={(e) => setDraft({ ...draft, status: e.target.value })}><option value="">ทุกสถานะ</option>{DONSHOP_STATUSES.map(([key, title]) => <option key={key} value={key}>{title}</option>)}</select></label><label className="space-y-2 text-sm"><span>ค้นหา Order / คิว / เกม / ผู้เติม</span><input type="search" maxLength={200} value={draft.search} className={input} onChange={(e) => setDraft({ ...draft, search: e.target.value })} /></label><label className="space-y-2 text-sm"><span>เรทอ้างอิง THB ต่อ IDR</span><input type="number" min="0.00000001" max="999999" step="0.00000001" required value={draft.rate} className={input} onChange={(e) => setDraft({ ...draft, rate: e.target.value })} /></label></div>
-      <div className="flex flex-wrap gap-2"><button type="submit" className={button}>ค้นหา / ใช้เรทนี้</button><button type="button" className={button} disabled={loading} onClick={() => load()}><RefreshCw size={16} aria-hidden />โหลดใหม่</button><button type="button" className={button} aria-pressed={live} onClick={() => setLive(!live)}><Radio size={16} aria-hidden />{live ? "อัปเดตอัตโนมัติ: เปิด" : "อัปเดตอัตโนมัติ: ปิด"}</button>{ready && <a className={button} href={`${endpoint}?${viewKey}&format=csv`} download><Download size={16} aria-hidden />Export CSV</a>}</div>
-      <p role="status" className="text-xs text-ll-ink-subtle">{updatedAt ? `อัปเดตล่าสุด ${new Date(updatedAt).toLocaleTimeString("th-TH", { timeZone: "Asia/Bangkok" })}` : "ยังไม่ได้โหลด"}{live ? ` · ดึงใหม่ทุก ${LIVE_MS / 1000} วินาทีขณะเปิดแท็บนี้` : " · ปิดอัปเดตอัตโนมัติ"}{stale && ` · อัปเดตล่าสุดไม่สำเร็จ (${stale}) แสดงข้อมูลเดิม`}</p><p className="text-xs text-ll-ink-subtle">เวลาไทย · ไม่เกิน 93 วัน · เรทตั้งต้น {DONSHOP_REFERENCE_RATE} THB ต่อ IDR · การปรับมีผลต่อหน้าจอ/CSV เท่านั้น ไม่บันทึกหรือแก้ประวัติบอท</p>
+  const quick = Object.entries({ today: "วันนี้", yesterday: "เมื่อวาน", month: "เดือนนี้" }).map(([key, title]) => ({ key, title, on: Object.entries(codaQuickDates(key)).every(([k, v]) => filters[k] === v) }));
+  return <TopupInventoryPage provider="donshop" description="เฉพาะคิวที่บอทเป็นคนทำ ทุกสถานะ · ไม่รวมคิวที่คนเติมหรือแก้เองโดยไม่มีข้อมูลบอท · อ่านอย่างเดียว ไม่สั่งเติมและไม่หักยอดซ้ำ">
+    <form className={tivCard} aria-label="กรอง Donshop" onSubmit={(e) => { e.preventDefault(); apply({ ...draft, page: "1" }); }}>
+      <div className="tiv-tools">{quick.map(({ key, title, on }) => <button type="button" key={key} aria-pressed={on} className={`${button}${on ? " on" : ""}`} onClick={() => apply({ ...draft, ...codaQuickDates(key), page: "1" })}>{title}</button>)}</div>
+      <div className="tiv-fields mt-4"><label className={tivField}><span>วันที่เริ่มต้น</span><input type="date" required value={draft.dateFrom} className={input} onChange={(e) => setDraft({ ...draft, dateFrom: e.target.value })} /></label><label className={tivField}><span>วันที่สิ้นสุด</span><input type="date" required value={draft.dateTo} className={input} onChange={(e) => setDraft({ ...draft, dateTo: e.target.value })} /></label><label className={tivField}><span>สถานะ</span><select value={draft.status} className={input} onChange={(e) => setDraft({ ...draft, status: e.target.value })}><option value="">ทุกสถานะ</option>{DONSHOP_STATUSES.map(([key, title]) => <option key={key} value={key}>{title}</option>)}</select></label><label className={tivField}><span>ค้นหา Order / คิว / เกม / ผู้เติม</span><input type="search" maxLength={200} value={draft.search} className={input} onChange={(e) => setDraft({ ...draft, search: e.target.value })} /></label><label className={tivField}><span>เรทอ้างอิง THB ต่อ IDR</span><input type="number" min="0.00000001" max="999999" step="0.00000001" required value={draft.rate} className={`${input} num`} onChange={(e) => setDraft({ ...draft, rate: e.target.value })} /></label></div>
+      <div className="tiv-tools mt-4"><button type="submit" className={tivPrimary}>ค้นหา / ใช้เรทนี้</button><button type="button" className={button} disabled={loading} onClick={() => load()}><RefreshCw size={16} aria-hidden />โหลดใหม่</button><button type="button" className={`${button}${live ? " on" : ""}`} aria-pressed={live} onClick={() => setLive(!live)}><Radio size={16} aria-hidden />{live ? "อัปเดตอัตโนมัติ: เปิด" : "อัปเดตอัตโนมัติ: ปิด"}</button>{ready && <a className={button} href={`${endpoint}?${viewKey}&format=csv`} download><Download size={16} aria-hidden />Export CSV</a>}</div>
+      <div className="tiv-foots mt-4"><span role="status">{updatedAt ? `อัปเดตล่าสุด ${new Date(updatedAt).toLocaleTimeString("th-TH", { timeZone: "Asia/Bangkok" })}` : "ยังไม่ได้โหลด"}{live ? ` · ดึงใหม่ทุก ${LIVE_MS / 1000} วินาทีขณะเปิดแท็บนี้` : " · ปิดอัปเดตอัตโนมัติ"}{stale && ` · อัปเดตล่าสุดไม่สำเร็จ (${stale}) แสดงข้อมูลเดิม`}</span><span>เวลาไทย · ไม่เกิน 93 วัน · เรทตั้งต้น {DONSHOP_REFERENCE_RATE} THB ต่อ IDR · การปรับมีผลต่อหน้าจอ/CSV เท่านั้น ไม่บันทึกหรือแก้ประวัติบอท</span></div>
     </form>
-    {error && <p role="alert" className="rounded-xl border border-ll-hairline p-4 text-sm">{error} · กดโหลดใหม่เพื่อลองอีกครั้ง</p>}{loading && <p role="status" className="text-sm text-ll-ink-subtle">กำลังโหลดข้อมูล…</p>}
+    {error && <p role="alert" className="tiv-alert">{error} · กดโหลดใหม่เพื่อลองอีกครั้ง</p>}{loading && <p role="status" className="tiv-muted">กำลังโหลดข้อมูล…</p>}
     {ready && <>
       <ChecksPanel alerts={data.alerts || []} fresh={data.fresh} resolved={data.resolved} rate={data.rate} settings={settings} onSettings={saveSettings} />
-      <section className="grid gap-4 sm:grid-cols-2" aria-label="ยอดคงเหลือและสถานะ"><WalletCard data={data} /><StatusCard summary={data.summary} /></section>
-      <p className="rounded-xl border border-ll-hairline bg-ll-surface-1 p-4 text-sm">IDR ออกใช้ live_cost_total ที่บอทบันทึก (หรือ live_cost × จำนวน) ของรายการสำเร็จ ต้นทุน THB = IDR ออก × เรทที่เลือก เป็นค่าอ้างอิง ไม่ใช่ต้นทุนซื้อจริงย้อนหลัง · ล็อต SYSTEM/NONE ต้นทุน 0 ไม่ถูกนำมาใช้</p>
-      <section className="space-y-4" aria-label="ผลการค้นหา"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold">ประวัติ Donshop · {data.total} ออเดอร์</h2><p className="text-sm text-ll-ink-subtle">{data.summary.delivered} ออเดอร์สำเร็จ · {data.summary.fills} รายการย่อย</p></div><dl className="grid gap-3 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4 sm:grid-cols-2 lg:grid-cols-4">{[["ยอดโอน THB", data.summary.sale], ["ต้นทุน THB (อ้างอิง)", data.summary.cost], ["กำไร THB (อ้างอิง)", data.summary.profit], ["IDR ออกตามตัวกรอง", data.summary.used]].map(([title, v]) => <div key={title}><dt className="text-xs text-ll-ink-subtle">{title}</dt><dd className="mt-2 text-xl font-semibold tabular-nums">{money(v)}</dd></div>)}</dl>
-        <p className="text-xs text-ll-ink-subtle">กำไร % = (ยอดโอน − ต้นทุน) ÷ ยอดโอน × 100 · ค่าอ้างอิงจะเปลี่ยนเมื่อปรับเรท</p>
-        {(data.summary.missingSales > 0 || data.summary.missingCosts > 0) && <p role="status" className="text-sm text-ll-ink-subtle">ข้อมูลไม่ครบ: ยอดโอน {data.summary.missingSales} · ยอดออก {data.summary.missingUsage} · ต้นทุน {data.summary.missingCosts} ออเดอร์ ยอดรวมที่ข้อมูลไม่ครบแสดง — ไม่แทนด้วยศูนย์</p>}
+      <section className="tiv-two" aria-label="ยอดคงเหลือและสถานะ"><WalletCard data={data} /><StatusCard summary={data.summary} /></section>
+      <p className="tiv-banner">IDR ออกใช้ live_cost_total ที่บอทบันทึก (หรือ live_cost × จำนวน) ของรายการสำเร็จ ต้นทุน THB = IDR ออก × เรทที่เลือก เป็นค่าอ้างอิง ไม่ใช่ต้นทุนซื้อจริงย้อนหลัง · ล็อต SYSTEM/NONE ต้นทุน 0 ไม่ถูกนำมาใช้</p>
+      <section className="flex flex-col gap-4" aria-label="ผลการค้นหา"><div className="tiv-sect-h"><h2>ประวัติ Donshop · {data.total} ออเดอร์</h2><span>{data.summary.delivered} ออเดอร์สำเร็จ · {data.summary.fills} รายการย่อย</span></div><dl className="tiv-kpis">{[["ยอดโอน THB", data.summary.sale], ["ต้นทุน THB (อ้างอิง)", data.summary.cost], ["กำไร THB (อ้างอิง)", data.summary.profit], ["IDR ออกตามตัวกรอง", data.summary.used]].map(([title, v]) => <div key={title} className="tiv-kpi"><dt>{title}</dt><dd className={v == null ? "mut" : ""}>{money(v)}</dd></div>)}</dl>
+        <div className="tiv-foots"><span>กำไร % = (ยอดโอน − ต้นทุน) ÷ ยอดโอน × 100 · ค่าอ้างอิงจะเปลี่ยนเมื่อปรับเรท</span>
+          {(data.summary.missingSales > 0 || data.summary.missingCosts > 0) && <span role="status">ข้อมูลไม่ครบ: ยอดโอน {data.summary.missingSales} · ยอดออก {data.summary.missingUsage} · ต้นทุน {data.summary.missingCosts} ออเดอร์ ยอดรวมที่ข้อมูลไม่ครบแสดง — ไม่แทนด้วยศูนย์</span>}</div>
         <History entries={data.entries} /><TablePagination page={data.page} pageSize={data.pageSize} total={data.total} totalPages={Math.max(1, Math.ceil(data.total / data.pageSize))} observedAt={data.pagination?.observedAt} loading={loading} onPage={(page) => apply({ ...filters, page: String(page) })} onPageSize={(size) => apply({ ...filters, page: "1", pageSize: String(size) })} label="แบ่งหน้าประวัติ" />
       </section>
     </>}
-  </main>;
+  </TopupInventoryPage>;
 }

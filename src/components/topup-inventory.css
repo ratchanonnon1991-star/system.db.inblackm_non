@@ -172,10 +172,11 @@ select.tiv-in { padding-right: 32px; }
 
 .tiv-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 12px; }
 .tiv-kpi { min-width: 0; padding: 16px 18px; border-radius: 22px; background: var(--glass); border: 1px solid var(--glass-line); box-shadow: var(--shadow); backdrop-filter: blur(18px); }
-.tiv-kpi small, .tiv-kpi dt { display: block; font-size: 12px; color: var(--fg-2); }
-.tiv-kpi b, .tiv-kpi dd { display: block; margin: 6px 0 0; font: 700 26px/1.1 var(--font-display); font-variant-numeric: tabular-nums; letter-spacing: -.02em; overflow-wrap: anywhere; }
-.tiv-kpi .mut { color: var(--fg-3); }
-.tiv-kpi p { margin: 8px 0 0; font-size: 12px; color: var(--fg-3); }
+/* Direct children only, so a smaller figure set inside a box keeps its own size. */
+.tiv-kpi > small, .tiv-kpi > dt { display: block; font-size: 12px; color: var(--fg-2); }
+.tiv-kpi > b, .tiv-kpi > dd { display: block; margin: 6px 0 0; font: 700 26px/1.1 var(--font-display); font-variant-numeric: tabular-nums; letter-spacing: -.02em; overflow-wrap: anywhere; }
+.tiv-kpi > .mut { color: var(--fg-3); }
+.tiv-kpi > p { margin: 8px 0 0; font-size: 12px; color: var(--fg-3); }
 .tiv-banner { padding: 14px 18px; border-radius: 20px; border: 1px solid var(--glass-line); background: var(--glass); color: var(--fg-2); font-size: 13px; backdrop-filter: blur(18px); }
 .tiv-foots { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--fg-3); }
 .tiv-sect-h { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 12px; }

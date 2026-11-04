@@ -38,6 +38,7 @@ function compile(path) {
   new Function("require", "exports", output)((specifier) => mocks[specifier] || require(specifier), exports);
   return exports;
 }
+mocks["@/components/topup-inventory-page"] = compile("src/components/topup-inventory-page.js");
 const Home = compile("src/components/topup-inventory-home.js").default;
 mocks["@/components/topup-inventory-home"] = { __esModule: true, default: Home };
 const hub = compile("src/app/projectm/[lang]/topup-inventory/page.js");
@@ -105,7 +106,7 @@ for (const [permissions, admin, topup] of [[[], false, false], [["projectm.claim
   const child = renderToStaticMarkup(await itune.default({ params }));
   check(child.includes('href="/projectm/th/itune/admin"') === admin, "admin respects permission");
   check(child.includes('href="/projectm/th/itune/topup"') === topup, "topup respects permission");
-  check(child.includes(`href="${topupInventoryPath("th")}"`), "child returns to hub");
+  check(child.includes("<b>Topup Inventory</b> · iTune"), "child sits under the hub (the frame's bar links back)");
 }
 check(read("src/components/itune-admin-shell.js").includes("href={ituneInventoryPath(lang)}"), "admin back link");
 check(read("src/app/projectm/[lang]/itune/topup/page.js").includes("href={ituneInventoryPath(lang)}"), "topup back link");
