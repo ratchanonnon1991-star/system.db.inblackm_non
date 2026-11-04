@@ -47,12 +47,14 @@ function AccountEntries({ account, range }) {
   </section>;
 }
 
-export default function InventoryLedgerChannels({ lang }) {
+// `categories`: only these groups (a provider's own page, e.g. Moniepoint = ANDROID NP / SLY).
+export default function InventoryLedgerChannels({ lang, categories = null, title = "ยอดเติมมือรายบัญชี",
+  description = "ยอดที่ทีมยกจากหน้ายกยอด รวมต่อบัญชี (หักรายการที่ยกเลิกแล้ว) ยังไม่รวมยอดที่บอทใช้" }) {
   const [range, setRange] = useState(() => presets().today);
   const [draft, setDraft] = useState(range);
   const [summary, setSummary] = useState(null);
   const [accounts, setAccounts] = useState([]);
-  const [showAll, setShowAll] = useState(false);
+  const [showAll, setShowAll] = useState(Boolean(categories));
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -63,10 +65,11 @@ export default function InventoryLedgerChannels({ lang }) {
     try {
       const p = new URLSearchParams({ view: "summary", from: range.from, to: range.to });
       const [s, a] = await Promise.all([apiJson(`${endpoint}?${p}`, { cache: "no-store" }), apiJson(`${endpoint}?view=accounts`, { cache: "no-store" })]);
-      setSummary(s.accounts ?? []); setAccounts(a.accounts ?? []);
+      const mine = (list) => (categories ? list.filter((r) => categories.includes(r.category)) : list);
+      setSummary(mine(s.accounts ?? [])); setAccounts(mine(a.accounts ?? []));
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
-  }, [range.from, range.to]);
+  }, [range.from, range.to, categories]);
   useEffect(() => { const timer = setTimeout(load, 0); return () => clearTimeout(timer); }, [load]);
 
   const rows = useMemo(() => {
@@ -92,7 +95,7 @@ export default function InventoryLedgerChannels({ lang }) {
   const totalText = Object.entries(totals).map(([c, v]) => `${num(v)} ${c}`).join(" · ");
   const preset = Object.entries(presets()).find(([, p]) => p.from === range.from && p.to === range.to)?.[0];
 
-  return <TopupInventoryPage provider="channels" actions={<Link href={`${topupInventoryPath(lang)}/ledger`} className={button}><CircleArrowUp size={16} aria-hidden />ยกยอดเติมมือ</Link>}>
+  return <TopupInventoryPage provider={categories ? "moniepoint" : "channels"} title={title} description={description} actions={<Link href={`${topupInventoryPath(lang)}/ledger`} className={button}><CircleArrowUp size={16} aria-hidden />ยกยอดเติมมือ</Link>}>
     <section aria-label="กรองข้อมูล" className="tiv-card">
       <div className="tiv-tools">
         {[["today", "วันนี้"], ["yesterday", "เมื่อวาน"], ["week", "7 วัน"], ["month", "เดือนนี้"]].map(([k, t]) => <button key={k} type="button" disabled={loading} aria-pressed={preset === k} onClick={() => apply(presets()[k])} className={`${button}${preset === k ? " on" : ""}`}>{t}</button>)}

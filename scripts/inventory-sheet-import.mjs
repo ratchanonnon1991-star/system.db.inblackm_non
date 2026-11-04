@@ -18,7 +18,8 @@ env.loadEnvConfig(fileURLToPath(new URL("../", import.meta.url)));
 const { readXlsxSheetsWithImages } = await import("../src/server/xlsx-reader.js");
 const { importRowsFromCsv } = await import("./lib/inventory-ledger-import.mjs");
 const { accountInput } = await import("../src/lib/inventory-ledger.js");
-const { parseAccountWorkbook, mergeSnapshots, ledgerEntries, dropDebited, SKIPPED_WORKBOOK } = await import("./lib/inventory-sheet-import.mjs");
+const { parseAccountWorkbook, mergeSnapshots, ledgerEntries, dropDebited, latestBalance, SKIPPED_WORKBOOK } = await import("./lib/inventory-sheet-import.mjs");
+const { rowRequestId } = await import("./lib/razer-sheet-import.mjs");
 
 const args = process.argv.slice(2), apply = args.includes("--apply");
 const registryAt = args.indexOf("--registry"), registryPath = registryAt >= 0 ? args[registryAt + 1] : null;
@@ -32,22 +33,25 @@ const walk = (p) => statSync(p).isDirectory() ? readdirSync(p).flatMap((n) => wa
 const today = new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10);
 const mask = (s) => String(s).replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/g, "<mail>").replace(/\d{5,}/g, "<num>");
 
-const snapshots = new Map(), skipped = [];
+const snapshots = new Map(), balances = new Map(), skipped = [];
 let skippedFiles = 0;
 for (const file of paths.flatMap(walk)) {
   if (SKIPPED_WORKBOOK.test(basename(file))) { skippedFiles++; continue; }
   const parsed = parseAccountWorkbook(readXlsxSheetsWithImages(readFileSync(file), { numbers: true }).sheets, basename(file), today);
   skipped.push(...parsed.skipped);
-  for (const [ref, tab] of parsed.tabs) snapshots.set(spaces(ref), [...(snapshots.get(spaces(ref)) ?? []), tab.rows]);
+  for (const [ref, tab] of parsed.tabs) {
+    snapshots.set(spaces(ref), [...(snapshots.get(spaces(ref)) ?? []), tab.rows]);
+    balances.set(spaces(ref), [...(balances.get(spaces(ref)) ?? []), tab.lastBalance]);
+  }
 }
 
 const plan = [], unmatched = [];
 for (const [ref, list] of snapshots) {
-  const rows = mergeSnapshots(list);
-  if (!rows.length) continue;
+  const rows = mergeSnapshots(list), balance = latestBalance(balances.get(ref));
+  if (!rows.length && !balance) continue;
   const account = registry.get(ref);
   if (!account) { unmatched.push(`${mask(ref)} (${rows.length} แถว)`); continue; }
-  plan.push({ account, key: accountInput(account).key, rows });
+  plan.push({ account, key: accountInput(account).key, rows, balance });
 }
 
 const byCategory = new Map(), reasons = new Map();
@@ -60,7 +64,7 @@ for (const { account, rows } of plan) {
 // The backup and the current file report the same tab twice; count each place once.
 for (const s of new Map(skipped.map((s) => [`${s.where}|${s.reason}`, s])).values()) { const k = s.reason.replace(/\(.*\)/, "").trim(); reasons.set(k, (reasons.get(k) ?? 0) + 1); }
 const total = plan.reduce((n, p) => n + p.rows.length, 0);
-console.log(`บัญชี ${plan.length} · รายการ ${total} · ไม่อยู่ในทะเบียน ${unmatched.length} แท็บ · ข้ามไฟล์ที่ไม่ใช่บัญชี ${skippedFiles}`);
+console.log(`บัญชี ${plan.length} · รายการ ${total} · ยอดคงเหลือล่าสุด ${plan.filter((p) => p.balance).length} บัญชี · ไม่อยู่ในทะเบียน ${unmatched.length} แท็บ · ข้ามไฟล์ที่ไม่ใช่บัญชี ${skippedFiles}`);
 for (const [cat, c] of [...byCategory].sort()) console.log(`  ${cat}: ${c.accounts} บัญชี · ใช้ ${c.use} (ไม่ระบุผู้เติม ${c.blankUse}) · เติมเข้า ${c.deposit} · ปรับเข้า ${c.adjust_in} · ปรับออก ${c.adjust_out} · ${c.first} ถึง ${c.last}`);
 for (const [k, n] of reasons) console.log(`  ข้าม ${String(n).padStart(5)}  ${k}`);
 for (const s of skipped.filter((s) => !/บอท/.test(s.reason)).slice(0, 30)) console.log(`    ${mask(s.where)}: ${mask(s.reason)}`);
@@ -101,6 +105,18 @@ try {
     process.stdout.write(`\r  ${Math.min(i + 200, bodies.length)}/${bodies.length}`);
   }
   console.log(`\nบันทึกแล้ว: ใหม่ ${saved} · มีอยู่แล้ว ${replayed} · ไม่สำเร็จ ${failed.length}`);
+  // Each tab's last balance, as of the end of its last day (never in the future): the reservation
+  // page's balance starts here and adds what was recorded after it.
+  let balanced = 0;
+  for (const { key, balance } of plan.filter((p) => p.balance)) {
+    const observedAt = new Date(Math.min(Date.parse(`${balance.day}T23:59:59+07:00`), Date.now())).toISOString();
+    try {
+      await ledger.recordSnapshot({ requestId: rowRequestId("inventory-sheet-balance", key, balance.day, balance.balance),
+        accountId: ids.get(key), balance: balance.balance, observedAt, source: "manual" }, actor);
+      balanced++;
+    } catch (e) { if (!e.status || e.status >= 500) throw e; failed.push(`ยอดคงเหลือ ${mask(key)}: ${e.message}`); }
+  }
+  console.log(`ยอดคงเหลือล่าสุด: ${balanced} บัญชี`);
   for (const f of failed.slice(0, 40)) console.log(`  ${f}`);
   if (failed.length) process.exitCode = 1;
 } catch (e) {

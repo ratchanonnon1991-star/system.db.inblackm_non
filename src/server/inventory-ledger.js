@@ -318,16 +318,31 @@ export function createInventoryLedger(pool, { now = () => new Date() } = {}) {
       return rows;
     },
 
-    /** Every account with whoever holds it now (the reservation page). iTunes keeps its own mail reservations. */
+    /**
+     * Every account with whoever holds it now (the reservation page). iTunes keeps its own mail reservations.
+     * balance: the latest snapshot plus everything recorded after it (null without a snapshot), so the
+     * next person to reserve sees roughly what is left. It does not see bot spending on bot-used accounts.
+     */
     async reservations(actor) {
       requireSignedIn(actor);
       await ensure(pool);
-      const { rows } = await pool.query(`SELECT a.id::text, a.label, a.currency, a.category, a.provider, a.status,
-          r.user_id AS "holderId", r.user_label AS "holder", r.reserved_at AS "reservedAt"
+      const { rows } = await pool.query(`SELECT a.id::text, a.account_key AS "accountKey", a.label, a.currency, a.category, a.provider, a.status,
+          r.user_id AS "holderId", r.user_label AS "holder", r.reserved_at AS "reservedAt",
+          s.balance::text AS "snapshotBalance", s.observed_at AS "snapshotAt",
+          (SELECT COALESCE(SUM(e.direction * e.amount), 0)::text FROM gamedb_inv_entries e
+            WHERE e.account_id = a.id AND s.observed_at IS NOT NULL AND e.occurred_at > s.observed_at) AS "movedSince",
+          (SELECT MAX(e.occurred_at) FROM gamedb_inv_entries e WHERE e.account_id = a.id) AS "lastActivityAt"
         FROM gamedb_inv_accounts a LEFT JOIN gamedb_inv_reservations r ON r.account_id = a.id
+        LEFT JOIN LATERAL (SELECT balance, observed_at FROM gamedb_inv_snapshots
+          WHERE account_id = a.id ORDER BY observed_at DESC, id DESC LIMIT 1) s ON TRUE
         WHERE a.provider <> 'itunes' ORDER BY a.category NULLS LAST, a.label, a.id`);
-      return rows.map(r => ({ ...r, holderId: r.holderId == null ? null : String(r.holderId), reservedAt: r.reservedAt ? iso(r.reservedAt) : null,
-        mine: r.holderId != null && String(r.holderId) === String(actor.id) }));
+      const signed = text => (text.startsWith("-") ? -toUnits(text.slice(1), { allowZero: true }) : toUnits(text, { allowZero: true }));
+      return rows.map(({ snapshotBalance, snapshotAt, movedSince, lastActivityAt, ...r }) => ({
+        ...r, holderId: r.holderId == null ? null : String(r.holderId), reservedAt: r.reservedAt ? iso(r.reservedAt) : null,
+        mine: r.holderId != null && String(r.holderId) === String(actor.id),
+        balance: snapshotBalance == null ? null : fromUnits(signed(snapshotBalance) + signed(movedSince)),
+        balanceSnapshotAt: snapshotAt ? iso(snapshotAt) : null, lastActivityAt: lastActivityAt ? iso(lastActivityAt) : null,
+      }));
     },
 
     /** Take an active, non-iTunes account. Held by someone else: refused with their name. */

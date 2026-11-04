@@ -24,7 +24,7 @@ export function sheetZone(title) {
 /** Excel day serial (1900 system) -> "YYYY-MM-DD", or null. */
 export function excelDay(value) {
   const n = Number(value);
-  if (!Number.isFinite(n) || n < 1) return null;
+  if (!Number.isFinite(n) || n < 1 || n > 2958465) return null; // past 9999-12-31 it is not a date (a phone number, an ID)
   return new Date(Date.UTC(1899, 11, 30) + Math.floor(n) * 86400000).toISOString().slice(0, 10);
 }
 

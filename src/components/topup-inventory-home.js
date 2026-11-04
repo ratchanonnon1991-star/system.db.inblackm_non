@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpRight, BellRing, BookmarkCheck, CircleArrowUp, CircleDollarSign, CirclePlus, Coins, CreditCard, Gamepad2,
-  Landmark, ListChecks, Music, Search, Shell, Smartphone, Star, Wallet, X,
+  Landmark, ListChecks, Music, Search, Shell, Smartphone, Star, UsersRound, Wallet, X,
 } from "lucide-react";
 import {
   TOPUP_INVENTORY_CURRENCIES, TOPUP_INVENTORY_GROUPS, TOPUP_INVENTORY_PROVIDERS, topupInventoryMatch, topupInventoryPath,
@@ -13,7 +13,7 @@ import {
 import { TOPUP_INVENTORY_STATS, topupInventoryStats } from "@/lib/topup-inventory-stats";
 import "./topup-inventory-home.css";
 
-const ICONS = { reserve: BookmarkCheck, up: CircleArrowUp, list: ListChecks, bell: BellRing, pad: Gamepad2, wallet: Wallet, coins: Coins, shell: Shell, music: Music, usd: CircleDollarSign, cards: CreditCard, phone: Smartphone, bank: Landmark };
+const ICONS = { users: UsersRound, reserve: BookmarkCheck, up: CircleArrowUp, list: ListChecks, bell: BellRing, pad: Gamepad2, wallet: Wallet, coins: Coins, shell: Shell, music: Music, usd: CircleDollarSign, cards: CreditCard, phone: Smartphone, bank: Landmark };
 const PINS_KEY = "tiv-pins";
 const RECENT_KEY = "tiv-recent";
 const GROUP_OF = Object.fromEntries(TOPUP_INVENTORY_GROUPS.map((group) => [group.key, group]));

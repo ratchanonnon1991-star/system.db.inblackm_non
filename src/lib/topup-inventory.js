@@ -3,6 +3,7 @@
 // darkLogo when it is drawn for a black tile. icon: the lucide name the home draws without a logo.
 export const TOPUP_INVENTORY_PROVIDERS = [
   { key: "reservations", group: "tools", icon: "reserve", name: "จองช่องทาง", description: "จองบัญชีที่จะใช้เติม แล้วเลือกพร้อมกรอกยอดที่ตัดในหน้าออเดอร์ inblackm (เว็บ · Russia · MarketPlace) คนอื่นเห็นว่าใครจองอะไร", ready: true },
+  { key: "staff-links", group: "tools", icon: "users", name: "จับคู่พนักงาน", description: "จับคู่ User ID พนักงาน inblackm กับบัญชี tools เพื่อให้เลือกเมล iTune และบันทึกยอดจากช่องทางที่จองได้ในหน้าออเดอร์ (Super Admin)", ready: true },
   { key: "ledger", group: "tools", icon: "up", name: "ยกยอดเติมมือ", description: "เลือกบัญชีที่ใช้เติม ใส่หรือวางเลขออเดอร์กับยอดที่ตัด ระบบหักยอดให้ ใช้แทนการยกยอดในชีท Center", ready: true },
   { key: "channels", group: "tools", icon: "list", name: "ยอดเติมมือรายบัญชี", description: "สรุปยอดที่ยกจากหน้ายกยอด แยกตามบัญชีและกลุ่ม (Moniepoint, iTunes, Bitcash, Laos Telecom ฯลฯ) พร้อมรายการของแต่ละบัญชี", ready: true },
   { key: "alerts", group: "tools", icon: "bell", name: "แจ้งเตือนสต็อก", description: "ตั้งยอดเป้าหมายของแต่ละบัญชี ระบบส่ง Telegram เมื่อยอดคงเหลือต่ำกว่าครึ่งของยอดที่ตั้งไว้", ready: true },
@@ -17,7 +18,7 @@ export const TOPUP_INVENTORY_PROVIDERS = [
   { key: "usdcodashop", group: "cards", icon: "usd", currencies: ["USD"], logo: "usdcodashop.png", name: "USDCodashop", description: "จัดการบัญชี USD ผู้ลงรายการ ยอดปัจจุบัน ใช้ไป และคงเหลือ", ready: true },
   { key: "multigamecard", group: "cards", icon: "cards", logo: "multigamecard.png", darkLogo: true, name: "Multigamecard", description: "ยอดบัตรแยก Serial พร้อมประวัติ Bot และบันทึกรายการ Manual ยอดเข้า ใช้ไป และคงเหลือ", ready: true },
   { key: "wavepay", group: "wallet", icon: "phone", currencies: ["MMK"], logo: "wavepay.png", name: "WavePay", description: "ยอดคงเหลือ MMK แยกตามเบอร์ พร้อมออเดอร์ ต้นทุน และกำไรของแต่ละเบอร์", ready: true },
-  { key: "moniepoint", group: "wallet", icon: "bank", logo: "moniepoint.png", name: "Moniepoint", description: "พื้นที่สำหรับจัดการ Inventory ของ Moniepoint", ready: false },
+  { key: "moniepoint", group: "wallet", icon: "bank", currencies: ["NGN"], logo: "moniepoint.png", name: "Moniepoint", description: "บัญชี Moniepoint NP / SLY (NGN) ยอดใช้และรายการของแต่ละบัญชี จากชีตที่นำเข้า หน้ายกยอด และหน้าออเดอร์ inblackm", ready: true },
 ];
 
 // hue: the colour of a section's cards. feature: tools are drawn as wide cards.
@@ -28,7 +29,7 @@ export const TOPUP_INVENTORY_GROUPS = [
   { key: "wallet", title: "กระเป๋าเงินดิจิทัล", hue: "teal" },
 ];
 
-export const TOPUP_INVENTORY_CURRENCIES = ["MYR", "IDR", "SGD", "CAD", "USD", "MMK"];
+export const TOPUP_INVENTORY_CURRENCIES = ["MYR", "IDR", "SGD", "CAD", "USD", "MMK", "NGN"];
 
 export const topupInventoryPath = (lang) => `/projectm/${lang}/topup-inventory`;
 export const ituneInventoryPath = (lang) => `${topupInventoryPath(lang)}/itune`;
