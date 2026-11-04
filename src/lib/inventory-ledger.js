@@ -129,7 +129,16 @@ export function entryInput(body) {
     // use: explicit THB cost (else reference rate); deposit: THB paid for the lot.
     thbAmount: optionalThb(body.thbAmount, "ยอดบาท"),
     saleThb: kind === "use" ? optionalThb(body.saleThb, "ราคาขาย") : null,
+    // Only when given (order pages): leaving the key out keeps every older request's hash unchanged.
+    ...(body.orderSource ? { orderSource: orderSourceInput(body.orderSource) } : {}),
   };
+}
+
+/** Which order list a use came from: "web", "russia", "kaleoz", "itemku", "playerok", "g2g" ... */
+export function orderSourceInput(value) {
+  const source = String(value ?? "").trim().toLowerCase();
+  if (!/^[a-z][a-z0-9_]{1,31}$/.test(source)) throw ledgerError("ช่องทางออเดอร์ไม่ถูกต้อง");
+  return source;
 }
 
 export const LEDGER_MAX_BATCH = 200;
