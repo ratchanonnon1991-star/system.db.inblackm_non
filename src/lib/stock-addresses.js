@@ -7,21 +7,44 @@
 const BASE58 = "1-9A-HJ-NP-Za-km-z";
 const EVM = /^0x[0-9a-fA-F]{40}$/;
 
-/** Common chains, by the name Bybit shows: suggestions and a format hint, not a limit. */
+/** Coins usually withdrawn; "อื่น ๆ" lets any other be typed. */
+export const ADDRESS_COINS = ["USDT", "USDC", "BTC", "ETH", "BNB", "SOL", "TRX", "TON", "XRP", "LTC", "DOGE", "POL", "AVAX", "ARB", "OP", "DAI", "FDUSD"];
+
+const STABLES = ["USDT", "USDC", "DAI", "FDUSD"];
+/**
+ * Common chains, by the name Bybit shows, with the coins usually sent on them: the
+ * form lists the chosen coin's chains first. A suggestion and a format hint, not a limit.
+ */
 export const ADDRESS_CHAINS = [
-  { code: "TRC20", label: "TRC20 (Tron)", pattern: new RegExp(`^T[${BASE58}]{33}$`), hint: "ขึ้นต้นด้วย T ยาว 34 ตัว" },
-  { code: "ERC20", label: "ERC20 (Ethereum)", pattern: EVM, hint: "ขึ้นต้นด้วย 0x ยาว 42 ตัว" },
-  { code: "BEP20", label: "BSC (BEP20)", pattern: EVM, hint: "ขึ้นต้นด้วย 0x ยาว 42 ตัว" },
-  { code: "ARBITRUM", label: "Arbitrum One", pattern: EVM, hint: "ขึ้นต้นด้วย 0x ยาว 42 ตัว" },
-  { code: "POLYGON", label: "Polygon PoS", pattern: EVM, hint: "ขึ้นต้นด้วย 0x ยาว 42 ตัว" },
-  { code: "OPTIMISM", label: "OP Mainnet", pattern: EVM, hint: "ขึ้นต้นด้วย 0x ยาว 42 ตัว" },
-  { code: "BASE", label: "Base Mainnet", pattern: EVM, hint: "ขึ้นต้นด้วย 0x ยาว 42 ตัว" },
-  { code: "AVAXC", label: "AVAX C-Chain", pattern: EVM, hint: "ขึ้นต้นด้วย 0x ยาว 42 ตัว" },
-  { code: "SOL", label: "SOL (Solana)", pattern: new RegExp(`^[${BASE58}]{32,44}$`), hint: "ตัวอักษร 32–44 ตัว ไม่มี 0 O I l" },
-  { code: "TON", label: "TON", pattern: /^(EQ|UQ|kQ|0Q)[A-Za-z0-9_-]{46}$|^-?\d:[0-9a-fA-F]{64}$/, hint: "ขึ้นต้นด้วย EQ หรือ UQ ยาว 48 ตัว", memo: true },
-  { code: "BTC", label: "BTC (Bitcoin)", pattern: new RegExp(`^(bc1[02-9ac-hj-np-z]{11,71}|[13][${BASE58}]{25,34})$`), hint: "ขึ้นต้นด้วย bc1, 1 หรือ 3" },
-  { code: "BYBIT_UID", label: "Bybit UID (โอนภายใน Bybit)", pattern: /^\d{6,12}$/, hint: "ตัวเลข UID ของบัญชี Bybit ปลายทาง" },
+  { code: "TRC20", label: "TRC20 (Tron)", coins: ["USDT", "USDC", "TRX"], pattern: new RegExp(`^T[${BASE58}]{33}$`), hint: "ขึ้นต้นด้วย T ยาว 34 ตัว" },
+  { code: "ERC20", label: "ERC20 (Ethereum)", coins: [...STABLES, "ETH", "POL", "ARB", "OP"], pattern: EVM, hint: "ขึ้นต้นด้วย 0x ยาว 42 ตัว" },
+  { code: "BEP20", label: "BSC (BEP20)", coins: [...STABLES, "BNB", "ETH", "SOL", "XRP", "DOGE", "TON"], pattern: EVM, hint: "ขึ้นต้นด้วย 0x ยาว 42 ตัว" },
+  { code: "ARBITRUM", label: "Arbitrum One", coins: ["USDT", "USDC", "ETH", "ARB", "DAI"], pattern: EVM, hint: "ขึ้นต้นด้วย 0x ยาว 42 ตัว" },
+  { code: "POLYGON", label: "Polygon PoS", coins: ["USDT", "USDC", "POL", "ETH", "DAI"], pattern: EVM, hint: "ขึ้นต้นด้วย 0x ยาว 42 ตัว" },
+  { code: "OPTIMISM", label: "OP Mainnet", coins: ["USDT", "USDC", "ETH", "OP", "DAI"], pattern: EVM, hint: "ขึ้นต้นด้วย 0x ยาว 42 ตัว" },
+  { code: "BASE", label: "Base Mainnet", coins: ["USDC", "ETH"], pattern: EVM, hint: "ขึ้นต้นด้วย 0x ยาว 42 ตัว" },
+  { code: "AVAXC", label: "AVAX C-Chain", coins: ["USDT", "USDC", "AVAX"], pattern: EVM, hint: "ขึ้นต้นด้วย 0x ยาว 42 ตัว" },
+  { code: "KAIA", label: "Kaia", coins: ["USDT"], pattern: EVM, hint: "ขึ้นต้นด้วย 0x ยาว 42 ตัว" },
+  { code: "MANTLE", label: "Mantle", coins: ["USDT", "USDC"], pattern: EVM, hint: "ขึ้นต้นด้วย 0x ยาว 42 ตัว" },
+  { code: "ZKSYNC", label: "zkSync Era", coins: ["USDT", "USDC", "ETH"], pattern: EVM, hint: "ขึ้นต้นด้วย 0x ยาว 42 ตัว" },
+  { code: "LINEA", label: "Linea", coins: ["USDT", "USDC", "ETH"], pattern: EVM, hint: "ขึ้นต้นด้วย 0x ยาว 42 ตัว" },
+  { code: "SOL", label: "SOL (Solana)", coins: ["USDT", "USDC", "SOL"], pattern: new RegExp(`^[${BASE58}]{32,44}$`), hint: "ตัวอักษร 32–44 ตัว ไม่มี 0 O I l" },
+  { code: "TON", label: "TON", coins: ["USDT", "TON"], pattern: /^(EQ|UQ|kQ|0Q)[A-Za-z0-9_-]{46}$|^-?\d:[0-9a-fA-F]{64}$/, hint: "ขึ้นต้นด้วย EQ หรือ UQ ยาว 48 ตัว", memo: true },
+  { code: "APTOS", label: "Aptos", coins: ["USDT", "USDC"], pattern: /^0x[0-9a-fA-F]{1,64}$/, hint: "ขึ้นต้นด้วย 0x ยาวไม่เกิน 66 ตัว" },
+  { code: "SUI", label: "SUI", coins: ["USDC"], pattern: /^0x[0-9a-fA-F]{64}$/, hint: "ขึ้นต้นด้วย 0x ยาว 66 ตัว" },
+  { code: "BTC", label: "BTC (Bitcoin)", coins: ["BTC"], pattern: new RegExp(`^(bc1[02-9ac-hj-np-z]{11,71}|[13][${BASE58}]{25,34})$`), hint: "ขึ้นต้นด้วย bc1, 1 หรือ 3" },
+  { code: "LTC", label: "LTC (Litecoin)", coins: ["LTC"], pattern: new RegExp(`^(ltc1[02-9ac-hj-np-z]{11,71}|[LM3][${BASE58}]{26,33})$`), hint: "ขึ้นต้นด้วย ltc1, L หรือ M" },
+  { code: "XRP", label: "XRP Ledger", coins: ["XRP"], pattern: new RegExp(`^r[${BASE58}]{24,34}$`), hint: "ขึ้นต้นด้วย r · มักต้องใส่ Tag", memo: true },
+  { code: "DOGE", label: "DOGE (Dogecoin)", coins: ["DOGE"], pattern: new RegExp(`^[DA9][${BASE58}]{25,34}$`), hint: "ขึ้นต้นด้วย D" },
+  { code: "BYBIT_UID", label: "Bybit UID (โอนภายใน Bybit)", coins: [], pattern: /^\d{6,12}$/, hint: "ตัวเลข UID ของบัญชี Bybit ปลายทาง" },
 ];
+
+/** The chains to offer for a coin: the ones it is usually sent on, then every other. */
+export function chainsForCoin(coin) {
+  const wanted = String(coin || "").toUpperCase();
+  const fits = (chain) => chain.code === "BYBIT_UID" || chain.coins.includes(wanted);
+  return { usual: ADDRESS_CHAINS.filter(fits), other: ADDRESS_CHAINS.filter((chain) => !fits(chain)) };
+}
 export const ADDRESS_STATUS_LABELS = { pending: "รออีกคนยืนยัน", confirmed: "ยืนยันแล้ว", retired: "เลิกใช้" };
 
 const clean = (value, max) => String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
