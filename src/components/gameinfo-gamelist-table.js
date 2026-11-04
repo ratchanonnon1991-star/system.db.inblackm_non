@@ -32,6 +32,7 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
+import { revealAdded } from "@/lib/reveal-added";
 import { apiJson } from "@/lib/api-json";
 import {
   requestGameinfoReload,
@@ -505,6 +506,8 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
     // actually visible instead of landing off-screen on whatever page the
     // user happened to be viewing.
     setPage(Math.max(0, Math.ceil((rows.length + 1) / pageSize) - 1));
+    // The game name is already open for typing; the row still needs scrolling to.
+    revealAdded(tempId, { focus: false });
   }
 
   const dirty = dirtyIds.size > 0 || orderDirty;
@@ -913,7 +916,7 @@ function SortableRow({ row, ...rest }) {
   };
 
   return (
-    <div ref={setNodeRef} style={style} className={`grid ${GRID_COLS} items-center gap-2 border-b border-linear-hairline px-3 py-2 text-sm last:border-b-0`}>
+    <div ref={setNodeRef} data-reveal-key={row.id} style={style} className={`grid ${GRID_COLS} items-center gap-2 border-b border-linear-hairline px-3 py-2 text-sm last:border-b-0`}>
       <input
         type="checkbox"
         checked={rest.selectedGameIds.has(row.id)}

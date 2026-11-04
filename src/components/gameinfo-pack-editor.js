@@ -40,6 +40,7 @@ import {
   useGameinfoPackColumnLayout,
 } from "./gameinfo-pack-column-layout";
 import { apiJson } from "@/lib/api-json";
+import { revealAdded } from "@/lib/reveal-added";
 import { evaluateFormula, extractFormulaRefs, parseFormula } from "@/lib/gamedb-formula";
 import { GAMEINFO_FIELD_NAMES, resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
 import {
@@ -485,25 +486,13 @@ export default function GameinfoPackEditor({
     };
   }, [dataMode]);
 
-  // A new currency goes below every existing pack, often far off screen, so
-  // the editor scrolls to it and puts the cursor in its name.
-  const revealCurrencyIdRef = useRef(null);
   function addCurrency() {
     const id = genId("c");
     updateCurrencies((draft) => {
       draft.push({ id, name: "", image: "", categories: [] });
     });
-    revealCurrencyIdRef.current = id;
+    revealAdded(id);
   }
-  useEffect(() => {
-    const id = revealCurrencyIdRef.current;
-    if (!id) return;
-    const block = document.querySelector(`[data-currency-id="${window.CSS.escape(String(id))}"]`);
-    if (!block) return;
-    revealCurrencyIdRef.current = null;
-    block.scrollIntoView({ behavior: "smooth", block: "center" });
-    block.querySelector('input[placeholder^="ชื่อสกุลเงิน"]')?.focus({ preventScroll: true });
-  }, [currencies]);
   function removeCurrency(cIdx) {
     setConfirmRequest({
       title: "ลบสกุลเงิน",
@@ -582,9 +571,11 @@ export default function GameinfoPackEditor({
     });
   }
   function addCategory(cIdx) {
+    const id = genId("cat");
     updateCurrencies((draft) => {
-      draft[cIdx].categories.push({ id: genId("cat"), name: "", packs: [] });
+      draft[cIdx].categories.push({ id, name: "", packs: [] });
     });
+    revealAdded(id);
   }
   // Swaps a category with its neighbour; the order is saved with the rest of the draft.
   function moveCategory(cIdx, catIdx, step) {
@@ -610,9 +601,12 @@ export default function GameinfoPackEditor({
   }
 
   function addPack(cIdx, catIdx) {
+    const id = genId("pk");
     updateCurrencies((draft) => {
-      draft[cIdx].categories[catIdx].packs.push(createBlankGameinfoPack(genId("pk")));
+      draft[cIdx].categories[catIdx].packs.push(createBlankGameinfoPack(id));
     });
+    // A pack's fields open on click, so it is only scrolled to, not typed into.
+    revealAdded(id, { focus: false });
   }
   function duplicatePack(cIdx, catIdx, pkIdx) {
     const source = currencies[cIdx]?.categories[catIdx]?.packs[pkIdx];
@@ -623,6 +617,7 @@ export default function GameinfoPackEditor({
       packs.splice(pkIdx + 1, 0, duplicateGameinfoPack(packs[pkIdx], newId));
     });
     setComputedColumns((prev) => duplicateGameinfoFormulaOverrides(prev, source.id, newId));
+    revealAdded(newId, { focus: false });
   }
   function removePack(cIdx, catIdx, pkIdx) {
     const pack = currencies[cIdx]?.categories[catIdx]?.packs[pkIdx];
@@ -1386,7 +1381,7 @@ export default function GameinfoPackEditor({
 
         <div className="space-y-4">
           {currencies.map((currency, cIdx) => (
-            <div key={currency.id} data-currency-id={currency.id} className="rounded-[14px] border border-linear-hairline bg-linear-surface-1 p-4">
+            <div key={currency.id} data-reveal-key={currency.id} className="rounded-[14px] border border-linear-hairline bg-linear-surface-1 p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
                   <span className="shrink-0 rounded-full bg-[#18181B] px-2.5 py-1 text-xs font-black text-white dark:bg-white dark:text-[#18181B]">
@@ -1400,7 +1395,7 @@ export default function GameinfoPackEditor({
                       })
                     }
                   />
-                  <div className="w-56">
+                  <div className="w-56" data-reveal-focus>
                     <GameinfoMemoryInput
                       value={currency.name}
                       onChange={(v) =>
@@ -1756,7 +1751,7 @@ function CategoryBlock({
   }
 
   return (
-    <div className="rounded-xl border border-[#FBD5D6] bg-[#FFF5F5] p-3 dark:border-[#D90005]/30 dark:bg-[#D90005]/[0.06]">
+    <div data-reveal-key={category.id} className="rounded-xl border border-[#FBD5D6] bg-[#FFF5F5] p-3 dark:border-[#D90005]/30 dark:bg-[#D90005]/[0.06]">
       <div className="mb-2 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <button
@@ -1996,6 +1991,7 @@ function PackRow({
   return (
     <div
       id={`pack-row-${pack.id}`}
+      data-reveal-key={pack.id}
       style={{ gridTemplateColumns: gridTemplate }}
       className={`grid items-center gap-2 border-b border-linear-hairline px-2 py-2 text-sm last:border-b-0 ${
         selected ? "bg-linear-hairline" : rowIndex % 2 === 0 ? "bg-linear-surface-1" : "bg-linear-surface-3"

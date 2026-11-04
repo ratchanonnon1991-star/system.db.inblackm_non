@@ -9,6 +9,7 @@ import {
   requestGameinfoDiscard,
   useGameinfoUnsavedChanges,
 } from "@/lib/gameinfo-unsaved-changes";
+import { revealAdded } from "@/lib/reveal-added";
 
 function newLink() {
   return {
@@ -114,7 +115,7 @@ export function GameinfoGameLinksButton({
             </div>
             <div className="max-h-[65vh] space-y-2 overflow-y-auto p-4">
               {editable ? draft.map((link, index) => (
-                <div key={link.id} className="grid grid-cols-[minmax(100px,0.8fr)_minmax(180px,1.5fr)_32px] gap-2">
+                <div key={link.id} data-reveal-key={link.id} className="grid grid-cols-[minmax(100px,0.8fr)_minmax(180px,1.5fr)_32px] gap-2">
                   <input
                     value={link.name}
                     onChange={(event) => setDraft((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))}
@@ -156,7 +157,11 @@ export function GameinfoGameLinksButton({
               <div className="flex items-center gap-2 border-t border-linear-hairline px-4 py-3">
                 <button
                   type="button"
-                  onClick={() => setDraft((current) => [...current, newLink()])}
+                  onClick={() => {
+                    const link = newLink();
+                    setDraft((current) => [...current, link]);
+                    revealAdded(link.id);
+                  }}
                   disabled={draft.length >= 20}
                   className="flex items-center gap-1 rounded-md border border-linear-hairline-strong px-2 py-1.5 text-xs text-linear-ink-muted hover:bg-linear-surface-2 disabled:opacity-40"
                 >

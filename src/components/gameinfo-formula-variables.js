@@ -11,6 +11,7 @@ import {
   requestGameinfoDiscard,
   useGameinfoUnsavedChanges,
 } from "@/lib/gameinfo-unsaved-changes";
+import { revealAdded } from "@/lib/reveal-added";
 
 function blankVariable() {
   return {
@@ -239,7 +240,7 @@ export default function GameinfoFormulaVariablesButton({ gameId, initialVariable
                   </section>
                   <div className="grid gap-3 lg:grid-cols-2">
                     {variables.map((variable) => (
-                          <div key={variable.id} className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
+                          <div key={variable.id} data-reveal-key={variable.id} className="rounded-md border border-linear-hairline bg-linear-surface-2 p-3">
                             <div className="mb-2 flex items-start gap-2">
                               <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-2">
                                 <VariableInput label="ชื่อตัวแปร" value={variable.name} placeholder="เช่น ราคาขายสุทธิ" onChange={(name) => update(variable.id, { name })} />
@@ -277,7 +278,11 @@ export default function GameinfoFormulaVariablesButton({ gameId, initialVariable
             </div>
             {!loading && !showHistory ? (
               <div className="flex items-center gap-2 border-t border-linear-hairline px-5 py-3">
-                <button type="button" onClick={() => setVariables((current) => [...current, blankVariable()])} disabled={variables.length >= 100} className="flex items-center gap-1 rounded-md border border-linear-hairline-strong px-3 py-1.5 text-xs text-linear-ink-muted hover:bg-linear-surface-2 disabled:opacity-40">
+                <button type="button" onClick={() => {
+                  const variable = blankVariable();
+                  setVariables((current) => [...current, variable]);
+                  revealAdded(variable.id);
+                }} disabled={variables.length >= 100} className="flex items-center gap-1 rounded-md border border-linear-hairline-strong px-3 py-1.5 text-xs text-linear-ink-muted hover:bg-linear-surface-2 disabled:opacity-40">
                   <Plus size={13} /> เพิ่มตัวแปร
                 </button>
                 <div className="flex-1" />
