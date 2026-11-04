@@ -274,7 +274,6 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
             botAuto={isGameinfoBotAuto(row.botManual)}
             channelSetup={{ gameId: row.id, dataMode, configured: priceChannels, editable: canEditChannels && !topupView }}
             rowColumnKeys={rowColumnChoice?.[topupView ? "topup" : "product"] ?? null}
-            viewSetup={{ gameId: row.id, view: topupView ? "topup" : "product", canEdit: canEditChannels }}
             className={verify?.className || ""}
             beforeList={(
               <>

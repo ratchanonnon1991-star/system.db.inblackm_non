@@ -2,11 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bot, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, Image as ImageIcon, LayoutGrid, List, Plus, Search, SlidersHorizontal, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Bot, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, Image as ImageIcon, LayoutGrid, List, Plus, Search, X, ZoomIn, ZoomOut } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { setGameinfoFoldClosed } from "./gameinfo-fold";
 import GameinfoPriceChannelEditor from "./gameinfo-price-channel-editor";
-import GameinfoViewColumnsEditor from "./gameinfo-view-columns-editor";
 import { GameinfoPackVerifyButton, GameinfoPackVerifyDialog } from "./gameinfo-pack-verify";
 import { GAMEINFO_LISTING_PRICE_CHANNEL, gameinfoListingEffective, gameinfoListingPack } from "@/lib/gameinfo-pack-listings";
 import { apiJson } from "@/lib/api-json";
@@ -90,13 +89,11 @@ export default function GameinfoPackList({
   // { gameId, dataMode, configured, editable }: the game's own selling
   // channels (null: the built-in ones) and whether this viewer may set them.
   channelSetup = null,
-  // The extra columns this view's rows show (null: the default), and
-  // { gameId, view, canEdit } for the admin's ปรับมุมมอง window.
+  // The extra columns this view's rows show (null: the default); set on the
+  // edit page, section มุมมองหน้าเกม.
   rowColumnKeys = null,
-  viewSetup = null,
 }) {
   const product = !topupView;
-  const [viewEditing, setViewEditing] = useState(false);
   const built = useMemo(
     () => buildGameinfoPackListRows(currency, columns, game, context, channelSetup?.configured ?? null),
     [currency, columns, game, context, channelSetup?.configured]
@@ -421,11 +418,6 @@ export default function GameinfoPackList({
           <div className="mb-2 ml-0.5 flex flex-wrap items-center justify-between gap-2">
             <p className="gd-note m-0">{product ? "แตะแพ็คเพื่อดูวิธีคำนวณและเทียบช่องทาง" : "แตะแพ็คเพื่อดูรายละเอียด"}</p>
             <div className="flex flex-wrap items-center gap-2">
-              {viewSetup?.canEdit ? (
-                <button type="button" className="gd-btn sm" onClick={() => setViewEditing(true)} title="เลือกคอลัมน์ที่แสดงในมุมมองนี้">
-                  <SlidersHorizontal size={15} aria-hidden="true" /> ปรับมุมมอง
-                </button>
-              ) : null}
               <div className="gd-seg" role="group" aria-label="รูปแบบการแสดงแพ็ค">
                 <button type="button" aria-pressed={layout === "list"} onClick={() => setLayout("list")} title="แสดงเป็นรายการ">
                   <List size={15} aria-hidden="true" /> รายการ
@@ -518,16 +510,6 @@ export default function GameinfoPackList({
             </div>
           </DialogContent>
         </Dialog>
-      ) : null}
-
-      {viewEditing && viewSetup?.canEdit ? (
-        <GameinfoViewColumnsEditor
-          gameId={viewSetup.gameId}
-          view={viewSetup.view}
-          rowColumnKeys={rowColumnKeys}
-          className={className}
-          onClose={() => setViewEditing(false)}
-        />
       ) : null}
 
       {lightbox !== null && visible[lightbox] ? (

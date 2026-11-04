@@ -26,6 +26,7 @@ import GameinfoModeCloneButton from "@/components/gameinfo-mode-clone-button";
 import GameinfoGameManager from "@/components/gameinfo-game-manager";
 import GameinfoTopupWebPanel from "@/components/gameinfo-topup-web-panel";
 import { GameinfoPriceChannelSection } from "@/components/gameinfo-price-channel-editor";
+import GameinfoViewColumnsSection from "@/components/gameinfo-view-columns-editor";
 import GameinfoTestAccounts, { GameinfoTestAccountsCard } from "@/components/gameinfo-test-accounts";
 import GameinfoPriorityStars, { GameinfoWebBadge } from "@/components/gameinfo-priority-stars";
 import { getGamelistGameSettings, listGamelistTestAccounts, maskGamelistTestAccount } from "@/server/gameinfo-game-settings";
@@ -380,6 +381,14 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
                 computedColumns={computedColumns}
               />
             </GameinfoManageSection>
+            <GameinfoManageSection
+              id="s-view"
+              number={MANAGE_NUMBERS.view}
+              title="มุมมองหน้าเกม"
+              description="คอลัมน์ที่มุมมอง Product และ Topup ของหน้าเกมนี้แสดง และคอลัมน์ที่ขึ้นในแถวรายการ"
+            >
+              <GameinfoViewColumnsSection gameId={row.id} listColumns={settings.listColumns ?? null} />
+            </GameinfoManageSection>
           </div>
         </div>
       </>
@@ -473,5 +482,6 @@ const MANAGE_SECTIONS = [
   { id: "s-margin", label: "ราคาเว็บและ Margin" },
   { id: "s-sales", label: "ช่องทางขาย" },
   { id: "s-profit", label: "ช่องทางดูกำไร" },
+  { id: "s-view", label: "มุมมองหน้าเกม" },
 ];
-const MANAGE_NUMBERS = { info: 1, method: 2, web: 3, test: 4, cost: 5, pack: 6, margin: 7, sales: 8, profit: 9 };
+const MANAGE_NUMBERS = { info: 1, method: 2, web: 3, test: 4, cost: 5, pack: 6, margin: 7, sales: 8, profit: 9, view: 10 };
