@@ -8,7 +8,7 @@ import { ADDRESS_CHAINS, chainOf, validateCryptoAddress } from "@/lib/stock-addr
 import { StockField, stockInputClass } from "@/components/stock-ui";
 import { CryptoAddressCard } from "@/components/crypto-address-card";
 
-const EMPTY = { recipient: "", coin: "USDT", chain: "TRC20", address: "", memo: "", note: "" };
+const EMPTY = { recipient: "", coin: "USDT", chain: "", address: "", memo: "", note: "" };
 
 export default function StockAddressesView({ addresses, retired = [], recipients = [], canEdit, currentUserId }) {
   const router = useRouter();
@@ -59,7 +59,7 @@ export default function StockAddressesView({ addresses, retired = [], recipients
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-black"><Send size={22} aria-hidden="true" /> ที่อยู่โอน</h1>
           <p className="mt-1 max-w-[720px] text-sm text-zinc-600">
-            address ปลายทางสำหรับถอนเหรียญจาก Bybit: กดก็อปเหรียญ chain address และ memo ทีละช่องแทนการพิมพ์ · address ที่เพิ่มใหม่ต้องให้<b>อีกคน</b>เทียบกับข้อความของผู้รับแล้วกดยืนยันก่อนจึงจะก็อปได้ · ถ้าผู้รับเปลี่ยน address ให้กดเลิกใช้อันเก่าแล้วเพิ่มอันใหม่
+            address ปลายทางสำหรับถอนเหรียญจาก Bybit: กดก็อปเหรียญ chain address และ memo ทีละช่องแทนการพิมพ์ · ใส่ chain และ address ได้ทุกแบบตามที่ผู้รับให้มา · address ที่เพิ่มใหม่ต้องให้<b>อีกคน</b>เทียบกับข้อความของผู้รับแล้วกดยืนยันก่อนจึงจะก็อปได้ · ถ้าผู้รับเปลี่ยน address ให้กดเลิกใช้อันเก่าแล้วเพิ่มอันใหม่
           </p>
         </div>
         {canEdit && !adding ? (
@@ -80,10 +80,9 @@ export default function StockAddressesView({ addresses, retired = [], recipients
           <StockField label="เหรียญ" htmlFor="addr-coin">
             <input id="addr-coin" value={form.coin} onChange={(event) => set({ coin: event.target.value.toUpperCase() })} className={stockInputClass} required />
           </StockField>
-          <StockField label="Chain" htmlFor="addr-chain" hint={chain?.hint}>
-            <select id="addr-chain" value={form.chain} onChange={(event) => set({ chain: event.target.value })} className={stockInputClass}>
-              {ADDRESS_CHAINS.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}
-            </select>
+          <StockField label="Chain" htmlFor="addr-chain" hint="พิมพ์ตามที่ผู้รับบอก หรือเลือกจากรายการ">
+            <input id="addr-chain" list="addr-chains" value={form.chain} onChange={(event) => set({ chain: event.target.value })} className={stockInputClass} required />
+            <datalist id="addr-chains">{ADDRESS_CHAINS.map((item) => <option key={item.code} value={item.label} />)}</datalist>
           </StockField>
           <StockField label={chain?.memo ? "Memo / Tag (TON มักต้องใส่)" : "Memo / Tag"} htmlFor="addr-memo" hint="ใส่เฉพาะเมื่อผู้รับให้มา">
             <input id="addr-memo" value={form.memo} onChange={(event) => set({ memo: event.target.value })} className={stockInputClass} />
@@ -92,7 +91,7 @@ export default function StockAddressesView({ addresses, retired = [], recipients
             <StockField label="Address" htmlFor="addr-address" hint="วางจากข้อความของผู้รับโดยตรง อย่าพิมพ์เอง">
               <input id="addr-address" value={form.address} onChange={(event) => set({ address: event.target.value })} className={`${stockInputClass} font-mono`} required autoComplete="off" spellCheck={false} />
             </StockField>
-            {check?.error ? <p className="mt-1 text-xs font-bold text-red-700">{check.error}</p> : check ? <p className="mt-1 text-xs font-bold text-emerald-700">รูปแบบถูกต้องสำหรับ {chain?.label}</p> : null}
+            {check?.warning ? <p className="mt-1 text-xs font-bold text-amber-800">{check.warning}</p> : check && !check.error && chain ? <p className="mt-1 text-xs font-bold text-emerald-700">ตรงกับรูปแบบของ {chain.label}</p> : null}
           </div>
           <div className="sm:col-span-2">
             <StockField label="หมายเหตุ" htmlFor="addr-note" hint="เช่น ผู้รับส่งมาทาง WeChat วันที่ 5/11">
@@ -100,7 +99,7 @@ export default function StockAddressesView({ addresses, retired = [], recipients
             </StockField>
           </div>
           <div className="flex gap-2 sm:col-span-2">
-            <button disabled={busy === "add" || Boolean(check?.error)} className="h-10 rounded-full bg-[#D90005] px-4 text-sm font-extrabold text-white hover:bg-[#B00004] disabled:opacity-50">บันทึก (รออีกคนยืนยัน)</button>
+            <button disabled={busy === "add"} className="h-10 rounded-full bg-[#D90005] px-4 text-sm font-extrabold text-white hover:bg-[#B00004] disabled:opacity-50">บันทึก (รออีกคนยืนยัน)</button>
             <button type="button" onClick={() => { setAdding(false); setForm(EMPTY); }} className="h-10 rounded-full border border-zinc-300 px-4 text-sm font-extrabold">ยกเลิก</button>
           </div>
         </form>

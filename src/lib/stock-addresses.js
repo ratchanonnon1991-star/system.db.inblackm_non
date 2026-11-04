@@ -7,7 +7,7 @@
 const BASE58 = "1-9A-HJ-NP-Za-km-z";
 const EVM = /^0x[0-9a-fA-F]{40}$/;
 
-/** The chains Bybit offers for withdrawals, by the name Bybit shows. */
+/** Common chains, by the name Bybit shows: suggestions and a format hint, not a limit. */
 export const ADDRESS_CHAINS = [
   { code: "TRC20", label: "TRC20 (Tron)", pattern: new RegExp(`^T[${BASE58}]{33}$`), hint: "ขึ้นต้นด้วย T ยาว 34 ตัว" },
   { code: "ERC20", label: "ERC20 (Ethereum)", pattern: EVM, hint: "ขึ้นต้นด้วย 0x ยาว 42 ตัว" },
@@ -25,25 +25,30 @@ export const ADDRESS_CHAINS = [
 export const ADDRESS_STATUS_LABELS = { pending: "รออีกคนยืนยัน", confirmed: "ยืนยันแล้ว", retired: "เลิกใช้" };
 
 const clean = (value, max) => String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
-export const chainOf = (code) => ADDRESS_CHAINS.find((chain) => chain.code === code) || null;
+export const chainOf = (code) => ADDRESS_CHAINS.find((chain) => chain.code === code || chain.label.toLowerCase() === String(code || "").trim().toLowerCase()) || null;
 
 /**
- * A new address as typed → { address: { recipient, coin, chain, address, memo, note } }
- * or { error } in Thai. Spaces and line breaks pasted with the address are removed;
- * the address must look right for its chain.
+ * A new address as typed → { address: { recipient, coin, chain, address, memo, note }, warning }
+ * or { error } in Thai. Spaces and line breaks pasted with the address are removed.
+ * Money goes from Bybit to many other apps, so any chain name and address is accepted;
+ * for a chain the list knows, an address that does not look like it only gives a warning.
  */
 export function validateCryptoAddress(input) {
   const recipient = clean(input?.recipient, 120);
   if (!recipient) return { error: "ใส่ชื่อผู้รับ เช่น YAYA หรือ Bybit Inblack Gaming" };
   const coin = clean(input?.coin, 10).toUpperCase();
   if (!/^[A-Z0-9]{2,10}$/.test(coin)) return { error: "ใส่เหรียญ เช่น USDT, USDC, BTC" };
-  const chain = chainOf(String(input?.chain || ""));
-  if (!chain) return { error: "เลือก chain ให้ตรงกับที่ผู้รับบอก" };
+  const typedChain = clean(input?.chain, 40);
+  if (!typedChain) return { error: "ใส่ chain ให้ตรงกับที่ผู้รับบอก เช่น TRC20, BSC (BEP20), SOL" };
+  const known = chainOf(typedChain);
   const address = String(input?.address ?? "").replace(/\s+/g, "");
   if (!address) return { error: "ใส่ address" };
-  if (!chain.pattern.test(address)) return { error: `address ไม่ใช่รูปแบบของ ${chain.label}: ${chain.hint}` };
+  if (address.length > 200) return { error: "address ยาวเกิน 200 ตัว" };
   const memo = String(input?.memo ?? "").replace(/\s+/g, "").slice(0, 120);
-  return { address: { recipient, coin, chain: chain.code, address, memo, note: clean(input?.note, 500) } };
+  const warning = known && !known.pattern.test(address)
+    ? `address นี้ไม่เหมือนรูปแบบปกติของ ${known.label} (${known.hint}) ตรวจกับผู้รับอีกครั้งว่าเลือก chain ถูก`
+    : "";
+  return { address: { recipient, coin, chain: known ? known.code : typedChain, address, memo, note: clean(input?.note, 500) }, warning };
 }
 
 /**
