@@ -5,15 +5,19 @@ import { Megaphone } from "lucide-react";
 import { GAMEINFO_CEO_NOTICE, useGameinfoNoticeChain } from "./gameinfo-notice-chain";
 
 // The CEO's notice. It shows every time someone arrives at a game's page:
-// leaving the page and coming back shows it again, a refresh of the page
-// once it was acknowledged does not. The edit page shows it only to whoever
-// has not acknowledged it in this tab yet (someone opening it straight from
-// a link). It can only be closed with the button drawn in the picture.
+// leaving the page and coming back shows it again, but a refresh of the page
+// once it was acknowledged does not, and nor does coming back from editing
+// that game. The edit page shows it only to whoever has not acknowledged it
+// in this tab yet (someone opening it straight from a link). It can only be
+// closed with the button drawn in the picture.
 const CEO_REQUEST = "gameinfo:ceo";
 // sessionStorage, so per tab: the page whose notice was acknowledged and has
 // not been left since, and whether this tab acknowledged it at all.
 const ACK_PAGE_KEY = "gameinfo-ceo-ack-page";
 const ACK_TAB_KEY = "gameinfo-ceo-ack-tab";
+// The game page the edit page on screen belongs to: going back to it from
+// editing is not a new arrival.
+const FROM_EDIT_KEY = "gameinfo-ceo-from-edit";
 
 function readSession(key) {
   try {
@@ -52,6 +56,10 @@ let pagesOnScreen = 0;
 // The first game page since the document loaded is the one a refresh brings
 // back; later ones were reached inside the app.
 let firstPageShown = false;
+let editPagesOnScreen = 0;
+// How long a page left behind keeps its claim: the next page mounts in the
+// same render after a move inside the app, well within this.
+const LEAVE_GRACE_MS = 1000;
 
 function useNoticeRun(className) {
   const notices = useGameinfoNoticeChain(className);
@@ -65,9 +73,17 @@ function useNoticeRun(className) {
 export default function GameinfoEditGate({ className = "" }) {
   const [notices, run] = useNoticeRun(className);
   useEffect(() => {
-    if (readSession(ACK_TAB_KEY)) return;
-    const page = window.location.pathname;
-    run.current([GAMEINFO_CEO_NOTICE], () => acknowledge(page), { always: true });
+    const gamePage = window.location.pathname.replace(/\/manage\/?$/, "");
+    editPagesOnScreen += 1;
+    writeSession(FROM_EDIT_KEY, gamePage);
+    if (!readSession(ACK_TAB_KEY)) run.current([GAMEINFO_CEO_NOTICE], () => acknowledge(gamePage), { always: true });
+    return () => {
+      editPagesOnScreen -= 1;
+      // Gone somewhere other than its game page: forget it.
+      setTimeout(() => {
+        if (editPagesOnScreen === 0 && readSession(FROM_EDIT_KEY) === gamePage) writeSession(FROM_EDIT_KEY, "");
+      }, LEAVE_GRACE_MS);
+    };
   }, [run]);
   return notices.node;
 }
@@ -87,10 +103,16 @@ export function GameinfoCeoNotice({ className = "" }) {
   useEffect(() => {
     const page = window.location.pathname;
     pagesOnScreen += 1;
+    const fromEdit = readSession(FROM_EDIT_KEY) === page;
+    if (fromEdit) {
+      writeSession(FROM_EDIT_KEY, "");
+      writeSession(ACK_PAGE_KEY, page);
+    }
     const acknowledgedHere = readSession(ACK_PAGE_KEY) === page;
-    // A refresh of an acknowledged page, or the same page mounted again
-    // without leaving it (its acknowledgement is only cleared on leaving).
-    const stillHere = acknowledgedHere && (firstPageShown || pageWasReloaded());
+    // Back from editing this game, a refresh of an acknowledged page, or the
+    // same page mounted again without leaving it (its acknowledgement is only
+    // cleared on leaving).
+    const stillHere = fromEdit || (acknowledgedHere && (firstPageShown || pageWasReloaded()));
     firstPageShown = true;
     if (!stillHere) run.current([GAMEINFO_CEO_NOTICE], () => acknowledge(page), { always: true });
     return () => {

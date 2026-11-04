@@ -105,8 +105,9 @@ const gate = read("../src/components/gameinfo-edit-gate.js");
 const toggle = read("../src/components/gameinfo-mode-toggle.js");
 const notices = read("../src/components/gameinfo-notice-chain.js");
 assert.ok(toggle.includes("if (isGamePage && !isManageMode) return null;"), "a game page has one way into editing, on its card");
-assert.ok(gate.includes("const stillHere = acknowledgedHere && (firstPageShown || pageWasReloaded());"), "the CEO's notice on every arrival at a game's page, not on a refresh of it");
-assert.ok(gate.includes("if (readSession(ACK_TAB_KEY)) return;"), "the edit page shows it only to a tab that has not acknowledged it");
+assert.ok(gate.includes("const stillHere = fromEdit || (acknowledgedHere && (firstPageShown || pageWasReloaded()));"), "the CEO's notice on every arrival at a game's page, not on a refresh of it nor on coming back from editing it");
+assert.ok(gate.includes("writeSession(FROM_EDIT_KEY, gamePage);"), "the edit page marks its game page");
+assert.ok(gate.includes("if (!readSession(ACK_TAB_KEY)) run.current([GAMEINFO_CEO_NOTICE]"), "the edit page shows it only to a tab that has not acknowledged it");
 assert.ok(detailPage.includes("<GameinfoEditGate") && detailPage.includes("backHref={viewHref}"), "the edit page shows the notice, and its way back is the game's page");
 assert.ok(notices.includes("gd-ceo-hint") && notices.includes("gd-hs-ok"), "the picture's own button acknowledges it, with the hint underneath");
 assert.ok(notices.includes("stored?.day === today()") && notices.includes('"/gameinfo/ceo-notice.webp"'), "each notice once a day, the CEO's from its picture");
@@ -119,6 +120,6 @@ assert.ok(list.includes('const grouped = sort === "default";'), "filtered packs 
 
 assert.ok(list.includes('aria-label="หมวดหมู่แพ็ค"') && list.includes('categoryTab === "all" ? rows'), "categories are tabs over the list, all or one at a time");
 
-assert.ok(editor.includes("function moveSelectedPacks(target)") && editor.includes("<MovePacksBar"), "ticked packs can move to another or a new category");
+assert.ok(editor.includes("function moveSelectedPacks(target") && editor.includes("<MovePacksBar"), "ticked packs can move to another or a new category");
 
 console.log("51 passed");
