@@ -332,7 +332,30 @@ export default function GameinfoPackEditor({
       }),
     [computedColumns]
   );
-  const packColumns = useMemo(() => buildGameinfoPackColumns(parsedColumns, game.columnOrder), [parsedColumns, game.columnOrder]);
+  // This game's column order: what everyone's table starts from, here and on
+  // the game page. Dragging a header sets it for this game straight away.
+  const [columnOrder, setColumnOrder] = useState(game.columnOrder || null);
+  const packColumns = useMemo(() => buildGameinfoPackColumns(parsedColumns, columnOrder), [parsedColumns, columnOrder]);
+  async function reorderColumns(activeId, overId) {
+    const ids = packColumns.map((column) => column.id);
+    const from = ids.indexOf(activeId);
+    const to = ids.indexOf(overId);
+    if (from < 0 || to < 0 || from === to || isGameinfoPackColumnPinned(activeId) || isGameinfoPackColumnPinned(overId)) return;
+    const previous = columnOrder;
+    const next = arrayMove(ids, from, to);
+    setColumnOrder(next);
+    try {
+      await apiJson("/api/gameinfo/column-order", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gameId: Number(game.id), columnIds: next }),
+        fallbackError: "บันทึกลำดับคอลัมน์ไม่สำเร็จ",
+      });
+    } catch (orderError) {
+      setColumnOrder(previous);
+      setError(orderError instanceof Error ? orderError.message : "บันทึกลำดับคอลัมน์ไม่สำเร็จ");
+    }
+  }
   // Columns are shared by every game, so this editor shows columns this game
   // has never filled in. It shows them all by default — that is how a column
   // gets its first value here — with a toggle to clear the empty ones away.
@@ -1509,7 +1532,7 @@ export default function GameinfoPackEditor({
                     invalidFields={invalidFields}
                     onRemoveColumn={removeComputedColumn}
                     onEditColumn={setEditingComputedColumn}
-                    onReorderColumns={packLayout.reorder}
+                    onReorderColumns={reorderColumns}
                     onSetFormulaOverride={setFormulaOverride}
                     onSetCategoryFormula={setCategoryFormula}
                     selectedPackIds={selectedPackIds}
@@ -2708,7 +2731,7 @@ function SortableColumnHeader({ column, index, onRemove, onEdit, onEditCategory 
       className={`flex min-w-0 items-center gap-1 px-2 ${
         pinned ? "cursor-default" : "cursor-grab active:cursor-grabbing"
       } ${column.kind === "computed" ? "text-linear-primary" : "text-linear-ink-tertiary"}`}
-      title={pinned ? "คอลัมน์สถานะถูกตรึงไว้เป็นคอลัมน์แรก" : "กดค้างแล้วลากเพื่อเปลี่ยนลำดับ"}
+      title={pinned ? "คอลัมน์สถานะถูกตรึงไว้เป็นคอลัมน์แรก" : "ลากเพื่อเปลี่ยนลำดับ · ใช้กับทุกคนในเกมนี้"}
     >
       {pinned ? <Lock size={10} className="shrink-0" /> : null}
       <span className="whitespace-normal break-words">{column.label || `สูตร ${index + 1}`}</span>

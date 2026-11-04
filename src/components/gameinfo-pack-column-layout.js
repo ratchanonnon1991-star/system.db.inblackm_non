@@ -603,7 +603,7 @@ export function GameinfoPackColumnControls({
           </div>
 
           <p className="mt-3 text-[10px] text-linear-ink-tertiary">
-            ลำดับคอลัมน์แอดมินตั้งที่หน้าสิทธิ์คอลัมน์ · preset ใช้ซ่อนคอลัมน์และตัวกรองของตัวเอง
+            ลำดับคอลัมน์: ลากหัวตารางในหน้าแก้ไขแพ็ค (ใช้กับทุกคนในเกมนั้น) หรือตั้งค่ากลางที่หน้าสิทธิ์คอลัมน์ · preset ใช้ซ่อนคอลัมน์และตัวกรองของตัวเอง
           </p>
           {dirty ? (
             <p className="mt-1 text-[10px] text-linear-primary">มีการเปลี่ยนแปลงที่ยังไม่บันทึก</p>
