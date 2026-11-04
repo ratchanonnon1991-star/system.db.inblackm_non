@@ -7,7 +7,7 @@ import { allocateShellSale } from "@/lib/garena-shell-inventory";
 import { prepareCodaSales } from "@/server/usdcodashop-sale-rates";
 import { RAZER_INVENTORY_ZONES, RAZER_INVENTORY_PAGE_SIZE, razerFilters, razerStockAccounts, razerWalletKey,
   razerOrder, groupRazerOrders, razerSummary, razerSum, razerMatches, razerLedgerOrder, razerManual,
-  razerLedgerWallet, razerWithLedgerWallets, RAZER_MIXED_ZONE } from "@/lib/razer-inventory";
+  razerLedgerWallet, razerWithLedgerWallets, razerIdNumber, RAZER_MIXED_ZONE } from "@/lib/razer-inventory";
 
 const selectStockRows = async (sql, params) => (await getPool().query(sql, params)).rows;
 // The existing stock service's ensureSchema performs writes; this inventory must not call it.
@@ -92,7 +92,7 @@ export function createRazerInventory({ select = selectQuery, selectStock = selec
     if (filters.account && !visibleKeys.has(filters.account)) throw inventoryError("ไม่พบบัญชีตามตัวกรอง");
     const matched = entries.filter((e) => (filters.showHidden || !byWallet.get(e.walletKey)?.hidden) && (!filters.status || visibleKeys.has(e.walletKey))
       && (!filters.zone || e.zone === filters.zone) && (!filters.account || e.walletKey === filters.account) && razerMatches(e, filters.search))
-      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || Number(b.id) - Number(a.id));
+      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || razerIdNumber(b.id) - razerIdNumber(a.id));
     const choices = visible.filter((a) => !filters.zone || a.zone === filters.zone);
     const selectedAccounts = choices.filter((a) => (!filters.account || a.key === filters.account)
       && (!filters.search || a.email.includes(filters.search.toLowerCase()) || matched.some((e) => e.walletKey === a.key)));

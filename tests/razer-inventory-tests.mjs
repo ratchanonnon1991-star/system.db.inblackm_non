@@ -57,8 +57,9 @@ const handCsv = lib.razerCsv([combined, hand]).split("\r\n");
 check(handCsv[0].endsWith('"ที่มา"') && handCsv[1].endsWith('"บอท"') && handCsv[2].endsWith('"เติมมือ"'), "CSV marks where each row's Gold came from");
 for (const key of ["razer:RAZER PIN(USD)", "razer:USD:x@y.com", "razer:RAZER SGD 1-25", "netease:SGD:x@y.com"]) eq(lib.razerLedgerOrder(ledgerRow(9, { account_key: key }), null), null);
 eq(lib.razerLedgerWallet("razer:PHP:A@B.com"), { zone: "PHP", email: "a@b.com" });
-eq(lib.razerWithLedgerWallets(accounts, [{ account_key: "razer:SGD:test@example.com" }, { account_key: "razer:PHP:x@y.com" }]).map((a) => [a.key, a.balanceSource]),
-  [["PHP:x@y.com", "ledger"], ["SGD:test@example.com", "stock"]]);
+eq(lib.razerWithLedgerWallets(accounts, [{ account_key: "razer:SGD:test@example.com" }, { account_key: "razer:PHP:x@y.com" }, { account_key: "razer:SGD:a@sheet.com" }]).map((a) => [a.key, a.balanceSource]),
+  [["SGD:test@example.com", "stock"], ["SGD:a@sheet.com", "ledger"], ["PHP:x@y.com", "ledger"]]);
+eq([lib.razerIdNumber("ledger:12"), lib.razerIdNumber("7")], [12, 7]);
 
 function compile(file, mocks) {
   const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
