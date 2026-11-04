@@ -383,29 +383,20 @@ function SystemHub({ me, onLoggedOut, onPermissionsChanged }) {
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
               {shownSystems.map((system) => {
                 const Icon = system.icon;
-                const main = system.key === "systemdb";
                 return (
                   <NextLink
                     key={system.key}
                     href={system.href}
-                    className={`group flex flex-col items-center gap-3 rounded-xl border px-4 pb-[22px] pt-7 text-center transition hover:-translate-y-[3px] hover:shadow-[0_14px_28px_-12px_rgba(143,0,25,0.45)] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-ll-ink ${
-                      main
-                        ? "border-[#D90005] bg-[#D90005] text-white shadow-[0_14px_28px_-14px_rgba(143,0,25,0.5)] hover:border-[#B80004] hover:bg-[#B80004]"
-                        : "border-ll-hairline bg-ll-surface-1 text-ll-ink shadow-[var(--ll-shadow-card)] hover:border-[#D90005] hover:bg-[#D90005] hover:text-white"
-                    }`}
+                    className="group flex flex-col items-center gap-3 rounded-xl border border-ll-hairline bg-ll-surface-1 px-4 pb-[22px] pt-7 text-center text-ll-ink shadow-[var(--ll-shadow-card)] transition hover:-translate-y-[3px] hover:border-[#D90005] hover:bg-[#D90005] hover:text-white hover:shadow-[0_14px_28px_-12px_rgba(143,0,25,0.45)] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-ll-ink"
                   >
                     <span
-                      className={`flex h-[60px] w-[60px] items-center justify-center rounded-2xl transition ${
-                        main
-                          ? "bg-white/20 text-white"
-                          : "bg-ll-primary-subtle-bg text-ll-primary-subtle-text group-hover:bg-white/20 group-hover:text-white"
-                      }`}
+                      className="flex h-[60px] w-[60px] items-center justify-center rounded-2xl bg-ll-primary-subtle-bg text-ll-primary-subtle-text transition group-hover:bg-white/20 group-hover:text-white"
                     >
                       <Icon size={28} strokeWidth={2} />
                     </span>
                     <span className="text-[17px] font-black leading-tight">{system.label}</span>
                     <span
-                      className={`text-[13px] leading-relaxed ${main ? "text-[#FFE4E4]" : "text-ll-ink-subtle group-hover:text-[#FFE4E4]"}`}
+                      className="text-[13px] leading-relaxed text-ll-ink-subtle group-hover:text-[#FFE4E4]"
                     >
                       {system.desc}
                     </span>

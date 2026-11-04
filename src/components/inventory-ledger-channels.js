@@ -1,15 +1,15 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ClipboardList, RefreshCw } from "lucide-react";
+import { CircleArrowUp, RefreshCw } from "lucide-react";
+import TopupInventoryPage from "@/components/topup-inventory-page";
 import { apiJson } from "@/lib/api-json";
 import { topupInventoryPath } from "@/lib/topup-inventory";
+import { tivButton as button, tivCheck, tivField, tivInput, tivPrimary, tivTable, tivTableBox } from "@/lib/topup-inventory-ui";
 
 const endpoint = "/api/projectm/ledger";
-const button = "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-ll-hairline-strong bg-ll-surface-1 px-4 text-sm text-ll-ink hover:bg-ll-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ll-primary disabled:opacity-50";
-const input = "mt-1 min-h-11 w-full rounded-lg border border-ll-hairline-strong bg-ll-surface-1 px-3 text-sm text-ll-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ll-primary";
-const cell = "border-b border-ll-hairline px-3 py-2 align-top";
 const num = v => (v == null ? "—" : Number(v).toLocaleString("en-US", { maximumFractionDigits: 4 }));
 const when = v => (v ? new Date(v).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "short", timeStyle: "short" }) : "—");
 const bangkokDay = (offsetDays = 0) => new Date(Date.now() + 7 * 3600000 + offsetDays * 86400000).toISOString().slice(0, 10);
@@ -31,20 +31,19 @@ function AccountEntries({ account, range }) {
     } catch (e) { setError(e.message); }
   }, [account.id, range.from, range.to]);
   useEffect(() => { const timer = setTimeout(load, 0); return () => clearTimeout(timer); }, [load]);
-  return <section aria-label={`รายการของ ${account.label}`} className="space-y-3 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4">
-    <h2 className="text-lg font-semibold">{account.label} <span className="text-sm font-normal text-ll-ink-subtle">· {account.currency}{account.category ? ` · ${account.category}` : ""}</span></h2>
-    {error && <p role="alert" className="text-sm text-ll-warning">{error}</p>}
-    <p className="text-xs text-ll-ink-subtle">{data ? `${data.entries.length} รายการ${data.truncated ? " (แสดง 500 รายการล่าสุด)" : ""}` : "กำลังโหลด…"}</p>
-    <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm">
-      <thead><tr className="text-xs text-ll-ink-subtle">{["เวลา", "เลขออเดอร์", "ยอด", "Invoice", "ผู้บันทึก"].map(h => <th key={h} className={`${cell} font-medium`}>{h}</th>)}</tr></thead>
-      <tbody>{(data?.entries ?? []).map(e => <tr key={e.id} className={e.reversedBy || e.kind === "reversal" ? "text-ll-ink-subtle" : ""}>
-        <td className={`${cell} whitespace-nowrap`}>{when(e.recordedAt)}</td>
-        <td className={`${cell} font-medium`}>{e.orderRef}{e.kind === "reversal" && <span className="ml-1 text-xs">(รายการกลับ)</span>}{e.reversedBy && <span className="ml-1 text-xs">(ยกเลิกแล้ว)</span>}</td>
-        <td className={`${cell} tabular-nums`}>{Number(e.direction) < 0 ? "−" : "+"}{num(e.amount)}</td>
-        <td className={cell}>{e.invoice || "—"}</td>
-        <td className={cell}>{e.recordedBy}</td>
-      </tr>)}</tbody>
-    </table></div>
+  return <section aria-label={`รายการของ ${account.label}`} className="tiv-card">
+    <div className="tiv-card-h"><h2>{account.label}<small>{account.currency}{account.category ? ` · ${account.category}` : ""} · {data ? `${data.entries.length} รายการ${data.truncated ? " (แสดง 500 รายการล่าสุด)" : ""}` : "กำลังโหลด…"}</small></h2></div>
+    {error && <p role="alert" className="tiv-alert mb-3">{error}</p>}
+    <div className={tivTableBox}><PaginatedTable items={(data?.entries ?? [])} resetKey={JSON.stringify([account.id, range.from, range.to])}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className={`${tivTable} min-w-[680px]`}>
+      <thead><tr>{["เวลา", "เลขออเดอร์", "ยอด", "Invoice", "ผู้บันทึก"].map(h => <th key={h} className={h === "ยอด" ? "r" : ""}>{h}</th>)}</tr></thead>
+      <tbody>{tablePageItems.map((tableItem, tableIndex) => (e => <tr key={e.id} className={e.reversedBy || e.kind === "reversal" ? "cx" : ""}>
+        <td className="whitespace-nowrap">{when(e.recordedAt)}</td>
+        <td><span className="oid">{e.orderRef}</span>{e.kind === "reversal" && <span className="sm">รายการกลับ</span>}{e.reversedBy && <span className="sm">ยกเลิกแล้ว</span>}</td>
+        <td className="r b">{Number(e.direction) < 0 ? "−" : "+"}{num(e.amount)}</td>
+        <td>{e.invoice || "—"}</td>
+        <td>{e.recordedBy}</td>
+      </tr>)(tableItem, tablePageStart + tableIndex, tableAllItems))}</tbody>
+    </table>)}</PaginatedTable></div>
   </section>;
 }
 
@@ -89,52 +88,50 @@ export default function InventoryLedgerChannels({ lang }) {
     return t;
   }, [summary]);
   function apply(next) { setSelected(null); setRange(next); setDraft(next); }
+  const uses = (summary ?? []).reduce((sum, r) => sum + Number(r.uses || 0), 0);
+  const totalText = Object.entries(totals).map(([c, v]) => `${num(v)} ${c}`).join(" · ");
+  const preset = Object.entries(presets()).find(([, p]) => p.from === range.from && p.to === range.to)?.[0];
 
-  return <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-4 pb-14 pt-10 text-ll-ink sm:px-6">
-    <header className="flex flex-wrap items-center justify-between gap-4 pr-12">
-      <div><p className="text-xs text-ll-ink-tertiary">TOPUP INVENTORY · จากหน้ายกยอด</p><h1 className="mt-2 text-3xl font-semibold">ยอดเติมมือรายบัญชี</h1>
-        <p className="mt-2 text-sm text-ll-ink-subtle">ยอดที่ทีมยกจากหน้ายกยอด รวมต่อบัญชี (หักรายการที่ยกเลิกแล้ว) ยังไม่รวมยอดที่บอทใช้</p></div>
-      <div className="flex flex-wrap gap-2">
-        <Link href={`${topupInventoryPath(lang)}/ledger`} className={button}><ClipboardList size={16} aria-hidden />ไปหน้ายกยอด</Link>
-        <Link href={topupInventoryPath(lang)} className={button}><ArrowLeft size={16} aria-hidden />กลับ Topup Inventory</Link>
+  return <TopupInventoryPage provider="channels" actions={<Link href={`${topupInventoryPath(lang)}/ledger`} className={button}><CircleArrowUp size={16} aria-hidden />ยกยอดเติมมือ</Link>}>
+    <section aria-label="กรองข้อมูล" className="tiv-card">
+      <div className="tiv-tools">
+        {[["today", "วันนี้"], ["yesterday", "เมื่อวาน"], ["week", "7 วัน"], ["month", "เดือนนี้"]].map(([k, t]) => <button key={k} type="button" disabled={loading} aria-pressed={preset === k} onClick={() => apply(presets()[k])} className={`${button}${preset === k ? " on" : ""}`}>{t}</button>)}
+        <span className="tiv-muted">เวลาไทย · เลือกได้ไม่เกิน 93 วัน</span>
       </div>
-    </header>
-
-    <section aria-label="กรองข้อมูล" className="space-y-3 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        {[["today", "วันนี้"], ["yesterday", "เมื่อวาน"], ["week", "7 วัน"], ["month", "เดือนนี้"]].map(([k, t]) => <button key={k} type="button" disabled={loading} onClick={() => apply(presets()[k])} className={button}>{t}</button>)}
-        <span className="text-xs text-ll-ink-subtle">เวลาไทย · เลือกได้ไม่เกิน 93 วัน</span>
-      </div>
-      <form onSubmit={e => { e.preventDefault(); apply(draft); }} className="flex flex-wrap items-end gap-3">
-        <label className="text-sm">ตั้งแต่<input type="date" required value={draft.from} onChange={e => setDraft({ ...draft, from: e.target.value })} className={input} /></label>
-        <label className="text-sm">ถึง<input type="date" required min={draft.from} value={draft.to} onChange={e => setDraft({ ...draft, to: e.target.value })} className={input} /></label>
-        <label className="min-w-0 basis-full text-sm sm:flex-1 sm:basis-56">ค้นหาบัญชี / กลุ่ม<input value={query} onChange={e => setQuery(e.target.value)} className={input} /></label>
-        <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={showAll} onChange={e => setShowAll(e.target.checked)} />แสดงบัญชีที่ยังไม่มีรายการด้วย</label>
-        <button disabled={loading} className={button}>ใช้ตัวกรอง</button>
+      <form onSubmit={e => { e.preventDefault(); apply(draft); }} className="mt-4 flex flex-wrap items-end gap-3">
+        <label className={tivField}><span>ตั้งแต่</span><input type="date" required value={draft.from} onChange={e => setDraft({ ...draft, from: e.target.value })} className={`${tivInput} date`} /></label>
+        <label className={tivField}><span>ถึง</span><input type="date" required min={draft.from} value={draft.to} onChange={e => setDraft({ ...draft, to: e.target.value })} className={`${tivInput} date`} /></label>
+        <label className={`${tivField} basis-full sm:flex-1 sm:basis-56`}><span>ค้นหาบัญชี / กลุ่ม</span><input value={query} onChange={e => setQuery(e.target.value)} placeholder="เช่น wavepay, moniepoint" className={tivInput} /></label>
+        <label className={tivCheck}><input type="checkbox" checked={showAll} onChange={e => setShowAll(e.target.checked)} />แสดงบัญชีที่ยังไม่มีรายการด้วย</label>
+        <button disabled={loading} className={tivPrimary}>ใช้ตัวกรอง</button>
         <button type="button" disabled={loading} onClick={load} className={button}><RefreshCw size={16} aria-hidden />โหลดใหม่</button>
       </form>
-      <p className="text-xs text-ll-ink-subtle">{range.from === range.to ? range.from : `${range.from} ถึง ${range.to}`}
-        {summary ? ` · ${summary.length} บัญชีที่มีการยกยอด` : ""}{Object.keys(totals).length ? ` · รวม ${Object.entries(totals).map(([c, v]) => `${num(v)} ${c}`).join(" · ")}` : ""}</p>
     </section>
 
-    {error && <p role="alert" className="rounded-xl border border-ll-hairline p-4 text-sm">{error}</p>}
-    {loading && !summary && <p role="status" className="text-sm text-ll-ink-subtle">กำลังโหลด…</p>}
-    {summary && !rows.length && <p className="rounded-xl border border-dashed border-ll-hairline-strong p-4 text-sm text-ll-ink-subtle">ยังไม่มีการยกยอดในช่วงนี้{query ? " ที่ตรงกับคำค้น" : ""}</p>}
+    <div className="tiv-kpis" aria-label={range.from === range.to ? range.from : `${range.from} ถึง ${range.to}`}>
+      <div className="tiv-kpi"><small>บัญชีที่มียอด</small><b className={summary ? "" : "mut"}>{summary ? summary.length : "—"}</b></div>
+      <div className="tiv-kpi"><small>รายการทั้งหมด</small><b className={summary ? "" : "mut"}>{summary ? uses : "—"}</b></div>
+      <div className="tiv-kpi"><small>ยอดรวมที่ตัด</small><b className={totalText ? "" : "mut"}>{totalText || "—"}</b></div>
+    </div>
 
-    {groups.map(([group, list]) => <section key={group} aria-label={group} className="space-y-2">
-      <h2 className="text-sm font-semibold text-ll-ink-subtle">{group}</h2>
-      <div className="overflow-x-auto rounded-xl border border-ll-hairline bg-ll-surface-1"><table className="w-full min-w-[640px] text-left text-sm">
-        <thead><tr className="text-xs text-ll-ink-subtle">{["บัญชี", "ยอดใช้สุทธิ", "รายการ", "ยกเลิก", "ล่าสุด"].map(h => <th key={h} className={`${cell} font-medium`}>{h}</th>)}</tr></thead>
-        <tbody>{list.map(r => <tr key={r.accountId} className={selected?.id === r.accountId ? "bg-ll-surface-2" : "hover:bg-ll-surface-2"}>
-          <td className={cell}><button type="button" onClick={() => setSelected({ id: r.accountId, label: r.label, currency: r.currency, category: r.category })} className="min-h-11 text-left font-medium underline-offset-4 hover:underline">{r.label}</button>{r.status && r.status !== "active" && <span className="ml-2 text-xs text-ll-ink-subtle">ปิดใช้งาน</span>}</td>
-          <td className={`${cell} tabular-nums`}>{num(r.netUsed)} {r.currency}</td>
-          <td className={`${cell} tabular-nums`}>{r.uses}</td>
-          <td className={`${cell} tabular-nums`}>{r.reversals || "—"}</td>
-          <td className={`${cell} whitespace-nowrap`}>{when(r.lastAt)}</td>
-        </tr>)}</tbody>
-      </table></div>
+    {error && <p role="alert" className="tiv-alert">{error}</p>}
+    {loading && !summary && <p role="status" className="tiv-muted">กำลังโหลด…</p>}
+    {summary && !rows.length && <div className="tiv-dempty"><strong>{query ? "ไม่พบบัญชีที่ค้นหา" : "ยังไม่มีการยกยอด"}</strong>{query ? "ลองใช้คำอื่น หรือเลือกช่วงวันที่ใหม่" : "บันทึกรายการที่หน้ายกยอดเติมมือ แล้วสรุปรายบัญชีจะขึ้นที่นี่"}<br />{!query && <Link href={`${topupInventoryPath(lang)}/ledger`} className={tivPrimary}>ไปยกยอดเติมมือ</Link>}</div>}
+
+    {groups.map(([group, list]) => <section key={group} aria-label={group} className="tiv-card">
+      <div className="tiv-card-h"><h2>{group}<small>{list.length} บัญชี · กดชื่อบัญชีเพื่อดูรายการ</small></h2></div>
+      <div className={tivTableBox}><PaginatedTable items={list} resetKey={JSON.stringify([range.from, range.to, query, showAll])}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className={`${tivTable} min-w-[640px]`}>
+        <thead><tr>{["บัญชี", "ยอดใช้สุทธิ", "รายการ", "ยกเลิก", "ล่าสุด"].map(h => <th key={h} className={h === "บัญชี" ? "" : "r"}>{h}</th>)}</tr></thead>
+        <tbody>{tablePageItems.map((tableItem, tableIndex) => (r => <tr key={r.accountId} className={selected?.id === r.accountId ? "sel" : ""}>
+          <td><button type="button" aria-pressed={selected?.id === r.accountId} onClick={() => setSelected({ id: r.accountId, label: r.label, currency: r.currency, category: r.category })} className="text-left font-bold underline-offset-4 hover:underline">{r.label}</button>{r.status && r.status !== "active" && <span className="sm">ปิดใช้งาน</span>}</td>
+          <td className="r b">{num(r.netUsed)} {r.currency}</td>
+          <td className="r">{r.uses}</td>
+          <td className="r">{r.reversals || "—"}</td>
+          <td className="r whitespace-nowrap">{when(r.lastAt)}</td>
+        </tr>)(tableItem, tablePageStart + tableIndex, tableAllItems))}</tbody>
+      </table>)}</PaginatedTable></div>
     </section>)}
 
     {selected && <AccountEntries key={`${selected.id}:${range.from}:${range.to}`} account={selected} range={range} />}
-  </main>;
+  </TopupInventoryPage>;
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import { useEffect, useState } from "react";
 import { CheckCircle2, Eye, EyeOff, KeyRound, Lock, Pencil, Plus, Trash2, XCircle } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
@@ -225,7 +226,7 @@ export default function GameinfoTestAccounts({ gameId, initialAccounts }) {
   return (
     <div className="flex flex-col gap-3">
       <div className="overflow-x-auto rounded-xl border border-linear-hairline">
-        <table className="w-full min-w-[900px] text-left text-sm">
+        <PaginatedTable items={accounts}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[900px] text-left text-sm">
           <thead className="bg-linear-surface-2 text-[11px] font-black uppercase tracking-[0.06em] text-linear-ink-muted">
             <tr>
               <th scope="col" className="px-4 py-3">ชื่อเรียก</th>
@@ -244,7 +245,7 @@ export default function GameinfoTestAccounts({ gameId, initialAccounts }) {
                 <td colSpan={8} className="px-4 py-6 text-center text-sm text-linear-ink-tertiary">ยังไม่มีบัญชีทดสอบ</td>
               </tr>
             ) : null}
-            {accounts.map((account) => (
+            {tablePageItems.map((tableItem, tableIndex) => ((account) => (
               <tr key={account.id} className="border-t border-linear-hairline align-middle">
                 <td className="px-4 py-2.5">
                   <span className="block font-black text-linear-ink">{account.name}</span>
@@ -268,9 +269,9 @@ export default function GameinfoTestAccounts({ gameId, initialAccounts }) {
                   </div>
                 </td>
               </tr>
-            ))}
+            ))(tableItem, tablePageStart + tableIndex, tableAllItems))}
           </tbody>
-        </table>
+        </table>)}</PaginatedTable>
       </div>
 
       {editingId !== null ? (

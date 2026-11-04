@@ -2,6 +2,7 @@ import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { requireAdmin } from "@/server/auth";
 import { findQueryById } from "@/server/gamedb-repository";
 import { insertFilterView, listFilterViews } from "@/server/gamedb-filter-views-repository";
+import { normalizeColumnValueFilters } from "@/lib/systemdb-workbench";
 
 const MAX_NAME_LENGTH = 120;
 const MAX_ROW_FILTER_LENGTH = 500;
@@ -55,6 +56,7 @@ export async function POST(request, { params }) {
       rowFilter: String(body.rowFilter || "").slice(0, MAX_ROW_FILTER_LENGTH),
       lookupRowFilter,
       paramValues,
+      columnValueFilters: normalizeColumnValueFilters(body.columnValueFilters),
       createdBy: admin.username || admin.displayName || "",
     });
     return jsonOk({ filterView }, 201);

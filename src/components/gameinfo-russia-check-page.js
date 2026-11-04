@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertCircle, ArrowLeft, Check, Clock3, Copy, Download, ExternalLink, KeyRound, LogIn, PackageCheck, PackageMinus, PackagePlus, RefreshCw, RotateCcw, ShieldCheck } from "lucide-react";
@@ -425,7 +426,7 @@ export default function GameinfoRussiaCheckPage({ initialDashboard, initialLogs,
               </Select>
             </Field>
           </div>
-          {loading ? <LoadingTable /> : packItems.length ? <PackTable items={packItems} showGame={game === "all"} /> : <Empty><EmptyHeader><EmptyMedia variant="icon"><PackageCheck /></EmptyMedia><EmptyTitle>{search || status !== "all" ? "ไม่พบ Pack ตามตัวกรอง" : "ยังไม่มี Pack"}</EmptyTitle><EmptyDescription>{search || status !== "all" ? "ลองใช้ชื่ออื่น หรือเลือกดูทุกสถานะ" : refreshBlockedReason || "กดรีข้อมูลเพื่อสร้างข้อมูลตั้งต้น"}</EmptyDescription></EmptyHeader>{search || status !== "all" ? <Button variant="outline" onClick={() => { setSearch(""); setStatus("all"); }}>ล้างตัวกรอง</Button> : null}</Empty>}
+          {loading ? <LoadingTable /> : packItems.length ? <PackTable items={packItems} showGame={game === "all"} resetKey={JSON.stringify([game, status, search])} /> : <Empty><EmptyHeader><EmptyMedia variant="icon"><PackageCheck /></EmptyMedia><EmptyTitle>{search || status !== "all" ? "ไม่พบ Pack ตามตัวกรอง" : "ยังไม่มี Pack"}</EmptyTitle><EmptyDescription>{search || status !== "all" ? "ลองใช้ชื่ออื่น หรือเลือกดูทุกสถานะ" : refreshBlockedReason || "กดรีข้อมูลเพื่อสร้างข้อมูลตั้งต้น"}</EmptyDescription></EmptyHeader>{search || status !== "all" ? <Button variant="outline" onClick={() => { setSearch(""); setStatus("all"); }}>ล้างตัวกรอง</Button> : null}</Empty>}
         </TabsContent>
         <TabsContent value="logs" className="flex flex-col gap-4 pt-2">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -529,19 +530,19 @@ function PackCount({ title, value }) {
   return <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1"><dt className="text-xs text-muted-foreground">{title}</dt><dd className="order-first text-2xl font-semibold tabular-nums">{value}</dd></div>;
 }
 
-function PackTable({ items, showGame }) {
+function PackTable({ items, showGame, resetKey }) {
   return <Card size="sm" className="min-w-0">
     <CardHeader className="flex flex-wrap items-center justify-between gap-2"><CardTitle>รายการ Pack</CardTitle><CardDescription aria-live="polite">{items.length} รายการ · วันที่และเวลาไทย</CardDescription></CardHeader>
     <CardContent>
-      <Table containerClassName="focus-visible:outline-ring" tabIndex={0} aria-label="รายการ Pack ตามตัวกรอง">
+      <PaginatedTable items={items} resetKey={resetKey}>{(tablePageItems, tablePageStart, tableAllItems) => (<Table containerClassName="focus-visible:outline-ring" tabIndex={0} aria-label="รายการ Pack ตามตัวกรอง">
         <TableHeader><TableRow><TableHead scope="col">ชื่อ Pack</TableHead>{showGame ? <TableHead scope="col">เกม</TableHead> : null}<TableHead scope="col">สถานะ</TableHead><TableHead scope="col">วันที่มีการเคลื่อนไหวล่าสุด</TableHead></TableRow></TableHeader>
-        <TableBody>{items.map((item, index) => <TableRow key={`${item.gameId}:${item.name}:${index}`}>
+        <TableBody>{tablePageItems.map((tableItem, tableIndex) => ((item, index) => <TableRow key={`${item.gameId}:${item.name}:${index}`}>
           <TableCell><div className="flex min-w-56 max-w-md items-center justify-between gap-2"><span className="whitespace-normal break-words font-medium">{item.name}</span><CopyPackName key={item.name} name={item.name} /></div></TableCell>
           {showGame ? <TableCell><span className="text-xs text-muted-foreground">{item.gameName}</span></TableCell> : null}
           <TableCell><div className="flex flex-col items-start gap-1"><Badge variant={statusBadge(item.displayStatus)}>{STATUS_LABELS[item.displayStatus]}</Badge>{item.status === "pending_removal" ? <span className="text-xs text-muted-foreground">รอยืนยันหาย · {item.missingRuns}/2 ครั้ง</span> : null}</div></TableCell>
           <TableCell><time dateTime={latestMovementAt(item) || undefined} className="text-xs tabular-nums">{formatBangkok(latestMovementAt(item))}</time></TableCell>
-        </TableRow>)}</TableBody>
-      </Table>
+        </TableRow>)(tableItem, tablePageStart + tableIndex, tableAllItems))}</TableBody>
+      </Table>)}</PaginatedTable>
     </CardContent>
   </Card>;
 }

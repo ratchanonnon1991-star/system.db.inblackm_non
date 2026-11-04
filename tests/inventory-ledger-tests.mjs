@@ -162,6 +162,22 @@ try {
     await db.query("UPDATE gamedb_inv_accounts SET status='active' WHERE id=$1", [idr]);
   });
 
+  await check("importEntries: admin-only old sheet rows, past the backdate limit and today's balance bound", async () => {
+    const [{ id: old }] = await ledger.registerAccounts([{ provider: "razer", ref: "SGD:old@x.com", label: "old@x.com", currency: "SGD" }], admin);
+    await ledger.recordSnapshot({ requestId: uuid(40), accountId: old, balance: "1", observedAt: "2026-10-09T00:00:00Z" }, admin);
+    const row = { requestId: uuid(41), kind: "use", accountId: old, amount: "5", orderRef: "Q1", note: "ชีต", occurredAt: "2026-02-01T05:00:00Z" };
+    const out = await ledger.importEntries([row, { ...row, requestId: uuid(42), amount: "-1" }], admin);
+    assert.deepEqual(out.map(r => r.ok), [true, false]);
+    assert.equal((await ledger.importEntries([row], admin))[0].replayed, true);
+    await rejects(ledger.importEntries([{ ...row, requestId: uuid(43) }], viewer), 403);
+    // the normal path still refuses the same row
+    await rejects(ledger.recordEntry({ ...row, requestId: uuid(44) }, admin), 400, /ย้อนหลัง/);
+    // a closed account keeps its old history; new movements are still refused
+    const [{ id: closed }] = await ledger.registerAccounts([{ provider: "channel", ref: "closed-tab", label: "ปิดแล้ว", currency: "PHP", status: "disabled" }], admin);
+    assert.equal((await ledger.importEntries([{ ...row, requestId: uuid(45), accountId: closed }], admin))[0].ok, true);
+    await rejects(ledger.recordEntry({ ...row, requestId: uuid(46), accountId: closed, occurredAt: undefined }, admin), 409, /ปิดใช้งาน/);
+  });
+
   await check("history is append-only: no update, delete or truncate", async () => {
     for (const sql of ["UPDATE gamedb_inv_entries SET amount=1", "DELETE FROM gamedb_inv_entries", "TRUNCATE gamedb_inv_entries",
       "UPDATE gamedb_inv_snapshots SET balance=1", "DELETE FROM gamedb_inv_snapshots"]) {
@@ -225,7 +241,7 @@ try {
 
   await check("schema setup is safe to run again", async () => {
     const again = createInventoryLedger(pool, { now: () => clock });
-    assert.equal((await again.listAccounts(viewer)).length, 3);
+    assert.equal((await again.listAccounts(viewer)).length, 5);
   });
 } finally {
   await db.close();

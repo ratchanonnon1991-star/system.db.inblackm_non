@@ -1,3 +1,4 @@
+import { readInventoryPage } from "@/server/inventory-page";
 import { requireAdmin } from "@/server/auth";
 import { jsonOk, jsonError } from "@/lib/http";
 import { gamepointInventory } from "@/server/gamepoint-inventory";
@@ -6,7 +7,9 @@ export async function GET(request) {
   try {
     const actor = await requireAdmin(request), params = new URL(request.url).searchParams;
     const exportAll = params.get("format") === "csv";
-    const result = await gamepointInventory().list(actor, Object.fromEntries(params), { exportAll });
+    const result = !exportAll && params.has("pageSize")
+      ? await readInventoryPage(request, actor, "gamepoint", () => gamepointInventory().list(actor, { ...Object.fromEntries(params), page: "1" }, { exportAll: true }))
+      : await gamepointInventory().list(actor, Object.fromEntries(params), { exportAll });
     if (exportAll) return new Response(gpCsv(result.entries), { headers: {
       "Content-Type": "text/csv; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
       "Content-Disposition": `attachment; filename="gamepoint-${result.dateFrom}-${result.dateTo}.csv"`,

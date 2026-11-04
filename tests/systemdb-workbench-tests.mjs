@@ -1,0 +1,45 @@
+import assert from "node:assert/strict";
+import { initialWorkbenchView, inspectedRow, normalizeWorkbenchPins, normalizeColumnValueFilters, queriesInView, safeWorkbenchUrl, workbenchGrants, workbenchStatusOptions } from "../src/lib/systemdb-workbench.js";
+
+let passed = 0;
+const check = (actual, expected, label) => { assert.deepEqual(actual, expected, label); passed++; };
+const denied = { canWriteData: false, canUpdateData: false };
+check(workbenchGrants({ role: "admin" }, { isReadOnly: true }), denied, "read-only templates also block admin writes");
+check(workbenchGrants({ role: "staff", canWriteData: true, canUpdateData: false }, null), { canWriteData: true, canUpdateData: false }, "staff flags remain separate");
+check(workbenchGrants({ role: "staff", canWriteData: true, canUpdateData: true }, { allowStaffEdit: false }), denied, "template can narrow staff grants");
+check(workbenchGrants({ role: "user" }, null), denied, "no template never grants a user writes");
+check(workbenchGrants({ role: "user" }, { allowUserEdit: false }), denied, "user grants remain opt-in");
+check(workbenchGrants({ role: "user" }, { allowUserEdit: true }), { canWriteData: true, canUpdateData: true }, "existing explicit template edit grant is retained");
+check(workbenchGrants({ role: "unknown", canWriteData: true }, { allowUserEdit: true }), denied, "unknown roles fail closed");
+const queries = [{ id: 1, name: "game_list" }, { id: 2, name: "packs" }, { id: 3, name: "other" }];
+const views = [{ id: 10, isDefault: true, config: { panels: [{ queryId: 2 }, { queryId: 999 }, { queryId: 1 }] } }, { id: 11, config: { panels: [{ queryId: 3 }] } }];
+check(queriesInView(queries, views[0]).map((q) => q.id), [2, 1], "template ordering preserved; unavailable query IDs never become runnable");
+check(queriesInView(queries, { config: {} }), [], "empty template stays empty");
+check(initialWorkbenchView(views, { role: "user", defaultViewId: 11 }).id, 11, "assigned template wins over global default");
+check(initialWorkbenchView(views, { role: "user", defaultViewId: 999 }).id, 10, "removed assignment falls back to a provided default");
+check(initialWorkbenchView(views, { role: "admin" }, "11").id, 11, "explicit shared-view URL wins over defaults");
+check(initialWorkbenchView(views, { role: "admin" }, 999), null, "missing requested view is not silently replaced");
+check(initialWorkbenchView([], { role: "user" }), null, "no available templates stays unconfigured");
+check(normalizeWorkbenchPins([1, "2", 2, 999, "bad"], queries), [1, 2], "stale and invalid pins are discarded");
+check(normalizeWorkbenchPins({ id: 1 }, queries), [], "malformed browser preference is ignored");
+for (const bad of ["javascript:alert(1)", "data:text/html,<script>", "//example.com", "https://name:secret@example.com", "https://example.com/\nsecret", "https://", "file:///C:/secret", null]) check(safeWorkbenchUrl(bad), null, "unsafe navigation is not offered");
+check(safeWorkbenchUrl("https://docs.google.com/document/d/guide?tab=topup"), "https://docs.google.com/document/d/guide?tab=topup", "ordinary guide URL preserved");
+const row = inspectedRow({ id: 4, name: "game_list" }, [{ id: "game", label: "GAME" }, { id: "link", label: "คู่มือ" }], {
+  sourceIndex: 7, cells: [{ raw: "Sample Game", text: "Sample Game" }, { raw: "https://docs.example.test/guide", text: "คู่มือเติม" }, { raw: "hidden value", text: "hidden value" }],
+}, new Date("2026-11-03T00:00:00Z"));
+check(row.title, "Sample Game", "title comes from visible game field");
+check(row.fields.length, 2, "drawer cannot expose cells omitted from visible columns");
+check(row.fields[1].links, ["https://docs.example.test/guide"], "guide link stays associated with its own field");
+check(row.asOf, "2026-11-03T00:00:00.000Z", "drawer snapshot carries data time");
+check(row.sourceIndex, 7, "inspector retains source position across sort and pagination");
+check(inspectedRow({ id: 1 }, [{ id: "note", label: "หมายเหตุ" }], { sourceIndex: 0, cells: [{ raw: "javascript:alert(1)", text: "ข้อความ" }] }).fields[0].links, [], "non-web text never becomes an executable link");
+check(normalizeColumnValueFilters(null), {}, "missing legacy column filters remain empty");
+check(normalizeColumnValueFilters(["status"]), {}, "arrays are not column maps");
+check(normalizeColumnValueFilters(JSON.parse('{"__proto__":["x"],"status":["ready","ready",null,{}]}')), { status: ["ready"] }, "invalid entries are ignored and values deduplicated");
+check(normalizeColumnValueFilters({ status: ["x".repeat(501)] }), {}, "oversized filter values are ignored");
+check(Object.keys(normalizeColumnValueFilters(Object.fromEntries(Array.from({ length: 40 }, (_, i) => [String(i), ["ready"]])))).length, 30, "column count is bounded");
+check(normalizeColumnValueFilters({ status: Array.from({ length: 150 }, (_, i) => String(i)) }).status.length, 100, "per-column values are bounded");
+check(workbenchStatusOptions([{ id: "status", label: "สถานะ" }], [{ cells: [{ text: "พร้อมใช้งาน" }] }, { cells: [{ text: "พร้อมใช้งาน" }] }]), { columnId: "status", options: [{ label: "พร้อมใช้งาน", count: 2 }] }, "status tabs derive from real visible values");
+check(workbenchStatusOptions([{ id: "game", label: "GAME" }], []), null, "ordinary tables do not invent status tabs");
+check(workbenchStatusOptions([{ id: "status", label: "status" }], Array.from({ length: 7 }, (_, i) => ({ cells: [{ text: String(i) }] }))), null, "high-cardinality status values use the normal column filter");
+console.log(`${passed} passed, 0 failed`);

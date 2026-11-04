@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { getPool } from "@/lib/db";
 import { canViewUsdInventory, canManageUsdInventory } from "@/lib/usdcodashop-inventory";
 import {
-  LEDGER_DIRECTION, accountInput, entryInput, snapshotInput, debitBatchInput, ledgerError,
+  LEDGER_DIRECTION, LEDGER_MAX_BATCH, accountInput, entryInput, snapshotInput, debitBatchInput, ledgerError, orderSourceInput,
   toUnits, fromUnits, reconcile, costOfUse, profitThb,
 } from "@/lib/inventory-ledger";
 
@@ -52,6 +52,15 @@ async function ensure(pool) {
       await c.query("ALTER TABLE gamedb_inv_accounts ADD COLUMN IF NOT EXISTS category TEXT");
       await c.query("ALTER TABLE gamedb_inv_entries ADD COLUMN IF NOT EXISTS invoice TEXT");
       await c.query("CREATE INDEX IF NOT EXISTS gamedb_inv_entries_recorded ON gamedb_inv_entries(recorded_at, id)");
+      // Added for the order pages: which order list a use came from (web / russia / kaleoz ...),
+      // since order numbers of different marketplaces can be the same.
+      await c.query("ALTER TABLE gamedb_inv_entries ADD COLUMN IF NOT EXISTS order_source TEXT");
+      // Who is using an account now: one holder at a time, released by them or an admin.
+      // Not history (the entries are): a released reservation is simply deleted.
+      await c.query(`CREATE TABLE IF NOT EXISTS gamedb_inv_reservations (
+        account_id BIGINT PRIMARY KEY REFERENCES gamedb_inv_accounts(id),
+        user_id INTEGER NOT NULL, user_label TEXT NOT NULL, reserved_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+      await c.query("CREATE INDEX IF NOT EXISTS gamedb_inv_reservations_user ON gamedb_inv_reservations(user_id)");
       await c.query(`CREATE TABLE IF NOT EXISTS gamedb_inv_snapshots (
         id BIGSERIAL PRIMARY KEY, account_id BIGINT NOT NULL REFERENCES gamedb_inv_accounts(id),
         request_id UUID UNIQUE, source TEXT NOT NULL CHECK(source IN ('api','manual')),
@@ -140,16 +149,20 @@ export function createInventoryLedger(pool, { now = () => new Date() } = {}) {
   /**
    * `staff`: the debit page path. Any signed-in account may record a "use", and may
    * reverse only its own "use" on the same Bangkok day. Everything else needs projectm.admin.
+   * `historical`: an admin import of an old sheet. No backdate limit and no balance bound
+   * (the bound is today's balance, which says nothing about a months-old row).
    */
-  async function recordEntry(body, actor, { staff = false } = {}) {
-    if (staff) requireSignedIn(actor); else requireManage(actor);
+  // `holder`: the order pages. A use is only accepted from the person who holds the account's
+  // reservation, checked under the same lock as the insert.
+  async function recordEntry(body, actor, { staff = false, historical = false, holder = false } = {}) {
+    if (staff && !historical) requireSignedIn(actor); else requireManage(actor);
     const input = entryInput(body);
     if (staff && input.kind !== "use" && input.kind !== "reversal") throw ledgerError("บันทึกได้เฉพาะยอดที่ใช้", 403);
     const hash = hashOf(input);
     const at = input.occurredAt ? new Date(input.occurredAt) : now();
     const current = now().getTime();
     if (at.getTime() > current + CLOCK_SKEW_MS) throw ledgerError("เวลาที่ทำรายการต้องไม่อยู่ในอนาคต");
-    if (at.getTime() < current - BACKDATE_DAYS * 86400000) throw ledgerError(`บันทึกย้อนหลังได้ไม่เกิน ${BACKDATE_DAYS} วัน`);
+    if (!historical && at.getTime() < current - BACKDATE_DAYS * 86400000) throw ledgerError(`บันทึกย้อนหลังได้ไม่เกิน ${BACKDATE_DAYS} วัน`);
     await ensure(pool);
     try {
       return await inTransaction(pool, async c => {
@@ -164,7 +177,7 @@ export function createInventoryLedger(pool, { now = () => new Date() } = {}) {
         let row;
         if (input.kind === "reversal") {
           const target = (await c.query(`SELECT e.id, e.account_id, e.kind, e.direction, e.amount::text, e.order_ref,
-              e.actor_id, e.recorded_at
+              e.order_source, e.actor_id, e.recorded_at
             FROM gamedb_inv_entries e WHERE e.id=$1`, [input.reversesEntryId])).rows[0];
           if (!target) throw ledgerError("ไม่พบรายการที่ต้องการกลับรายการ", 404);
           if (target.kind === "reversal") throw ledgerError("กลับรายการซ้อนไม่ได้ ให้บันทึกรายการใหม่แทน", 409);
@@ -175,13 +188,19 @@ export function createInventoryLedger(pool, { now = () => new Date() } = {}) {
           await c.query("SELECT id FROM gamedb_inv_accounts WHERE id=$1 FOR UPDATE", [target.account_id]);
           const done = await c.query("SELECT 1 FROM gamedb_inv_entries WHERE reverses_entry_id=$1", [target.id]);
           if (done.rows.length) throw ledgerError("รายการนี้ถูกกลับรายการไปแล้ว", 409);
-          row = { accountId: target.account_id, direction: -Number(target.direction), amount: target.amount, orderRef: target.order_ref, thb: null, sale: null, invoice: null };
+          row = { accountId: target.account_id, direction: -Number(target.direction), amount: target.amount, orderRef: target.order_ref,
+            orderSource: target.order_source, thb: null, sale: null, invoice: null };
         } else {
           const account = (await c.query("SELECT id, status FROM gamedb_inv_accounts WHERE id=$1 FOR UPDATE", [input.accountId])).rows[0];
           if (!account) throw ledgerError("ไม่พบบัญชี", 404);
-          if (account.status !== "active") throw ledgerError("บัญชีนี้ปิดใช้งานแล้ว", 409);
+          // A closed account still has its old history; only new movements are refused.
+          if (account.status !== "active" && !historical) throw ledgerError("บัญชีนี้ปิดใช้งานแล้ว", 409);
+          if (holder) {
+            const held = (await c.query("SELECT user_id FROM gamedb_inv_reservations WHERE account_id=$1 FOR UPDATE", [account.id])).rows[0];
+            if (!held || String(held.user_id) !== String(actor.id)) throw ledgerError("บัญชีนี้ไม่ได้จองไว้กับคุณแล้ว กรุณาจองใหม่ในหน้าจองช่องทาง", 409);
+          }
           const direction = LEDGER_DIRECTION[input.kind];
-          if (direction < 0) {
+          if (direction < 0 && !historical) {
             // Bots only ever lower the balance, so this bound is safe: spending past it
             // means a deposit or a newer snapshot is missing.
             const bound = await upperBoundBalance(c, account.id);
@@ -189,15 +208,16 @@ export function createInventoryLedger(pool, { now = () => new Date() } = {}) {
               throw ledgerError(`ยอดคงเหลือไม่พอ (สูงสุด ${fromUnits(bound)}) กรุณาบันทึกยอดเติมเข้าหรือยอดคงเหลือล่าสุดก่อน`, 409);
             }
           }
-          row = { accountId: account.id, direction, amount: input.amount, orderRef: input.orderRef, thb: input.thbAmount, sale: input.saleThb, invoice: input.invoice };
+          row = { accountId: account.id, direction, amount: input.amount, orderRef: input.orderRef, orderSource: input.orderSource ?? null,
+            thb: input.thbAmount, sale: input.saleThb, invoice: input.invoice };
         }
         const { rows } = await c.query(`INSERT INTO gamedb_inv_entries
           (account_id, request_id, request_hash, kind, direction, amount, order_ref, thb_amount, sale_thb,
-           reverses_entry_id, note, actor_id, actor_label, occurred_at, invoice, recorded_at)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id::text`,
+           reverses_entry_id, note, actor_id, actor_label, occurred_at, invoice, recorded_at, order_source)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id::text`,
         // recorded_at from the same clock as the same-day cancel rule, not the database's NOW().
         [row.accountId, input.requestId, hash, input.kind, row.direction, row.amount, row.orderRef, row.thb, row.sale,
-          input.reversesEntryId ?? null, input.note, actor.id, actorLabel(actor), iso(at), row.invoice ?? null, iso(now())]);
+          input.reversesEntryId ?? null, input.note, actor.id, actorLabel(actor), iso(at), row.invoice ?? null, iso(now()), row.orderSource ?? null]);
         return { id: rows[0].id, replayed: false };
       });
     } catch (e) {
@@ -264,6 +284,25 @@ export function createInventoryLedger(pool, { now = () => new Date() } = {}) {
       return { accountId: batch.accountId, saved: results.filter(r => r.ok).length, failed: results.filter(r => !r.ok).length, results };
     },
 
+    /**
+     * Admin import of old sheet rows (deposits and uses), oldest first. Like recordDebits,
+     * a bad row is reported back and the rest are still recorded; each row is idempotent.
+     */
+    async importEntries(rows, actor) {
+      requireManage(actor);
+      if (!Array.isArray(rows) || !rows.length || rows.length > LEDGER_MAX_BATCH) throw ledgerError(`นำเข้าได้ครั้งละ 1–${LEDGER_MAX_BATCH} รายการ`);
+      const results = [];
+      for (const [index, row] of rows.entries()) {
+        try {
+          results.push({ index, ok: true, ...(await recordEntry(row, actor, { historical: true })) });
+        } catch (e) {
+          if (!e.status || e.status >= 500) throw e;
+          results.push({ index, ok: false, status: e.status, error: e.message });
+        }
+      }
+      return results;
+    },
+
     /** Undo a debit with a reversal row (history is never edited). */
     async reverseEntry(body, actor) {
       requireSignedIn(actor);
@@ -277,6 +316,72 @@ export function createInventoryLedger(pool, { now = () => new Date() } = {}) {
       const { rows } = await pool.query(`SELECT a.id::text, a.label, a.currency, a.category, a.provider, a.status
         FROM gamedb_inv_accounts a ORDER BY a.category NULLS LAST, a.label, a.id`);
       return rows;
+    },
+
+    /** Every account with whoever holds it now (the reservation page). iTunes keeps its own mail reservations. */
+    async reservations(actor) {
+      requireSignedIn(actor);
+      await ensure(pool);
+      const { rows } = await pool.query(`SELECT a.id::text, a.label, a.currency, a.category, a.provider, a.status,
+          r.user_id AS "holderId", r.user_label AS "holder", r.reserved_at AS "reservedAt"
+        FROM gamedb_inv_accounts a LEFT JOIN gamedb_inv_reservations r ON r.account_id = a.id
+        WHERE a.provider <> 'itunes' ORDER BY a.category NULLS LAST, a.label, a.id`);
+      return rows.map(r => ({ ...r, holderId: r.holderId == null ? null : String(r.holderId), reservedAt: r.reservedAt ? iso(r.reservedAt) : null,
+        mine: r.holderId != null && String(r.holderId) === String(actor.id) }));
+    },
+
+    /** Take an active, non-iTunes account. Held by someone else: refused with their name. */
+    async reserve(accountId, actor) {
+      requireSignedIn(actor);
+      if (!/^\d{1,18}$/.test(String(accountId ?? ""))) throw ledgerError("ระบุบัญชีให้ถูกต้อง");
+      await ensure(pool);
+      return inTransaction(pool, async c => {
+        const account = (await c.query("SELECT id, provider, status FROM gamedb_inv_accounts WHERE id=$1 FOR UPDATE", [accountId])).rows[0];
+        if (!account) throw ledgerError("ไม่พบบัญชี", 404);
+        if (account.provider === "itunes") throw ledgerError("เมล iTunes ใช้การจองในหน้า iTune", 409);
+        if (account.status !== "active") throw ledgerError("บัญชีนี้ปิดใช้งานแล้ว", 409);
+        const held = (await c.query("SELECT user_id, user_label FROM gamedb_inv_reservations WHERE account_id=$1", [accountId])).rows[0];
+        if (held && String(held.user_id) !== String(actor.id)) throw ledgerError(`จองโดย ${held.user_label} แล้ว`, 409);
+        if (!held) await c.query("INSERT INTO gamedb_inv_reservations (account_id, user_id, user_label) VALUES ($1,$2,$3)", [accountId, actor.id, actorLabel(actor)]);
+        return { accountId: String(accountId), reserved: true };
+      });
+    },
+
+    /** Give an account back: its holder, or an admin for anyone's. */
+    async release(accountId, actor) {
+      requireSignedIn(actor);
+      if (!/^\d{1,18}$/.test(String(accountId ?? ""))) throw ledgerError("ระบุบัญชีให้ถูกต้อง");
+      await ensure(pool);
+      const { rowCount } = await pool.query("DELETE FROM gamedb_inv_reservations WHERE account_id=$1 AND (user_id=$2 OR $3)",
+        [accountId, actor.id, canManageUsdInventory(actor)]);
+      if (!rowCount) throw ledgerError("คืนได้เฉพาะบัญชีที่ตัวเองจองไว้", 409);
+      return { accountId: String(accountId), reserved: false };
+    },
+
+    /** The accounts one person holds, for the order pages' dropdown. */
+    async heldAccounts(actor) {
+      requireSignedIn(actor);
+      await ensure(pool);
+      const { rows } = await pool.query(`SELECT a.id::text, a.label, a.currency, a.category, r.reserved_at AS "reservedAt"
+        FROM gamedb_inv_reservations r JOIN gamedb_inv_accounts a ON a.id = r.account_id
+        WHERE r.user_id=$1 AND a.status='active' ORDER BY a.category NULLS LAST, a.label`, [actor.id]);
+      return rows.map(r => ({ ...r, reservedAt: iso(r.reservedAt) }));
+    },
+
+    /**
+     * What was used for one order: every use, cancelled ones marked, from anyone (others see it too).
+     * Matched on order number and source, since marketplaces' numbers can repeat across sources.
+     */
+    async orderUsage(actor, { orderRef, orderSource }) {
+      requireSignedIn(actor);
+      const ref = String(orderRef ?? "").trim().slice(0, 120), source = orderSourceInput(orderSource);
+      if (!ref) throw ledgerError("ระบุเลขออเดอร์");
+      await ensure(pool);
+      const { rows } = await pool.query(`SELECT ${entryColumns} FROM gamedb_inv_entries e JOIN gamedb_inv_accounts a ON a.id = e.account_id
+        WHERE e.kind='use' AND e.order_ref=$1 AND e.order_source=$2 ORDER BY e.recorded_at, e.id LIMIT 200`, [ref, source]);
+      const today = bangkokDay(now()), admin = canManageUsdInventory(actor);
+      return rows.map(e => ({ ...e, occurredAt: iso(e.occurredAt), recordedAt: iso(e.recordedAt), cancelled: Boolean(e.reversedBy),
+        canReverse: !e.reversedBy && (admin || (String(e.actorId) === String(actor.id) && bangkokDay(e.recordedAt) === today)) }));
     },
 
     /** Debits in a window, newest first; optionally one account or one person. */

@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AlertCircle, ArrowLeft, ArrowRight } from "lucide-react";
@@ -53,16 +54,16 @@ export default function GameinfoRussiaCheckGameLogsPage({ initialLog, lang }) {
         <CardDescription>นับแพ็กเพิ่ม หาย หรือกลับมา หากยังตรวจไม่ครบ จะยังไม่สรุปว่าไม่มีการเปลี่ยนแปลง{log?.startAt && log?.endAt ? ` · ช่วง ${formatBangkok(log.startAt)} ถึง ${formatBangkok(log.endAt)} (เวลาไทย)` : ""}</CardDescription>
       </CardHeader>
       <CardContent>
-        {log?.games?.length ? <Table aria-label="การเปลี่ยนแปลงรายเกมใน 24 ชั่วโมงล่าสุด">
+        {log?.games?.length ? <PaginatedTable items={log.games}>{(tablePageItems, tablePageStart, tableAllItems) => (<Table aria-label="การเปลี่ยนแปลงรายเกมใน 24 ชั่วโมงล่าสุด">
           <TableHeader><TableRow><TableHead scope="col">เกม</TableHead><TableHead scope="col">สถานะใน 24 ชม.</TableHead></TableRow></TableHeader>
-          <TableBody>{log.games.map((item) => <TableRow key={item.gameId}>
+          <TableBody>{tablePageItems.map((tableItem, tableIndex) => ((item) => <TableRow key={item.gameId}>
             <TableCell><div className="flex items-center gap-2">
               <span>{item.gameName}</span>
               <Link href={`/gameinfo/${lang}/russia-check?gameId=${item.gameId}`} className={buttonVariants({ variant: "outline", size: "sm" })} aria-label={`ดู Pack ของ ${item.gameName}`}>ดู Pack<ArrowRight data-icon="inline-end" /></Link>
             </div></TableCell>
             <TableCell><Badge variant={item.status === "changed" ? "success" : item.status === "unchanged" ? "secondary" : "outline"}>{labels[item.status] || labels.unchecked}</Badge></TableCell>
-          </TableRow>)}</TableBody>
-        </Table> : <Empty><EmptyHeader><EmptyTitle>ยังไม่มีเกมที่ติดตาม</EmptyTitle><EmptyDescription>เมื่อมีเกมที่ติดตาม สรุปทุกเกมจะแสดงที่นี่</EmptyDescription></EmptyHeader></Empty>}
+          </TableRow>)(tableItem, tablePageStart + tableIndex, tableAllItems))}</TableBody>
+        </Table>)}</PaginatedTable> : <Empty><EmptyHeader><EmptyTitle>ยังไม่มีเกมที่ติดตาม</EmptyTitle><EmptyDescription>เมื่อมีเกมที่ติดตาม สรุปทุกเกมจะแสดงที่นี่</EmptyDescription></EmptyHeader></Empty>}
       </CardContent>
     </Card>
   </div>;

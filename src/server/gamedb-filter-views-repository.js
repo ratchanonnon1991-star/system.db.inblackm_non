@@ -13,10 +13,12 @@ async function ensureSchema() {
         row_filter         TEXT NOT NULL DEFAULT '',
         lookup_row_filter  JSONB,
         param_values       JSONB NOT NULL DEFAULT '{}'::jsonb,
+        column_value_filters JSONB NOT NULL DEFAULT '{}'::jsonb,
         created_by         VARCHAR(255),
         created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
+    await getPool().query(`ALTER TABLE gamedb_filter_views ADD COLUMN IF NOT EXISTS column_value_filters JSONB NOT NULL DEFAULT '{}'::jsonb`);
     await getPool().query(
       `CREATE INDEX IF NOT EXISTS gamedb_filter_views_query_idx ON gamedb_filter_views (query_id)`
     );
@@ -35,6 +37,7 @@ function mapRow(row) {
     rowFilter: row.row_filter,
     lookupRowFilter: row.lookup_row_filter,
     paramValues: row.param_values || {},
+    columnValueFilters: row.column_value_filters || {},
     createdBy: row.created_by,
     createdAt: row.created_at,
   };
@@ -47,7 +50,7 @@ function mapRow(row) {
 export async function listFilterViews(queryId) {
   await ensureSchema();
   const result = await getPool().query(
-    `SELECT id, query_id, name, row_filter, lookup_row_filter, param_values, created_by, created_at
+    `SELECT id, query_id, name, row_filter, lookup_row_filter, param_values, column_value_filters, created_by, created_at
        FROM gamedb_filter_views
       WHERE query_id = $1
       ORDER BY id DESC`,
@@ -62,13 +65,14 @@ export async function insertFilterView({
   rowFilter = "",
   lookupRowFilter = null,
   paramValues = {},
+  columnValueFilters = {},
   createdBy = "",
 }) {
   await ensureSchema();
   const result = await getPool().query(
-    `INSERT INTO gamedb_filter_views (query_id, name, row_filter, lookup_row_filter, param_values, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING id, query_id, name, row_filter, lookup_row_filter, param_values, created_by, created_at`,
+    `INSERT INTO gamedb_filter_views (query_id, name, row_filter, lookup_row_filter, param_values, created_by, column_value_filters)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id, query_id, name, row_filter, lookup_row_filter, param_values, column_value_filters, created_by, created_at`,
     [
       queryId,
       name,
@@ -76,6 +80,7 @@ export async function insertFilterView({
       lookupRowFilter ? JSON.stringify(lookupRowFilter) : null,
       JSON.stringify(paramValues || {}),
       createdBy,
+      JSON.stringify(columnValueFilters),
     ]
   );
   return mapRow(result.rows[0]);

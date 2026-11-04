@@ -216,7 +216,8 @@ assert.match(mappingPage, /<TooltipContent className="max-w-80 break-words">\{fu
 assert.doesNotMatch(mappingPage, /title=\{/);
 assert.match(mappingPage, /<PackNameCell className="max-w-\[18rem\] font-medium" fullName=\{item\.name\}>/);
 assert.match(mappingPage, /<CardTitle>จัดการ Mapping ทั้งชุด<\/CardTitle>[\s\S]*ลิงก์ตามลำดับ[\s\S]*ล้าง Mapping[\s\S]*<\/Card>[\s\S]*xl:grid-cols-2/);
-assert.match(mappingPage, /visiblePacks\.map\(\(pack\)/);
+assert.match(mappingPage, /PaginatedTable items=\{visiblePacks\}/);
+assert.match(mappingPage, /tablePageItems\.map/);
 assert.match(mappingPage, /value=\{packQuery\}[\s\S]*value=\{packStatus\}/);
 assert.equal((mappingPage.match(/className="h-16"/g) || []).length, 2);
 assert.match(marketServer, /ALTER TABLE gameinfo_market_catalog_packs ADD COLUMN IF NOT EXISTS product_type/);

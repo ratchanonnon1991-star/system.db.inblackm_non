@@ -1,3 +1,4 @@
+import * as inventoryPagination from "../src/server/inventory-page.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
@@ -21,7 +22,7 @@ const mocks = {
 const source = readFileSync(new URL("../src/app/api/projectm/multigamecard/route.js", import.meta.url), "utf8");
 const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
 const route = {};
-new Function("require", "exports", js)(name => { if (!mocks[name]) throw Error(name); return mocks[name]; }, route);
+new Function("require", "exports", js)(name => { if (name === "@/server/inventory-page") return inventoryPagination; if (!mocks[name]) throw Error(name); return mocks[name]; }, route);
 const url = "https://example.test/api/projectm/multigamecard?dateFrom=2026-10-01&dateTo=2026-10-18";
 actor = null; assert.equal((await route.GET(new Request(url))).status, 401); assert.equal(reads, 0);
 actor = { id: 17, permissions: [] }; assert.equal((await route.GET(new Request(url))).status, 403);

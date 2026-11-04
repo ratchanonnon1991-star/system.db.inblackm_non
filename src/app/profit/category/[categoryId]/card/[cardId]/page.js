@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { TablePagination } from "@/components/table-pagination";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ChevronRight, Copy, Droplets, Loader2, Merge, Pencil, Plus, Trash2, User } from "lucide-react";
+import { usePagedResource } from "@/lib/use-paged-resource";
 import { apiJson } from "@/lib/api-json";
 import { fmtDate, fmtIdr, fmtKyat, fmtMoney, fmtMyr, fmtPct, fmtPhp, fmtPoints, fmtUsd, netSaleDisplay } from "@/lib/profit-format";
 import { commitOverrideEdit } from "@/lib/profit-conflict";
@@ -28,22 +30,14 @@ export default function ProfitCardPage() {
 function ProfitCardPageContent({ categoryId, cardId }) {
   const router = useRouter();
   const canEdit = useProfitCanEdit();
-  const [data, setData] = useState(null);
-  const [error, setError] = useState("");
   const [q, setQ] = useState("");
   const [editOpen, setEditOpen] = useState(false);
   const [addOrderOpen, setAddOrderOpen] = useState(false);
   const [platforms, setPlatforms] = useState([]);
 
-  const load = useCallback(() => {
-    apiJson(`/api/profit/categories/${categoryId}/cards/${cardId}`, { fallbackError: "โหลดรายละเอียดบัตรไม่สำเร็จ" })
-      .then((res) => setData(res))
-      .catch((err) => setError(err.message));
-  }, [categoryId, cardId]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  const [page, setPage] = useState(1), [pageSize, setPageSize] = useState(25);
+  const { data, loading, error, setError, reload: load } = usePagedResource(
+    `/api/profit/categories/${categoryId}/cards/${cardId}`, { page, pageSize, search: q }, { setPage });
 
   // Platform names for the "แพลตฟอร์ม" dropdown -- non-critical, so a failed
   // fetch just leaves the dropdown showing only whatever's already tagged.
@@ -299,7 +293,7 @@ function ProfitCardPageContent({ categoryId, cardId }) {
   }, [data, q]);
 
   if (error) {
-    return <div className="rounded-lg border border-ll-hairline bg-ll-surface-1 p-6 text-sm text-ll-primary-subtle-text">เกิดข้อผิดพลาด: {error}</div>;
+    return <div className="rounded-lg border border-ll-hairline bg-ll-surface-1 p-6 text-sm text-ll-primary-subtle-text">เกิดข้อผิดพลาด: {error} <button type="button" onClick={load} className="underline">ลองใหม่</button></div>;
   }
   if (!data) {
     return (
@@ -310,9 +304,10 @@ function ProfitCardPageContent({ categoryId, cardId }) {
   }
 
   const { category, card } = data;
+  const withPagination = (content) => <div><div aria-busy={loading} inert={loading || undefined}>{content}</div><TablePagination {...data.pagination} loading={loading} onPage={setPage} onPageSize={(size) => { setPage(1); setPageSize(size); }} label="แบ่งหน้ารายละเอียดบัตร" /><button type="button" disabled={loading} onClick={load} className="mt-2 text-xs underline">อัปเดตข้อมูล</button></div>;
 
   if (card.source === "oxide") {
-    return (
+    return withPagination((
       <OxideCardDetail
         categoryId={categoryId}
         category={category}
@@ -322,11 +317,11 @@ function ProfitCardPageContent({ categoryId, cardId }) {
         onEditOrder={editOrder}
         onToggleMergeCleared={toggleMergeCleared}
       />
-    );
+    ));
   }
 
   if (card.source === "wavepay") {
-    return (
+    return withPagination((
       <WavepayCardDetail
         categoryId={categoryId}
         category={category}
@@ -335,11 +330,11 @@ function ProfitCardPageContent({ categoryId, cardId }) {
         platforms={platforms}
         onEditOrder={editOrder}
       />
-    );
+    ));
   }
 
   if (card.source === "u9") {
-    return (
+    return withPagination((
       <U9CardDetail
         categoryId={categoryId}
         category={category}
@@ -348,7 +343,7 @@ function ProfitCardPageContent({ categoryId, cardId }) {
         platforms={platforms}
         onEditOrder={editOrder}
       />
-    );
+    ));
   }
 
   if (card.source === "truemoney" || card.source === "atom" || card.source === "smartsun") {
@@ -358,7 +353,7 @@ function ProfitCardPageContent({ categoryId, cardId }) {
         : card.source === "atom"
           ? { amountKey: "deductedKs", amountTotalKey: "deductedKsTotal", amountLabel: "ยอดตัด (Ks)", amountLabelTotal: "ยอดตัดรวม (Ks)", fmtAmount: fmtKyat, blurb: "เบอร์ ATOM · payment_method = ATOM (codashop_auto_api) · ยอดตัด Ks จาก pack_price" }
           : { amountKey: "deductedPhp", amountTotalKey: "deductedPhpTotal", amountLabel: "ยอดตัด (₱)", amountLabelTotal: "ยอดตัดรวม (₱)", fmtAmount: fmtPhp, blurb: "เบอร์ Smart/Sun · payment_method = Smart/Sun (codashop_auto_api) · ยอดตัด PHP จาก pack_price" };
-    return (
+    return withPagination((
       <PhoneChannelCardDetail
         categoryId={categoryId}
         category={category}
@@ -368,11 +363,11 @@ function ProfitCardPageContent({ categoryId, cardId }) {
         onEditOrder={editOrder}
         cfg={cfg}
       />
-    );
+    ));
   }
 
   if (card.source === "donshop") {
-    return (
+    return withPagination((
       <DonshopCardDetail
         categoryId={categoryId}
         category={category}
@@ -381,11 +376,11 @@ function ProfitCardPageContent({ categoryId, cardId }) {
         platforms={platforms}
         onEditOrder={editOrder}
       />
-    );
+    ));
   }
 
   if (card.source === "gamepoint") {
-    return (
+    return withPagination((
       <GamepointCardDetail
         categoryId={categoryId}
         category={category}
@@ -394,11 +389,11 @@ function ProfitCardPageContent({ categoryId, cardId }) {
         platforms={platforms}
         onEditOrder={editOrder}
       />
-    );
+    ));
   }
 
   if (card.source === "agenh2h") {
-    return (
+    return withPagination((
       <Agenh2hCardDetail
         categoryId={categoryId}
         category={category}
@@ -407,11 +402,11 @@ function ProfitCardPageContent({ categoryId, cardId }) {
         platforms={platforms}
         onEditOrder={editOrder}
       />
-    );
+    ));
   }
 
   if (card.source === "codareseller") {
-    return (
+    return withPagination((
       <CodaresellerCardDetail
         categoryId={categoryId}
         category={category}
@@ -420,11 +415,11 @@ function ProfitCardPageContent({ categoryId, cardId }) {
         platforms={platforms}
         onEditOrder={editOrder}
       />
-    );
+    ));
   }
 
   if (card.source === "netease") {
-    return (
+    return withPagination((
       <NeteaseCardDetail
         categoryId={categoryId}
         category={category}
@@ -433,13 +428,13 @@ function ProfitCardPageContent({ categoryId, cardId }) {
         platforms={platforms}
         onEditOrder={editOrder}
       />
-    );
+    ));
   }
 
   const isLive = card.source === "gocash";
   const money = isLive ? fmtUsd : fmtMoney;
 
-  return (
+  return withPagination((
     <div className="flex flex-col gap-5">
       <nav className="flex items-center gap-1.5 text-[12px] text-ll-ink-subtle">
         <Link href="/profit" className="hover:underline">ภาพรวม</Link>
@@ -504,12 +499,12 @@ function ProfitCardPageContent({ categoryId, cardId }) {
           <input
             type="search"
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={(e) => { setQ(e.target.value); setPage(1); }}
             placeholder="ค้นหาเลขออเดอร์..."
             className="h-9 w-72 max-w-full rounded-md border border-ll-hairline-strong bg-ll-surface-2 px-3 text-[13px] text-ll-ink outline-none focus:border-ll-primary focus:bg-ll-surface-1"
           />
           <span className="text-[12px] text-ll-ink-subtle">
-            {filteredOrders.length}{q ? ` / ${card.orderCount}` : ""} รายการ
+            {card.orderTotal ?? filteredOrders.length}{q ? ` / ${card.orderCount}` : ""} รายการ
           </span>
         </div>
       )}
@@ -634,7 +629,7 @@ function ProfitCardPageContent({ categoryId, cardId }) {
         <AddOrderModal cardId={card.id} onClose={() => setAddOrderOpen(false)} onSaved={() => { setAddOrderOpen(false); load(); }} />
       )}
     </div>
-  );
+  ));
 }
 
 const DUST_LOG_COLLAPSED_COUNT = 3;
@@ -1058,7 +1053,7 @@ function WavepayCardDetail({ categoryId, category, card, canEdit, platforms, onE
       <section className="rounded-lg border border-ll-hairline bg-ll-surface-1">
         <div className="flex items-center justify-between border-b border-ll-hairline px-4 py-3">
           <h2 className="text-sm font-semibold text-ll-ink">ออเดอร์</h2>
-          <span className="text-[12px] text-ll-ink-subtle">{card.orders.length} รายการ</span>
+          <span className="text-[12px] text-ll-ink-subtle">{card.orderTotal ?? card.orders.length} รายการ</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1200px] text-[13px] text-ll-ink">
@@ -1200,7 +1195,7 @@ function PhoneChannelCardDetail({ categoryId, category, card, canEdit, platforms
       <section className="rounded-lg border border-ll-hairline bg-ll-surface-1">
         <div className="flex items-center justify-between border-b border-ll-hairline px-4 py-3">
           <h2 className="text-sm font-semibold text-ll-ink">ออเดอร์</h2>
-          <span className="text-[12px] text-ll-ink-subtle">{card.orders.length} รายการ</span>
+          <span className="text-[12px] text-ll-ink-subtle">{card.orderTotal ?? card.orders.length} รายการ</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1200px] text-[13px] text-ll-ink">
@@ -1296,7 +1291,7 @@ function U9CardDetail({ categoryId, category, card, canEdit, platforms, onEditOr
       <section className="rounded-lg border border-ll-hairline bg-ll-surface-1">
         <div className="flex items-center justify-between border-b border-ll-hairline px-4 py-3">
           <h2 className="text-sm font-semibold text-ll-ink">ออเดอร์</h2>
-          <span className="text-[12px] text-ll-ink-subtle">{card.orders.length} รายการ</span>
+          <span className="text-[12px] text-ll-ink-subtle">{card.orderTotal ?? card.orders.length} รายการ</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1200px] text-[13px] text-ll-ink">
@@ -1435,7 +1430,7 @@ function DonshopCardDetail({ categoryId, category, card, canEdit, platforms, onE
       <section className="rounded-lg border border-ll-hairline bg-ll-surface-1">
         <div className="flex items-center justify-between border-b border-ll-hairline px-4 py-3">
           <h2 className="text-sm font-semibold text-ll-ink">ออเดอร์</h2>
-          <span className="text-[12px] text-ll-ink-subtle">{card.orders.length} รายการ</span>
+          <span className="text-[12px] text-ll-ink-subtle">{card.orderTotal ?? card.orders.length} รายการ</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1200px] text-[13px] text-ll-ink">
@@ -1582,7 +1577,7 @@ function GamepointCardDetail({ categoryId, category, card, canEdit, platforms, o
       <section className="rounded-lg border border-ll-hairline bg-ll-surface-1">
         <div className="flex items-center justify-between border-b border-ll-hairline px-4 py-3">
           <h2 className="text-sm font-semibold text-ll-ink">ออเดอร์</h2>
-          <span className="text-[12px] text-ll-ink-subtle">{card.orders.length} รายการ</span>
+          <span className="text-[12px] text-ll-ink-subtle">{card.orderTotal ?? card.orders.length} รายการ</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1200px] text-[13px] text-ll-ink">
@@ -1726,7 +1721,7 @@ function Agenh2hCardDetail({ categoryId, category, card, canEdit, platforms, onE
       <section className="rounded-lg border border-ll-hairline bg-ll-surface-1">
         <div className="flex items-center justify-between border-b border-ll-hairline px-4 py-3">
           <h2 className="text-sm font-semibold text-ll-ink">ออเดอร์</h2>
-          <span className="text-[12px] text-ll-ink-subtle">{card.orders.length} รายการ</span>
+          <span className="text-[12px] text-ll-ink-subtle">{card.orderTotal ?? card.orders.length} รายการ</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1200px] text-[13px] text-ll-ink">
@@ -1873,7 +1868,7 @@ function CodaresellerCardDetail({ categoryId, category, card, canEdit, platforms
       <section className="rounded-lg border border-ll-hairline bg-ll-surface-1">
         <div className="flex items-center justify-between border-b border-ll-hairline px-4 py-3">
           <h2 className="text-sm font-semibold text-ll-ink">ออเดอร์</h2>
-          <span className="text-[12px] text-ll-ink-subtle">{card.orders.length} รายการ</span>
+          <span className="text-[12px] text-ll-ink-subtle">{card.orderTotal ?? card.orders.length} รายการ</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1100px] text-[13px] text-ll-ink">
@@ -2020,7 +2015,7 @@ function NeteaseCardDetail({ categoryId, category, card, canEdit, platforms, onE
       <section className="rounded-lg border border-ll-hairline bg-ll-surface-1">
         <div className="flex items-center justify-between border-b border-ll-hairline px-4 py-3">
           <h2 className="text-sm font-semibold text-ll-ink">ออเดอร์</h2>
-          <span className="text-[12px] text-ll-ink-subtle">{card.orders.length} รายการ</span>
+          <span className="text-[12px] text-ll-ink-subtle">{card.orderTotal ?? card.orders.length} รายการ</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1100px] text-[13px] text-ll-ink">
@@ -2172,7 +2167,7 @@ function OxideCardDetail({ categoryId, category, card, canEdit, platforms, onEdi
       <section className="rounded-lg border border-ll-hairline bg-ll-surface-1">
         <div className="flex items-center justify-between border-b border-ll-hairline px-4 py-3">
           <h2 className="text-sm font-semibold text-ll-ink">ออเดอร์</h2>
-          <span className="text-[12px] text-ll-ink-subtle">{card.orders.length} รายการ</span>
+          <span className="text-[12px] text-ll-ink-subtle">{card.orderTotal ?? card.orders.length} รายการ</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1200px] text-[13px] text-ll-ink">

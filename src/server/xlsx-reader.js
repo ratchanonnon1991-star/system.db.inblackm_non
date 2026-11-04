@@ -55,9 +55,10 @@ function resolvePath(base, target) {
  * The workbook's sheets: [{ title, cells: [{ row, col, text }], images:
  * [{ row, col, media }] }] — rows 1-based, col a letter for cells and a
  * 0-based index for images (as the drawing stores it). `media(path)` returns
- * a picture's bytes. `titles` (a Set) reads only those sheets.
+ * a picture's bytes. `titles` (a Set) reads only those sheets. `numbers` also
+ * keeps number / error cells (as their raw text, e.g. "46099" or "#DIV/0!").
  */
-export function readXlsxSheetsWithImages(buffer, { titles = null } = {}) {
+export function readXlsxSheetsWithImages(buffer, { titles = null, numbers = false } = {}) {
   const zip = unzip(buffer);
   const strings = [...String(zip.text("xl/sharedStrings.xml") || "").matchAll(/<si>([\s\S]*?)<\/si>/g)]
     .map((m) => decodeXml([...m[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((t) => t[1]).join("")));
@@ -80,6 +81,7 @@ export function readXlsxSheetsWithImages(buffer, { titles = null } = {}) {
       if (/t="s"/.test(cell[3]) && value != null) text = strings[Number(value)] || "";
       else if (/t="inlineStr"/.test(cell[3])) text = decodeXml([...cell[4].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((t) => t[1]).join(""));
       else if (/t="str"/.test(cell[3]) && value != null) text = decodeXml(value);
+      else if (numbers && value != null) text = decodeXml(value);
       if (text.trim()) cells.push({ row: Number(cell[2]), col: cell[1], text });
     }
     const images = [];

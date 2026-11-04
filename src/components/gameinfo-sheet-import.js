@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -142,7 +143,7 @@ export default function GameinfoSheetImport({ lang, sheetUrl }) {
       </fieldset>
 
       <div className="overflow-x-auto rounded-2xl border border-linear-hairline bg-linear-surface-1">
-        <table className="w-full min-w-[900px] text-left text-sm">
+        <PaginatedTable items={rows}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[900px] text-left text-sm">
           <thead className="bg-linear-surface-2 text-[11px] font-black uppercase tracking-[0.06em] text-linear-ink-muted">
             <tr>
               <th scope="col" className="w-12 px-4 py-3">
@@ -161,7 +162,7 @@ export default function GameinfoSheetImport({ lang, sheetUrl }) {
           <tbody>
             {rows.length === 0 ? (
               <tr><td colSpan={3} className="px-4 py-8 text-center text-linear-ink-tertiary">ไม่มีอะไรต้องเติมแล้ว</td></tr>
-            ) : rows.map((item) => (
+            ) : tablePageItems.map((tableItem, tableIndex) => ((item) => (
               <tr key={item.gameId} className="border-t border-linear-hairline align-top">
                 <td className="px-4 py-3">
                   <input
@@ -210,9 +211,9 @@ export default function GameinfoSheetImport({ lang, sheetUrl }) {
                   </dl>
                 </td>
               </tr>
-            ))}
+            ))(tableItem, tablePageStart + tableIndex, tableAllItems))}
           </tbody>
-        </table>
+        </table>)}</PaginatedTable>
       </div>
 
       {preview.unmatchedSheetGames.length ? (

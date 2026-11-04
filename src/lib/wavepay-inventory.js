@@ -156,3 +156,66 @@ export function waveMatches(entry, term) {
   return [entry.orderId, d.game, d.pack, d.operator, d.invoice, d.customer, d.playerId, d.sheetOperator]
     .join(" ").toLowerCase().includes(term.toLowerCase());
 }
+
+/** A ledger account named like the sheet tab "WAVEPAY 3 (80888)" -> the one SIM ending in those digits, else null. */
+export function waveLedgerPhone(label, phones) {
+  const digits = /\((\d{4,6})\)\s*$/.exec(String(label ?? "").trim())?.[1];
+  if (!digits) return null;
+  const hits = phones.filter((p) => p && p.endsWith(digits));
+  return hits.length === 1 ? hits[0] : null;
+}
+
+const bangkokDay = (iso) => new Date(Date.parse(iso) + 7 * 3600000).toISOString().slice(0, 10);
+const LEDGER_OUT = new Set(["use", "adjust_out"]);
+
+/**
+ * Per SIM: what the bot's own balance readings cannot explain (from the chain check), beside
+ * what people recorded in the inventory ledger (debit page, imported sheets) over the same range.
+ * A gap lists the records of the same direction dated within its days: sheet rows carry a day,
+ * not a time, so matching is by Bangkok day.
+ * @param wallets     createInventoryCheck(...).check({ provider: "wavepay" }).wallets (label = phone)
+ * @param ledgerRows  { label, kind, amount, order_ref, occurred_at, actor_label }
+ */
+export function waveGapLines(wallets, ledgerRows, phones) {
+  const recorded = new Map(), unmatched = [];
+  for (const row of ledgerRows) {
+    const phone = waveLedgerPhone(row.label, phones);
+    if (!phone) { unmatched.push(row.label); continue; }
+    const list = recorded.get(phone) ?? [];
+    list.push({ direction: LEDGER_OUT.has(row.kind) ? "out" : "in", kind: row.kind, amount: kyat(row.amount),
+      orderRef: row.order_ref || null, occurredAt: new Date(row.occurred_at).toISOString(), by: row.actor_label || null });
+    recorded.set(phone, list);
+  }
+  const sum = (list) => signedUsd(list.reduce((n, x) => n + (sheetCents(x.amount) ?? 0n), 0n));
+  const lines = new Map();
+  const line = (phone, w) => {
+    const mine = recorded.get(phone) ?? [];
+    // Only the windows between two bot orders; a mismatch inside one bot receipt is the bot's own.
+    const gaps = (w?.gaps ?? []).filter((g) => g.kind === "between").map((g) => ({
+      from: g.from, to: g.to, direction: g.direction, amount: kyat(g.amount), likely: g.likely,
+      recorded: mine.filter((x) => x.direction === g.direction && bangkokDay(x.occurredAt) >= bangkokDay(g.from) && bangkokDay(x.occurredAt) <= bangkokDay(g.to)),
+    }));
+    // A drop that matches a stuck bot queue (charged) or comes back (refunded) is not a hand fill.
+    const handOut = gaps.filter((g) => g.direction === "out" && !g.likely), rises = gaps.filter((g) => g.direction === "in");
+    // Compare like with like: only records that fall inside a gap count against it (a record can sit in two).
+    const inside = (list) => [...new Set(list.flatMap((g) => g.recorded))];
+    const outOfGaps = (direction, list) => mine.filter((x) => x.direction === direction && !list.includes(x));
+    const matchedOut = inside(handOut), matchedIn = inside(rises);
+    const read = w != null;
+    const gapOut = read ? sum(handOut) : null, rest = read ? sheetCents(gapOut) - sheetCents(sum(matchedOut)) : null;
+    return {
+      gapOut, chargedOut: read ? sum(gaps.filter((g) => g.likely === "charged")) : null, gapIn: read ? sum(rises) : null,
+      recordedOut: sum(matchedOut), recordedIn: sum(matchedIn),
+      // Records dated outside every gap (before the first or after the last bot reading, or no reading at all).
+      outsideOut: sum(outOfGaps("out", matchedOut)), outsideIn: sum(outOfGaps("in", matchedIn)),
+      // Never below zero: more recorded than missing in those windows means a wrong SIM or a fill the bot saw.
+      unrecordedOut: rest == null ? null : signedUsd(rest > 0n ? rest : 0n),
+      overRecorded: rest != null && rest < 0n,
+      gaps,
+    };
+  };
+  for (const w of wallets) lines.set(String(w.label || ""), line(String(w.label || ""), w));
+  // Records on a SIM the bot did not read in this range: shown, with nothing to compare against.
+  for (const phone of recorded.keys()) if (!lines.has(phone)) lines.set(phone, line(phone, null));
+  return { lines, unmatched: [...new Set(unmatched)] };
+}

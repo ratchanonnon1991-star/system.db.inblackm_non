@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import { useMemo } from "react";
 import { gameinfoCostRateRows } from "@/lib/gameinfo-channel-costs";
 
@@ -23,7 +24,7 @@ export default function GameinfoCostRates({ currencies, costProfiles, formulaVar
   if (!rows.length) return null;
   return (
     <div className={`overflow-x-auto rounded-xl border border-linear-hairline bg-linear-surface-1 ${className}`}>
-      <table className="w-full min-w-[520px] text-left text-[13px]">
+      <PaginatedTable items={rows}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[520px] text-left text-[13px]">
         <caption className="px-3 pt-2.5 pb-1 text-left text-sm font-extrabold text-linear-ink">เรทต้นทุน</caption>
         <thead className="text-xs text-linear-ink-tertiary">
           <tr>
@@ -35,7 +36,7 @@ export default function GameinfoCostRates({ currencies, costProfiles, formulaVar
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {tablePageItems.map((tableItem, tableIndex) => ((row) => (
             <tr key={row.id} className="border-t border-linear-hairline">
               <td className="px-3 py-2 font-bold text-linear-ink">
                 {row.channel}
@@ -46,9 +47,9 @@ export default function GameinfoCostRates({ currencies, costProfiles, formulaVar
               <td className="px-3 py-2 tabular-nums text-linear-ink-muted">{dateText(row.updatedAt)}</td>
               <td className="px-3 py-2 text-right tabular-nums text-linear-ink-muted">{row.packs}</td>
             </tr>
-          ))}
+          ))(tableItem, tablePageStart + tableIndex, tableAllItems))}
         </tbody>
-      </table>
+      </table>)}</PaginatedTable>
     </div>
   );
 }

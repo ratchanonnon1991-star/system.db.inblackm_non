@@ -57,6 +57,16 @@ async function resolveActor(externalId) {
   return actor;
 }
 
+// The same staff mapping serves the channel bridge (reserved accounts on the order pages).
+export const resolveOrderActor = resolveActor;
+
+/** The inblackm staff ID mapped to this tools user, or null (their reservations then never reach Orders). */
+export async function orderMappingFor(userId) {
+  const pool = await mappingPool();
+  const { rows } = await pool.query("SELECT external_user_id FROM gamedb_itune_order_accounts WHERE gamedb_user_id=$1", [userId]);
+  return rows[0]?.external_user_id ?? null;
+}
+
 // Lives beside claim sessions in the iTune database, not in the Orders database.
 // No credentials, proof images or customer login data are copied into this log.
 const usageSchemas = new WeakMap();

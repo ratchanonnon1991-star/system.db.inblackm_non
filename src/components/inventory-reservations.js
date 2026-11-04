@@ -1,0 +1,83 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { RefreshCw } from "lucide-react";
+import TopupInventoryPage from "@/components/topup-inventory-page";
+import { apiJson } from "@/lib/api-json";
+import { tivButton as button, tivCheck, tivField, tivInput as input, tivPrimary } from "@/lib/topup-inventory-ui";
+
+const endpoint = "/api/projectm/ledger/reservations";
+const when = (v) => (v ? new Date(v).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "short", timeStyle: "short" }) : "");
+
+function AccountRow({ account, canManage, busy, onAction }) {
+  const held = account.holderId != null, closed = account.status !== "active";
+  return <li className="flex flex-wrap items-center justify-between gap-3 border-t border-ll-hairline py-3 first:border-t-0">
+    <div className="min-w-0">
+      <p className="break-words font-semibold">{account.label} <span className="text-xs font-normal text-ll-ink-subtle">· {account.currency}</span></p>
+      <p className={`mt-1 text-xs ${account.mine ? "font-semibold text-ll-primary" : held ? "text-ll-warning" : "text-ll-success"}`}>
+        {closed ? "ปิดใช้งาน" : held ? `${account.mine ? "คุณจองไว้" : `จองโดย ${account.holder}`} · ${when(account.reservedAt)}` : "ว่าง"}
+      </p>
+    </div>
+    {!closed && (account.mine
+      ? <button type="button" className={button} disabled={busy} onClick={() => onAction("DELETE", account)}>คืน</button>
+      : held
+        ? canManage && <button type="button" className={button} disabled={busy} onClick={() => onAction("DELETE", account)}>คืนแทน</button>
+        : <button type="button" className={tivPrimary} disabled={busy} onClick={() => onAction("POST", account)}>จอง</button>)}
+  </li>;
+}
+
+export default function InventoryReservations({ lang }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [search, setSearch] = useState("");
+  const [mineOnly, setMineOnly] = useState(false);
+  const load = useCallback(async () => {
+    setError("");
+    try { setData(await apiJson(endpoint, { cache: "no-store" })); } catch (e) { setError(e.message); }
+  }, []);
+  useEffect(() => { const timer = setTimeout(load, 0); return () => clearTimeout(timer); }, [load]);
+
+  async function act(method, account) {
+    if (method === "DELETE" && !account.mine && !window.confirm(`คืน ${account.label} ที่ ${account.holder} จองไว้?`)) return;
+    setBusy(true); setError("");
+    try { await apiJson(endpoint, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: account.id }) }); }
+    catch (e) { setError(e.message); }
+    finally { setBusy(false); load(); }
+  }
+
+  const groups = useMemo(() => {
+    const term = search.trim().toLowerCase(), map = new Map();
+    for (const a of data?.accounts ?? []) {
+      if (mineOnly && !a.mine) continue;
+      if (term && !`${a.label} ${a.category ?? ""} ${a.holder ?? ""}`.toLowerCase().includes(term)) continue;
+      const key = a.category || "อื่นๆ";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(a);
+    }
+    return [...map];
+  }, [data, search, mineOnly]);
+  const mine = (data?.accounts ?? []).filter((a) => a.mine).length;
+
+  return <TopupInventoryPage provider="reservations" description="จองบัญชีที่จะใช้เติม แล้วเลือกบัญชีนั้นพร้อมกรอกยอดที่ตัดในหน้าออเดอร์ของ inblackm (เว็บ · Russia · MarketPlace) ไม่ต้องยกยอดซ้ำ">
+    {data && !data.mapped && <p role="status" className="tiv-banner">
+      <span className="tiv-warn">บัญชีนี้ยังไม่ได้จับคู่กับ ID พนักงานของ inblackm บัญชีที่จองจะยังไม่ขึ้นในหน้าออเดอร์</span> ให้ Admin จับคู่ที่{" "}
+      <Link className="tiv-lnk underline underline-offset-4" href={`/projectm/${lang}/itune/admin/order-links`}>หน้าจับคู่บัญชีพนักงาน</Link></p>}
+    <section aria-label="กรองบัญชี" className="tiv-card">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className={`${tivField} flex-1 basis-64`}><span>ค้นหาบัญชี / กลุ่ม / คนจอง</span><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="เช่น wavepay, moniepoint, ชื่อคนจอง" className={input} /></label>
+        <label className={tivCheck}><input type="checkbox" checked={mineOnly} onChange={(e) => setMineOnly(e.target.checked)} />เฉพาะที่ฉันจอง ({mine})</label>
+        <button type="button" className={button} onClick={load}><RefreshCw size={16} aria-hidden />โหลดใหม่</button>
+      </div>
+      <p className="tiv-hint">จองได้ทีละคนต่อบัญชี และไม่หมดอายุเอง กดคืนเมื่อเลิกใช้ · บอทยังใช้บัญชีที่จองได้ตามปกติ · เมล iTunes จองในหน้า iTune เหมือนเดิม</p>
+    </section>
+    {error && <p role="alert" className="tiv-alert">{error}</p>}
+    {!data && !error && <p role="status" className="tiv-muted">กำลังโหลด…</p>}
+    {groups.map(([category, accounts]) => <section key={category} aria-label={category} className="tiv-card">
+      <div className="tiv-card-h mb-2"><h2>{category}<small>{accounts.length} บัญชี</small></h2></div>
+      <ul>{accounts.map((a) => <AccountRow key={a.id} account={a} canManage={data.canManage} busy={busy} onAction={act} />)}</ul>
+    </section>)}
+    {data && !groups.length && <div className="tiv-dempty"><strong>ไม่พบบัญชี</strong>ไม่พบบัญชีตามตัวกรอง</div>}
+  </TopupInventoryPage>;
+}

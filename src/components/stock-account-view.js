@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import { useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, Minus, Pencil, Plus, SlidersHorizontal } from "lucide-react";
@@ -79,7 +80,7 @@ export default function StockAccountView({ account, moves, games, packNames, can
           ) : null}
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
+          <PaginatedTable items={account.items} resetKey={account.id}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full border-collapse text-sm">
             <thead>
               <tr className="bg-zinc-50 text-left text-xs font-extrabold text-zinc-600">
                 <th className="border-b border-zinc-200 px-3.5 py-3">PACK</th>
@@ -95,7 +96,7 @@ export default function StockAccountView({ account, moves, games, packNames, can
               </tr>
             </thead>
             <tbody>
-              {account.items.map((item) => (
+              {tablePageItems.map((tableItem, tableIndex) => ((item) => (
                 <tr key={item.id} className="whitespace-nowrap">
                   <td className="border-b border-zinc-100 px-3.5 py-3 font-black">{item.label}</td>
                   <td className="border-b border-zinc-100 px-3.5 py-3">{item.unitUsd != null ? `${item.unitUsd} USD` : "—"}</td>
@@ -112,12 +113,12 @@ export default function StockAccountView({ account, moves, games, packNames, can
                     </td>
                   ) : null}
                 </tr>
-              ))}
+              ))(tableItem, tablePageStart + tableIndex, tableAllItems))}
               {!account.items.length ? (
                 <tr><td colSpan={canEdit ? 10 : 9} className="px-6 py-10 text-center text-sm text-zinc-600">ยังไม่มีแพ็ค{canEdit ? " — กด \"เพิ่มแพ็ค\"" : ""}</td></tr>
               ) : null}
             </tbody>
-          </table>
+          </table>)}</PaginatedTable>
         </div>
       </section>
 
@@ -135,7 +136,7 @@ export default function StockAccountView({ account, moves, games, packNames, can
           <span className="ml-auto text-[13px] text-zinc-600">ล่าสุด {moves.length} รายการ</span>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
+          <PaginatedTable items={shownMoves} resetKey={JSON.stringify([account.id, historyFilter])}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full border-collapse text-sm">
             <thead>
               <tr className="bg-zinc-50 text-left text-xs font-extrabold text-zinc-600">
                 <th className="border-b border-zinc-200 px-3.5 py-3">ประเภท</th>
@@ -150,7 +151,7 @@ export default function StockAccountView({ account, moves, games, packNames, can
               </tr>
             </thead>
             <tbody>
-              {shownMoves.map((move) => (
+              {tablePageItems.map((tableItem, tableIndex) => ((move) => (
                 <tr key={move.id}>
                   <td className="whitespace-nowrap border-b border-zinc-100 px-3.5 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-black ${KIND_CLASS[move.kind]}`}>{STOCK_MOVE_LABELS[move.kind]}</span></td>
                   <td className="whitespace-nowrap border-b border-zinc-100 px-3.5 py-3 font-mono">{move.queue || "—"}</td>
@@ -162,10 +163,10 @@ export default function StockAccountView({ account, moves, games, packNames, can
                   <td className="whitespace-nowrap border-b border-zinc-100 px-3.5 py-3 text-zinc-600">{dateFormat.format(new Date(move.createdAt))}</td>
                   <td className="whitespace-nowrap border-b border-zinc-100 px-3.5 py-3 text-zinc-600">{move.actorName || "—"}</td>
                 </tr>
-              ))}
+              ))(tableItem, tablePageStart + tableIndex, tableAllItems))}
               {!shownMoves.length ? <tr><td colSpan={9} className="px-6 py-10 text-center text-sm text-zinc-600">ยังไม่มีรายการ</td></tr> : null}
             </tbody>
-          </table>
+          </table>)}</PaginatedTable>
         </div>
       </section>
 

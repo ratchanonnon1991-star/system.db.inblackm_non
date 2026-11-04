@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import { useMemo, useState } from "react";
 import { gameinfoPackMatchKey } from "@/lib/gameinfo-topup-match";
 
@@ -74,7 +75,7 @@ export default function GameinfoWebMargin({ packages, dataMode = "uid", usdThb =
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-linear-hairline">
-        <table className="w-full min-w-[860px] text-left text-sm">
+        <PaginatedTable items={rows}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[860px] text-left text-sm">
           <thead className="bg-linear-surface-2 text-[11px] font-black uppercase tracking-[0.06em] text-linear-ink-muted">
             <tr>
               <th scope="col" className="px-4 py-3">แพ็กเกจบนเว็บ</th>
@@ -86,7 +87,7 @@ export default function GameinfoWebMargin({ packages, dataMode = "uid", usdThb =
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ pkg, price, active, cost, costSource, profit, margin, gameinfo }) => (
+            {tablePageItems.map((tableItem, tableIndex) => (({ pkg, price, active, cost, costSource, profit, margin, gameinfo }) => (
               <tr key={pkg.id} className={`border-t border-linear-hairline ${active ? "" : "opacity-55"}`}>
                 <td className="px-4 py-2.5">
                   <span className="block font-extrabold text-linear-ink">{pkg.label}</span>
@@ -113,9 +114,9 @@ export default function GameinfoWebMargin({ packages, dataMode = "uid", usdThb =
                   ) : <span className="text-xs text-linear-ink-tertiary">ไม่พบแพ็คชื่อนี้</span>}
                 </td>
               </tr>
-            ))}
+            ))(tableItem, tablePageStart + tableIndex, tableAllItems))}
           </tbody>
-        </table>
+        </table>)}</PaginatedTable>
       </div>
     </div>
   );

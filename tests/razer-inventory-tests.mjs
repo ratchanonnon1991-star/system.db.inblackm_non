@@ -1,3 +1,4 @@
+import * as paginationDependency0 from "../src/server/inventory-page.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
@@ -43,11 +44,27 @@ check(lib.razerMatches(combined, "ORDER/1"));
 const csv = lib.razerCsv([{ ...combined, orderId: '=HYPERLINK("x")' }]);
 check(csv.startsWith("\uFEFF") && csv.includes("'=") && csv.includes("ต้นทุนอ้างอิง"));
 check(csv.includes('"20"'));
+// Hand fills from the inventory ledger
+const ledgerRow = (id, patch = {}) => ({ id: String(id), account_key: "razer:SGD:test@example.com", amount: "5.0000", order_ref: "Q1", invoice: "032K9",
+  note: "ชีต RAZER SGD / แถว 3 · ผู้เติม RIN · SOJ 6480", actor_label: "razer-sheet-import", occurred_at: "2026-10-20T02:00:00Z", thb_amount: "120.00", sale_thb: "150.00", ...patch });
+const hand = lib.razerLedgerOrder(ledgerRow(7), accounts[0]);
+eq([hand.id, hand.source, hand.walletKey, hand.orderId, hand.used, hand.details.operator], ["ledger:7", "manual", "SGD:test@example.com", "Q1", "5.00", "RIN"]);
+eq(hand.figures, { sale: "150.00", cost: "120.00", profit: "30.00", margin: "20.00" });
+check(JSON.stringify(hand).length > 0, "no circular fills");
+const unpriced = lib.razerLedgerOrder(ledgerRow(8, { thb_amount: null, note: "ยกยอด", actor_label: "Gus" }), accounts[0]);
+eq([unpriced.figures.cost, unpriced.details.costBasis, unpriced.details.operator], ["100.00", "stock-current-reference", "Gus"]);
+const handCsv = lib.razerCsv([combined, hand]).split("\r\n");
+check(handCsv[0].endsWith('"ที่มา"') && handCsv[1].endsWith('"บอท"') && handCsv[2].endsWith('"เติมมือ"'), "CSV marks where each row's Gold came from");
+for (const key of ["razer:RAZER PIN(USD)", "razer:USD:x@y.com", "razer:RAZER SGD 1-25", "netease:SGD:x@y.com"]) eq(lib.razerLedgerOrder(ledgerRow(9, { account_key: key }), null), null);
+eq(lib.razerLedgerWallet("razer:PHP:A@B.com"), { zone: "PHP", email: "a@b.com" });
+eq(lib.razerWithLedgerWallets(accounts, [{ account_key: "razer:SGD:test@example.com" }, { account_key: "razer:PHP:x@y.com" }, { account_key: "razer:SGD:a@sheet.com" }]).map((a) => [a.key, a.balanceSource]),
+  [["SGD:test@example.com", "stock"], ["SGD:a@sheet.com", "ledger"], ["PHP:x@y.com", "ledger"]]);
+eq([lib.razerIdNumber("ledger:12"), lib.razerIdNumber("7")], [12, 7]);
 
 function compile(file, mocks) {
   const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
   const output = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  const result = {}; new Function("require", "exports", output)((key) => { if (!mocks[key]) throw new Error(`Unmocked ${key}`); return mocks[key]; }, result); return result;
+  const result = {}; new Function("require", "exports", output)((key) => { if (key === "@/server/inventory-page") return paginationDependency0; if (!mocks[key]) throw new Error(`Unmocked ${key}`); return mocks[key]; }, result); return result;
 }
 let reads = 0, failure = false, stockFailure = false, stockReads = 0;
 let stockRows = [stock];
@@ -65,7 +82,17 @@ const server = compile("src/server/razer-inventory.js", {
   "@/server/garena-shell-inventory": { saleJoin: "", enrichShellOrders: async (_s, r) => r },
   "@/lib/garena-shell-inventory": { allocateShellSale }, "@/server/usdcodashop-sale-rates": { prepareCodaSales: async (r) => r },
 });
-const repository = server.createRazerInventory({ select, selectStock, enrich: async (_s, rows) => rows.map((r) => ({ ...r, sheet_fields: { saleThb: "60", saleAllocation: { count: 2, position: Number(r.history_id) - 1 } } })), prepareSales: async (r) => r });
+let ledgerRows = [], ledgerFailure = null, ledgerSql = "", ledgerParams = [];
+let walletParams = [];
+const selectLedger = async (sql, params) => {
+  if (ledgerFailure) throw ledgerFailure;
+  // The wallet registry read: one row per account key the entries name.
+  if (sql.startsWith("SELECT account_key")) { walletParams = params; return [...new Set(ledgerRows.map((r) => r.account_key))].map((account_key) => ({ account_key })); }
+  ledgerSql = sql; ledgerParams = params; return ledgerRows;
+};
+let batchZones = null;
+const selectSpy = async (sql, params) => { if (sql.includes("n.id>$2")) batchZones = params[0]; return select(sql, params); };
+const repository = server.createRazerInventory({ select: selectSpy, selectStock, selectLedger, enrich: async (_s, rows) => rows.map((r) => ({ ...r, sheet_fields: { saleThb: "60", saleAllocation: { count: 2, position: Number(r.history_id) - 1 } } })), prepareSales: async (r) => r });
 await rejects(() => repository.list({}, date), 403); eq(reads + stockReads, 0);
 const result = await repository.list(actor, date);
 eq(result.total, 1); eq(result.summary.sale, "60.00"); eq(result.summary.cost, "40.00"); eq(result.canOpenStock, false);
@@ -85,6 +112,38 @@ const partial = await repository.list(actor, date);
 eq(partial.stockAvailable, false); eq(partial.accounts[0].status, "UNVERIFIED"); eq(partial.summary.cost, null);
 eq(partial.zones.find((z) => z.zone === "CAD").gold, null);
 stockFailure = false;
+eq(result.ledgerAvailable, true); eq(result.zones.find((z) => z.zone === "SGD").manualUsed, "0.00");
+eq(batchZones, lib.RAZER_INVENTORY_ZONES);
+ledgerRows = [ledgerRow(7), ledgerRow(8, { account_key: "razer:OTHER:x@y.com" }), ledgerRow(9, { account_key: "razer:RAZER PIN(USD)" }),
+  ledgerRow(10, { account_key: "razer:PHP:sheet@only.com", amount: "3" }), ledgerRow(11, { account_key: "razer:SGD:sheet@only.com", amount: "1" })];
+const withHand = await repository.list(actor, date), zone = (z) => withHand.zones.find((x) => x.zone === z), sgd = zone("SGD");
+eq(withHand.total, 5); eq([sgd.used, sgd.manualUsed, sgd.manualOrders], ["2.00", "6.00", 2]);
+eq(withHand.entries.filter((e) => e.source === "manual").map((e) => e.id).sort(), ["ledger:10", "ledger:11", "ledger:7", "ledger:8"]);
+check(ledgerSql.includes("e.kind='use'") && ledgerSql.includes("reverses_entry_id") && !/SELECT \*/.test(ledgerSql), "uses only, reversed ones left out");
+eq(ledgerParams.slice(0, 2), [lib.razerFilters(date).bounds.start, lib.razerFilters(date).bounds.end]);
+eq(ledgerParams[2], lib.RAZER_INVENTORY_ZONES.map((z) => `razer:${z}:%`)); eq(walletParams[0], ledgerParams[2]);
+// Sheet-only wallets are listed with no balance and kept out of the Gold total.
+const sheetOnly = withHand.accounts.find((a) => a.key === "SGD:sheet@only.com");
+eq([sheetOnly.balanceSource, sheetOnly.gold, sheetOnly.status], ["ledger", null, "UNVERIFIED"]);
+eq([sgd.accounts, sgd.noBalance, sgd.gold], [2, 1, "100.00"]);
+eq([zone("PHP").accounts, zone("PHP").gold, zone("PHP").manualUsed], [1, null, "3.00"]);
+eq([zone("OTHER").mixed, zone("OTHER").gold, zone("OTHER").manualOrders], [true, null, 1]);
+check(withHand.accountChoices.some((a) => a.key === "PHP:sheet@only.com"));
+// A chosen zone only loads that zone's date-range rows.
+const php = await repository.list(actor, { ...date, zone: "PHP" });
+eq([php.total, batchZones, ledgerParams[2]], [1, ["PHP"], ["razer:PHP:%"]]);
+eq((await repository.list(actor, { ...date, zone: "CAD" })).total, 0);
+eq((await repository.list(actor, { ...date, search: "RIN" })).total, 4);
+eq((await repository.list(actor, { ...date, account: "PHP:sheet@only.com" })).total, 1);
+ledgerFailure = Object.assign(new Error("relation does not exist"), { code: "42P01" });
+eq((await repository.list(actor, date)).ledgerAvailable, true);
+ledgerFailure = new Error("down");
+const noLedger = await repository.list(actor, date);
+eq([noLedger.ledgerAvailable, noLedger.total, noLedger.zones.find((z) => z.zone === "SGD").used], [false, 1, "2.00"]);
+eq(noLedger.accounts.some((a) => a.balanceSource === "ledger"), false);
+ledgerFailure = null; ledgerRows = Array.from({ length: 19999 }, (_, i) => ledgerRow(i + 20));
+await rejects(() => repository.list(actor, date), 413);
+ledgerRows = [];
 let currentActor = actor;
 const route = compile("src/app/api/projectm/razer/route.js", {
   "@/server/auth": { requireAdmin: async () => { if (!currentActor) throw access.inventoryError("login", 401); return currentActor; } },

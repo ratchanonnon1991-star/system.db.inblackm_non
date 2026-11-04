@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import { useMemo, useState } from "react";
 import { Check, LoaderCircle, Lock } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
@@ -108,7 +109,7 @@ export default function GameinfoColumnRolesPage({ columns, rules: initialRules, 
       <GameinfoColumnOrder key={gameId} columns={orderColumns} orders={orders} gameId={gameId} onSaved={setOrders} />
 
       <div className="overflow-x-auto rounded-xl border border-linear-hairline">
-        <table className="w-full min-w-[420px] text-sm">
+        <PaginatedTable items={columns} resetKey={JSON.stringify([gameId])}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[420px] text-sm">
           <thead>
             <tr className="border-b border-linear-hairline bg-linear-surface-2 text-left">
               <th className="px-4 py-2.5 font-medium text-linear-ink">คอลัมน์</th>
@@ -120,7 +121,7 @@ export default function GameinfoColumnRolesPage({ columns, rules: initialRules, 
             </tr>
           </thead>
           <tbody>
-            {columns.map((column) => (
+            {tablePageItems.map((tableItem, tableIndex) => ((column) => (
               <tr key={column.key} className="border-b border-linear-hairline last:border-0">
                 <td className="px-4 py-2.5 text-linear-ink-muted">{column.label}</td>
                 {GAMEINFO_COLUMN_ROLES.map((role) => {
@@ -143,9 +144,9 @@ export default function GameinfoColumnRolesPage({ columns, rules: initialRules, 
                   );
                 })}
               </tr>
-            ))}
+            ))(tableItem, tablePageStart + tableIndex, tableAllItems))}
           </tbody>
-        </table>
+        </table>)}</PaginatedTable>
       </div>
 
       <p className="flex items-start gap-2 rounded-xl border border-linear-warning/40 bg-linear-warning-bg p-3 text-xs text-linear-warning">

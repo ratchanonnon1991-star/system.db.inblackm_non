@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowLeft, Moon, RefreshCw, Sun } from "lucide-react";
@@ -126,9 +127,9 @@ export default function WorkforceDashboard() {
 
         <section className={`${panel} overflow-hidden`}>
           <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-3"><h2 className="text-sm font-semibold">รายชั่วโมง</h2><p className="text-xs text-ll-ink-subtle">คาดการณ์ = {dateLabel(report.forecastDate)} · คนที่ต้องใช้คิดจากคาดการณ์</p></div>
-          <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-left text-sm tabular-nums">
+          <div className="overflow-x-auto"><PaginatedTable items={staffing.hours} resetKey={JSON.stringify([date, channel])}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[560px] text-left text-sm tabular-nums">
             <thead className="bg-ll-surface-2 text-xs text-ll-ink-subtle"><tr>{["ช่วงเวลา", "ออเดอร์", "ชิ้นงาน", "คาดการณ์", "ช่วงต่ำ–สูง", "คนที่ต้องใช้"].map(h => <th key={h} className="px-4 py-2 font-medium">{h}</th>)}</tr></thead>
-            <tbody>{staffing.hours.map((h, i) => <tr key={h.hour} className="border-t border-ll-hairline">
+            <tbody>{tablePageItems.map((tableItem, tableIndex) => ((h, i) => <tr key={h.hour} className="border-t border-ll-hairline">
               <td className="whitespace-nowrap px-4 py-1.5">{rangeLabel(h.hour)}{i >= 15 && <span className="ml-1 text-[11px] text-ll-ink-tertiary">+1</span>}
                 {liveHour(report.actual[i]?.hour) && <span className="ml-1.5 rounded bg-ll-primary/10 px-1 text-[11px] text-ll-primary">กำลังนับ</span>}</td>
               <td className="px-4 py-1.5 font-medium">{fmt(report.actual[i]?.orders)}</td>
@@ -136,19 +137,19 @@ export default function WorkforceDashboard() {
               <td className="px-4 py-1.5">{fmt(h.expected)}</td>
               <td className="px-4 py-1.5 text-ll-ink-subtle">{h.expected == null ? "—" : `${fmt(h.low)}–${fmt(h.high)}`}</td>
               <td className="px-4 py-1.5">{fmt(h.people)}</td>
-            </tr>)}</tbody>
-          </table></div>
+            </tr>)(tableItem, tablePageStart + tableIndex, tableAllItems))}</tbody>
+          </table>)}</PaginatedTable></div>
         </section>
 
         <details className={`${panel} overflow-hidden`}>
           <summary className="cursor-pointer px-4 py-3 text-sm font-semibold">สรุปแยกช่องทาง</summary>
-          <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-left text-sm tabular-nums">
+          <div className="overflow-x-auto"><PaginatedTable items={report.channels} resetKey={JSON.stringify([date, channel])}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[560px] text-left text-sm tabular-nums">
             <thead className="bg-ll-surface-2 text-xs text-ll-ink-subtle"><tr>{["ช่องทาง", "ออเดอร์", "ชิ้นงาน", "คงค้าง", "คาดการณ์", "เริ่มมีข้อมูล"].map(h => <th key={h} className="px-4 py-2 font-medium">{h}</th>)}</tr></thead>
-            <tbody>{report.channels.map(c => <tr className="border-t border-ll-hairline" key={c.id}>
+            <tbody>{tablePageItems.map((tableItem, tableIndex) => (c => <tr className="border-t border-ll-hairline" key={c.id}>
               <td className="px-4 py-1.5 font-medium">{c.label}</td><td className="px-4 py-1.5">{fmt(c.orders)}</td><td className="px-4 py-1.5">{fmt(c.units)}</td><td className="px-4 py-1.5">{fmt(c.openUnits)}</td><td className="px-4 py-1.5">{fmt(c.predicted)}</td>
               <td className="px-4 py-1.5 text-xs text-ll-ink-subtle">{c.coverageStart ? new Date(c.coverageStart).toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok" }) : "ไม่มีข้อมูลในช่วง"}</td>
-            </tr>)}</tbody>
-          </table></div>
+            </tr>)(tableItem, tablePageStart + tableIndex, tableAllItems))}</tbody>
+          </table>)}</PaginatedTable></div>
         </details>
 
         <details className={`${panel} px-4 py-3 text-xs text-ll-ink-subtle`}><summary className="cursor-pointer font-medium">แหล่งข้อมูลและวิธีนับ</summary>

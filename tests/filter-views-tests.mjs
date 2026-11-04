@@ -25,6 +25,7 @@ setResponder((text) =>
             row_filter: "pending",
             lookup_row_filter: { lookupId: "abc", matched: true },
             param_values: { region: "th" },
+            column_value_filters: { status: ["pending"] },
             created_by: "admin",
             created_at: "now",
           },
@@ -38,13 +39,16 @@ const saved = await insertFilterView({
   rowFilter: "pending",
   lookupRowFilter: { lookupId: "abc", matched: true },
   paramValues: { region: "th" },
+  columnValueFilters: { status: ["pending"] },
   createdBy: "admin",
 });
 const insert = log.find((entry) => /^\s*INSERT INTO gamedb_filter_views/i.test(entry.text));
 ok("insertFilterView writes an INSERT", Boolean(insert));
-ok("every value travels as a bound parameter", insert.params.length === 6);
+ok("every value travels as a bound parameter", insert.params.length === 7 && insert.params[6] === JSON.stringify({ status: ["pending"] }));
 ok("no filter text is ever interpolated into the SQL text", !insert.text.includes("pending"));
 ok("insertFilterView returns the saved shape", saved.name === "รอดำเนินการ" && saved.paramValues.region === "th");
+ok("column filters survive a save/read round trip", saved.columnValueFilters.status[0] === "pending");
+ok("existing schemas receive an additive defaulted column", log.some((entry) => /ALTER TABLE.*ADD COLUMN IF NOT EXISTS column_value_filters/.test(entry.text)));
 
 // --- listFilterViews ----------------------------------------------------------
 reset({
@@ -54,6 +58,7 @@ reset({
 });
 const views = await listFilterViews(7);
 ok("listFilterViews maps snake_case columns to camelCase", views[0].queryId === 7);
+ok("older saved filters default to no column filters", Object.keys(views[0].columnValueFilters).length === 0);
 const select = log.find((entry) => /^\s*SELECT/i.test(entry.text));
 ok("listFilterViews scopes by query_id, bound not interpolated", select.params[0] === 7);
 

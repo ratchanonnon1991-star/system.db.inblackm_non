@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import { useCallback, useEffect, useState } from "react";
 import { ImagePlus, Pencil, Plus, Trash2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
@@ -19,13 +20,13 @@ const cell = "border-r border-ll-hairline px-3 py-2 align-top";
 const money2 = (v) => v == null ? "—" : Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // Coda-style order table (sale, cost, profit, game, customer…), shared with the admin page.
-export function ItuneOrdersTable({ rows, showEmail = false, onDelete, onEdit, editedIds, busy, emptyMessage = "ยังไม่มีออเดอร์" }) {
+export function ItuneOrdersTable({ rows, resetKey, showEmail = false, onDelete, onEdit, editedIds, busy, emptyMessage = "ยังไม่มีออเดอร์" }) {
   const headings = ["วันที่ / เวลา", "ลำดับคิว", "ที่มา", ...(showEmail ? ["เมล"] : []), "ยอดโอน (THB)", "ต้นทุน (THB)", "กำไร (THB)", "กำไร (%)",
     "ยอดออก", "ยอดเมล ก่อน → หลัง", "ชื่อลูกค้า", "ลิงก์", "เกม", "สิ่งที่ซื้อ", "UID", "หมายเหตุ / ผู้เพิ่ม", ...(onDelete || onEdit ? [""] : [])];
   return <div className="max-h-[60vh] overflow-auto rounded-xl border border-ll-hairline bg-ll-surface-1">
-    <table className="w-full min-w-[1700px] text-left text-sm text-ll-ink">
+    <PaginatedTable items={rows} resetKey={resetKey}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[1700px] text-left text-sm text-ll-ink">
       <thead className="sticky top-0 z-10 bg-ll-surface-2"><tr>{headings.map((h, i) => <th key={i} scope="col" className="whitespace-nowrap border-r border-ll-hairline px-3 py-2 font-semibold">{h}</th>)}</tr></thead>
-      <tbody>{rows.map((o) => {
+      <tbody>{tablePageItems.map((tableItem, tableIndex) => ((o) => {
         const f = sheetFigures({ saleThb: o.sale_thb, costThb: o.cost_thb }); const link = orderLink(o.link);
         return <tr key={o.id} className="border-t border-ll-hairline hover:bg-ll-surface-2">
           <td className={`${cell} whitespace-nowrap`}>{o.sheet_date}{o.order_time ? <p className="text-xs text-ll-ink-subtle">{o.order_time}</p> : null}</td>
@@ -49,8 +50,8 @@ export function ItuneOrdersTable({ rows, showEmail = false, onDelete, onEdit, ed
             {onDelete && <button type="button" onClick={() => onDelete(o)} disabled={busy} aria-label={`ลบออเดอร์ ${o.order_id}`} title="ลบออเดอร์" className="rounded-lg p-2 hover:bg-ll-surface-2 disabled:opacity-50"><Trash2 size={16} aria-hidden /></button>}
           </td>}
         </tr>;
-      })}</tbody>
-    </table>
+      })(tableItem, tablePageStart + tableIndex, tableAllItems))}</tbody>
+    </table>)}</PaginatedTable>
     {!rows.length && <p className="p-6 text-center text-sm text-ll-ink-subtle">{emptyMessage}</p>}
   </div>;
 }
@@ -142,7 +143,7 @@ export function ItuneSheetOrderList({ entryId, currency }) {
     {error && <p role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     {!data && !error && <p role="status" className="text-ll-ink-subtle">กำลังโหลด…</p>}
-    {data && <ItuneOrdersTable rows={orders} onDelete={remove} busy={busy} editedIds={new Set((data.edits || []).map((e) => String(e.import_id)))}
+    {data && <ItuneOrdersTable rows={orders} resetKey={entryId} onDelete={remove} busy={busy} editedIds={new Set((data.edits || []).map((e) => String(e.import_id)))}
       onEdit={(o) => { setForm(null); setError(""); setNotice(""); setEdit({ order: o, amount: String(Number(o.used_amount)), reason: "" }); }} />}
     {data?.edits?.length > 0 && <details><summary className="cursor-pointer py-2">ประวัติการแก้ยอดออก ({data.edits.length})</summary>
       <ul className="mt-2 space-y-1 text-xs text-ll-ink-subtle">{data.edits.map((e) => <li key={e.id}>

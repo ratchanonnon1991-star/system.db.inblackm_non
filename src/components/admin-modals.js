@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
@@ -231,7 +232,7 @@ export function HealthModal({ onClose }) {
           )}
 
           <div className="overflow-x-auto rounded-sm border border-zinc-200">
-            <table className="w-full border-collapse text-[11px]">
+            <PaginatedTable items={data.objects}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full border-collapse text-[11px]">
               <thead>
                 <tr className="bg-zinc-100 text-left font-black text-zinc-500">
                   <th className="px-2 py-1.5">object</th>
@@ -245,7 +246,7 @@ export function HealthModal({ onClose }) {
                 </tr>
               </thead>
               <tbody>
-                {data.objects.map((object) => (
+                {tablePageItems.map((tableItem, tableIndex) => ((object) => (
                   <tr key={object.name} className="border-t border-zinc-100">
                     <td className="px-2 py-1.5 font-mono font-bold text-zinc-700">{object.name}</td>
                     <td className="px-2 py-1.5 text-zinc-500">{object.kind}</td>
@@ -266,9 +267,9 @@ export function HealthModal({ onClose }) {
                     <td className="px-2 py-1.5 text-center">{yesNo(object.canDelete)}</td>
                     <td className="px-2 py-1.5 text-center">{yesNo(object.canUse)}</td>
                   </tr>
-                ))}
+                ))(tableItem, tablePageStart + tableIndex, tableAllItems))}
               </tbody>
-            </table>
+            </table>)}</PaginatedTable>
           </div>
 
           <p className="text-[10px] font-semibold text-zinc-400">

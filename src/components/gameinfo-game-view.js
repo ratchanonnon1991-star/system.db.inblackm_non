@@ -1,5 +1,6 @@
 "use client";
 
+import { TablePagination, useTablePagination } from "@/components/table-pagination";
 import { createContext, useContext, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeftRight, BookOpen, Boxes, Image as ImageIcon, Lock, Pencil, TriangleAlert } from "lucide-react";
@@ -571,6 +572,7 @@ function PackCategory({
     })
   );
 
+  const pagination = useTablePagination(visiblePacks, { resetKey: JSON.stringify(filters) });
   return (
     <tbody>
       <tr className="border-t border-linear-hairline bg-[#FFF5F5] dark:bg-[#D90005]/10">
@@ -588,7 +590,7 @@ function PackCategory({
           </td>
         </tr>
       ) : (
-        visiblePacks.map((pack) => (
+        pagination.items.map((pack) => (
           <tr key={pack.id} className="border-t border-linear-hairline transition-colors hover:bg-[#FFF7F7] dark:hover:bg-white/[0.03]">
             {columns.map((column) => (
               <PackViewCell
@@ -607,6 +609,7 @@ function PackCategory({
           </tr>
         ))
       )}
+      {pagination.showControls && <tr><td colSpan={columns.length || 1}><TablePagination {...pagination} label={`แพ็ก ${category.name || "ไม่มีชื่อ"}`} /></td></tr>}
     </tbody>
   );
 }
