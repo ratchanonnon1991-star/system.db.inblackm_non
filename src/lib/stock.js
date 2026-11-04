@@ -10,10 +10,13 @@ export const STOCK_ACCOUNT_STATUSES = ["active", "check", "closed"];
 export const STOCK_ACCOUNT_STATUS_LABELS = { active: "ปกติ", check: "ต้องตรวจ", closed: "ปิด" };
 export const STOCK_DEFAULT_LOW_AT = 10;
 
+// Page names under /stock that an account code would hide (/stock/<code>).
+export const STOCK_RESERVED_CODES = ["inventory", "purchase-orders", "wallets"];
+
 /** "pes1" → "pes1": letters, digits, dot, dash and underscore, 2–32 long. */
 export function normalizeStockCode(value) {
   const code = String(value ?? "").trim().toLowerCase();
-  return /^[a-z0-9][a-z0-9._-]{1,31}$/.test(code) ? code : "";
+  return /^[a-z0-9][a-z0-9._-]{1,31}$/.test(code) && !STOCK_RESERVED_CODES.includes(code) ? code : "";
 }
 
 /** A money amount as a string with at most 2 decimals, or "" when blank or not a number ≥ 0. */

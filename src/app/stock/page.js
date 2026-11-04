@@ -1,14 +1,21 @@
-import { getSessionUser } from "@/server/session-user";
-import { canManageStock } from "@/server/auth";
 import { listStockAccounts } from "@/server/stock-repository";
-import { listStockGames } from "@/server/stock-games";
-import StockOverview from "@/components/stock-overview";
+import { listPurchaseOrders, listRecentPurchaseOrderEvents } from "@/server/stock-purchase-order-repository";
+import { listWalletAdjustsAwaiting, listWalletEntries, listWallets } from "@/server/stock-wallet-repository";
+import { buildStockOverview } from "@/lib/stock-overview";
+import StockFrontPage from "@/components/stock-front-page";
 
 export const dynamic = "force-dynamic";
 
+// The Stock front page: what needs doing today. The account cards live at /stock/inventory.
 export default async function StockPage() {
-  const user = await getSessionUser();
-  const canEdit = canManageStock(user);
-  const [accounts, games] = await Promise.all([listStockAccounts(), canEdit ? listStockGames() : []]);
-  return <StockOverview accounts={accounts} games={games} canEdit={canEdit} />;
+  const orders = await listPurchaseOrders();
+  const [accounts, wallets, events, entries, adjusts] = await Promise.all([
+    listStockAccounts(),
+    listWallets(),
+    listRecentPurchaseOrderEvents(10),
+    listWalletEntries({ limit: 10 }),
+    listWalletAdjustsAwaiting(),
+  ]);
+  const overview = buildStockOverview({ orders, wallets, accounts });
+  return <StockFrontPage overview={overview} events={events} entries={entries} adjusts={adjusts} accountCount={accounts.filter((account) => account.status !== "closed").length} />;
 }

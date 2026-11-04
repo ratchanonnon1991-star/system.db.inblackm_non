@@ -39,7 +39,7 @@ export default function StockOverview({ accounts, games, canEdit }) {
     <div className="mx-auto flex max-w-[1400px] flex-col gap-5 px-4 py-7 sm:px-7">
       <div className="flex flex-wrap items-end gap-4">
         <div className="min-w-0 flex-[1_1_360px]">
-          <p className="text-xs font-black tracking-[0.12em] text-[#B00004]">STOCK</p>
+          <p className="text-xs font-black tracking-[0.12em] text-[#B00004]">STOCK · คลัง</p>
           <h1 className="mt-1 text-3xl font-extrabold">คลังของที่ซื้อตุนไว้</h1>
           <p className="mt-1.5 text-sm text-zinc-600">แยกตามไอดี stock · ยอดคงเหลือคิดจากประวัติรับเข้าและตัดออกทั้งหมด</p>
         </div>

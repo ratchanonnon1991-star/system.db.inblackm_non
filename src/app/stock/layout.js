@@ -5,6 +5,7 @@ import { Boxes, ChevronRight, LayoutGrid } from "lucide-react";
 import { getSessionUser } from "@/server/session-user";
 import { hasStockAccess } from "@/server/auth";
 import GameinfoProfileMenu from "@/components/gameinfo-profile-menu";
+import StockNav from "@/components/stock-nav";
 
 const notoThai = Noto_Sans_Thai({ subsets: ["thai", "latin"], variable: "--font-noto-thai" });
 const lato = Lato({ subsets: ["latin"], weight: ["400", "700", "900"], variable: "--font-ib-lato" });
@@ -39,6 +40,7 @@ export default async function StockLayout({ children }) {
           </nav>
         </div>
       </header>
+      <StockNav />
       <main className="min-w-0 flex-1">{children}</main>
     </div>
   );

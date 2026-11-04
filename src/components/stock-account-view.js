@@ -29,8 +29,8 @@ export default function StockAccountView({ account, moves, games, packNames, can
 
   return (
     <div className="mx-auto flex max-w-[1400px] flex-col gap-5 px-4 py-7 sm:px-7">
-      <Link href="/stock" className="flex w-fit items-center gap-1 text-sm font-extrabold text-zinc-700 hover:text-zinc-900">
-        <ChevronLeft size={16} strokeWidth={2.4} /> Stock ทั้งหมด
+      <Link href="/stock/inventory" className="flex w-fit items-center gap-1 text-sm font-extrabold text-zinc-700 hover:text-zinc-900">
+        <ChevronLeft size={16} strokeWidth={2.4} /> คลังทั้งหมด
       </Link>
 
       <section className="flex flex-wrap items-center gap-5 rounded-[20px] border border-zinc-200 bg-white px-6 py-5">
