@@ -51,6 +51,7 @@ import {
 import { listGamelistReports } from "@/server/gameinfo-gamelist-reports";
 import GameinfoReportPanel from "@/components/gameinfo-report-panel";
 import GameinfoFold from "@/components/gameinfo-fold";
+import { GameinfoCeoButton } from "@/components/gameinfo-edit-gate";
 import GameinfoPackEditor from "@/components/gameinfo-pack-editor";
 import { buildPackSuggestions } from "@/lib/gameinfo-suggestions";
 import { hasPermission } from "@/lib/permissions";
@@ -383,6 +384,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
           client-side navigation, so its bar kept showing the view the first
           page was opened in. */}
       <GameinfoViewSwitch savedView={view} isAdmin={editableRole} backHref={listHref}>
+        <GameinfoCeoButton />
         <GameinfoDatasetToggle variant="seg" basePath={gameinfoGameHref(lang, row.id, "uid", false)} />
       </GameinfoViewSwitch>
       <GameinfoGameView

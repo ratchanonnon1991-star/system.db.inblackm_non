@@ -39,15 +39,15 @@ function markSeen(key) {
 }
 
 /**
- * `run(steps, done, { force })`: `steps` are [{ key, render(step, total, next, cancel) }]
- * or names of the built-in steps below; those already seen today are skipped.
+ * `run(steps, done, { force, always })`: `steps` are [{ key, title, render(next, cancel) }]
+ * such as the ones below; those already seen today are skipped unless `always`.
  * `node` is what the page renders. `className` carries the page's typeface into the layer.
  */
 export function useGameinfoNoticeChain(className = "") {
   const [chain, setChain] = useState(null);
 
-  function run(steps, done, { force = true, onCancel = null } = {}) {
-    const pending = steps.filter((step) => !isGameinfoNoticeSeen(step.key));
+  function run(steps, done, { force = true, onCancel = null, always = false } = {}) {
+    const pending = always ? steps : steps.filter((step) => !isGameinfoNoticeSeen(step.key));
     if (!pending.length) {
       done?.();
       return;

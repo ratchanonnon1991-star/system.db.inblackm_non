@@ -82,4 +82,11 @@ assert.ok(view.includes("ระวัง แก้ไขแล้วบอทเ
 assert.equal(gameinfoCountryThaiName("Myanmar"), "เมียนมา", "the list heading names the country in Thai");
 assert.equal(gameinfoCountryThaiName("Somewhere"), "Somewhere", "an unknown country stays as stored");
 
-console.log("34 passed");
+const gate = read("../src/components/gameinfo-edit-gate.js");
+const toggle = read("../src/components/gameinfo-mode-toggle.js");
+const notices = read("../src/components/gameinfo-notice-chain.js");
+assert.ok(toggle.includes("requestGameinfoEdit(event, href)") && view.includes("requestGameinfoEdit(event, editHref)"), "both ways into editing pass the gate");
+assert.ok(gate.includes("[GAMEINFO_CEO_NOTICE, ...(bot ? [GAMEINFO_BOT_NOTICE] : []), gameinfoPlatformNotice(names)]"), "the CEO, Bot Auto and platform notices, in that order");
+assert.ok(notices.includes("stored?.day === today()") && notices.includes('"/gameinfo/ceo-notice.webp"'), "each notice once a day, the CEO's from its picture");
+
+console.log("37 passed");

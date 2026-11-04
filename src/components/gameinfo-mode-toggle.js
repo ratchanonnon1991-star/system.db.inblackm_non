@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { LayoutGrid, Pencil } from "lucide-react";
 import { gameinfoGameHref, gameinfoListHref, normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
+import { requestGameinfoEdit } from "./gameinfo-edit-gate";
 
 // Everyone lands on the card dashboard. Admins can open /manage; everyone
 // else only gets the dashboard link. These sit on the red GameInfo
@@ -41,7 +42,15 @@ export default function GameinfoModeToggle({ lang, editableRole }) {
 
   return (
     // On a game, edit ↔ view is the same game: replace, so back is the list.
-    <Link href={href} replace={isGamePage} className={SOLID_PILL} aria-label={label} title={label}>
+    <Link
+      href={href}
+      replace={isGamePage}
+      className={SOLID_PILL}
+      aria-label={label}
+      title={label}
+      // Into editing a game: the game page's notices come first (gameinfo-edit-gate.js).
+      onClick={isGamePage && !isManageMode ? (event) => requestGameinfoEdit(event, href) : undefined}
+    >
       {isManageMode ? <LayoutGrid size={16} strokeWidth={2.4} aria-hidden="true" /> : <Pencil size={16} strokeWidth={2.4} aria-hidden="true" />}
       <span className="hidden sm:inline">{label}</span>
     </Link>
