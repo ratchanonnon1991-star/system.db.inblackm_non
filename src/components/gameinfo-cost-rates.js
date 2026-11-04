@@ -2,7 +2,7 @@
 
 import PaginatedTable from "@/components/table-pagination";
 import { useMemo } from "react";
-import { Pencil } from "lucide-react";
+import { Pencil, Plus } from "lucide-react";
 import { gameinfoCostRateRows } from "@/lib/gameinfo-channel-costs";
 
 function rateText(rate) {
@@ -48,15 +48,33 @@ export default function GameinfoCostRates({
   otherModeLabel = "",
   onEdit = null,
   onApplySuggestion = null,
+  onAdd = null,
   className = "",
 }) {
   const rows = useMemo(
     () => gameinfoCostRateRows(currencies, costProfiles, { formulaVariables, externalValues, other }),
     [currencies, costProfiles, formulaVariables, externalValues, other]
   );
-  if (!rows.length) return null;
+  const addButton = editable && onAdd ? (
+    <button type="button" onClick={onAdd} className="inline-flex h-9 items-center gap-1.5 rounded-full bg-[#D90005] px-3.5 text-xs font-bold text-white hover:bg-[#B80004]">
+      <Plus size={14} aria-hidden="true" /> เพิ่มช่องทางเติม
+    </button>
+  ) : null;
+  if (!rows.length) {
+    if (!editable) return null;
+    return (
+      <div className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border border-linear-hairline bg-linear-surface-1 px-4 py-3.5 ${className}`}>
+        <div>
+          <p className="text-sm font-extrabold text-linear-ink">เรทต้นทุน</p>
+          <p className="text-xs text-linear-ink-tertiary">เกมนี้ยังไม่มีเรทของช่องทางเติม เพิ่มเรทแล้วต้นทุนของแพ็คที่ใช้ช่องทางนั้นจะคิดจากเรทนี้</p>
+        </div>
+        {addButton}
+      </div>
+    );
+  }
   return (
     <div className={`overflow-x-auto rounded-xl border border-linear-hairline bg-linear-surface-1 ${className}`}>
+      {addButton ? <div className="flex justify-end px-3 pt-2.5">{addButton}</div> : null}
       <PaginatedTable items={rows}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className={`w-full text-left text-[13px] ${editable ? "min-w-[720px]" : "min-w-[520px]"}`}>
         <caption className="px-3 pt-2.5 pb-1 text-left text-sm font-extrabold text-linear-ink">
           เรทต้นทุน

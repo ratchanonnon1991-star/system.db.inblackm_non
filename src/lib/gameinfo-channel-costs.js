@@ -147,7 +147,8 @@ export function gameinfoCostRateRows(currencies, costProfiles, { formulaVariable
             note: profile.note || "",
             // Today's rate by the profile's own sheet calculation, with live USDT/THB and USDCNY.
             suggestion,
-            channel: pack.channelsMain?.[0] || profile.label,
+            // A profile's label is "<wallet> → THB (จากชีต)"; the wallet alone when no pack names one.
+            channel: pack.channelsMain?.[0] || String(profile.label || "").replace(/\s*→\s*THB.*$/, "") || profile.label,
             currency: profile.inputCurrency || "",
             rate: resolveGameinfoField(pack, {}, "อัตราต้นทุน", context),
             source: sheetCalc && !formula

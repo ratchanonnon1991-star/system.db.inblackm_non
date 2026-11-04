@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { gameinfoSheetCalcRate } from "@/lib/gameinfo-cost-profiles";
 import { resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
 import { gameinfoListNumber, gameinfoMarginTone } from "@/lib/gameinfo-pack-list";
+import { gameinfoChannelKey } from "@/lib/gameinfo-channel-costs";
 
 const METHODS = [
   { id: "sheet", label: "คิดแบบชีต" },
@@ -39,13 +40,24 @@ function readVariableFormula(formula) {
  * from a ตัวแปรผสม. Shows what each pack on the rate would cost and make, and
  * hands the changed profile back; the editor's save bar stores it.
  */
-export default function GameinfoCostRateEditor({ row, packs, formulaVariables = [], externalValues = {}, otherProfiles = [], onApply, onClose }) {
-  const profile = row.profile;
-  const currency = row.currency || "หน่วย";
-  const oldRate = Number.isFinite(Number(row.rate)) ? Number(row.rate) : null;
+// The id a wallet's profile gets, as the sheet import names them: "GOOGLE NGN" → "sheet-googlengn".
+export function gameinfoCostProfileId(channel) {
+  return `sheet-${gameinfoChannelKey(channel).replace(/[^a-z0-9]+/g, "-")}`;
+}
+
+// With no `row` this adds a wallet: its name, the currency it is paid in,
+// its rate and the packs that use it (`allPacks`, the open mode's packs).
+export default function GameinfoCostRateEditor({ row = null, packs = [], allPacks = [], formulaVariables = [], externalValues = {}, otherProfiles = [], onApply, onClose }) {
+  const isNew = !row;
+  const [channelName, setChannelName] = useState("");
+  const [currencyCode, setCurrencyCode] = useState("");
+  const [picked, setPicked] = useState(null);
+  const profile = row?.profile || { id: "", label: "", inputCurrency: "", baseValue: "", rateFormula: "" };
+  const currency = (isNew ? currencyCode.trim().toUpperCase() : row.currency) || "หน่วย";
+  const oldRate = !isNew && Number.isFinite(Number(row.rate)) ? Number(row.rate) : null;
   const variableStart = readVariableFormula(profile.rateFormula);
-  const [method, setMethod] = useState(row.method === "variable" ? "variable" : row.method === "sheet" ? "sheet" : "direct");
-  const [kind, setKind] = useState(profile.sheetCalc?.kind || (CARD_CURRENCIES.has(String(row.currency).toUpperCase()) ? "cnyPerUnit" : "perUsdt"));
+  const [method, setMethod] = useState(row?.method === "variable" ? "variable" : row?.method === "sheet" ? "sheet" : "direct");
+  const [kind, setKind] = useState(profile.sheetCalc?.kind || (CARD_CURRENCIES.has(String(row?.currency).toUpperCase()) ? "cnyPerUnit" : "perUsdt"));
   const [amount, setAmount] = useState(profile.sheetCalc?.amount || "");
   const [usdtManual, setUsdtManual] = useState(Boolean(profile.sheetCalc?.usdtThb));
   const [usdtThb, setUsdtThb] = useState(profile.sheetCalc?.usdtThb || "");
@@ -78,10 +90,24 @@ export default function GameinfoCostRateEditor({ row, packs, formulaVariables = 
         externalValues,
       }))
     : null;
-  const ready = nextProfile !== null && Number.isFinite(newRate) && newRate > 0;
-  const changed = ready && (oldRate === null || Math.abs(newRate - oldRate) > 1e-9 || JSON.stringify(nextProfile) !== JSON.stringify(profile));
+  // Adding: the wallets the packs name that have no rate yet, and which packs go on the new one.
+  const newId = isNew ? gameinfoCostProfileId(channelName) : "";
+  const taken = isNew && channelName.trim() && otherProfiles.some((item) => item.id === newId);
+  const wallets = useMemo(() => {
+    if (!isNew) return [];
+    const known = new Set(otherProfiles.map((item) => item.id));
+    return [...new Set(allPacks.map((pack) => String(pack.channelsMain?.[0] || "").trim()).filter(Boolean))]
+      .filter((name) => !known.has(gameinfoCostProfileId(name)));
+  }, [allPacks, isNew, otherProfiles]);
+  const matching = isNew ? allPacks.filter((pack) => channelName.trim() && gameinfoChannelKey(pack.channelsMain?.[0]) === gameinfoChannelKey(channelName)) : [];
+  const choosable = isNew ? (matching.length ? matching : allPacks) : [];
+  const chosen = picked || new Set(matching.map((pack) => String(pack.id)));
+  const impactPacks = isNew ? allPacks.filter((pack) => chosen.has(String(pack.id))) : packs;
+  const newOk = !isNew || (channelName.trim() && /^[A-Z]{2,12}$/.test(currency) && !taken);
+  const ready = nextProfile !== null && Number.isFinite(newRate) && newRate > 0 && newOk;
+  const changed = ready && (isNew || oldRate === null || Math.abs(newRate - oldRate) > 1e-9 || JSON.stringify(nextProfile) !== JSON.stringify(profile));
 
-  const impact = packs.map((pack) => {
+  const impact = impactPacks.map((pack) => {
     const charged = gameinfoListNumber(pack.amountChargedFee);
     const price = gameinfoListNumber(pack.price);
     const oldCost = charged !== null && oldRate !== null ? charged * oldRate : null;
@@ -96,7 +122,14 @@ export default function GameinfoCostRateEditor({ row, packs, formulaVariables = 
     if (!cleaned.sheetCalc) delete cleaned.sheetCalc;
     if (note.trim()) cleaned.note = note.trim().slice(0, 200);
     else delete cleaned.note;
-    onApply(cleaned);
+    if (!isNew) {
+      onApply({ profile: cleaned });
+      return;
+    }
+    onApply({
+      profile: { ...cleaned, id: newId, label: `${channelName.trim()} → THB`, inputCurrency: currency },
+      packIds: [...chosen],
+    });
   }
 
   const field = "h-11 w-full rounded-xl border border-linear-hairline-strong bg-linear-surface-1 px-3 text-right text-[15px] font-bold tabular-nums text-linear-ink outline-none focus:border-[#D90005]";
@@ -107,9 +140,9 @@ export default function GameinfoCostRateEditor({ row, packs, formulaVariables = 
       <DialogContent showCloseButton={false} className="max-h-[90vh] gap-0 overflow-hidden rounded-[22px] p-0 sm:max-w-[640px]">
         <div className="flex items-center gap-3 bg-gradient-to-br from-[#E3000B] to-[#A80004] px-5 py-4 text-white">
           <div className="min-w-0">
-            <DialogTitle className="text-xl font-semibold text-white">แก้เรท · {row.channel}</DialogTitle>
+            <DialogTitle className="text-xl font-semibold text-white">{isNew ? "เพิ่มช่องทางเติม" : `แก้เรท · ${row.channel}`}</DialogTitle>
             <DialogDescription className="text-[13px] text-white/90">
-              ต่อ 1 {currency} · ใช้กับ {packs.length} แพ็ค · เรทตอนนี้ ฿{show(oldRate)}
+              {isNew ? "เรทต้นทุนของช่องทางที่ใช้เติม และแพ็คที่ใช้เรทนี้" : `ต่อ 1 ${currency} · ใช้กับ ${packs.length} แพ็ค · เรทตอนนี้ ฿${show(oldRate)}`}
             </DialogDescription>
           </div>
           <button type="button" onClick={onClose} aria-label="ปิด" className="ml-auto grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/20 text-white">
@@ -118,6 +151,55 @@ export default function GameinfoCostRateEditor({ row, packs, formulaVariables = 
         </div>
 
         <div className="flex max-h-[calc(90vh-80px)] flex-col gap-4 overflow-y-auto px-5 py-4">
+          {isNew ? (
+            <div className="flex flex-col gap-3">
+              {wallets.length ? (
+                <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/[0.07] px-3 py-2 text-[13px] text-sky-900 dark:text-sky-200">
+                  ช่องทางเติมที่แพ็คใช้แต่ยังไม่มีเรท:
+                  {wallets.map((name) => (
+                    <button key={name} type="button" onClick={() => { setChannelName(name); setPicked(null); }} className="rounded-full border border-sky-500/40 bg-linear-surface-1 px-2.5 py-0.5 font-bold hover:bg-sky-500/10">{name}</button>
+                  ))}
+                </div>
+              ) : null}
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_140px]">
+                <label className="flex flex-col gap-1.5 text-[13px] font-medium text-linear-ink">
+                  ชื่อช่องทางเติม (ตรงกับ “ช่องทางหลัก” ของแพ็ค)
+                  <input value={channelName} onChange={(event) => { setChannelName(event.target.value); setPicked(null); }} maxLength={60} placeholder="เช่น RAZER SGD" className="h-11 rounded-xl border border-linear-hairline-strong bg-linear-surface-1 px-3 text-[15px] font-bold text-linear-ink outline-none focus:border-[#D90005]" />
+                </label>
+                <label className="flex flex-col gap-1.5 text-[13px] font-medium text-linear-ink">
+                  จ่ายเป็นสกุล
+                  <input value={currencyCode} onChange={(event) => setCurrencyCode(event.target.value.toUpperCase())} maxLength={12} placeholder="เช่น SGD" className="h-11 rounded-xl border border-linear-hairline-strong bg-linear-surface-1 px-3 text-[15px] font-bold uppercase text-linear-ink outline-none focus:border-[#D90005]" />
+                </label>
+              </div>
+              {taken ? <p role="alert" className="text-sm text-linear-danger">มีเรทของช่องทางนี้แล้ว แก้ที่ปุ่มดินสอในตารางแทน</p> : null}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[13px] font-medium text-linear-ink">
+                  แพ็คที่ใช้เรทนี้ ({chosen.size})
+                  <span className="ml-1.5 font-normal text-linear-ink-tertiary">{matching.length ? "จับจากช่องทางหลักของแพ็ค ติ๊กออกได้" : "ไม่มีแพ็คที่ช่องทางหลักตรงชื่อนี้ เลือกเองได้"}</span>
+                </span>
+                <div className="max-h-48 overflow-y-auto rounded-xl border border-linear-hairline bg-linear-surface-1">
+                  {choosable.map((pack) => (
+                    <label key={pack.id} className="flex items-center gap-2.5 border-t border-linear-hairline px-3 py-2 text-[13px] text-linear-ink first:border-t-0">
+                      <input
+                        type="checkbox"
+                        checked={chosen.has(String(pack.id))}
+                        onChange={(event) => {
+                          const next = new Set(chosen);
+                          if (event.target.checked) next.add(String(pack.id));
+                          else next.delete(String(pack.id));
+                          setPicked(next);
+                        }}
+                        className="h-[18px] w-[18px] accent-[#D90005]"
+                      />
+                      <span className="min-w-0 flex-1 truncate">{pack.name || "-"}</span>
+                      <span className="text-xs text-linear-ink-tertiary">{pack.channelsMain?.[0] || "ไม่มีช่องทาง"}</span>
+                    </label>
+                  ))}
+                  {!choosable.length ? <p className="px-3 py-2 text-sm text-linear-ink-tertiary">ยังไม่มีแพ็คในโหมดนี้</p> : null}
+                </div>
+              </div>
+            </div>
+          ) : null}
           <div role="group" aria-label="เรทนี้ได้มาจาก" className="flex gap-1 rounded-full bg-linear-surface-3 p-1">
             {METHODS.map((item) => (
               <button key={item.id} type="button" aria-pressed={method === item.id} onClick={() => setMethod(item.id)} className={seg(method === item.id)}>
@@ -253,7 +335,7 @@ export default function GameinfoCostRateEditor({ row, packs, formulaVariables = 
           <div className="flex flex-wrap items-center justify-end gap-2 border-t border-linear-hairline pt-3">
             <span className="mr-auto text-xs text-linear-ink-tertiary">ใช้แล้วกด “บันทึก” ที่แถบด้านล่างเพื่อบันทึกจริง</span>
             <button type="button" onClick={onClose} className="h-11 rounded-full border border-linear-hairline-strong px-5 text-sm text-linear-ink hover:bg-linear-surface-2">ยกเลิก</button>
-            <button type="button" disabled={!changed} onClick={apply} className="h-11 rounded-full bg-[#D90005] px-6 text-sm font-bold text-white hover:bg-[#B80004] disabled:opacity-40">ใช้เรทนี้</button>
+            <button type="button" disabled={!changed} onClick={apply} className="h-11 rounded-full bg-[#D90005] px-6 text-sm font-bold text-white hover:bg-[#B80004] disabled:opacity-40">{isNew ? "เพิ่มช่องทาง" : "ใช้เรทนี้"}</button>
           </div>
         </div>
       </DialogContent>

@@ -52,6 +52,7 @@ import {
 } from "@/lib/gameinfo-column-dependencies";
 import { mergeCurrencies } from "@/lib/gameinfo-import";
 import { gameinfoCostRateRows } from "@/lib/gameinfo-channel-costs";
+import { gameinfoSheetCostFormulaColumns } from "@/lib/gameinfo-sheet-packs";
 import GameinfoCostRateEditor from "./gameinfo-cost-rate-editor";
 import {
   GAMEINFO_COUNTRY_NAMES,
@@ -141,6 +142,9 @@ function uniq(arr) {
 // (gameinfo's own engine) replaced by systemdb's gamedb-formula.js so
 // formulas stay editable from both surfaces. CSV import uses gameinfo-import.js
 // (ported separately) via the /api/gameinfo/import/* routes.
+// The rate window's id for a wallet being added (gameinfo-cost-rate-editor.js).
+const NEW_RATE = "__new_rate__";
+
 // The pack-name language picker (ชื่อหลัก / + ภาษา). No page shows a
 // translated name yet, so it stays out of the way; the names already
 // saved are kept and the editor works on the main names.
@@ -227,7 +231,8 @@ export default function GameinfoPackEditor({
     () => ({ costProfiles, formulaVariables, externalValues: rateState.externalValues }),
     [costProfiles, formulaVariables, rateState.externalValues]
   );
-  const editingRateRow = editingRateId === null
+  const allPacks = currencies.flatMap((currency) => currency.categories.flatMap((category) => category.packs));
+  const editingRateRow = editingRateId === null || editingRateId === NEW_RATE
     ? null
     : gameinfoCostRateRows(currencies, costProfiles, { formulaVariables, externalValues: rateState.externalValues, other: game.costRatesOther })
       .find((row) => row.id === editingRateId && row.own) || null;
@@ -530,6 +535,24 @@ export default function GameinfoPackEditor({
   // A cost rate change joins the draft; the save bar stores it.
   function replaceCostProfile(next) {
     setCostProfiles((current) => current.map((profile) => (profile.id === next.id ? next : profile)));
+  }
+  // A new wallet's rate, and the packs that go on it. A game whose ต้นทุน
+  // column has no formula yet gets the sheet's, so the rate is used.
+  function addCostProfile(profile, packIds = []) {
+    const nextProfiles = [...costProfiles.filter((item) => item.id !== profile.id), profile];
+    setCostProfiles(nextProfiles);
+    const ids = new Set(packIds.map(String));
+    if (ids.size) {
+      updateCurrencies((draft) => {
+        for (const currency of draft) {
+          for (const category of currency.categories) {
+            for (const pack of category.packs) if (ids.has(String(pack.id))) pack.costProfileId = profile.id;
+          }
+        }
+      });
+    }
+    const withCost = gameinfoSheetCostFormulaColumns(computedColumns, nextProfiles);
+    if (withCost) setComputedColumns(withCost);
   }
   // "ใช้เรทนี้" in the rate table: today's rate by the profile's own sheet calculation.
   function applyRateSuggestion(row) {
@@ -1062,16 +1085,19 @@ export default function GameinfoPackEditor({
         otherModeLabel={dataMode === "idpass" ? "UID" : "ID-PASS"}
         onEdit={(row) => setEditingRateId(row.id)}
         onApplySuggestion={applyRateSuggestion}
+        onAdd={() => setEditingRateId(NEW_RATE)}
       />
-      {editingRateRow ? (
+      {editingRateRow || editingRateId === NEW_RATE ? (
         <GameinfoCostRateEditor
           row={editingRateRow}
-          packs={currencies.flatMap((currency) => currency.categories.flatMap((category) => category.packs)).filter((pack) => pack.costProfileId === editingRateRow.id)}
+          packs={editingRateRow ? allPacks.filter((pack) => pack.costProfileId === editingRateRow.id) : []}
+          allPacks={allPacks}
           formulaVariables={formulaVariables}
           externalValues={rateState.externalValues}
-          otherProfiles={costProfiles}
-          onApply={(next) => {
-            replaceCostProfile(next);
+          otherProfiles={[...costProfiles, ...(game.costRatesOther?.costProfiles || [])]}
+          onApply={({ profile, packIds }) => {
+            if (editingRateRow) replaceCostProfile(profile);
+            else addCostProfile(profile, packIds);
             setEditingRateId(null);
           }}
           onClose={() => setEditingRateId(null)}
