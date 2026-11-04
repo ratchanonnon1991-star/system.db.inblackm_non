@@ -119,7 +119,10 @@ export default function GameinfoPackList({
   }, [listings]);
   const verifyRow = verifyPackId === null ? null : rows.find((row) => String(row.pack.id) === verifyPackId) || null;
   // Each listing as it stands against the pack's price for that channel now.
-  const listingsFor = (row) => (listingsByPack.get(String(row.pack.id)) || []).map((listing) => {
+  // Only channels the game sells on count; a listing left on one it stopped
+  // selling on stays stored but out of the badge.
+  const soldOn = new Set((verify?.channels || []).map((item) => item.key));
+  const listingsFor = (row) => (listingsByPack.get(String(row.pack.id)) || []).filter((listing) => soldOn.has(listing.channel)).map((listing) => {
     const key = GAMEINFO_LISTING_PRICE_CHANNEL[listing.channel];
     return gameinfoListingEffective(listing, key ? row.channels[key]?.price ?? null : null, now);
   });
@@ -342,6 +345,7 @@ export default function GameinfoPackList({
           canReview={verify.canReview}
           viewer={verify.viewer}
           reviewers={verify.reviewers || []}
+          setupHref={verify.setupHref}
           onListingsChange={setListings}
           className={verify.className}
         />

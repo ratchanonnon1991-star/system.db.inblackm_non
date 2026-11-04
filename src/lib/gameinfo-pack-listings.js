@@ -21,7 +21,9 @@ export function gameinfoListingDeadline(listing) {
 export const GAMEINFO_LISTING_PRICE_CHANNEL = { page: "page", kaleoz: "kaleoz", russia: "russia" };
 
 const CHANNEL_KEYS = new Set(GAMEINFO_SALES_CHANNELS.map((channel) => channel.key));
-const HIDDEN_SALES_STATUSES = new Set(["none", "removed"]);
+// A pack is checked where the game is sold: on sale, being listed, awaiting
+// verification or paused for now. Closed, removed or never there: no tab.
+const SOLD_STATUSES = new Set(["open", "listing", "verify", "paused"]);
 
 /** The name a listing or a check is recorded under: the API and the page must agree. */
 export function gameinfoListingActor(user) {
@@ -44,11 +46,10 @@ export function isGameinfoListingChannel(key) {
   return CHANNEL_KEYS.has(key);
 }
 
-/** The channels a game sells on (its sales channel rows), else every channel. */
+/** The channels a game sells on, from its sales channel rows; none when it has none set. */
 export function gameinfoListingChannels(salesChannels = []) {
-  const used = new Set((salesChannels || []).filter((row) => row.status && !HIDDEN_SALES_STATUSES.has(row.status)).map((row) => row.channel));
-  const channels = GAMEINFO_SALES_CHANNELS.filter((channel) => used.has(channel.key));
-  return channels.length ? channels : GAMEINFO_SALES_CHANNELS;
+  const used = new Set((salesChannels || []).filter((row) => SOLD_STATUSES.has(row.status)).map((row) => row.channel));
+  return GAMEINFO_SALES_CHANNELS.filter((channel) => used.has(channel.key));
 }
 
 /** A price as typed ("1,250", "฿90"), or null for none. */

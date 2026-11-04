@@ -61,6 +61,7 @@ export function GameinfoPackVerifyDialog({
   canReview = false,
   viewer = "",
   reviewers = [],
+  setupHref = null,
   onListingsChange,
   className = "",
 }) {
@@ -117,6 +118,14 @@ export function GameinfoPackVerifyDialog({
                 <div className="gd-autoc">
                   <span className="ai"><Bot size={22} aria-hidden="true" /></span>
                   <small>แพ็คนี้เติมอัตโนมัติด้วย Bot Auto ข้อมูลที่บันทึกจะถูกใช้เติมให้ลูกค้าเลย ตรวจชื่อ ราคา และจำนวนให้ถูกก่อนกดบันทึกทุกครั้ง</small>
+                </div>
+              ) : null}
+              {!channels.length ? (
+                <div className="gd-empty">
+                  <span className="eic"><ShieldCheck size={22} aria-hidden="true" /></span>
+                  <b>เกมนี้ยังไม่ได้ตั้งช่องทางขาย</b>
+                  <span>แท็บตรวจสอบจะแยกตามช่องทางที่เปิดขาย ตั้งได้ที่หน้าแก้ไข หัวข้อ “ช่องทางขาย”</span>
+                  {setupHref ? <a className="gd-btn sm" href={setupHref}>ไปตั้งช่องทางขาย</a> : null}
                 </div>
               ) : null}
               <div className="gd-tabs" role="tablist" aria-label="ช่องทางขาย">

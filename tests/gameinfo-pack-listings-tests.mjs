@@ -20,7 +20,8 @@ assert.equal(summarizeGameinfoPackListings([{ status: "ok" }, { status: "pending
 assert.equal(summarizeGameinfoPackListings([{ status: "pending" }, { status: "wrong" }]).label, "ราคาผิด 1", "a wrong price outranks one waiting");
 
 assert.deepEqual(gameinfoListingChannels([{ channel: "kaleoz", status: "open" }, { channel: "g2g", status: "removed" }]).map((channel) => channel.key), ["kaleoz"], "only channels the game sells on");
-assert.ok(gameinfoListingChannels([]).length > 5, "a game without sales channel rows gets every channel");
+assert.deepEqual(gameinfoListingChannels([]), [], "a game with no sales channels set has no tabs");
+assert.deepEqual(gameinfoListingChannels([{ channel: "kaleoz", status: "listing" }, { channel: "g2g", status: "closed" }, { channel: "russia", status: "paused" }]).map((channel) => channel.key), ["kaleoz", "russia"], "listing and paused count as sold on, closed does not");
 assert.equal(parseGameinfoListingPrice("฿1,250"), 1250);
 assert.equal(parseGameinfoListingPrice(""), null);
 assert.ok(Number.isNaN(parseGameinfoListingPrice("abc")));
@@ -98,4 +99,4 @@ assert.ok(route.includes("requireGameinfoReporter(request)") && route.includes("
 const packs = readFileSync(new URL("../src/server/gameinfo-gamelist-packs.js", import.meta.url), "utf8");
 assert.ok(packs.includes("CREATE TABLE IF NOT EXISTS gamelist_pack_listings"), "the table is created with the others");
 
-console.log("47 passed");
+console.log("48 passed");

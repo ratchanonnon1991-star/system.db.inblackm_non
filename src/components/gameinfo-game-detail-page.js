@@ -35,6 +35,7 @@ import GameinfoSalesChannelEditor, { GameinfoSalesChannelCards } from "@/compone
 import { listGamelistSalesChannels } from "@/server/gameinfo-sales-channels";
 import { listGameinfoListingReviewers, listGamelistPackListings } from "@/server/gameinfo-pack-listings";
 import { gameinfoListingActor, gameinfoListingChannels } from "@/lib/gameinfo-pack-listings";
+import { GAMEINFO_SALES_CHANNELS } from "@/lib/gameinfo-sales-channels";
 import { listStockForGame } from "@/server/stock-repository";
 import GameinfoMissingChecklist from "@/components/gameinfo-missing-checklist";
 import { gameinfoMissingItems } from "@/lib/gameinfo-completeness";
@@ -269,7 +270,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         {/* The day's notices before editing, whichever way someone came in. */}
         <GameinfoEditGate
           botAuto={isGameinfoBotAuto(row.botManual)}
-          channels={gameinfoListingChannels(salesChannels).map((channel) => channel.label)}
+          channels={(gameinfoListingChannels(salesChannels).length ? gameinfoListingChannels(salesChannels) : GAMEINFO_SALES_CHANNELS).map((channel) => channel.label)}
           cancelHref={viewHref}
           className={prompt.variable}
         />
@@ -408,6 +409,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
           dataMode,
           listings,
           channels: gameinfoListingChannels(salesChannels),
+          setupHref: editableRole ? `${manageHref}#s-sales` : null,
           canList: hasPermission(user, "gameinfo.report"),
           canReview: editableRole,
           viewer: gameinfoListingActor(user),
