@@ -792,24 +792,24 @@ function TopupInfo({ row, href }) {
   );
 }
 
+// Every column is listed, empty ones as "—": a column just added has no
+// values yet, and leaving it out read as the column not having been added.
 function OtherColumns({ row, columns }) {
-  const entries = columns
-    .map((column) => {
-      if (column.kind === "computed") {
-        const value = row.errors.has(column.id) ? "สูตรผิด" : formatGameinfoPackColumnValue(row.values[column.id], column);
-        return [column, value];
-      }
-      return [column, listText(row.pack[column.field])];
-    })
-    .filter(([, value]) => value && value !== "—" && value !== "-");
+  const entries = columns.map((column) => {
+    const raw = column.kind === "computed"
+      ? row.errors.has(column.id) ? "สูตรผิด" : formatGameinfoPackColumnValue(row.values[column.id], column)
+      : listText(row.pack[column.field]);
+    const empty = !raw || raw === "—" || raw === "-";
+    return [column, empty ? "—" : raw, empty];
+  });
   if (!entries.length) return null;
   return (
     <div className="gd-blk">
       <h4>ข้อมูลอื่น</h4>
       <dl className="gd-kv">
-        {entries.map(([column, value]) => [
+        {entries.map(([column, value, empty]) => [
           <dt key={`${column.id}-l`}>{column.label}</dt>,
-          <dd key={`${column.id}-v`} className="num">{value}</dd>,
+          <dd key={`${column.id}-v`} className="num" style={empty ? { color: "var(--gd-muted)" } : undefined}>{value}</dd>,
         ])}
       </dl>
     </div>
