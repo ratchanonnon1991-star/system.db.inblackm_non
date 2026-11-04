@@ -25,6 +25,7 @@ import { getGameinfoModeData } from "@/server/gameinfo-mode-data";
 import GameinfoModeCloneButton from "@/components/gameinfo-mode-clone-button";
 import GameinfoGameManager from "@/components/gameinfo-game-manager";
 import GameinfoTopupWebPanel from "@/components/gameinfo-topup-web-panel";
+import { GameinfoPriceChannelSection } from "@/components/gameinfo-price-channel-editor";
 import GameinfoTestAccounts, { GameinfoTestAccountsCard } from "@/components/gameinfo-test-accounts";
 import GameinfoPriorityStars, { GameinfoWebBadge } from "@/components/gameinfo-priority-stars";
 import { getGamelistGameSettings, listGamelistTestAccounts, maskGamelistTestAccount } from "@/server/gameinfo-game-settings";
@@ -366,6 +367,19 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
             >
               <GameinfoSalesChannelEditor gameId={row.id} initialChannels={salesChannels} />
             </GameinfoManageSection>
+            <GameinfoManageSection
+              id="s-profit"
+              number={MANAGE_NUMBERS.profit}
+              title="ช่องทางดูกำไร"
+              description="ช่องทางในแถบ “ดูกำไรของช่องทาง” ของหน้าเกม และคอลัมน์ที่เก็บราคาขายของแต่ละช่องทาง — UID กับ ID-PASS ตั้งแยกกัน"
+            >
+              <GameinfoPriceChannelSection
+                gameId={row.id}
+                dataMode={dataMode}
+                configured={settings.priceChannels?.[dataMode] ?? null}
+                computedColumns={computedColumns}
+              />
+            </GameinfoManageSection>
           </div>
         </div>
       </>
@@ -457,5 +471,6 @@ const MANAGE_SECTIONS = [
   { id: "s-pack", label: "แพ็คและราคา" },
   { id: "s-margin", label: "ราคาเว็บและ Margin" },
   { id: "s-sales", label: "ช่องทางขาย" },
+  { id: "s-profit", label: "ช่องทางดูกำไร" },
 ];
-const MANAGE_NUMBERS = { info: 1, method: 2, web: 3, test: 4, cost: 5, pack: 6, margin: 7, sales: 8 };
+const MANAGE_NUMBERS = { info: 1, method: 2, web: 3, test: 4, cost: 5, pack: 6, margin: 7, sales: 8, profit: 9 };

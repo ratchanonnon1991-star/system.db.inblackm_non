@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronUp, Plus, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { apiJson } from "@/lib/api-json";
-import { GAMEINFO_PRICE_CHANNEL_MAX } from "@/lib/gameinfo-pack-list";
+import { GAMEINFO_PRICE_CHANNEL_MAX, gameinfoPackListColumns } from "@/lib/gameinfo-pack-list";
+import { buildGameinfoPackColumns } from "@/lib/gameinfo-pack-columns";
+// The window keeps the game page's look on the edit page too.
+import "./gameinfo-game-detail.css";
 
 const squash = (label) => String(label ?? "").replace(/\s+/g, "").toLowerCase();
 const newKey = () => `ch_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
@@ -141,5 +144,64 @@ export default function GameinfoPriceChannelEditor({ gameId, dataMode, configure
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// The edit page's section: the channels the game page's profit bar offers,
+// each with the column its price comes from, and the button to change them.
+export function GameinfoPriceChannelSection({ gameId, dataMode, configured, computedColumns }) {
+  const [editing, setEditing] = useState(false);
+  const columns = useMemo(() => buildGameinfoPackColumns(computedColumns || []), [computedColumns]);
+  const columnLabels = useMemo(
+    () => columns.filter((column) => column.kind === "computed").map((column) => String(column.label ?? "")).filter(Boolean),
+    [columns]
+  );
+  const known = new Set(columnLabels.map(squash));
+  // A saved list is shown as saved, a channel whose column is gone included;
+  // the built-in one only with the channels whose column this game has.
+  const list = configured || gameinfoPackListColumns(columns).channels.map((item) => ({ key: item.key, label: item.short, column: item.priceColumn?.label || "" }));
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[13px] text-linear-ink-tertiary">
+          {configured ? "เกมนี้ตั้งช่องทางของตัวเองไว้" : "เกมนี้ใช้ช่องทางเริ่มต้นอยู่"} · {dataMode === "idpass" ? "โหมด ID-PASS" : "โหมด UID"}
+        </p>
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="flex h-10 items-center gap-1.5 rounded-[10px] bg-[#D90005] px-3.5 text-[13px] font-extrabold text-white hover:bg-[#B80004]"
+        >
+          <Pencil size={14} aria-hidden="true" /> แก้ช่องทาง
+        </button>
+      </div>
+      {list.length ? (
+        <ul className="m-0 flex list-none flex-col divide-y divide-linear-hairline rounded-xl border border-linear-hairline p-0">
+          {list.map((item) => {
+            const missing = item.column && !known.has(squash(item.column));
+            return (
+              <li key={item.key} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2.5">
+                <span className="text-[15px] font-bold text-linear-ink">{item.label}</span>
+                <span className={`text-[13px] ${missing ? "font-bold text-[#D90005]" : "text-linear-ink-muted"}`}>
+                  {missing ? `ไม่พบคอลัมน์ “${item.column}”` : `ราคาจาก ${item.column || "ราคา (ของแพ็ค)"}`}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="text-sm text-linear-ink-tertiary">ยังไม่มีช่องทาง กด “แก้ช่องทาง” เพื่อเพิ่ม</p>
+      )}
+      <p className="text-xs text-linear-ink-tertiary">กำไรของแต่ละช่องทาง = ราคาขายของช่องทางนั้น − ต้นทุน · เลือกคอลัมน์ที่เป็นราคาเงินบาท</p>
+      {editing ? (
+        <GameinfoPriceChannelEditor
+          gameId={gameId}
+          dataMode={dataMode}
+          configured={configured}
+          initial={list}
+          columnLabels={columnLabels}
+          onClose={() => setEditing(false)}
+        />
+      ) : null}
+    </div>
   );
 }

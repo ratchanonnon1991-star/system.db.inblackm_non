@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bot, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, Image as ImageIcon, LayoutGrid, List, Pencil, Plus, Search, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Bot, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, Image as ImageIcon, LayoutGrid, List, Plus, Search, X, ZoomIn, ZoomOut } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { setGameinfoFoldClosed } from "./gameinfo-fold";
 import GameinfoPriceChannelEditor from "./gameinfo-price-channel-editor";
@@ -281,16 +281,10 @@ export default function GameinfoPackList({
   return (
     <>
       <div className="gd-ctrl">
-        {product && (channels.length > 1 || channelsEditable) ? (
+        {/* Setting the channels up is on the edit page (ช่องทางดูกำไร). */}
+        {product && channels.length > 1 ? (
           <div className="flex flex-col gap-1.5">
-            <span className="flex items-center justify-between gap-2">
-              <span className="gd-lbl">ดูกำไรของช่องทาง</span>
-              {channelsEditable ? (
-                <button type="button" className="gd-btn sm" style={{ height: 28 }} onClick={() => setEditingChannels(true)}>
-                  <Pencil size={13} aria-hidden="true" /> แก้ช่องทาง
-                </button>
-              ) : null}
-            </span>
+            <span className="gd-lbl">ดูกำไรของช่องทาง</span>
             {channels.length ? (
               <div className="gd-seg red fill" role="group" aria-label="ช่องทางขาย">
                 {channels.map((item) => (
