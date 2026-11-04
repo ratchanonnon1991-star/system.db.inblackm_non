@@ -182,14 +182,14 @@ export async function listWallets() {
  * Entries newest first (by receipt time) with their legs. `walletId` narrows to
  * one wallet, `month` ("2026-10") to one month, `kind` to one kind, `q` to a
  * text in the title, note or details, `issues` to corrections and entries
- * waiting for a second person.
+ * waiting for a second person, `entryId` to one entry.
  */
-export async function listWalletEntries({ walletId = null, walletIds = null, orderId = null, month = "", kind = "", q = "", issues = false, limit = 300 } = {}) {
+export async function listWalletEntries({ walletId = null, walletIds = null, orderId = null, entryId = null, month = "", kind = "", q = "", issues = false, limit = 300 } = {}) {
   // Joins stock_purchase_orders: callers ensure that table first (ensurePurchaseOrderSchema).
   await ensureWalletSchema();
   const result = await getPool().query(
     `SELECT e.*, o.status AS order_status,
-            json_agg(json_build_object('walletId', l.wallet_id, 'walletName', w.name, 'currency', l.currency,
+            json_agg(json_build_object('walletId', l.wallet_id, 'walletCode', w.code, 'walletName', w.name, 'currency', l.currency,
               'amount', l.amount::text, 'fee', l.fee::text, 'balanceAfter', l.balance_after::text) ORDER BY l.id) AS legs
        FROM stock_wallet_entries e
        JOIN stock_wallet_legs l ON l.entry_id = e.id
@@ -201,12 +201,13 @@ export async function listWalletEntries({ walletId = null, walletIds = null, ord
         AND ($5 = '' OR e.kind = $5)
         AND ($6 = '' OR lower(e.title || ' ' || e.note || ' ' || e.destination_account || ' ' || e.details::text) LIKE $6)
         AND (NOT $7::boolean OR e.kind = 'adjust' OR e.status_request IS NOT NULL OR e.status = 'awaiting_approval')
+        AND ($8::bigint IS NULL OR e.id = $8)
       GROUP BY e.id, o.status
       ORDER BY e.occurred_at DESC, e.id DESC
       LIMIT $3`,
     [walletIds?.length ? walletIds.map(Number) : walletId ? [Number(walletId)] : null, orderId ? Number(orderId) : null, Math.min(Math.max(Number(limit) || 300, 1), 1000),
       /^\d{4}-\d{2}$/.test(month) ? month : "", WALLET_ENTRY_KINDS.includes(kind) ? kind : "",
-      q ? `%${String(q).trim().toLowerCase().replace(/[\\%_]/g, (char) => `\\${char}`)}%` : "", Boolean(issues)]
+      q ? `%${String(q).trim().toLowerCase().replace(/[\\%_]/g, (char) => `\\${char}`)}%` : "", Boolean(issues), entryId ? Number(entryId) : null]
   );
   const clean = (value) => fromWalletUnits(toWalletUnits(value));
   return result.rows.map((row) => ({
@@ -262,6 +263,69 @@ export async function listWalletChecks({ walletId = null } = {}) {
     };
     return { ...check, checkedStale: Boolean(row.checked_at) && row.checked_sig !== walletCheckSignature(check) };
   });
+}
+
+/**
+ * Where an entry's money came from and where it went, first in, first out per
+ * wallet and currency: for each leg that takes money out, the earlier incoming
+ * entries it spends ("from"); for each leg that brings money in, the later
+ * outgoing entries that spend it ("to"). Per leg: { direction, walletCode,
+ * walletName, currency, amount, items: [{ entryId, kind, title, occurredAt,
+ * portion, legs, sheet, receivedSheet }] }, at most 12 items.
+ */
+export async function walletEntryTrail(entryId) {
+  await ensureWalletSchema();
+  const pool = getPool();
+  const legs = (await pool.query(
+    `SELECT l.id, l.wallet_id, w.code, w.name, l.currency, l.amount::text AS amount
+       FROM stock_wallet_legs l JOIN stock_wallets w ON w.id = l.wallet_id WHERE l.entry_id = $1 ORDER BY l.id`, [Number(entryId)])).rows;
+  if (!legs.length) throw createHttpError("ไม่พบรายการนี้", 404);
+  const clean = (value) => fromWalletUnits(toWalletUnits(value));
+  const out = [];
+  for (const leg of legs) {
+    // cin / cout: money in / out of this wallet-currency up to and including the row.
+    // An in covers (cin - amount, cin]; an out covers (cout + amount, cout] (amount < 0).
+    const matches = (await pool.query(
+      `WITH flows AS (
+         SELECT l.id, l.entry_id, l.amount, e.occurred_at,
+                SUM(GREATEST(l.amount, 0)) OVER w AS cin, SUM(GREATEST(-l.amount, 0)) OVER w AS cout
+           FROM stock_wallet_legs l JOIN stock_wallet_entries e ON e.id = l.entry_id
+          WHERE l.wallet_id = $1 AND l.currency = $2 AND ${WALLET_COUNTED}
+         WINDOW w AS (ORDER BY e.occurred_at, e.id, l.id)
+       ), me AS (SELECT * FROM flows WHERE id = $3)
+       SELECT f.entry_id, CASE WHEN me.amount < 0
+                THEN LEAST(f.cin, me.cout) - GREATEST(f.cin - f.amount, me.cout + me.amount)
+                ELSE LEAST(f.cout, me.cin) - GREATEST(f.cout + f.amount, me.cin - me.amount) END AS portion
+         FROM flows f, me
+        WHERE f.entry_id <> me.entry_id
+          AND ((me.amount < 0 AND f.amount > 0 AND f.cin - f.amount < me.cout AND f.cin > me.cout + me.amount)
+            OR (me.amount > 0 AND f.amount < 0 AND f.cout + f.amount < me.cin AND f.cout > me.cin - me.amount))
+        ORDER BY f.occurred_at, f.id
+        LIMIT 12`,
+      [leg.wallet_id, leg.currency, leg.id]
+    )).rows;
+    const ids = matches.map((row) => Number(row.entry_id));
+    const found = ids.length ? (await pool.query(
+      `SELECT e.id, e.kind, e.title, e.occurred_at, e.sheet_period, e.sheet_tab, e.sheet_row, e.received_sheet,
+              json_agg(json_build_object('walletCode', w.code, 'walletName', w.name, 'currency', l.currency, 'amount', l.amount::text) ORDER BY l.id) AS legs
+         FROM stock_wallet_entries e JOIN stock_wallet_legs l ON l.entry_id = e.id JOIN stock_wallets w ON w.id = l.wallet_id
+        WHERE e.id = ANY($1::bigint[]) GROUP BY e.id`, [ids])).rows : [];
+    const byId = new Map(found.map((row) => [Number(row.id), row]));
+    out.push({
+      direction: String(leg.amount).startsWith("-") ? "from" : "to",
+      walletCode: leg.code, walletName: leg.name, currency: leg.currency, amount: clean(leg.amount),
+      items: matches.map((match) => {
+        const row = byId.get(Number(match.entry_id));
+        return {
+          entryId: Number(row.id), kind: row.kind, title: row.title, occurredAt: row.occurred_at, portion: clean(match.portion),
+          legs: row.legs.map((item) => ({ ...item, amount: clean(item.amount) })),
+          sheet: row.sheet_period ? { period: row.sheet_period, tab: row.sheet_tab, rowNo: row.sheet_row } : null,
+          receivedSheet: row.received_sheet || null,
+        };
+      }),
+    });
+  }
+  return out;
 }
 
 /** Marks one wallet-month-currency as checked by a person, for the numbers shown now. */

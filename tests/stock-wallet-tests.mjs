@@ -116,4 +116,6 @@ check(walletCheckState({ ...month, drifts: [{}], checkedAt: "2026-11-04" }) === 
 check(walletCheckSignature(month) !== walletCheckSignature({ ...month, systemClose: "50.01" }) && walletCheckSignature(month) !== walletCheckSignature({ ...month, drifts: [{}] }), "the sign-off remembers the numbers it was for");
 check(repository.includes("walletCheckSignature") && repository.includes("checked_sig"), "a sign-off stores those numbers and is compared after each import");
 
+check(repository.includes("walletEntryTrail") && repository.includes("OVER w AS cin") && repository.includes("l.currency = $2 AND ${WALLET_COUNTED}"), "the money trail is first in, first out over counted entries only");
+check(read("../src/app/api/stock/wallets/entries/[id]/trail/route.js").includes("requireStockAccess"), "the trail needs Stock access");
 console.log(`stock-wallets: ${passed} passed`);

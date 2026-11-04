@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowDownToLine, ArrowRightLeft, ChevronDown, ExternalLink, FileSpreadsheet, Link2, Loader2, Repeat, Search, ShoppingCart, SlidersHorizontal, Wallet } from "lucide-react";
@@ -88,6 +88,7 @@ function walletsHref(filters, change = {}) {
   if (next.kind) params.set("kind", next.kind);
   if (next.q) params.set("q", next.q);
   if (next.issues) params.set("issues", "1");
+  if (next.entry) params.set("entry", String(next.entry));
   const text = params.toString();
   return text ? `/stock/wallets?${text}` : "/stock/wallets";
 }
@@ -243,6 +244,69 @@ function CheckPanel({ wallet, checks, canEdit }) {
   );
 }
 
+const entryHref = (id) => `/stock/wallets?entry=${id}`;
+const plain = (value) => formatAmount(String(value).replace(/^-/, ""));
+
+/** One entry another one leads to: the link to follow it there. */
+function TrailItem({ item, currency }) {
+  const other = item.kind === "transfer" ? item.legs.find((leg) => String(leg.amount).startsWith("-")) : null;
+  const into = item.kind === "transfer" ? item.legs.find((leg) => !String(leg.amount).startsWith("-")) : null;
+  const what = item.kind === "transfer" ? `${other?.walletName} → ${into?.walletName}`
+    : item.kind === "adjust" ? "ยอดยกมา / ปรับยอด" : item.title || WALLET_ENTRY_LABELS[item.kind];
+  return (
+    <li>
+      <Link href={entryHref(item.entryId)} className="flex flex-wrap items-baseline gap-x-2 rounded-lg px-2 py-1 hover:bg-white hover:ring-1 hover:ring-zinc-200">
+        <span className="text-xs text-zinc-500">{formatTime(item.occurredAt)}</span>
+        <span className={`rounded-full px-2 text-[11px] font-black ${KIND_TONE[item.kind]}`}>{WALLET_ENTRY_LABELS[item.kind]}</span>
+        <b className="text-zinc-900">{what}</b>
+        <span className="text-xs text-zinc-600">ส่วนนี้ {plain(item.portion)} {currency}</span>
+        <span className="text-xs font-black text-[#B00004]">ตามต่อ →</span>
+      </Link>
+      {item.receivedSheet && sheetHref(item.receivedSheet) ? (
+        <Link href={sheetHref(item.receivedSheet)} className="ml-2 text-xs font-bold text-zinc-600 hover:underline">ชีตปลายทาง {item.receivedSheet.tab} แถว {item.receivedSheet.rowNo}</Link>
+      ) : null}
+    </li>
+  );
+}
+
+/** Where the money came from and where it went, first in, first out: each step is a link to follow. */
+function MoneyTrail({ entry }) {
+  const [trail, setTrail] = useState(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let live = true;
+    apiJson(`/api/stock/wallets/entries/${entry.id}/trail`)
+      .then((data) => { if (live) setTrail(data.trail); })
+      .catch((err) => { if (live) setError(err instanceof Error ? err.message : "อ่านที่มาที่ไปไม่สำเร็จ"); });
+    return () => { live = false; };
+  }, [entry.id]);
+  const toSheet = entry.kind !== "transfer" && entry.receivedSheet && sheetHref(entry.receivedSheet);
+  if (error) return <p className="text-xs font-bold text-red-700 sm:col-span-2">{error}</p>;
+  if (!trail) return <p className="flex items-center gap-1 text-xs text-zinc-500 sm:col-span-2"><Loader2 size={12} className="animate-spin" /> กำลังหาที่มาที่ไป…</p>;
+  return (
+    <div className="flex flex-col gap-2 border-t border-zinc-200 pt-2.5 sm:col-span-2">
+      {trail.map((leg, index) => (
+        <div key={index}>
+          <p className="text-xs font-black text-zinc-700">
+            {leg.direction === "from" ? `ที่มา: เงิน ${plain(leg.amount)} ${leg.currency} ที่ออกจาก ${leg.walletName} มาจาก` : `ที่ไป: ${plain(leg.amount)} ${leg.currency} ที่เข้า ${leg.walletName} ถูกใช้กับ`}
+          </p>
+          {leg.items.length ? (
+            <ul className="mt-0.5 flex flex-col">{leg.items.map((item) => <TrailItem key={item.entryId} item={item} currency={leg.currency} />)}</ul>
+          ) : (
+            <p className="px-2 text-xs text-zinc-500">{leg.direction === "from" ? "ไม่พบเงินเข้าก่อนหน้านี้" : "ยังไม่ได้ใช้ (ยังอยู่ในกระเป๋า)"}</p>
+          )}
+        </div>
+      ))}
+      {entry.kind === "payment" ? (
+        toSheet ? (
+          <p className="text-xs font-black text-zinc-700">ที่ไป: <Link href={toSheet} className="text-[#B00004] hover:underline">ผู้ขายรับเงินไว้ที่ชีต {entry.receivedSheet.tab} แถว {entry.receivedSheet.rowNo} →</Link> <span className="font-normal text-zinc-500">(แถวถัดไปในชีตนั้นคือของที่ได้)</span></p>
+        ) : <p className="text-xs text-zinc-500">ที่ไป: ไม่พบแถวรับเงินยอดนี้ในชีตผู้ขาย (เช่น Order (Miles)) ของเดือนที่มีในระบบ</p>
+      ) : null}
+      <p className="text-[11px] text-zinc-500">จับคู่แบบเข้าก่อนออกก่อน (FIFO) ในกระเป๋าและสกุลเดียวกัน</p>
+    </div>
+  );
+}
+
 /** Where the money went, and what proves it. */
 function EntryTrail({ entry }) {
   const proofs = entry.details.filter((item) => isUrl(item.value));
@@ -273,12 +337,13 @@ function EntryTrail({ entry }) {
             <FileSpreadsheet size={12} /> เปิดแถว {entry.sheet.rowNo} ในชีต {entry.sheet.tab}
           </Link>
         ) : null}
-        {sheetHref(entry.receivedSheet) ? (
+        {entry.kind === "transfer" && sheetHref(entry.receivedSheet) ? (
           <Link href={sheetHref(entry.receivedSheet)} className="flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-black text-zinc-800 ring-1 ring-zinc-200 hover:bg-zinc-100">
             <FileSpreadsheet size={12} /> ฝั่งรับเข้า: แถว {entry.receivedSheet.rowNo} ในชีต {entry.receivedSheet.tab}
           </Link>
         ) : null}
       </div>
+      <MoneyTrail entry={entry} />
     </div>
   );
 }
@@ -318,10 +383,12 @@ function PaymentStatus({ entry, canEdit, currentUserId, busy, act }) {
 }
 
 export default function StockWallets({ wallets, entries, checks = [], filters = {}, selected = null, waitingOrders = [], canEdit, currentUserId = null }) {
+  const focused = filters.entry ? Number(filters.entry) : null;
   const router = useRouter();
   const [dialog, setDialog] = useState(null);
   const [busy, setBusy] = useState(null);
   const [linking, setLinking] = useState(null);
+  // Rows the person toggled; the entry a trail link led to starts open (toggling it closes it).
   const [expanded, setExpanded] = useState(() => new Set());
   const main = wallets.filter((wallet) => wallet.group === "main");
   const others = wallets.filter((wallet) => wallet.group !== "main");
@@ -468,6 +535,13 @@ export default function StockWallets({ wallets, entries, checks = [], filters = 
         </label>
         <button className="h-9 rounded-xl bg-[#D90005] px-4 text-sm font-extrabold text-white hover:bg-[#B00004]">กรอง</button>
       </form>
+      {focused ? (
+        <p className="-mt-2 flex flex-wrap items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          ดูรายการเดียวตามที่มาที่ไป · กด &quot;ตามต่อ&quot; เพื่อไปขั้นถัดไป
+          <button type="button" onClick={() => router.back()} className="font-extrabold text-[#B00004] hover:underline">← ย้อนกลับ</button>
+          <Link href={walletsHref({ ...filters, entry: "" })} className="font-extrabold text-[#B00004] hover:underline">ดูรายการทั้งหมด</Link>
+        </p>
+      ) : null}
       <p className="-mt-3 text-xs text-zinc-500">แสดง {entries.length >= 400 ? "400 รายการล่าสุด — เลือกเดือนเพื่อดูครบ" : `${entries.length} รายการ`}</p>
 
       {entries.length ? (
@@ -487,7 +561,7 @@ export default function StockWallets({ wallets, entries, checks = [], filters = 
               {entries.map((entry) => {
                 const candidates = canEdit ? walletPaymentCandidates(entry, waitingOrders) : [];
                 const best = bestWalletPaymentMatch(candidates);
-                const open = expanded.has(entry.id);
+                const open = expanded.has(entry.id) !== (entry.id === focused);
                 return (
                   <Fragment key={entry.id}>
                     <tr className={`border-t border-zinc-100 align-top ${open ? "bg-zinc-50/60" : ""}`}>

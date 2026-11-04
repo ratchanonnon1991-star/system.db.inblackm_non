@@ -9,7 +9,10 @@ import {
   scrubSheetRows,
   sheetFileKind,
   sheetMinutes,
+  linkSupplierReceipts,
   sheetPeriod,
+  supplierName,
+  supplierReceipts,
   walletCodeForTab,
 } from "../src/lib/account-sheets.js";
 import { fromWalletUnits } from "../src/lib/stock-wallets.js";
@@ -139,4 +142,20 @@ const uah = parseWalletTab("google-uah", [
   ["", "46177", "", "34380", "44.3", "1.05", "814.8758465", "0", "", "", "50000.95238", "Raif (UAH) NP 7"],
 ], "2026-06");
 check(fromWalletUnits(uah.records[2].moves.UAH.out) === "34380" && planWalletEntries([{ code: "google-uah", period: "2026-06", tab: "Google UAH", records: uah.records }]).checks[0].drifts.length === 0, "Google UAH spends what ที่ได้ชำระ says, not the USDT cost in ที่จ่าย");
+// A payment ties to the supplier row that received it.
+check(supplierName("Order (Miles)") === "miles" && supplierName("Order STOCK(YAYA)") === "yaya" && supplierName("Cash Flow") === null, "a supplier is named in brackets");
+const miles = supplierReceipts("1.2 บัญชีแลกเงิน 10_2026", "Order (Miles)", [
+  ["CHECK Amount", "Date", "USDT ที่ได้รับ", "RAZER USD ที่ได้ชำระ"],
+  ["", "46296", "2568.0", ""],
+  ["", "46296", "", "300"],
+], "2026-10");
+check(miles.length === 1 && miles[0].rowNo === 2 && fromWalletUnits(miles[0].amount) === "2568" && miles[0].date === "2026-10-01", "a supplier tab lists the rows where it received USDT");
+check(supplierReceipts("1.2 x", "Bybit Inblack Gaming", [["Date", "USDT ที่ได้รับ"], ["46296", "5"]], "2026-10").length === 0 && supplierReceipts("1.1 x", "Order (Miles)", [["Date", "USDT ที่ได้รับ"], ["46296", "5"]], "2026-10").length === 0, "wallet tabs and other files are not supplier tabs");
+const pays = [
+  { kind: "payment", title: "ITunes Miles", occurredAt: "2026-10-01T15:00:00+07:00", legs: [{ currency: "USDT", amount: -256815000000n, fee: 15000000n }] },
+  { kind: "payment", title: "ITunes Miles", occurredAt: "2026-10-09T15:00:00+07:00", legs: [{ currency: "USDT", amount: -256815000000n, fee: 15000000n }] },
+  { kind: "payment", title: "ITunes T002", occurredAt: "2026-10-01T15:00:00+07:00", legs: [{ currency: "USDT", amount: -256815000000n, fee: 15000000n }] },
+];
+check(linkSupplierReceipts(pays, miles) === 1 && pays[0].receivedAt.tab === "Order (Miles)" && pays[0].receivedAt.rowNo === 2, "same amount less fee, named supplier, within 3 days");
+check(!pays[1].receivedAt && !pays[2].receivedAt, "a row is used once; another supplier's payment is not tied to it");
 console.log(`account sheets: ${passed} passed`);

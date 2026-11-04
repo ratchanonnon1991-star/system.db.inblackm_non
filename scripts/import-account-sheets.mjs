@@ -43,6 +43,7 @@ if (!months.length) {
 
 const archive = [];
 const walletTabs = [];
+const receipts = [];
 const skippedFiles = [];
 let removedCells = 0;
 for (const folder of months) {
@@ -62,6 +63,7 @@ for (const folder of months) {
       removedCells += scrubbed.removed;
       const code = sheets.walletCodeForTab(fileName, sheet.title);
       if (code) walletTabs.push({ code, period, tab: sheet.title, ...sheets.parseWalletTab(code, scrubbed.rows, period) });
+      else receipts.push(...sheets.supplierReceipts(fileName, sheet.title, scrubbed.rows, period));
       const rows = sheets.readableSheetRows(scrubbed.rows)
         .map((cells, index) => {
           const trimmed = [...cells];
@@ -77,6 +79,7 @@ for (const folder of months) {
 }
 
 const plan = sheets.planWalletEntries(walletTabs);
+const supplierLinks = sheets.linkSupplierReceipts(plan.entries, receipts);
 const entries = plan.entries.map((entry) => ({ ...entry, actorName: sheets.ACCOUNT_SHEET_ACTOR }));
 
 for (const { period, files } of archive) {
@@ -89,6 +92,7 @@ console.log(`\nกระเป๋าเงิน: ${entries.length} รายก
 for (const tab of walletTabs) {
   if (tab.problems.length) console.log(`  ต้องดู ${tab.period} ${tab.tab}: ${tab.problems.length} แถว เช่น แถว ${tab.problems[0].rowNo} ${tab.problems[0].reason}`);
 }
+console.log(`ผูกรายการจ่ายกับแถวในชีตผู้ขาย (เช่น Order (Miles)): ${supplierLinks} จาก ${entries.filter((entry) => entry.kind === "payment").length} รายการจ่าย, แถวรับ USDT ในชีตผู้ขาย ${receipts.length}`);
 console.log("ยอดหลังนำเข้า:", plan.totals);
 const drifts = plan.checks.filter((check) => check.drifts.length);
 console.log(`ตรวจยอด: ${plan.checks.length} ช่อง (กระเป๋า×เดือน×สกุล), มีแถวที่ยอดในชีตไม่ต่อจากแถวบน ${drifts.length} ช่อง`);

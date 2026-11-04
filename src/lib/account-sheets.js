@@ -541,6 +541,68 @@ export function planWalletEntries(tabs) {
   return { entries: out, mismatches, totals, overlap, copies, checks };
 }
 
+// ---- where a payment went: the supplier's own tab -----------------------------------------------
+
+const SUPPLIER_USDT = /^USDT ที่(ได้รับ|จ่าย|คำนวน)$/;
+/** "Order (Miles)" → "miles"; "Order STOCK(YAYA)" → "yaya"; a tab without a name in brackets → null. */
+export const supplierName = (tab) => (squash(tab).match(/\(([^)]+)\)\s*$/)?.[1] || "").trim().toLowerCase() || null;
+
+/**
+ * A supplier tab of 1.2 ("Order (Miles)", "ITunes (Panghou)", …: a "USDT ที่ได้รับ" column,
+ * its name in brackets) → the rows where it received USDT: [{ period, tab, rowNo, date, amount }].
+ * Not a supplier tab → [].
+ */
+export function supplierReceipts(fileName, tab, rows, period) {
+  if (!/^1\.2\b/.test(String(fileName).trim()) || walletSheetForTab(fileName, tab) || !supplierName(tab)) return [];
+  const out = [];
+  let dateCol = -1;
+  let usdtCol = -1;
+  rows.forEach((cells, index) => {
+    if (cells.some(isDateLabel)) {
+      dateCol = cells.findIndex(isDateLabel);
+      usdtCol = cells.findIndex((cell) => SUPPLIER_USDT.test(squash(cell)));
+      return;
+    }
+    if (dateCol < 0 || usdtCol < 0) return;
+    const date = excelDate(squash(cells[dateCol])) || (/^\d{4}-\d{2}-\d{2}$/.test(squash(cells[dateCol])) ? squash(cells[dateCol]) : null);
+    const amount = units(squash(cells[usdtCol]));
+    if (date && amount && amount > 0n) out.push({ period, tab, rowNo: index + 1, date, amount });
+  });
+  return out;
+}
+
+/**
+ * Ties each USDT payment to the supplier row that received it: same amount (fee
+ * left out), at most 3 days apart, and the payment names the supplier ("ITunes
+ * Miles" → Order (Miles)). The closest date wins; a row is used once. Sets
+ * entry.receivedAt = { period, tab, rowNo, title } on the entries it ties.
+ */
+export function linkSupplierReceipts(entries, receipts) {
+  const used = new Set();
+  const DAYS = 3 * 86400000;
+  let linked = 0;
+  for (const entry of entries) {
+    if (entry.kind !== "payment" || entry.receivedAt) continue;
+    const leg = entry.legs[0];
+    if (leg?.currency !== "USDT") continue;
+    const paid = -(leg.amount) - leg.fee;
+    const desc = String(entry.title || "").toLowerCase();
+    const at = Date.parse(entry.occurredAt);
+    let best = null;
+    for (const receipt of receipts) {
+      if (used.has(receipt) || receipt.amount !== paid || !desc.includes(supplierName(receipt.tab))) continue;
+      const gap = Math.abs(Date.parse(`${receipt.date}T12:00:00+07:00`) - at);
+      if (gap <= DAYS && (!best || gap < best.gap)) best = { receipt, gap };
+    }
+    if (!best) continue;
+    used.add(best.receipt);
+    const { period, tab, rowNo } = best.receipt;
+    entry.receivedAt = { period, tab, rowNo, title: tab };
+    linked += 1;
+  }
+  return linked;
+}
+
 // ---- what the web shows ---------------------------------------------------------------------
 
 export const WALLET_PAGE = { href: "/stock/wallets", label: "Stock → กระเป๋าเงิน" };
