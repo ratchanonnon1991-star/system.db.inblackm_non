@@ -46,6 +46,8 @@ function readLayout() {
     return "list";
   }
 }
+// The narrowest the pack column gets in the list (see trackList).
+const PACK_COLUMN_MIN = 280;
 // Sent by the game card's Bot Auto notice: show the bot's packs.
 export const GAMEINFO_SHOW_BOT_PACKS = "gameinfo:show-bot-packs";
 const STOCK_TONE = { ok: "green", low: "amber", empty: "red" };
@@ -220,13 +222,18 @@ export default function GameinfoPackList({
   const gotLabel = gotField === "priceUsd" ? "USD" : "ได้รับ";
   // Columns people added show in the rows too (gameinfoListRowColumns).
   const rowColumns = gameinfoListRowColumns(columns, rowColumnKeys);
-  const tracks = [
-    "minmax(150px,1fr)",
+  // The pack column keeps room for its picture, badges, name and check
+  // badge; when the figures and added columns need more than the list has,
+  // the list scrolls sideways instead of squeezing the name under them.
+  const trackList = [
+    `minmax(${PACK_COLUMN_MIN}px,1fr)`,
     gotField ? "72px" : null,
     ...(product ? ["88px", "112px", "96px", "78px"] : ["96px", "170px", "120px"]),
     ...rowColumns.map(() => "96px"),
     "28px",
-  ].filter(Boolean).join(" ");
+  ].filter(Boolean);
+  const tracks = trackList.join(" ");
+  const rowMinWidth = trackList.reduce((sum, track) => sum + (Number(/(\d+)px\)?$/.exec(track)?.[1]) || PACK_COLUMN_MIN), 0) + 12 * (trackList.length - 1) + 28;
   // Packs stay under their category headings through search, chips and status
   // tabs; only a sort by margin or price lists them as one run.
   const grouped = sort === "default";
@@ -447,7 +454,7 @@ export default function GameinfoPackList({
               <div className="gd-packcards">{visible.map(card)}</div>
             )
           ) : (
-          <div className="gd-list">
+          <div className="gd-list" style={{ "--rowmin": `${rowMinWidth}px` }}>
             <div className="gd-lh" style={{ "--cols": tracks }} aria-hidden="true">
               <span>แพ็ค</span>
               {gotField ? <span className="r">{gotLabel}</span> : null}
@@ -620,8 +627,9 @@ function PackItem({ row, product, tracks, gotField, channel, channels, costColum
               <span className="gd-nm" title={pack.name}>{pack.name || "-"}</span>
             </span>
             <PackNotes row={row} stock={stock} />
+            {/* Under the name, so the name keeps the column's width. */}
+            {listings ? <span className="gd-nmv"><GameinfoPackVerifyButton packName={pack.name} listings={listings} channelCount={channelCount} onOpen={onVerify} /></span> : null}
           </span>
-          {listings ? <GameinfoPackVerifyButton packName={pack.name} listings={listings} channelCount={channelCount} onOpen={onVerify} /> : null}
         </span>
         {gotField ? <span className="gd-v r num got">{got ? (gotField === "priceUsd" ? `$${got}` : got) : "–"}</span> : null}
         {product ? (

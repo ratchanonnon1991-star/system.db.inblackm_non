@@ -56,6 +56,8 @@ let pagesOnScreen = 0;
 // The first game page since the document loaded is the one a refresh brings
 // back; later ones were reached inside the app.
 let firstPageShown = false;
+// How long after a game page unmounts to look where the browser went.
+const LEAVE_CHECK_MS = 300;
 let editPagesOnScreen = 0;
 // How long a page left behind keeps its claim: the next page mounts in the
 // same render after a move inside the app, well within this.
@@ -117,9 +119,11 @@ export function GameinfoCeoNotice({ className = "" }) {
     if (!stillHere) run.current([GAMEINFO_CEO_NOTICE], () => acknowledge(page), { always: true });
     return () => {
       pagesOnScreen -= 1;
+      // Only leaving the page counts: switching Product / Topup or UID /
+      // ID-Pass mounts the same page again at the same address.
       setTimeout(() => {
-        if (pagesOnScreen === 0 && readSession(ACK_PAGE_KEY) === page) writeSession(ACK_PAGE_KEY, "");
-      }, 0);
+        if (pagesOnScreen === 0 && window.location.pathname !== page && readSession(ACK_PAGE_KEY) === page) writeSession(ACK_PAGE_KEY, "");
+      }, LEAVE_CHECK_MS);
     };
   }, [run]);
   useEffect(() => {

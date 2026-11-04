@@ -56,6 +56,8 @@ assert.deepEqual(gameinfoListRowColumns(withAdded, null).map((column) => column.
 assert.deepEqual(gameinfoListRowColumns(withAdded, ["c13", "col_1793799081226"]).map((column) => column.label), ["G2G", "ทดสอบ"], "a chosen list, in its order");
 assert.deepEqual(gameinfoListRowColumns(withAdded, ["gone"]), [], "a column no longer there is skipped");
 assert.equal(sanitizeGameinfoListColumnKeys("x"), null, "anything but a list means the default");
+const manyAdded = [...ladsColumns, ...["a", "b", "c", "d", "e"].map((key) => computed(`col_${key}`, key))];
+assert.deepEqual(gameinfoListRowColumns(manyAdded, null).map((column) => column.label), ["a", "b", "c"], "by default only the first three added columns, so the figures keep their room");
 assert.equal(sanitizeGameinfoListColumnKeys(Array.from({ length: 12 }, (_, index) => `k${index}`)).length, 8, "at most eight");
 
-console.log("22 passed");
+console.log("23 passed");

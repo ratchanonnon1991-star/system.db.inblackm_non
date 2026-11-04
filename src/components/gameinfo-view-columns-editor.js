@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Check } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { GAMEINFO_COLUMN_ROLE_ALL_GAMES, hiddenGameinfoColumnKeys } from "@/lib/gameinfo-column-roles";
-import { GAMEINFO_LIST_COLUMN_MAX, isGameinfoUserAddedColumnKey } from "@/lib/gameinfo-pack-list";
+import { GAMEINFO_LIST_COLUMN_DEFAULT, GAMEINFO_LIST_COLUMN_MAX, gameinfoDefaultListColumnKeys, isGameinfoUserAddedColumnKey } from "@/lib/gameinfo-pack-list";
 
 const VIEWS = [
   { id: "product", role: "admin", label: "Product" },
@@ -61,7 +61,7 @@ function ViewColumns({ gameId, view, rowColumnKeys }) {
         const shown = new Set(columns.map((column) => column.key).filter((key) => !hidden.has(key)));
         const rows = Array.isArray(rowColumnKeys)
           ? new Set(rowColumnKeys)
-          : new Set(columns.map((column) => column.key).filter(isGameinfoUserAddedColumnKey));
+          : new Set(gameinfoDefaultListColumnKeys(columns.map((column) => column.key)));
         setLoaded({ columns, rules, hidden, shown, rows });
         setVisible(shown);
         setInRows(new Set([...rows].filter((key) => shown.has(key))));
@@ -180,11 +180,11 @@ function ViewColumns({ gameId, view, rowColumnKeys }) {
             onClick={() => {
               setSaved(false);
               setUseDefault(true);
-              setInRows(new Set(columns.map((column) => column.key).filter((key) => isGameinfoUserAddedColumnKey(key) && visible.has(key))));
+              setInRows(new Set(gameinfoDefaultListColumnKeys(columns.map((column) => column.key).filter((key) => visible.has(key)))));
             }}
             className="h-10 rounded-[10px] border border-linear-hairline px-3.5 text-[13px] font-bold text-linear-ink-muted hover:bg-linear-surface-2"
           >
-            ในแถว: กลับเป็นค่าเริ่มต้น (คอลัมน์ที่เพิ่มเอง)
+            ในแถว: กลับเป็นค่าเริ่มต้น (คอลัมน์ที่เพิ่มเอง {GAMEINFO_LIST_COLUMN_DEFAULT} ตัวแรก)
           </button>
         ) : null}
         <span className="text-xs text-linear-ink-tertiary">ตั้งทุกเกมพร้อมกันได้ที่หน้า สิทธิ์คอลัมน์</span>
