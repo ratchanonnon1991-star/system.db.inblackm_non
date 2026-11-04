@@ -111,8 +111,12 @@ export function razerWithLedgerWallets(accounts, rows) {
     if (key && !byKey.has(key)) byKey.set(key, { key, ...wallet, stockId: null, status: "UNVERIFIED", hidden: false, botEnabled: null,
       rate: null, gold: null, silver: null, balanceAt: null, balanceSource: "ledger", inUse: false });
   }
-  return [...byKey.values()].sort((a, b) => a.zone.localeCompare(b.zone) || a.email.localeCompare(b.email));
+  // Busiest zones first (list order), wallets with a balance before ledger-only ones.
+  const rank = (a) => RAZER_INVENTORY_ZONES.indexOf(a.zone) * 2 + (a.balanceSource === "ledger" ? 1 : 0);
+  return [...byKey.values()].sort((a, b) => rank(a) - rank(b) || a.email.localeCompare(b.email));
 }
+/** Row id as a number for tie-breaks; ledger rows are "ledger:<id>". */
+export const razerIdNumber = (id) => Number(String(id).replace(/^ledger:/, "")) || 0;
 /** A hand-fill "use" from the inventory ledger (debit page or sheet import) as one list row, or null. */
 export function razerLedgerOrder(row, account, rates = {}) {
   const wallet = razerLedgerWallet(row.account_key);
