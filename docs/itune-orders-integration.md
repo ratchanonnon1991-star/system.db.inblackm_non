@@ -6,7 +6,7 @@
 2. Set `ITUNE_ORDER_BRIDGE_SECRET` to the same value in the private environment of **both** applications. Never put it in Git or a `NEXT_PUBLIC_` variable.
 3. In topup-inblackm set `ITUNE_ORDER_BRIDGE_URL=https://tools.inblackm.com/api/integrations/inblackm/itune`. This is the complete API URL, not the Topup page URL. HTTPS is required in production. Restart both applications with their updated environment. Keep server clocks synchronized (signature expiry is 60 seconds).
 4. Ensure GameDB's saved `topup_inblackm` connection works. The GameDB primary database stores staff mappings; the iTune database stores usage history. These do not have to be the Orders database. Existing credentials remain private to iTune.
-5. As a GameDB Super Admin with Projectm Admin access, open `/projectm/th/itune/admin/order-links` (also linked in Admin settings). Enter the exact **inblackm staff User ID**, not customer ID, username, display name or an assumed matching numeric ID. The staff ID is shown in the new Orders panel. Match it to the iTune username with Topup permission. Each account can have only one mapping.
+5. As a GameDB Super Admin with Projectm Admin access, open `/projectm/th/topup-inventory/staff-links` (Topup Inventory → จับคู่พนักงาน). Enter the exact **inblackm staff User ID**, not customer ID, username, display name or an assumed matching numeric ID. The staff ID is shown in the new Orders panel. Match it to the iTune username with Topup permission. Each account can have only one mapping.
 
 Tables and indexes are initialized on first use, following the existing repository pattern. Database roles need CREATE/INDEX privileges for initial setup. No existing orders, reservations or balances are migrated or reset.
 

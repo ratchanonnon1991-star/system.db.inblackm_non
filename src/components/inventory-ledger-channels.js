@@ -49,12 +49,14 @@ function AccountEntries({ account, range }) {
   </section>;
 }
 
-export default function InventoryLedgerChannels({ lang }) {
+// `categories`: only these groups (a provider's own page, e.g. Moniepoint = ANDROID NP / SLY).
+export default function InventoryLedgerChannels({ lang, categories = null, title = "ยอดเติมมือรายบัญชี",
+  description = "ยอดที่ทีมยกจากหน้ายกยอด รวมต่อบัญชี (หักรายการที่ยกเลิกแล้ว) ยังไม่รวมยอดที่บอทใช้" }) {
   const [range, setRange] = useState(() => presets().today);
   const [draft, setDraft] = useState(range);
   const [summary, setSummary] = useState(null);
   const [accounts, setAccounts] = useState([]);
-  const [showAll, setShowAll] = useState(false);
+  const [showAll, setShowAll] = useState(Boolean(categories));
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -65,10 +67,11 @@ export default function InventoryLedgerChannels({ lang }) {
     try {
       const p = new URLSearchParams({ view: "summary", from: range.from, to: range.to });
       const [s, a] = await Promise.all([apiJson(`${endpoint}?${p}`, { cache: "no-store" }), apiJson(`${endpoint}?view=accounts`, { cache: "no-store" })]);
-      setSummary(s.accounts ?? []); setAccounts(a.accounts ?? []);
+      const mine = (list) => (categories ? list.filter((r) => categories.includes(r.category)) : list);
+      setSummary(mine(s.accounts ?? [])); setAccounts(mine(a.accounts ?? []));
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
-  }, [range.from, range.to]);
+  }, [range.from, range.to, categories]);
   useEffect(() => { const timer = setTimeout(load, 0); return () => clearTimeout(timer); }, [load]);
 
   const rows = useMemo(() => {
@@ -93,8 +96,8 @@ export default function InventoryLedgerChannels({ lang }) {
 
   return <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-4 pb-14 pt-10 text-ll-ink sm:px-6">
     <header className="flex flex-wrap items-center justify-between gap-4 pr-12">
-      <div><p className="text-xs text-ll-ink-tertiary">TOPUP INVENTORY · จากหน้ายกยอด</p><h1 className="mt-2 text-3xl font-semibold">ยอดเติมมือรายบัญชี</h1>
-        <p className="mt-2 text-sm text-ll-ink-subtle">ยอดที่ทีมยกจากหน้ายกยอด รวมต่อบัญชี (หักรายการที่ยกเลิกแล้ว) ยังไม่รวมยอดที่บอทใช้</p></div>
+      <div><p className="text-xs text-ll-ink-tertiary">TOPUP INVENTORY · จากหน้ายกยอด</p><h1 className="mt-2 text-3xl font-semibold">{title}</h1>
+        <p className="mt-2 text-sm text-ll-ink-subtle">{description}</p></div>
       <div className="flex flex-wrap gap-2">
         <Link href={`${topupInventoryPath(lang)}/ledger`} className={button}><ClipboardList size={16} aria-hidden />ไปหน้ายกยอด</Link>
         <Link href={topupInventoryPath(lang)} className={button}><ArrowLeft size={16} aria-hidden />กลับ Topup Inventory</Link>

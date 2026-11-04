@@ -87,6 +87,18 @@ try {
     await rejects(bridge({ action: "reverse", actorId: "ext-2", order: order({ ref: "OTHER" }), payload: { id: uuid(12), entryId: used.id } }), 404);
   });
 
+  await check("reservation page balance: latest snapshot plus what was recorded after it", async () => {
+    assert.equal((await ledger.reservations(rin)).find((a) => a.id === wave).balance, null, "no snapshot yet");
+    await ledger.recordSnapshot({ requestId: uuid(30), accountId: wave, balance: "100000", observedAt: "2026-11-03T16:59:59Z", source: "manual" }, admin);
+    // the 5000 use (reversed) from earlier came after the snapshot and nets to zero
+    await ledger.reserve(wave, rin);
+    await bridge({ action: "use", actorId: "ext-2", order: order({ ref: "K-2002" }), payload: { id: uuid(31), accountId: wave, amount: "1500" } });
+    const row = (await ledger.reservations(gus)).find((a) => a.id === wave);
+    assert.deepEqual([row.balance, row.balanceSnapshotAt], ["98500.0000", "2026-11-03T16:59:59.000Z"]);
+    assert.ok(row.lastActivityAt);
+    await ledger.release(wave, rin);
+  });
+
   await check("release: holder or admin only", async () => {
     await ledger.reserve(wave, gus);
     await rejects(ledger.release(wave, rin), 409);
