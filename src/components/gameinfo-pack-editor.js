@@ -139,6 +139,11 @@ function uniq(arr) {
 // (gameinfo's own engine) replaced by systemdb's gamedb-formula.js so
 // formulas stay editable from both surfaces. CSV import uses gameinfo-import.js
 // (ported separately) via the /api/gameinfo/import/* routes.
+// The pack-name language picker (ชื่อหลัก / + ภาษา). No page shows a
+// translated name yet, so it stays out of the way; the names already
+// saved are kept and the editor works on the main names.
+const SHOW_PACK_LANGUAGES = false;
+
 export default function GameinfoPackEditor({
   game,
   userId,
@@ -1316,6 +1321,9 @@ export default function GameinfoPackEditor({
         ))}
       </div>
       <div className="mb-4 flex flex-nowrap items-center gap-2 overflow-x-auto rounded-xl bg-linear-surface-2 p-2.5">
+        {/* Translated pack names: kept, but hidden until a page shows them. */}
+        {SHOW_PACK_LANGUAGES ? (
+          <>
         <div className="flex items-center gap-2 text-xs font-medium text-linear-ink-muted">
           <Languages size={14} className="text-linear-primary" />
           ภาษาชื่อ Pack
@@ -1381,6 +1389,8 @@ export default function GameinfoPackEditor({
           {activeLanguageId ? "ชื่อที่ยังไม่เคยแปลจะแสดงเป็นช่องว่าง" : "ชื่อเดิมที่ระบบใช้แสดง"}
         </span>
         {languageError ? <span className="w-full text-xs text-red-400">{languageError}</span> : null}
+          </>
+        ) : null}
       <div className="ml-auto flex shrink-0 items-center gap-2">
         <label className="flex items-center gap-2 text-xs text-linear-ink-muted">
           <Checkbox
