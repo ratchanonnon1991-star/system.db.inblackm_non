@@ -126,9 +126,9 @@ export const razerMatches = (entry, search) => !search || [entry.email, entry.or
   ...Object.values(entry.details || {}).filter((v) => typeof v === "string")].join(" ").toLowerCase().includes(search.toLowerCase());
 export function razerCsv(entries) {
   const quote = (v, numeric = false) => { let s = v == null ? "" : String(v); if (!(numeric && /^-?\d+(?:\.\d+)?$/.test(s)) && /^[\s\u0000-\u001f]*[=+@-]/.test(s)) s = `'${s}`; return `"${s.replaceAll('"', '""')}"`; };
-  const rows = [["วันที่ (ไทย)", "Order", "บัญชี", "สกุลเงิน", "ยอดโอน THB", "ต้นทุนอ้างอิง THB", "กำไรอ้างอิง THB", "กำไรอ้างอิง %", "Gold ออก", "Gold คงเหลือ", "เกม", "แพ็ก", "เลขธุรกรรม", "จำนวนรายการย่อย", "เรทต้นทุนอ้างอิง", "ฐานต้นทุน"]];
+  const rows = [["วันที่ (ไทย)", "Order", "บัญชี", "สกุลเงิน", "ยอดโอน THB", "ต้นทุนอ้างอิง THB", "กำไรอ้างอิง THB", "กำไรอ้างอิง %", "Gold ออก", "Gold คงเหลือ", "เกม", "แพ็ก", "เลขธุรกรรม", "จำนวนรายการย่อย", "เรทต้นทุนอ้างอิง", "ฐานต้นทุน", "ที่มา"]];
   for (const e of entries) rows.push([new Date(e.occurredAt).toLocaleString("sv-SE", { timeZone: "Asia/Bangkok" }), e.orderId, e.email, e.zone,
     e.figures.sale, e.figures.cost, e.figures.profit, e.figures.margin, e.used, e.balance, e.details.game, e.details.pack,
-    e.details.invoice, e.fillCount, e.details.costRate, e.details.costBasis]);
+    e.details.invoice, e.fillCount, e.details.costRate, e.details.costBasis, razerManual(e) ? "เติมมือ" : "บอท"]);
   return "\uFEFF" + rows.map((row, i) => row.map((v, c) => quote(v, i > 0 && ((c >= 4 && c <= 9) || c === 14))).join(",")).join("\r\n");
 }

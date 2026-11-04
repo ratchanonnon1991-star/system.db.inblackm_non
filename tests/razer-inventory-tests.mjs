@@ -53,6 +53,8 @@ eq(hand.figures, { sale: "150.00", cost: "120.00", profit: "30.00", margin: "20.
 check(JSON.stringify(hand).length > 0, "no circular fills");
 const unpriced = lib.razerLedgerOrder(ledgerRow(8, { thb_amount: null, note: "ยกยอด", actor_label: "Gus" }), accounts[0]);
 eq([unpriced.figures.cost, unpriced.details.costBasis, unpriced.details.operator], ["100.00", "stock-current-reference", "Gus"]);
+const handCsv = lib.razerCsv([combined, hand]).split("\r\n");
+check(handCsv[0].endsWith('"ที่มา"') && handCsv[1].endsWith('"บอท"') && handCsv[2].endsWith('"เติมมือ"'), "CSV marks where each row's Gold came from");
 for (const key of ["razer:OTHER:x@y.com", "razer:RAZER PIN(USD)", "razer:PHP:x@y.com", "netease:SGD:x@y.com"]) eq(lib.razerLedgerOrder(ledgerRow(9, { account_key: key }), null), null);
 
 function compile(file, mocks) {
