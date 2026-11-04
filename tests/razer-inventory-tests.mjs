@@ -44,6 +44,16 @@ check(lib.razerMatches(combined, "ORDER/1"));
 const csv = lib.razerCsv([{ ...combined, orderId: '=HYPERLINK("x")' }]);
 check(csv.startsWith("\uFEFF") && csv.includes("'=") && csv.includes("ต้นทุนอ้างอิง"));
 check(csv.includes('"20"'));
+// Hand fills from the inventory ledger
+const ledgerRow = (id, patch = {}) => ({ id: String(id), account_key: "razer:SGD:test@example.com", amount: "5.0000", order_ref: "Q1", invoice: "032K9",
+  note: "ชีต RAZER SGD / แถว 3 · ผู้เติม RIN · SOJ 6480", actor_label: "razer-sheet-import", occurred_at: "2026-10-20T02:00:00Z", thb_amount: "120.00", sale_thb: "150.00", ...patch });
+const hand = lib.razerLedgerOrder(ledgerRow(7), accounts[0]);
+eq([hand.id, hand.source, hand.walletKey, hand.orderId, hand.used, hand.details.operator], ["ledger:7", "manual", "SGD:test@example.com", "Q1", "5.00", "RIN"]);
+eq(hand.figures, { sale: "150.00", cost: "120.00", profit: "30.00", margin: "20.00" });
+check(JSON.stringify(hand).length > 0, "no circular fills");
+const unpriced = lib.razerLedgerOrder(ledgerRow(8, { thb_amount: null, note: "ยกยอด", actor_label: "Gus" }), accounts[0]);
+eq([unpriced.figures.cost, unpriced.details.costBasis, unpriced.details.operator], ["100.00", "stock-current-reference", "Gus"]);
+for (const key of ["razer:OTHER:x@y.com", "razer:RAZER PIN(USD)", "razer:PHP:x@y.com", "netease:SGD:x@y.com"]) eq(lib.razerLedgerOrder(ledgerRow(9, { account_key: key }), null), null);
 
 function compile(file, mocks) {
   const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
@@ -66,7 +76,9 @@ const server = compile("src/server/razer-inventory.js", {
   "@/server/garena-shell-inventory": { saleJoin: "", enrichShellOrders: async (_s, r) => r },
   "@/lib/garena-shell-inventory": { allocateShellSale }, "@/server/usdcodashop-sale-rates": { prepareCodaSales: async (r) => r },
 });
-const repository = server.createRazerInventory({ select, selectStock, enrich: async (_s, rows) => rows.map((r) => ({ ...r, sheet_fields: { saleThb: "60", saleAllocation: { count: 2, position: Number(r.history_id) - 1 } } })), prepareSales: async (r) => r });
+let ledgerRows = [], ledgerFailure = null, ledgerSql = "", ledgerParams = [];
+const selectLedger = async (sql, params) => { ledgerSql = sql; ledgerParams = params; if (ledgerFailure) throw ledgerFailure; return ledgerRows; };
+const repository = server.createRazerInventory({ select, selectStock, selectLedger, enrich: async (_s, rows) => rows.map((r) => ({ ...r, sheet_fields: { saleThb: "60", saleAllocation: { count: 2, position: Number(r.history_id) - 1 } } })), prepareSales: async (r) => r });
 await rejects(() => repository.list({}, date), 403); eq(reads + stockReads, 0);
 const result = await repository.list(actor, date);
 eq(result.total, 1); eq(result.summary.sale, "60.00"); eq(result.summary.cost, "40.00"); eq(result.canOpenStock, false);
@@ -86,6 +98,23 @@ const partial = await repository.list(actor, date);
 eq(partial.stockAvailable, false); eq(partial.accounts[0].status, "UNVERIFIED"); eq(partial.summary.cost, null);
 eq(partial.zones.find((z) => z.zone === "CAD").gold, null);
 stockFailure = false;
+eq(result.ledgerAvailable, true); eq(result.zones.find((z) => z.zone === "SGD").manualUsed, "0.00");
+ledgerRows = [ledgerRow(7), ledgerRow(8, { account_key: "razer:OTHER:x@y.com" }), ledgerRow(9, { account_key: "razer:RAZER PIN(USD)" })];
+const withHand = await repository.list(actor, date), sgd = withHand.zones.find((z) => z.zone === "SGD");
+eq(withHand.total, 2); eq([sgd.used, sgd.manualUsed, sgd.manualOrders], ["2.00", "5.00", 1]);
+eq(withHand.summary.sale, "210.00"); eq(withHand.entries.filter((e) => e.source === "manual").map((e) => e.id), ["ledger:7"]);
+check(ledgerSql.includes("e.kind='use'") && ledgerSql.includes("reverses_entry_id") && !/SELECT \*/.test(ledgerSql), "uses only, reversed ones left out");
+eq(ledgerParams.slice(0, 2), [lib.razerFilters(date).bounds.start, lib.razerFilters(date).bounds.end]); eq(ledgerParams[2], ["razer:SGD:%", "razer:CAD:%"]);
+eq((await repository.list(actor, { ...date, zone: "CAD" })).total, 0);
+eq((await repository.list(actor, { ...date, search: "RIN" })).total, 1);
+ledgerFailure = Object.assign(new Error("relation does not exist"), { code: "42P01" });
+eq((await repository.list(actor, date)).ledgerAvailable, true);
+ledgerFailure = new Error("down");
+const noLedger = await repository.list(actor, date);
+eq([noLedger.ledgerAvailable, noLedger.total, noLedger.zones.find((z) => z.zone === "SGD").used], [false, 1, "2.00"]);
+ledgerFailure = null; ledgerRows = Array.from({ length: 19999 }, (_, i) => ledgerRow(i + 10));
+await rejects(() => repository.list(actor, date), 413);
+ledgerRows = [];
 let currentActor = actor;
 const route = compile("src/app/api/projectm/razer/route.js", {
   "@/server/auth": { requireAdmin: async () => { if (!currentActor) throw access.inventoryError("login", 401); return currentActor; } },
