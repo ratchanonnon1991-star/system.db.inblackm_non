@@ -3,16 +3,26 @@ import { jsonOk } from "@/lib/http";
 import { canManageUsdInventory } from "@/lib/usdcodashop-inventory";
 import { inventoryLedger } from "@/server/inventory-ledger";
 import { orderMappingFor } from "@/server/itune-order-usage";
+import { balanceReaders, loadAlertBalances } from "@/server/inventory-alert-balances";
+import { matchBotBalances } from "@/lib/inventory-bot-balances";
 import { ledgerFailure, readLedgerJson } from "@/server/inventory-ledger-http";
 
 export const dynamic = "force-dynamic";
 
-// GET: every account and who holds it. POST { accountId }: reserve. DELETE { accountId }: release.
+// Bot wallets that can be matched to a registry account (iTunes has its own page; card pools have no account).
+const BOT_BALANCE_PROVIDERS = ["razer", "wavepay", "netease", "garena-shell", "gamepoint", "plsbuy", "donshop", "agenh2h"]
+  .filter((p) => Object.hasOwn(balanceReaders, p));
+
+// GET: every account, who holds it, and its balance (the bot's own reading when there is one,
+// else the sheet's last balance plus what was recorded since). POST { accountId }: reserve. DELETE: release.
 export async function GET(request) {
   try {
     const actor = await requireAdmin(request);
-    const [accounts, mapping] = await Promise.all([inventoryLedger().reservations(actor), orderMappingFor(actor.id).catch(() => null)]);
-    const response = jsonOk({ accounts, mapped: Boolean(mapping), canManage: canManageUsdInventory(actor) });
+    const [accounts, mapping, bot] = await Promise.all([inventoryLedger().reservations(actor), orderMappingFor(actor.id).catch(() => null),
+      loadAlertBalances(BOT_BALANCE_PROVIDERS).catch(() => ({ channels: [], errors: [{ provider: "all" }] }))]);
+    const balances = matchBotBalances(accounts, bot.channels);
+    const response = jsonOk({ accounts: accounts.map((a) => ({ ...a, bot: balances.get(a.id) ?? null })),
+      botErrors: bot.errors.map((e) => e.provider), mapped: Boolean(mapping), canManage: canManageUsdInventory(actor) });
     response.headers.set("Cache-Control", "no-store");
     return response;
   } catch (e) { return ledgerFailure(e, "reservations"); }

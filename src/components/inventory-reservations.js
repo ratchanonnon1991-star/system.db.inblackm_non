@@ -23,9 +23,11 @@ function AccountRow({ account, canManage, busy, onAction }) {
         {closed ? "ปิดใช้งาน" : held ? `${account.mine ? "คุณจองไว้" : `จองโดย ${account.holder}`} · ${when(account.reservedAt)}` : "ว่าง"}
       </p>
       <p className="mt-1 text-xs text-ll-ink-subtle">
-        {account.balance == null
-          ? "ยังไม่มียอดคงเหลือ"
-          : <>คงเหลือประมาณ <span className="font-semibold tabular-nums text-ll-ink">{money(account.balance)} {account.currency}</span> · ยอดตั้งต้น {when(account.balanceSnapshotAt)}</>}
+        {account.bot
+          ? <>คงเหลือ (บอทอ่าน) <span className="font-semibold tabular-nums text-ll-ink">{money(account.bot.balance)} {account.currency}</span> · {when(account.bot.balanceAt)}</>
+          : account.balance == null
+            ? "ยังไม่มียอดคงเหลือ"
+            : <>คงเหลือประมาณ <span className="font-semibold tabular-nums text-ll-ink">{money(account.balance)} {account.currency}</span> · ยอดตั้งต้น {when(account.balanceSnapshotAt)}</>}
         {account.lastActivityAt && ` · ใช้ล่าสุด ${when(account.lastActivityAt)}`}
       </p>
     </div>
@@ -67,7 +69,7 @@ export default function InventoryReservations({ lang }) {
       if (status !== "all" && statusOf(a) !== status) continue;
       if (group && key !== group) continue;
       if (currency && a.currency !== currency) continue;
-      if (withBalance && !(Number(a.balance) > 0)) continue;
+      if (withBalance && !(Number(a.bot?.balance ?? a.balance) > 0)) continue;
       if (term && !`${a.label} ${a.category ?? ""} ${a.holder ?? ""}`.toLowerCase().includes(term)) continue;
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(a);
@@ -99,8 +101,9 @@ export default function InventoryReservations({ lang }) {
       <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={withBalance} onChange={(e) => setWithBalance(e.target.checked)} />เฉพาะที่มียอดเหลือ</label>
       <button type="button" className={button} onClick={load}><RefreshCw size={16} aria-hidden />โหลดใหม่</button>
     </section>
-    <p className="text-xs text-ll-ink-subtle">จองได้ทีละคนต่อบัญชี และไม่หมดอายุเอง กดคืนเมื่อเลิกใช้ · บอทยังใช้บัญชีที่จองได้ตามปกติ · เมล iTunes จองในหน้า iTune เหมือนเดิม · คงเหลือประมาณ = ยอดคงเหลือล่าสุดจากชีต + เติมเข้า − ใช้ไป ที่บันทึกหลังจากนั้น (ไม่รวมยอดที่บอทใช้)</p>
+    <p className="text-xs text-ll-ink-subtle">จองได้ทีละคนต่อบัญชี และไม่หมดอายุเอง กดคืนเมื่อเลิกใช้ · บอทยังใช้บัญชีที่จองได้ตามปกติ · เมล iTunes จองในหน้า iTune เหมือนเดิม · คงเหลือ (บอทอ่าน) = ยอดล่าสุดที่บอทอ่านได้ (Razer SGD/CAD, WavePay, Netease, Garena Shell, Gamepoint, Plsbuy, Donshop, AgenH2H) · คงเหลือประมาณ = ยอดคงเหลือล่าสุดจากชีต + เติมเข้า − ใช้ไป ที่บันทึกหลังจากนั้น (ไม่รวมยอดที่บอทใช้)</p>
     {error && <p role="alert" className="rounded-xl border border-ll-hairline p-4 text-sm">{error}</p>}
+    {data?.botErrors?.length > 0 && <p role="status" className="text-xs text-ll-warning">อ่านยอดบอทไม่สำเร็จ: {data.botErrors.join(", ")} บัญชีเหล่านี้แสดงยอดจากชีตแทน</p>}
     {!data && !error && <p role="status" className="text-sm text-ll-ink-subtle">กำลังโหลด…</p>}
     {groups.map(([category, accounts]) => <section key={category} aria-label={category} className="overflow-hidden rounded-xl border border-ll-hairline bg-ll-surface-1">
       <h2 className="px-4 py-3 font-semibold">{category} <span className="text-sm font-normal text-ll-ink-subtle">· {accounts.length} บัญชี</span></h2>
