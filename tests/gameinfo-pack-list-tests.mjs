@@ -8,6 +8,7 @@ import {
   gameinfoPackListColumns,
   summarizeGameinfoPackList,
 } from "@/lib/gameinfo-pack-list";
+import { gameinfoCountryThaiName } from "@/lib/gameinfo-countries";
 
 const computed = (key, label, formula) => ({ id: `computed:${key}`, kind: "computed", label, computed: { key, label, formula } });
 const columns = [
@@ -67,4 +68,7 @@ const editor = read("../src/components/gameinfo-pack-editor.js");
 const detailPage = read("../src/components/gameinfo-game-detail-page.js");
 assert.ok(view.includes("<GameinfoBotPriceWarning botManual={row.botManual}") && editor.includes("botManual={game.botManual}") && detailPage.includes("botManual: row.botManual,"), "Bot Auto games warn about prices on the game page and in the pack editor");
 
-console.log("28 passed");
+assert.equal(gameinfoCountryThaiName("Myanmar"), "เมียนมา", "the list heading names the country in Thai");
+assert.equal(gameinfoCountryThaiName("Somewhere"), "Somewhere", "an unknown country stays as stored");
+
+console.log("30 passed");

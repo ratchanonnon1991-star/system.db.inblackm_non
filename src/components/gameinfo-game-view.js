@@ -18,7 +18,7 @@ import {
   matchesGameinfoPackFilters,
 } from "@/lib/gameinfo-pack-columns";
 import { getGameinfoFormulaDisplay } from "@/lib/gameinfo-formula-overrides";
-import { gameinfoChargeUnit } from "@/lib/gameinfo-channel-costs";
+import { gameinfoChargeUnit, gameinfoCostRateRows } from "@/lib/gameinfo-channel-costs";
 import { filterGameinfoColumnsForRole } from "@/lib/gameinfo-column-roles";
 import {
   evaluateGameinfoComputedColumn,
@@ -26,7 +26,7 @@ import {
 } from "@/lib/gameinfo-computed-evaluator";
 import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
 import { gameinfoStableColorStyle } from "@/lib/gameinfo-stable-color";
-import { gameinfoCountryDisplayName } from "@/lib/gameinfo-countries";
+import { gameinfoCountryDisplayName, gameinfoCountryThaiName } from "@/lib/gameinfo-countries";
 import { isGameinfoBotAuto } from "@/lib/gameinfo-dashboard";
 import { gameinfoGameColor, gameinfoGameInitials } from "@/lib/gameinfo-game-initials";
 import { formatGameinfoPackExpiry, gameinfoPackExpiryWarning, GAMEINFO_PACK_STATUS_LABELS, GAMEINFO_PACK_STATUS_TONES, gameinfoPackDatePassed, gameinfoPackStatus } from "@/lib/gameinfo-pack-model";
@@ -153,6 +153,9 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
   );
   const packCount = activeCurrency ? countPacks(activeCurrency) : 0;
   const packWallets = (row.channels?.main || []).join(", ");
+  const packCountry = gameinfoCountryThaiName(mostCommon(
+    (activeCurrency?.categories || []).flatMap((category) => category.packs.map((pack) => pack.country)).filter(Boolean)
+  ));
   const listMode = packLayoutMode === "list";
   const costRates = costRatesOther ? (
     <GameinfoCostRates
@@ -161,7 +164,6 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
       formulaVariables={formulaVariables}
       externalValues={rateState.externalValues}
       other={costRatesOther}
-      caption={!listMode}
     />
   ) : null;
 
@@ -194,8 +196,9 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
         icon="layers"
         tone="red"
         title="แพ็คและราคา"
-        subtitle={[`${packCount} แพ็ค`, packWallets, row.sourceNote ? `แหล่งที่มา: ${row.sourceNote}` : ""].filter(Boolean).join(" · ")}
+        subtitle={[`${packCount} แพ็ค`, packWallets, packCountry, row.sourceNote ? `แหล่งที่มา: ${row.sourceNote}` : ""].filter(Boolean).join(" · ")}
       >
+        {listMode && currencyList.length < 2 ? null : (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
             {currencyList.length > 1 ? (
@@ -217,10 +220,12 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
                 ))}
               </div>
             ) : null}
-            <div role="group" aria-label="รูปแบบการแสดงแพ็ค" className="gd-seg">
-              <button type="button" aria-pressed={listMode} onClick={() => setPackLayoutMode("list")}>รายการ</button>
-              <button type="button" aria-pressed={!listMode} onClick={() => setPackLayoutMode("table")}>ตารางเต็ม</button>
-            </div>
+            {listMode ? null : (
+              <div role="group" aria-label="รูปแบบการแสดงแพ็ค" className="gd-seg">
+                <button type="button" aria-pressed={listMode} onClick={() => setPackLayoutMode("list")}>รายการ</button>
+                <button type="button" aria-pressed={!listMode} onClick={() => setPackLayoutMode("table")}>ตารางเต็ม</button>
+              </div>
+            )}
           </div>
           {listMode ? null : (
             <div className="flex flex-wrap items-center gap-2">
@@ -252,8 +257,9 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
             </div>
           )}
         </div>
+        )}
         {listMode ? null : <ChannelSummary channels={row.channels} botManual={row.botManual} />}
-        <StockSummary accounts={stock.accounts} links={stockLinks} />
+        {listMode ? null : <StockSummary accounts={stock.accounts} links={stockLinks} />}
         {!activeCurrency ? (
           <p className="gd-empty">ยังไม่มีข้อมูลแพ็กสำหรับเกมนี้</p>
         ) : listMode ? (
@@ -266,11 +272,23 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
             topupView={topupView}
             chargeUnit={chargeUnit}
             stock={stock.byPack}
-            beforeList={costRates ? (
-              <GameinfoFold sub id="rates" title="เรทต้นทุนที่ใช้" subtitle="เรทที่ใช้คิดต้นทุนของแพ็คในเกมนี้" defaultClosed>
-                {costRates}
-              </GameinfoFold>
-            ) : null}
+            beforeList={(
+              <>
+                <StockSummary accounts={stock.accounts} links={stockLinks} />
+                {costRatesOther ? (
+                  <CostRateFold
+                    currencies={currencies}
+                    costProfiles={costProfiles}
+                    formulaVariables={formulaVariables}
+                    externalValues={rateState.externalValues}
+                    other={costRatesOther}
+                  />
+                ) : null}
+              </>
+            )}
+            hintAction={(
+              <button type="button" className="gd-btn sm" onClick={() => setPackLayoutMode("table")}>ดูแบบตารางเต็ม</button>
+            )}
           />
         ) : (
           <>
@@ -307,6 +325,47 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
 
 function countPacks(currency) {
   return currency.categories.reduce((total, category) => total + category.packs.length, 0);
+}
+
+function mostCommon(values) {
+  const counts = new Map();
+  values.forEach((value) => counts.set(value, (counts.get(value) || 0) + 1));
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+}
+
+const rateText = (rate) => (rate == null || rate === "" || !Number.isFinite(Number(rate))
+  ? "ยังคิดไม่ได้"
+  : Number(rate).toLocaleString("en-US", { maximumFractionDigits: 6 }));
+
+// The list's rate box: one line per wallet, this mode's in bold, and the
+// open mode's main wallet as the folded title.
+function CostRateFold({ currencies, costProfiles, formulaVariables, externalValues, other }) {
+  const rows = useMemo(
+    () => gameinfoCostRateRows(currencies, costProfiles, { formulaVariables, externalValues, other }),
+    [currencies, costProfiles, formulaVariables, externalValues, other]
+  );
+  const ownIds = useMemo(
+    () => new Set(gameinfoCostRateRows(currencies, costProfiles, { formulaVariables, externalValues }).map((rate) => rate.id)),
+    [currencies, costProfiles, formulaVariables, externalValues]
+  );
+  if (!rows.length) return null;
+  const main = rows.find((rate) => ownIds.has(rate.id)) || rows[0];
+  const updated = rows.map((rate) => rate.updatedAt).filter(Boolean).sort().at(-1);
+  const updatedText = updated && !Number.isNaN(new Date(updated).getTime())
+    ? new Date(updated).toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok" })
+    : "";
+  return (
+    <GameinfoFold sub id="rates" title="เรทต้นทุนที่ใช้" subtitle={`${main.channel}: 1 ${main.currency || "หน่วย"} = ฿${rateText(main.rate)}`} defaultClosed>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-4 gap-y-2 text-[13px]">
+        {rows.map((rate) => [
+          <span key={`${rate.id}-n`} className={`truncate ${ownIds.has(rate.id) ? "font-semibold" : ""}`} title={rate.source}>{rate.channel}</span>,
+          <span key={`${rate.id}-r`} className="text-right tabular-nums">1 {rate.currency || "หน่วย"} = {rateText(rate.rate)}</span>,
+          <span key={`${rate.id}-p`} className="gd-note text-right">{rate.packs} แพ็ค</span>,
+        ])}
+      </div>
+      <span className="gd-note">{updatedText ? `แก้ล่าสุด ${updatedText} · ` : ""}เรทนี้ใช้คำนวณต้นทุนของแพ็คทั้งหมด</span>
+    </GameinfoFold>
+  );
 }
 
 const HERO_STATUS = {

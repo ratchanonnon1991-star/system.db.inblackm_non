@@ -48,7 +48,7 @@ function listText(value) {
  * five numbers a row in the Product view (got, cost, and the chosen channel's
  * price, profit and margin), price, wallet and link in the Topup view.
  */
-export default function GameinfoPackList({ currency, columns, game, context, topupView = false, chargeUnit = "", stock = {}, beforeList = null }) {
+export default function GameinfoPackList({ currency, columns, game, context, topupView = false, chargeUnit = "", stock = {}, beforeList = null, hintAction = null }) {
   const product = !topupView;
   const { rows, channels, costColumn } = useMemo(
     () => buildGameinfoPackListRows(currency, columns, game, context),
@@ -69,7 +69,7 @@ export default function GameinfoPackList({ currency, columns, game, context, top
   const chips = [
     { id: "all", label: "ทั้งหมด", count: rows.length },
     ...(categories.length > 1 ? categories.map((category) => ({ id: category.id, label: category.name || "(ไม่มีชื่อหมวดหมู่)", count: (category.packs || []).length })) : []),
-    ...(product && lowCount ? [{ id: "low", label: "กำไรต่ำ", count: lowCount }] : []),
+    ...(product ? [{ id: "low", label: "กำไรต่ำ", count: lowCount }] : []),
   ];
   const gotField = rows.some((row) => String(row.pack.amountReceived ?? "").trim()) ? "amountReceived" : rows.some((row) => String(row.pack.priceUsd ?? "").trim()) ? "priceUsd" : "";
   const gotLabel = gotField === "priceUsd" ? "USD" : "ได้รับ";
@@ -160,7 +160,7 @@ export default function GameinfoPackList({ currency, columns, game, context, top
         <div>
           <div className="gd-sum">
             <div className="gd-sbox">
-              <small>กำไรเฉลี่ย · {channel?.label}</small>
+              <small>กำไรเฉลี่ย</small>
               <b className={toneText(summary.average)}>{pct(summary.average)}</b>
               <span>{summary.count} แพ็ค</span>
             </div>
@@ -172,13 +172,13 @@ export default function GameinfoPackList({ currency, columns, game, context, top
             <div className="gd-sbox">
               <small>ต่ำกว่า {GAMEINFO_MARGIN_LOW}%</small>
               <b>{summary.low} แพ็ค</b>
-              <span>{summary.low ? "กด “กำไรต่ำ” ด้านบน" : "ไม่มี"}</span>
+              <span>{summary.low ? "กรองด้านบน" : "ไม่มี"}</span>
             </div>
           </div>
           <div className="gd-legend mt-2">
-            <span><i style={{ background: "var(--gd-green)" }} />ตั้งแต่ {GAMEINFO_MARGIN_GOOD}% ดี</span>
+            <span><i style={{ background: "var(--gd-green)" }} />≥{GAMEINFO_MARGIN_GOOD}% ดี</span>
             <span><i style={{ background: "var(--gd-amber)" }} />{GAMEINFO_MARGIN_LOW}–{GAMEINFO_MARGIN_GOOD}% พอใช้</span>
-            <span><i style={{ background: "var(--gd-red)" }} />ต่ำกว่า {GAMEINFO_MARGIN_LOW}% ต่ำ</span>
+            <span><i style={{ background: "var(--gd-red)" }} />&lt;{GAMEINFO_MARGIN_LOW}% ต่ำ</span>
           </div>
         </div>
       ) : null}
@@ -197,7 +197,10 @@ export default function GameinfoPackList({ currency, columns, game, context, top
         </div>
       ) : (
         <div>
-          <p className="gd-note mb-2 ml-0.5">{product ? "กดที่แพ็คเพื่อดูวิธีคิดต้นทุนและเทียบช่องทาง" : "กดที่แพ็คเพื่อดูรายละเอียด"}</p>
+          <div className="mb-2 ml-0.5 flex flex-wrap items-center justify-between gap-2">
+            <p className="gd-note m-0">{product ? "แตะแพ็คเพื่อดูวิธีคำนวณและเทียบช่องทาง" : "แตะแพ็คเพื่อดูรายละเอียด"}</p>
+            {hintAction}
+          </div>
           <div className="gd-list">
             <div className="gd-lh" style={{ "--cols": tracks }} aria-hidden="true">
               <span>แพ็ค</span>

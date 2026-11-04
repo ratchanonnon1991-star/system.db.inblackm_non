@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { Prompt } from "next/font/google";
 import Link from "next/link";
 import { gameinfoPackOffSale } from "@/lib/gameinfo-pack-model";
 import { getSessionUser } from "@/server/session-user";
@@ -60,6 +61,9 @@ import { GAMEINFO_VIEW_COOKIE, gameinfoViewColumnRole, resolveGameinfoView } fro
 import { listGameinfoColumnRoleRules } from "@/server/gameinfo-column-roles";
 import { listGameinfoColumnOrders } from "@/server/gameinfo-column-order";
 import { gameinfoColumnOrderFor } from "@/lib/gameinfo-pack-columns";
+
+// The game page's typeface, from its design; the rest of GameInfo keeps its own.
+const prompt = Prompt({ subsets: ["thai", "latin"], weight: ["400", "500", "600", "700"], variable: "--gd-font" });
 
 export default async function GameinfoGameDetailPage({ params, searchParams, manage = false }) {
   const { lang, id } = await params;
@@ -364,7 +368,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   const openSalesChannels = salesChannels.filter((channel) => channel.status === "open").length;
   return (
     // One column of folding cards (gameinfo-game-detail.css, loaded by the view).
-    <div className="gd min-h-[calc(100vh-4rem)]">
+    <div className={`gd ${prompt.variable} min-h-[calc(100vh-4rem)]`}>
     <div className="gd-wrap">
       {/* Rendered here, not in the layout: a layout is not re-rendered on a
           client-side navigation, so its bar kept showing the view the first
