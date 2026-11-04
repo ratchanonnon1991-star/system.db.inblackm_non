@@ -6,6 +6,7 @@ import {
   gameinfoListNumber,
   gameinfoMarginTone,
   gameinfoPackListColumns,
+  gameinfoPackListStatusTab,
   summarizeGameinfoPackList,
 } from "@/lib/gameinfo-pack-list";
 import { gameinfoCountryThaiName } from "@/lib/gameinfo-countries";
@@ -45,6 +46,16 @@ assert.deepEqual(filterGameinfoPackListRows(rows, { chip: "pass" }).map((row) =>
 assert.deepEqual(filterGameinfoPackListRows(rows, { query: "300" }).map((row) => row.pack.id), ["b"], "search matches the pack name");
 assert.deepEqual(filterGameinfoPackListRows(rows, { sort: "price" }).map((row) => row.pack.id), ["a", "b", "p"], "packs without a price sort last");
 
+const tabbed = [
+  { ...rows[0], status: "open", auto: true },
+  { ...rows[1], status: "new", auto: false },
+  { ...rows[2], status: "expired", auto: true },
+];
+assert.deepEqual(tabbed.map(gameinfoPackListStatusTab), ["active", "new", "expired"]);
+assert.deepEqual(filterGameinfoPackListRows(tabbed, { status: "new" }).map((row) => row.pack.id), ["b"], "the status tab keeps its packs");
+assert.deepEqual(filterGameinfoPackListRows(tabbed, { chip: "bot" }).map((row) => row.pack.id), ["a", "p"], "the Bot Auto chip keeps the bot's packs");
+assert.equal(gameinfoPackListStatusTab({ status: "closed" }), "closed", "a closed pack is under All only");
+
 const summary = summarizeGameinfoPackList(rows, "page");
 assert.equal(summary.count, 2, "only priced packs count");
 assert.ok(Math.abs(summary.average - 30) < 1e-9);
@@ -66,9 +77,9 @@ assert.ok(list.includes("aria-expanded={open}"), "each row's details open from a
 
 const editor = read("../src/components/gameinfo-pack-editor.js");
 const detailPage = read("../src/components/gameinfo-game-detail-page.js");
-assert.ok(view.includes("<GameinfoBotPriceWarning botManual={row.botManual}") && editor.includes("botManual={game.botManual}") && detailPage.includes("botManual: row.botManual,"), "Bot Auto games warn about prices on the game page and in the pack editor");
+assert.ok(view.includes("ระวัง แก้ไขแล้วบอทเติมตามทันที") && view.includes("botAuto={isGameinfoBotAuto(row.botManual)}") && editor.includes("botManual={game.botManual}") && detailPage.includes("botManual: row.botManual,"), "Bot Auto games warn about prices on the game page and in the pack editor");
 
 assert.equal(gameinfoCountryThaiName("Myanmar"), "เมียนมา", "the list heading names the country in Thai");
 assert.equal(gameinfoCountryThaiName("Somewhere"), "Somewhere", "an unknown country stays as stored");
 
-console.log("30 passed");
+console.log("34 passed");

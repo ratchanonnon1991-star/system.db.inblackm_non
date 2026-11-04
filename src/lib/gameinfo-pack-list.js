@@ -84,14 +84,32 @@ export function buildGameinfoPackListRows(currency, columns, game, context = {})
   };
 }
 
-/** Search, group chip ("all", "low" or a category id) and sort, as the list shows them. */
-export function filterGameinfoPackListRows(rows, { query = "", chip = "all", sort = "default", channel = "page" } = {}) {
+// The list's status tabs: a pack on sale is Active, a closed one shows under All only.
+export const GAMEINFO_PACK_LIST_STATUS_TABS = [
+  { id: "all", label: "All" },
+  { id: "active", label: "Active" },
+  { id: "new", label: "New" },
+  { id: "expired", label: "Expired" },
+];
+const STATUS_TAB = { open: "active", new: "new", expired: "expired", closed: "closed" };
+
+export function gameinfoPackListStatusTab(row) {
+  return STATUS_TAB[row.status] || "active";
+}
+
+/**
+ * Search, group chip ("all", "low", "bot" or a category id), status tab and
+ * sort, as the list shows them. "bot" keeps the rows marked `auto`.
+ */
+export function filterGameinfoPackListRows(rows, { query = "", chip = "all", status = "all", sort = "default", channel = "page" } = {}) {
   const needle = query.trim().toLowerCase();
   const margin = (row) => row.channels[channel]?.margin ?? null;
   const price = (row) => row.channels[channel]?.price ?? gameinfoListNumber(row.pack.price);
   let list = rows.filter((row) => !needle || String(row.pack.name || "").toLowerCase().includes(needle));
   if (chip === "low") list = list.filter((row) => margin(row) !== null && margin(row) < GAMEINFO_MARGIN_LOW);
+  else if (chip === "bot") list = list.filter((row) => row.auto);
   else if (chip !== "all") list = list.filter((row) => row.category.id === chip);
+  if (status !== "all") list = list.filter((row) => gameinfoPackListStatusTab(row) === status);
   const by = (read, direction) => (left, right) => {
     const a = read(left);
     const b = read(right);

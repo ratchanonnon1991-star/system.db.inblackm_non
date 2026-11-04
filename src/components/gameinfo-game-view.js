@@ -3,7 +3,7 @@
 import { TablePagination, useTablePagination } from "@/components/table-pagination";
 import { createContext, useContext, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeftRight, BookOpen, Boxes, Image as ImageIcon, Lock, Pencil, TriangleAlert } from "lucide-react";
+import { ArrowLeftRight, BookOpen, Bot, Boxes, Image as ImageIcon, Lock, Pencil, TriangleAlert } from "lucide-react";
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -43,8 +43,7 @@ import {
   useGameinfoPackColumnLayout,
 } from "./gameinfo-pack-column-layout";
 import GameinfoFold from "./gameinfo-fold";
-import GameinfoBotPriceWarning from "./gameinfo-bot-price-warning";
-import GameinfoPackList from "./gameinfo-pack-list";
+import GameinfoPackList, { GAMEINFO_SHOW_BOT_PACKS } from "./gameinfo-pack-list";
 import "./gameinfo-game-detail.css";
 
 // One game's game_list row, read-only (editing region/platform/server/etc.
@@ -172,6 +171,18 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
     <>
       <GameHero row={row} dataMode={dataMode} editHref={editHref} />
 
+      {/* The bot tops up from these prices, so a slip goes straight to a customer. */}
+      {isGameinfoBotAuto(row.botManual) ? (
+        <button type="button" className="gd-autotop" onClick={showBotPacks}>
+          <span className="a-ic"><Bot size={22} aria-hidden="true" /></span>
+          <span className="atx">
+            <b>ระวัง แก้ไขแล้วบอทเติมตามทันที</b>
+            <small>เกมนี้เติมอัตโนมัติด้วย Bot Auto ตรวจชื่อ ราคา และจำนวนให้ถูกก่อนกดบันทึก</small>
+          </span>
+          <span className="go"><span className="gd-lg">ดูแพ็ค </span>Bot Auto</span>
+        </button>
+      ) : null}
+
       {/* The full warning opens only from this strip. */}
       {row.hasWarning ? (
         <GameinfoTutorialButton
@@ -274,6 +285,8 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
             chargeUnit={chargeUnit}
             stock={stock.byPack}
             verify={verify}
+            botAuto={isGameinfoBotAuto(row.botManual)}
+            className={verify?.className || ""}
             beforeList={(
               <>
                 <StockSummary accounts={stock.accounts} links={stockLinks} />
@@ -323,6 +336,10 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
       </GameinfoFold>
     </>
   );
+}
+
+function showBotPacks() {
+  window.dispatchEvent(new Event(GAMEINFO_SHOW_BOT_PACKS));
 }
 
 function countPacks(currency) {
@@ -410,11 +427,14 @@ function GameHero({ row, dataMode, editHref }) {
       </div>
       <div className="gd-tags">
         <span className="gd-pill dark">{dataMode === "idpass" ? "ID-PASS" : "UID"}</span>
-        <span className={`gd-pill ${isGameinfoBotAuto(row.botManual) ? "green" : ""}`}>{row.botManual || "Manual"}</span>
+        {isGameinfoBotAuto(row.botManual) ? (
+          <button type="button" className="gd-pill green gd-botpill" onClick={showBotPacks} title="ดูแพ็ค Bot Auto">
+            <Bot size={12} aria-hidden="true" />{row.botManual}
+          </button>
+        ) : <span className="gd-pill">{row.botManual || "Manual"}</span>}
         {row.web ? <GameinfoWebBadge web={row.web} size="sm" /> : null}
         <span className={`gd-pill ${row.vpn === "YES" ? "amber" : ""}`}>{row.vpn === "YES" ? "ใช้ VPN" : "NO VPN"}</span>
       </div>
-      <GameinfoBotPriceWarning botManual={row.botManual} className="gd-hero-warn" />
       <div className="gd-hero-act">
         {/* Always view-only here regardless of role — editing the
             tutorial happens on the manage page. */}

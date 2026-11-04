@@ -36,7 +36,8 @@ function subscribe(listener) {
   return () => listeners.delete(listener);
 }
 
-function setFoldClosed(id, closed) {
+/** Opens or closes a fold from elsewhere on the page (the Bot Auto notice opens the pack list). */
+export function setGameinfoFoldClosed(id, closed) {
   snapshot = JSON.stringify({ ...parseFolds(readFolds()), [id]: closed });
   try {
     window.localStorage.setItem(STORAGE_KEY, snapshot);
@@ -53,7 +54,7 @@ export default function GameinfoFold({ id, title, subtitle = "", icon = "", tone
   const Icon = ICONS[icon];
   return (
     <section className={`${sub ? "gd-sub" : "gd-card"} gd-fold${closed ? " closed" : ""}`}>
-      <button type="button" className="gd-fold-h" aria-expanded={!closed} onClick={() => setFoldClosed(id, !closed)}>
+      <button type="button" className="gd-fold-h" aria-expanded={!closed} onClick={() => setGameinfoFoldClosed(id, !closed)}>
         {Icon ? (
           <span className={`gd-fh-ic ${tone}`}>
             <Icon size={18} aria-hidden="true" />

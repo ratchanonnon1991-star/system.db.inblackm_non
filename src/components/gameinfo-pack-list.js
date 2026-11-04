@@ -1,15 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Box, ChevronDown, ExternalLink, Search } from "lucide-react";
-import GameinfoImagePreview from "./gameinfo-image-preview";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Bot, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, Image as ImageIcon, Search, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { setGameinfoFoldClosed } from "./gameinfo-fold";
 import { GameinfoPackVerifyButton, GameinfoPackVerifyDialog } from "./gameinfo-pack-verify";
 import { GAMEINFO_LISTING_PRICE_CHANNEL, gameinfoListingEffective } from "@/lib/gameinfo-pack-listings";
 import {
   GAMEINFO_MARGIN_GOOD,
   GAMEINFO_MARGIN_LOW,
+  GAMEINFO_PACK_LIST_STATUS_TABS,
   buildGameinfoPackListRows,
   filterGameinfoPackListRows,
+  gameinfoPackListStatusTab,
   gameinfoListNumber,
   gameinfoMarginTone,
   summarizeGameinfoPackList,
@@ -25,6 +28,10 @@ const pct = (value) => (value === null || value === undefined ? "—" : `${num(v
 const signedBaht = (value) => (value === null ? "—" : `${value < 0 ? "−" : "+"}฿${num(Math.abs(value))}`);
 
 const STATUS_TONE = { open: "blue", new: "green", closed: "", expired: "red" };
+// A pack this dear stands out in the list, so a slip on it is caught.
+const HIGH_PRICE = 1000;
+// Sent by the game card's Bot Auto notice: show the bot's packs.
+export const GAMEINFO_SHOW_BOT_PACKS = "gameinfo:show-bot-packs";
 const STOCK_TONE = { ok: "green", low: "amber", empty: "red" };
 
 // The columns the row and its working-out already show; the rest go under
@@ -61,17 +68,35 @@ export default function GameinfoPackList({
   beforeList = null,
   hintAction = null,
   verify = null,
+  botAuto = false,
+  className = "",
 }) {
   const product = !topupView;
-  const { rows, channels, costColumn } = useMemo(
+  const built = useMemo(
     () => buildGameinfoPackListRows(currency, columns, game, context),
     [currency, columns, game, context]
   );
+  const { channels, costColumn } = built;
+  // Bot Auto is set per game, so in a Bot Auto game every pack is the bot's.
+  const rows = useMemo(() => built.rows.map((row) => ({ ...row, auto: botAuto })), [built.rows, botAuto]);
   const [channelChoice, setChannelChoice] = useState("page");
   const channel = channels.find((item) => item.key === channelChoice) || channels[0] || null;
   const channelKey = channel?.key || "page";
   const [query, setQuery] = useState("");
   const [chip, setChip] = useState("all");
+  const [status, setStatus] = useState("all");
+  const [lightbox, setLightbox] = useState(null);
+  const listRef = useRef(null);
+  useEffect(() => {
+    function showBotPacks() {
+      setChip("bot");
+      setStatus("all");
+      setGameinfoFoldClosed("price", false);
+      setTimeout(() => listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+    }
+    window.addEventListener(GAMEINFO_SHOW_BOT_PACKS, showBotPacks);
+    return () => window.removeEventListener(GAMEINFO_SHOW_BOT_PACKS, showBotPacks);
+  }, []);
   const [sort, setSort] = useState("default");
   const [open, setOpen] = useState(() => new Set());
   // Where each pack is listed for sale (gameinfo-pack-verify.js), kept here so
@@ -93,15 +118,18 @@ export default function GameinfoPackList({
     return gameinfoListingEffective(listing, key ? row.channels[key]?.price ?? null : null);
   });
 
-  const visible = filterGameinfoPackListRows(rows, { query, chip, sort, channel: channelKey });
+  const visible = filterGameinfoPackListRows(rows, { query, chip, status, sort, channel: channelKey });
   const summary = product ? summarizeGameinfoPackList(visible, channelKey) : null;
   const lowCount = product ? rows.filter((row) => (row.channels[channelKey]?.margin ?? Infinity) < GAMEINFO_MARGIN_LOW).length : 0;
   const categories = currency?.categories || [];
   const chips = [
     { id: "all", label: "ทั้งหมด", count: rows.length },
     ...(categories.length > 1 ? categories.map((category) => ({ id: category.id, label: category.name || "(ไม่มีชื่อหมวดหมู่)", count: (category.packs || []).length })) : []),
+    ...(botAuto ? [{ id: "bot", label: "Bot Auto", count: rows.filter((row) => row.auto).length }] : []),
     ...(product ? [{ id: "low", label: "กำไรต่ำ", count: lowCount }] : []),
   ];
+  const statusCounts = { all: rows.length };
+  rows.forEach((row) => { statusCounts[gameinfoPackListStatusTab(row)] = (statusCounts[gameinfoPackListStatusTab(row)] || 0) + 1; });
   const gotField = rows.some((row) => String(row.pack.amountReceived ?? "").trim()) ? "amountReceived" : rows.some((row) => String(row.pack.priceUsd ?? "").trim()) ? "priceUsd" : "";
   const gotLabel = gotField === "priceUsd" ? "USD" : "ได้รับ";
   const tracks = [
@@ -110,7 +138,7 @@ export default function GameinfoPackList({
     ...(product ? ["88px", "96px", "96px", "78px"] : ["96px", "170px", "120px"]),
     "28px",
   ].filter(Boolean).join(" ");
-  const grouped = sort === "default" && chip === "all" && !query.trim() && categories.length > 1;
+  const grouped = sort === "default" && chip === "all" && status === "all" && !query.trim() && categories.length > 1;
 
   const shownIds = new Set([costColumn?.id, ...channels.map((item) => item.priceColumn?.id)].filter(Boolean));
   const otherColumns = (columns || []).filter((column) => !shownIds.has(column.id) && !(column.kind !== "computed" && SHOWN_FIELDS.has(column.id)));
@@ -143,6 +171,7 @@ export default function GameinfoPackList({
         onToggle={() => toggle(row.pack.id)}
         listings={verify ? listingsFor(row) : null}
         onVerify={() => setVerifyPackId(String(row.pack.id))}
+        onImage={() => setLightbox(visible.indexOf(row))}
       />
     );
   }
@@ -181,12 +210,20 @@ export default function GameinfoPackList({
         {chips.length > 1 ? (
           <div className="gd-chipbar" role="group" aria-label="กรองแพ็ค">
             {chips.map((option) => (
-              <button key={option.id} type="button" className="gd-chip" aria-pressed={chip === option.id} onClick={() => setChip(option.id)}>
+              <button key={option.id} type="button" className={`gd-chip${option.id === "bot" ? " bot" : ""}`} aria-pressed={chip === option.id} onClick={() => setChip(option.id)}>
+                {option.id === "bot" ? <Bot size={14} aria-hidden="true" /> : null}
                 {option.label} <span className="cnt">{option.count}</span>
               </button>
             ))}
           </div>
         ) : null}
+        <div className="gd-seg red fill" role="group" aria-label="สถานะแพ็ค">
+          {GAMEINFO_PACK_LIST_STATUS_TABS.map((tab) => (
+            <button key={tab.id} type="button" aria-pressed={status === tab.id} onClick={() => setStatus(tab.id)}>
+              {tab.label} <span className="cnt">{statusCounts[tab.id] || 0}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {product && summary ? (
@@ -226,10 +263,11 @@ export default function GameinfoPackList({
           <span className="eic"><Search size={22} aria-hidden="true" /></span>
           <b>ไม่พบแพ็คที่ตรงเงื่อนไข</b>
           <span>ลองล้างคำค้นหา หรือเลือก “ทั้งหมด”</span>
-          <button type="button" className="gd-btn sm" onClick={() => { setQuery(""); setChip("all"); }}>ล้างตัวกรอง</button>
+          <button type="button" className="gd-btn sm" onClick={() => { setQuery(""); setChip("all"); setStatus("all"); }}>ล้างตัวกรอง</button>
         </div>
       ) : (
-        <div>
+        <div ref={listRef} className="scroll-mt-20">
+          {chip === "bot" ? <BotCallout /> : null}
           <div className="mb-2 ml-0.5 flex flex-wrap items-center justify-between gap-2">
             <p className="gd-note m-0">{product ? "แตะแพ็คเพื่อดูวิธีคำนวณและเทียบช่องทาง" : "แตะแพ็คเพื่อดูรายละเอียด"}</p>
             {hintAction}
@@ -267,6 +305,16 @@ export default function GameinfoPackList({
           </div>
         </div>
       )}
+
+      {lightbox !== null && visible[lightbox] ? (
+        <PackLightbox
+          rows={visible}
+          index={lightbox}
+          onIndex={setLightbox}
+          onClose={() => setLightbox(null)}
+          className={className}
+        />
+      ) : null}
 
       {verify && verifyRow ? (
         <GameinfoPackVerifyDialog
@@ -317,15 +365,21 @@ function mostCommon(values) {
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
 }
 
-function PackItem({ row, product, tracks, gotField, channel, channels, costColumn, otherColumns, chargeUnit, context, stock, open, onToggle, listings, onVerify }) {
+function PackItem({ row, product, tracks, gotField, channel, channels, costColumn, otherColumns, chargeUnit, context, stock, open, onToggle, listings, onVerify, onImage }) {
   const { pack } = row;
   const figures = row.channels[channel?.key] || { price: gameinfoListNumber(pack.price), profit: null, margin: null };
   const href = packHref(pack.link);
   const got = gotField ? String(pack[gotField] ?? "").trim() : "";
-  const off = row.status === "closed" || row.status === "expired";
   const detailsId = `pack-${pack.id}-details`;
+  const classes = [
+    "gd-it",
+    open ? "open" : "",
+    row.status === "closed" ? "off" : "",
+    row.status === "expired" ? "exp" : "",
+    (gameinfoListNumber(pack.price) ?? 0) >= HIGH_PRICE ? "hi" : "",
+  ].filter(Boolean).join(" ");
   return (
-    <div className={`gd-it${open ? " open" : ""}${off ? " off" : ""}`}>
+    <div className={classes}>
       {/* The chevron is the control; a click anywhere else on the row does the
           same for a mouse, except on the links and images inside it. */}
       <div
@@ -336,9 +390,19 @@ function PackItem({ row, product, tracks, gotField, channel, channels, costColum
         }}
       >
         <span className="gd-nmc">
-          <PackThumb src={pack.image} tone={row.categoryIndex % 4} />
+          <button type="button" className={`gd-pimg${pack.image ? "" : " none"}`} onClick={onImage} aria-label={pack.image ? `ดูรูปแพ็ค ${pack.name}` : `ยังไม่มีรูป ${pack.name}`}>
+            {pack.image ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={pack.image} alt="" width={36} height={36} />
+            ) : <ImageIcon size={16} aria-hidden="true" />}
+            {row.auto ? <span className="gd-pbot" title="Bot Auto"><Bot size={11} aria-hidden="true" /></span> : null}
+          </button>
           <span className="gd-nmt">
-            <span className="gd-nm" title={pack.name}>{pack.name || "-"}</span>
+            <span className="gd-nm1">
+              {row.auto ? <span className="gd-botb" title="Bot Auto"><Bot size={12} aria-hidden="true" />BOT</span> : null}
+              {row.status === "new" ? <span className="gd-stg new">NEW</span> : row.status === "expired" ? <span className="gd-stg exp">EXPIRED</span> : null}
+              <span className="gd-nm" title={pack.name}>{pack.name || "-"}</span>
+            </span>
             <PackNotes row={row} stock={stock} />
           </span>
           {listings ? <GameinfoPackVerifyButton packName={pack.name} listings={listings} onOpen={onVerify} /> : null}
@@ -371,6 +435,7 @@ function PackItem({ row, product, tracks, gotField, channel, channels, costColum
       <div id={detailsId} className="gd-dt">
         {open ? (
           <>
+            {row.auto ? <BotCallout /> : null}
             {product && channels.length ? <ChannelCompare row={row} channels={channels} selected={channel?.key} /> : null}
             {costColumn ? <CostWorking row={row} chargeUnit={chargeUnit} context={context} product={product} /> : null}
             <TopupInfo row={row} href={href} />
@@ -382,15 +447,67 @@ function PackItem({ row, product, tracks, gotField, channel, channels, costColum
   );
 }
 
-function PackThumb({ src, tone }) {
-  if (!src) {
-    return <span className={`gd-thumb t${tone}`} aria-hidden="true"><Box size={17} /></span>;
-  }
+function BotCallout() {
   return (
-    <GameinfoImagePreview src={src} alt="" wrapperClassName="gd-thumb">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={src} alt="" />
-    </GameinfoImagePreview>
+    <div className="gd-autoc">
+      <span className="ai"><Bot size={22} aria-hidden="true" /></span>
+      <small>แพ็คนี้เติมอัตโนมัติด้วย Bot Auto ข้อมูลที่บันทึกจะถูกใช้เติมให้ลูกค้าเลย ตรวจชื่อ ราคา และจำนวนให้ถูกก่อนกดบันทึกทุกครั้ง</small>
+    </div>
+  );
+}
+
+// A pack's picture large, to check it against its name and price before it is
+// listed: zoom by steps, and step through the packs the list is showing.
+function PackLightbox({ rows, index, onIndex, onClose, className }) {
+  const [zoom, setZoom] = useState(1);
+  const { pack } = rows[index];
+  const step = (by) => {
+    setZoom(1);
+    onIndex((index + by + rows.length) % rows.length);
+  };
+  return (
+    <Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent showCloseButton={false} className={`gd gd-modal sm:max-w-[560px] ${className}`}>
+        <div className="gd-mhead">
+          <div className="min-w-0">
+            <DialogTitle className="truncate text-xl leading-tight font-semibold text-white">{pack.name || "-"}</DialogTitle>
+            <DialogDescription className="truncate text-[13px] text-white/90">{pack.amountReceived ? `ได้รับ ${pack.amountReceived}` : "รูปแพ็ค"}</DialogDescription>
+          </div>
+          <button type="button" className="ml-auto grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/20 text-white" aria-label="ปิด" onClick={onClose}>
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+        <div className="gd-mbody">
+          <div className="gd-lbs">
+            <div className="gd-lbi" style={{ width: `${240 * zoom}px` }}>
+              {pack.image ? (
+                <button type="button" className="block w-full cursor-zoom-in" onClick={() => setZoom(zoom >= 3 ? 1 : zoom + 1)} aria-label="ขยายรูป">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={pack.image} alt={pack.name || ""} />
+                </button>
+              ) : (
+                <div className="gd-empty"><span className="eic"><ImageIcon size={22} aria-hidden="true" /></span><b>ยังไม่มีรูปแพ็คนี้</b></div>
+              )}
+            </div>
+          </div>
+          <div className="gd-lbc">
+            <button type="button" className="gd-btn sm" onClick={() => step(-1)} aria-label="แพ็คก่อนหน้า"><ChevronLeft size={18} aria-hidden="true" /></button>
+            <div className="gd-seg">
+              <button type="button" onClick={() => setZoom(Math.max(1, zoom - 1))} aria-label="ย่อ"><ZoomOut size={16} aria-hidden="true" /></button>
+              <button type="button" onClick={() => setZoom(1)} aria-label="ขนาดเดิม">{zoom * 100}%</button>
+              <button type="button" onClick={() => setZoom(Math.min(3, zoom + 1))} aria-label="ขยาย"><ZoomIn size={16} aria-hidden="true" /></button>
+            </div>
+            <button type="button" className="gd-btn sm" onClick={() => step(1)} aria-label="แพ็คถัดไป"><ChevronRight size={18} aria-hidden="true" /></button>
+          </div>
+          <div className="gd-vsec">
+            <div className="gd-kvl"><span>ชื่อแพ็ค</span><span>{pack.name || "-"}</span></div>
+            <div className="gd-kvl"><span>ได้รับ</span><span>{String(pack.amountReceived ?? "").trim() || "–"}</span></div>
+            <div className="gd-kvl"><span>ราคาขาย</span><span>{baht(gameinfoListNumber(pack.price))}</span></div>
+          </div>
+          <span className="gd-note">ตรวจรูปให้ตรงกับชื่อและราคาแพ็คก่อนลงสินค้า</span>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -398,10 +515,10 @@ function PackNotes({ row, stock }) {
   const { pack, status } = row;
   const warning = gameinfoPackExpiryWarning(pack);
   const expiry = formatGameinfoPackExpiry(pack.expiresAt);
-  if (status === "open" && !expiry && !stock) return null;
+  if (status !== "closed" && !expiry && !stock) return null;
   return (
     <span className="gd-nth">
-      {status !== "open" ? <span className={`gd-pill ${STATUS_TONE[status]}`}>{GAMEINFO_PACK_STATUS_LABELS[status]}</span> : null}
+      {status === "closed" ? <span className={`gd-pill ${STATUS_TONE[status]}`}>{GAMEINFO_PACK_STATUS_LABELS[status]}</span> : null}
       {expiry ? <span>หมดอายุ {expiry}</span> : null}
       {warning ? <span className="gd-pill amber">{warning}</span> : null}
       {stock ? (
