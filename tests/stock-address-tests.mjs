@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { ADDRESS_CHAINS, ADDRESS_COINS, addressDecision, addressesFor, addressGroups, chainsForCoin, validateCryptoAddress } from "../src/lib/stock-addresses.js";
+import { ADDRESS_CHAINS, ADDRESS_COINS, filterComboGroups, addressDecision, addressesFor, addressGroups, chainsForCoin, validateCryptoAddress } from "../src/lib/stock-addresses.js";
 
 let passed = 0;
 function check(condition, message) {
@@ -52,4 +52,9 @@ check(usdt.usual.some((chain) => chain.code === "TRC20") && usdt.usual.some((cha
 check(chainsForCoin("BTC").usual.map((chain) => chain.code).join() === "BTC,BYBIT_UID" && chainsForCoin("SHIB").usual.length === 1, "a coin's chains follow it; an unlisted coin still gets every chain under the rest");
 check(ADDRESS_COINS.includes("USDT") && ADDRESS_COINS.includes("ETH") && ADDRESS_COINS.length >= 15 && new Set(ADDRESS_CHAINS.map((chain) => chain.code)).size === ADDRESS_CHAINS.length, "the coin and chain lists are full and unique");
 check(!ok({ chain: "XRP", address: "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh", memo: "12345" }).warning && !ok({ chain: "LTC", address: "ltc1qg82ekspz2p6dvz2jlrlvnfy4x6mmmxwdtxs8vz" }).warning, "XRP and Litecoin addresses are recognised");
+const groups = [{ label: "บ่อย", options: ["TRC20 (Tron)", "BSC (BEP20)", "SOL (Solana)"] }, { label: "อื่น", options: ["BTC (Bitcoin)", "Base Mainnet"] }];
+check(filterComboGroups(groups, null).flatMap((group) => group.options).length === 5 && filterComboGroups(groups, "").length === 2, "an empty box lists every choice");
+check(filterComboGroups(groups, "b").flatMap((group) => group.options).join() === "BSC (BEP20),BTC (Bitcoin),Base Mainnet" && filterComboGroups(groups, "bs").flatMap((group) => group.options).join() === "BSC (BEP20)", "each letter typed narrows the list");
+check(filterComboGroups(groups, "sol so").length === 1 && filterComboGroups(groups, "zzz").length === 0, "every typed word must match; nothing matching leaves the typed text as is");
+check(validateCryptoAddress({ recipient: "x", coin: "USDT", chain: "TRC20 (Tron)", address: tron }).address.chain === "TRC20", "a chain picked by its shown name is stored by its code");
 console.log(`stock addresses: ${passed} passed`);

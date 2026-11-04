@@ -7,36 +7,9 @@ import { apiJson } from "@/lib/api-json";
 import { ADDRESS_COINS, chainOf, chainsForCoin, validateCryptoAddress } from "@/lib/stock-addresses";
 import { StockField, stockInputClass } from "@/components/stock-ui";
 import { CryptoAddressCard } from "@/components/crypto-address-card";
+import ComboInput from "@/components/combo-input";
 
-const EMPTY = { recipient: "", coin: "USDT", chain: "TRC20", address: "", memo: "", note: "" };
-const OTHER = "__other__";
-
-/**
- * A dropdown of every known choice, plus "อื่น ๆ" that opens a box to type one in.
- * `groups`: [{ label, options: [{ value, label }] }] (a group without a label is shown flat).
- */
-function PickOrType({ id, value, onChange, groups, typedPlaceholder, upper = false }) {
-  const known = groups.some((group) => group.options.some((option) => option.value === value));
-  const [typing, setTyping] = useState(!known && Boolean(value));
-  return (
-    <div className="flex flex-col gap-2">
-      <select id={id} value={typing ? OTHER : value} onChange={(event) => {
-        if (event.target.value === OTHER) { setTyping(true); onChange(""); } else { setTyping(false); onChange(event.target.value); }
-      }} className={stockInputClass}>
-        {!value && !typing ? <option value="">เลือก…</option> : null}
-        {groups.map((group, index) => group.label ? (
-          <optgroup key={index} label={group.label}>{group.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</optgroup>
-        ) : group.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>))}
-        <option value={OTHER}>อื่น ๆ (พิมพ์เอง)</option>
-      </select>
-      {typing ? (
-        <input aria-label={typedPlaceholder} value={value} onChange={(event) => onChange(upper ? event.target.value.toUpperCase() : event.target.value)}
-          className={stockInputClass} placeholder={typedPlaceholder} required autoFocus />
-      ) : null}
-    </div>
-  );
-}
-
+const EMPTY = { recipient: "", coin: "USDT", chain: "TRC20 (Tron)", address: "", memo: "", note: "" };
 export default function StockAddressesView({ addresses, retired = [], recipients = [], canEdit, currentUserId }) {
   const router = useRouter();
   const [form, setForm] = useState(EMPTY);
@@ -101,19 +74,24 @@ export default function StockAddressesView({ addresses, retired = [], recipients
       {adding ? (
         <form onSubmit={save} className="grid gap-3 rounded-2xl border border-zinc-200 bg-white p-4 sm:grid-cols-2">
           <StockField label="ผู้รับ (ซัพหรือกระเป๋าของเรา)" htmlFor="addr-recipient" hint="ใช้ชื่อเดียวกับชื่อซัพในใบสั่งซื้อ เพื่อให้ขึ้นในขั้นโอนเงิน">
-            <PickOrType id="addr-recipient" value={form.recipient} onChange={(recipient) => set({ recipient })} typedPlaceholder="ชื่อผู้รับ"
-              groups={[{ label: "", options: recipients.map((name) => ({ value: name, label: name })) }]} />
+            <ComboInput id="addr-recipient" value={form.recipient} onChange={(recipient) => set({ recipient })} placeholder="พิมพ์หรือเลือก เช่น YAYA" required
+              groups={[{ label: "", options: recipients }]} />
           </StockField>
           <StockField label="เหรียญ" htmlFor="addr-coin">
-            <PickOrType id="addr-coin" value={form.coin} upper typedPlaceholder="เหรียญ เช่น SHIB"
-              onChange={(coin) => set({ coin, chain: chainsForCoin(coin).usual.some((item) => item.code === form.chain) ? form.chain : chainsForCoin(coin).usual[0]?.code || "" })}
-              groups={[{ label: "", options: ADDRESS_COINS.map((coin) => ({ value: coin, label: coin })) }]} />
+            <ComboInput id="addr-coin" value={form.coin} upper required placeholder="พิมพ์หรือเลือก เช่น USDT"
+              onChange={(coin) => {
+                // A listed coin moves the chain to one it is sent on, unless the chain already fits.
+                const usual = chainsForCoin(coin).usual;
+                const fits = !ADDRESS_COINS.includes(coin) || usual.some((item) => item.label === form.chain || item.code === form.chain);
+                set({ coin, chain: fits ? form.chain : usual[0]?.label || form.chain });
+              }}
+              groups={[{ label: "", options: ADDRESS_COINS }]} />
           </StockField>
-          <StockField label="Chain" htmlFor="addr-chain" hint={chain ? `${chain.label}: ${chain.hint}` : "เลือกให้ตรงกับที่ผู้รับบอก"}>
-            <PickOrType key={form.coin} id="addr-chain" value={form.chain} onChange={(value) => set({ chain: value })} typedPlaceholder="ชื่อ chain ตามที่ผู้รับบอก"
+          <StockField label="Chain" htmlFor="addr-chain" hint={chain ? `${chain.label}: ${chain.hint}` : "เลือกหรือพิมพ์ให้ตรงกับที่ผู้รับบอก"}>
+            <ComboInput id="addr-chain" value={form.chain} onChange={(value) => set({ chain: value })} placeholder="พิมพ์หรือเลือก เช่น TRC20, BSC, SOL" required
               groups={[
-                { label: `ที่ใช้กับ ${form.coin || "เหรียญนี้"} บ่อย`, options: chainsForCoin(form.coin).usual.map((item) => ({ value: item.code, label: item.label })) },
-                { label: "chain อื่น", options: chainsForCoin(form.coin).other.map((item) => ({ value: item.code, label: item.label })) },
+                { label: `ที่ใช้กับ ${form.coin || "เหรียญนี้"} บ่อย`, options: chainsForCoin(form.coin).usual.map((item) => item.label) },
+                { label: "chain อื่น", options: chainsForCoin(form.coin).other.map((item) => item.label) },
               ]} />
           </StockField>
           <StockField label={chain?.memo ? `Memo / Tag (${chain.label} มักต้องใส่)` : "Memo / Tag"} htmlFor="addr-memo" hint="ใส่เฉพาะเมื่อผู้รับให้มา">
