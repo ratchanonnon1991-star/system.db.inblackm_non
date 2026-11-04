@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Box, ChevronDown, ExternalLink, Search } from "lucide-react";
 import GameinfoImagePreview from "./gameinfo-image-preview";
+import { GameinfoPackVerifyButton, GameinfoPackVerifyDialog } from "./gameinfo-pack-verify";
 import {
   GAMEINFO_MARGIN_GOOD,
   GAMEINFO_MARGIN_LOW,
@@ -48,7 +49,18 @@ function listText(value) {
  * five numbers a row in the Product view (got, cost, and the chosen channel's
  * price, profit and margin), price, wallet and link in the Topup view.
  */
-export default function GameinfoPackList({ currency, columns, game, context, topupView = false, chargeUnit = "", stock = {}, beforeList = null, hintAction = null }) {
+export default function GameinfoPackList({
+  currency,
+  columns,
+  game,
+  context,
+  topupView = false,
+  chargeUnit = "",
+  stock = {},
+  beforeList = null,
+  hintAction = null,
+  verify = null,
+}) {
   const product = !topupView;
   const { rows, channels, costColumn } = useMemo(
     () => buildGameinfoPackListRows(currency, columns, game, context),
@@ -61,6 +73,19 @@ export default function GameinfoPackList({ currency, columns, game, context, top
   const [chip, setChip] = useState("all");
   const [sort, setSort] = useState("default");
   const [open, setOpen] = useState(() => new Set());
+  // Where each pack is listed for sale (gameinfo-pack-verify.js), kept here so
+  // a save in the window updates the row's badge too.
+  const [listings, setListings] = useState(() => verify?.listings || []);
+  const [verifyPackId, setVerifyPackId] = useState(null);
+  const listingsByPack = useMemo(() => {
+    const byPack = new Map();
+    for (const listing of listings) {
+      if (!byPack.has(listing.packId)) byPack.set(listing.packId, []);
+      byPack.get(listing.packId).push(listing);
+    }
+    return byPack;
+  }, [listings]);
+  const verifyRow = verifyPackId === null ? null : rows.find((row) => String(row.pack.id) === verifyPackId) || null;
 
   const visible = filterGameinfoPackListRows(rows, { query, chip, sort, channel: channelKey });
   const summary = product ? summarizeGameinfoPackList(visible, channelKey) : null;
@@ -110,6 +135,8 @@ export default function GameinfoPackList({ currency, columns, game, context, top
         stock={stock[row.pack.name]}
         open={open.has(row.pack.id)}
         onToggle={() => toggle(row.pack.id)}
+        listings={verify ? listingsByPack.get(String(row.pack.id)) || [] : null}
+        onVerify={() => setVerifyPackId(String(row.pack.id))}
       />
     );
   }
@@ -234,6 +261,26 @@ export default function GameinfoPackList({ currency, columns, game, context, top
           </div>
         </div>
       )}
+
+      {verify && verifyRow ? (
+        <GameinfoPackVerifyDialog
+          key={verifyPackId}
+          open
+          onOpenChange={(next) => { if (!next) setVerifyPackId(null); }}
+          gameId={verify.gameId}
+          dataMode={verify.dataMode}
+          pack={verifyRow.pack}
+          channels={verify.channels}
+          listings={listingsByPack.get(verifyPackId) || []}
+          referencePrices={Object.fromEntries(Object.entries(verifyRow.channels).map(([key, value]) => [key, value.price]))}
+          cost={verifyRow.cost}
+          product={product}
+          canList={verify.canList}
+          canReview={verify.canReview}
+          onListingsChange={setListings}
+          className={verify.className}
+        />
+      ) : null}
     </>
   );
 }
@@ -263,7 +310,7 @@ function mostCommon(values) {
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
 }
 
-function PackItem({ row, product, tracks, gotField, channel, channels, costColumn, otherColumns, chargeUnit, context, stock, open, onToggle }) {
+function PackItem({ row, product, tracks, gotField, channel, channels, costColumn, otherColumns, chargeUnit, context, stock, open, onToggle, listings, onVerify }) {
   const { pack } = row;
   const figures = row.channels[channel?.key] || { price: gameinfoListNumber(pack.price), profit: null, margin: null };
   const href = packHref(pack.link);
@@ -287,6 +334,7 @@ function PackItem({ row, product, tracks, gotField, channel, channels, costColum
             <span className="gd-nm" title={pack.name}>{pack.name || "-"}</span>
             <PackNotes row={row} stock={stock} />
           </span>
+          {listings ? <GameinfoPackVerifyButton packName={pack.name} listings={listings} onOpen={onVerify} /> : null}
         </span>
         {gotField ? <span className="gd-v r num got">{got ? (gotField === "priceUsd" ? `$${got}` : got) : "–"}</span> : null}
         {product ? (

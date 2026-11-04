@@ -33,6 +33,8 @@ import { GameinfoManageNav, GameinfoManageSection } from "@/components/gameinfo-
 import GameinfoWebMargin from "@/components/gameinfo-web-margin";
 import GameinfoSalesChannelEditor, { GameinfoSalesChannelCards } from "@/components/gameinfo-sales-channels";
 import { listGamelistSalesChannels } from "@/server/gameinfo-sales-channels";
+import { listGamelistPackListings } from "@/server/gameinfo-pack-listings";
+import { gameinfoListingChannels } from "@/lib/gameinfo-pack-listings";
 import { listStockForGame } from "@/server/stock-repository";
 import GameinfoMissingChecklist from "@/components/gameinfo-missing-checklist";
 import { gameinfoMissingItems } from "@/lib/gameinfo-completeness";
@@ -111,6 +113,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   let stock = { accounts: [], byPack: {} };
   let costRatesOther = null;
   let columnOrder = null;
+  let listings = [];
   try {
     row = await getGameListRow(numericId);
     if (row) {
@@ -197,6 +200,8 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         listGamelistSalesChannels(row.id).catch(() => []),
         listStockForGame(row.id, dataMode).catch(() => stock),
       ]);
+      // Listing checks are an extra too; without them the badges just read "ยังไม่ลง".
+      listings = manageMode ? [] : await listGamelistPackListings(row.id, dataMode).catch(() => []);
       topupGame = topupConnected ? await getTopupWebGame(settings.topupGameId).catch(() => null) : null;
       row = {
         ...row,
@@ -392,6 +397,16 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         costRatesOther={costRatesOther}
         columnOrder={columnOrder}
         topupView={topupView}
+        verify={{
+          gameId: row.id,
+          dataMode,
+          listings,
+          channels: gameinfoListingChannels(salesChannels),
+          canList: hasPermission(user, "gameinfo.report"),
+          canReview: hasPermission(user, "gameinfo.market_check"),
+          // The window opens outside the page, so it takes the page's typeface along.
+          className: prompt.variable,
+        }}
       />
       <GameinfoFold
         id="channels"

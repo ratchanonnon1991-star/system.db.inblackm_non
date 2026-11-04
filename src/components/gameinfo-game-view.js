@@ -64,7 +64,7 @@ const NO_COLUMNS = [];
 const StockContext = createContext({});
 const NO_STOCK = { accounts: [], byPack: {} };
 
-export default function GameinfoGameView({ row, currencies, computedColumns = NO_COLUMNS, costProfiles = [], formulaVariables = [], userId, dataMode = "uid", hiddenColumnKeys = [], editHref = null, stock = NO_STOCK, stockLinks = false, costRatesOther = null, columnOrder = null, topupView = false }) {
+export default function GameinfoGameView({ row, currencies, computedColumns = NO_COLUMNS, costProfiles = [], formulaVariables = [], userId, dataMode = "uid", hiddenColumnKeys = [], editHref = null, stock = NO_STOCK, stockLinks = false, costRatesOther = null, columnOrder = null, topupView = false, verify = null }) {
   const [formulaMode, setFormulaMode] = useState("result");
   // The list is the page; the full table stays one switch away for the
   // columns, presets and formulas it carries.
@@ -272,6 +272,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
             topupView={topupView}
             chargeUnit={chargeUnit}
             stock={stock.byPack}
+            verify={verify}
             beforeList={(
               <>
                 <StockSummary accounts={stock.accounts} links={stockLinks} />

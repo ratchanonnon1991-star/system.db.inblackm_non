@@ -341,6 +341,26 @@ function ensureSchema(connection) {
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
+      // Where each pack is listed for sale and whether its price was checked
+      // (src/server/gameinfo-pack-listings.js).
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS gamelist_pack_listings (
+          game_id       INTEGER NOT NULL,
+          data_mode     TEXT NOT NULL,
+          pack_id       TEXT NOT NULL,
+          channel       TEXT NOT NULL,
+          url           TEXT NOT NULL DEFAULT '',
+          listed_price  NUMERIC,
+          listed_by     TEXT NOT NULL DEFAULT '',
+          listed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          status        TEXT NOT NULL DEFAULT 'pending',
+          checked_price NUMERIC,
+          reviewed_by   TEXT NOT NULL DEFAULT '',
+          reviewed_at   TIMESTAMPTZ,
+          note          TEXT NOT NULL DEFAULT '',
+          PRIMARY KEY (game_id, data_mode, pack_id, channel)
+        )
+      `);
     } finally {
       client.release();
     }
