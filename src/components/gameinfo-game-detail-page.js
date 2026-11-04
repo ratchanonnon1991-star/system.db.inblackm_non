@@ -33,7 +33,7 @@ import { GameinfoManageNav, GameinfoManageSection } from "@/components/gameinfo-
 import GameinfoWebMargin from "@/components/gameinfo-web-margin";
 import GameinfoSalesChannelEditor, { GameinfoSalesChannelCards } from "@/components/gameinfo-sales-channels";
 import { listGamelistSalesChannels } from "@/server/gameinfo-sales-channels";
-import { listGamelistPackListings } from "@/server/gameinfo-pack-listings";
+import { listGameinfoListingReviewers, listGamelistPackListings } from "@/server/gameinfo-pack-listings";
 import { gameinfoListingActor, gameinfoListingChannels } from "@/lib/gameinfo-pack-listings";
 import { listStockForGame } from "@/server/stock-repository";
 import GameinfoMissingChecklist from "@/components/gameinfo-missing-checklist";
@@ -114,6 +114,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   let costRatesOther = null;
   let columnOrder = null;
   let listings = [];
+  let listingReviewers = [];
   try {
     row = await getGameListRow(numericId);
     if (row) {
@@ -201,7 +202,10 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         listStockForGame(row.id, dataMode).catch(() => stock),
       ]);
       // Listing checks are an extra too; without them the badges just read "ยังไม่ลง".
-      listings = manageMode ? [] : await listGamelistPackListings(row.id, dataMode).catch(() => []);
+      [listings, listingReviewers] = manageMode ? [[], []] : await Promise.all([
+        listGamelistPackListings(row.id, dataMode).catch(() => []),
+        listGameinfoListingReviewers().catch(() => []),
+      ]);
       topupGame = topupConnected ? await getTopupWebGame(settings.topupGameId).catch(() => null) : null;
       row = {
         ...row,
@@ -405,6 +409,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
           canList: hasPermission(user, "gameinfo.report"),
           canReview: editableRole,
           viewer: gameinfoListingActor(user),
+          reviewers: listingReviewers,
           // The window opens outside the page, so it takes the page's typeface along.
           className: prompt.variable,
         }}

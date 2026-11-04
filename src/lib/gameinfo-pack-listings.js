@@ -6,6 +6,15 @@ import { GAMEINFO_SALES_CHANNELS } from "@/lib/gameinfo-sales-channels";
 //   ok       checked, the price is right
 //   wrong    checked, the price is wrong
 export const GAMEINFO_LISTING_STATUSES = ["pending", "ok", "wrong"];
+// How long the admin a round is sent to has to check it; after that the round
+// is closed ("late") and the lister sends a new one.
+export const GAMEINFO_LISTING_REVIEW_MINUTES = 60;
+
+/** When a round sent at `listedAt` stops taking a check. */
+export function gameinfoListingDeadline(listing) {
+  const sent = new Date(listing?.listedAt || 0).getTime();
+  return Number.isFinite(sent) ? sent + GAMEINFO_LISTING_REVIEW_MINUTES * 60_000 : 0;
+}
 
 // Sales channels whose own price the pack list works out, to check a listing
 // against (gameinfo-pack-list.js channel keys).
@@ -20,10 +29,12 @@ export function gameinfoListingActor(user) {
 }
 
 /**
+ * A listing as it stands now. A round not checked within its hour is "late".
  * A check holds only for the price it was made against: once the pack's own
- * price for that channel moves, a passed listing waits for a new check.
+ * price for that channel moves, a passed listing is `stale` and needs a new round.
  */
-export function gameinfoListingEffective(listing, reference = null) {
+export function gameinfoListingEffective(listing, reference = null, now = Date.now()) {
+  if (listing.status === "pending" && now > gameinfoListingDeadline(listing)) return { ...listing, status: "late" };
   const moved = listing.status === "ok" && listing.checkedReference !== null && listing.checkedReference !== undefined
     && reference !== null && reference !== undefined && Math.abs(Number(reference) - Number(listing.checkedReference)) > 0.005;
   return moved ? { ...listing, status: "pending", stale: true } : listing;
@@ -54,12 +65,14 @@ export function isGameinfoListingUrl(value) {
 
 /**
  * One pack's listings as the row's badge: any wrong price first, then any
- * waiting to be checked, then all checked; "none" when it is listed nowhere.
+ * round that ran out of time, then any waiting to be checked, then all
+ * checked; "none" when it is listed nowhere.
  */
 export function summarizeGameinfoPackListings(listings = []) {
-  const counts = { ok: 0, pending: 0, wrong: 0 };
+  const counts = { ok: 0, pending: 0, wrong: 0, late: 0 };
   for (const listing of listings) counts[listing.status] = (counts[listing.status] || 0) + 1;
   if (counts.wrong) return { ...counts, tone: "bad", label: `ราคาผิด ${counts.wrong}` };
+  if (counts.late) return { ...counts, tone: "late", label: `หมดเวลา ${counts.late}` };
   if (counts.pending) return { ...counts, tone: "warn", label: `รอตรวจ ${counts.pending}` };
   if (counts.ok) return { ...counts, tone: "ok", label: "ตรวจครบ" };
   return { ...counts, tone: "none", label: "ยังไม่ลง" };

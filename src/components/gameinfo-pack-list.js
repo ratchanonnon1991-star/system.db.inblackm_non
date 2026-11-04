@@ -103,6 +103,12 @@ export default function GameinfoPackList({
   // a save in the window updates the row's badge too.
   const [listings, setListings] = useState(() => verify?.listings || []);
   const [verifyPackId, setVerifyPackId] = useState(null);
+  // A round runs out after an hour; this moves the badges along without a reload.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
   const listingsByPack = useMemo(() => {
     const byPack = new Map();
     for (const listing of listings) {
@@ -115,7 +121,7 @@ export default function GameinfoPackList({
   // Each listing as it stands against the pack's price for that channel now.
   const listingsFor = (row) => (listingsByPack.get(String(row.pack.id)) || []).map((listing) => {
     const key = GAMEINFO_LISTING_PRICE_CHANNEL[listing.channel];
-    return gameinfoListingEffective(listing, key ? row.channels[key]?.price ?? null : null);
+    return gameinfoListingEffective(listing, key ? row.channels[key]?.price ?? null : null, now);
   });
 
   const visible = filterGameinfoPackListRows(rows, { query, chip, status, sort, channel: channelKey });
@@ -324,6 +330,7 @@ export default function GameinfoPackList({
           gameId={verify.gameId}
           dataMode={verify.dataMode}
           pack={verifyRow.pack}
+          auto={verifyRow.auto}
           channels={verify.channels}
           listings={listingsFor(verifyRow)}
           referencePrices={Object.fromEntries(Object.entries(verifyRow.channels).map(([key, value]) => [key, value.price]))}
@@ -332,6 +339,7 @@ export default function GameinfoPackList({
           canList={verify.canList}
           canReview={verify.canReview}
           viewer={verify.viewer}
+          reviewers={verify.reviewers || []}
           onListingsChange={setListings}
           className={verify.className}
         />

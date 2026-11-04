@@ -362,6 +362,13 @@ function ensureSchema(connection) {
         )
       `);
       await client.query(`ALTER TABLE gamelist_pack_listings ADD COLUMN IF NOT EXISTS checked_reference NUMERIC`);
+      await client.query(`
+        ALTER TABLE gamelist_pack_listings
+          ADD COLUMN IF NOT EXISTS round INTEGER NOT NULL DEFAULT 1,
+          ADD COLUMN IF NOT EXISTS assigned_reviewer TEXT NOT NULL DEFAULT '',
+          ADD COLUMN IF NOT EXISTS send_note TEXT NOT NULL DEFAULT '',
+          ADD COLUMN IF NOT EXISTS history JSONB NOT NULL DEFAULT '[]'::jsonb
+      `);
     } finally {
       client.release();
     }
