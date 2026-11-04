@@ -307,7 +307,28 @@ function MoneyTrail({ entry }) {
   );
 }
 
-/** Where the money went, and what proves it. */
+/** Under the entry's name: links straight to where its money came from and the documents behind it. */
+function EntryLinks({ entry, open, onTrail }) {
+  const proofs = entry.details.filter((item) => isUrl(item.value));
+  const link = "whitespace-nowrap font-bold text-[#B00004] hover:underline";
+  const parts = [
+    entry.kind !== "adjust" ? <button key="trail" type="button" onClick={onTrail} className={link}>{open ? "ซ่อนที่มา" : "ที่มาของเงิน →"}</button> : null,
+    sheetHref(entry.sheet) ? <Link key="sheet" href={sheetHref(entry.sheet)} className={link}>เอกสาร: แถว {entry.sheet.rowNo} ชีต {entry.sheet.tab}</Link> : null,
+    entry.receivedSheet && sheetHref(entry.receivedSheet)
+      ? <Link key="received" href={sheetHref(entry.receivedSheet)} className={link}>{entry.kind === "transfer" ? "ฝั่งรับเข้า" : "ชีตผู้ขาย"}: แถว {entry.receivedSheet.rowNo} {entry.receivedSheet.tab}</Link>
+      : null,
+    entry.orderId ? <Link key="order" href={`/stock/purchase-orders?open=${entry.orderId}`} className={link}>ใบสั่งซื้อ</Link> : null,
+    ...proofs.map((item, index) => <a key={`proof-${index}`} href={item.value} target="_blank" rel="noreferrer" className={link}>{item.label}</a>),
+  ].filter(Boolean);
+  if (!parts.length) return null;
+  return (
+    <p className="mt-0.5 flex flex-wrap gap-x-1.5 pl-5 text-xs">
+      {parts.map((part, index) => <Fragment key={index}>{index ? <span className="text-zinc-300">·</span> : null}{part}</Fragment>)}
+    </p>
+  );
+}
+
+/** What the sheet row says, and what proves it. */
 function EntryTrail({ entry }) {
   const proofs = entry.details.filter((item) => isUrl(item.value));
   const facts = entry.details.filter((item) => !isUrl(item.value));
@@ -320,7 +341,7 @@ function EntryTrail({ entry }) {
   return (
     <div className="grid gap-3 rounded-xl bg-zinc-50 px-4 py-3 text-[13px] sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       <div className="flex flex-col gap-1">
-        {where ? <p><span className="text-zinc-500">เงินไปไหน</span> <b>{where}</b></p> : null}
+        {where ? <p><span className="text-zinc-500">เส้นทาง</span> <b>{where}</b></p> : null}
         {facts.map((item, index) => <p key={index}><span className="text-zinc-500">{item.label}</span> <b className="break-all">{item.value}</b></p>)}
         {entry.txid ? <p><span className="text-zinc-500">TXID</span> <b className="break-all">{entry.txid}</b></p> : null}
         {entry.statusChangedBy ? <p className="text-zinc-600">เปลี่ยนสถานะล่าสุดโดย {entry.statusChangedBy} · {formatTime(entry.statusChangedAt)}</p> : null}
@@ -455,7 +476,7 @@ export default function StockWallets({ wallets, entries, checks = [], filters = 
         <div className="min-w-0 flex-[1_1_360px]">
           <p className="text-xs font-black tracking-[0.12em] text-[#B00004]">STOCK · กระเป๋าเงิน</p>
           <h1 className="mt-1 text-3xl font-extrabold">กระเป๋าเงิน</h1>
-          <p className="mt-1.5 text-sm text-zinc-600">กดการ์ดกระเป๋าเพื่อดูรายการและตรวจยอดกับชีตทีละเดือน · กดแถวรายการเพื่อดูว่าเงินไปไหนและหลักฐาน · จ่ายค่าของเข้า stock ให้ทำจาก <Link href="/stock/purchase-orders" className="font-extrabold text-[#B00004] hover:underline">ใบสั่งซื้อ</Link></p>
+          <p className="mt-1.5 text-sm text-zinc-600">กดการ์ดกระเป๋าเพื่อดูรายการและตรวจยอดกับชีตทีละเดือน · ใต้ชื่อรายการมีลิงก์ที่มาของเงินและเอกสาร (แถวในชีต) ให้กดตามได้ · จ่ายค่าของเข้า stock ให้ทำจาก <Link href="/stock/purchase-orders" className="font-extrabold text-[#B00004] hover:underline">ใบสั่งซื้อ</Link></p>
         </div>
         {canEdit ? (
           <div className="flex flex-wrap gap-2">
@@ -567,15 +588,15 @@ export default function StockWallets({ wallets, entries, checks = [], filters = 
                     <tr className={`border-t border-zinc-100 align-top ${open ? "bg-zinc-50/60" : ""}`}>
                       <td className="whitespace-nowrap px-4 py-3">{formatTime(entry.occurredAt)}<p className="text-xs text-zinc-600">{entry.actorName}</p></td>
                       <td className="px-4 py-3"><span className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-black ${KIND_TONE[entry.kind]}`}>{WALLET_ENTRY_LABELS[entry.kind]}</span></td>
-                      <td className="px-4 py-3">
+                      <td className="min-w-[300px] px-4 py-3">
                         <button type="button" onClick={() => toggleRow(entry.id)} aria-expanded={open} className="flex items-start gap-1 text-left">
                           <ChevronDown size={15} className={`mt-0.5 shrink-0 text-zinc-500 transition ${open ? "rotate-180" : ""}`} aria-hidden="true" />
                           <span>
                             <span className="font-extrabold">{entry.title || (entry.kind === "adjust" ? "ปรับยอด" : "—")}</span>
                             {entry.note ? <span className="block text-xs text-zinc-600">{entry.note}</span> : null}
-                            <span className="block text-xs font-bold text-[#B00004]">{open ? "ซ่อน" : "เงินไปไหน · หลักฐาน · แถวในชีต"}</span>
                           </span>
                         </button>
+                        <EntryLinks entry={entry} open={open} onTrail={() => toggleRow(entry.id)} />
                         <SheetDetails entry={entry} />
                       </td>
                       <td className="px-4 py-3">
