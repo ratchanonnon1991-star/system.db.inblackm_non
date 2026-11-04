@@ -97,7 +97,7 @@ export default function StockOverview({ accounts, games, canEdit }) {
 
       {shown.length ? (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,420px),1fr))] gap-4">
-          {shown.map((account) => <AccountCard key={account.id} account={account} />)}
+          {shown.map((account) => <AccountCard key={account.id} account={account} filter={filter} />)}
         </div>
       ) : (
         <div className="rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-14 text-center text-sm text-zinc-600">
@@ -111,7 +111,12 @@ export default function StockOverview({ accounts, games, canEdit }) {
   );
 }
 
-function AccountCard({ account }) {
+function AccountCard({ account, filter }) {
+  // Under the "ใกล้หมด" / "หมด" filters show only the packs that made the account match,
+  // so a card found by "หมด" does not look full because its other packs still have stock.
+  const packTone = filter === "low" || filter === "empty" ? filter : null;
+  const items = packTone ? account.items.filter((item) => item.tone === packTone) : account.items;
+  const hidden = account.items.length - items.length;
   return (
     <article className={`flex flex-col overflow-hidden rounded-[18px] border border-zinc-200 bg-white ${account.status === "closed" ? "opacity-70" : ""}`}>
       <div className="flex items-center gap-3 border-b border-zinc-100 px-[18px] py-4">
@@ -124,7 +129,7 @@ function AccountCard({ account }) {
       </div>
       {account.note && account.status === "check" ? <p className="bg-amber-50 px-[18px] py-2.5 text-[13px] font-bold text-amber-900">{account.note}</p> : null}
       <div className="px-[18px] pb-2 pt-1.5">
-        {account.items.length ? account.items.map((item) => {
+        {items.length ? items.map((item) => {
           const percent = item.received > 0 ? Math.max(0, Math.min(100, Math.round((item.left / item.received) * 100))) : 0;
           return (
             <div key={item.id} className="grid grid-cols-[minmax(0,110px)_64px_minmax(0,1fr)_56px] items-center gap-3 border-b border-zinc-100 py-2 last:border-0">
@@ -135,9 +140,10 @@ function AccountCard({ account }) {
             </div>
           );
         }) : <p className="py-4 text-sm text-zinc-600">ยังไม่มีแพ็ค</p>}
+        {hidden > 0 ? <p className="py-2 text-xs text-zinc-600">แสดงเฉพาะแพ็คที่{packTone === "empty" ? "หมดแล้ว" : "ใกล้หมด"} · ซ่อนแพ็คอื่นของไอดีนี้ {hidden} แพ็ค</p> : null}
       </div>
       <div className="mt-auto flex flex-wrap items-center gap-3 bg-zinc-50 px-[18px] py-3">
-        <span className="text-[13px] text-zinc-600">คงเหลือ <b className="text-zinc-900">{account.leftTotal}</b> ชิ้น · มูลค่า <b className="text-zinc-900">{formatStockNumber(account.valueUsd, 1)} USD</b></span>
+        <span className="text-[13px] text-zinc-600">ทั้งไอดีคงเหลือ <b className="text-zinc-900">{account.leftTotal}</b> ชิ้น · มูลค่า <b className="text-zinc-900">{formatStockNumber(account.valueUsd, 1)} USD</b></span>
         <Link href={`/stock/${account.code}`} className="ml-auto flex h-9 items-center rounded-full bg-zinc-900 px-3.5 text-[13px] font-extrabold text-white hover:bg-zinc-700">ดูไอดีนี้</Link>
       </div>
     </article>

@@ -4,7 +4,9 @@ import PaginatedTable from "@/components/table-pagination";
 import { useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, Minus, Pencil, Plus, SlidersHorizontal } from "lucide-react";
-import { STOCK_MOVE_LABELS } from "@/lib/stock";
+import { STOCK_MIN_MARGIN, STOCK_MOVE_LABELS, stockMarginTone } from "@/lib/stock";
+
+const MARGIN_CLASS = { ok: "bg-emerald-50 text-emerald-700", low: "bg-amber-100 text-amber-800", loss: "bg-red-50 text-red-700" };
 import StockMoveDialog from "@/components/stock-move-dialog";
 import { StockAccountDialog, StockItemDialog } from "@/components/stock-edit-dialogs";
 import { formatStockNumber, StockLeftBadge, StockStatusPill } from "@/components/stock-ui";
@@ -144,7 +146,7 @@ export default function StockAccountView({ account, moves, games, packNames, can
                 <th className="border-b border-zinc-200 px-3.5 py-3">แพ็ค</th>
                 <th className="border-b border-zinc-200 px-3.5 py-3">ราคาขาย</th>
                 <th className="border-b border-zinc-200 px-3.5 py-3">ต้นทุน</th>
-                <th className="border-b border-zinc-200 px-3.5 py-3">กำไร</th>
+                <th className="border-b border-zinc-200 px-3.5 py-3" title={`สีเหลือง = กำไรต่ำกว่า ${STOCK_MIN_MARGIN}% ของราคาขาย`}>กำไร</th>
                 <th className="border-b border-zinc-200 px-3.5 py-3">หมายเหตุ</th>
                 <th className="border-b border-zinc-200 px-3.5 py-3">วันที่</th>
                 <th className="border-b border-zinc-200 px-3.5 py-3">โดย</th>
@@ -158,7 +160,10 @@ export default function StockAccountView({ account, moves, games, packNames, can
                   <td className="min-w-56 border-b border-zinc-100 px-3.5 py-3">{move.lines.map((line) => lineText({ ...line, kind: move.kind })).join(" · ")}</td>
                   <td className="whitespace-nowrap border-b border-zinc-100 px-3.5 py-3">{move.sellPrice != null ? `฿${formatStockNumber(move.sellPrice)}` : "—"}</td>
                   <td className="whitespace-nowrap border-b border-zinc-100 px-3.5 py-3">{move.cost != null ? `฿${formatStockNumber(move.cost)}` : "—"}</td>
-                  <td className={`whitespace-nowrap border-b border-zinc-100 px-3.5 py-3 ${move.profit == null ? "text-zinc-500" : move.profit >= 0 ? "font-extrabold text-emerald-700" : "font-extrabold text-red-700"}`}>{move.profit != null ? `฿${formatStockNumber(move.profit)}` : "—"}</td>
+                  <td className={`whitespace-nowrap border-b border-zinc-100 px-3.5 py-3 ${move.profit == null ? "text-zinc-500" : move.profit >= 0 ? "font-extrabold text-emerald-700" : "font-extrabold text-red-700"}`}>{move.profit != null ? `฿${formatStockNumber(move.profit)}` : "—"}
+                    {move.margin != null ? (
+                      <span className={`ml-1.5 rounded-full px-2 py-0.5 text-xs font-black ${MARGIN_CLASS[stockMarginTone(move.margin)]}`} title={stockMarginTone(move.margin) === "low" ? `ต่ำกว่า ${STOCK_MIN_MARGIN}%` : undefined}>{move.margin}%</span>
+                    ) : null}</td>
                   <td className="min-w-40 border-b border-zinc-100 px-3.5 py-3 text-zinc-700">{move.note || ""}</td>
                   <td className="whitespace-nowrap border-b border-zinc-100 px-3.5 py-3 text-zinc-600">{dateFormat.format(new Date(move.createdAt))}</td>
                   <td className="whitespace-nowrap border-b border-zinc-100 px-3.5 py-3 text-zinc-600">{move.actorName || "—"}</td>

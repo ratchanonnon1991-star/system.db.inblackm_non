@@ -2,6 +2,8 @@ import Link from "next/link";
 import { AlertTriangle, ArrowRight, CheckCircle2, PackageX, Wallet } from "lucide-react";
 import { PO_ACTION_LABELS, PO_STATUS_LABELS } from "@/lib/stock-purchase-orders";
 import { WALLET_ENTRY_LABELS } from "@/lib/stock-wallets";
+import { stockAppLinkDaysText } from "@/lib/stock-app-links";
+import StockAppLinks from "@/components/stock-app-links";
 
 // The Stock front page (src/lib/stock-overview.js): orders to chase, wallet
 // balances, packs running out and whether something is already on the way.
@@ -19,13 +21,13 @@ const FOLLOW_UPS = [
   { status: "requested", tone: "border-sky-200 bg-sky-50 text-sky-900", hint: () => "ต้องให้คนอื่นอนุมัติก่อนโอน" },
   { status: "approved", tone: "border-cyan-200 bg-cyan-50 text-cyan-900", hint: () => "อนุมัติแล้ว ยังไม่ได้โอนเงิน" },
   { status: "paid", tone: "border-amber-300 bg-amber-50 text-amber-900", hint: (step) => `≈ ฿${formatStockNumber(step.thb, 0)} · ซัพยังไม่รับออเดอร์` },
-  { status: "accepted", tone: "border-yellow-300 bg-yellow-50 text-yellow-900", hint: () => "ซัพรับออเดอร์แล้ว รอส่งของ" },
+  { status: "accepted", tone: "border-yellow-300 bg-yellow-50 text-yellow-900", hint: () => "ซัพตอบรับแล้ว รอของเข้า" },
   { status: "delivered", tone: "border-violet-300 bg-violet-50 text-violet-900", hint: () => "ส่งของแล้ว ต้องให้คนอื่นตรวจ" },
   { status: "partial", tone: "border-orange-300 bg-orange-50 text-orange-900", hint: (step) => `ยังค้าง ${step.stillToCome} ชิ้น` },
   { status: "refund_requested", tone: "border-red-300 bg-red-50 text-red-900", hint: (step) => (step.byCurrency.length ? `รอได้คืน ${step.byCurrency.map((item) => `${formatAmount(item.amount)} ${item.currency}`).join(" · ")}` : "ไม่มีเงินค้างคืน") },
 ];
 
-export default function StockFrontPage({ overview, events, entries, adjusts = [], accountCount }) {
+export default function StockFrontPage({ overview, events, entries, adjusts = [], links = [], canEdit = false, accountCount }) {
   const { followUps, lowPacks, wallets, shortfalls, openCount } = overview;
   const activity = [
     ...events.map((event) => ({
@@ -59,9 +61,18 @@ export default function StockFrontPage({ overview, events, entries, adjusts = []
         </div>
       ) : null}
 
+      {links.some((link) => link.tone !== "ok") ? (
+        <a href="#app-links-section" className="flex flex-col gap-1 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 hover:bg-amber-100/60">
+          <span><b>ลิงก์แอปเติมใกล้หมดอายุ / หมดแล้ว</b> — ต่ออายุหรือเปลี่ยนลิงก์ก่อนใช้งานไม่ได้</span>
+          {links.filter((link) => link.tone !== "ok").map((link) => (
+            <span key={link.id} className="text-[13px]">{link.name} · {stockAppLinkDaysText(link.daysLeft)} ({link.expiresOn})</span>
+          ))}
+        </a>
+      ) : null}
+
       {adjusts.length ? (
         <Link href="/stock/wallets" className="flex flex-col gap-1 rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm text-cyan-900 hover:bg-cyan-100/60">
-          <span><b>ปรับยอดกระเป๋า {adjusts.length} รายการรออนุมัติ</b> — ต้องให้คนอื่นตรวจ ยอดยังไม่เปลี่ยนจนกว่าจะอนุมัติ</span>
+          <span><b>ปรับยอดกระเป๋าเก่า {adjusts.length} รายการค้างรออนุมัติ</b> — ยอดยังไม่เปลี่ยนจนกว่าจะกดอนุมัติ</span>
           {adjusts.slice(0, 3).map((entry) => (
             <span key={entry.id} className="text-[13px]">
               {entry.legs.map((leg) => `${leg.walletName} ${leg.amount.startsWith("-") ? "−" : "+"}${formatAmount(leg.amount.replace("-", ""))} ${leg.currency}`).join(", ")} · {entry.note} · โดย {entry.actorName}
@@ -137,9 +148,9 @@ export default function StockFrontPage({ overview, events, entries, adjusts = []
             <div className="flex flex-col divide-y divide-zinc-100 rounded-2xl border border-zinc-200 bg-white">
               {lowPacks.map((pack) => (
                 <div key={pack.itemId} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-[18px] py-3 text-sm">
-                  <span className={`inline-block min-w-11 rounded-full px-2.5 py-1 text-center text-[13px] font-black ${pack.tone === "empty" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800"}`}>{pack.left}</span>
+                  <span className={`inline-block min-w-11 rounded-full px-2.5 py-1 text-center text-[13px] font-black ${pack.tone === "empty" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800"}`}>{Number(pack.left) > 0 ? `เหลือ ${pack.left}` : "หมดแล้ว"}</span>
                   <Link href={`/stock/${pack.accountCode}`} className="font-extrabold hover:underline">{pack.accountCode} · {pack.label}</Link>
-                  <span className="text-xs text-zinc-600">{pack.gameName || ""} เกณฑ์ {pack.lowAt}</span>
+                  <span className="text-xs text-zinc-600">{pack.gameName ? `${pack.gameName} · ` : ""}แจ้งเตือนเมื่อเหลือ ≤ {pack.lowAt}</span>
                   <span className="ml-auto text-[13px]">
                     {pack.incoming.length ? (
                       <span className="flex items-center gap-1 font-bold text-emerald-700"><CheckCircle2 size={14} /> กำลังมา {pack.incoming.map((item) => `${item.qty} (${item.code} · ${PO_STATUS_LABELS[item.status]})`).join(", ")}</span>
@@ -157,6 +168,8 @@ export default function StockFrontPage({ overview, events, entries, adjusts = []
           )}
         </section>
       </div>
+
+      <StockAppLinks links={links} canEdit={canEdit} />
 
       <section aria-labelledby="activity" className="flex flex-col gap-3">
         <h2 id="activity" className="text-lg font-black">รายการล่าสุด</h2>

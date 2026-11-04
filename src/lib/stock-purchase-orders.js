@@ -1,6 +1,6 @@
 // Purchase orders for Stock: what was asked for, paid, delivered, checked and
 // refunded, so each purchase shows the step it is at instead of a colour in a sheet.
-//   ขอซื้อ → (อนุมัติ) → จ่ายแล้ว → ซัพรับออเดอร์ → ส่งของแล้ว รอตรวจ → (ตรวจผ่าน) ได้ของบางส่วน / เรียบร้อย
+//   รออนุมัติ → รอโอนเงิน → โอนแล้ว รอซัพตอบ → ซัพรับแล้ว รอของ → ของมาแล้ว รอคนตรวจ → (ตรวจผ่าน) ได้ของไม่ครบ / ได้ของครบ
 // Three steps need a second person, so no one alone can move money or count goods:
 //   approve  someone other than who made the order, before any money goes out
 //   verify   someone other than who recorded the delivery, before it counts in stock
@@ -16,14 +16,14 @@ import { fromWalletUnits, normalizeWalletAmount, toWalletUnits } from "@/lib/sto
 
 export const PO_STATUSES = ["requested", "approved", "paid", "accepted", "delivered", "partial", "received", "refund_requested", "refunded", "cancelled"];
 export const PO_STATUS_LABELS = {
-  requested: "ขอซื้อ รออนุมัติ",
-  approved: "อนุมัติแล้ว รอโอน",
-  paid: "จ่ายแล้ว รอสินค้า",
-  accepted: "ซัพรับออเดอร์",
-  delivered: "ส่งของแล้ว รอตรวจ",
-  partial: "ได้ของบางส่วน",
-  received: "เรียบร้อย",
-  refund_requested: "ขอคืนเงิน",
+  requested: "รออนุมัติ",
+  approved: "รอโอนเงิน",
+  paid: "โอนแล้ว รอซัพตอบ",
+  accepted: "ซัพรับแล้ว รอของ",
+  delivered: "ของมาแล้ว รอคนตรวจ",
+  partial: "ได้ของไม่ครบ",
+  received: "ได้ของครบ",
+  refund_requested: "รอเงินคืน",
   refunded: "คืนเงินแล้ว",
   cancelled: "ยกเลิก",
 };
@@ -36,15 +36,27 @@ export const PO_ACTIONS = ["approve", "pay", "accept", "deliver", "verify", "rej
 export const PO_ACTION_LABELS = {
   approve: "อนุมัติใบนี้",
   pay: "บันทึกการจ่ายเงิน",
-  accept: "ซัพรับออเดอร์แล้ว",
-  deliver: "บันทึกการส่งของ",
+  accept: "ซัพตอบรับออเดอร์แล้ว",
+  deliver: "ได้ของจากซัพแล้ว",
   verify: "ตรวจแล้ว ถูกต้อง",
-  reject_delivery: "ของไม่ตรง ส่งกลับ",
+  reject_delivery: "ไม่ถูกต้อง ให้กรอกใหม่",
   receive: "รับของเข้า stock",
-  request_refund: "ขอคืนเงิน",
+  request_refund: "ซัพไม่ส่งของ ขอเงินคืน",
   refund: "ได้เงินคืนแล้ว",
   cancel: "ยกเลิก",
   create: "สร้างใบสั่งซื้อ",
+};
+/** One line per button: when to press it, for whoever is working the order. */
+export const PO_ACTION_HINTS = {
+  approve: "เช็คแล้วว่าซื้อได้ → อนุมัติให้โอนเงิน",
+  pay: "โอนเงินให้ซัพแล้ว → จดว่าจ่ายจากไหน เท่าไหร่",
+  accept: "ซัพยืนยันว่ารับออเดอร์แล้ว แต่ยังไม่ได้ของ → ใส่เลขออเดอร์ของซัพ (ไม่ต้องแนบอะไร)",
+  deliver: "ของเข้ามาแล้ว (เติมเข้าบัญชี / ได้โค้ด / ของเข้าไอดี) → กรอกว่าได้อะไรมาเท่าไหร่ แล้วให้อีกคนตรวจ",
+  verify: "เช็คแล้วว่าของที่กรอกไว้ตรงจริง → ยอดเข้า stock ทันที",
+  reject_delivery: "ของที่กรอกไว้ไม่ตรงกับที่ได้จริง → ตีกลับให้คนกรอกแก้ใหม่ (ยังไม่เข้า stock)",
+  request_refund: "ซัพส่งของไม่ได้ / ไม่ครบ → ขอเงินคืนจากซัพ",
+  refund: "เงินคืนจากซัพเข้ามาแล้ว → ปิดใบ",
+  cancel: "ไม่ซื้อแล้ว (ยังไม่ได้โอนเงิน) → ยกเลิกใบ",
 };
 const ACTION_FROM = {
   approve: ["requested"],
@@ -60,7 +72,7 @@ const ACTION_FROM = {
 /** Steps a second person must take, and whose step they check. */
 export const PO_SECOND_PERSON = {
   approve: { of: "createdById", error: "คนอนุมัติต้องเป็นคนละคนกับคนสร้างใบสั่งซื้อ" },
-  verify: { of: "recordedById", error: "คนตรวจต้องเป็นคนละคนกับคนบันทึกการส่งของ" },
+  verify: { of: "recordedById", error: "คนตรวจต้องเป็นคนละคนกับคนที่กรอกของที่ได้จากซัพ" },
   refund: { of: "refundRequestedById", error: "คนยืนยันเงินคืนต้องเป็นคนละคนกับคนขอคืนเงิน" },
 };
 
@@ -99,8 +111,17 @@ export function validatePurchaseOrder(input, itemIds = []) {
   if (!PO_CURRENCY.test(currency)) return { error: "สกุลเงินใช้ตัวอักษร 3–5 ตัว เช่น THB, USDT" };
   const amount = normalizeWalletAmount(input?.amount);
   if (!amount) return { error: "ใส่ยอดที่ต้องจ่ายมากกว่า 0" };
-  const rate = normalizeRate(input?.rateThb);
+  let rate = normalizeRate(input?.rateThb);
   if (rate === null) return { error: "เรทต้องเป็นตัวเลขมากกว่า 0" };
+  // The supplier sheet's Product Rate (CNY per 1 unit of the order's currency) and
+  // CNY Rate (THB per 1 CNY): when known they set the THB rate, USD → CNY → THB.
+  const productRate = currency === "CNY" ? "" : normalizeRate(input?.productRate);
+  if (productRate === null) return { error: "Product Rate ต้องเป็นตัวเลขมากกว่า 0" };
+  const cnyRate = currency === "THB" ? "" : normalizeRate(input?.cnyRate);
+  if (cnyRate === null) return { error: "CNY Rate ต้องเป็นตัวเลขมากกว่า 0" };
+  if (productRate && !cnyRate) return { error: "ใส่ Product Rate แล้ว ต้องใส่ CNY Rate (บาทต่อ 1 หยวน) ด้วย" };
+  if (currency === "CNY" && cnyRate) rate = cnyRate;
+  else if (productRate && cnyRate) rate = String(Math.round(Number(productRate) * Number(cnyRate) * 1e6) / 1e6);
   const receiptUrl = normalizeReceiptUrl(input?.receiptUrl);
   if (receiptUrl === null) return { error: "ลิงก์ใบเสร็จต้องขึ้นต้นด้วย https://" };
 
@@ -127,6 +148,8 @@ export function validatePurchaseOrder(input, itemIds = []) {
       currency,
       amount,
       rateThb: rate,
+      productRate,
+      cnyRate,
       receiptUrl,
       note: clean(input?.note, 1000),
     },
@@ -270,10 +293,95 @@ function receivedLines(order, lines) {
   return { status: done ? "received" : "partial", received };
 }
 
+/** Amount in CNY: the amount itself for CNY orders, amount × Product Rate when that is known, else null. */
+export function purchaseOrderCny({ amount, currency, productRate }) {
+  if (amount == null) return null;
+  if (currency === "CNY") return Math.round(Number(amount) * 100) / 100;
+  if (productRate == null || productRate === "") return null;
+  return Math.round(Number(amount) * Number(productRate) * 100) / 100;
+}
+
 /** Amount in THB when a rate is known (THB orders count 1:1), else null. */
 export function purchaseOrderThb({ amount, currency, rateThb }) {
   if (amount == null) return null;
   if (currency === "THB") return Math.round(Number(amount) * 100) / 100;
   if (rateThb == null || rateThb === "") return null;
   return Math.round(Number(amount) * Number(rateThb) * 100) / 100;
+}
+
+/** How far apart a payment and its order may be, in days, to count as "same time". */
+export const LINK_DAYS = 3;
+const linkText = (value) => String(value ?? "").toLowerCase().replace(/[\s_\-·.]+/g, "");
+
+/**
+ * Orders a payment made outside an order (wallet page, sheet import) could
+ * belong to, best first. Only orders approved and waiting for money count, in
+ * the payment's currency, and only when the order's amount is what was paid
+ * (with or without the fee): a different amount is never offered. Each says why else it fits:
+ *   name    its supplier, game or stock account appears in the payment's text
+ *   date    the payment is within LINK_DAYS of the order being made
+ * `sure` = name or date. Nothing links by itself: a person picks.
+ */
+export function walletPaymentCandidates(entry, orders = []) {
+  if (!entry || entry.kind !== "payment" || entry.orderId) return [];
+  if (["awaiting_approval", "rejected"].includes(entry.status)) return [];
+  const leg = entry.legs?.[0];
+  const total = leg ? toWalletUnits(String(leg.amount).replace(/^-/, "")) : null;
+  if (!leg || total === null) return [];
+  const paid = total - (toWalletUnits(leg.fee) ?? 0n);
+  const text = linkText([entry.title, entry.seller, entry.destinationAccount, entry.note, entry.channel].join(" "));
+  const when = new Date(entry.occurredAt).getTime();
+  return orders
+    .filter((order) => order.status === "approved" && order.currency === leg.currency)
+    .map((order) => {
+      const amountMatch = walletPaymentAmountMatches(order.amount, total, paid);
+      const nameMatch = [order.supplier, order.gameName, order.accountCode].map(linkText).some((word) => word.length >= 3 && text.includes(word));
+      const days = Math.abs(when - new Date(order.createdAt).getTime()) / 86400000;
+      const dateMatch = Number.isFinite(days) && days <= LINK_DAYS;
+      return {
+        orderId: order.id,
+        code: order.code,
+        supplier: order.supplier,
+        accountCode: order.accountCode,
+        amount: order.amount,
+        currency: order.currency,
+        amountMatch,
+        nameMatch,
+        dateMatch,
+        sure: amountMatch && (nameMatch || dateMatch),
+        score: (amountMatch ? 4 : 0) + (nameMatch ? 2 : 0) + (dateMatch ? 1 : 0),
+      };
+    })
+    .filter((candidate) => candidate.amountMatch)
+    .sort((a, b) => b.score - a.score || b.orderId - a.orderId);
+}
+
+/** An order's amount equals a payment's total (fee included) or what reached the supplier. */
+export function walletPaymentAmountMatches(orderAmount, total, paid) {
+  const amount = toWalletUnits(orderAmount);
+  return amount !== null && (amount === paid || amount === total);
+}
+
+/** The one order to offer as a single click, or null when none or more than one is sure. */
+export function bestWalletPaymentMatch(candidates = []) {
+  const sure = candidates.filter((candidate) => candidate.sure);
+  return sure.length === 1 ? sure[0] : null;
+}
+
+/**
+ * THB cost per unit for each line, split from the order's THB amount by each
+ * pack's USD value: a 4.8 USD pack carries four times the cost of a 1.2 USD
+ * one. Lines are [{ itemId, qty, unitCost }]; `unitUsdById` maps itemId → USD.
+ * Only when every line's cost is blank and every pack has a USD value; any
+ * other case returns the lines as they are, so typed costs always win.
+ */
+export function allocatePurchaseOrderCosts(lines = [], unitUsdById = {}, amountThb = null) {
+  if (amountThb == null || !Number.isFinite(Number(amountThb)) || Number(amountThb) <= 0) return lines;
+  if (!lines.length || lines.some((line) => line.unitCost !== "" && line.unitCost != null)) return lines;
+  const usd = lines.map((line) => Number(unitUsdById[line.itemId]));
+  if (usd.some((value) => !Number.isFinite(value) || value <= 0)) return lines;
+  const totalUsd = lines.reduce((sum, line, index) => sum + usd[index] * Number(line.qty), 0);
+  if (!(totalUsd > 0)) return lines;
+  const perUsd = Number(amountThb) / totalUsd;
+  return lines.map((line, index) => ({ ...line, unitCost: String(Math.round(usd[index] * perUsd * 100) / 100), costAllocated: true }));
 }

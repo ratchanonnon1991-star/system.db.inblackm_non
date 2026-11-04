@@ -6,6 +6,7 @@ import {
   STOCK_DEFAULT_LOW_AT,
   stockTone,
   validateStockMove,
+  stockMargin,
 } from "@/lib/stock";
 
 // Stock accounts, their packs, and every move in or out (src/lib/stock.js).
@@ -324,6 +325,7 @@ export async function listStockMoves(accountId, { kind = null, limit = 200 } = {
     const costed = lines.every((line) => line.unitCost != null);
     const cost = costed ? Math.round(lines.reduce((sum, line) => sum + Math.abs(line.qty) * line.unitCost, 0) * 100) / 100 : null;
     const sellPrice = number(row.sell_price);
+    const profit = row.kind === "out" && sellPrice != null && cost != null ? Math.round((sellPrice - cost) * 100) / 100 : null;
     return {
       id: Number(row.id),
       kind: row.kind,
@@ -331,7 +333,8 @@ export async function listStockMoves(accountId, { kind = null, limit = 200 } = {
       note: row.note,
       sellPrice,
       cost,
-      profit: row.kind === "out" && sellPrice != null && cost != null ? Math.round((sellPrice - cost) * 100) / 100 : null,
+      profit,
+      margin: stockMargin(profit, sellPrice),
       actorName: row.actor_name,
       createdAt: row.created_at,
       lines,

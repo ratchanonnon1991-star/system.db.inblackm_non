@@ -1,6 +1,7 @@
 import { getSessionUser } from "@/server/session-user";
 import { canManageStock } from "@/server/auth";
 import { listStockAccounts } from "@/server/stock-repository";
+import { listStockGames } from "@/server/stock-games";
 import { listPurchaseOrders } from "@/server/stock-purchase-order-repository";
 import { listWallets } from "@/server/stock-wallet-repository";
 import StockPurchaseOrders from "@/components/stock-purchase-orders";
@@ -14,7 +15,7 @@ export default async function StockPurchaseOrdersPage({ searchParams }) {
   const user = await getSessionUser();
   const canEdit = canManageStock(user);
   const orders = await listPurchaseOrders();
-  const [accounts, wallets] = await Promise.all([canEdit ? listStockAccounts() : [], canEdit ? listWallets() : []]);
-  return <StockPurchaseOrders orders={orders} accounts={accounts} wallets={wallets} canEdit={canEdit}
+  const [accounts, wallets, games] = await Promise.all([canEdit ? listStockAccounts() : [], canEdit ? listWallets() : [], canEdit ? listStockGames() : []]);
+  return <StockPurchaseOrders orders={orders} accounts={accounts} games={games} wallets={wallets} canEdit={canEdit}
     initialOpenId={Number(params.open) || null} initialQuery={typeof params.q === "string" ? params.q.slice(0, 120) : ""} />;
 }

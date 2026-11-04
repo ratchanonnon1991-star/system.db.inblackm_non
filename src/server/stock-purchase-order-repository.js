@@ -1,12 +1,16 @@
 import { getPool } from "@/lib/db";
 import {
+  allocatePurchaseOrderCosts,
   applyPurchaseOrderAction,
   DELIVERY_METHODS,
   PO_STATUSES,
   topupCheck,
+  purchaseOrderCny,
   purchaseOrderThb,
   validatePurchaseOrder,
+  walletPaymentAmountMatches,
 } from "@/lib/stock-purchase-orders";
+import { normalizeStockCode } from "@/lib/stock";
 import { ensureStockSchema, insertStockMove } from "@/server/stock-repository";
 import { ensureWalletSchema, insertWalletEntry } from "@/server/stock-wallet-repository";
 import { fromWalletUnits, toWalletUnits } from "@/lib/stock-wallets";
@@ -68,6 +72,9 @@ async function ensureSchema() {
       await client.query(`ALTER TABLE stock_purchase_orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ`);
       await client.query(`ALTER TABLE stock_purchase_orders ADD COLUMN IF NOT EXISTS supplier_ref VARCHAR(120) NOT NULL DEFAULT ''`);
       await client.query(`ALTER TABLE stock_purchase_orders ADD COLUMN IF NOT EXISTS refund_requested_by_id INTEGER`);
+      // The supplier sheet's Product Rate (CNY per unit) and CNY Rate (THB per CNY).
+      await client.query(`ALTER TABLE stock_purchase_orders ADD COLUMN IF NOT EXISTS product_rate NUMERIC(18, 6)`);
+      await client.query(`ALTER TABLE stock_purchase_orders ADD COLUMN IF NOT EXISTS cny_rate NUMERIC(18, 6)`);
       // The step list grew (accepted, delivered): tables made before keep an older CHECK.
       await client.query(`ALTER TABLE stock_purchase_orders DROP CONSTRAINT IF EXISTS stock_purchase_orders_status_check`);
       await client.query(`ALTER TABLE stock_purchase_orders ADD CONSTRAINT stock_purchase_orders_status_check
@@ -163,6 +170,8 @@ function mapOrder(row) {
     currency: row.currency,
     amount: exact(row.amount),
     rateThb: number(row.rate_thb),
+    productRate: number(row.product_rate),
+    cnyRate: number(row.cny_rate),
     refundAmount: exact(row.refund_amount),
     paidWalletId: row.paid_wallet_id,
     paidWalletName: row.paid_wallet_name || "",
@@ -183,6 +192,7 @@ function mapOrder(row) {
     })),
   };
   order.amountThb = purchaseOrderThb(order);
+  order.amountCny = purchaseOrderCny(order);
   order.qtyOrdered = order.lines.reduce((sum, line) => sum + line.qtyOrdered, 0);
   order.qtyReceived = order.lines.reduce((sum, line) => sum + line.qtyReceived, 0);
   return order;
@@ -285,26 +295,75 @@ const paidAtFor = (value) => {
 
 const actorFields = (actor) => [actor?.id ?? null, String(actor?.name || "").slice(0, 255)];
 
+// A stock account made from the order form, for a game that has none yet.
+async function insertAccount(client, input) {
+  const code = normalizeStockCode(input?.code);
+  if (!code) throw createHttpError("ชื่อไอดีใหม่ใช้ได้เฉพาะ a-z 0-9 . _ - ยาว 2–32 ตัว", 400);
+  const gameId = Number(input?.gameId);
+  try {
+    const result = await client.query(
+      `INSERT INTO stock_accounts (code, game_id, game_name, data_mode) VALUES ($1, $2, $3, $4) RETURNING id`,
+      [code, Number.isInteger(gameId) && gameId > 0 ? gameId : null, String(input?.gameName || "").trim().slice(0, 255), input?.dataMode === "idpass" ? "idpass" : "uid"]
+    );
+    return result.rows[0].id;
+  } catch (error) {
+    if (error.code === "23505") throw createHttpError(`มีไอดี "${code}" อยู่แล้ว — เลือกไอดีนั้นแทน หรือตั้งชื่อใหม่`, 409);
+    throw error;
+  }
+}
+
+// Lines typed as a new pack ({ newLabel }) become packs of the account; a label
+// the account already has is reused instead of added twice.
+async function withNewPacks(client, accountId, lines) {
+  const result = [];
+  for (const line of Array.isArray(lines) ? lines : []) {
+    const label = String(line?.newLabel ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+    if (!label || line.itemId) {
+      result.push(line);
+      continue;
+    }
+    const found = await client.query(`SELECT id FROM stock_items WHERE account_id = $1 AND LOWER(label) = LOWER($2)`, [accountId, label]);
+    let itemId = found.rows[0]?.id;
+    if (!itemId) {
+      const added = await client.query(
+        `INSERT INTO stock_items (account_id, label, pack_name, sort_order)
+         VALUES ($1, $2, $3, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM stock_items WHERE account_id = $1)) RETURNING id`,
+        [accountId, label, String(line.packName || "").trim().slice(0, 255)]
+      );
+      itemId = added.rows[0].id;
+    }
+    result.push({ ...line, itemId });
+  }
+  return result;
+}
+
 export async function createPurchaseOrder(input, actor = null) {
   await ensureSchema();
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    const accountId = Number(input?.accountId);
+    const accountId = input?.newAccount ? await insertAccount(client, input.newAccount) : Number(input?.accountId);
     const account = await client.query(`SELECT id, status FROM stock_accounts WHERE id = $1`, [accountId]);
     if (!account.rows[0]) throw createHttpError("เลือกไอดี stock ที่จะรับของเข้า", 400);
     if (account.rows[0].status === "closed") throw createHttpError("ไอดีนี้ปิดแล้ว", 400);
-    const items = await client.query(`SELECT id FROM stock_items WHERE account_id = $1`, [accountId]);
-    const checked = validatePurchaseOrder(input, items.rows.map((row) => row.id));
+    const lines = await withNewPacks(client, accountId, input?.lines);
+    const items = await client.query(`SELECT id, unit_usd FROM stock_items WHERE account_id = $1`, [accountId]);
+    const checked = validatePurchaseOrder({ ...input, lines }, items.rows.map((row) => row.id));
     if (checked.error) throw createHttpError(checked.error, 400);
     const { order } = checked;
+    // No cost typed: split the order's THB amount over its packs by their USD value.
+    const unitUsdById = Object.fromEntries(items.rows.map((row) => [row.id, row.unit_usd]));
+    checked.lines = allocatePurchaseOrderCosts(checked.lines, unitUsdById, purchaseOrderThb(order));
 
     const created = await client.query(
       `INSERT INTO stock_purchase_orders
-         (account_id, supplier, payment_channel, buyer, currency, amount, rate_thb, receipt_url, note, created_by_id, created_by_name)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+         (account_id, supplier, payment_channel, buyer, currency, amount, rate_thb, product_rate, cny_rate, receipt_url, note, created_by_id, created_by_name)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
       [accountId, order.supplier, order.paymentChannel, order.buyer, order.currency, order.amount,
-        order.rateThb === "" ? null : Number(order.rateThb), order.receiptUrl, order.note, ...actorFields(actor)]
+        order.rateThb === "" ? null : Number(order.rateThb),
+        order.productRate === "" ? null : Number(order.productRate),
+        order.cnyRate === "" ? null : Number(order.cnyRate),
+        order.receiptUrl, order.note, ...actorFields(actor)]
     );
     const orderId = created.rows[0].id;
     for (const line of checked.lines) {
@@ -436,6 +495,54 @@ export async function takePurchaseOrderAction(id, action, input = {}, actor = nu
       `INSERT INTO stock_purchase_order_events (order_id, action, from_status, to_status, note, move_id, wallet_entry_id, actor_id, actor_name)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [row.id, action, row.status, step.status, step.note || "", moveId, walletEntryId, ...actorFields(actor)]
+    );
+    await client.query("COMMIT");
+    return getPurchaseOrder(row.id);
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Ties a payment already in a wallet (made outside an order, or imported from
+ * the sheet) to an order waiting for money: the order moves to "paid" as if it
+ * was paid from that wallet, and no money moves again. Both rows are locked so
+ * one payment cannot pay two orders and one order cannot take two payments.
+ */
+export async function linkWalletPaymentToOrder(entryId, orderId, actor = null) {
+  await ensureSchema();
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const entry = (await client.query(`SELECT * FROM stock_wallet_entries WHERE id = $1 FOR UPDATE`, [Number(entryId)])).rows[0];
+    if (!entry) throw createHttpError("ไม่พบรายการนี้", 404);
+    if (entry.kind !== "payment") throw createHttpError("ผูกได้เฉพาะรายการจ่ายค่าสินค้า", 400);
+    if (entry.order_id) throw createHttpError(`รายการนี้ผูกกับ ${poCode(entry.order_id)} อยู่แล้ว`, 400);
+    if (["awaiting_approval", "rejected"].includes(entry.status)) throw createHttpError("รายการนี้ยังไม่นับในยอด ผูกไม่ได้", 400);
+    const leg = (await client.query(`SELECT * FROM stock_wallet_legs WHERE entry_id = $1 ORDER BY id LIMIT 1`, [entry.id])).rows[0];
+    const row = (await client.query(`SELECT * FROM stock_purchase_orders WHERE id = $1 FOR UPDATE`, [Number(orderId)])).rows[0];
+    if (!row) throw createHttpError("ไม่พบใบสั่งซื้อนี้", 404);
+    if (!leg || leg.currency !== row.currency) throw createHttpError(`สกุลเงินไม่ตรงกัน: รายการจ่ายเป็น ${leg?.currency || "—"} ใบสั่งซื้อเป็น ${row.currency}`, 400);
+    const total = toWalletUnits(String(leg.amount).replace(/^-/, ""));
+    const paid = total - (toWalletUnits(leg.fee) ?? 0n);
+    if (!walletPaymentAmountMatches(row.amount, total, paid)) {
+      throw createHttpError(`ยอดไม่ตรง: ใบสั่งซื้อ ${fromWalletUnits(toWalletUnits(row.amount))} ${row.currency} แต่รายการจ่าย ${fromWalletUnits(paid)} ${row.currency} (fee ${fromWalletUnits(toWalletUnits(leg.fee) ?? 0n)}) — แก้ยอดให้ตรงก่อนผูก`, 400);
+    }
+    const step = applyPurchaseOrderAction({ status: row.status, amount: row.amount, createdById: row.created_by_id }, "pay", {}, actor);
+    if (step.error) throw createHttpError(step.error, 400);
+
+    await client.query(`UPDATE stock_wallet_entries SET order_id = $2 WHERE id = $1`, [entry.id, row.id]);
+    await client.query(
+      `UPDATE stock_purchase_orders SET status = $2, paid_wallet_id = $3, paid_at = $4, updated_at = NOW() WHERE id = $1`,
+      [row.id, step.status, leg.wallet_id, entry.occurred_at]
+    );
+    await client.query(
+      `INSERT INTO stock_purchase_order_events (order_id, action, from_status, to_status, note, wallet_entry_id, actor_id, actor_name)
+       VALUES ($1, 'pay', $2, $3, $4, $5, $6, $7)`,
+      [row.id, row.status, step.status, `ผูกรายการจ่ายที่มีอยู่ในกระเป๋า: ${entry.title}`.slice(0, 500), entry.id, ...actorFields(actor)]
     );
     await client.query("COMMIT");
     return getPurchaseOrder(row.id);

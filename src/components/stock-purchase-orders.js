@@ -8,9 +8,11 @@ import { apiJson } from "@/lib/api-json";
 import {
   DELIVERY_METHOD_LABELS,
   DELIVERY_STATUS_LABELS,
+  PO_ACTION_HINTS,
   PO_ACTION_LABELS,
   PO_OPEN_STATUSES,
   PO_STATUS_LABELS,
+  allocatePurchaseOrderCosts,
   PO_SECOND_PERSON,
   PO_STATUSES,
   purchaseOrderActions,
@@ -42,15 +44,15 @@ const ACTION_BUTTON = {
   refund: "bg-zinc-900 hover:bg-zinc-700",
   cancel: "bg-zinc-500 hover:bg-zinc-600",
 };
-const FILTERS = [{ id: "open", label: "ยังไม่จบ" }, ...PO_STATUSES.map((id) => ({ id, label: PO_STATUS_LABELS[id] })), { id: "all", label: "ทั้งหมด" }];
+const FILTERS = [...PO_STATUSES.map((id) => ({ id, label: PO_STATUS_LABELS[id] })), { id: "open", label: "ค้างอยู่ทั้งหมด" }, { id: "all", label: "ทั้งหมด" }];
 
 const TRACK = [
   { key: "requested", label: "ขอซื้อ" },
   { key: "approved", label: "อนุมัติ" },
-  { key: "paid", label: "จ่ายเงิน" },
+  { key: "paid", label: "โอนเงิน" },
   { key: "accepted", label: "ซัพรับออเดอร์" },
-  { key: "delivered", label: "ส่งของ" },
-  { key: "received", label: "ตรวจแล้ว / เรียบร้อย" },
+  { key: "delivered", label: "ของมาถึง" },
+  { key: "received", label: "ตรวจแล้ว เข้า stock" },
 ];
 const TRACK_AT = { requested: 0, approved: 1, paid: 2, accepted: 3, delivered: 4, partial: 4, received: 5 };
 
@@ -118,7 +120,7 @@ function matches(order, query, filter) {
   return text.includes(query);
 }
 
-export default function StockPurchaseOrders({ orders, accounts, wallets = [], canEdit, initialOpenId = null, initialQuery = "" }) {
+export default function StockPurchaseOrders({ orders, accounts, games = [], wallets = [], canEdit, initialOpenId = null, initialQuery = "" }) {
   const [query, setQuery] = useState(initialQuery);
   const [filter, setFilter] = useState(initialQuery || initialOpenId ? "all" : "open");
   const [creating, setCreating] = useState(false);
@@ -138,7 +140,7 @@ export default function StockPurchaseOrders({ orders, accounts, wallets = [], ca
           <p className="mt-1.5 text-sm text-zinc-600">ทุกการซื้อเห็นว่าอยู่ขั้นไหน: ขอซื้อ → โอนเงิน → ได้ของ หรือขอคืนเงิน · ได้ของเมื่อไหร่ ยอดเข้า stock ให้เอง</p>
         </div>
         {canEdit ? (
-          <button type="button" onClick={() => setCreating(true)} disabled={!accounts.some((account) => account.status !== "closed" && account.items.length)}
+          <button type="button" onClick={() => setCreating(true)} disabled={!games.length && !accounts.some((account) => account.status !== "closed")}
             className="flex h-11 items-center gap-2 rounded-full bg-[#D90005] px-5 text-sm font-extrabold text-white hover:bg-[#B00004] disabled:opacity-40">
             <Plus size={16} strokeWidth={2.4} /> สร้างใบสั่งซื้อ
           </button>
@@ -176,9 +178,9 @@ export default function StockPurchaseOrders({ orders, accounts, wallets = [], ca
                 <th className="px-4 py-3">ใบสั่งซื้อ</th>
                 <th className="px-4 py-3">ขั้นตอน</th>
                 <th className="px-4 py-3">ซัพ / ช่องทางจ่าย</th>
-                <th className="px-4 py-3">เข้าไอดี</th>
+                <th className="px-4 py-3">ของเข้าไอดี</th>
                 <th className="px-4 py-3 text-right">ยอดจ่าย</th>
-                <th className="px-4 py-3 text-right">ได้ของ</th>
+                <th className="px-4 py-3 text-right">เข้า stock แล้ว / สั่ง</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -200,12 +202,16 @@ export default function StockPurchaseOrders({ orders, accounts, wallets = [], ca
                   </td>
                   <td className="px-4 py-3 text-right">
                     <p className="font-black">{money(order.amount, order.currency)}</p>
+                    {order.currency !== "CNY" && order.amountCny != null ? <p className="text-xs text-zinc-600">≈ ¥{formatStockNumber(order.amountCny)}</p> : null}
                     {order.currency !== "THB" && order.amountThb != null ? <p className="text-xs text-zinc-600">≈ ฿{formatStockNumber(order.amountThb)}</p> : null}
                     {order.refundAmount != null ? <p className="text-xs font-bold text-red-700">ขอคืน {money(order.refundAmount, order.currency)}</p> : null}
                   </td>
-                  <td className="px-4 py-3 text-right font-extrabold">{order.qtyReceived} / {order.qtyOrdered}</td>
                   <td className="px-4 py-3 text-right">
-                    <button type="button" onClick={() => setOpenId(order.id)} className="h-9 rounded-full bg-zinc-900 px-3.5 text-[13px] font-extrabold text-white hover:bg-zinc-700">ดู / ทำขั้นต่อไป</button>
+                    <p className="font-extrabold">{order.qtyReceived} / {order.qtyOrdered}</p>
+                    {order.status === "delivered" ? <p className="text-xs text-violet-700">ยังไม่นับ จนกว่าจะมีคนตรวจ</p> : null}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button type="button" onClick={() => setOpenId(order.id)} className="h-9 rounded-full bg-zinc-900 px-3.5 text-[13px] font-extrabold text-white hover:bg-zinc-700">เปิดดู / ทำต่อ</button>
                   </td>
                 </tr>
               ))}
@@ -218,7 +224,7 @@ export default function StockPurchaseOrders({ orders, accounts, wallets = [], ca
         </div>
       )}
 
-      {creating ? <CreatePurchaseOrderDialog accounts={accounts} onClose={() => setCreating(false)} /> : null}
+      {creating ? <CreatePurchaseOrderDialog accounts={accounts} games={games} onClose={() => setCreating(false)} /> : null}
       {opened ? <PurchaseOrderDialog key={`${opened.id}-${opened.status}-${opened.qtyReceived}`} order={opened} wallets={wallets} canEdit={canEdit} onClose={() => setOpenId(null)} /> : null}
     </div>
   );
@@ -234,20 +240,90 @@ function SummaryCard({ label, value, unit, hint, className }) {
   );
 }
 
-const emptyLine = () => ({ key: Math.random().toString(36).slice(2), itemId: "", qty: "", unitCost: "" });
+const emptyLine = () => ({ key: Math.random().toString(36).slice(2), itemId: "", newLabel: "", qty: "", unitCost: "" });
+const NEW_ACCOUNT = "new";
+const NEW_PACK = "new";
 
-function CreatePurchaseOrderDialog({ accounts, onClose }) {
+// Every GameInfo game, plus the games of stock accounts that are not linked to
+// one, keyed so a game's accounts can be found: "g<gameId>" or "n<name>".
+function orderGames(games, accounts) {
+  const byName = new Map(games.map((game) => [game.name.toLowerCase(), `g${game.id}`]));
+  const keyOf = (account) => (account.gameId ? `g${account.gameId}` : byName.get(String(account.gameName || "").toLowerCase()) || `n${account.gameName || account.code}`);
+  const list = games.map((game) => ({ key: `g${game.id}`, id: game.id, name: game.name }));
+  for (const account of accounts) {
+    const key = keyOf(account);
+    if (!list.some((game) => game.key === key)) list.push({ key, id: account.gameId || null, name: account.gameName || `ไอดี ${account.code} (ไม่ได้ผูกเกม)` });
+  }
+  const withStock = new Set(accounts.map(keyOf));
+  return { list: list.map((game) => ({ ...game, hasStock: withStock.has(game.key) })).sort((a, b) => a.name.localeCompare(b.name)), keyOf };
+}
+
+// A suggested code for a new account: the Latin letters of the game's name + "1".
+const suggestCode = (name) => {
+  const base = String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 20);
+  return base.length >= 2 ? `${base}1` : "";
+};
+
+function CreatePurchaseOrderDialog({ accounts, games, onClose }) {
   const router = useRouter();
-  const open = accounts.filter((account) => account.status !== "closed" && account.items.length);
-  const [form, setForm] = useState({ accountId: String(open[0]?.id || ""), supplier: "", paymentChannel: "", buyer: "", currency: "THB", amount: "", rateThb: "", receiptUrl: "", note: "" });
+  const open = accounts.filter((account) => account.status !== "closed");
+  const { list: gameList, keyOf } = orderGames(games, open);
+  const first = open.find((account) => account.items.length) || open[0];
+  const [form, setForm] = useState({ gameKey: first ? keyOf(first) : "", accountId: first ? String(first.id) : "", supplier: "", paymentChannel: "", buyer: "", currency: "THB", amount: "", rateThb: "", productRate: "", cnyRate: "", receiptUrl: "", note: "" });
+  const [gameQuery, setGameQuery] = useState("");
+  const [newAccount, setNewAccount] = useState({ code: "", dataMode: "uid" });
+  const [packState, setPackState] = useState({ key: "", names: [] });
   const [lines, setLines] = useState([emptyLine()]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const account = open.find((item) => String(item.id) === form.accountId);
+  const game = gameList.find((item) => item.key === form.gameKey);
+  const gameAccounts = open.filter((account) => keyOf(account) === form.gameKey);
+  const creatingAccount = !!game && (form.accountId === NEW_ACCOUNT || !gameAccounts.length);
+  const account = creatingAccount ? null : gameAccounts.find((item) => String(item.id) === form.accountId);
   const items = account?.items || [];
+  const dataMode = creatingAccount ? newAccount.dataMode : account?.dataMode || "uid";
+  const packNames = game?.id && packState.key === `${game.id}-${dataMode}` ? packState.names : [];
+  const query = gameQuery.trim().toLowerCase();
+  const shownGames = gameList.filter((item) => item.key === form.gameKey || !query || item.name.toLowerCase().includes(query));
   const set = (patch) => setForm((current) => ({ ...current, ...patch }));
+  // Product Rate (CNY per unit) × CNY Rate (THB per CNY) sets the THB rate, as in the supplier sheet.
+  const positive = (value) => { const number = Number(String(value ?? "").replace(/,/g, "")); return Number.isFinite(number) && number > 0 ? number : null; };
+  const amountNumber = positive(form.amount);
+  const productRateNumber = form.currency === "CNY" ? null : positive(form.productRate);
+  const cnyRateNumber = form.currency === "THB" ? null : positive(form.cnyRate);
+  const derivedRate = form.currency === "CNY" ? cnyRateNumber : productRateNumber && cnyRateNumber ? Math.round(productRateNumber * cnyRateNumber * 1e6) / 1e6 : null;
+  const rateShown = derivedRate ? String(derivedRate) : form.rateThb;
+  const amountCny = amountNumber == null ? null : form.currency === "CNY" ? amountNumber : productRateNumber ? amountNumber * productRateNumber : null;
+  const amountThb = amountNumber != null && derivedRate ? amountNumber * derivedRate : null;
+  const orderThb = amountNumber == null ? null : form.currency === "THB" ? amountNumber : amountThb ?? (positive(form.rateThb) ? amountNumber * positive(form.rateThb) : null);
+  // What the server fills in when no cost is typed: the order's THB split by each pack's USD value.
+  const autoCosts = Object.fromEntries(allocatePurchaseOrderCosts(
+    lines.filter((line) => line.itemId && !creatingAccount && line.itemId !== NEW_PACK && Number(line.qty) > 0).map((line) => ({ itemId: line.itemId, qty: Number(line.qty), unitCost: line.unitCost })),
+    Object.fromEntries((items || []).map((item) => [String(item.id), item.unitUsd])),
+    orderThb,
+  ).filter((line) => line.costAllocated).map((line) => [line.itemId, line.unitCost]));
   const setLine = (key, patch) => setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
-  const filled = lines.filter((line) => line.itemId && Number(line.qty) > 0);
+  const isNewPack = (line) => creatingAccount || line.itemId === NEW_PACK;
+  const filled = lines.filter((line) => (isNewPack(line) ? line.newLabel.trim() : line.itemId) && Number(line.qty) > 0);
+
+  function pickGame(key) {
+    const picked = gameList.find((item) => item.key === key);
+    const own = open.filter((item) => keyOf(item) === key);
+    set({ gameKey: key, accountId: own[0] ? String(own[0].id) : NEW_ACCOUNT });
+    setNewAccount((current) => ({ ...current, code: suggestCode(picked?.name) }));
+    setLines([emptyLine()]);
+  }
+
+  // The game's pack names in GameInfo, offered when typing a new pack.
+  useEffect(() => {
+    if (!game?.id) return undefined;
+    let live = true;
+    const key = `${game.id}-${dataMode}`;
+    apiJson(`/api/stock/games/${game.id}/packs?mode=${dataMode}`)
+      .then((data) => { if (live) setPackState({ key, names: data.packs || [] }); })
+      .catch(() => { if (live) setPackState({ key, names: [] }); });
+    return () => { live = false; };
+  }, [game?.id, dataMode]);
 
   async function save(event) {
     event.preventDefault();
@@ -257,7 +333,14 @@ function CreatePurchaseOrderDialog({ accounts, onClose }) {
       await apiJson("/api/stock/purchase-orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, lines: filled.map((line) => ({ itemId: Number(line.itemId), qty: Number(line.qty), unitCost: line.unitCost })) }),
+        body: JSON.stringify({
+          ...form,
+          accountId: creatingAccount ? null : Number(form.accountId),
+          newAccount: creatingAccount ? { code: newAccount.code, dataMode: newAccount.dataMode, gameId: game?.id || null, gameName: game?.id ? game.name : "" } : null,
+          lines: filled.map((line) => (isNewPack(line)
+            ? { newLabel: line.newLabel.trim(), packName: packNames.includes(line.newLabel.trim()) ? line.newLabel.trim() : "", qty: Number(line.qty), unitCost: line.unitCost }
+            : { itemId: Number(line.itemId), qty: Number(line.qty), unitCost: line.unitCost })),
+        }),
         fallbackError: "สร้างใบสั่งซื้อไม่สำเร็จ",
       });
       router.refresh();
@@ -275,7 +358,7 @@ function CreatePurchaseOrderDialog({ accounts, onClose }) {
         footer={
           <>
             <button type="button" onClick={onClose} className="h-11 rounded-full border border-zinc-300 bg-white px-5 text-sm font-extrabold text-zinc-700">ยกเลิก</button>
-            <button type="submit" disabled={saving || !account || !filled.length} className="flex h-11 items-center gap-2 rounded-full bg-[#D90005] px-6 text-sm font-black text-white hover:bg-[#B00004] disabled:opacity-50">
+            <button type="submit" disabled={saving || !game || (creatingAccount ? !newAccount.code.trim() : !account) || !filled.length} className="flex h-11 items-center gap-2 rounded-full bg-[#D90005] px-6 text-sm font-black text-white hover:bg-[#B00004] disabled:opacity-50">
               {saving ? <Loader2 size={16} className="animate-spin" /> : null} บันทึกใบสั่งซื้อ
             </button>
           </>
@@ -284,11 +367,45 @@ function CreatePurchaseOrderDialog({ accounts, onClose }) {
           <StockField label="ซัพพลายเออร์ / ร้าน" htmlFor="po-supplier">
             <input id="po-supplier" value={form.supplier} onChange={(event) => set({ supplier: event.target.value })} className={stockInputClass} placeholder="เช่น Twocard, Panghou, OffGamer" required />
           </StockField>
-          <StockField label="รับของเข้าไอดี stock" htmlFor="po-account">
-            <select id="po-account" value={form.accountId} onChange={(event) => { set({ accountId: event.target.value }); setLines([emptyLine()]); }} className={stockInputClass}>
-              {open.map((item) => <option key={item.id} value={item.id}>{item.code}{item.gameName ? ` · ${item.gameName}` : ""}</option>)}
-            </select>
+          <StockField label="เกม" htmlFor="po-game" hint={games.length ? `${gameList.length} เกม · ★ = มีไอดี stock แล้ว` : "ต่อ GameInfo ไม่ได้ตอนนี้ — เลือกได้เฉพาะเกมที่มีไอดี stock แล้ว"}>
+            <div className="flex flex-col gap-1.5">
+              <input aria-label="ค้นหาเกม" value={gameQuery} onChange={(event) => setGameQuery(event.target.value)} className={stockInputClass} placeholder="พิมพ์ค้นหาชื่อเกม" />
+              <select id="po-game" value={form.gameKey} onChange={(event) => pickGame(event.target.value)} className={stockInputClass} required>
+                <option value="">เลือกเกม</option>
+                {shownGames.map((item) => <option key={item.key} value={item.key}>{item.hasStock ? "★ " : ""}{item.name}</option>)}
+              </select>
+            </div>
           </StockField>
+        </div>
+
+        {game ? (
+          <div className="grid gap-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-3.5 sm:grid-cols-2">
+            {gameAccounts.length ? (
+              <StockField label="รับของเข้าไอดี stock" htmlFor="po-account">
+                <select id="po-account" value={creatingAccount ? NEW_ACCOUNT : form.accountId} onChange={(event) => { set({ accountId: event.target.value }); setLines([emptyLine()]); }} className={stockInputClass}>
+                  {gameAccounts.map((item) => <option key={item.id} value={item.id}>{item.code} · {item.items.length} แพ็ค</option>)}
+                  <option value={NEW_ACCOUNT}>+ สร้างไอดี stock ใหม่</option>
+                </select>
+              </StockField>
+            ) : (
+              <p className="text-[13px] text-zinc-700 sm:col-span-2">เกมนี้ยังไม่มีไอดี stock — ตั้งชื่อไอดีด้านล่าง ระบบจะสร้างให้ตอนบันทึกใบสั่งซื้อ</p>
+            )}
+            {creatingAccount ? (
+              <>
+                <StockField label="ชื่อไอดีใหม่" htmlFor="po-new-code" hint="a-z 0-9 . _ - เช่น pes1, lastwar2">
+                  <input id="po-new-code" value={newAccount.code} onChange={(event) => setNewAccount((current) => ({ ...current, code: event.target.value }))} className={stockInputClass} required />
+                </StockField>
+                <StockField label="โหมด" htmlFor="po-new-mode">
+                  <select id="po-new-mode" value={newAccount.dataMode} onChange={(event) => setNewAccount((current) => ({ ...current, dataMode: event.target.value }))} className={stockInputClass}>
+                    <option value="uid">UID</option><option value="idpass">ID-PASS</option>
+                  </select>
+                </StockField>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="grid gap-3 sm:grid-cols-2">
           <StockField label="ช่องทางจ่าย" htmlFor="po-channel" hint="ธนาคาร / กระเป๋าที่โอนออก">
             <input id="po-channel" value={form.paymentChannel} onChange={(event) => set({ paymentChannel: event.target.value })} className={stockInputClass} placeholder="เช่น Bybit Inblack Gaming, KBANK P'aek" />
           </StockField>
@@ -305,26 +422,53 @@ function CreatePurchaseOrderDialog({ accounts, onClose }) {
             <input id="po-currency" value={form.currency} onChange={(event) => set({ currency: event.target.value.toUpperCase() })} className={stockInputClass} placeholder="THB, USDT, CNY" />
           </StockField>
           <StockField label="เรท (บาทต่อ 1 หน่วย)" htmlFor="po-rate" hint={form.currency === "THB" ? "THB ไม่ต้องใส่" : "ไม่บังคับ ใช้คิดยอดเป็นบาท"}>
-            <input id="po-rate" inputMode="decimal" value={form.rateThb} onChange={(event) => set({ rateThb: event.target.value })} className={stockInputClass} disabled={form.currency === "THB"} />
+            <input id="po-rate" inputMode="decimal" value={rateShown} onChange={(event) => set({ rateThb: event.target.value })} className={stockInputClass} disabled={form.currency === "THB" || Boolean(derivedRate)} />
           </StockField>
         </div>
+        {form.currency !== "THB" ? (
+          <div className="grid gap-3 sm:grid-cols-3">
+            {form.currency !== "CNY" ? (
+              <StockField label={`Product Rate (หยวนต่อ 1 ${form.currency || "หน่วย"})`} htmlFor="po-product-rate" hint="ไม่บังคับ · ซัพคิดเป็นหยวน">
+                <input id="po-product-rate" inputMode="decimal" value={form.productRate} onChange={(event) => set({ productRate: event.target.value })} className={stockInputClass} />
+              </StockField>
+            ) : null}
+            <StockField label="CNY Rate (บาทต่อ 1 หยวน)" htmlFor="po-cny-rate" hint={form.currency === "CNY" ? "ใส่แล้วใช้เป็นเรทบาทให้เอง" : "ใส่คู่กับ Product Rate"}>
+              <input id="po-cny-rate" inputMode="decimal" value={form.cnyRate} onChange={(event) => set({ cnyRate: event.target.value })} className={stockInputClass} />
+            </StockField>
+            {amountCny != null || amountThb != null ? (
+              <div className="flex flex-col justify-end pb-2 text-[13px] text-zinc-700">
+                {amountCny != null ? <span>≈ ¥{formatStockNumber(amountCny)}</span> : null}
+                {amountThb != null ? <span className="font-extrabold">≈ ฿{formatStockNumber(amountThb)}</span> : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="overflow-hidden rounded-2xl border border-zinc-200">
           <div className="grid grid-cols-[minmax(0,1.6fr)_96px_minmax(0,1fr)_40px] gap-2.5 bg-zinc-50 px-3.5 py-2.5 text-xs font-extrabold text-zinc-600">
-            <span>แพ็คที่สั่ง</span><span>จำนวน</span><span>ต้นทุนต่อชิ้น (฿)</span><span />
+            <span>แพ็คที่สั่ง</span><span>จำนวน</span><span title="เว้นว่างทุกแถว ระบบแบ่งยอดบาทของใบตามมูลค่า USD ของแต่ละแพ็คให้">ต้นทุนต่อชิ้น (฿) · เว้นว่าง = คิดให้</span><span />
           </div>
           {lines.map((line) => (
             <div key={line.key} className="grid grid-cols-[minmax(0,1.6fr)_96px_minmax(0,1fr)_40px] items-center gap-2.5 border-t border-zinc-100 px-3.5 py-2.5">
-              <select aria-label="แพ็ค" value={line.itemId} onChange={(event) => setLine(line.key, { itemId: event.target.value })} className={stockInputClass}>
-                <option value="">เลือกแพ็ค</option>
-                {items.map((item) => (
-                  <option key={item.id} value={item.id} disabled={lines.some((other) => other.key !== line.key && other.itemId === String(item.id))}>
-                    {item.label}{item.unitUsd != null ? ` (${item.unitUsd} USD)` : ""} · เหลือ {item.left}
-                  </option>
-                ))}
-              </select>
+              <div className="flex flex-col gap-1.5">
+                {creatingAccount ? null : (
+                  <select aria-label="แพ็ค" value={line.itemId} onChange={(event) => setLine(line.key, { itemId: event.target.value })} className={stockInputClass}>
+                    <option value="">เลือกแพ็ค</option>
+                    {items.map((item) => (
+                      <option key={item.id} value={item.id} disabled={lines.some((other) => other.key !== line.key && other.itemId === String(item.id))}>
+                        {item.label}{item.unitUsd != null ? ` (${item.unitUsd} USD)` : ""} · เหลือ {item.left}
+                      </option>
+                    ))}
+                    <option value={NEW_PACK}>+ แพ็คใหม่ (พิมพ์ชื่อ)</option>
+                  </select>
+                )}
+                {isNewPack(line) ? (
+                  <input aria-label="ชื่อแพ็คใหม่" list="po-pack-names" value={line.newLabel} onChange={(event) => setLine(line.key, { newLabel: event.target.value })} className={stockInputClass}
+                    placeholder={packNames.length ? "พิมพ์หรือเลือกแพ็คจาก GameInfo" : "เช่น 550 Coins"} />
+                ) : null}
+              </div>
               <input aria-label="จำนวน" type="number" step="1" min="1" value={line.qty} onChange={(event) => setLine(line.key, { qty: event.target.value })} className={stockInputClass} />
-              <input aria-label="ต้นทุนต่อชิ้น" inputMode="decimal" value={line.unitCost} onChange={(event) => setLine(line.key, { unitCost: event.target.value })} className={stockInputClass} placeholder="ไม่บังคับ" />
+              <input aria-label="ต้นทุนต่อชิ้น" inputMode="decimal" value={line.unitCost} onChange={(event) => setLine(line.key, { unitCost: event.target.value })} className={stockInputClass} placeholder={autoCosts[line.itemId] && lines.every((other) => !isNewPack(other)) ? `อัตโนมัติ ฿${formatStockNumber(Number(autoCosts[line.itemId]))}` : "ไม่บังคับ"} />
               <button type="button" onClick={() => setLines((current) => (current.length > 1 ? current.filter((item) => item.key !== line.key) : [emptyLine()]))} aria-label="ลบแถวนี้" className="flex h-10 w-10 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-100">
                 <Trash2 size={16} />
               </button>
@@ -333,6 +477,7 @@ function CreatePurchaseOrderDialog({ accounts, onClose }) {
           <button type="button" onClick={() => setLines((current) => [...current, emptyLine()])} className="flex h-12 w-full items-center gap-2 border-t border-dashed border-zinc-300 px-3.5 text-left text-[13px] font-extrabold text-[#B00004] hover:bg-red-50/40">
             <Plus size={14} strokeWidth={2.6} /> เพิ่มแพ็ค
           </button>
+          <datalist id="po-pack-names">{packNames.map((name) => <option key={name} value={name} />)}</datalist>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -417,7 +562,8 @@ function PurchaseOrderDialog({ order: listed, wallets, canEdit, onClose }) {
       <div className="flex flex-wrap items-center gap-3">
         <PurchaseOrderStatusPill status={order.status} />
         <span className="text-sm font-black">{money(order.amount, order.currency)}</span>
-        {order.currency !== "THB" && order.amountThb != null ? <span className="text-sm text-zinc-600">≈ ฿{formatStockNumber(order.amountThb)} (เรท {order.rateThb})</span> : null}
+        {order.currency !== "CNY" && order.amountCny != null ? <span className="text-sm text-zinc-600">≈ ¥{formatStockNumber(order.amountCny)} (Product Rate {order.productRate})</span> : null}
+        {order.currency !== "THB" && order.amountThb != null ? <span className="text-sm text-zinc-600">≈ ฿{formatStockNumber(order.amountThb)} ({order.cnyRate != null ? `CNY Rate ${order.cnyRate}` : `เรท ${order.rateThb}`})</span> : null}
         {order.paidWalletName ? <Link href="/stock/wallets" className="text-sm font-extrabold text-zinc-800 hover:underline">หักจาก {order.paidWalletName}</Link> : null}
         {order.paymentChannel ? <span className="text-sm text-zinc-600">ช่องทาง {order.paymentChannel}</span> : null}
         {order.buyer ? <span className="text-sm text-zinc-600">ผู้ซื้อ {order.buyer}</span> : null}
@@ -452,7 +598,7 @@ function PurchaseOrderDialog({ order: listed, wallets, canEdit, onClose }) {
 
       {actions.some((item) => PO_SECOND_PERSON[item]) ? (
         <p className="rounded-xl bg-cyan-50 px-3.5 py-2.5 text-[13px] text-cyan-900">
-          ขั้นนี้ต้องให้<b>คนอื่น</b>ทำ (คนละคนกับคนที่{order.status === "requested" ? "สร้างใบ" : order.status === "delivered" ? "บันทึกการส่งของ" : "ขอคืนเงิน"}) เพื่อรีเช็คอีกรอบ
+          ขั้นนี้ต้องให้<b>คนอื่น</b>ทำ (คนละคนกับคนที่{order.status === "requested" ? "สร้างใบ" : order.status === "delivered" ? "กรอกของที่ได้จากซัพ" : "ขอคืนเงิน"}) เพื่อรีเช็คอีกรอบ
         </p>
       ) : null}
       {actions.length ? (
@@ -465,6 +611,13 @@ function PurchaseOrderDialog({ order: listed, wallets, canEdit, onClose }) {
           ))}
         </div>
       ) : null}
+      {actions.length ? (
+        <ul className="flex flex-col gap-1 text-[13px] text-zinc-600">
+          {(action ? [action] : actions).map((item) => PO_ACTION_HINTS[item] ? (
+            <li key={item}><b className="text-zinc-800">{PO_ACTION_LABELS[item]}</b> — กดเมื่อ{PO_ACTION_HINTS[item]}</li>
+          ) : null)}
+        </ul>
+      ) : null}
 
       {action ? (
         <form onSubmit={submit} className="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
@@ -475,7 +628,8 @@ function PurchaseOrderDialog({ order: listed, wallets, canEdit, onClose }) {
           ) : null}
           {action === "deliver" ? (
             <div className="flex flex-col gap-3">
-              <div role="group" aria-label="วิธีส่งของ" className="flex flex-wrap gap-1 rounded-full bg-zinc-200 p-1">
+              <p className="text-[13px] font-extrabold text-zinc-700">ซัพส่งของมาแบบไหน</p>
+              <div role="group" aria-label="ซัพส่งของมาแบบไหน" className="flex flex-wrap gap-1 rounded-full bg-zinc-200 p-1">
                 {Object.entries(DELIVERY_METHOD_LABELS).map(([method, label]) => (
                   <button key={method} type="button" aria-pressed={deliver.method === method} onClick={() => setDelivery({ method })}
                     className={`h-9 rounded-full px-3.5 text-[13px] font-extrabold ${deliver.method === method ? "bg-violet-700 text-white" : "text-zinc-700"}`}>{label}</button>
@@ -562,7 +716,7 @@ function PurchaseOrderDialog({ order: listed, wallets, canEdit, onClose }) {
           <div className="flex justify-end gap-2">
             <button type="button" onClick={() => setAction(null)} className="h-10 rounded-full border border-zinc-300 bg-white px-4 text-[13px] font-extrabold text-zinc-700">ยกเลิก</button>
             <button type="submit" disabled={saving} className={`flex h-10 items-center gap-2 rounded-full px-5 text-[13px] font-black text-white disabled:opacity-50 ${ACTION_BUTTON[action]}`}>
-              {saving ? <Loader2 size={14} className="animate-spin" /> : null} ยืนยัน{PO_ACTION_LABELS[action]}
+              {saving ? <Loader2 size={14} className="animate-spin" /> : null} ยืนยัน: {PO_ACTION_LABELS[action]}
             </button>
           </div>
         </form>

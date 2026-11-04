@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   applyPurchaseOrderAction,
+  bestWalletPaymentMatch,
   normalizeReceiptUrl,
   purchaseOrderActions,
+  purchaseOrderCny,
   purchaseOrderRemaining,
   purchaseOrderThb,
   topupCheck,
   validatePurchaseOrder,
+  walletPaymentCandidates,
 } from "../src/lib/stock-purchase-orders.js";
 import { normalizeStockCode } from "../src/lib/stock.js";
 
@@ -17,6 +20,43 @@ function check(condition, message) {
   passed += 1;
 }
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
+
+// A wallet payment made outside an order is offered to orders waiting for money; a person confirms.
+{
+  const payment = {
+    kind: "payment", status: "done", orderId: null, title: "Ragnarok", occurredAt: "2026-11-04T13:05:00Z",
+    legs: [{ walletName: "BITKUB", currency: "USDT", amount: "-402", fee: "1" }],
+  };
+  const order = (id, extra) => ({ id, code: `PO-${id}`, status: "approved", currency: "USDT", amount: "401", supplier: "Panghou", gameName: "Ragnarok M", accountCode: "rag01", createdAt: "2026-11-03T10:00:00Z", ...extra });
+  const one = walletPaymentCandidates(payment, [order(1), order(2, { status: "paid" }), order(3, { currency: "THB" })]);
+  check(one.length === 1 && one[0].orderId === 1, "only approved orders in the payment's currency are offered");
+  check(one[0].amountMatch && one[0].dateMatch && one[0].sure, "amount without the fee matches, within days → sure");
+  check(bestWalletPaymentMatch(one)?.orderId === 1, "one sure order is offered as a single click");
+  check(walletPaymentCandidates(payment, [order(4, { amount: "402" })])[0].amountMatch, "amount with the fee matches too");
+  const name = walletPaymentCandidates(payment, [order(5, { gameName: "Ragnarok", createdAt: "2026-10-01T00:00:00Z" })])[0];
+  check(name.nameMatch && !name.dateMatch && name.sure, "game name in the title + amount → sure even when far apart");
+  const two = walletPaymentCandidates(payment, [order(6), order(7)]);
+  check(two.length === 2 && bestWalletPaymentMatch(two) === null, "two sure orders → no single-click offer, a person picks");
+  check(!walletPaymentCandidates(payment, [order(8, { amount: "320" })]).length, "a different amount is never offered");
+  const far = walletPaymentCandidates(payment, [order(10, { gameName: "", supplier: "YAYA", accountCode: "x", createdAt: "2026-09-01T00:00:00Z" })]);
+  check(far.length === 1 && !far[0].sure && bestWalletPaymentMatch(far) === null, "same amount but nothing else fits → listed, not offered as one click");
+  check(!walletPaymentCandidates({ ...payment, orderId: 9 }, [order(1)]).length, "a payment already tied is not offered again");
+  check(!walletPaymentCandidates({ ...payment, status: "awaiting_approval" }, [order(1)]).length, "a payment not counted yet is not offered");
+  check(!walletPaymentCandidates({ ...payment, kind: "deposit" }, [order(1)]).length, "only payments can be tied");
+}
+
+// Product Rate (CNY per USD) × CNY Rate (THB per CNY) gives the THB rate, as in the supplier sheet.
+{
+  const base = { supplier: "Panghou", amount: "100", lines: [{ itemId: 1, qty: 1 }] };
+  const usd = validatePurchaseOrder({ ...base, currency: "USD", productRate: "7.2", cnyRate: "4.6" }, [1]);
+  check(usd.order.rateThb === "33.12", "USD order: Product Rate × CNY Rate sets the THB rate");
+  check(purchaseOrderCny({ amount: "100", currency: "USD", productRate: "7.2" }) === 720, "USD 100 × 7.2 = 720 CNY");
+  check(purchaseOrderThb({ amount: "100", currency: "USD", rateThb: usd.order.rateThb }) === 3312, "USD 100 → 3,312 THB");
+  const cny = validatePurchaseOrder({ ...base, currency: "CNY", cnyRate: "4.6" }, [1]);
+  check(cny.order.rateThb === "4.6" && cny.order.productRate === "", "CNY order: CNY Rate is the THB rate");
+  check(validatePurchaseOrder({ ...base, currency: "USD", productRate: "7.2" }, [1]).error, "Product Rate without CNY Rate is refused");
+  check(validatePurchaseOrder({ ...base, currency: "USD", cnyRate: "abc" }, [1]).error, "CNY Rate must be a number");
+}
 
 const good = {
   supplier: " Twocard ",

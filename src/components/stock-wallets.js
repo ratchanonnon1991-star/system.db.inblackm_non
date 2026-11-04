@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowDownToLine, ArrowRight, ArrowRightLeft, Loader2, Repeat, ShoppingCart, SlidersHorizontal, Wallet } from "lucide-react";
+import { ArrowDownToLine, ArrowRight, ArrowRightLeft, Link2, Loader2, Repeat, ShoppingCart, SlidersHorizontal, Wallet } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
-import { PO_STATUS_LABELS } from "@/lib/stock-purchase-orders";
+import { bestWalletPaymentMatch, LINK_DAYS, PO_STATUS_LABELS, walletPaymentCandidates } from "@/lib/stock-purchase-orders";
 import { WALLET_ENTRY_LABELS, WALLET_PAYMENT_STATUS_LABELS, WALLET_REVIEW_LABELS } from "@/lib/stock-wallets";
 import { StockDialog, StockField, stockInputClass } from "@/components/stock-ui";
 
@@ -65,11 +65,12 @@ export function walletEntryStatus(entry) {
   return { label: WALLET_PAYMENT_STATUS_LABELS[entry.status], done: entry.status === "done" };
 }
 
-export default function StockWallets({ wallets, entries, canEdit }) {
+export default function StockWallets({ wallets, entries, waitingOrders = [], canEdit }) {
   const router = useRouter();
   const [dialog, setDialog] = useState(null);
   const [walletFilter, setWalletFilter] = useState("all");
   const [busy, setBusy] = useState(null);
+  const [linking, setLinking] = useState(null);
   const shown = walletFilter === "all" ? entries : entries.filter((entry) => entry.legs.some((leg) => String(leg.walletId) === walletFilter));
 
   const awaiting = entries.filter((entry) => entry.status === "awaiting_approval");
@@ -187,6 +188,8 @@ export default function StockWallets({ wallets, entries, canEdit }) {
             <tbody>
               {shown.map((entry) => {
                 const status = walletEntryStatus(entry);
+                const candidates = canEdit ? walletPaymentCandidates(entry, waitingOrders) : [];
+                const best = bestWalletPaymentMatch(candidates);
                 return (
                   <tr key={entry.id} className="border-t border-zinc-100 align-top">
                     <td className="px-4 py-3 whitespace-nowrap">{formatTime(entry.occurredAt)}<p className="text-xs text-zinc-600">{entry.actorName}</p></td>
@@ -234,6 +237,12 @@ export default function StockWallets({ wallets, entries, canEdit }) {
                           </button>
                         )
                       ) : <span className="text-xs text-zinc-500">—</span>}
+                      {!entry.orderId && candidates.length ? (
+                        <button type="button" onClick={() => setLinking(entry)}
+                          className={`mt-1.5 flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-black ${best ? "bg-zinc-900 text-white hover:bg-zinc-700" : "border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50"}`}>
+                          <Link2 size={12} /> {best ? `ผูกกับ ${best.code}?` : `ผูกใบสั่งซื้อ (${candidates.length})`}
+                        </button>
+                      ) : null}
                     </td>
                   </tr>
                 );
@@ -248,6 +257,7 @@ export default function StockWallets({ wallets, entries, canEdit }) {
       )}
 
       {dialog ? <WalletEntryDialog kind={dialog} wallets={wallets} onClose={() => setDialog(null)} /> : null}
+      {linking ? <LinkPaymentDialog entry={linking} candidates={walletPaymentCandidates(linking, waitingOrders)} onClose={() => setLinking(null)} /> : null}
     </div>
   );
 }
@@ -398,5 +408,83 @@ function WalletEntryDialog({ kind, wallets, onClose }) {
         {error ? <p className="rounded-xl bg-red-50 px-3.5 py-3 text-[13px] text-red-800">{error}</p> : null}
       </StockDialog>
     </form>
+  );
+}
+
+const LINK_REASONS = [
+  { key: "amountMatch", yes: "ยอดตรง", no: null },
+  { key: "nameMatch", yes: "ชื่อซัพ / เกม / ไอดีตรง", no: null },
+  { key: "dateMatch", yes: `ห่างกันไม่เกิน ${LINK_DAYS} วัน`, no: null },
+];
+
+/** Picks the order a wallet payment paid for; the best match is chosen first, a person confirms. */
+function LinkPaymentDialog({ entry, candidates, onClose }) {
+  const router = useRouter();
+  const best = bestWalletPaymentMatch(candidates);
+  const [orderId, setOrderId] = useState(best ? String(best.orderId) : "");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const chosen = candidates.find((candidate) => String(candidate.orderId) === orderId);
+  const leg = entry.legs[0];
+
+  async function submit() {
+    if (!chosen) return;
+    setSaving(true);
+    setError("");
+    try {
+      await apiJson(`/api/stock/wallets/entries/${entry.id}/link`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: chosen.orderId }),
+        fallbackError: "ผูกรายการจ่ายกับใบสั่งซื้อไม่สำเร็จ",
+      });
+      onClose();
+      router.refresh();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <StockDialog title="ผูกรายการจ่ายกับใบสั่งซื้อ" subtitle={`${entry.title} · ${leg?.walletName} ${leg?.amount} ${leg?.currency}`} icon={<Link2 size={18} strokeWidth={2.4} />} iconClass="bg-zinc-100 text-zinc-800" onClose={onClose}
+      footer={(
+        <>
+          <button type="button" onClick={onClose} className="h-10 rounded-full border border-zinc-300 px-4 text-sm font-extrabold text-zinc-700 hover:bg-zinc-50">ยกเลิก</button>
+          <button type="button" disabled={!chosen || saving} onClick={submit} className="flex h-10 items-center gap-1.5 rounded-full bg-zinc-900 px-4 text-sm font-extrabold text-white hover:bg-zinc-700 disabled:opacity-50">
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />} {chosen ? `ผูกกับ ${chosen.code}` : "เลือกใบสั่งซื้อ"}
+          </button>
+        </>
+      )}>
+      <div className="flex flex-col gap-3 text-sm">
+        <p className="text-[13px] text-zinc-700">
+          ใบสั่งซื้อจะขึ้นเป็น &quot;โอนแล้ว รอซัพตอบ&quot; โดยใช้รายการนี้เป็นการจ่าย <b>ไม่หักเงินกระเป๋าซ้ำ</b> · แสดงเฉพาะใบที่ &quot;รอโอนเงิน&quot; สกุล {leg?.currency} และยอดตรงกับที่จ่าย
+        </p>
+        <div className="flex flex-col gap-2">
+          {candidates.map((candidate) => (
+            <label key={candidate.orderId} className={`flex cursor-pointer items-start gap-3 rounded-xl border px-3.5 py-2.5 ${String(candidate.orderId) === orderId ? "border-zinc-900 bg-zinc-50" : "border-zinc-200 hover:bg-zinc-50"}`}>
+              <input type="radio" name="link-order" value={candidate.orderId} checked={String(candidate.orderId) === orderId} onChange={(event) => setOrderId(event.target.value)} className="mt-1" />
+              <span className="min-w-0 flex-1">
+                <span className="flex flex-wrap items-baseline gap-x-2">
+                  <b>{candidate.code}</b>
+                  <span>{candidate.supplier} · {candidate.accountCode}</span>
+                  <span className="ml-auto font-extrabold">{candidate.amount} {candidate.currency}</span>
+                </span>
+                <span className="mt-1 flex flex-wrap gap-1">
+                  {LINK_REASONS.map((reason) => {
+                    const label = candidate[reason.key] ? reason.yes : reason.no;
+                    if (!label) return null;
+                    return <span key={reason.key} className={`rounded-full px-2 py-0.5 text-xs font-bold ${candidate[reason.key] ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>{label}</span>;
+                  })}
+                  {candidate.sure && best?.orderId === candidate.orderId ? <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-xs font-bold text-white">น่าจะใช่</span> : null}
+                </span>
+              </span>
+            </label>
+          ))}
+        </div>
+        {error ? <p className="rounded-xl bg-red-50 px-3.5 py-2.5 text-[13px] font-bold text-red-700">{error}</p> : null}
+      </div>
+    </StockDialog>
   );
 }
