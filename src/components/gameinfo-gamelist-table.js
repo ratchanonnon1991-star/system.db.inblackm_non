@@ -357,6 +357,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
     try {
       const dirtyRows = rows.filter((r) => dirtyIds.has(r.id));
       const draftRows = dirtyRows.filter((r) => isTempId(r.id));
+      const followUpErrors = [];
       const editedRows = dirtyRows.filter((r) => !isTempId(r.id));
 
       // Draft rows (from "เพิ่มเกม") only actually get created here — this is
@@ -376,7 +377,35 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
               body: JSON.stringify(payload),
             });
           }
-          return [tempId, { ...row, ...(dataMode === "idpass" ? payload : {}) }];
+          // What was set on the draft that lives outside game_list: the
+          // picture, the links and a closed status. The game exists by now,
+          // so a failure here is reported, never thrown: a throw would keep
+          // the draft and the next save would add the game a second time.
+          const extra = {};
+          if (r.image) {
+            await apiJson(`/api/gameinfo/gamelist/${row.id}/image`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ imageUrl: r.image }),
+              fallbackError: "บันทึกรูปไม่สำเร็จ",
+            }).then(() => { extra.image = r.image; }, () => followUpErrors.push(`รูปของ ${r.game}`));
+          }
+          if (r.links?.length) {
+            await apiJson(`/api/gameinfo/gamelist/${row.id}/links${dataMode === "idpass" ? "?mode=idpass" : ""}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ links: r.links }),
+              fallbackError: "บันทึกลิงก์ไม่สำเร็จ",
+            }).then((data) => { extra.links = data.links; }, () => followUpErrors.push(`ลิงก์ของ ${r.game}`));
+          }
+          if (r.serviceEnabled === false) {
+            await apiJson("/api/gameinfo/gamelist/status", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ gameIds: [row.id], enabled: false }),
+            }).then(() => { extra.serviceEnabled = false; extra.serviceStatus = "offline"; }, () => followUpErrors.push(`สถานะปิดของ ${r.game}`));
+          }
+          return [tempId, { ...row, ...(dataMode === "idpass" ? payload : {}), ...extra }];
         })
       );
       const idMap = new Map(created);
@@ -405,6 +434,7 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
       setOrderDirty(false);
       setSavedVisible(true);
       setSavedAt(Date.now());
+      if (followUpErrors.length) setSaveError(`เพิ่มเกมแล้ว แต่บันทึก${followUpErrors.join(", ")}ไม่สำเร็จ ลองใส่ใหม่อีกครั้ง`);
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "บันทึกข้อมูลเกมไม่สำเร็จ");
     } finally {
@@ -504,8 +534,15 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
     beginGameSelection,
     enterGameSelection,
     onSetGameStatus: (gameId, status) => {
+      // A game being added is opened or closed in its draft, saved with it.
+      if (isTempId(gameId)) {
+        const enabled = status === "offline";
+        setRows((current) => current.map((row) => row.id === gameId ? { ...row, serviceEnabled: enabled, serviceStatus: enabled ? "online" : "offline" } : row));
+        return undefined;
+      }
       return setSelectedGamesStatus(status === "offline", [gameId]);
     },
+    onDraftImage: (gameId, image) => updateField(gameId, "image", image),
   };
 
   const rangeStart = filteredRows.length === 0 ? 0 : clampedPage * pageSize + 1;
@@ -936,13 +973,14 @@ function RowCells({
   onReorderByNumber,
   onSetGameStatus,
   onLinksSaved,
+  onDraftImage,
 }) {
   const editingName = isEditing(row.id, "game");
   return (
     <>
       <ServiceStatusLight
         status={row.serviceStatus || (row.serviceEnabled === false ? "offline" : "online")}
-        editable={editable && !isTempId(row.id)}
+        editable={editable}
         onToggle={() => onSetGameStatus(row.id, row.serviceStatus || (row.serviceEnabled === false ? "offline" : "online"))}
       />
       <OrderCell
@@ -956,7 +994,7 @@ function RowCells({
       />
       <span className="text-linear-ink-tertiary">{row.id}</span>
 
-      <RowThumb gameId={row.id} image={row.image ?? ""} editable={editable} />
+      <RowThumb gameId={row.id} image={row.image ?? ""} editable={editable} onDraftChange={(image) => onDraftImage(row.id, image)} />
 
       <NameCell
         // The name is shared by both modes, so IDPASS only names a game it is adding.
@@ -1063,7 +1101,8 @@ function RowCells({
           links={row.links || []}
           editable={editable}
           dataMode={dataMode}
-          disabled={isTempId(row.id)}
+          // A game being added keeps its links in the draft until บันทึก.
+          stageOnly={isTempId(row.id)}
           onSaved={(links) => onLinksSaved(row.id, links)}
         />
       </span>
@@ -1380,7 +1419,7 @@ function OrderCell({ editable, editing, order, totalRows, onStartEdit, onCommit,
 // game's first pack/currency). Editable rows open the same upload/URL popup
 // used for pack and currency images (gameinfo-image-picker-modal.js); saves
 // immediately on change rather than joining the row's dirty/save-all flow.
-function RowThumb({ gameId, image, editable }) {
+function RowThumb({ gameId, image, editable, onDraftChange }) {
   const [value, setValue] = useState(image);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saveError, setSaveError] = useState(false);
@@ -1395,6 +1434,13 @@ function RowThumb({ gameId, image, editable }) {
   }, [image]);
 
   async function handleChange(next) {
+    // A game being added has no id to save a picture to yet: the picture
+    // waits in the draft and is saved right after the game is created.
+    if (isDraft) {
+      setValue(next);
+      onDraftChange?.(next);
+      return;
+    }
     const previous = value;
     setValue(next);
     setSaveError(false);
@@ -1436,17 +1482,6 @@ function RowThumb({ gameId, image, editable }) {
         <GameinfoImagePreview src={value} alt="">
           {thumb}
         </GameinfoImagePreview>
-      </span>
-    );
-  }
-
-  // A draft row from "เพิ่มเกม" has no real id yet (game_list.id doesn't
-  // exist until "บันทึก" creates it) — the image side table is keyed on
-  // that id, so there's nothing to save to until then.
-  if (isDraft) {
-    return (
-      <span title="บันทึกเกมนี้ก่อนถึงจะใส่รูปได้" className="cursor-not-allowed opacity-60">
-        {thumb}
       </span>
     );
   }

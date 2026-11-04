@@ -25,6 +25,8 @@ export function GameinfoGameLinksButton({
   editable,
   dataMode = "uid",
   disabled,
+  // Hands the links to onSaved without saving them: for a game not created yet.
+  stageOnly = false,
   onSaved,
   className = "",
 }) {
@@ -60,6 +62,11 @@ export function GameinfoGameLinksButton({
   }
 
   async function save() {
+    if (stageOnly) {
+      onSaved?.(draft.filter((link) => String(link.url || "").trim()));
+      setOpen(false);
+      return;
+    }
     setSaving(true);
     setError("");
     try {
