@@ -87,8 +87,9 @@ const gate = read("../src/components/gameinfo-edit-gate.js");
 const toggle = read("../src/components/gameinfo-mode-toggle.js");
 const notices = read("../src/components/gameinfo-notice-chain.js");
 assert.ok(toggle.includes("if (isGamePage && !isManageMode) return null;"), "a game page has one way into editing, on its card");
-assert.ok(gate.includes("[GAMEINFO_CEO_NOTICE, ...(botAuto ? [GAMEINFO_BOT_NOTICE] : []), gameinfoPlatformNotice(channels)]"), "the CEO, Bot Auto and platform notices, in that order");
-assert.ok(detailPage.includes("<GameinfoEditGate") && detailPage.includes("cancelHref={viewHref}") && detailPage.includes("backHref={viewHref}"), "the edit page shows the notices, and its way back is the game's page");
+assert.ok(gate.includes("run.current([GAMEINFO_CEO_NOTICE], null);") && gate.includes("useCeoNoticeOnOpen(className)"), "only the CEO's notice, on opening the game's page or the edit page");
+assert.ok(detailPage.includes("<GameinfoEditGate") && detailPage.includes("backHref={viewHref}"), "the edit page shows the notice, and its way back is the game's page");
+assert.ok(notices.includes("gd-ceo-hint") && notices.includes("gd-hs-ok"), "the picture's own button acknowledges it, with the hint underneath");
 assert.ok(notices.includes("stored?.day === today()") && notices.includes('"/gameinfo/ceo-notice.webp"'), "each notice once a day, the CEO's from its picture");
 
 assert.ok(editor.includes("GAMEINFO_PACK_LIST_STATUS_TABS.map") && editor.includes('statusTab === "all" || gameinfoPackListStatusTab({ status: gameinfoPackStatus(pack) }) === statusTab'), "the editor has the game page's status tabs and filters by them");

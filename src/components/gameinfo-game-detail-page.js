@@ -35,7 +35,6 @@ import GameinfoSalesChannelEditor, { GameinfoSalesChannelCards } from "@/compone
 import { listGamelistSalesChannels } from "@/server/gameinfo-sales-channels";
 import { listGameinfoListingReviewers, listGamelistPackListings } from "@/server/gameinfo-pack-listings";
 import { gameinfoListingActor, gameinfoListingChannels } from "@/lib/gameinfo-pack-listings";
-import { GAMEINFO_SALES_CHANNELS } from "@/lib/gameinfo-sales-channels";
 import { listStockForGame } from "@/server/stock-repository";
 import GameinfoMissingChecklist from "@/components/gameinfo-missing-checklist";
 import { gameinfoMissingItems } from "@/lib/gameinfo-completeness";
@@ -51,7 +50,6 @@ import {
 } from "@/server/gameinfo-gamelist-tags";
 import GameinfoFold from "@/components/gameinfo-fold";
 import GameinfoEditGate, { GameinfoCeoButton } from "@/components/gameinfo-edit-gate";
-import { isGameinfoBotAuto } from "@/lib/gameinfo-dashboard";
 import GameinfoPackEditor from "@/components/gameinfo-pack-editor";
 import { buildPackSuggestions } from "@/lib/gameinfo-suggestions";
 import { hasPermission } from "@/lib/permissions";
@@ -267,13 +265,8 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
     const missingItems = gameinfoMissingItems({ row, packs: flatPacks, testAccountCount: testAccounts.length, linked: Boolean(topupGame), salesChannelCount: salesChannels.length });
     return (
       <>
-        {/* The day's notices before editing, whichever way someone came in. */}
-        <GameinfoEditGate
-          botAuto={isGameinfoBotAuto(row.botManual)}
-          channels={(gameinfoListingChannels(salesChannels).length ? gameinfoListingChannels(salesChannels) : GAMEINFO_SALES_CHANNELS).map((channel) => channel.label)}
-          cancelHref={viewHref}
-          className={prompt.variable}
-        />
+        {/* The CEO's notice before editing, whichever way someone came in. */}
+        <GameinfoEditGate className={prompt.variable} />
         {/* Sticks under the red header (h-16) so the game being edited and
             the way back stay in view down a long pack table. */}
         <div className="sticky top-16 z-30 border-b border-linear-hairline bg-linear-surface-1/95 shadow-[0_8px_20px_-16px_rgba(0,0,0,0.4)] backdrop-blur">

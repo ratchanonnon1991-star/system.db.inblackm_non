@@ -1,38 +1,29 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
 import { Megaphone } from "lucide-react";
-import {
-  GAMEINFO_BOT_NOTICE,
-  GAMEINFO_CEO_NOTICE,
-  gameinfoPlatformNotice,
-  useGameinfoNoticeChain,
-} from "./gameinfo-notice-chain";
+import { GAMEINFO_CEO_NOTICE, useGameinfoNoticeChain } from "./gameinfo-notice-chain";
 
-// Editing a game starts with the day's notices: the CEO's, the Bot Auto
-// warning for a bot game, and the reminder to check every platform after the
-// change. They show on the edit page itself, so every way in meets them;
-// cancelling goes back to the game's page.
+// The CEO's notice, once a day per browser: on the first visit to a game's
+// page, and on the edit page for whoever came straight there. It cannot be
+// dismissed, only acknowledged with the button in the picture.
 const CEO_REQUEST = "gameinfo:ceo";
 
-export default function GameinfoEditGate({ botAuto = false, channels = [], cancelHref, className = "" }) {
-  const router = useRouter();
+/** The day's CEO notice when the page opens, unless it was acknowledged today. */
+function useCeoNoticeOnOpen(className) {
   const notices = useGameinfoNoticeChain(className);
   const run = useRef(notices.run);
   useEffect(() => {
     run.current = notices.run;
   });
   useEffect(() => {
-    run.current(
-      [GAMEINFO_CEO_NOTICE, ...(botAuto ? [GAMEINFO_BOT_NOTICE] : []), gameinfoPlatformNotice(channels)],
-      null,
-      { onCancel: () => router.replace(cancelHref) }
-    );
-    // Once per visit to the edit page, with what it opened with.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    run.current([GAMEINFO_CEO_NOTICE], null);
   }, []);
-  return notices.node;
+  return notices;
+}
+
+export default function GameinfoEditGate({ className = "" }) {
+  return useCeoNoticeOnOpen(className).node;
 }
 
 /** Shows the CEO's notice again, whenever someone wants to read it. */
@@ -44,9 +35,9 @@ export function GameinfoCeoButton() {
   );
 }
 
-/** Where the CEO button's notice opens, on the game's page. */
+/** On the game's page: the day's notice on arrival, and again whenever the CEO button asks. */
 export function GameinfoCeoNotice({ className = "" }) {
-  const notices = useGameinfoNoticeChain(className);
+  const notices = useCeoNoticeOnOpen(className);
   const run = useRef(notices.run);
   useEffect(() => {
     run.current = notices.run;

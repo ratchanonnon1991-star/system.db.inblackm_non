@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Bot, Check, CircleAlert, Clock, ShieldCheck } from "lucide-react";
+import { ArrowUp, Check, CircleAlert, Clock } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 // The edit page uses these notices without the game page's stylesheet around them.
 import "./gameinfo-game-detail.css";
@@ -113,41 +113,26 @@ export function GameinfoNoticeCard({ heading, icon: Icon, title, children, confi
   );
 }
 
-// The CEO's notice: the picture is the message, and its own button acknowledges it.
+// The CEO's notice: the picture is the message, and the red button drawn in
+// it acknowledges it; the hint underneath says so.
 export const GAMEINFO_CEO_NOTICE = {
   key: "ceo",
   wide: true,
   title: "ประกาศจาก CEO",
   render: (next) => (
-    <div className="gd-ceo-art">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/gameinfo/ceo-notice.webp" alt="CEO ข้าวแต้มสั่งด่วน ห้ามลืมตรวจสอบราคาทุก Platform หลังการอัพเดท" width={960} height={640} />
-      <button type="button" className="gd-hs-ok" onClick={next} aria-label="ข้าพเจ้าเข้าใจท่าน CEO เป็นอย่างดี" autoFocus />
-    </div>
+    <>
+      <div className="gd-ceo-art">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/gameinfo/ceo-notice.webp" alt="CEO ข้าวแต้มสั่งด่วน ห้ามลืมตรวจสอบราคาทุก Platform หลังการอัพเดท" width={960} height={640} />
+        <button type="button" className="gd-hs-ok" onClick={next} title="กดเพื่อรับทราบ" aria-label="ข้าพเจ้าเข้าใจท่าน CEO เป็นอย่างดี" autoFocus />
+      </div>
+      <div className="gd-ceo-hint">
+        <span className="up"><ArrowUp size={16} aria-hidden="true" /></span>
+        <span>กดปุ่มสีแดง <b>“ข้าพเจ้าเข้าใจท่าน CEO เป็นอย่างดี”</b> เพื่อรับทราบและปิดหน้าต่าง</span>
+      </div>
+    </>
   ),
 };
-
-export const GAMEINFO_BOT_NOTICE = {
-  key: "bot",
-  title: "ระวังบอทเติมอัตโนมัติ",
-  render: (next, cancel) => (
-    <GameinfoNoticeCard heading="ระวัง !" icon={Bot} title="แก้ไขแล้วบอทเติมตามทันที" confirm="รับทราบ ไปต่อ" onConfirm={next} onCancel={cancel}>
-      <small>เกมนี้เติมอัตโนมัติด้วย Bot Auto ตรวจชื่อ ราคา และจำนวนให้ถูกก่อนกดบันทึกทุกครั้ง</small>
-    </GameinfoNoticeCard>
-  ),
-};
-
-export function gameinfoPlatformNotice(channels) {
-  return {
-    key: "list",
-    title: "ตรวจให้ครบทุก Platform",
-    render: (next, cancel) => (
-      <GameinfoNoticeCard heading="ตรวจให้ครบ !" icon={ShieldCheck} title="หลังแก้ไข ตรวจราคาทุก Platform" confirm="เข้าใจแล้ว เข้าโหมดแก้ไข" onConfirm={next} onCancel={cancel}>
-        <div className="gd-cl-tags">{channels.map((channel) => <span key={channel}>{channel}</span>)}</div>
-      </GameinfoNoticeCard>
-    ),
-  };
-}
 
 export function gameinfoSendNotice({ round, lister, reviewer }) {
   return {
