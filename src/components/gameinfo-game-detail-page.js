@@ -33,7 +33,7 @@ import { GameinfoManageNav, GameinfoManageSection } from "@/components/gameinfo-
 import GameinfoWebMargin from "@/components/gameinfo-web-margin";
 import GameinfoSalesChannelEditor, { GameinfoSalesChannelCards } from "@/components/gameinfo-sales-channels";
 import { listGamelistSalesChannels } from "@/server/gameinfo-sales-channels";
-import { listGameinfoListingReviewers, listGamelistPackListings } from "@/server/gameinfo-pack-listings";
+import { listGameinfoListingReviewers, listGamelistPackChannelsOff, listGamelistPackListings } from "@/server/gameinfo-pack-listings";
 import { gameinfoListingActor, gameinfoListingChannels } from "@/lib/gameinfo-pack-listings";
 import { listStockForGame } from "@/server/stock-repository";
 import GameinfoMissingChecklist from "@/components/gameinfo-missing-checklist";
@@ -113,6 +113,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   let columnOrder = null;
   let listings = [];
   let listingReviewers = [];
+  let channelsOff = [];
   try {
     row = await getGameListRow(numericId);
     if (row) {
@@ -198,9 +199,10 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         listStockForGame(row.id, dataMode).catch(() => stock),
       ]);
       // Listing checks are an extra too; without them the badges just read "ยังไม่ลง".
-      [listings, listingReviewers] = manageMode ? [[], []] : await Promise.all([
+      [listings, listingReviewers, channelsOff] = manageMode ? [[], [], []] : await Promise.all([
         listGamelistPackListings(row.id, dataMode).catch(() => []),
         listGameinfoListingReviewers().catch(() => []),
+        listGamelistPackChannelsOff(row.id, dataMode).catch(() => []),
       ]);
       topupGame = topupConnected ? await getTopupWebGame(settings.topupGameId).catch(() => null) : null;
       row = {
@@ -404,6 +406,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
           gameId: row.id,
           dataMode,
           listings,
+          channelsOff,
           channels: gameinfoListingChannels(salesChannels),
           setupHref: editableRole ? `${manageHref}#s-sales` : null,
           canList: hasPermission(user, "gameinfo.report"),

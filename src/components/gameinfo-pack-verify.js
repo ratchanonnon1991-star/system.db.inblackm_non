@@ -64,17 +64,44 @@ export function GameinfoPackVerifyDialog({
   reviewers = [],
   setupHref = null,
   onListingsChange,
+  // Channels this pack is kept off although the game sells there, and the way
+  // an admin turns one off or back on.
+  offChannels = EMPTY_SET,
+  onChannelsOffChange = null,
   className = "",
 }) {
   const byChannel = new Map(listings.map((listing) => [listing.channel, listing]));
-  const firstToLook = ["wrong", "late", "pending"].map((status) => channels.find((channel) => byChannel.get(channel.key)?.status === status)).find(Boolean) || channels[0];
+  const firstToLook = ["wrong", "late", "pending"].map((status) => channels.find((channel) => byChannel.get(channel.key)?.status === status)).find(Boolean)
+    || channels.find((channel) => !offChannels.has(channel.key)) || channels[0];
   const [tab, setTab] = useState(firstToLook?.key);
   const [sending, setSending] = useState(false);
+  const [switching, setSwitching] = useState(false);
+  const [switchError, setSwitchError] = useState("");
   const notices = useGameinfoNoticeChain(className);
   const channel = channels.find((item) => item.key === tab) || channels[0];
   const listing = channel ? byChannel.get(channel.key) || null : null;
   const reference = channel && GAMEINFO_LISTING_PRICE_CHANNEL[channel.key] ? referencePrices[GAMEINFO_LISTING_PRICE_CHANNEL[channel.key]] ?? null : null;
   const nameOf = (username) => reviewers.find((item) => item.username === username)?.name || username;
+  const channelOff = Boolean(channel && offChannels.has(channel.key));
+  const canSwitch = Boolean(canReview && onChannelsOffChange && channel);
+
+  async function switchChannel(off) {
+    setSwitching(true);
+    setSwitchError("");
+    try {
+      const data = await apiJson(`/api/gameinfo/gamelist/${gameId}/listings${dataMode === "idpass" ? "?mode=idpass" : ""}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ packId: pack.id, channel: channel.key, off }),
+        fallbackError: "เปิด/ปิดช่องทางไม่สำเร็จ",
+      });
+      onChannelsOffChange(data.channelsOff);
+    } catch (error) {
+      setSwitchError(error instanceof Error ? error.message : "เปิด/ปิดช่องทางไม่สำเร็จ");
+    } finally {
+      setSwitching(false);
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -130,14 +157,44 @@ export function GameinfoPackVerifyDialog({
                 </div>
               ) : null}
               <div className="gd-tabs" role="tablist" aria-label="ช่องทางขาย">
-                {channels.map((item) => (
-                  <button key={item.key} type="button" role="tab" className="gd-tab" aria-selected={item.key === channel?.key} onClick={() => setTab(item.key)}>
-                    <i className={`gd-td ${byChannel.get(item.key)?.status || ""}`} aria-hidden="true" />
-                    {item.label}
-                  </button>
-                ))}
+                {channels.map((item) => {
+                  const off = offChannels.has(item.key);
+                  return (
+                    <button key={item.key} type="button" role="tab" className={`gd-tab${off ? " off" : ""}`} aria-selected={item.key === channel?.key} onClick={() => { setTab(item.key); setSwitchError(""); }} title={off ? `แพ็คนี้ไม่ได้ขายใน ${item.label}` : undefined}>
+                      <i className={`gd-td ${off ? "off" : byChannel.get(item.key)?.status || ""}`} aria-hidden="true" />
+                      {item.label}
+                      {off ? <span className="gd-tab-off">ปิด</span> : null}
+                    </button>
+                  );
+                })}
               </div>
-              {channel ? (
+              {canSwitch ? (
+                <div className="gd-chsw">
+                  <span>
+                    <b>ขายแพ็คนี้ใน {channel.label}</b>
+                    <small>{channelOff ? "ปิดอยู่ ไม่ต้องลงสินค้าและไม่นับในการตรวจ" : "ปิดถ้าแพ็คนี้ไม่ได้ขายในช่องทางนี้"}</small>
+                  </span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={!channelOff}
+                    aria-label={`ขายแพ็คนี้ใน ${channel.label}`}
+                    className="gd-switch"
+                    disabled={switching}
+                    onClick={() => switchChannel(!channelOff)}
+                  >
+                    <i aria-hidden="true" />
+                  </button>
+                </div>
+              ) : null}
+              {switchError ? <p role="alert" className="gd-note text-[color:var(--gd-red)]">{switchError}</p> : null}
+              {channel && channelOff ? (
+                <div className="gd-empty">
+                  <span className="eic"><ShieldCheck size={22} aria-hidden="true" /></span>
+                  <b>แพ็คนี้ไม่ได้ขายใน {channel.label}</b>
+                  <span>ไม่ต้องลงสินค้าและไม่นับใน “ตรวจแล้ว” ของแพ็คนี้{canSwitch ? " เปิดกลับได้ที่สวิตช์ด้านบน" : ""}</span>
+                </div>
+              ) : channel ? (
                 <ChannelListing
                   key={`${channel.key}-${listing?.round || 0}-${listing?.status || ""}`}
                   gameId={gameId}
@@ -165,6 +222,8 @@ export function GameinfoPackVerifyDialog({
     </Dialog>
   );
 }
+
+const EMPTY_SET = new Set();
 
 // Re-renders every half minute so the time left and a round running out show without a reload.
 function useNow() {

@@ -168,3 +168,33 @@ export async function reviewGamelistPackListing(gameId, dataMode, { packId, chan
   );
   return listGamelistPackListings(gameId, dataMode);
 }
+
+/** The channels each pack is kept off, although its game sells there: [{ packId, channel }]. */
+export async function listGamelistPackChannelsOff(gameId, dataMode) {
+  const pool = await getGameinfoPool();
+  const result = await pool.query(
+    `SELECT pack_id, channel FROM gamelist_pack_channels_off WHERE game_id = $1 AND data_mode = $2 ORDER BY pack_id, channel`,
+    [gameId, dataMode]
+  );
+  return result.rows.map((row) => ({ packId: row.pack_id, channel: row.channel }));
+}
+
+/** Takes one pack off one channel (`off`), or puts it back on. Its listing there, if any, is kept. */
+export async function setGamelistPackChannelOff(gameId, dataMode, { packId, channel, off }, actor) {
+  const id = packKey(packId, channel);
+  const pool = await getGameinfoPool();
+  if (off) {
+    await pool.query(
+      `INSERT INTO gamelist_pack_channels_off (game_id, data_mode, pack_id, channel, set_by)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (game_id, data_mode, pack_id, channel) DO UPDATE SET set_by = EXCLUDED.set_by, set_at = NOW()`,
+      [gameId, dataMode, id, channel, String(actor || "").slice(0, 120)]
+    );
+  } else {
+    await pool.query(
+      `DELETE FROM gamelist_pack_channels_off WHERE game_id = $1 AND data_mode = $2 AND pack_id = $3 AND channel = $4`,
+      [gameId, dataMode, id, channel]
+    );
+  }
+  return listGamelistPackChannelsOff(gameId, dataMode);
+}

@@ -363,6 +363,19 @@ function ensureSchema(connection) {
       `);
       await client.query(`ALTER TABLE gamelist_pack_listings ADD COLUMN IF NOT EXISTS checked_reference NUMERIC`);
       await client.query(`ALTER TABLE gamelist_pack_listings ADD COLUMN IF NOT EXISTS checked_snapshot JSONB`);
+      // Channels a pack is not sold on although its game is: no listing, no
+      // check, and not counted in the pack's "ตรวจแล้ว x/y".
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS gamelist_pack_channels_off (
+          game_id   INTEGER NOT NULL,
+          data_mode TEXT NOT NULL,
+          pack_id   TEXT NOT NULL,
+          channel   TEXT NOT NULL,
+          set_by    TEXT NOT NULL DEFAULT '',
+          set_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (game_id, data_mode, pack_id, channel)
+        )
+      `);
       await client.query(`
         ALTER TABLE gamelist_pack_listings
           ADD COLUMN IF NOT EXISTS round INTEGER NOT NULL DEFAULT 1,

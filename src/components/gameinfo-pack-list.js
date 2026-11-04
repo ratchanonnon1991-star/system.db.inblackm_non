@@ -136,6 +136,8 @@ export default function GameinfoPackList({
   // Where each pack is listed for sale (gameinfo-pack-verify.js), kept here so
   // a save in the window updates the row's badge too.
   const [listings, setListings] = useState(() => verify?.listings || []);
+  // Channels a pack is kept off although the game sells there.
+  const [channelsOff, setChannelsOff] = useState(() => verify?.channelsOff || []);
   const [verifyPackId, setVerifyPackId] = useState(null);
   // A round runs out after an hour; this moves the badges along without a reload.
   const [now, setNow] = useState(() => Date.now());
@@ -156,7 +158,11 @@ export default function GameinfoPackList({
   // Only channels the game sells on count; a listing left on one it stopped
   // selling on stays stored but out of the badge.
   const soldOn = new Set((verify?.channels || []).map((item) => item.key));
-  const listingsFor = (row) => (listingsByPack.get(String(row.pack.id)) || []).filter((listing) => soldOn.has(listing.channel)).map((listing) => {
+  const offKeys = new Set(channelsOff.map((item) => `${item.packId}\u0000${item.channel}`));
+  const isOff = (row, channel) => offKeys.has(`${row.pack.id}\u0000${channel}`);
+  const offChannelsFor = (row) => new Set([...soldOn].filter((channel) => isOff(row, channel)));
+  const channelCountFor = (row) => [...soldOn].filter((channel) => !isOff(row, channel)).length;
+  const listingsFor = (row) => (listingsByPack.get(String(row.pack.id)) || []).filter((listing) => soldOn.has(listing.channel) && !isOff(row, listing.channel)).map((listing) => {
     const key = GAMEINFO_LISTING_PRICE_CHANNEL[listing.channel];
     return gameinfoListingEffective(listing, key ? row.channels[key]?.price ?? null : null, now, row.pack);
   });
@@ -215,7 +221,7 @@ export default function GameinfoPackList({
         open={open.has(row.pack.id)}
         onToggle={() => toggle(row.pack.id)}
         listings={verify ? listingsFor(row) : null}
-        channelCount={soldOn.size}
+        channelCount={channelCountFor(row)}
         onVerify={() => setVerifyPackId(String(row.pack.id))}
         onImage={() => setLightbox(visible.indexOf(row))}
       />
@@ -232,7 +238,7 @@ export default function GameinfoPackList({
         gotField={gotField}
         stock={stock[row.pack.name]}
         listings={verify ? listingsFor(row) : null}
-        channelCount={soldOn.size}
+        channelCount={channelCountFor(row)}
         onOpen={() => setDetailPackId(String(row.pack.id))}
         onVerify={() => setVerifyPackId(String(row.pack.id))}
       />
@@ -487,6 +493,8 @@ export default function GameinfoPackList({
           auto={verifyRow.auto}
           channels={verify.channels}
           listings={listingsFor(verifyRow)}
+          offChannels={offChannelsFor(verifyRow)}
+          onChannelsOffChange={setChannelsOff}
           referencePrices={Object.fromEntries(Object.entries(verifyRow.channels).map(([key, value]) => [key, value.price]))}
           cost={verifyRow.cost}
           product={product}

@@ -6,6 +6,7 @@ import {
   listGamelistPackListings,
   reviewGamelistPackListing,
   saveGamelistPackListing,
+  setGamelistPackChannelOff,
 } from "@/server/gameinfo-pack-listings";
 
 async function target(request, params) {
@@ -51,5 +52,19 @@ export async function POST(request, { params }) {
     return jsonOk({ listings: await reviewGamelistPackListing(gameId, dataMode, body || {}, gameinfoListingActor(user)) });
   } catch (error) {
     return handleApiError(error, "บันทึกผลตรวจไม่สำเร็จ");
+  }
+}
+
+// Taking one pack off one sales channel, or back on: an admin.
+export async function PATCH(request, { params }) {
+  try {
+    const user = await requireGameinfoEditor(request);
+    const { gameId, dataMode } = await target(request, params);
+    if (!gameId) return jsonError("เกมไม่ถูกต้อง", 400);
+    const body = (await request.json()) || {};
+    const channelsOff = await setGamelistPackChannelOff(gameId, dataMode, { packId: body.packId, channel: body.channel, off: body.off === true }, gameinfoListingActor(user));
+    return jsonOk({ channelsOff });
+  } catch (error) {
+    return handleApiError(error, "เปิด/ปิดช่องทางไม่สำเร็จ");
   }
 }

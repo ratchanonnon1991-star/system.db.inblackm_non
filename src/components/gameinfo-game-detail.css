@@ -444,3 +444,19 @@
   .gd-packcard-verify .gd-vbtn { height: 26px; padding: 0 7px; gap: 3px; font-size: 11px; max-width: 100%; overflow: hidden; }
   .gd-packcard-verify .gd-vbtn svg { display: none; }
 }
+
+/* A channel this pack is kept off, in the check window. */
+.gd-tab.off { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--gd-muted) 60%, transparent); opacity: 0.75; }
+.gd-tab.off[aria-selected="true"] { opacity: 1; }
+.gd-tab-off { font-size: 11px; font-weight: 600; text-decoration: none; padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, var(--gd-muted) 18%, transparent); }
+.gd-td.off { background: transparent; box-shadow: inset 0 0 0 1.5px var(--gd-faint); }
+.gd-chsw { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-radius: 14px; background: var(--gd-surface2); border: 1px solid var(--gd-line); }
+.gd-chsw > span { display: flex; flex-direction: column; min-width: 0; }
+.gd-chsw b { font-size: 13.5px; font-weight: 600; }
+.gd-chsw small { font-size: 12px; color: var(--gd-muted); }
+.gd-switch { position: relative; flex: none; width: 46px; height: 28px; border-radius: 999px; background: var(--gd-faint); transition: background 0.15s; cursor: pointer; }
+.gd-switch[aria-checked="true"] { background: var(--gd-green); }
+.gd-switch i { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); transition: transform 0.15s; }
+.gd-switch[aria-checked="true"] i { transform: translateX(18px); }
+.gd-switch:disabled { opacity: 0.6; cursor: wait; }
+.gd-switch:focus-visible { outline: 2px solid var(--gd-red); outline-offset: 2px; }

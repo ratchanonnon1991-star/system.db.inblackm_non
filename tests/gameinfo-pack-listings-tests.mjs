@@ -14,6 +14,7 @@ import {
   listGamelistPackListings,
   reviewGamelistPackListing,
   saveGamelistPackListing,
+  setGamelistPackChannelOff,
 } from "@/server/gameinfo-pack-listings";
 import { reset, setResponder } from "@/lib/db.js";
 
@@ -89,6 +90,17 @@ const review = queries.find((query) => /UPDATE gamelist_pack_listings/.test(quer
 assert.deepEqual(review.params.slice(0, 9), [3, "uid", "a", "kaleoz", "wrong", 99, 90, "tan", "ราคาเก่า"], "the check keeps the price it was made against");
 assert.deepEqual(JSON.parse(review.params[9]), { price: "90", name: "60 Crystals" }, "and the pack's values, known fields only");
 
+// One pack taken off one channel, and back on.
+queries.length = 0;
+await setGamelistPackChannelOff(3, "uid", { packId: "a", channel: "g2g", off: true }, "tan");
+assert.ok(/INSERT INTO gamelist_pack_channels_off/.test(queries[0].text) && queries[0].params.join() === "3,uid,a,g2g,tan", "a pack is kept off a channel, with who did it");
+queries.length = 0;
+await setGamelistPackChannelOff(3, "uid", { packId: "a", channel: "g2g", off: false }, "tan");
+assert.ok(/DELETE FROM gamelist_pack_channels_off/.test(queries[0].text), "and put back on");
+await assert.rejects(setGamelistPackChannelOff(3, "uid", { packId: "a", channel: "nowhere", off: true }, "tan"), /ช่องทางขายไม่ถูกต้อง/, "only a known channel");
+const listingsRoute = readFileSync(new URL("../src/app/api/gameinfo/gamelist/[id]/listings/route.js", import.meta.url), "utf8");
+assert.ok(/export async function PATCH[\s\S]*requireGameinfoEditor\(request\)/.test(listingsRoute), "switching a channel needs an admin");
+
 const passed = { status: "ok", checkedReference: 90 };
 assert.equal(gameinfoListingEffective(passed, 90).status, "ok", "a check holds while the price stays");
 assert.equal(gameinfoListingEffective(passed, 95).status, "pending", "a moved price asks for a new round");
@@ -117,4 +129,4 @@ assert.ok(route.includes("requireGameinfoReporter(request)") && route.includes("
 const packs = readFileSync(new URL("../src/server/gameinfo-gamelist-packs.js", import.meta.url), "utf8");
 assert.ok(packs.includes("CREATE TABLE IF NOT EXISTS gamelist_pack_listings"), "the table is created with the others");
 
-console.log("60 passed");
+console.log("64 passed");
