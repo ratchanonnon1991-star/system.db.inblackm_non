@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bot, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, Image as ImageIcon, Search, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Bot, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, Image as ImageIcon, LayoutGrid, List, Search, X, ZoomIn, ZoomOut } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { setGameinfoFoldClosed } from "./gameinfo-fold";
 import { GameinfoPackVerifyButton, GameinfoPackVerifyDialog } from "./gameinfo-pack-verify";
@@ -30,6 +30,16 @@ const signedBaht = (value) => (value === null ? "—" : `${value < 0 ? "−" : "
 const STATUS_TONE = { open: "blue", new: "green", closed: "", expired: "red" };
 // A pack this dear stands out in the list, so a slip on it is caught.
 const HIGH_PRICE = 1000;
+// How the packs are laid out: "list" rows, or "cards" in a grid as the TopUp
+// site shows them. Each browser keeps its own choice.
+const LAYOUT_KEY = "gameinfo-pack-layout";
+function readLayout() {
+  try {
+    return window.localStorage.getItem(LAYOUT_KEY) === "cards" ? "cards" : "list";
+  } catch {
+    return "list";
+  }
+}
 // Sent by the game card's Bot Auto notice: show the bot's packs.
 export const GAMEINFO_SHOW_BOT_PACKS = "gameinfo:show-bot-packs";
 const STOCK_TONE = { ok: "green", low: "amber", empty: "red" };
@@ -88,6 +98,22 @@ export default function GameinfoPackList({
   // The category tabs, as the TopUp site shows a game's packs: one category at a time, or all.
   const [categoryTab, setCategoryTab] = useState("all");
   const [lightbox, setLightbox] = useState(null);
+  const [layout, setLayoutState] = useState("list");
+  useEffect(() => {
+    // After hydration, so the server's "list" and the browser's choice never clash.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLayoutState(readLayout());
+  }, []);
+  function setLayout(next) {
+    setLayoutState(next);
+    try {
+      window.localStorage.setItem(LAYOUT_KEY, next);
+    } catch {
+      // Private window: the choice lasts until the page closes.
+    }
+  }
+  // The pack whose details are open in a window, in the card layout.
+  const [detailPackId, setDetailPackId] = useState(null);
   const listRef = useRef(null);
   useEffect(() => {
     function showBotPacks() {
@@ -189,6 +215,24 @@ export default function GameinfoPackList({
       />
     );
   }
+
+  function card(row) {
+    return (
+      <PackCard
+        key={row.pack.id}
+        row={row}
+        product={product}
+        channel={channel}
+        gotField={gotField}
+        stock={stock[row.pack.name]}
+        listings={verify ? listingsFor(row) : null}
+        channelCount={soldOn.size}
+        onOpen={() => setDetailPackId(String(row.pack.id))}
+        onVerify={() => setVerifyPackId(String(row.pack.id))}
+      />
+    );
+  }
+  const detailRow = detailPackId === null ? null : rows.find((row) => String(row.pack.id) === detailPackId) || null;
 
   return (
     <>
@@ -299,8 +343,36 @@ export default function GameinfoPackList({
           {chip === "bot" ? <BotCallout /> : null}
           <div className="mb-2 ml-0.5 flex flex-wrap items-center justify-between gap-2">
             <p className="gd-note m-0">{product ? "แตะแพ็คเพื่อดูวิธีคำนวณและเทียบช่องทาง" : "แตะแพ็คเพื่อดูรายละเอียด"}</p>
-            {hintAction}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="gd-seg" role="group" aria-label="รูปแบบการแสดงแพ็ค">
+                <button type="button" aria-pressed={layout === "list"} onClick={() => setLayout("list")} title="แสดงเป็นรายการ">
+                  <List size={15} aria-hidden="true" /> รายการ
+                </button>
+                <button type="button" aria-pressed={layout === "cards"} onClick={() => setLayout("cards")} title="แสดงเป็นการ์ดแบบหน้าเว็บ inblackm">
+                  <LayoutGrid size={15} aria-hidden="true" /> แบบเว็บ
+                </button>
+              </div>
+              {hintAction}
+            </div>
           </div>
+          {layout === "cards" ? (
+            grouped && categories.length > 1 ? (
+              <div className="gd-cgroups">
+                {categories.map((category) => {
+                  const items = visible.filter((row) => row.category.id === category.id);
+                  if (!items.length) return null;
+                  return (
+                    <section key={category.id} className="gd-cgroup">
+                      <h4 className="gd-cgtitle">{category.name || "(ไม่มีชื่อหมวดหมู่)"}<span>{items.length} แพ็ค</span></h4>
+                      <div className="gd-cards">{items.map(card)}</div>
+                    </section>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="gd-cards">{visible.map(card)}</div>
+            )
+          ) : (
           <div className="gd-list">
             <div className="gd-lh" style={{ "--cols": tracks }} aria-hidden="true">
               <span>แพ็ค</span>
@@ -332,8 +404,38 @@ export default function GameinfoPackList({
               })
               : visible.map(item)}
           </div>
+          )}
         </div>
       )}
+
+      {detailRow ? (
+        <Dialog open onOpenChange={(next) => { if (!next) setDetailPackId(null); }}>
+          <DialogContent showCloseButton={false} className={`gd gd-modal sm:max-w-[760px] ${className}`}>
+            <div className="gd-mhead">
+              <span className={`gd-micon${detailRow.pack.image ? " pic" : ""}`}>
+                {detailRow.pack.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={detailRow.pack.image} alt="" />
+                ) : <ImageIcon size={22} aria-hidden="true" />}
+              </span>
+              <div className="min-w-0">
+                <DialogTitle className="truncate text-xl leading-tight font-semibold text-white">{detailRow.pack.name || "-"}</DialogTitle>
+                <DialogDescription className="truncate text-[13px] text-white/90">
+                  {[detailRow.category.name, detailRow.pack.amountReceived ? `ได้รับ ${detailRow.pack.amountReceived}` : ""].filter(Boolean).join(" · ") || "รายละเอียดแพ็ค"}
+                </DialogDescription>
+              </div>
+              <button type="button" className="ml-auto grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/20 text-white" aria-label="ปิด" onClick={() => setDetailPackId(null)}>
+                <X size={18} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="gd-mbody">
+              <div className="gd-dtgrid">
+                <PackDetails row={detailRow} product={product} channel={channel} channels={channels} costColumn={costColumn} otherColumns={otherColumns} chargeUnit={chargeUnit} context={context} />
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      ) : null}
 
       {lightbox !== null && visible[lightbox] ? (
         <PackLightbox
@@ -465,16 +567,63 @@ function PackItem({ row, product, tracks, gotField, channel, channels, costColum
         </button>
       </div>
       <div id={detailsId} className="gd-dt">
-        {open ? (
-          <>
-            {row.auto ? <BotCallout /> : null}
-            {product && channels.length ? <ChannelCompare row={row} channels={channels} selected={channel?.key} /> : null}
-            {costColumn ? <CostWorking row={row} chargeUnit={chargeUnit} context={context} product={product} /> : null}
-            <TopupInfo row={row} href={href} />
-            <OtherColumns row={row} columns={otherColumns} />
-          </>
-        ) : null}
+        {open ? <PackDetails row={row} product={product} channel={channel} channels={channels} costColumn={costColumn} otherColumns={otherColumns} chargeUnit={chargeUnit} context={context} /> : null}
       </div>
+    </div>
+  );
+}
+
+// What opening a pack shows: the bot note, the channels side by side, how the
+// cost is worked out, where it is topped up, and the remaining columns.
+function PackDetails({ row, product, channel, channels, costColumn, otherColumns, chargeUnit, context }) {
+  return (
+    <>
+      {row.auto ? <BotCallout /> : null}
+      {product && channels.length ? <ChannelCompare row={row} channels={channels} selected={channel?.key} /> : null}
+      {costColumn ? <CostWorking row={row} chargeUnit={chargeUnit} context={context} product={product} /> : null}
+      <TopupInfo row={row} href={packHref(row.pack.link)} />
+      <OtherColumns row={row} columns={otherColumns} />
+    </>
+  );
+}
+
+// One pack as the TopUp site shows it: picture, name and price on a card.
+// The card opens the details; the check badge opens its own window.
+function PackCard({ row, product, channel, gotField, stock, listings, channelCount, onOpen, onVerify }) {
+  const { pack } = row;
+  const figures = row.channels[channel?.key] || { price: gameinfoListNumber(pack.price), profit: null, margin: null };
+  const price = product ? figures.price : gameinfoListNumber(pack.price);
+  const got = gotField ? String(pack[gotField] ?? "").trim() : "";
+  const classes = [
+    "gd-card",
+    row.status === "closed" ? "off" : "",
+    row.status === "expired" ? "exp" : "",
+    (gameinfoListNumber(pack.price) ?? 0) >= HIGH_PRICE ? "hi" : "",
+  ].filter(Boolean).join(" ");
+  return (
+    <div className={classes}>
+      <button type="button" className="gd-card-hit" onClick={onOpen} aria-label={`รายละเอียด ${pack.name || ""}`} />
+      <span className="gd-card-tags">
+        {row.auto ? <span className="gd-botb" title="Bot Auto"><Bot size={12} aria-hidden="true" />BOT</span> : null}
+        {row.status === "new" ? <span className="gd-stg new">NEW</span> : row.status === "expired" ? <span className="gd-stg exp">EXPIRED</span> : null}
+      </span>
+      <span className={`gd-card-img${pack.image ? "" : " none"}`}>
+        {pack.image ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={pack.image} alt="" loading="lazy" />
+        ) : <ImageIcon size={28} aria-hidden="true" />}
+      </span>
+      <span className="gd-card-nm" title={pack.name}>{pack.name || "-"}</span>
+      {got ? <span className="gd-card-sub">{gotField === "priceUsd" ? `$${got}` : `ได้รับ ${got}`}</span> : null}
+      <span className="gd-card-price num">{baht(price)}</span>
+      {product && (figures.profit !== null || figures.margin !== null) ? (
+        <span className="gd-card-sub">
+          <span className={`num ${figures.profit === null ? "" : figures.profit >= 0 ? "pos" : "neg"}`}>{signedBaht(figures.profit)}</span>
+          <MarginPill margin={figures.margin} />
+        </span>
+      ) : null}
+      <span className="gd-card-notes"><PackNotes row={row} stock={stock} /></span>
+      {listings ? <span className="gd-card-verify"><GameinfoPackVerifyButton packName={pack.name} listings={listings} channelCount={channelCount} onOpen={onVerify} /></span> : null}
     </div>
   );
 }
