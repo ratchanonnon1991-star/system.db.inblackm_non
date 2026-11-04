@@ -959,7 +959,8 @@ function RowCells({
       <RowThumb gameId={row.id} image={row.image ?? ""} editable={editable} />
 
       <NameCell
-        editable={editable && dataMode === "uid"}
+        // The name is shared by both modes, so IDPASS only names a game it is adding.
+        editable={editable && (dataMode === "uid" || isTempId(row.id))}
         editing={editingName}
         value={row.game}
         packCount={row.packCount}

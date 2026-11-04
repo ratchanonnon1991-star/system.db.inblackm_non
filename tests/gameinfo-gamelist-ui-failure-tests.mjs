@@ -13,4 +13,6 @@ assert.ok(source.includes("ข้อมูลบางส่วนอาจถ�
 assert.ok(source.includes("onClick={requestGameinfoReload}"), "reload after a partial save goes through the unsaved guard");
 assert.ok(cards.includes("อัปเดต Report ไม่สำเร็จ — ระบบจะลองใหม่อัตโนมัติ"));
 
-console.log("6 passed");
+assert.ok(source.includes('editable={editable && (dataMode === "uid" || isTempId(row.id))}'), "a game added in IDPASS can be named before it is saved");
+
+console.log("7 passed");
