@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, ChevronDown, Copy, Download, FileUp, Image as ImageIcon, Languages, Lock, Pencil, Plus, Trash2, X } from "lucide-react";
+import { CheckCircle2, ChevronDown, Copy, Download, FileUp, Image as ImageIcon, Languages, LayoutGrid, Lock, Pencil, Plus, Trash2, X } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -105,7 +105,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { GAMEINFO_ADD_WEB_PACKS_EVENT, GAMEINFO_SET_WEB_PACK_IMAGES_EVENT, GAMEINFO_WEB_PACK_CATEGORY } from "@/lib/gameinfo-topup-match";
+import { GAMEINFO_ADD_WEB_PACKS_EVENT, GAMEINFO_SET_WEB_PACK_IMAGES_EVENT, GAMEINFO_WEB_PACK_CATEGORY, regroupByTopupWebCategories } from "@/lib/gameinfo-topup-match";
 import { Input } from "@/components/ui/input";
 import { GAMEINFO_PACK_LIST_STATUS_TABS, gameinfoPackListStatusTab } from "@/lib/gameinfo-pack-list";
 
@@ -147,6 +147,9 @@ export default function GameinfoPackEditor({
   exportUrl = `/api/gameinfo/import/export?gameId=${game.id}`,
   historyUrl = `/api/gameinfo/gamelist/${game.id}/packs/history?limit=200`,
   sectionNumbers = null,
+  // The linked TopUp website's packages ({ label, amountDisplay, category }),
+  // for sorting packs into the website's categories.
+  webPackages = [],
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -525,6 +528,42 @@ export default function GameinfoPackEditor({
       destination.packs.push(...moving);
     });
     setSelectedPackIds(new Set());
+  }
+  // What "จัดหมวดตามเว็บ TopUp" would make of one currency; null when it
+  // would change nothing.
+  function webRegroupPlan(cIdx) {
+    const currency = currencies[cIdx];
+    if (!currency || !webPackages.length) return null;
+    const plan = regroupByTopupWebCategories([currency], webPackages, () => genId("cat"));
+    if (!plan.matched) return null;
+    const shape = (categories) => JSON.stringify(categories.map((category) => [category.name, category.packs.map((pack) => pack.id)]));
+    if (shape(plan.currencies[0].categories) === shape(currency.categories)) return null;
+    return plan;
+  }
+  const webPlans = webPackages.length ? currencies.map((_, cIdx) => webRegroupPlan(cIdx)) : [];
+  function regroupByWeb(cIdx) {
+    const plan = webRegroupPlan(cIdx);
+    if (!plan) return;
+    const next = plan.currencies[0];
+    const used = next.categories.filter((category) => category.packs.length).map((category) => category.name).filter(Boolean);
+    const keptIds = new Set(next.categories.map((category) => String(category.id)));
+    const losesFormula = computedColumns.some((column) => Object.keys(column.categoryFormulas || {}).some((id) => !keptIds.has(String(id)) && currencies[cIdx].categories.some((category) => String(category.id) === String(id))));
+    setConfirmRequest({
+      title: "จัดหมวดตามเว็บ TopUp",
+      message: [
+        `แพ็ค ${plan.matched} แพ็คจะเข้าหมวดเดียวกับหน้าเว็บ: ${used.join(", ")}`,
+        plan.unmatched ? `อีก ${plan.unmatched} แพ็คที่เว็บไม่มีจะอยู่หมวดเดิม` : "",
+        losesFormula ? "หมวดที่ว่างจะถูกลบ พร้อมสูตรเฉพาะหมวดของมัน" : "",
+        "ยังไม่บันทึกจนกว่าจะกดบันทึก",
+      ].filter(Boolean).join(" · "),
+      confirmLabel: "จัดหมวด",
+      onConfirm: () => {
+        updateCurrencies((draft) => {
+          draft[cIdx] = structuredClone(next);
+        });
+        setSelectedPackIds(new Set());
+      },
+    });
   }
   function addCategory(cIdx) {
     updateCurrencies((draft) => {
@@ -1354,13 +1393,26 @@ export default function GameinfoPackEditor({
 
               <div className="mb-2 flex items-center justify-between">
                 <h3 className="text-sm font-medium text-linear-ink-muted">หมวดหมู่ pack</h3>
-                <button
-                  type="button"
-                  onClick={() => addCategory(cIdx)}
-                  className="flex items-center gap-1 rounded-md border border-linear-hairline-strong px-2 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-2"
-                >
-                  <Plus size={13} /> หมวดหมู่
-                </button>
+                <div className="flex items-center gap-2">
+                  {webPackages.length ? (
+                    <button
+                      type="button"
+                      disabled={!webPlans[cIdx]}
+                      onClick={() => regroupByWeb(cIdx)}
+                      title={webPlans[cIdx] ? "ย้ายแพ็คเข้าหมวดเดียวกับหน้าเว็บ TopUp (ยังไม่บันทึก)" : "หมวดตรงกับหน้าเว็บแล้ว"}
+                      className="flex items-center gap-1 rounded-md border border-sky-500/40 bg-sky-500/[0.06] px-2 py-1 text-xs font-bold text-sky-700 hover:bg-sky-500/15 disabled:cursor-default disabled:opacity-40 dark:text-sky-300"
+                    >
+                      <LayoutGrid size={13} aria-hidden="true" /> จัดหมวดตามเว็บ TopUp
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => addCategory(cIdx)}
+                    className="flex items-center gap-1 rounded-md border border-linear-hairline-strong px-2 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-2"
+                  >
+                    <Plus size={13} /> หมวดหมู่
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-3">

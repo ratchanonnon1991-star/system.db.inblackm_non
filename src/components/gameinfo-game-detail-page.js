@@ -349,6 +349,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
               importPreviewUrl={`/api/gameinfo/import/preview?gameId=${row.id}`}
               exportUrl={`/api/gameinfo/import/export?gameId=${row.id}${dataMode === "idpass" ? "&mode=idpass" : ""}`}
               sectionNumbers={MANAGE_NUMBERS}
+              webPackages={(topupGame?.packages || []).filter((pkg) => pkg.category).map(({ label, amountDisplay, category }) => ({ label, amountDisplay, category }))}
             />
             <GameinfoManageSection
               id="s-margin"
