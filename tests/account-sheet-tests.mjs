@@ -105,4 +105,38 @@ const coverage = accountSheetCoverage([
 ]);
 check(coverage.length === 2 && coverage[0].rows === 15 && coverage[0].page && !coverage[1].page, "coverage groups a tab across months and says which have a page");
 
+// A login typed beside an account's name on the header row is dropped; the labels stay.
+const header = scrubSheetRows([["", "Date", "time", "TNT Hero", "Hero5713", "PHP ที่ได้รับ", "Ayetun786#"], ["", "46296", "", "x", "Hero5713"]]);
+check(header.rows[0][4] === REMOVED_CELL && header.rows[0][6] === REMOVED_CELL && header.rows[0][3] === "TNT Hero" && header.rows[0][5] === "PHP ที่ได้รับ", "logins on a header row are dropped, labels kept");
+check(header.rows[1][4] === "Hero5713" && header.removed === 2, "only header rows are scanned for logins");
+check(scrubSheetRows([["Password"], ["abc"], [""]]).rows[1][0] === REMOVED_CELL && scrubSheetRows([["Password"], ["abc"], [""]]).rows[2][0] === "", "a Password column is dropped, empty cells stay empty");
+
+// Secondary wallet tabs (ledger layout).
+check(walletCodeForTab("1.2 x", "MYR ( Plsbuy )") === "myr-plsbuy" && walletCodeForTab("1.2 x", "BITKUB PTos") === "bitkub-ptos" && walletCodeForTab("1.2 x", "TNT Hero", ["bybit"]) === null, "secondary tabs map to their wallet, and a code list narrows it");
+const myr = parseWalletTab("myr-plsbuy", [
+  ["", "Date", "time", "TOP UP MAIL", "MYR ที่ได้รับ", "MYR ที่จ่าย", "MYR คงเหลือ", "Link"],
+  ["", "46200", "", "old copied row", "", "10", "90", ""], // last months' row under its old date
+  ["", "46296", "9.0", "a@b.co", "", "15", "85", "https://img/1"],
+  ["", "46297", "10.3", "deposit", "40", "", "125", ""],
+], "2026-10");
+check(myr.records.length === 3 && myr.records[0].opening && fromWalletUnits(myr.records[0].balances.MYR) === "100", "a ledger tab starting on a money row gets its carried balance from that row");
+check(!myr.records.some((record) => record.desc === "old copied row") && myr.problems.length === 0, "rows carried along under last months' dates are left out");
+check(myr.records[1].desc === "a@b.co" && myr.records[1].details.some((d) => d.label === "Link" && d.value === "https://img/1"), "the description column and proof links are kept");
+const myrPlan = planWalletEntries([{ code: "myr-plsbuy", period: "2026-10", tab: "MYR ( Plsbuy )", records: myr.records }]);
+check(myrPlan.totals["myr-plsbuy:MYR"] === "125" && myrPlan.mismatches.length === 0, "a secondary wallet ends where its sheet ends");
+const idr = parseWalletTab("idr-amen", [
+  ["", "Date", "time", "TOP UP NUMBER", "IDR ที่ได้รับ", "IDR ที่จ่าย", "PHP คงเหลือ"],
+  ["", "", "", "ยอดยกมา", "", "", "1000"],
+  ["", "46296", "", "0812", "", "300", "700"],
+], "2026-10");
+check(idr.records.length === 2 && idr.records[0].opening && fromWalletUnits(idr.records[1].balances.IDR) === "700", "IDR Amen reads its balance from the column the sheet calls PHP คงเหลือ");
+
+check(scrubSheetRows([["Date", "knnr@gmail.com Navaphol123"]]).rows[0][1] === `knnr@gmail.com ${REMOVED_CELL}` && scrubSheetRows([["x@y.co ลด 12%"]]).rows[0][0] === "x@y.co ลด 12%", "a password after an e-mail in the same cell is dropped; plain words stay");
+const uah = parseWalletTab("google-uah", [
+  ["", "Date", "USDT ที่ได้รับ", "UAH ที่ได้ชำระ", "Pruduct RATE", "FEE", "UAH ที่จ่าย", "UAH ที่ได้รับ", "UAH RATE", "FEE", "UAH คงเหลือ", "TOP UP MAIL"],
+  ["", "46177", "", "", "", "", "0", "0", "", "", "0.0", "ยกยอดมา"],
+  ["", "46177", "2000", "", "", "", "0", "84380.95238", "44.3", "1.05", "84380.95238", ""],
+  ["", "46177", "", "34380", "44.3", "1.05", "814.8758465", "0", "", "", "50000.95238", "Raif (UAH) NP 7"],
+], "2026-06");
+check(fromWalletUnits(uah.records[2].moves.UAH.out) === "34380" && planWalletEntries([{ code: "google-uah", period: "2026-06", tab: "Google UAH", records: uah.records }]).checks[0].drifts.length === 0, "Google UAH spends what ที่ได้ชำระ says, not the USDT cost in ที่จ่าย");
 console.log(`account sheets: ${passed} passed`);

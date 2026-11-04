@@ -212,17 +212,16 @@ export const walletCheckSignature = (check) =>
 
 /**
  * One month of one wallet and currency → its state for the page:
- *   ok       the system's carried and closing balances equal the sheet's, no row breaks the sheet's own balance
+ *   ok       the system's carried and closing balances are within 0.01 of the sheet's, no row breaks the sheet's own balance
  *   diff     something differs: the person has to look
  *   checked  someone looked and signed it off (for these numbers)
  *   stale    someone signed it off, but the numbers have changed since
  */
 export function walletCheckState(check) {
   if (check.checkedAt) return check.checkedStale ? "stale" : "checked";
-  const same = (a, b) => a == null || b == null || toWalletUnits(a) === toWalletUnits(b);
-  const closeOk = check.sheetClose == null || check.systemClose == null
-    || (() => { const d = toWalletUnits(check.sheetClose) - toWalletUnits(check.systemClose); return d <= 1000000n && d >= -1000000n; })();
-  return same(check.sheetOpen, check.systemOpen) && closeOk && !(check.drifts || []).length ? "ok" : "diff";
+  // Within 0.01: the sheets' formulas leave float dust that nobody can correct.
+  const near = (a, b) => a == null || b == null || (() => { const d = toWalletUnits(a) - toWalletUnits(b); return d <= 1000000n && d >= -1000000n; })();
+  return near(check.sheetOpen, check.systemOpen) && near(check.sheetClose, check.systemClose) && !(check.drifts || []).length ? "ok" : "diff";
 }
 export const WALLET_CHECK_LABELS = { ok: "ตรงกับชีต", diff: "ต้องตรวจ", checked: "ตรวจแล้ว", stale: "ตัวเลขเปลี่ยนหลังตรวจ" };
 

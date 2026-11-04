@@ -56,11 +56,12 @@ const EMAIL = /^[\w.+-]+@[\w-]+(\.[\w-]+)+$/;
 const SECRET_HEADER = /^(pin|pass|password|passwords|รหัสผ่าน|otp|2fa|seed phrase|private key)$/i;
 const NUMBER = /^-?[\d,]*\.?\d+(e-?\d+)?$/i;
 const LOGIN_LIKE = /^(?=.*[A-Za-z])(?=.*\d)\S{6,}$/;
+const EMAIL_THEN_WORD = /([\w.+-]+@[\w-]+(?:\.[\w-]+)+)\s+(\S+)/g;
 
 /**
  * rows: [[text, …], …] in sheet order → { rows, removed }. Drops a login typed
- * right after an e-mail (a non-number without spaces) and everything below a
- * PIN / Password / OTP header.
+ * right after an e-mail (a non-number without spaces) or after one in the same
+ * cell, and everything below a PIN / Password / OTP header.
  */
 export function scrubSheetRows(rows) {
   const secretCols = new Set();
@@ -74,6 +75,14 @@ export function scrubSheetRows(rows) {
       }
       if (secretCols.has(col) && cells[col]) {
         cells[col] = REMOVED_CELL;
+        removed += 1;
+      }
+    }
+    // An e-mail and its password typed in one cell ("x@gmail.com Pass123"): the e-mail stays.
+    for (let col = 0; col < cells.length; col += 1) {
+      const kept = cells[col].replace(EMAIL_THEN_WORD, (whole, email, word) => (LOGIN_LIKE.test(word) ? `${email} ${REMOVED_CELL}` : whole));
+      if (kept !== cells[col]) {
+        cells[col] = kept;
         removed += 1;
       }
     }
@@ -163,7 +172,8 @@ export const WALLET_SHEETS = [
   } },
   { code: "amaten", tabs: ["Amaten ( JPY )"], layout: "ledger", currencies: { JPY: { in: ["JPY ที่เติม"], out: ["JPY ที่ใช้"], balance: ["JPY คงเหลือ"] } }, skip: ["Code Bitcash"] },
   { code: "myr-plsbuy", tabs: ["MYR ( Plsbuy )"], layout: "ledger", currencies: { MYR: { in: ["MYR ที่ได้รับ"], out: ["MYR ที่จ่าย"], balance: ["MYR คงเหลือ"] } }, desc: ["TOP UP MAIL"] },
-  { code: "google-uah", tabs: ["Google UAH"], layout: "ledger", currencies: { UAH: { in: ["UAH ที่ได้รับ"], out: ["UAH ที่จ่าย"], balance: ["UAH คงเหลือ"] } }, desc: ["TOP UP MAIL"] },
+  // Google UAH's "UAH ที่จ่าย" is the USDT cost of the top-up; the UAH spent is "UAH ที่ได้ชำระ".
+  { code: "google-uah", tabs: ["Google UAH"], layout: "ledger", currencies: { UAH: { in: ["UAH ที่ได้รับ"], out: ["UAH ที่ได้ชำระ"], balance: ["UAH คงเหลือ"] } }, desc: ["TOP UP MAIL"] },
 ];
 const SHEET_BY_TAB = new Map(WALLET_SHEETS.flatMap((spec) => spec.tabs.map((tab) => [squash(tab).toLowerCase(), spec])));
 const SHEET_BY_CODE = new Map(WALLET_SHEETS.map((spec) => [spec.code, spec]));

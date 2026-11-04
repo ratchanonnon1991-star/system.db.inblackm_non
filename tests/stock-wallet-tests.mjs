@@ -8,7 +8,11 @@ import {
   sumWalletLegs,
   toWalletUnits,
   validateWalletEntry,
+  walletCheckSignature,
+  walletCheckState,
   walletKey,
+  walletStatusChange,
+  walletStatusDecision,
 } from "../src/lib/stock-wallets.js";
 
 let passed = 0;
@@ -81,5 +85,35 @@ check(sheet.legs[0].amount === -toWalletUnits("5"), "the sheet's columns never c
 check(validateWalletEntry({ kind: "deposit", toWalletId: 1, toCurrency: "USDT", amount: "1" }, wallets, balances).entry.credit === "", "the sheet's columns are optional");
 check(Boolean(validateWalletEntry({ kind: "deposit", toWalletId: 1, toCurrency: "USDT", amount: "1", credit: "abc" }, wallets, balances).error), "a credit must be a number");
 check(repository.includes("destination_account") && repository.includes("ADD COLUMN IF NOT EXISTS credit"), "the sheet's columns are stored on the entry");
+
+// Changing a done payment back to waiting needs a second person.
+const payment = { kind: "payment", status: "pending", orderId: null, statusRequest: null };
+check(walletStatusChange(payment, "done", { id: 5 }).status === "done", "waiting → done happens at once");
+const done = { ...payment, status: "done" };
+check(Boolean(walletStatusChange(done, "pending", { id: 5 }).error), "done → waiting needs a reason");
+check(Boolean(walletStatusChange(done, "pending", null, "ของยังไม่มา").error), "done → waiting needs someone signed in");
+const asked = walletStatusChange(done, "pending", { id: 5, name: "A" }, " ของยังไม่มา ");
+check(!asked.status && asked.request.to === "pending" && asked.request.byId === 5 && asked.request.reason === "ของยังไม่มา", "done → waiting is stored as a request, not applied");
+check(Boolean(walletStatusChange({ ...done, orderId: 7 }, "pending", { id: 5 }, "x").error) && Boolean(walletStatusChange({ ...done, kind: "deposit" }, "pending", { id: 5 }, "x").error), "only payments outside an order change status here");
+check(Boolean(walletStatusChange(payment, "pending", { id: 5 }).error) && Boolean(walletStatusChange(payment, "lost", { id: 5 }).error), "the new status must be a different, known one");
+const requested = { ...done, statusRequest: { to: "pending", byId: 5 } };
+check(Boolean(walletStatusChange(requested, "pending", { id: 9 }, "x").error), "one request at a time");
+check(Boolean(walletStatusDecision(requested, "approve", { id: 5 }).error) && Boolean(walletStatusDecision(requested, "approve", { id: "5" }).error), "whoever asked cannot confirm it");
+check(walletStatusDecision(requested, "approve", { id: 9 }).status === "pending", "someone else confirms it and the status changes");
+check(walletStatusDecision(requested, "reject", { id: 9 }).status === null, "someone else refuses it and the status stays");
+check(walletStatusDecision(requested, "cancel", { id: 5 }).status === null && Boolean(walletStatusDecision(requested, "cancel", { id: 9 }).error), "only whoever asked withdraws it");
+check(Boolean(walletStatusDecision(done, "approve", { id: 9 }).error) && Boolean(walletStatusDecision(requested, "approve", null).error) && Boolean(walletStatusDecision(requested, "maybe", { id: 9 }).error), "no request, no sign-in or an unknown answer is refused");
+check(repository.includes("walletStatusChange") && repository.includes("walletStatusDecision") && repository.includes("status_request_by_id"), "the repository runs both steps and keeps who asked");
+
+// Checking a wallet-month against its sheet.
+const month = { sheetOpen: "100", systemOpen: "100", sheetClose: "50", systemClose: "50.005", rows: 12, drifts: [] };
+check(walletCheckState(month) === "ok", "carried and closing balances that match (closing within 0.01) are ok");
+check(walletCheckState({ ...month, systemOpen: "100.004" }) === "ok", "a carried balance within 0.01 is float dust, not a difference");
+check(walletCheckState({ ...month, systemClose: "50.02" }) === "diff" && walletCheckState({ ...month, systemOpen: "99" }) === "diff", "a different carried or closing balance needs a look");
+check(walletCheckState({ ...month, drifts: [{ rowNo: 7 }] }) === "diff", "a row breaking the sheet's own balance needs a look");
+check(walletCheckState({ ...month, sheetOpen: null, sheetClose: null }) === "ok", "a month the sheet has no figure for is not flagged");
+check(walletCheckState({ ...month, drifts: [{}], checkedAt: "2026-11-04" }) === "checked" && walletCheckState({ ...month, checkedAt: "2026-11-04", checkedStale: true }) === "stale", "a signed-off month is checked until its numbers change");
+check(walletCheckSignature(month) !== walletCheckSignature({ ...month, systemClose: "50.01" }) && walletCheckSignature(month) !== walletCheckSignature({ ...month, drifts: [{}] }), "the sign-off remembers the numbers it was for");
+check(repository.includes("walletCheckSignature") && repository.includes("checked_sig"), "a sign-off stores those numbers and is compared after each import");
 
 console.log(`stock-wallets: ${passed} passed`);
