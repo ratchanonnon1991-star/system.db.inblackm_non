@@ -84,12 +84,14 @@ export function buildGameinfoPackListRows(currency, columns, game, context = {})
   };
 }
 
-// The list's status tabs: a pack on sale is Active, a closed one shows under All only.
+// The status tabs on the game page and in the pack editor: a pack on sale is
+// Active, one switched off by hand Closed.
 export const GAMEINFO_PACK_LIST_STATUS_TABS = [
   { id: "all", label: "All" },
   { id: "active", label: "Active" },
   { id: "new", label: "New" },
   { id: "expired", label: "Expired" },
+  { id: "closed", label: "Closed" },
 ];
 const STATUS_TAB = { open: "active", new: "new", expired: "expired", closed: "closed" };
 

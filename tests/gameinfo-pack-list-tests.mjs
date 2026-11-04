@@ -54,7 +54,8 @@ const tabbed = [
 assert.deepEqual(tabbed.map(gameinfoPackListStatusTab), ["active", "new", "expired"]);
 assert.deepEqual(filterGameinfoPackListRows(tabbed, { status: "new" }).map((row) => row.pack.id), ["b"], "the status tab keeps its packs");
 assert.deepEqual(filterGameinfoPackListRows(tabbed, { chip: "bot" }).map((row) => row.pack.id), ["a", "p"], "the Bot Auto chip keeps the bot's packs");
-assert.equal(gameinfoPackListStatusTab({ status: "closed" }), "closed", "a closed pack is under All only");
+assert.equal(gameinfoPackListStatusTab({ status: "closed" }), "closed");
+assert.deepEqual(filterGameinfoPackListRows([{ ...rows[0], status: "closed" }, ...tabbed], { status: "closed" }).map((row) => row.pack.id), ["a"], "a closed pack has its own tab");
 
 const summary = summarizeGameinfoPackList(rows, "page");
 assert.equal(summary.count, 2, "only priced packs count");
@@ -98,4 +99,4 @@ assert.ok(list.includes('const grouped = sort === "default";'), "filtered packs 
 
 assert.ok(list.includes('aria-label="หมวดหมู่แพ็ค"') && list.includes('categoryTab === "all" ? rows'), "categories are tabs over the list, all or one at a time");
 
-console.log("41 passed");
+console.log("42 passed");
