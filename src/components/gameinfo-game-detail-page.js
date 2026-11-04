@@ -51,7 +51,8 @@ import {
 import { listGamelistReports } from "@/server/gameinfo-gamelist-reports";
 import GameinfoReportPanel from "@/components/gameinfo-report-panel";
 import GameinfoFold from "@/components/gameinfo-fold";
-import { GameinfoCeoButton } from "@/components/gameinfo-edit-gate";
+import GameinfoEditGate, { GameinfoCeoButton } from "@/components/gameinfo-edit-gate";
+import { isGameinfoBotAuto } from "@/lib/gameinfo-dashboard";
 import GameinfoPackEditor from "@/components/gameinfo-pack-editor";
 import { buildPackSuggestions } from "@/lib/gameinfo-suggestions";
 import { hasPermission } from "@/lib/permissions";
@@ -235,7 +236,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
 
   const viewHref = gameinfoGameHref(lang, row.id, dataMode, false);
   const manageHref = gameinfoGameHref(lang, row.id, dataMode, true);
-  // Back from a game, viewed or edited, is always the game list.
+  // Back from a game's page is the game list; back from editing it is its page.
   const listHref = gameinfoListHref(lang, dataMode, false);
   const packGame = {
     id: row.id,
@@ -270,13 +271,20 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
     const missingItems = gameinfoMissingItems({ row, packs: flatPacks, testAccountCount: testAccounts.length, linked: Boolean(topupGame), salesChannelCount: salesChannels.length });
     return (
       <>
+        {/* The day's notices before editing, whichever way someone came in. */}
+        <GameinfoEditGate
+          botAuto={isGameinfoBotAuto(row.botManual)}
+          channels={gameinfoListingChannels(salesChannels).map((channel) => channel.label)}
+          cancelHref={viewHref}
+          className={prompt.variable}
+        />
         {/* Sticks under the red header (h-16) so the game being edited and
             the way back stay in view down a long pack table. */}
         <div className="sticky top-16 z-30 border-b border-linear-hairline bg-linear-surface-1/95 shadow-[0_8px_20px_-16px_rgba(0,0,0,0.4)] backdrop-blur">
           <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-3 px-4 py-3 sm:px-7">
             <GameinfoBackLink
               className="flex h-10 items-center gap-1.5 rounded-full border border-linear-hairline bg-linear-surface-1 px-4 text-[13px] font-bold text-linear-ink transition hover:bg-linear-surface-2"
-              href={listHref}
+              href={viewHref}
             />
             <div className="flex min-w-0 flex-col leading-tight">
               <h1 className="truncate text-xl font-black text-linear-ink">แก้ไขเกม · {row.game}</h1>
@@ -339,7 +347,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
               userId={user.id}
               suggestions={{ ...buildPackSuggestions(packGame), channels: allChannels }}
               dataMode={dataMode}
-              backHref={listHref}
+              backHref={viewHref}
               historyUrl={`/api/gameinfo/gamelist/${row.id}/packs/history?limit=200${dataMode === "idpass" ? "&mode=idpass" : ""}`}
               savePacksUrl={`/api/gameinfo/gamelist/${row.id}/packs${dataMode === "idpass" ? "?mode=idpass" : ""}`}
               importPreviewUrl={`/api/gameinfo/import/preview?gameId=${row.id}`}

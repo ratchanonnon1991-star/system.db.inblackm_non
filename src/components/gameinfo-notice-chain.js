@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Bot, Check, CircleAlert, Clock, ShieldCheck } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+// The edit page uses these notices without the game page's stylesheet around them.
+import "./gameinfo-game-detail.css";
 
 // Notices that stand between a person and an action (editing a game, sending
 // a listing for a check, recording a check), one layer after another. Each is

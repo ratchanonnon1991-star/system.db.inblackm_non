@@ -43,7 +43,7 @@ import {
   useGameinfoPackColumnLayout,
 } from "./gameinfo-pack-column-layout";
 import GameinfoFold from "./gameinfo-fold";
-import GameinfoEditGate, { requestGameinfoEdit } from "./gameinfo-edit-gate";
+import { GameinfoCeoNotice } from "./gameinfo-edit-gate";
 import GameinfoPackList, { GAMEINFO_SHOW_BOT_PACKS } from "./gameinfo-pack-list";
 import "./gameinfo-game-detail.css";
 
@@ -171,13 +171,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
   return (
     <>
       <GameHero row={row} dataMode={dataMode} editHref={editHref} />
-      {editHref ? (
-        <GameinfoEditGate
-          botAuto={isGameinfoBotAuto(row.botManual)}
-          channels={(verify?.channels || []).map((channel) => channel.label)}
-          className={verify?.className || ""}
-        />
-      ) : null}
+      <GameinfoCeoNotice className={verify?.className || ""} />
 
       {/* The bot tops up from these prices, so a slip goes straight to a customer. */}
       {isGameinfoBotAuto(row.botManual) ? (
@@ -465,7 +459,6 @@ function GameHero({ row, dataMode, editHref }) {
             // manage page's ดูหน้าผู้ใช้): back from the editor is the list.
             replace
             className="gd-btn"
-            onClick={(event) => requestGameinfoEdit(event, editHref)}
           >
             <Pencil size={15} aria-hidden="true" /> แก้ไขข้อมูล
           </Link>

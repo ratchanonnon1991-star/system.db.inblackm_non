@@ -10,19 +10,29 @@ import {
   useGameinfoNoticeChain,
 } from "./gameinfo-notice-chain";
 
-// Going from a game's page into editing it passes through the day's notices:
-// the CEO's, the Bot Auto warning for a bot game, and the reminder to check
-// every platform afterwards. The way in is the game card's link, which asks
-// the gate on the page; the gate navigates once they are answered.
-const EDIT_REQUEST = "gameinfo:edit-request";
+// Editing a game starts with the day's notices: the CEO's, the Bot Auto
+// warning for a bot game, and the reminder to check every platform after the
+// change. They show on the edit page itself, so every way in meets them;
+// cancelling goes back to the game's page.
 const CEO_REQUEST = "gameinfo:ceo";
 
-/** Call from an edit link's click: true when the page's gate took it over. */
-export function requestGameinfoEdit(event, href) {
-  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return false;
-  const taken = !window.dispatchEvent(new CustomEvent(EDIT_REQUEST, { detail: { href }, cancelable: true }));
-  if (taken) event.preventDefault();
-  return taken;
+export default function GameinfoEditGate({ botAuto = false, channels = [], cancelHref, className = "" }) {
+  const router = useRouter();
+  const notices = useGameinfoNoticeChain(className);
+  const run = useRef(notices.run);
+  useEffect(() => {
+    run.current = notices.run;
+  });
+  useEffect(() => {
+    run.current(
+      [GAMEINFO_CEO_NOTICE, ...(botAuto ? [GAMEINFO_BOT_NOTICE] : []), gameinfoPlatformNotice(channels)],
+      null,
+      { onCancel: () => router.replace(cancelHref) }
+    );
+    // Once per visit to the edit page, with what it opened with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return notices.node;
 }
 
 /** Shows the CEO's notice again, whenever someone wants to read it. */
@@ -34,34 +44,19 @@ export function GameinfoCeoButton() {
   );
 }
 
-export default function GameinfoEditGate({ botAuto = false, channels = [], className = "" }) {
-  const router = useRouter();
+/** Where the CEO button's notice opens, on the game's page. */
+export function GameinfoCeoNotice({ className = "" }) {
   const notices = useGameinfoNoticeChain(className);
-  // The handlers below stay registered once; they read the latest props here.
-  const latest = useRef({ notices, botAuto, channels });
+  const run = useRef(notices.run);
   useEffect(() => {
-    latest.current = { notices, botAuto, channels };
+    run.current = notices.run;
   });
-
   useEffect(() => {
-    function onEdit(event) {
-      event.preventDefault();
-      const { notices: chain, botAuto: bot, channels: names } = latest.current;
-      chain.run(
-        [GAMEINFO_CEO_NOTICE, ...(bot ? [GAMEINFO_BOT_NOTICE] : []), gameinfoPlatformNotice(names)],
-        () => router.replace(event.detail.href)
-      );
-    }
     function onCeo() {
-      latest.current.notices.run([GAMEINFO_CEO_NOTICE], null, { force: false, always: true });
+      run.current([GAMEINFO_CEO_NOTICE], null, { force: false, always: true });
     }
-    window.addEventListener(EDIT_REQUEST, onEdit);
     window.addEventListener(CEO_REQUEST, onCeo);
-    return () => {
-      window.removeEventListener(EDIT_REQUEST, onEdit);
-      window.removeEventListener(CEO_REQUEST, onCeo);
-    };
-  }, [router]);
-
+    return () => window.removeEventListener(CEO_REQUEST, onCeo);
+  }, []);
   return notices.node;
 }

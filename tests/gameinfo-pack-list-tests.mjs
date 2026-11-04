@@ -85,8 +85,9 @@ assert.equal(gameinfoCountryThaiName("Somewhere"), "Somewhere", "an unknown coun
 const gate = read("../src/components/gameinfo-edit-gate.js");
 const toggle = read("../src/components/gameinfo-mode-toggle.js");
 const notices = read("../src/components/gameinfo-notice-chain.js");
-assert.ok(toggle.includes("if (isGamePage && !isManageMode) return null;") && view.includes("requestGameinfoEdit(event, editHref)"), "a game page has one way into editing, through the gate");
-assert.ok(gate.includes("[GAMEINFO_CEO_NOTICE, ...(bot ? [GAMEINFO_BOT_NOTICE] : []), gameinfoPlatformNotice(names)]"), "the CEO, Bot Auto and platform notices, in that order");
+assert.ok(toggle.includes("if (isGamePage && !isManageMode) return null;"), "a game page has one way into editing, on its card");
+assert.ok(gate.includes("[GAMEINFO_CEO_NOTICE, ...(botAuto ? [GAMEINFO_BOT_NOTICE] : []), gameinfoPlatformNotice(channels)]"), "the CEO, Bot Auto and platform notices, in that order");
+assert.ok(detailPage.includes("<GameinfoEditGate") && detailPage.includes("cancelHref={viewHref}") && detailPage.includes("backHref={viewHref}"), "the edit page shows the notices, and its way back is the game's page");
 assert.ok(notices.includes("stored?.day === today()") && notices.includes('"/gameinfo/ceo-notice.webp"'), "each notice once a day, the CEO's from its picture");
 
 console.log("37 passed");

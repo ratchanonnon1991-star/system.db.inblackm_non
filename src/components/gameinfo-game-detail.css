@@ -297,7 +297,7 @@
 /* Notices before an action (gameinfo-notice-chain.js): a red ticket card, or the CEO's picture. */
 .gd-notice { width: min(420px, calc(100% - 2rem)); max-width: none; padding: 0; gap: 0; background: transparent; box-shadow: none; border: 0; overflow: visible; }
 .gd-notice.wide { width: min(560px, calc(100% - 2rem)); }
-[data-slot="dialog-overlay"]:has(~ .gd-notice) { background: radial-gradient(70% 60% at 50% 45%, rgba(211, 32, 27, 0.38), rgba(8, 8, 12, 0.72)); }
+[data-slot="dialog-overlay"]:has(~ .gd-notice) { background: radial-gradient(70% 60% at 50% 45%, rgba(211, 32, 27, 0.38), rgba(8, 8, 12, 0.72)); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
 .gd-stp { display: flex; gap: 6px; align-items: center; justify-content: center; color: #fff; font-size: 12.5px; font-weight: 500; margin-bottom: 10px; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); }
 .gd-stp i { width: 8px; height: 8px; border-radius: 50%; background: rgba(255, 255, 255, 0.45); }
 .gd-stp i.on { background: #fff; }
