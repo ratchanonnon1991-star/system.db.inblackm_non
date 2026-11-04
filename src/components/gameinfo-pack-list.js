@@ -1,18 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bot, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, Image as ImageIcon, LayoutGrid, List, Pencil, Search, X, ZoomIn, ZoomOut } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Bot, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, Image as ImageIcon, LayoutGrid, List, Pencil, Plus, Search, X, ZoomIn, ZoomOut } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { setGameinfoFoldClosed } from "./gameinfo-fold";
 import GameinfoPriceChannelEditor from "./gameinfo-price-channel-editor";
 import { GameinfoPackVerifyButton, GameinfoPackVerifyDialog } from "./gameinfo-pack-verify";
 import { GAMEINFO_LISTING_PRICE_CHANNEL, gameinfoListingEffective } from "@/lib/gameinfo-pack-listings";
+import { apiJson } from "@/lib/api-json";
 import {
   GAMEINFO_MARGIN_GOOD,
   GAMEINFO_MARGIN_LOW,
   GAMEINFO_PACK_LIST_STATUS_TABS,
   buildGameinfoPackListRows,
   filterGameinfoPackListRows,
+  gameinfoColumnLooksBaht,
+  gameinfoPriceChannelsWithColumn,
   gameinfoPackListStatusTab,
   gameinfoListNumber,
   gameinfoMarginTone,
@@ -102,8 +106,35 @@ export default function GameinfoPackList({
   // The category tabs, as the TopUp site shows a game's packs: one category at a time, or all.
   const [categoryTab, setCategoryTab] = useState("all");
   const [lightbox, setLightbox] = useState(null);
+  // false, true (the editor as it is) or "add" (with a new channel ready to name).
   const [editingChannels, setEditingChannels] = useState(false);
   const channelsEditable = Boolean(product && channelSetup?.editable);
+  const router = useRouter();
+  const [channelSaving, setChannelSaving] = useState("");
+  const [channelError, setChannelError] = useState("");
+  const priceColumns = useMemo(() => (columns || []).filter((column) => column.kind === "computed" && String(column.label ?? "").trim()), [columns]);
+  // Picking a channel's price column in a pack's comparison sets it for the
+  // whole game: one channel reads one column on every pack.
+  async function setChannelColumn(key, column) {
+    setChannelSaving(key);
+    setChannelError("");
+    try {
+      await apiJson(`/api/gameinfo/gamelist/${channelSetup.gameId}/settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priceChannels: { mode: channelSetup.dataMode, channels: gameinfoPriceChannelsWithColumn(channels, channelSetup.configured, key, column) } }),
+        fallbackError: "บันทึกราคาขายของช่องทางไม่สำเร็จ",
+      });
+      router.refresh();
+    } catch (error) {
+      setChannelError(error instanceof Error ? error.message : "บันทึกราคาขายของช่องทางไม่สำเร็จ");
+    } finally {
+      setChannelSaving("");
+    }
+  }
+  const channelPicker = channelsEditable
+    ? { columns: priceColumns, saving: channelSaving, error: channelError, choose: setChannelColumn, add: () => setEditingChannels("add") }
+    : null;
   const [layout, setLayoutState] = useState("list");
   useEffect(() => {
     // After hydration, so the server's "list" and the browser's choice never clash.
@@ -224,6 +255,7 @@ export default function GameinfoPackList({
         channelCount={channelCountFor(row)}
         onVerify={() => setVerifyPackId(String(row.pack.id))}
         onImage={() => setLightbox(visible.indexOf(row))}
+        channelPicker={channelPicker}
       />
     );
   }
@@ -278,6 +310,7 @@ export default function GameinfoPackList({
             // The list starts from what the bar shows; a saved list keeps
             // channels whose column is gone too, so they can be fixed here.
             initial={channelSetup.configured || channels.map((item) => ({ key: item.key, label: item.short, column: item.priceColumn?.label || "" }))}
+            startWithNewRow={editingChannels === "add"}
             columnLabels={(columns || []).filter((column) => column.kind === "computed").map((column) => String(column.label ?? "")).filter(Boolean)}
             onClose={() => setEditingChannels(false)}
           />
@@ -465,7 +498,7 @@ export default function GameinfoPackList({
             </div>
             <div className="gd-mbody">
               <div className="gd-dtgrid">
-                <PackDetails row={detailRow} product={product} channel={channel} channels={channels} costColumn={costColumn} otherColumns={otherColumns} chargeUnit={chargeUnit} context={context} />
+                <PackDetails row={detailRow} product={product} channel={channel} channels={channels} costColumn={costColumn} otherColumns={otherColumns} chargeUnit={chargeUnit} context={context} channelPicker={channelPicker} />
               </div>
             </div>
           </DialogContent>
@@ -536,7 +569,7 @@ function mostCommon(values) {
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
 }
 
-function PackItem({ row, product, tracks, gotField, channel, channels, costColumn, otherColumns, chargeUnit, context, stock, open, onToggle, listings, channelCount, onVerify, onImage }) {
+function PackItem({ row, product, tracks, gotField, channel, channels, costColumn, otherColumns, chargeUnit, context, stock, open, onToggle, listings, channelCount, onVerify, onImage, channelPicker }) {
   const { pack } = row;
   const figures = row.channels[channel?.key] || { price: gameinfoListNumber(pack.price), profit: null, margin: null };
   const href = packHref(pack.link);
@@ -604,7 +637,7 @@ function PackItem({ row, product, tracks, gotField, channel, channels, costColum
         </button>
       </div>
       <div id={detailsId} className="gd-dt">
-        {open ? <PackDetails row={row} product={product} channel={channel} channels={channels} costColumn={costColumn} otherColumns={otherColumns} chargeUnit={chargeUnit} context={context} /> : null}
+        {open ? <PackDetails row={row} product={product} channel={channel} channels={channels} costColumn={costColumn} otherColumns={otherColumns} chargeUnit={chargeUnit} context={context} channelPicker={channelPicker} /> : null}
       </div>
     </div>
   );
@@ -612,11 +645,11 @@ function PackItem({ row, product, tracks, gotField, channel, channels, costColum
 
 // What opening a pack shows: the bot note, the channels side by side, how the
 // cost is worked out, where it is topped up, and the remaining columns.
-function PackDetails({ row, product, channel, channels, costColumn, otherColumns, chargeUnit, context }) {
+function PackDetails({ row, product, channel, channels, costColumn, otherColumns, chargeUnit, context, channelPicker = null }) {
   return (
     <>
       {row.auto ? <BotCallout /> : null}
-      {product && channels.length ? <ChannelCompare row={row} channels={channels} selected={channel?.key} /> : null}
+      {product && channels.length ? <ChannelCompare row={row} channels={channels} selected={channel?.key} picker={channelPicker} /> : null}
       {costColumn ? <CostWorking row={row} chargeUnit={chargeUnit} context={context} product={product} /> : null}
       <TopupInfo row={row} href={packHref(row.pack.link)} />
       <OtherColumns row={row} columns={otherColumns} />
@@ -753,7 +786,12 @@ function MarginPill({ margin }) {
   return <span className={`gd-pb ${gameinfoMarginTone(margin)}`}>{pct(margin)}</span>;
 }
 
-function ChannelCompare({ row, channels, selected }) {
+// Each channel's price and what it makes on this pack. Under its name, the
+// column its price comes from; someone who may set the game's channels picks
+// another by its price (option B on the design canvas), seeing what each
+// column holds for this pack, columns not in baht marked so.
+function ChannelCompare({ row, channels, selected, picker = null }) {
+  const [openKey, setOpenKey] = useState(null);
   return (
     <div className="gd-blk">
       <h4>เทียบรายช่องทางขาย</h4>
@@ -765,14 +803,79 @@ function ChannelCompare({ row, channels, selected }) {
         {channels.map((item) => {
           const value = row.channels[item.key];
           const sel = item.key === selected ? " sel" : "";
+          const open = Boolean(picker) && openKey === item.key;
           return [
-            <span key={`${item.key}-n`} className={`nx${sel}`}>{item.short}</span>,
-            <span key={`${item.key}-p`} className={`rr${sel}`}>{baht(value.price)}</span>,
+            <span key={`${item.key}-n`} className={`nx${sel}`}>
+              <span className="block truncate">{item.short}</span>
+              <span className="gd-cmp-src">จาก {item.priceColumn?.label || "ราคา (ของแพ็ค)"}</span>
+            </span>,
+            picker ? (
+              <span key={`${item.key}-p`} className="rr">
+                <button
+                  type="button"
+                  className={`gd-cmp-pick${open ? " on" : ""}${sel}`}
+                  aria-expanded={open}
+                  aria-label={`ราคาขายของ ${item.short} ${baht(value.price)} เปลี่ยนคอลัมน์`}
+                  disabled={picker.saving === item.key}
+                  onClick={() => setOpenKey(open ? null : item.key)}
+                >
+                  {picker.saving === item.key ? "กำลังบันทึก…" : baht(value.price)}
+                  <ChevronDown size={14} aria-hidden="true" style={open ? { transform: "rotate(180deg)" } : undefined} />
+                </button>
+              </span>
+            ) : (
+              <span key={`${item.key}-p`} className={`rr${sel}`}>{baht(value.price)}</span>
+            ),
             <span key={`${item.key}-f`} className={`rr hp ${value.profit === null ? "" : value.profit >= 0 ? "pos" : "neg"}`}>{signedBaht(value.profit)}</span>,
             <span key={`${item.key}-m`} className="rr"><MarginPill margin={value.margin} /></span>,
+            open ? (
+              <PriceSourceList
+                key={`${item.key}-list`}
+                row={row}
+                channel={item}
+                columns={picker.columns}
+                onPick={(column) => {
+                  setOpenKey(null);
+                  if (column !== (item.priceColumn?.label || "")) picker.choose(item.key, column);
+                }}
+              />
+            ) : null,
           ];
         })}
       </div>
+      {picker ? (
+        <button type="button" className="gd-cmp-add" onClick={picker.add}>
+          <Plus size={15} aria-hidden="true" /> เพิ่มช่องทาง
+        </button>
+      ) : null}
+      {picker?.error ? <p role="alert" className="gd-cmp-err">{picker.error}</p> : null}
+    </div>
+  );
+}
+
+function PriceSourceList({ row, channel, columns, onPick }) {
+  const current = channel.priceColumn?.label || "";
+  const options = [
+    { column: "", label: "ราคา (ของแพ็ค)", shown: baht(gameinfoListNumber(row.pack.price)), baht: true },
+    ...columns.map((column) => {
+      const isBaht = gameinfoColumnLooksBaht(column);
+      const raw = row.errors.has(column.id) ? "สูตรผิด" : row.values[column.id];
+      const number = gameinfoListNumber(raw);
+      const shown = isBaht && number !== null ? baht(number) : formatGameinfoPackColumnValue(raw, column) || "—";
+      return { column: String(column.label), label: String(column.label), shown, baht: isBaht };
+    }),
+  ].sort((left, right) => Number(right.baht) - Number(left.baht));
+  const name = `gd-src-${row.pack.id}-${channel.key}`;
+  return (
+    <div className="gd-cmp-list" role="radiogroup" aria-label={`ราคาขายของ ${channel.short} มาจากคอลัมน์`}>
+      <span className="gd-cmp-src">ราคาขายของ {channel.short} มาจากคอลัมน์ · ใช้กับทุกแพ็คของเกมนี้</span>
+      {options.map((option) => (
+        <label key={option.column || "__price"} className={`${option.column === current ? "on" : ""}${option.baht ? "" : " off"}`}>
+          <input type="radio" name={name} checked={option.column === current} onChange={() => onPick(option.column)} />
+          <span className="nm">{option.label}</span>
+          <span className="vl">{option.shown}{option.baht ? "" : " · ไม่ใช่บาท"}</span>
+        </label>
+      ))}
     </div>
   );
 }

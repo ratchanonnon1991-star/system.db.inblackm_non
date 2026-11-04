@@ -15,9 +15,12 @@ const newKey = () => `ch_${Date.now().toString(36)}${Math.random().toString(36).
 // and mode keeps its own list; "ใช้ค่าเริ่มต้น" goes back to the built-in four.
 // Keys carry over from the list it starts with, so a channel's listing checks
 // (gameinfo-pack-listings.js) stay with it when it is renamed.
-export default function GameinfoPriceChannelEditor({ gameId, dataMode, configured, initial, columnLabels, onClose }) {
+export default function GameinfoPriceChannelEditor({ gameId, dataMode, configured, initial, columnLabels, onClose, startWithNewRow = false }) {
   const router = useRouter();
-  const [rows, setRows] = useState(() => initial.map((row) => ({ ...row })));
+  const [rows, setRows] = useState(() => [
+    ...initial.map((row) => ({ ...row })),
+    ...(startWithNewRow && initial.length < GAMEINFO_PRICE_CHANNEL_MAX ? [{ key: newKey(), label: "", column: "" }] : []),
+  ]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 

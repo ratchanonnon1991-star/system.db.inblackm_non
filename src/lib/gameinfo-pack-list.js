@@ -45,6 +45,31 @@ export function sanitizeGameinfoPriceChannels(list) {
   return channels;
 }
 
+/**
+ * The game's channel list with one channel's price column set, ready to save.
+ * A game still on the built-in channels gets a list of its own, starting from
+ * the channels `shown` (gameinfoPackListColumns' channels), keys kept.
+ */
+export function gameinfoPriceChannelsWithColumn(shown, configured, key, column) {
+  const base = Array.isArray(configured)
+    ? configured
+    : (shown || []).map((channel) => ({ key: channel.key, label: channel.short || channel.label, column: channel.priceColumn?.label || "" }));
+  return base.map((channel) => ({ key: channel.key, label: channel.label, column: channel.key === key ? String(column ?? "") : channel.column }));
+}
+
+/**
+ * Whether a column reads as a price in baht, so it can stand for a channel's
+ * selling price against a baht cost. Dollar, percent and foreign-currency
+ * columns (USD, USDT, IDR) do not. "" is the pack's own ราคา. A percent is
+ * told by the column's symbol, not its name: "KALEOZ 5%" is a baht price.
+ */
+export function gameinfoColumnLooksBaht(column) {
+  if (!column) return true;
+  if (column.type && column.type !== "number") return false;
+  if (["$", "%"].includes(String(column.symbol || "").trim())) return false;
+  return !/usdt?\b|\bidr\b|\$|ดอลลาร์/i.test(String(column.label || ""));
+}
+
 /** A plain number, or null for blanks and text such as "236155 X 2". */
 export function gameinfoListNumber(value) {
   if (value === null || value === undefined || value === "") return null;

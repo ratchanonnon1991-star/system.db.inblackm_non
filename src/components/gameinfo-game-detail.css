@@ -194,6 +194,24 @@
 .gd-cmp .h { font-size: 12px; color: var(--gd-muted); }
 .gd-cmp .rr { text-align: right; font-variant-numeric: tabular-nums; }
 .gd-cmp .sel { font-weight: 600; }
+.gd-cmp-src { display: block; font-size: 11.5px; font-weight: 400; color: var(--gd-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gd-cmp-pick { display: inline-flex; align-items: center; gap: 4px; height: 34px; padding: 0 8px 0 10px; border-radius: 10px; border: 1px solid transparent; background: none; color: inherit; font: inherit; font-variant-numeric: tabular-nums; cursor: pointer; }
+.gd-cmp-pick:hover { background: var(--gd-fill); }
+.gd-cmp-pick.on { border-color: var(--gd-red); background: color-mix(in srgb, var(--gd-red) 7%, transparent); }
+.gd-cmp-pick svg { color: var(--gd-muted); transition: transform 0.15s; }
+.gd-cmp-pick.on svg { color: var(--gd-red); }
+.gd-cmp-pick:disabled { opacity: 0.6; cursor: progress; }
+.gd-cmp-list { grid-column: 1 / -1; white-space: normal; display: flex; flex-direction: column; gap: 2px; padding: 6px; margin: 0 0 6px; border: 1px solid var(--gd-line2); border-radius: 12px; background: var(--gd-surface); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1); }
+.gd-cmp-list > .gd-cmp-src { white-space: normal; padding: 4px 8px; }
+.gd-cmp-list label { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border-radius: 8px; font-size: 13.5px; cursor: pointer; }
+.gd-cmp-list label:hover { background: var(--gd-fill); }
+.gd-cmp-list label.on { background: color-mix(in srgb, var(--gd-red) 7%, transparent); font-weight: 600; }
+.gd-cmp-list label.off { color: var(--gd-muted); }
+.gd-cmp-list input { accent-color: var(--gd-red); margin: 0; }
+.gd-cmp-list .nm { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.gd-cmp-list .vl { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gd-cmp-add { margin-top: 10px; display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: 999px; border: 1px dashed color-mix(in srgb, var(--gd-red) 45%, transparent); background: none; color: var(--gd-red); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+.gd-cmp-err { margin: 8px 0 0; font-size: 12.5px; color: var(--gd-red); }
 .gd-kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; font-size: 13.5px; align-items: center; margin: 0; }
 .gd-kv dt { color: var(--gd-muted); white-space: nowrap; }
 .gd-kv dd { margin: 0; text-align: right; min-width: 0; overflow-wrap: anywhere; }
