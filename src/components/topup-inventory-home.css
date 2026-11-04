@@ -1,59 +1,6 @@
-/* Topup Inventory home ("Topup Inventory Pro" design, 2026-11): a top bar, a hero with
-   search, currency chips and three account counts, then the services as glass cards in
-   colour-coded sections. Everything is scoped to .tiv; dark mode follows the data-theme
-   that ProjectmThemeRoot sets around the page. */
-.tiv {
-  --bg: #fff; --fg: #18181b; --fg-2: #5f5f68; --fg-3: #8a8a94;
-  --glass: rgba(255, 255, 255, .88); --glass-2: #fff; --glass-line: rgba(24, 24, 27, .09); --line: rgba(24, 24, 27, .08);
-  --shadow: 0 1px 2px rgba(24, 24, 27, .05), 0 12px 28px -12px rgba(40, 20, 30, .16);
-  --red: #d8201d; --blue: #2f6fed; --violet: #6e56cf; --teal: #0e8f8a; --green: #168a4a; --amber: #c27400;
-  --ic-red: #dd2118; --ic-blue: #2f6fed; --ic-violet: #6e56cf; --ic-teal: #0e8f8a;
-  --blob1: rgba(215, 38, 61, .035); --blob2: rgba(47, 111, 237, .04); --blob3: rgba(110, 86, 207, .03);
-  --font-display: var(--tiv-font-display), var(--tiv-font-body), -apple-system, "Segoe UI", sans-serif;
-  --font-body: var(--tiv-font-body), var(--tiv-font-display), -apple-system, "Segoe UI", sans-serif;
-  /* clip, not hidden: the hero's dot grid bleeds past the page edge, and the bar must stay sticky */
-  position: relative; min-height: 100vh; overflow-x: clip; background: var(--bg); color: var(--fg);
-  font-family: var(--font-body); font-size: 15px; line-height: 1.5; -webkit-font-smoothing: antialiased;
-  transition: background .3s, color .3s;
-}
-[data-theme="dark"] .tiv {
-  --bg: #08080a; --fg: #f4f4f6; --fg-2: #a9a9b3; --fg-3: #7c7c86;
-  --glass: rgba(255, 255, 255, .055); --glass-2: rgba(255, 255, 255, .1); --glass-line: rgba(255, 255, 255, .14); --line: rgba(255, 255, 255, .09);
-  --shadow: 0 12px 36px -12px rgba(0, 0, 0, .7);
-  --red: #ff5360; --blue: #5aa9ff; --violet: #b393ff; --teal: #4fd0dc; --green: #4ade80; --amber: #f5b041;
-  --blob1: rgba(255, 50, 70, .2); --blob2: rgba(40, 120, 255, .2); --blob3: rgba(140, 90, 255, .2);
-  color-scheme: dark;
-}
-.tiv :focus-visible { outline: 2px solid var(--red); outline-offset: 2px; border-radius: 12px; }
-.tiv .tiv-i { width: 1em; height: 1em; flex: none; }
-
-.tiv-aurora { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
-.tiv-aurora i { position: absolute; border-radius: 50%; filter: blur(90px); }
-.tiv-aurora i:nth-child(1) { width: 46vmax; height: 46vmax; left: -12vmax; top: -14vmax; background: var(--blob1); }
-.tiv-aurora i:nth-child(2) { width: 40vmax; height: 40vmax; right: -14vmax; top: 12vmax; background: var(--blob2); }
-.tiv-aurora i:nth-child(3) { width: 38vmax; height: 38vmax; left: 30vmax; bottom: -20vmax; background: var(--blob3); }
-
-.tiv-shell {
-  position: relative; z-index: 1; max-width: 1040px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px;
-  padding-block: 28px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
-}
-
-/* top bar */
-.tiv-rail { position: relative; display: flex; align-items: center; gap: 12px; }
-.tiv-back {
-  display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px 7px 8px; border-radius: 999px; background: var(--glass);
-  border: 1px solid var(--glass-line); backdrop-filter: blur(16px); font-weight: 500; font-size: 13.5px; transition: .2s;
-}
-.tiv-back:hover { background: var(--glass-2); }
-.tiv-back .tiv-i { font-size: 18px; color: var(--red); }
-.tiv-brand { position: absolute; left: 50%; translate: -50% 0; font: 600 10.5px var(--font-display); letter-spacing: .16em; text-transform: uppercase; color: var(--red); }
-.tiv-seg {
-  display: inline-flex; margin-left: auto; background: var(--glass); border: 1px solid var(--glass-line); border-radius: 999px;
-  padding: 3px; gap: 2px; backdrop-filter: blur(16px);
-}
-.tiv-seg button { width: 34px; height: 30px; border-radius: 999px; display: grid; place-items: center; color: var(--fg-3); font-size: 16px; transition: .2s; }
-.tiv-seg button[aria-checked="true"] { background: var(--fg); color: var(--bg); }
-
+/* Topup Inventory home: a hero with search, currency chips and three account counts, then
+   the services as glass cards in colour-coded sections. The frame (tokens, top bar) is in
+   topup-inventory.css. */
 /* hero */
 .tiv-hero { position: relative; isolation: isolate; }
 .tiv-hero::before {
@@ -186,7 +133,6 @@
 .tiv-note { margin-top: 44px; display: flex; gap: 10px; align-items: flex-start; padding: 14px 16px; border: 1px dashed var(--line); border-radius: 18px; color: var(--fg-2); font-size: 13px; }
 .tiv-note .tiv-i { font-size: 18px; color: var(--red); margin-top: 1px; }
 
-@keyframes tiv-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 @keyframes tiv-pulse { 50% { opacity: .4; } }
 .tiv-intro .tiv-tile { animation: tiv-rise .6s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--k, 0) * 45ms); }
 
@@ -227,19 +173,10 @@
 .tiv-mbar { grid-column: 2; height: 6px; border-radius: 99px; overflow: hidden; background: color-mix(in srgb, var(--fg) 8%, transparent); }
 .tiv-mbar i { display: block; height: 100%; border-radius: inherit; background: var(--c); }
 
-/* narrow: the bar sticks to the top */
 @media (max-width: 900px) {
-  .tiv-shell { gap: 18px; padding-top: 0; }
-  .tiv-rail {
-    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 40; gap: 8px 10px;
-    margin: 0 calc(-1 * max(16px, env(safe-area-inset-left, 0px))); padding: 10px max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
-    background: color-mix(in srgb, var(--bg) 72%, transparent); backdrop-filter: saturate(180%) blur(20px); border-bottom: 1px solid var(--line);
-  }
-  .tiv-brand { display: none; }
   .tiv-hero { padding-top: 10px; }
 }
 @media (max-width: 640px) {
-  .tiv-shell { gap: 10px; }
   .tiv-hero h1 { font-size: 34px; }
   .tiv-hero-top { gap: 16px; }
   .tiv-stats-wrap { width: 100%; align-items: center; }
@@ -270,7 +207,4 @@
   .tiv-sheet { align-items: flex-end; padding: 0; }
   .tiv-sp { border-radius: 28px 28px 0 0; max-height: 88vh; padding: 20px 16px calc(20px + env(safe-area-inset-bottom, 0px)); }
   .tiv-sp-tot { font-size: 40px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .tiv *, .tiv *::before, .tiv *::after { animation: none !important; transition: none !important; }
 }

@@ -5,7 +5,7 @@ import { TABLE_PAGE_SIZES, tablePage } from "@/lib/table-pagination";
 
 export function TablePagination({ page, pageSize, total, totalPages, onPage, onPageSize, loading = false, observedAt, label = "แบ่งหน้าตาราง" }) {
   const { start, end } = tablePage(total, page, pageSize);
-  return <nav aria-label={label} className="sticky left-0 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200 px-3 py-3 text-xs text-inherit dark:border-zinc-700">
+  return <nav aria-label={label} data-table-pagination className="sticky left-0 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200 px-3 py-3 text-xs text-inherit dark:border-zinc-700">
     <span aria-live="polite">{total ? start + 1 : 0}–{end} จาก {total.toLocaleString("th-TH")} รายการ{loading ? " · กำลังโหลด…" : ""}{observedAt && <> · ข้อมูลเมื่อ {new Date(observedAt).toLocaleTimeString("th-TH")}</>}</span>
     <div className="flex flex-wrap items-center gap-2">
       {onPageSize && <label className="flex items-center gap-2">ต่อหน้า<select aria-label={`${label} จำนวนแถวต่อหน้า`} value={pageSize} disabled={loading} onChange={(e) => onPageSize(Number(e.target.value))} className="rounded border border-zinc-300 bg-transparent px-2 py-1.5 dark:border-zinc-600">{TABLE_PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}</select></label>}

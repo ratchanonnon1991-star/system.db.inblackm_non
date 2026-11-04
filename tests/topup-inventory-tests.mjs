@@ -14,13 +14,15 @@ const { topupInventoryStats } = topupInventoryStatsModule;
 const require = createRequire(import.meta.url);
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 let user = null;
+let pathname = "/projectm/th/topup-inventory";
 const redirect = (path) => { throw Object.assign(new Error("redirect"), { path }); };
 const mocks = {
   "next/link": { __esModule: true, default: (props) => React.createElement("a", props) },
-  "next/navigation": { redirect, notFound: () => { throw new Error("notFound"); }, useRouter: () => ({ push() {} }) },
+  "next/navigation": { redirect, notFound: () => { throw new Error("notFound"); }, useRouter: () => ({ push() {} }), usePathname: () => pathname },
   "next/font/google": { Sora: () => ({ variable: "font-sora" }), Noto_Sans_Thai: () => ({ variable: "font-noto" }) },
   "lucide-react": lucide,
   "./topup-inventory-home.css": {},
+  "./topup-inventory.css": {},
   "@/components/projectm-theme-context": { useProjectmTheme: () => ({ theme: "light", choice: "auto", setChoice() {} }) },
   "@/lib/topup-inventory-stats": topupInventoryStatsModule,
   "@/server/session-user": { getSessionUser: async () => user },
@@ -47,10 +49,15 @@ const check = (condition, message) => { assert.ok(condition, message); assertion
 const html = renderToStaticMarkup(await hub.default({ params }));
 check(html.includes("<h1>Topup <em>Inventory</em></h1>"), "hub title");
 mocks["./topup-inventory-fonts.css"] = {};
+mocks["@/components/topup-inventory-shell"] = compile("src/components/topup-inventory-shell.js");
 const sectionLayout = compile("src/app/projectm/[lang]/topup-inventory/layout.js").default;
-check(renderToStaticMarkup(sectionLayout({ children: "service page" })) === '<div class="tiv-fonts font-sora font-noto">service page</div>', "every Topup Inventory page gets the design's fonts");
+const framed = renderToStaticMarkup(await sectionLayout({ params, children: "service page" }));
+check(framed.startsWith('<div class="tiv-fonts font-sora font-noto"><div class="tiv">') && framed.includes("service page"), "every Topup Inventory page gets the design's fonts and frame");
+check(framed.includes('href="/"') && framed.includes("กลับเมนูหลัก") && framed.includes('aria-checked="true" aria-label="ตามระบบ"'), "the home's bar leads to the main menu; the theme switch shows the choice");
+pathname = "/projectm/th/topup-inventory/plsbuy";
+const service = renderToStaticMarkup(await sectionLayout({ params, children: "service page" }));
+check(service.includes('class="tiv-back" href="/projectm/th/topup-inventory"') && !service.includes("กลับเมนูหลัก"), "a service page's bar leads back to the home");
 check(html.includes('href="/projectm/th/topup-inventory/alerts"') && html.includes("แจ้งเตือนสต็อก"), "stock alerts card");
-check(html.includes('aria-checked="true" aria-label="ตามระบบ"'), "theme switch shows the current choice");
 check(html.includes('aria-busy="true"') && !html.includes("ปักหมุดไว้"), "counts load after mount; nothing pinned before storage is read");
 check((html.match(/class="tiv-chip"/g) || []).length === 7 && html.includes("ทั้งหมด <span class=\"n\">15</span>"), "currency chips with the number of cards");
 for (const [group, keys] of [["tools", ["ledger", "channels", "alerts"]], ["asia", ["gamepoint", "plsbuy", "donshop", "agenh2h"]], ["wallet", ["wavepay", "moniepoint"]]]) {

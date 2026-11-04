@@ -17,8 +17,8 @@ export default function ProjectmThemeRoot({ children }) {
   const [theme, toggleTheme, choice, setChoice] = useLLTheme();
   const pathname = usePathname();
   const router = useRouter();
-  // The iTune admin and the Topup Inventory home draw their own theme switch.
-  const hasOwnThemeControl = /\/itune\/admin(?:\/|$)/.test(pathname) || /^\/projectm\/[^/]+\/topup-inventory\/?$/.test(pathname);
+  // The iTune admin and every Topup Inventory page draw their own theme switch.
+  const hasOwnThemeControl = /\/itune\/admin(?:\/|$)/.test(pathname) || /^\/projectm\/[^/]+\/topup-inventory(?:\/|$)/.test(pathname);
 
   useEffect(() => {
     const refreshPermissions = () => router.refresh();

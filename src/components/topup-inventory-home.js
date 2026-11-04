@@ -4,10 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowUpRight, BellRing, BookmarkCheck, ChevronLeft, CircleArrowUp, CircleDollarSign, CirclePlus, Coins, Contrast, CreditCard, Gamepad2,
-  Landmark, ListChecks, Moon, Music, Search, Shell, Smartphone, Star, Sun, Wallet, X,
+  ArrowUpRight, BellRing, BookmarkCheck, CircleArrowUp, CircleDollarSign, CirclePlus, Coins, CreditCard, Gamepad2,
+  Landmark, ListChecks, Music, Search, Shell, Smartphone, Star, Wallet, X,
 } from "lucide-react";
-import { useProjectmTheme } from "@/components/projectm-theme-context";
 import {
   TOPUP_INVENTORY_CURRENCIES, TOPUP_INVENTORY_GROUPS, TOPUP_INVENTORY_PROVIDERS, topupInventoryMatch, topupInventoryPath,
 } from "@/lib/topup-inventory";
@@ -15,7 +14,6 @@ import { TOPUP_INVENTORY_STATS, topupInventoryStats } from "@/lib/topup-inventor
 import "./topup-inventory-home.css";
 
 const ICONS = { reserve: BookmarkCheck, up: CircleArrowUp, list: ListChecks, bell: BellRing, pad: Gamepad2, wallet: Wallet, coins: Coins, shell: Shell, music: Music, usd: CircleDollarSign, cards: CreditCard, phone: Smartphone, bank: Landmark };
-const THEMES = [{ key: "light", label: "สว่าง", Icon: Sun }, { key: "auto", label: "ตามระบบ", Icon: Contrast }, { key: "dark", label: "มืด", Icon: Moon }];
 const PINS_KEY = "tiv-pins";
 const RECENT_KEY = "tiv-recent";
 const GROUP_OF = Object.fromEntries(TOPUP_INVENTORY_GROUPS.map((group) => [group.key, group]));
@@ -114,7 +112,6 @@ function StatsSheet({ stat, counts, errors, lang, onClose, onOpen }) {
 
 export default function TopupInventoryHome({ lang }) {
   const router = useRouter();
-  const { choice, setChoice } = useProjectmTheme();
   const searchRef = useRef(null);
   const [query, setQuery] = useState("");
   const [currency, setCurrency] = useState("all");
@@ -193,93 +190,80 @@ export default function TopupInventoryHome({ lang }) {
   const shownStat = TOPUP_INVENTORY_STATS.find((stat) => stat.key === openStat);
 
   return (
-    <div className="tiv">
-      <div className="tiv-aurora" aria-hidden><i /><i /><i /></div>
-      <div className="tiv-shell">
-        <header className="tiv-rail">
-          <Link className="tiv-back" href="/">{icon(ChevronLeft)}กลับเมนูหลัก</Link>
-          <div className="tiv-brand">ProjectM</div>
-          <div className="tiv-seg" role="radiogroup" aria-label="ธีมสี">
-            {THEMES.map(({ key, label, Icon }) => (
-              <button key={key} type="button" role="radio" aria-checked={choice === key} aria-label={label} title={label} onClick={() => setChoice?.(key)}>{icon(Icon)}</button>
-            ))}
-          </div>
-        </header>
-
-        <main className={intro ? "tiv-intro" : undefined}>
-          <section className="tiv-hero">
-            <div className="tiv-hero-top">
-              <div>
-                <h1>Topup <em>Inventory</em></h1>
-                <p className="tiv-sub">ศูนย์รวม Inventory สำหรับงานเติมเกม เลือกบริการที่ต้องการใช้งาน</p>
-              </div>
-              {!snapshot?.hidden && (
-                <div className="tiv-stats-wrap">
-                <div className="tiv-stats" aria-busy={!snapshot}>
-                  {TOPUP_INVENTORY_STATS.map((stat) => {
-                    const value = stats?.[stat.key].total;
-                    return (
-                      <button key={stat.key} type="button" className={`tiv-stat ${stat.tone}${snapshot ? "" : " loading"}`} aria-haspopup="dialog"
-                        disabled={!stats} onClick={() => setOpenStat(stat.key)}>
-                        <b>{value ?? "—"}<i>บัญชี</i></b><small>{stat.label}</small>
-                      </button>
-                    );
-                  })}
-                </div>
-                {statsNotice && <p className="tiv-stats-note" role="status">{statsNotice}</p>}
-                </div>
-              )}
+    <>
+      <main className={intro ? "tiv-intro" : undefined}>
+        <section className="tiv-hero">
+          <div className="tiv-hero-top">
+            <div>
+              <h1>Topup <em>Inventory</em></h1>
+              <p className="tiv-sub">ศูนย์รวม Inventory สำหรับงานเติมเกม เลือกบริการที่ต้องการใช้งาน</p>
             </div>
-            <div className="tiv-find">
-              <label className="tiv-search">
-                {icon(Search)}
-                <input ref={searchRef} type="search" placeholder="ค้นหาบริการ หรือสกุลเงิน" autoComplete="off" aria-label="ค้นหาบริการ" value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") { setQuery(""); event.currentTarget.blur(); }
-                    if (event.key === "Enter") {
-                      const first = TOPUP_INVENTORY_PROVIDERS.find((provider) => provider.ready && topupInventoryMatch(provider, query, currency));
-                      if (first) open(first.key);
-                    }
-                  }} />
-                <kbd>/</kbd>
-              </label>
-              <div className="tiv-chips" role="group" aria-label="กรองตามสกุลเงิน">
-                <button type="button" className="tiv-chip" aria-pressed={currency === "all"} onClick={() => setCurrency("all")}>ทั้งหมด <span className="n">{TOPUP_INVENTORY_PROVIDERS.length}</span></button>
-                {TOPUP_INVENTORY_CURRENCIES.map((code) => (
-                  <button key={code} type="button" className="tiv-chip" aria-pressed={currency === code} onClick={() => setCurrency(code)}>
-                    {code} <span className="n">{TOPUP_INVENTORY_PROVIDERS.filter((provider) => (provider.currencies || []).includes(code)).length}</span>
-                  </button>
+            {!snapshot?.hidden && (
+              <div className="tiv-stats-wrap">
+              <div className="tiv-stats" aria-busy={!snapshot}>
+                {TOPUP_INVENTORY_STATS.map((stat) => {
+                  const value = stats?.[stat.key].total;
+                  return (
+                    <button key={stat.key} type="button" className={`tiv-stat ${stat.tone}${snapshot ? "" : " loading"}`} aria-haspopup="dialog"
+                      disabled={!stats} onClick={() => setOpenStat(stat.key)}>
+                      <b>{value ?? "—"}<i>บัญชี</i></b><small>{stat.label}</small>
+                    </button>
+                  );
+                })}
+              </div>
+              {statsNotice && <p className="tiv-stats-note" role="status">{statsNotice}</p>}
+              </div>
+            )}
+          </div>
+          <div className="tiv-find">
+            <label className="tiv-search">
+              {icon(Search)}
+              <input ref={searchRef} type="search" placeholder="ค้นหาบริการ หรือสกุลเงิน" autoComplete="off" aria-label="ค้นหาบริการ" value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") { setQuery(""); event.currentTarget.blur(); }
+                  if (event.key === "Enter") {
+                    const first = TOPUP_INVENTORY_PROVIDERS.find((provider) => provider.ready && topupInventoryMatch(provider, query, currency));
+                    if (first) open(first.key);
+                  }
+                }} />
+              <kbd>/</kbd>
+            </label>
+            <div className="tiv-chips" role="group" aria-label="กรองตามสกุลเงิน">
+              <button type="button" className="tiv-chip" aria-pressed={currency === "all"} onClick={() => setCurrency("all")}>ทั้งหมด <span className="n">{TOPUP_INVENTORY_PROVIDERS.length}</span></button>
+              {TOPUP_INVENTORY_CURRENCIES.map((code) => (
+                <button key={code} type="button" className="tiv-chip" aria-pressed={currency === code} onClick={() => setCurrency(code)}>
+                  {code} <span className="n">{TOPUP_INVENTORY_PROVIDERS.filter((provider) => (provider.currencies || []).includes(code)).length}</span>
+                </button>
+              ))}
+            </div>
+            {recent.length > 0 && (
+              <div className="tiv-recents"><span>เข้าล่าสุด</span>
+                {recent.map((key) => <Link key={key} href={`${base}/${key}`} onClick={() => remember(key)}>{PROVIDER[key].name}</Link>)}
+              </div>
+            )}
+          </div>
+        </section>
+
+        <div className="tiv-groups" aria-label="บริการ Topup Inventory">
+          {sections.map((section) => (
+            <section key={section.key} className={`tiv-group${section.feature ? " feat" : ""}`} aria-labelledby={`tiv-g-${section.key}`}>
+              <div className="tiv-group-h"><h2 id={`tiv-g-${section.key}`}>{section.title}</h2><span className="c">{section.items.length} บริการ</span><span className="bar" /></div>
+              <div className="tiv-grid">
+                {section.items.map((provider) => (
+                  <Tile key={provider.key} provider={provider} href={`${base}/${provider.key}`} hue={GROUP_OF[provider.group].hue} order={order++}
+                    pinned={pins.includes(provider.key)} onPin={togglePin} onOpen={remember} />
                 ))}
               </div>
-              {recent.length > 0 && (
-                <div className="tiv-recents"><span>เข้าล่าสุด</span>
-                  {recent.map((key) => <Link key={key} href={`${base}/${key}`} onClick={() => remember(key)}>{PROVIDER[key].name}</Link>)}
-                </div>
-              )}
-            </div>
-          </section>
-
-          <div className="tiv-groups" aria-label="บริการ Topup Inventory">
-            {sections.map((section) => (
-              <section key={section.key} className={`tiv-group${section.feature ? " feat" : ""}`} aria-labelledby={`tiv-g-${section.key}`}>
-                <div className="tiv-group-h"><h2 id={`tiv-g-${section.key}`}>{section.title}</h2><span className="c">{section.items.length} บริการ</span><span className="bar" /></div>
-                <div className="tiv-grid">
-                  {section.items.map((provider) => (
-                    <Tile key={provider.key} provider={provider} href={`${base}/${provider.key}`} hue={GROUP_OF[provider.group].hue} order={order++}
-                      pinned={pins.includes(provider.key)} onPin={togglePin} onOpen={remember} />
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
-          {nothingFound && <div className="tiv-empty"><strong>ไม่พบบริการที่ค้นหา</strong>ลองใช้คำอื่น หรือเลือกสกุลเงินเป็น &quot;ทั้งหมด&quot;</div>}
-          <div className="tiv-note">{icon(CirclePlus)}<span>รองรับการเพิ่มบริการ Inventory อื่น ๆ ในอนาคต โดยแยกการจัดการของแต่ละบริการออกจากกัน</span></div>
-        </main>
-      </div>
+            </section>
+          ))}
+        </div>
+        {nothingFound && <div className="tiv-empty"><strong>ไม่พบบริการที่ค้นหา</strong>ลองใช้คำอื่น หรือเลือกสกุลเงินเป็น &quot;ทั้งหมด&quot;</div>}
+        <div className="tiv-note">{icon(CirclePlus)}<span>รองรับการเพิ่มบริการ Inventory อื่น ๆ ในอนาคต โดยแยกการจัดการของแต่ละบริการออกจากกัน</span></div>
+      </main>
       {shownStat && stats && (
         <StatsSheet stat={shownStat} counts={stats[shownStat.key]} errors={snapshot.errors} lang={lang} onClose={() => setOpenStat(null)} onOpen={remember} />
       )}
-    </div>
+    </>
   );
 }
