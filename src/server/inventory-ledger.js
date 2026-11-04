@@ -326,7 +326,7 @@ export function createInventoryLedger(pool, { now = () => new Date() } = {}) {
     async reservations(actor) {
       requireSignedIn(actor);
       await ensure(pool);
-      const { rows } = await pool.query(`SELECT a.id::text, a.label, a.currency, a.category, a.provider, a.status,
+      const { rows } = await pool.query(`SELECT a.id::text, a.account_key AS "accountKey", a.label, a.currency, a.category, a.provider, a.status,
           r.user_id AS "holderId", r.user_label AS "holder", r.reserved_at AS "reservedAt",
           s.balance::text AS "snapshotBalance", s.observed_at AS "snapshotAt",
           (SELECT COALESCE(SUM(e.direction * e.amount), 0)::text FROM gamedb_inv_entries e
