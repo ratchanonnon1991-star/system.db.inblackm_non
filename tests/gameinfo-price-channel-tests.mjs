@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import {
   gameinfoColumnIsSellingPrice,
   gameinfoColumnLooksBaht,
+  gameinfoListRowColumns,
   gameinfoPackListColumns,
+  sanitizeGameinfoListColumnKeys,
   gameinfoPriceChannelsWithColumn,
 } from "@/lib/gameinfo-pack-list";
 
@@ -48,4 +50,12 @@ const ladsColumns = [
 ].map(([label, symbol], index) => computed(`c${index}`, label, { type: "number", symbol }));
 assert.deepEqual(ladsColumns.filter(gameinfoColumnIsSellingPrice).map((column) => column.label), ["ราคาRussia", "ราคาขาย(KALEOZ)", "KALEOZ 5%", "G2G"], "costs, profits, percentages and foreign money are left out");
 
-console.log("17 passed");
+// The extra columns in a view's pack rows.
+const withAdded = [...ladsColumns, computed("col_1793799081226", "ทดสอบ")];
+assert.deepEqual(gameinfoListRowColumns(withAdded, null).map((column) => column.label), ["ทดสอบ"], "by default the rows show the columns people added, not the sheet's");
+assert.deepEqual(gameinfoListRowColumns(withAdded, ["c13", "col_1793799081226"]).map((column) => column.label), ["G2G", "ทดสอบ"], "a chosen list, in its order");
+assert.deepEqual(gameinfoListRowColumns(withAdded, ["gone"]), [], "a column no longer there is skipped");
+assert.equal(sanitizeGameinfoListColumnKeys("x"), null, "anything but a list means the default");
+assert.equal(sanitizeGameinfoListColumnKeys(Array.from({ length: 12 }, (_, index) => `k${index}`)).length, 8, "at most eight");
+
+console.log("22 passed");

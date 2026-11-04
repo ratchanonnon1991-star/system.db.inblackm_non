@@ -79,6 +79,29 @@ export function gameinfoColumnIsSellingPrice(column) {
   return !/กำไร|ต้นทุน|profit|margin|\bcost\b/i.test(String(column.label || ""));
 }
 
+// Extra columns a view's pack rows show beside the fixed figures, chosen per
+// game for the Product and Topup views. Unset, a view shows the columns
+// people added in the editor (their keys start "col_"), not the ones the
+// source sheet brought in.
+export const GAMEINFO_LIST_COLUMN_VIEWS = ["product", "topup"];
+export const GAMEINFO_LIST_COLUMN_MAX = 8;
+
+/** Up to GAMEINFO_LIST_COLUMN_MAX distinct column keys, or null for "use the default". */
+export function sanitizeGameinfoListColumnKeys(keys) {
+  if (!Array.isArray(keys)) return null;
+  const clean = [...new Set(keys.map((key) => String(key ?? "").trim().slice(0, 64)).filter(Boolean))];
+  return clean.slice(0, GAMEINFO_LIST_COLUMN_MAX);
+}
+
+export const isGameinfoUserAddedColumnKey = (key) => /^col_/.test(String(key || ""));
+
+/** The computed columns a view's rows show, in the chosen order (or the default). */
+export function gameinfoListRowColumns(columns, keys = null) {
+  const computed = (columns || []).filter((column) => column.kind === "computed" && column.computed?.key);
+  if (!Array.isArray(keys)) return computed.filter((column) => isGameinfoUserAddedColumnKey(column.computed.key)).slice(0, GAMEINFO_LIST_COLUMN_MAX);
+  return keys.map((key) => computed.find((column) => column.computed.key === key)).filter(Boolean);
+}
+
 /** A plain number, or null for blanks and text such as "236155 X 2". */
 export function gameinfoListNumber(value) {
   if (value === null || value === undefined || value === "") return null;

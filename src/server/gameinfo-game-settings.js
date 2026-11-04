@@ -7,7 +7,7 @@ import { getPoolForConnection } from "@/lib/db";
 import { findConnectionWithSecretByName } from "@/server/connections-repository";
 import { decryptSecret, encryptSecret } from "@/server/crypto";
 import { recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
-import { sanitizeGameinfoPriceChannels } from "@/lib/gameinfo-pack-list";
+import { GAMEINFO_LIST_COLUMN_VIEWS, sanitizeGameinfoListColumnKeys, sanitizeGameinfoPriceChannels } from "@/lib/gameinfo-pack-list";
 
 const CONNECTION_NAME = "gameinfo";
 const schemaReadyByConnection = new Map();
@@ -41,6 +41,8 @@ function ensureSchema(connection) {
       await client.query(`ALTER TABLE gamelist_game_settings ADD COLUMN IF NOT EXISTS source_idpass TEXT NOT NULL DEFAULT ''`);
       // { uid: [...], idpass: [...] }: a mode left out uses the built-in channels.
       await client.query(`ALTER TABLE gamelist_game_settings ADD COLUMN IF NOT EXISTS price_channels JSONB NOT NULL DEFAULT '{}'::jsonb`);
+      // { product: [...], topup: [...] }: the columns each view's pack rows show; a view left out uses the default.
+      await client.query(`ALTER TABLE gamelist_game_settings ADD COLUMN IF NOT EXISTS list_columns JSONB NOT NULL DEFAULT '{}'::jsonb`);
       await client.query(`
         CREATE TABLE IF NOT EXISTS gamelist_test_accounts (
           id             BIGSERIAL PRIMARY KEY,
@@ -79,11 +81,15 @@ function cleanText(value, maxLength) {
   return String(value ?? "").trim().slice(0, maxLength);
 }
 
-const SETTINGS_COLUMNS = "topup_game_id, source_uid, source_idpass, price_channels";
+const SETTINGS_COLUMNS = "topup_game_id, source_uid, source_idpass, price_channels, list_columns";
 const PRICE_CHANNEL_MODES = ["uid", "idpass"];
 
 function priceChannelsFromJson(value) {
   return Object.fromEntries(PRICE_CHANNEL_MODES.map((mode) => [mode, sanitizeGameinfoPriceChannels(value?.[mode])]));
+}
+
+function listColumnsFromJson(value) {
+  return Object.fromEntries(GAMEINFO_LIST_COLUMN_VIEWS.map((view) => [view, sanitizeGameinfoListColumnKeys(value?.[view])]));
 }
 
 function settingsFromRow(row) {
@@ -92,6 +98,7 @@ function settingsFromRow(row) {
     sourceUid: row?.source_uid || "",
     sourceIdpass: row?.source_idpass || "",
     priceChannels: priceChannelsFromJson(row?.price_channels),
+    listColumns: listColumnsFromJson(row?.list_columns),
   };
 }
 
@@ -127,16 +134,26 @@ export async function saveGamelistGameSettings(gameId, patch, actor = null, tran
       if (!PRICE_CHANNEL_MODES.includes(mode)) throw createHttpError("ไม่รู้จักโหมดของช่องทางขาย", 400);
       next.priceChannels = { ...before.priceChannels, [mode]: sanitizeGameinfoPriceChannels(channels) };
     }
+    // One view's row columns at a time; null puts that view back on the default.
+    if (Object.hasOwn(patch, "listColumns")) {
+      const { view, keys } = patch.listColumns || {};
+      if (!GAMEINFO_LIST_COLUMN_VIEWS.includes(view)) throw createHttpError("ไม่รู้จักมุมมอง", 400);
+      next.listColumns = { ...before.listColumns, [view]: sanitizeGameinfoListColumnKeys(keys) };
+    }
+    const storedListColumns = Object.fromEntries(
+      GAMEINFO_LIST_COLUMN_VIEWS.filter((view) => next.listColumns[view]).map((view) => [view, next.listColumns[view]])
+    );
     const storedChannels = Object.fromEntries(
       PRICE_CHANNEL_MODES.filter((mode) => next.priceChannels[mode]).map((mode) => [mode, next.priceChannels[mode]])
     );
     await client.query(
-      `INSERT INTO gamelist_game_settings (game_id, topup_game_id, source_uid, source_idpass, price_channels, updated_at)
-       VALUES ($1, $2, $3, $4, $5::jsonb, NOW())
+      `INSERT INTO gamelist_game_settings (game_id, topup_game_id, source_uid, source_idpass, price_channels, list_columns, updated_at)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, NOW())
        ON CONFLICT (game_id) DO UPDATE SET
          topup_game_id = EXCLUDED.topup_game_id, source_uid = EXCLUDED.source_uid,
-         source_idpass = EXCLUDED.source_idpass, price_channels = EXCLUDED.price_channels, updated_at = NOW()`,
-      [gameId, next.topupGameId, next.sourceUid, next.sourceIdpass, JSON.stringify(storedChannels)]
+         source_idpass = EXCLUDED.source_idpass, price_channels = EXCLUDED.price_channels,
+         list_columns = EXCLUDED.list_columns, updated_at = NOW()`,
+      [gameId, next.topupGameId, next.sourceUid, next.sourceIdpass, JSON.stringify(storedChannels), JSON.stringify(storedListColumns)]
     );
     await recordGameinfoAudit({ gameId, area: "settings", actor, before, after: next, client });
     if (!transactionClient) await client.query("COMMIT");

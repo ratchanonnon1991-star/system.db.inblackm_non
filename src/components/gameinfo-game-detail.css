@@ -485,3 +485,16 @@
 .gd-switch[aria-checked="true"] i { transform: translateX(18px); }
 .gd-switch:disabled { opacity: 0.6; cursor: wait; }
 .gd-switch:focus-visible { outline: 2px solid var(--gd-red); outline-offset: 2px; }
+
+/* Columns a view adds to its pack rows and cards (ปรับมุมมอง). */
+.gd-lh .gd-lh-x { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gd-rw .gd-x { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gd-packcard-x { display: flex; flex-direction: column; gap: 2px; width: 100%; pointer-events: none; }
+.gd-packcard-x > span { display: flex; justify-content: space-between; gap: 6px; font-size: 12px; color: var(--gd-muted); min-width: 0; }
+.gd-packcard-x > span > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gd-packcard-x b { color: var(--gd-fg); font-weight: 600; flex: none; }
+@container (max-width: 739px) {
+  .gd-rw .gd-x { white-space: normal; }
+  .gd-rw.tp .gd-x { grid-column: 1 / -1; text-align: left; font-size: 13px; }
+  .gd-rw.tp .gd-x::before { content: attr(data-l) " · "; color: var(--gd-muted); font-weight: 400; }
+}

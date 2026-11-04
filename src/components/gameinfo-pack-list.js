@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bot, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, Image as ImageIcon, LayoutGrid, List, Plus, Search, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Bot, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, Image as ImageIcon, LayoutGrid, List, Plus, Search, SlidersHorizontal, X, ZoomIn, ZoomOut } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { setGameinfoFoldClosed } from "./gameinfo-fold";
 import GameinfoPriceChannelEditor from "./gameinfo-price-channel-editor";
+import GameinfoViewColumnsEditor from "./gameinfo-view-columns-editor";
 import { GameinfoPackVerifyButton, GameinfoPackVerifyDialog } from "./gameinfo-pack-verify";
 import { GAMEINFO_LISTING_PRICE_CHANNEL, gameinfoListingEffective, gameinfoListingPack } from "@/lib/gameinfo-pack-listings";
 import { apiJson } from "@/lib/api-json";
@@ -16,6 +17,7 @@ import {
   buildGameinfoPackListRows,
   filterGameinfoPackListRows,
   gameinfoColumnLooksBaht,
+  gameinfoListRowColumns,
   gameinfoPriceChannelsWithColumn,
   gameinfoPackListStatusTab,
   gameinfoListNumber,
@@ -88,8 +90,13 @@ export default function GameinfoPackList({
   // { gameId, dataMode, configured, editable }: the game's own selling
   // channels (null: the built-in ones) and whether this viewer may set them.
   channelSetup = null,
+  // The extra columns this view's rows show (null: the default), and
+  // { gameId, view, canEdit } for the admin's ปรับมุมมอง window.
+  rowColumnKeys = null,
+  viewSetup = null,
 }) {
   const product = !topupView;
+  const [viewEditing, setViewEditing] = useState(false);
   const built = useMemo(
     () => buildGameinfoPackListRows(currency, columns, game, context, channelSetup?.configured ?? null),
     [currency, columns, game, context, channelSetup?.configured]
@@ -214,10 +221,13 @@ export default function GameinfoPackList({
   rows.forEach((row) => { statusCounts[gameinfoPackListStatusTab(row)] = (statusCounts[gameinfoPackListStatusTab(row)] || 0) + 1; });
   const gotField = rows.some((row) => String(row.pack.amountReceived ?? "").trim()) ? "amountReceived" : rows.some((row) => String(row.pack.priceUsd ?? "").trim()) ? "priceUsd" : "";
   const gotLabel = gotField === "priceUsd" ? "USD" : "ได้รับ";
+  // Columns people added show in the rows too (gameinfoListRowColumns).
+  const rowColumns = gameinfoListRowColumns(columns, rowColumnKeys);
   const tracks = [
     "minmax(150px,1fr)",
     gotField ? "72px" : null,
     ...(product ? ["88px", "112px", "96px", "78px"] : ["96px", "170px", "120px"]),
+    ...rowColumns.map(() => "96px"),
     "28px",
   ].filter(Boolean).join(" ");
   // Packs stay under their category headings through search, chips and status
@@ -225,6 +235,7 @@ export default function GameinfoPackList({
   const grouped = sort === "default";
 
   const shownIds = new Set([costColumn?.id, ...channels.map((item) => item.priceColumn?.id)].filter(Boolean));
+  rowColumns.forEach((column) => shownIds.add(column.id));
   const otherColumns = (columns || []).filter((column) => !shownIds.has(column.id) && !(column.kind !== "computed" && SHOWN_FIELDS.has(column.id)));
 
   function toggle(packId) {
@@ -248,6 +259,7 @@ export default function GameinfoPackList({
         channels={channels}
         costColumn={costColumn}
         otherColumns={otherColumns}
+        rowColumns={rowColumns}
         chargeUnit={chargeUnit}
         context={context}
         stock={stock[row.pack.name]}
@@ -273,6 +285,7 @@ export default function GameinfoPackList({
         stock={stock[row.pack.name]}
         listings={verify ? listingsFor(row) : null}
         channelCount={channelCountFor(row)}
+        rowColumns={rowColumns}
         onOpen={() => setDetailPackId(String(row.pack.id))}
         onVerify={() => setVerifyPackId(String(row.pack.id))}
       />
@@ -408,6 +421,11 @@ export default function GameinfoPackList({
           <div className="mb-2 ml-0.5 flex flex-wrap items-center justify-between gap-2">
             <p className="gd-note m-0">{product ? "แตะแพ็คเพื่อดูวิธีคำนวณและเทียบช่องทาง" : "แตะแพ็คเพื่อดูรายละเอียด"}</p>
             <div className="flex flex-wrap items-center gap-2">
+              {viewSetup?.canEdit ? (
+                <button type="button" className="gd-btn sm" onClick={() => setViewEditing(true)} title="เลือกคอลัมน์ที่แสดงในมุมมองนี้">
+                  <SlidersHorizontal size={15} aria-hidden="true" /> ปรับมุมมอง
+                </button>
+              ) : null}
               <div className="gd-seg" role="group" aria-label="รูปแบบการแสดงแพ็ค">
                 <button type="button" aria-pressed={layout === "list"} onClick={() => setLayout("list")} title="แสดงเป็นรายการ">
                   <List size={15} aria-hidden="true" /> รายการ
@@ -455,6 +473,7 @@ export default function GameinfoPackList({
                   <span className="r">ลิงก์</span>
                 </>
               )}
+              {rowColumns.map((column) => <span key={column.id} className="r gd-lh-x" title={column.label}>{column.label}</span>)}
               <span />
             </div>
             {grouped
@@ -499,6 +518,16 @@ export default function GameinfoPackList({
             </div>
           </DialogContent>
         </Dialog>
+      ) : null}
+
+      {viewEditing && viewSetup?.canEdit ? (
+        <GameinfoViewColumnsEditor
+          gameId={viewSetup.gameId}
+          view={viewSetup.view}
+          rowColumnKeys={rowColumnKeys}
+          className={className}
+          onClose={() => setViewEditing(false)}
+        />
       ) : null}
 
       {lightbox !== null && visible[lightbox] ? (
@@ -565,7 +594,7 @@ function mostCommon(values) {
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
 }
 
-function PackItem({ row, product, tracks, gotField, channel, channels, costColumn, otherColumns, chargeUnit, context, stock, open, onToggle, listings, channelCount, onVerify, onImage, channelPicker }) {
+function PackItem({ row, product, tracks, gotField, channel, channels, costColumn, otherColumns, rowColumns = [], chargeUnit, context, stock, open, onToggle, listings, channelCount, onVerify, onImage, channelPicker }) {
   const { pack } = row;
   // A row can show another channel than the bar above it. The pick holds
   // only while the bar stays on the channel it was made against: moving the
@@ -651,6 +680,10 @@ function PackItem({ row, product, tracks, gotField, channel, channels, costColum
             </span>
           </>
         )}
+        {rowColumns.map((column) => {
+          const value = row.errors.has(column.id) ? "สูตรผิด" : formatGameinfoPackColumnValue(row.values[column.id], column);
+          return <span key={column.id} className="gd-v r num gd-x" data-l={column.label} title={column.label}>{value && value !== "-" ? value : "—"}</span>;
+        })}
         <button type="button" className="gd-chv" aria-expanded={open} aria-controls={detailsId} aria-label={`รายละเอียด ${pack.name || ""}`} onClick={onToggle}>
           <ChevronDown size={18} aria-hidden="true" />
         </button>
@@ -678,7 +711,7 @@ function PackDetails({ row, product, channel, channels, costColumn, otherColumns
 
 // One pack as the TopUp site shows it: picture, name and price on a card.
 // The card opens the details; the check badge opens its own window.
-function PackCard({ row, product, channel, gotField, stock, listings, channelCount, onOpen, onVerify }) {
+function PackCard({ row, product, channel, gotField, stock, listings, channelCount, rowColumns = [], onOpen, onVerify }) {
   const { pack } = row;
   const figures = row.channels[channel?.key] || { price: gameinfoListNumber(pack.price), profit: null, margin: null };
   const price = product ? figures.price : gameinfoListNumber(pack.price);
@@ -709,6 +742,14 @@ function PackCard({ row, product, channel, gotField, stock, listings, channelCou
         <span className="gd-packcard-sub">
           <span className={`num ${figures.profit === null ? "" : figures.profit >= 0 ? "pos" : "neg"}`}>{signedBaht(figures.profit)}</span>
           <MarginPill margin={figures.margin} />
+        </span>
+      ) : null}
+      {rowColumns.length ? (
+        <span className="gd-packcard-x">
+          {rowColumns.map((column) => {
+            const value = row.errors.has(column.id) ? "สูตรผิด" : formatGameinfoPackColumnValue(row.values[column.id], column);
+            return <span key={column.id}><span>{column.label}</span><b className="num">{value && value !== "-" ? value : "—"}</b></span>;
+          })}
         </span>
       ) : null}
       <span className="gd-packcard-notes"><PackNotes row={row} stock={stock} /></span>
