@@ -1,5 +1,6 @@
 export const TOPUP_INVENTORY_PROVIDERS = [
   { key: "reservations", name: "จองช่องทาง", description: "จองบัญชีที่จะใช้เติม แล้วเลือกพร้อมกรอกยอดที่ตัดในหน้าออเดอร์ inblackm (เว็บ · Russia · MarketPlace) คนอื่นเห็นว่าใครจองอะไร", ready: true },
+  { key: "staff-links", name: "จับคู่พนักงาน", description: "จับคู่ User ID พนักงาน inblackm กับบัญชี tools เพื่อให้เลือกเมล iTune และบันทึกยอดจากช่องทางที่จองได้ในหน้าออเดอร์ (Super Admin)", ready: true },
   { key: "ledger", name: "ยกยอดเติมมือ", description: "เลือกบัญชีที่ใช้เติม ใส่หรือวางเลขออเดอร์กับยอดที่ตัด ระบบหักยอดให้ ใช้แทนการยกยอดในชีท Center", ready: true },
   { key: "channels", name: "ยอดเติมมือรายบัญชี", description: "สรุปยอดที่ยกจากหน้ายกยอด แยกตามบัญชีและกลุ่ม (Moniepoint, iTunes, Bitcash, Laos Telecom ฯลฯ) พร้อมรายการของแต่ละบัญชี", ready: true },
   { key: "gamepoint", name: "(MYR) Gamepoint", description: "ยอดตัด MYR จากผลบอทและ ledger พร้อมต้นทุน กำไร และยอดคงเหลือคำนวณแยกจากยอดที่บันทึก", ready: true },

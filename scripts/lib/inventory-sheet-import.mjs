@@ -68,7 +68,10 @@ export function parseAccountWorkbook(sheets, file, today) {
     const col = {
       queue: find("ลำดับคิว", "ลำดับที่"), sale: find("ยอดโอน"), cost: starts("ต้นทุน"), invoice: find("transaction"),
       operator: find("ผู้เติม") ?? starts("ผู้ทำรายการ"), game: find("เกม", "เกมที่เติม"), item: find("สิ่งที่ชื้อ", "แพ๊คที่เติม", "PACK"),
+      balance: header.find(([, t]) => /คงเหลือ/.test(t) && !/ตรวจ/.test(t))?.[0],
     };
+    // The tab's own running balance after its last dated row (bot rows too): becomes a ledger snapshot.
+    let lastBalance = null;
     // 1.4 LAK leaves the date header blank; every tab keeps the date just left of the queue.
     col.date = find("วันที่", "วันที่สั่งซื้อ") ?? col.queue - 1;
     const dataRows = order.filter((n) => n > headerRow);
@@ -84,6 +87,8 @@ export function parseAccountWorkbook(sheets, file, today) {
       const rawDay = get(col.date), day = sheetDay(rawDay) ?? (rawDay ? null : lastDay);
       if (!day || day < FIRST_DAY || day > today) { skipped.push({ where: `${where} แถว ${r}`, reason: rawDay ? `วันที่ผิด (${rawDay})` : "ไม่มีวันที่" }); continue; }
       lastDay = day;
+      const balance = Number(get(col.balance).replaceAll(",", ""));
+      if (get(col.balance) !== "" && Number.isFinite(balance) && balance >= 0) lastBalance = { day, balance: balance.toFixed(2) };
       const operator = staffColumn ? get(col.operator) : "";
       // Bot spending is read from the bot database; money put in is not, so it stays.
       if (isBotOperator(get(col.operator))) {
@@ -98,7 +103,7 @@ export function parseAccountWorkbook(sheets, file, today) {
         note: [`ชีต ${clean(where)}`, ...detail].join(" · ").slice(0, 500),
       });
     }
-    tabs.set(`${category} :: ${tab}`, { category, tab, rows });
+    tabs.set(`${category} :: ${tab}`, { category, tab, rows, lastBalance });
   }
   return { tabs, skipped };
 }
@@ -127,6 +132,9 @@ export function dropDebited(bodies, debited) {
   const kept = bodies.filter((b) => b.kind !== "use" || b.orderRef === "ไม่มีคิว" || !debited.has(`${b.accountId}|${b.orderRef}`));
   return { kept, dropped: bodies.length - kept.length };
 }
+
+/** The latest of a tab's balances across snapshots (the later file wins a tie). */
+export const latestBalance = (list) => list.filter(Boolean).reduce((best, b) => (!best || b.day >= best.day ? b : best), null);
 
 /** Ledger entry bodies for one registered account; ids come from content, not row position. */
 export function ledgerEntries(accountKey, rows) {
