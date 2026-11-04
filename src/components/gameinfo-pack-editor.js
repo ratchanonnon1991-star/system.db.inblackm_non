@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, CheckCircle2, ChevronDown, Copy, Download, FileUp, Image as ImageIcon, Languages, LayoutGrid, Lock, Pencil, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, CheckCircle2, ChevronDown, Copy, GripVertical, Download, FileUp, Image as ImageIcon, Languages, LayoutGrid, Lock, Pencil, Plus, Trash2, X } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -13,9 +13,11 @@ import {
 } from "@dnd-kit/core";
 import {
   SortableContext,
+  arrayMove,
   horizontalListSortingStrategy,
   sortableKeyboardCoordinates,
   useSortable,
+  verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import GameinfoMemoryInput from "./gameinfo-memory-input";
@@ -614,6 +616,16 @@ export default function GameinfoPackEditor({
     });
     // A pack's fields open on click, so it is only scrolled to, not typed into.
     revealAdded(id, { focus: false });
+  }
+  // Drag-and-drop within one category; the order is saved with the rest of the draft.
+  function reorderPack(cIdx, catIdx, activeId, overId) {
+    updateCurrencies((draft) => {
+      const category = draft[cIdx].categories[catIdx];
+      const from = category.packs.findIndex((pack) => String(pack.id) === String(activeId));
+      const to = category.packs.findIndex((pack) => String(pack.id) === String(overId));
+      if (from < 0 || to < 0 || from === to) return;
+      category.packs = arrayMove(category.packs, from, to);
+    });
   }
   function duplicatePack(cIdx, catIdx, pkIdx) {
     const source = currencies[cIdx]?.categories[catIdx]?.packs[pkIdx];
@@ -1502,6 +1514,7 @@ export default function GameinfoPackEditor({
                     onUpdatePack={(pkIdx, patch) => updatePack(cIdx, catIdx, pkIdx, patch)}
                     onDuplicatePack={(pkIdx) => duplicatePack(cIdx, catIdx, pkIdx)}
                     onRemovePack={(pkIdx) => removePack(cIdx, catIdx, pkIdx)}
+                    onReorderPack={(activeId, overId) => reorderPack(cIdx, catIdx, activeId, overId)}
                   />
                 ))}
               </div>
@@ -1753,6 +1766,7 @@ function CategoryBlock({
   onUpdatePack,
   onDuplicatePack,
   onRemovePack,
+  onReorderPack,
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [categoryFormulaColumn, setCategoryFormulaColumn] = useState(null);
@@ -1813,6 +1827,11 @@ function CategoryBlock({
       categoryPackIdsKey ? categoryPackIdsKey.split("\u0000") : []
     );
   }, [category.id, categoryPackIdsKey, collapsed, onVisiblePacksChange, visiblePackIdsKey]);
+
+  function handlePackDragEnd({ active, over }) {
+    if (!over || active.id === over.id) return;
+    onReorderPack(active.id, over.id);
+  }
 
   function handleColumnDragEnd(e) {
     const { active, over } = e;
@@ -1922,7 +1941,7 @@ function CategoryBlock({
               style={{ gridTemplateColumns: grid.template }}
               className="grid gap-2 border-b border-linear-hairline bg-linear-surface-2 px-2 py-1.5 text-[10px] text-linear-ink-tertiary"
             >
-              <span className="flex items-center justify-center">
+              <span className="flex items-center justify-end pr-1">
                 <Checkbox
                   checked={allVisibleSelected}
                   indeterminate={selectedVisibleCount > 0 && !allVisibleSelected}
@@ -1972,6 +1991,16 @@ function CategoryBlock({
               </DndContext>
               <span></span>
             </div>
+            <DndContext
+              id={`gameinfo-pack-rows-${game.id}-${category.id}`}
+              sensors={columnSensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handlePackDragEnd}
+            >
+            <SortableContext
+              items={visiblePacks.map(({ pack }) => pack.id)}
+              strategy={verticalListSortingStrategy}
+            >
             {visiblePacks.map(({ pack, pkIdx }, visibleIndex) => (
               <PackRow
                 key={pack.id}
@@ -2007,6 +2036,8 @@ function CategoryBlock({
                 onEditCategoryFormula={(column) => setCategoryFormulaColumn(column)}
               />
             ))}
+            </SortableContext>
+            </DndContext>
           </div>
         </div>
       )}
@@ -2057,17 +2088,34 @@ function PackRow({
   const [editing, setEditing] = useState(null);
   const [overrideColumn, setOverrideColumn] = useState(null);
   const isEditing = (field) => editing === field;
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: pack.id });
 
   return (
     <div
+      ref={setNodeRef}
       id={`pack-row-${pack.id}`}
       data-reveal-key={pack.id}
-      style={{ gridTemplateColumns: gridTemplate }}
+      style={{
+        gridTemplateColumns: gridTemplate,
+        transform: CSS.Translate.toString(transform),
+        transition,
+      }}
       className={`grid items-center gap-2 border-b border-linear-hairline px-2 py-2 text-sm last:border-b-0 ${
         selected ? "bg-linear-hairline" : rowIndex % 2 === 0 ? "bg-linear-surface-1" : "bg-linear-surface-3"
-      }`}
+      } ${isDragging ? "relative z-10 shadow-lg opacity-90" : ""}`}
     >
-      <span className="flex items-center justify-center">
+      <span className="flex items-center justify-end gap-0.5 pr-1">
+        <button
+          type="button"
+          ref={setActivatorNodeRef}
+          {...attributes}
+          {...listeners}
+          title="ลากเพื่อจัดลำดับ"
+          aria-label={`ลากเพื่อจัดลำดับ ${pack.name || pack.id}`}
+          className="flex h-6 w-5 cursor-grab touch-none items-center justify-center rounded text-linear-ink-tertiary hover:bg-linear-surface-4 hover:text-linear-ink-muted active:cursor-grabbing"
+        >
+          <GripVertical size={14} aria-hidden="true" />
+        </button>
         <Checkbox
           checked={selected}
           onCheckedChange={(checked) => onToggleSelected(Boolean(checked))}
@@ -2764,7 +2812,8 @@ function ImageUrlField({ value, onChange, compact }) {
 // whenever this minimum is wider than the viewport.
 function packGridTemplate(columns, packs, resolveValue) {
   const tracks = [
-    "36px",
+    // Drag handle + checkbox.
+    "52px",
     ...columns.map((column) => `${gameinfoPackColumnWidth(
       column,
       packs.map((pack) => resolveValue(column, pack))
