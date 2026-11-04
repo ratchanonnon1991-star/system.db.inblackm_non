@@ -91,7 +91,7 @@ const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const view = read("../src/components/gameinfo-game-view.js");
 const list = read("../src/components/gameinfo-pack-list.js");
 assert.ok(view.includes('useState("list")') && view.includes("ตารางเต็ม"), "the list is the default and the full table is one switch away");
-assert.ok(list.includes('event.target.closest("a, button, input")'), "a row click leaves its links and buttons alone");
+assert.ok(list.includes('event.target.closest("a, button, input, select, label")'), "a row click leaves its links, buttons and channel pick alone");
 assert.ok(list.includes("aria-expanded={open}"), "each row's details open from a real button");
 
 const editor = read("../src/components/gameinfo-pack-editor.js");

@@ -215,7 +215,7 @@ export default function GameinfoPackList({
   const tracks = [
     "minmax(150px,1fr)",
     gotField ? "72px" : null,
-    ...(product ? ["88px", "96px", "96px", "78px"] : ["96px", "170px", "120px"]),
+    ...(product ? ["88px", "112px", "96px", "78px"] : ["96px", "170px", "120px"]),
     "28px",
   ].filter(Boolean).join(" ");
   // Packs stay under their category headings through search, chips and status
@@ -571,7 +571,12 @@ function mostCommon(values) {
 
 function PackItem({ row, product, tracks, gotField, channel, channels, costColumn, otherColumns, chargeUnit, context, stock, open, onToggle, listings, channelCount, onVerify, onImage, channelPicker }) {
   const { pack } = row;
-  const figures = row.channels[channel?.key] || { price: gameinfoListNumber(pack.price), profit: null, margin: null };
+  // A row can show another channel than the bar above it. The pick holds
+  // only while the bar stays on the channel it was made against: moving the
+  // bar brings every row along again. Nothing is saved.
+  const [ownChannel, setOwnChannel] = useState(null);
+  const shownChannel = (ownChannel && ownChannel.base === channel?.key && channels.find((item) => item.key === ownChannel.key)) || channel;
+  const figures = row.channels[shownChannel?.key] || { price: gameinfoListNumber(pack.price), profit: null, margin: null };
   const href = packHref(pack.link);
   const got = gotField ? String(pack[gotField] ?? "").trim() : "";
   const detailsId = `pack-${pack.id}-details`;
@@ -590,7 +595,7 @@ function PackItem({ row, product, tracks, gotField, channel, channels, costColum
         className={`gd-rw ${product ? "pr" : "tp"} cursor-pointer`}
         style={{ "--cols": tracks }}
         onClick={(event) => {
-          if (!event.target.closest("a, button, input")) onToggle();
+          if (!event.target.closest("a, button, input, select, label")) onToggle();
         }}
       >
         <span className="gd-nmc">
@@ -615,7 +620,25 @@ function PackItem({ row, product, tracks, gotField, channel, channels, costColum
         {product ? (
           <>
             <span className="gd-v r num cost" data-l="ต้นทุน">{baht(row.cost)}</span>
-            <span className="gd-v r num big" data-l="ราคาขาย">{baht(figures.price)}</span>
+            {channels.length > 1 ? (
+              <span className="gd-v r num big" data-l="ราคาขาย">
+                <label className={`gd-chsel${shownChannel?.key !== channel?.key ? " own" : ""}`}>
+                  <span className="pr">{baht(figures.price)}</span>
+                  <span className="chn">{shownChannel?.short}<ChevronDown size={12} aria-hidden="true" /></span>
+                  <select
+                    value={shownChannel?.key || ""}
+                    aria-label={`ช่องทางที่แสดงของ ${pack.name || "แพ็คนี้"}`}
+                    onChange={(event) => setOwnChannel(event.target.value === channel?.key ? null : { key: event.target.value, base: channel?.key })}
+                  >
+                    {channels.map((item) => (
+                      <option key={item.key} value={item.key}>{item.short} · {baht(row.channels[item.key]?.price ?? null)}</option>
+                    ))}
+                  </select>
+                </label>
+              </span>
+            ) : (
+              <span className="gd-v r num big" data-l="ราคาขาย">{baht(figures.price)}</span>
+            )}
             <span className={`gd-v r num ${figures.profit === null ? "" : figures.profit >= 0 ? "pos" : "neg"}`} data-l="กำไร">{signedBaht(figures.profit)}</span>
             <span className="gd-v r" data-l="กำไร %"><MarginPill margin={figures.margin} /></span>
           </>
@@ -637,7 +660,7 @@ function PackItem({ row, product, tracks, gotField, channel, channels, costColum
         </button>
       </div>
       <div id={detailsId} className="gd-dt">
-        {open ? <PackDetails row={row} product={product} channel={channel} channels={channels} costColumn={costColumn} otherColumns={otherColumns} chargeUnit={chargeUnit} context={context} channelPicker={channelPicker} /> : null}
+        {open ? <PackDetails row={row} product={product} channel={shownChannel} channels={channels} costColumn={costColumn} otherColumns={otherColumns} chargeUnit={chargeUnit} context={context} channelPicker={channelPicker} /> : null}
       </div>
     </div>
   );
