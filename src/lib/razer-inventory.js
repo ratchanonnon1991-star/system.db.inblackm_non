@@ -96,6 +96,27 @@ export function groupRazerOrders(entries) {
       conflict: fills.some((e) => e.conflict), fillCount: fills.length, fills, details, figures: sheetFigures(details) };
   });
 }
+/**
+ * A hand-fill "use" from the inventory ledger (debit page or sheet import) as one list row.
+ * Only wallet accounts keyed "razer:<zone>:<email>" in a page zone; anything else is null.
+ */
+export function razerLedgerOrder(row, account, rates = {}) {
+  const match = /^razer:([A-Z]+):(.+@.+)$/.exec(String(row.account_key || ""));
+  if (!match || !RAZER_INVENTORY_ZONES.includes(match[1])) return null;
+  const zone = match[1], email = razerEmail(match[2]), used = razerAmount(row.amount), entered = row.thb_amount != null;
+  const rate = entered ? null : rates[zone] ?? account?.rate ?? null;
+  const note = String(row.note || "").slice(0, 500);
+  const details = { saleThb: row.sale_thb ?? null, costThb: entered ? row.thb_amount : rate && used !== null ? convertSaleThb(used, rate) : null,
+    costRate: rate, costBasis: entered ? "ledger-entered" : rates[zone] != null ? "view-reference" : rate ? "stock-current-reference" : null,
+    game: "", pack: "", invoice: String(row.invoice || "").slice(0, 200), note,
+    // Imported sheet rows name the person in the note; debit-page rows are recorded by that person.
+    operator: (/ผู้เติม ([^·]+)/.exec(note)?.[1] || String(row.actor_label || "")).trim().slice(0, 160) };
+  const id = `ledger:${row.id}`, at = new Date(row.occurred_at).toISOString();
+  return { id, codaId: null, zone, email, walletKey: razerWalletKey(email, zone), orderId: String(row.order_ref || id), source: "manual",
+    occurredAt: at, observedAt: at, balance: null, used, conflict: false, fillCount: 1,
+    fills: [{ id, zone, used, codaId: null, details: { pack: "เติมมือ", invoice: details.invoice } }], details, figures: sheetFigures(details) };
+}
+export const razerManual = (entry) => entry.source === "manual";
 export function razerSummary(entries) {
   const sale = razerSum(entries, (e) => e.figures.sale), cost = razerSum(entries, (e) => e.figures.cost);
   return { orders: entries.length, fills: entries.reduce((n, e) => n + e.fillCount, 0), ...sheetFigures({ saleThb: sale, costThb: cost }),
@@ -105,9 +126,9 @@ export const razerMatches = (entry, search) => !search || [entry.email, entry.or
   ...Object.values(entry.details || {}).filter((v) => typeof v === "string")].join(" ").toLowerCase().includes(search.toLowerCase());
 export function razerCsv(entries) {
   const quote = (v, numeric = false) => { let s = v == null ? "" : String(v); if (!(numeric && /^-?\d+(?:\.\d+)?$/.test(s)) && /^[\s\u0000-\u001f]*[=+@-]/.test(s)) s = `'${s}`; return `"${s.replaceAll('"', '""')}"`; };
-  const rows = [["วันที่ (ไทย)", "Order", "บัญชี", "สกุลเงิน", "ยอดโอน THB", "ต้นทุนอ้างอิง THB", "กำไรอ้างอิง THB", "กำไรอ้างอิง %", "Gold ออก", "Gold คงเหลือ", "เกม", "แพ็ก", "เลขธุรกรรม", "จำนวนรายการย่อย", "เรทต้นทุนอ้างอิง", "ฐานต้นทุน"]];
+  const rows = [["วันที่ (ไทย)", "Order", "บัญชี", "สกุลเงิน", "ยอดโอน THB", "ต้นทุนอ้างอิง THB", "กำไรอ้างอิง THB", "กำไรอ้างอิง %", "Gold ออก", "Gold คงเหลือ", "เกม", "แพ็ก", "เลขธุรกรรม", "จำนวนรายการย่อย", "เรทต้นทุนอ้างอิง", "ฐานต้นทุน", "ที่มา"]];
   for (const e of entries) rows.push([new Date(e.occurredAt).toLocaleString("sv-SE", { timeZone: "Asia/Bangkok" }), e.orderId, e.email, e.zone,
     e.figures.sale, e.figures.cost, e.figures.profit, e.figures.margin, e.used, e.balance, e.details.game, e.details.pack,
-    e.details.invoice, e.fillCount, e.details.costRate, e.details.costBasis]);
+    e.details.invoice, e.fillCount, e.details.costRate, e.details.costBasis, razerManual(e) ? "เติมมือ" : "บอท"]);
   return "\uFEFF" + rows.map((row, i) => row.map((v, c) => quote(v, i > 0 && ((c >= 4 && c <= 9) || c === 14))).join(",")).join("\r\n");
 }
