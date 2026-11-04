@@ -343,7 +343,6 @@ function GameHero({ row, dataMode, editHref }) {
           <span className={`gd-pill ${status.tone}`} title={row.serviceStatus === "partial" ? `ปิดอยู่ ${row.packDisabledCount} แพ็ค` : undefined}>
             <i className="d" aria-hidden="true" />{status.label}
           </span>
-          {row.reportCount > 0 ? <span className="gd-pill red">ต้องตรวจสอบ {row.reportCount} รายการ</span> : null}
           <span>{meta}</span>
         </div>
       </div>

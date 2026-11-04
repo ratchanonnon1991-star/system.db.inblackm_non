@@ -68,7 +68,6 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   const user = await getSessionUser();
   if (!user) redirect("/");
   const editableRole = canManageGameinfo(user);
-  const canReport = hasPermission(user, "gameinfo.report");
   if (manage && !editableRole) redirect(gameinfoGameHref(lang, id, dataMode));
   const manageMode = manage && editableRole;
   const view = resolveGameinfoView({ param: rawView, cookie: (await cookies()).get(GAMEINFO_VIEW_COOKIE)?.value, isAdmin: editableRole });
@@ -182,7 +181,6 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         tagImages,
         publishers: publishersByGame[row.id] || [],
         publisherImages,
-        reportCount: loadedReports.filter((report) => report.status === "open").length,
       };
       formulaVariables = variableData.variables;
       // Website data and test accounts are extras: if they fail to load the
@@ -363,7 +361,6 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
   }
 
   const openSalesChannels = salesChannels.filter((channel) => channel.status === "open").length;
-  const openReports = reports.filter((report) => report.status === "open").length;
   return (
     // One column of folding cards (gameinfo-game-detail.css, loaded by the view).
     <div className="gd min-h-[calc(100vh-4rem)]">
@@ -415,15 +412,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
           addHref={editableRole ? `${manageHref}#s-test` : null}
         />
       </GameinfoFold>
-      <GameinfoFold
-        id="reports"
-        icon="alert"
-        tone="amber"
-        title="รายงานปัญหา"
-        subtitle={openReports ? `ต้องตรวจสอบ ${openReports} รายการ` : "ไม่มีเรื่องที่ต้องตรวจสอบ"}
-      >
-        <GameinfoReportPanel bare gameId={row.id} initialReports={reports} canManage={editableRole} canReport={canReport} />
-      </GameinfoFold>
+      {/* Reports are hidden here for now (2026-11-04); the manage page keeps them. */}
     </div>
     </div>
   );
