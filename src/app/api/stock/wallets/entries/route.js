@@ -4,7 +4,8 @@ import { ensurePurchaseOrderSchema } from "@/server/stock-purchase-order-reposit
 import { recordWalletEntry } from "@/server/stock-wallet-repository";
 
 // A deposit, move, exchange, payment or correction:
-// { kind, fromWalletId, fromCurrency, toWalletId, toCurrency, amount, amountTo, fee, title, txid, occurredAt, note, status }.
+// { kind, fromWalletId, fromCurrency, toWalletId, toCurrency, amount, amountTo, fee, title, txid, occurredAt, note, status,
+//   channel, destinationAccount, seller, buyer, credit }.
 export async function POST(request) {
   try {
     const user = await requireStockEditor(request);

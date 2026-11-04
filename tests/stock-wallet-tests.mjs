@@ -57,11 +57,10 @@ check(Boolean(validateWalletEntry({ kind: "adjust", toWalletId: 3, toCurrency: "
 check(Boolean(validateWalletEntry({ kind: "adjust", toWalletId: 3, toCurrency: "BTC", amount: "-0.001", note: "นับใหม่" }, wallets, balances).error), "a correction cannot take a balance below zero");
 check(!validateWalletEntry({ kind: "adjust", toWalletId: 3, toCurrency: "BTC", amount: "0.00012345", note: "ยอดจริงในแอป" }, wallets, balances).error, "a correction may raise a balance to the app's figure");
 check(Boolean(validateWalletEntry({ kind: "payment", fromWalletId: 3, fromCurrency: "USDT", amount: "1", title: "x", occurredAt: "not a date" }, wallets, balances).error), "a receipt time must be a date");
-check(validateWalletEntry({ kind: "adjust", toWalletId: 3, toCurrency: "BTC", amount: "0.001", note: "ยอดจริง" }, wallets, balances).entry.status === "awaiting_approval", "a correction waits for approval");
+check(validateWalletEntry({ kind: "adjust", toWalletId: 3, toCurrency: "BTC", amount: "0.001", note: "ยอดจริง" }, wallets, balances).entry.status === "done", "a correction counts at once");
 check(validateWalletEntry({ kind: "transfer", fromWalletId: 1, fromCurrency: "USDT", toWalletId: 2, toCurrency: "USDT", amount: "1" }, wallets, balances).entry.status === "done", "a move counts at once");
 const adjust = { kind: "adjust", status: "awaiting_approval", actorId: 5 };
-check(reviewWalletAdjust(adjust, "approve", { id: 5 }).error === "คนอนุมัติต้องเป็นคนละคนกับคนปรับยอด", "whoever typed a correction cannot approve it");
-check(reviewWalletAdjust(adjust, "approve", { id: 9 }).status === "done", "someone else approves it");
+check(reviewWalletAdjust(adjust, "approve", { id: 5 }).status === "done", "a correction left awaiting approval can be approved, even by whoever typed it");
 check(Boolean(reviewWalletAdjust(adjust, "reject", { id: 9 }).error) && reviewWalletAdjust(adjust, "reject", { id: 9 }, "ยอดไม่ตรงแอป").status === "rejected", "a rejection says why");
 check(Boolean(reviewWalletAdjust({ ...adjust, status: "done" }, "approve", { id: 9 }).error) && Boolean(reviewWalletAdjust({ ...adjust, kind: "payment" }, "approve", { id: 9 }).error), "only corrections awaiting approval are reviewed");
 
@@ -71,8 +70,15 @@ check(totals[walletKey(1, "USDT")] === toWalletUnits("98") && totals[walletKey(2
 const repository = read("../src/server/stock-wallet-repository.js");
 check(repository.includes("FOR UPDATE") && repository.includes("validateWalletEntry"), "an entry is checked against balances read under a lock");
 check(repository.includes("NUMERIC(30, 8)"), "wallet amounts are stored with 8 decimals");
-check(repository.includes("WALLET_COUNTED") && repository.includes("reviewWalletAdjust"), "corrections stay out of balances until someone else approves them");
+check(repository.includes("WALLET_COUNTED") && repository.includes("reviewWalletAdjust"), "corrections left awaiting approval stay out of balances");
 const orders = read("../src/server/stock-purchase-order-repository.js");
 check(orders.includes("insertWalletEntry(client"), "paying an order writes its wallet payment in the same transaction");
+
+const sheet = validateWalletEntry({ kind: "payment", fromWalletId: 3, fromCurrency: "USDT", amount: "5", title: "Razer", channel: " Application ", destinationAccount: "ร้าน A", seller: "s1", buyer: "b1", credit: "1,250.5" }, wallets, balances);
+check(!sheet.error && sheet.entry.channel === "Application" && sheet.entry.destinationAccount === "ร้าน A" && sheet.entry.seller === "s1" && sheet.entry.buyer === "b1" && sheet.entry.credit === "1250.5", "an entry keeps the sheet's channel, destination account, seller, buyer and credit");
+check(sheet.legs[0].amount === -toWalletUnits("5"), "the sheet's columns never change the amount");
+check(validateWalletEntry({ kind: "deposit", toWalletId: 1, toCurrency: "USDT", amount: "1" }, wallets, balances).entry.credit === "", "the sheet's columns are optional");
+check(Boolean(validateWalletEntry({ kind: "deposit", toWalletId: 1, toCurrency: "USDT", amount: "1", credit: "abc" }, wallets, balances).error), "a credit must be a number");
+check(repository.includes("destination_account") && repository.includes("ADD COLUMN IF NOT EXISTS credit"), "the sheet's columns are stored on the entry");
 
 console.log(`stock-wallets: ${passed} passed`);

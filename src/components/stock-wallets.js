@@ -14,7 +14,7 @@ const KIND_LOOK = {
   transfer: { icon: <ArrowRightLeft size={18} strokeWidth={2.4} />, iconClass: "bg-sky-50 text-sky-800", subtitle: "ย้ายสกุลเดียวกันข้ามกระเป๋า เช่น Bitazza → BITKUB, BITKUB → Bybit" },
   exchange: { icon: <Repeat size={18} strokeWidth={2.4} />, iconClass: "bg-violet-50 text-violet-800", subtitle: "แลกสกุลในกระเป๋าเดียว เช่น USDT → THB ใน BITKUB" },
   payment: { icon: <ShoppingCart size={18} strokeWidth={2.4} />, iconClass: "bg-red-50 text-red-700", subtitle: "จ่ายค่าสินค้าที่ไม่ได้ผ่านใบสั่งซื้อ · ถ้าเป็นของเข้า stock ให้จ่ายจากใบสั่งซื้อ" },
-  adjust: { icon: <SlidersHorizontal size={18} strokeWidth={2.4} />, iconClass: "bg-amber-100 text-amber-800", subtitle: "แก้ยอดให้ตรงกับยอดจริงในแอป ต้องใส่เหตุผล · ยอดเปลี่ยนเมื่อคนอื่นอนุมัติแล้ว" },
+  adjust: { icon: <SlidersHorizontal size={18} strokeWidth={2.4} />, iconClass: "bg-amber-100 text-amber-800", subtitle: "แก้ยอดให้ตรงกับยอดจริงในแอป ต้องใส่เหตุผล · ยอดเปลี่ยนทันที" },
 };
 const KIND_TONE = {
   deposit: "bg-emerald-50 text-emerald-700",
@@ -36,6 +36,27 @@ const nowLocal = () => {
   at.setMinutes(at.getMinutes() - at.getTimezoneOffset());
   return at.toISOString().slice(0, 16);
 };
+
+// The sheet's extra columns: [field, label, placeholder].
+const SHEET_FIELDS = [
+  ["channel", "ช่องทาง", "เช่น Application"],
+  ["destinationAccount", "ชื่อบัญชีปลายทาง", "ไม่บังคับ"],
+  ["seller", "ผู้ขาย", "ไม่บังคับ"],
+  ["buyer", "ผู้ซื้อ", "ไม่บังคับ"],
+  ["credit", "ยอดเครดิต", "0"],
+];
+
+function SheetDetails({ entry }) {
+  const shown = SHEET_FIELDS.filter(([key]) => entry[key]);
+  if (!shown.length) return null;
+  return (
+    <p className="mt-0.5 text-xs text-zinc-600">
+      {shown.map(([key, label], index) => (
+        <span key={key}>{index ? " · " : ""}{label} <b className="text-zinc-800">{key === "credit" ? formatAmount(entry[key]) : entry[key]}</b></span>
+      ))}
+    </p>
+  );
+}
 
 /** The payment's step: its order's status when it paid one, else its own. */
 export function walletEntryStatus(entry) {
@@ -137,7 +158,7 @@ export default function StockWallets({ wallets, entries, canEdit }) {
 
       {awaiting.length ? (
         <p className="rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm text-cyan-900">
-          มีการปรับยอด <b>{awaiting.length}</b> รายการรออนุมัติ — ต้องให้<b>คนอื่น</b> (ไม่ใช่คนที่ปรับ) กดอนุมัติ ยอดถึงจะเปลี่ยน
+          มีการปรับยอดเก่า <b>{awaiting.length}</b> รายการที่ยังค้างรออนุมัติ — กดอนุมัติหรือไม่อนุมัติให้จบ (ปรับยอดใหม่มีผลทันที ไม่ต้องรออนุมัติแล้ว)
         </p>
       ) : null}
 
@@ -174,6 +195,7 @@ export default function StockWallets({ wallets, entries, canEdit }) {
                       <p className="font-extrabold">{entry.title || "—"}</p>
                       {entry.txid ? <p className="break-all text-xs text-zinc-600">TXID {entry.txid}</p> : null}
                       {entry.note ? <p className="text-xs text-zinc-600">{entry.note}</p> : null}
+                      <SheetDetails entry={entry} />
                     </td>
                     <td className="px-4 py-3">
                       {entry.legs.map((leg, index) => (
@@ -269,7 +291,7 @@ function WalletEntryDialog({ kind, wallets, onClose }) {
   };
   const [from, setFrom] = useState(sideOf(preset.from, "USDT"));
   const [to, setTo] = useState(sideOf(preset.to, kind === "exchange" ? "THB" : "USDT"));
-  const [form, setForm] = useState({ amount: "", amountTo: "", fee: "", title: kind === "deposit" ? "Russia deposit" : "", txid: "", note: "", occurredAt: nowLocal(), status: "pending" });
+  const [form, setForm] = useState({ amount: "", amountTo: "", fee: "", title: kind === "deposit" ? "Russia deposit" : "", txid: "", note: "", occurredAt: nowLocal(), status: "pending", channel: "", destinationAccount: "", seller: "", buyer: "", credit: "" });
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const look = KIND_LOOK[kind];
@@ -361,6 +383,18 @@ function WalletEntryDialog({ kind, wallets, onClose }) {
             </StockField>
           ) : null}
         </div>
+        {kind !== "adjust" ? (
+          <details className="rounded-xl border border-zinc-200 px-3.5 py-2.5" open={SHEET_FIELDS.some(([key]) => form[key])}>
+            <summary className="cursor-pointer text-sm font-extrabold text-zinc-700">รายละเอียดตามชีต (ไม่บังคับ)</summary>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              {SHEET_FIELDS.map(([key, label, placeholder]) => (
+                <StockField key={key} label={label} htmlFor={`wallet-${key}`}>
+                  <input id={`wallet-${key}`} inputMode={key === "credit" ? "decimal" : undefined} value={form[key]} onChange={(event) => set({ [key]: event.target.value })} className={stockInputClass} placeholder={placeholder} />
+                </StockField>
+              ))}
+            </div>
+          </details>
+        ) : null}
         {error ? <p className="rounded-xl bg-red-50 px-3.5 py-3 text-[13px] text-red-800">{error}</p> : null}
       </StockDialog>
     </form>

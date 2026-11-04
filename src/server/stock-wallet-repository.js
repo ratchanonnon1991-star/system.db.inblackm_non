@@ -65,6 +65,12 @@ export async function ensureWalletSchema() {
       await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS reviewed_by VARCHAR(255) NOT NULL DEFAULT ''`);
       await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ`);
       await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS review_note TEXT NOT NULL DEFAULT ''`);
+      // The sheet's columns, kept as notes beside the entry.
+      await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS channel VARCHAR(100) NOT NULL DEFAULT ''`);
+      await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS destination_account VARCHAR(200) NOT NULL DEFAULT ''`);
+      await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS seller VARCHAR(120) NOT NULL DEFAULT ''`);
+      await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS buyer VARCHAR(120) NOT NULL DEFAULT ''`);
+      await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS credit NUMERIC(30, 8)`);
       await client.query(`CREATE INDEX IF NOT EXISTS stock_wallet_entries_time_idx ON stock_wallet_entries (occurred_at DESC, id DESC)`);
       await client.query(`CREATE INDEX IF NOT EXISTS stock_wallet_entries_order_idx ON stock_wallet_entries (order_id) WHERE order_id IS NOT NULL`);
       await client.query(`
@@ -150,6 +156,11 @@ export async function listWalletEntries({ walletId = null, orderId = null, limit
     title: row.title,
     note: row.note,
     txid: row.txid,
+    channel: row.channel,
+    destinationAccount: row.destination_account,
+    seller: row.seller,
+    buyer: row.buyer,
+    credit: row.credit == null ? "" : clean(row.credit),
     status: row.status,
     actorId: row.actor_id,
     reviewedBy: row.reviewed_by,
@@ -180,9 +191,11 @@ export async function insertWalletEntry(client, input, actor = null, { orderId =
   const { entry, legs } = checked;
 
   const created = await client.query(
-    `INSERT INTO stock_wallet_entries (kind, title, note, txid, status, order_id, occurred_at, actor_id, actor_name)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-    [entry.kind, entry.title, entry.note, entry.txid, entry.status, orderId, entry.occurredAt, actor?.id ?? null, String(actor?.name || "").slice(0, 255)]
+    `INSERT INTO stock_wallet_entries (kind, title, note, txid, status, order_id, occurred_at, actor_id, actor_name,
+                                       channel, destination_account, seller, buyer, credit)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
+    [entry.kind, entry.title, entry.note, entry.txid, entry.status, orderId, entry.occurredAt, actor?.id ?? null, String(actor?.name || "").slice(0, 255),
+      entry.channel, entry.destinationAccount, entry.seller, entry.buyer, entry.credit === "" ? null : entry.credit]
   );
   const entryId = Number(created.rows[0].id);
   const counts = entry.status !== "awaiting_approval";

@@ -6,8 +6,11 @@
 // payment and refund is an entry with one or two legs (wallet, currency,
 // signed amount, fee), and a balance is the sum of its legs.
 // Amounts carry up to 8 decimals (BTC), so sums run on scaled BigInt.
-// A correction (ปรับยอด) is the easiest way to make numbers "fit", so it waits
-// for someone other than who typed it: until approved it is not in any balance.
+// A correction (ปรับยอด) counts at once and must say why. Corrections typed
+// while approval was required may still be awaiting it: those stay out of any
+// balance until someone approves or rejects them.
+// Each entry may also carry the sheet's columns: ช่องทาง, ชื่อบัญชีปลายทาง,
+// ผู้ขาย, ผู้ซื้อ and ยอดเครดิต. They are notes only and never touch a balance.
 // Pure: the same rules run in the API and the tests.
 
 export const WALLET_DECIMALS = 8;
@@ -88,6 +91,12 @@ export function validateWalletEntry(input, wallets = [], balances = {}) {
   const title = clean(input.title, 200);
   const note = clean(input.note, 500);
   const txid = clean(input.txid, 200);
+  const channel = clean(input.channel, 100);
+  const destinationAccount = clean(input.destinationAccount, 200);
+  const seller = clean(input.seller, 120);
+  const buyer = clean(input.buyer, 120);
+  const credit = normalizeWalletAmount(input.credit, { allowZero: true });
+  if (credit === null) return { error: "ยอดเครดิตต้องเป็นตัวเลข 0 ขึ้นไป" };
   const occurredAt = input.occurredAt ? new Date(input.occurredAt) : new Date();
   if (Number.isNaN(occurredAt.getTime())) return { error: "เวลาใบเสร็จไม่ถูกต้อง" };
 
@@ -145,19 +154,17 @@ export function validateWalletEntry(input, wallets = [], balances = {}) {
   }
 
   const status = kind === "payment" ? (WALLET_PAYMENT_STATUSES.includes(input.status) ? input.status : "pending")
-    : kind === "adjust" ? "awaiting_approval" : "done";
-  return { entry: { kind, title, note, txid, occurredAt: occurredAt.toISOString(), status }, legs };
+    : "done";
+  return { entry: { kind, title, note, txid, channel, destinationAccount, seller, buyer, credit, occurredAt: occurredAt.toISOString(), status }, legs };
 }
 
 /**
- * Approving or rejecting a correction → { status } or { error } in Thai. Only a
- * correction awaiting approval, only by someone other than who typed it, and a
- * rejection says why. `entry` is { kind, status, actorId }; `actor` is { id }.
+ * Approving or rejecting a correction left awaiting approval → { status } or
+ * { error } in Thai. A rejection says why. `entry` is { kind, status }.
  */
 export function reviewWalletAdjust(entry, decision, actor, note = "") {
   if (entry?.kind !== "adjust" || entry.status !== "awaiting_approval") return { error: "รายการนี้ไม่ได้รออนุมัติ" };
   if (!["approve", "reject"].includes(decision)) return { error: "เลือกอนุมัติหรือไม่อนุมัติ" };
-  if (actor?.id != null && entry.actorId != null && String(actor.id) === String(entry.actorId)) return { error: "คนอนุมัติต้องเป็นคนละคนกับคนปรับยอด" };
   const reason = clean(note, 500);
   if (decision === "reject" && !reason) return { error: "ใส่เหตุผลที่ไม่อนุมัติ" };
   return { status: decision === "approve" ? "done" : "rejected", note: reason };
