@@ -1,4 +1,5 @@
 import { getPool } from "@/lib/db";
+import { groupStockCounts, isStockTab, readStockCount, withStockChanges } from "@/lib/sheet-stock";
 import { ACCOUNT_SHEET_SOURCE, sheetFileKind, walletCodeForTab } from "@/lib/account-sheets";
 import { DEFAULT_WALLETS, fromWalletUnits, WALLET_COUNTED } from "@/lib/stock-wallets";
 import { ensureWalletSchema } from "@/server/stock-wallet-repository";
@@ -98,6 +99,16 @@ export async function listAccountSheetTabs() {
     id: row.id, period: row.period, fileName: row.file_name, fileKind: row.file_kind, tab: row.tab_name,
     rowCount: row.row_count, walletCode: row.wallet_code, importedAt: row.imported_at,
   }));
+}
+
+/**
+ * Every stock count the sheets hold (1.4 Cash Flow, 1.2 › Cash Flow, Stock to THB),
+ * oldest first, each item with its change since the count before. Read-only.
+ */
+export async function listSheetStockCounts() {
+  const tabs = (await listAccountSheetTabs()).filter(isStockTab);
+  const read = await Promise.all(tabs.map(async (tab) => ({ tab, items: readStockCount(await readAccountSheetRows(tab.id, { limit: 1000 })) })));
+  return withStockChanges(groupStockCounts(read));
 }
 
 /** One tab's rows, a page at a time. */
