@@ -132,36 +132,46 @@ export function gameinfoCostRateRows(currencies, costProfiles, { formulaVariable
             row.packs += 1;
             continue;
           }
-          const formula = String(profile.rateFormula || "").trim();
-          const variables = gameinfoRateVariables(formula).map((name) => (formulaVariables || []).find((item) => item.name === name)).filter(Boolean);
-          const direct = `[${variables[0]?.name}]` === formula;
-          const sheetCalc = profile.sheetCalc || null;
-          const suggestion = !formula && sheetCalc ? gameinfoSheetCalcRate(sheetCalc, externalValues, { live: true }) : null;
-          rows.set(profile.id, {
-            id: profile.id,
-            // This mode's own profile (editable here) or the other mode's (shown only).
-            own: sourceIndex === 0,
-            profile,
-            method: formula ? "variable" : sheetCalc ? "sheet" : "fixed",
-            sheetCalc,
-            note: profile.note || "",
-            // Today's rate by the profile's own sheet calculation, with live USDT/THB and USDCNY.
-            suggestion,
-            // A profile's label is "<wallet> → THB (จากชีต)"; the wallet alone when no pack names one.
-            channel: pack.channelsMain?.[0] || String(profile.label || "").replace(/\s*→\s*THB.*$/, "") || profile.label,
-            currency: profile.inputCurrency || "",
-            rate: resolveGameinfoField(pack, {}, "อัตราต้นทุน", context),
-            source: sheetCalc && !formula
-              ? gameinfoSheetCalcText(sheetCalc, profile.inputCurrency)
-              : direct
-                ? variables[0].formula || variables[0].name
-                : formula.replace(/\[([^[\]]+)\]/g, (text, name) => variables.find((item) => item.name === name)?.value || text) || "เรทคงที่",
-            updatedAt: variables[0]?.updatedAt || profile.updatedAt || "",
-            packs: 1,
-          });
+          rows.set(profile.id, rateRow(profile, pack, { own: sourceIndex === 0, context, formulaVariables, externalValues, packs: 1 }));
         }
       }
     }
   }
+  // A rate this mode has but no pack uses yet (just added, or its packs moved
+  // off it) still shows, so it can be found and edited.
+  const context = { costProfiles, formulaVariables, externalValues };
+  for (const profile of costProfiles || []) {
+    if (!rows.has(profile.id)) rows.set(profile.id, rateRow(profile, {}, { own: true, context, formulaVariables, externalValues, packs: 0 }));
+  }
   return [...rows.values()];
+}
+
+function rateRow(profile, pack, { own, context, formulaVariables, externalValues, packs }) {
+  const formula = String(profile.rateFormula || "").trim();
+  const variables = gameinfoRateVariables(formula).map((name) => (formulaVariables || []).find((item) => item.name === name)).filter(Boolean);
+  const direct = `[${variables[0]?.name}]` === formula;
+  const sheetCalc = profile.sheetCalc || null;
+  return {
+    id: profile.id,
+    // This mode's own profile (editable here) or the other mode's (shown only).
+    own,
+    profile,
+    method: formula ? "variable" : sheetCalc ? "sheet" : "fixed",
+    sheetCalc,
+    note: profile.note || "",
+    // Today's rate by the profile's own sheet calculation, with live USDT/THB and USDCNY.
+    suggestion: !formula && sheetCalc ? gameinfoSheetCalcRate(sheetCalc, externalValues, { live: true }) : null,
+    // A profile's label is "<wallet> → THB (จากชีต)"; the wallet alone when no pack names one.
+    channel: pack.channelsMain?.[0] || String(profile.label || "").replace(/\s*→\s*THB.*$/, "") || profile.label,
+    currency: profile.inputCurrency || "",
+    // Per unit: the pack's own amount does not matter to the rate.
+    rate: resolveGameinfoField({ ...pack, costProfileId: profile.id, amountChargedFee: "1" }, {}, "อัตราต้นทุน", context),
+    source: sheetCalc && !formula
+      ? gameinfoSheetCalcText(sheetCalc, profile.inputCurrency)
+      : direct
+        ? variables[0].formula || variables[0].name
+        : formula.replace(/\[([^[\]]+)\]/g, (text, name) => variables.find((item) => item.name === name)?.value || text) || "เรทคงที่",
+    updatedAt: variables[0]?.updatedAt || profile.updatedAt || "",
+    packs,
+  };
 }
