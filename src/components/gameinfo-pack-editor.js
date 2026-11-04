@@ -499,6 +499,33 @@ export default function GameinfoPackEditor({
     });
   }
 
+  // Moves the ticked packs, in their order, to the end of one category; "new:<currency index>"
+  // makes a fresh, unnamed category in that currency for them.
+  function moveSelectedPacks(target) {
+    const ids = new Set(selectedPackIds);
+    if (!ids.size || !target) return;
+    updateCurrencies((draft) => {
+      const moving = [];
+      for (const currency of draft) {
+        for (const category of currency.categories) {
+          category.packs = category.packs.filter((pack) => {
+            if (!ids.has(String(pack.id))) return true;
+            moving.push(pack);
+            return false;
+          });
+        }
+      }
+      let destination = null;
+      if (target.startsWith("new:")) {
+        destination = { id: genId("cat"), name: "", packs: [] };
+        draft[Number(target.slice(4))].categories.push(destination);
+      } else {
+        destination = draft.flatMap((currency) => currency.categories).find((category) => category.id === target);
+      }
+      destination.packs.push(...moving);
+    });
+    setSelectedPackIds(new Set());
+  }
   function addCategory(cIdx) {
     updateCurrencies((draft) => {
       draft[cIdx].categories.push({ id: genId("cat"), name: "", packs: [] });
@@ -1263,6 +1290,9 @@ export default function GameinfoPackEditor({
       </div>
 
       {selectedPacks.length > 0 ? (
+        <MovePacksBar count={selectedPacks.length} currencies={currencies} onMove={moveSelectedPacks} />
+      ) : null}
+      {selectedPacks.length > 0 ? (
         <GameinfoBulkFormulaToolbar
           computedColumns={computedColumns}
           selectedPacks={selectedPacks}
@@ -1495,6 +1525,42 @@ export default function GameinfoPackEditor({
           onSave={updateComputedColumn}
         />
       )}
+    </div>
+  );
+}
+
+// Sends the ticked packs to another category, or to a new one to name after.
+function MovePacksBar({ count, currencies, onMove }) {
+  const [target, setTarget] = useState("");
+  const several = currencies.length > 1;
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-linear-hairline bg-linear-surface-1 p-2.5 text-[13px]">
+      <span className="font-bold text-linear-ink">ย้าย {count} แพ็คที่เลือกไปหมวด</span>
+      <select
+        aria-label="หมวดที่จะย้ายไป"
+        value={target}
+        onChange={(event) => setTarget(event.target.value)}
+        className="h-9 min-w-48 rounded-[10px] border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm text-linear-ink outline-none focus:border-[#D90005]"
+      >
+        <option value="">เลือกหมวด…</option>
+        {currencies.map((currency, cIdx) => (
+          <optgroup key={currency.id} label={several ? currency.name || `สกุลที่ ${cIdx + 1}` : "หมวดหมู่"}>
+            {currency.categories.map((category) => (
+              <option key={category.id} value={category.id}>{category.name || "(ไม่มีชื่อหมวดหมู่)"}</option>
+            ))}
+            <option value={`new:${cIdx}`}>+ หมวดใหม่ (ตั้งชื่อทีหลัง)</option>
+          </optgroup>
+        ))}
+      </select>
+      <button
+        type="button"
+        disabled={!target}
+        onClick={() => { onMove(target); setTarget(""); }}
+        className="h-9 rounded-[10px] bg-[#D90005] px-4 text-sm font-bold text-white hover:bg-[#B80004] disabled:opacity-40"
+      >
+        ย้าย
+      </button>
+      <span className="text-xs text-linear-ink-tertiary">ย้ายแล้วกดบันทึกด้านล่างเพื่อเก็บ</span>
     </div>
   );
 }

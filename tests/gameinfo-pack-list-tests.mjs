@@ -99,4 +99,6 @@ assert.ok(list.includes('const grouped = sort === "default";'), "filtered packs 
 
 assert.ok(list.includes('aria-label="หมวดหมู่แพ็ค"') && list.includes('categoryTab === "all" ? rows'), "categories are tabs over the list, all or one at a time");
 
-console.log("42 passed");
+assert.ok(editor.includes("function moveSelectedPacks(target)") && editor.includes("<MovePacksBar"), "ticked packs can move to another or a new category");
+
+console.log("43 passed");
