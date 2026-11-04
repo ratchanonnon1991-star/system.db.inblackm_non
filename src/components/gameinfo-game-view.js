@@ -21,10 +21,7 @@ import {
 import { getGameinfoFormulaDisplay } from "@/lib/gameinfo-formula-overrides";
 import { gameinfoChargeUnit, gameinfoCostRateRows } from "@/lib/gameinfo-channel-costs";
 import { filterGameinfoColumnsForRole } from "@/lib/gameinfo-column-roles";
-import {
-  evaluateGameinfoComputedColumn,
-  gameinfoColumnsWithDataInGame,
-} from "@/lib/gameinfo-computed-evaluator";
+import { evaluateGameinfoComputedColumn } from "@/lib/gameinfo-computed-evaluator";
 import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
 import { gameinfoStableColorStyle } from "@/lib/gameinfo-stable-color";
 import { gameinfoCountryDisplayName, gameinfoCountryThaiName } from "@/lib/gameinfo-countries";
@@ -111,24 +108,14 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
     )),
     [currencies]
   );
-  // Every column is registered for every game, so this one carries columns it
-  // has nothing to put in. Readers only want what this game actually uses, so
-  // the empty ones never reach the table here — no toggle, unlike the editor.
-  const emptyColumnIds = useMemo(() => {
-    const withData = gameinfoColumnsWithDataInGame(packColumns, currencies, formulaGame, {
-      costProfiles,
-      formulaVariables,
-      externalValues: rateState.externalValues,
-    });
-    return new Set(packColumns.map((column) => column.id).filter((id) => !withData.has(id)));
-  }, [packColumns, currencies, formulaGame, costProfiles, formulaVariables, rateState.externalValues]);
+  // Every column is registered for every game, and this page shows them all,
+  // filled or not, so every game reads with the same columns (the user asked
+  // for this on 2026-11-04). Role rules and presets can still hide one.
   const packLayout = useGameinfoPackColumnLayout({
     columns: packColumns,
     userId,
     gameId: row.id,
     surface: "view",
-    emptyColumnIds,
-    hideEmptyColumns: true,
   });
   useGameinfoUnsavedChanges(packLayout.dirty);
 
@@ -142,12 +129,9 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
     if (column.id === "amountBeforeFee") return { ...column, label: `${chargeUnit} ที่กด` };
     return column.id === "amountChargedFee" ? { ...column, label: `${chargeUnit} รวม Fee` } : column;
   }) : columns);
-  // The list reads every column this view may see and that this game fills,
-  // in the admin's order; presets only shape the full table.
-  const listColumns = useMemo(
-    () => packLayout.orderedColumns.filter((column) => !emptyColumnIds.has(column.id)),
-    [packLayout.orderedColumns, emptyColumnIds]
-  );
+  // The list reads every column this view may see, in the admin's order;
+  // presets only shape the full table.
+  const listColumns = packLayout.orderedColumns;
   const listContext = useMemo(
     () => ({ costProfiles, formulaVariables, externalValues: rateState.externalValues }),
     [costProfiles, formulaVariables, rateState.externalValues]
