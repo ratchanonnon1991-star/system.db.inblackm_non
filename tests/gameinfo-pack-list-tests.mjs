@@ -90,4 +90,6 @@ assert.ok(gate.includes("[GAMEINFO_CEO_NOTICE, ...(botAuto ? [GAMEINFO_BOT_NOTIC
 assert.ok(detailPage.includes("<GameinfoEditGate") && detailPage.includes("cancelHref={viewHref}") && detailPage.includes("backHref={viewHref}"), "the edit page shows the notices, and its way back is the game's page");
 assert.ok(notices.includes("stored?.day === today()") && notices.includes('"/gameinfo/ceo-notice.webp"'), "each notice once a day, the CEO's from its picture");
 
-console.log("37 passed");
+assert.ok(editor.includes("GAMEINFO_PACK_LIST_STATUS_TABS.map") && editor.includes('statusTab === "all" || gameinfoPackListStatusTab({ status: gameinfoPackStatus(pack) }) === statusTab'), "the editor has the game page's status tabs and filters by them");
+
+console.log("38 passed");

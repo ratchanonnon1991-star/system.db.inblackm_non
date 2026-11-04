@@ -107,6 +107,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { GAMEINFO_ADD_WEB_PACKS_EVENT, GAMEINFO_SET_WEB_PACK_IMAGES_EVENT, GAMEINFO_WEB_PACK_CATEGORY } from "@/lib/gameinfo-topup-match";
 import { Input } from "@/components/ui/input";
+import { GAMEINFO_PACK_LIST_STATUS_TABS, gameinfoPackListStatusTab } from "@/lib/gameinfo-pack-list";
 
 const REQUIRED_PACK_FIELDS = ["name", "price", "amountChargedFee", "channelsMain"];
 // A click on a pack's status moves it on: เปิด → ปิด → ใหม่ → หมดอายุ → เปิด.
@@ -226,6 +227,21 @@ export default function GameinfoPackEditor({
     ],
     [currentCategoryIds, visiblePackIdsByCategory]
   );
+  // Status tabs as on the game page (gameinfo-pack-list.js); categories show only the chosen one.
+  const [statusTab, setStatusTab] = useState("all");
+  const statusCounts = useMemo(() => {
+    const counts = { all: 0 };
+    for (const currency of currencies) {
+      for (const category of currency.categories || []) {
+        for (const pack of category.packs || []) {
+          const tab = gameinfoPackListStatusTab({ status: gameinfoPackStatus(pack) });
+          counts.all += 1;
+          counts[tab] = (counts[tab] || 0) + 1;
+        }
+      }
+    }
+    return counts;
+  }, [currencies]);
   const selectedPacks = useMemo(() => {
     const entries = [];
     for (const currency of currencies) {
@@ -1116,6 +1132,20 @@ export default function GameinfoPackEditor({
         className="mb-3 flex items-center gap-2 rounded-xl bg-amber-500/15 px-3.5 py-2.5 text-[13px] text-amber-900 dark:text-amber-300"
       />
       <GameinfoPackSource gameId={game.id} dataMode={dataMode} initial={game.sourceNote} />
+      {/* The game page's status tabs, so both pages sort packs the same way. */}
+      <div role="group" aria-label="สถานะแพ็ค" className="mb-3 flex flex-wrap gap-1 rounded-full bg-linear-surface-3 p-1">
+        {GAMEINFO_PACK_LIST_STATUS_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            aria-pressed={statusTab === tab.id}
+            onClick={() => setStatusTab(tab.id)}
+            className={`flex h-8 flex-1 items-center justify-center gap-1.5 rounded-full px-4 text-[13px] font-bold transition sm:flex-none ${statusTab === tab.id ? "bg-[#D90005] text-white" : "text-linear-ink-muted hover:text-linear-ink"}`}
+          >
+            {tab.label} <span className="text-[11px] opacity-75">{statusCounts[tab.id] || 0}</span>
+          </button>
+        ))}
+      </div>
       <div className="mb-4 flex flex-nowrap items-center gap-2 overflow-x-auto rounded-xl bg-linear-surface-2 p-2.5">
         <div className="flex items-center gap-2 text-xs font-medium text-linear-ink-muted">
           <Languages size={14} className="text-linear-primary" />
@@ -1307,6 +1337,7 @@ export default function GameinfoPackEditor({
                     columns={packLayout.visibleColumns}
                     allColumns={packLayout.orderedColumns}
                     filters={packLayout.layout.filters}
+                    statusTab={statusTab}
                     onSetCategoryStatus={(enabled) => {
                       updateCurrencies((draft) => {
                         for (const pack of draft[cIdx].categories[catIdx].packs) {
@@ -1461,6 +1492,7 @@ export default function GameinfoPackEditor({
 
 function CategoryBlock({
   category,
+  statusTab = "all",
   suggestions,
   game,
   costProfiles,
@@ -1522,6 +1554,7 @@ function CategoryBlock({
 
   const visiblePacks = category.packs
     .map((pack, pkIdx) => ({ pack, pkIdx }))
+    .filter(({ pack }) => statusTab === "all" || gameinfoPackListStatusTab({ status: gameinfoPackStatus(pack) }) === statusTab)
     .filter(({ pack }) =>
       matchesGameinfoPackFilters(pack, filters, (columnId, targetPack) => {
         const column = allColumns.find((item) => item.id === columnId);
