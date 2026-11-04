@@ -1552,16 +1552,6 @@ export default function GameinfoPackEditor({
               <div className="mb-2 flex items-center justify-between">
                 <h3 className="text-sm font-medium text-linear-ink-muted">หมวดหมู่ pack</h3>
                 <div className="flex items-center gap-2">
-                  {singleCurrency ? (
-                    <button
-                      type="button"
-                      onClick={addCurrency}
-                      title="สำหรับเกมที่มีหลายหน่วยเงินในเกม เช่น เพชรกับทอง แต่ละสกุลมีหมวดหมู่ของตัวเอง"
-                      className="px-1 text-xs text-linear-ink-tertiary underline-offset-2 hover:text-linear-ink hover:underline"
-                    >
-                      แยกหลายสกุลเงิน
-                    </button>
-                  ) : null}
                   {webPackages.length ? (
                     <button
                       type="button"
