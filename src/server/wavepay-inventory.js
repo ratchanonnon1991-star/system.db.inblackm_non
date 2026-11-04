@@ -1,11 +1,23 @@
+import { getPool } from "@/lib/db";
 import { selectQuery } from "@/lib/profit-remote-db";
 import { canViewUsdInventory, inventoryError } from "@/lib/usdcodashop-inventory";
 import { prepareCodaSales } from "@/server/usdcodashop-sale-rates";
 import { attachSheetFields } from "@/server/usdcodashop-source";
+import { createInventoryCheck } from "@/server/inventory-ledger-check";
 import {
   WAVEPAY_MAX_ORDERS, WAVEPAY_METHOD, WAVEPAY_PAGE_SIZE, WAVE_PHONE_SQL, WAVE_NOT_CHARGED_CODE, wavePhoneSql,
-  normalizeWaveOrder, summarizeWaveLines, waveFilters, waveMatches,
+  normalizeWaveOrder, summarizeWaveLines, waveFilters, waveMatches, waveGapLines,
 } from "@/lib/wavepay-inventory";
+
+// Hand fills and top-ups people recorded (debit page, imported sheets) for WavePay accounts.
+// Plain read of the tools DB: the ledger's own ensure() writes schema. Reversed rows are left out.
+const ledgerSql = `SELECT a.label,e.kind,e.amount::text AS amount,e.order_ref,e.occurred_at,e.actor_label
+  FROM gamedb_inv_entries e JOIN gamedb_inv_accounts a ON a.id=e.account_id
+  WHERE a.provider='wavepay' AND e.kind IN ('use','deposit','adjust_in','adjust_out')
+    AND e.occurred_at >= $1::timestamptz AND e.occurred_at < $2::timestamptz
+    AND NOT EXISTS (SELECT 1 FROM gamedb_inv_entries r WHERE r.reverses_entry_id=e.id)
+  ORDER BY e.id LIMIT 20001`;
+const selectToolsRows = async (sql, params) => (await getPool().query(sql, params)).rows;
 
 const BATCH = 500;
 // The wallet's own before/after read (provider_response.balances) is the per-order MMK ledger;
@@ -25,7 +37,8 @@ const orderJoins = `LEFT JOIN telegram_orders_dev t ON t.task_request_id=c.teleg
 
 // Read-only and live: WavePay keeps no local ledger. Each order already names the SIM that paid
 // (codashop_orders.phone_number).
-export function createWavePayInventory(select = selectQuery, { prepareSales = prepareCodaSales } = {}) {
+export function createWavePayInventory(select = selectQuery, { prepareSales = prepareCodaSales, selectLedger = selectToolsRows,
+  balanceGaps = (actor, q) => createInventoryCheck({ select }).check(actor, { provider: "wavepay", ...q }) } = {}) {
   async function rangeOrders(bounds) {
     const all = []; let cursor = "0";
     for (;;) {
@@ -70,11 +83,22 @@ export function createWavePayInventory(select = selectQuery, { prepareSales = pr
       // Same sale conversion as USDCodashop, but nothing is stored: foreign-currency sales use today's reference rate.
       const prepared = await timed("rates", () => prepareSales(enriched.map((row) => ({ sourceId: String(row.id), row, details: row.sheet_fields })), []));
       const entries = prepared.map((p) => normalizeWaveOrder({ ...p.row, sheet_fields: p.details }));
-      const lines = summarizeWaveLines(entries, latest);
+      // Balance gaps and recorded hand fills: either one failing leaves the page as it was, with a notice.
+      let gapsAvailable = true, ledgerAvailable = true;
+      const [check, ledger] = await Promise.all([
+        timed("gaps", () => balanceGaps(actor, { dateFrom: filters.dateFrom, dateTo: filters.dateTo }).catch((e) => {
+          if (e.status && e.status < 500 && e.status !== 413) throw e; gapsAvailable = false; return { wallets: [] }; })),
+        timed("ledger", () => selectLedger(ledgerSql, [filters.bounds.start, filters.bounds.end]).catch((e) => {
+          if (e.code !== "42P01") ledgerAvailable = false; return []; })), // 42P01: no ledger tables yet
+      ]);
+      if (ledger.length > 20000) throw inventoryError("ยอดเติมมือเกิน 20,000 รายการ กรุณาลดช่วงวันที่", 413);
+      const base = summarizeWaveLines(entries, latest);
+      const gaps = waveGapLines(check.wallets, ledger, base.map((l) => l.phone));
+      const lines = base.map((l) => ({ ...l, check: gaps.lines.get(l.phone) ?? null }));
       const shown = entries.filter((e) => (filters.phone == null || e.phone === filters.phone) && waveMatches(e, filters.search))
         .sort((a, b) => (b.occurredAt || "").localeCompare(a.occurredAt || "") || Number(b.id) - Number(a.id));
       const offset = (filters.page - 1) * WAVEPAY_PAGE_SIZE;
-      return { dateFrom: filters.dateFrom, dateTo: filters.dateTo, lines, phone: filters.phone, total: shown.length, page: filters.page, pageSize: WAVEPAY_PAGE_SIZE,
+      return { dateFrom: filters.dateFrom, dateTo: filters.dateTo, lines, phone: filters.phone, gapsAvailable, ledgerAvailable, unmatchedLedger: gaps.unmatched, total: shown.length, page: filters.page, pageSize: WAVEPAY_PAGE_SIZE,
         entries: exportAll ? shown : shown.slice(offset, offset + WAVEPAY_PAGE_SIZE), observedAt: new Date().toISOString() };
     },
   };

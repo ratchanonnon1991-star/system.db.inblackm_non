@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { kyat, waveUsage, wavePhoneKey, waveFilters, normalizeWaveOrder, summarizeWaveLines, waveMatches, waveCostThb, waveDefaultDates, waveShortBalance } from "../src/lib/wavepay-inventory.js";
+import { kyat, waveUsage, wavePhoneKey, waveFilters, normalizeWaveOrder, summarizeWaveLines, waveMatches, waveCostThb, waveDefaultDates, waveShortBalance, waveLedgerPhone, waveGapLines } from "../src/lib/wavepay-inventory.js";
 import { createWavePayInventory } from "../src/server/wavepay-inventory.js";
 let passed = 0; const check = (v, message) => { assert.ok(v, message); passed++; };
 
@@ -57,7 +57,19 @@ const repo = createWavePayInventory(async (sql, params) => {
   if (sql.includes("FROM sheet_jobs")) return [];
   if (sql.includes("DISTINCT ON (CASE")) return [{ ...base, id: 102, phone_key: "09111111111", new_balance: "777" }];
   return params[1] === "0" ? orders : [];
-}, { prepareSales: async (list) => list });
+}, { prepareSales: async (list) => list,
+  // Gaps between bot readings (as the chain check reports them) and what people recorded.
+  balanceGaps: async (_actor, q) => { gapQueries.push(q); if (gapFailure) throw gapFailure; return { wallets: [
+    { label: "09781106479", unexplainedOut: "15000.0000", unexplainedIn: "50000.0000", gaps: [
+      { kind: "between", from: "2026-10-16T02:00:00Z", to: "2026-10-16T09:00:00Z", direction: "out", amount: "10000.0000", likely: null },
+      { kind: "between", from: "2026-10-17T02:00:00Z", to: "2026-10-17T03:00:00Z", direction: "out", amount: "5000.0000", likely: null },
+      { kind: "receipt", from: "2026-10-17T04:00:00Z", to: "2026-10-17T04:01:00Z", direction: "out", amount: "1.0000", likely: null }] }] }; },
+  selectLedger: async (sql, params) => { ledgerCalls.push({ sql, params }); if (ledgerFailure) throw ledgerFailure; return [
+    { label: "WAVEPAY 3 (06479)", kind: "use", amount: "10000.0000", order_ref: "Q1", occurred_at: "2026-10-15T17:00:00Z", actor_label: "RIN" },
+    { label: "WAVEPAY 3 (06479)", kind: "deposit", amount: "50000.0000", order_ref: null, occurred_at: "2026-10-16T05:00:00Z", actor_label: "Admin" },
+    { label: "WAVEPAY 9 (99999)", kind: "use", amount: "1.0000", order_ref: "Q2", occurred_at: "2026-10-16T05:00:00Z", actor_label: "RIN" }]; } });
+let gapFailure = null, ledgerFailure = null;
+const gapQueries = [], ledgerCalls = [];
 const admin = { id: 1, permissions: ["projectm.admin"] };
 const result = await repo.list(admin, { ...month, phone: "09781106479" });
 check(calls.every((c) => c.sql.trim().startsWith("SELECT")), "read-only");
@@ -67,6 +79,31 @@ check(result.lines.length === 2 && result.lines.find((l) => l.phone === "0911111
 check(result.total === 2 && result.entries.every((e) => e.phone === "09781106479"));
 check(result.entries[0].orderId === "K101", "newest first");
 check(result.entries[1].details.saleThb === "30.00" && result.entries[1].details.salePacks === 2, "multi-pack sale split per pack");
+// Balance gaps beside recorded hand fills, per SIM.
+check(gapQueries[0].dateFrom === "2026-10-15" && ledgerCalls[0].params[0] === "2026-10-14T17:00:00.000Z", "same range for gaps and ledger");
+check(/e\.kind IN \('use','deposit','adjust_in','adjust_out'\)/.test(ledgerCalls[0].sql) && ledgerCalls[0].sql.includes("reverses_entry_id"), "ledger read leaves reversed rows out");
+const sim = result.lines.find((l) => l.phone === "09781106479").check;
+check(sim.gapOut === "15000.00" && sim.recordedOut === "10000.00" && sim.unrecordedOut === "5000.00", "missing − recorded = unrecorded");
+check(sim.gapIn === "50000.00" && sim.recordedIn === "50000.00");
+check(sim.gaps.length === 2, "only gaps between bot orders, not the bot's own receipt mismatch");
+check(sim.gaps[0].recorded.length === 1 && sim.gaps[0].recorded[0].orderRef === "Q1", "a sheet row dated that Bangkok day sits in the gap");
+check(sim.gaps[1].recorded.length === 0, "a gap with nothing recorded");
+check(result.unmatchedLedger.length === 1 && result.unmatchedLedger[0] === "WAVEPAY 9 (99999)", "a tab whose digits match no SIM is listed");
+check(result.gapsAvailable && result.ledgerAvailable);
+gapFailure = Object.assign(new Error("too many"), { status: 413 }); ledgerFailure = Object.assign(new Error("down"), { code: "ECONNREFUSED" });
+const degraded = await repo.list(admin, month);
+check(!degraded.gapsAvailable && !degraded.ledgerAvailable && degraded.total === 3, "the page still loads without gaps or ledger");
+ledgerFailure = Object.assign(new Error("no table"), { code: "42P01" }); gapFailure = null;
+check((await repo.list(admin, month)).ledgerAvailable, "no ledger tables yet is not a failure");
+ledgerFailure = null;
+check(waveLedgerPhone("WAVEPAY 1 (80888)", ["09111180888", "09222222222"]) === "09111180888");
+check(waveLedgerPhone("WAVEPAY 1 (80888)", ["09111180888", "09333380888"]) === null, "two SIMs with those digits: no guess");
+check(waveLedgerPhone("WAVEPAY 1", ["09111180888"]) === null);
+const over = waveGapLines([{ label: "09111180888", unexplainedOut: "100", unexplainedIn: "0", gaps: [] }],
+  [{ label: "W (80888)", kind: "use", amount: "300", occurred_at: "2026-10-16T05:00:00Z" }], ["09111180888"]).lines.get("09111180888");
+check(over.unrecordedOut === "0.00" && over.overRecorded, "more recorded than missing is flagged, never negative");
+const onlyRecorded = waveGapLines([], [{ label: "W (70777)", kind: "use", amount: "5", occurred_at: "2026-10-16T05:00:00Z" }], ["09222270777"]).lines.get("09222270777");
+check(onlyRecorded.gapOut === null && onlyRecorded.recordedOut === "5.00", "records on a SIM the bot did not read still show");
 await assert.rejects(repo.list({ id: 2, permissions: [] }, month), { status: 403 }); passed++;
 // The bot stopped before the PIN because the SIM was short (order 307174): nothing left this SIM.
 // A person then filled it another way, so the cost is unknown here, never the pack price.
