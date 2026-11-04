@@ -3,7 +3,7 @@
 // source sheet works it out. This gives each wallet a cost profile at its rate,
 // points every pack at its wallet's profile, and puts the sheet's own ต้นทุน
 // formula on the game, so cost = amount × that wallet's rate.
-import { evaluateGameinfoPackCost, getGameinfoCostProfile } from "@/lib/gameinfo-cost-profiles";
+import { evaluateGameinfoPackCost, gameinfoSheetCalcRate, getGameinfoCostProfile } from "@/lib/gameinfo-cost-profiles";
 import { resolveGameinfoField } from "@/lib/gameinfo-formula-fields";
 import { evaluateGameinfoFormulaVariable } from "@/lib/gameinfo-formula-variables";
 import { gameinfoSheetCostFormulaColumns } from "@/lib/gameinfo-sheet-packs";
@@ -107,9 +107,20 @@ export function gameinfoCostRatePacks({ currencies, costProfiles } = {}) {
  * `other` is the game's other mode: a game's rates are the game's, as on its
  * sheet tab, so both modes' wallets show whichever mode is open.
  */
+const amountText = (value) => Number(value).toLocaleString("en-US", { maximumFractionDigits: 4 });
+
+/** "4,615 MMK/USDT ÷ เรทสด", "¥5.85 ต่อ 1 USD × 32.57": how a sheet-style rate is worked out. */
+export function gameinfoSheetCalcText(calc, currency = "") {
+  if (!calc) return "";
+  const usdt = calc.usdtThb ? `USDT ฿${amountText(calc.usdtThb)}` : "USDT เรทสด";
+  return calc.kind === "perUsdt"
+    ? `${amountText(calc.amount)} ${currency || "หน่วย"}/USDT · ${usdt}`
+    : `¥${amountText(calc.amount)} ต่อ 1 ${currency || "หน่วย"} · ${usdt}`;
+}
+
 export function gameinfoCostRateRows(currencies, costProfiles, { formulaVariables = [], externalValues = {}, other = null } = {}) {
   const rows = new Map();
-  for (const source of [{ currencies, costProfiles }, other]) {
+  for (const [sourceIndex, source] of [{ currencies, costProfiles }, other].entries()) {
     const context = { costProfiles: source?.costProfiles, formulaVariables, externalValues };
     for (const currency of source?.currencies || []) {
       for (const category of currency.categories || []) {
@@ -124,14 +135,26 @@ export function gameinfoCostRateRows(currencies, costProfiles, { formulaVariable
           const formula = String(profile.rateFormula || "").trim();
           const variables = gameinfoRateVariables(formula).map((name) => (formulaVariables || []).find((item) => item.name === name)).filter(Boolean);
           const direct = `[${variables[0]?.name}]` === formula;
+          const sheetCalc = profile.sheetCalc || null;
+          const suggestion = !formula && sheetCalc ? gameinfoSheetCalcRate(sheetCalc, externalValues, { live: true }) : null;
           rows.set(profile.id, {
             id: profile.id,
+            // This mode's own profile (editable here) or the other mode's (shown only).
+            own: sourceIndex === 0,
+            profile,
+            method: formula ? "variable" : sheetCalc ? "sheet" : "fixed",
+            sheetCalc,
+            note: profile.note || "",
+            // Today's rate by the profile's own sheet calculation, with live USDT/THB and USDCNY.
+            suggestion,
             channel: pack.channelsMain?.[0] || profile.label,
             currency: profile.inputCurrency || "",
             rate: resolveGameinfoField(pack, {}, "อัตราต้นทุน", context),
-            source: direct
-              ? variables[0].formula || variables[0].name
-              : formula.replace(/\[([^[\]]+)\]/g, (text, name) => variables.find((item) => item.name === name)?.value || text) || "เรทคงที่",
+            source: sheetCalc && !formula
+              ? gameinfoSheetCalcText(sheetCalc, profile.inputCurrency)
+              : direct
+                ? variables[0].formula || variables[0].name
+                : formula.replace(/\[([^[\]]+)\]/g, (text, name) => variables.find((item) => item.name === name)?.value || text) || "เรทคงที่",
             updatedAt: variables[0]?.updatedAt || profile.updatedAt || "",
             packs: 1,
           });

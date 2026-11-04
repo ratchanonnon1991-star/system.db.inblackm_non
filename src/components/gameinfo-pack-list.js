@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { setGameinfoFoldClosed } from "./gameinfo-fold";
 import GameinfoPriceChannelEditor from "./gameinfo-price-channel-editor";
 import { GameinfoPackVerifyButton, GameinfoPackVerifyDialog } from "./gameinfo-pack-verify";
-import { GAMEINFO_LISTING_PRICE_CHANNEL, gameinfoListingEffective } from "@/lib/gameinfo-pack-listings";
+import { GAMEINFO_LISTING_PRICE_CHANNEL, gameinfoListingEffective, gameinfoListingPack } from "@/lib/gameinfo-pack-listings";
 import { apiJson } from "@/lib/api-json";
 import {
   GAMEINFO_MARGIN_GOOD,
@@ -193,9 +193,11 @@ export default function GameinfoPackList({
   const isOff = (row, channel) => offKeys.has(`${row.pack.id}\u0000${channel}`);
   const offChannelsFor = (row) => new Set([...soldOn].filter((channel) => isOff(row, channel)));
   const channelCountFor = (row) => [...soldOn].filter((channel) => !isOff(row, channel)).length;
+  // A check holds the pack to its cost rate as well (gameinfo-pack-listings.js).
+  const listingPack = (row) => gameinfoListingPack(row.pack, resolveGameinfoField(row.pack, game, "อัตราต้นทุน", context));
   const listingsFor = (row) => (listingsByPack.get(String(row.pack.id)) || []).filter((listing) => soldOn.has(listing.channel) && !isOff(row, listing.channel)).map((listing) => {
     const key = GAMEINFO_LISTING_PRICE_CHANNEL[listing.channel];
-    return gameinfoListingEffective(listing, key ? row.channels[key]?.price ?? null : null, now, row.pack);
+    return gameinfoListingEffective(listing, key ? row.channels[key]?.price ?? null : null, now, listingPack(row));
   });
 
   const inCategory = categoryTab === "all" ? rows : rows.filter((row) => String(row.category.id) === categoryTab);
@@ -516,7 +518,7 @@ export default function GameinfoPackList({
           onOpenChange={(next) => { if (!next) setVerifyPackId(null); }}
           gameId={verify.gameId}
           dataMode={verify.dataMode}
-          pack={verifyRow.pack}
+          pack={listingPack(verifyRow)}
           auto={verifyRow.auto}
           channels={verify.channels}
           listings={listingsFor(verifyRow)}

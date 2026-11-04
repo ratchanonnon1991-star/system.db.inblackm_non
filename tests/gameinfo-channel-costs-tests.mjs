@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { applyGameinfoChannelCosts, gameinfoChannelKey, gameinfoChargeUnit, gameinfoCostRatePacks, gameinfoCostRateRows, gameinfoRateVariables, parseGameinfoChannelRate } from "../src/lib/gameinfo-channel-costs.js";
 import { resolveGameinfoField } from "../src/lib/gameinfo-formula-fields.js";
+import { gameinfoSheetCalcRate, sanitizeGameinfoCostProfiles, sanitizeGameinfoSheetCalc } from "../src/lib/gameinfo-cost-profiles.js";
+import { gameinfoListingChanges, gameinfoListingPack, gameinfoListingSnapshot } from "../src/lib/gameinfo-pack-listings.js";
 import { GAMEINFO_SHEET_COST_FORMULA } from "../src/lib/gameinfo-sheet-packs.js";
 
 let passed = 0;
@@ -65,5 +67,23 @@ check(other.currencies[0].categories[0].packs.length === 1 && !("name" in other.
 const bothModes = gameinfoCostRateRows(packs.currencies, packs.costProfiles, { formulaVariables: variables, other });
 check(bothModes.length === 1 && bothModes[0].channel === "GOOGLE NGN" && bothModes[0].rate === 0.024037, "a mode with no profiles still shows the game's other mode's rates");
 check(gameinfoCostRateRows(followed.packs.currencies, followed.packs.costProfiles, { formulaVariables: variables, other })[0].packs === 2, "one wallet in both modes is one row");
+
+// A rate worked out like the sheet, and today's suggestion from it.
+const live = { "USDT/THB": 33.62, USDCNY: 6.6723 };
+check(Math.abs(gameinfoSheetCalcRate({ kind: "perUsdt", amount: "4,615", usdtThb: "32.6" }, live) - 32.6 / 4615) < 1e-12, "MMK: typed USDT/THB ÷ MMK per USDT, as the sheet's 141.69");
+check(Math.abs(gameinfoSheetCalcRate({ kind: "perUsdt", amount: "4615", usdtThb: "32.6" }, live, { live: true }) - 33.62 / 4615) < 1e-12, "the suggestion uses today's USDT/THB");
+check(Math.abs(gameinfoSheetCalcRate({ kind: "cnyPerUnit", amount: "5.85" }, { "USDT/THB": 32.57, USDCNY: 6.68 }) - 28.52) < 0.01, "iTunes USD: ¥5.85 ÷ 6.68 × 32.57 is the sheet's 28.52");
+check(gameinfoSheetCalcRate({ kind: "cnyPerUnit", amount: "5.85" }, { "USDT/THB": 33 }) === null, "no USDCNY yet, no rate");
+check(sanitizeGameinfoSheetCalc({ kind: "perUsdt", amount: "0" }) === null && sanitizeGameinfoSheetCalc({ kind: "other", amount: "5" }) === null, "a calculation needs a known kind and an amount");
+const kept = sanitizeGameinfoCostProfiles([{ id: "sheet-wavepay", label: "Wavepay", baseValue: "0.007285", sheetCalc: { kind: "perUsdt", amount: "4615" }, note: " ตามตลาด " }])[0];
+check(kept.sheetCalc.amount === "4615" && kept.sheetCalc.usdtThb === "" && kept.note === "ตามตลาด", "a profile keeps its calculation and note");
+const sheetRow = gameinfoCostRateRows([{ categories: [{ packs: [{ costProfileId: "sheet-wavepay", channelsMain: ["Wavepay"], amountChargedFee: "2000" }] }] }], [{ ...kept, inputCurrency: "MMK" }], { externalValues: live })[0];
+check(sheetRow.method === "sheet" && sheetRow.own && sheetRow.rate === 0.007285 && Math.abs(sheetRow.suggestion - 33.62 / 4615) < 1e-12, "a sheet rate row has its method and today's suggestion");
+check(sheetRow.source.includes("4,615 MMK/USDT"), "and says how it is worked out");
+
+// A check holds the pack to its cost rate: changing the rate asks for a new one.
+const checked = gameinfoListingSnapshot(gameinfoListingPack({ name: "60 Crystals", price: "20" }, 0.007058));
+check(gameinfoListingChanges(checked, gameinfoListingPack({ name: "60 Crystals", price: "20" }, 0.007285)).map((change) => change.key).join() === "costRate", "a new cost rate is a change");
+check(gameinfoListingChanges(checked, gameinfoListingPack({ name: "60 Crystals", price: "20" }, undefined)).length === 0, "a rate not worked out yet is not");
 
 console.log(`gameinfo-channel-costs: ${passed} passed`);

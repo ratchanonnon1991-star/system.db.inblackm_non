@@ -56,7 +56,17 @@ export const GAMEINFO_LISTING_SNAPSHOT_FIELDS = [
   { key: "amountBeforeFee", label: "ยอดที่กด" },
   { key: "amountChargedFee", label: "ยอดรวมค่าธรรมเนียม" },
   { key: "costProfileId", label: "เรทต้นทุนที่ใช้" },
+  // The rate itself, as resolved when the check was made: an admin changing
+  // a wallet's rate changes every pack on it. Not part of the pack's own data;
+  // the page adds it (gameinfoListingPack).
+  { key: "costRate", label: "เรทต้นทุน" },
 ];
+
+/** The pack with its resolved cost rate, as a check snapshots it. */
+export function gameinfoListingPack(pack, costRate) {
+  const rate = Number(costRate);
+  return { ...pack, costRate: Number.isFinite(rate) ? String(Number(rate.toFixed(6))) : "" };
+}
 const SNAPSHOT_KEYS = new Set(GAMEINFO_LISTING_SNAPSHOT_FIELDS.map((field) => field.key));
 
 function snapshotValue(value) {
@@ -92,7 +102,8 @@ export function gameinfoListingChanges(snapshot, pack) {
   return GAMEINFO_LISTING_SNAPSHOT_FIELDS
     .filter(({ key }) => Object.hasOwn(snapshot, key))
     .map(({ key, label }) => ({ key, label, from: snapshotValue(snapshot[key]), to: snapshotValue(pack?.[key]) }))
-    .filter((change) => !sameValue(change.from, change.to));
+    // A rate not worked out yet (live rates still loading) is no change.
+    .filter((change) => !(change.key === "costRate" && change.to === "") && !sameValue(change.from, change.to));
 }
 
 export function isGameinfoListingChannel(key) {

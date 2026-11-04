@@ -51,6 +51,8 @@ import {
   listGameinfoColumnReferences,
 } from "@/lib/gameinfo-column-dependencies";
 import { mergeCurrencies } from "@/lib/gameinfo-import";
+import { gameinfoCostRateRows } from "@/lib/gameinfo-channel-costs";
+import GameinfoCostRateEditor from "./gameinfo-cost-rate-editor";
 import {
   GAMEINFO_COUNTRY_NAMES,
   gameinfoCountryDisplayName,
@@ -183,6 +185,8 @@ export default function GameinfoPackEditor({
   const [currencies, setCurrencies] = useState(game.currencies);
   const [computedColumns, setComputedColumns] = useState(game.computedColumns ?? []);
   const [costProfiles, setCostProfiles] = useState(game.costProfiles ?? []);
+  // The cost rate being changed in its window (gameinfo-cost-rate-editor.js).
+  const [editingRateId, setEditingRateId] = useState(null);
   const [formulaVariables, setFormulaVariables] = useState(game.formulaVariables ?? []);
   const [packLanguages, setPackLanguages] = useState(game.packLanguages ?? []);
   const [activeLanguageId, setActiveLanguageId] = useState("");
@@ -223,6 +227,10 @@ export default function GameinfoPackEditor({
     () => ({ costProfiles, formulaVariables, externalValues: rateState.externalValues }),
     [costProfiles, formulaVariables, rateState.externalValues]
   );
+  const editingRateRow = editingRateId === null
+    ? null
+    : gameinfoCostRateRows(currencies, costProfiles, { formulaVariables, externalValues: rateState.externalValues, other: game.costRatesOther })
+      .find((row) => row.id === editingRateId && row.own) || null;
 
   const currentCategoryIds = useMemo(
     () => new Set(currencies.flatMap((currency) => currency.categories.map((category) => String(category.id)))),
@@ -518,6 +526,16 @@ export default function GameinfoPackEditor({
       window.removeEventListener(GAMEINFO_SET_WEB_PACK_IMAGES_EVENT, setWebPackImages);
     };
   }, [dataMode]);
+
+  // A cost rate change joins the draft; the save bar stores it.
+  function replaceCostProfile(next) {
+    setCostProfiles((current) => current.map((profile) => (profile.id === next.id ? next : profile)));
+  }
+  // "ใช้เรทนี้" in the rate table: today's rate by the profile's own sheet calculation.
+  function applyRateSuggestion(row) {
+    if (row.suggestion === null || !row.profile) return;
+    replaceCostProfile({ ...row.profile, baseValue: String(Number(row.suggestion.toFixed(6))), rateFormula: "" });
+  }
 
   function addCurrency() {
     const id = genId("c");
@@ -1040,7 +1058,25 @@ export default function GameinfoPackEditor({
         formulaVariables={formulaVariables}
         externalValues={rateState.externalValues}
         other={game.costRatesOther}
+        editable
+        otherModeLabel={dataMode === "idpass" ? "UID" : "ID-PASS"}
+        onEdit={(row) => setEditingRateId(row.id)}
+        onApplySuggestion={applyRateSuggestion}
       />
+      {editingRateRow ? (
+        <GameinfoCostRateEditor
+          row={editingRateRow}
+          packs={currencies.flatMap((currency) => currency.categories.flatMap((category) => category.packs)).filter((pack) => pack.costProfileId === editingRateRow.id)}
+          formulaVariables={formulaVariables}
+          externalValues={rateState.externalValues}
+          otherProfiles={costProfiles}
+          onApply={(next) => {
+            replaceCostProfile(next);
+            setEditingRateId(null);
+          }}
+          onClose={() => setEditingRateId(null)}
+        />
+      ) : null}
       <section className="rounded-lg border border-linear-hairline bg-linear-surface-1 p-4">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-semibold text-linear-ink">นำเข้าแพ็กจาก CSV (เกมนี้)</h2>
