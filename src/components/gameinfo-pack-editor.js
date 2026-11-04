@@ -485,11 +485,25 @@ export default function GameinfoPackEditor({
     };
   }, [dataMode]);
 
+  // A new currency goes below every existing pack, often far off screen, so
+  // the editor scrolls to it and puts the cursor in its name.
+  const revealCurrencyIdRef = useRef(null);
   function addCurrency() {
+    const id = genId("c");
     updateCurrencies((draft) => {
-      draft.push({ id: genId("c"), name: "", image: "", categories: [] });
+      draft.push({ id, name: "", image: "", categories: [] });
     });
+    revealCurrencyIdRef.current = id;
   }
+  useEffect(() => {
+    const id = revealCurrencyIdRef.current;
+    if (!id) return;
+    const block = document.querySelector(`[data-currency-id="${window.CSS.escape(String(id))}"]`);
+    if (!block) return;
+    revealCurrencyIdRef.current = null;
+    block.scrollIntoView({ behavior: "smooth", block: "center" });
+    block.querySelector('input[placeholder^="ชื่อสกุลเงิน"]')?.focus({ preventScroll: true });
+  }, [currencies]);
   function removeCurrency(cIdx) {
     setConfirmRequest({
       title: "ลบสกุลเงิน",
@@ -1372,7 +1386,7 @@ export default function GameinfoPackEditor({
 
         <div className="space-y-4">
           {currencies.map((currency, cIdx) => (
-            <div key={currency.id} className="rounded-[14px] border border-linear-hairline bg-linear-surface-1 p-4">
+            <div key={currency.id} data-currency-id={currency.id} className="rounded-[14px] border border-linear-hairline bg-linear-surface-1 p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
                   <span className="shrink-0 rounded-full bg-[#18181B] px-2.5 py-1 text-xs font-black text-white dark:bg-white dark:text-[#18181B]">
