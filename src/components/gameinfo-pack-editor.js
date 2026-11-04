@@ -649,11 +649,17 @@ export default function GameinfoPackEditor({
     );
   }
 
+  // Only packs added or changed since the last save are held to the required
+  // fields: a game whose older packs were saved without them can still save
+  // a status change or a new pack.
   function validatePacks() {
     const invalid = new Set();
+    const saved = new Map(savedCurrencies.flatMap((c) => c.categories.flatMap((cat) => cat.packs.map((p) => [p.id, JSON.stringify(p)]))));
+    const changed = (p) => saved.get(p.id) !== JSON.stringify(p);
     for (const c of currencies) {
       for (const cat of c.categories) {
         for (const p of cat.packs) {
+          if (!changed(p)) continue;
           if (!p.name.trim()) invalid.add(`${p.id}:name`);
           if (!(p.price ?? "").trim()) invalid.add(`${p.id}:price`);
           if (!(p.amountChargedFee ?? "").trim()) invalid.add(`${p.id}:amountChargedFee`);
@@ -662,7 +668,8 @@ export default function GameinfoPackEditor({
         }
       }
     }
-    const duplicateNamePriceIds = findDuplicateGameinfoPackNamePrices(currencies);
+    const changedIds = new Set(currencies.flatMap((c) => c.categories.flatMap((cat) => cat.packs.filter(changed).map((p) => p.id))));
+    const duplicateNamePriceIds = new Set([...findDuplicateGameinfoPackNamePrices(currencies)].filter((packId) => changedIds.has(packId)));
     for (const packId of duplicateNamePriceIds) {
       invalid.add(`${packId}:name`);
       invalid.add(`${packId}:price`);
@@ -677,6 +684,8 @@ export default function GameinfoPackEditor({
     const { invalid, duplicateNamePriceIds } = validatePacks();
     if (invalid.size > 0) {
       setInvalidFields(invalid);
+      // A status tab could be hiding the pack that needs filling in.
+      setStatusTab("all");
       setError(duplicateNamePriceIds.size > 0
         ? "ชื่อ Pack และราคาห้ามซ้ำกันพร้อมกัน กรุณาแก้ช่องที่ไฮไลต์สีแดง"
         : "กรุณากรอกข้อมูลให้ครบก่อนบันทึก: ชื่อ pack, ราคา, ยอดที่กด + fee, ช่องทางหลัก, ประเทศ (ช่องที่ไฮไลต์สีแดง)");

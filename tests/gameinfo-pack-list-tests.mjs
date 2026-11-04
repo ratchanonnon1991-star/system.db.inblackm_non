@@ -92,4 +92,6 @@ assert.ok(notices.includes("stored?.day === today()") && notices.includes('"/gam
 
 assert.ok(editor.includes("GAMEINFO_PACK_LIST_STATUS_TABS.map") && editor.includes('statusTab === "all" || gameinfoPackListStatusTab({ status: gameinfoPackStatus(pack) }) === statusTab'), "the editor has the game page's status tabs and filters by them");
 
-console.log("38 passed");
+assert.ok(editor.includes("if (!changed(p)) continue;") && editor.includes('setStatusTab("all");'), "saving checks only the packs added or changed, and shows every pack when one needs filling in");
+
+console.log("39 passed");
