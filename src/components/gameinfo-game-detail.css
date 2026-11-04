@@ -223,12 +223,13 @@
 .gd-mbody { padding: 16px 18px 22px; overflow: auto; display: flex; flex-direction: column; gap: 12px; }
 .gd-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
 .gd-tab { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 13px; border-radius: 999px; background: var(--gd-fill); font-size: 13px; font-weight: 500; color: var(--gd-muted); white-space: nowrap; }
-.gd-tab[aria-selected="true"] { background: var(--gd-red); color: #fff; }
+/* Dark, not red, when chosen: a red "ราคาผิด" dot vanished on a red tab. */
+.gd-tab[aria-selected="true"] { background: var(--gd-fg); color: var(--gd-bg); }
 .gd-td { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--gd-faint); }
 .gd-td.ok { background: var(--gd-green); }
 .gd-td.pending { background: var(--gd-amber); }
 .gd-td.wrong { background: var(--gd-red); }
-.gd-tab[aria-selected="true"] .gd-td { box-shadow: 0 0 0 2px #fff; }
+.gd-tab[aria-selected="true"] .gd-td { box-shadow: 0 0 0 2px var(--gd-bg); }
 .gd-lnkc { background: var(--gd-surface2); border: 1px solid var(--gd-line2); border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .gd-lnku { font-size: 13.5px; color: var(--gd-blue); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gd-vstb { display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-radius: 16px; border: 1px solid var(--gd-line2); background: var(--gd-surface2); min-width: 0; }
