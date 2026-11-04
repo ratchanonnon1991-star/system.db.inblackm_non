@@ -45,6 +45,7 @@ assert.equal(listed[0].listedAt, "2026-11-04T05:00:00.000Z");
 await saveGamelistPackListing(3, "uid", { packId: "a", channel: "kaleoz", url: "https://k.example/a", listedPrice: "95" }, "nok");
 const upsert = queries.find((query) => /INSERT INTO gamelist_pack_listings/.test(query.text));
 assert.ok(/status = 'pending'/.test(upsert.text) && /reviewed_by = ''/.test(upsert.text), "a changed listing waits for a new check");
+assert.ok(/IS DISTINCT FROM EXCLUDED\.url[\s\S]*IS DISTINCT FROM EXCLUDED\.listed_price/.test(upsert.text), "saving the same link and price keeps the check");
 assert.deepEqual(upsert.params.slice(0, 7), [3, "uid", "a", "kaleoz", "https://k.example/a", 95, "nok"]);
 
 queries.length = 0;
@@ -71,4 +72,4 @@ assert.ok(route.includes("requireGameinfoReporter(request)") && route.includes("
 const packs = readFileSync(new URL("../src/server/gameinfo-gamelist-packs.js", import.meta.url), "utf8");
 assert.ok(packs.includes("CREATE TABLE IF NOT EXISTS gamelist_pack_listings"), "the table is created with the others");
 
-console.log("29 passed");
+console.log("30 passed");

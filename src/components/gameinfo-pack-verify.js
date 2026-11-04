@@ -155,6 +155,8 @@ function ChannelListing({ gameId, dataMode, pack, channel, listing, reference, c
   // The one who listed it never checks it, so the check is always a second pair of eyes.
   const ownListing = Boolean(listing && viewer && listing.listedBy === viewer);
   const profit = reference !== null && cost !== null ? reference - cost : null;
+  // Only a real change to the link or the price is saved, and so sends the listing back for a check.
+  const changed = url.trim() !== (listing?.url || "") || String(price).trim() !== String(listing?.listedPrice ?? (listing ? "" : reference ?? ""));
 
   return (
     <>
@@ -239,7 +241,7 @@ function ChannelListing({ gameId, dataMode, pack, channel, listing, reference, c
             <label className="gd-field">ราคาที่ลง<input className="gd-input" inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} /></label>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button type="submit" disabled={busy} className="gd-btn sm red">{busy ? "กำลังบันทึก…" : "บันทึก"}</button>
+            <button type="submit" disabled={busy || !changed} className="gd-btn sm red disabled:opacity-40">{busy ? "กำลังบันทึก…" : "บันทึกลิงก์และราคา"}</button>
             {listing ? (
               <button type="button" disabled={busy} className="gd-btn sm" onClick={() => send("PUT", { packId: pack.id, channel: channel.key, url: "", listedPrice: "" }, "ลบการลงสินค้าไม่สำเร็จ")}>ลบการลงสินค้านี้</button>
             ) : null}

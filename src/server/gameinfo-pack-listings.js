@@ -73,7 +73,10 @@ export async function saveGamelistPackListing(gameId, dataMode, { packId, channe
        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), 'pending')
        ON CONFLICT (game_id, data_mode, pack_id, channel) DO UPDATE SET
          url = EXCLUDED.url, listed_price = EXCLUDED.listed_price, listed_by = EXCLUDED.listed_by,
-         listed_at = NOW(), status = 'pending', checked_price = NULL, checked_reference = NULL, reviewed_by = '', reviewed_at = NULL, note = ''`,
+         listed_at = NOW(), status = 'pending', checked_price = NULL, checked_reference = NULL, reviewed_by = '', reviewed_at = NULL, note = ''
+       -- Saving the same link and price again changes nothing, the check included.
+       WHERE gamelist_pack_listings.url IS DISTINCT FROM EXCLUDED.url
+          OR gamelist_pack_listings.listed_price IS DISTINCT FROM EXCLUDED.listed_price`,
       [gameId, dataMode, id, channel, link, price, String(actor || "").slice(0, 120)]
     );
   }
