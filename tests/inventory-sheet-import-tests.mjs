@@ -103,4 +103,32 @@ check("each tab's last balance, bot rows included; the latest across snapshots w
   assert.equal(latestBalance([null]), null);
 });
 
+check("U9: a SIM wallet and an ID wallet in one tab become two accounts", () => {
+  const u9 = { title: "U9 2 - 12345", cells: cells([
+    [1, { A: "วันที่", B: "ลำดับคิว", E: "MMK เข้าซิม", F: "MMK ออกซิม", G: "MMK คงเหลือ", H: "ผู้เติม", L: "MMK ออกไอดี" }],
+    [2, { A: "46099", E: "10000", G: "10000" }],
+    [3, { A: "46099", B: "#7", F: "3000", G: "7000", H: "RIN", L: "2500" }],
+  ]) };
+  const parsed = parseAccountWorkbook([u9], "1.2 UID ( MMK )_.xlsx", "2026-11-04").tabs;
+  assert.deepEqual(parsed.get("1.2 UID ( MMK ) :: U9 2 - 12345").rows.map((r) => [r.kind, r.amount]), [["deposit", "10000.00"], ["use", "3000.00"]]);
+  assert.deepEqual(parsed.get("1.2 UID ( MMK ) :: U9 2 - 12345 · ไอดี").rows.map((r) => [r.kind, r.amount, r.queue]), [["use", "2500.00", "#7"]]);
+  assert.equal(parsed.get("1.2 UID ( MMK ) :: U9 2 - 12345").lastBalance.balance, "7000.00");
+});
+
+check("'…ที่ออก' columns are information; bank and iTunes tabs without a queue column are read", () => {
+  const wallet = { title: "True Wallet JET 3394", cells: cells([
+    [1, { A: "วันที่", B: "ลำดับคิว", E: "ยอดเงิน เข้าไอดี", F: "ยอดเงิน ออกไอดี", G: "ยอดเงิน คงเหลือ", H: "ผู้เติม", P: "Shellที่ออก" }],
+    [2, { A: "46099", B: "#1", F: "50", H: "RIN", P: "500" }],
+  ]) };
+  const bank = { title: "KBZ Aye", cells: cells([
+    [1, { A: "วันที่", B: "จำนวนเงิน เข้า", C: "จำนวนเงิน ออก", D: "จำนวนเงิน คงเหลือ", E: "ผู้ทำรายการเติม" }],
+    [2, { A: "46099", B: "900000", D: "900000" }],
+    [3, { A: "46100", C: "100000", D: "800000", E: "O" }],
+  ]) };
+  const parsed = parseAccountWorkbook([wallet, bank], "1.8 UID ( THB ).xlsx", "2026-11-04").tabs;
+  assert.deepEqual(parsed.get("1.8 UID ( THB ) :: True Wallet JET 3394").rows.map((r) => [r.kind, r.amount]), [["use", "50.00"]]);
+  assert.deepEqual(parsed.get("1.8 UID ( THB ) :: KBZ Aye").rows.map((r) => [r.kind, r.amount, r.queue]), [["deposit", "900000.00", ""], ["use", "100000.00", ""]]);
+  assert.equal(ledgerEntries("bank:x", parsed.get("1.8 UID ( THB ) :: KBZ Aye").rows)[1].orderRef, "ไม่มีคิว");
+});
+
 console.log(`${passed} passed`);
