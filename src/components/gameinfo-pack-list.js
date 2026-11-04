@@ -85,6 +85,8 @@ export default function GameinfoPackList({
   const [query, setQuery] = useState("");
   const [chip, setChip] = useState("all");
   const [status, setStatus] = useState("all");
+  // The category tabs, as the TopUp site shows a game's packs: one category at a time, or all.
+  const [categoryTab, setCategoryTab] = useState("all");
   const [lightbox, setLightbox] = useState(null);
   const listRef = useRef(null);
   useEffect(() => {
@@ -127,13 +129,13 @@ export default function GameinfoPackList({
     return gameinfoListingEffective(listing, key ? row.channels[key]?.price ?? null : null, now);
   });
 
-  const visible = filterGameinfoPackListRows(rows, { query, chip, status, sort, channel: channelKey });
+  const inCategory = categoryTab === "all" ? rows : rows.filter((row) => String(row.category.id) === categoryTab);
+  const visible = filterGameinfoPackListRows(inCategory, { query, chip, status, sort, channel: channelKey });
   const summary = product ? summarizeGameinfoPackList(visible, channelKey) : null;
   const lowCount = product ? rows.filter((row) => (row.channels[channelKey]?.margin ?? Infinity) < GAMEINFO_MARGIN_LOW).length : 0;
   const categories = currency?.categories || [];
   const chips = [
     { id: "all", label: "ทั้งหมด", count: rows.length },
-    ...(categories.length > 1 ? categories.map((category) => ({ id: category.id, label: category.name || "(ไม่มีชื่อหมวดหมู่)", count: (category.packs || []).length })) : []),
     ...(botAuto ? [{ id: "bot", label: "Bot Auto", count: rows.filter((row) => row.auto).length }] : []),
     ...(product ? [{ id: "low", label: "กำไรต่ำ", count: lowCount }] : []),
   ];
@@ -191,6 +193,21 @@ export default function GameinfoPackList({
   return (
     <>
       <div className="gd-ctrl">
+        {categories.length ? (
+          <div className="gd-cattabs" role="group" aria-label="หมวดหมู่แพ็ค">
+            {[{ id: "all", name: "ทั้งหมด" }, ...categories].map((category) => (
+              <button
+                key={category.id}
+                type="button"
+                className="gd-cattab"
+                aria-pressed={categoryTab === String(category.id)}
+                onClick={() => setCategoryTab(String(category.id))}
+              >
+                {category.name || "(ไม่มีชื่อหมวดหมู่)"}
+              </button>
+            ))}
+          </div>
+        ) : null}
         {product && channels.length > 1 ? (
           <div className="flex flex-col gap-1.5">
             <span className="gd-lbl">ดูกำไรของช่องทาง</span>
@@ -275,7 +292,7 @@ export default function GameinfoPackList({
           <span className="eic"><Search size={22} aria-hidden="true" /></span>
           <b>ไม่พบแพ็คที่ตรงเงื่อนไข</b>
           <span>ลองล้างคำค้นหา หรือเลือก “ทั้งหมด”</span>
-          <button type="button" className="gd-btn sm" onClick={() => { setQuery(""); setChip("all"); setStatus("all"); }}>ล้างตัวกรอง</button>
+          <button type="button" className="gd-btn sm" onClick={() => { setQuery(""); setChip("all"); setStatus("all"); setCategoryTab("all"); }}>ล้างตัวกรอง</button>
         </div>
       ) : (
         <div ref={listRef} className="scroll-mt-20">

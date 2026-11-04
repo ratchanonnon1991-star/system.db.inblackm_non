@@ -138,6 +138,11 @@
 .gd-sel { appearance: none; height: 38px; border-radius: 999px; border: 0; background: var(--gd-fill); color: var(--gd-fg); padding: 0 38px 0 16px; outline: 0; font-size: 13px; max-width: 100%; min-width: 0; cursor: pointer; }
 .gd-selw::after { content: ""; position: absolute; right: 17px; top: 50%; width: 7px; height: 7px; border-right: 2px solid var(--gd-muted); border-bottom: 2px solid var(--gd-muted); transform: translateY(-70%) rotate(45deg); pointer-events: none; }
 .gd-chipbar { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Category tabs, as the TopUp site's package step: the chosen one a red pill, the rest plain. */
+.gd-cattabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.gd-cattab { min-height: 42px; padding: 0 20px; border-radius: 999px; font-size: 15px; font-weight: 700; color: var(--gd-muted); }
+.gd-cattab:hover { color: var(--gd-fg); background: var(--gd-fill); }
+.gd-cattab[aria-pressed="true"] { background: var(--gd-red); color: #fff; box-shadow: 0 8px 18px -10px var(--gd-red); }
 .gd-chip { flex: none; height: 32px; padding: 0 13px; border-radius: 999px; background: var(--gd-fill); font-size: 13px; font-weight: 500; color: var(--gd-muted); display: inline-flex; align-items: center; gap: 6px; }
 .gd-chip[aria-pressed="true"] { background: var(--gd-fg); color: var(--gd-bg); }
 .gd-chip .cnt { opacity: 0.75; font-size: 12px; }

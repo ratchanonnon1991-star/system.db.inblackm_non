@@ -96,4 +96,6 @@ assert.ok(editor.includes("if (!changed(p)) continue;") && editor.includes('setS
 
 assert.ok(list.includes('const grouped = sort === "default";'), "filtered packs keep their category headings");
 
-console.log("40 passed");
+assert.ok(list.includes('aria-label="หมวดหมู่แพ็ค"') && list.includes('categoryTab === "all" ? rows'), "categories are tabs over the list, all or one at a time");
+
+console.log("41 passed");
