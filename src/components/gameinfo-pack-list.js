@@ -237,21 +237,6 @@ export default function GameinfoPackList({
   return (
     <>
       <div className="gd-ctrl">
-        {categories.length ? (
-          <div className="gd-cattabs" role="group" aria-label="หมวดหมู่แพ็ค">
-            {[{ id: "all", name: "ทั้งหมด" }, ...categories].map((category) => (
-              <button
-                key={category.id}
-                type="button"
-                className="gd-cattab"
-                aria-pressed={categoryTab === String(category.id)}
-                onClick={() => setCategoryTab(String(category.id))}
-              >
-                {category.name || "(ไม่มีชื่อหมวดหมู่)"}
-              </button>
-            ))}
-          </div>
-        ) : null}
         {product && channels.length > 1 ? (
           <div className="flex flex-col gap-1.5">
             <span className="gd-lbl">ดูกำไรของช่องทาง</span>
@@ -328,6 +313,23 @@ export default function GameinfoPackList({
       {!product && rows.length ? <TopupSummary rows={visible.length ? visible : rows} total={rows.length} /> : null}
 
       {beforeList}
+
+      {/* Right above the packs, as the TopUp site puts them. */}
+      {categories.length && rows.length ? (
+        <div className="gd-cattabs" role="group" aria-label="หมวดหมู่แพ็ค">
+          {[{ id: "all", name: "ทั้งหมด" }, ...categories].map((category) => (
+            <button
+              key={category.id}
+              type="button"
+              className="gd-cattab"
+              aria-pressed={categoryTab === String(category.id)}
+              onClick={() => setCategoryTab(String(category.id))}
+            >
+              {category.name || "(ไม่มีชื่อหมวดหมู่)"}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {!rows.length ? (
         <div className="gd-empty"><b>ยังไม่มีแพ็คในสกุลนี้</b></div>
