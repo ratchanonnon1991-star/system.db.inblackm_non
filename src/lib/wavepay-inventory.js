@@ -188,25 +188,34 @@ export function waveGapLines(wallets, ledgerRows, phones) {
   }
   const sum = (list) => signedUsd(list.reduce((n, x) => n + (sheetCents(x.amount) ?? 0n), 0n));
   const lines = new Map();
-  for (const w of wallets) {
-    const phone = String(w.label || ""), mine = recorded.get(phone) ?? [];
-    const recordedOut = sum(mine.filter((x) => x.direction === "out")), recordedIn = sum(mine.filter((x) => x.direction === "in"));
-    const gapOut = w.unexplainedOut == null ? null : kyat(w.unexplainedOut), gapIn = w.unexplainedIn == null ? null : kyat(w.unexplainedIn);
-    const rest = gapOut == null ? null : sheetCents(gapOut) - sheetCents(recordedOut);
-    lines.set(phone, {
-      gapOut, gapIn, recordedOut, recordedIn,
-      // Never below zero: more recorded than missing means hand fills the bot already saw, or a wrong SIM.
+  const line = (phone, w) => {
+    const mine = recorded.get(phone) ?? [];
+    // Only the windows between two bot orders; a mismatch inside one bot receipt is the bot's own.
+    const gaps = (w?.gaps ?? []).filter((g) => g.kind === "between").map((g) => ({
+      from: g.from, to: g.to, direction: g.direction, amount: kyat(g.amount), likely: g.likely,
+      recorded: mine.filter((x) => x.direction === g.direction && bangkokDay(x.occurredAt) >= bangkokDay(g.from) && bangkokDay(x.occurredAt) <= bangkokDay(g.to)),
+    }));
+    // A drop that matches a stuck bot queue (charged) or comes back (refunded) is not a hand fill.
+    const handOut = gaps.filter((g) => g.direction === "out" && !g.likely), rises = gaps.filter((g) => g.direction === "in");
+    // Compare like with like: only records that fall inside a gap count against it (a record can sit in two).
+    const inside = (list) => [...new Set(list.flatMap((g) => g.recorded))];
+    const outOfGaps = (direction, list) => mine.filter((x) => x.direction === direction && !list.includes(x));
+    const matchedOut = inside(handOut), matchedIn = inside(rises);
+    const read = w != null;
+    const gapOut = read ? sum(handOut) : null, rest = read ? sheetCents(gapOut) - sheetCents(sum(matchedOut)) : null;
+    return {
+      gapOut, chargedOut: read ? sum(gaps.filter((g) => g.likely === "charged")) : null, gapIn: read ? sum(rises) : null,
+      recordedOut: sum(matchedOut), recordedIn: sum(matchedIn),
+      // Records dated outside every gap (before the first or after the last bot reading, or no reading at all).
+      outsideOut: sum(outOfGaps("out", matchedOut)), outsideIn: sum(outOfGaps("in", matchedIn)),
+      // Never below zero: more recorded than missing in those windows means a wrong SIM or a fill the bot saw.
       unrecordedOut: rest == null ? null : signedUsd(rest > 0n ? rest : 0n),
       overRecorded: rest != null && rest < 0n,
-      gaps: (w.gaps ?? []).filter((g) => g.kind === "between").map((g) => ({
-        from: g.from, to: g.to, direction: g.direction, amount: kyat(g.amount), likely: g.likely,
-        recorded: mine.filter((x) => x.direction === g.direction && bangkokDay(x.occurredAt) >= bangkokDay(g.from) && bangkokDay(x.occurredAt) <= bangkokDay(g.to)),
-      })),
-    });
-  }
+      gaps,
+    };
+  };
+  for (const w of wallets) lines.set(String(w.label || ""), line(String(w.label || ""), w));
   // Records on a SIM the bot did not read in this range: shown, with nothing to compare against.
-  for (const [phone, mine] of recorded) if (!lines.has(phone)) lines.set(phone, { gapOut: null, gapIn: null,
-    recordedOut: sum(mine.filter((x) => x.direction === "out")), recordedIn: sum(mine.filter((x) => x.direction === "in")),
-    unrecordedOut: null, overRecorded: false, gaps: [] });
+  for (const phone of recorded.keys()) if (!lines.has(phone)) lines.set(phone, line(phone, null));
   return { lines, unmatched: [...new Set(unmatched)] };
 }

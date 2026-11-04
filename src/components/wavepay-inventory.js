@@ -56,6 +56,8 @@ function HandFillSummary({ check }) {
       <dd className={`tabular-nums ${unrecorded ? "font-semibold text-ll-warning" : ""}`}>{ks(check.unrecordedOut)}{check.overRecorded && <span className="ml-1 font-normal text-ll-ink-subtle">(ยกยอดมากกว่ายอดที่หาย)</span>}</dd></div>
     <div><dt className="text-ll-ink-subtle">ยอดเพิ่ม (คาดว่าเติมเข้า)</dt><dd className="tabular-nums">{ks(check.gapIn)}</dd></div>
     <div><dt className="text-ll-ink-subtle">บันทึกเติมเข้าแล้ว</dt><dd className="tabular-nums">{ks(check.recordedIn)}</dd></div>
+    {Number(check.chargedOut) > 0 && <div className="col-span-2"><dt className="text-ll-ink-subtle">บอทถูกตัดเงิน (ตรงกับคิวที่ค้าง ไม่นับเป็นคนเติม)</dt><dd className="tabular-nums">{ks(check.chargedOut)}</dd></div>}
+    {(Number(check.outsideOut) > 0 || Number(check.outsideIn) > 0) && <div className="col-span-2"><dt className="text-ll-ink-subtle">บันทึกนอกช่วงที่บอทอ่าน (เทียบไม่ได้)</dt><dd className="tabular-nums">ออก {ks(check.outsideOut)} · เข้า {ks(check.outsideIn)}</dd></div>}
   </dl>;
 }
 
