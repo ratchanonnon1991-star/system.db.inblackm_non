@@ -393,6 +393,8 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         dataMode={dataMode}
         hiddenColumnKeys={hiddenColumnKeys}
         editHref={editableRole ? manageHref : null}
+        priceChannels={settings.priceChannels?.[dataMode] ?? null}
+        canEditChannels={editableRole}
         stock={stock}
         stockLinks={hasPermission(user, "stock.access")}
         costRatesOther={costRatesOther}

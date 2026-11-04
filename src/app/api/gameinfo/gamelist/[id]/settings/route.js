@@ -12,6 +12,7 @@ export async function PUT(request, { params }) {
     if (Object.hasOwn(body, "topupGameId")) patch.topupGameId = body.topupGameId;
     if (Object.hasOwn(body, "sourceUid")) patch.sourceUid = body.sourceUid;
     if (Object.hasOwn(body, "sourceIdpass")) patch.sourceIdpass = body.sourceIdpass;
+    if (Object.hasOwn(body, "priceChannels")) patch.priceChannels = body.priceChannels;
     return jsonOk({ settings: await saveGamelistGameSettings(Number(id), patch, auditActor(user)) });
   } catch (error) {
     return handleApiError(error, "บันทึกการตั้งค่าเกมไม่สำเร็จ");

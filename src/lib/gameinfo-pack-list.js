@@ -19,8 +19,31 @@ export const GAMEINFO_PRICE_CHANNELS = [
   { key: "russia", label: "Russia", short: "Russia", column: "ราคาrussia" },
 ];
 const COST_COLUMN = "ต้นทุน";
+export const GAMEINFO_PRICE_CHANNEL_MAX = 10;
 
 const squash = (label) => String(label ?? "").replace(/\s+/g, "").toLowerCase();
+
+/**
+ * A game's own selling channels, as saved in its settings: name and the
+ * column holding the price there ("" is the pack's ราคา). Null means it has
+ * none of its own and uses GAMEINFO_PRICE_CHANNELS. Games sell on different
+ * channels, as each tab of the source sheet shows.
+ */
+export function sanitizeGameinfoPriceChannels(list) {
+  if (!Array.isArray(list)) return null;
+  const keys = new Set();
+  const channels = [];
+  for (const item of list) {
+    const label = String(item?.label ?? "").trim().slice(0, 40);
+    if (!label) continue;
+    let key = String(item?.key ?? "").trim().slice(0, 40) || `ch_${channels.length + 1}`;
+    while (keys.has(key)) key = `${key}_`;
+    keys.add(key);
+    channels.push({ key, label, column: String(item?.column ?? "").trim().slice(0, 120) });
+    if (channels.length >= GAMEINFO_PRICE_CHANNEL_MAX) break;
+  }
+  return channels;
+}
 
 /** A plain number, or null for blanks and text such as "236155 X 2". */
 export function gameinfoListNumber(value) {
@@ -35,12 +58,19 @@ export function gameinfoMarginTone(margin) {
   return margin >= GAMEINFO_MARGIN_LOW ? "amber" : "red";
 }
 
-/** The cost column and each channel's price column among the columns given. */
-export function gameinfoPackListColumns(columns) {
+/**
+ * The cost column and each channel's price column among the columns given.
+ * `configured` is the game's own channel list (null: the built-in four).
+ */
+export function gameinfoPackListColumns(columns, configured = null) {
   const byName = new Map((columns || []).filter((column) => column.kind === "computed").map((column) => [squash(column.label), column]));
+  const own = Array.isArray(configured);
+  const list = own
+    ? configured.map((channel) => ({ ...channel, short: channel.label, column: squash(channel.column), configured: true }))
+    : GAMEINFO_PRICE_CHANNELS;
   return {
     cost: byName.get(COST_COLUMN) || null,
-    channels: GAMEINFO_PRICE_CHANNELS
+    channels: list
       .map((channel) => ({ ...channel, priceColumn: channel.column ? byName.get(channel.column) || null : null }))
       .filter((channel) => !channel.column || channel.priceColumn),
   };
@@ -55,10 +85,10 @@ function figures(price, cost) {
  * One row per pack of the currency, its computed columns worked out once.
  * `channels` keeps only those with a price on some pack.
  */
-export function buildGameinfoPackListRows(currency, columns, game, context = {}) {
+export function buildGameinfoPackListRows(currency, columns, game, context = {}, configuredChannels = null) {
   const computed = (columns || []).filter((column) => column.kind === "computed");
   const definitions = computed.map((column) => column.computed);
-  const { cost, channels } = gameinfoPackListColumns(columns);
+  const { cost, channels } = gameinfoPackListColumns(columns, configuredChannels);
   const rows = (currency?.categories || []).flatMap((category, categoryIndex) => (category.packs || []).map((pack) => {
     const values = {};
     const errors = new Set();
@@ -80,7 +110,8 @@ export function buildGameinfoPackListRows(currency, columns, game, context = {})
   return {
     rows,
     costColumn: cost,
-    channels: channels.filter((channel) => rows.some((row) => row.channels[channel.key].price !== null)),
+    // A channel someone set up for this game stays even before it has prices.
+    channels: channels.filter((channel) => channel.configured || rows.some((row) => row.channels[channel.key].price !== null)),
   };
 }
 

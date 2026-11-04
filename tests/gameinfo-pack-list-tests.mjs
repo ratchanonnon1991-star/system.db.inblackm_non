@@ -7,6 +7,7 @@ import {
   gameinfoMarginTone,
   gameinfoPackListColumns,
   gameinfoPackListStatusTab,
+  sanitizeGameinfoPriceChannels,
   summarizeGameinfoPackList,
 } from "@/lib/gameinfo-pack-list";
 import { gameinfoCountryThaiName } from "@/lib/gameinfo-countries";
@@ -41,6 +42,23 @@ assert.ok(Math.abs(first.channels.kaleoz.price - 25) < 1e-9, "a channel's price 
 assert.equal(rows[2].channels.page.price, null, "a pack without a price has no figures");
 assert.equal(rows[2].channels.page.margin, null);
 assert.deepEqual(channels.map((channel) => channel.key), ["page", "kaleoz"]);
+
+// A game's own channels replace the built-in four, found by column name.
+const own = sanitizeGameinfoPriceChannels([
+  { key: "page", label: "เพจ", column: "" },
+  { key: "itemku", label: " Itemku ", column: "itemku (idr)" },
+  { label: "G2G", column: "G2G" },
+  { label: "   ", column: "x" },
+]);
+assert.deepEqual(own.map((channel) => channel.label), ["เพจ", "Itemku", "G2G"], "names are trimmed and nameless channels dropped");
+assert.ok(own[2].key && own[2].key !== own[1].key, "a channel without a key gets its own");
+assert.equal(sanitizeGameinfoPriceChannels(null), null, "no list means the built-in channels");
+assert.equal(sanitizeGameinfoPriceChannels(Array.from({ length: 15 }, (_, index) => ({ label: `c${index}` }))).length, 10, "at most ten channels");
+const ownBuilt = buildGameinfoPackListRows(currency, columns, {}, {}, own);
+assert.deepEqual(ownBuilt.channels.map((channel) => channel.key), ["page", "itemku"], "a configured channel shows when its column exists, prices or not");
+assert.equal(ownBuilt.channels[1].short, "Itemku", "the bar shows the name it was given");
+assert.ok(Math.abs(ownBuilt.rows[0].channels.itemku.price - 10000) < 1e-9, "its price comes from the chosen column");
+assert.equal(ownBuilt.rows[0].channels.kaleoz, undefined, "a built-in channel left out of the list is gone");
 
 assert.deepEqual(filterGameinfoPackListRows(rows, { chip: "pass" }).map((row) => row.pack.id), ["p"], "a category chip keeps its packs");
 assert.deepEqual(filterGameinfoPackListRows(rows, { query: "300" }).map((row) => row.pack.id), ["b"], "search matches the pack name");
@@ -103,4 +121,4 @@ assert.ok(list.includes('aria-label="หมวดหมู่แพ็ค"') && 
 
 assert.ok(editor.includes("function moveSelectedPacks(target)") && editor.includes("<MovePacksBar"), "ticked packs can move to another or a new category");
 
-console.log("43 passed");
+console.log("51 passed");

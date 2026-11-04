@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bot, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, Image as ImageIcon, LayoutGrid, List, Search, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Bot, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, Image as ImageIcon, LayoutGrid, List, Pencil, Search, X, ZoomIn, ZoomOut } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { setGameinfoFoldClosed } from "./gameinfo-fold";
+import GameinfoPriceChannelEditor from "./gameinfo-price-channel-editor";
 import { GameinfoPackVerifyButton, GameinfoPackVerifyDialog } from "./gameinfo-pack-verify";
 import { GAMEINFO_LISTING_PRICE_CHANNEL, gameinfoListingEffective } from "@/lib/gameinfo-pack-listings";
 import {
@@ -80,11 +81,14 @@ export default function GameinfoPackList({
   verify = null,
   botAuto = false,
   className = "",
+  // { gameId, dataMode, configured, editable }: the game's own selling
+  // channels (null: the built-in ones) and whether this viewer may set them.
+  channelSetup = null,
 }) {
   const product = !topupView;
   const built = useMemo(
-    () => buildGameinfoPackListRows(currency, columns, game, context),
-    [currency, columns, game, context]
+    () => buildGameinfoPackListRows(currency, columns, game, context, channelSetup?.configured ?? null),
+    [currency, columns, game, context, channelSetup?.configured]
   );
   const { channels, costColumn } = built;
   // Bot Auto is set per game, so in a Bot Auto game every pack is the bot's.
@@ -98,6 +102,8 @@ export default function GameinfoPackList({
   // The category tabs, as the TopUp site shows a game's packs: one category at a time, or all.
   const [categoryTab, setCategoryTab] = useState("all");
   const [lightbox, setLightbox] = useState(null);
+  const [editingChannels, setEditingChannels] = useState(false);
+  const channelsEditable = Boolean(product && channelSetup?.editable);
   const [layout, setLayoutState] = useState("list");
   useEffect(() => {
     // After hydration, so the server's "list" and the browser's choice never clash.
@@ -237,17 +243,38 @@ export default function GameinfoPackList({
   return (
     <>
       <div className="gd-ctrl">
-        {product && channels.length > 1 ? (
+        {product && (channels.length > 1 || channelsEditable) ? (
           <div className="flex flex-col gap-1.5">
-            <span className="gd-lbl">ดูกำไรของช่องทาง</span>
-            <div className="gd-seg red fill" role="group" aria-label="ช่องทางขาย">
-              {channels.map((item) => (
-                <button key={item.key} type="button" aria-pressed={item.key === channelKey} onClick={() => setChannelChoice(item.key)}>
-                  {item.short}
+            <span className="flex items-center justify-between gap-2">
+              <span className="gd-lbl">ดูกำไรของช่องทาง</span>
+              {channelsEditable ? (
+                <button type="button" className="gd-btn sm" style={{ height: 28 }} onClick={() => setEditingChannels(true)}>
+                  <Pencil size={13} aria-hidden="true" /> แก้ช่องทาง
                 </button>
-              ))}
-            </div>
+              ) : null}
+            </span>
+            {channels.length ? (
+              <div className="gd-seg red fill" role="group" aria-label="ช่องทางขาย">
+                {channels.map((item) => (
+                  <button key={item.key} type="button" aria-pressed={item.key === channelKey} onClick={() => setChannelChoice(item.key)}>
+                    {item.short}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
+        ) : null}
+        {editingChannels ? (
+          <GameinfoPriceChannelEditor
+            gameId={channelSetup.gameId}
+            dataMode={channelSetup.dataMode}
+            configured={channelSetup.configured}
+            // The list starts from what the bar shows; a saved list keeps
+            // channels whose column is gone too, so they can be fixed here.
+            initial={channelSetup.configured || channels.map((item) => ({ key: item.key, label: item.short, column: item.priceColumn?.label || "" }))}
+            columnLabels={(columns || []).filter((column) => column.kind === "computed").map((column) => String(column.label ?? "")).filter(Boolean)}
+            onClose={() => setEditingChannels(false)}
+          />
         ) : null}
         <div className="gd-ctrl-row">
           <label className="gd-search">

@@ -62,7 +62,7 @@ const NO_COLUMNS = [];
 const StockContext = createContext({});
 const NO_STOCK = { accounts: [], byPack: {} };
 
-export default function GameinfoGameView({ row, currencies, computedColumns = NO_COLUMNS, costProfiles = [], formulaVariables = [], userId, dataMode = "uid", hiddenColumnKeys = [], editHref = null, stock = NO_STOCK, stockLinks = false, costRatesOther = null, columnOrder = null, topupView = false, verify = null }) {
+export default function GameinfoGameView({ row, currencies, computedColumns = NO_COLUMNS, costProfiles = [], formulaVariables = [], userId, dataMode = "uid", hiddenColumnKeys = [], editHref = null, stock = NO_STOCK, stockLinks = false, costRatesOther = null, columnOrder = null, topupView = false, verify = null, priceChannels = null, canEditChannels = false }) {
   const [formulaMode, setFormulaMode] = useState("result");
   // The list is the page; the full table stays one switch away for the
   // columns, presets and formulas it carries.
@@ -272,6 +272,7 @@ export default function GameinfoGameView({ row, currencies, computedColumns = NO
             stock={stock.byPack}
             verify={verify}
             botAuto={isGameinfoBotAuto(row.botManual)}
+            channelSetup={{ gameId: row.id, dataMode, configured: priceChannels, editable: canEditChannels && !topupView }}
             className={verify?.className || ""}
             beforeList={(
               <>
