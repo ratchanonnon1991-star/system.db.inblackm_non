@@ -112,7 +112,7 @@ function StatsSheet({ stat, counts, errors, lang, onClose, onOpen }) {
   );
 }
 
-export default function TopupInventoryHome({ lang, fontClassName = "" }) {
+export default function TopupInventoryHome({ lang }) {
   const router = useRouter();
   const { choice, setChoice } = useProjectmTheme();
   const searchRef = useRef(null);
@@ -193,7 +193,7 @@ export default function TopupInventoryHome({ lang, fontClassName = "" }) {
   const shownStat = TOPUP_INVENTORY_STATS.find((stat) => stat.key === openStat);
 
   return (
-    <div className={`tiv ${fontClassName}`}>
+    <div className="tiv">
       <div className="tiv-aurora" aria-hidden><i /><i /><i /></div>
       <div className="tiv-shell">
         <header className="tiv-rail">
