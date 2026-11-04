@@ -1,6 +1,7 @@
 // Where a game's packs are listed for sale, one row per pack and channel, and
 // whether each listed price was checked (src/lib/gameinfo-pack-listings.js).
-// Saving a listing sends it back to "pending": a changed price needs a new check.
+// Saving a listing sends it back to "pending": a changed price needs a new check,
+// and the one who listed a pack cannot be the one who checks it.
 import { getGameinfoPool } from "@/server/gameinfo-gamelist-packs";
 import {
   GAMEINFO_LISTING_STATUSES,
@@ -9,11 +10,11 @@ import {
   parseGameinfoListingPrice,
 } from "@/lib/gameinfo-pack-listings";
 
-const COLUMNS = "pack_id, channel, url, listed_price, listed_by, listed_at, status, checked_price, reviewed_by, reviewed_at, note";
+const COLUMNS = "pack_id, channel, url, listed_price, listed_by, listed_at, status, checked_price, checked_reference, reviewed_by, reviewed_at, note";
 
-function badRequest(message) {
+function badRequest(message, status = 400) {
   const error = new Error(message);
-  error.status = 400;
+  error.status = status;
   return error;
 }
 
@@ -30,6 +31,7 @@ function toListing(row) {
     listedAt: toTime(row.listed_at),
     status: row.status,
     checkedPrice: toNumber(row.checked_price),
+    checkedReference: toNumber(row.checked_reference),
     reviewedBy: row.reviewed_by,
     reviewedAt: toTime(row.reviewed_at),
     note: row.note,
@@ -71,26 +73,37 @@ export async function saveGamelistPackListing(gameId, dataMode, { packId, channe
        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), 'pending')
        ON CONFLICT (game_id, data_mode, pack_id, channel) DO UPDATE SET
          url = EXCLUDED.url, listed_price = EXCLUDED.listed_price, listed_by = EXCLUDED.listed_by,
-         listed_at = NOW(), status = 'pending', checked_price = NULL, reviewed_by = '', reviewed_at = NULL, note = ''`,
+         listed_at = NOW(), status = 'pending', checked_price = NULL, checked_reference = NULL, reviewed_by = '', reviewed_at = NULL, note = ''`,
       [gameId, dataMode, id, channel, link, price, String(actor || "").slice(0, 120)]
     );
   }
   return listGamelistPackListings(gameId, dataMode);
 }
 
-/** A check of a listed price: right ("ok") or wrong, with the price seen and a note. */
-export async function reviewGamelistPackListing(gameId, dataMode, { packId, channel, status, checkedPrice = null, note = "" }, actor) {
+/**
+ * A check of a listed price: right ("ok") or wrong, with the price seen, a
+ * note, and the pack's own price for that channel it was checked against
+ * (`referencePrice`), so a later change to that price asks for a new check.
+ */
+export async function reviewGamelistPackListing(gameId, dataMode, { packId, channel, status, checkedPrice = null, referencePrice = null, note = "" }, actor) {
   const id = packKey(packId, channel);
   if (!GAMEINFO_LISTING_STATUSES.includes(status) || status === "pending") throw badRequest("ผลการตรวจไม่ถูกต้อง");
   const price = parseGameinfoListingPrice(checkedPrice);
   if (Number.isNaN(price)) throw badRequest("ราคาที่ตรวจไม่ถูกต้อง");
+  const reference = parseGameinfoListingPrice(referencePrice);
+  const reviewer = String(actor || "").slice(0, 120);
   const pool = await getGameinfoPool();
-  const result = await pool.query(
-    `UPDATE gamelist_pack_listings
-       SET status = $5, checked_price = $6, reviewed_by = $7, reviewed_at = NOW(), note = $8
-     WHERE game_id = $1 AND data_mode = $2 AND pack_id = $3 AND channel = $4`,
-    [gameId, dataMode, id, channel, status, price, String(actor || "").slice(0, 120), String(note ?? "").trim().slice(0, 500)]
+  const current = await pool.query(
+    `SELECT listed_by FROM gamelist_pack_listings WHERE game_id = $1 AND data_mode = $2 AND pack_id = $3 AND channel = $4`,
+    [gameId, dataMode, id, channel]
   );
-  if (!result.rowCount) throw badRequest("ยังไม่มีการลงสินค้านี้ในช่องทางนั้น");
+  if (!current.rows.length) throw badRequest("ยังไม่มีการลงสินค้านี้ในช่องทางนั้น");
+  if (current.rows[0].listed_by === reviewer) throw badRequest("ผู้ลงสินค้าตรวจเองไม่ได้ ต้องให้ admin คนอื่นตรวจ", 403);
+  await pool.query(
+    `UPDATE gamelist_pack_listings
+       SET status = $5, checked_price = $6, checked_reference = $7, reviewed_by = $8, reviewed_at = NOW(), note = $9
+     WHERE game_id = $1 AND data_mode = $2 AND pack_id = $3 AND channel = $4`,
+    [gameId, dataMode, id, channel, status, price, Number.isNaN(reference) ? null : reference, reviewer, String(note ?? "").trim().slice(0, 500)]
+  );
   return listGamelistPackListings(gameId, dataMode);
 }

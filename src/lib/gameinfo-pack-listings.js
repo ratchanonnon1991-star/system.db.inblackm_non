@@ -14,6 +14,21 @@ export const GAMEINFO_LISTING_PRICE_CHANNEL = { page: "page", kaleoz: "kaleoz", 
 const CHANNEL_KEYS = new Set(GAMEINFO_SALES_CHANNELS.map((channel) => channel.key));
 const HIDDEN_SALES_STATUSES = new Set(["none", "removed"]);
 
+/** The name a listing or a check is recorded under: the API and the page must agree. */
+export function gameinfoListingActor(user) {
+  return String(user?.username || user?.displayName || user?.id || "");
+}
+
+/**
+ * A check holds only for the price it was made against: once the pack's own
+ * price for that channel moves, a passed listing waits for a new check.
+ */
+export function gameinfoListingEffective(listing, reference = null) {
+  const moved = listing.status === "ok" && listing.checkedReference !== null && listing.checkedReference !== undefined
+    && reference !== null && reference !== undefined && Math.abs(Number(reference) - Number(listing.checkedReference)) > 0.005;
+  return moved ? { ...listing, status: "pending", stale: true } : listing;
+}
+
 export function isGameinfoListingChannel(key) {
   return CHANNEL_KEYS.has(key);
 }

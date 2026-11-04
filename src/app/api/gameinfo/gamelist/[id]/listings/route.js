@@ -1,15 +1,12 @@
 import { handleApiError, jsonError, jsonOk } from "@/lib/http";
 import { normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
-import { requireGameinfoAccess, requireGameinfoMarketChecker, requireGameinfoReporter } from "@/server/auth";
+import { requireGameinfoAccess, requireGameinfoEditor, requireGameinfoReporter } from "@/server/auth";
+import { gameinfoListingActor } from "@/lib/gameinfo-pack-listings";
 import {
   listGamelistPackListings,
   reviewGamelistPackListing,
   saveGamelistPackListing,
 } from "@/server/gameinfo-pack-listings";
-
-function actorName(user) {
-  return user.username || user.displayName || String(user.id || "");
-}
 
 async function target(request, params) {
   const { id } = await params;
@@ -38,20 +35,20 @@ export async function PUT(request, { params }) {
     const { gameId, dataMode } = await target(request, params);
     if (!gameId) return jsonError("เกมไม่ถูกต้อง", 400);
     const body = await request.json();
-    return jsonOk({ listings: await saveGamelistPackListing(gameId, dataMode, body || {}, actorName(user)) });
+    return jsonOk({ listings: await saveGamelistPackListing(gameId, dataMode, body || {}, gameinfoListingActor(user)) });
   } catch (error) {
     return handleApiError(error, "บันทึกการลงสินค้าไม่สำเร็จ");
   }
 }
 
-// Checking a listed price: whoever may check market prices.
+// Checking a listed price: an admin, never the one who listed it (the store refuses that).
 export async function POST(request, { params }) {
   try {
-    const user = await requireGameinfoMarketChecker(request);
+    const user = await requireGameinfoEditor(request);
     const { gameId, dataMode } = await target(request, params);
     if (!gameId) return jsonError("เกมไม่ถูกต้อง", 400);
     const body = await request.json();
-    return jsonOk({ listings: await reviewGamelistPackListing(gameId, dataMode, body || {}, actorName(user)) });
+    return jsonOk({ listings: await reviewGamelistPackListing(gameId, dataMode, body || {}, gameinfoListingActor(user)) });
   } catch (error) {
     return handleApiError(error, "บันทึกผลตรวจไม่สำเร็จ");
   }

@@ -45,6 +45,7 @@ export function GameinfoPackVerifyDialog({
   product = false,
   canList = false,
   canReview = false,
+  viewer = "",
   onListingsChange,
   className = "",
 }) {
@@ -99,6 +100,7 @@ export function GameinfoPackVerifyDialog({
               product={product}
               canList={canList}
               canReview={canReview}
+              viewer={viewer}
               onListingsChange={onListingsChange}
             />
           ) : null}
@@ -108,7 +110,7 @@ export function GameinfoPackVerifyDialog({
   );
 }
 
-function ChannelListing({ gameId, dataMode, pack, channel, listing, reference, cost, product, canList, canReview, onListingsChange }) {
+function ChannelListing({ gameId, dataMode, pack, channel, listing, reference, cost, product, canList, canReview, viewer, onListingsChange }) {
   const [url, setUrl] = useState(listing?.url || "");
   const [price, setPrice] = useState(listing?.listedPrice ?? reference ?? "");
   const [checkedPrice, setCheckedPrice] = useState(listing?.checkedPrice ?? listing?.listedPrice ?? "");
@@ -147,7 +149,11 @@ function ChannelListing({ gameId, dataMode, pack, channel, listing, reference, c
       ? { tone: "wrong", Icon: CircleAlert, title: "ราคาผิด", detail: `ลงไว้ ${baht(listing.checkedPrice ?? listing.listedPrice)}${reference !== null ? ` แต่ควรเป็น ${baht(reference)}` : ""}${listing.note ? ` · ${listing.note}` : ""}` }
       : status === "ok"
         ? { tone: "ok", Icon: ShieldCheck, title: "ตรวจแล้ว ราคาตรงกัน", detail: `โดย ${listing.reviewedBy || "—"} · ${when(listing.reviewedAt)}` }
-        : { tone: "pending", Icon: Clock, title: "รอตรวจสอบ", detail: "ลงหรือแก้แล้ว ยังไม่มีใครตรวจ" };
+        : listing.stale
+          ? { tone: "pending", Icon: Clock, title: "ต้องตรวจใหม่", detail: `ราคาในระบบเปลี่ยนเป็น ${baht(reference)} หลัง ${listing.reviewedBy || "—"} ตรวจไว้ที่ ${baht(listing.checkedReference)}` }
+          : { tone: "pending", Icon: Clock, title: "รอตรวจสอบ", detail: "ลงหรือแก้แล้ว ต้องให้ admin คนอื่นตรวจ" };
+  // The one who listed it never checks it, so the check is always a second pair of eyes.
+  const ownListing = Boolean(listing && viewer && listing.listedBy === viewer);
   const profit = reference !== null && cost !== null ? reference - cost : null;
 
   return (
@@ -181,7 +187,7 @@ function ChannelListing({ gameId, dataMode, pack, channel, listing, reference, c
             <h4>ผู้ตรวจสอบ <span className={`gd-pill ${STATUS_PILL[status]}`}>{STATUS_WORD[status]}</span></h4>
             <div className="gd-kvl"><span>ชื่อ</span><span>{listing.reviewedBy || "—"}</span></div>
             <div className="gd-kvl"><span>วันที่ตรวจ</span><span>{listing.reviewedAt ? when(listing.reviewedAt) : "ยังไม่ได้ตรวจ"}</span></div>
-            <div className="gd-kvl"><span>ราคาที่ตรวจ</span><span className={status === "wrong" ? "neg" : ""}>{status === "pending" ? "—" : `${baht(listing.checkedPrice)} · ${status === "wrong" ? "ไม่ตรง" : "ตรงกัน"}`}</span></div>
+            <div className="gd-kvl"><span>ราคาที่ตรวจ</span><span className={status === "wrong" ? "neg" : ""}>{status === "pending" && !listing.stale ? "—" : `${baht(listing.checkedPrice)} · ${status === "wrong" ? "ไม่ตรง" : "ตรงกัน"}`}</span></div>
             {listing.note ? <div className="gd-kvl"><span>หมายเหตุ</span><span>{listing.note}</span></div> : null}
           </div>
         </>
@@ -195,13 +201,16 @@ function ChannelListing({ gameId, dataMode, pack, channel, listing, reference, c
         </div>
       ) : null}
 
-      {canReview && listing ? (
+      {listing && ownListing && canReview ? (
+        <p className="gd-note m-0">คุณเป็นผู้ลงสินค้านี้ ต้องให้ admin คนอื่นตรวจ</p>
+      ) : null}
+      {canReview && listing && !ownListing ? (
         <form
           className="gd-vsec"
           onSubmit={(event) => {
             event.preventDefault();
             const result = event.nativeEvent.submitter?.value;
-            send("POST", { packId: pack.id, channel: channel.key, status: result, checkedPrice, note }, "บันทึกผลตรวจไม่สำเร็จ");
+            send("POST", { packId: pack.id, channel: channel.key, status: result, checkedPrice, referencePrice: reference, note }, "บันทึกผลตรวจไม่สำเร็จ");
           }}
         >
           <h4>บันทึกผลการตรวจ</h4>

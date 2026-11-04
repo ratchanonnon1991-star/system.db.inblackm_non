@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   gameinfoListingChannels,
+  gameinfoListingEffective,
   isGameinfoListingUrl,
   parseGameinfoListingPrice,
   summarizeGameinfoPackListings,
@@ -30,6 +31,7 @@ const queries = [];
 reset();
 setResponder((text, params) => {
   queries.push({ text, params });
+  if (/SELECT listed_by FROM/.test(text)) return { rows: params[2] === "a" ? [{ listed_by: "nok" }] : [] };
   if (/SELECT .* FROM gamelist_pack_listings/s.test(text)) return { rows: [row] };
   // The stub counts the rows given as rowCount.
   if (/UPDATE gamelist_pack_listings/.test(text)) return { rows: params[2] === "a" ? [{}] : [] };
@@ -53,13 +55,20 @@ await assert.rejects(saveGamelistPackListing(3, "uid", { packId: "a", channel: "
 await assert.rejects(saveGamelistPackListing(3, "uid", { packId: "a", channel: "kaleoz", url: "ftp://x" }, "nok"), /ลิงก์/);
 await assert.rejects(reviewGamelistPackListing(3, "uid", { packId: "a", channel: "kaleoz", status: "pending" }, "tan"), /ผลการตรวจ/, "a check is right or wrong");
 await assert.rejects(reviewGamelistPackListing(3, "uid", { packId: "b", channel: "kaleoz", status: "ok" }, "tan"), /ยังไม่มีการลงสินค้า/, "nothing to check where nothing is listed");
-await reviewGamelistPackListing(3, "uid", { packId: "a", channel: "kaleoz", status: "wrong", checkedPrice: "99", note: "ราคาเก่า" }, "tan");
+await assert.rejects(reviewGamelistPackListing(3, "uid", { packId: "a", channel: "kaleoz", status: "ok" }, "nok"), /ตรวจเองไม่ได้/, "the one who listed it cannot check it");
+await reviewGamelistPackListing(3, "uid", { packId: "a", channel: "kaleoz", status: "wrong", checkedPrice: "99", referencePrice: 90, note: "ราคาเก่า" }, "tan");
 const review = queries.find((query) => /UPDATE gamelist_pack_listings/.test(query.text) && query.params[2] === "a");
-assert.deepEqual(review.params, [3, "uid", "a", "kaleoz", "wrong", 99, "tan", "ราคาเก่า"]);
+assert.deepEqual(review.params, [3, "uid", "a", "kaleoz", "wrong", 99, 90, "tan", "ราคาเก่า"], "the check keeps the price it was made against");
+
+const passed = { status: "ok", checkedReference: 90 };
+assert.equal(gameinfoListingEffective(passed, 90).status, "ok", "a check holds while the price stays");
+assert.equal(gameinfoListingEffective(passed, 95).status, "pending", "a moved price asks for a new check");
+assert.ok(gameinfoListingEffective(passed, 95).stale);
+assert.equal(gameinfoListingEffective({ status: "wrong", checkedReference: 90 }, 95).status, "wrong", "a wrong price stays wrong until it is listed again");
 
 const route = readFileSync(new URL("../src/app/api/gameinfo/gamelist/[id]/listings/route.js", import.meta.url), "utf8");
-assert.ok(route.includes("requireGameinfoReporter(request)") && route.includes("requireGameinfoMarketChecker(request)"), "listing and checking need their own permissions");
+assert.ok(route.includes("requireGameinfoReporter(request)") && route.includes("requireGameinfoEditor(request)"), "listing needs the report permission, checking an admin");
 const packs = readFileSync(new URL("../src/server/gameinfo-gamelist-packs.js", import.meta.url), "utf8");
 assert.ok(packs.includes("CREATE TABLE IF NOT EXISTS gamelist_pack_listings"), "the table is created with the others");
 
-console.log("23 passed");
+console.log("29 passed");

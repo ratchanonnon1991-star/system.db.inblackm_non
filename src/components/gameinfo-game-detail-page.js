@@ -34,7 +34,7 @@ import GameinfoWebMargin from "@/components/gameinfo-web-margin";
 import GameinfoSalesChannelEditor, { GameinfoSalesChannelCards } from "@/components/gameinfo-sales-channels";
 import { listGamelistSalesChannels } from "@/server/gameinfo-sales-channels";
 import { listGamelistPackListings } from "@/server/gameinfo-pack-listings";
-import { gameinfoListingChannels } from "@/lib/gameinfo-pack-listings";
+import { gameinfoListingActor, gameinfoListingChannels } from "@/lib/gameinfo-pack-listings";
 import { listStockForGame } from "@/server/stock-repository";
 import GameinfoMissingChecklist from "@/components/gameinfo-missing-checklist";
 import { gameinfoMissingItems } from "@/lib/gameinfo-completeness";
@@ -403,7 +403,8 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
           listings,
           channels: gameinfoListingChannels(salesChannels),
           canList: hasPermission(user, "gameinfo.report"),
-          canReview: hasPermission(user, "gameinfo.market_check"),
+          canReview: editableRole,
+          viewer: gameinfoListingActor(user),
           // The window opens outside the page, so it takes the page's typeface along.
           className: prompt.variable,
         }}

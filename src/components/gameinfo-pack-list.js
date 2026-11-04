@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Box, ChevronDown, ExternalLink, Search } from "lucide-react";
 import GameinfoImagePreview from "./gameinfo-image-preview";
 import { GameinfoPackVerifyButton, GameinfoPackVerifyDialog } from "./gameinfo-pack-verify";
+import { GAMEINFO_LISTING_PRICE_CHANNEL, gameinfoListingEffective } from "@/lib/gameinfo-pack-listings";
 import {
   GAMEINFO_MARGIN_GOOD,
   GAMEINFO_MARGIN_LOW,
@@ -86,6 +87,11 @@ export default function GameinfoPackList({
     return byPack;
   }, [listings]);
   const verifyRow = verifyPackId === null ? null : rows.find((row) => String(row.pack.id) === verifyPackId) || null;
+  // Each listing as it stands against the pack's price for that channel now.
+  const listingsFor = (row) => (listingsByPack.get(String(row.pack.id)) || []).map((listing) => {
+    const key = GAMEINFO_LISTING_PRICE_CHANNEL[listing.channel];
+    return gameinfoListingEffective(listing, key ? row.channels[key]?.price ?? null : null);
+  });
 
   const visible = filterGameinfoPackListRows(rows, { query, chip, sort, channel: channelKey });
   const summary = product ? summarizeGameinfoPackList(visible, channelKey) : null;
@@ -135,7 +141,7 @@ export default function GameinfoPackList({
         stock={stock[row.pack.name]}
         open={open.has(row.pack.id)}
         onToggle={() => toggle(row.pack.id)}
-        listings={verify ? listingsByPack.get(String(row.pack.id)) || [] : null}
+        listings={verify ? listingsFor(row) : null}
         onVerify={() => setVerifyPackId(String(row.pack.id))}
       />
     );
@@ -271,12 +277,13 @@ export default function GameinfoPackList({
           dataMode={verify.dataMode}
           pack={verifyRow.pack}
           channels={verify.channels}
-          listings={listingsByPack.get(verifyPackId) || []}
+          listings={listingsFor(verifyRow)}
           referencePrices={Object.fromEntries(Object.entries(verifyRow.channels).map(([key, value]) => [key, value.price]))}
           cost={verifyRow.cost}
           product={product}
           canList={verify.canList}
           canReview={verify.canReview}
+          viewer={verify.viewer}
           onListingsChange={setListings}
           className={verify.className}
         />

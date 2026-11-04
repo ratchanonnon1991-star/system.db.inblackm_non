@@ -361,6 +361,7 @@ function ensureSchema(connection) {
           PRIMARY KEY (game_id, data_mode, pack_id, channel)
         )
       `);
+      await client.query(`ALTER TABLE gamelist_pack_listings ADD COLUMN IF NOT EXISTS checked_reference NUMERIC`);
     } finally {
       client.release();
     }
