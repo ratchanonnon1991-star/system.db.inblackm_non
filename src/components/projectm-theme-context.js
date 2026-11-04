@@ -4,9 +4,9 @@ import { createContext, useContext } from "react";
 
 const ProjectmThemeContext = createContext(null);
 
-export function ProjectmThemeProvider({ theme, toggleTheme, children }) {
+export function ProjectmThemeProvider({ theme, toggleTheme, choice, setChoice, children }) {
   return (
-    <ProjectmThemeContext.Provider value={{ theme, toggleTheme }}>
+    <ProjectmThemeContext.Provider value={{ theme, toggleTheme, choice, setChoice }}>
       {children}
     </ProjectmThemeContext.Provider>
   );
