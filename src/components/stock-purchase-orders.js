@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ClipboardList, ExternalLink, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import { AddressesForRecipient } from "@/components/crypto-address-card";
 import {
   DELIVERY_METHOD_LABELS,
   DELIVERY_STATUS_LABELS,
@@ -681,6 +682,7 @@ function PurchaseOrderDialog({ order: listed, wallets, canEdit, onClose }) {
           ) : null}
           {action === "pay" ? (
             <div className="grid gap-3 sm:grid-cols-2">
+              <AddressesForRecipient recipient={order.supplier} coin={order.currency} />
               <StockField label={`จ่ายจากกระเป๋า (${order.currency})`} htmlFor="po-pay-wallet" hint={payable.length ? "ระบบหักยอด + fee จากกระเป๋านี้ให้เอง" : `ไม่มีกระเป๋าที่ถือ ${order.currency} — บันทึกได้แต่ไม่หักยอดกระเป๋า`}>
                 <select id="po-pay-wallet" value={pay.walletId} onChange={(event) => setPay((current) => ({ ...current, walletId: event.target.value }))} className={stockInputClass}>
                   {payable.map((wallet) => {
