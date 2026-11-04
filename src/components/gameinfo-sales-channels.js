@@ -2,7 +2,7 @@
 
 import PaginatedTable from "@/components/table-pagination";
 import { useState } from "react";
-import { CheckCircle2, Save, Store } from "lucide-react";
+import { CheckCircle2, ChevronDown, Save, Store } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
 import { gameinfoMarginTone } from "@/lib/gameinfo-pack-list";
@@ -108,6 +108,8 @@ export default function GameinfoSalesChannelEditor({ gameId, initialChannels }) 
   }
 
   const fieldClass = "h-10 w-full rounded-[10px] border border-linear-hairline-strong bg-linear-surface-1 px-2.5 text-sm text-linear-ink outline-none focus:border-[#D90005]";
+  // The browser's own arrow sits against the edge; this one keeps a margin.
+  const selectClass = `${fieldClass} cursor-pointer appearance-none pl-3.5 pr-10`;
 
   return (
     <div className="flex flex-col gap-3">
@@ -127,16 +129,22 @@ export default function GameinfoSalesChannelEditor({ gameId, initialChannels }) 
               <tr key={row.channel} className="border-t border-linear-hairline">
                 <th scope="row" className="px-4 py-2 text-left font-extrabold text-linear-ink">{LABEL[row.channel]}</th>
                 <td className="px-3 py-2">
-                  <select aria-label={`สถานะ ${LABEL[row.channel]}`} value={row.status} onChange={(e) => update(index, "status", e.target.value)} className={fieldClass}>
-                    <option value="">—</option>
-                    {GAMEINFO_SALES_STATUSES.map((status) => <option key={status.key} value={status.key}>{status.label}</option>)}
-                  </select>
+                  <span className="relative block">
+                    <select aria-label={`สถานะ ${LABEL[row.channel]}`} value={row.status} onChange={(e) => update(index, "status", e.target.value)} className={selectClass}>
+                      <option value="">—</option>
+                      {GAMEINFO_SALES_STATUSES.map((status) => <option key={status.key} value={status.key}>{status.label}</option>)}
+                    </select>
+                    <ChevronDown size={16} aria-hidden="true" className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-linear-ink-muted" />
+                  </span>
                 </td>
                 <td className="px-3 py-2">
-                  <select aria-label={`ราคาตลาด ${LABEL[row.channel]}`} value={row.market} onChange={(e) => update(index, "market", e.target.value)} className={fieldClass}>
-                    <option value="">—</option>
-                    {GAMEINFO_MARKET_RESULTS.map((result) => <option key={result.key} value={result.key}>{result.label}</option>)}
-                  </select>
+                  <span className="relative block">
+                    <select aria-label={`ราคาตลาด ${LABEL[row.channel]}`} value={row.market} onChange={(e) => update(index, "market", e.target.value)} className={selectClass}>
+                      <option value="">—</option>
+                      {GAMEINFO_MARKET_RESULTS.map((result) => <option key={result.key} value={result.key}>{result.label}</option>)}
+                    </select>
+                    <ChevronDown size={16} aria-hidden="true" className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-linear-ink-muted" />
+                  </span>
                 </td>
                 <td className="px-3 py-2">
                   <input aria-label={`Margin ${LABEL[row.channel]}`} inputMode="decimal" value={row.margin} onChange={(e) => update(index, "margin", e.target.value)} className={`${fieldClass} text-right tabular-nums`} />
