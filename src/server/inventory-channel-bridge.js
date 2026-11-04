@@ -14,14 +14,20 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 const text = (value, max) => (typeof value === "string" ? value.trim().slice(0, max) : "");
 
+// Someone with no tools mapping (a supervisor, say) still sees an order's usage, read-only.
+// The id can never match a real user, so nothing is theirs to undo.
+const VIEWER = Object.freeze({ id: -1, username: "inblackm-viewer", permissions: [] });
+
 export async function runChannelBridge(body, { ledger = inventoryLedger(), resolveActor = resolveOrderActor } = {}) {
-  const actor = await resolveActor(body?.actorId);
   const source = text(body?.order?.source, 32), ref = text(body?.order?.ref, 120);
   if (!Object.hasOwn(ORDER_SOURCES, source) || !ref) fail("Invalid order");
-  const canRecord = body.order.canRecord === true;
+  let actor, mapped = true;
+  try { actor = await resolveActor(body?.actorId); }
+  catch (e) { if (body?.action !== "list" || e.status !== 403) throw e; actor = VIEWER; mapped = false; }
+  const canRecord = body.order.canRecord === true && mapped;
   const usage = () => ledger.orderUsage(actor, { orderRef: ref, orderSource: source });
 
-  if (body.action === "list") return { held: canRecord ? await ledger.heldAccounts(actor) : [], usage: await usage() };
+  if (body.action === "list") return { held: canRecord ? await ledger.heldAccounts(actor) : [], usage: await usage(), mapped };
 
   const payload = body.payload ?? {};
   if (!UUID.test(String(payload.id ?? ""))) fail("Invalid operation ID");

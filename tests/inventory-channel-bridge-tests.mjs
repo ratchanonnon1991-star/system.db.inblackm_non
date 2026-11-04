@@ -52,7 +52,7 @@ try {
     assert.deepEqual(mine.held.map((a) => a.id), [wave]);
     const other = await bridge({ action: "list", actorId: "ext-3", order: order({ canRecord: false }) });
     assert.deepEqual([other.held, other.usage], [[], []]);
-    await rejects(bridge({ action: "list", actorId: "ext-9", order: order() }), 403);
+    assert.deepEqual((await bridge({ action: "list", actorId: "ext-9", order: order() })).mapped, false, "unmapped staff get a read-only list, not an error");
     await rejects(bridge({ action: "list", actorId: "ext-2", order: { ...order(), source: "unknown" } }), 400);
   });
 
@@ -74,6 +74,9 @@ try {
     assert.equal(g2g.usage.length, 0);
     const seen = await bridge({ action: "list", actorId: "ext-3", order: order({ canRecord: false }) });
     assert.equal(seen.usage.length, 1, "another staff member sees the use");
+    const unmapped = await bridge({ action: "list", actorId: "ext-9", order: order() });
+    assert.deepEqual([unmapped.mapped, unmapped.held, unmapped.usage.length, unmapped.usage[0].canReverse], [false, [], 1, false], "someone unmapped sees it read-only");
+    await rejects(bridge({ action: "use", actorId: "ext-9", order: order(), payload: { id: uuid(4), accountId: wave, amount: "1" } }), 403);
   });
 
   await check("reverse: own use of this order, even after releasing the account; not someone else's", async () => {
