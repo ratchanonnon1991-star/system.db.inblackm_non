@@ -16,11 +16,35 @@
 export const WALLET_DECIMALS = 8;
 const SCALE = 10n ** BigInt(WALLET_DECIMALS);
 
-export const DEFAULT_WALLETS = [
-  { code: "bitazza", name: "Bitazza", currencies: ["USDT"], role: "รับเงินจากฝั่ง Russia เวลา deposit มา", sortOrder: 1 },
-  { code: "bitkub", name: "BITKUB", currencies: ["THB", "USDT"], role: "กระเป๋าเก็บเงินหลัก", sortOrder: 2 },
-  { code: "bybit", name: "Bybit Inblack Gaming", currencies: ["USDT", "USDC", "BTC"], role: "ใช้จ่ายค่าสินค้า · เงินไม่พอให้ดึงจาก BITKUB", sortOrder: 3 },
+/** Wallet groups, in the order the wallets page shows them. */
+export const WALLET_GROUPS = [
+  { code: "main", label: "กระเป๋าหลัก Stock", hint: "Bitazza รับเงิน → BITKUB เก็บ → Bybit จ่ายค่าสินค้า" },
+  { code: "crypto", label: "คริปโตบัญชีอื่น", hint: "BITKUB / Bybit ของแต่ละคน" },
+  { code: "payout", label: "กระเป๋าเติมเงินต่างประเทศ", hint: "PHP · IDR ที่ใช้เติมให้ลูกค้า" },
+  { code: "foreign", label: "สกุลต่างประเทศ / เครดิตซัพพลายเออร์", hint: "USD · JPY · MYR · UAH" },
 ];
+
+const W = (code, name, currencies, group, role) => ({ code, name, currencies, group, role });
+export const DEFAULT_WALLETS = [
+  W("bitazza", "Bitazza", ["USDT"], "main", "รับเงินจากฝั่ง Russia เวลา deposit มา"),
+  W("bitkub", "BITKUB", ["THB", "USDT"], "main", "กระเป๋าเก็บเงินหลัก"),
+  W("bybit", "Bybit Inblack Gaming", ["USDT", "USDC", "BTC"], "main", "ใช้จ่ายค่าสินค้า · เงินไม่พอให้ดึงจาก BITKUB"),
+  W("bitkub-ptos", "BITKUB PTos", ["THB", "USDT"], "crypto", "BITKUB ของพี่โต"),
+  W("bitkub-songkran", "BITKUB Songkran", ["THB", "USDT"], "crypto", "BITKUB Songkran"),
+  W("bybit-paek", "Bybit PAek", ["USDT"], "crypto", "Bybit ของพี่เอก"),
+  W("tnt-vincent", "TNT Vincent", ["PHP"], "payout", "TNT ฟิลิปปินส์"),
+  W("tnt-emalyn", "TNT Emalyn", ["PHP"], "payout", "TNT ฟิลิปปินส์ (ถึง พ.ค.)"),
+  W("tnt-hero", "TNT Hero", ["PHP"], "payout", "TNT ฟิลิปปินส์ (ม.ค.)"),
+  W("tnt-jake", "TNT Jake", ["PHP"], "payout", "TNT ฟิลิปปินส์"),
+  W("php-emalyn", "PHP Emalyn", ["PHP"], "payout", "PHP ฟิลิปปินส์ (ตั้งแต่ มิ.ย.)"),
+  W("idr-amen", "IDR Amen", ["IDR"], "payout", "IDR อินโดนีเซีย"),
+  W("xl-amen", "XL Amen", ["IDR"], "payout", "XL อินโดนีเซีย (ก.พ.)"),
+  W("zelle", "Zelle (USD)", ["USD"], "foreign", "USD ที่โอนไปใช้สั่ง Gocash"),
+  W("jpy-exchange", "JPY Exchange", ["USD", "JPY"], "foreign", "แลก USD เป็น JPY"),
+  W("amaten", "Amaten (JPY)", ["JPY"], "foreign", "เครดิต JPY ที่ Amaten"),
+  W("myr-plsbuy", "MYR (Plsbuy)", ["MYR"], "foreign", "เครดิต MYR ที่ Plsbuy"),
+  W("google-uah", "Google UAH", ["UAH"], "foreign", "เครดิต UAH"),
+].map((wallet, index) => ({ ...wallet, sortOrder: index + 1 }));
 
 export const WALLET_ENTRY_KINDS = ["deposit", "transfer", "exchange", "payment", "refund", "adjust"];
 export const WALLET_ENTRY_LABELS = {
@@ -178,4 +202,61 @@ export function sumWalletLegs(legs) {
     totals[key] = (totals[key] ?? 0n) + toWalletUnits(leg.amount);
   }
   return totals;
+}
+
+// ---- checking a wallet against its sheet ------------------------------------------------------
+
+/** What a person checked: the numbers of one wallet-month-currency. */
+export const walletCheckSignature = (check) =>
+  [check.sheetOpen, check.systemOpen, check.sheetClose, check.systemClose, check.rows, (check.drifts || []).length].join("|");
+
+/**
+ * One month of one wallet and currency → its state for the page:
+ *   ok       the system's carried and closing balances equal the sheet's, no row breaks the sheet's own balance
+ *   diff     something differs: the person has to look
+ *   checked  someone looked and signed it off (for these numbers)
+ *   stale    someone signed it off, but the numbers have changed since
+ */
+export function walletCheckState(check) {
+  if (check.checkedAt) return check.checkedStale ? "stale" : "checked";
+  const same = (a, b) => a == null || b == null || toWalletUnits(a) === toWalletUnits(b);
+  const closeOk = check.sheetClose == null || check.systemClose == null
+    || (() => { const d = toWalletUnits(check.sheetClose) - toWalletUnits(check.systemClose); return d <= 1000000n && d >= -1000000n; })();
+  return same(check.sheetOpen, check.systemOpen) && closeOk && !(check.drifts || []).length ? "ok" : "diff";
+}
+export const WALLET_CHECK_LABELS = { ok: "ตรงกับชีต", diff: "ต้องตรวจ", checked: "ตรวจแล้ว", stale: "ตัวเลขเปลี่ยนหลังตรวจ" };
+
+// ---- changing a done payment back needs a second person ----------------------------------------
+
+/**
+ * A payment not tied to an order: pending → done straight away; done → pending
+ * only as a request that someone else confirms. → { status } to set now,
+ * { request } to store, or { error } in Thai.
+ */
+export function walletStatusChange(entry, to, actor, reason = "") {
+  if (entry?.kind !== "payment" || entry.orderId) return { error: "แก้สถานะได้เฉพาะรายการจ่ายที่ไม่ได้ผูกใบสั่งซื้อ" };
+  if (!WALLET_PAYMENT_STATUSES.includes(to) || to === entry.status) return { error: "สถานะไม่ถูกต้อง" };
+  if (entry.statusRequest) return { error: "มีคำขอเปลี่ยนสถานะค้างอยู่ ให้อีกคนยืนยันหรือยกเลิกก่อน" };
+  if (entry.status === "done") {
+    const why = clean(reason, 500);
+    if (!why) return { error: "ใส่เหตุผลที่ขอเปลี่ยนจากเรียบร้อยกลับเป็นรอสินค้า" };
+    if (!actor?.id) return { error: "ต้องเข้าสู่ระบบก่อน" };
+    return { request: { to, byId: actor.id, by: clean(actor.name, 255), reason: why } };
+  }
+  return { status: to };
+}
+
+/**
+ * Answering a status request: "approve" / "reject" by someone other than who
+ * asked, "cancel" by who asked. → { status } (null: unchanged) or { error }.
+ */
+export function walletStatusDecision(entry, decision, actor) {
+  const request = entry?.statusRequest;
+  if (!request) return { error: "ไม่มีคำขอเปลี่ยนสถานะ" };
+  if (!actor?.id) return { error: "ต้องเข้าสู่ระบบก่อน" };
+  const own = Number(actor.id) === Number(request.byId);
+  if (decision === "cancel") return own ? { status: null } : { error: "ยกเลิกได้เฉพาะคนที่ขอ" };
+  if (!["approve", "reject"].includes(decision)) return { error: "เลือกยืนยันหรือไม่ยืนยัน" };
+  if (own) return { error: "ต้องให้อีกคนเป็นคนยืนยัน ไม่ใช่คนที่ขอ" };
+  return { status: decision === "approve" ? request.to : null };
 }

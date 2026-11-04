@@ -26,7 +26,7 @@ export function stockMarginTone(margin) {
 }
 
 // Page names under /stock that an account code would hide (/stock/<code>).
-export const STOCK_RESERVED_CODES = ["inventory", "purchase-orders", "wallets"];
+export const STOCK_RESERVED_CODES = ["inventory", "purchase-orders", "wallets", "sheets"];
 
 /** "pes1" → "pes1": letters, digits, dot, dash and underscore, 2–32 long. */
 export function normalizeStockCode(value) {

@@ -17,10 +17,12 @@ export default async function StockPage() {
     listStockAccounts(),
     listWallets(),
     listRecentPurchaseOrderEvents(10),
-    listWalletEntries({ limit: 10 }),
+    listWallets().then((all) => listWalletEntries({ walletIds: all.filter((wallet) => wallet.group === "main").map((wallet) => wallet.id), limit: 10 })),
     listWalletAdjustsAwaiting(),
     listStockAppLinks(),
   ]);
-  const overview = buildStockOverview({ orders, wallets, accounts });
+  // The front page follows the three Stock wallets; the others live on the wallets page.
+  const main = wallets.filter((wallet) => wallet.group === "main");
+  const overview = buildStockOverview({ orders, wallets: main, accounts });
   return <StockFrontPage overview={overview} events={events} entries={entries} adjusts={adjusts} links={links} canEdit={canManageStock(user)} accountCount={accounts.filter((account) => account.status !== "closed").length} />;
 }

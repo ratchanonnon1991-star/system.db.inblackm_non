@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Boxes, ClipboardList, LayoutDashboard, Wallet } from "lucide-react";
+import { Boxes, ClipboardList, FileSpreadsheet, LayoutDashboard, Wallet } from "lucide-react";
 
 // The tabs every Stock page shares. An account page (/stock/<code>) belongs to the inventory tab.
 const TABS = [
   { href: "/stock", label: "ภาพรวม", icon: LayoutDashboard, match: (path) => path === "/stock" },
-  { href: "/stock/inventory", label: "คลัง", icon: Boxes, match: (path) => path === "/stock/inventory" || /^\/stock\/(?!purchase-orders|wallets)[^/]+$/.test(path) },
+  { href: "/stock/inventory", label: "คลัง", icon: Boxes, match: (path) => path === "/stock/inventory" || /^\/stock\/(?!purchase-orders|wallets|sheets)[^/]+$/.test(path) },
   { href: "/stock/purchase-orders", label: "ใบสั่งซื้อ", icon: ClipboardList, match: (path) => path.startsWith("/stock/purchase-orders") },
   { href: "/stock/wallets", label: "กระเป๋าเงิน", icon: Wallet, match: (path) => path.startsWith("/stock/wallets") },
+  { href: "/stock/sheets", label: "ข้อมูลบัญชี", icon: FileSpreadsheet, match: (path) => path.startsWith("/stock/sheets") },
 ];
 
 export default function StockNav() {

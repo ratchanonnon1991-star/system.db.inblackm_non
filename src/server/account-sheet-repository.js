@@ -1,0 +1,194 @@
+import { getPool } from "@/lib/db";
+import { ACCOUNT_SHEET_SOURCE, sheetFileKind, walletCodeForTab } from "@/lib/account-sheets";
+import { DEFAULT_WALLETS, fromWalletUnits, WALLET_COUNTED } from "@/lib/stock-wallets";
+import { ensureWalletSchema } from "@/server/stock-wallet-repository";
+
+// The accounting workbooks kept row by row (src/lib/account-sheets.js). A
+// month is replaced as a whole on every import, so a re-run never duplicates.
+let schemaReady;
+
+export async function ensureAccountSheetSchema() {
+  if (schemaReady) return schemaReady;
+  schemaReady = (async () => {
+    const pool = getPool();
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS account_sheet_tabs (
+        id          SERIAL PRIMARY KEY,
+        period      CHAR(7) NOT NULL,
+        file_name   VARCHAR(200) NOT NULL,
+        file_kind   VARCHAR(200) NOT NULL,
+        tab_name    VARCHAR(200) NOT NULL,
+        sort_order  INTEGER NOT NULL DEFAULT 0,
+        row_count   INTEGER NOT NULL DEFAULT 0,
+        wallet_code VARCHAR(32),
+        imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (period, file_name, tab_name)
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS account_sheet_rows (
+        id          BIGSERIAL PRIMARY KEY,
+        tab_id      INTEGER NOT NULL REFERENCES account_sheet_tabs(id) ON DELETE CASCADE,
+        row_no      INTEGER NOT NULL,
+        cells       JSONB NOT NULL,
+        search_text TEXT NOT NULL DEFAULT ''
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS account_sheet_rows_tab_idx ON account_sheet_rows (tab_id, row_no)`);
+  })();
+  schemaReady.catch(() => {
+    schemaReady = null;
+  });
+  return schemaReady;
+}
+
+/**
+ * Replaces one month: `files` is [{ fileName, tabs: [{ tab, rows: [{ rowNo, cells }] }] }].
+ * Returns { tabs, rows }.
+ */
+export async function replaceAccountSheetMonth(period, files) {
+  await ensureAccountSheetSchema();
+  const client = await getPool().connect();
+  let tabCount = 0;
+  let rowCount = 0;
+  try {
+    await client.query("BEGIN");
+    await client.query(`DELETE FROM account_sheet_tabs WHERE period = $1`, [period]);
+    for (const file of files) {
+      let order = 0;
+      for (const { tab, rows } of file.tabs) {
+        order += 1;
+        const created = await client.query(
+          `INSERT INTO account_sheet_tabs (period, file_name, file_kind, tab_name, sort_order, row_count, wallet_code)
+           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+          [period, file.fileName, sheetFileKind(file.fileName), tab, order, rows.length, walletCodeForTab(file.fileName, tab)]
+        );
+        const tabId = created.rows[0].id;
+        for (let start = 0; start < rows.length; start += 2000) {
+          const chunk = rows.slice(start, start + 2000);
+          await client.query(
+            `INSERT INTO account_sheet_rows (tab_id, row_no, cells, search_text)
+             SELECT $1, r.row_no, r.cells::jsonb, r.search_text
+               FROM UNNEST($2::int[], $3::text[], $4::text[]) AS r(row_no, cells, search_text)`,
+            [tabId, chunk.map((row) => row.rowNo), chunk.map((row) => JSON.stringify(row.cells)), chunk.map((row) => row.cells.join(" ").toLowerCase())]
+          );
+        }
+        tabCount += 1;
+        rowCount += rows.length;
+      }
+    }
+    await client.query("COMMIT");
+    return { tabs: tabCount, rows: rowCount };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/** Every tab kept, with its month: [{ id, period, fileName, fileKind, tab, rowCount, walletCode }]. */
+export async function listAccountSheetTabs() {
+  await ensureAccountSheetSchema();
+  const result = await getPool().query(
+    `SELECT id, period, file_name, file_kind, tab_name, row_count, wallet_code, imported_at
+       FROM account_sheet_tabs ORDER BY period DESC, file_name, sort_order`
+  );
+  return result.rows.map((row) => ({
+    id: row.id, period: row.period, fileName: row.file_name, fileKind: row.file_kind, tab: row.tab_name,
+    rowCount: row.row_count, walletCode: row.wallet_code, importedAt: row.imported_at,
+  }));
+}
+
+/** One tab's rows, a page at a time. */
+export async function readAccountSheetRows(tabId, { offset = 0, limit = 200 } = {}) {
+  await ensureAccountSheetSchema();
+  const result = await getPool().query(
+    `SELECT row_no, cells FROM account_sheet_rows WHERE tab_id = $1 ORDER BY row_no OFFSET $2 LIMIT $3`,
+    [Number(tabId), Math.max(Number(offset) || 0, 0), Math.min(Math.max(Number(limit) || 200, 1), 1000)]
+  );
+  return result.rows.map((row) => ({ rowNo: row.row_no, cells: row.cells }));
+}
+
+/** How many kept rows come before sheet row `rowNo` of a tab (to open the page that shows it). */
+export async function accountSheetRowIndex(tabId, rowNo) {
+  await ensureAccountSheetSchema();
+  const result = await getPool().query(`SELECT COUNT(*)::int AS n FROM account_sheet_rows WHERE tab_id = $1 AND row_no < $2`, [Number(tabId), Number(rowNo)]);
+  return result.rows[0].n;
+}
+
+/** Rows of any tab holding `text` (case-insensitive), newest month first. */
+export async function searchAccountSheets(text, { period = "", limit = 200 } = {}) {
+  await ensureAccountSheetSchema();
+  const needle = String(text || "").trim().toLowerCase();
+  if (!needle) return [];
+  const escaped = needle.replace(/[\\%_]/g, (char) => `\\${char}`);
+  const result = await getPool().query(
+    `SELECT t.id AS tab_id, t.period, t.file_name, t.tab_name, r.row_no, r.cells,
+            (SELECT COUNT(*) FROM account_sheet_rows x WHERE x.tab_id = r.tab_id AND x.row_no < r.row_no)::int AS row_index
+       FROM account_sheet_rows r JOIN account_sheet_tabs t ON t.id = r.tab_id
+      WHERE r.search_text LIKE $1 AND ($2 = '' OR t.period = $2)
+      ORDER BY t.period DESC, t.file_name, t.sort_order, r.row_no
+      LIMIT $3`,
+    [`%${escaped}%`, period, Math.min(Math.max(Number(limit) || 200, 1), 500)]
+  );
+  return result.rows.map((row) => ({ tabId: row.tab_id, period: row.period, fileName: row.file_name, tab: row.tab_name, rowNo: row.row_no, rowIndex: row.row_index, cells: row.cells }));
+}
+
+/**
+ * Replaces the wallet entries that came from the sheets with `entries`
+ * (planWalletEntries), then recomputes every leg's balance-after in time order.
+ */
+export async function replaceSheetWalletEntries(entries, checks = []) {
+  await ensureWalletSchema();
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const wallets = Object.fromEntries((await client.query(`SELECT id, code FROM stock_wallets FOR UPDATE`)).rows.map((row) => [row.code, row.id]));
+    const removed = await client.query(`DELETE FROM stock_wallet_entries WHERE source_ref LIKE $1`, [`${ACCOUNT_SHEET_SOURCE}:%`]);
+    for (const entry of entries) {
+      const created = await client.query(
+        `INSERT INTO stock_wallet_entries (kind, title, note, status, occurred_at, actor_name, source_ref, details, sheet_period, sheet_tab, sheet_row, received_sheet)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+        [entry.kind, entry.title, entry.note, entry.status, entry.occurredAt, entry.actorName, entry.sourceRef, JSON.stringify(entry.details || []),
+          entry.sheet?.period || null, entry.sheet?.tab || null, entry.sheet?.rowNo ?? null, entry.receivedAt ? JSON.stringify(entry.receivedAt) : null]
+      );
+      for (const leg of entry.legs) {
+        if (!wallets[leg.walletCode]) throw new Error(`ไม่พบกระเป๋า ${leg.walletCode}`);
+        await client.query(
+          `INSERT INTO stock_wallet_legs (entry_id, wallet_id, currency, amount, fee, balance_after) VALUES ($1, $2, $3, $4, $5, 0)`,
+          [created.rows[0].id, wallets[leg.walletCode], leg.currency, fromWalletUnits(leg.amount), fromWalletUnits(leg.fee)]
+        );
+      }
+    }
+    await client.query(`
+      UPDATE stock_wallet_legs l SET balance_after = s.after
+        FROM (SELECT l2.id, SUM(l2.amount) OVER (PARTITION BY l2.wallet_id, l2.currency ORDER BY e.occurred_at, e.id, l2.id) AS after
+                FROM stock_wallet_legs l2 JOIN stock_wallet_entries e ON e.id = l2.entry_id
+               WHERE ${WALLET_COUNTED}) s
+       WHERE s.id = l.id`);
+    // The month checks: numbers replaced, who checked them kept (the page shows when the numbers moved since).
+    await client.query(`DELETE FROM stock_wallet_sheet_checks c WHERE NOT EXISTS (
+      SELECT 1 FROM UNNEST($1::int[], $2::text[], $3::text[]) AS k(w, p, c2) WHERE k.w = c.wallet_id AND k.p = c.period AND k.c2 = c.currency)`,
+    [checks.map((c) => wallets[c.code]), checks.map((c) => c.period), checks.map((c) => c.currency)]);
+    for (const check of checks) {
+      await client.query(
+        `INSERT INTO stock_wallet_sheet_checks (wallet_id, period, currency, tab_name, sheet_open, system_open, sheet_close, system_close, rows, drifts)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT (wallet_id, period, currency) DO UPDATE SET tab_name = EXCLUDED.tab_name, sheet_open = EXCLUDED.sheet_open, system_open = EXCLUDED.system_open,
+           sheet_close = EXCLUDED.sheet_close, system_close = EXCLUDED.system_close, rows = EXCLUDED.rows, drifts = EXCLUDED.drifts`,
+        [wallets[check.code], check.period, check.currency, check.tab, check.sheetOpen, check.systemOpen, check.sheetClose, check.systemClose, check.rows, JSON.stringify(check.drifts)]
+      );
+    }
+    // Wallets no longer in the list and never used go away.
+    const gone = await client.query(`DELETE FROM stock_wallets w WHERE w.code <> ALL($1::text[])
+      AND NOT EXISTS (SELECT 1 FROM stock_wallet_legs l WHERE l.wallet_id = w.id) RETURNING code`, [DEFAULT_WALLETS.map((wallet) => wallet.code)]);
+    await client.query("COMMIT");
+    return { removed: removed.rowCount, added: entries.length, checks: checks.length, walletsRemoved: gone.rows.map((row) => row.code) };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}

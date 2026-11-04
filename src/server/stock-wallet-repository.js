@@ -5,7 +5,10 @@ import {
   toWalletUnits,
   reviewWalletAdjust,
   validateWalletEntry,
+  walletCheckSignature,
   walletKey,
+  walletStatusChange,
+  walletStatusDecision,
   WALLET_COUNTED,
   WALLET_ENTRY_STATUSES,
   WALLET_ENTRY_KINDS,
@@ -71,6 +74,23 @@ export async function ensureWalletSchema() {
       await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS seller VARCHAR(120) NOT NULL DEFAULT ''`);
       await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS buyer VARCHAR(120) NOT NULL DEFAULT ''`);
       await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS credit NUMERIC(30, 8)`);
+      // Entries brought in from the accounting sheets name their sheet row, so an import can replace them.
+      await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS source_ref VARCHAR(200)`);
+      await client.query(`CREATE INDEX IF NOT EXISTS stock_wallet_entries_source_idx ON stock_wallet_entries (source_ref) WHERE source_ref IS NOT NULL`);
+      // Where the money went and its proof (the sheet row's other columns), and the sheet row itself.
+      await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS details JSONB NOT NULL DEFAULT '[]'::jsonb`);
+      await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS sheet_period CHAR(7)`);
+      await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS sheet_tab VARCHAR(200)`);
+      await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS sheet_row INTEGER`);
+      await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS received_sheet JSONB`);
+      // Taking a done payment back to "waiting for goods" needs a second person.
+      await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS status_request VARCHAR(20)`);
+      await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS status_request_by_id INTEGER`);
+      await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS status_request_by VARCHAR(255) NOT NULL DEFAULT ''`);
+      await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS status_request_at TIMESTAMPTZ`);
+      await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS status_request_reason TEXT NOT NULL DEFAULT ''`);
+      await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS status_changed_by VARCHAR(255) NOT NULL DEFAULT ''`);
+      await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS status_changed_at TIMESTAMPTZ`);
       await client.query(`CREATE INDEX IF NOT EXISTS stock_wallet_entries_time_idx ON stock_wallet_entries (occurred_at DESC, id DESC)`);
       await client.query(`CREATE INDEX IF NOT EXISTS stock_wallet_entries_order_idx ON stock_wallet_entries (order_id) WHERE order_id IS NOT NULL`);
       await client.query(`
@@ -85,11 +105,34 @@ export async function ensureWalletSchema() {
         )
       `);
       await client.query(`CREATE INDEX IF NOT EXISTS stock_wallet_legs_wallet_idx ON stock_wallet_legs (wallet_id, currency)`);
+      await client.query(`ALTER TABLE stock_wallets ADD COLUMN IF NOT EXISTS wallet_group VARCHAR(16) NOT NULL DEFAULT 'main'`);
+      // Month by month: the sheet's balances beside the system's, and who checked them.
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS stock_wallet_sheet_checks (
+          wallet_id     INTEGER NOT NULL REFERENCES stock_wallets(id) ON DELETE CASCADE,
+          period        CHAR(7) NOT NULL,
+          currency      VARCHAR(5) NOT NULL,
+          tab_name      VARCHAR(200) NOT NULL DEFAULT '',
+          sheet_open    NUMERIC(30, 8),
+          system_open   NUMERIC(30, 8),
+          sheet_close   NUMERIC(30, 8),
+          system_close  NUMERIC(30, 8),
+          rows          INTEGER NOT NULL DEFAULT 0,
+          drifts        JSONB NOT NULL DEFAULT '[]'::jsonb,
+          checked_by_id INTEGER,
+          checked_by    VARCHAR(255) NOT NULL DEFAULT '',
+          checked_at    TIMESTAMPTZ,
+          checked_note  TEXT NOT NULL DEFAULT '',
+          checked_sig   TEXT NOT NULL DEFAULT '',
+          PRIMARY KEY (wallet_id, period, currency)
+        )
+      `);
       for (const wallet of DEFAULT_WALLETS) {
+        // A wallet already there keeps its name and role; its group and place follow the list.
         await client.query(
-          `INSERT INTO stock_wallets (code, name, currencies, role, sort_order) VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (code) DO NOTHING`,
-          [wallet.code, wallet.name, wallet.currencies, wallet.role, wallet.sortOrder]
+          `INSERT INTO stock_wallets (code, name, currencies, role, sort_order, wallet_group) VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (code) DO UPDATE SET sort_order = EXCLUDED.sort_order, wallet_group = EXCLUDED.wallet_group`,
+          [wallet.code, wallet.name, wallet.currencies, wallet.role, wallet.sortOrder, wallet.group]
         );
       }
     } finally {
@@ -102,7 +145,7 @@ export async function ensureWalletSchema() {
   return schemaReady;
 }
 
-const mapWallet = (row) => ({ id: row.id, code: row.code, name: row.name, currencies: row.currencies, role: row.role, status: row.status });
+const mapWallet = (row) => ({ id: row.id, code: row.code, name: row.name, currencies: row.currencies, role: row.role, status: row.status, group: row.wallet_group || "main" });
 
 async function balancesFor(client, walletIds) {
   const result = await client.query(
@@ -121,8 +164,13 @@ export async function listWallets() {
   const pool = getPool();
   const rows = (await pool.query(`SELECT * FROM stock_wallets ORDER BY sort_order, id`)).rows;
   const totals = await balancesFor(pool, rows.map((row) => row.id));
+  const last = Object.fromEntries((await pool.query(
+    `SELECT l.wallet_id, MAX(e.occurred_at) AS at FROM stock_wallet_legs l JOIN stock_wallet_entries e ON e.id = l.entry_id
+      WHERE e.kind <> 'adjust' GROUP BY l.wallet_id`
+  )).rows.map((row) => [row.wallet_id, row.at]));
   return rows.map((row) => ({
     ...mapWallet(row),
+    lastActivity: last[row.id] || null,
     balances: row.currencies.map((currency) => {
       const total = totals[walletKey(row.id, currency)];
       return { currency, balance: total ? fromWalletUnits(toWalletUnits(total.balance)) : "0", fees: total ? fromWalletUnits(toWalletUnits(total.fees)) : "0" };
@@ -130,8 +178,13 @@ export async function listWallets() {
   }));
 }
 
-/** Entries newest first (by receipt time) with their legs; `walletId` narrows to one wallet. */
-export async function listWalletEntries({ walletId = null, orderId = null, limit = 300 } = {}) {
+/**
+ * Entries newest first (by receipt time) with their legs. `walletId` narrows to
+ * one wallet, `month` ("2026-10") to one month, `kind` to one kind, `q` to a
+ * text in the title, note or details, `issues` to corrections and entries
+ * waiting for a second person.
+ */
+export async function listWalletEntries({ walletId = null, walletIds = null, orderId = null, month = "", kind = "", q = "", issues = false, limit = 300 } = {}) {
   // Joins stock_purchase_orders: callers ensure that table first (ensurePurchaseOrderSchema).
   await ensureWalletSchema();
   const result = await getPool().query(
@@ -142,12 +195,18 @@ export async function listWalletEntries({ walletId = null, orderId = null, limit
        JOIN stock_wallet_legs l ON l.entry_id = e.id
        JOIN stock_wallets w ON w.id = l.wallet_id
        LEFT JOIN stock_purchase_orders o ON o.id = e.order_id
-      WHERE ($1::int IS NULL OR EXISTS (SELECT 1 FROM stock_wallet_legs x WHERE x.entry_id = e.id AND x.wallet_id = $1))
+      WHERE ($1::int[] IS NULL OR EXISTS (SELECT 1 FROM stock_wallet_legs x WHERE x.entry_id = e.id AND x.wallet_id = ANY($1::int[])))
         AND ($2::int IS NULL OR e.order_id = $2)
+        AND ($4 = '' OR to_char(e.occurred_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM') = $4)
+        AND ($5 = '' OR e.kind = $5)
+        AND ($6 = '' OR lower(e.title || ' ' || e.note || ' ' || e.destination_account || ' ' || e.details::text) LIKE $6)
+        AND (NOT $7::boolean OR e.kind = 'adjust' OR e.status_request IS NOT NULL OR e.status = 'awaiting_approval')
       GROUP BY e.id, o.status
       ORDER BY e.occurred_at DESC, e.id DESC
       LIMIT $3`,
-    [walletId ? Number(walletId) : null, orderId ? Number(orderId) : null, Math.min(Math.max(Number(limit) || 300, 1), 1000)]
+    [walletIds?.length ? walletIds.map(Number) : walletId ? [Number(walletId)] : null, orderId ? Number(orderId) : null, Math.min(Math.max(Number(limit) || 300, 1), 1000),
+      /^\d{4}-\d{2}$/.test(month) ? month : "", WALLET_ENTRY_KINDS.includes(kind) ? kind : "",
+      q ? `%${String(q).trim().toLowerCase().replace(/[\\%_]/g, (char) => `\\${char}`)}%` : "", Boolean(issues)]
   );
   const clean = (value) => fromWalletUnits(toWalletUnits(value));
   return result.rows.map((row) => ({
@@ -170,8 +229,53 @@ export async function listWalletEntries({ walletId = null, orderId = null, limit
     orderStatus: row.order_status,
     occurredAt: row.occurred_at,
     actorName: row.actor_name,
+    details: Array.isArray(row.details) ? row.details : [],
+    sheet: row.sheet_period ? { period: row.sheet_period, tab: row.sheet_tab, rowNo: row.sheet_row } : null,
+    receivedSheet: row.received_sheet || null,
+    statusRequest: row.status_request
+      ? { to: row.status_request, byId: row.status_request_by_id, by: row.status_request_by, at: row.status_request_at, reason: row.status_request_reason }
+      : null,
+    statusChangedBy: row.status_changed_by,
+    statusChangedAt: row.status_changed_at,
     legs: row.legs.map((leg) => ({ ...leg, amount: clean(leg.amount), fee: clean(leg.fee), balanceAfter: clean(leg.balanceAfter) })),
   }));
+}
+
+/**
+ * The sheet-against-system checks of one wallet (or all), newest month first:
+ * [{ walletId, period, currency, tab, sheetOpen, systemOpen, sheetClose,
+ * systemClose, rows, drifts, checkedBy, checkedAt, checkedNote, checkedStale }].
+ * A check stays "checked" only while its numbers are the ones that were checked.
+ */
+export async function listWalletChecks({ walletId = null } = {}) {
+  await ensureWalletSchema();
+  const result = await getPool().query(
+    `SELECT * FROM stock_wallet_sheet_checks WHERE ($1::int IS NULL OR wallet_id = $1) ORDER BY period DESC, wallet_id, currency`,
+    [walletId ? Number(walletId) : null]
+  );
+  const num = (value) => (value == null ? null : fromWalletUnits(toWalletUnits(value)));
+  return result.rows.map((row) => {
+    const check = {
+      walletId: row.wallet_id, period: row.period, currency: row.currency, tab: row.tab_name,
+      sheetOpen: num(row.sheet_open), systemOpen: num(row.system_open), sheetClose: num(row.sheet_close), systemClose: num(row.system_close),
+      rows: row.rows, drifts: row.drifts || [], checkedBy: row.checked_by, checkedAt: row.checked_at, checkedNote: row.checked_note,
+    };
+    return { ...check, checkedStale: Boolean(row.checked_at) && row.checked_sig !== walletCheckSignature(check) };
+  });
+}
+
+/** Marks one wallet-month-currency as checked by a person, for the numbers shown now. */
+export async function markWalletCheck({ walletId, period, currency }, actor, note = "") {
+  await ensureWalletSchema();
+  const pool = getPool();
+  const [check] = (await listWalletChecks({ walletId })).filter((item) => item.period === period && item.currency === currency);
+  if (!check) throw createHttpError("ไม่พบเดือนนี้ของกระเป๋านี้", 404);
+  await pool.query(
+    `UPDATE stock_wallet_sheet_checks SET checked_by_id = $4, checked_by = $5, checked_at = NOW(), checked_note = $6, checked_sig = $7
+      WHERE wallet_id = $1 AND period = $2 AND currency = $3`,
+    [Number(walletId), period, currency, actor?.id ?? null, String(actor?.name || "").slice(0, 255), String(note || "").slice(0, 500), walletCheckSignature(check)]
+  );
+  return true;
 }
 
 /**
@@ -230,21 +334,78 @@ export async function recordWalletEntry(input, actor = null) {
   }
 }
 
-/** A payment made outside a purchase order: waiting for goods → done. */
-export async function setWalletPaymentStatus(entryId, status) {
+const entryForStatus = (row) => ({
+  kind: row.kind, status: row.status, orderId: row.order_id,
+  statusRequest: row.status_request ? { to: row.status_request, byId: row.status_request_by_id } : null,
+});
+
+/**
+ * A payment made outside a purchase order: waiting for goods → done at once;
+ * done → waiting only as a request (with a reason) that someone else confirms.
+ * Returns { entryId, requested }.
+ */
+export async function setWalletPaymentStatus(entryId, status, actor = null, reason = "") {
   await ensureWalletSchema();
-  if (!WALLET_PAYMENT_STATUSES.includes(status)) throw createHttpError("สถานะไม่ถูกต้อง", 400);
-  const result = await getPool().query(
-    `UPDATE stock_wallet_entries SET status = $2 WHERE id = $1 AND kind = 'payment' AND order_id IS NULL RETURNING id`,
-    [Number(entryId), status]
-  );
-  if (!result.rows[0]) throw createHttpError("แก้สถานะได้เฉพาะรายการจ่ายที่ไม่ได้ผูกใบสั่งซื้อ", 400);
-  return Number(result.rows[0].id);
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const row = (await client.query(`SELECT * FROM stock_wallet_entries WHERE id = $1 FOR UPDATE`, [Number(entryId)])).rows[0];
+    if (!row) throw createHttpError("ไม่พบรายการนี้", 404);
+    const step = walletStatusChange(entryForStatus(row), status, actor, reason);
+    if (step.error) throw createHttpError(step.error, 400);
+    if (step.request) {
+      await client.query(
+        `UPDATE stock_wallet_entries SET status_request = $2, status_request_by_id = $3, status_request_by = $4, status_request_at = NOW(), status_request_reason = $5 WHERE id = $1`,
+        [row.id, step.request.to, step.request.byId, step.request.by, step.request.reason]
+      );
+    } else {
+      await client.query(`UPDATE stock_wallet_entries SET status = $2, status_changed_by = $3, status_changed_at = NOW() WHERE id = $1`,
+        [row.id, step.status, String(actor?.name || "").slice(0, 255)]);
+    }
+    await client.query("COMMIT");
+    return { entryId: Number(row.id), requested: Boolean(step.request) };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/** Confirms ("approve"), refuses ("reject") or withdraws ("cancel") a status request. */
+export async function decideWalletStatus(entryId, decision, actor) {
+  await ensureWalletSchema();
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const row = (await client.query(`SELECT * FROM stock_wallet_entries WHERE id = $1 FOR UPDATE`, [Number(entryId)])).rows[0];
+    if (!row) throw createHttpError("ไม่พบรายการนี้", 404);
+    const step = walletStatusDecision(entryForStatus(row), decision, actor);
+    if (step.error) throw createHttpError(step.error, 400);
+    const by = String(actor?.name || "").slice(0, 255);
+    await client.query(
+      `UPDATE stock_wallet_entries
+          SET status = COALESCE($2, status),
+              status_changed_by = CASE WHEN $2::text IS NULL THEN status_changed_by ELSE $3 || ' (ขอโดย ' || status_request_by || ')' END,
+              status_changed_at = CASE WHEN $2::text IS NULL THEN status_changed_at ELSE NOW() END,
+              review_note = CASE WHEN $4 = 'reject' THEN 'ไม่ยืนยันเปลี่ยนสถานะ: ' || $3 ELSE review_note END,
+              status_request = NULL, status_request_by_id = NULL, status_request_by = '', status_request_at = NULL, status_request_reason = ''
+        WHERE id = $1`,
+      [row.id, step.status, by, decision]
+    );
+    await client.query("COMMIT");
+    return Number(row.id);
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /** Corrections awaiting approval, oldest first, for the Stock front page. */
 export async function listWalletAdjustsAwaiting() {
-  const entries = await listWalletEntries({ limit: 1000 });
+  const entries = await listWalletEntries({ issues: true, limit: 1000 });
   return entries.filter((entry) => entry.kind === "adjust" && entry.status === "awaiting_approval").reverse();
 }
 

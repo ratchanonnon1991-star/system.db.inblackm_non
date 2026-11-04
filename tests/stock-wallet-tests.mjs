@@ -23,7 +23,8 @@ check(toWalletUnits("0.000000015") === 2n && toWalletUnits("abc") === null && to
 check(fromWalletUnits(-150000000n) === "-1.5" && fromWalletUnits(0n) === "0", "trailing zeros drop, signs stay");
 check(normalizeWalletAmount("0.1") === "0.1" && normalizeWalletAmount("") === "" && normalizeWalletAmount("-1") === null && normalizeWalletAmount("0") === null, "an amount is a positive number");
 check(normalizeWalletAmount("0", { allowZero: true }) === "0", "a fee may be zero");
-check(DEFAULT_WALLETS.map((wallet) => wallet.code).join() === "bitazza,bitkub,bybit", "the three wallets come set up");
+check(DEFAULT_WALLETS.filter((wallet) => wallet.group === "main").map((wallet) => wallet.code).join() === "bitazza,bitkub,bybit", "the three Stock wallets come set up as the main group");
+check(new Set(DEFAULT_WALLETS.map((wallet) => wallet.code)).size === DEFAULT_WALLETS.length && DEFAULT_WALLETS.every((wallet) => wallet.code.length <= 32 && wallet.currencies.every((c) => /^[A-Z]{3,5}$/.test(c))), "wallet codes are unique and currencies valid");
 check(DEFAULT_WALLETS.find((wallet) => wallet.code === "bybit").currencies.join() === "USDT,USDC,BTC", "Bybit holds USDT, USDC and BTC");
 
 const wallets = [

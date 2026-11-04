@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowDownToLine, ArrowRight, ArrowRightLeft, Link2, Loader2, Repeat, ShoppingCart, SlidersHorizontal, Wallet } from "lucide-react";
+import { ArrowDownToLine, ArrowRightLeft, ChevronDown, ExternalLink, FileSpreadsheet, Link2, Loader2, Repeat, Search, ShoppingCart, SlidersHorizontal, Wallet } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { bestWalletPaymentMatch, LINK_DAYS, PO_STATUS_LABELS, walletPaymentCandidates } from "@/lib/stock-purchase-orders";
-import { WALLET_ENTRY_LABELS, WALLET_PAYMENT_STATUS_LABELS, WALLET_REVIEW_LABELS } from "@/lib/stock-wallets";
+import { fromWalletUnits, toWalletUnits, WALLET_CHECK_LABELS, WALLET_ENTRY_LABELS, WALLET_GROUPS, WALLET_PAYMENT_STATUS_LABELS, WALLET_REVIEW_LABELS, walletCheckState } from "@/lib/stock-wallets";
 import { StockDialog, StockField, stockInputClass } from "@/components/stock-ui";
 
 const KIND_LOOK = {
@@ -65,15 +65,274 @@ export function walletEntryStatus(entry) {
   return { label: WALLET_PAYMENT_STATUS_LABELS[entry.status], done: entry.status === "done" };
 }
 
-export default function StockWallets({ wallets, entries, waitingOrders = [], canEdit }) {
+const MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+const monthLabel = (period) => `${MONTHS[Number(period.slice(5, 7)) - 1]} ${period.slice(0, 4)}`;
+const CHECK_TONE = {
+  ok: "bg-emerald-50 text-emerald-800",
+  checked: "bg-emerald-600 text-white",
+  diff: "bg-red-50 text-red-800",
+  stale: "bg-amber-100 text-amber-900",
+};
+const isUrl = (value) => /^https?:\/\//i.test(String(value || ""));
+const sheetHref = (sheet) => (sheet?.period && sheet?.tab
+  ? `/stock/sheets?period=${sheet.period}&name=${encodeURIComponent(sheet.tab)}${sheet.rowNo ? `&row=${sheet.rowNo}` : ""}`
+  : null);
+const sinceDays = (at) => (at ? Math.floor((Date.now() - new Date(at).getTime()) / 86400000) : null);
+
+function walletsHref(filters, change = {}) {
+  const next = { ...filters, ...change };
+  const params = new URLSearchParams();
+  if (next.wallet) params.set("wallet", next.wallet);
+  if (next.others && !next.wallet) params.set("others", "1");
+  if (next.month) params.set("month", next.month);
+  if (next.kind) params.set("kind", next.kind);
+  if (next.q) params.set("q", next.q);
+  if (next.issues) params.set("issues", "1");
+  const text = params.toString();
+  return text ? `/stock/wallets?${text}` : "/stock/wallets";
+}
+
+/** Per wallet: how many months are fine, signed off, or need a look. */
+function checkSummary(checks, walletId) {
+  const mine = checks.filter((check) => check.walletId === walletId);
+  const states = mine.map(walletCheckState);
+  return { total: mine.length, todo: states.filter((state) => state === "diff" || state === "stale").length, signed: states.filter((state) => state === "checked").length };
+}
+
+function WalletCard({ wallet, summary, filters, compact = false }) {
+  const active = filters.wallet === wallet.code;
+  const idle = sinceDays(wallet.lastActivity);
+  return (
+    <Link href={walletsHref(filters, { wallet: active ? "" : wallet.code })} aria-current={active ? "true" : undefined}
+      className={`flex flex-col rounded-[18px] border bg-white px-[18px] py-4 transition hover:border-zinc-400 ${active ? "border-[#D90005] ring-2 ring-[#D90005]/30" : "border-zinc-200"}`}>
+      <div className="flex items-center gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-white"><Wallet size={18} /></span>
+        <div className="min-w-0">
+          <p className="truncate text-[17px] font-black">{wallet.name}</p>
+          <p className="truncate text-[13px] text-zinc-600">{wallet.role}</p>
+        </div>
+      </div>
+      <dl className="mt-3 flex flex-col gap-1.5">
+        {wallet.balances.map((item) => (
+          <div key={item.currency} className="flex items-baseline justify-between gap-3 border-t border-zinc-100 pt-1.5">
+            <dt className="text-sm font-extrabold text-zinc-700">{item.currency}</dt>
+            <dd className="text-right">
+              <span className={`${compact ? "text-base" : "text-lg"} font-black ${String(item.balance).startsWith("-") ? "text-red-700" : ""}`}>{formatAmount(item.balance)}</span>
+              {!compact && item.fees !== "0" ? <span className="block text-xs text-zinc-600">fee รวม {formatAmount(item.fees)}</span> : null}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <div className="mt-3 flex flex-wrap gap-1.5 text-[11px] font-extrabold">
+        {summary.total ? (
+          summary.todo
+            ? <span className="rounded-full bg-red-50 px-2 py-0.5 text-red-800">ต้องตรวจ {summary.todo} เดือน</span>
+            : <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-800">ตรงกับชีตทุกเดือน{summary.signed ? ` · เซ็นแล้ว ${summary.signed}` : ""}</span>
+        ) : null}
+        {idle != null && idle > 30 ? <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-zinc-600">ไม่มีรายการมา {idle} วัน</span> : null}
+      </div>
+    </Link>
+  );
+}
+
+function CheckPanel({ wallet, checks, canEdit }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(null);
+  const [busy, setBusy] = useState(null);
+  const mine = checks.filter((check) => check.walletId === wallet.id);
+  if (!mine.length) return null;
+  async function sign(check) {
+    const note = window.prompt(`ยืนยันว่าตรวจ ${wallet.name} ${check.currency} เดือน ${monthLabel(check.period)} กับชีตแล้ว\nหมายเหตุ (ไม่บังคับ)`, "");
+    if (note === null) return;
+    setBusy(`${check.period}-${check.currency}`);
+    try {
+      await apiJson("/api/stock/wallets/checks", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletId: wallet.id, period: check.period, currency: check.currency, note }), fallbackError: "บันทึกการตรวจไม่สำเร็จ" });
+      router.refresh();
+    } catch (err) {
+      window.alert(err.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+  const diff = (a, b) => (a == null || b == null ? null : fromWalletUnits(toWalletUnits(a) - toWalletUnits(b)));
+  return (
+    <section className="rounded-2xl border border-zinc-200 bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 px-4 py-3">
+        <div>
+          <h2 className="text-base font-black">ตรวจยอด {wallet.name} กับชีต</h2>
+          <p className="text-xs text-zinc-600">ทุกเดือน: ยอดยกมาและยอดปิดเดือนในชีต เทียบกับที่ระบบคำนวณจากรายการ · แถวที่ยอดในชีตไม่ต่อจากแถวบนจะขึ้นให้กดดู</p>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[860px] text-sm">
+          <thead className="bg-zinc-50 text-left text-xs font-extrabold text-zinc-600">
+            <tr>
+              <th className="px-3 py-2">เดือน</th><th className="px-3 py-2">สกุล</th>
+              <th className="px-3 py-2 text-right">ยกมา · ชีต</th><th className="px-3 py-2 text-right">ยกมา · ระบบ</th>
+              <th className="px-3 py-2 text-right">ปิดเดือน · ชีต</th><th className="px-3 py-2 text-right">ปิดเดือน · ระบบ</th>
+              <th className="px-3 py-2 text-right">รายการ</th><th className="px-3 py-2">ผล</th><th className="px-3 py-2" />
+            </tr>
+          </thead>
+          <tbody>
+            {mine.map((check) => {
+              const state = walletCheckState(check);
+              const id = `${check.period}-${check.currency}`;
+              const openDiff = diff(check.sheetOpen, check.systemOpen);
+              const closeDiff = diff(check.sheetClose, check.systemClose);
+              return (
+                <Fragment key={id}>
+                  <tr className="border-t border-zinc-100 align-top">
+                    <td className="whitespace-nowrap px-3 py-2 font-extrabold">{monthLabel(check.period)}</td>
+                    <td className="px-3 py-2">{check.currency}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{check.sheetOpen == null ? "—" : formatAmount(check.sheetOpen)}</td>
+                    <td className={`px-3 py-2 text-right tabular-nums ${openDiff && openDiff !== "0" ? "font-black text-red-700" : ""}`}>
+                      {check.systemOpen == null ? "ต้นปี" : formatAmount(check.systemOpen)}
+                      {openDiff && openDiff !== "0" ? <span className="block text-[11px]">ต่าง {signed(openDiff)}</span> : null}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{check.sheetClose == null ? "—" : formatAmount(check.sheetClose)}</td>
+                    <td className={`px-3 py-2 text-right tabular-nums ${closeDiff && closeDiff !== "0" ? "font-black text-red-700" : ""}`}>
+                      {check.systemClose == null ? "—" : formatAmount(check.systemClose)}
+                      {closeDiff && closeDiff !== "0" ? <span className="block text-[11px]">ต่าง {signed(closeDiff)}</span> : null}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{check.rows}</td>
+                    <td className="px-3 py-2">
+                      <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-black ${CHECK_TONE[state]}`}>{WALLET_CHECK_LABELS[state]}</span>
+                      {check.checkedAt ? <p className="mt-1 text-[11px] text-zinc-600">{check.checkedBy} · {formatTime(check.checkedAt)}{check.checkedNote ? ` · ${check.checkedNote}` : ""}</p> : null}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right">
+                      <div className="flex justify-end gap-1.5">
+                        {check.drifts.length ? (
+                          <button type="button" onClick={() => setOpen(open === id ? null : id)} className="rounded-full border border-red-200 bg-white px-2.5 py-1 text-xs font-black text-red-700 hover:bg-red-50">
+                            {open === id ? "ซ่อน" : `ดู ${check.drifts.length} แถว`}
+                          </button>
+                        ) : null}
+                        <Link href={sheetHref({ period: check.period, tab: check.tab })} className="rounded-full border border-zinc-300 bg-white px-2.5 py-1 text-xs font-black text-zinc-700 hover:bg-zinc-50">ชีต</Link>
+                        {canEdit && state !== "checked" ? (
+                          <button type="button" disabled={busy === id} onClick={() => sign(check)} className="rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-black text-white hover:bg-zinc-700 disabled:opacity-50">
+                            {busy === id ? <Loader2 size={12} className="inline animate-spin" /> : "ตรวจแล้ว"}
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                  {open === id ? (
+                    <tr className="bg-red-50/40">
+                      <td colSpan={9} className="px-3 py-2">
+                        <p className="mb-1 text-xs font-bold text-red-900">แถวที่ยอดคงเหลือในชีตไม่เท่ากับยอดแถวบน + เข้า − ออก (ต่างไปเท่าไรจากแถวก่อนหน้า)</p>
+                        <ul className="flex flex-col gap-1 text-[13px]">
+                          {check.drifts.map((drift) => (
+                            <li key={drift.rowNo} className="flex flex-wrap gap-x-3">
+                              <Link href={sheetHref({ period: check.period, tab: check.tab, rowNo: drift.rowNo })} className="font-black text-[#B00004] hover:underline">แถว {drift.rowNo}</Link>
+                              <span>{drift.desc || "—"}</span>
+                              <span>ชีต {formatAmount(drift.sheet)} · ระบบ {formatAmount(drift.system)}</span>
+                              <b className="text-red-700">ต่าง {signed(drift.step)}</b>
+                            </li>
+                          ))}
+                        </ul>
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+/** Where the money went, and what proves it. */
+function EntryTrail({ entry }) {
+  const proofs = entry.details.filter((item) => isUrl(item.value));
+  const facts = entry.details.filter((item) => !isUrl(item.value));
+  const from = entry.legs.find((leg) => String(leg.amount).startsWith("-"));
+  const to = entry.legs.find((leg) => !String(leg.amount).startsWith("-"));
+  const where = entry.kind === "transfer" ? `${from?.walletName} → ${to?.walletName}`
+    : entry.kind === "exchange" ? `${from?.currency} → ${to?.currency} ใน ${from?.walletName}`
+    : entry.kind === "payment" ? `${from?.walletName} → ${entry.title || "ไม่ระบุ"}${entry.destinationAccount ? ` (${entry.destinationAccount})` : ""}`
+    : entry.kind === "deposit" ? `${entry.title || "ไม่ระบุ"} → ${to?.walletName}` : null;
+  return (
+    <div className="grid gap-3 rounded-xl bg-zinc-50 px-4 py-3 text-[13px] sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <div className="flex flex-col gap-1">
+        {where ? <p><span className="text-zinc-500">เงินไปไหน</span> <b>{where}</b></p> : null}
+        {facts.map((item, index) => <p key={index}><span className="text-zinc-500">{item.label}</span> <b className="break-all">{item.value}</b></p>)}
+        {entry.txid ? <p><span className="text-zinc-500">TXID</span> <b className="break-all">{entry.txid}</b></p> : null}
+        {entry.statusChangedBy ? <p className="text-zinc-600">เปลี่ยนสถานะล่าสุดโดย {entry.statusChangedBy} · {formatTime(entry.statusChangedAt)}</p> : null}
+        {entry.reviewNote ? <p className="text-zinc-600">{entry.reviewNote}</p> : null}
+      </div>
+      <div className="flex flex-col items-start gap-1.5">
+        {proofs.length ? proofs.map((item, index) => (
+          <a key={index} href={item.value} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-black text-[#B00004] ring-1 ring-zinc-200 hover:bg-red-50">
+            <ExternalLink size={12} /> {item.label}
+          </a>
+        )) : <p className="text-xs text-zinc-500">ไม่มีลิงก์รูปหลักฐานในชีต</p>}
+        {sheetHref(entry.sheet) ? (
+          <Link href={sheetHref(entry.sheet)} className="flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-black text-zinc-800 ring-1 ring-zinc-200 hover:bg-zinc-100">
+            <FileSpreadsheet size={12} /> เปิดแถว {entry.sheet.rowNo} ในชีต {entry.sheet.tab}
+          </Link>
+        ) : null}
+        {sheetHref(entry.receivedSheet) ? (
+          <Link href={sheetHref(entry.receivedSheet)} className="flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-black text-zinc-800 ring-1 ring-zinc-200 hover:bg-zinc-100">
+            <FileSpreadsheet size={12} /> ฝั่งรับเข้า: แถว {entry.receivedSheet.rowNo} ในชีต {entry.receivedSheet.tab}
+          </Link>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function PaymentStatus({ entry, canEdit, currentUserId, busy, act }) {
+  const status = walletEntryStatus(entry);
+  const request = entry.statusRequest;
+  if (entry.orderId) {
+    return <Link href={`/stock/purchase-orders?open=${entry.orderId}`} title="เปิดใบสั่งซื้อ ดูว่าของอยู่ขั้นไหน" className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-black ${status.done ? "bg-emerald-50 text-emerald-700" : "bg-amber-100 text-amber-800"}`}>{status.label} →</Link>;
+  }
+  if (request) {
+    const mine = Number(request.byId) === Number(currentUserId);
+    return (
+      <div className="flex flex-col items-start gap-1">
+        <span className="whitespace-nowrap rounded-full bg-cyan-100 px-3 py-1 text-xs font-black text-cyan-900">ขอเปลี่ยนเป็น{WALLET_PAYMENT_STATUS_LABELS[request.to]} · รออีกคนยืนยัน</span>
+        <span className="text-[11px] text-zinc-600">ขอโดย {request.by} · {request.reason}</span>
+        {canEdit ? (
+          mine ? (
+            <button type="button" disabled={busy} onClick={() => act("decide", "cancel")} className="rounded-full border border-zinc-300 bg-white px-2.5 py-1 text-xs font-black text-zinc-700 hover:bg-zinc-50 disabled:opacity-50">ยกเลิกคำขอ</button>
+          ) : (
+            <span className="flex gap-1">
+              <button type="button" disabled={busy} onClick={() => act("decide", "approve")} className="rounded-full bg-emerald-700 px-2.5 py-1 text-xs font-black text-white hover:bg-emerald-800 disabled:opacity-50">ยืนยันเปลี่ยน</button>
+              <button type="button" disabled={busy} onClick={() => act("decide", "reject")} className="rounded-full border border-red-300 bg-white px-2.5 py-1 text-xs font-black text-red-700 hover:bg-red-50 disabled:opacity-50">ไม่ยืนยัน</button>
+            </span>
+          )
+        ) : null}
+      </div>
+    );
+  }
+  return (
+    <button type="button" disabled={!canEdit || busy} onClick={() => act("toggle")}
+      title={canEdit ? (status.done ? "ขอเปลี่ยนกลับเป็นรอสินค้า (ต้องให้อีกคนยืนยัน)" : "กดเมื่อได้สินค้าแล้ว") : undefined}
+      className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-black ${status.done ? "bg-emerald-50 text-emerald-700" : "bg-amber-100 text-amber-800"}`}>
+      {busy ? <Loader2 size={12} className="inline animate-spin" /> : status.label}
+    </button>
+  );
+}
+
+export default function StockWallets({ wallets, entries, checks = [], filters = {}, selected = null, waitingOrders = [], canEdit, currentUserId = null }) {
   const router = useRouter();
   const [dialog, setDialog] = useState(null);
-  const [walletFilter, setWalletFilter] = useState("all");
   const [busy, setBusy] = useState(null);
   const [linking, setLinking] = useState(null);
-  const shown = walletFilter === "all" ? entries : entries.filter((entry) => entry.legs.some((leg) => String(leg.walletId) === walletFilter));
-
+  const [expanded, setExpanded] = useState(() => new Set());
+  const main = wallets.filter((wallet) => wallet.group === "main");
+  const others = wallets.filter((wallet) => wallet.group !== "main");
   const awaiting = entries.filter((entry) => entry.status === "awaiting_approval");
+  const statusRequests = entries.filter((entry) => entry.statusRequest);
+  const months = [...new Set(checks.map((check) => check.period))].sort().reverse();
+  const toggleRow = (id) => setExpanded((current) => {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
 
   async function review(entry, decision) {
     const note = decision === "reject" ? window.prompt("เหตุผลที่ไม่อนุมัติ") : "";
@@ -94,16 +353,30 @@ export default function StockWallets({ wallets, entries, waitingOrders = [], can
     }
   }
 
-  async function toggle(entry) {
+  // "toggle": waiting → done at once; done → a request for someone else to confirm.
+  async function statusAction(entry, action, decision) {
+    let body = null;
+    let url = `/api/stock/wallets/entries/${entry.id}`;
+    let method = "PATCH";
+    if (action === "toggle") {
+      const to = entry.status === "done" ? "pending" : "done";
+      let reason = "";
+      if (to === "pending") {
+        reason = window.prompt("รายการนี้เรียบร้อยแล้ว — ขอเปลี่ยนกลับเป็น \"รอสินค้า\" ต้องให้อีกคนยืนยัน\nใส่เหตุผล:");
+        if (!reason) return;
+      }
+      body = { status: to, reason };
+    } else {
+      url = `/api/stock/wallets/entries/${entry.id}/status`;
+      method = "POST";
+      body = { decision };
+    }
     setBusy(entry.id);
     try {
-      await apiJson(`/api/stock/wallets/entries/${entry.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: entry.status === "done" ? "pending" : "done" }),
-        fallbackError: "แก้สถานะไม่สำเร็จ",
-      });
+      await apiJson(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), fallbackError: "เปลี่ยนสถานะไม่สำเร็จ" });
       router.refresh();
+    } catch (err) {
+      window.alert(err.message);
     } finally {
       setBusy(null);
     }
@@ -115,7 +388,7 @@ export default function StockWallets({ wallets, entries, waitingOrders = [], can
         <div className="min-w-0 flex-[1_1_360px]">
           <p className="text-xs font-black tracking-[0.12em] text-[#B00004]">STOCK · กระเป๋าเงิน</p>
           <h1 className="mt-1 text-3xl font-extrabold">กระเป๋าเงิน</h1>
-          <p className="mt-1.5 text-sm text-zinc-600">ยอดคงเหลือคิดจากทุกรายการเข้า-ออก รวม fee · จ่ายค่าของเข้า stock ให้ทำจาก <Link href="/stock/purchase-orders" className="font-extrabold text-[#B00004] hover:underline">ใบสั่งซื้อ</Link></p>
+          <p className="mt-1.5 text-sm text-zinc-600">กดการ์ดกระเป๋าเพื่อดูรายการและตรวจยอดกับชีตทีละเดือน · กดแถวรายการเพื่อดูว่าเงินไปไหนและหลักฐาน · จ่ายค่าของเข้า stock ให้ทำจาก <Link href="/stock/purchase-orders" className="font-extrabold text-[#B00004] hover:underline">ใบสั่งซื้อ</Link></p>
         </div>
         {canEdit ? (
           <div className="flex flex-wrap gap-2">
@@ -129,122 +402,152 @@ export default function StockWallets({ wallets, entries, waitingOrders = [], can
         ) : null}
       </div>
 
-      <div className="flex flex-col items-stretch gap-3 lg:flex-row lg:items-center">
-        {wallets.map((wallet, index) => (
-          <div key={wallet.id} className="flex flex-1 flex-col items-stretch gap-3 lg:flex-row lg:items-center">
-            {index > 0 ? <ArrowRight size={22} className="mx-auto shrink-0 rotate-90 text-zinc-400 lg:rotate-0" aria-hidden="true" /> : null}
-            <article className="flex-1 rounded-[18px] border border-zinc-200 bg-white px-[18px] py-4">
-              <div className="flex items-center gap-3">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-900 text-white"><Wallet size={18} /></span>
-                <div className="min-w-0">
-                  <p className="truncate text-[17px] font-black">{wallet.name}</p>
-                  <p className="text-[13px] text-zinc-600">{wallet.role}</p>
-                </div>
-              </div>
-              <dl className="mt-3 flex flex-col gap-1.5">
-                {wallet.balances.map((item) => (
-                  <div key={item.currency} className="flex items-baseline justify-between gap-3 border-t border-zinc-100 pt-1.5">
-                    <dt className="text-sm font-extrabold text-zinc-700">{item.currency}</dt>
-                    <dd className="text-right">
-                      <span className={`text-lg font-black ${String(item.balance).startsWith("-") ? "text-red-700" : ""}`}>{formatAmount(item.balance)}</span>
-                      {item.fees !== "0" ? <span className="block text-xs text-zinc-600">fee รวม {formatAmount(item.fees)}</span> : null}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            </article>
-          </div>
-        ))}
+      <div className="grid gap-3 lg:grid-cols-3">
+        {main.map((wallet) => <WalletCard key={wallet.id} wallet={wallet} summary={checkSummary(checks, wallet.id)} filters={filters} />)}
       </div>
+
+      {others.length ? (
+        filters.others ? (
+          <section className="flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-base font-black">กระเป๋าอื่น ({others.length})</h2>
+              <Link href={walletsHref(filters, { others: false, wallet: "" })} className="text-sm font-extrabold text-[#B00004] hover:underline">ซ่อนกระเป๋าอื่น</Link>
+            </div>
+            {WALLET_GROUPS.filter((group) => group.code !== "main").map((group) => {
+              const list = others.filter((wallet) => wallet.group === group.code);
+              if (!list.length) return null;
+              return (
+                <div key={group.code} className="flex flex-col gap-2">
+                  <p className="text-xs font-extrabold text-zinc-600">{group.label} · <span className="font-bold text-zinc-500">{group.hint}</span></p>
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    {list.map((wallet) => <WalletCard key={wallet.id} wallet={wallet} summary={checkSummary(checks, wallet.id)} filters={filters} compact />)}
+                  </div>
+                </div>
+              );
+            })}
+          </section>
+        ) : (
+          <Link href={walletsHref(filters, { others: true })} className="w-fit rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm font-extrabold text-zinc-700 hover:bg-zinc-50">
+            แสดงกระเป๋าอื่น ({others.length}) · เติมเงินต่างประเทศ, คริปโตบัญชีอื่น, JPY/MYR/UAH
+          </Link>
+        )
+      ) : null}
 
       {awaiting.length ? (
         <p className="rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm text-cyan-900">
           มีการปรับยอดเก่า <b>{awaiting.length}</b> รายการที่ยังค้างรออนุมัติ — กดอนุมัติหรือไม่อนุมัติให้จบ (ปรับยอดใหม่มีผลทันที ไม่ต้องรออนุมัติแล้ว)
         </p>
       ) : null}
+      {statusRequests.length ? (
+        <p className="rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm text-cyan-900">
+          มีคำขอเปลี่ยนสถานะรายการที่เรียบร้อยแล้ว <b>{statusRequests.length}</b> รายการ รออีกคนกดยืนยัน
+        </p>
+      ) : null}
 
-      <div role="group" aria-label="กรองกระเป๋า" className="flex w-fit flex-wrap gap-1 rounded-full bg-zinc-200 p-1">
-        {[{ id: "all", name: "ทุกกระเป๋า" }, ...wallets.map((wallet) => ({ id: String(wallet.id), name: wallet.name }))].map((item) => (
-          <button key={item.id} type="button" aria-pressed={walletFilter === item.id} onClick={() => setWalletFilter(item.id)}
-            className={`h-[38px] rounded-full px-4 text-[13px] font-extrabold ${walletFilter === item.id ? "bg-[#D90005] text-white" : "text-zinc-700 hover:text-zinc-900"}`}>
-            {item.name}
-          </button>
-        ))}
-      </div>
+      {selected ? <CheckPanel wallet={selected} checks={checks} canEdit={canEdit} /> : null}
 
-      {shown.length ? (
+      <form action="/stock/wallets" className="flex flex-wrap items-center gap-2 rounded-2xl border border-zinc-200 bg-white px-3 py-2.5">
+        {filters.wallet ? <input type="hidden" name="wallet" value={filters.wallet} /> : null}
+        {filters.others && !filters.wallet ? <input type="hidden" name="others" value="1" /> : null}
+        <span className="text-sm font-extrabold text-zinc-700">{selected ? selected.name : filters.others ? "ทุกกระเป๋า" : "3 กระเป๋าหลัก"}</span>
+        {selected ? <Link href={walletsHref(filters, { wallet: "" })} className="text-xs font-bold text-[#B00004] hover:underline">(ดูทั้งหมด)</Link> : null}
+        <select name="month" defaultValue={filters.month} className="h-9 rounded-xl border border-zinc-300 bg-white px-2 text-sm">
+          <option value="">ทุกเดือน</option>
+          {months.map((period) => <option key={period} value={period}>{monthLabel(period)}</option>)}
+        </select>
+        <select name="kind" defaultValue={filters.kind} className="h-9 rounded-xl border border-zinc-300 bg-white px-2 text-sm">
+          <option value="">ทุกประเภท</option>
+          {Object.entries(WALLET_ENTRY_LABELS).map(([kind, label]) => <option key={kind} value={kind}>{label}</option>)}
+        </select>
+        <label className="flex h-9 flex-1 items-center gap-2 rounded-xl border border-zinc-300 px-2.5">
+          <Search size={14} className="text-zinc-400" aria-hidden="true" />
+          <input name="q" defaultValue={filters.q} placeholder="ค้นชื่อรายการ ปลายทาง Order เบอร์" className="min-w-0 flex-1 bg-transparent text-sm outline-none" />
+        </label>
+        <label className="flex items-center gap-1.5 text-sm font-bold text-zinc-700">
+          <input type="checkbox" name="issues" value="1" defaultChecked={filters.issues} /> เฉพาะที่ต้องตรวจ
+        </label>
+        <button className="h-9 rounded-xl bg-[#D90005] px-4 text-sm font-extrabold text-white hover:bg-[#B00004]">กรอง</button>
+      </form>
+      <p className="-mt-3 text-xs text-zinc-500">แสดง {entries.length >= 400 ? "400 รายการล่าสุด — เลือกเดือนเพื่อดูครบ" : `${entries.length} รายการ`}</p>
+
+      {entries.length ? (
         <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
-          <table className="w-full min-w-[900px] text-sm">
+          <table className="w-full min-w-[960px] text-sm">
             <thead className="bg-zinc-50 text-left text-xs font-extrabold text-zinc-600">
               <tr>
                 <th className="px-4 py-3">เวลาใบเสร็จ</th>
                 <th className="px-4 py-3">ประเภท</th>
-                <th className="px-4 py-3">ชื่อรายการ</th>
+                <th className="px-4 py-3">ชื่อรายการ / ปลายทาง</th>
                 <th className="px-4 py-3">กระเป๋า · ยอด · fee</th>
                 <th className="px-4 py-3 text-right">ยอดคงเหลือ</th>
                 <th className="px-4 py-3">สถานะ</th>
               </tr>
             </thead>
             <tbody>
-              {shown.map((entry) => {
-                const status = walletEntryStatus(entry);
+              {entries.map((entry) => {
                 const candidates = canEdit ? walletPaymentCandidates(entry, waitingOrders) : [];
                 const best = bestWalletPaymentMatch(candidates);
+                const open = expanded.has(entry.id);
                 return (
-                  <tr key={entry.id} className="border-t border-zinc-100 align-top">
-                    <td className="px-4 py-3 whitespace-nowrap">{formatTime(entry.occurredAt)}<p className="text-xs text-zinc-600">{entry.actorName}</p></td>
-                    <td className="px-4 py-3"><span className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-black ${KIND_TONE[entry.kind]}`}>{WALLET_ENTRY_LABELS[entry.kind]}</span></td>
-                    <td className="px-4 py-3">
-                      <p className="font-extrabold">{entry.title || "—"}</p>
-                      {entry.txid ? <p className="break-all text-xs text-zinc-600">TXID {entry.txid}</p> : null}
-                      {entry.note ? <p className="text-xs text-zinc-600">{entry.note}</p> : null}
-                      <SheetDetails entry={entry} />
-                    </td>
-                    <td className="px-4 py-3">
-                      {entry.legs.map((leg, index) => (
-                        <p key={index} className="whitespace-nowrap">
-                          <span className="text-zinc-600">{leg.walletName}</span>{" "}
-                          <b className={String(leg.amount).startsWith("-") ? "text-red-700" : "text-emerald-700"}>{signed(leg.amount)} {leg.currency}</b>
-                          {leg.fee !== "0" ? <span className="text-xs text-zinc-600"> (fee {formatAmount(leg.fee)})</span> : null}
-                        </p>
-                      ))}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {entry.legs.map((leg, index) => <p key={index} className="whitespace-nowrap font-extrabold">{formatAmount(leg.balanceAfter)} {leg.currency}</p>)}
-                    </td>
-                    <td className="px-4 py-3">
-                      {entry.status === "awaiting_approval" ? (
-                        <div className="flex flex-col items-start gap-1">
-                          <span className="whitespace-nowrap rounded-full bg-cyan-100 px-3 py-1 text-xs font-black text-cyan-800">{WALLET_REVIEW_LABELS.awaiting_approval} · ยังไม่นับในยอด</span>
-                          {canEdit ? (
-                            <span className="flex gap-1">
-                              <button type="button" disabled={busy === entry.id} onClick={() => review(entry, "approve")} className="rounded-full bg-emerald-700 px-2.5 py-1 text-xs font-black text-white hover:bg-emerald-800 disabled:opacity-50">อนุมัติ</button>
-                              <button type="button" disabled={busy === entry.id} onClick={() => review(entry, "reject")} className="rounded-full border border-red-300 bg-white px-2.5 py-1 text-xs font-black text-red-700 hover:bg-red-50 disabled:opacity-50">ไม่อนุมัติ</button>
-                            </span>
-                          ) : null}
-                        </div>
-                      ) : entry.status === "rejected" ? (
-                        <span className="whitespace-nowrap rounded-full bg-zinc-200 px-3 py-1 text-xs font-black text-zinc-600" title={entry.reviewNote}>{WALLET_REVIEW_LABELS.rejected} · {entry.reviewedBy}</span>
-                      ) : entry.kind === "adjust" && entry.reviewedBy ? (
-                        <span className="whitespace-nowrap text-xs font-bold text-emerald-700">อนุมัติโดย {entry.reviewedBy}</span>
-                      ) : status ? (
-                        entry.orderId ? (
-                          <Link href={`/stock/purchase-orders?open=${entry.orderId}`} title="เปิดใบสั่งซื้อ ดูว่าของอยู่ขั้นไหน" className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-black ${status.done ? "bg-emerald-50 text-emerald-700" : "bg-amber-100 text-amber-800"}`}>{status.label} →</Link>
-                        ) : (
-                          <button type="button" disabled={!canEdit || busy === entry.id} onClick={() => toggle(entry)} title={canEdit ? "กดเพื่อสลับ รอสินค้า / เรียบร้อย" : undefined}
-                            className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-black ${status.done ? "bg-emerald-50 text-emerald-700" : "bg-amber-100 text-amber-800"}`}>
-                            {busy === entry.id ? <Loader2 size={12} className="inline animate-spin" /> : status.label}
-                          </button>
-                        )
-                      ) : <span className="text-xs text-zinc-500">—</span>}
-                      {!entry.orderId && candidates.length ? (
-                        <button type="button" onClick={() => setLinking(entry)}
-                          className={`mt-1.5 flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-black ${best ? "bg-zinc-900 text-white hover:bg-zinc-700" : "border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50"}`}>
-                          <Link2 size={12} /> {best ? `ผูกกับ ${best.code}?` : `ผูกใบสั่งซื้อ (${candidates.length})`}
+                  <Fragment key={entry.id}>
+                    <tr className={`border-t border-zinc-100 align-top ${open ? "bg-zinc-50/60" : ""}`}>
+                      <td className="whitespace-nowrap px-4 py-3">{formatTime(entry.occurredAt)}<p className="text-xs text-zinc-600">{entry.actorName}</p></td>
+                      <td className="px-4 py-3"><span className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-black ${KIND_TONE[entry.kind]}`}>{WALLET_ENTRY_LABELS[entry.kind]}</span></td>
+                      <td className="px-4 py-3">
+                        <button type="button" onClick={() => toggleRow(entry.id)} aria-expanded={open} className="flex items-start gap-1 text-left">
+                          <ChevronDown size={15} className={`mt-0.5 shrink-0 text-zinc-500 transition ${open ? "rotate-180" : ""}`} aria-hidden="true" />
+                          <span>
+                            <span className="font-extrabold">{entry.title || (entry.kind === "adjust" ? "ปรับยอด" : "—")}</span>
+                            {entry.note ? <span className="block text-xs text-zinc-600">{entry.note}</span> : null}
+                            <span className="block text-xs font-bold text-[#B00004]">{open ? "ซ่อน" : "เงินไปไหน · หลักฐาน · แถวในชีต"}</span>
+                          </span>
                         </button>
-                      ) : null}
-                    </td>
-                  </tr>
+                        <SheetDetails entry={entry} />
+                      </td>
+                      <td className="px-4 py-3">
+                        {entry.legs.map((leg, index) => (
+                          <p key={index} className="whitespace-nowrap">
+                            <span className="text-zinc-600">{leg.walletName}</span>{" "}
+                            <b className={String(leg.amount).startsWith("-") ? "text-red-700" : "text-emerald-700"}>{signed(leg.amount)} {leg.currency}</b>
+                            {leg.fee !== "0" ? <span className="text-xs text-zinc-600"> (fee {formatAmount(leg.fee)})</span> : null}
+                          </p>
+                        ))}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {entry.legs.map((leg, index) => <p key={index} className="whitespace-nowrap font-extrabold">{formatAmount(leg.balanceAfter)} {leg.currency}</p>)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {entry.status === "awaiting_approval" ? (
+                          <div className="flex flex-col items-start gap-1">
+                            <span className="whitespace-nowrap rounded-full bg-cyan-100 px-3 py-1 text-xs font-black text-cyan-800">{WALLET_REVIEW_LABELS.awaiting_approval} · ยังไม่นับในยอด</span>
+                            {canEdit ? (
+                              <span className="flex gap-1">
+                                <button type="button" disabled={busy === entry.id} onClick={() => review(entry, "approve")} className="rounded-full bg-emerald-700 px-2.5 py-1 text-xs font-black text-white hover:bg-emerald-800 disabled:opacity-50">อนุมัติ</button>
+                                <button type="button" disabled={busy === entry.id} onClick={() => review(entry, "reject")} className="rounded-full border border-red-300 bg-white px-2.5 py-1 text-xs font-black text-red-700 hover:bg-red-50 disabled:opacity-50">ไม่อนุมัติ</button>
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : entry.status === "rejected" ? (
+                          <span className="whitespace-nowrap rounded-full bg-zinc-200 px-3 py-1 text-xs font-black text-zinc-600" title={entry.reviewNote}>{WALLET_REVIEW_LABELS.rejected} · {entry.reviewedBy}</span>
+                        ) : entry.kind === "adjust" && entry.reviewedBy ? (
+                          <span className="whitespace-nowrap text-xs font-bold text-emerald-700">อนุมัติโดย {entry.reviewedBy}</span>
+                        ) : entry.kind === "payment" ? (
+                          <PaymentStatus entry={entry} canEdit={canEdit} currentUserId={currentUserId} busy={busy === entry.id} act={(action, decision) => statusAction(entry, action, decision)} />
+                        ) : <span className="text-xs text-zinc-500">—</span>}
+                        {!entry.orderId && candidates.length ? (
+                          <button type="button" onClick={() => setLinking(entry)}
+                            className={`mt-1.5 flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-black ${best ? "bg-zinc-900 text-white hover:bg-zinc-700" : "border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50"}`}>
+                            <Link2 size={12} /> {best ? `ผูกกับ ${best.code}?` : `ผูกใบสั่งซื้อ (${candidates.length})`}
+                          </button>
+                        ) : null}
+                      </td>
+                    </tr>
+                    {open ? (
+                      <tr className="bg-zinc-50/60">
+                        <td colSpan={6} className="px-4 pb-3"><EntryTrail entry={entry} /></td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -252,7 +555,7 @@ export default function StockWallets({ wallets, entries, waitingOrders = [], can
         </div>
       ) : (
         <div className="rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-14 text-center text-sm text-zinc-600">
-          {entries.length ? "ไม่มีรายการของกระเป๋านี้" : canEdit ? "ยังไม่มีรายการ — เริ่มจาก \"ปรับยอด\" ใส่ยอดตั้งต้นตามแอปของแต่ละกระเป๋า" : "ยังไม่มีรายการ"}
+          {filters.month || filters.kind || filters.q || filters.issues ? "ไม่มีรายการตามที่กรอง" : canEdit ? "ยังไม่มีรายการ — เริ่มจาก \"ปรับยอด\" ใส่ยอดตั้งต้นตามแอปของแต่ละกระเป๋า" : "ยังไม่มีรายการ"}
         </div>
       )}
 
