@@ -24,8 +24,8 @@ const STATUS_WORD = { ok: "ตรวจแล้ว", pending: "รอตรว�
 const HISTORY_WORD = { ok: "ตรวจแล้ว", wrong: "ราคาผิด", late: "หมดเวลา", pending: "ส่งใหม่ก่อนตรวจ" };
 
 /** The row's badge: what the pack's listings come to, and the way into them. */
-export function GameinfoPackVerifyButton({ packName, listings, onOpen }) {
-  const summary = summarizeGameinfoPackListings(listings);
+export function GameinfoPackVerifyButton({ packName, listings, channelCount, onOpen }) {
+  const summary = summarizeGameinfoPackListings(listings, channelCount);
   const Icon = BADGE_ICON[summary.tone];
   return (
     <button type="button" className={`gd-vbtn ${summary.tone}`} onClick={onOpen} aria-label={`ตรวจสอบสินค้า ${packName}: ${summary.label}`}>

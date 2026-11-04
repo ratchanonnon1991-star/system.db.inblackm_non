@@ -15,7 +15,8 @@ import {
 import { reset, setResponder } from "@/lib/db.js";
 
 assert.deepEqual(summarizeGameinfoPackListings([]), { ok: 0, pending: 0, wrong: 0, late: 0, tone: "none", label: "ยังไม่ลง" });
-assert.equal(summarizeGameinfoPackListings([{ status: "ok" }, { status: "ok" }]).label, "ตรวจครบ");
+assert.equal(summarizeGameinfoPackListings([{ status: "ok" }, { status: "ok" }], 2).label, "ตรวจครบ");
+assert.equal(summarizeGameinfoPackListings([{ status: "ok" }], 7).label, "ตรวจแล้ว 1/7", "one channel checked of seven is not all");
 assert.equal(summarizeGameinfoPackListings([{ status: "ok" }, { status: "pending" }, { status: "pending" }]).label, "รอตรวจ 2");
 assert.equal(summarizeGameinfoPackListings([{ status: "pending" }, { status: "wrong" }]).label, "ราคาผิด 1", "a wrong price outranks one waiting");
 
@@ -99,4 +100,4 @@ assert.ok(route.includes("requireGameinfoReporter(request)") && route.includes("
 const packs = readFileSync(new URL("../src/server/gameinfo-gamelist-packs.js", import.meta.url), "utf8");
 assert.ok(packs.includes("CREATE TABLE IF NOT EXISTS gamelist_pack_listings"), "the table is created with the others");
 
-console.log("48 passed");
+console.log("49 passed");

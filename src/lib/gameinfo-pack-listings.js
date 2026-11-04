@@ -66,15 +66,17 @@ export function isGameinfoListingUrl(value) {
 
 /**
  * One pack's listings as the row's badge: any wrong price first, then any
- * round that ran out of time, then any waiting to be checked, then all
- * checked; "none" when it is listed nowhere.
+ * round that ran out of time, then any waiting to be checked; then how many
+ * of the game's `channelCount` channels are checked, ตรวจครบ when all are.
  */
-export function summarizeGameinfoPackListings(listings = []) {
+export function summarizeGameinfoPackListings(listings = [], channelCount = listings.length) {
   const counts = { ok: 0, pending: 0, wrong: 0, late: 0 };
   for (const listing of listings) counts[listing.status] = (counts[listing.status] || 0) + 1;
   if (counts.wrong) return { ...counts, tone: "bad", label: `ราคาผิด ${counts.wrong}` };
   if (counts.late) return { ...counts, tone: "late", label: `หมดเวลา ${counts.late}` };
   if (counts.pending) return { ...counts, tone: "warn", label: `รอตรวจ ${counts.pending}` };
-  if (counts.ok) return { ...counts, tone: "ok", label: "ตรวจครบ" };
+  // ตรวจครบ only once every channel the game sells on has a passed check.
+  if (counts.ok && counts.ok >= channelCount) return { ...counts, tone: "ok", label: "ตรวจครบ" };
+  if (counts.ok) return { ...counts, tone: "none", label: `ตรวจแล้ว ${counts.ok}/${channelCount}` };
   return { ...counts, tone: "none", label: "ยังไม่ลง" };
 }

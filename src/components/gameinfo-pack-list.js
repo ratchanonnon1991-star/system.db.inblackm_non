@@ -181,6 +181,7 @@ export default function GameinfoPackList({
         open={open.has(row.pack.id)}
         onToggle={() => toggle(row.pack.id)}
         listings={verify ? listingsFor(row) : null}
+        channelCount={soldOn.size}
         onVerify={() => setVerifyPackId(String(row.pack.id))}
         onImage={() => setLightbox(visible.indexOf(row))}
       />
@@ -379,7 +380,7 @@ function mostCommon(values) {
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
 }
 
-function PackItem({ row, product, tracks, gotField, channel, channels, costColumn, otherColumns, chargeUnit, context, stock, open, onToggle, listings, onVerify, onImage }) {
+function PackItem({ row, product, tracks, gotField, channel, channels, costColumn, otherColumns, chargeUnit, context, stock, open, onToggle, listings, channelCount, onVerify, onImage }) {
   const { pack } = row;
   const figures = row.channels[channel?.key] || { price: gameinfoListNumber(pack.price), profit: null, margin: null };
   const href = packHref(pack.link);
@@ -419,7 +420,7 @@ function PackItem({ row, product, tracks, gotField, channel, channels, costColum
             </span>
             <PackNotes row={row} stock={stock} />
           </span>
-          {listings ? <GameinfoPackVerifyButton packName={pack.name} listings={listings} onOpen={onVerify} /> : null}
+          {listings ? <GameinfoPackVerifyButton packName={pack.name} listings={listings} channelCount={channelCount} onOpen={onVerify} /> : null}
         </span>
         {gotField ? <span className="gd-v r num got">{got ? (gotField === "priceUsd" ? `$${got}` : got) : "–"}</span> : null}
         {product ? (
