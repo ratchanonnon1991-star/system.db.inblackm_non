@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, ChevronDown, Copy, Download, FileUp, Image as ImageIcon, Languages, LayoutGrid, Lock, Pencil, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, CheckCircle2, ChevronDown, Copy, Download, FileUp, Image as ImageIcon, Languages, LayoutGrid, Lock, Pencil, Plus, Trash2, X } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -568,6 +568,15 @@ export default function GameinfoPackEditor({
   function addCategory(cIdx) {
     updateCurrencies((draft) => {
       draft[cIdx].categories.push({ id: genId("cat"), name: "", packs: [] });
+    });
+  }
+  // Swaps a category with its neighbour; the order is saved with the rest of the draft.
+  function moveCategory(cIdx, catIdx, step) {
+    updateCurrencies((draft) => {
+      const categories = draft[cIdx].categories;
+      const target = catIdx + step;
+      if (target < 0 || target >= categories.length) return;
+      [categories[catIdx], categories[target]] = [categories[target], categories[catIdx]];
     });
   }
   function removeCategory(cIdx, catIdx) {
@@ -1455,6 +1464,8 @@ export default function GameinfoPackEditor({
                       })
                     }
                     onRemoveCategory={() => removeCategory(cIdx, catIdx)}
+                    onMoveUp={catIdx > 0 ? () => moveCategory(cIdx, catIdx, -1) : null}
+                    onMoveDown={catIdx < currency.categories.length - 1 ? () => moveCategory(cIdx, catIdx, 1) : null}
                     onAddPack={() => addPack(cIdx, catIdx)}
                     onUpdatePack={(pkIdx, patch) => updatePack(cIdx, catIdx, pkIdx, patch)}
                     onDuplicatePack={(pkIdx) => duplicatePack(cIdx, catIdx, pkIdx)}
@@ -1642,6 +1653,8 @@ function CategoryBlock({
   onVisiblePacksChange,
   onRenameCategory,
   onRemoveCategory,
+  onMoveUp,
+  onMoveDown,
   onAddPack,
   onUpdatePack,
   onDuplicatePack,
@@ -1728,6 +1741,28 @@ function CategoryBlock({
               <ChevronDown size={14} />
             </span>
           </button>
+          <div className="flex shrink-0 flex-col">
+            <button
+              type="button"
+              disabled={!onMoveUp}
+              onClick={onMoveUp || undefined}
+              title="เลื่อนหมวดหมู่ขึ้น"
+              aria-label="เลื่อนหมวดหมู่ขึ้น"
+              className="flex h-4 w-6 items-center justify-center rounded text-linear-ink-subtle hover:bg-linear-surface-4 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              <ArrowUp size={12} />
+            </button>
+            <button
+              type="button"
+              disabled={!onMoveDown}
+              onClick={onMoveDown || undefined}
+              title="เลื่อนหมวดหมู่ลง"
+              aria-label="เลื่อนหมวดหมู่ลง"
+              className="flex h-4 w-6 items-center justify-center rounded text-linear-ink-subtle hover:bg-linear-surface-4 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              <ArrowDown size={12} />
+            </button>
+          </div>
           <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
             <GameinfoMemoryInput
               value={category.name}
