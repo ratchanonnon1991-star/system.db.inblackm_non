@@ -53,7 +53,25 @@ export function sheetMinutes(value) {
 }
 
 const EMAIL = /^[\w.+-]+@[\w-]+(\.[\w-]+)+$/;
-const SECRET_HEADER = /^(pin|pass|password|passwords|รหัสผ่าน|otp|2fa|seed phrase|private key)$/i;
+// "Code" columns hold gift-card codes (Garena, MyCard, Bitcash …): money to whoever reads them.
+const SECRET_HEADER = /^(pin|pin code|pass|password|passwords|รหัสผ่าน|otp|2fa|seed phrase|private key|cvv|cvc|card number|เลขบัตร|รหัสบัตร|codes?|code .+)$/i;
+// A payment card number typed anywhere: 13-19 digits in groups of four, Luhn-valid.
+const CARD_GROUPS = /(?<!\d)\d{4}([ -]?)\d{4}\1\d{4}\1\d{1,7}(?!\d)/g;
+function luhn(digits) {
+  let sum = 0;
+  for (let i = 0; i < digits.length; i += 1) {
+    let n = Number(digits[digits.length - 1 - i]);
+    if (i % 2) n = n * 2 > 9 ? n * 2 - 9 : n * 2;
+    sum += n;
+  }
+  return sum % 10 === 0;
+}
+// Grouped ("4624 3706 …") at 13-19 digits; run together only at exactly 16, so order numbers survive.
+const isCardNumber = (text) => {
+  const digits = text.replace(/\D/g, "");
+  if (/^\d+$/.test(text)) return digits.length === 16 && luhn(digits);
+  return digits.length >= 13 && digits.length <= 19 && (luhn(digits) || luhn(digits.slice(0, 16)));
+};
 const NUMBER = /^-?[\d,]*\.?\d+(e-?\d+)?$/i;
 const LOGIN_LIKE = /^(?=.*[A-Za-z])(?=.*\d)\S{6,}$/;
 const EMAIL_THEN_WORD = /([\w.+-]+@[\w-]+(?:\.[\w-]+)+)\s+(\S+)/g;
@@ -61,7 +79,8 @@ const EMAIL_THEN_WORD = /([\w.+-]+@[\w-]+(?:\.[\w-]+)+)\s+(\S+)/g;
 /**
  * rows: [[text, …], …] in sheet order → { rows, removed }. Drops a login typed
  * right after an e-mail (a non-number without spaces) or after one in the same
- * cell, and everything below a PIN / Password / OTP header.
+ * cell, a payment card number anywhere, and everything below a PIN / Password /
+ * OTP / CVV / Code header.
  */
 export function scrubSheetRows(rows) {
   const secretCols = new Set();
@@ -73,7 +92,15 @@ export function scrubSheetRows(rows) {
         secretCols.add(col);
         continue;
       }
-      if (secretCols.has(col) && cells[col]) {
+      // The carried-balance label ("ยกยอดมา") sometimes sits in a Code column: it is not a secret.
+      if (secretCols.has(col) && cells[col] && !OPENING_WORDS.has(cells[col])) {
+        cells[col] = REMOVED_CELL;
+        removed += 1;
+      }
+    }
+    // A card number anywhere in a cell: the whole cell goes (expiry and CVV are usually beside it).
+    for (let col = 0; col < cells.length; col += 1) {
+      if (cells[col] !== REMOVED_CELL && [...cells[col].matchAll(CARD_GROUPS)].some((match) => isCardNumber(match[0]))) {
         cells[col] = REMOVED_CELL;
         removed += 1;
       }

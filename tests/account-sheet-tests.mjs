@@ -37,8 +37,8 @@ const scrubbed = scrubSheetRows([
   ["", "", "a@b.co", "has space"],
 ]);
 check(scrubbed.rows[0][2] === REMOVED_CELL && scrubbed.rows[0][4] === "1234.5", "a login right after an e-mail is dropped; a number after one is kept");
-check(scrubbed.rows[2][1] === REMOVED_CELL && scrubbed.rows[2][0] === "ABC" && scrubbed.rows[3][3] === "has space", "a PIN column is dropped below its header; text with spaces stays");
-check(scrubbed.removed === 2, "dropped cells are counted");
+check(scrubbed.rows[2][1] === REMOVED_CELL && scrubbed.rows[2][0] === REMOVED_CELL && scrubbed.rows[3][3] === "has space", "PIN and Code columns are dropped below their header; text with spaces stays");
+check(scrubbed.removed === 3, "dropped cells are counted");
 
 const readable = readableSheetRows([["", "Date", "time", "รายการ"], ["", "46296", "0.5", "BITKUB"]]);
 check(readable[1][1] === "2026-10-01" && readable[1][2] === "12:00" && readable[1][3] === "BITKUB", "date and time columns are shown as such");
@@ -158,4 +158,15 @@ const pays = [
 ];
 check(linkSupplierReceipts(pays, miles) === 1 && pays[0].receivedAt.tab === "Order (Miles)" && pays[0].receivedAt.rowNo === 2, "same amount less fee, named supplier, within 3 days");
 check(!pays[1].receivedAt && !pays[2].receivedAt, "a row is used once; another supplier's payment is not tied to it");
+// Card numbers and gift-card codes never reach the archive.
+const cards = scrubSheetRows([
+  ["Icloud", "เบอร์ที่ผูก", "cvv", "Order"],
+  ["Mangoseekew", "088-756-3989", "", "4111111111111112"],
+  ["x", "4111 1111 1111 1111 05-30", "123", "47418137"],
+  ["Note: card 4111-1111-1111-1111", "1234567812345670", "", ""],
+]);
+check(cards.rows[2][1] === REMOVED_CELL && cards.rows[2][2] === REMOVED_CELL && cards.rows[1][1] === "088-756-3989", "a grouped card number and everything under a cvv header go; phone numbers stay");
+check(cards.rows[3][0] === REMOVED_CELL && cards.rows[3][1] === REMOVED_CELL && cards.rows[1][3] === "4111111111111112" && cards.rows[2][3] === "47418137", "a Luhn-valid 16-digit run goes; other order numbers stay");
+const codes = scrubSheetRows([["วันที่ซื้อ", "Code", "ยอดบัตร GARENA", "Code Bitcash"], ["46057", "7276473075421307", "350", "ABCD-EFGH"]]);
+check(codes.rows[1][1] === REMOVED_CELL && codes.rows[1][3] === REMOVED_CELL && codes.rows[1][2] === "350", "gift-card Code columns go, amounts stay");
 console.log(`account sheets: ${passed} passed`);
