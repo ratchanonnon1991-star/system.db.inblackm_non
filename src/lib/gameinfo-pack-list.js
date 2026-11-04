@@ -70,6 +70,15 @@ export function gameinfoColumnLooksBaht(column) {
   return !/usdt?\b|\bidr\b|\$|ดอลลาร์/i.test(String(column.label || ""));
 }
 
+/**
+ * A column a channel's selling price can come from: a baht amount
+ * (gameinfoColumnLooksBaht) that is not itself a cost or a profit.
+ */
+export function gameinfoColumnIsSellingPrice(column) {
+  if (!column || !gameinfoColumnLooksBaht(column)) return false;
+  return !/กำไร|ต้นทุน|profit|margin|\bcost\b/i.test(String(column.label || ""));
+}
+
 /** A plain number, or null for blanks and text such as "236155 X 2". */
 export function gameinfoListNumber(value) {
   if (value === null || value === undefined || value === "") return null;

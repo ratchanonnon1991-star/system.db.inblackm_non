@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  gameinfoColumnIsSellingPrice,
   gameinfoColumnLooksBaht,
   gameinfoPackListColumns,
   gameinfoPriceChannelsWithColumn,
@@ -39,4 +40,12 @@ assert.equal(gameinfoColumnLooksBaht(computed("p", "%กำไร", { symbol: "%
 assert.equal(gameinfoColumnLooksBaht(computed("k5", "KALEOZ 5%", { type: "number", symbol: "฿" })), true, "a % in the name alone is still baht");
 assert.equal(gameinfoColumnLooksBaht(computed("n", "หมายเหตุ", { type: "text" })), false, "text is no price");
 
-console.log("16 passed");
+// Only selling prices in baht are offered for a channel's price.
+const ladsColumns = [
+  ["ต้นทุน", ""], ["กำไร", ""], ["กำไรPage", "฿"], ["% กำไรเฉลี่ย Page", "%"], ["ราคาUSD (PAGE)", ""], ["ราคาRussia", "฿"],
+  ["กำไร (Russia)", "฿"], ["ราคาขาย(KALEOZ)", "฿"], ["KALEOZ 5%", "฿"], ["%กำไร (KALEOZ 5%)", "%"], ["KALEOZ (USDT)", "$"],
+  ["Itemku (IDR)", ""], ["Itemku (USDT)", "$"], ["G2G", "฿"], ["G2G USD", "$"],
+].map(([label, symbol], index) => computed(`c${index}`, label, { type: "number", symbol }));
+assert.deepEqual(ladsColumns.filter(gameinfoColumnIsSellingPrice).map((column) => column.label), ["ราคาRussia", "ราคาขาย(KALEOZ)", "KALEOZ 5%", "G2G"], "costs, profits, percentages and foreign money are left out");
+
+console.log("17 passed");

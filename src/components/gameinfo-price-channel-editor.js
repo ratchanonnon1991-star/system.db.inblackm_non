@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronUp, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { apiJson } from "@/lib/api-json";
-import { GAMEINFO_PRICE_CHANNEL_MAX, gameinfoPackListColumns } from "@/lib/gameinfo-pack-list";
+import { GAMEINFO_PRICE_CHANNEL_MAX, gameinfoColumnIsSellingPrice, gameinfoPackListColumns } from "@/lib/gameinfo-pack-list";
 import { buildGameinfoPackColumns } from "@/lib/gameinfo-pack-columns";
 // The window keeps the game page's look on the edit page too.
 import "./gameinfo-game-detail.css";
@@ -18,7 +18,7 @@ const newKey = () => `ch_${Date.now().toString(36)}${Math.random().toString(36).
 // and mode keeps its own list; "ใช้ค่าเริ่มต้น" goes back to the built-in four.
 // Keys carry over from the list it starts with, so a channel's listing checks
 // (gameinfo-pack-listings.js) stay with it when it is renamed.
-export default function GameinfoPriceChannelEditor({ gameId, dataMode, configured, initial, columnLabels, onClose, startWithNewRow = false }) {
+export default function GameinfoPriceChannelEditor({ gameId, dataMode, configured, initial, columnLabels, priceLabels = columnLabels, onClose, startWithNewRow = false }) {
   const router = useRouter();
   const [rows, setRows] = useState(() => [
     ...initial.map((row) => ({ ...row })),
@@ -83,6 +83,8 @@ export default function GameinfoPriceChannelEditor({ gameId, dataMode, configure
           <ul className="flex flex-col gap-2">
             {rows.map((row, index) => {
               const missing = row.column && !known.has(squash(row.column));
+              // A channel saved on a column that is no selling price still shows what it uses.
+              const notPrice = row.column && !missing && !priceLabels.some((label) => squash(label) === squash(row.column));
               return (
                 <li key={row.key} className="flex flex-wrap items-center gap-2 rounded-2xl border border-[var(--gd-line2)] p-2.5">
                   <input
@@ -102,7 +104,8 @@ export default function GameinfoPriceChannelEditor({ gameId, dataMode, configure
                     >
                       <option value="">ราคา (ช่องราคาของแพ็ค)</option>
                       {missing ? <option value={row.column}>ไม่พบคอลัมน์ “{row.column}”</option> : null}
-                      {columnLabels.map((label) => <option key={label} value={label}>{label}</option>)}
+                      {notPrice ? <option value={row.column}>{row.column} (ไม่ใช่คอลัมน์ราคา)</option> : null}
+                      {priceLabels.map((label) => <option key={label} value={label}>{label}</option>)}
                     </select>
                   </span>
                   <span className="flex gap-1">
@@ -111,6 +114,7 @@ export default function GameinfoPriceChannelEditor({ gameId, dataMode, configure
                     <button type="button" className="gd-btn sm disabled:opacity-40" onClick={() => setRows((current) => current.filter((_, at) => at !== index))} aria-label={`ลบ ${row.label || "ช่องทางนี้"}`}><Trash2 size={16} aria-hidden="true" /></button>
                   </span>
                   {missing ? <span className="w-full text-xs text-[var(--gd-red)]">เกมนี้ไม่มีคอลัมน์ชื่อนี้แล้ว ช่องทางนี้จะไม่ขึ้นจนกว่าจะเลือกคอลัมน์ใหม่</span> : null}
+                  {notPrice ? <span className="w-full text-xs text-[var(--gd-red)]">“{row.column}” ไม่ใช่ราคาขายเงินบาท กำไรของช่องทางนี้จะผิด เลือกคอลัมน์ราคาใหม่</span> : null}
                 </li>
               );
             })}
@@ -156,6 +160,12 @@ export function GameinfoPriceChannelSection({ gameId, dataMode, configured, comp
     () => columns.filter((column) => column.kind === "computed").map((column) => String(column.label ?? "")).filter(Boolean),
     [columns]
   );
+  // Only baht selling prices are offered: not costs, profits, percentages or
+  // dollar, USDT and rupiah amounts, none of which give a profit against cost.
+  const priceLabels = useMemo(
+    () => columns.filter((column) => column.kind === "computed" && gameinfoColumnIsSellingPrice(column)).map((column) => String(column.label ?? "")).filter(Boolean),
+    [columns]
+  );
   const known = new Set(columnLabels.map(squash));
   // A saved list is shown as saved, a channel whose column is gone included;
   // the built-in one only with the channels whose column this game has.
@@ -199,6 +209,7 @@ export function GameinfoPriceChannelSection({ gameId, dataMode, configured, comp
           configured={configured}
           initial={list}
           columnLabels={columnLabels}
+          priceLabels={priceLabels}
           onClose={() => setEditing(false)}
         />
       ) : null}
