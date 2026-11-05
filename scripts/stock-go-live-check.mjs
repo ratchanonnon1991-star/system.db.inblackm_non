@@ -5,7 +5,7 @@
 //   node scripts/stock-go-live-check.mjs                    read only: prints what is there
 //   node scripts/stock-go-live-check.mjs --clear-old-2-1    removes the 2.1 STOCK_ import's own
 //                                                           moves, then the packs left with none
-// People's moves, orders and wallet entries are never touched. Used by scripts/stock-go-live.sh.
+// People's moves, orders and wallet entries are never touched. Used by scripts/sync-account-sheets.mjs.
 import "./register-app-alias.mjs";
 import env from "@next/env";
 import { access, mkdir } from "node:fs/promises";
