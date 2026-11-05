@@ -541,6 +541,21 @@ export default function GameinfoPackEditor({
   function replaceCostProfile(next) {
     setCostProfiles((current) => current.map((profile) => (profile.id === next.id ? next : profile)));
   }
+  // The packs on a rate, chosen in its dialog: those ticked go on it, those
+  // taken off it are left with no rate.
+  function assignCostProfilePacks(profileId, packIds) {
+    const ids = new Set(packIds.map(String));
+    updateCurrencies((draft) => {
+      for (const currency of draft) {
+        for (const category of currency.categories) {
+          for (const pack of category.packs) {
+            if (ids.has(String(pack.id))) pack.costProfileId = profileId;
+            else if (pack.costProfileId === profileId) pack.costProfileId = "";
+          }
+        }
+      }
+    });
+  }
   // A new wallet's rate, and the packs that go on it. A game whose ต้นทุน
   // column has no formula yet gets the sheet's, so the rate is used.
   function addCostProfile(profile, packIds = []) {
@@ -1101,8 +1116,10 @@ export default function GameinfoPackEditor({
           externalValues={rateState.externalValues}
           otherProfiles={[...costProfiles, ...(game.costRatesOther?.costProfiles || [])]}
           onApply={({ profile, packIds }) => {
-            if (editingRateRow) replaceCostProfile(profile);
-            else addCostProfile(profile, packIds);
+            if (editingRateRow) {
+              replaceCostProfile(profile);
+              if (packIds) assignCostProfilePacks(profile.id, packIds);
+            } else addCostProfile(profile, packIds);
             setEditingRateId(null);
           }}
           onClose={() => setEditingRateId(null)}

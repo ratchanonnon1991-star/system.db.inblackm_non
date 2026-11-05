@@ -100,20 +100,34 @@ export default function GameinfoCostRateEditor({ row = null, packs = [], allPack
       .filter((name) => !known.has(gameinfoCostProfileId(name)));
   }, [allPacks, isNew, otherProfiles]);
   const matching = isNew ? allPacks.filter((pack) => channelName.trim() && gameinfoChannelKey(pack.channelsMain?.[0]) === gameinfoChannelKey(channelName)) : [];
-  const choosable = isNew ? (matching.length ? matching : allPacks) : [];
-  const chosen = picked || new Set(matching.map((pack) => String(pack.id)));
-  const impactPacks = isNew ? allPacks.filter((pack) => chosen.has(String(pack.id))) : packs;
+  // Editing, every pack of the mode can be put on the rate or taken off it;
+  // the ones on it come first.
+  const onRate = useMemo(() => new Set(packs.map((pack) => String(pack.id))), [packs]);
+  const choosable = isNew
+    ? (matching.length ? matching : allPacks)
+    : [...allPacks].sort((left, right) => Number(onRate.has(String(right.id))) - Number(onRate.has(String(left.id))));
+  const chosen = picked || (isNew ? new Set(matching.map((pack) => String(pack.id))) : onRate);
+  const packsChanged = !isNew && (chosen.size !== onRate.size || [...chosen].some((id) => !onRate.has(id)));
+  const impactPacks = allPacks.filter((pack) => chosen.has(String(pack.id)));
   const newOk = !isNew || (channelName.trim() && /^[A-Z]{2,12}$/.test(currency) && !taken);
   const ready = nextProfile !== null && Number.isFinite(newRate) && newRate > 0 && newOk;
-  const changed = ready && (isNew || oldRate === null || Math.abs(newRate - oldRate) > 1e-9 || JSON.stringify(nextProfile) !== JSON.stringify(profile));
+  const changed = ready && (isNew || packsChanged || oldRate === null || Math.abs(newRate - oldRate) > 1e-9 || JSON.stringify(nextProfile) !== JSON.stringify(profile));
+  const profileLabel = (id) => otherProfiles.find((item) => item.id === id)?.label || "";
+  // What a pack costs now, on whatever rate it is on (none: no cost).
+  const rateNow = (pack) => {
+    if (!pack.costProfileId) return null;
+    const rate = Number(resolveGameinfoField({ costProfileId: pack.costProfileId, amountChargedFee: "1" }, {}, "อัตราต้นทุน", { costProfiles: otherProfiles, formulaVariables, externalValues }));
+    return Number.isFinite(rate) ? rate : null;
+  };
 
   const impact = impactPacks.map((pack) => {
     const charged = gameinfoListNumber(pack.amountChargedFee);
     const price = gameinfoListNumber(pack.price);
-    const oldCost = charged !== null && oldRate !== null ? charged * oldRate : null;
+    const before = rateNow(pack);
+    const oldCost = charged !== null && before !== null ? charged * before : null;
     const newCost = charged !== null && ready ? charged * newRate : null;
     const margin = (cost) => (price && cost !== null ? ((price - cost) / price) * 100 : null);
-    return { id: pack.id, name: pack.name || "-", oldCost, newCost, oldMargin: margin(oldCost), newMargin: margin(newCost) };
+    return { id: pack.id, name: pack.name || "-", noAmount: charged === null, oldCost, newCost, oldMargin: margin(oldCost), newMargin: margin(newCost) };
   });
 
   function apply() {
@@ -123,7 +137,7 @@ export default function GameinfoCostRateEditor({ row = null, packs = [], allPack
     if (note.trim()) cleaned.note = note.trim().slice(0, 200);
     else delete cleaned.note;
     if (!isNew) {
-      onApply({ profile: cleaned });
+      onApply({ profile: cleaned, packIds: packsChanged ? [...chosen] : null });
       return;
     }
     onApply({
@@ -131,6 +145,38 @@ export default function GameinfoCostRateEditor({ row = null, packs = [], allPack
       packIds: [...chosen],
     });
   }
+
+  const packPicker = (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[13px] font-medium text-linear-ink">
+        แพ็คที่ใช้เรทนี้ ({chosen.size})
+        <span className="ml-1.5 font-normal text-linear-ink-tertiary">{!isNew ? "ติ๊กเพื่อย้ายแพ็คมาใช้เรทนี้ ติ๊กออกแล้วแพ็คจะไม่มีเรทต้นทุน" : matching.length ? "จับจากช่องทางหลักของแพ็ค ติ๊กออกได้" : "ไม่มีแพ็คที่ช่องทางหลักตรงชื่อนี้ เลือกเองได้"}</span>
+      </span>
+      <div className="max-h-48 overflow-y-auto rounded-xl border border-linear-hairline bg-linear-surface-1">
+        {choosable.map((pack) => (
+          <label key={pack.id} className="flex items-center gap-2.5 border-t border-linear-hairline px-3 py-2 text-[13px] text-linear-ink first:border-t-0">
+            <input
+              type="checkbox"
+              checked={chosen.has(String(pack.id))}
+              onChange={(event) => {
+                const next = new Set(chosen);
+                if (event.target.checked) next.add(String(pack.id));
+                else next.delete(String(pack.id));
+                setPicked(next);
+              }}
+              className="h-[18px] w-[18px] accent-[#D90005]"
+            />
+            <span className="min-w-0 flex-1 truncate">{pack.name || "-"}</span>
+            <span className="max-w-[45%] truncate text-xs text-linear-ink-tertiary">
+              {pack.channelsMain?.[0] || "ไม่มีช่องทาง"}
+              {pack.costProfileId && pack.costProfileId !== profile.id ? ` · ตอนนี้ใช้ ${profileLabel(pack.costProfileId) || "เรทอื่น"}` : ""}
+            </span>
+          </label>
+        ))}
+        {!choosable.length ? <p className="px-3 py-2 text-sm text-linear-ink-tertiary">ยังไม่มีแพ็คในโหมดนี้</p> : null}
+      </div>
+    </div>
+  );
 
   const field = "h-11 w-full rounded-xl border border-linear-hairline-strong bg-linear-surface-1 px-3 text-right text-[15px] font-bold tabular-nums text-linear-ink outline-none focus:border-[#D90005]";
   const seg = (on) => `h-10 flex-1 rounded-full text-sm font-bold transition ${on ? "bg-linear-surface-1 text-linear-ink shadow-sm" : "text-linear-ink-muted hover:text-linear-ink"}`;
@@ -172,34 +218,9 @@ export default function GameinfoCostRateEditor({ row = null, packs = [], allPack
                 </label>
               </div>
               {taken ? <p role="alert" className="text-sm text-linear-danger">มีเรทของช่องทางนี้แล้ว แก้ที่ปุ่มดินสอในตารางแทน</p> : null}
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[13px] font-medium text-linear-ink">
-                  แพ็คที่ใช้เรทนี้ ({chosen.size})
-                  <span className="ml-1.5 font-normal text-linear-ink-tertiary">{matching.length ? "จับจากช่องทางหลักของแพ็ค ติ๊กออกได้" : "ไม่มีแพ็คที่ช่องทางหลักตรงชื่อนี้ เลือกเองได้"}</span>
-                </span>
-                <div className="max-h-48 overflow-y-auto rounded-xl border border-linear-hairline bg-linear-surface-1">
-                  {choosable.map((pack) => (
-                    <label key={pack.id} className="flex items-center gap-2.5 border-t border-linear-hairline px-3 py-2 text-[13px] text-linear-ink first:border-t-0">
-                      <input
-                        type="checkbox"
-                        checked={chosen.has(String(pack.id))}
-                        onChange={(event) => {
-                          const next = new Set(chosen);
-                          if (event.target.checked) next.add(String(pack.id));
-                          else next.delete(String(pack.id));
-                          setPicked(next);
-                        }}
-                        className="h-[18px] w-[18px] accent-[#D90005]"
-                      />
-                      <span className="min-w-0 flex-1 truncate">{pack.name || "-"}</span>
-                      <span className="text-xs text-linear-ink-tertiary">{pack.channelsMain?.[0] || "ไม่มีช่องทาง"}</span>
-                    </label>
-                  ))}
-                  {!choosable.length ? <p className="px-3 py-2 text-sm text-linear-ink-tertiary">ยังไม่มีแพ็คในโหมดนี้</p> : null}
-                </div>
-              </div>
+              {packPicker}
             </div>
-          ) : null}
+          ) : packPicker}
           <div role="group" aria-label="เรทนี้ได้มาจาก" className="flex gap-1 rounded-full bg-linear-surface-3 p-1">
             {METHODS.map((item) => (
               <button key={item.id} type="button" aria-pressed={method === item.id} onClick={() => setMethod(item.id)} className={seg(method === item.id)}>
@@ -304,7 +325,10 @@ export default function GameinfoCostRateEditor({ row = null, packs = [], allPack
                   <tbody>
                     {impact.map((item) => (
                       <tr key={item.id} className="border-t border-linear-hairline tabular-nums">
-                        <td className="px-3 py-2 font-medium text-linear-ink">{item.name}</td>
+                        <td className="px-3 py-2 font-medium text-linear-ink">
+                          {item.name}
+                          {item.noAmount ? <span className="block text-xs font-normal text-linear-ink-tertiary">ยังไม่มียอดที่กด + fee คิดต้นทุนไม่ได้</span> : null}
+                        </td>
                         <td className="px-3 py-2 text-right text-linear-ink-muted">{baht(item.oldCost)}</td>
                         <td className="px-3 py-2 text-right font-bold text-linear-ink">{baht(item.newCost)}</td>
                         <td className="px-3 py-2">
