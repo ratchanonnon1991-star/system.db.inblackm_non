@@ -81,6 +81,8 @@ export const DELIVERY_METHOD_LABELS = { topup: "เติมเข้าบั�
 export const DELIVERY_STATUS_LABELS = { pending: "รอตรวจ", verified: "ตรวจแล้ว", rejected: "ไม่ผ่าน" };
 
 const PO_CURRENCY = /^[A-Z]{3,5}$/;
+/** Currencies an order may carry the sheet's Product Rate and CNY Rate for. */
+export const SHEET_RATE_CURRENCIES = ["USD", "USDT"];
 const clean = (value, max) => String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 
 /** The actions a person can take on an order in this status. */
@@ -111,17 +113,17 @@ export function validatePurchaseOrder(input, itemIds = []) {
   if (!PO_CURRENCY.test(currency)) return { error: "สกุลเงินใช้ตัวอักษร 3–5 ตัว เช่น THB, USDT" };
   const amount = normalizeWalletAmount(input?.amount);
   if (!amount) return { error: "ใส่ยอดที่ต้องจ่ายมากกว่า 0" };
-  let rate = normalizeRate(input?.rateThb);
+  const rate = normalizeRate(input?.rateThb);
   if (rate === null) return { error: "เรทต้องเป็นตัวเลขมากกว่า 0" };
-  // The supplier sheet's Product Rate (CNY per 1 unit of the order's currency) and
-  // CNY Rate (THB per 1 CNY): when known they set the THB rate, USD → CNY → THB.
-  const productRate = currency === "CNY" ? "" : normalizeRate(input?.productRate);
+  // The 1.1 supplier sheet's rates, meaning what they mean there (USD and USDT orders only):
+  //   Product Rate  CNY per 1 USD of pack value
+  //   CNY Rate      CNY per 1 USDT
+  // so the USDT to pay is Total USD × Product Rate ÷ CNY Rate. Neither sets the THB rate.
+  const sheetRates = SHEET_RATE_CURRENCIES.includes(currency);
+  const productRate = sheetRates ? normalizeRate(input?.productRate) : "";
   if (productRate === null) return { error: "Product Rate ต้องเป็นตัวเลขมากกว่า 0" };
-  const cnyRate = currency === "THB" ? "" : normalizeRate(input?.cnyRate);
+  const cnyRate = sheetRates ? normalizeRate(input?.cnyRate) : "";
   if (cnyRate === null) return { error: "CNY Rate ต้องเป็นตัวเลขมากกว่า 0" };
-  if (productRate && !cnyRate) return { error: "ใส่ Product Rate แล้ว ต้องใส่ CNY Rate (บาทต่อ 1 หยวน) ด้วย" };
-  if (currency === "CNY" && cnyRate) rate = cnyRate;
-  else if (productRate && cnyRate) rate = String(Math.round(Number(productRate) * Number(cnyRate) * 1e6) / 1e6);
   const receiptUrl = normalizeReceiptUrl(input?.receiptUrl);
   if (receiptUrl === null) return { error: "ลิงก์ใบเสร็จต้องขึ้นต้นด้วย https://" };
 
@@ -205,7 +207,16 @@ export function applyPurchaseOrderAction(order, action, input = {}, actor = null
   const note = clean(input.note, 500);
 
   if (action === "approve") return { status: "approved", note };
-  if (action === "pay") return { status: "paid", note };
+  if (action === "pay") {
+    // Money leaves from a wallet (its balance drops), or outside every wallet with proof of the transfer.
+    const walletId = Number(input.walletId);
+    if (Number.isInteger(walletId) && walletId > 0) return { status: "paid", note, walletId };
+    if (!input.outside) return { error: "เลือกกระเป๋าที่จ่าย หรือเลือก \"จ่ายทางอื่น\" พร้อมแนบหลักฐาน" };
+    const proofUrl = normalizeReceiptUrl(input.proofUrl);
+    if (!proofUrl) return { error: "จ่ายทางอื่นต้องแนบลิงก์หลักฐานการโอน (https://)" };
+    if (!note) return { error: "จ่ายทางอื่นต้องบอกว่าจ่ายช่องทางไหน เช่น KBANK P'aek" };
+    return { status: "paid", note: `จ่ายทางอื่น: ${note} · หลักฐาน ${proofUrl}`.slice(0, 1500), walletId: null, proofUrl };
+  }
   if (action === "cancel") return { status: "cancelled", note };
   if (action === "refund") return { status: "refunded", note };
   if (action === "accept") {
@@ -293,12 +304,23 @@ function receivedLines(order, lines) {
   return { status: done ? "received" : "partial", received };
 }
 
-/** Amount in CNY: the amount itself for CNY orders, amount × Product Rate when that is known, else null. */
-export function purchaseOrderCny({ amount, currency, productRate }) {
+/**
+ * Amount in CNY: the amount itself for CNY orders, USDT × CNY Rate, USD × Product Rate;
+ * null when the rate it needs is unknown.
+ */
+export function purchaseOrderCny({ amount, currency, productRate, cnyRate }) {
   if (amount == null) return null;
   if (currency === "CNY") return Math.round(Number(amount) * 100) / 100;
-  if (productRate == null || productRate === "") return null;
-  return Math.round(Number(amount) * Number(productRate) * 100) / 100;
+  const rate = currency === "USDT" ? cnyRate : currency === "USD" ? productRate : null;
+  if (rate == null || rate === "") return null;
+  return Math.round(Number(amount) * Number(rate) * 100) / 100;
+}
+
+/** USDT to pay for `usd` of packs, as the sheet's TOTAL: USD × Product Rate ÷ CNY Rate; null when a figure is missing. */
+export function sheetUsdtForUsd(usd, productRate, cnyRate) {
+  const [value, product, cny] = [usd, productRate, cnyRate].map((figure) => (figure == null || figure === "" ? NaN : Number(figure)));
+  if (!(value > 0) || !(product > 0) || !(cny > 0)) return null;
+  return Math.round((value * product / cny) * 100) / 100;
 }
 
 /** Amount in THB when a rate is known (THB orders count 1:1), else null. */

@@ -8,6 +8,7 @@ import {
   purchaseOrderCny,
   purchaseOrderRemaining,
   purchaseOrderThb,
+  sheetUsdtForUsd,
   topupCheck,
   validatePurchaseOrder,
   walletPaymentCandidates,
@@ -45,17 +46,22 @@ const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
   check(!walletPaymentCandidates({ ...payment, kind: "deposit" }, [order(1)]).length, "only payments can be tied");
 }
 
-// Product Rate (CNY per USD) × CNY Rate (THB per CNY) gives the THB rate, as in the supplier sheet.
+// The 1.1 sheet's rates: Product Rate (CNY per USD), CNY Rate (CNY per USDT); neither sets the THB rate.
 {
-  const base = { supplier: "Panghou", amount: "100", lines: [{ itemId: 1, qty: 1 }] };
-  const usd = validatePurchaseOrder({ ...base, currency: "USD", productRate: "7.2", cnyRate: "4.6" }, [1]);
-  check(usd.order.rateThb === "33.12", "USD order: Product Rate × CNY Rate sets the THB rate");
-  check(purchaseOrderCny({ amount: "100", currency: "USD", productRate: "7.2" }) === 720, "USD 100 × 7.2 = 720 CNY");
-  check(purchaseOrderThb({ amount: "100", currency: "USD", rateThb: usd.order.rateThb }) === 3312, "USD 100 → 3,312 THB");
-  const cny = validatePurchaseOrder({ ...base, currency: "CNY", cnyRate: "4.6" }, [1]);
-  check(cny.order.rateThb === "4.6" && cny.order.productRate === "", "CNY order: CNY Rate is the THB rate");
-  check(validatePurchaseOrder({ ...base, currency: "USD", productRate: "7.2" }, [1]).error, "Product Rate without CNY Rate is refused");
+  const base = { supplier: "YAYA", amount: "462", lines: [{ itemId: 1, qty: 1 }] };
+  const usdt = validatePurchaseOrder({ ...base, currency: "USDT", productRate: "7.2", cnyRate: "7.1" }, [1]);
+  check(usdt.order.productRate === "7.2" && usdt.order.cnyRate === "7.1", "USDT order keeps both sheet rates");
+  check(usdt.order.rateThb === "", "the sheet rates do not make up a THB rate");
+  check(purchaseOrderCny({ amount: "100", currency: "USDT", cnyRate: "7.1" }) === 710, "USDT 100 × CNY Rate 7.1 = 710 CNY");
+  check(purchaseOrderCny({ amount: "100", currency: "USD", productRate: "7.2" }) === 720, "USD 100 × Product Rate 7.2 = 720 CNY");
+  check(purchaseOrderCny({ amount: "100", currency: "USDT", productRate: "7.2" }) === null, "a USDT order needs the CNY Rate for CNY");
+  check(sheetUsdtForUsd(100, 7.2, 7.1) === 101.41, "Total USD 100 × 7.2 ÷ 7.1 = 101.41 USDT, as the sheet's TOTAL");
+  check(sheetUsdtForUsd(100, 7.2, null) === null, "no CNY Rate, no USDT figure");
+  const cny = validatePurchaseOrder({ ...base, currency: "CNY", productRate: "7.2", cnyRate: "4.6", rateThb: "4.6" }, [1]);
+  check(cny.order.productRate === "" && cny.order.cnyRate === "" && cny.order.rateThb === "4.6", "CNY order: no sheet rates, its THB rate as typed");
+  check(validatePurchaseOrder({ ...base, currency: "THB", cnyRate: "7.1" }, [1]).order.cnyRate === "", "THB order drops the sheet rates");
   check(validatePurchaseOrder({ ...base, currency: "USD", cnyRate: "abc" }, [1]).error, "CNY Rate must be a number");
+  check(!validatePurchaseOrder({ ...base, currency: "USD", productRate: "7.2" }, [1]).error, "Product Rate alone is fine");
 }
 
 const good = {
@@ -98,7 +104,14 @@ const order = {
   lines: [{ itemId: 7, qtyOrdered: 10, qtyReceived: 0, label: "550 Coins" }, { itemId: 8, qtyOrdered: 2, qtyReceived: 0, label: "1100 Coins" }],
 };
 check(Boolean(applyPurchaseOrderAction({ ...order, status: "requested" }, "pay").error), "an order is not paid before it is approved");
-check(applyPurchaseOrderAction({ ...order, status: "approved" }, "pay").status === "paid", "paying moves an approved order on");
+check(applyPurchaseOrderAction({ ...order, status: "approved" }, "pay", { walletId: 3 }).status === "paid", "paying from a wallet moves an approved order on");
+check(Boolean(applyPurchaseOrderAction({ ...order, status: "approved" }, "pay").error), "paid needs a wallet or proof of an outside payment");
+check(Boolean(applyPurchaseOrderAction({ ...order, status: "approved" }, "pay", { outside: true, note: "KBANK" }).error), "an outside payment needs a proof link");
+check(Boolean(applyPurchaseOrderAction({ ...order, status: "approved" }, "pay", { outside: true, proofUrl: "https://drive.google.com/x" }).error), "an outside payment says which channel");
+{
+  const outside = applyPurchaseOrderAction({ ...order, status: "approved" }, "pay", { outside: true, proofUrl: "https://drive.google.com/x", note: "KBANK P'aek" });
+  check(outside.status === "paid" && outside.walletId === null && outside.note.includes("https://drive.google.com/x"), "an outside payment with proof and channel is paid, the proof in its note");
+}
 const maker = { id: 5 };
 const other = { id: 9 };
 check(applyPurchaseOrderAction({ ...order, status: "requested", createdById: 5 }, "approve", {}, maker).error === "คนอนุมัติต้องเป็นคนละคนกับคนสร้างใบสั่งซื้อ", "the maker cannot approve their own order");
@@ -107,7 +120,7 @@ check(Boolean(applyPurchaseOrderAction({ ...order, status: "delivered", delivery
 check(applyPurchaseOrderAction({ ...order, status: "delivered", delivery: { lines: [{ itemId: 7, qty: 1 }], recordedById: 5 } }, "verify", {}, other).status === "partial", "someone else checks the delivery");
 check(Boolean(applyPurchaseOrderAction({ ...order, status: "refund_requested", refundRequestedById: 5 }, "refund", {}, maker).error), "whoever asked for a refund cannot confirm it came back");
 check(applyPurchaseOrderAction({ ...order, status: "refund_requested", refundRequestedById: 5 }, "refund", {}, other).status === "refunded", "someone else confirms the refund");
-check(!applyPurchaseOrderAction({ ...order, status: "approved", createdById: 5 }, "pay", {}, maker).error, "the maker may still record the payment once approved");
+check(!applyPurchaseOrderAction({ ...order, status: "approved", createdById: 5 }, "pay", { walletId: 3 }, maker).error, "the maker may still record the payment once approved");
 check(Boolean(applyPurchaseOrderAction(order, "pay").error), "an order is paid once");
 check(Boolean(applyPurchaseOrderAction(order, "cancel").error), "a paid order is refunded, not cancelled");
 check(Boolean(applyPurchaseOrderAction(order, "accept", {}).error), "an accepted order names the supplier's order number");

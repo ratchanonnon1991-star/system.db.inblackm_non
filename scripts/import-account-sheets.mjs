@@ -117,7 +117,7 @@ try {
     console.log(`บันทึก ${period}: ${done.tabs} แท็บ ${done.rows} แถว`);
   }
   const wallets = await repo.replaceSheetWalletEntries(entries, plan.checks);
-  console.log(`กระเป๋าเงิน: ลบของเดิมจากชีต ${wallets.removed}, ใส่ใหม่ ${wallets.added}, ตรวจยอด ${wallets.checks} ช่อง${wallets.walletsRemoved.length ? `, ลบกระเป๋าที่ไม่ใช้ ${wallets.walletsRemoved.join(", ")}` : ""}`);
+  console.log(`กระเป๋าเงิน: คงรายการเดิม ${wallets.kept} (ยอดในชีตเปลี่ยน ${wallets.changed}), เพิ่มใหม่ ${wallets.added}, ลบที่หายจากชีต ${wallets.deleted}, แยกไว้ให้ตรวจ ${wallets.setAside} (มีคนทำงานบนรายการนี้แล้ว ไม่นับในยอด), ตรวจยอด ${wallets.checks} ช่อง${wallets.walletsRemoved.length ? `, ลบกระเป๋าที่ไม่ใช้ ${wallets.walletsRemoved.join(", ")}` : ""}`);
   console.log("ยอดล่าสุด:", Object.entries(plan.totals).map(([k, v]) => `${k}=${v}`).join(", "));
   process.exit(0);
 } catch (error) {

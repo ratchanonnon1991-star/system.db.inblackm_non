@@ -85,13 +85,13 @@ export async function replaceSheetInventory(plan, idNotes = {}) {
       const note = [
         `ยกมาจากชีต ${order.sheet.fileName} › ${order.sheet.tab} แถว ${order.sheet.rowNo}`,
         order.totalUsd ? `มูลค่าแพ็ค ${order.totalUsd} USD` : "",
-        order.productRate ? `Product Rate ${order.productRate} CNY/USD` : "",
-        order.cnyRate ? `CNY Rate ${order.cnyRate} CNY/USDT` : "",
       ].filter(Boolean).join(" · ");
+      // The sheet's Product Rate (CNY per USD) and CNY Rate (CNY per USDT), as the order's own rates.
+      const rate = (value) => (Number(value) > 0 ? Number(value) : null);
       const orderId = (await client.query(
-        `INSERT INTO stock_purchase_orders (account_id, status, supplier, currency, amount, receipt_url, note, created_by_name, created_at, updated_at, supplier_ref)
-         VALUES ($1, 'received', $2, $3, $4, $5, $6, $7, $8, $8, $9) RETURNING id`,
-        [accountId, order.supplier, currency, amount, order.receiptUrl, note, ACCOUNT_SHEET_ACTOR, order.when, order.ref]
+        `INSERT INTO stock_purchase_orders (account_id, status, supplier, currency, amount, receipt_url, note, created_by_name, created_at, updated_at, supplier_ref, cny_per_usd, cny_per_usdt)
+         VALUES ($1, 'received', $2, $3, $4, $5, $6, $7, $8, $8, $9, $10, $11) RETURNING id`,
+        [accountId, order.supplier, currency, amount, order.receiptUrl, note, ACCOUNT_SHEET_ACTOR, order.when, order.ref, rate(order.productRate), rate(order.cnyRate)]
       )).rows[0].id;
       for (const [label, qty] of lines) {
         await client.query(`INSERT INTO stock_purchase_order_lines (order_id, item_id, qty_ordered, qty_received) VALUES ($1, $2, $3, $3)`, [orderId, itemIds[move.code][label], qty]);

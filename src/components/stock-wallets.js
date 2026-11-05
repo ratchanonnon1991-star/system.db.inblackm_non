@@ -660,6 +660,10 @@ export default function StockWallets({ wallets, entries, checks = [], filters = 
                         {entry.legs.map((leg, index) => <p key={index} className="whitespace-nowrap font-extrabold">{formatAmount(leg.balanceAfter)} {leg.currency}</p>)}
                       </td>
                       <td className="px-4 py-3">
+                        {entry.sheetRemovedAt ? (
+                          <span className="mb-1.5 inline-block whitespace-nowrap rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-900"
+                            title="แถวนี้ไม่มีในชีตแล้ว แต่มีคนผูกใบสั่งซื้อหรือเปลี่ยนสถานะไว้ จึงเก็บไว้ให้ตรวจ">หายจากชีต · ไม่นับในยอด</span>
+                        ) : null}
                         {entry.status === "awaiting_approval" ? (
                           <div className="flex flex-col items-start gap-1">
                             <span className="whitespace-nowrap rounded-full bg-cyan-100 px-3 py-1 text-xs font-black text-cyan-800">{WALLET_REVIEW_LABELS.awaiting_approval} · ยังไม่นับในยอด</span>

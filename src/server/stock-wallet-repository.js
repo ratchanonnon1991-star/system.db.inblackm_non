@@ -91,6 +91,8 @@ export async function ensureWalletSchema() {
       await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS status_request_reason TEXT NOT NULL DEFAULT ''`);
       await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS status_changed_by VARCHAR(255) NOT NULL DEFAULT ''`);
       await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS status_changed_at TIMESTAMPTZ`);
+      // A sheet entry the sheets no longer have, kept because a person had worked on it.
+      await client.query(`ALTER TABLE stock_wallet_entries ADD COLUMN IF NOT EXISTS sheet_removed_at TIMESTAMPTZ`);
       await client.query(`CREATE INDEX IF NOT EXISTS stock_wallet_entries_time_idx ON stock_wallet_entries (occurred_at DESC, id DESC)`);
       await client.query(`CREATE INDEX IF NOT EXISTS stock_wallet_entries_order_idx ON stock_wallet_entries (order_id) WHERE order_id IS NOT NULL`);
       await client.query(`
@@ -200,7 +202,7 @@ export async function listWalletEntries({ walletId = null, walletIds = null, ord
         AND ($4 = '' OR to_char(e.occurred_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM') = $4)
         AND ($5 = '' OR e.kind = $5)
         AND ($6 = '' OR lower(e.title || ' ' || e.note || ' ' || e.destination_account || ' ' || e.details::text) LIKE $6)
-        AND (NOT $7::boolean OR e.kind = 'adjust' OR e.status_request IS NOT NULL OR e.status = 'awaiting_approval')
+        AND (NOT $7::boolean OR e.kind = 'adjust' OR e.status_request IS NOT NULL OR e.status = 'awaiting_approval' OR e.sheet_removed_at IS NOT NULL)
         AND ($8::bigint IS NULL OR e.id = $8)
       GROUP BY e.id, o.status
       ORDER BY e.occurred_at DESC, e.id DESC
@@ -238,6 +240,7 @@ export async function listWalletEntries({ walletId = null, walletIds = null, ord
       : null,
     statusChangedBy: row.status_changed_by,
     statusChangedAt: row.status_changed_at,
+    sheetRemovedAt: row.sheet_removed_at || null,
     legs: row.legs.map((leg) => ({ ...leg, amount: clean(leg.amount), fee: clean(leg.fee), balanceAfter: clean(leg.balanceAfter) })),
   }));
 }

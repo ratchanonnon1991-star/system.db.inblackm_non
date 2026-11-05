@@ -1,7 +1,7 @@
 import { getPool } from "@/lib/db";
 import { groupStockCounts, isStockTab, readStockCount, withStockChanges } from "@/lib/sheet-stock";
 import { ACCOUNT_SHEET_SOURCE, sheetFileKind, walletCodeForTab } from "@/lib/account-sheets";
-import { DEFAULT_WALLETS, fromWalletUnits, WALLET_COUNTED } from "@/lib/stock-wallets";
+import { DEFAULT_WALLETS, fromWalletUnits, planSheetWalletSync, sheetEntryFingerprint, WALLET_COUNTED } from "@/lib/stock-wallets";
 import { ensureWalletSchema } from "@/server/stock-wallet-repository";
 import { isExpenseFile, mergeExpenseTabs, readExpenseTab } from "@/lib/sheet-expenses";
 import { isOffgamerFile, mergeOffgamerTabs, offgamerAccount, readOffgamerList } from "@/lib/offgamer-cards";
@@ -196,8 +196,12 @@ export async function searchAccountSheets(text, { period = "", limit = 200 } = {
 }
 
 /**
- * Replaces the wallet entries that came from the sheets with `entries`
- * (planWalletEntries), then recomputes every leg's balance-after in time order.
+ * Brings the wallet entries that came from the sheets in line with `entries`
+ * (planWalletEntries) without losing what people did on them: an entry still in the
+ * sheets keeps its id, its tie to an order, a status a person changed and any request
+ * awaiting someone (planSheetWalletSync says how entries are paired). Gone from the
+ * sheets: deleted when untouched, else kept aside out of every balance for someone to
+ * check. Then every leg's balance-after is recomputed in time order.
  */
 export async function replaceSheetWalletEntries(entries, checks = []) {
   await ensureWalletSchema();
@@ -205,21 +209,62 @@ export async function replaceSheetWalletEntries(entries, checks = []) {
   try {
     await client.query("BEGIN");
     const wallets = Object.fromEntries((await client.query(`SELECT id, code FROM stock_wallets FOR UPDATE`)).rows.map((row) => [row.code, row.id]));
-    const removed = await client.query(`DELETE FROM stock_wallet_entries WHERE source_ref LIKE $1`, [`${ACCOUNT_SHEET_SOURCE}:%`]);
     for (const entry of entries) {
-      const created = await client.query(
-        `INSERT INTO stock_wallet_entries (kind, title, note, status, occurred_at, actor_name, source_ref, details, sheet_period, sheet_tab, sheet_row, received_sheet)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
-        [entry.kind, entry.title, entry.note, entry.status, entry.occurredAt, entry.actorName, entry.sourceRef, JSON.stringify(entry.details || []),
-          entry.sheet?.period || null, entry.sheet?.tab || null, entry.sheet?.rowNo ?? null, entry.receivedAt ? JSON.stringify(entry.receivedAt) : null]
-      );
+      for (const leg of entry.legs) if (!wallets[leg.walletCode]) throw new Error(`ไม่พบกระเป๋า ${leg.walletCode}`);
+    }
+    await client.query(`SELECT id FROM stock_wallet_entries WHERE source_ref LIKE $1 FOR UPDATE`, [`${ACCOUNT_SHEET_SOURCE}:%`]);
+    const stored = (await client.query(
+      `SELECT e.id, e.kind, e.title, e.occurred_at, e.source_ref,
+              (e.order_id IS NOT NULL OR e.status_changed_at IS NOT NULL OR e.status_request IS NOT NULL OR e.reviewed_at IS NOT NULL
+               OR EXISTS (SELECT 1 FROM stock_purchase_order_events v WHERE v.wallet_entry_id = e.id)) AS touched,
+              json_agg(json_build_object('walletCode', w.code, 'currency', l.currency, 'amount', l.amount::text, 'fee', l.fee::text)) AS legs
+         FROM stock_wallet_entries e
+         JOIN stock_wallet_legs l ON l.entry_id = e.id
+         JOIN stock_wallets w ON w.id = l.wallet_id
+        WHERE e.source_ref LIKE $1
+        GROUP BY e.id`,
+      [`${ACCOUNT_SHEET_SOURCE}:%`]
+    )).rows;
+    const plan = planSheetWalletSync(
+      stored.map((row) => ({ id: Number(row.id), sourceRef: row.source_ref, touched: row.touched,
+        fingerprint: sheetEntryFingerprint({ kind: row.kind, occurredAt: row.occurred_at, title: row.title, legs: row.legs }) })),
+      entries.map((entry) => ({ ...entry, fingerprint: sheetEntryFingerprint({ ...entry, legs: entry.legs.map((leg) => ({ ...leg, amount: fromWalletUnits(leg.amount), fee: fromWalletUnits(leg.fee) })) }) })),
+    );
+    const sheetFields = (entry) => [entry.kind, entry.title, entry.note, entry.occurredAt, entry.sourceRef, JSON.stringify(entry.details || []),
+      entry.sheet?.period || null, entry.sheet?.tab || null, entry.sheet?.rowNo ?? null, entry.receivedAt ? JSON.stringify(entry.receivedAt) : null];
+    const insertLegs = async (entryId, entry) => {
       for (const leg of entry.legs) {
-        if (!wallets[leg.walletCode]) throw new Error(`ไม่พบกระเป๋า ${leg.walletCode}`);
         await client.query(
           `INSERT INTO stock_wallet_legs (entry_id, wallet_id, currency, amount, fee, balance_after) VALUES ($1, $2, $3, $4, $5, 0)`,
-          [created.rows[0].id, wallets[leg.walletCode], leg.currency, fromWalletUnits(leg.amount), fromWalletUnits(leg.fee)]
+          [entryId, wallets[leg.walletCode], leg.currency, fromWalletUnits(leg.amount), fromWalletUnits(leg.fee)]
         );
       }
+    };
+    if (plan.deletes.length) await client.query(`DELETE FROM stock_wallet_entries WHERE id = ANY($1::bigint[])`, [plan.deletes]);
+    if (plan.removed.length) {
+      await client.query(`UPDATE stock_wallet_entries SET sheet_removed_at = COALESCE(sheet_removed_at, NOW()) WHERE id = ANY($1::bigint[])`, [plan.removed]);
+    }
+    for (const { id, entry, changed } of plan.updates) {
+      // A status a person set stays theirs; otherwise the sheet's.
+      await client.query(
+        `UPDATE stock_wallet_entries
+            SET kind = $2, title = $3, note = $4, occurred_at = $5, source_ref = $6, details = $7, sheet_period = $8, sheet_tab = $9, sheet_row = $10,
+                received_sheet = $11, status = CASE WHEN status_changed_at IS NULL AND reviewed_at IS NULL THEN $12 ELSE status END, sheet_removed_at = NULL
+          WHERE id = $1`,
+        [id, ...sheetFields(entry), entry.status]
+      );
+      if (changed) {
+        await client.query(`DELETE FROM stock_wallet_legs WHERE entry_id = $1`, [id]);
+        await insertLegs(id, entry);
+      }
+    }
+    for (const entry of plan.inserts) {
+      const created = await client.query(
+        `INSERT INTO stock_wallet_entries (kind, title, note, occurred_at, source_ref, details, sheet_period, sheet_tab, sheet_row, received_sheet, status, actor_name)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+        [...sheetFields(entry), entry.status, entry.actorName]
+      );
+      await insertLegs(created.rows[0].id, entry);
     }
     await client.query(`
       UPDATE stock_wallet_legs l SET balance_after = s.after
@@ -244,7 +289,10 @@ export async function replaceSheetWalletEntries(entries, checks = []) {
     const gone = await client.query(`DELETE FROM stock_wallets w WHERE w.code <> ALL($1::text[])
       AND NOT EXISTS (SELECT 1 FROM stock_wallet_legs l WHERE l.wallet_id = w.id) RETURNING code`, [DEFAULT_WALLETS.map((wallet) => wallet.code)]);
     await client.query("COMMIT");
-    return { removed: removed.rowCount, added: entries.length, checks: checks.length, walletsRemoved: gone.rows.map((row) => row.code) };
+    return {
+      kept: plan.updates.length, changed: plan.updates.filter((update) => update.changed).length, added: plan.inserts.length,
+      deleted: plan.deletes.length, setAside: plan.removed.length, checks: checks.length, walletsRemoved: gone.rows.map((row) => row.code),
+    };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
     throw error;
