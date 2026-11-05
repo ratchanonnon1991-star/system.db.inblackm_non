@@ -13,7 +13,7 @@ export const STOCK_CODE_GAME_HINTS = {
   pokemon: ["pokemon tcg", "pokemon"],
 };
 
-const flat = (value) => String(value ?? "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9ก-๙]+/g, "");
+export const flatGameName = (value) => String(value ?? "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9ก-๙]+/g, "");
 const codeLetters = (code) => String(code || "").toLowerCase().replace(/[^a-z]+/g, "");
 
 /** The names to look for, best first. */
@@ -32,8 +32,8 @@ export function stockGameHints(account) {
  *   { game: null, candidates: [...] }    none or several: a person picks
  */
 export function matchStockGame(account, games) {
-  const named = games.map((game) => ({ game, key: flat(game.name) })).filter((entry) => entry.key);
-  for (const hint of stockGameHints(account).map(flat).filter(Boolean)) {
+  const named = games.map((game) => ({ game, key: flatGameName(game.name) })).filter((entry) => entry.key);
+  for (const hint of stockGameHints(account).map(flatGameName).filter(Boolean)) {
     const exact = named.filter((entry) => entry.key === hint);
     if (exact.length === 1) return { game: exact[0].game, sure: true, hint };
     const close = named.filter((entry) => entry.key.includes(hint) || hint.includes(entry.key));

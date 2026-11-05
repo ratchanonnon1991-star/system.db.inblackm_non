@@ -21,7 +21,9 @@ export async function POST(request, { params }) {
     const { id } = await params;
     const body = await request.json();
     const moveId = await recordStockMove(
-      { ...body, accountId: id, allowDuplicateQueue: body.allowDuplicateQueue === true },
+      // orderPack (from รอตัด) teaches the pack; only the auto-cut scheduler makes awaiting cuts.
+      { ...body, accountId: id, allowDuplicateQueue: body.allowDuplicateQueue === true,
+        orderPack: typeof body.orderPack === "string" ? body.orderPack : "", awaiting: false },
       { id: user.id, name: user.displayName || user.username }
     );
     return jsonOk({ moveId }, 201);

@@ -49,6 +49,7 @@ export function StockAccountDialog({ account = null, games, onClose }) {
     dataMode: account?.dataMode || "uid",
     status: account?.status || "active",
     note: account?.note || "",
+    autoCut: account?.autoCut === true,
   });
   const { saving, error, run } = useSave(onClose);
   const set = (patch) => setForm((current) => ({ ...current, ...patch }));
@@ -95,6 +96,15 @@ export function StockAccountDialog({ account = null, games, onClose }) {
               {STOCK_ACCOUNT_STATUSES.map((status) => <option key={status} value={status}>{STOCK_ACCOUNT_STATUS_LABELS[status]}</option>)}
             </select>
           </StockField>
+        ) : null}
+        {account ? (
+          <label className="flex items-start gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-3">
+            <input type="checkbox" checked={form.autoCut} onChange={(event) => set({ autoCut: event.target.checked })} className="mt-1 h-4 w-4 accent-[#D90005]" />
+            <span className="text-[13px] text-zinc-700">
+              <b className="text-zinc-900">ตัด stock อัตโนมัติจากออเดอร์</b><br />
+              เปิดเฉพาะเกมที่เติมจาก stock ทุกออเดอร์ · ระบบตัดเฉพาะออเดอร์ใหม่หลังเปิด และเฉพาะแพ็คที่เคยตัดเองมาก่อน แล้วรอคนกดยืนยันในหน้ารอตัด
+            </span>
+          </label>
         ) : null}
         <StockField label="หมายเหตุ" htmlFor="stock-account-note" hint="อย่าใส่รหัสผ่านบัญชี — เก็บไว้ใน password manager">
           <input id="stock-account-note" value={form.note} onChange={(event) => set({ note: event.target.value })} className={stockInputClass} placeholder="เช่น ช่องทางซื้อ, ผู้ดูแล" />

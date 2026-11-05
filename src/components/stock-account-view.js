@@ -182,7 +182,11 @@ export default function StockAccountView({ account, moves, games, packNames, can
                     ) : null}</td>
                   <td className="min-w-40 border-b border-zinc-100 px-3.5 py-3 text-zinc-700">{move.note || ""}</td>
                   <td className="whitespace-nowrap border-b border-zinc-100 px-3.5 py-3 text-zinc-600">{dateFormat.format(new Date(move.createdAt))}</td>
-                  <td className="whitespace-nowrap border-b border-zinc-100 px-3.5 py-3 text-zinc-600">{move.actorName || "—"}</td>
+                  <td className="whitespace-nowrap border-b border-zinc-100 px-3.5 py-3 text-zinc-600">
+                    {move.actorName || "—"}
+                    {move.confirmState === "awaiting" ? <Link href="/stock/pending" className="ml-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-extrabold text-amber-900">รอยืนยัน</Link> : null}
+                    {move.confirmedBy ? <span className="block text-xs">ยืนยันโดย {move.confirmedBy}</span> : null}
+                  </td>
                 </tr>
               ))(tableItem, tablePageStart + tableIndex, tableAllItems))}
               {!shownMoves.length ? <tr><td colSpan={9} className="px-6 py-10 text-center text-sm text-zinc-600">ยังไม่มีรายการ</td></tr> : null}
