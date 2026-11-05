@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Bot, CloudDownload, FileCheck2, History, ListChecks, Loader2, Lock, PackagePlus, Upload, X } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import GameinfoSelect from "./gameinfo-select";
 import { gameinfoGameColor, gameinfoGameInitials } from "@/lib/gameinfo-game-initials";
 import {
   PACK_UPDATE_LOG_ACTIONS,
@@ -389,14 +390,14 @@ function PackUpdateHistory({ log }) {
       ) : null}
       <div className="flex flex-wrap items-center gap-2">
         <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหาเกมหรือแพ็ก..." className={`${FIELD} min-w-[200px] flex-1`} />
-        <select value={who} onChange={(event) => setWho(event.target.value)} aria-label="ผู้ตรวจ" className={FIELD}>
+        <GameinfoSelect value={who} onChange={(event) => setWho(event.target.value)} aria-label="ผู้ตรวจ">
           <option value="">ทุกคน</option>
           {people.map((name) => <option key={name} value={name}>{name}</option>)}
-        </select>
-        <select value={action} onChange={(event) => setAction(event.target.value)} aria-label="การกระทำ" className={FIELD}>
+        </GameinfoSelect>
+        <GameinfoSelect value={action} onChange={(event) => setAction(event.target.value)} aria-label="การกระทำ">
           <option value="">ทุกการกระทำ</option>
           {Object.entries(PACK_UPDATE_LOG_ACTIONS).map(([id, item]) => <option key={id} value={id}>{item.label}</option>)}
-        </select>
+        </GameinfoSelect>
         <span className="text-xs text-linear-ink-tertiary">{rows.length} จาก {log.length} รายการ</span>
       </div>
       <div className="overflow-auto rounded-xl border border-linear-hairline bg-linear-surface-1">
