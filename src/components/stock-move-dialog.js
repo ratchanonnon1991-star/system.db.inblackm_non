@@ -12,20 +12,22 @@ const KIND_LOOK = {
   out: { icon: <Minus size={20} strokeWidth={2.4} />, iconClass: "bg-red-50 text-red-700", button: "bg-[#D90005] hover:bg-[#B00004]", subtitle: "ใช้ของ stock เติมให้ออเดอร์" },
   adjust: { icon: <SlidersHorizontal size={18} strokeWidth={2.4} />, iconClass: "bg-amber-100 text-amber-800", button: "bg-zinc-900 hover:bg-zinc-700", subtitle: "แก้ยอดให้ตรงของจริง ต้องใส่เหตุผล" },
 };
-const emptyRow = () => ({ key: Math.random().toString(36).slice(2), itemId: "", qty: "", unitCost: "" });
+const emptyRow = (patch = {}) => ({ key: Math.random().toString(36).slice(2), itemId: "", qty: "", unitCost: "", ...patch });
 
 /**
  * Receive, cut or correct stock for one account. `accounts` (with items)
  * lets the overview pick the account; the account page passes just its own.
+ * รอตัด opens it from an order: `defaultAccountId` (still changeable),
+ * `initialQueue`, `initialNote`, `initialItemId` and `order` (shown on top).
  */
-export default function StockMoveDialog({ accounts, accountId: initialAccountId, kind, onClose }) {
+export default function StockMoveDialog({ accounts, accountId: initialAccountId, defaultAccountId, initialQueue = "", initialNote = "", initialItemId = null, order = null, kind, onClose, onSaved }) {
   const router = useRouter();
   const open = accounts.filter((account) => account.status !== "closed");
-  const [accountId, setAccountId] = useState(String(initialAccountId || open[0]?.id || ""));
-  const [rows, setRows] = useState([emptyRow()]);
-  const [queue, setQueue] = useState("");
+  const [accountId, setAccountId] = useState(String(initialAccountId || defaultAccountId || open[0]?.id || ""));
+  const [rows, setRows] = useState([initialItemId ? emptyRow({ itemId: String(initialItemId), qty: "1" }) : emptyRow()]);
+  const [queue, setQueue] = useState(initialQueue);
   const [sellPrice, setSellPrice] = useState("");
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState(initialNote);
   const [error, setError] = useState("");
   const [duplicate, setDuplicate] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -65,10 +67,13 @@ export default function StockMoveDialog({ accounts, accountId: initialAccountId,
           sellPrice,
           lines: rows.filter((row) => row.itemId).map((row) => ({ itemId: Number(row.itemId), qty: Number(row.qty), unitCost: row.unitCost })),
           allowDuplicateQueue: duplicate,
+          // A cut from an order teaches which pack its text means (stock_pack_aliases).
+          orderPack: order?.pack || "",
         }),
         fallbackError: "บันทึกรายการ stock ไม่สำเร็จ",
       });
       router.refresh();
+      onSaved?.();
       onClose();
     } catch (err) {
       if (err.data?.duplicateQueue) setDuplicate(true);
@@ -97,6 +102,13 @@ export default function StockMoveDialog({ accounts, accountId: initialAccountId,
           </>
         }
       >
+        {order ? (
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-3 text-[13px] text-zinc-700">
+            <p className="font-extrabold text-zinc-900">{order.game}</p>
+            <p className="mt-0.5">{order.pack || "—"}{order.price ? ` · ราคาในออเดอร์ ${order.price}` : ""}{order.source ? ` · ${order.source}` : ""}</p>
+            <p className="mt-0.5 text-xs text-zinc-600">ออเดอร์ {order.orderId || "—"} · {order.status || "—"} · ตรวจแพ็คและจำนวนให้ตรงกับที่เติมจริงก่อนบันทึก</p>
+          </div>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2">
           {kind === "out" ? (
             <StockField label="เลขคิว / ออเดอร์" htmlFor="stock-queue">

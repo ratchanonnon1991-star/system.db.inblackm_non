@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Boxes, ChevronRight, LayoutGrid } from "lucide-react";
 import { getSessionUser } from "@/server/session-user";
 import { hasStockAccess } from "@/server/auth";
+import { countAwaitingStockMoves } from "@/server/stock-repository";
 import GameinfoProfileMenu from "@/components/gameinfo-profile-menu";
 import StockNav from "@/components/stock-nav";
 
@@ -17,6 +18,7 @@ export const metadata = { title: "GameDB — Stock" };
 export default async function StockLayout({ children }) {
   const user = await getSessionUser();
   if (!hasStockAccess(user)) redirect("/");
+  const awaiting = await countAwaitingStockMoves().catch(() => 0);
 
   return (
     <div
@@ -40,7 +42,7 @@ export default async function StockLayout({ children }) {
           </nav>
         </div>
       </header>
-      <StockNav />
+      <StockNav awaiting={awaiting} />
       <main className="min-w-0 flex-1">{children}</main>
     </div>
   );

@@ -9,6 +9,7 @@ import {
   validateStockMove,
   stockMargin,
 } from "@/lib/stock";
+import { stockOrderPackKey } from "@/lib/stock-pending-orders";
 
 // Stock accounts, their packs, and every move in or out (src/lib/stock.js).
 // game_id points at a GameInfo game, which lives in another database, so it
@@ -81,6 +82,28 @@ async function ensureSchema() {
         )
       `);
       await client.query(`CREATE INDEX IF NOT EXISTS stock_move_lines_item_idx ON stock_move_lines (item_id)`);
+      // Auto cut (src/server/stock-auto-cut.js): an account opts in, and only
+      // orders made after auto_cut_since are cut. A cut the system made waits
+      // as 'awaiting' (already off the balance) until a person confirms it.
+      await client.query(`ALTER TABLE stock_accounts ADD COLUMN IF NOT EXISTS auto_cut BOOLEAN NOT NULL DEFAULT FALSE`);
+      await client.query(`ALTER TABLE stock_accounts ADD COLUMN IF NOT EXISTS auto_cut_since TIMESTAMPTZ`);
+      await client.query(`ALTER TABLE stock_moves ADD COLUMN IF NOT EXISTS confirm_state VARCHAR(16) NOT NULL DEFAULT 'confirmed'`);
+      await client.query(`ALTER TABLE stock_moves ADD COLUMN IF NOT EXISTS order_pack VARCHAR(200) NOT NULL DEFAULT ''`);
+      await client.query(`ALTER TABLE stock_moves ADD COLUMN IF NOT EXISTS confirmed_by VARCHAR(255) NOT NULL DEFAULT ''`);
+      await client.query(`ALTER TABLE stock_moves ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMPTZ`);
+      await client.query(`CREATE INDEX IF NOT EXISTS stock_moves_awaiting_idx ON stock_moves (created_at) WHERE confirm_state = 'awaiting'`);
+      // Which stock pack an order's pack text was cut from, learned from each
+      // cut a person makes or confirms, so the next order with the same text is matched.
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS stock_pack_aliases (
+          account_id  INTEGER NOT NULL REFERENCES stock_accounts(id) ON DELETE CASCADE,
+          pack_key    VARCHAR(200) NOT NULL,
+          item_id     INTEGER NOT NULL REFERENCES stock_items(id) ON DELETE CASCADE,
+          uses        INTEGER NOT NULL DEFAULT 1,
+          updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (account_id, pack_key)
+        )
+      `);
     } finally {
       client.release();
     }
@@ -102,6 +125,8 @@ function mapAccount(row) {
     dataMode: row.data_mode,
     status: row.status,
     note: row.note,
+    autoCut: row.auto_cut === true,
+    autoCutSince: row.auto_cut_since ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -207,6 +232,7 @@ function accountFields(input, { partial = false } = {}) {
     fields.status = input.status;
   }
   if (input.note !== undefined) fields.note = String(input.note || "").trim().slice(0, 1000);
+  if (input.autoCut !== undefined) fields.auto_cut = input.autoCut === true;
   return fields;
 }
 
@@ -232,8 +258,10 @@ export async function updateStockAccount(id, input) {
   const keys = Object.keys(fields);
   if (!keys.length) throw createHttpError("ไม่มีอะไรให้แก้", 400);
   try {
+    // Turning auto cut on starts its clock now, so orders from before are never cut by it.
+    const since = fields.auto_cut === true ? ", auto_cut_since = CASE WHEN auto_cut THEN auto_cut_since ELSE NOW() END" : "";
     const result = await getPool().query(
-      `UPDATE stock_accounts SET ${keys.map((key, i) => `${key} = $${i + 2}`).join(", ")}, updated_at = NOW()
+      `UPDATE stock_accounts SET ${keys.map((key, i) => `${key} = $${i + 2}`).join(", ")}, updated_at = NOW()${since}
         WHERE id = $1 RETURNING code`,
       [Number(id), ...keys.map((key) => fields[key])]
     );
@@ -338,6 +366,8 @@ export async function listStockMoves(accountId, { kind = null, limit = 200 } = {
       margin: stockMargin(profit, sellPrice),
       actorName: row.actor_name,
       createdAt: row.created_at,
+      confirmState: row.confirm_state,
+      confirmedBy: row.confirmed_by,
       lines,
     };
   });
@@ -369,7 +399,7 @@ export async function recordStockMove(input, actor = null) {
  * recordStockMove's work inside a transaction the caller already opened, so
  * another write (a purchase order receipt) can commit or roll back with it.
  */
-export async function insertStockMove(client, { accountId, kind, queue, note, sellPrice, lines, allowDuplicateQueue = false }, actor = null) {
+export async function insertStockMove(client, { accountId, kind, queue, note, sellPrice, lines, allowDuplicateQueue = false, orderPack = "", awaiting = false }, actor = null) {
   await ensureSchema();
   const account = await client.query(`SELECT id, status FROM stock_accounts WHERE id = $1 FOR UPDATE`, [Number(accountId)]);
   if (!account.rows[0]) throw createHttpError("ไม่พบไอดีนี้", 404);
@@ -397,10 +427,11 @@ export async function insertStockMove(client, { accountId, kind, queue, note, se
 
   const price = normalizeStockMoney(sellPrice);
   const move = await client.query(
-    `INSERT INTO stock_moves (account_id, kind, queue, note, sell_price, actor_id, actor_name)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+    `INSERT INTO stock_moves (account_id, kind, queue, note, sell_price, actor_id, actor_name, order_pack, confirm_state)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
     [Number(accountId), kind, checked.queue, checked.note, kind === "out" && price !== "" ? Number(price) : null,
-      actor?.id ?? null, String(actor?.name || "").slice(0, 255)]
+      actor?.id ?? null, String(actor?.name || "").slice(0, 255), kind === "out" ? String(orderPack || "").slice(0, 200) : "",
+      kind === "out" && awaiting ? "awaiting" : "confirmed"]
   );
   for (const line of checked.lines) {
     // An out line keeps the pack's average cost at the time, so a later
@@ -409,6 +440,18 @@ export async function insertStockMove(client, { accountId, kind, queue, note, se
     await client.query(
       `INSERT INTO stock_move_lines (move_id, item_id, qty, unit_cost) VALUES ($1, $2, $3, $4)`,
       [move.rows[0].id, line.itemId, line.qty, unitCost === "" || unitCost == null ? null : Number(unitCost)]
+    );
+  }
+  // A person's one-pack cut of an order teaches which pack that order text means.
+  const packKey = stockOrderPackKey(orderPack);
+  if (kind === "out" && !awaiting && packKey && checked.lines.length === 1) {
+    await client.query(
+      `INSERT INTO stock_pack_aliases (account_id, pack_key, item_id) VALUES ($1, $2, $3)
+       ON CONFLICT (account_id, pack_key) DO UPDATE
+         SET item_id = EXCLUDED.item_id,
+             uses = CASE WHEN stock_pack_aliases.item_id = EXCLUDED.item_id THEN stock_pack_aliases.uses + 1 ELSE 1 END,
+             updated_at = NOW()`,
+      [Number(accountId), packKey, checked.lines[0].itemId]
     );
   }
   return Number(move.rows[0].id);
@@ -447,4 +490,96 @@ export async function listStockForGame(gameId, dataMode = "uid") {
     }
   }
   return { accounts: [...accounts.values()], byPack };
+}
+
+/** { "<accountId>|<packKey>": itemId } learned from earlier cuts. */
+export async function listStockPackAliases() {
+  await ensureSchema();
+  const result = await getPool().query(`SELECT account_id, pack_key, item_id FROM stock_pack_aliases`);
+  return new Map(result.rows.map((row) => [`${row.account_id}|${row.pack_key}`, row.item_id]));
+}
+
+/** How many system cuts wait for a person, for the รอตัด tab's badge. */
+export async function countAwaitingStockMoves() {
+  await ensureSchema();
+  const result = await getPool().query(`SELECT COUNT(*)::int AS n FROM stock_moves WHERE confirm_state = 'awaiting'`);
+  return result.rows[0].n;
+}
+
+/** Cuts the system made that wait for a person, oldest first. */
+export async function listAwaitingStockMoves() {
+  await ensureSchema();
+  const result = await getPool().query(
+    `SELECT m.id, m.account_id, a.code, m.queue, m.note, m.order_pack, m.created_at,
+            COALESCE(json_agg(json_build_object('itemId', l.item_id, 'label', i.label, 'qty', -l.qty)) FILTER (WHERE l.id IS NOT NULL), '[]') AS lines
+       FROM stock_moves m
+       JOIN stock_accounts a ON a.id = m.account_id
+       LEFT JOIN stock_move_lines l ON l.move_id = m.id
+       LEFT JOIN stock_items i ON i.id = l.item_id
+      WHERE m.confirm_state = 'awaiting'
+      GROUP BY m.id, a.code
+      ORDER BY m.created_at, m.id`
+  );
+  return result.rows.map((row) => ({
+    id: Number(row.id), accountId: row.account_id, code: row.code, queue: row.queue, note: row.note,
+    orderPack: row.order_pack, createdAt: row.created_at, lines: row.lines,
+  }));
+}
+
+/** A person agrees with a system cut: it becomes an ordinary cut, and its learned pack gains a use. */
+export async function confirmStockMove(moveId, actor = null) {
+  await ensureSchema();
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const result = await client.query(
+      `UPDATE stock_moves SET confirm_state = 'confirmed', confirmed_by = $2, confirmed_at = NOW()
+        WHERE id = $1 AND confirm_state = 'awaiting' RETURNING account_id, order_pack`,
+      [Number(moveId), String(actor?.name || "").slice(0, 255)]
+    );
+    if (!result.rows[0]) throw createHttpError("รายการนี้ยืนยันหรือยกเลิกไปแล้ว", 409);
+    const packKey = stockOrderPackKey(result.rows[0].order_pack);
+    if (packKey) {
+      await client.query(
+        `UPDATE stock_pack_aliases SET uses = uses + 1, updated_at = NOW() WHERE account_id = $1 AND pack_key = $2`,
+        [result.rows[0].account_id, packKey]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * A person rejects a system cut: the move goes, so the balance comes back.
+ * With `forget` (the pack was wrong) the learned pack that led to it is
+ * forgotten too, so the order is not cut the same way again; without it (the
+ * order just did not use stock) the learned pack stays.
+ * Returns { queue, note, orderPack } for the caller.
+ */
+export async function cancelAwaitingStockMove(moveId, { forget = true } = {}) {
+  await ensureSchema();
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const result = await client.query(
+      `DELETE FROM stock_moves WHERE id = $1 AND confirm_state = 'awaiting' RETURNING account_id, queue, note, order_pack`,
+      [Number(moveId)]
+    );
+    if (!result.rows[0]) throw createHttpError("รายการนี้ยืนยันหรือยกเลิกไปแล้ว", 409);
+    const { account_id: accountId, queue, note, order_pack: orderPack } = result.rows[0];
+    const packKey = stockOrderPackKey(orderPack);
+    if (forget && packKey) await client.query(`DELETE FROM stock_pack_aliases WHERE account_id = $1 AND pack_key = $2`, [accountId, packKey]);
+    await client.query("COMMIT");
+    return { queue, note, orderPack };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
 }
