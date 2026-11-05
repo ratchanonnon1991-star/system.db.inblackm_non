@@ -22,6 +22,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
+  ChevronDown,
   ChevronsLeft,
   ChevronsRight,
   CheckCircle2,
@@ -635,10 +636,9 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
           />
         </div>
 
-        <select
+        <FilterSelect
           value={filterRegion}
           onChange={(e) => setFilterRegion(e.target.value)}
-          className="h-10 rounded-xl border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm text-linear-ink outline-none focus:border-linear-primary"
         >
           <option value="">Region ทั้งหมด</option>
           {suggestions.regions.map((v) => (
@@ -646,12 +646,11 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
               {v}
             </option>
           ))}
-        </select>
+        </FilterSelect>
 
-        <select
+        <FilterSelect
           value={filterPlatform}
           onChange={(e) => setFilterPlatform(e.target.value)}
-          className="h-10 rounded-xl border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm text-linear-ink outline-none focus:border-linear-primary"
         >
           <option value="">Platform ทั้งหมด</option>
           {suggestions.platforms.map((v) => (
@@ -659,12 +658,11 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
               {v}
             </option>
           ))}
-        </select>
+        </FilterSelect>
 
-        <select
+        <FilterSelect
           value={filterServer}
           onChange={(e) => setFilterServer(e.target.value)}
-          className="h-10 rounded-xl border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm text-linear-ink outline-none focus:border-linear-primary"
         >
           <option value="">Server ทั้งหมด</option>
           {suggestions.servers.map((v) => (
@@ -672,17 +670,16 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
               {v}
             </option>
           ))}
-        </select>
+        </FilterSelect>
 
-        <select
+        <FilterSelect
           value={filterVpn}
           onChange={(e) => setFilterVpn(e.target.value)}
-          className="h-10 rounded-xl border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm text-linear-ink outline-none focus:border-linear-primary"
         >
           <option value="">VPN ทั้งหมด</option>
           <option value="NO">NO</option>
           <option value="YES">YES</option>
-        </select>
+        </FilterSelect>
 
         {filtersActive && (
           <button
@@ -1598,5 +1595,20 @@ function EditBox({ onCommit, children }) {
     >
       {children}
     </div>
+  );
+}
+
+// The browser's own arrow sits on the border; this one keeps clear of the text and the edge.
+function FilterSelect({ children, ...props }) {
+  return (
+    <span className="relative inline-flex">
+      <select
+        {...props}
+        className="h-10 appearance-none rounded-xl border border-linear-hairline-strong bg-linear-surface-1 pl-3.5 pr-10 text-sm text-linear-ink outline-none focus:border-linear-primary"
+      >
+        {children}
+      </select>
+      <ChevronDown size={16} aria-hidden="true" className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-linear-ink-muted" />
+    </span>
   );
 }
