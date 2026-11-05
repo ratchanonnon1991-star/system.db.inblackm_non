@@ -49,7 +49,8 @@ export default function RazerInventory({ lang }) {
     const version = ++generation.current; setLoading(true); setError("");
     try {
       const result = await pageReader.run(endpoint, viewKey);
-      if (!Array.isArray(result?.zones) || result.zones.length !== 2 || !Array.isArray(result.accounts) || !Array.isArray(result.accountChoices) || !Array.isArray(result.entries) || !result.summary) throw new Error("ข้อมูลไม่ครบ กรุณาโหลดใหม่");
+      // One card per currency (every Razer zone), so the count is not fixed.
+      if (!Array.isArray(result?.zones) || !result.zones.length || !Array.isArray(result.accounts) || !Array.isArray(result.accountChoices) || !Array.isArray(result.entries) || !result.summary) throw new Error("ข้อมูลไม่ครบ กรุณาโหลดใหม่");
       if (alive.current && generation.current === version) setData({ ...result, viewKey });
     } catch (e) { if (alive.current && generation.current === version) setError(e.message || "โหลดข้อมูลไม่สำเร็จ"); }
     finally { if (alive.current && generation.current === version) setLoading(false); }
