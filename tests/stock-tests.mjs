@@ -81,4 +81,7 @@ check(stockPackNameParts("Lunite Subscription").join("|") === "Lunite Subscripti
 const repo = read("../src/server/stock-repository.js");
 check(/for \(const name of stockPackNameParts\(item\.packName\)\)/.test(repo), "the game page badges each pack an \"A / B\" item stands for");
 
+const stockNav = read("../src/components/stock-nav.js");
+check(!stockNav.includes("/stock/addresses") && !read("../src/components/stock-purchase-orders.js").includes("AddressesForRecipient"), "no supplier address is kept: they change, so it is asked for each payment");
+
 console.log(`stock: ${passed} passed`);

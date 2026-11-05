@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowDownToLine, ArrowRightLeft, ChevronDown, ExternalLink, FileSpreadsheet, Link2, Loader2, Repeat, Search, ShoppingCart, SlidersHorizontal, Wallet } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
-import { AddressesForRecipient } from "@/components/crypto-address-card";
 import { bestWalletPaymentMatch, LINK_DAYS, PO_STATUS_LABELS, walletPaymentCandidates } from "@/lib/stock-purchase-orders";
 import { fromWalletUnits, toWalletUnits, WALLET_CHECK_LABELS, WALLET_ENTRY_LABELS, WALLET_GROUPS, WALLET_PAYMENT_STATUS_LABELS, WALLET_REVIEW_LABELS, walletCheckState } from "@/lib/stock-wallets";
 import { StockDialog, StockField, stockInputClass } from "@/components/stock-ui";
@@ -803,9 +802,6 @@ function WalletEntryDialog({ kind, wallets, onClose }) {
         <div className="grid gap-3 sm:grid-cols-2">
           {hasFrom ? <WalletSide id="from" label={kind === "exchange" ? "กระเป๋า · สกุลที่แลกออก" : "จ่ายออกจาก"} wallets={wallets} {...from} onChange={(side) => { setFrom(side); if (kind === "exchange") setTo((current) => ({ ...current, walletId: side.walletId })); }} /> : null}
           {hasTo ? <WalletSide id="to" label={kind === "exchange" ? "สกุลที่ได้" : kind === "adjust" ? "กระเป๋าที่ปรับ" : "รับเข้า"} wallets={wallets} {...(kind === "exchange" ? { ...to, walletId: from.walletId } : to)} lockedWalletId={kind === "exchange" ? from.walletId : null} onChange={setTo} /> : null}
-          {kind === "transfer" && to.walletId ? (
-            <AddressesForRecipient recipient={wallets.find((wallet) => String(wallet.id) === String(to.walletId))?.name || ""} coin={to.currency || from.currency} />
-          ) : null}
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3">

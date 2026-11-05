@@ -37,7 +37,7 @@ export function stockPackNameParts(packName) {
 }
 
 // Page names under /stock that an account code would hide (/stock/<code>).
-export const STOCK_RESERVED_CODES = ["inventory", "purchase-orders", "wallets", "sheets", "sheet-stock", "addresses", "expenses"];
+export const STOCK_RESERVED_CODES = ["inventory", "purchase-orders", "wallets", "sheets", "sheet-stock", "expenses"];
 
 /** "pes1" → "pes1": letters, digits, dot, dash and underscore, 2–32 long. */
 export function normalizeStockCode(value) {

@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ClipboardList, ExternalLink, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
-import { AddressesForRecipient } from "@/components/crypto-address-card";
 import StockGamePicker from "@/components/stock-game-picker";
 import ComboInput from "@/components/combo-input";
 import {
@@ -306,6 +305,15 @@ function SupplierBalances({ orders, onPick }) {
       ) : <p className="px-4 pb-4 pt-2 text-sm text-zinc-600">ทุกใบจบแล้ว ไม่มีอะไรต้องจ่ายหรือรอ</p>}
       {shown.length ? <p className="px-4 pb-3 pt-2 text-xs text-zinc-500">&quot;โอนแล้ว ของยังไม่ครบ&quot; คิดจากยอดที่จ่าย × สัดส่วนแพ็คที่ยังไม่ได้รับ · กดชื่อซัพเพื่อดูใบของเจ้านั้น</p> : null}
     </section>
+  );
+}
+
+// Suppliers change their address and network, so none is kept here: ask each time.
+function SupplierAddressReminder() {
+  return (
+    <p className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[13px] font-bold leading-6 text-amber-900 sm:col-span-2">
+      ขอ address และ network จากซัพทุกครั้งก่อนโอน · ซัพเปลี่ยนได้ ห้ามใช้ address เก่าที่เคยโอน
+    </p>
   );
 }
 
@@ -777,7 +785,7 @@ function PurchaseOrderDialog({ order: listed, wallets, canEdit, currentUserId, o
           ) : null}
           {action === "pay" ? (
             <div className="grid gap-3 sm:grid-cols-2">
-              <AddressesForRecipient recipient={order.supplier} coin={order.currency} />
+              {order.currency !== "THB" ? <SupplierAddressReminder /> : null}
               <StockField label={`จ่ายจากกระเป๋า (${order.currency})`} htmlFor="po-pay-wallet" hint={payable.length ? (pay.walletId ? "ระบบหักยอด + fee จากกระเป๋านี้ให้เอง" : "ไม่หักกระเป๋าใด ต้องแนบหลักฐานและบอกช่องทาง") : `ไม่มีกระเป๋าที่ถือ ${order.currency} — เลือกจ่ายทางอื่นพร้อมแนบหลักฐาน`}>
                 <select id="po-pay-wallet" value={pay.walletId} onChange={(event) => setPay((current) => ({ ...current, walletId: event.target.value }))} className={stockInputClass}>
                   {payable.map((wallet) => {
