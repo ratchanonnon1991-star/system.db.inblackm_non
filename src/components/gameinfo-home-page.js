@@ -51,7 +51,7 @@ import { getGameinfoBaselineSeller } from "@/server/gameinfo-market-preferences"
 // either view (see gameinfo-view.js).
 export default async function GameinfoHomePage({ params, searchParams, manage = false }) {
   const { lang } = await params;
-  const { mode: rawMode, view: rawView, section, game, unit, market } = await searchParams;
+  const { mode: rawMode, view: rawView, section, game, unit, market, tab } = await searchParams;
   const priceComparison = section === "pack-price-compare";
   if (priceComparison) {
     const query = new URLSearchParams();
@@ -203,7 +203,7 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
   }
 
   if (!manageMode && !loadError) {
-    return <GameinfoGamelistCards initial={rows} initialReports={reports} tagImages={tagImages} publisherImages={publisherImages} botChannels={botChannels} botCategoryImages={botCategoryImages} marketPage={marketPage} botCatalogActive={section === "game-bot-auto"} priceComparisonActive={priceComparison} packUpdateActive={section === "pack-update"} packUpdates={packUpdates} userName={user.displayName || user.username || ""} editable={editableRole} topupView={topupView} canReport={canReport} lang={lang} dataMode={dataMode} />;
+    return <GameinfoGamelistCards initial={rows} initialReports={reports} tagImages={tagImages} publisherImages={publisherImages} botChannels={botChannels} botCategoryImages={botCategoryImages} marketPage={marketPage} botCatalogActive={section === "game-bot-auto"} priceComparisonActive={priceComparison} packUpdateActive={section === "pack-update"} packUpdates={packUpdates} packUpdateTab={tab === "history" ? "history" : "list"} userName={user.displayName || user.username || ""} editable={editableRole} topupView={topupView} canReport={canReport} lang={lang} dataMode={dataMode} />;
   }
 
   return (

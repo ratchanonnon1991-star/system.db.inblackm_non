@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import {
+  applyPackUpdateSavedState,
   gameinfoPackUpdateSource,
+  packUpdateSavedState,
   mockGameinfoPackUpdates,
   packUpdateBotResult,
   packUpdateGate,
@@ -65,3 +67,13 @@ assert.deepEqual(packUpdateGate(packs, "A").map((rule) => rule.ok), [true, true,
 assert.ok(packUpdateGate(packs, "B").every((rule) => rule.ok));
 const unchecked = [{ type: "new", bot: null, human: false }, { type: "new", bot: "bad", human: false }];
 assert.deepEqual(packUpdateGate(unchecked, "B").map((rule) => rule.ok), [false, false, false, true]);
+
+// Checks are saved per pack and put back on the same packs after a reload.
+const touchedGames = games.map((game, index) => index === 0
+  ? { ...game, packs: game.packs.map((pack, packIndex) => packIndex === 0 ? { ...pack, human: true, checkedBy: "A", checkedAt: "2026-11-05T05:00:00.000Z", bot: "ok" } : pack) }
+  : game);
+const saved = packUpdateSavedState(touchedGames);
+assert.deepEqual(Object.keys(saved), [games[0].packs[0].id]);
+assert.deepEqual(applyPackUpdateSavedState(games, saved), touchedGames);
+assert.deepEqual(applyPackUpdateSavedState(games, { "no-such-pack": { human: true } }), games);
+assert.deepEqual(applyPackUpdateSavedState(games, null), games);

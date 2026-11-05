@@ -76,7 +76,7 @@ const STATUS_STYLE = {
   offline: { label: "ปิดใช้งาน", dot: "bg-linear-ink-tertiary", text: "text-linear-ink-subtle" },
 };
 
-export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, botChannels = [], botCategoryImages = {}, marketPage = null, botCatalogActive = false, priceComparisonActive = false, packUpdateActive = false, packUpdates = null, userName = "", editable = false, topupView = false, canReport = false, lang, dataMode = "uid" }) {
+export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, botChannels = [], botCategoryImages = {}, marketPage = null, botCatalogActive = false, priceComparisonActive = false, packUpdateActive = false, packUpdates = null, packUpdateTab = "list", userName = "", editable = false, topupView = false, canReport = false, lang, dataMode = "uid" }) {
   // A page other than the game list fills the main area; the filters there lead back to the list.
   const otherSection = priceComparisonActive || packUpdateActive;
   // Every game is listed until the PG2 API says which changed (see gameinfo-pack-update.js).
@@ -505,7 +505,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
         ) : priceComparisonActive ? (
           <GameinfoPackPriceCompare page={marketPage} editable={editable} />
         ) : packUpdateActive ? (
-          <GameinfoPackUpdate initialGames={packUpdates || []} userName={userName} />
+          <GameinfoPackUpdate initialGames={packUpdates || []} userName={userName} initialTab={packUpdateTab} />
         ) : (
           <>
         <div className="flex flex-wrap items-end justify-between gap-4">

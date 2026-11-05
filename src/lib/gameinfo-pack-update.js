@@ -155,3 +155,43 @@ export function packUpdateGate(packs, user = "") {
     { ok: s.self === 0, label: "คนกดนำเข้าไม่ได้เป็นคนแก้ราคาในรอบนี้", why: s.self ? `${user} แก้ราคาไว้ ${s.self} แพ็ก — ให้อีกคนเป็นคนกดนำเข้า` : "" },
   ];
 }
+
+// What a person or the bot did, for the history page.
+export const PACK_UPDATE_LOG_ACTIONS = {
+  check: { label: "ตรวจแล้ว", tone: "ok" },
+  close: { label: "ยืนยันปิดขาย", tone: "warn" },
+  uncheck: { label: "ยกเลิกการตรวจ", tone: "plain" },
+  price: { label: "แก้ราคา", tone: "info" },
+  bot: { label: "บอทตรวจ", tone: "plain" },
+  import: { label: "นำเข้าคลัง", tone: "bad" },
+};
+
+const SAVED_PACK_FIELDS = ["bot", "human", "checkedBy", "checkedAt", "web", "editedBy"];
+
+/** The check state of every pack someone or the bot has touched, keyed by pack id. */
+export function packUpdateSavedState(games) {
+  const out = {};
+  for (const game of games || []) {
+    for (const pack of game.packs) {
+      if (!pack.bot && !pack.human && !pack.editedBy) continue;
+      out[pack.id] = Object.fromEntries(SAVED_PACK_FIELDS.map((field) => [field, pack[field] ?? null]));
+    }
+  }
+  return out;
+}
+
+/** The games with saved check state put back on their packs (unknown ids are ignored). */
+export function applyPackUpdateSavedState(games, saved) {
+  if (!saved || typeof saved !== "object") return games;
+  return games.map((game) => ({
+    ...game,
+    packs: game.packs.map((pack) => {
+      const state = saved[pack.id];
+      if (!state || typeof state !== "object") return pack;
+      const next = { ...pack };
+      for (const field of SAVED_PACK_FIELDS) if (field in state) next[field] = state[field];
+      next.human = Boolean(next.human);
+      return next;
+    }),
+  }));
+}
