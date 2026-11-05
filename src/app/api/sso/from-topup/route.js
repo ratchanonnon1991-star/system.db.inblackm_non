@@ -14,7 +14,7 @@ export const revalidate = 0;
  * for the account's email and role server-to-server. TopUp admin/staff only;
  * the email signs in as the gamedb account it is mapped to or named after,
  * or a new Staff account that can view GameInfo (TOPUP_SSO_NEW_ACCOUNT). A
- * TopUp admin's account is also given a view of every system (topupAdminGrant)
+ * TopUp admin's account is made an Admin with every permission (topupAdminGrant)
  * each time, so one made or demoted here before still gets it.
  */
 export async function GET(request) {
