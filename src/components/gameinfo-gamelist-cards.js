@@ -886,20 +886,18 @@ function GameCard({ row, editable, topupView, canReport, lang, dataMode, favorit
         </dl>
       </div>
       <div className="flex items-center gap-2 px-4 pb-4">
-        {editable ? (
-          <Link href={actionHref} className="inline-flex h-[42px] min-w-0 flex-1 items-center justify-center rounded-[10px] bg-linear-primary px-3 text-sm font-extrabold text-white hover:bg-linear-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D90005]">
-            เปิดจัดการ
-          </Link>
-        ) : null}
         <DetailLink
           href={href}
           editable={editable}
-          className={editable
-            ? "flex h-[42px] min-w-20 shrink-0 items-center justify-center rounded-[10px] border border-linear-hairline-strong px-3 text-xs font-medium text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D90005]"
-            : "inline-flex h-[42px] min-w-0 flex-1 items-center justify-center rounded-[10px] bg-linear-primary px-3 text-sm font-extrabold text-white hover:bg-linear-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D90005]"}
+          className="inline-flex h-[42px] min-w-0 flex-1 items-center justify-center rounded-[10px] bg-linear-primary px-3 text-sm font-extrabold text-white hover:bg-linear-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D90005]"
         >
           ข้อมูลเกม
         </DetailLink>
+        {editable ? (
+          <Link href={actionHref} className="flex h-[42px] shrink-0 items-center justify-center rounded-[10px] border border-linear-hairline-strong px-3 text-xs font-medium text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D90005]">
+            จัดการ
+          </Link>
+        ) : null}
         <GameinfoTutorialButton gameId={row.id} gameName={row.game} editable={false} hasData={row.hasWarning} variant="warning" dataMode={dataMode} compact />
       </div>
     </article>
@@ -939,20 +937,18 @@ function GameRow({ row, editable, topupView, lang, dataMode, onPriorityChange })
       <td className="px-4 py-2.5 font-bold text-linear-ink">{row.server || "-"}</td>
       <td className="sticky right-0 bg-linear-surface-1 px-4 py-2.5 shadow-[-8px_0_12px_-10px_rgba(0,0,0,0.25)]">
         <div className="flex justify-end gap-1.5">
-          {editable ? (
-            <Link href={actionHref} className="flex h-9 items-center whitespace-nowrap rounded-[9px] bg-[#D90005] px-3.5 text-[13px] font-extrabold text-white hover:bg-[#B80004]">
-              เปิดจัดการ
-            </Link>
-          ) : null}
           <DetailLink
             href={href}
             editable={editable}
-            className={editable
-              ? "flex h-9 items-center whitespace-nowrap rounded-[9px] border border-linear-hairline-strong px-3 text-[13px] font-medium text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink"
-              : "flex h-9 items-center whitespace-nowrap rounded-[9px] bg-[#D90005] px-3.5 text-[13px] font-extrabold text-white hover:bg-[#B80004]"}
+            className="flex h-9 items-center whitespace-nowrap rounded-[9px] bg-[#D90005] px-3.5 text-[13px] font-extrabold text-white hover:bg-[#B80004]"
           >
             ข้อมูลเกม
           </DetailLink>
+          {editable ? (
+            <Link href={actionHref} className="flex h-9 items-center whitespace-nowrap rounded-[9px] border border-linear-hairline-strong px-3 text-[13px] font-medium text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink">
+              จัดการ
+            </Link>
+          ) : null}
         </div>
       </td>
     </tr>
