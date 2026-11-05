@@ -101,6 +101,50 @@ function checkSummary(checks, walletId) {
   return { total: mine.length, todo: states.filter((state) => state === "diff" || state === "stale").length, signed: states.filter((state) => state === "checked").length };
 }
 
+// Who runs the wallet, by its name: the provider's own icon (by domain), else
+// its initials on the brand colour. Custom wallets match by name too.
+const WALLET_BRANDS = [
+  [/bitazza/i, "bitazza.com", "BZ", "bg-[#1B2B5B] text-white"],
+  [/bitkub/i, "bitkub.com", "BK", "bg-[#00C373] text-white"],
+  [/bybit/i, "bybit.com", "BY", "bg-[#17181E] text-[#F7A600]"],
+  [/binance/i, "binance.com", "BN", "bg-[#F0B90B] text-zinc-900"],
+  [/okx/i, "okx.com", "OK", "bg-black text-white"],
+  [/tnt/i, "smart.com.ph", "TNT", "bg-[#F5A800] text-zinc-900"],
+  [/zelle/i, "zellepay.com", "Z", "bg-[#6D1ED4] text-white"],
+  [/amaten/i, "amaten.com", "AM", "bg-[#E60033] text-white"],
+  [/plsbuy/i, "plsbuy.com", "PB", "bg-sky-600 text-white"],
+  [/google/i, "google.com", "G", "bg-white text-zinc-800 border border-zinc-200"],
+  [/xl/i, "xl.co.id", "XL", "bg-[#0A3D91] text-white"],
+];
+const CURRENCY_TONE = { PHP: "bg-blue-700 text-white", IDR: "bg-red-600 text-white", JPY: "bg-rose-600 text-white", USD: "bg-emerald-700 text-white", MYR: "bg-indigo-700 text-white", UAH: "bg-yellow-400 text-blue-900" };
+
+function walletBrand(wallet) {
+  const hit = WALLET_BRANDS.find(([match]) => match.test(wallet.name || wallet.code || ""));
+  if (hit) return { domain: hit[1], mark: hit[2], tone: hit[3] };
+  const currency = wallet.currencies?.[0] || wallet.balances?.[0]?.currency || "";
+  return { domain: null, mark: currency.slice(0, 3) || (wallet.name || "?").slice(0, 2).toUpperCase(), tone: CURRENCY_TONE[currency] || "bg-zinc-900 text-white" };
+}
+
+function WalletLogo({ wallet, size = 40 }) {
+  const brand = walletBrand(wallet);
+  const [broken, setBroken] = useState(false);
+  const box = { width: size, height: size };
+  if (brand.domain && !broken) {
+    return (
+      <span className="flex shrink-0 items-center justify-center overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm" style={box}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={`https://www.google.com/s2/favicons?domain=${brand.domain}&sz=128`} alt="" onError={() => setBroken(true)} onLoad={(event) => { if (event.currentTarget.naturalWidth <= 16) setBroken(true); }}
+          className="object-contain" style={{ width: size * 0.7, height: size * 0.7 }} />
+      </span>
+    );
+  }
+  return (
+    <span aria-hidden="true" className={`flex shrink-0 items-center justify-center rounded-xl font-black tracking-tight shadow-sm ${brand.tone}`} style={{ ...box, fontSize: Math.round(size * (brand.mark.length > 2 ? 0.3 : 0.36)) }}>
+      {brand.mark || <Wallet size={18} />}
+    </span>
+  );
+}
+
 function WalletCard({ wallet, summary, filters, compact = false }) {
   const active = filters.wallet === wallet.code;
   const idle = sinceDays(wallet.lastActivity);
@@ -108,7 +152,7 @@ function WalletCard({ wallet, summary, filters, compact = false }) {
     <Link href={walletsHref(filters, { wallet: active ? "" : wallet.code })} aria-current={active ? "true" : undefined}
       className={`flex flex-col rounded-[18px] border bg-white px-[18px] py-4 transition hover:border-zinc-400 ${active ? "border-[#D90005] ring-2 ring-[#D90005]/30" : "border-zinc-200"}`}>
       <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-white"><Wallet size={18} /></span>
+        <WalletLogo wallet={wallet} />
         <div className="min-w-0">
           <p className="truncate text-[17px] font-black">{wallet.name}</p>
           <p className="truncate text-[13px] text-zinc-600">{wallet.role}</p>
