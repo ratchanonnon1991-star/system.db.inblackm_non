@@ -9,11 +9,29 @@ export const STOCK_MOVE_LABELS = { in: "รับเข้า", out: "ตัด�
 export const STOCK_ACCOUNT_STATUSES = ["active", "check", "closed"];
 export const STOCK_ACCOUNT_STATUS_LABELS = { active: "ปกติ", check: "ต้องตรวจ", closed: "ปิด" };
 export const STOCK_DEFAULT_LOW_AT = 10;
+/** Profit as % of the sale below which a sale is flagged, as the sheet's "กำไร 10%" column. */
+export const STOCK_MIN_MARGIN = 10;
+
+/** Profit as % of the sale price, one decimal; null when either is unknown or the price is not above 0. */
+export function stockMargin(profit, sellPrice) {
+  if (profit == null || sellPrice == null || !(Number(sellPrice) > 0)) return null;
+  return Math.round((Number(profit) / Number(sellPrice)) * 1000) / 10;
+}
+
+/** "low" under STOCK_MIN_MARGIN, "loss" below 0, "ok" otherwise; null when unknown. */
+export function stockMarginTone(margin) {
+  if (margin == null) return null;
+  if (margin < 0) return "loss";
+  return margin < STOCK_MIN_MARGIN ? "low" : "ok";
+}
+
+// Page names under /stock that an account code would hide (/stock/<code>).
+export const STOCK_RESERVED_CODES = ["inventory", "purchase-orders", "wallets", "sheets", "sheet-stock", "addresses", "offgamer", "expenses"];
 
 /** "pes1" → "pes1": letters, digits, dot, dash and underscore, 2–32 long. */
 export function normalizeStockCode(value) {
   const code = String(value ?? "").trim().toLowerCase();
-  return /^[a-z0-9][a-z0-9._-]{1,31}$/.test(code) ? code : "";
+  return /^[a-z0-9][a-z0-9._-]{1,31}$/.test(code) && !STOCK_RESERVED_CODES.includes(code) ? code : "";
 }
 
 /** A money amount as a string with at most 2 decimals, or "" when blank or not a number ≥ 0. */

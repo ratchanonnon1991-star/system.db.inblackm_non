@@ -6,6 +6,7 @@ import {
   STOCK_DEFAULT_LOW_AT,
   stockTone,
   validateStockMove,
+  stockMargin,
 } from "@/lib/stock";
 
 // Stock accounts, their packs, and every move in or out (src/lib/stock.js).
@@ -17,6 +18,10 @@ function createHttpError(message, status) {
   const error = new Error(message);
   error.status = status;
   return error;
+}
+
+export async function ensureStockSchema() {
+  return ensureSchema();
 }
 
 async function ensureSchema() {
@@ -320,6 +325,7 @@ export async function listStockMoves(accountId, { kind = null, limit = 200 } = {
     const costed = lines.every((line) => line.unitCost != null);
     const cost = costed ? Math.round(lines.reduce((sum, line) => sum + Math.abs(line.qty) * line.unitCost, 0) * 100) / 100 : null;
     const sellPrice = number(row.sell_price);
+    const profit = row.kind === "out" && sellPrice != null && cost != null ? Math.round((sellPrice - cost) * 100) / 100 : null;
     return {
       id: Number(row.id),
       kind: row.kind,
@@ -327,7 +333,8 @@ export async function listStockMoves(accountId, { kind = null, limit = 200 } = {
       note: row.note,
       sellPrice,
       cost,
-      profit: row.kind === "out" && sellPrice != null && cost != null ? Math.round((sellPrice - cost) * 100) / 100 : null,
+      profit,
+      margin: stockMargin(profit, sellPrice),
       actorName: row.actor_name,
       createdAt: row.created_at,
       lines,
@@ -341,59 +348,69 @@ export async function listStockMoves(accountId, { kind = null, limit = 200 } = {
  * succeed. An out move whose queue number was already used is refused
  * unless `allowDuplicateQueue` (the person confirmed it is a second item).
  */
-export async function recordStockMove({ accountId, kind, queue, note, sellPrice, lines, allowDuplicateQueue = false }, actor = null) {
+export async function recordStockMove(input, actor = null) {
   await ensureSchema();
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    const account = await client.query(`SELECT id, status FROM stock_accounts WHERE id = $1 FOR UPDATE`, [Number(accountId)]);
-    if (!account.rows[0]) throw createHttpError("ไม่พบไอดีนี้", 404);
-    if (account.rows[0].status === "closed") throw createHttpError("ไอดีนี้ปิดแล้ว", 400);
-    const itemRows = await client.query(`${ITEMS_SQL} WHERE i.account_id = $1 GROUP BY i.id`, [Number(accountId)]);
-    const items = new Map(itemRows.rows.map((row) => [row.id, mapItem(row)]));
-    const labelled = (lines || []).map((line) => ({ ...line, label: items.get(Number(line.itemId))?.label }));
-    if (labelled.some((line) => !line.label)) throw createHttpError("มีแพ็คที่ไม่อยู่ในไอดีนี้", 400);
-    const balances = Object.fromEntries([...items.values()].map((item) => [item.id, item.left]));
-    const checked = validateStockMove({ kind, queue, note, lines: labelled }, balances);
-    if (checked.error) throw createHttpError(checked.error, 400);
-
-    if (kind === "out" && !allowDuplicateQueue) {
-      const used = await client.query(
-        `SELECT a.code FROM stock_moves m JOIN stock_accounts a ON a.id = m.account_id
-          WHERE m.kind = 'out' AND m.queue = $1 LIMIT 1`,
-        [checked.queue]
-      );
-      if (used.rows[0]) {
-        const error = createHttpError(`เลขคิว ${checked.queue} เคยตัด stock ไปแล้ว (${used.rows[0].code})`, 409);
-        error.duplicateQueue = true;
-        throw error;
-      }
-    }
-
-    const price = normalizeStockMoney(sellPrice);
-    const move = await client.query(
-      `INSERT INTO stock_moves (account_id, kind, queue, note, sell_price, actor_id, actor_name)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-      [Number(accountId), kind, checked.queue, checked.note, kind === "out" && price !== "" ? Number(price) : null,
-        actor?.id ?? null, String(actor?.name || "").slice(0, 255)]
-    );
-    for (const line of checked.lines) {
-      // An out line keeps the pack's average cost at the time, so a later
-      // receipt at another price does not rewrite an old sale's profit.
-      const unitCost = kind === "in" ? line.unitCost : kind === "out" ? items.get(line.itemId).avgCost : null;
-      await client.query(
-        `INSERT INTO stock_move_lines (move_id, item_id, qty, unit_cost) VALUES ($1, $2, $3, $4)`,
-        [move.rows[0].id, line.itemId, line.qty, unitCost === "" || unitCost == null ? null : Number(unitCost)]
-      );
-    }
+    const moveId = await insertStockMove(client, input, actor);
     await client.query("COMMIT");
-    return Number(move.rows[0].id);
+    return moveId;
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
     throw error;
   } finally {
     client.release();
   }
+}
+
+/**
+ * recordStockMove's work inside a transaction the caller already opened, so
+ * another write (a purchase order receipt) can commit or roll back with it.
+ */
+export async function insertStockMove(client, { accountId, kind, queue, note, sellPrice, lines, allowDuplicateQueue = false }, actor = null) {
+  await ensureSchema();
+  const account = await client.query(`SELECT id, status FROM stock_accounts WHERE id = $1 FOR UPDATE`, [Number(accountId)]);
+  if (!account.rows[0]) throw createHttpError("ไม่พบไอดีนี้", 404);
+  if (account.rows[0].status === "closed") throw createHttpError("ไอดีนี้ปิดแล้ว", 400);
+  const itemRows = await client.query(`${ITEMS_SQL} WHERE i.account_id = $1 GROUP BY i.id`, [Number(accountId)]);
+  const items = new Map(itemRows.rows.map((row) => [row.id, mapItem(row)]));
+  const labelled = (lines || []).map((line) => ({ ...line, label: items.get(Number(line.itemId))?.label }));
+  if (labelled.some((line) => !line.label)) throw createHttpError("มีแพ็คที่ไม่อยู่ในไอดีนี้", 400);
+  const balances = Object.fromEntries([...items.values()].map((item) => [item.id, item.left]));
+  const checked = validateStockMove({ kind, queue, note, lines: labelled }, balances);
+  if (checked.error) throw createHttpError(checked.error, 400);
+
+  if (kind === "out" && !allowDuplicateQueue) {
+    const used = await client.query(
+      `SELECT a.code FROM stock_moves m JOIN stock_accounts a ON a.id = m.account_id
+        WHERE m.kind = 'out' AND m.queue = $1 LIMIT 1`,
+      [checked.queue]
+    );
+    if (used.rows[0]) {
+      const error = createHttpError(`เลขคิว ${checked.queue} เคยตัด stock ไปแล้ว (${used.rows[0].code})`, 409);
+      error.duplicateQueue = true;
+      throw error;
+    }
+  }
+
+  const price = normalizeStockMoney(sellPrice);
+  const move = await client.query(
+    `INSERT INTO stock_moves (account_id, kind, queue, note, sell_price, actor_id, actor_name)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+    [Number(accountId), kind, checked.queue, checked.note, kind === "out" && price !== "" ? Number(price) : null,
+      actor?.id ?? null, String(actor?.name || "").slice(0, 255)]
+  );
+  for (const line of checked.lines) {
+    // An out line keeps the pack's average cost at the time, so a later
+    // receipt at another price does not rewrite an old sale's profit.
+    const unitCost = kind === "in" ? line.unitCost : kind === "out" ? items.get(line.itemId).avgCost : null;
+    await client.query(
+      `INSERT INTO stock_move_lines (move_id, item_id, qty, unit_cost) VALUES ($1, $2, $3, $4)`,
+      [move.rows[0].id, line.itemId, line.qty, unitCost === "" || unitCost == null ? null : Number(unitCost)]
+    );
+  }
+  return Number(move.rows[0].id);
 }
 
 /**

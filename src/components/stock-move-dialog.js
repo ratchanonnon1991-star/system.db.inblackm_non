@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Minus, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
-import { STOCK_MOVE_LABELS } from "@/lib/stock";
+import { STOCK_MIN_MARGIN, STOCK_MOVE_LABELS, stockMargin, stockMarginTone } from "@/lib/stock";
 import { formatStockNumber, StockDialog, StockField, stockInputClass } from "@/components/stock-ui";
 
 const KIND_LOOK = {
@@ -46,6 +46,7 @@ export default function StockMoveDialog({ accounts, accountId: initialAccountId,
     ? filled.reduce((sum, line) => sum + line.qty * line.item.avgCost, 0)
     : null;
   const profit = cost != null && sellPrice !== "" && Number.isFinite(Number(sellPrice)) ? Number(sellPrice) - cost : null;
+  const margin = stockMargin(profit, sellPrice === "" ? null : Number(sellPrice));
 
   const setRow = (key, patch) => setRows((current) => current.map((row) => (row.key === key ? { ...row, ...patch } : row)));
 
@@ -160,8 +161,9 @@ export default function StockMoveDialog({ accounts, accountId: initialAccountId,
               <p className="text-xs text-zinc-600">กำไร</p>
               <p className={`mt-0.5 text-xl font-black ${profit == null ? "" : profit >= 0 ? "text-emerald-700" : "text-red-700"}`}>
                 {profit == null ? "—" : `฿${formatStockNumber(profit)}`}
-                {profit != null && Number(sellPrice) > 0 ? <span className="ml-1 text-[13px]">· {formatStockNumber((profit / Number(sellPrice)) * 100, 1)}%</span> : null}
+                {margin != null ? <span className="ml-1 text-[13px]">· {margin}%</span> : null}
               </p>
+              {stockMarginTone(margin) === "low" ? <p className="mt-0.5 text-xs font-bold text-amber-800">กำไรต่ำกว่า {STOCK_MIN_MARGIN}% ของราคาขาย</p> : null}
             </div>
           </div>
         ) : null}

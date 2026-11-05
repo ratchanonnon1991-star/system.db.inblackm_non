@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Minus, Plus, Search } from "lucide-react";
+import { AlertTriangle, Minus, Plus, Search } from "lucide-react";
 import StockMoveDialog from "@/components/stock-move-dialog";
 import { StockAccountDialog } from "@/components/stock-edit-dialogs";
 import { formatStockNumber, STOCK_BAR_CLASS, StockLeftBadge, StockStatusPill } from "@/components/stock-ui";
@@ -23,10 +23,60 @@ function matches(account, query, filter) {
   return text.includes(query);
 }
 
-export default function StockOverview({ accounts, games, canEdit }) {
+const NO_GAME = "none";
+const gameKeyOf = (account) => (account.gameId ? `g${account.gameId}` : String(account.gameName || "").trim().toLowerCase() || NO_GAME);
+
+// The games that have an account, by name, with "ยังไม่ผูกเกม" last.
+function gameChips(accounts) {
+  const chips = new Map();
+  for (const account of accounts) {
+    const key = gameKeyOf(account);
+    if (!chips.has(key)) chips.set(key, { key, accountId: account.id, name: key === NO_GAME ? "ยังไม่ผูกเกม" : account.gameName || `เกม #${account.gameId}`, count: 0 });
+    chips.get(key).count += 1;
+  }
+  return [...chips.values()].sort((a, b) => (a.key === NO_GAME) - (b.key === NO_GAME) || a.name.localeCompare(b.name, "th"));
+}
+
+// Soft tile colours for a game with no GameInfo icon, picked by its name so a game keeps its colour.
+const TILE_TONES = [
+  "from-rose-500 to-red-600", "from-orange-400 to-amber-600", "from-emerald-400 to-teal-600", "from-sky-400 to-blue-600",
+  "from-violet-400 to-purple-600", "from-fuchsia-400 to-pink-600", "from-lime-400 to-green-600", "from-slate-500 to-zinc-700",
+];
+function tileTone(text) {
+  let hash = 0;
+  for (const ch of String(text)) hash = (hash * 31 + ch.codePointAt(0)) >>> 0;
+  return TILE_TONES[hash % TILE_TONES.length];
+}
+// "Diablo Immortal" → "DI", "Honkai: Star Rail" → "HS", "delta01" → "DE".
+function initials(text) {
+  const words = String(text || "").replace(/[^\p{L}\p{N}\s]/gu, " ").trim().split(/\s+/).filter(Boolean);
+  if (words.length > 1) return (words[0][0] + words[1][0]).toUpperCase();
+  return (words[0] || "?").replace(/\d+$/, "").slice(0, 2).toUpperCase() || "?";
+}
+
+// The game's GameInfo icon, else its initials on a coloured tile.
+function GameLogo({ src, name, size }) {
+  const [broken, setBroken] = useState(false);
+  const radius = size >= 40 ? "rounded-2xl" : "rounded-full";
+  if (src && !broken) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={src} alt="" onError={() => setBroken(true)} className={`shrink-0 border border-zinc-200 bg-white object-cover shadow-sm ${radius}`} style={{ width: size, height: size }} />;
+  }
+  return (
+    <div aria-hidden="true" className={`flex shrink-0 items-center justify-center bg-linear-to-br font-black tracking-wide text-white shadow-sm ${radius} ${tileTone(name)}`} style={{ width: size, height: size, fontSize: Math.round(size * 0.36) }}>
+      {initials(name)}
+    </div>
+  );
+}
+
+export default function StockOverview({ accounts: allAccounts, games, logos = {}, canEdit }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
+  const [gameKey, setGameKey] = useState("all");
   const [dialog, setDialog] = useState(null);
+  const chips = gameChips(allAccounts);
+  const picked = chips.find((chip) => chip.key === gameKey);
+  const accounts = picked ? allAccounts.filter((account) => gameKeyOf(account) === picked.key) : allAccounts;
   const open = accounts.filter((account) => account.status !== "closed");
   const totals = {
     value: open.reduce((sum, account) => sum + account.valueUsd, 0),
@@ -39,7 +89,7 @@ export default function StockOverview({ accounts, games, canEdit }) {
     <div className="mx-auto flex max-w-[1400px] flex-col gap-5 px-4 py-7 sm:px-7">
       <div className="flex flex-wrap items-end gap-4">
         <div className="min-w-0 flex-[1_1_360px]">
-          <p className="text-xs font-black tracking-[0.12em] text-[#B00004]">STOCK</p>
+          <p className="text-xs font-black tracking-[0.12em] text-[#B00004]">STOCK · คลัง</p>
           <h1 className="mt-1 text-3xl font-extrabold">คลังของที่ซื้อตุนไว้</h1>
           <p className="mt-1.5 text-sm text-zinc-600">แยกตามไอดี stock · ยอดคงเหลือคิดจากประวัติรับเข้าและตัดออกทั้งหมด</p>
         </div>
@@ -60,7 +110,7 @@ export default function StockOverview({ accounts, games, canEdit }) {
         <div className="rounded-2xl border border-zinc-200 bg-white px-[18px] py-4">
           <p className="text-[13px] text-zinc-600">ไอดี stock ที่ใช้อยู่</p>
           <p className="mt-1 text-3xl font-black">{open.length}</p>
-          <p className="mt-0.5 text-xs text-zinc-600">ทั้งหมด {accounts.length} ไอดี</p>
+          <p className="mt-0.5 text-xs text-zinc-600">ทั้งหมด {accounts.length} ไอดี{picked ? ` · ${picked.name}` : ""}</p>
         </div>
         <div className="rounded-2xl border border-zinc-200 bg-white px-[18px] py-4">
           <p className="text-[13px] text-zinc-600">มูลค่าคงเหลือ</p>
@@ -95,9 +145,24 @@ export default function StockOverview({ accounts, games, canEdit }) {
         </div>
       </div>
 
+      {chips.length > 1 ? (
+        <div role="group" aria-label="กรองตามเกม" className="-mt-2 flex flex-wrap gap-2">
+          {[{ key: "all", name: "ทุกเกม", count: allAccounts.length }, ...chips].map((chip) => {
+            const on = (picked ? picked.key : "all") === chip.key;
+            return (
+              <button key={chip.key} type="button" aria-pressed={on} onClick={() => setGameKey(chip.key)}
+                className={`flex h-9 items-center gap-2 rounded-full border pl-1.5 pr-3.5 text-[13px] font-extrabold ${on ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-300 bg-white text-zinc-700 hover:border-zinc-500"} ${chip.key === NO_GAME && !on ? "border-dashed text-zinc-500" : ""}`}>
+                {chip.accountId && chip.key !== NO_GAME ? <GameLogo src={logos[chip.accountId]} name={chip.name} size={26} /> : <span className="w-1" />}
+                {chip.name} <span className={on ? "text-zinc-300" : "text-zinc-500"}>{chip.count}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
       {shown.length ? (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,420px),1fr))] gap-4">
-          {shown.map((account) => <AccountCard key={account.id} account={account} />)}
+          {shown.map((account) => <AccountCard key={account.id} account={account} logo={logos[account.id]} filter={filter} />)}
         </div>
       ) : (
         <div className="rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-14 text-center text-sm text-zinc-600">
@@ -105,26 +170,50 @@ export default function StockOverview({ accounts, games, canEdit }) {
         </div>
       )}
 
-      {dialog?.type === "move" ? <StockMoveDialog accounts={accounts} kind={dialog.kind} onClose={() => setDialog(null)} /> : null}
+      {dialog?.type === "move" ? <StockMoveDialog accounts={allAccounts} kind={dialog.kind} onClose={() => setDialog(null)} /> : null}
       {dialog?.type === "account" ? <StockAccountDialog games={games} onClose={() => setDialog(null)} /> : null}
     </div>
   );
 }
 
-function AccountCard({ account }) {
+// The "ต้องตรวจ" note folded to one line, so a long sheet note does not push the packs down.
+function CheckNote({ note }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="flex items-start gap-2 bg-amber-50 px-[18px] py-2 text-[13px] text-amber-900">
+      <AlertTriangle size={15} strokeWidth={2.4} className="mt-0.5 shrink-0" aria-hidden="true" />
+      <p className={`min-w-0 flex-1 whitespace-pre-line ${open ? "" : "line-clamp-1"}`}>{note}</p>
+      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="shrink-0 font-extrabold underline-offset-2 hover:underline">
+        {open ? "ย่อ" : "อ่านต่อ"}
+      </button>
+    </div>
+  );
+}
+
+function AccountCard({ account, logo, filter }) {
+  // Under the "ใกล้หมด" / "หมด" filters show only the packs that made the account match,
+  // so a card found by "หมด" does not look full because its other packs still have stock.
+  const packTone = filter === "low" || filter === "empty" ? filter : null;
+  const items = packTone ? account.items.filter((item) => item.tone === packTone) : account.items;
+  const hidden = account.items.length - items.length;
   return (
     <article className={`flex flex-col overflow-hidden rounded-[18px] border border-zinc-200 bg-white ${account.status === "closed" ? "opacity-70" : ""}`}>
       <div className="flex items-center gap-3 border-b border-zinc-100 px-[18px] py-4">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-[13px] font-black uppercase text-white">{account.code.slice(0, 3)}</div>
+        <GameLogo src={logo} name={account.gameName || account.code} size={48} />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[17px] font-black">{account.code}</p>
-          <p className="truncate text-[13px] text-zinc-600">{account.gameName || "ยังไม่ผูกเกม"} · {account.dataMode === "idpass" ? "ID-PASS" : "UID"}</p>
+          <p className="truncate text-[17px] font-black leading-tight">{account.gameName || account.code}</p>
+          <p className="mt-1 flex min-w-0 items-center gap-1.5 text-[13px] text-zinc-600">
+            {account.gameName ? <span className="truncate rounded-md bg-zinc-100 px-1.5 py-0.5 font-mono text-[12px] font-bold text-zinc-800">{account.code}</span> : (
+              <span className="shrink-0 rounded-md border border-dashed border-zinc-300 px-1.5 py-0.5 text-[12px] font-bold text-zinc-500">ยังไม่ผูกเกม</span>
+            )}
+            <span className="shrink-0">{account.dataMode === "idpass" ? "ID-PASS" : "UID"}</span>
+          </p>
         </div>
         <StockStatusPill status={account.status} />
       </div>
-      {account.note && account.status === "check" ? <p className="bg-amber-50 px-[18px] py-2.5 text-[13px] font-bold text-amber-900">{account.note}</p> : null}
+      {account.note && account.status === "check" ? <CheckNote note={account.note} /> : null}
       <div className="px-[18px] pb-2 pt-1.5">
-        {account.items.length ? account.items.map((item) => {
+        {items.length ? items.map((item) => {
           const percent = item.received > 0 ? Math.max(0, Math.min(100, Math.round((item.left / item.received) * 100))) : 0;
           return (
             <div key={item.id} className="grid grid-cols-[minmax(0,110px)_64px_minmax(0,1fr)_56px] items-center gap-3 border-b border-zinc-100 py-2 last:border-0">
@@ -135,9 +224,10 @@ function AccountCard({ account }) {
             </div>
           );
         }) : <p className="py-4 text-sm text-zinc-600">ยังไม่มีแพ็ค</p>}
+        {hidden > 0 ? <p className="py-2 text-xs text-zinc-600">แสดงเฉพาะแพ็คที่{packTone === "empty" ? "หมดแล้ว" : "ใกล้หมด"} · ซ่อนแพ็คอื่นของไอดีนี้ {hidden} แพ็ค</p> : null}
       </div>
       <div className="mt-auto flex flex-wrap items-center gap-3 bg-zinc-50 px-[18px] py-3">
-        <span className="text-[13px] text-zinc-600">คงเหลือ <b className="text-zinc-900">{account.leftTotal}</b> ชิ้น · มูลค่า <b className="text-zinc-900">{formatStockNumber(account.valueUsd, 1)} USD</b></span>
+        <span className="text-[13px] text-zinc-600">ทั้งไอดีคงเหลือ <b className="text-zinc-900">{account.leftTotal}</b> ชิ้น · มูลค่า <b className="text-zinc-900">{formatStockNumber(account.valueUsd, 1)} USD</b></span>
         <Link href={`/stock/${account.code}`} className="ml-auto flex h-9 items-center rounded-full bg-zinc-900 px-3.5 text-[13px] font-extrabold text-white hover:bg-zinc-700">ดูไอดีนี้</Link>
       </div>
     </article>
