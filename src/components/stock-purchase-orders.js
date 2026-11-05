@@ -6,6 +6,8 @@ import Link from "next/link";
 import { ClipboardList, ExternalLink, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { AddressesForRecipient } from "@/components/crypto-address-card";
+import StockGamePicker from "@/components/stock-game-picker";
+import ComboInput from "@/components/combo-input";
 import {
   DELIVERY_METHOD_LABELS,
   DELIVERY_STATUS_LABELS,
@@ -233,7 +235,7 @@ export default function StockPurchaseOrders({ orders, accounts, games = [], wall
         </div>
       )}
 
-      {creating ? <CreatePurchaseOrderDialog accounts={accounts} games={games} onClose={() => setCreating(false)} /> : null}
+      {creating ? <CreatePurchaseOrderDialog accounts={accounts} games={games} usedCurrencies={[...new Set(orders.map((order) => order.currency).filter(Boolean))]} onClose={() => setCreating(false)} /> : null}
       {opened ? <PurchaseOrderDialog key={`${opened.id}-${opened.status}-${opened.qtyReceived}`} order={opened} wallets={wallets} canEdit={canEdit} currentUserId={currentUserId} onClose={() => setOpenId(null)} /> : null}
     </div>
   );
@@ -341,13 +343,15 @@ const suggestCode = (name) => {
   return base.length >= 2 ? `${base}1` : "";
 };
 
-function CreatePurchaseOrderDialog({ accounts, games, onClose }) {
+// The currency box offers these first; any 3–5 letter code can still be typed.
+const PO_COMMON_CURRENCIES = ["THB", "USDT", "USD", "CNY", "USDC"];
+
+function CreatePurchaseOrderDialog({ accounts, games, usedCurrencies = [], onClose }) {
   const router = useRouter();
   const open = accounts.filter((account) => account.status !== "closed");
   const { list: gameList, keyOf } = orderGames(games, open);
   const first = open.find((account) => account.items.length) || open[0];
   const [form, setForm] = useState({ gameKey: first ? keyOf(first) : "", accountId: first ? String(first.id) : "", supplier: "", paymentChannel: "", buyer: "", currency: "THB", amount: "", rateThb: "", productRate: "", cnyRate: "", receiptUrl: "", note: "" });
-  const [gameQuery, setGameQuery] = useState("");
   const [newAccount, setNewAccount] = useState({ code: "", dataMode: "uid" });
   const [packState, setPackState] = useState({ key: "", names: [] });
   const [lines, setLines] = useState([emptyLine()]);
@@ -360,8 +364,6 @@ function CreatePurchaseOrderDialog({ accounts, games, onClose }) {
   const items = account?.items || [];
   const dataMode = creatingAccount ? newAccount.dataMode : account?.dataMode || "uid";
   const packNames = game?.id && packState.key === `${game.id}-${dataMode}` ? packState.names : [];
-  const query = gameQuery.trim().toLowerCase();
-  const shownGames = gameList.filter((item) => item.key === form.gameKey || !query || item.name.toLowerCase().includes(query));
   const set = (patch) => setForm((current) => ({ ...current, ...patch }));
   // The 1.1 sheet's rates: Product Rate (CNY per 1 USD of packs), CNY Rate (CNY per 1 USDT).
   // USDT to pay = Total USD × Product Rate ÷ CNY Rate. The THB rate is typed on its own.
@@ -458,13 +460,7 @@ function CreatePurchaseOrderDialog({ accounts, games, onClose }) {
             <input id="po-supplier" value={form.supplier} onChange={(event) => set({ supplier: event.target.value })} className={stockInputClass} placeholder="เช่น Twocard, Panghou, OffGamer" required />
           </StockField>
           <StockField label="เกม" htmlFor="po-game" hint={games.length ? `${gameList.length} เกม · ★ = มีไอดี stock แล้ว` : "ต่อ GameInfo ไม่ได้ตอนนี้ — เลือกได้เฉพาะเกมที่มีไอดี stock แล้ว"}>
-            <div className="flex flex-col gap-1.5">
-              <input aria-label="ค้นหาเกม" value={gameQuery} onChange={(event) => setGameQuery(event.target.value)} className={stockInputClass} placeholder="พิมพ์ค้นหาชื่อเกม" />
-              <select id="po-game" value={form.gameKey} onChange={(event) => pickGame(event.target.value)} className={stockInputClass} required>
-                <option value="">เลือกเกม</option>
-                {shownGames.map((item) => <option key={item.key} value={item.key}>{item.hasStock ? "★ " : ""}{item.name}</option>)}
-              </select>
-            </div>
+            <StockGamePicker id="po-game" games={gameList} value={form.gameKey} onPick={pickGame} />
           </StockField>
         </div>
 
@@ -509,7 +505,8 @@ function CreatePurchaseOrderDialog({ accounts, games, onClose }) {
             <input id="po-amount" inputMode="decimal" value={form.amount} onChange={(event) => set({ amount: event.target.value })} className={stockInputClass} required />
           </StockField>
           <StockField label="สกุลเงิน" htmlFor="po-currency">
-            <input id="po-currency" value={form.currency} onChange={(event) => set({ currency: event.target.value.toUpperCase() })} className={stockInputClass} placeholder="THB, USDT, CNY" />
+            <ComboInput id="po-currency" value={form.currency} onChange={(currency) => set({ currency })} upper placeholder="THB, USDT, CNY"
+              groups={[{ label: "ใช้บ่อย", options: PO_COMMON_CURRENCIES }, { label: "เคยใช้ในใบสั่งซื้อ", options: usedCurrencies.filter((code) => !PO_COMMON_CURRENCIES.includes(code)).sort() }]} />
           </StockField>
           <StockField label={`เรท (บาทต่อ 1 ${form.currency && form.currency !== "THB" ? form.currency : "หน่วย"})`} htmlFor="po-rate" hint={form.currency === "THB" ? "THB ไม่ต้องใส่" : "ไม่บังคับ ใช้คิดยอดเป็นบาท"}>
             <input id="po-rate" inputMode="decimal" value={form.rateThb} onChange={(event) => set({ rateThb: event.target.value })} className={stockInputClass} disabled={form.currency === "THB"} />
