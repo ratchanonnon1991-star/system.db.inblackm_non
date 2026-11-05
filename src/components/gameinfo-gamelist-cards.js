@@ -21,6 +21,7 @@ import {
   List,
   Menu,
   MoreVertical,
+  PackagePlus,
   PackageSearch,
   Search,
   Send,
@@ -35,6 +36,7 @@ import {
 import GameinfoDatasetToggle from "./gameinfo-dataset-toggle";
 import GameinfoBotCatalog from "./gameinfo-bot-catalog";
 import GameinfoPackPriceCompare from "./gameinfo-pack-price-compare";
+import GameinfoPackUpdate from "./gameinfo-pack-update";
 import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
 import {
   GAMEINFO_STATUSES,
@@ -48,6 +50,7 @@ import { gameinfoGameHref, gameinfoListHref, gameinfoPacksHref } from "@/lib/gam
 import { gameinfoRoleView, rememberGameinfoView } from "@/lib/gameinfo-view";
 import { useGameinfoDialog } from "@/lib/use-gameinfo-dialog";
 import { gameinfoGameColor, gameinfoGameInitials } from "@/lib/gameinfo-game-initials";
+import { mockGameinfoPackUpdates } from "@/lib/gameinfo-pack-update";
 import GameinfoPriorityStars, { GameinfoWebBadge } from "./gameinfo-priority-stars";
 import {
   requestGameinfoDiscard,
@@ -72,7 +75,11 @@ const STATUS_STYLE = {
   offline: { label: "ปิดใช้งาน", dot: "bg-linear-ink-tertiary", text: "text-linear-ink-subtle" },
 };
 
-export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, botChannels = [], botCategoryImages = {}, marketPage = null, botCatalogActive = false, priceComparisonActive = false, editable = false, topupView = false, canReport = false, lang, dataMode = "uid" }) {
+export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, botChannels = [], botCategoryImages = {}, marketPage = null, botCatalogActive = false, priceComparisonActive = false, packUpdateActive = false, userName = "", editable = false, topupView = false, canReport = false, lang, dataMode = "uid" }) {
+  // A page other than the game list fills the main area; the filters there lead back to the list.
+  const otherSection = priceComparisonActive || packUpdateActive;
+  // Mock until the PG2 API exists (see gameinfo-pack-update.js).
+  const packUpdateCount = useMemo(() => mockGameinfoPackUpdates(initial).length, [initial]);
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
@@ -194,21 +201,21 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
   }
 
   function chooseStatus(nextStatus) {
-    if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false));
+    if (botCatalogActive || otherSection) router.push(gameinfoListHref(lang, dataMode, false));
     setStatus(nextStatus);
     setPage(0);
     setSidebarOpen(false);
   }
 
   function chooseTag(nextTag) {
-    if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false));
+    if (botCatalogActive || otherSection) router.push(gameinfoListHref(lang, dataMode, false));
     setTag(nextTag);
     setPage(0);
     setSidebarOpen(false);
   }
 
   function choosePublisher(nextPublisher) {
-    if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false));
+    if (botCatalogActive || otherSection) router.push(gameinfoListHref(lang, dataMode, false));
     setPublisher(nextPublisher);
     setPage(0);
     setSidebarOpen(false);
@@ -367,14 +374,23 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             onClick={() => {
               clearFilters();
               setSidebarOpen(false);
-              if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false));
+              if (botCatalogActive || otherSection) router.push(gameinfoListHref(lang, dataMode, false));
             }}
-            className={`${navItemClass(!botCatalogActive && status === "all" && !tag && !publisher && !priceComparisonActive)} min-h-11 font-bold`}
+            className={`${navItemClass(!botCatalogActive && status === "all" && !tag && !publisher && !otherSection)} min-h-11 font-bold`}
           >
             <Gamepad2 size={18} aria-hidden="true" />
             <span>เกมทั้งหมด</span>
-            <span className={navCountClass(!botCatalogActive && status === "all" && !tag && !publisher && !priceComparisonActive)}>{counts.all}</span>
+            <span className={navCountClass(!botCatalogActive && status === "all" && !tag && !publisher && !otherSection)}>{counts.all}</span>
           </button>
+          <Link
+            href={`/gameinfo/${lang}?section=pack-update${dataMode === "uid" ? "" : `&mode=${dataMode}`}`}
+            onClick={() => setSidebarOpen(false)}
+            className={`${navItemClass(packUpdateActive)} min-h-11 font-bold`}
+          >
+            <PackagePlus size={18} aria-hidden="true" />
+            <span>Pack Update</span>
+            {packUpdateCount ? <span className={`ml-auto rounded-full px-2 text-[11px] ${packUpdateActive ? "bg-white text-[#D90005]" : "bg-[#D90005] text-white"}`}>{packUpdateCount}</span> : null}
+          </Link>
 
           <details open className="group/sec">
             <summary className={`${sectionLabelClass} cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden`}>
@@ -382,7 +398,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             </summary>
             <div className="flex flex-col gap-1">
               {GAMEINFO_STATUSES.slice(1).map((item) => {
-                const active = !botCatalogActive && status === item.id && !priceComparisonActive;
+                const active = !botCatalogActive && status === item.id && !otherSection;
                 return (
                   <button key={item.id} type="button" onClick={() => chooseStatus(item.id)} className={navItemClass(active)}>
                     <span aria-hidden="true" className={`mx-[5px] h-2 w-2 rounded-full ${active ? "bg-white" : STATUS_STYLE[item.id].dot}`} />
@@ -401,7 +417,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             {tagOptions.length ? (
               <div className="flex flex-col gap-1">
                 {tagOptions.map((item) => {
-                  const active = !botCatalogActive && tag === item.name && !priceComparisonActive;
+                  const active = !botCatalogActive && tag === item.name && !otherSection;
                   return (
                     <button key={item.name} type="button" onClick={() => chooseTag(tag === item.name ? "" : item.name)} className={navItemClass(active)}>
                       {tagImages[item.name] ? (
@@ -424,7 +440,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             {publisherOptions.length ? (
               <div className="flex flex-col gap-1">
                 {publisherOptions.map((item) => {
-                  const active = !botCatalogActive && publisher === item.name && !priceComparisonActive;
+                  const active = !botCatalogActive && publisher === item.name && !otherSection;
                   return (
                     <button key={item.name} type="button" onClick={() => choosePublisher(publisher === item.name ? "" : item.name)} className={navItemClass(active)}>
                       {publisherImages[item.name] ? (
@@ -441,37 +457,37 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
           </details>
 
           <span aria-hidden="true" className="mx-1 mb-1 mt-3.5 h-px bg-linear-hairline" />
-          <button type="button" onClick={() => chooseStatus("expiring")} className={navItemClass(!botCatalogActive && status === "expiring" && !priceComparisonActive)}>
+          <button type="button" onClick={() => chooseStatus("expiring")} className={navItemClass(!botCatalogActive && status === "expiring" && !otherSection)}>
             <Clock size={18} aria-hidden="true" />
             <span>ใกล้หมดอายุ</span>
-            <span className={navCountClass(!botCatalogActive && status === "expiring" && !priceComparisonActive)}>{counts.expiring}</span>
+            <span className={navCountClass(!botCatalogActive && status === "expiring" && !otherSection)}>{counts.expiring}</span>
           </button>
-          <button type="button" onClick={() => chooseStatus("favorite")} className={navItemClass(!botCatalogActive && status === "favorite" && !priceComparisonActive)}>
+          <button type="button" onClick={() => chooseStatus("favorite")} className={navItemClass(!botCatalogActive && status === "favorite" && !otherSection)}>
             <Star size={18} aria-hidden="true" />
             <span>รายการโปรด</span>
-            <span className={navCountClass(!botCatalogActive && status === "favorite" && !priceComparisonActive)}>{counts.favorite}</span>
+            <span className={navCountClass(!botCatalogActive && status === "favorite" && !otherSection)}>{counts.favorite}</span>
           </button>
-          <button type="button" onClick={() => chooseStatus("bot-auto")} className={navItemClass(!botCatalogActive && status === "bot-auto" && !priceComparisonActive)}>
+          <button type="button" onClick={() => chooseStatus("bot-auto")} className={navItemClass(!botCatalogActive && status === "bot-auto" && !otherSection)}>
             <Bot size={18} aria-hidden="true" />
             <span>Bot Auto</span>
-            <span className={navCountClass(!botCatalogActive && status === "bot-auto" && !priceComparisonActive)}>{counts.botAuto}</span>
+            <span className={navCountClass(!botCatalogActive && status === "bot-auto" && !otherSection)}>{counts.botAuto}</span>
           </button>
-          <button type="button" onClick={() => chooseStatus("priority-high")} className={navItemClass(!botCatalogActive && status === "priority-high" && !priceComparisonActive)}>
+          <button type="button" onClick={() => chooseStatus("priority-high")} className={navItemClass(!botCatalogActive && status === "priority-high" && !otherSection)}>
             <Flame size={18} aria-hidden="true" />
             <span>สำคัญสูง ★★★</span>
-            <span className={navCountClass(!botCatalogActive && status === "priority-high" && !priceComparisonActive)}>{counts.priorityHigh}</span>
+            <span className={navCountClass(!botCatalogActive && status === "priority-high" && !otherSection)}>{counts.priorityHigh}</span>
           </button>
           {hasWebData ? (
             <>
-              <button type="button" onClick={() => chooseStatus("web-on")} className={navItemClass(!botCatalogActive && status === "web-on" && !priceComparisonActive)}>
+              <button type="button" onClick={() => chooseStatus("web-on")} className={navItemClass(!botCatalogActive && status === "web-on" && !otherSection)}>
                 <Globe size={18} aria-hidden="true" />
                 <span>Web ON</span>
-                <span className={navCountClass(!botCatalogActive && status === "web-on" && !priceComparisonActive)}>{counts.webOn}</span>
+                <span className={navCountClass(!botCatalogActive && status === "web-on" && !otherSection)}>{counts.webOn}</span>
               </button>
-              <button type="button" onClick={() => chooseStatus("web-off")} className={navItemClass(!botCatalogActive && status === "web-off" && !priceComparisonActive)}>
+              <button type="button" onClick={() => chooseStatus("web-off")} className={navItemClass(!botCatalogActive && status === "web-off" && !otherSection)}>
                 <Globe size={18} aria-hidden="true" className="opacity-50" />
                 <span>Web OFF</span>
-                <span className={navCountClass(!botCatalogActive && status === "web-off" && !priceComparisonActive)}>{counts.webOff}</span>
+                <span className={navCountClass(!botCatalogActive && status === "web-off" && !otherSection)}>{counts.webOff}</span>
               </button>
             </>
           ) : null}
@@ -483,6 +499,8 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
           <GameinfoBotCatalog channels={botChannels} categoryImages={botCategoryImages} editable={editable} lang={lang} />
         ) : priceComparisonActive ? (
           <GameinfoPackPriceCompare page={marketPage} editable={editable} />
+        ) : packUpdateActive ? (
+          <GameinfoPackUpdate rows={initial} userName={userName} />
         ) : (
           <>
         <div className="flex flex-wrap items-end justify-between gap-4">

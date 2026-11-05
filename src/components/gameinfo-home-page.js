@@ -193,7 +193,7 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
   }
 
   if (!manageMode && !loadError) {
-    return <GameinfoGamelistCards initial={rows} initialReports={reports} tagImages={tagImages} publisherImages={publisherImages} botChannels={botChannels} botCategoryImages={botCategoryImages} marketPage={marketPage} botCatalogActive={section === "game-bot-auto"} priceComparisonActive={priceComparison} editable={editableRole} topupView={topupView} canReport={canReport} lang={lang} dataMode={dataMode} />;
+    return <GameinfoGamelistCards initial={rows} initialReports={reports} tagImages={tagImages} publisherImages={publisherImages} botChannels={botChannels} botCategoryImages={botCategoryImages} marketPage={marketPage} botCatalogActive={section === "game-bot-auto"} priceComparisonActive={priceComparison} packUpdateActive={section === "pack-update"} userName={user.displayName || user.username || ""} editable={editableRole} topupView={topupView} canReport={canReport} lang={lang} dataMode={dataMode} />;
   }
 
   return (
