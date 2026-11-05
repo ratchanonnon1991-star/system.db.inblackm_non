@@ -5,8 +5,10 @@ import { listGameListRows } from "@/server/gameinfo-gamelist";
 import {
   listGamelistChannelsByGame,
   listGamelistPackCountByGame,
+  listGamelistPackPricesByGame,
   listGamelistPackServiceByGame,
 } from "@/server/gameinfo-gamelist-packs";
+import { gameinfoPackUpdateSource, mockGameinfoPackUpdates } from "@/lib/gameinfo-pack-update";
 import {
   listGamelistTutorialPresence,
   listGamelistVpnNotePresence,
@@ -81,6 +83,7 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
   let botChannels = [];
   let botCategoryImages = {};
   let marketPage = null;
+  let packUpdates = null;
   let loadError = null;
   try {
     const [gameListRows, channelsByGame, packCountByGame, packServiceByGame, tutorialPresence, warningPresence, vpnNotePresence, imageByGame, linksByGame, tagsByGame, publishersByGame, loadedTagImages, loadedPublisherImages, openReports, favoriteIds, loadedBotChannels, loadedBotCategoryImages, loadedMarketPage, savedBaselineSeller] =
@@ -188,12 +191,19 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
       web: topupWebById.get(settingsByGame[r.id]?.topupGameId) || null,
       });
     });
+    if (section === "pack-update") {
+      // Every game with its real packs; PG2's side is mock (see gameinfo-pack-update.js).
+      const packsByGame = dataMode === "idpass"
+        ? Object.fromEntries(Object.entries(modeDataByGame).map(([gameId, data]) => [gameId, gameinfoPackUpdateSource(data?.packs?.currencies)]))
+        : await listGamelistPackPricesByGame();
+      packUpdates = mockGameinfoPackUpdates(rows, packsByGame);
+    }
   } catch (err) {
     loadError = err.message || "โหลดข้อมูลไม่สำเร็จ";
   }
 
   if (!manageMode && !loadError) {
-    return <GameinfoGamelistCards initial={rows} initialReports={reports} tagImages={tagImages} publisherImages={publisherImages} botChannels={botChannels} botCategoryImages={botCategoryImages} marketPage={marketPage} botCatalogActive={section === "game-bot-auto"} priceComparisonActive={priceComparison} packUpdateActive={section === "pack-update"} userName={user.displayName || user.username || ""} editable={editableRole} topupView={topupView} canReport={canReport} lang={lang} dataMode={dataMode} />;
+    return <GameinfoGamelistCards initial={rows} initialReports={reports} tagImages={tagImages} publisherImages={publisherImages} botChannels={botChannels} botCategoryImages={botCategoryImages} marketPage={marketPage} botCatalogActive={section === "game-bot-auto"} priceComparisonActive={priceComparison} packUpdateActive={section === "pack-update"} packUpdates={packUpdates} userName={user.displayName || user.username || ""} editable={editableRole} topupView={topupView} canReport={canReport} lang={lang} dataMode={dataMode} />;
   }
 
   return (

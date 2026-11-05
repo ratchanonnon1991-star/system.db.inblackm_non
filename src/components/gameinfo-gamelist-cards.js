@@ -50,7 +50,6 @@ import { gameinfoGameHref, gameinfoListHref, gameinfoPacksHref } from "@/lib/gam
 import { gameinfoRoleView, rememberGameinfoView } from "@/lib/gameinfo-view";
 import { useGameinfoDialog } from "@/lib/use-gameinfo-dialog";
 import { gameinfoGameColor, gameinfoGameInitials } from "@/lib/gameinfo-game-initials";
-import { mockGameinfoPackUpdates } from "@/lib/gameinfo-pack-update";
 import GameinfoPriorityStars, { GameinfoWebBadge } from "./gameinfo-priority-stars";
 import {
   requestGameinfoDiscard,
@@ -77,11 +76,11 @@ const STATUS_STYLE = {
   offline: { label: "ปิดใช้งาน", dot: "bg-linear-ink-tertiary", text: "text-linear-ink-subtle" },
 };
 
-export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, botChannels = [], botCategoryImages = {}, marketPage = null, botCatalogActive = false, priceComparisonActive = false, packUpdateActive = false, userName = "", editable = false, topupView = false, canReport = false, lang, dataMode = "uid" }) {
+export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, botChannels = [], botCategoryImages = {}, marketPage = null, botCatalogActive = false, priceComparisonActive = false, packUpdateActive = false, packUpdates = null, userName = "", editable = false, topupView = false, canReport = false, lang, dataMode = "uid" }) {
   // A page other than the game list fills the main area; the filters there lead back to the list.
   const otherSection = priceComparisonActive || packUpdateActive;
-  // Mock until the PG2 API exists (see gameinfo-pack-update.js).
-  const packUpdateCount = useMemo(() => mockGameinfoPackUpdates(initial).length, [initial]);
+  // Every game is listed until the PG2 API says which changed (see gameinfo-pack-update.js).
+  const packUpdateCount = initial.length;
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
@@ -506,7 +505,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
         ) : priceComparisonActive ? (
           <GameinfoPackPriceCompare page={marketPage} editable={editable} />
         ) : packUpdateActive ? (
-          <GameinfoPackUpdate rows={initial} userName={userName} />
+          <GameinfoPackUpdate initialGames={packUpdates || []} userName={userName} />
         ) : (
           <>
         <div className="flex flex-wrap items-end justify-between gap-4">

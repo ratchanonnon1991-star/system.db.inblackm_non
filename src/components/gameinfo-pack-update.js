@@ -7,7 +7,6 @@ import { gameinfoGameColor, gameinfoGameInitials } from "@/lib/gameinfo-game-ini
 import {
   PACK_UPDATE_PRIORITIES,
   PACK_UPDATE_TYPES,
-  mockGameinfoPackUpdates,
   packUpdateBotResult,
   packUpdateGate,
   packUpdateNeedsWork,
@@ -37,12 +36,12 @@ function Cover({ game, size }) {
   const style = size ? { width: size, height: size } : undefined;
   if (game.image) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={game.image} alt="" style={style} className={`aspect-square shrink-0 rounded-xl object-cover ${size ? "" : "w-full"}`} />;
+    return <img src={game.image} alt="" loading="lazy" style={style} className={`aspect-square shrink-0 rounded-xl object-cover ${size ? "" : "w-full"}`} />;
   }
   return (
     <span
       aria-hidden="true"
-      style={{ ...style, background: gameinfoGameColor(Number(game.pg)) }}
+      style={{ ...style, background: gameinfoGameColor(game.gameId) }}
       className={`flex aspect-square shrink-0 items-center justify-center rounded-xl font-black text-white ${size ? "text-lg" : "w-full text-3xl"}`}
     >
       {gameinfoGameInitials(game.name)}
@@ -52,13 +51,13 @@ function Cover({ game, size }) {
 
 /**
  * GameInfo's Pack Update screen: what PG2 changed, the bot and a person
- * checking each pack, then one import. Everything here is a mock until the
- * PG2 API exists: the games and images are GameInfo's, the packs are made up,
- * and nothing is saved.
+ * checking each pack, then one import. Until the PG2 API exists only PG2's
+ * side is made up: the games, images and current packs are GameInfo's, and
+ * nothing is saved.
  */
-export default function GameinfoPackUpdate({ rows, userName = "" }) {
+export default function GameinfoPackUpdate({ initialGames, userName = "" }) {
   const me = userName || "แอดมิน A";
-  const [games, setGames] = useState(() => mockGameinfoPackUpdates(rows));
+  const [games, setGames] = useState(initialGames);
   const [user, setUser] = useState(me);
   const [priority, setPriority] = useState("all");
   const [modal, setModal] = useState(null);
@@ -74,8 +73,8 @@ export default function GameinfoPackUpdate({ rows, userName = "" }) {
   const blocked = gate.some((rule) => !rule.ok);
   const shown = games
     .filter((game) => priority === "all" || String(game.priority) === priority)
-    .sort((a, b) => a.priority - b.priority || b.newCount - a.newCount);
-  const modalGames = modal === "price" ? games : games.filter((game) => game.pg === modal);
+    .sort((a, b) => a.priority - b.priority || b.packs.length - a.packs.length);
+  const modalGames = modal === "price" ? games : games.filter((game) => game.key === modal);
 
   const addLog = (who, message) => setLog((current) => [{ at: clock(), who, message }, ...current]);
   const updatePacks = (change) => setGames((current) => current.map((game) => ({ ...game, packs: game.packs.map((pack) => change(pack, game) || pack) })));
@@ -124,7 +123,7 @@ export default function GameinfoPackUpdate({ rows, userName = "" }) {
     setBusy("pull");
     setTimeout(() => {
       setBusy("");
-      setNote(`ดึงข้อมูลล่าสุดจาก PG2 แล้ว — มี ${games.length} เกมที่เปลี่ยน (ข้อมูลตัวอย่าง)`);
+      setNote(`ดึงข้อมูลล่าสุดจาก PG2 แล้ว — ${games.length} เกม (ข้อมูลตัวอย่าง)`);
     }, 700);
   }
 
@@ -132,13 +131,12 @@ export default function GameinfoPackUpdate({ rows, userName = "" }) {
     if (blocked) return;
     setBusy("import");
     setTimeout(() => {
-      const fresh = games.filter((game) => !game.gameId).length;
-      addLog(user, `นำเข้าคลัง: แพ็กใหม่ ${total.new} · แก้ราคา ${total.changed} · ปิดขาย ${total.removed} · เกมใหม่ ${fresh}`);
+      addLog(user, `นำเข้าคลัง ${games.length} เกม: แพ็กใหม่ ${total.new} · แก้ราคา ${total.changed} · ปิดขาย ${total.removed}`);
       setGames([]);
       setModal(null);
       setBusy("");
       setLogOpen(true);
-      setNote(`อัปเดตแล้ว — แพ็กใหม่ ${total.new} · แก้ราคา ${total.changed} · ปิดขาย ${total.removed} · เกมใหม่ ${fresh} เกม (ตัวอย่าง ยังไม่ได้บันทึกจริง)`);
+      setNote(`อัปเดตแล้ว ${games.length} เกม — แพ็กใหม่ ${total.new} · แก้ราคา ${total.changed} · ปิดขาย ${total.removed} (ตัวอย่าง ยังไม่ได้บันทึกจริง)`);
     }, 900);
   }
 
@@ -167,7 +165,7 @@ export default function GameinfoPackUpdate({ rows, userName = "" }) {
         <div className="min-w-[200px] flex-1">
           <h2 className="m-0 text-xl font-black text-linear-ink">Game Update</h2>
           <p className="m-0 mt-0.5 text-sm text-linear-ink-muted">
-            การเปลี่ยนแปลงจาก PG2 · {games.length} เกม · ใหม่ {total.new} · ราคาเปลี่ยน {total.changed} · ถูกลบ {total.removed}
+            การเปลี่ยนแปลงจาก PG2 · ทุกเกมใน GameInfo {games.length} เกม · ใหม่ {total.new} · ราคาเปลี่ยน {total.changed} · ถูกลบ {total.removed}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -235,21 +233,21 @@ export default function GameinfoPackUpdate({ rows, userName = "" }) {
             const prio = PACK_UPDATE_PRIORITIES[game.priority];
             return (
               <button
-                key={game.pg}
+                key={game.key}
                 type="button"
-                onClick={() => { setModal(game.pg); setOnlyNeedsWork(false); }}
+                onClick={() => { setModal(game.key); setOnlyNeedsWork(false); }}
                 aria-label={`ดูแพ็กของ ${game.name}`}
                 className={`flex flex-col items-center gap-1.5 rounded-2xl border bg-linear-surface-1 p-3 text-center transition hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D90005] ${game.priority === 1 ? "border-[#D90005] shadow-[0_0_0_1px_#D90005]" : "border-linear-hairline"}`}
               >
                 <span className="relative block w-full">
                   <Cover game={game} />
-                  <span title={`แพ็กใหม่ ${game.newCount} แพ็ก`} className={`absolute left-1.5 top-1.5 bg-[#D90005] px-2 py-0.5 font-mono text-[13px] tabular-nums ${STAMP}`}>+{game.newCount}</span>
+                  <span title={`เปลี่ยนแปลง ${game.packs.length} รายการ`} className={`absolute left-1.5 top-1.5 bg-[#D90005] px-2 py-0.5 font-mono text-[13px] tabular-nums ${STAMP}`}>+{game.packs.length}</span>
                   <span className={`absolute right-1.5 top-1.5 px-2 py-0.5 text-[11px] ${STAMP}`} style={{ background: prio.color }}>{prio.label}</span>
                 </span>
                 <span className="line-clamp-2 text-[13px] font-bold text-linear-ink">{game.name}</span>
-                <span className="font-mono text-[11px] text-linear-ink-tertiary">PG2 #{game.pg}</span>
+                <span className="font-mono text-[11px] text-linear-ink-tertiary">ID {game.gameId} · {game.packTotal} แพ็ก</span>
                 <span className="flex flex-wrap justify-center gap-1">
-                  <Chip tone={game.gameId ? "ok" : "info"}>{game.gameId ? "เกมเดิม" : "เกมใหม่"}</Chip>
+                  {s.new ? <Chip tone="info">ใหม่ {s.new}</Chip> : null}
                   {s.changed ? <Chip tone="warn">ราคาเปลี่ยน {s.changed}</Chip> : null}
                   {s.removed ? <Chip tone="bad">ถูกลบ {s.removed}</Chip> : null}
                   {s.bad ? <Chip tone="bad">ราคาไม่ตรง {s.bad}</Chip> : s.wait ? null : <Chip tone="ok">บอทตรวจผ่าน</Chip>}
@@ -300,7 +298,7 @@ function PackUpdateDialog({ games, all, user, busy, onlyNeedsWork, onOnlyNeedsWo
           ) : (
             <span className="relative shrink-0">
               <Cover game={game} size={64} />
-              <span className={`absolute -left-1.5 -top-1.5 bg-[#D90005] px-1.5 font-mono text-[11px] ${STAMP}`}>+{game.newCount}</span>
+              <span className={`absolute -left-1.5 -top-1.5 bg-[#D90005] px-1.5 font-mono text-[11px] ${STAMP}`}>+{game.packs.length}</span>
             </span>
           )}
           <div className="min-w-0 flex-1">
@@ -308,7 +306,7 @@ function PackUpdateDialog({ games, all, user, busy, onlyNeedsWork, onOnlyNeedsWo
             <DialogDescription className="text-sm text-linear-ink-muted">
               {all
                 ? `${games.length} เกม · ${rows.length} แพ็ก · เทียบราคาในคลังกับราคา PG2`
-                : <>PG2 #{game.pg} · {game.gameId ? "เกมเดิม" : "เกมใหม่"} · <b style={{ color: prio.color }}>{prio.label}</b> · {rows.length} รายการเปลี่ยนแปลง</>}
+                : <>ID {game.gameId} · แพ็กในคลัง {game.packTotal} · <b style={{ color: prio.color }}>{prio.label}</b> · {rows.length} รายการเปลี่ยนแปลง</>}
             </DialogDescription>
           </div>
           <button type="button" onClick={onClose} aria-label="ปิด" className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-linear-hairline text-linear-ink hover:bg-linear-surface-3">

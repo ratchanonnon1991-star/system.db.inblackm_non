@@ -1,9 +1,9 @@
 // Pack Update: what PG2 changed since the last import (new packs, new
 // prices, packs it stopped selling), checked by the bot and by a person
-// before it goes into GameInfo. There is no PG2 API yet, so the changes are
-// made up here: the games are GameInfo's own (name, image), a few new ones
-// are added, and every pack figure is invented. The same game always gets
-// the same changes, so the server render and the browser agree.
+// before it goes into GameInfo. There is no PG2 API yet, so only PG2's side
+// is made up: every GameInfo game is listed with its own name, image and
+// priority, and its own packs and prices are the "ราคาเดิม". The same game
+// always gets the same changes, so the page reads the same on every visit.
 
 export const PACK_UPDATE_PRIORITIES = {
   1: { label: "ด่วน", color: "#d90005" },
@@ -20,13 +20,7 @@ export const PACK_UPDATE_TYPES = {
 };
 
 const UNITS = ["Diamonds", "Gems", "Crystals", "Coins", "Tokens", "Gold"];
-const LADDER = [60, 120, 300, 500, 680, 980, 1280, 1980, 2580, 3280, 4280, 6480, 8080, 9980, 12960, 16480];
-const SMALL = [30, 90, 250, 420, 800, 1500];
-// Games PG2 has that GameInfo does not yet.
-const NEW_GAMES = [
-  ["Starfall Odyssey", 12, 2], ["Mecha Rush", 6, 3], ["Dragon Lore M", 9, 2], ["Neon Drift", 3, 4],
-  ["Kingdom Tactics", 8, 3], ["Pixel Knights", 10, 2], ["Shadow Hunter X", 14, 1], ["Thunder Squad", 9, 1],
-];
+const LADDER = [60, 120, 300, 500, 680, 980, 1280, 1980, 2580];
 
 function hash(text) {
   let h = 2166136261;
@@ -42,62 +36,87 @@ function random(seed) {
   };
 }
 
-function mockPacks(game, newCount, existing) {
-  const rnd = random(`${game.pg}:${game.name}`);
-  const unit = UNITS[hash(game.name) % UNITS.length];
+const priceOf = (value) => Number(String(value ?? "").replace(/[^\d.]/g, "")) || 0;
+const roundPrice = (value) => Math.max(1, Math.round(value));
+
+/** The packs of a GameInfo pack tree as Pack Update reads them: id, name, price, in order. */
+export function gameinfoPackUpdateSource(currencies) {
+  return (currencies || [])
+    .flatMap((currency) => (currency.categories || []).flatMap((category) => category.packs || []))
+    .filter((pack) => String(pack.name || "").trim() || String(pack.price || "").trim())
+    .map((pack) => ({ id: pack.id, name: pack.name || "", price: pack.price || "" }));
+}
+
+// New packs PG2 "added": bigger versions of the game's largest pack
+// ("6480 Diamonds" → "12,960 Diamonds"), or a plain ladder for a game with none.
+function newPackLabels(real, count, rnd, unitSeed) {
+  const last = real[real.length - 1];
+  const match = last ? /^([\d,.]+)\s*(.*)$/.exec(String(last.name).trim()) : null;
+  const amount = match ? Number(match[1].replace(/,/g, "")) : 0;
+  const lastPrice = priceOf(last?.price);
+  if (amount > 0 && lastPrice > 0) {
+    return Array.from({ length: count }, (_, index) => {
+      const factor = index + 2;
+      return { label: `${(amount * factor).toLocaleString("en-US")} ${match[2]}`.trim(), price: roundPrice(lastPrice * factor * (0.92 + rnd() * 0.06)) };
+    });
+  }
+  if (last) {
+    return Array.from({ length: count }, (_, index) => ({ label: `${last.name} (ใหม่ ${index + 1})`, price: roundPrice((lastPrice || 100) * (index + 2)) }));
+  }
+  const unit = UNITS[hash(unitSeed) % UNITS.length];
   const rate = 0.25 + rnd() * 0.35;
-  let index = 0;
-  const make = (amount, type) => {
-    const pg2 = Math.max(9, Math.round((amount * rate) / 10) * 10 - 1);
-    const step = Math.max(10, Math.round(pg2 * (0.05 + rnd() * 0.15)));
-    const base = { id: `${game.pg}:${index++}`, type, label: `${amount.toLocaleString("en-US")} ${unit}`, bot: null, human: false, checkedBy: null, checkedAt: null, editedBy: null };
-    if (type === "removed") return { ...base, old: pg2, pg2: null, web: pg2 };
-    const old = type === "changed" ? pg2 + (rnd() < 0.7 ? -step : step) : null;
+  return LADDER.slice(0, count).map((value) => ({ label: `${value.toLocaleString("en-US")} ${unit}`, price: Math.max(9, Math.round((value * rate) / 10) * 10 - 1) }));
+}
+
+function mockChanges(game, real) {
+  const rnd = random(`pu:${game.gameId}:${real.length}`);
+  const out = [];
+  const pack = (type, label, old, pg2, sourceId = null) => {
+    const base = { id: `${game.gameId}:${out.length}`, sourceId, type, label, old, pg2, web: pg2, bot: null, human: false, checkedBy: null, checkedAt: null, editedBy: null };
+    if (type === "removed") return { ...base, web: old };
     // About one in eight is typed in wrong: a changed price left at the old
     // one, or a new pack's price off by a step.
-    const wrong = rnd() < 0.13;
-    return { ...base, old, pg2, web: wrong ? (type === "changed" ? old : pg2 + (rnd() < 0.5 ? -step : step)) : pg2 };
+    if (rnd() < 0.13) {
+      const step = Math.max(1, Math.round(pg2 * (0.05 + rnd() * 0.1)));
+      return { ...base, web: type === "changed" ? old : pg2 + (rnd() < 0.5 ? -step : step) };
+    }
+    return base;
   };
-  const removed = existing ? Math.floor(rnd() * 3) : 0;
-  const changed = existing ? 1 + Math.floor(rnd() * 3) : 0;
-  return [
-    ...SMALL.slice(0, removed).map((amount) => make(amount, "removed")),
-    ...SMALL.slice(removed, removed + changed).map((amount) => make(amount, "changed")),
-    ...LADDER.slice(0, newCount).map((amount) => make(amount, "new")),
-  ];
+  for (const item of real) {
+    const roll = rnd();
+    const price = priceOf(item.price);
+    if (real.length > 3 && roll < 0.06) out.push(pack("removed", item.name || "-", price || null, null, item.id));
+    else if (price > 0 && roll < 0.2) {
+      const move = 0.03 + rnd() * 0.09;
+      out.push(pack("changed", item.name || "-", price, roundPrice(price * (rnd() < 0.65 ? 1 + move : 1 - move)), item.id));
+    }
+  }
+  let added = real.length ? Math.floor(rnd() * 3) : 3 + Math.floor(rnd() * 5);
+  if (!out.length && !added) added = 1;
+  for (const item of newPackLabels(real, added, rnd, game.name)) out.push(pack("new", item.label, null, item.price));
+  return out;
 }
 
 /**
- * The pending updates for these GameInfo rows: about one game in three
- * (up to `limit`), each with GameInfo's name and image, plus the new games.
+ * Every GameInfo game, each with PG2's (made-up) changes to its real packs.
+ * `packsByGame` is `{ [gameId]: [{ id, name, price }] }` in the editor's order.
  */
-export function mockGameinfoPackUpdates(rows, { limit = 14 } = {}) {
-  const picked = [...(rows || [])]
-    .filter((row) => hash(`pu:${row.id}`) % 3 === 0)
-    .sort((a, b) => a.id - b.id)
-    .slice(0, limit)
-    .map((row) => {
-      const rnd = random(`pu-row:${row.id}`);
-      const stars = Number(row.priority) || 0;
-      return {
-        pg: String(100 + Number(row.id)),
-        gameId: row.id,
-        name: row.game || `เกม #${row.id}`,
-        image: row.image || "",
-        newCount: 1 + Math.floor(rnd() * 11),
-        // A ★★★ game's update is urgent; the rest spread over สูง–ต่ำ.
-        priority: stars >= 3 ? 1 : 2 + Math.floor(rnd() * 3),
-      };
-    });
-  const fresh = NEW_GAMES.map(([name, newCount, priority], index) => ({
-    pg: String(412 + index * 3),
-    gameId: null,
-    name,
-    image: "",
-    newCount,
-    priority,
-  }));
-  return [...picked, ...fresh].map((game) => ({ ...game, packs: mockPacks(game, game.newCount, Boolean(game.gameId)) }));
+export function mockGameinfoPackUpdates(rows, packsByGame = {}) {
+  return (rows || []).map((row) => {
+    const real = packsByGame[row.id] || [];
+    const stars = Number(row.priority) || 0;
+    const game = {
+      key: String(row.id),
+      gameId: row.id,
+      name: row.game || `เกม #${row.id}`,
+      image: row.image || "",
+      // ★★★ ด่วน · ★★ สูง · ★ ปกติ · none ต่ำ
+      priority: stars >= 3 ? 1 : stars === 2 ? 2 : stars === 1 ? 3 : 4,
+      packTotal: real.length,
+    };
+    const packs = mockChanges(game, real);
+    return { ...game, packs, newCount: packs.filter((pack) => pack.type === "new").length };
+  });
 }
 
 /** What the bot finds: PG2 stopped selling it, the web price matches PG2, or not. */
