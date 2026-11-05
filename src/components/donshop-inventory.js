@@ -7,6 +7,7 @@ import TopupInventoryPage from "@/components/topup-inventory-page";
 import { tivButton as button, tivCard, tivCheck, tivField, tivInput as input, tivPrimary, tivTable, tivTableBox } from "@/lib/topup-inventory-ui";
 import { codaQuickDates } from "@/lib/usdcodashop-overview";
 import { DONSHOP_CHECK_DEFAULTS, DONSHOP_CHECK_KINDS, DONSHOP_LATE_MINUTES, DONSHOP_REFERENCE_RATE, DONSHOP_STATUSES, dsCheckSettings, dsStatusLabel, dsSum, dsVisibleAlerts } from "@/lib/donshop-inventory";
+import { ChannelReservations } from "@/components/inventory-reservations";
 const endpoint = "/api/projectm/donshop";
 // Polls only while the tab is visible; each read hits the shared production DB.
 const LIVE_MS = 30_000;
@@ -151,6 +152,7 @@ export default function DonshopInventory({ lang }) {
   const ready = data?.viewKey === viewKey && !loading && !error;
   const quick = Object.entries({ today: "วันนี้", yesterday: "เมื่อวาน", month: "เดือนนี้" }).map(([key, title]) => ({ key, title, on: Object.entries(codaQuickDates(key)).every(([k, v]) => filters[k] === v) }));
   return <TopupInventoryPage provider="donshop" description="เฉพาะคิวที่บอทเป็นคนทำ ทุกสถานะ · ไม่รวมคิวที่คนเติมหรือแก้เองโดยไม่มีข้อมูลบอท · อ่านอย่างเดียว ไม่สั่งเติมและไม่หักยอดซ้ำ">
+    <ChannelReservations lang={lang} channel="donshop" />
     <form className={tivCard} aria-label="กรอง Donshop" onSubmit={(e) => { e.preventDefault(); apply({ ...draft, page: "1" }); }}>
       <div className="tiv-tools">{quick.map(({ key, title, on }) => <button type="button" key={key} aria-pressed={on} className={`${button}${on ? " on" : ""}`} onClick={() => apply({ ...draft, ...codaQuickDates(key), page: "1" })}>{title}</button>)}</div>
       <div className="tiv-fields mt-4"><label className={tivField}><span>วันที่เริ่มต้น</span><input type="date" required value={draft.dateFrom} className={input} onChange={(e) => setDraft({ ...draft, dateFrom: e.target.value })} /></label><label className={tivField}><span>วันที่สิ้นสุด</span><input type="date" required value={draft.dateTo} className={input} onChange={(e) => setDraft({ ...draft, dateTo: e.target.value })} /></label><label className={tivField}><span>สถานะ</span><select value={draft.status} className={input} onChange={(e) => setDraft({ ...draft, status: e.target.value })}><option value="">ทุกสถานะ</option>{DONSHOP_STATUSES.map(([key, title]) => <option key={key} value={key}>{title}</option>)}</select></label><label className={tivField}><span>ค้นหา Order / คิว / เกม / ผู้เติม</span><input type="search" maxLength={200} value={draft.search} className={input} onChange={(e) => setDraft({ ...draft, search: e.target.value })} /></label><label className={tivField}><span>เรทอ้างอิง THB ต่อ IDR</span><input type="number" min="0.00000001" max="999999" step="0.00000001" required value={draft.rate} className={`${input} num`} onChange={(e) => setDraft({ ...draft, rate: e.target.value })} /></label></div>

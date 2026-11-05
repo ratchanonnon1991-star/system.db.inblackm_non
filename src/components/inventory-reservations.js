@@ -39,21 +39,17 @@ function AccountRow({ account, canManage, busy, onAction }) {
   </li>;
 }
 
-export default function InventoryReservations({ lang }) {
+// The accounts (all, or one Topup Inventory page's), and reserving / releasing them.
+function useReservations(channel) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("all");
-  const [group, setGroup] = useState("");
-  const [currency, setCurrency] = useState("");
-  const [withBalance, setWithBalance] = useState(false);
   const load = useCallback(async () => {
     setError("");
-    try { setData(await apiJson(endpoint, { cache: "no-store" })); } catch (e) { setError(e.message); }
-  }, []);
+    try { setData(await apiJson(channel ? `${endpoint}?channel=${encodeURIComponent(channel)}` : endpoint, { cache: "no-store" })); }
+    catch (e) { setError(e.message); }
+  }, [channel]);
   useEffect(() => { const timer = setTimeout(load, 0); return () => clearTimeout(timer); }, [load]);
-
   async function act(method, account) {
     if (method === "DELETE" && !account.mine && !window.confirm(`คืน ${account.label} ที่ ${account.holder} จองไว้?`)) return;
     setBusy(true); setError("");
@@ -61,6 +57,42 @@ export default function InventoryReservations({ lang }) {
     catch (e) { setError(e.message); }
     finally { setBusy(false); load(); }
   }
+  return { data, error, busy, load, act };
+}
+
+function NotMapped({ lang }) {
+  return <p role="status" className="tiv-banner">
+    <span className="tiv-warn">บัญชีนี้ยังไม่ได้จับคู่กับ ID พนักงานของ inblackm บัญชีที่จองจะยังไม่ขึ้นในหน้าออเดอร์</span> ให้ Admin จับคู่ที่{" "}
+    <Link className="tiv-lnk underline underline-offset-4" href={`${topupInventoryPath(lang)}/staff-links`}>หน้าจับคู่พนักงาน</Link></p>;
+}
+
+/** One Topup Inventory page's own accounts to reserve, as a card inside that page. */
+export function ChannelReservations({ lang, channel }) {
+  const { data, error, busy, load, act } = useReservations(channel);
+  const accounts = data?.accounts ?? [];
+  if (data && !accounts.length && !error) return null; // a page with no imported sheet account
+  return <section aria-label="จองช่องทาง" className="tiv-card">
+    <div className="tiv-card-h mb-2 flex flex-wrap items-center justify-between gap-2">
+      <h2>จองช่องทาง<small>{accounts.length} บัญชี · จองอยู่ {accounts.filter((a) => a.holderId != null).length}</small></h2>
+      <button type="button" className={button} onClick={load}><RefreshCw size={16} aria-hidden />โหลดใหม่</button>
+    </div>
+    {data && !data.mapped && <NotMapped lang={lang} />}
+    {error && <p role="alert" className="tiv-alert">{error}</p>}
+    {data?.botErrors?.length > 0 && <p role="status" className="tiv-muted">อ่านยอดบอทไม่สำเร็จ แสดงยอดจากชีตแทน</p>}
+    {!data && !error && <p role="status" className="tiv-muted">กำลังโหลด…</p>}
+    {/* Razer has hundreds of wallets: the list scrolls so the page's own content stays in reach. */}
+    <ul className="max-h-[28rem] overflow-y-auto">{accounts.map((a) => <AccountRow key={a.id} account={a} canManage={data.canManage} busy={busy} onAction={act} />)}</ul>
+    <p className="tiv-hint">จองแล้วเลือกบัญชีนี้พร้อมกรอกยอดที่ตัดในหน้าออเดอร์ inblackm ได้ · ดูทุกช่องทางรวมกันที่ <Link className="tiv-lnk underline underline-offset-4" href={`${topupInventoryPath(lang)}/reservations`}>หน้าจองช่องทาง</Link></p>
+  </section>;
+}
+
+export default function InventoryReservations({ lang }) {
+  const { data, error, busy, load, act } = useReservations(null);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("all");
+  const [group, setGroup] = useState("");
+  const [currency, setCurrency] = useState("");
+  const [withBalance, setWithBalance] = useState(false);
 
   const groups = useMemo(() => {
     const term = search.trim().toLowerCase(), map = new Map();
@@ -82,9 +114,7 @@ export default function InventoryReservations({ lang }) {
   const count = (s) => all.filter((a) => s === "all" || statusOf(a) === s).length;
 
   return <TopupInventoryPage provider="reservations" description="จองบัญชีที่จะใช้เติม แล้วเลือกบัญชีนั้นพร้อมกรอกยอดที่ตัดในหน้าออเดอร์ของ inblackm (เว็บ · Russia · MarketPlace) ไม่ต้องยกยอดซ้ำ">
-    {data && !data.mapped && <p role="status" className="tiv-banner">
-      <span className="tiv-warn">บัญชีนี้ยังไม่ได้จับคู่กับ ID พนักงานของ inblackm บัญชีที่จองจะยังไม่ขึ้นในหน้าออเดอร์</span> ให้ Admin จับคู่ที่{" "}
-      <Link className="tiv-lnk underline underline-offset-4" href={`${topupInventoryPath(lang)}/staff-links`}>หน้าจับคู่พนักงาน</Link></p>}
+    {data && !data.mapped && <NotMapped lang={lang} />}
     <section aria-label="กรองบัญชี" className="tiv-card">
       <div className="flex flex-wrap items-end gap-3">
         <label className={`${tivField} flex-1 basis-64`}><span>ค้นหาบัญชี / กลุ่ม / คนจอง</span><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="เช่น wavepay, moniepoint, ชื่อคนจอง" className={input} /></label>

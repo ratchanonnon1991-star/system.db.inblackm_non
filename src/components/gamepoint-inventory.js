@@ -6,6 +6,7 @@ import TopupInventoryPage from "@/components/topup-inventory-page";
 import { tivButton as button, tivCard, tivField, tivInput as input, tivPrimary, tivTable, tivTableBox } from "@/lib/topup-inventory-ui";
 import { codaQuickDates } from "@/lib/usdcodashop-overview";
 import { GAMEPOINT_RATE } from "@/lib/gamepoint-inventory";
+import { ChannelReservations } from "@/components/inventory-reservations";
 const endpoint = "/api/projectm/gamepoint";
 const money = (v) => v == null ? "—" : Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const when = (v) => v ? new Date(v).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "short", timeStyle: "short" }) : "ไม่ระบุเวลา";
@@ -49,6 +50,7 @@ export default function GamepointInventory({ lang }) {
   const ready = data?.viewKey === viewKey && !loading && !error;
   const quick = Object.entries({ today: "วันนี้", yesterday: "เมื่อวาน", month: "เดือนนี้" }).map(([key, title]) => ({ key, title, on: Object.entries(codaQuickDates(key)).every(([k, v]) => filters[k] === v) }));
   return <TopupInventoryPage provider="gamepoint" description="ประวัติสำเร็จจากบอท · อ่านอย่างเดียว ไม่สั่งเติม ไม่หักยอดซ้ำ">
+    <ChannelReservations lang={lang} channel="gamepoint" />
     <form aria-label="กรอง Gamepoint" className={tivCard} onSubmit={(e) => { e.preventDefault(); apply({ ...draft, page: "1" }); }}>
       <div className="tiv-tools">{quick.map(({ key, title, on }) => <button type="button" key={key} aria-pressed={on} className={`${button}${on ? " on" : ""}`} onClick={() => apply({ ...draft, ...codaQuickDates(key), page: "1" })}>{title}</button>)}</div>
       <div className="tiv-fields mt-4">{[["dateFrom", "วันที่เริ่มต้น", "date"], ["dateTo", "วันที่สิ้นสุด", "date"], ["search", "ค้นหา Order / เกม / ผู้เติม", "search"], ["rate", "เรทอ้างอิง THB ต่อ MYR", "number"]].map(([key, label, type]) => <label key={key} className={tivField}><span>{label}</span><input className={key === "rate" ? `${input} num` : input} type={type} required={key !== "search"} {...(key === "rate" ? { min: "0.00000001", max: "999999", step: "0.00000001" } : key === "search" ? { maxLength: 200 } : {})} value={draft[key]} onChange={(e) => setDraft({ ...draft, [key]: e.target.value })} /></label>)}</div>

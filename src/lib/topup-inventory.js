@@ -19,7 +19,55 @@ export const TOPUP_INVENTORY_PROVIDERS = [
   { key: "multigamecard", group: "cards", icon: "cards", logo: "multigamecard.png", darkLogo: true, name: "Multigamecard", description: "ยอดบัตรแยก Serial พร้อมประวัติ Bot และบันทึกรายการ Manual ยอดเข้า ใช้ไป และคงเหลือ", ready: true },
   { key: "wavepay", group: "wallet", icon: "phone", currencies: ["MMK"], logo: "wavepay.png", name: "WavePay", description: "ยอดคงเหลือ MMK แยกตามเบอร์ พร้อมออเดอร์ ต้นทุน และกำไรของแต่ละเบอร์", ready: true },
   { key: "moniepoint", group: "wallet", icon: "bank", currencies: ["NGN"], logo: "moniepoint.png", name: "Moniepoint", description: "บัญชี Moniepoint NP / SLY (NGN) ยอดใช้และรายการของแต่ละบัญชี จากชีตที่นำเข้า หน้ายกยอด และหน้าออเดอร์ inblackm", ready: true },
+  // sheet: pages made only of imported sheet accounts, all drawn by one page (topup-inventory/[channel]).
+  ...[
+    ["u9", "wallet", "phone", ["MMK"], "U9", "กระเป๋า U9 (MMK) ทั้งฝั่งซิมและฝั่งไอดี"],
+    ["atom", "wallet", "phone", ["MMK"], "ATOM", "กระเป๋า ATOM (MMK)"],
+    ["mmk-bank", "wallet", "bank", ["MMK"], "ธนาคาร MMK", "KBZ, KBZpay, YOMA, CB, AYA และ OR RB (MMK)"],
+    ["gcash", "wallet", "phone", [], "GCash", "GCash NP / RB (PHP)"],
+    ["maya", "wallet", "phone", [], "Maya", "Maya NP (PHP)"],
+    ["coins-ph", "wallet", "wallet", [], "Coins.ph", "Coins.ph NP / SLY (PHP)"],
+    ["true-wallet", "wallet", "wallet", [], "True Wallet", "True Wallet (THB)"],
+    ["tevau", "wallet", "cards", ["USD"], "Tevau", "บัตร Tevau (USD)"],
+    ["etherfi", "wallet", "cards", ["USD"], "Ether.fi", "บัตร Ether.fi (JPY / USD)"],
+    ["youtrip", "wallet", "cards", [], "Youtrip", "บัตร Youtrip (JPY)"],
+    ["tnt", "cards", "phone", [], "TNT", "TNT load (PHP)"],
+    ["ais-dtac", "cards", "phone", [], "AIS / DTAC", "เติมเงินมือถือ AIS และ DTAC (THB)"],
+    ["bitcash", "cards", "cards", [], "Bitcash", "Bitcash inblackbot / inblackbc / Bitcash (JPY)"],
+    ["xsolla", "cards", "coins", ["USD"], "Xsolla Gold", "Xsolla Gold Old / NP / Sup NP (USD)"],
+    ["mycard", "cards", "cards", [], "MyCard", "MyCard NP (TWD)"],
+    ["smile-one", "cards", "pad", ["USD"], "Smile One", "Smile One และ Smilecode"],
+    ["unipin", "cards", "cards", ["IDR"], "Unipin", "Unipin IDR และ PHP"],
+    ["easy-card", "cards", "cards", [], "Easy Card", "Easy Card RB / KAN (THB)"],
+    ["google-play", "cards", "pad", ["MYR"], "Google Play", "Google JPY / MYR"],
+    ["psn", "cards", "pad", ["USD"], "PSN", "PSN USD / UK / DE / UAE"],
+    ["xbox", "cards", "pad", ["USD"], "Xbox", "Xbox USD / BRL"],
+    ["others", "cards", "list", [], "บัญชีอื่นจากชีต", "บัญชีจากชีตที่ยังไม่มีหน้าของตัวเอง เช่น Skrill, SEAGM, BRI, LAOTELECOM"],
+  ].map(([key, group, icon, currencies, name, description]) => ({ key, group, icon, currencies, name, description, ready: true, sheet: true })),
 ];
+
+// Which page an imported sheet account belongs to; the first rule that names it wins. Stock lots,
+// game card pools and Roblox wallets stay on the central reservations page only (never imported).
+const CHANNEL_RULES = [
+  ["netease", /net\s*ease/i], ["moniepoint", /moniepoint/i], ["wavepay", /wave\s*pay/i], ["itune", /^itunes/i],
+  ["gamepoint", /gamepoint/i], ["plsbuy", /plsbuy/i], ["donshop", /donshop/i], ["agenh2h", /agenh2h/i],
+  ["usdcodashop", /codashop/i], ["multigamecard", /multi\s*game/i],
+  ["u9", /^u9\b/i], ["atom", /^atom\b/i], ["mmk-bank", /kbz|yoma|cb bank|^aya\b|^or rb/i],
+  ["gcash", /g-?cash/i], ["maya", /maya/i], ["coins-ph", /coins\.ph/i], ["true-wallet", /true\s*wallet/i],
+  ["tevau", /tevau/i], ["etherfi", /ether\.?fi/i], ["youtrip", /youtrip/i], ["tnt", /\btnt\b/i], ["ais-dtac", /\b(ais|dtac)\b/i],
+  ["bitcash", /bitcash/i], ["xsolla", /xsolla/i], ["mycard", /my\s*card/i], ["smile-one", /smile\s*one|smilecode/i],
+  ["unipin", /unipin/i], ["easy-card", /easy\s*card/i], ["google-play", /google/i], ["psn", /\bpsn\b/i], ["xbox", /xbox/i],
+];
+const CENTRAL_ONLY = /STOCK|GAME CARD|Roblox/i;
+export const INVENTORY_CHANNEL_KEYS = new Set(["razer", "garena-shell", "others", ...CHANNEL_RULES.map(([key]) => key)]);
+
+/** The Topup Inventory page of a ledger account ({ label, category, currency, provider }), or null. */
+export function inventoryChannelOf(account) {
+  if (CENTRAL_ONLY.test(account.category ?? "")) return null;
+  if (account.provider === "razer") return "razer";
+  if (account.currency === "SHELL") return "garena-shell";
+  return CHANNEL_RULES.find(([, rule]) => rule.test(account.label ?? ""))?.[0] ?? "others";
+}
 
 // hue: the colour of a section's cards. feature: tools are drawn as wide cards.
 export const TOPUP_INVENTORY_GROUPS = [

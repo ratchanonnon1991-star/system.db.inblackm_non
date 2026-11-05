@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { CircleArrowUp, RefreshCw } from "lucide-react";
 import TopupInventoryPage from "@/components/topup-inventory-page";
 import { apiJson } from "@/lib/api-json";
-import { topupInventoryPath } from "@/lib/topup-inventory";
+import { inventoryChannelOf, topupInventoryPath } from "@/lib/topup-inventory";
 import { tivButton as button, tivCheck, tivField, tivInput, tivPrimary, tivTable, tivTableBox } from "@/lib/topup-inventory-ui";
 
 const endpoint = "/api/projectm/ledger";
@@ -47,14 +47,14 @@ function AccountEntries({ account, range }) {
   </section>;
 }
 
-// `categories`: only these groups (a provider's own page, e.g. Moniepoint = ANDROID NP / SLY).
-export default function InventoryLedgerChannels({ lang, categories = null, title = "ยอดเติมมือรายบัญชี",
+// `channel`: only that Topup Inventory page's accounts (inventoryChannelOf). `children` sit above the filters.
+export default function InventoryLedgerChannels({ lang, channel = null, children = null, title = "ยอดเติมมือรายบัญชี",
   description = "ยอดที่ทีมยกจากหน้ายกยอด รวมต่อบัญชี (หักรายการที่ยกเลิกแล้ว) ยังไม่รวมยอดที่บอทใช้" }) {
   const [range, setRange] = useState(() => presets().today);
   const [draft, setDraft] = useState(range);
   const [summary, setSummary] = useState(null);
   const [accounts, setAccounts] = useState([]);
-  const [showAll, setShowAll] = useState(Boolean(categories));
+  const [showAll, setShowAll] = useState(Boolean(channel));
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -65,11 +65,11 @@ export default function InventoryLedgerChannels({ lang, categories = null, title
     try {
       const p = new URLSearchParams({ view: "summary", from: range.from, to: range.to });
       const [s, a] = await Promise.all([apiJson(`${endpoint}?${p}`, { cache: "no-store" }), apiJson(`${endpoint}?view=accounts`, { cache: "no-store" })]);
-      const mine = (list) => (categories ? list.filter((r) => categories.includes(r.category)) : list);
+      const mine = (list) => (channel ? list.filter((r) => inventoryChannelOf(r) === channel) : list);
       setSummary(mine(s.accounts ?? [])); setAccounts(mine(a.accounts ?? []));
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
-  }, [range.from, range.to, categories]);
+  }, [range.from, range.to, channel]);
   useEffect(() => { const timer = setTimeout(load, 0); return () => clearTimeout(timer); }, [load]);
 
   const rows = useMemo(() => {
@@ -95,7 +95,8 @@ export default function InventoryLedgerChannels({ lang, categories = null, title
   const totalText = Object.entries(totals).map(([c, v]) => `${num(v)} ${c}`).join(" · ");
   const preset = Object.entries(presets()).find(([, p]) => p.from === range.from && p.to === range.to)?.[0];
 
-  return <TopupInventoryPage provider={categories ? "moniepoint" : "channels"} title={title} description={description} actions={<Link href={`${topupInventoryPath(lang)}/ledger`} className={button}><CircleArrowUp size={16} aria-hidden />ยกยอดเติมมือ</Link>}>
+  return <TopupInventoryPage provider={channel ?? "channels"} title={title} description={description} actions={<Link href={`${topupInventoryPath(lang)}/ledger`} className={button}><CircleArrowUp size={16} aria-hidden />ยกยอดเติมมือ</Link>}>
+    {children}
     <section aria-label="กรองข้อมูล" className="tiv-card">
       <div className="tiv-tools">
         {[["today", "วันนี้"], ["yesterday", "เมื่อวาน"], ["week", "7 วัน"], ["month", "เดือนนี้"]].map(([k, t]) => <button key={k} type="button" disabled={loading} aria-pressed={preset === k} onClick={() => apply(presets()[k])} className={`${button}${preset === k ? " on" : ""}`}>{t}</button>)}

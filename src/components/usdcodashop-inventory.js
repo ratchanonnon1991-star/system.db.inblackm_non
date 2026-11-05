@@ -7,6 +7,7 @@ import { ArrowLeft, Plus, RefreshCw, Pencil } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { topupInventoryPath } from "@/lib/topup-inventory";
 import { USD_INVENTORY_STATUSES, USD_CODASHOP_SHEET_ROW, normalizeUsdInventory } from "@/lib/usdcodashop-inventory";
+import { ChannelReservations } from "@/components/inventory-reservations";
 
 const endpoint = "/api/projectm/usdcodashop";
 const button = "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-ll-hairline-strong bg-ll-surface-1 px-3 text-sm text-ll-ink hover:bg-ll-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ll-primary disabled:opacity-50";
@@ -88,5 +89,6 @@ export default function UsdCodashopInventory({ lang }) {
       </div>
       {data.hasMore && <p className="text-sm text-ll-ink-subtle">แสดงสูงสุด 1,000 รายการ</p>}
     </>}
+    <ChannelReservations lang={lang} channel="usdcodashop" />
   </main>;
 }

@@ -9,6 +9,7 @@ import { tivButton as button, tivCheck, tivField, tivInput as input, tivPrimary,
 import { codaQuickDates } from "@/lib/usdcodashop-overview";
 import { RAZER_STATUS_LABELS } from "@/lib/profit-razer-status";
 import { RAZER_INVENTORY_ZONES, RAZER_MIXED_ZONE } from "@/lib/razer-inventory";
+import { ChannelReservations } from "@/components/inventory-reservations";
 
 const endpoint = "/api/projectm/razer";
 const money = (v) => v == null ? "—" : Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -59,6 +60,7 @@ export default function RazerInventory({ lang }) {
   const ready = data?.viewKey === viewKey && !loading && !error;
   const quick = Object.entries({ today: "วันนี้", yesterday: "เมื่อวาน", month: "เดือนนี้" }).map(([key, title]) => ({ key, title, on: Object.entries(codaQuickDates(key)).every(([k, v]) => filters[k] === v) }));
   return <TopupInventoryPage provider="razer" description="ทุกสกุล · อ่านบัญชีเดิม ประวัติบอท และยอดเติมมือจากหน้ายกยอด ไม่สั่งเติมหรือหักยอด">
+    <ChannelReservations lang={lang} channel="razer" />
     <form aria-label="กรอง Razer" className="tiv-card" onSubmit={(e) => { e.preventDefault(); applyDraft(); }}>
       <div className="tiv-tools">{quick.map(({ key, title, on }) => <button type="button" key={key} aria-pressed={on} className={`${button}${on ? " on" : ""}`} onClick={() => applyDraft({ ...draft, ...codaQuickDates(key) })}>{title}</button>)}</div>
       <div className="tiv-fields mt-4"><label className={tivField}><span>วันที่เริ่มต้น</span><input type="date" required value={draft.dateFrom} className={input} onChange={(e) => setDraft({ ...draft, dateFrom: e.target.value })} /></label><label className={tivField}><span>วันที่สิ้นสุด</span><input type="date" required value={draft.dateTo} className={input} onChange={(e) => setDraft({ ...draft, dateTo: e.target.value })} /></label><label className={tivField}><span>สกุลเงิน</span><select value={draft.zone} className={input} onChange={(e) => setDraft({ ...draft, zone: e.target.value, account: "" })}><option value="">ทุกสกุล</option>{RAZER_INVENTORY_ZONES.map((z) => <option key={z} value={z}>{z === RAZER_MIXED_ZONE ? "OTHER (หลายสกุล)" : z}</option>)}</select></label><label className={tivField}><span>บัญชี Razer</span><select aria-label="บัญชี Razer" value={draft.account} className={input} onChange={(e) => setDraft({ ...draft, account: e.target.value })}><option value="">ทุกบัญชี</option>{(data?.accountChoices || []).filter((a) => !draft.zone || a.zone === draft.zone).map((a) => <option key={a.key} value={a.key}>{a.zone} · {a.email}</option>)}</select></label><label className={tivField}><span>ค้นหา Order / เกม / อีเมล</span><input type="search" maxLength={200} value={draft.search} className={input} onChange={(e) => setDraft({ ...draft, search: e.target.value })} /></label><label className={`${tivCheck} self-end`}><input type="checkbox" checked={draft.showHidden === "true"} onChange={(e) => setDraft({ ...draft, showHidden: String(e.target.checked), account: "" })} />รวมบัญชีที่ซ่อนใน Stock</label></div>

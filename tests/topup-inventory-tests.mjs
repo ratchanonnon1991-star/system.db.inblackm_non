@@ -9,7 +9,7 @@ import * as topupInventoryStatsModule from "../src/lib/topup-inventory-stats.js"
 import * as lucide from "lucide-react";
 import { hasPermission } from "../src/lib/permissions.js";
 
-const { TOPUP_INVENTORY_PROVIDERS, topupInventoryPath, ituneInventoryPath, topupInventoryMatch } = topupInventory;
+const { TOPUP_INVENTORY_PROVIDERS, topupInventoryPath, ituneInventoryPath, topupInventoryMatch, inventoryChannelOf, INVENTORY_CHANNEL_KEYS } = topupInventory;
 const { topupInventoryStats } = topupInventoryStatsModule;
 const require = createRequire(import.meta.url);
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -60,7 +60,7 @@ const service = renderToStaticMarkup(await sectionLayout({ params, children: "se
 check(service.includes('class="tiv-back" href="/projectm/th/topup-inventory"') && !service.includes("กลับเมนูหลัก"), "a service page's bar leads back to the home");
 check(html.includes('href="/projectm/th/topup-inventory/alerts"') && html.includes("แจ้งเตือนสต็อก"), "stock alerts card");
 check(html.includes('aria-busy="true"') && !html.includes("ปักหมุดไว้"), "counts load after mount; nothing pinned before storage is read");
-check((html.match(/class="tiv-chip"/g) || []).length === 8 && html.includes("ทั้งหมด <span class=\"n\">17</span>"), "currency chips with the number of cards");
+check((html.match(/class="tiv-chip"/g) || []).length === 8 && html.includes("ทั้งหมด <span class=\"n\">39</span>"), "currency chips with the number of cards");
 for (const [group, keys] of [["tools", ["reservations", "staff-links", "ledger", "channels", "alerts"]], ["asia", ["gamepoint", "plsbuy", "donshop", "agenh2h"]], ["wallet", ["wavepay", "moniepoint"]]]) {
   check(keys.every((key) => TOPUP_INVENTORY_PROVIDERS.find((p) => p.key === key)?.group === group), `${group} section`);
 }
@@ -90,6 +90,20 @@ check(html.includes('href="/projectm/th/topup-inventory/multigamecard"') && html
 check(html.includes('href="/projectm/th/topup-inventory/garena-shell"') && html.includes("Garena Shell"), "Garena Shell is available");
 check(html.includes('href="/projectm/th/topup-inventory/netease"') && html.includes("Netease"), "Netease is available");
 check(html.includes('href="/projectm/th/topup-inventory/razer"') && html.includes("Razer Gold"), "Razer Gold is available");
+// Each imported sheet account lands on its channel page; stock, game cards and Roblox stay central only.
+for (const [account, page] of [
+  [{ label: "( JPY ) Netease Pay 3", category: "1.6 UID ( JPY )" }, "netease"], [{ label: "( USD ) Netease Credit 1", category: "1.1 UID (  SMILEONE , GARENA,My CARD )" }, "netease"],
+  [{ label: "Moniepoint NP 87 6441", category: "ANDROID NP" }, "moniepoint"], [{ label: "Bitcash 3", category: "ANDROID NP" }, "bitcash"],
+  [{ label: "U9 1 - 52053", category: "1.2 UID ( MMK )" }, "u9"], [{ label: "U9 1 - 52053 · ไอดี", category: "1.2 UID ( MMK )" }, "u9"],
+  [{ label: "ATOM 8 - 33408" }, "atom"], [{ label: "AYA RB 1" }, "mmk-bank"], [{ label: "(PHP) G-CASH 2527(ปิดการใช้งาน)" }, "gcash"], [{ label: "GCASH(RB)" }, "gcash"],
+  [{ label: "MAYA(NP)" }, "maya"], [{ label: "Ether.fi Face" }, "etherfi"], [{ label: "InblackShell1 (InblackRB2c)", currency: "SHELL" }, "garena-shell"],
+  [{ label: "a@b.co", provider: "razer", category: "RAZER CAD 1 - 100" }, "razer"], [{ label: "( USD ) Skrill" }, "others"],
+  [{ label: "pes1", category: "2.1 STOCK" }, null], [{ label: "Xbox USD", category: "6.GAME CARD" }, null], [{ label: "Roblox ลาว", category: "7.Roblox wallet" }, null],
+]) check(inventoryChannelOf(account) === page, `${account.label} -> ${page}`);
+const sheetPages = TOPUP_INVENTORY_PROVIDERS.filter((p) => p.sheet);
+check(sheetPages.every((p) => INVENTORY_CHANNEL_KEYS.has(p.key) && !existsSync(new URL(`../src/app/projectm/[lang]/topup-inventory/${p.key}`, import.meta.url))), "sheet pages are drawn by the shared [channel] page, never a folder of the same name");
+check([...INVENTORY_CHANNEL_KEYS].every((key) => TOPUP_INVENTORY_PROVIDERS.some((p) => p.key === key)), "every channel has a card on the home");
+check(html.includes('href="/projectm/th/topup-inventory/u9"') && html.includes("บัญชีอื่นจากชีต"), "sheet pages have cards");
 check(hub.metadata.title === "Topup Inventory", "hub browser title");
 check(itune.metadata.title === "iTune | Topup Inventory", "child browser title");
 check(html.includes('href="/projectm/th/topup-inventory/ledger"') && html.includes("ยกยอดเติมมือ"), "debit page card");
@@ -108,6 +122,16 @@ for (const [permissions, admin, topup] of [[[], false, false], [["projectm.claim
   check(child.includes('href="/projectm/th/itune/topup"') === topup, "topup respects permission");
   check(child.includes("<b>Topup Inventory</b> · iTune"), "child sits under the hub (the frame's bar links back)");
 }
+mocks["@/components/inventory-ledger-channels"] = { __esModule: true, default: ({ title, channel, children }) => React.createElement("main", { "data-channel": channel }, title, children) };
+mocks["@/components/inventory-reservations"] = { ChannelReservations: ({ channel }) => React.createElement("section", null, `reserve ${channel}`) };
+const sheetPage = compile("src/app/projectm/[lang]/topup-inventory/[channel]/page.js");
+const u9 = renderToStaticMarkup(await sheetPage.default({ params: Promise.resolve({ lang: "th", channel: "u9" }) }));
+check(u9.includes('data-channel="u9"') && u9.includes("U9") && u9.includes("reserve u9"), "a sheet page shows its accounts to reserve and its history");
+check((await sheetPage.generateMetadata({ params: Promise.resolve({ channel: "gcash" }) })).title === "GCash | Topup Inventory", "sheet page browser title");
+await assert.rejects(sheetPage.default({ params: Promise.resolve({ lang: "th", channel: "razer" }) }), /notFound/); assertions++;
+user = null;
+await assert.rejects(sheetPage.default({ params: Promise.resolve({ lang: "th", channel: "u9" }) }), { path: "/" }); assertions++;
+user = { id: 1, permissions: [] };
 check(read("src/components/itune-admin-shell.js").includes("href={ituneInventoryPath(lang)}"), "admin back link");
 check(read("src/app/projectm/[lang]/itune/topup/page.js").includes("href={ituneInventoryPath(lang)}"), "topup back link");
 check(read("src/app/page.js").includes('label: "Topup Inventory"'), "main menu renamed");

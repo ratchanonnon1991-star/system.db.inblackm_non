@@ -11,6 +11,7 @@ import { tivButton as button, tivField, tivInput as input, tivPrimary, tivTable,
 import { codaQuickDates } from "@/lib/usdcodashop-overview";
 import { codaDateBounds } from "@/lib/usdcodashop-report";
 import { orderLink } from "@/lib/usdcodashop-sheet";
+import { ChannelReservations } from "@/components/inventory-reservations";
 
 const endpoint = "/api/projectm/multigamecard";
 const money = v => v == null ? "—" : Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -147,6 +148,7 @@ export default function MultigamecardInventory({ lang }) {
   }
   const quick = Object.entries({ today: "วันนี้", yesterday: "เมื่อวาน", month: "เดือนนี้" }).map(([value, text]) => ({ value, text, on: Object.entries(codaQuickDates(value)).every(([k, v]) => dates[k] === v) }));
   return <TopupInventoryPage provider="multigamecard" description="ยอดบัตรและรายการใช้เงิน แยก Bot / Manual · ไม่แสดงหรือเก็บ PIN บัตร">
+    <ChannelReservations lang={lang} channel="multigamecard" />
     <div role="group" aria-label="ประเภท Multigamecard" className="tiv-tools">{[["bot", "Bot"], ["manual", "Manual"]].map(([value, text]) => <button key={value} aria-pressed={mode === value} disabled={disabled || Boolean(form) || rateEditing} onClick={() => { generation.current++; setMode(value); setSerial(""); setPage(1); setNotice(""); }} className={`${button}${mode === value ? " on" : ""}`}>{text}</button>)}</div>
     <section aria-label="กรอง Multigamecard" className="tiv-card">
       <div className="tiv-tools">{quick.map(({ value, text, on }) => <button key={value} aria-pressed={on} disabled={disabled || Boolean(form)} onClick={() => apply(codaQuickDates(value))} className={`${button}${on ? " on" : ""}`}>{text}</button>)}</div>
