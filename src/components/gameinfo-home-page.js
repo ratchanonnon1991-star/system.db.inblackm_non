@@ -5,10 +5,9 @@ import { listGameListRows } from "@/server/gameinfo-gamelist";
 import {
   listGamelistChannelsByGame,
   listGamelistPackCountByGame,
-  listGamelistPackPricesByGame,
   listGamelistPackServiceByGame,
 } from "@/server/gameinfo-gamelist-packs";
-import { gameinfoPackUpdateSource, mockGameinfoPackUpdates } from "@/lib/gameinfo-pack-update";
+import { listGameinfoPackUpdatePacks } from "@/server/gameinfo-pack-update";
 import {
   listGamelistTutorialPresence,
   listGamelistVpnNotePresence,
@@ -51,7 +50,7 @@ import { getGameinfoBaselineSeller } from "@/server/gameinfo-market-preferences"
 // either view (see gameinfo-view.js).
 export default async function GameinfoHomePage({ params, searchParams, manage = false }) {
   const { lang } = await params;
-  const { mode: rawMode, view: rawView, section, game, unit, market, tab } = await searchParams;
+  const { mode: rawMode, view: rawView, section, game, unit, market } = await searchParams;
   const priceComparison = section === "pack-price-compare";
   if (priceComparison) {
     const query = new URLSearchParams();
@@ -83,7 +82,7 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
   let botChannels = [];
   let botCategoryImages = {};
   let marketPage = null;
-  let packUpdates = null;
+  let packUpdatePacks = null;
   let loadError = null;
   try {
     const [gameListRows, channelsByGame, packCountByGame, packServiceByGame, tutorialPresence, warningPresence, vpnNotePresence, imageByGame, linksByGame, tagsByGame, publishersByGame, loadedTagImages, loadedPublisherImages, openReports, favoriteIds, loadedBotChannels, loadedBotCategoryImages, loadedMarketPage, savedBaselineSeller] =
@@ -191,19 +190,14 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
       web: topupWebById.get(settingsByGame[r.id]?.topupGameId) || null,
       });
     });
-    if (section === "pack-update") {
-      // Every game with its real packs; PG2's side is mock (see gameinfo-pack-update.js).
-      const packsByGame = dataMode === "idpass"
-        ? Object.fromEntries(Object.entries(modeDataByGame).map(([gameId, data]) => [gameId, gameinfoPackUpdateSource(data?.packs?.currencies)]))
-        : await listGamelistPackPricesByGame();
-      packUpdates = mockGameinfoPackUpdates(rows, packsByGame);
-    }
+    // Opened straight from its link; from the list it loads its packs itself.
+    if (section === "pack-update") packUpdatePacks = await listGameinfoPackUpdatePacks(dataMode);
   } catch (err) {
     loadError = err.message || "โหลดข้อมูลไม่สำเร็จ";
   }
 
   if (!manageMode && !loadError) {
-    return <GameinfoGamelistCards initial={rows} initialReports={reports} tagImages={tagImages} publisherImages={publisherImages} botChannels={botChannels} botCategoryImages={botCategoryImages} marketPage={marketPage} botCatalogActive={section === "game-bot-auto"} priceComparisonActive={priceComparison} packUpdateActive={section === "pack-update"} packUpdates={packUpdates} packUpdateTab={tab === "history" ? "history" : "list"} userName={user.displayName || user.username || ""} editable={editableRole} topupView={topupView} canReport={canReport} lang={lang} dataMode={dataMode} />;
+    return <GameinfoGamelistCards initial={rows} initialReports={reports} tagImages={tagImages} publisherImages={publisherImages} botChannels={botChannels} botCategoryImages={botCategoryImages} marketPage={marketPage} botCatalogActive={section === "game-bot-auto"} priceComparisonActive={priceComparison} packUpdatePacks={packUpdatePacks} userName={user.displayName || user.username || ""} editable={editableRole} topupView={topupView} canReport={canReport} lang={lang} dataMode={dataMode} />;
   }
 
   return (
