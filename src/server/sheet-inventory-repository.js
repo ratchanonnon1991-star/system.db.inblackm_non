@@ -2,6 +2,7 @@ import { getPool } from "@/lib/db";
 import { ACCOUNT_SHEET_ACTOR } from "@/lib/account-sheets";
 import { sheetInventoryMoves } from "@/lib/sheet-inventory";
 import { ensurePurchaseOrderSchema } from "@/server/stock-purchase-order-repository";
+import { ensureAttachmentSchema } from "@/server/stock-attachment-repository";
 
 // Writes what planSheetInventory read from the sheets into Stock: the stock IDs and
 // their packs (kept and updated, never deleted), and the purchase orders, receipts and
@@ -17,10 +18,18 @@ const DAY = 86400000;
  */
 export async function replaceSheetInventory(plan, idNotes = {}) {
   await ensurePurchaseOrderSchema();
+  await ensureAttachmentSchema();
   const { moves, balances } = sheetInventoryMoves(plan.events);
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    // The sheet's orders are made again with new ids: files people attached to them would be lost.
+    const attached = (await client.query(`SELECT DISTINCT o.id FROM stock_attachments a
+      JOIN stock_purchase_orders o ON o.id = a.owner_id
+      WHERE a.owner_kind = 'po' AND a.removed_at IS NULL AND o.created_by_name = $1 AND o.created_by_id IS NULL`, [ACCOUNT_SHEET_ACTOR])).rows;
+    if (attached.length) {
+      throw new Error(`ใบสั่งซื้อจากชีตมีไฟล์แนบแล้ว (${attached.map((row) => `PO-${String(row.id).padStart(5, "0")}`).join(", ")}) นำเข้าทับไม่ได้ เพราะไฟล์จะหลุดจากใบ`);
+    }
     // Wallet payments point at orders without a foreign key: unlink the ones about to go.
     await client.query(`UPDATE stock_wallet_entries SET order_id = NULL WHERE order_id IN (
       SELECT id FROM stock_purchase_orders WHERE created_by_name = $1 AND created_by_id IS NULL)`, [ACCOUNT_SHEET_ACTOR]);
