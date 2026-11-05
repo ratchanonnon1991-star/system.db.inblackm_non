@@ -16,7 +16,8 @@ export default async function StockAccountPage({ params }) {
   const [moves, games, packNames] = await Promise.all([
     listStockMoves(account.id),
     canEdit ? listStockGames() : [],
-    canEdit ? listStockPackNames(account.gameId, account.dataMode) : [],
+    // Viewers need the names too: a pack whose name is not in GameInfo shows no badge on the game page.
+    listStockPackNames(account.gameId, account.dataMode),
   ]);
   return <StockAccountView account={account} moves={moves} games={games} packNames={packNames} canEdit={canEdit} />;
 }

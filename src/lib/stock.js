@@ -25,6 +25,17 @@ export function stockMarginTone(margin) {
   return margin < STOCK_MIN_MARGIN ? "low" : "ok";
 }
 
+/**
+ * The GameInfo pack names one stock item stands for. Items brought in from the sheets cover
+ * every pack of one price, kept as "A / B / C" (src/lib/sheet-inventory.js); the whole text
+ * is kept too, for a pack whose own name holds " / ".
+ */
+export function stockPackNameParts(packName) {
+  const whole = String(packName || "").trim();
+  if (!whole) return [];
+  return [...new Set([whole, ...whole.split(" / ").map((part) => part.trim()).filter(Boolean)])];
+}
+
 // Page names under /stock that an account code would hide (/stock/<code>).
 export const STOCK_RESERVED_CODES = ["inventory", "purchase-orders", "wallets", "sheets", "sheet-stock", "addresses", "expenses"];
 
