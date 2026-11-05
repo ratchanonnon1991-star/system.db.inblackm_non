@@ -47,15 +47,15 @@ export default function SheetExpensesView({ entries, summary, month, category = 
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-900">
-          <p className="text-xs font-extrabold">เงินออก {monthLabel(month)}</p>
-          <p className="mt-1 text-2xl font-black">{baht(current.out)}</p>
-          {previous ? <p className="text-xs">เดือนก่อน {baht(previous.out)}</p> : null}
-        </div>
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
-          <p className="text-xs font-extrabold">เงินเข้า</p>
+          <p className="text-xs font-extrabold">เงินเข้า {monthLabel(month)}</p>
           <p className="mt-1 text-2xl font-black">{baht(current.in)}</p>
           {previous ? <p className="text-xs">เดือนก่อน {baht(previous.in)}</p> : null}
+        </div>
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-900">
+          <p className="text-xs font-extrabold">เงินออก</p>
+          <p className="mt-1 text-2xl font-black">{baht(current.out)}</p>
+          {previous ? <p className="text-xs">เดือนก่อน {baht(previous.out)}</p> : null}
         </div>
         <div className="rounded-2xl border border-zinc-200 bg-white p-4">
           <p className="text-xs font-extrabold text-zinc-500">รายการ</p>
