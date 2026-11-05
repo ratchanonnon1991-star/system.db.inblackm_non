@@ -69,7 +69,11 @@ function NotMapped({ lang }) {
 /** One Topup Inventory page's own accounts to reserve, as a card inside that page. */
 export function ChannelReservations({ lang, channel }) {
   const { data, error, busy, load, act } = useReservations(channel);
-  const accounts = data?.accounts ?? [];
+  const [search, setSearch] = useState("");
+  const [withBalance, setWithBalance] = useState(false);
+  const accounts = data?.accounts ?? [], term = search.trim().toLowerCase();
+  const shown = accounts.filter((a) => (!term || `${a.label} ${a.holder ?? ""}`.toLowerCase().includes(term))
+    && (!withBalance || Number(a.bot?.balance ?? a.balance) > 0));
   if (data && !accounts.length && !error) return null; // a page with no imported sheet account
   return <section aria-label="จองช่องทาง" className="tiv-card">
     <div className="tiv-card-h mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -80,8 +84,13 @@ export function ChannelReservations({ lang, channel }) {
     {error && <p role="alert" className="tiv-alert">{error}</p>}
     {data?.botErrors?.length > 0 && <p role="status" className="tiv-muted">อ่านยอดบอทไม่สำเร็จ แสดงยอดจากชีตแทน</p>}
     {!data && !error && <p role="status" className="tiv-muted">กำลังโหลด…</p>}
-    {/* Razer has hundreds of wallets: the list scrolls so the page's own content stays in reach. */}
-    <ul className="max-h-[28rem] overflow-y-auto">{accounts.map((a) => <AccountRow key={a.id} account={a} canManage={data.canManage} busy={busy} onAction={act} />)}</ul>
+    {/* Razer has hundreds of wallets: search, and a list that scrolls so the page's own content stays in reach. */}
+    {accounts.length > 12 && <div className="mb-2 flex flex-wrap items-end gap-3">
+      <label className={`${tivField} flex-1 basis-64`}><span>ค้นหาบัญชี / คนจอง</span><input value={search} onChange={(e) => setSearch(e.target.value)} className={input} /></label>
+      <label className={tivCheck}><input type="checkbox" checked={withBalance} onChange={(e) => setWithBalance(e.target.checked)} />เฉพาะที่มียอดเหลือ</label>
+    </div>}
+    {data && accounts.length > 0 && !shown.length && <p className="tiv-muted">ไม่พบบัญชีตามตัวกรอง</p>}
+    <ul className="max-h-[28rem] overflow-y-auto">{shown.map((a) => <AccountRow key={a.id} account={a} canManage={data.canManage} busy={busy} onAction={act} />)}</ul>
     <p className="tiv-hint">จองแล้วเลือกบัญชีนี้พร้อมกรอกยอดที่ตัดในหน้าออเดอร์ inblackm ได้ · ดูทุกช่องทางรวมกันที่ <Link className="tiv-lnk underline underline-offset-4" href={`${topupInventoryPath(lang)}/reservations`}>หน้าจองช่องทาง</Link></p>
   </section>;
 }
