@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import {
   normalizeStockCode,
   normalizeStockMoney,
+  stockPackNameParts,
   stockTone,
   summarizeStockLines,
   validateStockMove,
@@ -73,5 +74,14 @@ check(byCode.pes1.packs.length === 3 && !byCode.lastwar1.packs.some((pack) => pa
 const opening = stockSheetOpeningMoves(byCode.pes1.packs[2]);
 check(opening.in === 72 && opening.out === 23 && opening.adjust === 1, "a balance the sheet does not add up to gets a correction");
 check(stockSheetOpeningMoves(byCode.wuthering01.packs[0]).in === 0, "a flagged pack comes in at zero");
+
+const parts = stockPackNameParts(" 60.0 / Returnee's Radiant Aid ");
+check(parts[0] === "60.0 / Returnee's Radiant Aid" && parts.includes("60.0") && parts.includes("Returnee's Radiant Aid") && parts.length === 3, "an item kept as \"A / B\" stands for A, B and the whole text");
+check(stockPackNameParts("Lunite Subscription").join("|") === "Lunite Subscription" && stockPackNameParts("").length === 0 && stockPackNameParts(null).length === 0, "a single name stays one; no name gives none");
+const repo = read("../src/server/stock-repository.js");
+check(/for \(const name of stockPackNameParts\(item\.packName\)\)/.test(repo), "the game page badges each pack an \"A / B\" item stands for");
+
+const stockNav = read("../src/components/stock-nav.js");
+check(!stockNav.includes("/stock/addresses") && !read("../src/components/stock-purchase-orders.js").includes("AddressesForRecipient"), "no supplier address is kept: they change, so it is asked for each payment");
 
 console.log(`stock: ${passed} passed`);

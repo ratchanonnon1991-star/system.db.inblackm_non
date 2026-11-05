@@ -4,6 +4,7 @@ import {
   normalizeStockMoney,
   STOCK_ACCOUNT_STATUSES,
   STOCK_DEFAULT_LOW_AT,
+  stockPackNameParts,
   stockTone,
   validateStockMove,
   stockMargin,
@@ -437,11 +438,13 @@ export async function listStockForGame(gameId, dataMode = "uid") {
     if (row.id == null) continue;
     const item = mapItem(row);
     account.leftTotal += Math.max(item.left, 0);
-    if (!item.packName) continue;
-    const current = byPack[item.packName];
-    const left = (current?.left ?? 0) + Math.max(item.left, 0);
-    const lowAt = Math.max(current?.lowAt ?? 0, item.lowAt);
-    byPack[item.packName] = { left, lowAt, tone: stockTone(left, lowAt), codes: [...(current?.codes || []), row.code] };
+    // An item kept as "A / B" badges both packs A and B on the game page.
+    for (const name of stockPackNameParts(item.packName)) {
+      const current = byPack[name];
+      const left = (current?.left ?? 0) + Math.max(item.left, 0);
+      const lowAt = Math.max(current?.lowAt ?? 0, item.lowAt);
+      byPack[name] = { left, lowAt, tone: stockTone(left, lowAt), codes: [...new Set([...(current?.codes || []), row.code])] };
+    }
   }
   return { accounts: [...accounts.values()], byPack };
 }
