@@ -13,7 +13,6 @@ import {
   summarizePackUpdate,
 } from "@/lib/gameinfo-pack-update";
 
-const OTHER_USER = "แอดมินอีกคน";
 const CHIP = {
   ok: "bg-emerald-500/12 text-emerald-700 dark:text-emerald-400",
   info: "bg-sky-500/12 text-sky-700 dark:text-sky-300",
@@ -58,7 +57,8 @@ function Cover({ game, size }) {
 export default function GameinfoPackUpdate({ initialGames, userName = "" }) {
   const me = userName || "แอดมิน A";
   const [games, setGames] = useState(initialGames);
-  const [user, setUser] = useState(me);
+  // Whoever is signed in edits and checks; a pack they priced needs someone else.
+  const user = me;
   const [priority, setPriority] = useState("all");
   const [modal, setModal] = useState(null);
   const [onlyNeedsWork, setOnlyNeedsWork] = useState(false);
@@ -149,14 +149,6 @@ export default function GameinfoPackUpdate({ initialGames, userName = "" }) {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-amber-400/20 px-3 py-1 text-xs font-bold text-amber-800 dark:text-amber-300">ข้อมูลตัวอย่าง · ยังไม่เชื่อม PG2</span>
-          <div role="group" aria-label="ใช้งานเป็น" className="flex items-center gap-1 rounded-full border border-linear-hairline bg-linear-surface-1 p-1 text-xs font-bold">
-            <span className="whitespace-nowrap px-2 text-linear-ink-tertiary">ใช้งานเป็น</span>
-            {[me, OTHER_USER].map((name) => (
-              <button key={name} type="button" aria-pressed={user === name} onClick={() => setUser(name)} title={name} className={`max-w-[180px] truncate rounded-full px-3 py-1.5 transition ${user === name ? "bg-[#D90005] text-white" : "text-linear-ink-muted hover:text-linear-ink"}`}>
-                {name}
-              </button>
-            ))}
-          </div>
         </div>
       </div>
 
@@ -335,7 +327,6 @@ function PackUpdateDialog({ games, all, user, busy, onlyNeedsWork, onOnlyNeedsWo
             <input type="checkbox" checked={onlyNeedsWork} onChange={(event) => onOnlyNeedsWork(event.target.checked)} className="h-4 w-4 accent-[#D90005]" />
             แสดงเฉพาะที่ต้องจัดการ
           </label>
-          <span className="text-xs text-linear-ink-tertiary">กำลังใช้งานเป็น <b className="text-linear-ink">{user}</b></span>
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-linear-hairline">
