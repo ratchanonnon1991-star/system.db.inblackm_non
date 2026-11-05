@@ -21,6 +21,7 @@ import {
   topupCheck,
 } from "@/lib/stock-purchase-orders";
 import { formatStockNumber, StockDialog, StockField, stockInputClass } from "@/components/stock-ui";
+import { formatCurrencyBag, supplierBalances } from "@/lib/stock-supplier-balances";
 
 const STATUS_CLASS = {
   requested: "bg-sky-50 text-sky-800",
@@ -155,6 +156,8 @@ export default function StockPurchaseOrders({ orders, accounts, games = [], wall
         <SummaryCard label="จบแล้ว" value={counts.received + counts.refunded + counts.cancelled} unit="ใบ" hint="ได้ของครบ · คืนเงินแล้ว · ยกเลิก" className="border-zinc-200 bg-white" />
       </div>
 
+      <SupplierBalances orders={orders} onPick={(supplier) => { setQuery(supplier); setFilter("all"); }} />
+
       <div className="flex flex-wrap items-center gap-2.5">
         <label className="flex h-[46px] min-w-0 flex-[1_1_320px] items-center gap-2.5 rounded-xl border border-zinc-300 bg-white px-4">
           <Search size={18} className="text-[#B00004]" aria-hidden="true" />
@@ -228,6 +231,74 @@ export default function StockPurchaseOrders({ orders, accounts, games = [], wall
       {creating ? <CreatePurchaseOrderDialog accounts={accounts} games={games} onClose={() => setCreating(false)} /> : null}
       {opened ? <PurchaseOrderDialog key={`${opened.id}-${opened.status}-${opened.qtyReceived}`} order={opened} wallets={wallets} canEdit={canEdit} onClose={() => setOpenId(null)} /> : null}
     </div>
+  );
+}
+
+/** Per supplier: what we still have to pay, goods still to come for money sent, refunds not back. */
+function SupplierBalances({ orders, onPick }) {
+  const [showAll, setShowAll] = useState(false);
+  const rows = supplierBalances(orders);
+  if (!rows.length) return null;
+  const open = rows.filter((row) => row.openCount);
+  const shown = showAll ? rows : open;
+  // Per currency, so an order without a THB rate still shows; ≈ THB only where rates exist.
+  const total = (key) => {
+    const bag = {};
+    for (const row of open) for (const [currency, amount] of Object.entries(row[key])) bag[currency] = (bag[currency] || 0) + amount;
+    const thb = open.reduce((sum, row) => sum + row[`${key}Thb`], 0);
+    const text = formatCurrencyBag(bag, (n) => formatStockNumber(n, 0));
+    return text ? `${text}${thb ? ` (≈ ฿${formatStockNumber(thb, 0)})` : ""}` : "—";
+  };
+  const cell = (bag, thb) => {
+    const text = formatCurrencyBag(bag, (n) => formatStockNumber(n));
+    if (!text) return <span className="text-zinc-400">—</span>;
+    return <><p className="font-extrabold">{text}</p>{thb ? <p className="text-xs text-zinc-600">≈ ฿{formatStockNumber(thb, 0)}</p> : null}</>;
+  };
+  return (
+    <section className="rounded-2xl border border-zinc-200 bg-white">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-4">
+        <div>
+          <h2 className="text-base font-black">ยอดค้างต่อซัพ</h2>
+          <p className="text-xs text-zinc-600">
+            {open.length ? `ค้างอยู่ ${open.length} เจ้า · ต้องจ่าย ${total("toPay")} · จ่ายแล้วรอของ ${total("goods")} · รอเงินคืน ${total("refund")}` : "ไม่มีซัพที่ค้างเงินหรือของ"}
+          </p>
+        </div>
+        <button type="button" onClick={() => setShowAll((value) => !value)} className="text-sm font-extrabold text-[#B00004] hover:underline">
+          {showAll ? "เฉพาะที่ค้าง" : `ดูทุกเจ้า (${rows.length})`}
+        </button>
+      </div>
+      {shown.length ? (
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full min-w-[760px] text-sm">
+            <thead className="bg-zinc-50 text-left text-xs font-extrabold text-zinc-600">
+              <tr>
+                <th className="px-4 py-2">ซัพ</th>
+                <th className="px-4 py-2 text-right">ต้องจ่าย (ยังไม่โอน)</th>
+                <th className="px-4 py-2 text-right">โอนแล้ว ของยังไม่ครบ</th>
+                <th className="px-4 py-2 text-right">รอเงินคืน</th>
+                <th className="px-4 py-2 text-right">ซื้อทั้งหมด</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((row) => (
+                <tr key={row.supplier} className="border-t border-zinc-100 align-top">
+                  <td className="px-4 py-2.5">
+                    <button type="button" onClick={() => onPick(row.supplier)} className="font-black hover:underline">{row.supplier}</button>
+                    <p className="text-xs text-zinc-600">{row.openCount ? `ค้าง ${row.openCount} ใบ · ` : ""}{row.orderCount} ใบ{row.lastAt ? ` · ล่าสุด ${new Date(row.lastAt).toLocaleDateString("th-TH", { dateStyle: "short" })}` : ""}</p>
+                    {row.missingRate ? <p className="text-xs font-bold text-amber-700">บางใบไม่มีเรท ยอดบาทจึงไม่ครบ</p> : null}
+                  </td>
+                  <td className="px-4 py-2.5 text-right">{cell(row.toPay, row.toPayThb)}</td>
+                  <td className="px-4 py-2.5 text-right">{cell(row.goods, row.goodsThb)}</td>
+                  <td className="px-4 py-2.5 text-right">{cell(row.refund, row.refundThb)}</td>
+                  <td className="px-4 py-2.5 text-right text-zinc-600">{formatCurrencyBag(row.bought, (n) => formatStockNumber(n, 0)) || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : <p className="px-4 pb-4 pt-2 text-sm text-zinc-600">ทุกใบจบแล้ว ไม่มีอะไรต้องจ่ายหรือรอ</p>}
+      {shown.length ? <p className="px-4 pb-3 pt-2 text-xs text-zinc-500">&quot;โอนแล้ว ของยังไม่ครบ&quot; คิดจากยอดที่จ่าย × สัดส่วนแพ็คที่ยังไม่ได้รับ · กดชื่อซัพเพื่อดูใบของเจ้านั้น</p> : null}
+    </section>
   );
 }
 

@@ -3,6 +3,8 @@ import { groupStockCounts, isStockTab, readStockCount, withStockChanges } from "
 import { ACCOUNT_SHEET_SOURCE, sheetFileKind, walletCodeForTab } from "@/lib/account-sheets";
 import { DEFAULT_WALLETS, fromWalletUnits, WALLET_COUNTED } from "@/lib/stock-wallets";
 import { ensureWalletSchema } from "@/server/stock-wallet-repository";
+import { isExpenseFile, mergeExpenseTabs, readExpenseTab } from "@/lib/sheet-expenses";
+import { isOffgamerFile, mergeOffgamerTabs, offgamerAccount, readOffgamerList } from "@/lib/offgamer-cards";
 
 // The accounting workbooks kept row by row (src/lib/account-sheets.js). A
 // month is replaced as a whole on every import, so a re-run never duplicates.
@@ -119,6 +121,35 @@ export async function readAccountSheetRows(tabId, { offset = 0, limit = 200 } = 
     [Number(tabId), Math.max(Number(offset) || 0, 0), Math.min(Math.max(Number(limit) || 200, 1), 1000)]
   );
   return result.rows.map((row) => ({ rowNo: row.row_no, cells: row.cells }));
+}
+
+/** Every row of one tab, in sheet order. */
+async function readAllAccountSheetRows(tabId) {
+  await ensureAccountSheetSchema();
+  const result = await getPool().query(`SELECT row_no, cells FROM account_sheet_rows WHERE tab_id = $1 ORDER BY row_no`, [Number(tabId)]);
+  return result.rows.map((row) => ({ rowNo: row.row_no, cells: row.cells }));
+}
+
+/** 1.3 บัญชีใช้จ่ายทั่วไป: every money row of every bank tab, each once (src/lib/sheet-expenses.js). Read-only. */
+export async function listSheetExpenses() {
+  const tabs = (await listAccountSheetTabs()).filter((tab) => isExpenseFile(tab.fileName));
+  const read = await Promise.all(tabs.map(async (tab) => ({ tabId: tab.id, tab: tab.tab, period: tab.period, entries: readExpenseTab(tab.tab, await readAllAccountSheetRows(tab.id)) })));
+  return mergeExpenseTabs(read.filter((tab) => tab.entries.length));
+}
+
+/**
+ * 1.4 Multi Game Card: the OffGamer orders (src/lib/offgamer-cards.js) and the newest
+ * "Offgamer List" of accounts. Read-only; PINs are never stored.
+ */
+export async function listOffgamerCards() {
+  const tabs = (await listAccountSheetTabs()).filter((tab) => isOffgamerFile(tab.fileName));
+  const accountTabs = tabs.filter((tab) => offgamerAccount(tab.tab));
+  const listTab = tabs.find((tab) => /^offgamer\s+list$/i.test(tab.tab.trim())); // tabs come newest month first
+  const [read, listRows] = await Promise.all([
+    Promise.all(accountTabs.map(async (tab) => ({ tabId: tab.id, tab: tab.tab, period: tab.period, rows: await readAllAccountSheetRows(tab.id) }))),
+    listTab ? readAllAccountSheetRows(listTab.id) : [],
+  ]);
+  return { orders: mergeOffgamerTabs(read), accounts: readOffgamerList(listRows), listTabId: listTab?.id ?? null };
 }
 
 /** How many kept rows come before sheet row `rowNo` of a tab (to open the page that shows it). */
