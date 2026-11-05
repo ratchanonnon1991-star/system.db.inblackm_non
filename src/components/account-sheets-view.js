@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, FileSpreadsheet, Search } from "lucide-react";
 import { accountSheetCoverage } from "@/lib/account-sheets";
+import { PinToMenuButton } from "@/components/stock-nav-pins";
 
 export const ACCOUNT_SHEET_PAGE_SIZE = 200;
 
@@ -157,13 +158,13 @@ export default function AccountSheetsView({ tabs, open, rows, page, query, perio
                 ข้อมูลที่ยังไม่มีหน้าในเว็บ: {missing.length} จาก {coverage.length} แท็บ
               </summary>
               <p className="mt-2 text-sm text-zinc-600">
-                แท็บที่มีหน้าในเว็บแล้วคือ 3 กระเป๋าเงิน (Bybit Inblack Gaming, BITKUB INBLACK, Bitazza Inblack) ที่หน้า Stock → กระเป๋าเงิน
+                แท็บกระเป๋าเงินและบัญชีธนาคาร (สีเขียว) มีหน้าแล้วที่ Stock → กระเป๋าเงิน
                 ส่วนแท็บอื่นยังไม่มีหน้าเฉพาะ แต่เปิดดูและค้นหาได้ที่หน้านี้
               </p>
               <div className="mt-3 overflow-x-auto">
                 <table className="min-w-full text-[13px]">
                   <thead className="text-left text-[11px] font-extrabold uppercase text-zinc-500">
-                    <tr><th className="px-2 py-1.5">ไฟล์</th><th className="px-2 py-1.5">แท็บ</th><th className="px-2 py-1.5">เดือนที่มี</th><th className="px-2 py-1.5 text-right">แถว</th><th className="px-2 py-1.5">ในเว็บ</th></tr>
+                    <tr><th className="px-2 py-1.5">ไฟล์</th><th className="px-2 py-1.5">แท็บ</th><th className="px-2 py-1.5">เดือนที่มี</th><th className="px-2 py-1.5 text-right">แถว</th><th className="px-2 py-1.5">ในเว็บ</th><th className="px-2 py-1.5">เมนู</th></tr>
                   </thead>
                   <tbody>
                     {coverage.map((line) => (
@@ -176,6 +177,9 @@ export default function AccountSheetsView({ tabs, open, rows, page, query, perio
                           {line.page
                             ? <Link href={line.page.href} className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-extrabold text-emerald-800 hover:underline">{line.page.label}</Link>
                             : <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-extrabold text-amber-800">ยังไม่มี (ดูได้ที่หน้านี้)</span>}
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-1.5">
+                          {!line.page && <PinToMenuButton kind={line.fileKind} tab={line.tab} />}
                         </td>
                       </tr>
                     ))}

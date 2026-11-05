@@ -14,6 +14,7 @@ import {
   supplierName,
   supplierReceipts,
   walletCodeForTab,
+  isFrozenWallet,
 } from "../src/lib/account-sheets.js";
 import { fromWalletUnits } from "../src/lib/stock-wallets.js";
 
@@ -169,4 +170,23 @@ check(cards.rows[2][1] === REMOVED_CELL && cards.rows[2][2] === REMOVED_CELL && 
 check(cards.rows[3][0] === REMOVED_CELL && cards.rows[3][1] === REMOVED_CELL && cards.rows[1][3] === "4111111111111112" && cards.rows[2][3] === "47418137", "a Luhn-valid 16-digit run goes; other order numbers stay");
 const codes = scrubSheetRows([["วันที่ซื้อ", "Code", "ยอดบัตร GARENA", "Code Bitcash"], ["46057", "7276473075421307", "350", "ABCD-EFGH"]]);
 check(codes.rows[1][1] === REMOVED_CELL && codes.rows[1][3] === REMOVED_CELL && codes.rows[1][2] === "350", "gift-card Code columns go, amounts stay");
+// Bank tabs of 1.3 and frozen tabs (2026-11-05).
+check(walletCodeForTab("1.3 บัญชีใช้จ่ายทั่วไป 10_2026", "KBANK Paek") === "kbank-paek" && walletCodeForTab("1.2 x", "KBANK Paek") === null
+  && walletCodeForTab("1.2 x", "Binance DAD") === "binance-dad" && walletCodeForTab("1.13 x", "KBANK Paek") === null, "a bank tab feeds its wallet only from 1.3");
+check(isFrozenWallet("binance-dad") && isFrozenWallet("kkp-paek") && !isFrozenWallet("kbank-paek") && !isFrozenWallet("bybit"), "frozen wallets are named");
+const BANK_HEAD = ["", "วันที่ทำรายการ", "เวลา", "ยอดเงินเข้า", "ยอดเงินออก", "ยอดเงินคงเหลือ", "ประเภทสินค้า ใช้จ่ายบริษัท", "รายการแยกย่อย", "ประเภทสินค้า สั่งซื้อ", "รายการแยกย่อย", "จำนวน(ค่าเงิน TH) / จำนวนสินค้", "ราคารวม", "ผู้ขาย"];
+const sep = parseWalletTab("kbank-paek", [BANK_HEAD,
+  ["0", "46265", "", "", "", "1000", "", "ยกยอดมา"],
+  ["0", "46280", "13.37", "", "200", "800", "", "", "ค่าใช้จ่าย สั่งซื้อ", "True Wallet DAD", "200", "200", "Shopee pay"],
+  ["0", "46296", "11.2", "", "300", "500", "ค่าใช้จ่ายบริษัท", "ค่าน้ำ", "", "", "300", "300"],
+], "2026-09");
+const pay = sep.records.find((record) => !record.opening);
+check(sep.records[0].opening && fromWalletUnits(sep.records[0].balances.THB) === "1000" && pay.desc === "ค่าใช้จ่าย สั่งซื้อ · True Wallet DAD" && pay.minutes === 817
+  && pay.details.map((item) => item.label).join() === "ผู้ขาย", "a bank tab reads its date header, joins the description columns and leaves the amount copies out");
+const oct = parseWalletTab("kbank-paek", [BANK_HEAD, ["0", "46296", "", "", "", "500", "", "ยกยอดมา"], ["0", "46297", "9.1", "100", "", "600", "เงินสดเข้าบัญชี", "GSB"]], "2026-10");
+const bank = planWalletEntries([{ code: "kbank-paek", period: "2026-09", tab: "KBANK Paek", records: sep.records }, { code: "kbank-paek", period: "2026-10", tab: "KBANK Paek", records: oct.records }]);
+check(bank.mismatches.length === 0 && bank.totals["kbank-paek:THB"] === "600", "a bank row past the next file's start stays when the next file does not repeat it");
+const dad = parseWalletTab("binance-dad", [["Date", "time", "MMK In", "USDT ที่ได้", "USDT ที่ใช้", "USDT FEE", "USDT ที่ใข้ (รวม)", "USDT คงเหลือ"],
+  ["", "", "ย้ายยอด", "", "", "", "0", "10"], ["45749", "12:34", "Reseller", "4", "", "", "0", "14"]], "2026-10");
+check(dad.problems.length === 0 && !dad.records[1].slipped && dad.records[0].date === "2025-04-02", "a frozen tab keeps its old rows and puts the carried balance before them");
 console.log(`account sheets: ${passed} passed`);

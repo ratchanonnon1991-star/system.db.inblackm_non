@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Boxes, ClipboardList, FileSpreadsheet, LayoutDashboard, PackageSearch, Send, Wallet } from "lucide-react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Boxes, ClipboardList, FileSpreadsheet, LayoutDashboard, PackageSearch, Pin, Send, Wallet, X } from "lucide-react";
+import { pinHref, removePin, usePins } from "@/components/stock-nav-pins";
 
 // The tabs every Stock page shares. An account page (/stock/<code>) belongs to the inventory tab.
 const TABS = [
@@ -15,18 +16,40 @@ const TABS = [
   { href: "/stock/sheets", label: "ข้อมูลบัญชี", icon: FileSpreadsheet, match: (path) => path.startsWith("/stock/sheets") },
 ];
 
+const tabClass = (active) =>
+  `flex h-12 shrink-0 items-center gap-2 border-b-[3px] px-3.5 text-sm font-extrabold ${active ? "border-[#D90005] text-[#B00004]" : "border-transparent text-zinc-600 hover:text-zinc-900"}`;
+
 export default function StockNav() {
   const path = usePathname() || "/stock";
+  const search = useSearchParams();
+  const pins = usePins();
+  const openPin = path === "/stock/sheets" && search?.get("kind")
+    ? pins.find((pin) => pin.kind === search.get("kind") && pin.tab.trim().toLowerCase() === (search.get("name") || "").trim().toLowerCase())
+    : null;
+
   return (
     <nav aria-label="เมนู Stock" className="border-b border-zinc-200 bg-white">
       <div className="mx-auto flex max-w-[1400px] gap-1 overflow-x-auto px-4 sm:px-7">
         {TABS.map(({ href, label, icon: Icon, match }) => {
-          const active = match(path);
+          const active = match(path) && !(openPin && href === "/stock/sheets");
           return (
-            <Link key={href} href={href} aria-current={active ? "page" : undefined}
-              className={`flex h-12 shrink-0 items-center gap-2 border-b-[3px] px-3.5 text-sm font-extrabold ${active ? "border-[#D90005] text-[#B00004]" : "border-transparent text-zinc-600 hover:text-zinc-900"}`}>
+            <Link key={href} href={href} aria-current={active ? "page" : undefined} className={tabClass(active)}>
               <Icon size={16} strokeWidth={2.3} aria-hidden="true" /> {label}
             </Link>
+          );
+        })}
+        {pins.map((pin) => {
+          const active = pin === openPin;
+          return (
+            <span key={`${pin.kind}-${pin.tab}`} className="group flex shrink-0 items-center">
+              <Link href={pinHref(pin)} title={`${pin.kind} › ${pin.tab}`} aria-current={active ? "page" : undefined} className={`${tabClass(active)} pr-1`}>
+                <Pin size={14} strokeWidth={2.3} aria-hidden="true" /> {pin.tab}
+              </Link>
+              <button type="button" onClick={() => removePin(pin)} aria-label={`เอา ${pin.tab} ออกจากเมนู`} title="เอาออกจากเมนู"
+                className="rounded p-0.5 text-zinc-300 hover:bg-zinc-100 hover:text-zinc-700">
+                <X size={13} aria-hidden="true" />
+              </button>
+            </span>
           );
         })}
       </div>

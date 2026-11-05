@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 // The accounting workbooks from Drive ("ข้อมูลบัญชี 2026": one folder per month,
 // downloaded as .xlsx) → every tab kept row by row (Stock → ข้อมูลบัญชี), and the
-// Bybit / BITKUB / Bitazza tabs of 1.2 → Stock wallet entries.
+// wallet tabs (1.2 exchange / credit tabs, 1.3 bank tabs: WALLET_SHEETS) → Stock wallet entries.
 //   node scripts/import-account-sheets.mjs "<folder>"           dry run: what would come in
 //   node scripts/import-account-sheets.mjs "<folder>" --apply   writes (each month and the
 //                                                               sheet wallet entries are replaced)
@@ -78,7 +78,10 @@ for (const folder of months) {
   archive.push({ period, files });
 }
 
-const plan = sheets.planWalletEntries(walletTabs);
+// A frozen wallet's tab is the same old rows copied into every month: read only the newest one.
+const newest = {};
+for (const tab of walletTabs) if (sheets.isFrozenWallet(tab.code) && !(newest[tab.code] > tab.period)) newest[tab.code] = tab.period;
+const plan = sheets.planWalletEntries(walletTabs.filter((tab) => !newest[tab.code] || newest[tab.code] === tab.period));
 const supplierLinks = sheets.linkSupplierReceipts(plan.entries, receipts);
 const entries = plan.entries.map((entry) => ({ ...entry, actorName: sheets.ACCOUNT_SHEET_ACTOR }));
 

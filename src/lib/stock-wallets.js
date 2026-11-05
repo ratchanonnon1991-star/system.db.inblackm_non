@@ -22,6 +22,7 @@ export const WALLET_GROUPS = [
   { code: "crypto", label: "คริปโตบัญชีอื่น", hint: "BITKUB / Bybit ของแต่ละคน" },
   { code: "payout", label: "กระเป๋าเติมเงินต่างประเทศ", hint: "PHP · IDR ที่ใช้เติมให้ลูกค้า" },
   { code: "foreign", label: "สกุลต่างประเทศ / เครดิตซัพพลายเออร์", hint: "USD · JPY · MYR · UAH" },
+  { code: "bank", label: "บัญชีธนาคาร", hint: "THB ใช้จ่ายทั่วไป (ชีต 1.3)" },
 ];
 
 const W = (code, name, currencies, group, role) => ({ code, name, currencies, group, role });
@@ -44,6 +45,11 @@ export const DEFAULT_WALLETS = [
   W("amaten", "Amaten (JPY)", ["JPY"], "foreign", "เครดิต JPY ที่ Amaten"),
   W("myr-plsbuy", "MYR (Plsbuy)", ["MYR"], "foreign", "เครดิต MYR ที่ Plsbuy"),
   W("google-uah", "Google UAH", ["UAH"], "foreign", "เครดิต UAH"),
+  W("binance-dad", "Binance DAD", ["USDT"], "crypto", "Binance ของ DAD (ชีตไม่มีรายการใหม่ตั้งแต่ เม.ย. 2025)"),
+  W("binance-mom", "Binance MOM", ["USDT"], "crypto", "Binance ของ MOM (มีแค่ยอดยกมา)"),
+  W("apple-santosh", "Apple Gift Card (Santosh)", ["USDT"], "foreign", "เครดิต USDT ที่ Santosh สำหรับ Apple Gift Card"),
+  W("kbank-paek", "KBANK Paek", ["THB"], "bank", "บัญชีใช้จ่ายทั่วไป"),
+  W("kkp-paek", "KKP PAek (ปิดใช้งาน)", ["THB"], "bank", "บัญชีที่ปิดแล้ว (รายการถึง พ.ย. 2025)"),
 ].map((wallet, index) => ({ ...wallet, sortOrder: index + 1 }));
 
 export const WALLET_ENTRY_KINDS = ["deposit", "transfer", "exchange", "payment", "refund", "adjust"];

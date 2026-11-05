@@ -114,7 +114,10 @@ const WALLET_BRANDS = [
   [/amaten/i, "amaten.com", "AM", "bg-[#E60033] text-white"],
   [/plsbuy/i, "plsbuy.com", "PB", "bg-sky-600 text-white"],
   [/google/i, "google.com", "G", "bg-white text-zinc-800 border border-zinc-200"],
-  [/xl/i, "xl.co.id", "XL", "bg-[#0A3D91] text-white"],
+  [/(^|[^a-z])xl([^a-z]|$)/i, "xl.co.id", "XL", "bg-[#0A3D91] text-white"],
+  [/kbank|kasikorn/i, "kasikornbank.com", "K+", "bg-[#138F2D] text-white"],
+  [/(^|[^a-z])kkp([^a-z]|$)/i, "kkpfg.com", "KKP", "bg-[#594F9F] text-white"],
+  [/apple/i, "apple.com", "A", "bg-zinc-900 text-white"],
 ];
 const CURRENCY_TONE = { PHP: "bg-blue-700 text-white", IDR: "bg-red-600 text-white", JPY: "bg-rose-600 text-white", USD: "bg-emerald-700 text-white", MYR: "bg-indigo-700 text-white", UAH: "bg-yellow-400 text-blue-900" };
 

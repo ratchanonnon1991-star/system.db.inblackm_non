@@ -1,8 +1,8 @@
 // The accounting workbooks ("ข้อมูลบัญชี M-YYYY" folders on Drive: 1.1 สั่งซื้อสินค้า,
 // 1.2 แลกเงิน, 1.3 ใช้จ่ายทั่วไป, 1.4 Cash Flow / Multi Game Card, 1.5 …) read into
 // the system. Every tab of every file is kept row by row so it can be looked
-// up here; the three Stock wallet tabs of 1.2 (Bybit Inblack Gaming, BITKUB
-// INBLACK, Bitazza Inblack) also become wallet entries.
+// up here; the wallet tabs (WALLET_SHEETS: exchange and credit tabs of 1.2,
+// bank tabs of 1.3) also become wallet entries.
 // The sheets keep logins next to e-mails and card PINs / passwords in their
 // own columns: those cells are dropped before anything is stored.
 // Pure: the importer and the tests share it.
@@ -178,6 +178,14 @@ const PHP_LIKE = (cur, balance = `${cur} คงเหลือ`) => ({
   layout: "ledger", currencies: { [cur]: { in: [`${cur} ที่ได้รับ`], out: [`${cur} ที่จ่าย`], balance: [balance] } },
   desc: ["TOP UP NUMBER"], note: ["หมายเหตุ 1"],
 });
+// A bank tab's file sometimes runs into the next month without the next file repeating those rows
+// (Sep's ends on 1 Oct, Oct's opens on "ยกยอดมา"): a row past the next file's start is dropped only
+// when the next file has the same row (twinOverlap).
+const BANK = {
+  layout: "ledger", dateLabel: "วันที่ทำรายการ", twinOverlap: true,
+  currencies: { THB: { in: ["ยอดเงินเข้า"], out: ["ยอดเงินออก"], balance: ["ยอดเงินคงเหลือ"] } },
+  descAll: ["ประเภทสินค้า ใช้จ่ายบริษัท", "รายการแยกย่อย", "ประเภทสินค้า สั่งซื้อ"], note: ["หมายเหตุ1"],
+};
 export const WALLET_SHEETS = [
   { code: "bitazza", tabs: ["Bitazza Inblack"], layout: "exchange", mentions: /bitazza/i },
   { code: "bitkub", tabs: ["BITKUB INBLACK"], layout: "bitkub", mentions: /bitkub(?!\s*(p'?aek|p'?tos|songkran))/i },
@@ -201,12 +209,28 @@ export const WALLET_SHEETS = [
   { code: "myr-plsbuy", tabs: ["MYR ( Plsbuy )"], layout: "ledger", currencies: { MYR: { in: ["MYR ที่ได้รับ"], out: ["MYR ที่จ่าย"], balance: ["MYR คงเหลือ"] } }, desc: ["TOP UP MAIL"] },
   // Google UAH's "UAH ที่จ่าย" is the USDT cost of the top-up; the UAH spent is "UAH ที่ได้ชำระ".
   { code: "google-uah", tabs: ["Google UAH"], layout: "ledger", currencies: { UAH: { in: ["UAH ที่ได้รับ"], out: ["UAH ที่ได้ชำระ"], balance: ["UAH คงเหลือ"] } }, desc: ["TOP UP MAIL"] },
+  // Frozen tabs: every month's file carries the same old rows unchanged, so only
+  // the newest month is read, rows kept under their own dates (none is a slip).
+  { code: "binance-dad", tabs: ["Binance DAD"], layout: "exchange", frozen: true, mentions: /binance\s*dad/i },
+  { code: "binance-mom", tabs: ["Binance MOM"], layout: "exchange", frozen: true, mentions: /binance\s*mom/i },
+  // Santosh holds USDT credit: "USDT ที่จ่าย" tops it up, "USD ที่จ่าย" is the USDT a card costs.
+  { code: "apple-santosh", tabs: ["Apple Gift Card (Santosh)"], frozen: true, layout: "ledger",
+    currencies: { USDT: { in: ["USDT ที่จ่าย"], out: ["USD ที่จ่าย"], balance: ["USDT คงเหลือ"] } }, desc: ["TOP UP MAIL"] },
+  // The bank tabs of 1.3 (บัญชีใช้จ่ายทั่วไป): THB in / out / balance, what it was for over four columns.
+  { code: "kbank-paek", file: "1.3", tabs: ["KBANK Paek"], ...BANK, mentions: /kbank\s*p'?aek/i },
+  { code: "kkp-paek", file: "1.3", tabs: ["KKP-PAek ปิดใช้งาน"], ...BANK, frozen: true, mentions: /kkp\W*p'?aek/i },
 ];
 const SHEET_BY_TAB = new Map(WALLET_SHEETS.flatMap((spec) => spec.tabs.map((tab) => [squash(tab).toLowerCase(), spec])));
 const SHEET_BY_CODE = new Map(WALLET_SHEETS.map((spec) => [spec.code, spec]));
-/** The wallet a tab of 1.2 could feed (whether or not it is imported), or null. */
-export const walletSheetForTab = (fileName, tab) =>
-  /^1\.2\b/.test(String(fileName).trim()) ? SHEET_BY_TAB.get(squash(tab).toLowerCase()) || null : null;
+/** "1.3 บัญชีใช้จ่ายทั่วไป 10_2026" → "1.3". */
+const fileNumber = (fileName) => /^(\d+\.\d+)(?!\d)/.exec(String(fileName).trim())?.[1] || null;
+/** The wallet a tab could feed (whether or not it is imported), or null. Wallet tabs live in 1.2 unless the spec names another file. */
+export const walletSheetForTab = (fileName, tab) => {
+  const spec = SHEET_BY_TAB.get(squash(tab).toLowerCase()) || null;
+  return spec && fileNumber(fileName) === (spec.file || "1.2") ? spec : null;
+};
+/** Wallets whose tab is copied unchanged month to month: only the newest month counts. */
+export const isFrozenWallet = (code) => Boolean(SHEET_BY_CODE.get(code)?.frozen);
 /** The wallet a tab of 1.2 feeds, among `codes` (default: every wallet sheet), or null. */
 export const walletCodeForTab = (fileName, tab, codes = null) => {
   const code = walletSheetForTab(fileName, tab)?.code || null;
@@ -231,7 +255,7 @@ function walletColumns(spec, header) {
     }
     return -1;
   };
-  const date = cells.findIndex(isDateLabel);
+  const date = cells.findIndex((cell) => isDateLabel(cell) || (spec.dateLabel && cell === spec.dateLabel));
   const base = { labels: cells, date, time: find(["time", "TIME", "เวลา"]), status: find(["สถานะ"]), note: -1, order: -1, desc: -1, skip: [], currencies: {} };
   if (spec.layout === "bitkub") {
     return {
@@ -255,10 +279,13 @@ function walletColumns(spec, header) {
   for (const [currency, labels] of Object.entries(spec.currencies)) {
     currencies[currency] = { in: find(labels.in), out: find(labels.out), fee: labels.fee ? find(labels.fee) : -1, balance: find(labels.balance) };
   }
-  return { ...base, desc: spec.desc ? find(spec.desc) : -1, note: spec.note ? find(spec.note) : -1, skip: (spec.skip || []).map((label) => find([label])), currencies };
+  // descAll: every column under these labels (the bank tabs repeat "รายการแยกย่อย"), joined.
+  const descCols = spec.descAll ? cells.flatMap((cell, col) => (spec.descAll.includes(cell) ? [col] : [])) : [];
+  const desc = descCols.length ? descCols[0] : spec.desc ? find(spec.desc) : -1;
+  return { ...base, desc, descCols, note: spec.note ? find(spec.note) : -1, skip: (spec.skip || []).map((label) => find([label])), currencies };
 }
 
-const usedColumns = (cols) => new Set([cols.date, cols.time, cols.status, cols.desc, ...cols.skip,
+const usedColumns = (cols) => new Set([cols.date, cols.time, cols.status, cols.desc, ...(cols.descCols || []), ...cols.skip,
   ...Object.values(cols.currencies).flatMap((c) => [c.in, c.out, c.fee, c.balance])]);
 
 /**
@@ -273,7 +300,7 @@ export function rowDetails(cells, cols) {
     const label = squash(cols.labels?.[col]);
     const value = squash(cell);
     // Formula columns (totals, the sheet's own rate maths) repeat what the entry already shows.
-    if (used.has(col) || !label || !value || /^check|\(รวม\)|สูตร|USDT RATE|fee 0\.25/i.test(label) || value === REMOVED_CELL) return;
+    if (used.has(col) || !label || !value || /^check|\(รวม\)|สูตร|USDT RATE|fee 0\.25|^ราคารวม$|^จำนวน\(ค่าเงิน|^วันที่ทำรายการ$/i.test(label) || value === REMOVED_CELL) return;
     if (/^#(DIV|REF|N\/A|VALUE)/i.test(value) || (NUMBER.test(value) && Number(value) === 0) || value === "-") return;
     out.push({ label, value: value.slice(0, 300) });
   });
@@ -306,13 +333,15 @@ export function parseWalletTab(codeOrSpec, rows, period) {
   let cols = null;
   let lastDate = null;
   const firstDay = `${period}-01`;
+  const isHeader = (cells) => cells.some((cell) => isDateLabel(cell) || (spec.dateLabel && squash(cell) === spec.dateLabel));
   const inMonth = (date) => {
+    if (spec.frozen) return true; // a frozen tab's rows are old on purpose
     const offset = (Date.parse(date) - Date.parse(firstDay)) / 86400000;
     return offset >= -10 && offset <= 45;
   };
   rows.forEach((cells, index) => {
     const rowNo = index + 1;
-    if (cells.some(isDateLabel)) {
+    if (isHeader(cells)) {
       // A repeated header sometimes leaves a label out (Jan Bybit drops "USDT ที่ได้"): keep the earlier column.
       const next = walletColumns(spec, cells);
       if (cols) {
@@ -350,7 +379,7 @@ export function parseWalletTab(codeOrSpec, rows, period) {
       const balance = units(get(c.balance));
       if (balance !== null) balances[currency] = balance;
     }
-    let desc = get(cols.desc);
+    let desc = cols.descCols?.length ? cols.descCols.map(get).filter(Boolean).join(" · ") : get(cols.desc);
     if (spec.layout === "ledger" && cols.desc < 0) desc = looseText(cells, cols);
     const named = cells.some((cell) => OPENING_WORDS.has(squash(cell)));
     // The ledger tabs carry last months' rows along under their old dates: only the file's own month counts.
@@ -370,9 +399,14 @@ export function parseWalletTab(codeOrSpec, rows, period) {
     if (!opening && !hasMoves) return;
     if (slip && !opening) problems.push({ ...slip, desc });
     const base = { rowNo, desc, order: get(cols.order), status: get(cols.status), note: get(cols.note), ...(slip ? { slipped: true, sheetDate: slip.sheetDate } : {}) };
-    records.push({ ...base, date: opening ? firstDay : date || lastDate || firstDay, minutes: opening ? 0 : sheetMinutes(get(cols.time)),
+    records.push({ ...base, date: opening ? (spec.frozen && date) || firstDay : date || lastDate || firstDay, minutes: opening ? 0 : sheetMinutes(get(cols.time)),
       opening, moves: opening ? {} : moves, balances, details: opening ? [] : rowDetails(cells, cols) });
   });
+  // A frozen tab's carried balance without its own date goes before its oldest row, not on the 1st of the file's month.
+  if (spec.frozen) {
+    const oldest = records.filter((record) => !record.opening).map((record) => record.date).sort()[0];
+    for (const record of records) if (record.opening && oldest && record.date === firstDay && oldest < firstDay) record.date = oldest;
+  }
   return { records, problems };
 }
 
@@ -435,9 +469,11 @@ export function planWalletEntries(tabs) {
     const at = list.indexOf(t);
     const from = at > 0 ? startOf(t) : null;
     const until = at < list.length - 1 ? startOf(list[at + 1]) : null;
+    const twinKey = (record) => `${record.date}|${Object.entries(record.moves).map(([cur, m]) => `${cur}:${m.in}:${m.out}:${m.fee}`).join()}`;
+    const twins = until && SHEET_BY_CODE.get(code)?.twinOverlap ? new Set(list[at + 1].records.filter((record) => !record.opening).map(twinKey)) : null;
     const kept = all.filter((record) => !isCopy(t, record));
     copies += all.length - kept.length;
-    const records = kept.filter((record) => record.opening || ((!from || record.date >= from) && (!until || record.date < until)));
+    const records = kept.filter((record) => record.opening || ((!from || record.date >= from) && (!until || record.date < until || (twins && !twins.has(twinKey(record))))));
     overlap += kept.length - records.length;
     let minutes = 0;
     const lastBalances = {};
@@ -469,7 +505,7 @@ export function planWalletEntries(tabs) {
         continue;
       }
       Object.assign(lastBalances, record.balances);
-      const extra = [record.order && `Order ${record.order}`, record.note, record.status && record.status !== "เรียบร้อย" && `สถานะในชีต: ${record.status}`]
+      const extra = [record.order && `Order ${record.order}`, record.note, record.status && !/เรียบร้อย$/.test(record.status) && `สถานะในชีต: ${record.status}`]
         .filter(Boolean).join(" · ");
       const outs = Object.entries(record.moves).filter(([, m]) => m.out > 0n || (m.fee > 0n && m.in === 0n));
       const ins = Object.entries(record.moves).filter(([, m]) => m.in > 0n);
