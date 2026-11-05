@@ -239,6 +239,25 @@ try {
     assert.ok(!later.some(o => o.orderRef === "OX2"));
   });
 
+  await check("adjust balance: any staff, reason required, kept as history, becomes the shown balance", async () => {
+    clock = new Date("2026-10-20T00:00:00Z");
+    const body = { accountId: idr, balance: "500", reason: "  นับยอดจริงในแอป ", previousBalance: "12.5", requestId: uuid(900) };
+    await rejects(ledger.adjustBalance(body, {}), 401);
+    await rejects(ledger.adjustBalance({ ...body, reason: " " }, nobody), 400, /เหตุผล/);
+    await rejects(ledger.adjustBalance({ ...body, balance: "-1" }, nobody), 400);
+    const first = await ledger.adjustBalance(body, nobody);
+    clock = new Date("2026-10-20T00:00:05Z"); // a retry arrives later: still the same entry
+    assert.deepEqual(await ledger.adjustBalance(body, nobody), { id: first.id, replayed: true });
+    await rejects(ledger.adjustBalance({ ...body, balance: "501" }, nobody), 409);
+    await ledger.adjustBalance({ ...body, balance: "480", previousBalance: "", reason: "หักค่าธรรมเนียม", requestId: uuid(901) }, admin);
+    const history = await ledger.balanceAdjustments(nobody, idr);
+    assert.deepEqual(history.map(h => [h.balance, h.previousBalance, h.note]),
+      [["480.0000", null, "หักค่าธรรมเนียม"], ["500.0000", "12.5000", "นับยอดจริงในแอป"]]);
+    assert.equal(history[1].at, "2026-10-20T00:00:00.000Z");
+    assert.equal((await ledger.reservations(nobody)).find(a => a.id === idr).balance, "480.0000");
+    await rejects(ledger.balanceAdjustments(nobody, "x"), 400);
+  });
+
   await check("schema setup is safe to run again", async () => {
     const again = createInventoryLedger(pool, { now: () => clock });
     assert.equal((await again.listAccounts(viewer)).length, 5);

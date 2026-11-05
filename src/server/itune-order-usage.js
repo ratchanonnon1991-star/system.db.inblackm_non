@@ -39,8 +39,10 @@ export async function saveOrderAccount(body, actor) {
     await pool.query("DELETE FROM gamedb_itune_order_accounts WHERE external_user_id=$1", [externalId]);
     return;
   }
+  // Any tools user may be linked: reserving channels is open to every staff account. Picking
+  // iTune mails still needs Topup permission, checked each time a mail is picked (resolveActor).
   const user = await findUserByUsername(text(body.username));
-  if (!user || !hasPermission(user, "projectm.claim")) fail("ไม่พบบัญชีที่มีสิทธิ์ Topup");
+  if (!user) fail("ไม่พบชื่อผู้ใช้นี้ใน tools");
   try {
     await pool.query(`INSERT INTO gamedb_itune_order_accounts (external_user_id,gamedb_user_id,updated_by)
       VALUES ($1,$2,$3) ON CONFLICT (external_user_id) DO UPDATE SET
@@ -48,17 +50,26 @@ export async function saveOrderAccount(body, actor) {
   } catch (err) { if (err.code === "23505") fail("บัญชีนี้ถูกจับคู่กับ User ID อื่นแล้ว", 409); throw err; }
 }
 
-async function resolveActor(externalId) {
+async function mappedUser(externalId) {
   if (!text(externalId)) fail("Invalid actor");
   const pool = await mappingPool();
   const { rows } = await pool.query("SELECT gamedb_user_id FROM gamedb_itune_order_accounts WHERE external_user_id=$1", [externalId]);
-  const actor = rows[0] && await findUserById(rows[0].gamedb_user_id);
+  return rows[0] ? findUserById(rows[0].gamedb_user_id) : null;
+}
+
+// iTune mails: the linked user must also have Topup permission.
+async function resolveActor(externalId) {
+  const actor = await mappedUser(externalId);
   if (!actor || !hasPermission(actor, "projectm.claim")) fail("ยังไม่ได้จับคู่บัญชีพนักงานกับ iTune หรือบัญชีไม่มีสิทธิ์ Topup", 403);
   return actor;
 }
 
-// The same staff mapping serves the channel bridge (reserved accounts on the order pages).
-export const resolveOrderActor = resolveActor;
+// The channel bridge (reserved accounts on the order pages): any linked user, like the reservation page.
+export async function resolveOrderActor(externalId) {
+  const actor = await mappedUser(externalId);
+  if (!actor) fail("ยังไม่ได้จับคู่บัญชีพนักงาน ให้ Admin จับคู่ที่หน้าจับคู่พนักงานใน tools", 403);
+  return actor;
+}
 
 /** The inblackm staff ID mapped to this tools user, or null (their reservations then never reach Orders). */
 export async function orderMappingFor(userId) {

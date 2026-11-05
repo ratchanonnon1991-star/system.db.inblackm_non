@@ -31,3 +31,11 @@ export function matchBotBalances(accounts, channels) {
   }
   return out;
 }
+
+/** The balance a row shows: the bot's reading, unless someone set the balance by hand after it. */
+export function shownBalance(account) {
+  const manualNewer = account.balance != null && account.balanceSnapshotAt && account.bot
+    && Date.parse(account.balanceSnapshotAt) > Date.parse(account.bot.balanceAt);
+  if (account.bot && !manualNewer) return { source: "bot", balance: account.bot.balance, at: account.bot.balanceAt };
+  return account.balance == null ? null : { source: "ledger", balance: account.balance, at: account.balanceSnapshotAt };
+}

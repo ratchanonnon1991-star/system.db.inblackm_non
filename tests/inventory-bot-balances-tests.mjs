@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { matchBotBalances } from "../src/lib/inventory-bot-balances.js";
+import { matchBotBalances, shownBalance } from "../src/lib/inventory-bot-balances.js";
 
 let passed = 0;
 const check = (name, fn) => { fn(); passed++; console.log(`ok ${name}`); };
@@ -37,4 +37,10 @@ check("no guess: other currency, unknown balance, sheet-only accounts stay unmat
   assert.equal(m.size, 0);
 });
 
+check("shown balance: the bot reading, unless a person set the balance after it", () => {
+  const bot = { balance: "10", balanceAt: "2026-11-04T05:00:00.000Z" };
+  assert.equal(shownBalance({ bot, balance: "7", balanceSnapshotAt: "2026-11-01T00:00:00.000Z" }).source, "bot");
+  assert.deepEqual(shownBalance({ bot, balance: "7", balanceSnapshotAt: "2026-11-04T06:00:00.000Z" }), { source: "ledger", balance: "7", at: "2026-11-04T06:00:00.000Z" });
+  assert.equal(shownBalance({ bot: null, balance: null }), null);
+});
 console.log(`${passed} passed`);
