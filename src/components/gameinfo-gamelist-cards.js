@@ -58,6 +58,8 @@ import {
 } from "@/lib/gameinfo-unsaved-changes";
 
 const PAGE_SIZE = 12;
+// เทียบราคาแพ็ค and Russia Check are hidden from the rail for now; their pages still work by URL.
+const SHOW_MARKET_TOOLS = false;
 
 const EXTRA_FILTER_LABELS = {
   expiring: "ใกล้หมดอายุ",
@@ -338,20 +340,24 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
           >
             <GitBranch size={18} aria-hidden="true" className={botCatalogActive ? "" : "text-[#D90005]"} /> Game Bot Auto
           </Link>
-          <Link
-            href={`/gameinfo/${lang}/pack-price-compare${dataMode === "uid" ? "" : `?mode=${dataMode}`}`}
-            onClick={() => setSidebarOpen(false)}
-            className={navItemClass(priceComparisonActive)}
-          >
-            <ArrowLeftRight size={18} aria-hidden="true" className={priceComparisonActive ? "" : "text-[#D90005]"} /> เทียบราคาแพ็ค
-          </Link>
-          <Link
-            href={`/gameinfo/${lang}/russia-check`}
-            onClick={() => setSidebarOpen(false)}
-            className={navItemClass(false)}
-          >
-            <PackageSearch size={18} aria-hidden="true" className="text-[#D90005]" /> Russia Check
-          </Link>
+          {SHOW_MARKET_TOOLS ? (
+            <>
+            <Link
+              href={`/gameinfo/${lang}/pack-price-compare${dataMode === "uid" ? "" : `?mode=${dataMode}`}`}
+              onClick={() => setSidebarOpen(false)}
+              className={navItemClass(priceComparisonActive)}
+            >
+              <ArrowLeftRight size={18} aria-hidden="true" className={priceComparisonActive ? "" : "text-[#D90005]"} /> เทียบราคาแพ็ค
+            </Link>
+            <Link
+              href={`/gameinfo/${lang}/russia-check`}
+              onClick={() => setSidebarOpen(false)}
+              className={navItemClass(false)}
+            >
+              <PackageSearch size={18} aria-hidden="true" className="text-[#D90005]" /> Russia Check
+            </Link>
+            </>
+          ) : null}
           {editable ? (
             <>
               <Link href={`/gameinfo/${lang}/topup-web`} className={navItemClass(false)}>
