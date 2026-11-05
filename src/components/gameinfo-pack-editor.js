@@ -145,6 +145,11 @@ function uniq(arr) {
 // The rate window's id for a wallet being added (gameinfo-cost-rate-editor.js).
 const NEW_RATE = "__new_rate__";
 
+// จัดการ Market (link a game to Kaleoz / Itemku / G2G for the market price
+// pages). Nothing on the game page shows its results yet, so the button is
+// hidden; links already made keep working on the market pages.
+const SHOW_MARKET_MANAGER = false;
+
 // The pack-name language picker (ชื่อหลัก / + ภาษา). No page shows a
 // translated name yet, so it stays out of the way; the names already
 // saved are kept and the editor works on the main names.
@@ -1339,12 +1344,14 @@ export default function GameinfoPackEditor({
         description={`${currencies.length} สกุลเงิน · กดที่ช่องเพื่อแก้ไข คอลัมน์สูตรคำนวณให้อัตโนมัติ`}
         actions={(
           <>
-            <GameinfoMarketManager
-              gameId={game.id}
-              dataMode={dataMode}
-              columns={computedColumns}
-              onColumnsChange={setComputedColumns}
-            />
+            {SHOW_MARKET_MANAGER ? (
+              <GameinfoMarketManager
+                gameId={game.id}
+                dataMode={dataMode}
+                columns={computedColumns}
+                onColumnsChange={setComputedColumns}
+              />
+            ) : null}
             {canAddColumn ? (
               <>
                 <Button type="button" variant="outline" size="sm" onClick={() => setModalOpen("manual")} title="คอลัมน์ว่าง กรอกค่าเองแต่ละแพ็ค">
