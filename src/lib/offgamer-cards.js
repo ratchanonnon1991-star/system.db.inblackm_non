@@ -167,3 +167,74 @@ export function readOffgamerList(rows = []) {
   }
   return list;
 }
+
+// ---- where an order's money came from -------------------------------------------------------
+
+/** How far apart (days) a wallet payment and the OffGamer top-up it paid for may be. */
+export const PAYMENT_DAYS = 2;
+/** USDT the two may differ by once the fee is taken off (the sheets round differently). */
+export const PAYMENT_TOLERANCE = 0.2;
+
+/** One order's id across accounts: "Ptos|46054901" or "Ptos|2026-11-03#511". */
+export const offgamerOrderId = (order) => `${order.account}|${order.key}`;
+const dayNumber = (date) => Math.round(Date.parse(`${String(date).slice(0, 10)}T00:00:00Z`) / 86400000);
+
+/**
+ * orders (mergeOffgamerTabs) and the wallet payments marked "Multi Game Card"
+ * ([{ id, date, amount, fee, walletName }], amount paid out including the fee) →
+ * Map(offgamerOrderId → payment). A payment pays for the order whose top-up equals
+ * amount − fee (within PAYMENT_TOLERANCE) at most PAYMENT_DAYS apart; the closest
+ * amounts are paired first, then the closest dates, each payment and order once.
+ * An order without a top-up row is matched on what its cards cost.
+ */
+export function linkOffgamerPayments(orders = [], payments = []) {
+  const pairs = [];
+  for (const order of orders) {
+    const target = order.received || order.spent;
+    if (!target) continue;
+    const day = dayNumber(order.date);
+    for (const payment of payments) {
+      const net = Number(payment.amount) - (Number(payment.fee) || 0);
+      const amountGap = Math.abs(net - target);
+      const dayGap = Math.abs(dayNumber(payment.date) - day);
+      if (amountGap <= PAYMENT_TOLERANCE && dayGap <= PAYMENT_DAYS) pairs.push({ order, payment, amountGap, dayGap });
+    }
+  }
+  pairs.sort((a, b) => a.amountGap - b.amountGap || a.dayGap - b.dayGap || String(a.payment.id).localeCompare(String(b.payment.id), "en", { numeric: true }));
+  const linked = new Map();
+  const used = new Set();
+  for (const { order, payment } of pairs) {
+    const id = offgamerOrderId(order);
+    if (linked.has(id) || used.has(payment.id)) continue;
+    linked.set(id, payment);
+    used.add(payment.id);
+  }
+  return linked;
+}
+
+// ---- where the cards went: the Oxide bot ----------------------------------------------------
+
+/** MOL's redeemPoints text ("1,234.50") → a number, or null when unreadable. */
+export function molPoints(value) {
+  const text = squash(value);
+  if (!/^([0-9]{1,12}|[0-9]{1,3}(,[0-9]{3}){1,3})([.][0-9]{1,2})?$/.test(text)) return null;
+  return Number(text.replace(/,/g, ""));
+}
+
+/**
+ * An order's cards against the bot's use per serial ({ serial: { orders, points } }) →
+ * { used, cards, botOrders, points }; points is null when any used card's points are unknown.
+ */
+export function orderBotUse(order, bySerial = {}) {
+  let used = 0;
+  let botOrders = 0;
+  let points = 0;
+  for (const card of order.cards) {
+    const use = bySerial[card.serial];
+    if (!use) continue;
+    used += 1;
+    botOrders += use.orders;
+    points = points === null || use.points === null ? null : points + use.points;
+  }
+  return { used, cards: order.cards.length, botOrders, points: points === null ? null : round(points) };
+}

@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { formatCurrencyBag, stillToComeShare, supplierBalances } from "../src/lib/stock-supplier-balances.js";
 import { mergeExpenseTabs, readExpenseTab, summarizeExpenses, UNCATEGORIZED } from "../src/lib/sheet-expenses.js";
-import { mergeOffgamerTabs, offgamerAccount, orderNumber, readOffgamerList, readOffgamerTab, summarizeOffgamer } from "../src/lib/offgamer-cards.js";
+import { linkOffgamerPayments, mergeOffgamerTabs, molPoints, offgamerAccount, offgamerOrderId, orderBotUse, orderNumber, readOffgamerList, readOffgamerTab, summarizeOffgamer } from "../src/lib/offgamer-cards.js";
+import { offgamerBotOrders, offgamerBotUsage } from "../src/server/offgamer-bot-usage.js";
 
 let passed = 0;
 function check(condition, message) {
@@ -113,6 +114,47 @@ const accounts = readOffgamerList(rows([
   ["", "ไม่ใช่เมล"],
 ]));
 check(accounts.length === 2 && accounts[0].notice === "โดนระงับ 30 วัน" && accounts[1].notice === "Verification✅" && !JSON.stringify(accounts).includes("ลบข้อมูลลับ"), "the account list keeps owner, rank and notices, never the password column");
+
+// ---- 1.4 trail: which payment funded an order, how the bot used its cards ---------------------
+const trailOrders = [
+  { account: "Ptos", key: "2026-11-04#539", order: "", date: "2026-11-04", received: 4693.58, spent: 4693.58, cards: [{ serial: "A1" }, { serial: "A2" }, { serial: "A3" }] },
+  { account: "Ptos", key: "2026-11-03#511", order: "", date: "2026-11-03", received: 2347.26, spent: 2347.26, cards: [{ serial: "B1" }] },
+  { account: "Ptos", key: "2026-11-03#522", order: "", date: "2026-11-03", received: 2347.025, spent: 2347.025, cards: [{ serial: "C1" }] },
+  { account: "Bom", key: "46000001", order: "46000001", date: "2026-06-10", received: 0, spent: 469.15, cards: [{ serial: "D1" }] },
+  { account: "Bom", key: "46000002", order: "46000002", date: "2026-06-10", received: 100, spent: 100, cards: [] },
+];
+const trail = linkOffgamerPayments(trailOrders, [
+  { id: "71688", date: "2026-11-04", amount: 4693.65, fee: 0.07, walletName: "Bybit" },
+  { id: "71659", date: "2026-11-03", amount: 2347.36, fee: 0.1, walletName: "Bybit" },
+  { id: "71660", date: "2026-11-03", amount: 2347.125, fee: 0.1, walletName: "Bybit" },
+  { id: "60001", date: "2026-06-11", amount: 470.15, fee: 1, walletName: "Bybit" },
+  { id: "60002", date: "2026-06-20", amount: 101, fee: 1, walletName: "Bybit" },
+]);
+check(trail.get(offgamerOrderId(trailOrders[0]))?.id === "71688", "a payment pays the order whose top-up equals what was paid less the fee");
+check(trail.get(offgamerOrderId(trailOrders[1]))?.id === "71659" && trail.get(offgamerOrderId(trailOrders[2]))?.id === "71660", "two same-day orders of near amounts each take the payment that matches them exactly");
+check(trail.get(offgamerOrderId(trailOrders[3]))?.id === "60001", "an order without a top-up row matches on what its cards cost");
+check(!trail.has(offgamerOrderId(trailOrders[4])) && trail.size === 4, "a payment more than two days away is not tied to the order");
+check(molPoints("1,234.50") === 1234.5 && molPoints("80") === 80 && molPoints("") === null && molPoints("abc") === null, "MOL points read with thousands commas; anything else is unknown");
+const use = orderBotUse(trailOrders[0], { A1: { orders: 100, points: 5000 }, A3: { orders: 20, points: 1000.5 } });
+check(use.used === 2 && use.cards === 3 && use.botOrders === 120 && use.points === 6000.5, "an order adds up the bot orders and points of the cards the bot used");
+check(orderBotUse(trailOrders[0], { A1: { orders: 1, points: null } }).points === null, "one card with unknown points makes the order's points unknown, not zero");
+
+let botSql = "";
+const botStub = async (sql, values) => {
+  botSql = sql;
+  assert.deepEqual(values, [["A1", "A2"]]);
+  return [{ serial: "A1", orders: 2, first: "2026-11-04T10:00:00Z", last: "2026-11-04T12:00:00Z", points: ["1,000", "250.5"] }, { serial: "A2", orders: 1, first: null, last: null, points: ["?"] }];
+};
+const bot = await offgamerBotUsage(["A1", "A2", "A1", ""], { select: botStub });
+check(bot.bySerial.A1.orders === 2 && bot.bySerial.A1.points === 1250.5 && bot.bySerial.A2.points === null && !bot.error, "the bot's completed orders add up per serial; unreadable points stay unknown");
+check(/^\s*SELECT/.test(botSql) && /status = 'completed'/.test(botSql) && !/pin/i.test(botSql) && !/customer|user_id|telegram/i.test(botSql), "the bot database is only read, completed orders only, without PINs or customer details");
+const down = await offgamerBotUsage(["A1"], { select: async () => { throw new Error("timeout"); } });
+check(down.error && !Object.keys(down.bySerial).length, "when the bot database does not answer, the page says so instead of failing");
+check((await offgamerBotUsage([], { select: async () => { throw new Error("never"); } })).error === "", "no serials, no query");
+const cardOrders = await offgamerBotOrders("A1", { select: async (sql, values) => (values[0] === "A1" && /LIMIT 300/.test(sql) ? [{ id: 9, source_order_id: "TG-1", created_at: "2026-11-04T10:00:00Z", points: "1,000", remaining: "500" }] : []) });
+check(cardOrders.orders[0].sourceOrderId === "TG-1" && cardOrders.orders[0].points === 1000 && cardOrders.orders[0].remaining === 500, "one card's bot orders come newest first with their points");
+const view = readFileSync(new URL("../src/components/offgamer-cards-view.js", import.meta.url), "utf8");
+check(view.includes("/stock/wallets?entry=") && view.includes("CardTrail"), "an order links to its wallet payment and a card opens its trail");
 
 // ---- pages ------------------------------------------------------------------------------
 const nav = readFileSync(new URL("../src/components/stock-nav.js", import.meta.url), "utf8");

@@ -152,6 +152,24 @@ export async function listOffgamerCards() {
   return { orders: mergeOffgamerTabs(read), accounts: readOffgamerList(listRows), listTabId: listTab?.id ?? null };
 }
 
+/**
+ * The wallet payments for Multi Game Cards (entries titled "Multi Game Card", money out),
+ * to tie each OffGamer order to the payment that funded it: [{ id, date (Bangkok), amount, fee, walletName }].
+ */
+export async function listMultiGameCardPayments() {
+  await ensureWalletSchema();
+  const result = await getPool().query(
+    `SELECT e.id, to_char(e.occurred_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD') AS date,
+            (-l.amount)::text AS amount, l.fee::text AS fee, w.name AS wallet_name, l.currency
+       FROM stock_wallet_entries e
+       JOIN stock_wallet_legs l ON l.entry_id = e.id
+       JOIN stock_wallets w ON w.id = l.wallet_id
+      WHERE e.title ILIKE '%multi game card%' AND l.amount < 0 AND l.currency IN ('USDT', 'USDC')
+      ORDER BY e.occurred_at, e.id`
+  );
+  return result.rows.map((row) => ({ id: String(row.id), date: row.date, amount: Number(row.amount), fee: Number(row.fee) || 0, walletName: row.wallet_name, currency: row.currency }));
+}
+
 /** How many kept rows come before sheet row `rowNo` of a tab (to open the page that shows it). */
 export async function accountSheetRowIndex(tabId, rowNo) {
   await ensureAccountSheetSchema();
