@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import { STOCK_ACCOUNT_STATUS_LABELS, STOCK_ACCOUNT_STATUSES, STOCK_DEFAULT_LOW_AT } from "@/lib/stock";
 import { StockDialog, StockField, stockInputClass } from "@/components/stock-ui";
+import StockGamePicker from "@/components/stock-game-picker";
 
 function useSave(onClose) {
   const router = useRouter();
@@ -85,10 +86,8 @@ export function StockAccountDialog({ account = null, games, onClose }) {
           </StockField>
         </div>
         <StockField label="เกมใน GameInfo" htmlFor="stock-game" hint={games.length ? "แพ็คในไอดีนี้จะขึ้นป้าย stock ในหน้าเกมนั้น" : "ต่อ GameInfo ไม่ได้ตอนนี้ — เลือกเกมทีหลังได้"}>
-          <select id="stock-game" value={form.gameId} onChange={(event) => set({ gameId: event.target.value })} className={stockInputClass}>
-            <option value="">ยังไม่เลือก</option>
-            {games.map((game) => <option key={game.id} value={game.id}>{game.name}</option>)}
-          </select>
+          <StockGamePicker id="stock-game" games={games.map((game) => ({ key: String(game.id), name: game.name }))} value={String(form.gameId ?? "")}
+            onPick={(gameId) => set({ gameId })} noneLabel="ยังไม่เลือก" placeholder="ยังไม่เลือก · พิมพ์ชื่อเกม" />
         </StockField>
         {account ? (
           <StockField label="สถานะ" htmlFor="stock-status">

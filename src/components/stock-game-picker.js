@@ -11,8 +11,9 @@ const SHOW_AT_MOST = 80;
  * the same list, pick with the mouse or ↑ ↓ Enter. Only a game from the list can be chosen;
  * leaving the box without picking puts the chosen game's name back.
  * `games`: [{ key, name, hasStock }]; ★ marks a game that already has a stock account.
+ * `noneLabel`: when set, the list starts with that choice, which picks "" (no game).
  */
-export default function StockGamePicker({ id, games, value, onPick, placeholder = "พิมพ์ชื่อเกม" }) {
+export default function StockGamePicker({ id, games, value, onPick, placeholder = "พิมพ์ชื่อเกม", noneLabel = "" }) {
   const listId = useId();
   const box = useRef(null);
   const [open, setOpen] = useState(false);
@@ -21,7 +22,9 @@ export default function StockGamePicker({ id, games, value, onPick, placeholder 
   const chosen = games.find((game) => game.key === value);
   const needle = (query || "").trim().toLowerCase();
   const matches = needle ? games.filter((game) => game.name.toLowerCase().includes(needle)) : games;
-  const shown = matches.slice(0, SHOW_AT_MOST);
+  const none = { key: "", name: noneLabel };
+  const shown = [...(noneLabel && !needle ? [none] : []), ...matches.slice(0, SHOW_AT_MOST)];
+  const more = matches.length - Math.min(matches.length, SHOW_AT_MOST);
 
   const close = () => { setOpen(false); setQuery(null); };
   const pick = (game) => { onPick(game.key); close(); };
@@ -30,9 +33,10 @@ export default function StockGamePicker({ id, games, value, onPick, placeholder 
       event.preventDefault();
       setOpen(true);
       setActive((current) => (shown.length ? (current + (event.key === "ArrowDown" ? 1 : -1) + shown.length) % shown.length : 0));
-    } else if (event.key === "Enter" && open) {
+    } else if (event.key === "Enter") {
+      // Enter picks from the list; it never submits the form from this box.
       event.preventDefault();
-      if (shown[active]) pick(shown[active]);
+      if (!open) { setOpen(true); setActive(0); } else if (shown[active]) pick(shown[active]);
     } else if (event.key === "Escape") {
       close();
     }
@@ -43,6 +47,7 @@ export default function StockGamePicker({ id, games, value, onPick, placeholder 
       <input id={id} role="combobox" aria-expanded={open} aria-controls={listId} aria-autocomplete="list" autoComplete="off"
         value={query ?? (chosen ? `${chosen.hasStock ? "★ " : ""}${chosen.name}` : "")} placeholder={placeholder}
         onFocus={(event) => { setOpen(true); setActive(0); event.target.select(); }}
+        onClick={() => { if (!open) { setOpen(true); setActive(0); } }}
         onChange={(event) => { setQuery(event.target.value); setActive(0); setOpen(true); }}
         onKeyDown={onKeyDown}
         className={`${stockInputClass} pr-9`} />
@@ -56,12 +61,12 @@ export default function StockGamePicker({ id, games, value, onPick, placeholder 
           {shown.map((game, index) => (
             <li key={game.key} role="option" aria-selected={index === active} tabIndex={-1}
               onMouseDown={(event) => { event.preventDefault(); pick(game); }} onMouseEnter={() => setActive(index)}
-              className={`cursor-pointer px-3 py-1.5 ${index === active ? "bg-red-50 text-[#B00004]" : ""} ${game.key === value ? "font-extrabold" : ""}`}>
+              className={`cursor-pointer px-3 py-1.5 ${index === active ? "bg-red-50 text-[#B00004]" : ""} ${game.key === value ? "font-extrabold" : ""} ${game.key ? "" : "text-zinc-500"}`}>
               {game.hasStock ? "★ " : ""}{game.name}
             </li>
           ))}
           {!shown.length ? <li className="px-3 py-2 text-xs text-zinc-500">ไม่พบเกมที่มีคำว่า &quot;{query}&quot;</li> : null}
-          {matches.length > shown.length ? <li className="px-3 py-1.5 text-xs text-zinc-500">อีก {matches.length - shown.length} เกม · พิมพ์ต่อเพื่อค้นหา</li> : null}
+          {more > 0 ? <li className="px-3 py-1.5 text-xs text-zinc-500">อีก {more} เกม · พิมพ์ต่อเพื่อค้นหา</li> : null}
         </ul>
       ) : null}
     </div>
