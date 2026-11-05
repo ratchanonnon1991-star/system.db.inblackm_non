@@ -8,6 +8,7 @@ import TopupInventoryPage from "@/components/topup-inventory-page";
 import { tivButton as button, tivField, tivInput as input, tivPrimary, tivTable, tivTableBox } from "@/lib/topup-inventory-ui";
 import { codaQuickDates } from "@/lib/usdcodashop-overview";
 import { NETEASE_ACCOUNTS, neteaseAccount } from "@/lib/netease-inventory";
+import { ChannelReservations } from "@/components/inventory-reservations";
 
 const endpoint = "/api/projectm/netease";
 const money = (v) => v == null ? "—" : Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -70,6 +71,7 @@ export default function NeteaseInventory({ lang }) {
   const ready = data?.viewKey === viewKey && !loading && !error;
   const quick = Object.entries({ today: "วันนี้", yesterday: "เมื่อวาน", month: "เดือนนี้" }).map(([key, title]) => ({ key, title, on: Object.entries(codaQuickDates(key)).every(([k, v]) => filters[k] === v) }));
   return <TopupInventoryPage provider="netease" description="Pay / Credit ตามชีท · อ่านประวัติบอท ไม่สั่งเติมและไม่หักเงิน">
+    <ChannelReservations lang={lang} channel="netease" />
     <form className="tiv-card" aria-label="กรอง Netease" onSubmit={(e) => { e.preventDefault(); apply({ ...draft, rates: JSON.stringify(rates), page: "1" }); }}>
       <div className="tiv-tools">{quick.map(({ key, title, on }) => <button type="button" aria-pressed={on} className={`${button}${on ? " on" : ""}`} key={key} onClick={() => apply({ ...draft, ...codaQuickDates(key), rates: JSON.stringify(rates), page: "1" })}>{title}</button>)}</div>
       <div className="tiv-fields mt-4">

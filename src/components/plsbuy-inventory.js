@@ -7,6 +7,7 @@ import TopupInventoryPage from "@/components/topup-inventory-page";
 import { tivButton as button, tivField, tivInput as input, tivPrimary, tivTable, tivTableBox } from "@/lib/topup-inventory-ui";
 import { codaQuickDates } from "@/lib/usdcodashop-overview";
 import { PLSBUY_REFERENCE_RATE } from "@/lib/plsbuy-inventory";
+import { ChannelReservations } from "@/components/inventory-reservations";
 const endpoint = "/api/projectm/plsbuy";
 const money = (v) => v == null ? "—" : Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const when = (v) => v ? new Date(v).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "short", timeStyle: "short" }) : "ไม่ระบุเวลา";
@@ -63,6 +64,7 @@ export default function PlsbuyInventory({ lang }) {
   const ready = data?.viewKey === viewKey && !loading && !error;
   const quick = Object.entries({ today: "วันนี้", yesterday: "เมื่อวาน", month: "เดือนนี้" }).map(([key, title]) => ({ key, title, on: Object.entries(codaQuickDates(key)).every(([k, v]) => filters[k] === v) }));
   return <TopupInventoryPage provider="plsbuy" description="ประวัติสำเร็จจากบอท · อ่านอย่างเดียว ไม่สั่งเติมและไม่หักยอดซ้ำ">
+    <ChannelReservations lang={lang} channel="plsbuy" />
     <form className="tiv-card" aria-label="กรอง Plsbuy" onSubmit={(e) => { e.preventDefault(); apply({ ...draft, page: "1" }); }}>
       <div className="tiv-tools">{quick.map(({ key, title, on }) => <button type="button" key={key} aria-pressed={on} className={`${button}${on ? " on" : ""}`} onClick={() => apply({ ...draft, ...codaQuickDates(key), page: "1" })}>{title}</button>)}</div>
       <div className="tiv-fields mt-4"><label className={tivField}><span>วันที่เริ่มต้น</span><input type="date" required value={draft.dateFrom} className={input} onChange={(e) => setDraft({ ...draft, dateFrom: e.target.value })} /></label><label className={tivField}><span>วันที่สิ้นสุด</span><input type="date" required value={draft.dateTo} className={input} onChange={(e) => setDraft({ ...draft, dateTo: e.target.value })} /></label><label className={tivField}><span>ค้นหา Order / เกม / ผู้เติม</span><input type="search" maxLength={200} value={draft.search} className={input} onChange={(e) => setDraft({ ...draft, search: e.target.value })} /></label><label className={tivField}><span>เรทอ้างอิง THB ต่อ MYR</span><input type="number" min="0.00000001" max="999999" step="0.00000001" required value={draft.rate} className={`${input} num`} onChange={(e) => setDraft({ ...draft, rate: e.target.value })} /></label></div>

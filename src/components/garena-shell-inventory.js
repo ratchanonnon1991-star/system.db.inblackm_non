@@ -8,6 +8,7 @@ import TopupInventoryPage from "@/components/topup-inventory-page";
 import { tivButton as button, tivField, tivInput as input, tivPrimary, tivTable, tivTableBox } from "@/lib/topup-inventory-ui";
 import { codaQuickDates } from "@/lib/usdcodashop-overview";
 import { SHELL_ACCOUNTS, SHELL_COST_PER_UNIT, shellAccount } from "@/lib/garena-shell-inventory";
+import { ChannelReservations } from "@/components/inventory-reservations";
 
 const endpoint = "/api/projectm/garena-shell";
 const money = (value) => value == null ? "—" : Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -88,6 +89,7 @@ export default function GarenaShellInventory({ lang }) {
   const ready = data?.viewKey === viewKey && !error;
   const quick = Object.entries({ today: "วันนี้", yesterday: "เมื่อวาน", month: "เดือนนี้" }).map(([preset, label]) => ({ preset, label, on: Object.entries(codaQuickDates(preset)).every(([k, v]) => dates[k] === v) }));
   return <TopupInventoryPage provider="garena-shell" description="เฉพาะสองบัญชีที่กำหนด · ใช้ยอดที่บอทบันทึก ไม่เชื่อมการสั่งเติม">
+    <ChannelReservations lang={lang} channel="garena-shell" />
     <form onSubmit={(event) => { event.preventDefault(); apply(draft); }} aria-label="กรอง Garena Shell" className="tiv-card">
       <div className="tiv-tools">{quick.map(({ preset, label, on }) => <button type="button" key={preset} aria-pressed={on} className={`${button}${on ? " on" : ""}`} onClick={() => apply(codaQuickDates(preset))}>{label}</button>)}</div>
       <div className="tiv-fields mt-4"><label className={tivField}><span>วันที่เริ่มต้น</span><input type="date" required value={draft.dateFrom} max={draft.dateTo || undefined} onChange={(e) => setDraft({ ...draft, dateFrom: e.target.value })} className={input} /></label><label className={tivField}><span>วันที่สิ้นสุด</span><input type="date" required value={draft.dateTo} min={draft.dateFrom || undefined} onChange={(e) => setDraft({ ...draft, dateTo: e.target.value })} className={input} /></label><label className={tivField}><span>บัญชี Shell</span><select aria-label="บัญชี Shell" value={account} onChange={(e) => selectAccount(e.target.value)} className={input}><option value="">ทุกบัญชี</option>{SHELL_ACCOUNTS.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label className={tivField}><span>ค้นหา Order / เกม / ผู้เติม</span><input type="search" value={query} maxLength={200} onChange={(e) => setQuery(e.target.value)} className={input} /></label></div>

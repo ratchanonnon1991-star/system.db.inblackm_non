@@ -9,6 +9,7 @@ import { tivButton as button, tivField, tivInput as input, tivPrimary, tivTable,
 import { codaQuickDates } from "@/lib/usdcodashop-overview";
 import { orderLink, sheetFigures } from "@/lib/usdcodashop-sheet";
 import { WAVEPAY_MMK_PER_THB, WAVEPAY_START_DATE, waveDefaultDates, wavePhoneLabel } from "@/lib/wavepay-inventory";
+import { ChannelReservations } from "@/components/inventory-reservations";
 
 const endpoint = "/api/projectm/wavepay";
 // .tiv-kpi dd is the box's big number; the small figures listed inside a phone's box keep body text.
@@ -138,6 +139,7 @@ export default function WavePayInventory({ lang }) {
   const selected = phone == null ? null : data?.lines.find((l) => l.phone === phone);
   const quick = Object.entries({ today: "วันนี้", yesterday: "เมื่อวาน", month: "เดือนนี้" }).map(([preset, text]) => ({ preset, text, on: Object.entries(codaQuickDates(preset)).every(([k, v]) => dates[k] === v) }));
   return <TopupInventoryPage provider="wavepay" description="ออเดอร์ completed ที่จ่ายด้วย WavePay จาก codashop_orders แยกตามเบอร์ที่บอทใช้จ่าย">
+    <ChannelReservations lang={lang} channel="wavepay" />
     <section aria-label="กรองข้อมูล" className="tiv-card">
       <div className="tiv-tools">{quick.map(({ preset, text, on }) => <button key={preset} disabled={loading} aria-pressed={on} onClick={() => apply(codaQuickDates(preset))} className={`${button}${on ? " on" : ""}`}>{text}</button>)}<span className="tiv-muted">เวลาไทย · ไม่เกิน 93 วัน · เริ่มนับตั้งแต่ {WAVEPAY_START_DATE}</span></div>
       <form onSubmit={(e) => { e.preventDefault(); apply(draft); }} className="mt-4">
