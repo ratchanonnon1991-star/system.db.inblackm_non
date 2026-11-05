@@ -1,4 +1,4 @@
-import { PERMISSION_PRESETS, PERMISSIONS } from "@/lib/permissions";
+import { PERMISSION_PRESETS } from "@/lib/permissions";
 
 // gamedb's half of "sign in with TopUp" (see /api/sso/from-topup, and on the
 // TopUp side src/server/tools-sso/tools-sso-service.js). TopUp verifies the
@@ -32,15 +32,17 @@ export const TOPUP_SSO_NEW_ACCOUNT = Object.freeze({
   permissions: PERMISSION_PRESETS.gameinfoTopup,
 });
 
-// TopUp's admins are Admins here too: the Admin role (users, System DB
-// edits, Stock) and every system's permissions, Admin ones included.
-export const TOPUP_SSO_ADMIN_PERMISSIONS = Object.freeze(PERMISSIONS.map(({ key }) => key));
+// TopUp's admins can look at every system here: each system's view permission
+// and nothing that changes data. iTune's Topup page has no such permission
+// (projectm.claim takes orders), so it stays a grant an Admin makes by hand.
+export const TOPUP_SSO_ADMIN_VIEW = Object.freeze(["gameinfo.access", "profit.access", "stock.access", "workforce.access"]);
 
 /** What a TopUp admin's gamedb account still lacks, as updateUser fields, or null. Adds only, and only ever to `user`'s own. */
 export function topupAdminGrant(user) {
   const held = user.permissions || [];
   const fields = {};
-  if (TOPUP_SSO_ADMIN_PERMISSIONS.some((key) => !held.includes(key))) fields.permissions = [...new Set([...held, ...TOPUP_SSO_ADMIN_PERMISSIONS])];
-  if (user.role !== "admin") fields.role = "admin";
+  if (TOPUP_SSO_ADMIN_VIEW.some((key) => !held.includes(key))) fields.permissions = [...new Set([...held, ...TOPUP_SSO_ADMIN_VIEW])];
+  // A "user" account has no System DB or Feed Social.
+  if (user.role === "user") fields.role = "staff";
   return Object.keys(fields).length ? fields : null;
 }
