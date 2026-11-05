@@ -109,6 +109,7 @@ import {
 import { normalizeSpaces } from "@/lib/text-normalize";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import GameinfoHScroll from "./gameinfo-hscroll";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { GAMEINFO_ADD_WEB_PACKS_EVENT, GAMEINFO_SET_WEB_PACK_IMAGES_EVENT, GAMEINFO_WEB_PACK_CATEGORY, regroupByTopupWebCategories } from "@/lib/gameinfo-topup-match";
@@ -883,7 +884,6 @@ export default function GameinfoPackEditor({
           if (!(p.price ?? "").trim()) invalid.add(`${p.id}:price`);
           if (!(p.amountChargedFee ?? "").trim()) invalid.add(`${p.id}:amountChargedFee`);
           if (p.channelsMain.length === 0) invalid.add(`${p.id}:channelsMain`);
-          if (!(p.country ?? "").trim()) invalid.add(`${p.id}:country`);
         }
       }
     }
@@ -907,7 +907,7 @@ export default function GameinfoPackEditor({
       setStatusTab("all");
       setError(duplicateNamePriceIds.size > 0
         ? "ชื่อ Pack และราคาห้ามซ้ำกันพร้อมกัน กรุณาแก้ช่องที่ไฮไลต์สีแดง"
-        : "กรุณากรอกข้อมูลให้ครบก่อนบันทึก: ชื่อ pack, ราคา, ยอดที่กด + fee, ช่องทางหลัก, ประเทศ (ช่องที่ไฮไลต์สีแดง)");
+        : "กรุณากรอกข้อมูลให้ครบก่อนบันทึก: ชื่อ pack, ราคา, ยอดที่กด + fee, ช่องทางหลัก (ช่องที่ไฮไลต์สีแดง)");
       // The floating บันทึก/ยกเลิก bar is fixed to the bottom of the
       // viewport, so if the user is scrolled up while a pack further down
       // fails validation, nothing near their cursor visibly changes — it
@@ -1182,7 +1182,7 @@ export default function GameinfoPackEditor({
                     ["amount_charged_fee", "ยอดที่กดรวม fee", "ใช่"],
                     ["channel_main", "ช่องทางหลัก", "ใช่"],
                     ["channel_secondary", "ช่องทางรอง", "ไม่"],
-                    ["country", "ประเทศของ pack", "ใช่"],
+                    ["country", "ประเทศของ pack", "ไม่"],
                   ].map(([column, description, required]) => (
                     <tr key={column} className="border-t border-linear-hairline">
                       <td className="py-1 pr-3"><code>{column}</code></td>
@@ -2092,7 +2092,8 @@ function CategoryBlock({
           {category.packs.length === 0 ? "ยังไม่มี pack" : "ไม่มี pack ที่ตรงกับตัวกรอง"}
         </p>
       ) : (
-        <div className="mt-2 overflow-x-auto overscroll-x-contain rounded-md border border-linear-hairline bg-linear-surface-1">
+        <div className="mt-2">
+        <GameinfoHScroll className="overflow-x-auto overscroll-x-contain rounded-md border border-linear-hairline bg-linear-surface-1">
           {/* mt-2 keeps this box's rounded corner clear of the category
               card's own border right above it — without that gap the two
               curves sit close enough to visually clash. The inner grid keeps
@@ -2205,6 +2206,7 @@ function CategoryBlock({
             </SortableContext>
             </DndContext>
           </div>
+        </GameinfoHScroll>
         </div>
       )}
       {categoryFormulaColumn ? (
