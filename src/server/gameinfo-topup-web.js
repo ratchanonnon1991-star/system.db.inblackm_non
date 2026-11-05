@@ -175,3 +175,31 @@ export async function getTopupWebGameAssets(topupGameId) {
 export async function isTopupWebConnected() {
   return Boolean(await findConnectionWithSecretByName(TOPUP_WEB_CONNECTION_NAME));
 }
+
+/**
+ * { [topupGameId]: { href } | { hash } } for the website games given that have a
+ * thumbnail: its own https URL, or an md5 to version a route that serves the
+ * stored data: URL (which can be megabytes, so it never leaves here in a list).
+ * Empty when the connection is not set up.
+ */
+export async function listTopupWebGameThumbnails(topupGameIds) {
+  const ids = [...new Set(topupGameIds.filter(Boolean).map(String))];
+  const pool = ids.length ? await getTopupWebPool() : null;
+  if (!pool) return {};
+  const result = await pool.query(
+    `SELECT g.id::text AS id,
+            CASE WHEN g.thumbnail ~* '^https://' THEN g.thumbnail END AS href,
+            CASE WHEN g.thumbnail LIKE 'data:image/%' THEN left(md5(g.thumbnail), 16) END AS hash
+       FROM games g WHERE g.id::text = ANY($1::text[])`,
+    [ids]
+  );
+  return Object.fromEntries(result.rows.filter((row) => row.href || row.hash).map((row) => [row.id, row.href ? { href: row.href } : { hash: row.hash }]));
+}
+
+/** One website game's thumbnail as stored (data: or http(s) URL), or "". */
+export async function getTopupWebGameThumbnail(topupGameId) {
+  const pool = topupGameId ? await getTopupWebPool() : null;
+  if (!pool) return "";
+  const result = await pool.query(`SELECT thumbnail FROM games WHERE id::text = $1`, [String(topupGameId)]);
+  return String(result.rows[0]?.thumbnail || "");
+}
