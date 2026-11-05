@@ -28,6 +28,9 @@ const { mails, skipped } = parseItuneMailTab(sheet);
 const { listItuneEntries, insertItuneEntry } = await import("../src/server/itune-entries-repository.js");
 const { findUserByUsername } = await import("../src/server/users-repository.js");
 const { hasPermission } = await import("../src/lib/permissions.js");
+// Checked before the dry run's counts, so a wrong --as shows now and not only on --apply.
+const actor = await findUserByUsername(username);
+if (!actor || !hasPermission(actor, "projectm.admin")) { console.error(`ไม่พบผู้ใช้ ${username} หรือไม่มีสิทธิ์ Projectm Admin (ใช้ชื่อที่ล็อกอิน tools เช่นชื่อในคอลัมน์ "เพิ่มโดย" ของหน้า iTune)`); process.exit(2); }
 const existing = new Set((await listItuneEntries({ all: true })).map((e) => String(e.email ?? "").trim().toLowerCase()));
 const fresh = mails.filter((m) => !existing.has(m.email));
 
@@ -41,8 +44,6 @@ for (const [k, n] of reasons) console.log(`  ข้าม ${String(n).padStart(4
 
 if (!apply) { console.log("\nยังไม่ได้บันทึก (dry run) ใส่ --apply เพื่อบันทึกจริง"); process.exit(0); }
 
-const actor = await findUserByUsername(username);
-if (!actor || !hasPermission(actor, "projectm.admin")) { console.error(`ไม่พบผู้ใช้ ${username} หรือไม่มีสิทธิ์ Projectm Admin`); process.exit(2); }
 let added = 0;
 const failed = [];
 for (const [i, m] of fresh.entries()) {
