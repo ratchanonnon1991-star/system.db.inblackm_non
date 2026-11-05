@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import GameinfoSelect from "./gameinfo-select";
 import {
   DndContext,
   closestCenter,
@@ -635,10 +636,9 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
           />
         </div>
 
-        <select
+        <GameinfoSelect
           value={filterRegion}
           onChange={(e) => setFilterRegion(e.target.value)}
-          className="h-10 rounded-xl border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm text-linear-ink outline-none focus:border-linear-primary"
         >
           <option value="">Region ทั้งหมด</option>
           {suggestions.regions.map((v) => (
@@ -646,12 +646,11 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
               {v}
             </option>
           ))}
-        </select>
+        </GameinfoSelect>
 
-        <select
+        <GameinfoSelect
           value={filterPlatform}
           onChange={(e) => setFilterPlatform(e.target.value)}
-          className="h-10 rounded-xl border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm text-linear-ink outline-none focus:border-linear-primary"
         >
           <option value="">Platform ทั้งหมด</option>
           {suggestions.platforms.map((v) => (
@@ -659,12 +658,11 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
               {v}
             </option>
           ))}
-        </select>
+        </GameinfoSelect>
 
-        <select
+        <GameinfoSelect
           value={filterServer}
           onChange={(e) => setFilterServer(e.target.value)}
-          className="h-10 rounded-xl border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm text-linear-ink outline-none focus:border-linear-primary"
         >
           <option value="">Server ทั้งหมด</option>
           {suggestions.servers.map((v) => (
@@ -672,17 +670,16 @@ export default function GameinfoGamelistTable({ initial, editable, lang, dataMod
               {v}
             </option>
           ))}
-        </select>
+        </GameinfoSelect>
 
-        <select
+        <GameinfoSelect
           value={filterVpn}
           onChange={(e) => setFilterVpn(e.target.value)}
-          className="h-10 rounded-xl border border-linear-hairline-strong bg-linear-surface-1 px-3 text-sm text-linear-ink outline-none focus:border-linear-primary"
         >
           <option value="">VPN ทั้งหมด</option>
           <option value="NO">NO</option>
           <option value="YES">YES</option>
-        </select>
+        </GameinfoSelect>
 
         {filtersActive && (
           <button
@@ -1600,3 +1597,4 @@ function EditBox({ onCommit, children }) {
     </div>
   );
 }
+

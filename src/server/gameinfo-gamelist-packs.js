@@ -1894,6 +1894,26 @@ export async function listGamelistRealPackCountByGame() {
   return Object.fromEntries(result.rows.map((row) => [row.game_id, row.pack_count]));
 }
 
+/** { [gameId]: [{ id, name, price }] } in the editor's order, blank rows left
+ * out: only what the Pack Update page reads. */
+export async function listGamelistPackPricesByGame() {
+  const pool = await getReadyPool();
+  const result = await pool.query(
+    `SELECT game_id, pack_id, data->>'name' AS name, data->>'price' AS price,
+            data->>'currencyOrder' AS currency_order, data->>'categoryOrder' AS category_order, data->>'packOrder' AS pack_order
+       FROM gamelist_packs
+      WHERE pack_id != $1 AND (COALESCE(TRIM(data->>'name'), '') <> '' OR COALESCE(TRIM(data->>'price'), '') <> '')`,
+    [COMPUTED_SENTINEL]
+  );
+  const order = (row) => [row.currency_order, row.category_order, row.pack_order].map((value) => Number(value) || 0);
+  const rows = result.rows
+    .map((row) => ({ row, key: order(row) }))
+    .sort((a, b) => a.row.game_id - b.row.game_id || a.key[0] - b.key[0] || a.key[1] - b.key[1] || a.key[2] - b.key[2]);
+  const out = {};
+  for (const { row } of rows) (out[row.game_id] ||= []).push({ id: row.pack_id, name: row.name || "", price: row.price || "" });
+  return out;
+}
+
 /** Disabled-pack count used to derive the orange game service light, and how
  * many on sale are about to expire. Old rows without serviceEnabled are
  * treated as enabled for compatibility. */
