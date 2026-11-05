@@ -9,6 +9,7 @@ import { AddressesForRecipient } from "@/components/crypto-address-card";
 import { bestWalletPaymentMatch, LINK_DAYS, PO_STATUS_LABELS, walletPaymentCandidates } from "@/lib/stock-purchase-orders";
 import { fromWalletUnits, toWalletUnits, WALLET_CHECK_LABELS, WALLET_ENTRY_LABELS, WALLET_GROUPS, WALLET_PAYMENT_STATUS_LABELS, WALLET_REVIEW_LABELS, walletCheckState } from "@/lib/stock-wallets";
 import { StockDialog, StockField, stockInputClass } from "@/components/stock-ui";
+import StockAttachments from "@/components/stock-attachments";
 
 const KIND_LOOK = {
   deposit: { icon: <ArrowDownToLine size={18} strokeWidth={2.4} />, iconClass: "bg-emerald-50 text-emerald-700", subtitle: "เงินเข้ากระเป๋า เช่น Russia deposit เข้า Bitazza" },
@@ -377,7 +378,7 @@ function EntryLinks({ entry, open, onTrail }) {
 }
 
 /** What the sheet row says, and what proves it. */
-function EntryTrail({ entry }) {
+function EntryTrail({ entry, canEdit = false, currentUserId = null }) {
   const proofs = entry.details.filter((item) => isUrl(item.value));
   const facts = entry.details.filter((item) => !isUrl(item.value));
   const from = entry.legs.find((leg) => String(leg.amount).startsWith("-"));
@@ -413,6 +414,7 @@ function EntryTrail({ entry }) {
         ) : null}
       </div>
       <MoneyTrail entry={entry} />
+      <div className="sm:col-span-2"><StockAttachments kind="wallet_entry" ownerId={entry.id} canEdit={canEdit} currentUserId={currentUserId} /></div>
     </div>
   );
 }
@@ -691,7 +693,7 @@ export default function StockWallets({ wallets, entries, checks = [], filters = 
                     </tr>
                     {open ? (
                       <tr className="bg-zinc-50/60">
-                        <td colSpan={6} className="px-4 pb-3"><EntryTrail entry={entry} /></td>
+                        <td colSpan={6} className="px-4 pb-3"><EntryTrail entry={entry} canEdit={canEdit} currentUserId={currentUserId} /></td>
                       </tr>
                     ) : null}
                   </Fragment>

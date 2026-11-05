@@ -3,6 +3,7 @@ import { groupStockCounts, isStockTab, readStockCount, withStockChanges } from "
 import { ACCOUNT_SHEET_SOURCE, sheetFileKind, walletCodeForTab } from "@/lib/account-sheets";
 import { DEFAULT_WALLETS, fromWalletUnits, planSheetWalletSync, sheetEntryFingerprint, WALLET_COUNTED } from "@/lib/stock-wallets";
 import { ensureWalletSchema } from "@/server/stock-wallet-repository";
+import { ensureAttachmentSchema } from "@/server/stock-attachment-repository";
 import { isExpenseFile, mergeExpenseTabs, readExpenseTab } from "@/lib/sheet-expenses";
 import { isOffgamerFile, mergeOffgamerTabs, offgamerAccount, readOffgamerList } from "@/lib/offgamer-cards";
 
@@ -200,11 +201,12 @@ export async function searchAccountSheets(text, { period = "", limit = 200 } = {
  * (planWalletEntries) without losing what people did on them: an entry still in the
  * sheets keeps its id, its tie to an order, a status a person changed and any request
  * awaiting someone (planSheetWalletSync says how entries are paired). Gone from the
- * sheets: deleted when untouched, else kept aside out of every balance for someone to
+ * sheets (a file attached counts as touched): deleted when untouched, else kept aside out of every balance for someone to
  * check. Then every leg's balance-after is recomputed in time order.
  */
 export async function replaceSheetWalletEntries(entries, checks = []) {
   await ensureWalletSchema();
+  await ensureAttachmentSchema();
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -216,7 +218,8 @@ export async function replaceSheetWalletEntries(entries, checks = []) {
     const stored = (await client.query(
       `SELECT e.id, e.kind, e.title, e.occurred_at, e.source_ref,
               (e.order_id IS NOT NULL OR e.status_changed_at IS NOT NULL OR e.status_request IS NOT NULL OR e.reviewed_at IS NOT NULL
-               OR EXISTS (SELECT 1 FROM stock_purchase_order_events v WHERE v.wallet_entry_id = e.id)) AS touched,
+               OR EXISTS (SELECT 1 FROM stock_purchase_order_events v WHERE v.wallet_entry_id = e.id)
+               OR EXISTS (SELECT 1 FROM stock_attachments a WHERE a.owner_kind = 'wallet_entry' AND a.owner_id = e.id AND a.removed_at IS NULL)) AS touched,
               json_agg(json_build_object('walletCode', w.code, 'currency', l.currency, 'amount', l.amount::text, 'fee', l.fee::text)) AS legs
          FROM stock_wallet_entries e
          JOIN stock_wallet_legs l ON l.entry_id = e.id

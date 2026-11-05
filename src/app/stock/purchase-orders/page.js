@@ -17,6 +17,6 @@ export default async function StockPurchaseOrdersPage({ searchParams }) {
   // A year of orders imported from the sheets is ~320: load them all, newest first.
   const orders = await listPurchaseOrders({ limit: 1000 });
   const [accounts, wallets, games] = await Promise.all([canEdit ? listStockAccounts() : [], canEdit ? listWallets() : [], canEdit ? listStockGames() : []]);
-  return <StockPurchaseOrders orders={orders} accounts={accounts} games={games} wallets={wallets} canEdit={canEdit}
+  return <StockPurchaseOrders orders={orders} accounts={accounts} games={games} wallets={wallets} canEdit={canEdit} currentUserId={user?.id ?? null}
     initialOpenId={Number(params.open) || null} initialQuery={typeof params.q === "string" ? params.q.slice(0, 120) : ""} />;
 }

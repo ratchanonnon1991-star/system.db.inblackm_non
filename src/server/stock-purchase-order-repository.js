@@ -14,6 +14,7 @@ import { normalizeStockCode } from "@/lib/stock";
 import { ensureStockSchema, insertStockMove } from "@/server/stock-repository";
 import { ensureWalletSchema, insertWalletEntry } from "@/server/stock-wallet-repository";
 import { fromWalletUnits, toWalletUnits } from "@/lib/stock-wallets";
+import { ensureAttachmentSchema } from "@/server/stock-attachment-repository";
 
 // Purchase orders (src/lib/stock-purchase-orders.js): one order buys packs for
 // one stock account. Every step is an event row, so the history of who paid,
@@ -423,6 +424,7 @@ export async function createPurchaseOrder(input, actor = null) {
  */
 export async function takePurchaseOrderAction(id, action, input = {}, actor = null) {
   await ensureSchema();
+  await ensureAttachmentSchema();
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -439,9 +441,13 @@ export async function takePurchaseOrderAction(id, action, input = {}, actor = nu
       `SELECT * FROM stock_purchase_order_deliveries WHERE order_id = $1 AND status = 'pending' ORDER BY id DESC LIMIT 1 FOR UPDATE`,
       [row.id]
     )).rows[0];
+    const attachmentCount = (await client.query(
+      `SELECT COUNT(*)::int AS n FROM stock_attachments WHERE owner_kind = 'po' AND owner_id = $1 AND removed_at IS NULL`, [row.id]
+    )).rows[0].n;
     const order = {
       status: row.status,
       amount: row.amount,
+      attachmentCount,
       createdById: row.created_by_id,
       refundRequestedById: row.refund_requested_by_id,
       delivery: pending ? { lines: pending.lines, fromStatus: pending.from_status, recordedById: pending.recorded_by_id } : null,

@@ -106,7 +106,12 @@ const order = {
 check(Boolean(applyPurchaseOrderAction({ ...order, status: "requested" }, "pay").error), "an order is not paid before it is approved");
 check(applyPurchaseOrderAction({ ...order, status: "approved" }, "pay", { walletId: 3 }).status === "paid", "paying from a wallet moves an approved order on");
 check(Boolean(applyPurchaseOrderAction({ ...order, status: "approved" }, "pay").error), "paid needs a wallet or proof of an outside payment");
-check(Boolean(applyPurchaseOrderAction({ ...order, status: "approved" }, "pay", { outside: true, note: "KBANK" }).error), "an outside payment needs a proof link");
+check(Boolean(applyPurchaseOrderAction({ ...order, status: "approved" }, "pay", { outside: true, note: "KBANK" }).error), "an outside payment needs a proof link or file");
+check(Boolean(applyPurchaseOrderAction({ ...order, status: "approved", attachmentCount: 1 }, "pay", { outside: true, note: "KBANK", proofUrl: "drive/x" }).error), "a proof link that is not a link is refused even with a file attached");
+{
+  const filed = applyPurchaseOrderAction({ ...order, status: "approved", attachmentCount: 2 }, "pay", { outside: true, note: "KBANK P'aek" });
+  check(filed.status === "paid" && filed.proofUrl === null && filed.note.includes("ไฟล์แนบในใบนี้ (2 ไฟล์)"), "a slip attached to the order is proof enough, and the note says so");
+}
 check(Boolean(applyPurchaseOrderAction({ ...order, status: "approved" }, "pay", { outside: true, proofUrl: "https://drive.google.com/x" }).error), "an outside payment says which channel");
 {
   const outside = applyPurchaseOrderAction({ ...order, status: "approved" }, "pay", { outside: true, proofUrl: "https://drive.google.com/x", note: "KBANK P'aek" });

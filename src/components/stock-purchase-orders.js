@@ -25,6 +25,7 @@ import {
 } from "@/lib/stock-purchase-orders";
 import { formatStockNumber, StockDialog, StockField, stockInputClass } from "@/components/stock-ui";
 import { formatCurrencyBag, supplierBalances } from "@/lib/stock-supplier-balances";
+import StockAttachments from "@/components/stock-attachments";
 
 const STATUS_CLASS = {
   requested: "bg-sky-50 text-sky-800",
@@ -125,7 +126,7 @@ function matches(order, query, filter) {
   return text.includes(query);
 }
 
-export default function StockPurchaseOrders({ orders, accounts, games = [], wallets = [], canEdit, initialOpenId = null, initialQuery = "" }) {
+export default function StockPurchaseOrders({ orders, accounts, games = [], wallets = [], canEdit, currentUserId = null, initialOpenId = null, initialQuery = "" }) {
   const [query, setQuery] = useState(initialQuery);
   const [filter, setFilter] = useState(initialQuery || initialOpenId ? "all" : "open");
   const [creating, setCreating] = useState(false);
@@ -233,7 +234,7 @@ export default function StockPurchaseOrders({ orders, accounts, games = [], wall
       )}
 
       {creating ? <CreatePurchaseOrderDialog accounts={accounts} games={games} onClose={() => setCreating(false)} /> : null}
-      {opened ? <PurchaseOrderDialog key={`${opened.id}-${opened.status}-${opened.qtyReceived}`} order={opened} wallets={wallets} canEdit={canEdit} onClose={() => setOpenId(null)} /> : null}
+      {opened ? <PurchaseOrderDialog key={`${opened.id}-${opened.status}-${opened.qtyReceived}`} order={opened} wallets={wallets} canEdit={canEdit} currentUserId={currentUserId} onClose={() => setOpenId(null)} /> : null}
     </div>
   );
 }
@@ -587,7 +588,7 @@ function CreatePurchaseOrderDialog({ accounts, games, onClose }) {
   );
 }
 
-function PurchaseOrderDialog({ order: listed, wallets, canEdit, onClose }) {
+function PurchaseOrderDialog({ order: listed, wallets, canEdit, currentUserId, onClose }) {
   const router = useRouter();
   const [detail, setDetail] = useState(null);
   const order = detail || listed;
@@ -786,12 +787,12 @@ function PurchaseOrderDialog({ order: listed, wallets, canEdit, onClose }) {
                     const balance = wallet.balances.find((item) => item.currency === order.currency)?.balance ?? "0";
                     return <option key={wallet.id} value={wallet.id}>{wallet.name} · เหลือ {balance} {order.currency}</option>;
                   })}
-                  <option value="">จ่ายทางอื่น (ไม่หักกระเป๋า · ต้องแนบหลักฐาน)</option>
+                  <option value="">จ่ายทางอื่น (ไม่หักกระเป๋า · ต้องมีหลักฐาน)</option>
                 </select>
               </StockField>
               {payOutside ? (
-                <StockField label="ลิงก์หลักฐานการโอน" htmlFor="po-pay-proof" hint="สลิป / หน้าจอการโอน (Google Drive ฯลฯ)">
-                  <input id="po-pay-proof" type="url" value={pay.proofUrl} onChange={(event) => setPay((current) => ({ ...current, proofUrl: event.target.value }))} className={stockInputClass} placeholder="https://..." required />
+                <StockField label="ลิงก์หลักฐานการโอน" htmlFor="po-pay-proof" hint="ไม่ต้องใส่ถ้าแนบสลิปไว้ในช่อง &quot;ไฟล์แนบ&quot; ของใบนี้แล้ว">
+                  <input id="po-pay-proof" type="url" value={pay.proofUrl} onChange={(event) => setPay((current) => ({ ...current, proofUrl: event.target.value }))} className={stockInputClass} placeholder="https://... (หรือแนบสลิปด้านล่าง)" />
                 </StockField>
               ) : null}
               <StockField label={`ค่า fee (${order.currency})`} htmlFor="po-pay-fee">
@@ -832,6 +833,8 @@ function PurchaseOrderDialog({ order: listed, wallets, canEdit, onClose }) {
           {deliveries.filter((delivery) => delivery.status !== "pending").map((delivery) => <DeliveryCard key={delivery.id} delivery={delivery} />)}
         </div>
       ) : null}
+
+      <StockAttachments kind="po" ownerId={order.id} canEdit={canEdit} currentUserId={currentUserId} title="ไฟล์แนบ / อีเมลซัพ" />
 
       <div>
         <p className="mb-2 text-[13px] font-extrabold text-zinc-700">ประวัติขั้นตอน</p>

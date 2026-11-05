@@ -193,6 +193,8 @@ export function topupCheck({ balanceBefore, balanceAfter, expected }) {
  * verify / reject_delivery: `order.delivery` is the delivery waiting { lines, fromStatus };
  *          a rejection needs a reason and sends the order back to the step it was at.
  * request_refund: `input.refundAmount` (≤ the amount paid) and a reason in `input.note`.
+ * pay outside every wallet: proof is a link in `input.proofUrl` or a file already attached
+ *          to the order (`order.attachmentCount`, src/lib/stock-attachments.js).
  */
 export function applyPurchaseOrderAction(order, action, input = {}, actor = null) {
   if (!PO_ACTIONS.includes(action)) return { error: "ขั้นตอนไม่ถูกต้อง" };
@@ -213,9 +215,12 @@ export function applyPurchaseOrderAction(order, action, input = {}, actor = null
     if (Number.isInteger(walletId) && walletId > 0) return { status: "paid", note, walletId };
     if (!input.outside) return { error: "เลือกกระเป๋าที่จ่าย หรือเลือก \"จ่ายทางอื่น\" พร้อมแนบหลักฐาน" };
     const proofUrl = normalizeReceiptUrl(input.proofUrl);
-    if (!proofUrl) return { error: "จ่ายทางอื่นต้องแนบลิงก์หลักฐานการโอน (https://)" };
+    if (proofUrl === null) return { error: "ลิงก์หลักฐานต้องขึ้นต้นด้วย https://" };
+    const files = Number(order.attachmentCount) || 0;
+    if (!proofUrl && !files) return { error: "จ่ายทางอื่นต้องมีหลักฐาน: แนบสลิปในใบนี้ หรือใส่ลิงก์หลักฐานการโอน (https://)" };
     if (!note) return { error: "จ่ายทางอื่นต้องบอกว่าจ่ายช่องทางไหน เช่น KBANK P'aek" };
-    return { status: "paid", note: `จ่ายทางอื่น: ${note} · หลักฐาน ${proofUrl}`.slice(0, 1500), walletId: null, proofUrl };
+    const proof = proofUrl || `ไฟล์แนบในใบนี้ (${files} ไฟล์)`;
+    return { status: "paid", note: `จ่ายทางอื่น: ${note} · หลักฐาน ${proof}`.slice(0, 1500), walletId: null, proofUrl: proofUrl || null };
   }
   if (action === "cancel") return { status: "cancelled", note };
   if (action === "refund") return { status: "refunded", note };
