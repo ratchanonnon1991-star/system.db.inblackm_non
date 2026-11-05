@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   ArrowLeftRight,
@@ -37,6 +37,8 @@ import GameinfoDatasetToggle from "./gameinfo-dataset-toggle";
 import GameinfoBotCatalog from "./gameinfo-bot-catalog";
 import GameinfoPackPriceCompare from "./gameinfo-pack-price-compare";
 import GameinfoPackUpdate from "./gameinfo-pack-update";
+import { mockGameinfoPackUpdates } from "@/lib/gameinfo-pack-update";
+import { apiJson } from "@/lib/api-json";
 import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
 import {
   GAMEINFO_STATUSES,
@@ -76,12 +78,52 @@ const STATUS_STYLE = {
   offline: { label: "ปิดใช้งาน", dot: "bg-linear-ink-tertiary", text: "text-linear-ink-subtle" },
 };
 
-export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, botChannels = [], botCategoryImages = {}, marketPage = null, botCatalogActive = false, priceComparisonActive = false, packUpdateActive = false, packUpdates = null, packUpdateTab = "list", userName = "", editable = false, topupView = false, canReport = false, lang, dataMode = "uid" }) {
+export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, botChannels = [], botCategoryImages = {}, marketPage = null, botCatalogActive = false, priceComparisonActive = false, packUpdatePacks: initialPackUpdatePacks = null, userName = "", editable = false, topupView = false, canReport = false, lang, dataMode = "uid" }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  // Pack Update and the game list switch in the browser (the URL follows by
+  // pushState), not by loading the page again: the list is already here and
+  // Pack Update only needs every game's packs, loaded once.
+  const packUpdateActive = !botCatalogActive && !priceComparisonActive && searchParams.get("section") === "pack-update";
   // A page other than the game list fills the main area; the filters there lead back to the list.
   const otherSection = priceComparisonActive || packUpdateActive;
   // Every game is listed until the PG2 API says which changed (see gameinfo-pack-update.js).
   const packUpdateCount = initial.length;
-  const router = useRouter();
+  const listHref = gameinfoListHref(lang, dataMode, false);
+  const packUpdateHref = `/gameinfo/${lang}?section=pack-update${dataMode === "uid" ? "" : `&mode=${dataMode}`}`;
+  const [packUpdatePacks, setPackUpdatePacks] = useState(initialPackUpdatePacks);
+  const [packUpdateError, setPackUpdateError] = useState("");
+  const packUpdateLoading = useRef(false);
+  const packUpdates = useMemo(() => (packUpdatePacks ? mockGameinfoPackUpdates(initial, packUpdatePacks) : null), [initial, packUpdatePacks]);
+  const loadPackUpdatePacks = useCallback(() => {
+    if (packUpdatePacks || packUpdateLoading.current) return;
+    packUpdateLoading.current = true;
+    setPackUpdateError("");
+    apiJson(`/api/gameinfo/pack-update${dataMode === "idpass" ? "?mode=idpass" : ""}`, { fallbackError: "โหลดแพ็คของ Pack Update ไม่สำเร็จ" })
+      .then((data) => setPackUpdatePacks(data.packsByGame || {}))
+      .catch((error) => setPackUpdateError(error instanceof Error ? error.message : "โหลดแพ็คของ Pack Update ไม่สำเร็จ"))
+      .finally(() => { packUpdateLoading.current = false; });
+  }, [dataMode, packUpdatePacks]);
+  useEffect(() => {
+    if (packUpdateActive) loadPackUpdatePacks();
+  }, [loadPackUpdatePacks, packUpdateActive]);
+  // Back to the list from another section: Pack Update in place, the rest by loading the list.
+  function leaveSection() {
+    if (botCatalogActive || priceComparisonActive) router.push(listHref);
+    else if (packUpdateActive) {
+      window.history.pushState(null, "", listHref);
+      window.scrollTo({ top: 0 });
+    }
+  }
+  function openPackUpdate(event) {
+    setSidebarOpen(false);
+    if (botCatalogActive || priceComparisonActive || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+    event.preventDefault();
+    if (packUpdateActive) return;
+    loadPackUpdatePacks();
+    window.history.pushState(null, "", packUpdateHref);
+    window.scrollTo({ top: 0 });
+  }
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [tag, setTag] = useState("");
@@ -202,21 +244,21 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
   }
 
   function chooseStatus(nextStatus) {
-    if (botCatalogActive || otherSection) router.push(gameinfoListHref(lang, dataMode, false));
+    if (botCatalogActive || otherSection) leaveSection();
     setStatus(nextStatus);
     setPage(0);
     setSidebarOpen(false);
   }
 
   function chooseTag(nextTag) {
-    if (botCatalogActive || otherSection) router.push(gameinfoListHref(lang, dataMode, false));
+    if (botCatalogActive || otherSection) leaveSection();
     setTag(nextTag);
     setPage(0);
     setSidebarOpen(false);
   }
 
   function choosePublisher(nextPublisher) {
-    if (botCatalogActive || otherSection) router.push(gameinfoListHref(lang, dataMode, false));
+    if (botCatalogActive || otherSection) leaveSection();
     setPublisher(nextPublisher);
     setPage(0);
     setSidebarOpen(false);
@@ -379,7 +421,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             onClick={() => {
               clearFilters();
               setSidebarOpen(false);
-              if (botCatalogActive || otherSection) router.push(gameinfoListHref(lang, dataMode, false));
+              if (botCatalogActive || otherSection) leaveSection();
             }}
             className={`${navItemClass(!botCatalogActive && status === "all" && !tag && !publisher && !otherSection)} min-h-11 font-bold`}
           >
@@ -388,8 +430,10 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             <span className={navCountClass(!botCatalogActive && status === "all" && !tag && !publisher && !otherSection)}>{counts.all}</span>
           </button>
           <Link
-            href={`/gameinfo/${lang}?section=pack-update${dataMode === "uid" ? "" : `&mode=${dataMode}`}`}
-            onClick={() => setSidebarOpen(false)}
+            href={packUpdateHref}
+            onClick={openPackUpdate}
+            onMouseEnter={loadPackUpdatePacks}
+            onFocus={loadPackUpdatePacks}
             className={`${navItemClass(packUpdateActive)} min-h-11 font-bold`}
           >
             <PackagePlus size={18} aria-hidden="true" />
@@ -505,7 +549,18 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
         ) : priceComparisonActive ? (
           <GameinfoPackPriceCompare page={marketPage} editable={editable} />
         ) : packUpdateActive ? (
-          <GameinfoPackUpdate initialGames={packUpdates || []} userName={userName} initialTab={packUpdateTab} />
+          packUpdates ? (
+            <GameinfoPackUpdate initialGames={packUpdates} userName={userName} initialTab={searchParams.get("tab") === "history" ? "history" : "list"} />
+          ) : (
+            <div role="status" className="rounded-2xl border border-linear-hairline bg-linear-surface-1 p-8 text-center text-sm text-linear-ink-muted">
+              {packUpdateError ? (
+                <span className="flex flex-col items-center gap-3">
+                  <span className="text-linear-danger">{packUpdateError}</span>
+                  <button type="button" onClick={loadPackUpdatePacks} className="h-10 rounded-full border border-linear-hairline-strong px-4 font-bold text-linear-ink hover:bg-linear-surface-2">ลองอีกครั้ง</button>
+                </span>
+              ) : "กำลังโหลดแพ็คของทุกเกม…"}
+            </div>
+          )
         ) : (
           <>
         <div className="flex flex-wrap items-end justify-between gap-4">
