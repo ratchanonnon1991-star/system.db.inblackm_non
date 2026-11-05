@@ -12,7 +12,7 @@ import GameinfoPackEditor from "@/components/gameinfo-pack-editor";
 import GameinfoErrorNotice from "@/components/gameinfo-error-notice";
 import GameinfoBackLink from "@/components/gameinfo-back-link";
 import { getGameinfoFormulaVariables } from "@/server/gameinfo-formula-variables";
-import { gameinfoGameHref, gameinfoListHref, gameinfoPacksHref, normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
+import { gameinfoListHref, gameinfoPacksHref, normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 import { getGameinfoModeData } from "@/server/gameinfo-mode-data";
 import GameinfoDatasetToggle from "@/components/gameinfo-dataset-toggle";
 import GameinfoModeCloneButton from "@/components/gameinfo-mode-clone-button";
@@ -85,7 +85,7 @@ export default async function GameinfoGamelistPacksPage({ params, searchParams }
     <div className="px-4 py-8 pb-24">
       <GameinfoBackLink
         className="mb-4 inline-flex items-center gap-1 text-sm text-linear-primary hover:underline"
-        href={gameinfoGameHref(lang, row.id, dataMode)}
+        href={gameinfoListHref(lang, dataMode)}
       />
       <div className="mb-6 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="min-w-0 break-words text-2xl font-bold text-linear-ink">แพ็ก — {row.game}</h1>
@@ -105,7 +105,7 @@ export default async function GameinfoGamelistPacksPage({ params, searchParams }
         // stay scoped to this game only.
         suggestions={{ ...buildPackSuggestions(game), channels: allChannels }}
         dataMode={dataMode}
-        backHref={gameinfoGameHref(lang, row.id, dataMode)}
+        backHref={gameinfoListHref(lang, dataMode)}
         historyUrl={`/api/gameinfo/gamelist/${row.id}/packs/history?limit=200${dataMode === "idpass" ? "&mode=idpass" : ""}`}
         savePacksUrl={`/api/gameinfo/gamelist/${row.id}/packs${dataMode === "idpass" ? "?mode=idpass" : ""}`}
         importPreviewUrl={`/api/gameinfo/import/preview?gameId=${row.id}`}

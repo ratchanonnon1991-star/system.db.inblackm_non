@@ -18,6 +18,8 @@ export async function attachSheetFields(select, rows, { exactAllocation = false 
     WHERE c.status='completed' AND (t.order_id::text=ANY($1::text[]) OR split_part(c.source_order_id::text,':',1)=ANY($1::text[]))
     GROUP BY 1,2`, [keys]);
   const packGroups = new Map(packs.map((p) => [JSON.stringify([String(p.sale_key), String(p.sale_source || "")]), p]));
+  const fallbackGroups = new Map();
+  for (const pack of packs) if (!fallbackGroups.has(String(pack.sale_key))) fallbackGroups.set(String(pack.sale_key), pack);
   // Batch only approved fields, never passwords/raw payloads or receipt URLs.
   const listings = await select(`SELECT DISTINCT ON (order_id,source) order_id,source AS listing_source,
     payload->>'amount' AS sale_amount,payload->>'buyer' AS buyer,payload->>'link' AS link,
@@ -25,12 +27,19 @@ export async function attachSheetFields(select, rows, { exactAllocation = false 
     FROM sheet_jobs WHERE order_id=ANY($1::text[]) AND target='marketplace'
       AND source IN ('kaleoz','itemku','playerok','playerok-topupman','g2g','coda-worker')
     ORDER BY order_id,source,created_at DESC,id DESC`, [keys]);
+  const listingsByOrder = new Map();
+  for (const listing of listings) {
+    const key = String(listing.order_id);
+    if (!listingsByOrder.has(key)) listingsByOrder.set(key, new Map());
+    const bySource = listingsByOrder.get(key);
+    if (!bySource.has(listing.listing_source)) bySource.set(listing.listing_source, listing);
+  }
   return rows.map((row) => {
     const key = keyOf(row), source = String(row.source || row.telegram_source || "").toLowerCase();
-    const matches = listings.filter((l) => String(l.order_id) === key);
-    const listing = matches.find((l) => l.listing_source === source) || {};
-    const filler = matches.find((l) => l.listing_source === "coda-worker")?.filler;
-    const group = packGroups.get(JSON.stringify([key, source])) || (!exactAllocation ? packs.find((p) => String(p.sale_key) === key) : null);
+    const matches = listingsByOrder.get(key);
+    const listing = matches?.get(source) || {};
+    const filler = matches?.get("coda-worker")?.filler;
+    const group = packGroups.get(JSON.stringify([key, source])) || (!exactAllocation ? fallbackGroups.get(key) : null);
     // Other inventory readers retain their existing per-pack contract. Only the
     // USD ledger prepares the whole payment before allocating exact satang.
     if (!exactAllocation) return { ...row, sheet_fields: listingFields({ ...row, pack_count: group?.pack_count }, { ...listing, filler }) };

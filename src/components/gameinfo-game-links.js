@@ -26,6 +26,7 @@ export function GameinfoGameLinksButton({
   dataMode = "uid",
   disabled,
   onSaved,
+  className = "",
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(links);
@@ -86,7 +87,7 @@ export function GameinfoGameLinksButton({
           show();
         }}
         disabled={disabled}
-        className="rounded-md border border-linear-hairline-strong px-2 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
+        className={className || "rounded-md border border-linear-hairline-strong px-2 py-1 text-xs text-linear-ink-muted hover:bg-linear-surface-2 disabled:cursor-not-allowed disabled:opacity-50"}
       >
         {editable ? `จัดการลิงก์${links.length ? ` (${links.length})` : ""}` : `เลือกลิงก์ (${links.length})`}
       </button>
@@ -169,9 +170,14 @@ export function GameinfoGameLinksButton({
   );
 }
 
+// The old default name for a game's single original link. A link saved
+// under it before the rename still reads with the new name.
+const OLD_DEFAULT_LINK_NAME = "เว็บเติมเกม";
+const DEFAULT_LINK_NAME = "ข้อมูลเติมเกมส์";
+
 export function GameinfoGameLinkButtons({ links = [] }) {
   if (links.length === 0) {
-    return <span className="inline-block text-xs text-linear-ink-tertiary">ยังไม่มีลิงก์เว็บเติมเกม</span>;
+    return <span className="inline-block text-[13px] text-linear-ink-tertiary">ยังไม่มีลิงก์ข้อมูลเติมเกมส์</span>;
   }
   return links.map((link) => (
     <a
@@ -179,9 +185,9 @@ export function GameinfoGameLinkButtons({ links = [] }) {
       href={link.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 rounded-md bg-linear-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-linear-primary-hover"
+      className="inline-flex h-11 items-center gap-2 rounded-xl border border-linear-hairline bg-linear-surface-1 px-4 text-sm font-bold text-linear-ink transition hover:bg-linear-surface-2"
     >
-      {link.name} <ExternalLink size={13} />
+      <ExternalLink size={17} aria-hidden="true" /> {link.name === OLD_DEFAULT_LINK_NAME ? DEFAULT_LINK_NAME : link.name}
     </a>
   ));
 }

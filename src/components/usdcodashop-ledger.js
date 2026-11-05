@@ -1,9 +1,11 @@
 "use client";
 
+import { TablePagination } from "@/components/table-pagination";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, RefreshCw, Plus, Download } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import { createInventoryReadSession, inventoryPollDelay } from "@/lib/inventory-read-session";
 import { topupInventoryPath } from "@/lib/topup-inventory";
 import { CODA_BOUNDARY, CODA_OPENING } from "@/lib/usdcodashop-ledger";
 import UsdCodashopSheetTable from "@/components/usdcodashop-sheet-table";
@@ -25,32 +27,42 @@ export default function UsdCodashopLedger({ lang }) {
   const [query, setQuery] = useState(""); const [search, setSearch] = useState(""); const [page, setPage] = useState(1);
   const [periodMode, setPeriodMode] = useState("all"); const [periodValue, setPeriodValue] = useState(""); const [periodEnd, setPeriodEnd] = useState("");
   const [dates, setDates] = useState({ dateFrom: "", dateTo: "" }); const [exporting, setExporting] = useState(false);
+  const [pageSize, setPageSize] = useState(25);
   const [kind, setKind] = useState("order");
   const [profitDraft, setProfitDraft] = useState(() => codaProfitFilter());
   const [profitFilter, setProfitFilter] = useState(() => codaProfitFilter());
   const [deposit, setDeposit] = useState(null);
   const [observedAt, setObservedAt] = useState(null);
   const lock = useRef(false); const alive = useRef(false); const generation = useRef(0);
+  const [reader] = useState(() => createInventoryReadSession());
+  const exportRequest = useRef(null);
   const load = useCallback(async () => {
     const key = ++generation.current; setLoading(true); setError("");
     try {
-      const viewKey = new URLSearchParams({ search, page: String(page), ...dates, kind, ...profitFilter }).toString();
-      const result = await apiJson(`${endpoint}?${viewKey}`, { cache: "no-store" });
+      const viewKey = new URLSearchParams({ search, page: String(page), pageSize: String(pageSize), ...dates, kind, ...profitFilter }).toString();
+      const result = await reader.run(viewKey, `${endpoint}?${viewKey}`);
       if (typeof result?.configured !== "boolean" || !Array.isArray(result.entries)) throw new Error("ข้อมูลไม่ครบ กรุณาโหลดใหม่");
-      if (alive.current && key === generation.current) { setData({ ...result, viewKey }); setObservedAt(Date.now()); }
-    } catch (e) { if (alive.current && key === generation.current) setError(e.message); }
+      if (alive.current && key === generation.current) { setData({ ...result, viewKey }); setObservedAt(Date.now()); const lastPage = Math.max(1, Math.ceil(Number(result.total || 0) / pageSize)); if (page > lastPage) setPage(lastPage); }
+      return true;
+    } catch (e) { if (alive.current && key === generation.current && e.name !== "AbortError") setError(e.message); return false; }
     finally { if (alive.current && key === generation.current) setLoading(false); }
-  }, [search, page, dates, kind, profitFilter]);
-  const invalidate = useCallback(() => { generation.current++; }, []);
+  }, [search, page, pageSize, dates, kind, profitFilter, reader]);
+  const invalidate = useCallback(() => { generation.current++; reader.cancel(); }, [reader]);
   useEffect(() => { alive.current = true; const timer = setTimeout(load, 0); return () => { alive.current = false; invalidate(); clearTimeout(timer); }; }, [load, invalidate]);
   useEffect(() => {
-    if (!data?.configured || deposit) return;
-    const timer = setInterval(() => { if (!document.hidden && !lock.current) load(); }, 30_000);
-    return () => clearInterval(timer);
-  }, [data?.configured, deposit, load]);
+    if (!data?.configured || deposit || exporting) return;
+    let stopped = false, failures = 0, timer;
+    const poll = async () => {
+      if (!document.hidden && !lock.current) failures = await load() ? 0 : failures + 1;
+      if (!stopped) timer = setTimeout(poll, inventoryPollDelay(failures));
+    };
+    timer = setTimeout(poll, inventoryPollDelay(0));
+    return () => { stopped = true; clearTimeout(timer); };
+  }, [data?.configured, deposit, exporting, load]);
+  useEffect(() => () => exportRequest.current?.abort(), []);
   async function mutate(body) {
     if (lock.current) return;
-    lock.current = true; generation.current++; setBusy(true); setError(""); setNotice("");
+    lock.current = true; invalidate(); setLoading(false); setBusy(true); setError(""); setNotice("");
     try {
       const result = await apiJson(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if ((body.action === "sync" && (!Number.isInteger(result?.added) || !Number.isInteger(result?.checked))) ||
@@ -79,8 +91,10 @@ export default function UsdCodashopLedger({ lang }) {
   async function exportCsv() {
     if (exporting) return;
     setExporting(true); setError("");
+    const controller = new AbortController(); exportRequest.current = controller;
+    const deadline = setTimeout(() => controller.abort(), 90_000);
     try {
-      const response = await fetch(`${endpoint}?${new URLSearchParams({ search, ...dates, kind, ...profitFilter, format: "csv" })}`, { cache: "no-store" });
+      const response = await fetch(`${endpoint}?${new URLSearchParams({ search, ...dates, kind, ...profitFilter, format: "csv" })}`, { cache: "no-store", signal: controller.signal });
       if (!response.ok || !response.headers.get("content-type")?.startsWith("text/csv")) {
         const body = await response.json().catch(() => null);
         throw new Error(body?.error || body?.message || "Export ไม่สำเร็จ กรุณาลองใหม่");
@@ -91,14 +105,14 @@ export default function UsdCodashopLedger({ lang }) {
       document.body.appendChild(anchor); anchor.click(); anchor.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       if (alive.current) setNotice("ส่งออก CSV แล้ว รวมทุกรายการตามตัวกรองที่ใช้ ไม่ใช่เฉพาะหน้าปัจจุบัน");
-    } catch (e) { if (alive.current) setError(e.message); }
-    finally { if (alive.current) setExporting(false); }
+    } catch (e) { if (alive.current) setError(e.name === "AbortError" ? "Export นานเกินกำหนด กรุณาลดช่วงวันที่แล้วลองใหม่" : e.message); }
+    finally { clearTimeout(deadline); if (exportRequest.current === controller) exportRequest.current = null; if (alive.current) setExporting(false); }
   }
   const worker = data?.autoSync;
   const workerFresh = worker && observedAt - new Date(worker.heartbeat).getTime() < 180_000;
   const workerLabel = !worker ? "ยังไม่พบ worker" : !workerFresh ? "ไม่ได้รับสถานะเกิน 3 นาที โปรดตรวจ worker" :
     ({ ok: "ทำงานปกติ", syncing: "กำลังซิงก์", error: "ซิงก์ติดขัด", waiting: "รอยืนยันยอดยกมา", stopped: "หยุดทำงาน" }[worker.state] || "รอตรวจสอบ");
-  const historyReady = data?.viewKey === new URLSearchParams({ search, page: String(page), ...dates, kind, ...profitFilter }).toString();
+  const historyReady = data?.viewKey === new URLSearchParams({ search, page: String(page), pageSize: String(pageSize), ...dates, kind, ...profitFilter }).toString();
   const summary = historyReady ? data?.summary : null;
   const filteredLabel = dates.dateFrom ? `${dates.dateFrom} ถึง ${dates.dateTo} (ค.ศ.)` : "ทุกวันที่";
   const pending = loading || busy;
@@ -148,6 +162,7 @@ export default function UsdCodashopLedger({ lang }) {
       </form> : <p className="mt-4 text-sm">ให้ Projectm Admin ยืนยันยอดยกมาก่อนใช้งาน</p>}
     </section>}
     {data?.configured && <>
+      <p className="text-xs text-ll-ink-subtle">ข้อมูลประวัติเมื่อ {date(observedAt)}{error ? " · แสดงข้อมูลที่อ่านสำเร็จล่าสุด กรุณาโหลดประวัติใหม่" : ""}</p>
       {filters}
       <div role="group" aria-label="ประเภทประวัติ" className="flex flex-wrap gap-2">{[["order", "รายการใช้เงิน"], ["deposit", "รายการเติมเงิน"], ["all", "ทั้งหมด"]].map(([value, text]) => <button key={value} aria-pressed={kind === value} disabled={pending || exporting} onClick={() => { invalidate(); setKind(value); setPage(1); if (value === "deposit") { setProfitDraft(codaProfitFilter()); setProfitFilter(codaProfitFilter()); } }} className={`${button} ${kind === value ? "border-ll-primary ring-1 ring-ll-primary" : ""}`}>{text}</button>)}</div>
       <section aria-label="สรุปยอด" aria-busy={loading} className={`grid grid-cols-2 gap-3 ${kind === "deposit" ? "" : "lg:grid-cols-4"}`}>
@@ -179,7 +194,7 @@ export default function UsdCodashopLedger({ lang }) {
         <div aria-busy={loading} className={loading ? "pointer-events-none opacity-50" : ""}>
           <UsdCodashopOverviewTable entries={historyReady ? data.entries : []} emptyMessage={!historyReady ? loading ? "กำลังโหลดประวัติ…" : "โหลดประวัติไม่สำเร็จ กรุณาลองใหม่" : search || dates.dateFrom || profitFilter.profitStatus !== "all" || profitFilter.profitMin || profitFilter.profitMax ? "ไม่พบรายการตามตัวกรอง" : kind === "deposit" ? "ยังไม่มีประวัติเติมเงินที่บันทึกในระบบนี้" : "ยังไม่มีประวัติ กดซิงก์ Orders เพื่อดึงรายการ"} />
         </div>
-        <nav aria-label="หน้าประวัติ" className="flex items-center justify-end gap-3 text-sm"><button disabled={busy || loading || page <= 1} onClick={() => setPage(page - 1)} className={button}>ก่อนหน้า</button><span>หน้า {page}</span><button disabled={busy || loading || page * 100 >= data.total} onClick={() => setPage(page + 1)} className={button}>ถัดไป</button></nav>
+        <TablePagination page={data.page || page} pageSize={data.pageSize || pageSize} total={Number(data.total || 0)} totalPages={Math.max(1, Math.ceil(Number(data.total || 0) / (data.pageSize || pageSize)))} loading={busy || loading} onPage={setPage} onPageSize={(size) => { invalidate(); setPageSize(size); setPage(1); }} label="แบ่งหน้าประวัติ USD" />
       </section>
       <details className="rounded-xl border border-ll-hairline bg-ll-surface-1 p-4 text-sm"><summary className="cursor-pointer">รายละเอียดบัญชีและวิธีคำนวณ</summary><div className="mt-4 space-y-3 text-xs leading-6 text-ll-ink-subtle">
         <p>นับหลัง {data.boundary} · ยอดยกมา {money(data.opening)} USD · USD เข้า {money(data.deposits)} · USD ออก {money(data.used)} (ยอดบัญชีทั้งหมด ไม่ขึ้นกับตัวกรอง)</p>

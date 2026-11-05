@@ -40,7 +40,7 @@ function normalizePlatform(raw) {
   return PLATFORM_ALIASES[raw] || raw;
 }
 
-function platformFromSourceGroup(group) {
+export function platformFromSourceGroup(group) {
   if (!group) return null;
   return SOURCE_GROUP_ALIASES[String(group).trim().toLowerCase()] || null;
 }

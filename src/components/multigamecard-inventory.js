@@ -1,5 +1,8 @@
 "use client";
 
+import { createInventoryPageSession } from "@/lib/inventory-page-session";
+import { TablePagination } from "@/components/table-pagination";
+import PaginatedTable from "@/components/table-pagination";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Download, Plus, RefreshCw } from "lucide-react";
@@ -16,18 +19,18 @@ const cell = "px-4 py-3 align-top";
 const money = v => v == null ? "—" : Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const when = v => v ? new Date(v).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "short", timeStyle: "short" }) : "—";
 
-function CardTable({ cards, serial, select }) {
+function CardTable({ cards, serial, select, resetKey }) {
   return <div className="relative max-w-full overflow-x-auto rounded-xl border border-ll-hairline bg-ll-surface-1">
-    <table className="w-full text-left text-sm"><caption className="sr-only">ยอดบัตร Multigamecard แยก Serial หน่วยแต้ม</caption>
+    <PaginatedTable items={cards} resetKey={resetKey}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full text-left text-sm"><caption className="sr-only">ยอดบัตร Multigamecard แยก Serial หน่วยแต้ม</caption>
       <thead className="bg-ll-surface-2"><tr>{["Serial", "สถานะ", "ผู้ใช้งาน", "แต้มเข้า (ทั้งหมด)", "ใช้ไป (ทั้งหมด)", "คงเหลือล่าสุด", "จัดการ"].map(h => <th key={h} className={`${cell} whitespace-nowrap font-medium`}>{h}</th>)}</tr></thead>
-      <tbody>{cards.map(c => <tr key={c.id} className={`border-t border-ll-hairline ${serial === c.serial ? "bg-ll-surface-2" : ""}`}>
+      <tbody>{tablePageItems.map((tableItem, tableIndex) => (c => <tr key={c.id} className={`border-t border-ll-hairline ${serial === c.serial ? "bg-ll-surface-2" : ""}`}>
         <td className={`${cell} whitespace-nowrap font-medium`}>{c.serial || "ไม่ทราบ Serial"}{c.duplicate && <p className="text-xs text-amber-600">พบ Serial ซ้ำ ต้องตรวจสอบ</p>}</td>
         <td className={`${cell} whitespace-nowrap`}>{c.status}{!c.enabled && <p className="text-xs text-ll-ink-subtle">ไม่เปิดใช้งานในพูล</p>}</td>
         <td className={cell}>{c.owner}</td><td className={`${cell} tabular-nums`}>{money(c.inTotal)}</td><td className={`${cell} tabular-nums`}>{money(c.outTotal)}</td>
         <td className={`${cell} whitespace-nowrap font-semibold tabular-nums`}>{money(c.balance)}<p className="mt-1 text-xs font-normal text-ll-ink-subtle">{when(c.balanceAt)}</p></td>
         <td className={cell}>{c.serial && <button type="button" onClick={() => select(c.serial)} aria-label={`${serial === c.serial ? "ยกเลิกเลือก" : "ดูประวัติ"} ${c.serial}`} aria-pressed={serial === c.serial} className={button}>{serial === c.serial ? "ยกเลิกเลือก" : "ดูประวัติ"}</button>}</td>
-      </tr>)}</tbody>
-    </table>{!cards.length && <p className="p-6 text-center text-sm text-ll-ink-subtle">ยังไม่มีบัตรในระบบนี้</p>}
+      </tr>)(tableItem, tablePageStart + tableIndex, tableAllItems))}</tbody>
+    </table>)}</PaginatedTable>{!cards.length && <p className="p-6 text-center text-sm text-ll-ink-subtle">ยังไม่มีบัตรในระบบนี้</p>}
   </div>;
 }
 function Entries({ entries }) {
@@ -72,17 +75,19 @@ export default function MultigamecardInventory({ lang }) {
   const [notice, setNotice] = useState(""), [form, setForm] = useState(null), [busy, setBusy] = useState(false), [exporting, setExporting] = useState(false);
   const [rateEditing, setRateEditing] = useState(false);
   const generation = useRef(0), alive = useRef(false), lock = useRef(false);
-  const viewKey = new URLSearchParams({ mode, ...dates, serial, search, page: String(page) }).toString();
+  const [pageSize, setPageSize] = useState(25);
+  const viewKey = new URLSearchParams({ mode, ...dates, serial, search, page: String(page), pageSize: String(pageSize) }).toString();
+  const [pageReader] = useState(() => createInventoryPageSession());
   const load = useCallback(async () => {
     const token = ++generation.current; setLoading(true); setError("");
     try {
-      const result = await apiJson(`${endpoint}?${viewKey}`, { cache: "no-store" });
+      const result = await pageReader.run(endpoint, viewKey);
       if (!Array.isArray(result?.cards) || !Array.isArray(result.entries) || result.mode !== mode || !result.summary) throw new Error("ข้อมูลไม่ครบ กรุณาโหลดใหม่");
       if (alive.current && token === generation.current) setData({ ...result, viewKey });
     } catch (e) { if (alive.current && token === generation.current) setError(e.message); }
     finally { if (alive.current && token === generation.current) setLoading(false); }
-  }, [viewKey, mode]);
-  const invalidate = useCallback(() => { generation.current++; }, []);
+  }, [viewKey, mode, pageReader]);
+  const invalidate = useCallback(() => { generation.current++; pageReader.cancel(); }, [pageReader]);
   useEffect(() => { alive.current = true; const timer = setTimeout(load, 0); return () => { alive.current = false; invalidate(); clearTimeout(timer); }; }, [load, invalidate]);
   useEffect(() => {
     if (form || rateEditing) return;
@@ -165,7 +170,7 @@ export default function MultigamecardInventory({ lang }) {
       <p className="text-sm text-ll-ink-subtle">ต้นทุน (THB) = ยอดแต้มออก ÷ {data.costRate.divisor} · ปัดทศนิยม 2 ตำแหน่งต่อออเดอร์ · ไม่ใช่เรท GoogleFinance</p>
       {data.canManage && <CostRateForm key={data.costRate.version} rate={data.costRate} disabled={disabled} save={saveRate} editing={setRateEditing} />}
     </>}
-    <section className="min-w-0 space-y-3"><h2 className="text-xl font-semibold">ยอดบัตร {mode === "bot" ? "Bot" : "Manual"}</h2><p className="text-xs text-ll-ink-subtle">เลื่อนตารางซ้าย–ขวาเพื่อดูยอดทั้งหมด · กดดูประวัติเพื่อเลือก Serial</p><CardTable cards={cards} serial={serial} select={value => { if (form || disabled) return; generation.current++; setSerial(serial === value ? "" : value); setPage(1); }} />
+    <section className="min-w-0 space-y-3"><h2 className="text-xl font-semibold">ยอดบัตร {mode === "bot" ? "Bot" : "Manual"}</h2><p className="text-xs text-ll-ink-subtle">เลื่อนตารางซ้าย–ขวาเพื่อดูยอดทั้งหมด · กดดูประวัติเพื่อเลือก Serial</p><CardTable cards={cards} serial={serial} resetKey={mode} select={value => { if (form || disabled) return; generation.current++; setSerial(serial === value ? "" : value); setPage(1); }} />
       <p className="text-xs leading-6 text-ll-ink-subtle">หน่วยบัตรเป็นแต้ม ไม่ใช่ USD · หมดแล้ว = 0 · เศษ = มากกว่า 0 แต่น้อยกว่า 50,000 · ปกติ = ตั้งแต่ 50,000 · ยอดบัตรรวมทั้งหมดไม่ขึ้นกับช่วงวันที่หรือคำค้นหา</p>
       {mode === "bot" ? <p className="text-xs leading-6 text-ll-ink-subtle">Bot อ่านยอดล่าสุดจากพูลบัตรเดิม และแต้มที่ใช้จากหลักฐาน molGameCard ในออเดอร์ completed · ยอดเข้าแสดง — เพราะไม่มีประวัตินำเข้าที่ตรวจสอบได้ ไม่คำนวณย้อนเดา · คงเหลือหลังแต่ละ Order เป็นภาพยอดที่บอทอ่าน ณ ตอนนั้น ไม่รับประกันว่าจะต่อกันเมื่อหลายบอทใช้บัตรพร้อมกัน · ต้นทุน THB = ยอดแต้มออก ÷ ตัวหารที่บันทึก ถ้าไม่มีข้อมูลยอดออกจะแสดง — · ไม่เปลี่ยนข้อมูลหรือสั่งจ่ายที่ฐาน Bot</p> : <p className="text-xs leading-6 text-ll-ink-subtle">Manual บันทึกบัญชีเท่านั้น ไม่เติมเกมหรือโอนเงินจริง · ตอนเพิ่มบัตรกรอกยอดคงเหลือที่ยืนยันแล้วเป็นยอดยกมา จากนั้นบันทึกแต้มเข้า/ใช้แต้มตามจริง · ต้นทุนกรอกเป็น THB ไม่เดาอัตราแต้มต่อบาท · วันที่บันทึกเป็นเวลาปัจจุบัน และไม่แก้ทับประวัติเดิม</p>}
     </section>
@@ -179,7 +184,7 @@ export default function MultigamecardInventory({ lang }) {
       </fieldset><div className="flex gap-2"><button disabled={busy} className={button}>ยืนยันบันทึก</button><button type="button" disabled={busy} onClick={() => setForm(null)} className={button}>ยกเลิก</button></div></form>}
     {mode === "manual" && ready && !data.canManage && <p className="text-sm text-ll-ink-subtle">ดูประวัติได้ แต่ต้องมีสิทธิ์ Projectm Admin เพื่อเพิ่มรายการ Manual</p>}
     <section className="min-w-0 space-y-3"><div className="flex flex-wrap items-end justify-between gap-2"><h2 className="text-xl font-semibold">ประวัติ {serial || (mode === "bot" ? "Bot" : "Manual")}</h2><p className="text-xs text-ll-ink-subtle">{ready ? `${data.total} รายการ` : "ยังโหลดตัวกรองนี้ไม่สำเร็จ"}{serial && <button disabled={disabled || Boolean(form)} onClick={() => { generation.current++; setSerial(""); setPage(1); }} className="ml-3 underline">ดูทุก Serial</button>}</p></div><Entries entries={ready ? data.entries : []} />
-      <nav aria-label="หน้าประวัติ Multigamecard" className="flex items-center justify-end gap-3 text-sm"><button disabled={disabled || Boolean(form) || page <= 1} onClick={() => setPage(page - 1)} className={button}>ก่อนหน้า</button><span>หน้า {page}</span><button disabled={disabled || Boolean(form) || !ready || page * data.pageSize >= data.total} onClick={() => setPage(page + 1)} className={button}>ถัดไป</button></nav>
+      <TablePagination page={data?.page || page} pageSize={data?.pageSize || pageSize} total={Number(data?.total || 0)} totalPages={Math.max(1, Math.ceil(Number(data?.total || 0) / (data?.pageSize || pageSize)))} observedAt={data?.pagination?.observedAt} loading={disabled || Boolean(form) || !ready} onPage={(nextPage) => { invalidate(); setPage(nextPage); }} onPageSize={(size) => { invalidate(); setPageSize(size); setPage(1); }} label="แบ่งหน้าประวัติ" />
     </section><p className="text-xs text-ll-ink-subtle">กำไร = ยอดโอน − ต้นทุน · กำไร % = กำไร ÷ ยอดโอน × 100 · ยอดโอนศูนย์ไม่มีเปอร์เซ็นต์ · โหลดใหม่ทุก 30 วินาที หยุดระหว่างกรอก Manual</p>
   </main>;
 }

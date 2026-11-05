@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChartColumn,
@@ -3089,7 +3090,7 @@ export function FindReplaceModal({ editable, rows, onApply, onClose }) {
 
       {matches.length > 0 && (
         <div className="max-h-56 overflow-y-auto rounded-sm border border-zinc-200">
-          <table className="w-full text-[10px]">
+          <PaginatedTable items={toApply.slice(0, 100)}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full text-[10px]">
             <thead className="sticky top-0 bg-zinc-100 text-left font-black text-zinc-500">
               <tr>
                 <th className="px-2 py-1">{editable.pk}</th>
@@ -3099,16 +3100,16 @@ export function FindReplaceModal({ editable, rows, onApply, onClose }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {toApply.slice(0, 100).map((match, index) => (
+              {tablePageItems.map((tableItem, tableIndex) => ((match, index) => (
                 <tr key={index}>
                   <td className="px-2 py-1 font-mono text-zinc-500">{String(match.pkValue)}</td>
                   <td className="px-2 py-1 font-bold text-zinc-700">{match.column}</td>
                   <td className="px-2 py-1 text-red-600 line-through">{match.oldValue}</td>
                   <td className="px-2 py-1 text-emerald-700">{match.newValue}</td>
                 </tr>
-              ))}
+              ))(tableItem, tablePageStart + tableIndex, tableAllItems))}
             </tbody>
-          </table>
+          </table>)}</PaginatedTable>
           {toApply.length > 100 && (
             <p className="border-t border-zinc-200 bg-zinc-50 px-2 py-1 text-[10px] font-semibold text-zinc-400">
               และอีก {toApply.length - 100} เซลล์

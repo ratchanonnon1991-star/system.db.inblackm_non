@@ -1,9 +1,10 @@
 "use client";
 
+import { createInventoryPageSession } from "@/lib/inventory-page-session";
+import { TablePagination } from "@/components/table-pagination";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, RefreshCw } from "lucide-react";
-import { apiJson } from "@/lib/api-json";
 import { topupInventoryPath } from "@/lib/topup-inventory";
 import { codaQuickDates } from "@/lib/usdcodashop-overview";
 import { orderLink, sheetFigures } from "@/lib/usdcodashop-sheet";
@@ -18,12 +19,22 @@ const ks = (v) => v == null ? "—" : Number(v).toLocaleString("en-US", { maximu
 const when = (v) => v ? new Date(v).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "short", timeStyle: "short" }) : "—";
 const headings = ["วันที่", "ลำดับคิว", "ยอดโอน (THB)", "ต้นทุน (THB)", "กำไร (THB)", "กำไร (%)", "MMK ออก", "MMK คงเหลือ", "หมวดสินค้า", "ผู้เติม", "ชื่อลูกค้า", "ลิงก์", "เกม", "สิ่งที่ซื้อ", "transaction / UID", "เลขธุรกรรม"];
 
+// The reading above is from an older order: say what happened after it.
+function LaterNote({ line }) {
+  const uncharged = line.laterUncharged === line.laterOrders;
+  return <p className={`mt-1 text-xs ${uncharged ? "text-ll-ink-subtle" : "text-ll-warning"}`}>
+    {uncharged
+      ? `หลังจากนั้นมี ${line.laterOrders} ออเดอร์ที่บอทไม่ได้ตัดเงิน (ยอดไม่พอ เติมทางอื่น) ยอดนี้จึงยังใช้ได้`
+      : `หลังจากนั้นมี ${line.laterOrders} ออเดอร์ที่ไม่ได้บันทึกยอด${line.laterUncharged ? ` (บอทไม่ได้ตัดเงิน ${line.laterUncharged})` : ""} ล่าสุด ${when(line.laterAt)} ยอดจริงอาจต่ำกว่านี้`}
+  </p>;
+}
+
 function LineCard({ line, active, onSelect }) {
   const incomplete = line.missingSales > 0 || line.missingCosts > 0;
   return <button type="button" aria-pressed={active} onClick={onSelect}
     className={`flex min-w-0 flex-col gap-3 rounded-xl border bg-ll-surface-1 p-4 text-left text-ll-ink hover:bg-ll-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ll-primary ${active ? "border-ll-primary ring-1 ring-ll-primary" : "border-ll-hairline"}`}>
     <div className="flex items-start justify-between gap-2"><p className="break-all font-semibold tabular-nums">{wavePhoneLabel(line.phone)}</p><span className="shrink-0 rounded-full bg-ll-surface-2 px-2 py-1 text-xs text-ll-ink-subtle">{line.orders.toLocaleString("en-US")} ออเดอร์</span></div>
-    <div><p className="text-xs text-ll-ink-subtle">คงเหลือล่าสุด (บอท)</p><p className="mt-1 text-2xl font-semibold tabular-nums">{ks(line.balance)} <span className="text-sm font-normal text-ll-ink-subtle">Ks</span></p><p className="mt-1 text-xs text-ll-ink-subtle">ณ {when(line.balanceAt)}</p></div>
+    <div><p className="text-xs text-ll-ink-subtle">คงเหลือล่าสุด (บอท)</p><p className="mt-1 text-2xl font-semibold tabular-nums">{ks(line.balance)} <span className="text-sm font-normal text-ll-ink-subtle">Ks</span></p><p className="mt-1 text-xs text-ll-ink-subtle">ณ {when(line.balanceAt)}</p>{line.laterOrders > 0 && <LaterNote line={line} />}</div>
     <dl className="grid grid-cols-2 gap-x-3 gap-y-2 border-t border-ll-hairline pt-3 text-xs">
       <div><dt className="text-ll-ink-subtle">MMK ออก</dt><dd className="tabular-nums">{ks(line.used)}</dd></div>
       <div><dt className="text-ll-ink-subtle">ยอดโอน (THB)</dt><dd className="tabular-nums">{money(line.sale)}</dd></div>
@@ -31,7 +42,42 @@ function LineCard({ line, active, onSelect }) {
       <div><dt className="text-ll-ink-subtle">กำไร (THB)</dt><dd className="tabular-nums">{money(line.profit)}{line.margin != null && ` · ${line.margin}%`}</dd></div>
     </dl>
     {incomplete && <p className="text-xs text-ll-ink-subtle">ข้อมูลไม่ครบ: ยอดโอน {line.missingSales} · ต้นทุน {line.missingCosts} รายการ (ยอดรวมแสดง —)</p>}
+    {line.check && <HandFillSummary check={line.check} />}
   </button>;
+}
+
+// What the bot's balance readings cannot explain, beside what people recorded (debit page, sheets).
+function HandFillSummary({ check }) {
+  const unrecorded = Number(check.unrecordedOut) > 0;
+  return <dl className="grid grid-cols-2 gap-x-3 gap-y-2 border-t border-ll-hairline pt-3 text-xs">
+    <div><dt className="text-ll-ink-subtle">ยอดหายระหว่างบอทอ่าน</dt><dd className="tabular-nums">{ks(check.gapOut)}</dd></div>
+    <div><dt className="text-ll-ink-subtle">ยกยอดเติมมือแล้ว</dt><dd className="tabular-nums">{ks(check.recordedOut)}</dd></div>
+    <div className="col-span-2"><dt className="text-ll-ink-subtle">ยังไม่มีใครบันทึก</dt>
+      <dd className={`tabular-nums ${unrecorded ? "font-semibold text-ll-warning" : ""}`}>{ks(check.unrecordedOut)}{check.overRecorded && <span className="ml-1 font-normal text-ll-ink-subtle">(ยกยอดมากกว่ายอดที่หาย)</span>}</dd></div>
+    <div><dt className="text-ll-ink-subtle">ยอดเพิ่ม (คาดว่าเติมเข้า)</dt><dd className="tabular-nums">{ks(check.gapIn)}</dd></div>
+    <div><dt className="text-ll-ink-subtle">บันทึกเติมเข้าแล้ว</dt><dd className="tabular-nums">{ks(check.recordedIn)}</dd></div>
+    {Number(check.chargedOut) > 0 && <div className="col-span-2"><dt className="text-ll-ink-subtle">บอทถูกตัดเงิน (ตรงกับคิวที่ค้าง ไม่นับเป็นคนเติม)</dt><dd className="tabular-nums">{ks(check.chargedOut)}</dd></div>}
+    {(Number(check.outsideOut) > 0 || Number(check.outsideIn) > 0) && <div className="col-span-2"><dt className="text-ll-ink-subtle">บันทึกนอกช่วงที่บอทอ่าน (เทียบไม่ได้)</dt><dd className="tabular-nums">ออก {ks(check.outsideOut)} · เข้า {ks(check.outsideIn)}</dd></div>}
+  </dl>;
+}
+
+const LIKELY = { charged: "ตรงกับราคาคิวที่ค้าง (บอทถูกตัดเงิน)", refunded: "ได้คืนในรอบถัดไป" };
+function GapTable({ check }) {
+  const gaps = check?.gaps ?? [];
+  return <div className="max-h-[50vh] overflow-auto rounded-xl border border-ll-hairline bg-ll-surface-1">
+    <table className="w-full min-w-[760px] text-left text-sm text-ll-ink">
+      <caption className="sr-only">ช่วงที่ยอดคงเหลือเปลี่ยนโดยบอทอธิบายไม่ได้ และรายการที่คนบันทึกในวันเดียวกัน</caption>
+      <thead className="sticky top-0 bg-ll-surface-2"><tr>{["ช่วงเวลา", "ทิศทาง", "Ks", "ข้อสังเกต", "ที่บันทึกไว้ในวันเดียวกัน"].map((h) => <th key={h} scope="col" className="whitespace-nowrap border-r border-ll-hairline px-3 py-3 font-semibold">{h}</th>)}</tr></thead>
+      <tbody>{gaps.map((g) => <tr key={`${g.from}|${g.to}|${g.direction}`} className="border-t border-ll-hairline">
+        <td className={`${cell} whitespace-nowrap`}>{when(g.from)} – {when(g.to)}</td>
+        <td className={cell}>{g.direction === "out" ? "หาย (คาดว่าคนเติม)" : "เพิ่ม (คาดว่าเติมเข้า)"}</td>
+        <td className={`${cell} tabular-nums`}>{ks(g.amount)}</td>
+        <td className={`${cell} text-xs`}>{LIKELY[g.likely] || "—"}</td>
+        <td className={`${cell} text-xs`}>{g.recorded.length ? g.recorded.map((r, i) => <p key={i}>{ks(r.amount)} Ks · {r.orderRef || r.kind} · {r.by || "—"}</p>) : <span className="text-ll-warning">ไม่มีบันทึก</span>}</td>
+      </tr>)}</tbody>
+    </table>
+    {!gaps.length && <p className="p-6 text-center text-sm text-ll-ink-subtle">ไม่พบช่วงที่ยอดไม่ตรงในช่วงวันที่นี้</p>}
+  </div>;
 }
 
 function OrdersTable({ entries, emptyMessage }) {
@@ -48,7 +94,7 @@ function OrdersTable({ entries, emptyMessage }) {
           <td className={`${cell} tabular-nums`}>{money(f.cost)}</td>
           <td className={`${cell} tabular-nums`}>{money(f.profit)}</td>
           <td className={`${cell} tabular-nums`}>{f.margin == null ? "—" : `${f.margin}%`}</td>
-          <td className={`${cell} tabular-nums`}>{ks(row.usedMmk)}{row.usedSource === "pack" && <p className="mt-1 whitespace-nowrap text-xs text-ll-ink-subtle">ตามราคาแพ็ก (ไม่มียอดก่อน/หลัง)</p>}</td>
+          <td className={`${cell} tabular-nums`}>{ks(row.usedMmk)}{row.usedSource === "pack" && <p className="mt-1 whitespace-nowrap text-xs text-ll-ink-subtle">ตามราคาแพ็ก (ไม่มียอดก่อน/หลัง)</p>}{row.usedSource === "not-charged" && <p className="mt-1 whitespace-nowrap text-xs text-ll-ink-subtle">บอทไม่ได้ตัดเงิน (ยอดไม่พอ)<br />เติมทางอื่น ต้นทุนไม่ทราบ</p>}{row.usedSource === "bot-failed" && <p className="mt-1 whitespace-nowrap text-xs text-ll-warning">บอทเติมไม่สำเร็จ<br />ไม่ทราบว่าตัดเงินไหม</p>}</td>
           <td className={`${cell} font-semibold tabular-nums`}>{ks(row.balanceMmk)}</td>
           <td className={cell}>{d.category || "—"}</td>
           <td className={`${cell} max-w-44 break-words`}>{d.sheetOperator || d.operator || "—"}</td>
@@ -72,17 +118,20 @@ export default function WavePayInventory({ lang }) {
   const [page, setPage] = useState(1); const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true); const [error, setError] = useState("");
   const alive = useRef(false); const generation = useRef(0);
-  const viewKey = new URLSearchParams({ ...dates, search, page: String(page), ...(phone == null ? {} : { phone }) }).toString();
+
+  const [pageSize, setPageSize] = useState(25);
+  const viewKey = new URLSearchParams({ ...dates, search, page: String(page), pageSize: String(pageSize), ...(phone == null ? {} : { phone }) }).toString();
+  const [pageReader] = useState(() => createInventoryPageSession());
   const load = useCallback(async () => {
     const key = ++generation.current; setLoading(true); setError("");
     try {
-      const result = await apiJson(`${endpoint}?${viewKey}`, { cache: "no-store" });
+      const result = await pageReader.run(endpoint, viewKey);
       if (!Array.isArray(result?.lines) || !Array.isArray(result.entries)) throw new Error("ข้อมูลไม่ครบ กรุณาโหลดใหม่");
       if (alive.current && key === generation.current) setData({ ...result, viewKey });
-    } catch (e) { if (alive.current && key === generation.current) setError(e.message); }
+    } catch (e) { if (alive.current && key === generation.current && e.name !== "AbortError") setError(e.message); }
     finally { if (alive.current && key === generation.current) setLoading(false); }
-  }, [viewKey]);
-  const invalidate = useCallback(() => { generation.current++; }, []);
+  }, [viewKey, pageReader]);
+  const invalidate = useCallback(() => { generation.current++; pageReader.cancel(); }, [pageReader]);
   useEffect(() => { alive.current = true; const timer = setTimeout(load, 0); return () => { alive.current = false; invalidate(); clearTimeout(timer); }; }, [load, invalidate]);
   function apply(next) { setError(""); setPage(1); setDates(next); setDraft(next); setSearch(query); }
   function selectPhone(value) { setPage(1); setPhone((previous) => previous === value ? null : value); }
@@ -107,17 +156,26 @@ export default function WavePayInventory({ lang }) {
     {error && <p role="alert" className="rounded-xl border border-ll-hairline p-4 text-sm">{error}</p>}
     {loading && <p role="status" className="text-sm text-ll-ink-subtle">กำลังโหลด… (ช่วงวันที่ยาวอาจใช้เวลาสักครู่)</p>}
     {data && <>
+      <p className="text-xs text-ll-ink-subtle">ข้อมูลเมื่อ {when(data.observedAt)}{error ? " · แสดงข้อมูลเดิม เนื่องจากโหลดล่าสุดไม่สำเร็จ" : ""}</p>
+      {data.gapsAvailable === false && <p role="status" className="rounded-xl border border-ll-hairline p-4 text-sm">คำนวณยอดที่หายระหว่างบอทอ่านไม่ได้ (ข้อมูลเยอะเกินหรือฐานข้อมูลบอทไม่ตอบ) ลองลดช่วงวันที่</p>}
+      {data.ledgerAvailable === false && <p role="status" className="rounded-xl border border-ll-hairline p-4 text-sm">โหลดยอดเติมมือจากหน้ายกยอดไม่ได้ ตัวเลข &quot;ยกยอดแล้ว&quot; จึงยังไม่ครบ</p>}
+      {data.unmatchedLedger?.length > 0 && <p role="status" className="text-xs text-ll-ink-subtle">บัญชี WavePay ที่จับคู่กับเบอร์ไม่ได้ (ชื่อต้องลงท้ายด้วยเลขท้ายเบอร์ในวงเล็บ): {data.unmatchedLedger.join(", ")}</p>}
       <section aria-label="ยอดแต่ละเบอร์" aria-busy={loading} className={`grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 ${loading ? "opacity-50" : ""}`}>
         {data.lines.map((line) => <LineCard key={line.phone || "unknown"} line={line} active={phone === line.phone} onSelect={() => selectPhone(line.phone)} />)}
       </section>
-      <p className="text-xs leading-6 text-ll-ink-subtle">ยอดคงเหลือ = newBalance ของออเดอร์ล่าสุดของเบอร์นั้น (ไม่ขึ้นกับช่วงวันที่) · MMK ออก = ยอดก่อน − หลังจากกระเป๋า WavePay (ถ้าไม่มีใช้ราคาแพ็ก) · MMK ออก / ยอดโอน / ต้นทุน / กำไร เป็นยอดตามช่วงวันที่ · ต้นทุน = MMK ออก ÷ {WAVEPAY_MMK_PER_THB} (THB) · นับเฉพาะออเดอร์ตั้งแต่ {WAVEPAY_START_DATE} · ยอดโอนสกุลอื่นแปลงด้วยเรทอ้างอิงวันนี้ ไม่ได้ล็อกเรทแบบ USDCodashop · ออเดอร์หลายแพ็กหารยอดโอนต่อแพ็ก</p>
+      <p className="text-xs leading-6 text-ll-ink-subtle">ยอดคงเหลือ = newBalance ของออเดอร์ล่าสุดของเบอร์นั้น (ไม่ขึ้นกับช่วงวันที่) · MMK ออก = ยอดก่อน − หลังจากกระเป๋า WavePay (ถ้าไม่มีใช้ราคาแพ็ก) · MMK ออก / ยอดโอน / ต้นทุน / กำไร เป็นยอดตามช่วงวันที่ · ต้นทุน = MMK ออก ÷ {WAVEPAY_MMK_PER_THB} (THB) · นับเฉพาะออเดอร์ตั้งแต่ {WAVEPAY_START_DATE} · ยอดโอนสกุลอื่นแปลงด้วยเรทอ้างอิงวันนี้ ไม่ได้ล็อกเรทแบบ USDCodashop · ออเดอร์หลายแพ็กหารยอดโอนต่อแพ็ก · ยอดหายระหว่างบอทอ่าน = ยอดที่ลดลงระหว่างออเดอร์ของบอทโดยบอทไม่ได้ใช้ (น่าจะเป็นคนเติม) · ยกยอดแล้ว = จากหน้ายกยอดและชีตที่นำเข้า (ไม่รวมที่ยกเลิก) · ยังไม่มีใครบันทึก = ยอดที่หาย − ยกยอดแล้ว</p>
+      {selected?.check && <section className="min-w-0 space-y-3" aria-label="ช่วงที่ยอดไม่ตรง">
+        <h2 className="text-xl font-semibold">ช่วงที่ยอดไม่ตรง · {wavePhoneLabel(phone)}</h2>
+        <p className="text-xs text-ll-ink-subtle">ระหว่างออเดอร์ของบอทสองรายการ ยอดคงเหลือเปลี่ยนโดยไม่มีออเดอร์บอทรองรับ · รายการที่บันทึกจับคู่ตามวัน (ชีตมีแค่วันที่ ไม่มีเวลา)</p>
+        <GapTable check={selected.check} />
+      </section>}
       <section className="min-w-0 space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <h2 className="text-xl font-semibold">{phone == null ? "ออเดอร์ทุกเบอร์" : `ออเดอร์เบอร์ ${wavePhoneLabel(phone)}`}</h2>
           <p className="text-xs text-ll-ink-subtle">{ready ? `${data.total.toLocaleString("en-US")} รายการ` : "กำลังโหลด…"}{phone != null && <> · <button type="button" onClick={() => selectPhone(phone)} className="underline underline-offset-4">ดูทุกเบอร์</button></>}{selected == null && phone != null && ready && " · ไม่มีออเดอร์ในช่วงนี้"}</p>
         </div>
         <div aria-busy={loading} className={loading ? "pointer-events-none opacity-50" : ""}><OrdersTable entries={ready ? data.entries : []} emptyMessage={ready ? "ไม่พบออเดอร์ตามตัวกรอง" : "กำลังโหลด…"} /></div>
-        <nav aria-label="หน้าออเดอร์" className="flex items-center justify-end gap-3 text-sm"><button disabled={loading || page <= 1} onClick={() => setPage(page - 1)} className={button}>ก่อนหน้า</button><span>หน้า {page}</span><button disabled={loading || !ready || page * data.pageSize >= data.total} onClick={() => setPage(page + 1)} className={button}>ถัดไป</button></nav>
+        <TablePagination page={data.page} pageSize={data.pageSize} total={data.total} totalPages={Math.max(1, Math.ceil(data.total / data.pageSize))} observedAt={data.pagination?.observedAt} loading={loading} onPage={(nextPage) => { invalidate(); setPage(nextPage); }} onPageSize={(size) => { invalidate(); setPageSize(size); setPage(1); }} label="แบ่งหน้าประวัติ" />
       </section>
     </>}
   </main>;

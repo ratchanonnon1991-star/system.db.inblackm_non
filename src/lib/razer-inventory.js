@@ -5,7 +5,9 @@ import { signedUsd } from "./usdcodashop-ledger.js";
 import { convertSaleThb } from "./usdcodashop-sale-conversion.js";
 import { RAZER_STATUSES } from "./profit-razer-status.js";
 
-export const RAZER_INVENTORY_ZONES = ["SGD", "CAD"];
+// Every zone the bot, Razer Stock or the imported sheets use. OTHER mixes unknown currencies.
+export const RAZER_INVENTORY_ZONES = ["SGD", "CAD", "PHP", "VND", "THB", "MYR", "AUD", "BRL", "TRY", "MXN", "OTHER"];
+export const RAZER_MIXED_ZONE = "OTHER";
 export const RAZER_INVENTORY_PAGE_SIZE = 100;
 export const razerEmail = (v) => String(v || "").trim().toLowerCase();
 export const razerWalletKey = (email, zone) => `${zone}:${razerEmail(email)}`;
@@ -14,7 +16,7 @@ export function razerFilters({ dateFrom, dateTo, zone = "", account = "", status
   if (!dateFrom || !dateTo) throw inventoryError("กรุณาเลือกช่วงวันที่");
   const bounds = codaDateBounds({ dateFrom, dateTo });
   if (Date.parse(bounds.end) - Date.parse(bounds.start) > 93 * 86400000) throw inventoryError("เลือกช่วงวันที่ได้ไม่เกิน 93 วัน");
-  if (zone && !RAZER_INVENTORY_ZONES.includes(zone)) throw inventoryError("รองรับ SGD และ CAD ก่อน");
+  if (zone && !RAZER_INVENTORY_ZONES.includes(zone)) throw inventoryError("สกุลเงินไม่ถูกต้อง");
   if (status && ![...RAZER_STATUSES, "READY", "UNVERIFIED"].includes(status)) throw inventoryError("สถานะไม่ถูกต้อง");
   if (typeof account !== "string" || account.length > 300) throw inventoryError("บัญชีไม่ถูกต้อง");
   let overrides;
@@ -96,6 +98,43 @@ export function groupRazerOrders(entries) {
       conflict: fills.some((e) => e.conflict), fillCount: fills.length, fills, details, figures: sheetFigures(details) };
   });
 }
+/** A ledger account key "razer:<zone>:<email>" in a page zone -> { zone, email }, else null (groups, PIN cards ...). */
+export function razerLedgerWallet(accountKey) {
+  const match = /^razer:([A-Z]+):(.+@.+)$/.exec(String(accountKey || ""));
+  return match && RAZER_INVENTORY_ZONES.includes(match[1]) ? { zone: match[1], email: razerEmail(match[2]) } : null;
+}
+/** Wallets registered only in the ledger (sheet import, debit page) join the list with no balance. */
+export function razerWithLedgerWallets(accounts, rows) {
+  const byKey = new Map(accounts.map((a) => [a.key, a]));
+  for (const row of rows) {
+    const wallet = razerLedgerWallet(row.account_key), key = wallet && razerWalletKey(wallet.email, wallet.zone);
+    if (key && !byKey.has(key)) byKey.set(key, { key, ...wallet, stockId: null, status: "UNVERIFIED", hidden: false, botEnabled: null,
+      rate: null, gold: null, silver: null, balanceAt: null, balanceSource: "ledger", inUse: false });
+  }
+  // Busiest zones first (list order), wallets with a balance before ledger-only ones.
+  const rank = (a) => RAZER_INVENTORY_ZONES.indexOf(a.zone) * 2 + (a.balanceSource === "ledger" ? 1 : 0);
+  return [...byKey.values()].sort((a, b) => rank(a) - rank(b) || a.email.localeCompare(b.email));
+}
+/** Row id as a number for tie-breaks; ledger rows are "ledger:<id>". */
+export const razerIdNumber = (id) => Number(String(id).replace(/^ledger:/, "")) || 0;
+/** A hand-fill "use" from the inventory ledger (debit page or sheet import) as one list row, or null. */
+export function razerLedgerOrder(row, account, rates = {}) {
+  const wallet = razerLedgerWallet(row.account_key);
+  if (!wallet) return null;
+  const { zone, email } = wallet, used = razerAmount(row.amount), entered = row.thb_amount != null;
+  const rate = entered ? null : rates[zone] ?? account?.rate ?? null;
+  const note = String(row.note || "").slice(0, 500);
+  const details = { saleThb: row.sale_thb ?? null, costThb: entered ? row.thb_amount : rate && used !== null ? convertSaleThb(used, rate) : null,
+    costRate: rate, costBasis: entered ? "ledger-entered" : rates[zone] != null ? "view-reference" : rate ? "stock-current-reference" : null,
+    game: "", pack: "", invoice: String(row.invoice || "").slice(0, 200), note,
+    // Imported sheet rows name the person in the note; debit-page rows are recorded by that person.
+    operator: (/ผู้เติม ([^·]+)/.exec(note)?.[1] || String(row.actor_label || "")).trim().slice(0, 160) };
+  const id = `ledger:${row.id}`, at = new Date(row.occurred_at).toISOString();
+  return { id, codaId: null, zone, email, walletKey: razerWalletKey(email, zone), orderId: String(row.order_ref || id), source: "manual",
+    occurredAt: at, observedAt: at, balance: null, used, conflict: false, fillCount: 1,
+    fills: [{ id, zone, used, codaId: null, details: { pack: "เติมมือ", invoice: details.invoice } }], details, figures: sheetFigures(details) };
+}
+export const razerManual = (entry) => entry.source === "manual";
 export function razerSummary(entries) {
   const sale = razerSum(entries, (e) => e.figures.sale), cost = razerSum(entries, (e) => e.figures.cost);
   return { orders: entries.length, fills: entries.reduce((n, e) => n + e.fillCount, 0), ...sheetFigures({ saleThb: sale, costThb: cost }),
@@ -105,9 +144,9 @@ export const razerMatches = (entry, search) => !search || [entry.email, entry.or
   ...Object.values(entry.details || {}).filter((v) => typeof v === "string")].join(" ").toLowerCase().includes(search.toLowerCase());
 export function razerCsv(entries) {
   const quote = (v, numeric = false) => { let s = v == null ? "" : String(v); if (!(numeric && /^-?\d+(?:\.\d+)?$/.test(s)) && /^[\s\u0000-\u001f]*[=+@-]/.test(s)) s = `'${s}`; return `"${s.replaceAll('"', '""')}"`; };
-  const rows = [["วันที่ (ไทย)", "Order", "บัญชี", "สกุลเงิน", "ยอดโอน THB", "ต้นทุนอ้างอิง THB", "กำไรอ้างอิง THB", "กำไรอ้างอิง %", "Gold ออก", "Gold คงเหลือ", "เกม", "แพ็ก", "เลขธุรกรรม", "จำนวนรายการย่อย", "เรทต้นทุนอ้างอิง", "ฐานต้นทุน"]];
+  const rows = [["วันที่ (ไทย)", "Order", "บัญชี", "สกุลเงิน", "ยอดโอน THB", "ต้นทุนอ้างอิง THB", "กำไรอ้างอิง THB", "กำไรอ้างอิง %", "Gold ออก", "Gold คงเหลือ", "เกม", "แพ็ก", "เลขธุรกรรม", "จำนวนรายการย่อย", "เรทต้นทุนอ้างอิง", "ฐานต้นทุน", "ที่มา"]];
   for (const e of entries) rows.push([new Date(e.occurredAt).toLocaleString("sv-SE", { timeZone: "Asia/Bangkok" }), e.orderId, e.email, e.zone,
     e.figures.sale, e.figures.cost, e.figures.profit, e.figures.margin, e.used, e.balance, e.details.game, e.details.pack,
-    e.details.invoice, e.fillCount, e.details.costRate, e.details.costBasis]);
+    e.details.invoice, e.fillCount, e.details.costRate, e.details.costBasis, razerManual(e) ? "เติมมือ" : "บอท"]);
   return "\uFEFF" + rows.map((row, i) => row.map((v, c) => quote(v, i > 0 && ((c >= 4 && c <= 9) || c === 14))).join(",")).join("\r\n");
 }

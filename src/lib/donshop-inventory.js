@@ -8,7 +8,7 @@ export const DONSHOP_METHOD = "DonShopIDR";
 // THB per IDR used only for the on-screen reference cost; not a locked purchase rate.
 export const DONSHOP_REFERENCE_RATE = "0.0019";
 export const DONSHOP_PAGE_SIZE = 100;
-export const DONSHOP_STATUSES = [["completed", "สำเร็จ"], ["manual", "Manual"], ["failed", "Failed"], ["pending", "Pending"], ["wait", "Wait"]];
+export const DONSHOP_STATUSES = [["completed", "สำเร็จ"], ["manual", "Manual"], ["manual_pending", "รอเติมมือ"], ["failed", "Failed"], ["rejected", "Rejected"], ["pending", "Pending"], ["wait", "Wait"]];
 export const dsStatusLabel = (status) => DONSHOP_STATUSES.find(([key]) => key === status)?.[1] || String(status || "ไม่ระบุ");
 export const dsAmount = (v) => { const n = sheetCents(v); return n === null ? null : signedUsd(n); };
 // Wallet drawdown: live_cost_total matches the sequential balance_before; fall back to live_cost × quantity.
@@ -45,6 +45,49 @@ export function dsOrder(row, rate) {
   return { id: String(row.id), orderId: String(row.sale_order_id || row.source_base || row.source_order_id || row.id),
     source: String(row.source || row.telegram_source || "").toLowerCase(), status: String(row.status || ""), used, quoted,
     wallet: dsWallet(row), occurredAt: new Date(row.occurred_at).toISOString(), details, figures: sheetFigures(details) };
+}
+// Web/PAGE queues whose telegram order id is not their own source id took their price from the telegram task: one task
+// row carries the price of the whole line (e.g. "Cash Pack x32" = 720) while the bot filled it as 32 queues. The shared
+// sale lookup counts packs by source id and misses these, so Donshop allocates the task price over the task's queues.
+const PAGE_SALE_SOURCES = ["page", "inblackm_web"];
+// PAGE order ids: "215344", or a part of a split order "215344-1". Old "PAGE-863011" ids are not parts.
+const PAGE_PART = /^(\d+)(?:-\d{1,2})?$/;
+const dsSaleSource = (row) => String(row.source || row.telegram_source || "").toLowerCase();
+export function dsPageSaleTarget(row) {
+  return PAGE_SALE_SOURCES.includes(dsSaleSource(row)) && !!row.task_id && !row.sale_ambiguous && sheetCents(row.sale_price) !== null
+    && row.sale_order_id != null && String(row.sale_order_id) !== String(row.source_base ?? "");
+}
+export const dsPageRoot = (row) => dsSaleSource(row) === "page" ? PAGE_PART.exec(String(row.source_base ?? ""))?.[1] || null : null;
+// rows: sale lookup rows · siblings: telegram rows of the same PAGE roots · packs: completed queues per task.
+// A split PAGE order whose parts all repeat one price carries the whole order's price on every part (217283 x1 720 +
+// 217283-1 x31 720), so that price is spread over every part's queues once. Parts with their own prices keep them.
+// Returns queue id → { saleThb, count, position }; a queue that cannot be allocated exactly is left out (no sale).
+export function dsPageSales(rows, siblings = [], packs = []) {
+  const byTask = new Map(packs.map((p) => [String(p.task), { ids: (p.ids || []).map(String).sort((a, b) => Number(a) - Number(b)), bases: Number(p.bases) }]));
+  const roots = new Map();
+  for (const s of siblings) {
+    const root = PAGE_PART.exec(String(s.order_id ?? "").split(":")[0])?.[1];
+    if (!root) continue;
+    if (!roots.has(root)) roots.set(root, new Map());
+    roots.get(root).set(String(s.task_request_id), sheetCents(s.price));
+  }
+  const out = new Map();
+  for (const row of rows) {
+    if (!dsPageSaleTarget(row)) continue;
+    let tasks = [String(row.task_id)], total = sheetCents(row.sale_price);
+    const parts = roots.get(dsPageRoot(row));
+    if (parts?.size > 1 && parts.has(tasks[0])) {
+      const prices = [...parts.values()];
+      if (prices.every((p) => p !== null && p === prices[0])) { tasks = [...parts.keys()]; total = prices[0]; }
+    }
+    const groups = tasks.map((t) => byTask.get(t));
+    // A task reused by another order (more than one source id) cannot say which queues its price covers.
+    if (groups.some((g) => !g || g.bases !== 1)) continue;
+    const ids = groups.flatMap((g) => g.ids).sort((a, b) => Number(a) - Number(b)), position = ids.indexOf(String(row.id));
+    if (position < 0) continue;
+    out.set(String(row.id), { saleThb: signedUsd(total), count: ids.length, position });
+  }
+  return out;
 }
 export function dsSum(entries, get) {
   let sum = 0n;

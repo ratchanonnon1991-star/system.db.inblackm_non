@@ -22,10 +22,20 @@ export function wavePhoneKey(value) {
   return d;
 }
 // The SQL twin of wavePhoneKey; keep both in sync.
-export const WAVE_PHONE_SQL = `CASE
-  WHEN regexp_replace(COALESCE(c.phone_number,''),'\\D','','g') LIKE '959%' THEN '0'||substr(regexp_replace(c.phone_number,'\\D','','g'),3)
-  WHEN regexp_replace(COALESCE(c.phone_number,''),'\\D','','g') LIKE '9%' THEN '0'||regexp_replace(c.phone_number,'\\D','','g')
-  ELSE regexp_replace(COALESCE(c.phone_number,''),'\\D','','g') END`;
+export const wavePhoneSql = (alias = "c") => `CASE
+  WHEN regexp_replace(COALESCE(${alias}.phone_number,''),'\\D','','g') LIKE '959%' THEN '0'||substr(regexp_replace(${alias}.phone_number,'\\D','','g'),3)
+  WHEN regexp_replace(COALESCE(${alias}.phone_number,''),'\\D','','g') LIKE '9%' THEN '0'||regexp_replace(${alias}.phone_number,'\\D','','g')
+  ELSE regexp_replace(COALESCE(${alias}.phone_number,''),'\\D','','g') END`;
+export const WAVE_PHONE_SQL = wavePhoneSql("c");
+// The bot reads the SIM balance before entering the PIN. When it is short the bot stops
+// with this code and pays nothing; a person may then fill the order another way and
+// mark it completed, so it must not count as MMK out of this SIM.
+export const WAVE_NOT_CHARGED_CODE = "INSUFFICIENT_BALANCE";
+/** The balance the bot read when it stopped, from "WavePay balance 202487 Ks insufficient ...". */
+export function waveShortBalance(message) {
+  const match = /balance\s+([\d,]+(?:\.\d+)?)\s*Ks/i.exec(String(message ?? ""));
+  return match ? kyat(match[1]) : null;
+}
 
 export function wavePhoneLabel(phone) {
   return phone ? phone : "ไม่ทราบเบอร์";
@@ -56,12 +66,16 @@ export function kyat(value) {
   const cents = sheetCents(String(value).replace(/^\s*Ks\s*/i, "").replaceAll(",", "").trim());
   return cents === null ? null : signedUsd(cents);
 }
-// MMK used: the wallet's own before − after read; pack_price only when that pair is missing.
+// MMK used: the wallet's own before − after read; pack_price only when that pair is missing
+// and the bot did not report its own fill as stopped or failed.
 export function waveUsage(row) {
   const before = kyat(row.old_balance); const after = kyat(row.new_balance);
   if (before != null && after != null && sheetCents(before) >= sheetCents(after)) {
     return { usedMmk: signedUsd(sheetCents(before) - sheetCents(after)), usedSource: "balances" };
   }
+  if (row.bot_error_code === WAVE_NOT_CHARGED_CODE) return { usedMmk: "0.00", usedSource: "not-charged" };
+  // Failed somewhere else: it may or may not have paid. Unknown, not the pack price.
+  if (row.bot_status === "failed") return { usedMmk: null, usedSource: "bot-failed" };
   const pack = kyat(row.pack_price);
   return pack == null ? { usedMmk: null, usedSource: null } : { usedMmk: pack, usedSource: "pack" };
 }
@@ -80,7 +94,8 @@ export function normalizeWaveOrder(row) {
   const details = {
     game: String(row.game_name || "").slice(0, 200), pack: String(row.pack_name || "").slice(0, 300),
     operator: String(row.operator || "Bot").slice(0, 160), invoice: String(row.invoice_number || "").slice(0, 1000),
-    costThb: waveCostThb(usedMmk),
+    // Not paid from this SIM: whatever it cost was paid elsewhere, so the cost is unknown here.
+    costThb: usedSource === "not-charged" ? null : waveCostThb(usedMmk),
     ...fields,
   };
   return {
@@ -106,7 +121,8 @@ export function summarizeWaveLines(entries, latest = []) {
   const lines = new Map();
   const line = (phone) => {
     if (!lines.has(phone)) lines.set(phone, { phone, orders: 0, used: 0n, sale: 0n, cost: 0n, profit: 0n,
-      missingSales: 0, missingCosts: 0, missingUsage: 0, balance: null, balanceAt: null, balanceOrderId: null });
+      missingSales: 0, missingCosts: 0, missingUsage: 0, balance: null, balanceAt: null, balanceOrderId: null,
+      laterOrders: 0, laterUncharged: 0, laterAt: null });
     return lines.get(phone);
   };
   for (const entry of entries) {
@@ -122,6 +138,10 @@ export function summarizeWaveLines(entries, latest = []) {
     l.balance = kyat(row.new_balance);
     l.balanceAt = row.occurred_at ? new Date(row.occurred_at).toISOString() : null;
     l.balanceOrderId = String(row.sale_order_id || row.source_order_id || row.id);
+    // Completed orders after that reading which recorded no balance of their own.
+    l.laterOrders = Number(row.later_orders) || 0;
+    l.laterUncharged = Number(row.later_uncharged) || 0;
+    l.laterAt = row.later_at ? new Date(row.later_at).toISOString() : null;
   }
   const text = (n) => n === null ? null : signedUsd(n);
   return [...lines.values()].map((l) => {
@@ -135,4 +155,67 @@ export function waveMatches(entry, term) {
   const d = entry.details;
   return [entry.orderId, d.game, d.pack, d.operator, d.invoice, d.customer, d.playerId, d.sheetOperator]
     .join(" ").toLowerCase().includes(term.toLowerCase());
+}
+
+/** A ledger account named like the sheet tab "WAVEPAY 3 (80888)" -> the one SIM ending in those digits, else null. */
+export function waveLedgerPhone(label, phones) {
+  const digits = /\((\d{4,6})\)\s*$/.exec(String(label ?? "").trim())?.[1];
+  if (!digits) return null;
+  const hits = phones.filter((p) => p && p.endsWith(digits));
+  return hits.length === 1 ? hits[0] : null;
+}
+
+const bangkokDay = (iso) => new Date(Date.parse(iso) + 7 * 3600000).toISOString().slice(0, 10);
+const LEDGER_OUT = new Set(["use", "adjust_out"]);
+
+/**
+ * Per SIM: what the bot's own balance readings cannot explain (from the chain check), beside
+ * what people recorded in the inventory ledger (debit page, imported sheets) over the same range.
+ * A gap lists the records of the same direction dated within its days: sheet rows carry a day,
+ * not a time, so matching is by Bangkok day.
+ * @param wallets     createInventoryCheck(...).check({ provider: "wavepay" }).wallets (label = phone)
+ * @param ledgerRows  { label, kind, amount, order_ref, occurred_at, actor_label }
+ */
+export function waveGapLines(wallets, ledgerRows, phones) {
+  const recorded = new Map(), unmatched = [];
+  for (const row of ledgerRows) {
+    const phone = waveLedgerPhone(row.label, phones);
+    if (!phone) { unmatched.push(row.label); continue; }
+    const list = recorded.get(phone) ?? [];
+    list.push({ direction: LEDGER_OUT.has(row.kind) ? "out" : "in", kind: row.kind, amount: kyat(row.amount),
+      orderRef: row.order_ref || null, occurredAt: new Date(row.occurred_at).toISOString(), by: row.actor_label || null });
+    recorded.set(phone, list);
+  }
+  const sum = (list) => signedUsd(list.reduce((n, x) => n + (sheetCents(x.amount) ?? 0n), 0n));
+  const lines = new Map();
+  const line = (phone, w) => {
+    const mine = recorded.get(phone) ?? [];
+    // Only the windows between two bot orders; a mismatch inside one bot receipt is the bot's own.
+    const gaps = (w?.gaps ?? []).filter((g) => g.kind === "between").map((g) => ({
+      from: g.from, to: g.to, direction: g.direction, amount: kyat(g.amount), likely: g.likely,
+      recorded: mine.filter((x) => x.direction === g.direction && bangkokDay(x.occurredAt) >= bangkokDay(g.from) && bangkokDay(x.occurredAt) <= bangkokDay(g.to)),
+    }));
+    // A drop that matches a stuck bot queue (charged) or comes back (refunded) is not a hand fill.
+    const handOut = gaps.filter((g) => g.direction === "out" && !g.likely), rises = gaps.filter((g) => g.direction === "in");
+    // Compare like with like: only records that fall inside a gap count against it (a record can sit in two).
+    const inside = (list) => [...new Set(list.flatMap((g) => g.recorded))];
+    const outOfGaps = (direction, list) => mine.filter((x) => x.direction === direction && !list.includes(x));
+    const matchedOut = inside(handOut), matchedIn = inside(rises);
+    const read = w != null;
+    const gapOut = read ? sum(handOut) : null, rest = read ? sheetCents(gapOut) - sheetCents(sum(matchedOut)) : null;
+    return {
+      gapOut, chargedOut: read ? sum(gaps.filter((g) => g.likely === "charged")) : null, gapIn: read ? sum(rises) : null,
+      recordedOut: sum(matchedOut), recordedIn: sum(matchedIn),
+      // Records dated outside every gap (before the first or after the last bot reading, or no reading at all).
+      outsideOut: sum(outOfGaps("out", matchedOut)), outsideIn: sum(outOfGaps("in", matchedIn)),
+      // Never below zero: more recorded than missing in those windows means a wrong SIM or a fill the bot saw.
+      unrecordedOut: rest == null ? null : signedUsd(rest > 0n ? rest : 0n),
+      overRecorded: rest != null && rest < 0n,
+      gaps,
+    };
+  };
+  for (const w of wallets) lines.set(String(w.label || ""), line(String(w.label || ""), w));
+  // Records on a SIM the bot did not read in this range: shown, with nothing to compare against.
+  for (const phone of recorded.keys()) if (!lines.has(phone)) lines.set(phone, line(phone, null));
+  return { lines, unmatched: [...new Set(unmatched)] };
 }

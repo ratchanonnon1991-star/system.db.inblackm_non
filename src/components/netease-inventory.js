@@ -1,5 +1,7 @@
 "use client";
 
+import { createInventoryPageSession } from "@/lib/inventory-page-session";
+import { TablePagination } from "@/components/table-pagination";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Download, RefreshCw } from "lucide-react";
@@ -54,17 +56,18 @@ export default function NeteaseInventory({ lang }) {
   const [draft, setDraft] = useState(filters), [rates, setRates] = useState(initialRates);
   const [data, setData] = useState(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
   const generation = useRef(0), alive = useRef(false);
-  const invalidate = useCallback(() => { generation.current++; }, []);
+  const [pageReader] = useState(() => createInventoryPageSession());
+  const invalidate = useCallback(() => { generation.current++; pageReader.cancel(); }, [pageReader]);
   const viewKey = new URLSearchParams(filters).toString();
   const load = useCallback(async () => {
     const version = ++generation.current; setLoading(true); setError("");
     try {
-      const result = await apiJson(`${endpoint}?${viewKey}`, { cache: "no-store" });
+      const result = await pageReader.run(endpoint, viewKey);
       if (!Array.isArray(result?.cards) || result.cards.length !== NETEASE_ACCOUNTS.length || !Array.isArray(result.entries) || !result.summary) throw new Error("ข้อมูลไม่ครบ กรุณาโหลดใหม่");
       if (alive.current && generation.current === version) setData({ ...result, viewKey });
     } catch (e) { if (alive.current && generation.current === version) setError(e.message || "โหลดข้อมูลไม่สำเร็จ"); }
     finally { if (alive.current && generation.current === version) setLoading(false); }
-  }, [viewKey]);
+  }, [viewKey, pageReader]);
   useEffect(() => { alive.current = true; const timer = setTimeout(load, 0); return () => { alive.current = false; invalidate(); clearTimeout(timer); }; }, [load, invalidate]);
   function apply(next) { generation.current++; setError(""); setFilters(next); setDraft(next); if (new URLSearchParams(next).toString() === viewKey) void load(); }
   const ready = data?.viewKey === viewKey && !loading && !error;
@@ -95,7 +98,7 @@ export default function NeteaseInventory({ lang }) {
         <dl className="grid gap-3 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4 sm:grid-cols-3">{[["ยอดโอน THB", data.summary.sale], ["ต้นทุน THB", data.summary.cost], ["กำไร THB", data.summary.profit]].map(([label, value]) => <div key={label}><dt className="text-sm text-ll-ink-subtle">{label}</dt><dd className="mt-2 text-xl font-semibold tabular-nums">{money(value)}</dd></div>)}</dl>
         {(data.summary.missingSales > 0 || data.summary.missingCosts > 0) && <p role="status" className="text-sm text-ll-ink-subtle">ข้อมูลไม่ครบ: ยอดโอน {data.summary.missingSales} · ต้นทุน {data.summary.missingCosts} รายการ ยอดรวมที่ข้อมูลไม่ครบจะแสดง — ไม่แทนด้วยศูนย์</p>}
         <History entries={data.entries} />
-        <nav aria-label="เปลี่ยนหน้าประวัติ" className="flex items-center justify-end gap-3"><button type="button" className={button} disabled={data.page <= 1} onClick={() => apply({ ...filters, page: String(data.page - 1) })}>ก่อนหน้า</button><span className="text-sm">หน้า {data.page} / {Math.max(1, Math.ceil(data.total / data.pageSize))}</span><button type="button" className={button} disabled={data.page * data.pageSize >= data.total} onClick={() => apply({ ...filters, page: String(data.page + 1) })}>ถัดไป</button></nav>
+        <TablePagination page={data.page} pageSize={data.pageSize} total={data.total} totalPages={Math.max(1, Math.ceil(data.total / data.pageSize))} observedAt={data.pagination?.observedAt} loading={loading} onPage={(page) => apply({ ...filters, page: String(page) })} onPageSize={(size) => apply({ ...filters, page: "1", pageSize: String(size) })} label="แบ่งหน้าประวัติ" />
       </section>
     </>}
   </main>;

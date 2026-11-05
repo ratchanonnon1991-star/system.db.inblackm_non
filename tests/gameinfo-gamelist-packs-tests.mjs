@@ -162,6 +162,7 @@ async function run() {
   check("save: persists localized pack names", firstPackData.localizedNames, { 7: "English Pack A", 8: "日本語パックA" });
   ok("save: legacy amountCharged is not persisted", !("amountCharged" in firstPackData));
   check("save: the second pack keeps its own position", JSON.parse(packInserts[1].params[2]).packOrder, 1);
+  ok("save: a pack with no expiry date stores none", !("expiresAt" in firstPackData));
 
   const duplicateNamePriceTree = structuredClone(ORIGINAL_TREE);
   duplicateNamePriceTree[0].categories[0].packs[1].name = " pack a ";
@@ -354,15 +355,26 @@ async function run() {
   check("pack count: binds the sentinel value", countStmt?.params, ["__computed__"]);
 
   reset();
+  const datedTree = structuredClone(ORIGINAL_TREE);
+  datedTree[0].categories[0].packs[0].expiresAt = "2026-11-04";
+  await saveGamelistPacks(5, { currencies: datedTree, computedColumns });
+  const datedInsert = log.find((e) => /^INSERT INTO gamelist_packs/.test(e.text) && e.params?.[1] === "pk1");
+  check("save: persists the expiry date", JSON.parse(datedInsert.params[2]).expiresAt, "2026-11-04");
+
+  reset();
   setResponder((text) => {
     if (/disabled_count/.test(text)) {
-      return { rows: [{ game_id: 5, total_count: 3, disabled_count: 1 }] };
+      return { rows: [{ game_id: 5, total_count: 3, disabled_count: 1, expiring_count: 2 }] };
     }
     return null;
   });
   check("service summary: returns disabled packs per game", await listGamelistPackServiceByGame(), {
-    5: { total: 3, disabled: 1 },
+    5: { total: 3, disabled: 1, expiring: 2 },
   });
+  const serviceStmt = find(/disabled_count/);
+  ok("service summary: a passed expiry date counts as disabled", /data->>'expiresAt' < \$2/.test(serviceStmt?.text || ""));
+  ok("service summary: a pack on sale due within the warning counts as expiring", /IS DISTINCT FROM 'false' AND data->>'expiresAt' BETWEEN \$2 AND \$3/.test(serviceStmt?.text || ""));
+  ok("service summary: binds today as the date to compare", /^\d{4}-\d{2}-\d{2}$/.test(serviceStmt?.params?.[1] || ""));
 
   // --- listAllGamelistChannels: merges main+secondary across every game -----
   reset();

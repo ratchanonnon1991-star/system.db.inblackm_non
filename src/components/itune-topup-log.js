@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { apiJson } from "@/lib/api-json";
@@ -271,7 +272,7 @@ export default function ItuneTopupLog() {
                     </span>
                   </p>
                   <div className="mt-2 overflow-x-auto">
-                    <table className="w-full min-w-[560px] text-left text-[12px]">
+                    <PaginatedTable items={group.items}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[560px] text-left text-[12px]">
                       <thead className="text-[11px] font-medium uppercase tracking-wide text-ll-ink-subtle">
                         <tr>
                           <th className="px-2 py-1">ID</th>
@@ -281,7 +282,7 @@ export default function ItuneTopupLog() {
                         </tr>
                       </thead>
                       <tbody>
-                        {group.items.map((entry) => (
+                        {tablePageItems.map((tableItem, tableIndex) => ((entry) => (
                           <tr key={entry.id} className="border-t border-ll-hairline">
                             <td className="px-2 py-1.5 font-mono text-ll-ink-subtle">
                               {entry.id}
@@ -299,9 +300,9 @@ export default function ItuneTopupLog() {
                               {formatLogTime(entry.claimedAt)}
                             </td>
                           </tr>
-                        ))}
+                        ))(tableItem, tablePageStart + tableIndex, tableAllItems))}
                       </tbody>
-                    </table>
+                    </table>)}</PaginatedTable>
                   </div>
                 </div>
               ))}
@@ -319,7 +320,7 @@ export default function ItuneTopupLog() {
           )}
           {!logError && logs && logs.length > 0 && (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[820px] text-left text-[12px]">
+              <PaginatedTable items={logs}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[820px] text-left text-[12px]">
                 <thead className="bg-ll-surface-2 text-[11px] font-medium uppercase tracking-wide text-ll-ink-subtle">
                   <tr>
                     <th className="px-3 py-2">เวลา</th>
@@ -331,7 +332,7 @@ export default function ItuneTopupLog() {
                   </tr>
                 </thead>
                 <tbody>
-                  {logs.map((log) => (
+                  {tablePageItems.map((tableItem, tableIndex) => ((log) => (
                     <tr key={log.id} className="border-t border-ll-hairline">
                       <td className="whitespace-nowrap px-3 py-2 text-ll-ink-subtle">
                         {formatLogTime(log.createdAt)}
@@ -388,9 +389,9 @@ export default function ItuneTopupLog() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  ))(tableItem, tablePageStart + tableIndex, tableAllItems))}
                 </tbody>
-              </table>
+              </table>)}</PaginatedTable>
             </div>
           )}
         </div>

@@ -1,3 +1,4 @@
+import * as paginationDependency0 from "../src/server/inventory-page.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
@@ -19,6 +20,15 @@ eq(normalize(raw(1, { recorded_cost: "0" })).figures.cost, "0.00");
 eq(lib.plsOrder(raw(1, { recorded_cost: "55" }), "9").figures.cost, "55.00");
 eq(normalize(raw(1, { myr_used: null })).figures.cost, null);
 eq(normalize(raw(1, { myr_used: "0" })).figures.cost, "0.00");
+const placeholder = { myr_used: "0", recorded_cost: null, ledger_slices: [{ id: "zero", typed: false, used: "0", cost: "0", balance: null }] };
+const repairedView = normalize(raw(1, { ...placeholder, worker_pack_price: "MYR71.74", worker_live_cost: "71.74" }));
+eq(repairedView.used, "71.74"); eq(repairedView.figures.cost, "554.05"); eq(repairedView.details.usageBasis, "worker-reference"); check(Boolean(repairedView.details.usageWarning));
+eq(repairedView.ledger[0].used, "0.00"); // The actual ledger is never silently rewritten.
+eq(normalize(raw(1, { ...placeholder, ledger_slices: [...placeholder.ledger_slices, { ...placeholder.ledger_slices[0], id: "another" }], worker_pack_price: "MYR71.74", worker_live_cost: "71.74" })).used, null);
+for (const evidence of [{}, { worker_pack_price: "USD71.74", worker_live_cost: "71.74" }, { worker_pack_price: "MYR71.74", worker_live_cost: "70" }, { worker_pack_price: "MYR71.74", worker_live_cost: null }]) {
+  const unknown = normalize(raw(1, { ...placeholder, ...evidence })); eq(unknown.used, null); eq(unknown.figures.profit, null);
+}
+eq(normalize(raw(1, { ...placeholder, recorded_cost: "0", ledger_slices: [{ id: "real", typed: true, used: "0", cost: "0" }] })).figures.cost, "0.00");
 eq(normalize(raw(1, { ledger_slices: [{ id: 1, typed: false, used: "18", cost: "0", balance: "291.56" }] })).ledger[0].balance, null);
 const pair = [1, 2].map((id) => normalize(raw(id, { myr_used: "0.01", sheet_fields: { saleThb: "0.50", saleTotalThb: "1" } })));
 const combined = lib.groupPlsOrders(pair)[0];
@@ -42,7 +52,7 @@ check(TOPUP_INVENTORY_PROVIDERS.some((p) => p.key === "plsbuy" && p.ready));
 function compile(file, mocks) {
   const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
   const output = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
-  const exports = {}; new Function("require", "exports", output)((key) => { if (!mocks[key]) throw Error(`Unmocked ${key}`); return mocks[key]; }, exports); return exports;
+  const exports = {}; new Function("require", "exports", output)((key) => { if (key === "@/server/inventory-page") return paginationDependency0; if (!mocks[key]) throw Error(`Unmocked ${key}`); return mocks[key]; }, exports); return exports;
 }
 let reads = 0, failure = false, walletRows = [];
 const select = async (sql, args) => {

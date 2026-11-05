@@ -70,15 +70,7 @@ export async function findConnectionById(id) {
   return mapRow(result.rows[0]);
 }
 
-/** Internal shape with the decrypted password — for pool creation only. */
-export async function findConnectionWithSecret(id) {
-  await ensureSchema();
-  const result = await getPool().query(
-    `SELECT id, name, host, port, database, username, password_enc, ssl, updated_at
-     FROM gamedb_connections WHERE id = $1`,
-    [id]
-  );
-  const row = result.rows[0];
+function mapSecretRow(row) {
   if (!row) return null;
   return {
     id: row.id,
@@ -91,6 +83,48 @@ export async function findConnectionWithSecret(id) {
     ssl: row.ssl,
     updatedAt: row.updated_at,
   };
+}
+
+/** Internal shape with the decrypted password — for pool creation only. */
+export async function findConnectionWithSecret(id) {
+  await ensureSchema();
+  const result = await getPool().query(
+    `SELECT id, name, host, port, database, username, password_enc, ssl, updated_at
+     FROM gamedb_connections WHERE id = $1`,
+    [id]
+  );
+  return mapSecretRow(result.rows[0]);
+}
+
+// The gameinfo/itune helpers each look their saved connection up by name on
+// every call, and one GameInfo page fans out to ~17 of them at once. Without
+// this cache that is 2 primary-DB round trips per helper per request, all
+// queued on a 5-connection pool. Writes below clear it in this process; the
+// TTL bounds how long another process (pm2 worker) can see a stale row.
+const CONNECTION_BY_NAME_TTL_MS = 10_000;
+const connectionByName = new Map();
+
+/** Same as findConnectionWithSecret, matched by name (trimmed, case-insensitive). */
+export function findConnectionWithSecretByName(name) {
+  const key = String(name).trim().toLowerCase();
+  const cached = connectionByName.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.promise;
+
+  const promise = (async () => {
+    await ensureSchema();
+    const result = await getPool().query(
+      `SELECT id, name, host, port, database, username, password_enc, ssl, updated_at
+       FROM gamedb_connections WHERE LOWER(BTRIM(name)) = $1
+       ORDER BY name ASC, id ASC LIMIT 1`,
+      [key]
+    );
+    return mapSecretRow(result.rows[0]);
+  })();
+  connectionByName.set(key, { promise, expiresAt: Date.now() + CONNECTION_BY_NAME_TTL_MS });
+  promise.catch(() => {
+    if (connectionByName.get(key)?.promise === promise) connectionByName.delete(key);
+  });
+  return promise;
 }
 
 export async function insertConnection({ name, host, port, database, username, password, ssl }) {
@@ -109,6 +143,7 @@ export async function insertConnection({ name, host, port, database, username, p
       Boolean(ssl),
     ]
   );
+  connectionByName.clear();
   return mapRow(result.rows[0]);
 }
 
@@ -149,6 +184,7 @@ export async function updateConnection(id, fields) {
      RETURNING id, name, host, port, database, username, password_enc, ssl, created_at, updated_at`,
     values
   );
+  connectionByName.clear();
   dropConnectionPool(id);
   return mapRow(result.rows[0]);
 }
@@ -156,5 +192,6 @@ export async function updateConnection(id, fields) {
 export async function deleteConnection(id) {
   await ensureSchema();
   await getPool().query(`DELETE FROM gamedb_connections WHERE id = $1`, [id]);
+  connectionByName.clear();
   dropConnectionPool(id);
 }

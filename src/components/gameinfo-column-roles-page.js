@@ -1,18 +1,23 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import { useMemo, useState } from "react";
 import { Check, LoaderCircle, Lock } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import GameinfoColumnOrder from "./gameinfo-column-order";
 import {
   GAMEINFO_COLUMN_ROLES,
   GAMEINFO_COLUMN_ROLE_ALL_GAMES,
   hiddenGameinfoColumnKeys,
 } from "@/lib/gameinfo-column-roles";
 
-const ROLE_LABELS = { admin: "Admin", topup: "Topup" };
+// The rules are stored per role key but apply per view: "admin" is the
+// Product view (gameinfo-view.js).
+const ROLE_LABELS = { admin: "มุมมอง Product", topup: "มุมมอง Topup" };
 
-export default function GameinfoColumnRolesPage({ columns, rules: initialRules, games }) {
+export default function GameinfoColumnRolesPage({ columns, rules: initialRules, games, orderColumns = [], columnOrders = {} }) {
   const [rules, setRules] = useState(initialRules);
+  const [orders, setOrders] = useState(columnOrders);
   const [gameId, setGameId] = useState(GAMEINFO_COLUMN_ROLE_ALL_GAMES);
   const [saving, setSaving] = useState("");
   const [error, setError] = useState("");
@@ -67,7 +72,7 @@ export default function GameinfoColumnRolesPage({ columns, rules: initialRules, 
     }
   }
 
-  if (!columns.length) {
+  if (!columns.length && !orderColumns.length) {
     return (
       <p className="rounded-xl border border-linear-hairline bg-linear-surface-2 p-4 text-sm text-linear-ink-muted">
         ยังไม่มีคอลัมน์ที่สร้างเอง — สร้างคอลัมน์ในหน้าแก้ไขแพ็กหรือนำเข้าด้วย CSV ก่อน
@@ -101,8 +106,10 @@ export default function GameinfoColumnRolesPage({ columns, rules: initialRules, 
         <p className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">{error}</p>
       ) : null}
 
+      <GameinfoColumnOrder key={gameId} columns={orderColumns} orders={orders} gameId={gameId} onSaved={setOrders} />
+
       <div className="overflow-x-auto rounded-xl border border-linear-hairline">
-        <table className="w-full min-w-[420px] text-sm">
+        <PaginatedTable items={columns} resetKey={JSON.stringify([gameId])}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[420px] text-sm">
           <thead>
             <tr className="border-b border-linear-hairline bg-linear-surface-2 text-left">
               <th className="px-4 py-2.5 font-medium text-linear-ink">คอลัมน์</th>
@@ -114,7 +121,7 @@ export default function GameinfoColumnRolesPage({ columns, rules: initialRules, 
             </tr>
           </thead>
           <tbody>
-            {columns.map((column) => (
+            {tablePageItems.map((tableItem, tableIndex) => ((column) => (
               <tr key={column.key} className="border-b border-linear-hairline last:border-0">
                 <td className="px-4 py-2.5 text-linear-ink-muted">{column.label}</td>
                 {GAMEINFO_COLUMN_ROLES.map((role) => {
@@ -137,16 +144,16 @@ export default function GameinfoColumnRolesPage({ columns, rules: initialRules, 
                   );
                 })}
               </tr>
-            ))}
+            ))(tableItem, tablePageStart + tableIndex, tableAllItems))}
           </tbody>
-        </table>
+        </table>)}</PaginatedTable>
       </div>
 
       <p className="flex items-start gap-2 rounded-xl border border-linear-warning/40 bg-linear-warning-bg p-3 text-xs text-linear-warning">
         <Lock size={14} className="mt-0.5 shrink-0" />
         <span>
           การตั้งค่านี้ซ่อนคอลัมน์บนหน้าจอเท่านั้น API ของแพ็กยังส่งข้อมูลครบ
-          ใช้จัดหน้าจอให้ตรงกับงานของแต่ละ role ไม่ใช่การกันข้อมูลลับ
+          ใช้จัดหน้าจอให้ตรงกับงานของแต่ละมุมมอง (ทุกคนสลับมุมมองได้) ไม่ใช่การกันข้อมูลลับ
         </span>
       </p>
     </div>

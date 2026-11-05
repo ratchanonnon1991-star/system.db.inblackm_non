@@ -9,6 +9,14 @@ const SHEETS = "https://sheets.googleapis.com/v4/spreadsheets";
 const DRIVE = "https://www.googleapis.com/drive/v3/files";
 
 const b64url = (value) => Buffer.from(value).toString("base64url");
+const quoteTab = (tab) => `'${tab.replaceAll("'", "''")}'`;
+
+// 0 → "A", 26 → "AA".
+function columnLetter(index) {
+  let letters = "";
+  for (let n = index + 1; n > 0; n = Math.floor((n - 1) / 26)) letters = String.fromCharCode(65 + ((n - 1) % 26)) + letters;
+  return letters;
+}
 
 export function signServiceAccountJwt(account, now = Date.now(), scopes = SCOPES) {
   if (!account?.client_email || !account?.private_key) throw new Error("Service account key is missing client_email/private_key");
@@ -20,7 +28,9 @@ export function signServiceAccountJwt(account, now = Date.now(), scopes = SCOPES
   return `${header}.${claims}.${signer.sign(account.private_key).toString("base64url")}`;
 }
 
-export function createGoogleReader({ keyFile = process.env.ITUNE_SHEETS_CREDENTIALS, fetchImpl = fetch, now = () => Date.now(), readOnly = false, readKeyFile = readFile } = {}) {
+// `exportAccess` adds Drive read access, which exporting a whole spreadsheet needs.
+export function createGoogleReader({ keyFile = process.env.ITUNE_SHEETS_CREDENTIALS, fetchImpl = fetch, now = () => Date.now(), readOnly = false, exportAccess = false, readKeyFile = readFile, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) } = {}) {
+  const readScopes = ["https://www.googleapis.com/auth/spreadsheets.readonly", ...(exportAccess ? ["https://www.googleapis.com/auth/drive.readonly"] : [])].join(" ");
   let account; let token = null;
   async function accessToken() {
     if (token && token.expires > now() + 60_000) return token.value;
@@ -28,7 +38,7 @@ export function createGoogleReader({ keyFile = process.env.ITUNE_SHEETS_CREDENTI
     account ||= JSON.parse(await readKeyFile(keyFile, "utf8"));
     const response = await fetchImpl(account.token_uri || "https://oauth2.googleapis.com/token", {
       method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: signServiceAccountJwt(account, now(), readOnly ? "https://www.googleapis.com/auth/spreadsheets.readonly" : SCOPES) }),
+      body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: signServiceAccountJwt(account, now(), readOnly ? readScopes : SCOPES) }),
       signal: AbortSignal.timeout(15_000),
     });
     const body = await response.json().catch(() => ({}));
@@ -36,9 +46,14 @@ export function createGoogleReader({ keyFile = process.env.ITUNE_SHEETS_CREDENTI
     token = { value: body.access_token, expires: now() + Number(body.expires_in || 3600) * 1000 };
     return token.value;
   }
-  async function get(url, init = {}) {
+  async function get(url, init = {}, attempt = 0) {
     const response = await fetchImpl(url, { ...init, headers: { Authorization: `Bearer ${await accessToken()}`, ...init.headers }, signal: AbortSignal.timeout(20_000) });
     const body = await response.json().catch(() => ({}));
+    // The per-minute read quota is shared by everything using this key: wait it out, twice at most.
+    if (response.status === 429 && attempt < 2) {
+      await wait(attempt === 0 ? 20_000 : 40_000);
+      return get(url, init, attempt + 1);
+    }
     if (!response.ok) throw Object.assign(new Error(`Google API HTTP ${response.status}: ${body?.error?.message || "request failed"}`), { status: response.status });
     return body;
   }
@@ -68,6 +83,52 @@ export function createGoogleReader({ keyFile = process.env.ITUNE_SHEETS_CREDENTI
       const range = `'${tab.replaceAll("'", "''")}'!A:ZZ`;
       const body = await get(`${SHEETS}/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?valueRenderOption=FORMATTED_VALUE`);
       return body.values || [];
+    },
+    // [{ title, gid }] — gid is what a "#gid=" link to the tab carries.
+    async tabs(spreadsheetId) {
+      const body = await get(`${SHEETS}/${encodeURIComponent(spreadsheetId)}?fields=sheets.properties(title,sheetId)`);
+      return (body.sheets || []).map((s) => ({ title: s.properties.title, gid: Number(s.properties.sheetId) }));
+    },
+    // rows() for many tabs: { [title]: rows }, 20 tabs per request.
+    async batchRows(spreadsheetId, tabs) {
+      const out = {};
+      for (let i = 0; i < tabs.length; i += 20) {
+        const chunk = tabs.slice(i, i + 20);
+        const params = new URLSearchParams({ valueRenderOption: "FORMATTED_VALUE" });
+        for (const tab of chunk) params.append("ranges", `'${tab.replaceAll("'", "''")}'!A:ZZ`);
+        const body = await get(`${SHEETS}/${encodeURIComponent(spreadsheetId)}/values:batchGet?${params}`);
+        (body.valueRanges || []).forEach((range, index) => { out[chunk[index]] = range.values || []; });
+      }
+      return out;
+    },
+    // The background colour of every cell in some columns, which the values
+    // API does not give: { [title]: { [col]: [{ red, green, blue } | null per row] } }.
+    // `wanted` is [{ tab, cols: [0-based column] }]; 40 columns per request.
+    async columnColors(spreadsheetId, wanted) {
+      const ranges = wanted.flatMap(({ tab, cols }) => cols.map((col) => `${quoteTab(tab)}!${columnLetter(col)}:${columnLetter(col)}`));
+      const out = {};
+      for (let i = 0; i < ranges.length; i += 40) {
+        const params = new URLSearchParams({ fields: "sheets(properties(title),data(startColumn,rowData(values(effectiveFormat(backgroundColor)))))" });
+        for (const range of ranges.slice(i, i + 40)) params.append("ranges", range);
+        const body = await get(`${SHEETS}/${encodeURIComponent(spreadsheetId)}?${params}`);
+        for (const sheet of body.sheets || []) {
+          const byCol = (out[sheet.properties?.title] ||= {});
+          for (const grid of sheet.data || []) {
+            byCol[Number(grid.startColumn) || 0] = (grid.rowData || []).map((row) => row.values?.[0]?.effectiveFormat?.backgroundColor || null);
+          }
+        }
+      }
+      return out;
+    },
+    // The whole spreadsheet as .xlsx — pictures placed over cells included,
+    // which the Sheets API does not return. Tens of MB for a big sheet.
+    async exportXlsx(spreadsheetId) {
+      const response = await fetchImpl(`https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/export?format=xlsx`, {
+        headers: { Authorization: `Bearer ${await accessToken()}` },
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (!response.ok) throw Object.assign(new Error(`Google export HTTP ${response.status}`), { status: response.status });
+      return Buffer.from(await response.arrayBuffer());
     },
     // Literal values (RAW), one cell per update: { range: "'tab'!E12", value }.
     async writeRaw(spreadsheetId, updates) {

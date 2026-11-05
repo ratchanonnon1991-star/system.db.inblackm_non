@@ -89,6 +89,8 @@ import {
   ShareLinkModal,
 } from "@/components/panel-config-modals";
 import PanelTable from "@/components/panel-table";
+import SystemDbQueryToolbar from "@/components/systemdb-query-toolbar";
+import { inspectedRow, normalizeColumnValueFilters, workbenchStatusOptions } from "@/lib/systemdb-workbench";
 import SearchableSelect from "@/components/searchable-select";
 import PanelChart from "@/components/panel-chart";
 import ModalResizeHandle from "@/components/modal-resize-handle";
@@ -454,6 +456,8 @@ export default function QueryPanel({
   // In the sheet view the panel is the page: it sits in the flow at full width
   // and has no position or frame of its own to drag.
   docked = false,
+  workbench = false,
+  onInspectRow = null,
   canClose = true,
   // A public link renders this same panel, so it reads through the share route
   // instead of the signed-in one. Everything the token does not cover is off
@@ -1273,6 +1277,8 @@ export default function QueryPanel({
     [columnValueFilters]
   );
 
+  const statusTabs = useMemo(() => workbench ? workbenchStatusOptions(visibleColumns, mappedRows) : null, [workbench, visibleColumns, mappedRows]);
+
   const displayRows = useMemo(() => {
     if (!result) return [];
     let rows = mappedRows;
@@ -1710,8 +1716,8 @@ export default function QueryPanel({
     loadFilterViews();
   }, [loadFilterViews]);
 
-  const saveFilterView = async () => {
-    const name = window.prompt(
+  const saveFilterView = async (nameOverride) => {
+    const name = typeof nameOverride === "string" ? nameOverride : window.prompt(
       "ตั้งชื่อชุดตัวกรองนี้",
       rowFilter.trim() || `ตัวกรอง ${new Date().toLocaleString("th-TH")}`
     );
@@ -1720,11 +1726,12 @@ export default function QueryPanel({
       await apiJson(`/api/queries/${query.id}/filter-views`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), rowFilter, lookupRowFilter, paramValues }),
+        body: JSON.stringify({ name: name.trim(), rowFilter, lookupRowFilter, paramValues, columnValueFilters }),
         fallbackError: "บันทึกชุดตัวกรองไม่สำเร็จ",
       });
       await loadFilterViews();
     } catch (err) {
+      if (typeof nameOverride === "string") throw err;
       window.alert(err.message);
     }
   };
@@ -1732,6 +1739,7 @@ export default function QueryPanel({
   const applyFilterView = (view) => {
     setRowFilter(view.rowFilter || "");
     setLookupRowFilter(view.lookupRowFilter || null);
+    setColumnValueFilters(normalizeColumnValueFilters(view.columnValueFilters));
     setParamValues((prev) => ({ ...prev, ...(view.paramValues || {}) }));
     setPage(1);
   };
@@ -2439,9 +2447,10 @@ export default function QueryPanel({
   return (
     <section
       ref={sectionRef}
+      data-systemdb-table={workbench ? "workbench" : undefined}
       onPointerDown={() => {
         onSelect?.();
-        if (canCustomizeLayout) {
+        if (canCustomizeLayout && !workbench) {
           setFrameSelected(true);
           onBringToFront?.(query.id);
         }
@@ -2458,8 +2467,8 @@ export default function QueryPanel({
         ...(panelBorderColor ? { borderColor: panelBorderColor } : {}),
         ...(panelBodyColor ? { backgroundColor: panelBodyColor } : {}),
       }}
-      className={`flex min-w-0 flex-col border border-zinc-200 bg-white shadow-sm transition-shadow ${
-        panelDrag || frameDrag
+      className={`flex min-w-0 flex-col border border-zinc-200 bg-white shadow-sm transition-shadow ${workbench ? "sdb-query-panel" : ""} ${
+        workbench ? "" : panelDrag || frameDrag
           ? "z-30 shadow-xl ring-1 ring-red-500"
           : frameSelected || isSelected
             ? "z-10 ring-1 ring-red-500"
@@ -2477,6 +2486,20 @@ export default function QueryPanel({
         </div>
       )}
 
+      {workbench ? <SystemDbQueryToolbar queryName={query.name} search={rowFilter}
+        onSearch={(value) => { setRowFilter(value); setPage(1); }} filterViews={filterViews} selectedViewId={selectedFilterViewId}
+        onSelectView={(id) => { setSelectedFilterViewId(id); const selected = filterViews.find((v) => String(v.id) === id); if (selected) applyFilterView(selected); else { setRowFilter(""); setColumnValueFilters({}); setLookupRowFilter(null); setPage(1); } }}
+        onSaveView={saveFilterView} columns={displayColumns.filter((col) => !(col.kind === "base" && isKeyOnlyColumn(col.column.name)) && (canCustomizeLayout || !savedLayout.hidden.includes(col.id)))} hidden={layout.hidden}
+        onToggleColumn={(id) => { layoutDirtyRef.current = true; setLayout((prev) => ({ ...prev, hidden: prev.hidden.includes(id) ? prev.hidden.filter((key) => key !== id) : [...prev.hidden, id] })); setPage(1); }}
+        rowCount={displayRows.length} loadedCount={result?.rows.length || 0} running={running} refreshing={refreshing} lastRunAt={lastRunAt}
+        onRefresh={() => runQuery({ validate: true })} onExport={exportCsv} hasResult={Boolean(result)}
+        filters={Boolean(rowFilter || activeColumnFilterIds.length || lookupRowFilter)}
+        statusTabs={statusTabs} selectedStatuses={columnValueFilters[statusTabs?.columnId] || []}
+        onSelectStatus={(value) => { setColumnValueFilters((prev) => { const next = { ...prev }; if (value === null) delete next[statusTabs.columnId]; else next[statusTabs.columnId] = [value]; return next; }); setSelectedFilterViewId(""); setPage(1); }}
+        onClearFilters={() => { setRowFilter(""); setColumnValueFilters({}); setLookupRowFilter(null); setSelectedFilterViewId(""); setPage(1); }}
+        onOpenParams={effectiveParams.length ? () => setModal("paramsInput") : null}
+        onInsert={canUseInsertForm && !viewingSnapshot ? () => setModal("insertRun") : null} insertLabel={sharedInsertForm?.label}
+      /> : (
       <div
         className="flex flex-wrap items-center gap-2 border-b border-zinc-100 px-3 py-1.5"
         style={panelHeaderTone || undefined}
@@ -3138,7 +3161,7 @@ export default function QueryPanel({
         </button>}
         {workspaceToolbar}
         </div>
-      </div>
+      </div>)}
 
       {!panel.collapsed && (
         <>
@@ -3411,11 +3434,12 @@ export default function QueryPanel({
           >
           {running ? (
             <p className="flex items-center justify-center gap-2 py-16 text-xs font-semibold text-zinc-400">
-              <Loader2 size={16} className="animate-spin" /> กำลังรัน Query...
+              <Loader2 size={16} className="animate-spin" /> {workbench ? "กำลังโหลดตาราง…" : "กำลังรัน Query..."}
             </p>
           ) : runError ? (
-            <div className="m-3 rounded-sm border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold text-red-600">
+            <div role="alert" className="m-3 rounded-sm border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold text-red-600">
               {runError}
+              {workbench && <button type="button" className="sdb-button sdb-retry" onClick={() => runQuery({ validate: true })}>ลองโหลดตารางใหม่</button>}
             </div>
           ) : Object.keys(paramErrors).length > 0 && !result ? (
             <p className="px-4 py-12 text-center text-xs font-semibold text-zinc-400">
@@ -3477,6 +3501,8 @@ export default function QueryPanel({
                   layout={layout}
                   mutateLayout={mutateLayout}
                   canCustomizeLayout={canCustomizeLayout}
+                  canSortLayout={workbench || canCustomizeLayout}
+                  onSortLayout={workbench ? (updater) => { layoutDirtyRef.current = true; setLayout(updater); setPage(1); } : undefined}
                   height={bodyHeight}
                   viewportHeight={chartHeight}
                   canEdit={canEditCells}
@@ -3539,6 +3565,7 @@ export default function QueryPanel({
                   pkValueOf={pkValueOf}
                   onSaveNote={notesEnabled && !viewingSnapshot ? saveNote : null}
                   onPeekCell={peekCell}
+                  onInspectRow={workbench && onInspectRow ? (row) => onInspectRow(inspectedRow(query, visibleColumns, row, lastRunAt)) : null}
                 />
               )}
 

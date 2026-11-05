@@ -37,10 +37,11 @@ let assertions = 0;
 const check = (condition, message) => { assert.ok(condition, message); assertions++; };
 const html = renderToStaticMarkup(await hub.default({ params }));
 check(html.includes("Topup Inventory"), "hub title");
+check(html.includes('href="/projectm/th/topup-inventory/gamepoint"') && html.includes("Gamepoint"), "Gamepoint is available");
 check(html.includes(`href="${ituneInventoryPath("th")}"`), "iTune child link");
 check(html.includes("Moniepoint") && html.includes("USDCodashop"), "future services");
-check((html.match(/data-inventory-state="coming-soon"/g) || []).length === 1, "Moniepoint remains informational, not a broken link");
-check(!html.includes('href="/projectm/th/topup-inventory/moniepoint"'), "no broken future links");
+check(!html.includes('data-inventory-state="coming-soon"'), "every service card is live");
+check(html.includes('href="/projectm/th/topup-inventory/moniepoint"'), "Moniepoint opens its page");
 check(html.includes('href="/projectm/th/topup-inventory/usdcodashop"'), "USDCodashop is available");
 check(html.includes('href="/projectm/th/topup-inventory/wavepay"') && html.includes("WavePay"), "WavePay is available");
 check(html.includes('href="/projectm/th/topup-inventory/multigamecard"') && html.includes("Multigamecard"), "Multigamecard is available");
@@ -49,6 +50,9 @@ check(html.includes('href="/projectm/th/topup-inventory/netease"') && html.inclu
 check(html.includes('href="/projectm/th/topup-inventory/razer"') && html.includes("Razer Gold"), "Razer Gold is available");
 check(hub.metadata.title === "Topup Inventory", "hub browser title");
 check(itune.metadata.title === "iTune | Topup Inventory", "child browser title");
+check(html.includes('href="/projectm/th/topup-inventory/ledger"') && html.includes("ยกยอดเติมมือ"), "debit page card");
+check(html.includes('href="/projectm/th/topup-inventory/channels"') && html.includes("ยอดเติมมือรายบัญชี"), "per-account hand use card");
+check(html.includes('href="/projectm/th/topup-inventory/reservations"') && html.includes("จองช่องทาง"), "reservation page card");
 for (const path of ["src/app/projectm/[lang]/page.js", "src/app/projectm/[lang]/itune/page.js"]) {
   await assert.rejects(compile(path).default({ params }), { path: topupInventoryPath("th") }); assertions++;
 }

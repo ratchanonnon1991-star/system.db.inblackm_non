@@ -5,11 +5,13 @@
 // channel, region, vpn, game, is_repeatable, link, platform, server, remark,
 // created_at, updated_at.
 import { getPoolForConnection } from "@/lib/db";
-import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
+import { findConnectionWithSecretByName } from "@/server/connections-repository";
 import { deleteGamelistPacksForGame, recordGameinfoAudit } from "@/server/gameinfo-gamelist-packs";
 import { deleteGamelistTutorialForGame } from "@/server/gameinfo-gamelist-tutorial";
 import { deleteGamelistImageForGame } from "@/server/gameinfo-gamelist-image";
 import { deleteGamelistLinksForGame } from "@/server/gameinfo-gamelist-links";
+import { deleteGamelistGameSettingsForGame } from "@/server/gameinfo-game-settings";
+import { deleteGamelistSalesChannelsForGame } from "@/server/gameinfo-sales-channels";
 import { deleteGamelistPublishersForGame, deleteGamelistTagsForGame } from "@/server/gameinfo-gamelist-tags";
 import { deleteGamelistReportsForGame } from "@/server/gameinfo-gamelist-reports";
 import { deleteGamelistFavoritesForGame } from "@/server/gameinfo-gamelist-favorites";
@@ -38,10 +40,7 @@ function createHttpError(message, status) {
 }
 
 async function getGameinfoConnection() {
-  const connections = await listConnections();
-  const match = connections.find((c) => c.name.trim().toLowerCase() === CONNECTION_NAME);
-  if (!match) return null;
-  return findConnectionWithSecret(match.id);
+  return findConnectionWithSecretByName(CONNECTION_NAME);
 }
 
 // game_list has no order column and isn't ours to ALTER (shared with Topup
@@ -407,6 +406,8 @@ export async function deleteGameListRow(id, actor = null) {
     await deleteGamelistPublishersForGame(id, client);
     await deleteGamelistReportsForGame(id, client);
     await deleteGamelistFavoritesForGame(id, client);
+    await deleteGamelistGameSettingsForGame(id, client);
+    await deleteGamelistSalesChannelsForGame(id, client);
     await deleteGameinfoModeData(id, client);
     await client.query(`DELETE FROM game_list WHERE id = $1`, [id]);
     await client.query(`DELETE FROM gamelist_order WHERE game_id = $1`, [id]);

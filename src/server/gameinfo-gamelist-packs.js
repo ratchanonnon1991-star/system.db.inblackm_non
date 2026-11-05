@@ -11,7 +11,7 @@
 // shape the whole way through.
 import { createHash } from "node:crypto";
 import { getPoolForConnection } from "@/lib/db";
-import { sanitizeGameinfoPack } from "@/lib/gameinfo-pack-model";
+import { gameinfoPackToday, gameinfoPackWarnUntil, sanitizeGameinfoPack } from "@/lib/gameinfo-pack-model";
 import { findDuplicateGameinfoPackNamePrices } from "@/lib/gameinfo-pack-validation";
 import {
   sanitizeGameinfoCostProfiles,
@@ -31,7 +31,7 @@ import {
   listGameinfoColumnReferences,
 } from "@/lib/gameinfo-column-dependencies";
 import { parseFormula } from "@/lib/gamedb-formula";
-import { findConnectionWithSecret, listConnections } from "@/server/connections-repository";
+import { findConnectionWithSecretByName } from "@/server/connections-repository";
 
 const CONNECTION_NAME = "gameinfo";
 const COMPUTED_SENTINEL = "__computed__";
@@ -125,8 +125,13 @@ function flattenCurrencies(gameId, currencies) {
             image: cleanPack.image,
             price: cleanPack.price,
             amountChargedFee: cleanPack.amountChargedFee,
+            amountBeforeFee: cleanPack.amountBeforeFee,
+            amountReceived: cleanPack.amountReceived,
+            priceUsd: cleanPack.priceUsd,
+            link: cleanPack.link,
             serviceEnabled: cleanPack.serviceEnabled,
             serviceStatus: cleanPack.serviceStatus,
+            expiresAt: cleanPack.expiresAt,
             costProfileId: cleanPack.costProfileId,
             channelsMain: cleanPack.channelsMain,
             channelsSecondary: cleanPack.channelsSecondary,
@@ -140,10 +145,7 @@ function flattenCurrencies(gameId, currencies) {
 }
 
 async function getGameinfoConnection() {
-  const connections = await listConnections();
-  const match = connections.find((c) => c.name.trim().toLowerCase() === CONNECTION_NAME);
-  if (!match) return null;
-  return findConnectionWithSecret(match.id);
+  return findConnectionWithSecretByName(CONNECTION_NAME);
 }
 
 const schemaReadyByConnection = new Map();
@@ -330,6 +332,13 @@ function ensureSchema(connection) {
           visible    BOOLEAN NOT NULL DEFAULT TRUE,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           PRIMARY KEY (role, game_id, column_key)
+        )
+      `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS gamelist_pack_column_order (
+          game_id    INTEGER PRIMARY KEY,
+          column_ids JSONB NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
     } finally {
@@ -1830,8 +1839,22 @@ export async function listGamelistPackCountByGame() {
   }
 }
 
-/** Disabled-pack count used to derive the orange game service light. Old
- * rows without serviceEnabled are treated as enabled for compatibility. */
+/** { [gameId]: count } of packs that have a name or a price — the empty
+ * placeholder row a new game starts with doesn't count. */
+export async function listGamelistRealPackCountByGame() {
+  const pool = await getReadyPool();
+  const result = await pool.query(
+    `SELECT game_id, COUNT(*)::int AS pack_count FROM gamelist_packs
+     WHERE pack_id != $1 AND (COALESCE(TRIM(data->>'name'), '') <> '' OR COALESCE(TRIM(data->>'price'), '') <> '')
+     GROUP BY game_id`,
+    [COMPUTED_SENTINEL]
+  );
+  return Object.fromEntries(result.rows.map((row) => [row.game_id, row.pack_count]));
+}
+
+/** Disabled-pack count used to derive the orange game service light, and how
+ * many on sale are about to expire. Old rows without serviceEnabled are
+ * treated as enabled for compatibility. */
 export async function listGamelistPackServiceByGame() {
   const pool = await getReadyPool();
   const client = await pool.connect();
@@ -1839,14 +1862,15 @@ export async function listGamelistPackServiceByGame() {
     const result = await client.query(
       `SELECT game_id,
               COUNT(*)::int AS total_count,
-              COUNT(*) FILTER (WHERE data->>'serviceEnabled' = 'false')::int AS disabled_count
+              COUNT(*) FILTER (WHERE data->>'serviceEnabled' = 'false' OR data->>'expiresAt' < $2)::int AS disabled_count,
+              COUNT(*) FILTER (WHERE data->>'serviceEnabled' IS DISTINCT FROM 'false' AND data->>'expiresAt' BETWEEN $2 AND $3)::int AS expiring_count
          FROM gamelist_packs
         WHERE pack_id != $1
         GROUP BY game_id`,
-      [COMPUTED_SENTINEL]
+      [COMPUTED_SENTINEL, gameinfoPackToday(), gameinfoPackWarnUntil()]
     );
     return Object.fromEntries(
-      result.rows.map((row) => [row.game_id, { total: row.total_count, disabled: row.disabled_count }])
+      result.rows.map((row) => [row.game_id, { total: row.total_count, disabled: row.disabled_count, expiring: row.expiring_count }])
     );
   } finally {
     client.release();

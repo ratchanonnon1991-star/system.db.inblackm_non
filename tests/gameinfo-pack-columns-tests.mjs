@@ -1,5 +1,6 @@
 import {
   buildGameinfoPackColumns,
+  gameinfoColumnOrderFor,
   gameinfoColumnsWithData,
   gameinfoPackLayoutKnownIds,
   formatGameinfoPackColumnValue,
@@ -45,11 +46,16 @@ check(
     "serviceEnabled",
     "image",
     "name",
+    "expiresAt",
+    "amountReceived",
     "price",
+    "amountBeforeFee",
     "amountChargedFee",
+    "link",
     "channelsMain",
     "channelsSecondary",
     "country",
+    "priceUsd",
     "computed:profit",
   ]
 );
@@ -68,10 +74,15 @@ check("layout pins the service status column to the front", normalized.order, [
   "price",
   "image",
   "name",
+  "expiresAt",
+  "amountReceived",
+  "amountBeforeFee",
   "amountChargedFee",
+  "link",
   "channelsMain",
   "channelsSecondary",
   "country",
+  "priceUsd",
 ]);
 check("layout drops unknown, duplicate, and hidden status ids", normalized.hidden, ["country"]);
 check("layout defaults to no row filters", normalized.filters, []);
@@ -106,7 +117,7 @@ const stampedLayout = normalizeGameinfoPackLayout(
   },
   stampedColumns
 );
-check("a preset hides columns registered after it was saved", stampedLayout.hidden, ["computed:late"]);
+check("a preset hides columns registered after it was saved", stampedLayout.hidden, ["expiresAt", "amountReceived", "amountBeforeFee", "link", "priceUsd", "computed:late"]);
 check(
   "a preset still shows every column it was saved with",
   stampedLayout.order.filter((id) => !stampedLayout.hidden.includes(id)).includes("computed:old"),
@@ -190,11 +201,16 @@ check(
     "computed:profit",
     "image",
     "name",
+    "expiresAt",
+    "amountReceived",
+    "amountBeforeFee",
     "amountChargedFee",
+    "link",
     "channelsMain",
     "price",
     "channelsSecondary",
     "country",
+    "priceUsd",
   ]
 );
 
@@ -473,6 +489,38 @@ check(
   120
 );
 check("and the cap is still a cap", GAMEINFO_PACK_COLUMN_LIMIT > GAMEDB_QUERY_COLUMN_LIMIT, true);
+
+check(
+  "the sheet's price columns follow the price, in the sheet's order",
+  buildGameinfoPackColumns([
+    { key: "cost", label: "ต้นทุน", formula: "1" },
+    { key: "ru", label: "ราคาRussia", formula: "" },
+    { key: "kz", label: " ราคาขาย(KALEOZ) ", formula: "" },
+    { key: "usd", label: "ราคาUSD (PAGE)", formula: "1" },
+  ]).map((column) => column.id).slice(4, 9),
+  ["amountReceived", "price", "computed:usd", "computed:kz", "computed:ru"]
+);
+check(
+  "an admin's order wins, and columns it does not name follow in the default order",
+  buildGameinfoPackColumns([{ key: "c", label: "ต้นทุน", formula: "1" }, { key: "x", label: "อื่นๆ", formula: "1" }], ["computed:c", "country", "price"]).map((column) => column.id).slice(0, 5),
+  ["computed:c", "country", "price", "serviceEnabled", "image"]
+);
+check(
+  "a game's own order beats the shared one, which beats none",
+  [gameinfoColumnOrderFor({ 0: ["a"], 3: ["b"] }, 3), gameinfoColumnOrderFor({ 0: ["a"], 3: ["b"] }, 4), gameinfoColumnOrderFor({}, 4)],
+  [["b"], ["a"], null]
+);
+check(
+  "every game starts from the LOVE AND DEEPSPACE tab's order; other columns follow",
+  buildGameinfoPackColumns([
+    { key: "x", label: "อื่นๆ", formula: "1" },
+    { key: "g", label: "G2G", formula: "1" },
+    { key: "p", label: "กำไร (KALEOZ 5%)", formula: "1" },
+    { key: "c", label: "ต้นทุน", formula: "1" },
+    { key: "k", label: "KALEOZ 5%", formula: "1" },
+  ]).map((column) => column.id).slice(-6),
+  ["computed:k", "computed:c", "computed:p", "priceUsd", "computed:g", "computed:x"]
+);
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const failure of failures) console.log(`  FAIL ${failure}`);

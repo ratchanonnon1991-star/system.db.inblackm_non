@@ -34,7 +34,7 @@ function ProfitCategoryPageContent({ categoryId }) {
   const [form, setForm] = useState({ name: "", openingBalance: "0", note: "", gameId: "" });
   const [saving, setSaving] = useState(false);
   const [sortDir, setSortDir] = useState("desc");
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(25);
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState("all"); // all | needs | cleared -- dust page only
   const [dupFilter, setDupFilter] = useState("all"); // all | needs | reviewed -- gocash cards' duplicate-review state
@@ -567,7 +567,7 @@ function ProfitCategoryPageContent({ categoryId }) {
                     onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
                     className="h-9 rounded-md border border-ll-hairline-strong bg-ll-surface-2 px-2.5 text-[13px] text-ll-ink outline-none focus:border-ll-primary focus:bg-ll-surface-1"
                   >
-                    {[20, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
+                    {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n}</option>)}
                   </select>
                 </label>
               </>

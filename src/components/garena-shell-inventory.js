@@ -1,5 +1,7 @@
 "use client";
 
+import { createInventoryPageSession } from "@/lib/inventory-page-session";
+import { TablePagination } from "@/components/table-pagination";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Download, RefreshCw, Search } from "lucide-react";
@@ -61,25 +63,27 @@ export default function GarenaShellInventory({ lang }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const alive = useRef(false), generation = useRef(0);
-  const viewKey = new URLSearchParams({ ...dates, account, search, page: String(page) }).toString();
+  const [pageSize, setPageSize] = useState(25);
+  const viewKey = new URLSearchParams({ ...dates, account, search, page: String(page), pageSize: String(pageSize) }).toString();
+  const [pageReader] = useState(() => createInventoryPageSession());
   const load = useCallback(async () => {
     const version = ++generation.current;
     setLoading(true); setError("");
     try {
-      const result = await apiJson(`${endpoint}?${viewKey}`, { cache: "no-store" });
+      const result = await pageReader.run(endpoint, viewKey);
       if (!Array.isArray(result?.cards) || result.cards.length !== 2 || !Array.isArray(result.entries) || !result.summary) throw new Error("ข้อมูลไม่ครบ กรุณาโหลดใหม่");
       if (alive.current && generation.current === version) setData({ ...result, viewKey });
     } catch (e) { if (alive.current && generation.current === version) setError(e.message || "โหลดข้อมูลไม่สำเร็จ"); }
     finally { if (alive.current && generation.current === version) setLoading(false); }
-  }, [viewKey]);
-  const invalidate = useCallback(() => { generation.current++; }, []);
+  }, [viewKey, pageReader]);
+  const invalidate = useCallback(() => { generation.current++; pageReader.cancel(); }, [pageReader]);
   useEffect(() => {
     alive.current = true;
     const timer = setTimeout(load, 0);
     return () => { alive.current = false; invalidate(); clearTimeout(timer); };
   }, [load, invalidate]);
   function apply(next) {
-    const nextKey = new URLSearchParams({ ...next, account, search: query, page: "1" }).toString();
+    const nextKey = new URLSearchParams({ ...next, account, search: query, page: "1", pageSize: String(pageSize) }).toString();
     invalidate(); setError(""); setDates(next); setDraft(next); setSearch(query); setPage(1);
     if (nextKey === viewKey) void load();
   }
@@ -102,7 +106,7 @@ export default function GarenaShellInventory({ lang }) {
         <dl className="grid grid-cols-1 gap-3 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4 text-sm sm:grid-cols-3">{[["ยอดโอนตามตัวกรอง (THB)", data.summary.sale], ["ต้นทุนตามตัวกรอง (THB)", data.summary.cost], ["กำไรตามตัวกรอง (THB)", data.summary.profit]].map(([label, value]) => <div key={label}><dt className="text-ll-ink-subtle">{label}</dt><dd className="mt-2 text-xl font-semibold tabular-nums">{money(value)}</dd></div>)}</dl>
         {(data.summary.missingSales > 0 || data.summary.missingCosts > 0) && <p role="status" className="text-sm text-ll-ink-subtle">ข้อมูลไม่ครบ: ยอดโอน {data.summary.missingSales} · ต้นทุน {data.summary.missingCosts} รายการ ยอดรวมที่คำนวณไม่ครบแสดง — ไม่แทนด้วยศูนย์</p>}
         <OrdersTable entries={data.entries} />
-        <nav aria-label="เปลี่ยนหน้าประวัติ" className="flex flex-wrap items-center justify-end gap-3"><button type="button" className={button} disabled={page <= 1} onClick={() => { invalidate(); setPage(page - 1); }}>ก่อนหน้า</button><span className="text-sm">หน้า {page} / {Math.max(1, Math.ceil(data.total / data.pageSize))}</span><button type="button" className={button} disabled={page * data.pageSize >= data.total} onClick={() => { invalidate(); setPage(page + 1); }}>ถัดไป</button></nav>
+        <TablePagination page={data.page} pageSize={data.pageSize} total={data.total} totalPages={Math.max(1, Math.ceil(data.total / data.pageSize))} observedAt={data.pagination?.observedAt} loading={loading} onPage={(nextPage) => { invalidate(); setPage(nextPage); }} onPageSize={(size) => { invalidate(); setPageSize(size); setPage(1); }} label="แบ่งหน้าประวัติ" />
       </section>
     </>}
   </main>;

@@ -2,78 +2,48 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Eye, Settings } from "lucide-react";
+import { LayoutGrid, Pencil } from "lucide-react";
 import { gameinfoGameHref, gameinfoListHref, normalizeGameinfoDataMode } from "@/lib/gameinfo-data-mode";
 
-// Everyone lands on the card dashboard. Admin/staff can open /manage;
-// role "user" only gets the dashboard link.
+// Everyone lands on the card dashboard. Admins can open /manage; everyone
+// else only gets the dashboard link. These sit on the red GameInfo
+// header: a solid white pill is the primary action, an outlined one the
+// secondary.
+const SOLID_PILL =
+  "flex h-[42px] items-center gap-2 whitespace-nowrap rounded-full bg-white/95 px-4 text-sm font-black text-[#D90005] transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white";
+const OUTLINE_PILL =
+  "flex h-[42px] items-center gap-2 whitespace-nowrap rounded-full border-[1.5px] border-white/70 px-4 text-sm font-bold text-white transition hover:bg-white/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white";
 export default function GameinfoModeToggle({ lang, editableRole }) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const dataMode = normalizeGameinfoDataMode(searchParams.get("mode"));
-  const topupView = searchParams.get("view") === "topup";
-  const botAutoSection = searchParams.get("section") === "game-bot-auto";
 
   if (!editableRole) {
     return (
-      <Link href={gameinfoListHref(lang, dataMode)} className="text-linear-ink-muted hover:text-linear-primary">
+      <Link href={gameinfoListHref(lang, dataMode)} className={OUTLINE_PILL}>
         หน้าเว็บ
       </Link>
     );
   }
 
-  const isManageMode = pathname.split("/").includes("manage");
-  const isBotAutoPage = pathname.split("/").includes("game-bot-auto") || botAutoSection;
-  const botAutoMode = dataMode === "uid" ? "" : `&mode=${dataMode}`;
-  const href = gameinfoListHref(lang, dataMode, !isManageMode);
-  const gameId = pathname.split("/")[3];
+  // Topup / Product is the view switch under the header now (for everyone);
+  // this pill is only the way in and out of editing.
+  const parts = pathname.split("/");
+  const isManageMode = parts.includes("manage");
+  const isBotAutoPage = parts.includes("game-bot-auto") || searchParams.get("section") === "game-bot-auto";
+  if (isBotAutoPage) return null;
+  const gameId = parts[3];
   const isGamePage = /^\d+$/.test(gameId || "");
-  const topupHref = isBotAutoPage
-    ? `/gameinfo/${lang}?section=game-bot-auto${botAutoMode}&view=topup`
-    : isGamePage
-    ? gameinfoGameHref(lang, gameId, dataMode, false, !topupView)
-    : gameinfoListHref(lang, dataMode, false, !topupView);
-  const adminHref = isBotAutoPage
-    ? `/gameinfo/${lang}?section=game-bot-auto${botAutoMode}`
-    : isGamePage
-    ? gameinfoGameHref(lang, gameId, dataMode, true)
-    : gameinfoListHref(lang, dataMode);
-
-  if (topupView) {
-    return (
-      <Link
-        href={adminHref}
-        className="flex h-10 items-center gap-2 rounded-lg border border-linear-ink bg-linear-ink px-3 text-xs font-medium text-linear-canvas hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-linear-primary"
-      >
-        <Settings size={14} aria-hidden="true" /> มุมมอง Admin
-      </Link>
-    );
-  }
-
-  const topupButton = (
-    <Link
-      href={topupHref}
-      className="flex h-10 items-center gap-2 rounded-lg border border-linear-hairline-strong px-3 text-xs font-medium text-linear-ink-muted hover:bg-linear-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-linear-primary"
-    >
-      <Eye size={14} aria-hidden="true" /> มุมมอง Topup
-    </Link>
-  );
-  if (isBotAutoPage) return topupButton;
+  const href = isGamePage
+    ? gameinfoGameHref(lang, gameId, dataMode, !isManageMode)
+    : gameinfoListHref(lang, dataMode, !isManageMode);
+  const label = isManageMode ? (isGamePage ? "กลับหน้าเกม" : "กลับหน้ารวมเกม") : (isGamePage ? "แก้ไขเกมนี้" : "จัดการข้อมูล");
 
   return (
-    <>
-      {topupButton}
-      <Link
-        href={href}
-        className={`flex h-10 items-center rounded-lg border px-3 text-xs font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-linear-primary ${
-          isManageMode
-            ? "border-linear-hairline-strong text-linear-ink-muted hover:bg-linear-surface-2"
-            : "border-linear-ink bg-linear-ink text-linear-canvas hover:opacity-90"
-        }`}
-        title={isManageMode ? "กลับหน้ารวมเกม" : "เปิดตารางจัดการข้อมูลเกม"}
-      >
-        {isManageMode ? "กลับหน้ารวมเกม" : "จัดการข้อมูล"}
-      </Link>
-    </>
+    // On a game, edit ↔ view is the same game: replace, so back is the list.
+    <Link href={href} replace={isGamePage} className={SOLID_PILL} aria-label={label} title={label}>
+      {isManageMode ? <LayoutGrid size={16} strokeWidth={2.4} aria-hidden="true" /> : <Pencil size={16} strokeWidth={2.4} aria-hidden="true" />}
+      <span className="hidden sm:inline">{label}</span>
+    </Link>
   );
 }

@@ -187,7 +187,7 @@ export default function ItuneAdminSettingsDrawer({ onClose }) {
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           <section className="border-b border-ll-hairline p-5">
-            <a href={`/projectm/${lang}/itune/admin/order-links`} className="text-sm font-semibold text-ll-ink underline">เชื่อมบัญชี Orders และดูประวัติการใช้เมล (Super Admin)</a>
+            <a href={`/projectm/${lang}/itune/admin/order-links`} className="text-sm font-semibold text-ll-ink underline">ดูประวัติการใช้เมลในออเดอร์</a>
           </section>
           <section className="border-b border-ll-hairline p-5">
             <div className="flex items-center gap-2 text-sm font-semibold text-ll-ink">

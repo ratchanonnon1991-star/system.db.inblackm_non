@@ -4,7 +4,10 @@ export const GAMEINFO_PACK_BASE_COLUMNS = [
   { id: "serviceEnabled", label: "สถานะ", field: "serviceEnabled", track: "70px", minWidth: 70, maxWidth: 90 },
   { id: "image", label: "รูป", field: "image", track: "40px", minWidth: 40, maxWidth: 56 },
   { id: "name", label: "ชื่อ pack", field: "name", track: "minmax(110px, 1.6fr)", minWidth: 140, maxWidth: 360, required: true },
+  { id: "expiresAt", label: "วันหมดอายุ", field: "expiresAt", track: "minmax(90px, 0.7fr)", minWidth: 130, maxWidth: 160 },
+  { id: "amountReceived", label: "จำนวนที่ได้", field: "amountReceived", track: "minmax(70px, 0.7fr)", minWidth: 100, maxWidth: 160 },
   { id: "price", label: "ราคา", field: "price", track: "minmax(60px, 0.7fr)", minWidth: 80, maxWidth: 140, required: true },
+  { id: "amountBeforeFee", label: "ยอดที่กด (ก่อน fee)", field: "amountBeforeFee", track: "minmax(70px, 0.8fr)", minWidth: 130, maxWidth: 180 },
   {
     id: "amountChargedFee",
     label: "ยอดที่กด + fee",
@@ -32,6 +35,8 @@ export const GAMEINFO_PACK_BASE_COLUMNS = [
     maxWidth: 720,
   },
   { id: "country", label: "ประเทศ", field: "country", track: "minmax(80px, 0.8fr)", minWidth: 100, maxWidth: 220, required: true },
+  { id: "priceUsd", label: "USD", field: "priceUsd", track: "minmax(60px, 0.6fr)", minWidth: 80, maxWidth: 140 },
+  { id: "link", label: "ลิงก์", field: "link", track: "minmax(70px, 0.6fr)", minWidth: 90, maxWidth: 320 },
 ];
 
 /* The status column doubles as the row-select checkbox, so it stays pinned
@@ -44,8 +49,37 @@ export function isGameinfoPackColumnPinned(column) {
 
 export const GAMEINFO_PACK_SYMBOLS = ["", "$", "฿", "%"];
 
-export function buildGameinfoPackColumns(computedColumns = []) {
-  return [
+// The order every game starts from: the LOVE AND DEEPSPACE tab of the source
+// sheet, with the name first. Built-in columns go by id; columns people made
+// go by name, wherever they were added. Anything not listed follows, as it was.
+const COLUMN_ORDER = [
+  "serviceEnabled", "image", "name", "expiresAt", "amountReceived", "price",
+  "ราคาusd (page)", "ราคาขาย(kaleoz)", "ราคาrussia",
+  "amountBeforeFee", "amountChargedFee", "link",
+  "channelsMain", "channelsSecondary", "country",
+  "kaleoz 5%", "ต้นทุน", "กำไร (kaleoz 5%)", "%กำไร (kaleoz 5%)",
+  "priceUsd", "itemku (idr)", "itemku (usdt)", "g2g", "g2g usd",
+];
+
+function columnRank(column) {
+  const rank = COLUMN_ORDER.indexOf(column.kind === "computed" ? String(column.label ?? "").trim().toLowerCase() : column.id);
+  return rank < 0 ? COLUMN_ORDER.length : rank;
+}
+
+/** The order an admin set for this game, else for every game (key 0), else none. */
+export function gameinfoColumnOrderFor(orders, gameId) {
+  return orders?.[gameId] || orders?.[0] || null;
+}
+
+/** Columns in an admin's order; those it does not name follow, in the default order. */
+export function sortGameinfoPackColumns(columns, order = null) {
+  const position = new Map((order || []).map((id, index) => [id, index]));
+  const rank = (column) => position.get(column.id) ?? position.size + columnRank(column);
+  return [...columns].sort((left, right) => rank(left) - rank(right));
+}
+
+export function buildGameinfoPackColumns(computedColumns = [], order = null) {
+  const columns = [
     ...GAMEINFO_PACK_BASE_COLUMNS.map((column) => ({ ...column, kind: "base" })),
     ...(computedColumns || []).filter((computed) => computed.kind !== "market" || computed.enabled !== false).map((computed) => ({
       id: `computed:${computed.key}`,
@@ -59,6 +93,7 @@ export function buildGameinfoPackColumns(computedColumns = []) {
       symbol: typeof computed.symbol === "string" ? computed.symbol.slice(0, 24) : "",
     })),
   ];
+  return sortGameinfoPackColumns(columns, order);
 }
 
 export function gameinfoPackColumnWidth(column, values = []) {

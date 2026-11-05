@@ -32,6 +32,8 @@ Object.assign(raw[0], { wallet_after: "9789.33", wallet_before: "9790.33", walle
 raw.push({ ...raw[0], id: 999, ledger_slices: [{ id: "test-ledger", used: "1", cost: "0", typed: false, balance: "100" }] });
 Object.assign(raw.at(-1), { wallet_after: "9788.33", wallet_before: "9789.33", wallet_checked_at: "2026-10-21T01:01:00Z" });
 Object.assign(raw[1], { wallet_after: "0", wallet_source: "plsbuy_api", wallet_currency: "MYR", wallet_checked_at: "2026-10-21T01:30:00Z" });
+Object.assign(raw[2], { myr_used: "0", ledger_slices: [{ id: "placeholder", typed: false, used: "0", cost: "0" }], worker_pack_price: "MYR71.74", worker_live_cost: "71.74" });
+Object.assign(raw[3], { myr_used: "0", ledger_slices: [{ id: "unknown-placeholder", typed: false, used: "0", cost: "0" }] });
 let offline = false, malformed = false;
 function entriesFor(p) { return groupPlsOrders(raw.map((r) => plsOrder(r, p.get("rate") || "7.723"))).filter((e) => plsMatches(e, p.get("search"))); }
 const server = createServer((req, res) => {
@@ -64,6 +66,9 @@ try {
     await orderRow("ORDER-1").getByRole("cell").nth(6).getByText("9,788.33", { exact: true }).waitFor();
     await orderRow("ORDER-2").getByRole("cell").nth(6).getByText("0.00", { exact: true }).waitFor();
     await orderRow("ORDER-3").getByRole("cell").nth(6).getByText("ยังไม่มียอดที่บันทึก", { exact: true }).waitFor();
+    await orderRow("ORDER-3").getByRole("cell").nth(3).filter({ hasText: /^554[.]05/ }).waitFor();
+    await orderRow("ORDER-3").getByRole("cell").nth(5).getByText(/ledger เป็นศูนย์ ใช้ยอดอ้างอิงบอท/).waitFor();
+    await orderRow("ORDER-4").getByRole("cell").nth(3).filter({ hasText: /^—/ }).waitFor();
     await page.getByText("2 รายการย่อย", { exact: true }).click(); await page.getByText(/คิว 999/).waitFor();
     await page.getByRole("navigation").getByRole("button", { name: "ถัดไป" }).click(); await page.getByText("ORDER-101", { exact: true }).waitFor();
     await page.getByRole("navigation").getByRole("button", { name: "ก่อนหน้า" }).click(); await page.getByText("ORDER-1", { exact: true }).waitFor();

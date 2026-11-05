@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import { useState } from "react";
 import { RefreshCw } from "lucide-react";
 import {
@@ -114,7 +115,7 @@ export default function ItuneDevQueueSimulator() {
 
       <section className="overflow-hidden rounded-xl border border-ll-hairline bg-ll-surface-1">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1050px] text-left text-[12px]">
+          <PaginatedTable items={orderedRows}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[1050px] text-left text-[12px]">
             <thead className="bg-ll-surface-2 text-ll-ink-subtle">
               <tr>
                 <th className="px-3 py-2 text-center">คิว</th>
@@ -131,7 +132,7 @@ export default function ItuneDevQueueSimulator() {
             <tbody>
               {orderedRows.length === 0 ? (
                 <tr><td colSpan="9" className="px-4 py-12 text-center text-ll-ink-tertiary">ตั้งค่าแล้วกด “สุ่มและเรียงคิว”</td></tr>
-              ) : orderedRows.map((row, index) => {
+              ) : tablePageItems.map((tableItem, tableIndex) => ((row, index) => {
                 const metrics = computeItuneQueueMetrics(row, config, now);
                 const [riskLabel, riskClass] = RISK_LABELS[metrics.risk];
                 return (
@@ -147,9 +148,9 @@ export default function ItuneDevQueueSimulator() {
                     <td className="px-3 py-2 text-right text-ll-ink-subtle">{metrics.estimatedActiveHours.toFixed(1)} ชม.</td>
                   </tr>
                 );
-              })}
+              })(tableItem, tablePageStart + tableIndex, tableAllItems))}
             </tbody>
-          </table>
+          </table>)}</PaginatedTable>
         </div>
       </section>
     </div>

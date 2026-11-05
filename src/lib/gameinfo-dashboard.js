@@ -12,11 +12,14 @@ export function summarizeGameinfoRows(rows) {
       counts.all += 1;
       counts[row.serviceStatus || "online"] += 1;
       if (row.reportCount > 0) counts.review += 1;
+      if (row.packExpiringCount > 0) counts.expiring += 1;
       if (isGameinfoBotAuto(row.botManual)) counts.botAuto += 1;
       if (row.isFavorite) counts.favorite += 1;
+      if (row.priority === 3) counts.priorityHigh += 1;
+      if (row.web) counts[row.web.isActive ? "webOn" : "webOff"] += 1;
       return counts;
     },
-    { all: 0, online: 0, review: 0, partial: 0, offline: 0, botAuto: 0, favorite: 0 }
+    { all: 0, online: 0, review: 0, partial: 0, offline: 0, expiring: 0, botAuto: 0, favorite: 0, priorityHigh: 0, webOn: 0, webOff: 0 }
   );
 }
 
@@ -45,13 +48,20 @@ export function listGameinfoPublishers(rows) {
   return listGameinfoValues(rows, "publishers");
 }
 
+// Filters that test something other than the service status.
+const ROW_FILTERS = new Set(["all", "review", "expiring", "bot-auto", "favorite", "priority-high", "web-on", "web-off"]);
+
 export function filterGameinfoRows(rows, { query = "", status = "all", tag = "", publisher = "", sort = "order" } = {}) {
   const needle = query.trim().toLocaleLowerCase("th");
   const filtered = rows.filter((row) => {
     if (status === "review" && !(row.reportCount > 0)) return false;
+    if (status === "expiring" && !(row.packExpiringCount > 0)) return false;
     if (status === "bot-auto" && !isGameinfoBotAuto(row.botManual)) return false;
     if (status === "favorite" && !row.isFavorite) return false;
-    if (status !== "all" && status !== "review" && status !== "bot-auto" && status !== "favorite" && row.serviceStatus !== status) return false;
+    if (status === "priority-high" && row.priority !== 3) return false;
+    if (status === "web-on" && !row.web?.isActive) return false;
+    if (status === "web-off" && !(row.web && !row.web.isActive)) return false;
+    if (!ROW_FILTERS.has(status) && row.serviceStatus !== status) return false;
     if (tag && !(row.tags || []).some((value) => value.toLocaleLowerCase("th") === tag.toLocaleLowerCase("th"))) return false;
     if (publisher && !(row.publishers || []).some((value) => value.toLocaleLowerCase("th") === publisher.toLocaleLowerCase("th"))) return false;
     if (!needle) return true;
@@ -60,5 +70,7 @@ export function filterGameinfoRows(rows, { query = "", status = "all", tag = "",
   });
   if (sort === "name") return [...filtered].sort((a, b) => String(a.game).localeCompare(String(b.game), "th"));
   if (sort === "latest") return [...filtered].sort((a, b) => Number(b.id) - Number(a.id));
+  // Stable, so equal priorities keep the list's own order.
+  if (sort === "priority") return [...filtered].sort((a, b) => (b.priority || 0) - (a.priority || 0));
   return filtered;
 }

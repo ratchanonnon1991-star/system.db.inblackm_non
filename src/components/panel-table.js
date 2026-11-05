@@ -21,6 +21,7 @@ import {
   Copy,
   CornerDownRight,
   ExternalLink,
+  Eye,
   EyeOff,
   Filter,
   History,
@@ -622,6 +623,8 @@ export default function PanelTable({
   layout,
   mutateLayout,
   canCustomizeLayout,
+  canSortLayout = canCustomizeLayout,
+  onSortLayout = mutateLayout,
   height,
   // Windowing needs a number. In sheet mode `height` is the CSS string "100%",
   // because the table is sized by its flex parent rather than by a pixel value,
@@ -641,6 +644,7 @@ export default function PanelTable({
   // Not one per table -- a self-join contributes two rows of the same one.
   deleteTargets = [],
   onRowHistory,
+  onInspectRow = null,
   columnValueFilters,
   columnValueOptions,
   onSetColumnFilter,
@@ -956,7 +960,7 @@ export default function PanelTable({
   // tiebreaker after whatever is already sorted, leaving those untouched --
   // an ORDER BY built one column at a time instead of typed in as a list.
   const toggleSort = (colId, additive) => {
-    mutateLayout((prev) => {
+    onSortLayout((prev) => {
       const current = prev.sort || [];
       const index = current.findIndex((entry) => entry.colId === colId);
       if (!additive) {
@@ -1211,9 +1215,10 @@ export default function PanelTable({
         className="border border-[var(--cell-border)] bg-inherit px-1 py-1.5 text-center font-bold text-zinc-400"
         style={freezeCount ? { position: "sticky", left: 0, zIndex: 2 } : undefined}
       >
+        {onInspectRow && <button type="button" className="sdb-inspect-row" aria-label={`เปิดรายละเอียดแถว ${rowOffset + rowIndex + 1}`} onClick={(event) => { event.stopPropagation(); onInspectRow(row); }}><Eye size={15} /><span>{rowOffset + rowIndex + 1}</span></button>}
         {onDrill || onDeleteRow || onRowHistory ? (
           <>
-            <span className="group-hover/row:hidden">{rowOffset + rowIndex + 1}</span>
+            <span className={onInspectRow ? "hidden" : "group-hover/row:hidden"}>{rowOffset + rowIndex + 1}</span>
             <span className="hidden items-center justify-center gap-0.5 group-hover/row:flex">
               {onDrill && (
                 <button
@@ -1248,7 +1253,7 @@ export default function PanelTable({
             </span>
           </>
         ) : (
-          rowOffset + rowIndex + 1
+          onInspectRow ? null : rowOffset + rowIndex + 1
         )}
       </td>
       {row.cells.map((cell, cellIndex) => {
@@ -1435,6 +1440,7 @@ export default function PanelTable({
                 #{rowOffset + rowIndex + 1}
               </span>
               <span className="flex items-center gap-1.5">
+                {onInspectRow && <button type="button" className="sdb-inspect-row" onClick={() => onInspectRow(row)} aria-label={`เปิดรายละเอียดแถว ${rowOffset + rowIndex + 1}`}><Eye size={15} />รายละเอียด</button>}
                 {onRowHistory && (
                   <button type="button" onClick={() => onRowHistory(row)} className="text-zinc-400" title="ประวัติการแก้ไข">
                     <History size={13} />
@@ -1596,12 +1602,12 @@ export default function PanelTable({
                     <button
                       type="button"
                       onClick={(event) => toggleSort(col.id, event.shiftKey)}
-                      disabled={!canCustomizeLayout}
+                      disabled={!canSortLayout}
                       className={`flex min-w-0 flex-1 items-center gap-1 truncate text-left font-black ${
                         headTone || headerInk ? "" : HEADER_TONE[col.kind] || "text-zinc-700"
                       }`}
                       title={
-                        canCustomizeLayout
+                        canSortLayout
                           ? `${columnTooltip(col)} · shift+คลิกเพื่อเรียงซ้อนหลายคอลัมน์`
                           : `${columnTooltip(col)} · layout ถูกล็อกโดย template`
                       }

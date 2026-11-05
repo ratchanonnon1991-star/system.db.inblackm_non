@@ -1,4 +1,6 @@
 "use client";
+import { createInventoryPageSession } from "@/lib/inventory-page-session";
+import { TablePagination } from "@/components/table-pagination";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Download, RefreshCw } from "lucide-react";
@@ -31,10 +33,11 @@ function History({ entries }) {
         <td className="px-3 py-3 text-right tabular-nums">{money(e.figures.sale)}{e.fillCount > 1 && <p className="mt-1 text-xs text-ll-ink-subtle">รวมแล้ว ไม่คิดซ้ำ</p>}</td>
         <td className="px-3 py-3 text-right tabular-nums">{money(e.figures.cost)}<p className="mt-1 text-xs text-ll-ink-subtle">{basis(e.details)}</p></td>
         <td className="px-3 py-3 text-right tabular-nums">{money(e.figures.profit)}<p className="mt-1 text-xs text-ll-ink-subtle">{e.figures.margin == null ? "—" : `${e.figures.margin}%`}</p></td>
-        <td className="px-3 py-3 text-right font-semibold tabular-nums">{money(e.used)}</td>
+        <td className="px-3 py-3 text-right tabular-nums"><p className="font-semibold">{money(e.used)}</p>{e.details.usageWarning && <p className="mt-2 max-w-56 rounded border border-ll-hairline p-2 text-xs text-ll-ink-subtle">{e.details.usageWarning}</p>}</td>
         <td className="px-3 py-3 text-right tabular-nums"><p className="font-semibold">{money(e.wallet?.amount)}</p><p className="mt-1 text-xs text-ll-ink-subtle">{e.wallet ? `เช็กเมื่อ ${when(e.wallet.checkedAt)}` : "ยังไม่มียอดที่บันทึก"}</p></td>
         <td className="max-w-72 break-words px-3 py-3"><details><summary className="min-h-11 cursor-pointer py-3 text-xs focus-visible:outline-2 focus-visible:outline-ll-primary">{e.fillCount} รายการย่อย</summary><p className="text-xs">ลูกค้า: {e.details.customer || "—"} · UID: {e.details.playerId || "—"}</p><ul className="mt-2 space-y-2 text-xs">{e.fills.map((f) => <li key={f.id} className="border-t border-ll-hairline py-2">
           <p>คิว {f.id} · {f.details.pack}</p><p className="mt-1">MYR ออก {money(f.used)}</p>
+          {f.details.usageWarning && <p className="mt-1 text-ll-ink-subtle">{f.details.usageWarning}</p>}
           <p className="mt-1">ยอดก่อนเช็ก {money(f.wallet?.before)} MYR · ยอดหลังเช็ก {money(f.wallet?.amount)} MYR</p>
           {f.wallet && <p className="mt-1 text-ll-ink-subtle">เช็กเมื่อ {when(f.wallet.checkedAt)}</p>}
           <p className="mt-1 break-all text-ll-ink-subtle">{f.details.invoice || "ไม่มีเลขธุรกรรม"}</p>{f.ledger.map((l) => <p key={l.id} className="mt-1 text-ll-ink-subtle">Ledger: {money(l.used)} MYR · {l.typed ? `คงเหลือเฉพาะล็อต ${money(l.balance)}` : "SYSTEM/NONE ไม่ใช่ยอดคงเหลือ Plsbuy"}</p>)}
@@ -47,16 +50,17 @@ export default function PlsbuyInventory({ lang }) {
   const [filters, setFilters] = useState(() => ({ ...codaQuickDates("month"), search: "", rate: PLSBUY_REFERENCE_RATE, page: "1" }));
   const [draft, setDraft] = useState(filters), [data, setData] = useState(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
   const generation = useRef(0), alive = useRef(false), viewKey = new URLSearchParams(filters).toString();
-  const invalidate = useCallback(() => { generation.current++; }, []);
+  const [pageReader] = useState(() => createInventoryPageSession());
+  const invalidate = useCallback(() => { generation.current++; pageReader.cancel(); }, [pageReader]);
   const load = useCallback(async () => {
     const version = ++generation.current; setLoading(true); setError("");
     try {
-      const result = await apiJson(`${endpoint}?${viewKey}`, { cache: "no-store" });
+      const result = await pageReader.run(endpoint, viewKey);
       if (!Array.isArray(result?.entries) || !result.summary || !result.reference || !Number.isFinite(result.total)) throw new Error("ข้อมูลไม่ครบ กรุณาโหลดใหม่");
       if (alive.current && generation.current === version) setData({ ...result, viewKey });
     } catch (e) { if (alive.current && generation.current === version) setError(e.message || "โหลดข้อมูลไม่สำเร็จ"); }
     finally { if (alive.current && generation.current === version) setLoading(false); }
-  }, [viewKey]);
+  }, [viewKey, pageReader]);
   useEffect(() => { alive.current = true; const timer = setTimeout(load, 0); return () => { alive.current = false; invalidate(); clearTimeout(timer); }; }, [load, invalidate]);
   function apply(next) { invalidate(); setError(""); setFilters(next); setDraft(next); if (new URLSearchParams(next).toString() === viewKey) void load(); }
   const ready = data?.viewKey === viewKey && !loading && !error;
@@ -71,10 +75,10 @@ export default function PlsbuyInventory({ lang }) {
     {ready && <>
       <section className="grid gap-4 sm:grid-cols-2" aria-label="ยอดคงเหลือและอ้างอิง"><WalletCard data={data} /><article className="rounded-xl border border-ll-hairline bg-ll-surface-1 p-5"><h2 className="font-semibold">ยอดอ้างอิงจากไฟล์ชีท (MYR)</h2><dl className="mt-4 grid grid-cols-3 gap-3 text-sm">{[["ปัจจุบัน", data.reference.current], ["ใช้ไป", data.reference.used], ["คงเหลือ", data.reference.remaining]].map(([title, v]) => <div key={title}><dt className="text-ll-ink-subtle">{title}</dt><dd className="mt-2 font-semibold tabular-nums">{money(v)}</dd></div>)}</dl><p className="mt-4 text-xs text-ll-ink-subtle">สถานะอ้างอิง: {data.reference.status} · ไม่ใช่ยอดสด ไม่นำมาหักยอดออกซ้ำ และไม่ได้ยืนยันวันตัดยอด</p></article></section>
       <p className="rounded-xl border border-ll-hairline bg-ll-surface-1 p-4 text-sm">ยอดออกใช้ amount_used ที่บอทบันทึกให้คิว PlsbuyMYR หากล็อตเป็น SYSTEM/NONE ต้นทุน 0 จะไม่ถูกนับเป็นต้นทุนจริง แต่ใช้อ้างอิง MYR ออก × เรทที่เลือก หากพบต้นทุนล็อต MYR จริงจะใช้ค่าที่บันทึกนั้นและไม่แปลงซ้ำ</p>
-      <section className="space-y-4" aria-label="ผลการค้นหา"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold">ประวัติ Plsbuy · {data.total} ออเดอร์</h2><p className="text-sm text-ll-ink-subtle">{data.summary.fills} รายการย่อย</p></div><dl className="grid gap-3 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4 sm:grid-cols-2 lg:grid-cols-4">{[["ยอดโอน THB", data.summary.sale], ["ต้นทุน THB (รวมค่าอ้างอิง)", data.summary.cost], ["กำไร THB (รวมค่าอ้างอิง)", data.summary.profit], ["MYR ออกตามตัวกรอง", data.summary.used]].map(([title, v]) => <div key={title}><dt className="text-xs text-ll-ink-subtle">{title}</dt><dd className="mt-2 text-xl font-semibold tabular-nums">{money(v)}</dd></div>)}</dl>
+      <section className="space-y-4" aria-label="ผลการค้นหา"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold">ประวัติ Plsbuy · {data.total} ออเดอร์</h2><p className="text-sm text-ll-ink-subtle">{data.summary.fills} รายการย่อย</p></div><dl className="grid gap-3 rounded-xl border border-ll-hairline bg-ll-surface-1 p-4 sm:grid-cols-2 lg:grid-cols-4">{[["ยอดโอน THB", data.summary.sale], ["ต้นทุน THB (รวมค่าอ้างอิง)", data.summary.cost], ["กำไร THB (รวมค่าอ้างอิง)", data.summary.profit], ["MYR ออก (รวมยอดอ้างอิงบอทถ้ามี)", data.summary.used]].map(([title, v]) => <div key={title}><dt className="text-xs text-ll-ink-subtle">{title}</dt><dd className="mt-2 text-xl font-semibold tabular-nums">{money(v)}</dd></div>)}</dl>
         <p className="text-xs text-ll-ink-subtle">กำไร % = (ยอดโอน − ต้นทุน) ÷ ยอดโอน × 100 · ค่าอ้างอิงจะเปลี่ยนเมื่อปรับเรท ไม่ใช่ต้นทุนซื้อจริงย้อนหลัง · ไม่นับรายการ Failed/Manual ว่าเติมสำเร็จ</p>
         {(data.summary.missingSales > 0 || data.summary.missingCosts > 0) && <p role="status" className="text-sm text-ll-ink-subtle">ข้อมูลไม่ครบ: ยอดโอน {data.summary.missingSales} · ยอดออก {data.summary.missingUsage} · ต้นทุน {data.summary.missingCosts} รายการ ยอดรวมที่ข้อมูลไม่ครบแสดง — ไม่แทนด้วยศูนย์</p>}
-        <p className="text-xs text-ll-ink-subtle">เลื่อนตารางแนวนอนเพื่อดู MYR คงเหลือ · ใช้ยอดบัญชีที่บอทเช็กล่าสุดภายใน Order นั้น ไม่ใช่ยอดสดหรือผลรวมยอดคงเหลือ · รายการเก่าที่ไม่เคยบันทึกจะแสดง —</p><History entries={data.entries} /><nav aria-label="เปลี่ยนหน้าประวัติ" className="flex items-center justify-end gap-3"><button type="button" className={button} disabled={data.page <= 1} onClick={() => apply({ ...filters, page: String(data.page - 1) })}>ก่อนหน้า</button><span className="text-sm">หน้า {data.page} / {Math.max(1, Math.ceil(data.total / data.pageSize))}</span><button type="button" className={button} disabled={data.page * data.pageSize >= data.total} onClick={() => apply({ ...filters, page: String(data.page + 1) })}>ถัดไป</button></nav>
+        <p className="text-xs text-ll-ink-subtle">เลื่อนตารางแนวนอนเพื่อดู MYR คงเหลือ · ใช้ยอดบัญชีที่บอทเช็กล่าสุดภายใน Order นั้น ไม่ใช่ยอดสดหรือผลรวมยอดคงเหลือ · รายการเก่าที่ไม่เคยบันทึกจะแสดง —</p><History entries={data.entries} /><TablePagination page={data.page} pageSize={data.pageSize} total={data.total} totalPages={Math.max(1, Math.ceil(data.total / data.pageSize))} observedAt={data.pagination?.observedAt} loading={loading} onPage={(page) => apply({ ...filters, page: String(page) })} onPageSize={(size) => apply({ ...filters, page: "1", pageSize: String(size) })} label="แบ่งหน้าประวัติ" />
       </section>
     </>}
   </main>;

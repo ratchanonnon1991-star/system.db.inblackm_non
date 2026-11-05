@@ -1,5 +1,6 @@
 "use client";
 
+import PaginatedTable from "@/components/table-pagination";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Plus, RefreshCw, Pencil } from "lucide-react";
@@ -81,8 +82,8 @@ export default function UsdCodashopInventory({ lang }) {
       {!data.canManage && <p className="text-sm text-ll-ink-subtle">ดูข้อมูลได้ การเพิ่ม/แก้ไขต้องมีสิทธิ์ Projectm Admin</p>}
       <p className="text-xs text-ll-ink-subtle sm:hidden">เลื่อนตารางแนวนอนเพื่อดูยอดปัจจุบัน ใช้ไป คงเหลือ และปุ่มแก้ไข</p>
       <div className="overflow-x-auto rounded-xl border border-ll-hairline bg-ll-surface-1">
-        <table className="w-full min-w-[720px] text-left text-sm text-ll-ink"><caption className="sr-only">ยอดบัญชี USDCodashop หน่วย USD</caption><thead className="bg-ll-surface-2"><tr>{["ไอดี", "สถานะ", "ผู้ใช้งาน (ผู้ลงรายการ)", "ปัจจุบัน", "ใช้ไป", "คงเหลือ", "จัดการ"].map((name) => <th key={name} scope="col" className="px-4 py-3 font-semibold">{name}</th>)}</tr></thead>
-          <tbody>{rows.map((row) => <tr key={row.id} className="border-t border-ll-hairline"><td className="max-w-72 break-words px-4 py-3 font-medium">{row.name}</td><td className="whitespace-nowrap px-4 py-3">{row.status}</td><td className="max-w-52 break-words px-4 py-3">{row.createdBy}</td><td className="px-4 py-3 tabular-nums">{money(row.current)}</td><td className="px-4 py-3 tabular-nums">{money(row.used)}</td><td className="px-4 py-3 font-semibold tabular-nums">{money(row.remaining)}</td><td className="px-4 py-3">{data.canManage && <button type="button" aria-label={`แก้ไข ${row.name}`} disabled={saving || Boolean(form)} className={button} onClick={() => open(row)}><Pencil size={15} aria-hidden />แก้ไข</button>}</td></tr>)}</tbody></table>
+        <PaginatedTable items={rows} resetKey={JSON.stringify([search])}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[720px] text-left text-sm text-ll-ink"><caption className="sr-only">ยอดบัญชี USDCodashop หน่วย USD</caption><thead className="bg-ll-surface-2"><tr>{["ไอดี", "สถานะ", "ผู้ใช้งาน (ผู้ลงรายการ)", "ปัจจุบัน", "ใช้ไป", "คงเหลือ", "จัดการ"].map((name) => <th key={name} scope="col" className="px-4 py-3 font-semibold">{name}</th>)}</tr></thead>
+          <tbody>{tablePageItems.map((tableItem, tableIndex) => ((row) => <tr key={row.id} className="border-t border-ll-hairline"><td className="max-w-72 break-words px-4 py-3 font-medium">{row.name}</td><td className="whitespace-nowrap px-4 py-3">{row.status}</td><td className="max-w-52 break-words px-4 py-3">{row.createdBy}</td><td className="px-4 py-3 tabular-nums">{money(row.current)}</td><td className="px-4 py-3 tabular-nums">{money(row.used)}</td><td className="px-4 py-3 font-semibold tabular-nums">{money(row.remaining)}</td><td className="px-4 py-3">{data.canManage && <button type="button" aria-label={`แก้ไข ${row.name}`} disabled={saving || Boolean(form)} className={button} onClick={() => open(row)}><Pencil size={15} aria-hidden />แก้ไข</button>}</td></tr>)(tableItem, tablePageStart + tableIndex, tableAllItems))}</tbody></table>)}</PaginatedTable>
         {!rows.length && <p className="p-6 text-center text-sm text-ll-ink-subtle">{search ? "ไม่พบรายการที่ค้นหา" : "ยังไม่มีข้อมูล เพิ่มรายการจากชีทได้ด้วยปุ่มเพิ่มรายการ"}</p>}
       </div>
       {data.hasMore && <p className="text-sm text-ll-ink-subtle">แสดงสูงสุด 1,000 รายการ</p>}

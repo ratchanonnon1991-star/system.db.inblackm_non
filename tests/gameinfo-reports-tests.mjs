@@ -44,7 +44,7 @@ check("open report API is editor-only", openRoute.includes("requireGameinfoEdito
 check("admin dashboard refreshes reports", cards.includes('fetch("/api/gameinfo/reports")'), true);
 check("game card can submit a report", cards.includes('method: "POST"') && cards.includes("onReport"), true);
 check("submitted report becomes visible", cards.includes('chooseStatus("review")'), true);
-check("manage page keeps report context", detail.match(/manageMode \? <GameinfoReportPanel/g)?.length, 1);
+check("manage page keeps report context", detail.includes("<GameinfoReportPanel gameId={row.id} initialReports={reports} canManage canReport"), true);
 check("review status reuses game cards", cards.includes('const pageRows = rows.slice') && !cards.includes("function ReportCard"), true);
 
 console.log(`\n${pass} passed, ${failures.length} failed`);

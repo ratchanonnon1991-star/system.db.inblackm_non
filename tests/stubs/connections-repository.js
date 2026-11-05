@@ -34,3 +34,8 @@ export async function findConnectionById(id) {
 export async function findConnectionWithSecret(id) {
   return FAKE_CONNECTIONS.find((connection) => connection.id === id) || null;
 }
+
+export async function findConnectionWithSecretByName(name) {
+  const key = String(name).trim().toLowerCase();
+  return FAKE_CONNECTIONS.find((connection) => connection.name.trim().toLowerCase() === key) || null;
+}

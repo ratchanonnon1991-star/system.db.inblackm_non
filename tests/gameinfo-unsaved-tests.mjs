@@ -36,7 +36,7 @@ const checks = [
   !guard.includes("if (allowingNavigation) {\n      allowingNavigation = false;"),
   dialog.includes("useRouter") && dialog.includes("router.push("),
   dialog.includes('target.kind === "discard"') && dialog.includes('target.kind === "reload"'),
-  dialog.includes("consumeGameinfoBackHref"),
+  dialog.includes("performGameinfoBack(target.fallbackHref)"),
   files.every((source) => source.includes("useGameinfoUnsavedChanges(")),
   !layout.match(/const dirty =\s*legacyDraft/),
   csvImport.includes("allowGameinfoNavigation();\n      window.location.reload();"),

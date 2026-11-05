@@ -1,0 +1,472 @@
+import assert from "node:assert/strict";
+import { generateKeyPairSync } from "node:crypto";
+import { createGoogleReader } from "../src/server/google-sheets.js";
+import { withGameinfoSheetColumns } from "../src/lib/gameinfo-sheet-columns.js";
+import {
+  addGameinfoSheetPacks,
+  applyGameinfoSheetDetailFills,
+  applyGameinfoSheetStatusChanges,
+  countGameinfoSheetPacks,
+  findGameinfoSheetPackHeader,
+  GAMEINFO_SHEET_COST_FORMULA,
+  gameinfoSheetCostFormulaColumns,
+  gameinfoSheetCostProfiles,
+  gameinfoSheetDetailFills,
+  gameinfoSheetMissingPacks,
+  gameinfoSheetPackKey,
+  gameinfoSheetPackTree,
+  gameinfoSheetPackNameColumns,
+  gameinfoSheetPackUnits,
+  formatGameinfoSheetSyncTime,
+  gameinfoSheetAutoChange,
+  gameinfoSheetStatusChanges,
+  gameinfoSheetSyncProblem,
+  nextGameinfoSheetSyncAt,
+  gameinfoSheetTone,
+  parseGameinfoSheetPackTab,
+  withGameinfoSheetTones,
+} from "../src/lib/gameinfo-sheet-packs.js";
+import { gameinfoHasRealPacks } from "../src/lib/gameinfo-pack-model.js";
+import { evaluateGameinfoComputedColumn } from "../src/lib/gameinfo-computed-evaluator.js";
+import { parseGameinfoSourceSheet } from "../src/lib/gameinfo-sales-channels.js";
+
+let passed = 0;
+function check(condition, message) {
+  assert.ok(condition, message);
+  passed += 1;
+}
+
+// Laid out like "U.HONKAI IMPACT(ASIA)": rate blocks on top, then the header,
+// packs, a lone category label, more packs, and a repeated row.
+const honkai = [
+  ["", "Honkai Impact (UID)"],
+  ["DATE", "27/10/2026", "", "Rate", "0.0081"],
+  [""],
+  ["ราคาขาย", "USDT", "KALEOZ", "B-Chips\nที่กด", "B-Chips รวม", "MMK ที่กด", "MMK รวม Fee", "LINK", "ช่องทาง", "ช่องทาง", "ระบบการเติม", "ต้นทุน", "กำไร\nที่ได้"],
+  ["35", "0.99", "1.10", "60 B-Chips", "60", "4,500", "4,590", "https://shop.example/hi3", "Wavepay", "CODASHOP(MM)", "Auto", "37.2", "-2.2"],
+  ["170", "4.99", "5.40", "300 B-Chips", "300", "22,000", "22,440", "", "CODASHOP(MM)", "ATOM", "Auto", "", ""],
+  ["", "", "", "", "", "", "", "", "", "", "", "", ""],
+  ["MONTHLY CARD"],
+  ["170", "4.99", "5.40", "Monthly Card", "", "22,000", "22,440", "", "ATOM", "", "", "", ""],
+  ["170", "4.99", "5.40", "300 B-Chips", "300", "22,000", "22,440", "", "Wavepay", "", "", "", ""],
+  ["", "", "", "Note: ไม่มีราคา", "", "", "", "", "", "", "", "", ""],
+  ["เเก้บอท>>\nUID"],
+];
+
+check(findGameinfoSheetPackHeader(honkai) === 3, "the header is the row with ราคาขาย and a pack column");
+const parsed = parseGameinfoSheetPackTab(honkai);
+check(parsed.currencies.length === 1 && parsed.currencies[0].unit === "B-Chips", "the unit comes from the pack column's header, line break and all");
+check(parsed.currencies[0].categories.map((category) => category.name).join("|") === "แพ็คหลัก|MONTHLY CARD", "the game title above the rate block is not a category; a lone label right above packs is");
+check(countGameinfoSheetPacks(parsed) === 3, "the repeated name + price and the priceless row are skipped");
+check(gameinfoSheetPackUnits(parsed) === "B-Chips", "units for the preview");
+const first = parsed.currencies[0].categories[0].packs[0];
+check(first.name === "60 B-Chips" && first.price === "35", "name and price");
+check(first.amountChargedFee === "4590", "the fee-inclusive total wins over the plain amount, commas dropped");
+check(first.channelsMain.join() === "Wavepay", "the wallet, not the store, from two plain ช่องทาง columns");
+check(parsed.currencies[0].categories[0].packs[1].channelsMain.join() === "ATOM", "the store can come first; the wallet is still picked");
+check(first.channelsSecondary.length === 0, "no สำรอง column, no secondary channel");
+check(first.country === "Myanmar", "no ประเทศ column: the country follows the pressed currency");
+
+// "Auto-chess": a bare unit column ("Donuts" + "Donuts รวม"), combo pack
+// names, "ยอด MMK รวม FEE", and a link in the first ช่องทาง column.
+const autoChess = [
+  ["ราคาขาย", "ราคา USDT", "Kaleoz", "Donuts", "Donuts รวม", "ยอด MMK", "ยอด MMK\nรวม FEE", "ช่องทาง", "ช่องทาง", "ระบบการเติม", "ต้นทุน", "กำไรที่ได้"],
+  ["", "", "", "", "", "", "", "", "", "", "", ""],
+  ["135", "4.00", "135", "140+13 X 3", "459", "4400 X 3", "17688", "https://codashop.example/auto-chess", "Ooredoo", "Manual", "109.67", "25.33"],
+];
+const chess = parseGameinfoSheetPackTab(autoChess);
+check(chess.currencies[0].unit === "Donuts", "a bare unit column followed by its รวม column is the pack column, not กำไรที่ได้");
+const chessPack = chess.currencies[0].categories[0].packs[0];
+check(chessPack.name === "140+13 X 3" && chessPack.amountChargedFee === "17688", "combo names stay; the ยอด … รวม FEE column is the amount");
+check(chessPack.channelsMain.join() === "Ooredoo", "a link in a channel column is never the wallet");
+
+// "8 Ball Pool": several tables, each under a label, one with a PACK column,
+// a second route (ARS → MMK) for the same packs, numeric pack names.
+const pool = [
+  ["8 Ball Pool"],
+  ["ต้นทุน MMK", "DATE", "MMK", "Rate"],
+  ["Cash"],
+  ["PAGE", "USDT", "Cash\nที่กด", "รวม", "ARS\nที่กด", "USD\nรวม", "ช่องทาง หลัก", "ช่องทาง สำรอง", "ประเทศ"],
+  ["25", "0.7", "25", "25", "1,000", "1.10", "U9", "ATOM", ""],
+  ["Coins"],
+  ["PAGE", "USDT", "Coins\nที่กด", "รวม", "ARS\nที่กด", "USD\nรวม", "ช่องทาง หลัก", "ช่องทาง สำรอง", "ประเทศ"],
+  ["30", "0.8", "5000", "5000", "1,200", "1.30", "U9", "", "Argentina"],
+  ["Minigames"],
+  ["PAGE", "USDT", "PACK", "ARS\nที่กด", "USD\nรวม", "ช่องทาง หลัก"],
+  ["50", "1.4", "Spin Pack", "2,000", "2.10", "U9"],
+  ["Cash"],
+  ["PAGE", "USDT", "Cash\nที่กด", "รวม", "MMK ที่กด", "MMK รวม", "ช่องทาง หลัก"],
+  ["25", "0.7", "25", "25", "4,000", "4,200", "Wavepay"],
+];
+const poolParsed = parseGameinfoSheetPackTab(pool);
+check(poolParsed.currencies.map((currency) => currency.unit).join() === "Cash,Coins", "one currency per unit; the PACK table joins the first");
+const cash = poolParsed.currencies[0];
+check(cash.categories.map((category) => category.name).join("|") === "แพ็คหลัก|Minigames", "a label equal to the unit is the default category; other labels name theirs");
+check(cash.categories[0].packs.length === 1 && cash.categories[0].packs[0].name === "25 Cash", "a numeric pack name gets its unit; the MMK route for the same pack is dropped");
+check(cash.categories[0].packs[0].country === "Argentina" && cash.categories[0].packs[0].amountChargedFee === "1.10", "the country follows the pressed currency (ARS), the amount is the total");
+check(cash.categories[0].packs[0].channelsMain.join() === "U9" && cash.categories[0].packs[0].channelsSecondary.join() === "ATOM", "ช่องทาง หลัก / สำรอง");
+check(poolParsed.currencies[1].categories[0].packs[0].name === "5000 Coins", "the second table has its own unit");
+
+// "PAGE" for the price, an explicit ประเทศหลัก, a fiat ที่กด before the pack column.
+const shining = [
+  ["PAGE", "LAK ที่กด", "Diamonds ที่ได้", "ช่องทาง หลัก", "ช่องทาง สำรอง", "ประเทศหลัก"],
+  ["49", "30000", "60 Diamonds", "BCEL", "Unitel", "Laos"],
+  ["0", "1000", "Free", "BCEL", "", "Laos"],
+];
+const shiningParsed = parseGameinfoSheetPackTab(shining);
+check(shiningParsed.currencies[0].unit === "Diamonds", "a fiat ที่กด column is never the pack column");
+const shiningPack = shiningParsed.currencies[0].categories[0].packs[0];
+check(shiningPack.amountChargedFee === "30000" && shiningPack.channelsMain[0] === "BCEL" && shiningPack.channelsSecondary[0] === "Unitel" && shiningPack.country === "Laos", "PAGE price, หลัก/สำรอง channels and ประเทศหลัก are read");
+check(countGameinfoSheetPacks(shiningParsed) === 1, "a zero price is not a pack");
+
+check(parseGameinfoSheetPackTab([["ต้นทุน", "ค่าเงิน"], ["1", "2"]]) === null, "a tab without a pack table gives nothing");
+check(parseGameinfoSheetPackTab([["ราคาขาย", "Jades ที่กด"], ["", ""]]) === null, "a header with no packs under it gives nothing");
+check(findGameinfoSheetPackHeader([["ราคาขาย", "กำไร ที่ได้", "MMK ที่กด"]]) === -1, "money columns are never the pack column");
+
+// Notes are not categories; VIP and price-comparison tables are not packs
+// for sale; a table whose pack column we cannot find is not read with the
+// previous table's columns; "ราคาขาย เพจ" is a price header.
+const notes = parseGameinfoSheetPackTab([
+  ["ต้องเปิด VPN ตามข้อมูลเติมเกม"],
+  ["ราคาขาย\nเพจ", "K-Coinที่กด", "PHP\nที่กด", "ช่องทาง\nหลัก"],
+  ["47", "103", "100", "GCASH"],
+  ["ราคา VIP"],
+  ["ราคาขาย\nเพจ", "K-Coinที่กด", "PHP\nที่กด", "ช่องทาง\nหลัก"],
+  ["40", "103", "100", "GCASH"],
+  ["Crystal"],
+  ["ราคาขาย", "Crystal ที่กด", "ช่องทาง"],
+  ["99", "300", "ATOM"],
+  ["แพ๊คเสริมเทียบราคา"],
+  ["ราคาขาย", "ราคาเต็ม THB", "UK\nที่กด", "ช่องทาง"],
+  ["240", "Fairy Tale Pocket", "8", "ITUNES(DE)"],
+]);
+check(notes.currencies.map((currency) => currency.unit).join() === "K-Coin,Crystal", "a unit glued to ที่กด is read; a two-letter region is not a unit");
+check(notes.currencies[0].categories.map((category) => category.name).join() === "แพ็คหลัก", "a note above a table is not a category");
+check(countGameinfoSheetPacks(notes) === 2, "the VIP table and the comparison table are skipped, the table between them is not");
+check(notes.currencies[0].categories[0].packs[0].price === "47", "ราคาขาย เพจ is the price column");
+check(findGameinfoSheetPackHeader([["ราคาขาย", "Razer OTHER ที่กด"]]) === -1, "a Razer column is never the pack column");
+check(findGameinfoSheetPackHeader([["ราคาขายเรท ", "USDT", "UC ที่กด", "IDR\nที่กด"]]) === 0, "ราคาขายเรท is a price header too");
+
+// A bare title before the money columns names a table's packs.
+const bare = parseGameinfoSheetPackTab([
+  ["ราคาขาย", "Kaleoz", "USDT", "Gems ที่กด", "PHP ที่กด", "ช่องทาง"],
+  ["30", "31", "0.9", "60", "49", "GCASH"],
+  ["ราคาขาย", "Kaleoz", "USDT", "Growth Pack", "NOTICE", "PHP ที่กด", "Razer (SGD) ที่กด", "LINK การเติม", "ช่องทาง"],
+  ["120", "126", "3.5", "Growth Fund I", "", "249", "5.9", "", "GCASH"],
+]);
+check(bare.currencies.length === 1 && bare.currencies[0].categories.map((category) => category.name).join() === "แพ็คหลัก,Growth Pack", "a bare title column joins the tab's currency as a category of its own");
+check(bare.currencies[0].categories[1].packs[0].name === "Growth Fund I" && bare.currencies[0].categories[1].packs[0].amountChargedFee === "249", "its packs keep their names");
+check(findGameinfoSheetPackHeader([["ราคาขาย", "DATE", "Rate", "MMK ที่กด"]]) === -1, "rate-block words are not pack titles");
+
+const shop = parseGameinfoSheetPackTab([
+  ["."],
+  ["ราคาขาย", "USDT", "Monthly Kit Shop ที่กด", "USD ที่ออก", "ช่องทาง หลัก", "สำรอง"],
+  ["99", "2.9", "Monthly Kit", "2.99", "Razer (SGD)", "GCASH"],
+]);
+const shopPack = shop.currencies[0].categories[0].packs[0];
+check(shop.currencies[0].categories[0].name === "แพ็คหลัก", "a label with no letters is not a category");
+check(shopPack.amountChargedFee === "2.99" && shopPack.channelsSecondary.join() === "GCASH", "USD ที่ออก is an amount; a bare สำรอง after ช่องทาง หลัก is the secondary channel");
+
+const { currencies, costProfiles: poolProfiles } = gameinfoSheetPackTree(poolParsed);
+check(currencies.length === 2 && currencies[0].name === "Cash", "one GameInfo currency per unit");
+const tree = currencies[0].categories[0].packs[0];
+check(tree.id && tree.name === "25 Cash" && tree.serviceEnabled !== undefined, "packs are full GameInfo packs with ids");
+check(!("cost" in tree) && !("costCurrency" in tree), "the sheet's cost does not travel on the pack itself");
+check(poolProfiles.length === 0 && tree.costProfileId === "", "no ต้นทุน column, no cost profile");
+
+// ต้นทุน ÷ amount gives each cost currency its rate; GameInfo derives cost and profit from it.
+const hiProfiles = gameinfoSheetCostProfiles(parsed, "2026-10-27T00:00:00.000Z");
+check(hiProfiles.length === 1 && hiProfiles[0].id === "sheet-mmk" && hiProfiles[0].inputCurrency === "MMK", "one profile per cost currency");
+check(hiProfiles[0].baseValue === String(Number((37.2 / 4590).toPrecision(6))), "the rate is the sheet's cost over the amount, packs without a cost left out");
+const hiTree = gameinfoSheetPackTree(parsed);
+check(hiTree.currencies[0].categories.every((category) => category.packs.every((pack) => pack.costProfileId === "sheet-mmk")), "every pack with an amount points at its currency's profile");
+const razer = gameinfoSheetCostProfiles(parseGameinfoSheetPackTab([
+  ["ราคาขาย", "Gems ที่กด", "Razer SGD ที่กด", "ต้นทุน"],
+  ["30", "60", "1", "24"],
+  ["60", "120", "2", "50"],
+  ["90", "180", "3", "72"],
+]));
+check(razer[0].label.startsWith("Razer SGD") && razer[0].inputCurrency === "SGD" && razer[0].baseValue === "24", "Razer amounts get their own profile; the median rate ignores the odd row");
+check(gameinfoHasRealPacks(currencies), "imported packs count as real packs");
+check(!gameinfoHasRealPacks([{ categories: [{ packs: [{ id: "p1", name: "", price: "" }] }] }]), "an empty placeholder pack is not a real pack");
+check(!gameinfoHasRealPacks([]), "no currencies, no packs");
+
+// Imported games get a ต้นทุน formula of their own, so cost matches the sheet.
+const columns = [{ key: "cost", label: "ต้นทุน", formula: "[ยอดที่กด + fee]/134.02", gameFormula: "" }, { key: "profit", label: "กำไร", formula: "[ราคา]-[ต้นทุน]", gameFormula: "" }];
+const usd = gameinfoSheetCostFormulaColumns(columns, [{ id: "sheet-usd", inputCurrency: "USD" }, { id: "sheet-mmk", inputCurrency: "MMK" }]);
+check(usd[0].gameFormula === GAMEINFO_SHEET_COST_FORMULA && usd[0].formula === columns[0].formula && usd[1] === columns[1], "a game with sheet profiles computes ต้นทุน from them; the shared formula and other columns stay");
+check(gameinfoSheetCostFormulaColumns(columns, [{ id: "sheet-mmk", inputCurrency: "MMK" }])[0].gameFormula === GAMEINFO_SHEET_COST_FORMULA, "an MMK game uses the sheet's own MMK rate too");
+const usdPack = { id: "p1", name: "110 Cash", price: "70", amountChargedFee: "0.62", costProfileId: "sheet-usd" };
+const usdContext = { costProfiles: [{ id: "sheet-usd", label: "USD → THB (จากชีต)", inputCurrency: "USD", baseValue: "34.8495", rateFormula: "" }] };
+check(evaluateGameinfoComputedColumn(usd[0], usd, usdPack, {}, usdContext) === 21.61, "0.62 USD at 34.8495 costs 21.61 baht");
+check(evaluateGameinfoComputedColumn(usd[1], usd, usdPack, {}, usdContext) === 48.39, "and the profit follows: 70 − 21.61");
+check(gameinfoSheetCostFormulaColumns(columns, [{ id: "manual", inputCurrency: "USD" }]) === null, "profiles an admin made are not the import's business");
+check(gameinfoSheetCostFormulaColumns([{ ...columns[0], gameFormula: "[ยอดที่กด + fee]*35" }], [{ id: "sheet-usd", inputCurrency: "USD" }]) === null, "a formula the game already has is never replaced");
+
+// GAMELIST's LINK column gives each game's tab.
+const games = parseGameinfoSourceSheet({
+  gamelist: [
+    ["Game", "LINK"],
+    ["HONKAI IMPACT", "https://docs.google.com/spreadsheets/d/192Yosw/edit#gid=627518256"],
+    ["AUTO CHESS", "https://docs.google.com/spreadsheets/d/192Yosw/edit?gid=215079588#gid=215079588"],
+    ["NO LINK", ""],
+  ],
+});
+check(games.find((game) => game.key === "honkai impact").tabGid === 627518256, "a #gid= link gives the tab");
+check(games.find((game) => game.key === "auto chess").tabGid === 215079588, "a ?gid= link gives the tab");
+check(games.find((game) => game.key === "no link").tabGid === null, "no link, no tab");
+
+// The reader: tabs with their gids, 20 tabs per batchGet, and a 429 waited out.
+const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+const urls = [];
+const waits = [];
+let throttled = 1;
+const reader = createGoogleReader({
+  keyFile: "/test/key.json",
+  readOnly: true,
+  readKeyFile: async () => JSON.stringify({ client_email: "fixture@example.invalid", private_key: privateKey.export({ type: "pkcs8", format: "pem" }) }),
+  wait: async (ms) => { waits.push(ms); },
+  fetchImpl: async (url) => {
+    if (url.includes("oauth2")) return { ok: true, status: 200, json: async () => ({ access_token: "t", expires_in: 3600 }) };
+    urls.push(url);
+    if (url.includes("batchGet") && throttled-- > 0) return { ok: false, status: 429, json: async () => ({ error: { message: "Quota exceeded" } }) };
+    if (url.includes("batchGet")) {
+      const ranges = new URL(url).searchParams.getAll("ranges");
+      return { ok: true, status: 200, json: async () => ({ valueRanges: ranges.map((range) => ({ range, values: [[range]] })) }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ sheets: [{ properties: { title: "GAMELIST", sheetId: 0 } }, { properties: { title: "U.HONKAI", sheetId: 627518256 } }] }) };
+  },
+});
+const tabs = await reader.tabs("sheet");
+check(tabs[1].title === "U.HONKAI" && tabs[1].gid === 627518256, "tabs come with their gids");
+const titles = Array.from({ length: 25 }, (_, i) => `U.GAME ${i}'s`);
+const byTab = await reader.batchRows("sheet", titles);
+check(Object.keys(byTab).length === 25 && byTab[titles[24]][0][0] === "'U.GAME 24''s'!A:ZZ", "every tab's rows come back under its title, quotes escaped");
+check(urls.filter((url) => url.includes("batchGet")).length === 3 && waits.join() === "20000", "25 tabs take two batchGets; a 429 is waited out and retried");
+
+// Row marks: bright red = the pack expired in the game, bright green = new.
+// The colours "U.LOVE AND DEEPSPACE" and "U.AFK JOURNEY" decorate with are not marks.
+const rgb = (hex) => Object.fromEntries(["red", "green", "blue"].map((key, i) => [key, parseInt(hex.slice(i * 2, i * 2 + 2), 16) / 255]).filter(([, value]) => value > 0));
+check(gameinfoSheetTone(rgb("ff0000")) === "red" && gameinfoSheetTone(rgb("ee1111")) === "red", "bright red is the expired mark");
+check(gameinfoSheetTone(rgb("00ff00")) === "green" && gameinfoSheetTone(rgb("22ee22")) === "green", "bright green is the new mark");
+check(["990000", "cc0000", "e06666", "e6b8af", "f4cccc", "b6d7a8", "d9ead3", "93c47d", "fce5cd", "ffffff", "000000", "fff2cc", "cfe2f3"].every((hex) => gameinfoSheetTone(rgb(hex)) === "") && gameinfoSheetTone(null) === "",
+  "dark red, pink, pale green, peach, white, black, yellow and blue decorate: no status");
+
+const toned = parseGameinfoSheetPackTab(honkai);
+check(gameinfoSheetPackNameColumns(toned).join() === "3", "colours are read from the pack-name column");
+// Row 4 (60 B-Chips) red, row 5 (300 B-Chips) green, row 8 (Monthly Card) white.
+const nameColumn = [];
+nameColumn[4] = rgb("ff0000");
+nameColumn[5] = rgb("00ff00");
+nameColumn[8] = rgb("ffffff");
+withGameinfoSheetTones(toned, { 3: nameColumn });
+const tonedPacks = toned.currencies.flatMap((currency) => currency.categories.flatMap((category) => category.packs));
+check(tonedPacks.map((pack) => `${pack.name}:${pack.tone}`).join() === "60 B-Chips:red,300 B-Chips:green,Monthly Card:", "each pack takes its row's colour");
+const tonedTree = gameinfoSheetPackTree(toned).currencies.flatMap((currency) => currency.categories.flatMap((category) => category.packs));
+check(tonedTree.map((pack) => `${pack.serviceEnabled}/${pack.serviceStatus}`).join() === "false/expired,true/new,true/", "an import brings red rows in expired and green rows new");
+check(tonedTree.every((pack) => !("sheetRow" in pack) && !("tone" in pack)), "the sheet position and colour are not stored on the pack");
+
+const gameTree = [{ id: "c", categories: [{ id: "cat", packs: [
+  { id: "a", name: "60  b-chips", serviceEnabled: true, serviceStatus: "" },
+  { id: "b", name: "300 B-Chips", serviceEnabled: false, serviceStatus: "" },
+  { id: "c", name: "Monthly Card", serviceEnabled: true, serviceStatus: "new" },
+  { id: "d", name: "Only in GameInfo", serviceEnabled: true, serviceStatus: "" },
+] }] }];
+const changes = gameinfoSheetStatusChanges(gameTree, toned);
+check(changes.map((change) => `${change.packId}:${change.from}>${change.to}`).join() === "a:open>expired,c:new>open", "red expires, an uncoloured row ends ใหม่, green does not reopen a pack closed by hand");
+const changed = applyGameinfoSheetStatusChanges(gameTree, changes)[0].categories[0].packs;
+check(changed[0].serviceEnabled === false && changed[0].serviceStatus === "expired" && changed[2].serviceStatus === "" && changed[3] === gameTree[0].categories[0].packs[3], "only the named packs change");
+check(gameinfoSheetStatusChanges(applyGameinfoSheetStatusChanges(gameTree, changes), toned).length === 0, "a second run changes nothing");
+const twoWays = parseGameinfoSheetPackTab(honkai);
+withGameinfoSheetTones(twoWays, { 3: nameColumn });
+twoWays.currencies[0].categories[0].packs.push({ name: "60 B-Chips", tone: "green" });
+check(!gameinfoSheetStatusChanges(gameTree, twoWays).some((change) => change.packId === "a"), "a name coloured two ways is left alone");
+const pastDate = gameTree.map((currency) => ({ ...currency, categories: currency.categories.map((category) => ({ ...category, packs: category.packs.map((pack) => ({ ...pack, expiresAt: "2020-01-01" })) })) }));
+check(gameinfoSheetStatusChanges(pastDate, toned).length === 0, "a pack past its date stays expired, whatever colour its row is");
+
+// An expiry note under the green rows, as LOVE AND DEEPSPACE writes it (with the doubled vowel).
+const notedRow = (price, name) => [price, "0.99", "1.10", name, "60", "4,500", "4,590", "", "Wavepay", "", "", "", ""];
+const notedRows = (note) => [
+  honkai[3],
+  notedRow("10", "Plain Pack"),
+  notedRow("20", "Green One"),
+  notedRow("30", "Plain Middle"),
+  notedRow("40", "Green Two"),
+  notedRow("50", "Green Three"),
+  ["", "", "", note, "", "", "", "", "", "", "", "", ""],
+  notedRow("60", "After Note"),
+];
+const noteColours = () => {
+  const column = [];
+  for (const row of [2, 4, 5, 7]) column[row] = rgb("00ff00");
+  return column;
+};
+const expiryNoted = parseGameinfoSheetPackTab(notedRows("แพ็กใหม่หมดอายุุ 4/11/2026"));
+check(expiryNoted.currencies.flatMap((currency) => currency.categories).length === 1, "the note does not start a category of its own");
+const nameCol = expiryNoted.currencies[0].categories[0].packs[0].sheetCol;
+withGameinfoSheetTones(expiryNoted, { [nameCol]: noteColours() });
+const notedPacks = expiryNoted.currencies[0].categories[0].packs;
+check(
+  notedPacks.map((pack) => `${pack.name.replace(" B-Chips", "")}:${pack.expiresAt || "-"}`).join() === "Plain Pack:-,Green One:-,Plain Middle:-,Green Two:2026-11-04,Green Three:2026-11-04,After Note:-",
+  "a note covers the green rows right above it, and stops at the first row that is not green"
+);
+check(gameinfoSheetPackTree(expiryNoted).currencies[0].categories[0].packs.find((pack) => pack.name.startsWith("Green Two")).expiresAt === "2026-11-04", "an import keeps the date");
+for (const [note, date] of [["หมดเขต 04-11-26", "2026-11-04"], ["หมดอายุ 4.11.2569", "2026-11-04"], ["หมดอายุ 31/2/2026", undefined], ["ราคา 4/11/2026", undefined]]) {
+  const parsedNote = parseGameinfoSheetPackTab(notedRows(note));
+  withGameinfoSheetTones(parsedNote, { [nameCol]: noteColours() });
+  check(parsedNote.currencies[0].categories[0].packs.find((pack) => pack.name.startsWith("Green Two")).expiresAt === date, `"${note}" gives ${date}`);
+}
+const datedTree = (fields = {}) => [{ id: "c", categories: [{ id: "cat", packs: [{ id: "g", name: expiryNoted.currencies[0].categories[0].packs[3].name, serviceEnabled: true, serviceStatus: "new", ...fields }] }] }];
+const future = gameinfoSheetStatusChanges(datedTree(), expiryNoted);
+check(future.length === 1 && future[0].expiresAt === "2026-11-04", "the note's date is a change even when the status stays");
+check(applyGameinfoSheetStatusChanges(datedTree(), future)[0].categories[0].packs[0].expiresAt === "2026-11-04", "and is applied to the pack");
+check(gameinfoSheetStatusChanges(applyGameinfoSheetStatusChanges(datedTree(), future), expiryNoted).length === 0, "a second run changes nothing");
+check(gameinfoSheetStatusChanges(datedTree({ expiresAt: "2099-01-01" }), expiryNoted)[0]?.expiresAt === "2026-11-04", "the sheet's date replaces the pack's");
+const pastNote = parseGameinfoSheetPackTab(notedRows("หมดอายุ 1/1/2020"));
+withGameinfoSheetTones(pastNote, { [nameCol]: noteColours() });
+const pastChange = gameinfoSheetStatusChanges(datedTree(), pastNote);
+check(pastChange[0]?.to === "expired" && pastChange[0]?.expiresAt === "2020-01-01", "a date already gone by reads as expired");
+check(gameinfoSheetStatusChanges(applyGameinfoSheetStatusChanges(datedTree(), pastChange), pastNote).length === 0, "and is not raised again");
+const laterNote = parseGameinfoSheetPackTab(notedRows("หมดอายุ 1/1/2099"));
+withGameinfoSheetTones(laterNote, { [nameCol]: noteColours() });
+check(gameinfoSheetStatusChanges(datedTree({ expiresAt: "2020-01-01" }), laterNote)[0]?.to === "new", "a later date in the sheet brings a passed pack back");
+const twoDates = structuredClone(expiryNoted);
+twoDates.currencies[0].categories[0].packs.push({ name: expiryNoted.currencies[0].categories[0].packs[3].name, tone: "green", expiresAt: "2026-12-01" });
+check(gameinfoSheetStatusChanges(datedTree(), twoDates).length === 0, "two dates for one name are left alone");
+check(gameinfoSheetStatusChanges(datedTree({ expiresAt: "2099-01-01" }), toned).every((change) => !change.expiresAt), "with no note a pack keeps its date");
+
+const syncRun = (fields = {}) => ({ finishedAt: "2026-11-01T23:00:00Z", error: "", failed: 0, ...fields });
+const nextMorning = new Date("2026-11-02T00:00:00Z");
+check(gameinfoSheetSyncProblem(null) === "", "before the first run there is nothing to warn of");
+check(gameinfoSheetSyncProblem(syncRun(), nextMorning) === "", "a clean run from this morning is fine");
+check(gameinfoSheetSyncProblem(syncRun({ error: "no key" }), nextMorning) === "failed", "a run that failed outright is flagged");
+check(gameinfoSheetSyncProblem(syncRun({ failed: 2 }), nextMorning) === "partial", "as is one where some games failed");
+check(gameinfoSheetSyncProblem(syncRun(), new Date("2026-11-03T00:59:00Z")) === "", "a run due today but a little slow is not late");
+check(gameinfoSheetSyncProblem(syncRun(), new Date("2026-11-03T01:01:00Z")) === "late", "a run that never came is");
+check(gameinfoSheetSyncProblem(syncRun({ error: "no key" }), new Date("2026-11-09T00:00:00Z")) === "failed", "a failure stays a failure however old");
+check(formatGameinfoSheetSyncTime("2026-11-01T23:00:00Z") === "2/11/2026 06:00 น.", "the time reads in Bangkok, day first");
+check(!gameinfoSheetAutoChange({ from: "expired", to: "open" }), "the daily run does not put an expired pack back on sale");
+check(["new", "expired"].every((to) => gameinfoSheetAutoChange({ from: "open", to })) && gameinfoSheetAutoChange({ from: "new", to: "open" }), "it makes what the sheet marks, and ends ใหม่");
+check(gameinfoSheetAutoChange({ from: "expired", to: "new", expiresAt: "2099-01-01" }), "a green row with a later date does bring a pack back");
+check(nextGameinfoSheetSyncAt(new Date("2026-11-01T22:59:00Z")).toISOString() === "2026-11-01T23:00:00.000Z", "the next run is 06:00 in Bangkok, the same evening in UTC");
+check(nextGameinfoSheetSyncAt(new Date("2026-11-01T23:00:00Z")).toISOString() === "2026-11-02T23:00:00.000Z", "and a run at that moment waits for tomorrow's");
+
+const missing = gameinfoSheetMissingPacks(toned, { uid: [{ categories: [{ packs: [{ name: "60 B-Chips" }] }] }] });
+check(missing.map((row) => `${row.name}:${row.tone}`).join() === "300 B-Chips:green,Monthly Card:", "every sheet pack with no pack of that name is listed, coloured or not");
+check(missing[1].price === "170" && missing[1].channel === "ATOM", "with its price and wallet, to find it in the sheet");
+
+// A tab in sections, like "U.LOVE AND DEEPSPACE": a UID table, then an ID-PASS one.
+const sectioned = [
+  ["1.Love and Deepspace UID - ( Page / Market Place ) - ช่องทางหลัก", "", "", "", "ต้นทุน MMK", "MMK"],
+  ["ราคาขาย", "USDT", "Crystals ที่ได้", "MMK ที่กด", "ช่องทาง", "ต้นทุน"],
+  ["20", "0.59", "60 Crystals", "1,905", "Wavepay", "13.5"],
+  ["2.Love and Deepspace ID - PASS\n( PAGE / Kaleoz / Market Place )"],
+  ["ราคาขาย", "USDT", "PACK", "NGN ที่กด", "ช่องทาง", "ต้นทุน"],
+  ["30", "0.89", "Association Special LV.10", "1070", "GOOGLE NGN", "25.72"],
+  ["45", "1.19", "Weekly Home Pack", "1.5", "ITUNES(DE)", "38.98"],
+  ["290", "8.01", "Promise Pack ( Caleb )", "11000", "GOOGLE NGN", "264.41"],
+  ["30", "0.89", "Entangled Hearts Pack I", "1070", "GOOGLE NGN", "25.72"],
+];
+const sections = parseGameinfoSheetPackTab(sectioned);
+const sectionColors = [];
+sectionColors[7] = rgb("00ff00");
+sectionColors[8] = rgb("ff0000");
+withGameinfoSheetTones(sections, { 2: sectionColors });
+const sectionPacks = sections.currencies.flatMap((currency) => currency.categories.flatMap((category) => category.packs));
+check(sectionPacks.map((pack) => pack.mode).join() === "uid,idpass,idpass,idpass,idpass", "packs under an ID - PASS title are ID-PASS, the rest UID");
+const ldsIdpass = [{ id: "g", name: "Google", categories: [{ id: "k", name: "PACK", packs: [
+  { id: "p1", name: "Association Special LV.10", channelsMain: ["GOOGLE NGN"], costProfileId: "sheet-google-ngn" },
+] }] }];
+const ldsMissing = gameinfoSheetMissingPacks(sections, { uid: [], idpass: ldsIdpass });
+check(ldsMissing.map((row) => `${row.mode}:${row.name}:${row.tone}`).join() === "uid:60 Crystals:,idpass:Weekly Home Pack:,idpass:Promise Pack ( Caleb ):green,idpass:Entangled Hearts Pack I:red",
+  "missing packs are looked for in their own mode");
+const addedIdpass = addGameinfoSheetPacks({ currencies: ldsIdpass, costProfiles: [{ id: "sheet-google-ngn" }] }, sections, "idpass", ldsMissing.map((row) => row.key));
+check(addedIdpass.added.join() === "Weekly Home Pack,Promise Pack ( Caleb )", "the chosen packs are added, never a red (expired) one");
+const google = addedIdpass.currencies.find((currency) => currency.name === "Google");
+const caleb = google.categories.find((category) => category.name === "เพิ่มจากชีต").packs[0];
+check(caleb.name === "Promise Pack ( Caleb )" && caleb.serviceStatus === "new" && caleb.costProfileId === "sheet-google-ngn" && caleb.price === "290",
+  "a pack joins the currency holding its wallet's packs, comes in ใหม่ from a green row, and takes that wallet's cost profile");
+const itunes = addedIdpass.currencies.find((currency) => currency.name === "ITUNES(DE)");
+check(itunes?.categories[0].packs[0].name === "Weekly Home Pack" && itunes.categories[0].packs[0].serviceStatus === "", "a wallet GameInfo has no packs for gets a currency of its own");
+const deProfile = addedIdpass.costProfiles.find((profile) => profile.id === itunes.categories[0].packs[0].costProfileId);
+check(deProfile?.id === "sheet-itunesde" && Math.abs(Number(deProfile.baseValue) - 38.98 / 1.5) < 0.001,
+  "with that wallet's own rate from its sheet rows when no pack of the wallet has one (not the NGN of the amount header)");
+const uidAdded = addGameinfoSheetPacks({ currencies: [{ id: "c1", name: "Crystals", categories: [{ id: "k", name: "แพ็คหลัก", packs: [{ id: "x", name: "Old", channelsMain: [] }] }] }], costProfiles: [] }, sections, "uid", [gameinfoSheetPackKey("uid", "60 Crystals")]);
+check(uidAdded.currencies.length === 1 && uidAdded.currencies[0].categories[1].packs[0].name === "60 Crystals", "a UID pack joins the game's own currency, not a new one named after its wallet");
+check(ldsIdpass[0].categories[0].packs.length === 1, "the tree given is not changed in place");
+check(addGameinfoSheetPacks({ currencies: addedIdpass.currencies, costProfiles: addedIdpass.costProfiles }, sections, "idpass", ldsMissing.map((row) => row.key)).added.length === 0, "a pack GameInfo already has is not added twice");
+check(addGameinfoSheetPacks({ currencies: [], costProfiles: [] }, sections, "uid", [gameinfoSheetPackKey("idpass", "Weekly Home Pack")]).added.length === 0, "a pack is added only to its own mode");
+
+// columnColors: one A1 column range per wanted column, grouped back by tab title.
+const colorUrls = [];
+const colorReader = createGoogleReader({
+  keyFile: "/test/key.json",
+  readOnly: true,
+  readKeyFile: async () => JSON.stringify({ client_email: "fixture@example.invalid", private_key: privateKey.export({ type: "pkcs8", format: "pem" }) }),
+  fetchImpl: async (url) => {
+    if (url.includes("oauth2")) return { ok: true, status: 200, json: async () => ({ access_token: "t", expires_in: 3600 }) };
+    colorUrls.push(url);
+    return { ok: true, status: 200, json: async () => ({ sheets: [{ properties: { title: "U.PES" }, data: [
+      { startColumn: 3, rowData: [{}, { values: [{ effectiveFormat: { backgroundColor: { red: 1 } } }] }] },
+      { startColumn: 27, rowData: [{ values: [{ effectiveFormat: { backgroundColor: { green: 1 } } }] }] },
+    ] }] }) };
+  },
+});
+const colors = await colorReader.columnColors("sheet", [{ tab: "U.PES", cols: [3, 27] }]);
+check(new URL(colorUrls[0]).searchParams.getAll("ranges").join() === "'U.PES'!D:D,'U.PES'!AB:AB", "columns are asked for as A1 ranges");
+check(colors["U.PES"][3][0] === null && colors["U.PES"][3][1].red === 1 && colors["U.PES"][27][0].green === 1, "colours come back by tab, column and row");
+
+// The UID table of U.LOVE AND DEEPSPACE: the name, then the count, under one header.
+const loveRows = [
+  ["1.Love and Deepspace UID - ( Page / Market Place ) - ช่องทางหลัก"],
+  ["ราคาขาย", "USDT", "KALEOZ", "Russia", "Crystals\nที่ได้", "Crystals\nที่ได้", "MMK\nที่กด", "MMK\nรวม Fee", "LINK", "ช่องทาง", "ระบบการเติม", "KALEOZ 5%", "ต้นทุน"],
+  ["20", "0.59", "20", "18.50", "60 Crystals", "60", "1,905", "2,000", "https://www.codashop.com/my-mm/love", "Wavepay", "Bot Auto", "19.00", "14.11"],
+  ["4000", "118.61", "4100", "4020", "6480 Crystals+1600 Diamonds X 2", "16160", "236155 X 2", "495926", "https://www.codashop.com/my-mm/love", "Wavepay", "Bot Auto", "3895.00", "3499.96"],
+  ["95", "2.82", "88.5", "87.50", "Aurum Pass (30 Days)", "", "10,476", "11,000", "", "Wavepay", "Bot Auto", "84.08", "77.63"],
+];
+const lovePacks = parseGameinfoSheetPackTab(loveRows).currencies[0].categories[0].packs;
+check(lovePacks[0].name === "60 Crystals" && lovePacks[0].amountChargedFee === "2000", "the first of two like headers is the name; the fee total stays the charge");
+check(lovePacks[0].amountReceived === "60" && lovePacks[0].amountBeforeFee === "1905" && lovePacks[0].link === "https://www.codashop.com/my-mm/love", "the count, the pre-fee amount and the link come with a pack");
+check(lovePacks[1].amountBeforeFee === "236155 X 2", "a pre-fee amount the sheet writes as a sum stays as written");
+check(lovePacks[2].amountReceived === "" && lovePacks[2].link === "", "a blank cell gives a blank field");
+check(parseGameinfoSheetPackTab([["ราคาขาย", "Diamonds ที่กด", "ช่องทาง"], ["30", "86", "https://x.example/a"]]).currencies[0].categories[0].packs[0].amountReceived === "86", "a bare count under the pack column is the count");
+
+// The ID-PASS table of the same tab: bare currencies, and a wallet column with no header.
+const idpassRows = [
+  ["2.Love and Deepspace ID - PASS ( PAGE / Kaleoz / Market Place )"],
+  ["ราคาขาย", "USDT", "Kaleoz", "Russia", "USDT", "PACK", "", "", "USD", "NGN", "ต้นทุน\n( cost )", "กำไร THB\n( profit THB )", "กำไร %"],
+  ["30", "0.84", "29", "28", "0.84", "Association Special LV.10", "", "GOOGLE NGN", "1", "1070", "25.72", "4.28", "14.27"],
+];
+const idpassPack = parseGameinfoSheetPackTab(idpassRows).currencies[0].categories[0].packs[0];
+check(idpassPack.mode === "idpass" && idpassPack.amountChargedFee === "1070" && idpassPack.costCurrency === "NGN" && idpassPack.cost === "25.72", "a bare currency before the cost is the charge, and ต้นทุน (cost) is the cost");
+check(idpassPack.channelsMain[0] === "GOOGLE NGN" && idpassPack.priceUsd === "1", "the wallet under no header is read, and the USD price with it");
+check(parseGameinfoSheetPackTab(loveRows).currencies[0].categories[0].packs[0].channelsMain[0] === "Wavepay", "a named ช่องทาง column still wins");
+
+const bothTitles = parseGameinfoSheetPackTab([...loveRows, ...idpassRows]);
+check(bothTitles.sources.uid === "Page / Market Place" && bothTitles.sources.idpass === "PAGE / Kaleoz / Market Place", "each mode takes the bracket of its table title, without what follows it");
+check(!parseGameinfoSheetPackTab([["ราคาขาย", "Diamonds ที่กด"], ["30", "86"]]).sources.uid, "a tab with no title has no source");
+const noted = parseGameinfoSheetPackTab([["วิธีเติม UID ( ปัญหาเเละคำเเนะนำ )"], ["ติดต่อแอดมิน"], ...loveRows]);
+check(noted.sources.uid === "Page / Market Place", "only the title right above a table gives the source, not a note that mentions the mode");
+const noBracket = parseGameinfoSheetPackTab([["2.Game ID - PASS"], ...loveRows.slice(1, 3)]);
+check(noBracket.sources.idpass === undefined, "a title with no bracket leaves it blank");
+
+const detailParsed = parseGameinfoSheetPackTab(loveRows);
+const detailTree = [{ id: "c", categories: [{ id: "k", packs: [
+  { id: "a", name: " 60 crystals ", amountReceived: "", amountBeforeFee: "", link: "" },
+  { id: "b", name: "Aurum Pass (30 Days)", amountBeforeFee: "แก้เอง", amountReceived: "", link: "" },
+  { id: "c", name: "ไม่มีในชีต" },
+] }] }];
+const detailFills = gameinfoSheetDetailFills(detailTree, detailParsed, "uid");
+check(detailFills.length === 1 && detailFills[0].packId === "a" && detailFills[0].patch.amountBeforeFee === "1905", "packs match by name and a pack with nothing new is left out");
+check(gameinfoSheetDetailFills(detailTree, detailParsed, "idpass").length === 0, "a uid table fills no idpass pack");
+const detailApplied = applyGameinfoSheetDetailFills(detailTree, detailFills)[0].categories[0].packs;
+check(detailApplied[0].link === "https://www.codashop.com/my-mm/love" && detailApplied[1].amountBeforeFee === "แก้เอง" && gameinfoSheetDetailFills(applyGameinfoSheetDetailFills(detailTree, detailFills), detailParsed, "uid").length === 0, "what a pack has stays, and a second run finds nothing");
+
+const addedColumns = withGameinfoSheetColumns([{ key: "c1", label: "ต้นทุน", formula: "1" }, { key: "mine", label: " g2g ", formula: "[ราคา]" }]);
+check(addedColumns.added.join() === "KALEOZ 5%,กำไร (KALEOZ 5%),%กำไร (KALEOZ 5%),G2G USD" && addedColumns.columns.length === 6, "only the missing columns are added, by name");
+check(addedColumns.keys.includes("mine") && addedColumns.keys.length === 5, "a column added by hand is the one hidden from Topup");
+check(withGameinfoSheetColumns(addedColumns.columns).added.length === 0, "a second run adds nothing");
+check(addedColumns.columns.find((column) => column.label === "KALEOZ 5%").formula === "" && addedColumns.columns.find((column) => column.label === "KALEOZ 5%").gameFormula === "[ราคาขาย(KALEOZ)]*0.95", "the formula is this game's, so other games are left alone");
+check(!addedColumns.columns.some((column) => column.version !== undefined && column.key.startsWith("col_sheet")), "a new column carries no version, so it can only be created");
+
+console.log(`gameinfo-sheet-packs: ${passed} passed`);

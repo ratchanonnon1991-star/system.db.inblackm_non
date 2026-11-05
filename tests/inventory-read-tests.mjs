@@ -1,0 +1,32 @@
+import assert from "node:assert/strict";
+import { inventoryReadQuery } from "../src/server/inventory-read.js";
+
+let passed = 0;
+const check = (actual, expected, label) => { assert.deepEqual(actual, expected, label); passed++; };
+const calls = [], timings = [];
+let released = 0, failure;
+const client = { release() { released++; }, async query(sql, values) {
+  calls.push({ sql, values }); if (sql === "SELECT fixture" && failure) throw failure;
+  return { rows: sql === "SELECT fixture" ? [{ amount: "1.25" }] : [] };
+} };
+const pool = { connect: async () => client };
+const result = await inventoryReadQuery(pool, "SELECT fixture", ["bound"], { onTiming: (name) => timings.push(name) });
+check(result.rows, [{ amount: "1.25" }], "successful result is unchanged");
+check(calls[0].sql, "BEGIN READ ONLY", "report runs in a read-only transaction");
+check(calls[1], { sql: "SELECT set_config('statement_timeout',$1,true)", values: ["25000"] }, "actual server SQL timeout is local to this transaction");
+check(calls.at(-1).sql, "COMMIT", "successful read closes the transaction");
+check(released, 1, "successful read releases its client");
+check(timings, ["pool", "sql"], "pool wait and SQL times are measured separately");
+failure = Object.assign(new Error("internal SQL details"), { code: "57014" });
+await assert.rejects(inventoryReadQuery(pool, "SELECT fixture", []), { code: "INVENTORY_READ_TIMEOUT", status: 504 }); passed++;
+check(calls.at(-1).sql, "ROLLBACK", "cancelled SQL rolls back before returning the client");
+check(released, 2, "SQL timeout cannot leak a client or its transaction settings");
+const controller = new AbortController(); let late;
+const pending = inventoryReadQuery({ connect: () => new Promise((resolve) => { late = resolve; }) }, "SELECT fixture", [], { signal: controller.signal });
+await Promise.resolve(); controller.abort(); await assert.rejects(pending, { name: "AbortError" }); passed++;
+late(client); await Promise.resolve(); await Promise.resolve(); check(released, 3, "a client acquired after disconnect is immediately released");
+let afterTimeout;
+const fullPool = inventoryReadQuery({ connect: () => new Promise((resolve) => { afterTimeout = resolve; }) }, "SELECT fixture", [], { poolWaitMs: 1 });
+await assert.rejects(fullPool, { code: "INVENTORY_POOL_TIMEOUT", status: 504 }); passed++;
+afterTimeout(client); await Promise.resolve(); await Promise.resolve(); check(released, 4, "a client acquired after a pool deadline is also released");
+console.log(`${passed} passed, 0 failed`);
