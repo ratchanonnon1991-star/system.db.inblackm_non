@@ -1,7 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
-import { STOCK_ACCOUNT_STATUS_LABELS } from "@/lib/stock";
+import { STOCK_ACCOUNT_STATUS_LABELS, STOCK_WEB_LINK_LABELS, stockWebLink } from "@/lib/stock";
 
 // Pieces shared by the stock pages: tones, pills, the dialog frame, inputs.
 
@@ -28,6 +28,19 @@ export function StockLeftBadge({ item }) {
   return (
     <span className={`inline-block min-w-11 rounded-full px-2.5 py-1 text-center text-[13px] font-black ${STOCK_TONE_CLASS[item.tone]}`}>
       {item.left}
+    </span>
+  );
+}
+
+/** Whether this pack reaches the main site; when not, what is in the way. */
+export function StockWebLinkBadge({ account, item, webSync }) {
+  const state = stockWebLink(account, item, webSync);
+  const on = state === "on";
+  const title = on ? `ยอดแพ็คนี้ส่งไปเว็บหลัก ผูก ${item.webPackageIds.length} แพ็ค · ยอด 0 จะเป็นสีเทาบนเว็บ` : `ยังไม่ส่งไปเว็บหลัก: ${STOCK_WEB_LINK_LABELS[state]}`;
+  return (
+    <span title={title} className={`inline-flex max-w-full items-center gap-1 truncate rounded-full px-2 py-0.5 text-[11px] font-extrabold ${on ? "bg-emerald-50 text-emerald-800" : "bg-zinc-100 text-zinc-500"}`}>
+      <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${on ? "bg-emerald-600" : "bg-zinc-400"}`} />
+      {on ? `${STOCK_WEB_LINK_LABELS.on} · ${item.webPackageIds.length} แพ็ค` : STOCK_WEB_LINK_LABELS[state]}
     </span>
   );
 }

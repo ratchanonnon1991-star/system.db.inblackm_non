@@ -9,7 +9,7 @@ import { STOCK_ACCOUNT_PLATFORMS, STOCK_MIN_MARGIN, STOCK_MOVE_LABELS, stockMarg
 const MARGIN_CLASS = { ok: "bg-emerald-50 text-emerald-700", low: "bg-amber-100 text-amber-800", loss: "bg-red-50 text-red-700" };
 import StockMoveDialog from "@/components/stock-move-dialog";
 import { StockAccountDialog, StockItemDialog } from "@/components/stock-edit-dialogs";
-import { formatStockNumber, StockLeftBadge, StockStatusPill } from "@/components/stock-ui";
+import { formatStockNumber, StockLeftBadge, StockStatusPill, StockWebLinkBadge } from "@/components/stock-ui";
 
 const KIND_CLASS = {
   in: "bg-emerald-50 text-emerald-700",
@@ -23,7 +23,7 @@ function lineText(line) {
   return `${line.label} ×${Math.abs(line.qty)}${line.qty < 0 && line.kind !== "out" ? " (ลด)" : ""}`;
 }
 
-export default function StockAccountView({ account, moves, games, packNames, webGameId = null, canEdit }) {
+export default function StockAccountView({ account, moves, games, packNames, webGameId = null, webSync = false, canEdit }) {
   const [dialog, setDialog] = useState(null);
   const [historyFilter, setHistoryFilter] = useState("all");
   const shownMoves = historyFilter === "all" ? moves : moves.filter((move) => move.kind === historyFilter);
@@ -125,9 +125,7 @@ export default function StockAccountView({ account, moves, games, packNames, web
                         ไม่พบใน GameInfo{item.packName.includes(" / ") ? `: ${missing.join(", ")}` : ""}
                       </span>
                     ) : null)(missingPacks(item))}
-                    <span className={`mt-1 block text-[11px] font-bold ${item.webPackageIds?.length ? "text-emerald-800" : "text-zinc-500"}`}>
-                      {item.webPackageIds?.length ? `เว็บหลัก: ผูก ${item.webPackageIds.length} แพ็ค` : "เว็บหลัก: ยังไม่ผูก"}
-                    </span>
+                    <span className="mt-1 block"><StockWebLinkBadge account={account} item={item} webSync={webSync} /></span>
                   </td>
                   {canEdit ? (
                     <td className="border-b border-zinc-100 px-3.5 py-3 text-right">

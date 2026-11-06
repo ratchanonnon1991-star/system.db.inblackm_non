@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { stockBalanceReport } from "../src/lib/stock-balance-report.js";
-import { normalizeStockWebPackageIds } from "../src/lib/stock.js";
+import { normalizeStockWebPackageIds, stockWebLink } from "../src/lib/stock.js";
 import { bridgeSignature, verifyBridgeRequest } from "../src/server/itune-order-bridge-auth.js";
 
 let passed = 0;
@@ -47,5 +47,18 @@ const route = readFileSync(new URL("../src/app/api/integrations/inblackm/stock/r
 check(route.includes("verifyBridgeRequest(request.headers, `stock-balance\\n${raw}`)"),"the route checks the signature, under its own prefix");
 check(route.indexOf("verifyBridgeRequest(") < route.indexOf("listStockAccounts()"), "the signature is checked before anything is read");
 check(!/\bexport async function (GET|PUT|PATCH|DELETE)\b/.test(route) && !/recordStockMove|updateStock/.test(route), "the bridge only reads");
+
+// The badge on คลัง says "on" exactly when the bridge would let the main site grey that pack.
+const linked = { webPackageIds: [11] };
+const open = { status: "active", webSoldOut: true };
+check(stockWebLink(open, linked, true) === "on", "an open, switched-on account's tied pack is on");
+check(stockWebLink(open, linked, false) === "master-off", "the main switch off wins over the account's");
+check(stockWebLink({ ...open, webSoldOut: false }, linked, true) === "account-off", "the account's own switch off");
+check(stockWebLink(open, { webPackageIds: [] }, true) === "unlinked" && stockWebLink(open, {}, true) === "unlinked", "a pack tied to no site package");
+check(stockWebLink({ ...open, status: "closed" }, linked, true) === "closed", "a closed account is never sent");
+for (const [account, item, webSync] of [[open, linked, true], [open, linked, false], [{ ...open, webSoldOut: false }, linked, true], [open, { webPackageIds: [] }, true]]) {
+  const sent = stockBalanceReport([{ code: "x", ...account, items: [{ label: "p", ...item }] }], [], { webSync }).accounts[0];
+  check((stockWebLink(account, item, webSync) === "on") === (sent.webSoldOut && sent.items[0].webPackageIds.length > 0), "the badge agrees with what the bridge sends");
+}
 
 console.log(`stock balance bridge: ${passed} passed`);

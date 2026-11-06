@@ -22,6 +22,27 @@ export function normalizeStockWebPackageIds(value) {
 /** Profit as % of the sale below which a sale is flagged, as the sheet's "กำไร 10%" column. */
 export const STOCK_MIN_MARGIN = 10;
 
+/**
+ * Whether a pack's stock reaches the main site, and if not, the first thing in the way. Mirrors
+ * stockBalanceReport: the main switch, the account open and switched on, the pack tied to site packages.
+ * "on" | "closed" | "master-off" | "account-off" | "unlinked".
+ */
+export function stockWebLink(account, item, webSync) {
+  if (account.status === "closed") return "closed";
+  if (webSync !== true) return "master-off";
+  if (account.webSoldOut !== true) return "account-off";
+  if (!item.webPackageIds?.length) return "unlinked";
+  return "on";
+}
+
+export const STOCK_WEB_LINK_LABELS = {
+  on: "เชื่อมเว็บแล้ว",
+  closed: "ไอดีปิด ไม่ส่งไปเว็บ",
+  "master-off": "ปุ่มเชื่อมทั้งหมดปิด",
+  "account-off": "ไอดีนี้ยังไม่เปิดซิงค์",
+  unlinked: "ยังไม่ผูกแพ็คเว็บ",
+};
+
 /** Profit as % of the sale price, one decimal; null when either is unknown or the price is not above 0. */
 export function stockMargin(profit, sellPrice) {
   if (profit == null || sellPrice == null || !(Number(sellPrice) > 0)) return null;

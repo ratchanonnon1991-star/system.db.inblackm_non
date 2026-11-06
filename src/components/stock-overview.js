@@ -7,7 +7,7 @@ import { AlertTriangle, Minus, Plus, Search } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
 import StockMoveDialog from "@/components/stock-move-dialog";
 import { StockAccountDialog } from "@/components/stock-edit-dialogs";
-import { formatStockNumber, STOCK_BAR_CLASS, StockLeftBadge, StockStatusPill } from "@/components/stock-ui";
+import { formatStockNumber, STOCK_BAR_CLASS, StockLeftBadge, StockStatusPill, StockWebLinkBadge } from "@/components/stock-ui";
 
 const FILTERS = [
   { id: "all", label: "ทั้งหมด" },
@@ -288,8 +288,11 @@ function AccountCard({ account, logo, filter, canEdit, webSync }) {
         {items.length ? items.map((item) => {
           const percent = item.received > 0 ? Math.max(0, Math.min(100, Math.round((item.left / item.received) * 100))) : 0;
           return (
-            <div key={item.id} className="grid grid-cols-[minmax(0,110px)_64px_minmax(0,1fr)_56px] items-center gap-3 border-b border-zinc-100 py-2 last:border-0">
-              <span className="truncate text-sm font-extrabold" title={item.label}>{item.label}</span>
+            <div key={item.id} className="grid grid-cols-[minmax(0,150px)_64px_minmax(0,1fr)_56px] items-center gap-3 border-b border-zinc-100 py-2 last:border-0">
+              <span className="flex min-w-0 flex-col items-start gap-1">
+                <span className="max-w-full truncate text-sm font-extrabold" title={item.label}>{item.label}</span>
+                <StockWebLinkBadge account={account} item={item} webSync={webSync} />
+              </span>
               <span className="text-xs text-zinc-600">{item.unitUsd != null ? `${item.unitUsd} USD` : ""}</span>
               <span className="h-2 overflow-hidden rounded-full bg-zinc-100"><span className={`block h-full rounded-full ${STOCK_BAR_CLASS[item.tone]}`} style={{ width: `${percent}%` }} /></span>
               <span className="justify-self-end"><StockLeftBadge item={item} /></span>
