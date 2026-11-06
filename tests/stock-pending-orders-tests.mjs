@@ -9,8 +9,10 @@ import ts from "typescript";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
+  accountFitsOrderPlatform,
   autoCutPlan,
   isClosedOrderStatus,
+  orderPlatform,
   stockOrderPackKey,
   suggestOrderPack,
   pendingStockOrders,
@@ -164,5 +166,35 @@ check(awaitingHtml.includes("ยืนยัน</button>") && awaitingHtml.inclu
 check(awaitingHtml.includes("ควรกดไม่ได้ใช้ stock"), "an order rejected after the cut is flagged");
 const learnedHtml = renderToStaticMarkup(React.createElement(Page, { canEdit: true, data: { ...pageData, orders: [{ ...pageData.orders[0], suggestion: { accountId: 12, itemId: 121, source: "learned" } }] } }));
 check(learnedHtml.includes("จำไว้จากครั้งก่อน: 6480 Lunite"), "a learned pack says so");
+
+// iOS and Android are different stock, written by hand in the order's pack text.
+for (const [text, expected] of [
+  ["4.44 550 IOS", "ios"], ["6.03 750 ios", "ios"], ["iPhone 550", "ios"],
+  ["16.98 2130 Android", "android"], ["0.79 Great value for a set (Suarez) androif", "android"], ["550 андроид", "android"],
+  ["3.49 Great value for a set", ""], ["4.44 840", ""], ["", ""], [null, ""], ["550 iOS / Android", ""],
+  ["Radios 100", ""], ["Bios 100", ""],
+]) check(orderPlatform(text) === expected, `"${text}" names "${expected}"`);
+
+check(accountFitsOrderPlatform({ platform: "ios" }, "4.44 550 IOS"), "the same store fits");
+check(!accountFitsOrderPlatform({ platform: "ios" }, "4.60 550 Android"), "the other store does not");
+check(accountFitsOrderPlatform({ platform: "ios" }, "3.49 Great value"), "an order naming no store may still fit");
+check(accountFitsOrderPlatform({ platform: "" }, "4.60 550 Android"), "an account naming no store is not ruled out");
+
+const iosPes = { id: 9, code: "pes1", gameName: "eFootball", platform: "ios", status: "active", autoCut: true, autoCutSince: "2026-01-01T00:00:00Z", items: [{ id: 27, label: "4.8 USD", packName: "550 Coin / 840 Coin", left: 5 }] };
+const pesOrder = (ref, pack) => ({ task_request_id: ref, game_name: "#eFootbal (PES) (via login 2fa)", pack_name: pack, status: "pending", source: "russia", created_at: "2026-11-01T00:00:00Z" });
+const learnedAndroid = new Map([[`9|${stockOrderPackKey("4.60 550 Android")}`, 27], [`9|${stockOrderPackKey("4.44 550 IOS")}`, 27]]);
+const pesPending = pendingStockOrders([pesOrder("a", "4.60 550 Android"), pesOrder("i", "4.44 550 IOS"), pesOrder("n", "4.44 840")], [iosPes], new Set(), learnedAndroid);
+check(!pesPending.some((order) => order.ref === "a"), "an Android order leaves an iOS account's queue, even with a pack learned before");
+check(pesPending.find((order) => order.ref === "i")?.suggestion?.itemId === 27, "the iOS order keeps its pack");
+check(pesPending.some((order) => order.ref === "n"), "an order naming no store stays for a person to judge");
+const pesById = new Map([[9, iosPes]]);
+check(autoCutPlan(pesPending.find((order) => order.ref === "i"), pesById)?.itemId === 27, "auto cut still takes the iOS order");
+const otherStore = pendingStockOrders([pesOrder("a", "4.60 550 Android")], [iosPes, { ...iosPes, id: 10, code: "pes2", platform: "" }], new Set(), new Map());
+check(otherStore[0]?.accounts.length === 1 && otherStore[0].accounts[0].code === "pes2", "an account naming no store still answers an Android order");
+
+check(stockOrderGamePatterns([iosPes]).includes("%efootbal%"), "the SQL filter also finds the channels' spelling");
+check(stockAccountGameKeys(iosPes).includes("efootbal"), "so does the match by account");
+check(pendingStockOrders([pesOrder("s", "4.44 550 IOS"), { ...pesOrder("t", "4.44 550 IOS"), game_name: "#EFootbalPESViaLogin2fa" }, { ...pesOrder("u", "4.44 550 IOS"), game_name: "eFootball 2026" }], [iosPes]).length === 3, "every spelling of the game reaches the account");
+check(!pendingStockOrders([{ ...pesOrder("h", "1,000 Coin"), game_name: "Homescapes" }], [iosPes]).length, "another game stays out");
 
 console.log(`${passed} passed`);

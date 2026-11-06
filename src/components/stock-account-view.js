@@ -4,7 +4,7 @@ import PaginatedTable from "@/components/table-pagination";
 import { useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, Minus, Pencil, Plus, SlidersHorizontal } from "lucide-react";
-import { STOCK_MIN_MARGIN, STOCK_MOVE_LABELS, stockMarginTone, stockPackNameParts } from "@/lib/stock";
+import { STOCK_ACCOUNT_PLATFORMS, STOCK_MIN_MARGIN, STOCK_MOVE_LABELS, stockMarginTone, stockPackNameParts } from "@/lib/stock";
 
 const MARGIN_CLASS = { ok: "bg-emerald-50 text-emerald-700", low: "bg-amber-100 text-amber-800", loss: "bg-red-50 text-red-700" };
 import StockMoveDialog from "@/components/stock-move-dialog";
@@ -23,7 +23,7 @@ function lineText(line) {
   return `${line.label} ×${Math.abs(line.qty)}${line.qty < 0 && line.kind !== "out" ? " (ลด)" : ""}`;
 }
 
-export default function StockAccountView({ account, moves, games, packNames, canEdit }) {
+export default function StockAccountView({ account, moves, games, packNames, webGameId = null, canEdit }) {
   const [dialog, setDialog] = useState(null);
   const [historyFilter, setHistoryFilter] = useState("all");
   const shownMoves = historyFilter === "all" ? moves : moves.filter((move) => move.kind === historyFilter);
@@ -50,6 +50,7 @@ export default function StockAccountView({ account, moves, games, packNames, can
             <h1 className="text-[28px] font-black">{account.code}</h1>
             <StockStatusPill status={account.status} />
             <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-extrabold text-zinc-700">{account.dataMode === "idpass" ? "ID-PASS" : "UID"}</span>
+            {account.platform ? <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-extrabold text-zinc-700">{STOCK_ACCOUNT_PLATFORMS[account.platform]}</span> : null}
           </div>
           <p className="mt-1.5 text-sm text-zinc-600">
             {account.gameName ? <>เกม {account.gameName}</> : "ยังไม่ผูกเกมใน GameInfo"}
@@ -124,6 +125,9 @@ export default function StockAccountView({ account, moves, games, packNames, can
                         ไม่พบใน GameInfo{item.packName.includes(" / ") ? `: ${missing.join(", ")}` : ""}
                       </span>
                     ) : null)(missingPacks(item))}
+                    <span className={`mt-1 block text-[11px] font-bold ${item.webPackageIds?.length ? "text-emerald-800" : "text-zinc-500"}`}>
+                      {item.webPackageIds?.length ? `เว็บหลัก: ผูก ${item.webPackageIds.length} แพ็ค` : "เว็บหลัก: ยังไม่ผูก"}
+                    </span>
                   </td>
                   {canEdit ? (
                     <td className="border-b border-zinc-100 px-3.5 py-3 text-right">
@@ -197,7 +201,7 @@ export default function StockAccountView({ account, moves, games, packNames, can
 
       {dialog?.type === "move" ? <StockMoveDialog accounts={[account]} accountId={account.id} kind={dialog.kind} onClose={() => setDialog(null)} /> : null}
       {dialog?.type === "account" ? <StockAccountDialog account={account} games={games} onClose={() => setDialog(null)} /> : null}
-      {dialog?.type === "item" ? <StockItemDialog accountId={account.id} item={dialog.item || null} packNames={packNames} onClose={() => setDialog(null)} /> : null}
+      {dialog?.type === "item" ? <StockItemDialog accountId={account.id} item={dialog.item || null} packNames={packNames} webGameId={webGameId} onClose={() => setDialog(null)} /> : null}
     </div>
   );
 }

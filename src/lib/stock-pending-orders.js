@@ -23,9 +23,36 @@ export function stockPendingDays(value) {
 }
 
 /** Order statuses that never get filled. */
+const IOS_WORD = /(^|[^\p{L}])(ios|iphone|ipad)($|[^\p{L}])/iu;
+const ANDROID_WORD = /andr|андр/iu;
+
+/**
+ * The store an order's pack text names: "4.44 550 IOS" → "ios", "1.11 260 androif" → "android".
+ * Most orders are typed by hand, so "andr" takes the misspellings too. "" when it names neither,
+ * or both, which says nothing either way.
+ */
+export function orderPlatform(packText) {
+  const text = String(packText ?? "");
+  const ios = IOS_WORD.test(text);
+  const android = ANDROID_WORD.test(text);
+  if (ios === android) return "";
+  return ios ? "ios" : "android";
+}
+
+/** Whether an account's stock can fill an order: only a store named on both sides can rule it out. */
+export function accountFitsOrderPlatform(account, packText) {
+  const wanted = orderPlatform(packText);
+  return !wanted || !account.platform || account.platform === wanted;
+}
+
 export function isClosedOrderStatus(status) {
   return /reject|cancel/i.test(String(status ?? ""));
 }
+
+/** How the order channels really spell a game, when that is not its name: "#eFootbal (PES) (via login 2fa)". */
+const ORDER_GAME_SPELLINGS = {
+  efootball: ["efootbal"],
+};
 
 /**
  * The names an account's orders are found by: its own game name when it has
@@ -34,7 +61,8 @@ export function isClosedOrderStatus(status) {
  */
 function orderHints(account) {
   const own = String(account.gameName || "").trim();
-  return own ? [own] : stockGameHints(account);
+  const hints = own ? [own] : stockGameHints(account);
+  return hints.flatMap((hint) => [hint, ...(ORDER_GAME_SPELLINGS[flatGameName(hint)] || [])]);
 }
 
 /** The flat game names an open account answers to, longest first. */
@@ -148,7 +176,10 @@ export function pendingStockOrders(orders, accounts, done = new Set(), aliases =
     seen.add(ref);
     if (done.has(ref) || (orderId && done.has(orderId)) || isClosedOrderStatus(order.status)) continue;
     const game = flatGameName(order.game_name);
-    const matched = open.filter((entry) => entry.keys.some((key) => game.includes(key))).map((entry) => entry.account);
+    const matched = open
+      .filter((entry) => entry.keys.some((key) => game.includes(key)))
+      .map((entry) => entry.account)
+      .filter((account) => accountFitsOrderPlatform(account, order.pack_name));
     if (!matched.length) continue;
     const suggestion = suggestOrderPack(order.pack_name, matched, aliases);
     out.push({

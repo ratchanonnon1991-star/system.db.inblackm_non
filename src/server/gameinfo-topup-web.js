@@ -99,6 +99,29 @@ export function topupWebPackageIconHref(packageId, version) {
   return `/api/gameinfo/topup-web/package-icon/${encodeURIComponent(packageId)}?v=${encodeURIComponent(version)}`;
 }
 
+/** Every live website package, without icons, for a picker. Null when the connection is not set up. */
+export async function listTopupWebPackages() {
+  const pool = await getTopupWebPool();
+  if (!pool) return null;
+  const result = await pool.query(
+    `SELECT p.id, p.label, p.amount_display, p.package_type, p.is_active_uid, p.is_active_idpass, g.id::text AS game_id, g.name AS game_name
+       FROM packages p
+       INNER JOIN games g ON g.id = p.game_id
+      WHERE p.archived_at IS NULL
+      ORDER BY g.name, p.sort_order, p.id`
+  );
+  return result.rows.map((row) => ({
+    id: Number(row.id),
+    label: String(row.label || ""),
+    amountDisplay: String(row.amount_display || ""),
+    category: String(row.package_type || "").trim(),
+    uidActive: bool(row.is_active_uid),
+    idpassActive: bool(row.is_active_idpass),
+    gameId: row.game_id,
+    gameName: String(row.game_name || ""),
+  }));
+}
+
 /** A website package's icon as stored: a data: URL, an http(s) URL, or "". */
 export async function getTopupWebPackageIcon(packageId) {
   const pool = await getTopupWebPool();

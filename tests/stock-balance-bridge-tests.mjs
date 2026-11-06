@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { stockBalanceReport } from "../src/lib/stock-balance-report.js";
+import { normalizeStockWebPackageIds } from "../src/lib/stock.js";
 import { bridgeSignature, verifyBridgeRequest } from "../src/server/itune-order-bridge-auth.js";
 
 let passed = 0;
@@ -9,7 +10,7 @@ const check = (condition, message) => { assert.ok(condition, message); passed +=
 
 const accounts = [
   { code: "hsr", gameId: 7, gameName: "sheet name", dataMode: "uid", status: "check", note: "secret note", valueUsd: 99, webSoldOut: true,
-    items: [{ label: "4.8 USD", packName: "550 Coin / 840 Coin", left: 12, lowAt: 10, tone: "ok", avgCost: 3.2, unitUsd: 4.8, received: 20 }] },
+    items: [{ label: "4.8 USD", packName: "550 Coin / 840 Coin", webPackageIds: [11, 12], left: 12, lowAt: 10, tone: "ok", avgCost: 3.2, unitUsd: 4.8, received: 20 }] },
   { code: "pes1", gameId: null, gameName: "eFootball", dataMode: "idpass", status: "active", items: [{ label: "1.2 USD", packName: "", left: 0, lowAt: 10, tone: "empty" }] },
   { code: "old", gameId: null, gameName: "Gone", dataMode: "uid", status: "closed", items: [] },
 ];
@@ -22,7 +23,12 @@ const masterOff = stockBalanceReport(accounts, [], { webSync: false });
 check(masterOff.webSync === false && masterOff.accounts.every((account) => account.webSoldOut === false) && masterOff.accounts[0].items.length === 1, "the main switch off turns every account off, balances still sent");
 check(stockBalanceReport(accounts).accounts.every((account) => account.webSoldOut === false), "the main switch is off unless turned on");
 check(report.accounts[1].dataMode === "idpass", "the mode goes along, so UID and ID-Pass packs stay apart");
-assert.deepEqual(report.accounts[0].items[0], { label: "4.8 USD", packNames: ["550 Coin / 840 Coin", "550 Coin", "840 Coin"], left: 12, lowAt: 10, tone: "ok" });
+assert.deepEqual(report.accounts[0].items[0], { label: "4.8 USD", packNames: ["550 Coin / 840 Coin", "550 Coin", "840 Coin"], webPackageIds: [11, 12], left: 12, lowAt: 10, tone: "ok" });
+passed += 1;
+check(Array.isArray(report.accounts[1].items[0].webPackageIds) && report.accounts[1].items[0].webPackageIds.length === 0, "a pack with no link sends an empty list");
+assert.deepEqual(normalizeStockWebPackageIds([5, "6", 5, 0, -1, 1.5, "x", null, 3000000000]), [5, 6]);
+passed += 1;
+assert.deepEqual(normalizeStockWebPackageIds("5"), []);
 passed += 1;
 check(report.accounts[1].items[0].packNames.length === 0, "a pack with no GameInfo name sends none");
 check(!/secret note|avgCost|unitUsd|valueUsd|received/.test(JSON.stringify(report)), "costs, value and notes never cross the bridge");

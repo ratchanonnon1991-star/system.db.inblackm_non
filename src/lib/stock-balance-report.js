@@ -21,6 +21,7 @@ export function stockBalanceReport(accounts, games = [], { webSync = false } = {
         items: (account.items || []).map((item) => ({
           label: item.label,
           packNames: stockPackNameParts(item.packName),
+          webPackageIds: item.webPackageIds || [],
           left: item.left,
           lowAt: item.lowAt,
           tone: item.tone,

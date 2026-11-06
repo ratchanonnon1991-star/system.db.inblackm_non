@@ -8,7 +8,17 @@ export const STOCK_MOVE_KINDS = ["in", "out", "adjust"];
 export const STOCK_MOVE_LABELS = { in: "รับเข้า", out: "ตัดออก", adjust: "ปรับยอด" };
 export const STOCK_ACCOUNT_STATUSES = ["active", "check", "closed"];
 export const STOCK_ACCOUNT_STATUS_LABELS = { active: "ปกติ", check: "ต้องตรวจ", closed: "ปิด" };
+/** Which store an account's stock was bought for. Empty: not said, so it answers to any order. */
+export const STOCK_ACCOUNT_PLATFORMS = { "": "ไม่ระบุ", ios: "iOS", android: "Android" };
 export const STOCK_DEFAULT_LOW_AT = 10;
+export const STOCK_WEB_PACKAGES_MAX = 30;
+
+/** The main-site package ids a pack fills: whole, positive, and each once. Anything else is dropped. */
+export function normalizeStockWebPackageIds(value) {
+  if (!Array.isArray(value)) return [];
+  const ids = value.map(Number).filter((id) => Number.isInteger(id) && id > 0 && id <= 2147483647);
+  return [...new Set(ids)];
+}
 /** Profit as % of the sale below which a sale is flagged, as the sheet's "กำไร 10%" column. */
 export const STOCK_MIN_MARGIN = 10;
 

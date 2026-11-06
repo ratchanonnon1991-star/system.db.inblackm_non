@@ -2,12 +2,15 @@ import { getPool } from "@/lib/db";
 import {
   normalizeStockCode,
   normalizeStockMoney,
+  STOCK_ACCOUNT_PLATFORMS,
   STOCK_ACCOUNT_STATUSES,
   STOCK_DEFAULT_LOW_AT,
   stockPackNameParts,
   stockTone,
   validateStockMove,
   stockMargin,
+  normalizeStockWebPackageIds,
+  STOCK_WEB_PACKAGES_MAX,
 } from "@/lib/stock";
 import { stockOrderPackKey } from "@/lib/stock-pending-orders";
 
@@ -89,8 +92,12 @@ async function ensureSchema() {
       await client.query(`ALTER TABLE stock_accounts ADD COLUMN IF NOT EXISTS auto_cut_since TIMESTAMPTZ`);
       // Whether this account's empty packs go grey on the main site (off: the site is left alone).
       await client.query(`ALTER TABLE stock_accounts ADD COLUMN IF NOT EXISTS web_sold_out BOOLEAN NOT NULL DEFAULT FALSE`);
+      // The store this account's stock is for, so an order for the other store is not cut from it.
+      await client.query(`ALTER TABLE stock_accounts ADD COLUMN IF NOT EXISTS platform VARCHAR(16) NOT NULL DEFAULT ''`);
       // When a pack's low-stock alert went out (src/server/stock-low-alert.js); cleared once it is back up.
       await client.query(`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS low_alert_at TIMESTAMPTZ`);
+      // The main site's packages this pack fills, picked by a person; ids, so a rename cannot break it.
+      await client.query(`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS web_package_ids INTEGER[] NOT NULL DEFAULT '{}'`);
       // The main switch over every account's main-site switch: no row means off.
       await client.query(`
         CREATE TABLE IF NOT EXISTS stock_web_sync (
@@ -136,6 +143,7 @@ function mapAccount(row) {
     gameId: row.game_id,
     gameName: row.game_name,
     dataMode: row.data_mode,
+    platform: row.platform || "",
     status: row.status,
     note: row.note,
     autoCut: row.auto_cut === true,
@@ -149,7 +157,7 @@ function mapAccount(row) {
 // Each pack with its totals; avgCost is the THB cost per unit over the
 // receipts that state one, which an out move takes as its cost.
 const ITEM_COLUMNS = `
-  i.id, i.account_id, i.label, i.unit_usd, i.low_at, i.pack_name, i.sort_order, i.low_alert_at,
+  i.id, i.account_id, i.label, i.unit_usd, i.low_at, i.pack_name, i.sort_order, i.low_alert_at, i.web_package_ids,
          COALESCE(SUM(l.qty) FILTER (WHERE m.kind = 'in'), 0) AS received,
          COALESCE(-SUM(l.qty) FILTER (WHERE m.kind = 'out'), 0) AS used,
          COALESCE(SUM(l.qty) FILTER (WHERE m.kind = 'adjust'), 0) AS adjusted,
@@ -173,6 +181,7 @@ function mapItem(row) {
     lowAt: row.low_at,
     lowAlertAt: row.low_alert_at ?? null,
     packName: row.pack_name,
+    webPackageIds: row.web_package_ids || [],
     sortOrder: row.sort_order,
     received,
     used,
@@ -242,6 +251,10 @@ function accountFields(input, { partial = false } = {}) {
   }
   if (input.gameName !== undefined) fields.game_name = String(input.gameName || "").trim().slice(0, 255);
   if (input.dataMode !== undefined) fields.data_mode = input.dataMode === "idpass" ? "idpass" : "uid";
+  if (input.platform !== undefined) {
+    if (!Object.hasOwn(STOCK_ACCOUNT_PLATFORMS, input.platform)) throw createHttpError("แพลตฟอร์มไม่ถูกต้อง", 400);
+    fields.platform = input.platform;
+  }
   if (input.status !== undefined) {
     if (!STOCK_ACCOUNT_STATUSES.includes(input.status)) throw createHttpError("สถานะไม่ถูกต้อง", 400);
     fields.status = input.status;
@@ -306,6 +319,11 @@ function itemFields(input, { partial = false } = {}) {
     fields.low_at = lowAt;
   }
   if (input.packName !== undefined) fields.pack_name = String(input.packName || "").trim().slice(0, 255);
+  if (input.webPackageIds !== undefined) {
+    const ids = normalizeStockWebPackageIds(input.webPackageIds);
+    if (ids.length > STOCK_WEB_PACKAGES_MAX) throw createHttpError(`ผูกแพ็คบนเว็บได้ไม่เกิน ${STOCK_WEB_PACKAGES_MAX} แพ็ค`, 400);
+    fields.web_package_ids = ids;
+  }
   if (input.sortOrder !== undefined) fields.sort_order = Number(input.sortOrder) || 0;
   return fields;
 }
