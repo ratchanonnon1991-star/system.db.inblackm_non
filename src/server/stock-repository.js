@@ -91,6 +91,15 @@ async function ensureSchema() {
       await client.query(`ALTER TABLE stock_accounts ADD COLUMN IF NOT EXISTS web_sold_out BOOLEAN NOT NULL DEFAULT FALSE`);
       // When a pack's low-stock alert went out (src/server/stock-low-alert.js); cleared once it is back up.
       await client.query(`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS low_alert_at TIMESTAMPTZ`);
+      // The main switch over every account's main-site switch: no row means off.
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS stock_web_sync (
+          id          BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
+          enabled     BOOLEAN NOT NULL DEFAULT FALSE,
+          updated_by  VARCHAR(255) NOT NULL DEFAULT '',
+          updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
       await client.query(`ALTER TABLE stock_moves ADD COLUMN IF NOT EXISTS confirm_state VARCHAR(16) NOT NULL DEFAULT 'confirmed'`);
       await client.query(`ALTER TABLE stock_moves ADD COLUMN IF NOT EXISTS order_pack VARCHAR(200) NOT NULL DEFAULT ''`);
       await client.query(`ALTER TABLE stock_moves ADD COLUMN IF NOT EXISTS confirmed_by VARCHAR(255) NOT NULL DEFAULT ''`);
@@ -504,6 +513,23 @@ export async function listStockPackAliases() {
   await ensureSchema();
   const result = await getPool().query(`SELECT account_id, pack_key, item_id FROM stock_pack_aliases`);
   return new Map(result.rows.map((row) => [`${row.account_id}|${row.pack_key}`, row.item_id]));
+}
+
+/** The main switch: off, and no account touches the main site whatever its own switch says. */
+export async function getStockWebSync() {
+  await ensureSchema();
+  const result = await getPool().query(`SELECT enabled FROM stock_web_sync`);
+  return result.rows[0]?.enabled === true;
+}
+
+export async function setStockWebSync(enabled, actorName = "") {
+  await ensureSchema();
+  await getPool().query(
+    `INSERT INTO stock_web_sync (id, enabled, updated_by) VALUES (TRUE, $1, $2)
+     ON CONFLICT (id) DO UPDATE SET enabled = EXCLUDED.enabled, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+    [enabled === true, String(actorName || "").slice(0, 255)]
+  );
+  return enabled === true;
 }
 
 /** Remember which packs were alerted, and forget those that are back above their level. */

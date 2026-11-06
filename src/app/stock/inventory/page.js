@@ -1,6 +1,6 @@
 import { getSessionUser } from "@/server/session-user";
 import { canManageStock } from "@/server/auth";
-import { listStockAccounts } from "@/server/stock-repository";
+import { getStockWebSync, listStockAccounts } from "@/server/stock-repository";
 import { listStockGameLogos, listStockGames } from "@/server/stock-games";
 import { matchStockGame, stockGameHints } from "@/lib/stock-game-match";
 import { appStoreKey } from "@/lib/stock-app-store";
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export default async function StockPage() {
   const user = await getSessionUser();
   const canEdit = canManageStock(user);
-  const [accounts, games] = await Promise.all([listStockAccounts(), listStockGames()]);
+  const [accounts, games, webSync] = await Promise.all([listStockAccounts(), listStockGames(), getStockWebSync()]);
   // An account not linked yet still gets its game's icon when its sheet name is a GameInfo game's.
   const gameOf = new Map(accounts.map((account) => [account.id, account.gameId || matchStockGame(account, games).game?.id || null]));
   const byGame = await listStockGameLogos([...gameOf.values()]);
@@ -25,5 +25,5 @@ export default async function StockPage() {
     const icon = appStore[appStoreKey(nameOf(account))];
     if (icon) logos[account.id] = icon;
   }
-  return <StockOverview accounts={accounts} games={canEdit ? games : []} logos={logos} canEdit={canEdit} />;
+  return <StockOverview accounts={accounts} games={canEdit ? games : []} logos={logos} canEdit={canEdit} webSync={webSync} />;
 }

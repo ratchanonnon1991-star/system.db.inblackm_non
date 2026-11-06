@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AlertTriangle, Minus, Plus, Search } from "lucide-react";
+import { apiJson } from "@/lib/api-json";
 import StockMoveDialog from "@/components/stock-move-dialog";
 import { StockAccountDialog } from "@/components/stock-edit-dialogs";
 import { formatStockNumber, STOCK_BAR_CLASS, StockLeftBadge, StockStatusPill } from "@/components/stock-ui";
@@ -69,7 +71,7 @@ function GameLogo({ src, name, size }) {
   );
 }
 
-export default function StockOverview({ accounts: allAccounts, games, logos = {}, canEdit }) {
+export default function StockOverview({ accounts: allAccounts, games, logos = {}, canEdit, webSync = false }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
   const [gameKey, setGameKey] = useState("all");
@@ -105,6 +107,8 @@ export default function StockOverview({ accounts: allAccounts, games, logos = {}
           </div>
         ) : null}
       </div>
+
+      <WebSyncMaster enabled={webSync} canEdit={canEdit} on={allAccounts.filter((account) => account.webSoldOut === true && account.status !== "closed").length} />
 
       <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3">
         <div className="rounded-2xl border border-zinc-200 bg-white px-[18px] py-4">
@@ -162,7 +166,7 @@ export default function StockOverview({ accounts: allAccounts, games, logos = {}
 
       {shown.length ? (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,420px),1fr))] gap-4">
-          {shown.map((account) => <AccountCard key={account.id} account={account} logo={logos[account.id]} filter={filter} />)}
+          {shown.map((account) => <AccountCard key={account.id} account={account} logo={logos[account.id]} filter={filter} canEdit={canEdit} webSync={webSync} />)}
         </div>
       ) : (
         <div className="rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-14 text-center text-sm text-zinc-600">
@@ -190,7 +194,74 @@ function CheckNote({ note }) {
   );
 }
 
-function AccountCard({ account, logo, filter }) {
+/** Save a switch, then show the page as the server now has it. */
+function useSwitchSave(url, method, fallbackError) {
+  const router = useRouter();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const save = async (body) => {
+    setSaving(true);
+    setError("");
+    try {
+      await apiJson(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), fallbackError });
+      router.refresh();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return { saving, error, save };
+}
+
+function SwitchButton({ on, label, disabled, onClick }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} aria-label={label} disabled={disabled} onClick={onClick}
+      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${on ? "bg-[#D90005]" : "bg-zinc-300"}`}>
+      <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${on ? "translate-x-5" : ""}`} />
+    </button>
+  );
+}
+
+/** The main switch: off, and no account touches the main site whatever its own switch says. */
+function WebSyncMaster({ enabled, canEdit, on }) {
+  const { saving, error, save } = useSwitchSave("/api/stock/web-sync", "PUT", "บันทึกการเชื่อมเว็บหลักไม่สำเร็จ");
+  return (
+    <div className={`rounded-2xl border px-[18px] py-3.5 ${enabled ? "border-red-200 bg-red-50" : "border-zinc-200 bg-white"}`}>
+      <div className="flex items-center justify-between gap-4">
+        <p className="min-w-0 text-sm font-black text-zinc-900">
+          เชื่อมกับเว็บหลัก (ทั้งหมด): {enabled ? "เปิด" : "ปิด"}
+          <span className="mt-0.5 block text-[13px] font-normal text-zinc-600">
+            {enabled ? `ไอดีที่เปิดซิงค์ ${on} ไอดี: แพ็คยอด 0 เป็นสีเทาและกดซื้อไม่ได้บนเว็บ` : "ไม่เชื่อมกับหน้าบ้านเลย ไม่ว่าสวิตช์ของแต่ละไอดีจะเป็นอย่างไร"}
+          </span>
+        </p>
+        <SwitchButton on={enabled} label="เชื่อมกับเว็บหลักทั้งหมด" disabled={!canEdit || saving} onClick={() => save({ enabled: !enabled })} />
+      </div>
+      {error ? <p role="alert" className="mt-1 text-xs font-bold text-red-700">{error}</p> : null}
+    </div>
+  );
+}
+
+/** Off leaves the main site alone; on, this account's empty packs go grey there. */
+function WebSyncSwitch({ account, canEdit, webSync }) {
+  const { saving, error, save } = useSwitchSave(`/api/stock/accounts/${account.id}`, "PATCH", "บันทึกการซิงค์ไม่สำเร็จ");
+  const on = account.webSoldOut === true;
+
+  return (
+    <div className="border-b border-zinc-100 px-[18px] py-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <span className="min-w-0 text-[13px] font-extrabold text-zinc-800">
+          ซิงค์ของหมดไปเว็บหลัก
+          <span className="block text-xs font-normal text-zinc-600">{!webSync ? "ปุ่มเชื่อมทั้งหมดปิดอยู่ ยังไม่มีผล" : on ? "ยอด 0 = เป็นสีเทา กดซื้อไม่ได้" : "ไม่ยุ่งกับเว็บหลัก"}</span>
+        </span>
+        <SwitchButton on={on} label={`ซิงค์ของหมดไปเว็บหลัก ${account.code}`} disabled={!canEdit || saving} onClick={() => save({ webSoldOut: !on })} />
+      </div>
+      {error ? <p role="alert" className="mt-1 text-xs font-bold text-red-700">{error}</p> : null}
+    </div>
+  );
+}
+
+function AccountCard({ account, logo, filter, canEdit, webSync }) {
   // Under the "ใกล้หมด" / "หมด" filters show only the packs that made the account match,
   // so a card found by "หมด" does not look full because its other packs still have stock.
   const packTone = filter === "low" || filter === "empty" ? filter : null;
@@ -211,6 +282,7 @@ function AccountCard({ account, logo, filter }) {
         </div>
         <StockStatusPill status={account.status} />
       </div>
+      <WebSyncSwitch account={account} canEdit={canEdit} webSync={webSync} />
       {account.note && account.status === "check" ? <CheckNote note={account.note} /> : null}
       <div className="px-[18px] pb-2 pt-1.5">
         {items.length ? items.map((item) => {

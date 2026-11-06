@@ -13,11 +13,14 @@ const accounts = [
   { code: "pes1", gameId: null, gameName: "eFootball", dataMode: "idpass", status: "active", items: [{ label: "1.2 USD", packName: "", left: 0, lowAt: 10, tone: "empty" }] },
   { code: "old", gameId: null, gameName: "Gone", dataMode: "uid", status: "closed", items: [] },
 ];
-const report = stockBalanceReport(accounts, [{ id: 7, name: "Honkai: Star Rail" }]);
+const report = stockBalanceReport(accounts, [{ id: 7, name: "Honkai: Star Rail" }], { webSync: true });
 
 check(report.accounts.length === 2 && !report.accounts.some((account) => account.code === "old"), "a closed account is not sent");
 check(report.accounts[0].game === "Honkai: Star Rail" && report.accounts[1].game === "eFootball", "the linked game's name comes first, else the sheet's");
 check(report.accounts[0].webSoldOut === true && report.accounts[1].webSoldOut === false, "the main-site switch goes along, off unless turned on");
+const masterOff = stockBalanceReport(accounts, [], { webSync: false });
+check(masterOff.webSync === false && masterOff.accounts.every((account) => account.webSoldOut === false) && masterOff.accounts[0].items.length === 1, "the main switch off turns every account off, balances still sent");
+check(stockBalanceReport(accounts).accounts.every((account) => account.webSoldOut === false), "the main switch is off unless turned on");
 check(report.accounts[1].dataMode === "idpass", "the mode goes along, so UID and ID-Pass packs stay apart");
 assert.deepEqual(report.accounts[0].items[0], { label: "4.8 USD", packNames: ["550 Coin / 840 Coin", "550 Coin", "840 Coin"], left: 12, lowAt: 10, tone: "ok" });
 passed += 1;

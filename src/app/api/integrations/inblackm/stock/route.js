@@ -1,5 +1,5 @@
 import { verifyBridgeRequest } from "@/server/itune-order-bridge-auth";
-import { listStockAccounts } from "@/server/stock-repository";
+import { getStockWebSync, listStockAccounts } from "@/server/stock-repository";
 import { listStockGames } from "@/server/stock-games";
 import { stockBalanceReport } from "@/lib/stock-balance-report";
 
@@ -14,8 +14,8 @@ export async function POST(request) {
     const raw = await request.text();
     if (Buffer.byteLength(raw) > 1024) return Response.json({ error: "Request too large" }, { status: 413 });
     verifyBridgeRequest(request.headers, `stock-balance\n${raw}`);
-    const [accounts, games] = await Promise.all([listStockAccounts(), listStockGames()]);
-    return Response.json({ report: stockBalanceReport(accounts, games) }, { headers: { "Cache-Control": "no-store" } });
+    const [accounts, games, webSync] = await Promise.all([listStockAccounts(), listStockGames(), getStockWebSync()]);
+    return Response.json({ report: stockBalanceReport(accounts, games, { webSync }) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("[stock-balance] bridge", error.code || error.status || "internal");
     return Response.json({ error: error.status ? error.message : "โหลดข้อมูลไม่สำเร็จ" }, { status: error.status || 500 });
