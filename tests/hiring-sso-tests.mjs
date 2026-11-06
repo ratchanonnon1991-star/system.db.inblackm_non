@@ -66,6 +66,7 @@ passed += 1;
 const mockRoute = fs.readFileSync(new URL("../src/app/api/sso/mock/route.js", import.meta.url), "utf8");
 assert.match(mockRoute, /NODE_ENV === "production"[\s\S]*status: 404/, "mock SSO must be unreachable in production");
 assert.match(mockRoute, /PERMISSION_PRESETS\.projectmTopup/, "mock account should be usable in Projectm Topup");
-passed += 2;
+assert.match(mockRoute, /as"\) === "reviewer"[\s\S]*PERMISSION_PRESETS\.gameinfoAdmin/, "a second mock account is a GameInfo admin");
+passed += 3;
 
 console.log(`${passed} passed`);

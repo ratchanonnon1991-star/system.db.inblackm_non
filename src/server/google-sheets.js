@@ -130,6 +130,27 @@ export function createGoogleReader({ keyFile = process.env.ITUNE_SHEETS_CREDENTI
       if (!response.ok) throw Object.assign(new Error(`Google export HTTP ${response.status}`), { status: response.status });
       return Buffer.from(await response.arrayBuffer());
     },
+    // Everything directly in one Drive folder, any type: [{ id, name, mimeType }].
+    async listFolder(folderId) {
+      const files = []; let pageToken = "";
+      do {
+        const params = new URLSearchParams({ q: `'${String(folderId).replaceAll("'", "\\'")}' in parents and trashed = false`,
+          fields: "nextPageToken,files(id,name,mimeType)", pageSize: "200", supportsAllDrives: "true", includeItemsFromAllDrives: "true" });
+        if (pageToken) params.set("pageToken", pageToken);
+        const body = await get(`${DRIVE}?${params}`);
+        files.push(...(body.files || [])); pageToken = body.nextPageToken || "";
+      } while (pageToken);
+      return files;
+    },
+    // A file stored in Drive (an uploaded .xlsx, not a Google Sheet), as bytes.
+    async downloadFile(fileId) {
+      const response = await fetchImpl(`${DRIVE}/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`, {
+        headers: { Authorization: `Bearer ${await accessToken()}` },
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (!response.ok) throw Object.assign(new Error(`Google Drive download HTTP ${response.status}`), { status: response.status });
+      return Buffer.from(await response.arrayBuffer());
+    },
     // Literal values (RAW), one cell per update: { range: "'tab'!E12", value }.
     async writeRaw(spreadsheetId, updates) {
       if (readOnly) throw new Error("This Google Sheets reader is read-only");

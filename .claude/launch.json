@@ -4,8 +4,22 @@
     {
       "name": "gamedb",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 4183
+    },
+    {
+      "name": "topup",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "C:/Users/Deal7420NotHag/Documents/GitHub/topup-inblackm",
+        "run",
+        "dev"
+      ],
+      "port": 3000
     }
   ]
 }

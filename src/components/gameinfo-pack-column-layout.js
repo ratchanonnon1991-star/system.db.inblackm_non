@@ -12,6 +12,7 @@ import {
   normalizeGameinfoPackLayout,
   orderGameinfoPackColumns,
 } from "@/lib/gameinfo-pack-columns";
+import { revealAdded } from "@/lib/reveal-added";
 
 function normalizeLayoutForScreen(layout, columns) {
   return normalizeGameinfoPackLayout(layout, columns);
@@ -540,10 +541,13 @@ export function GameinfoPackColumnControls({
               <button
                 type="button"
                 disabled={loading || saving || filters.length >= 10 || columns.length === 0}
-                onClick={() => onFiltersChange([
-                  ...filters,
-                  { columnId: columns[0]?.id || "", operator: "contains", value: "" },
-                ])}
+                onClick={() => {
+                  onFiltersChange([
+                    ...filters,
+                    { columnId: columns[0]?.id || "", operator: "contains", value: "" },
+                  ]);
+                  revealAdded(`pack-filter:${filters.length}`);
+                }}
                 className="inline-flex items-center gap-1 text-xs text-linear-primary hover:underline disabled:opacity-50"
               >
                 <Plus size={12} /> เพิ่ม
@@ -554,7 +558,7 @@ export function GameinfoPackColumnControls({
             ) : (
               <div className="space-y-2">
                 {filters.map((filter, index) => (
-                  <div key={`${filter.columnId}:${index}`} className="grid grid-cols-[1fr_88px_auto] gap-1">
+                  <div key={`${filter.columnId}:${index}`} data-reveal-key={`pack-filter:${index}`} className="grid grid-cols-[1fr_88px_auto] gap-1">
                     <select
                       value={filter.columnId}
                       onChange={(event) => onFiltersChange(filters.map((item, itemIndex) =>
@@ -599,7 +603,7 @@ export function GameinfoPackColumnControls({
           </div>
 
           <p className="mt-3 text-[10px] text-linear-ink-tertiary">
-            ลำดับคอลัมน์แอดมินตั้งที่หน้าสิทธิ์คอลัมน์ · preset ใช้ซ่อนคอลัมน์และตัวกรองของตัวเอง
+            ลำดับคอลัมน์: ลากหัวตารางในหน้าแก้ไขแพ็ค (ใช้กับทุกคนในเกมนั้น) หรือตั้งค่ากลางที่หน้าสิทธิ์คอลัมน์ · preset ใช้ซ่อนคอลัมน์และตัวกรองของตัวเอง
           </p>
           {dirty ? (
             <p className="mt-1 text-[10px] text-linear-primary">มีการเปลี่ยนแปลงที่ยังไม่บันทึก</p>

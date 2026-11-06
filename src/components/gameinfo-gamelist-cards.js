@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   ArrowLeftRight,
@@ -21,6 +21,7 @@ import {
   List,
   Menu,
   MoreVertical,
+  PackagePlus,
   PackageSearch,
   Search,
   Send,
@@ -35,6 +36,9 @@ import {
 import GameinfoDatasetToggle from "./gameinfo-dataset-toggle";
 import GameinfoBotCatalog from "./gameinfo-bot-catalog";
 import GameinfoPackPriceCompare from "./gameinfo-pack-price-compare";
+import GameinfoPackUpdate from "./gameinfo-pack-update";
+import { mockGameinfoPackUpdates } from "@/lib/gameinfo-pack-update";
+import { apiJson } from "@/lib/api-json";
 import GameinfoTutorialButton from "./gameinfo-tutorial-modal";
 import {
   GAMEINFO_STATUSES,
@@ -55,6 +59,8 @@ import {
 } from "@/lib/gameinfo-unsaved-changes";
 
 const PAGE_SIZE = 12;
+// เทียบราคาแพ็ค and Russia Check are hidden from the rail for now; their pages still work by URL.
+const SHOW_MARKET_TOOLS = false;
 
 const EXTRA_FILTER_LABELS = {
   expiring: "ใกล้หมดอายุ",
@@ -72,8 +78,52 @@ const STATUS_STYLE = {
   offline: { label: "ปิดใช้งาน", dot: "bg-linear-ink-tertiary", text: "text-linear-ink-subtle" },
 };
 
-export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, botChannels = [], botCategoryImages = {}, marketPage = null, botCatalogActive = false, priceComparisonActive = false, editable = false, topupView = false, canReport = false, lang, dataMode = "uid" }) {
+export default function GameinfoGamelistCards({ initial, initialReports = [], tagImages = {}, publisherImages = {}, botChannels = [], botCategoryImages = {}, marketPage = null, botCatalogActive = false, priceComparisonActive = false, packUpdatePacks: initialPackUpdatePacks = null, userName = "", editable = false, topupView = false, canReport = false, lang, dataMode = "uid" }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Pack Update and the game list switch in the browser (the URL follows by
+  // pushState), not by loading the page again: the list is already here and
+  // Pack Update only needs every game's packs, loaded once.
+  const packUpdateActive = !botCatalogActive && !priceComparisonActive && searchParams.get("section") === "pack-update";
+  // A page other than the game list fills the main area; the filters there lead back to the list.
+  const otherSection = priceComparisonActive || packUpdateActive;
+  // Every game is listed until the PG2 API says which changed (see gameinfo-pack-update.js).
+  const packUpdateCount = initial.length;
+  const listHref = gameinfoListHref(lang, dataMode, false);
+  const packUpdateHref = `/gameinfo/${lang}?section=pack-update${dataMode === "uid" ? "" : `&mode=${dataMode}`}`;
+  const [packUpdatePacks, setPackUpdatePacks] = useState(initialPackUpdatePacks);
+  const [packUpdateError, setPackUpdateError] = useState("");
+  const packUpdateLoading = useRef(false);
+  const packUpdates = useMemo(() => (packUpdatePacks ? mockGameinfoPackUpdates(initial, packUpdatePacks) : null), [initial, packUpdatePacks]);
+  const loadPackUpdatePacks = useCallback(() => {
+    if (packUpdatePacks || packUpdateLoading.current) return;
+    packUpdateLoading.current = true;
+    setPackUpdateError("");
+    apiJson(`/api/gameinfo/pack-update${dataMode === "idpass" ? "?mode=idpass" : ""}`, { fallbackError: "โหลดแพ็คของ Pack Update ไม่สำเร็จ" })
+      .then((data) => setPackUpdatePacks(data.packsByGame || {}))
+      .catch((error) => setPackUpdateError(error instanceof Error ? error.message : "โหลดแพ็คของ Pack Update ไม่สำเร็จ"))
+      .finally(() => { packUpdateLoading.current = false; });
+  }, [dataMode, packUpdatePacks]);
+  useEffect(() => {
+    if (packUpdateActive) loadPackUpdatePacks();
+  }, [loadPackUpdatePacks, packUpdateActive]);
+  // Back to the list from another section: Pack Update in place, the rest by loading the list.
+  function leaveSection() {
+    if (botCatalogActive || priceComparisonActive) router.push(listHref);
+    else if (packUpdateActive) {
+      window.history.pushState(null, "", listHref);
+      window.scrollTo({ top: 0 });
+    }
+  }
+  function openPackUpdate(event) {
+    setSidebarOpen(false);
+    if (botCatalogActive || priceComparisonActive || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+    event.preventDefault();
+    if (packUpdateActive) return;
+    loadPackUpdatePacks();
+    window.history.pushState(null, "", packUpdateHref);
+    window.scrollTo({ top: 0 });
+  }
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [tag, setTag] = useState("");
@@ -194,21 +244,21 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
   }
 
   function chooseStatus(nextStatus) {
-    if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false));
+    if (botCatalogActive || otherSection) leaveSection();
     setStatus(nextStatus);
     setPage(0);
     setSidebarOpen(false);
   }
 
   function chooseTag(nextTag) {
-    if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false));
+    if (botCatalogActive || otherSection) leaveSection();
     setTag(nextTag);
     setPage(0);
     setSidebarOpen(false);
   }
 
   function choosePublisher(nextPublisher) {
-    if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false));
+    if (botCatalogActive || otherSection) leaveSection();
     setPublisher(nextPublisher);
     setPage(0);
     setSidebarOpen(false);
@@ -321,6 +371,49 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             <X size={20} />
           </button>
         </div>
+        {/* Above the filters: the tag and publisher lists run long enough to bury anything under them. */}
+        <nav aria-label="เครื่องมือ" className="mb-3 flex flex-col gap-1 border-b border-linear-hairline pb-3">
+          <h2 className="mx-2 mb-2 mt-0.5 text-[13px] font-extrabold text-linear-ink-muted">เครื่องมือ</h2>
+          <Link
+            href={`/gameinfo/${lang}?section=game-bot-auto${dataMode === "uid" ? "" : `&mode=${dataMode}`}`}
+            onClick={() => setSidebarOpen(false)}
+            className={navItemClass(botCatalogActive)}
+          >
+            <GitBranch size={18} aria-hidden="true" className={botCatalogActive ? "" : "text-[#D90005]"} /> Game Bot Auto
+          </Link>
+          {SHOW_MARKET_TOOLS ? (
+            <>
+            <Link
+              href={`/gameinfo/${lang}/pack-price-compare${dataMode === "uid" ? "" : `?mode=${dataMode}`}`}
+              onClick={() => setSidebarOpen(false)}
+              className={navItemClass(priceComparisonActive)}
+            >
+              <ArrowLeftRight size={18} aria-hidden="true" className={priceComparisonActive ? "" : "text-[#D90005]"} /> เทียบราคาแพ็ค
+            </Link>
+            <Link
+              href={`/gameinfo/${lang}/russia-check`}
+              onClick={() => setSidebarOpen(false)}
+              className={navItemClass(false)}
+            >
+              <PackageSearch size={18} aria-hidden="true" className="text-[#D90005]" /> Russia Check
+            </Link>
+            </>
+          ) : null}
+          {editable ? (
+            <>
+              <Link href={`/gameinfo/${lang}/topup-web`} className={navItemClass(false)}>
+                <Link2 size={18} aria-hidden="true" className="text-[#D90005]" /> เชื่อมเกมกับเว็บ TopUp
+              </Link>
+              <Link href={`/gameinfo/${lang}/sheet-import`} className={navItemClass(false)}>
+                <FileSpreadsheet size={18} aria-hidden="true" className="text-[#D90005]" /> นำเข้าจาก Google Sheet
+              </Link>
+              <span aria-hidden="true" className="mx-1 mb-1 mt-2.5 h-px bg-linear-hairline" />
+              <Link href={gameinfoListHref(lang, dataMode, true)} className={`${navItemClass(false)} text-linear-ink-muted`}>
+                <Settings size={18} aria-hidden="true" /> ตั้งค่าระบบ
+              </Link>
+            </>
+          ) : null}
+        </nav>
         <nav aria-label="ตัวกรองเกม" className="flex flex-col gap-1">
           <h2 className="mx-2 mb-2 mt-0.5 hidden text-[13px] font-extrabold text-linear-ink-muted lg:block">ตัวกรองเกม</h2>
           <button
@@ -328,14 +421,25 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             onClick={() => {
               clearFilters();
               setSidebarOpen(false);
-              if (botCatalogActive || priceComparisonActive) router.push(gameinfoListHref(lang, dataMode, false));
+              if (botCatalogActive || otherSection) leaveSection();
             }}
-            className={`${navItemClass(!botCatalogActive && status === "all" && !tag && !publisher && !priceComparisonActive)} min-h-11 font-bold`}
+            className={`${navItemClass(!botCatalogActive && status === "all" && !tag && !publisher && !otherSection)} min-h-11 font-bold`}
           >
             <Gamepad2 size={18} aria-hidden="true" />
             <span>เกมทั้งหมด</span>
-            <span className={navCountClass(!botCatalogActive && status === "all" && !tag && !publisher && !priceComparisonActive)}>{counts.all}</span>
+            <span className={navCountClass(!botCatalogActive && status === "all" && !tag && !publisher && !otherSection)}>{counts.all}</span>
           </button>
+          <Link
+            href={packUpdateHref}
+            onClick={openPackUpdate}
+            onMouseEnter={loadPackUpdatePacks}
+            onFocus={loadPackUpdatePacks}
+            className={`${navItemClass(packUpdateActive)} min-h-11 font-bold`}
+          >
+            <PackagePlus size={18} aria-hidden="true" />
+            <span>Pack Update</span>
+            {packUpdateCount ? <span className={`ml-auto rounded-full px-2 text-[11px] ${packUpdateActive ? "bg-white text-[#D90005]" : "bg-[#D90005] text-white"}`}>{packUpdateCount}</span> : null}
+          </Link>
 
           <details open className="group/sec">
             <summary className={`${sectionLabelClass} cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden`}>
@@ -343,7 +447,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             </summary>
             <div className="flex flex-col gap-1">
               {GAMEINFO_STATUSES.slice(1).map((item) => {
-                const active = !botCatalogActive && status === item.id && !priceComparisonActive;
+                const active = !botCatalogActive && status === item.id && !otherSection;
                 return (
                   <button key={item.id} type="button" onClick={() => chooseStatus(item.id)} className={navItemClass(active)}>
                     <span aria-hidden="true" className={`mx-[5px] h-2 w-2 rounded-full ${active ? "bg-white" : STATUS_STYLE[item.id].dot}`} />
@@ -362,7 +466,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             {tagOptions.length ? (
               <div className="flex flex-col gap-1">
                 {tagOptions.map((item) => {
-                  const active = !botCatalogActive && tag === item.name && !priceComparisonActive;
+                  const active = !botCatalogActive && tag === item.name && !otherSection;
                   return (
                     <button key={item.name} type="button" onClick={() => chooseTag(tag === item.name ? "" : item.name)} className={navItemClass(active)}>
                       {tagImages[item.name] ? (
@@ -385,7 +489,7 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
             {publisherOptions.length ? (
               <div className="flex flex-col gap-1">
                 {publisherOptions.map((item) => {
-                  const active = !botCatalogActive && publisher === item.name && !priceComparisonActive;
+                  const active = !botCatalogActive && publisher === item.name && !otherSection;
                   return (
                     <button key={item.name} type="button" onClick={() => choosePublisher(publisher === item.name ? "" : item.name)} className={navItemClass(active)}>
                       {publisherImages[item.name] ? (
@@ -402,75 +506,38 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
           </details>
 
           <span aria-hidden="true" className="mx-1 mb-1 mt-3.5 h-px bg-linear-hairline" />
-          <button type="button" onClick={() => chooseStatus("expiring")} className={navItemClass(!botCatalogActive && status === "expiring" && !priceComparisonActive)}>
+          <button type="button" onClick={() => chooseStatus("expiring")} className={navItemClass(!botCatalogActive && status === "expiring" && !otherSection)}>
             <Clock size={18} aria-hidden="true" />
             <span>ใกล้หมดอายุ</span>
-            <span className={navCountClass(!botCatalogActive && status === "expiring" && !priceComparisonActive)}>{counts.expiring}</span>
+            <span className={navCountClass(!botCatalogActive && status === "expiring" && !otherSection)}>{counts.expiring}</span>
           </button>
-          <button type="button" onClick={() => chooseStatus("favorite")} className={navItemClass(!botCatalogActive && status === "favorite" && !priceComparisonActive)}>
+          <button type="button" onClick={() => chooseStatus("favorite")} className={navItemClass(!botCatalogActive && status === "favorite" && !otherSection)}>
             <Star size={18} aria-hidden="true" />
             <span>รายการโปรด</span>
-            <span className={navCountClass(!botCatalogActive && status === "favorite" && !priceComparisonActive)}>{counts.favorite}</span>
+            <span className={navCountClass(!botCatalogActive && status === "favorite" && !otherSection)}>{counts.favorite}</span>
           </button>
-          <button type="button" onClick={() => chooseStatus("bot-auto")} className={navItemClass(!botCatalogActive && status === "bot-auto" && !priceComparisonActive)}>
+          <button type="button" onClick={() => chooseStatus("bot-auto")} className={navItemClass(!botCatalogActive && status === "bot-auto" && !otherSection)}>
             <Bot size={18} aria-hidden="true" />
             <span>Bot Auto</span>
-            <span className={navCountClass(!botCatalogActive && status === "bot-auto" && !priceComparisonActive)}>{counts.botAuto}</span>
+            <span className={navCountClass(!botCatalogActive && status === "bot-auto" && !otherSection)}>{counts.botAuto}</span>
           </button>
-          <button type="button" onClick={() => chooseStatus("priority-high")} className={navItemClass(!botCatalogActive && status === "priority-high" && !priceComparisonActive)}>
+          <button type="button" onClick={() => chooseStatus("priority-high")} className={navItemClass(!botCatalogActive && status === "priority-high" && !otherSection)}>
             <Flame size={18} aria-hidden="true" />
             <span>สำคัญสูง ★★★</span>
-            <span className={navCountClass(!botCatalogActive && status === "priority-high" && !priceComparisonActive)}>{counts.priorityHigh}</span>
+            <span className={navCountClass(!botCatalogActive && status === "priority-high" && !otherSection)}>{counts.priorityHigh}</span>
           </button>
           {hasWebData ? (
             <>
-              <button type="button" onClick={() => chooseStatus("web-on")} className={navItemClass(!botCatalogActive && status === "web-on" && !priceComparisonActive)}>
+              <button type="button" onClick={() => chooseStatus("web-on")} className={navItemClass(!botCatalogActive && status === "web-on" && !otherSection)}>
                 <Globe size={18} aria-hidden="true" />
                 <span>Web ON</span>
-                <span className={navCountClass(!botCatalogActive && status === "web-on" && !priceComparisonActive)}>{counts.webOn}</span>
+                <span className={navCountClass(!botCatalogActive && status === "web-on" && !otherSection)}>{counts.webOn}</span>
               </button>
-              <button type="button" onClick={() => chooseStatus("web-off")} className={navItemClass(!botCatalogActive && status === "web-off" && !priceComparisonActive)}>
+              <button type="button" onClick={() => chooseStatus("web-off")} className={navItemClass(!botCatalogActive && status === "web-off" && !otherSection)}>
                 <Globe size={18} aria-hidden="true" className="opacity-50" />
                 <span>Web OFF</span>
-                <span className={navCountClass(!botCatalogActive && status === "web-off" && !priceComparisonActive)}>{counts.webOff}</span>
+                <span className={navCountClass(!botCatalogActive && status === "web-off" && !otherSection)}>{counts.webOff}</span>
               </button>
-            </>
-          ) : null}
-
-          <span className={sectionLabelClass}>เครื่องมือ</span>
-          <Link
-            href={`/gameinfo/${lang}?section=game-bot-auto${dataMode === "uid" ? "" : `&mode=${dataMode}`}`}
-            onClick={() => setSidebarOpen(false)}
-            className={navItemClass(botCatalogActive)}
-          >
-            <GitBranch size={18} aria-hidden="true" className={botCatalogActive ? "" : "text-[#D90005]"} /> Game Bot Auto
-          </Link>
-          <Link
-            href={`/gameinfo/${lang}/pack-price-compare${dataMode === "uid" ? "" : `?mode=${dataMode}`}`}
-            onClick={() => setSidebarOpen(false)}
-            className={navItemClass(priceComparisonActive)}
-          >
-            <ArrowLeftRight size={18} aria-hidden="true" className={priceComparisonActive ? "" : "text-[#D90005]"} /> เทียบราคาแพ็ค
-          </Link>
-          <Link
-            href={`/gameinfo/${lang}/russia-check`}
-            onClick={() => setSidebarOpen(false)}
-            className={navItemClass(false)}
-          >
-            <PackageSearch size={18} aria-hidden="true" className="text-[#D90005]" /> Russia Check
-          </Link>
-          {editable ? (
-            <>
-              <Link href={`/gameinfo/${lang}/topup-web`} className={navItemClass(false)}>
-                <Link2 size={18} aria-hidden="true" className="text-[#D90005]" /> เชื่อมเกมกับเว็บ TopUp
-              </Link>
-              <Link href={`/gameinfo/${lang}/sheet-import`} className={navItemClass(false)}>
-                <FileSpreadsheet size={18} aria-hidden="true" className="text-[#D90005]" /> นำเข้าจาก Google Sheet
-              </Link>
-              <span aria-hidden="true" className="mx-1 mb-1 mt-2.5 h-px bg-linear-hairline" />
-              <Link href={gameinfoListHref(lang, dataMode, true)} className={`${navItemClass(false)} text-linear-ink-muted`}>
-                <Settings size={18} aria-hidden="true" /> ตั้งค่าระบบ
-              </Link>
             </>
           ) : null}
         </nav>
@@ -481,6 +548,19 @@ export default function GameinfoGamelistCards({ initial, initialReports = [], ta
           <GameinfoBotCatalog channels={botChannels} categoryImages={botCategoryImages} editable={editable} lang={lang} />
         ) : priceComparisonActive ? (
           <GameinfoPackPriceCompare page={marketPage} editable={editable} />
+        ) : packUpdateActive ? (
+          packUpdates ? (
+            <GameinfoPackUpdate initialGames={packUpdates} userName={userName} initialTab={searchParams.get("tab") === "history" ? "history" : "list"} />
+          ) : (
+            <div role="status" className="rounded-2xl border border-linear-hairline bg-linear-surface-1 p-8 text-center text-sm text-linear-ink-muted">
+              {packUpdateError ? (
+                <span className="flex flex-col items-center gap-3">
+                  <span className="text-linear-danger">{packUpdateError}</span>
+                  <button type="button" onClick={loadPackUpdatePacks} className="h-10 rounded-full border border-linear-hairline-strong px-4 font-bold text-linear-ink hover:bg-linear-surface-2">ลองอีกครั้ง</button>
+                </span>
+              ) : "กำลังโหลดแพ็คของทุกเกม…"}
+            </div>
+          )
         ) : (
           <>
         <div className="flex flex-wrap items-end justify-between gap-4">
@@ -806,20 +886,18 @@ function GameCard({ row, editable, topupView, canReport, lang, dataMode, favorit
         </dl>
       </div>
       <div className="flex items-center gap-2 px-4 pb-4">
-        {editable ? (
-          <Link href={actionHref} className="inline-flex h-[42px] min-w-0 flex-1 items-center justify-center rounded-[10px] bg-linear-primary px-3 text-sm font-extrabold text-white hover:bg-linear-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D90005]">
-            เปิดจัดการ
-          </Link>
-        ) : null}
         <DetailLink
           href={href}
           editable={editable}
-          className={editable
-            ? "flex h-[42px] min-w-20 shrink-0 items-center justify-center rounded-[10px] border border-linear-hairline-strong px-3 text-xs font-medium text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D90005]"
-            : "inline-flex h-[42px] min-w-0 flex-1 items-center justify-center rounded-[10px] bg-linear-primary px-3 text-sm font-extrabold text-white hover:bg-linear-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D90005]"}
+          className="inline-flex h-[42px] min-w-0 flex-1 items-center justify-center rounded-[10px] bg-linear-primary px-3 text-sm font-extrabold text-white hover:bg-linear-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D90005]"
         >
           ข้อมูลเกม
         </DetailLink>
+        {editable ? (
+          <Link href={actionHref} className="flex h-[42px] shrink-0 items-center justify-center rounded-[10px] border border-linear-hairline-strong px-3 text-xs font-medium text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D90005]">
+            จัดการ
+          </Link>
+        ) : null}
         <GameinfoTutorialButton gameId={row.id} gameName={row.game} editable={false} hasData={row.hasWarning} variant="warning" dataMode={dataMode} compact />
       </div>
     </article>
@@ -859,20 +937,18 @@ function GameRow({ row, editable, topupView, lang, dataMode, onPriorityChange })
       <td className="px-4 py-2.5 font-bold text-linear-ink">{row.server || "-"}</td>
       <td className="sticky right-0 bg-linear-surface-1 px-4 py-2.5 shadow-[-8px_0_12px_-10px_rgba(0,0,0,0.25)]">
         <div className="flex justify-end gap-1.5">
-          {editable ? (
-            <Link href={actionHref} className="flex h-9 items-center whitespace-nowrap rounded-[9px] bg-[#D90005] px-3.5 text-[13px] font-extrabold text-white hover:bg-[#B80004]">
-              เปิดจัดการ
-            </Link>
-          ) : null}
           <DetailLink
             href={href}
             editable={editable}
-            className={editable
-              ? "flex h-9 items-center whitespace-nowrap rounded-[9px] border border-linear-hairline-strong px-3 text-[13px] font-medium text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink"
-              : "flex h-9 items-center whitespace-nowrap rounded-[9px] bg-[#D90005] px-3.5 text-[13px] font-extrabold text-white hover:bg-[#B80004]"}
+            className="flex h-9 items-center whitespace-nowrap rounded-[9px] bg-[#D90005] px-3.5 text-[13px] font-extrabold text-white hover:bg-[#B80004]"
           >
             ข้อมูลเกม
           </DetailLink>
+          {editable ? (
+            <Link href={actionHref} className="flex h-9 items-center whitespace-nowrap rounded-[9px] border border-linear-hairline-strong px-3 text-[13px] font-medium text-linear-ink-muted hover:bg-linear-surface-2 hover:text-linear-ink">
+              จัดการ
+            </Link>
+          ) : null}
         </div>
       </td>
     </tr>

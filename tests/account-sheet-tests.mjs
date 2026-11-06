@@ -28,6 +28,8 @@ check(sheetPeriod("ข้อมูลบัญชี 10-2026") === "2026-10" && 
 check(sheetFileKind("1.2 บัญชีแลกเงิน 10_2026.xlsx") === "1.2 บัญชีแลกเงิน" && sheetFileKind("1.4 Multi Game Card") === "1.4 Multi Game Card", "the month drops out of a workbook's name");
 check(walletCodeForTab("1.2 บัญชีแลกเงิน 10_2026", "BITKUB INBLACK") === "bitkub" && walletCodeForTab("1.2 x", "Bitazza Inblack") === "bitazza"
   && walletCodeForTab("1.2 x", "BITKUB PAek") === null && walletCodeForTab("1.1 x", "Bybit Inblack Gaming") === null, "only the three wallet tabs of 1.2 feed wallets");
+check(walletCodeForTab("1.3 บัญชีใช้จ่ายทั่วไป 10_2026", "KBANK P'aek") === "kbank-paek" && walletCodeForTab("1.3 x", "KBANK P’aek") === "kbank-paek"
+  && walletCodeForTab("1.3 x", "kbank  paek") === "kbank-paek", "a tab name matches with or without its apostrophe");
 check(excelDate("46296") === "2026-10-01" && excelDate("123") === null && excelDate("abc") === null, "day serials become dates, other numbers do not");
 check(sheetMinutes("9.4") === 580 && sheetMinutes("10.19") === 619 && sheetMinutes("0.5") === 720 && sheetMinutes("21:51:") === 1311 && sheetMinutes("") === null, "the time column reads hour.minute, day fractions and text");
 

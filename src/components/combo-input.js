@@ -3,7 +3,7 @@
 import { useId, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { stockInputClass } from "@/components/stock-ui";
-import { filterComboGroups } from "@/lib/stock-addresses";
+import { filterComboGroups } from "@/lib/combo-filter";
 
 /**
  * A text box that is also a list: focus it to see every choice, type to narrow the list

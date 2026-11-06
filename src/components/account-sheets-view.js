@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight, FileSpreadsheet, Search } from "lucide-react";
 import { accountSheetCoverage } from "@/lib/account-sheets";
 import { PinToMenuButton } from "@/components/stock-nav-pins";
+import AccountSheetSync from "@/components/account-sheet-sync";
 
 export const ACCOUNT_SHEET_PAGE_SIZE = 200;
 
@@ -60,7 +61,7 @@ function SheetTable({ rows, showWhere = false, markRow = null }) {
   );
 }
 
-export default function AccountSheetsView({ tabs, open, rows, page, query, period, results, markRow = null }) {
+export default function AccountSheetsView({ tabs, open, rows, page, query, period, results, markRow = null, canSync = false }) {
   const periods = [...new Set(tabs.map((tab) => tab.period))].sort().reverse();
   const shownPeriod = open?.period || period || periods[0] || "";
   const files = [...new Set(tabs.filter((tab) => tab.period === shownPeriod).map((tab) => tab.fileName))];
@@ -87,12 +88,13 @@ export default function AccountSheetsView({ tabs, open, rows, page, query, perio
             <input name="q" defaultValue={query} placeholder="ค้นในทุกแท็บ เช่น Order, ชื่อ, ยอด" className="w-56 bg-transparent text-sm outline-none" />
           </label>
           <button className="h-10 rounded-xl bg-[#D90005] px-4 text-sm font-extrabold text-white hover:bg-[#B00004]">ค้นหา</button>
+          {canSync ? <AccountSheetSync /> : null}
         </form>
       </div>
 
       {!tabs.length && (
         <p className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          ยังไม่มีข้อมูล — รัน <code>node scripts/import-account-sheets.mjs &quot;&lt;โฟลเดอร์&gt;&quot; --apply</code>
+          ยังไม่มีข้อมูล — กด ซิงค์จาก Drive (ผู้ดูแล Stock)
         </p>
       )}
 

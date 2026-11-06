@@ -67,6 +67,9 @@ async function ensure(pool) {
         balance NUMERIC(20,4) NOT NULL CHECK(balance >= 0), observed_at TIMESTAMPTZ NOT NULL,
         actor_id INTEGER, actor_label TEXT NOT NULL, recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         UNIQUE(account_id, source, observed_at))`);
+      // Added for "adjust balance" on the channel pages: why the person set it, and what it showed before.
+      await c.query("ALTER TABLE gamedb_inv_snapshots ADD COLUMN IF NOT EXISTS note TEXT");
+      await c.query("ALTER TABLE gamedb_inv_snapshots ADD COLUMN IF NOT EXISTS previous_balance NUMERIC(20,4)");
       // History is evidence: corrections are new rows (reversal, adjust, a new snapshot).
       await c.query(`CREATE OR REPLACE FUNCTION gamedb_inv_append_only() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN RAISE EXCEPTION 'append-only: % on % is not allowed', TG_OP, TG_TABLE_NAME; END $$`);
@@ -228,7 +231,9 @@ export function createInventoryLedger(pool, { now = () => new Date() } = {}) {
     }
   }
 
-  async function insertSnapshot(input, actor) {
+  // `adjust`: { note, previousBalance } from the channel pages. Its time is the server's, so a retry
+  // of the same request matches on account and balance only.
+  async function insertSnapshot(input, actor, adjust = null) {
     if (new Date(input.observedAt).getTime() > now().getTime() + CLOCK_SKEW_MS) throw ledgerError("เวลาของยอดคงเหลือต้องไม่อยู่ในอนาคต");
     await ensure(pool);
     return inTransaction(pool, async c => {
@@ -236,17 +241,19 @@ export function createInventoryLedger(pool, { now = () => new Date() } = {}) {
         await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`inv-snapshot:${input.requestId}`]);
         const previous = (await c.query("SELECT id::text, account_id::text, balance::text, observed_at FROM gamedb_inv_snapshots WHERE request_id=$1", [input.requestId])).rows[0];
         if (previous) {
-          const same = previous.account_id === input.accountId && previous.balance === input.balance && iso(previous.observed_at) === input.observedAt;
+          const same = previous.account_id === input.accountId && previous.balance === input.balance && (adjust || iso(previous.observed_at) === input.observedAt);
           if (!same) throw ledgerError("รหัสคำขอนี้ถูกใช้กับยอดอื่นแล้ว", 409);
           return { id: previous.id, replayed: true };
         }
       }
-      const account = (await c.query("SELECT id FROM gamedb_inv_accounts WHERE id=$1", [input.accountId])).rows[0];
+      const account = (await c.query("SELECT id, status FROM gamedb_inv_accounts WHERE id=$1", [input.accountId])).rows[0];
       if (!account) throw ledgerError("ไม่พบบัญชี", 404);
+      if (adjust && account.status !== "active") throw ledgerError("บัญชีนี้ปิดใช้งานแล้ว", 409);
       const inserted = (await c.query(`INSERT INTO gamedb_inv_snapshots
-        (account_id, request_id, source, balance, observed_at, actor_id, actor_label)
-        VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (account_id, source, observed_at) DO NOTHING RETURNING id::text`,
-      [input.accountId, input.requestId, input.source, input.balance, input.observedAt, actor?.id ?? null, actor ? actorLabel(actor) : "provider-sync"])).rows[0];
+        (account_id, request_id, source, balance, observed_at, actor_id, actor_label, note, previous_balance)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (account_id, source, observed_at) DO NOTHING RETURNING id::text`,
+      [input.accountId, input.requestId, input.source, input.balance, input.observedAt, actor?.id ?? null, actor ? actorLabel(actor) : "provider-sync",
+        adjust?.note ?? null, adjust?.previousBalance ?? null])).rows[0];
       if (inserted) return { id: inserted.id, replayed: false };
       const existing = (await c.query(`SELECT id::text, balance::text FROM gamedb_inv_snapshots
         WHERE account_id=$1 AND source=$2 AND observed_at=$3`, [input.accountId, input.source, input.observedAt])).rows[0];
@@ -441,6 +448,32 @@ export function createInventoryLedger(pool, { now = () => new Date() } = {}) {
       const input = snapshotInput({ ...body, source: "manual" });
       if (!input.requestId) throw ledgerError("รหัสคำขอไม่ถูกต้อง");
       return insertSnapshot(input, actor);
+    },
+
+    /**
+     * "Adjust balance" on a channel page: any signed-in staff types what the balance is now, with a
+     * reason. Kept as a new manual snapshot (never an edit), with the balance the page showed before.
+     */
+    async adjustBalance(body, actor) {
+      requireSignedIn(actor);
+      const note = String(body?.reason ?? "").replace(/\s+/g, " ").trim().slice(0, 500);
+      if (!note) throw ledgerError("กรุณาระบุเหตุผลที่ปรับยอด");
+      const shown = body?.previousBalance == null || body.previousBalance === "" ? null
+        : fromUnits(toUnits(body.previousBalance, { allowZero: true, field: "ยอดก่อนปรับ" }));
+      const input = snapshotInput({ accountId: body?.accountId, balance: body?.balance, requestId: body?.requestId, observedAt: iso(now()), source: "manual" });
+      if (!input.requestId) throw ledgerError("รหัสคำขอไม่ถูกต้อง");
+      return insertSnapshot(input, actor, { note, previousBalance: shown });
+    },
+
+    /** Balance adjustments of one account, newest first (the channel pages' history). */
+    async balanceAdjustments(actor, accountId) {
+      requireSignedIn(actor);
+      if (!/^\d{1,18}$/.test(String(accountId ?? ""))) throw ledgerError("ระบุบัญชีให้ถูกต้อง");
+      await ensure(pool);
+      const { rows } = await pool.query(`SELECT id::text, balance::text, previous_balance::text AS "previousBalance", note,
+          actor_label AS "recordedBy", observed_at AS "at"
+        FROM gamedb_inv_snapshots WHERE account_id=$1 AND note IS NOT NULL ORDER BY observed_at DESC, id DESC LIMIT 100`, [accountId]);
+      return rows.map(r => ({ ...r, at: iso(r.at) }));
     },
 
     /** Trusted server-side sync that read a provider's balance API. Not reachable from a request. */

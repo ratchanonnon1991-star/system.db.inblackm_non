@@ -6,6 +6,40 @@ function cleanText(value, maxLength) {
   return String(value ?? "").trim().slice(0, maxLength);
 }
 
+const positive = (value) => {
+  const number = Number(String(value ?? "").replace(/,/g, "").trim());
+  return Number.isFinite(number) && number > 0 ? number : null;
+};
+
+// A rate worked out the way the source sheet does, kept with the profile so
+// the rate table can suggest today's rate. "perUsdt": how many units one USDT
+// buys (4,615 MMK, 1,355 NGN) → USDT/THB ÷ amount. "cnyPerUnit": the yuan one
+// unit costs (an iTunes $1 card at ¥5.85) → amount ÷ USDCNY × USDT/THB.
+// `usdtThb` is the baht per USDT typed in; empty means the live rate.
+export const GAMEINFO_SHEET_CALC_KINDS = ["perUsdt", "cnyPerUnit"];
+
+export function sanitizeGameinfoSheetCalc(raw) {
+  if (!raw || typeof raw !== "object" || !GAMEINFO_SHEET_CALC_KINDS.includes(raw.kind)) return null;
+  const amount = positive(raw.amount);
+  if (amount === null) return null;
+  const usdtThb = positive(raw.usdtThb);
+  return { kind: raw.kind, amount: String(amount), usdtThb: usdtThb === null ? "" : String(usdtThb) };
+}
+
+/**
+ * Baht per unit from a sheet calculation, or null when a rate it needs is
+ * missing. `live` ignores a typed USDT/THB and uses today's.
+ */
+export function gameinfoSheetCalcRate(calc, externalValues = {}, { live = false } = {}) {
+  const clean = sanitizeGameinfoSheetCalc(calc);
+  if (!clean) return null;
+  const usdtThb = (!live && positive(clean.usdtThb)) || positive(externalValues?.["USDT/THB"]);
+  if (usdtThb === null) return null;
+  if (clean.kind === "perUsdt") return usdtThb / Number(clean.amount);
+  const usdCny = positive(externalValues?.USDCNY);
+  return usdCny === null ? null : (Number(clean.amount) / usdCny) * usdtThb;
+}
+
 export function sanitizeGameinfoCostProfiles(raw) {
   if (!Array.isArray(raw)) return [];
   const seen = new Set();
@@ -23,6 +57,8 @@ export function sanitizeGameinfoCostProfiles(raw) {
       inputCurrency: cleanText(item.inputCurrency, 12).toUpperCase(),
       baseValue: cleanText(item.baseValue, 64),
       rateFormula: cleanText(item.rateFormula, 500),
+      ...(sanitizeGameinfoSheetCalc(item.sheetCalc) ? { sheetCalc: sanitizeGameinfoSheetCalc(item.sheetCalc) } : {}),
+      ...(cleanText(item.note, 200) ? { note: cleanText(item.note, 200) } : {}),
       updatedAt: cleanText(item.updatedAt, 40),
       updatedBy: Number.isInteger(updatedBy) && updatedBy > 0 ? updatedBy : null,
     });

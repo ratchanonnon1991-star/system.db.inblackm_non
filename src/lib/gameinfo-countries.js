@@ -36,6 +36,13 @@ aliases.set(countryKey("UK"), englishNames.of("GB"));
 aliases.set(countryKey("เกาหลีใต้"), englishNames.of("KR"));
 aliases.set(countryKey("เกาหลีเหนือ"), englishNames.of("KP"));
 
+/** A stored country in Thai ("Myanmar" → "เมียนมา"), or as stored when it is not one we know. */
+export function gameinfoCountryThaiName(value) {
+  const name = aliases.get(countryKey(value));
+  const country = name ? GAMEINFO_COUNTRIES.find((item) => item.name === gameinfoCountryDisplayName(name)) : null;
+  return country ? gameinfoCountryDisplayName(country.thaiName) : gameinfoCountryDisplayName(value);
+}
+
 export function normalizeGameinfoCountry(value) {
   const clean = String(value || "").trim();
   if (!clean) return { value: "", matched: false };

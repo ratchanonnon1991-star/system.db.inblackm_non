@@ -65,8 +65,11 @@ export const WALLET_PAYMENT_STATUSES = ["pending", "done"];
 export const WALLET_PAYMENT_STATUS_LABELS = { pending: "รอสินค้า", done: "เรียบร้อย" };
 export const WALLET_ENTRY_STATUSES = ["pending", "done", "awaiting_approval", "rejected"];
 export const WALLET_REVIEW_LABELS = { awaiting_approval: "รออนุมัติ", rejected: "ไม่อนุมัติ" };
-/** Entries whose legs count in a balance. */
-export const WALLET_COUNTED = "e.status NOT IN ('awaiting_approval', 'rejected')";
+/**
+ * Entries whose legs count in a balance. An entry from the sheets that the sheets no longer
+ * have, but that a person had worked on, is kept for them to check and counts no more.
+ */
+export const WALLET_COUNTED = "e.status NOT IN ('awaiting_approval', 'rejected') AND e.sheet_removed_at IS NULL";
 
 const CURRENCY = /^[A-Z]{3,5}$/;
 const clean = (value, max) => String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -264,4 +267,63 @@ export function walletStatusDecision(entry, decision, actor) {
   if (!["approve", "reject"].includes(decision)) return { error: "เลือกยืนยันหรือไม่ยืนยัน" };
   if (own) return { error: "ต้องให้อีกคนเป็นคนยืนยัน ไม่ใช่คนที่ขอ" };
   return { status: decision === "approve" ? request.to : null };
+}
+
+// ---- importing the sheets again ------------------------------------------------------------------
+
+/** What makes two sheet entries the same money: kind, time, title and every leg. */
+export function sheetEntryFingerprint({ kind, occurredAt, title, legs }) {
+  const at = Number.isNaN(Date.parse(occurredAt)) ? String(occurredAt ?? "") : new Date(occurredAt).toISOString();
+  const leg = (item) => [item.walletCode, item.currency, fromWalletUnits(toWalletUnits(String(item.amount ?? 0)) ?? 0n), fromWalletUnits(toWalletUnits(String(item.fee ?? 0)) ?? 0n)].join("/");
+  return [kind, at, String(title ?? "").trim(), (legs || []).map(leg).sort().join(",")].join("|");
+}
+
+/**
+ * Pairs the sheet entries already stored with the ones just read, so an import keeps what
+ * people did on them (a payment tied to an order, a status changed, a request awaiting
+ * someone) instead of wiping it. `existing`: [{ id, sourceRef, fingerprint, touched }];
+ * `incoming`: the planned entries (each with sourceRef and fingerprint). Pairs, in order:
+ *   1. same row and same money       → kept, refreshed from the sheet
+ *   2. same money on another row     → kept (a row was inserted or removed above it)
+ *   3. same row, the money changed   → kept, its figures replaced from the sheet
+ * Then what is left over: new rows are added; stored entries no row matches are deleted
+ * when nobody worked on them, else kept aside as gone from the sheet, out of every balance.
+ * → { updates: [{ id, entry, changed }], inserts: [entry], deletes: [id], removed: [id] }
+ */
+export function planSheetWalletSync(existing = [], incoming = []) {
+  const left = new Map(existing.map((row) => [row.id, row]));
+  const updates = [];
+  const waiting = [];
+  const take = (row, entry, changed) => {
+    left.delete(row.id);
+    updates.push({ id: row.id, entry, changed });
+  };
+  const byRefAndPrint = new Map();
+  for (const row of existing) byRefAndPrint.set(`${row.sourceRef}#${row.fingerprint}`, row);
+  for (const entry of incoming) {
+    const row = byRefAndPrint.get(`${entry.sourceRef}#${entry.fingerprint}`);
+    if (row && left.has(row.id)) take(row, entry, false);
+    else waiting.push(entry);
+  }
+  const pass = (list, keyOfRow, keyOfEntry, changed) => {
+    const index = new Map();
+    for (const row of left.values()) {
+      const key = keyOfRow(row);
+      if (!index.has(key)) index.set(key, []);
+      index.get(key).push(row);
+    }
+    const rest = [];
+    for (const entry of list) {
+      const row = (index.get(keyOfEntry(entry)) || []).find((candidate) => left.has(candidate.id));
+      if (row) take(row, entry, changed);
+      else rest.push(entry);
+    }
+    return rest;
+  };
+  const afterMoved = pass(waiting, (row) => row.fingerprint, (entry) => entry.fingerprint, false);
+  const inserts = pass(afterMoved, (row) => row.sourceRef, (entry) => entry.sourceRef, true);
+  const deletes = [];
+  const removed = [];
+  for (const row of left.values()) (row.touched ? removed : deletes).push(row.id);
+  return { updates, inserts, deletes, removed };
 }

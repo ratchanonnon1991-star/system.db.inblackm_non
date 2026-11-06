@@ -10,7 +10,8 @@ import { deleteGamelistPacksForGame, recordGameinfoAudit } from "@/server/gamein
 import { deleteGamelistTutorialForGame } from "@/server/gameinfo-gamelist-tutorial";
 import { deleteGamelistImageForGame } from "@/server/gameinfo-gamelist-image";
 import { deleteGamelistLinksForGame } from "@/server/gameinfo-gamelist-links";
-import { deleteGamelistGameSettingsForGame } from "@/server/gameinfo-game-settings";
+import { countGamelistTestIdsByGame, deleteGamelistGameSettingsForGame } from "@/server/gameinfo-game-settings";
+import { GAMEINFO_REQUIRED_TEST_IDS, gameinfoTestIdsShort } from "@/lib/gameinfo-test-account-rule";
 import { deleteGamelistSalesChannelsForGame } from "@/server/gameinfo-sales-channels";
 import { deleteGamelistPublishersForGame, deleteGamelistTagsForGame } from "@/server/gameinfo-gamelist-tags";
 import { deleteGamelistReportsForGame } from "@/server/gameinfo-gamelist-reports";
@@ -348,8 +349,16 @@ export async function setGameListServiceStatus(gameIds, enabled, actor = null) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const existing = await client.query(`SELECT id FROM game_list WHERE id = ANY($1::int[]) FOR UPDATE`, [ids]);
+    const existing = await client.query(`SELECT id, game FROM game_list WHERE id = ANY($1::int[]) FOR UPDATE`, [ids]);
     if (existing.rows.length !== ids.length) throw createHttpError("มีเกมที่เลือกไม่อยู่ในระบบ", 404);
+    if (normalizedEnabled) {
+      const testIds = await countGamelistTestIdsByGame(ids, client);
+      const short = existing.rows.filter((row) => gameinfoTestIdsShort(testIds[Number(row.id)] || 0));
+      if (short.length) {
+        const names = short.map((row) => row.game || `#${row.id}`).join(", ");
+        throw createHttpError(`เปิดใช้งานไม่ได้: ${names} ยังมี ID ทดสอบไม่ครบ ${GAMEINFO_REQUIRED_TEST_IDS} ID ใส่ให้ครบที่หัวข้อบัญชีทดสอบก่อน`, 400);
+      }
+    }
     const previous = await client.query(
       `SELECT game_id, enabled FROM gamelist_service_status WHERE game_id = ANY($1::int[])`,
       [ids]

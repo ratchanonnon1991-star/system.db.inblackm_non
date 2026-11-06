@@ -8,9 +8,40 @@ export const STOCK_MOVE_KINDS = ["in", "out", "adjust"];
 export const STOCK_MOVE_LABELS = { in: "รับเข้า", out: "ตัดออก", adjust: "ปรับยอด" };
 export const STOCK_ACCOUNT_STATUSES = ["active", "check", "closed"];
 export const STOCK_ACCOUNT_STATUS_LABELS = { active: "ปกติ", check: "ต้องตรวจ", closed: "ปิด" };
+/** Which store an account's stock was bought for. Empty: not said, so it answers to any order. */
+export const STOCK_ACCOUNT_PLATFORMS = { "": "ไม่ระบุ", ios: "iOS", android: "Android" };
 export const STOCK_DEFAULT_LOW_AT = 10;
+export const STOCK_WEB_PACKAGES_MAX = 30;
+
+/** The main-site package ids a pack fills: whole, positive, and each once. Anything else is dropped. */
+export function normalizeStockWebPackageIds(value) {
+  if (!Array.isArray(value)) return [];
+  const ids = value.map(Number).filter((id) => Number.isInteger(id) && id > 0 && id <= 2147483647);
+  return [...new Set(ids)];
+}
 /** Profit as % of the sale below which a sale is flagged, as the sheet's "กำไร 10%" column. */
 export const STOCK_MIN_MARGIN = 10;
+
+/**
+ * Whether a pack's stock reaches the main site, and if not, the first thing in the way. Mirrors
+ * stockBalanceReport: the main switch, the account open and switched on, the pack tied to site packages.
+ * "on" | "closed" | "master-off" | "account-off" | "unlinked".
+ */
+export function stockWebLink(account, item, webSync) {
+  if (account.status === "closed") return "closed";
+  if (webSync !== true) return "master-off";
+  if (account.webSoldOut !== true) return "account-off";
+  if (!item.webPackageIds?.length) return "unlinked";
+  return "on";
+}
+
+export const STOCK_WEB_LINK_LABELS = {
+  on: "เชื่อมเว็บแล้ว",
+  closed: "ไอดีปิด ไม่ส่งไปเว็บ",
+  "master-off": "ปุ่มเชื่อมทั้งหมดปิด",
+  "account-off": "ไอดีนี้ยังไม่เปิดซิงค์",
+  unlinked: "ยังไม่ผูกแพ็คเว็บ",
+};
 
 /** Profit as % of the sale price, one decimal; null when either is unknown or the price is not above 0. */
 export function stockMargin(profit, sellPrice) {
@@ -25,8 +56,19 @@ export function stockMarginTone(margin) {
   return margin < STOCK_MIN_MARGIN ? "low" : "ok";
 }
 
+/**
+ * The GameInfo pack names one stock item stands for. Items brought in from the sheets cover
+ * every pack of one price, kept as "A / B / C" (src/lib/sheet-inventory.js); the whole text
+ * is kept too, for a pack whose own name holds " / ".
+ */
+export function stockPackNameParts(packName) {
+  const whole = String(packName || "").trim();
+  if (!whole) return [];
+  return [...new Set([whole, ...whole.split(" / ").map((part) => part.trim()).filter(Boolean)])];
+}
+
 // Page names under /stock that an account code would hide (/stock/<code>).
-export const STOCK_RESERVED_CODES = ["inventory", "purchase-orders", "wallets", "sheets", "sheet-stock", "addresses", "offgamer", "expenses"];
+export const STOCK_RESERVED_CODES = ["inventory", "purchase-orders", "wallets", "sheets", "sheet-stock", "expenses", "pending"];
 
 /** "pes1" → "pes1": letters, digits, dot, dash and underscore, 2–32 long. */
 export function normalizeStockCode(value) {

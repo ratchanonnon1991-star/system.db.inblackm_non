@@ -2,6 +2,7 @@ import { getPool } from "@/lib/db";
 import { ACCOUNT_SHEET_ACTOR } from "@/lib/account-sheets";
 import { sheetInventoryMoves } from "@/lib/sheet-inventory";
 import { ensurePurchaseOrderSchema } from "@/server/stock-purchase-order-repository";
+import { ensureAttachmentSchema } from "@/server/stock-attachment-repository";
 
 // Writes what planSheetInventory read from the sheets into Stock: the stock IDs and
 // their packs (kept and updated, never deleted), and the purchase orders, receipts and
@@ -17,10 +18,18 @@ const DAY = 86400000;
  */
 export async function replaceSheetInventory(plan, idNotes = {}) {
   await ensurePurchaseOrderSchema();
+  await ensureAttachmentSchema();
   const { moves, balances } = sheetInventoryMoves(plan.events);
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    // The sheet's orders are made again with new ids: files people attached to them would be lost.
+    const attached = (await client.query(`SELECT DISTINCT o.id FROM stock_attachments a
+      JOIN stock_purchase_orders o ON o.id = a.owner_id
+      WHERE a.owner_kind = 'po' AND a.removed_at IS NULL AND o.created_by_name = $1 AND o.created_by_id IS NULL`, [ACCOUNT_SHEET_ACTOR])).rows;
+    if (attached.length) {
+      throw new Error(`ใบสั่งซื้อจากชีตมีไฟล์แนบแล้ว (${attached.map((row) => `PO-${String(row.id).padStart(5, "0")}`).join(", ")}) นำเข้าทับไม่ได้ เพราะไฟล์จะหลุดจากใบ`);
+    }
     // Wallet payments point at orders without a foreign key: unlink the ones about to go.
     await client.query(`UPDATE stock_wallet_entries SET order_id = NULL WHERE order_id IN (
       SELECT id FROM stock_purchase_orders WHERE created_by_name = $1 AND created_by_id IS NULL)`, [ACCOUNT_SHEET_ACTOR]);
@@ -85,13 +94,13 @@ export async function replaceSheetInventory(plan, idNotes = {}) {
       const note = [
         `ยกมาจากชีต ${order.sheet.fileName} › ${order.sheet.tab} แถว ${order.sheet.rowNo}`,
         order.totalUsd ? `มูลค่าแพ็ค ${order.totalUsd} USD` : "",
-        order.productRate ? `Product Rate ${order.productRate} CNY/USD` : "",
-        order.cnyRate ? `CNY Rate ${order.cnyRate} CNY/USDT` : "",
       ].filter(Boolean).join(" · ");
+      // The sheet's Product Rate (CNY per USD) and CNY Rate (CNY per USDT), as the order's own rates.
+      const rate = (value) => (Number(value) > 0 ? Number(value) : null);
       const orderId = (await client.query(
-        `INSERT INTO stock_purchase_orders (account_id, status, supplier, currency, amount, receipt_url, note, created_by_name, created_at, updated_at, supplier_ref)
-         VALUES ($1, 'received', $2, $3, $4, $5, $6, $7, $8, $8, $9) RETURNING id`,
-        [accountId, order.supplier, currency, amount, order.receiptUrl, note, ACCOUNT_SHEET_ACTOR, order.when, order.ref]
+        `INSERT INTO stock_purchase_orders (account_id, status, supplier, currency, amount, receipt_url, note, created_by_name, created_at, updated_at, supplier_ref, cny_per_usd, cny_per_usdt)
+         VALUES ($1, 'received', $2, $3, $4, $5, $6, $7, $8, $8, $9, $10, $11) RETURNING id`,
+        [accountId, order.supplier, currency, amount, order.receiptUrl, note, ACCOUNT_SHEET_ACTOR, order.when, order.ref, rate(order.productRate), rate(order.cnyRate)]
       )).rows[0].id;
       for (const [label, qty] of lines) {
         await client.query(`INSERT INTO stock_purchase_order_lines (order_id, item_id, qty_ordered, qty_received) VALUES ($1, $2, $3, $3)`, [orderId, itemIds[move.code][label], qty]);

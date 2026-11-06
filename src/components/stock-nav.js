@@ -2,26 +2,26 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Boxes, ClipboardList, CreditCard, FileSpreadsheet, LayoutDashboard, PackageSearch, Pin, Receipt, Send, Wallet, X } from "lucide-react";
+import { Boxes, ClipboardCheck, ClipboardList, FileSpreadsheet, LayoutDashboard, PackageSearch, Pin, Receipt, Wallet, X } from "lucide-react";
 import { pinHref, removePin, usePins } from "@/components/stock-nav-pins";
 
 // The tabs every Stock page shares. An account page (/stock/<code>) belongs to the inventory tab.
 const TABS = [
   { href: "/stock", label: "ภาพรวม", icon: LayoutDashboard, match: (path) => path === "/stock" },
-  { href: "/stock/inventory", label: "คลัง", icon: Boxes, match: (path) => path === "/stock/inventory" || /^\/stock\/(?!purchase-orders|wallets|sheets|sheet-stock|addresses|offgamer|expenses)[^/]+$/.test(path) },
+  { href: "/stock/inventory", label: "คลัง", icon: Boxes, match: (path) => path === "/stock/inventory" || /^\/stock\/(?!purchase-orders|wallets|sheets|sheet-stock|expenses|pending)[^/]+$/.test(path) },
+  { href: "/stock/pending", label: "รอตัด", icon: ClipboardCheck, match: (path) => path.startsWith("/stock/pending") },
   { href: "/stock/sheet-stock", label: "คลังตามชีต", icon: PackageSearch, match: (path) => path.startsWith("/stock/sheet-stock") },
   { href: "/stock/purchase-orders", label: "ใบสั่งซื้อ", icon: ClipboardList, match: (path) => path.startsWith("/stock/purchase-orders") },
   { href: "/stock/wallets", label: "กระเป๋าเงิน", icon: Wallet, match: (path) => path.startsWith("/stock/wallets") },
-  { href: "/stock/offgamer", label: "Multi Game Card", icon: CreditCard, match: (path) => path.startsWith("/stock/offgamer") },
   { href: "/stock/expenses", label: "ค่าใช้จ่าย", icon: Receipt, match: (path) => path.startsWith("/stock/expenses") },
-  { href: "/stock/addresses", label: "ที่อยู่โอน", icon: Send, match: (path) => path.startsWith("/stock/addresses") },
   { href: "/stock/sheets", label: "ข้อมูลบัญชี", icon: FileSpreadsheet, match: (path) => path.startsWith("/stock/sheets") },
 ];
 
 const tabClass = (active) =>
   `flex h-12 shrink-0 items-center gap-2 border-b-[3px] px-3.5 text-sm font-extrabold ${active ? "border-[#D90005] text-[#B00004]" : "border-transparent text-zinc-600 hover:text-zinc-900"}`;
 
-export default function StockNav() {
+/** `awaiting`: system cuts waiting for a person, shown on the รอตัด tab. */
+export default function StockNav({ awaiting = 0 }) {
   const path = usePathname() || "/stock";
   const search = useSearchParams();
   const pins = usePins();
@@ -37,6 +37,11 @@ export default function StockNav() {
           return (
             <Link key={href} href={href} aria-current={active ? "page" : undefined} className={tabClass(active)}>
               <Icon size={16} strokeWidth={2.3} aria-hidden="true" /> {label}
+              {href === "/stock/pending" && awaiting > 0 ? (
+                <span title={`ระบบตัดให้แล้ว รอยืนยัน ${awaiting} รายการ`} className="rounded-full bg-[#D90005] px-1.5 py-0.5 text-[11px] font-black leading-none text-white">
+                  {awaiting}<span className="sr-only"> รายการรอยืนยัน</span>
+                </span>
+              ) : null}
             </Link>
           );
         })}

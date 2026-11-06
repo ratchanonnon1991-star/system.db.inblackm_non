@@ -341,6 +341,48 @@ function ensureSchema(connection) {
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
+      // Where each pack is listed for sale and whether its price was checked
+      // (src/server/gameinfo-pack-listings.js).
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS gamelist_pack_listings (
+          game_id       INTEGER NOT NULL,
+          data_mode     TEXT NOT NULL,
+          pack_id       TEXT NOT NULL,
+          channel       TEXT NOT NULL,
+          url           TEXT NOT NULL DEFAULT '',
+          listed_price  NUMERIC,
+          listed_by     TEXT NOT NULL DEFAULT '',
+          listed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          status        TEXT NOT NULL DEFAULT 'pending',
+          checked_price NUMERIC,
+          reviewed_by   TEXT NOT NULL DEFAULT '',
+          reviewed_at   TIMESTAMPTZ,
+          note          TEXT NOT NULL DEFAULT '',
+          PRIMARY KEY (game_id, data_mode, pack_id, channel)
+        )
+      `);
+      await client.query(`ALTER TABLE gamelist_pack_listings ADD COLUMN IF NOT EXISTS checked_reference NUMERIC`);
+      await client.query(`ALTER TABLE gamelist_pack_listings ADD COLUMN IF NOT EXISTS checked_snapshot JSONB`);
+      // Channels a pack is not sold on although its game is: no listing, no
+      // check, and not counted in the pack's "ตรวจแล้ว x/y".
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS gamelist_pack_channels_off (
+          game_id   INTEGER NOT NULL,
+          data_mode TEXT NOT NULL,
+          pack_id   TEXT NOT NULL,
+          channel   TEXT NOT NULL,
+          set_by    TEXT NOT NULL DEFAULT '',
+          set_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (game_id, data_mode, pack_id, channel)
+        )
+      `);
+      await client.query(`
+        ALTER TABLE gamelist_pack_listings
+          ADD COLUMN IF NOT EXISTS round INTEGER NOT NULL DEFAULT 1,
+          ADD COLUMN IF NOT EXISTS assigned_reviewer TEXT NOT NULL DEFAULT '',
+          ADD COLUMN IF NOT EXISTS send_note TEXT NOT NULL DEFAULT '',
+          ADD COLUMN IF NOT EXISTS history JSONB NOT NULL DEFAULT '[]'::jsonb
+      `);
     } finally {
       client.release();
     }
@@ -1850,6 +1892,26 @@ export async function listGamelistRealPackCountByGame() {
     [COMPUTED_SENTINEL]
   );
   return Object.fromEntries(result.rows.map((row) => [row.game_id, row.pack_count]));
+}
+
+/** { [gameId]: [{ id, name, price }] } in the editor's order, blank rows left
+ * out: only what the Pack Update page reads. */
+export async function listGamelistPackPricesByGame() {
+  const pool = await getReadyPool();
+  const result = await pool.query(
+    `SELECT game_id, pack_id, data->>'name' AS name, data->>'price' AS price,
+            data->>'currencyOrder' AS currency_order, data->>'categoryOrder' AS category_order, data->>'packOrder' AS pack_order
+       FROM gamelist_packs
+      WHERE pack_id != $1 AND (COALESCE(TRIM(data->>'name'), '') <> '' OR COALESCE(TRIM(data->>'price'), '') <> '')`,
+    [COMPUTED_SENTINEL]
+  );
+  const order = (row) => [row.currency_order, row.category_order, row.pack_order].map((value) => Number(value) || 0);
+  const rows = result.rows
+    .map((row) => ({ row, key: order(row) }))
+    .sort((a, b) => a.row.game_id - b.row.game_id || a.key[0] - b.key[0] || a.key[1] - b.key[1] || a.key[2] - b.key[2]);
+  const out = {};
+  for (const { row } of rows) (out[row.game_id] ||= []).push({ id: row.pack_id, name: row.name || "", price: row.price || "" });
+  return out;
 }
 
 /** Disabled-pack count used to derive the orange game service light, and how

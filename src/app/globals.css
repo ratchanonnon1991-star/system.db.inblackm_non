@@ -510,3 +510,19 @@ body {
     @apply font-sans;
   }
 }
+
+/* GameInfo dropdowns: the browser's own arrow sits on the border right
+   against the text. Every single-choice <select> in GameInfo (dialogs too,
+   since <html> carries data-gameinfo-root while GameInfo is open) gets its
+   own arrow with room on both sides. Unlayered, so it outranks Tailwind's
+   px-* utilities; selects already drawing their own arrow (appearance-none)
+   are left alone. */
+[data-gameinfo-root] select:not([multiple]):not([size]):not(.appearance-none) {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2.5rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.85rem center;
+  background-size: 16px 16px;
+}

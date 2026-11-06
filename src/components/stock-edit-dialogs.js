@@ -4,8 +4,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
-import { STOCK_ACCOUNT_STATUS_LABELS, STOCK_ACCOUNT_STATUSES, STOCK_DEFAULT_LOW_AT } from "@/lib/stock";
+import { STOCK_ACCOUNT_PLATFORMS, STOCK_ACCOUNT_STATUS_LABELS, STOCK_ACCOUNT_STATUSES, STOCK_DEFAULT_LOW_AT } from "@/lib/stock";
 import { StockDialog, StockField, stockInputClass } from "@/components/stock-ui";
+import StockGamePicker from "@/components/stock-game-picker";
+import StockWebPackPicker from "@/components/stock-web-pack-picker";
 
 function useSave(onClose) {
   const router = useRouter();
@@ -46,8 +48,11 @@ export function StockAccountDialog({ account = null, games, onClose }) {
     code: account?.code || "",
     gameId: account?.gameId ? String(account.gameId) : "",
     dataMode: account?.dataMode || "uid",
+    platform: account?.platform || "",
     status: account?.status || "active",
     note: account?.note || "",
+    autoCut: account?.autoCut === true,
+    webSoldOut: account?.webSoldOut === true,
   });
   const { saving, error, run } = useSave(onClose);
   const set = (patch) => setForm((current) => ({ ...current, ...patch }));
@@ -84,11 +89,14 @@ export function StockAccountDialog({ account = null, games, onClose }) {
             </select>
           </StockField>
         </div>
-        <StockField label="เกมใน GameInfo" htmlFor="stock-game" hint={games.length ? "แพ็คในไอดีนี้จะขึ้นป้าย stock ในหน้าเกมนั้น" : "ต่อ GameInfo ไม่ได้ตอนนี้ — เลือกเกมทีหลังได้"}>
-          <select id="stock-game" value={form.gameId} onChange={(event) => set({ gameId: event.target.value })} className={stockInputClass}>
-            <option value="">ยังไม่เลือก</option>
-            {games.map((game) => <option key={game.id} value={game.id}>{game.name}</option>)}
+        <StockField label="แพลตฟอร์มของของในไอดีนี้" htmlFor="stock-platform" hint="เลือก iOS หรือ Android แล้ว ออเดอร์ที่ระบุอีกฝั่งจะไม่เข้าหน้ารอตัดและไม่ถูกตัดอัตโนมัติจากไอดีนี้">
+          <select id="stock-platform" value={form.platform} onChange={(event) => set({ platform: event.target.value })} className={stockInputClass}>
+            {Object.entries(STOCK_ACCOUNT_PLATFORMS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
+        </StockField>
+        <StockField label="เกมใน GameInfo" htmlFor="stock-game" hint={games.length ? "แพ็คในไอดีนี้จะขึ้นป้าย stock ในหน้าเกมนั้น" : "ต่อ GameInfo ไม่ได้ตอนนี้ — เลือกเกมทีหลังได้"}>
+          <StockGamePicker id="stock-game" games={games.map((game) => ({ key: String(game.id), name: game.name }))} value={String(form.gameId ?? "")}
+            onPick={(gameId) => set({ gameId })} noneLabel="ยังไม่เลือก" placeholder="ยังไม่เลือก · พิมพ์ชื่อเกม" />
         </StockField>
         {account ? (
           <StockField label="สถานะ" htmlFor="stock-status">
@@ -96,6 +104,24 @@ export function StockAccountDialog({ account = null, games, onClose }) {
               {STOCK_ACCOUNT_STATUSES.map((status) => <option key={status} value={status}>{STOCK_ACCOUNT_STATUS_LABELS[status]}</option>)}
             </select>
           </StockField>
+        ) : null}
+        {account ? (
+          <label className="flex items-start gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-3">
+            <input type="checkbox" checked={form.autoCut} onChange={(event) => set({ autoCut: event.target.checked })} className="mt-1 h-4 w-4 accent-[#D90005]" />
+            <span className="text-[13px] text-zinc-700">
+              <b className="text-zinc-900">ตัด stock อัตโนมัติจากออเดอร์</b><br />
+              เปิดเฉพาะเกมที่เติมจาก stock ทุกออเดอร์ · ระบบตัดเฉพาะออเดอร์ใหม่หลังเปิด และเฉพาะแพ็คที่เคยตัดเองมาก่อน แล้วรอคนกดยืนยันในหน้ารอตัด
+            </span>
+          </label>
+        ) : null}
+        {account ? (
+          <label className="flex items-start gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-3">
+            <input type="checkbox" checked={form.webSoldOut} onChange={(event) => set({ webSoldOut: event.target.checked })} className="mt-1 h-4 w-4 accent-[#D90005]" />
+            <span className="text-[13px] text-zinc-700">
+              <b className="text-zinc-900">ซิงค์ของหมดไปเว็บหลัก</b><br />
+              เปิด: แพ็คที่ยอดเหลือ 0 จะเป็นสีเทาและกดซื้อไม่ได้บนเว็บ · ปิด: ไม่ยุ่งกับเว็บเลย ของหมดลูกค้าก็ยังซื้อได้
+            </span>
+          </label>
         ) : null}
         <StockField label="หมายเหตุ" htmlFor="stock-account-note" hint="อย่าใส่รหัสผ่านบัญชี — เก็บไว้ใน password manager">
           <input id="stock-account-note" value={form.note} onChange={(event) => set({ note: event.target.value })} className={stockInputClass} placeholder="เช่น ช่องทางซื้อ, ผู้ดูแล" />
@@ -107,12 +133,13 @@ export function StockAccountDialog({ account = null, games, onClose }) {
 }
 
 /** Add a pack to an account (no `item`) or edit one. */
-export function StockItemDialog({ accountId, item = null, packNames, onClose }) {
+export function StockItemDialog({ accountId, item = null, packNames, webGameId = null, onClose }) {
   const [form, setForm] = useState({
     label: item?.label || "",
     unitUsd: item?.unitUsd != null ? String(item.unitUsd) : "",
     lowAt: String(item?.lowAt ?? STOCK_DEFAULT_LOW_AT),
     packName: item?.packName || "",
+    webPackageIds: item?.webPackageIds || [],
   });
   const { saving, error, run } = useSave(onClose);
   const set = (patch) => setForm((current) => ({ ...current, ...patch }));
@@ -145,6 +172,11 @@ export function StockItemDialog({ accountId, item = null, packNames, onClose }) 
           <input id="stock-item-pack" list="stock-pack-names" value={form.packName} onChange={(event) => set({ packName: event.target.value })} className={stockInputClass} placeholder="ไม่ผูกก็ได้" />
           <datalist id="stock-pack-names">{packNames.map((name) => <option key={name} value={name} />)}</datalist>
         </StockField>
+        <div className="flex flex-col gap-1.5">
+          <p className="text-[13px] font-extrabold text-zinc-700">แพ็คบนเว็บหลัก</p>
+          <StockWebPackPicker value={form.webPackageIds} onChange={(webPackageIds) => set({ webPackageIds })} defaultGameId={webGameId} />
+          <p className="text-xs text-zinc-600">ยอดของแพ็คนี้จะขึ้นบนการ์ดแพ็คที่เลือก และใช้ตัดสินว่าแพ็คนั้นหมดหรือไม่ เลือกได้หลายแพ็ค</p>
+        </div>
         {error ? <p className="rounded-xl bg-red-50 px-3.5 py-3 text-[13px] text-red-800">{error}</p> : null}
       </StockDialog>
     </form>

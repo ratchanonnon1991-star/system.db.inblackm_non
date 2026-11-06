@@ -22,6 +22,9 @@ export default function GameinfoTagsInput({
   onTagImageChange,
   imageLabel = "หมวดหมู่",
   stableColors = false,
+  // In a form the tags wrap onto more lines; in a table cell (the default)
+  // they stay on one line and the cell scrolls.
+  wrap = false,
 }) {
   const [text, setText] = useState("");
   const [open, setOpen] = useState(false);
@@ -102,7 +105,7 @@ export default function GameinfoTagsInput({
   return (
     <div className="relative" ref={ref}>
       <div
-        className={`flex min-h-9 w-max min-w-full flex-nowrap items-center gap-1.5 rounded border px-2 py-1 focus-within:border-linear-primary/40 focus-within:bg-linear-surface-1 ${
+        className={`flex min-h-9 ${wrap ? "w-full flex-wrap" : "w-max min-w-full flex-nowrap"} items-center gap-1.5 rounded border px-2 py-1 focus-within:border-linear-primary/40 focus-within:bg-linear-surface-1 ${
           invalid ? "border-red-500/40" : "border-transparent hover:bg-linear-surface-2"
         }`}
       >
@@ -158,7 +161,7 @@ export default function GameinfoTagsInput({
             }}
             autoComplete="off"
             style={{ width: `${Math.max(80, (text.length + 1) * 8)}px` }}
-            className="min-w-20 flex-none border-none py-0.5 text-sm outline-none placeholder:text-linear-ink-tertiary focus-visible:outline-none"
+            className={`min-w-20 ${wrap ? "flex-1" : "flex-none"} border-none py-0.5 text-sm outline-none placeholder:text-linear-ink-tertiary focus-visible:outline-none`}
           />
         )}
       </div>

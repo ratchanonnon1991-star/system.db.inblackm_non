@@ -12,6 +12,7 @@ import {
   Layers,
   Loader2,
   Lock,
+  PackagePlus,
   LogOut,
   Moon,
   Radio,
@@ -134,6 +135,13 @@ const SYSTEMS = [
     desc: "ฐานข้อมูลการเติมเกม",
     icon: Gamepad2,
     href: "/gameinfo/th",
+  },
+  {
+    key: "pack-update",
+    label: "Pack Update",
+    desc: "แพ็กใหม่และราคาที่ PG2 เปลี่ยน ตรวจก่อนนำเข้า GameInfo",
+    icon: PackagePlus,
+    href: "/gameinfo/th?section=pack-update",
   },
   {
     key: "projectm",
@@ -263,7 +271,7 @@ function SystemHub({ me, onLoggedOut, onPermissionsChanged }) {
   const accessibleSystems = SYSTEMS.filter((system) => {
     if (system.key === "workforce") return me.role === "admin" || hasPermission(me, "workforce.access");
     if (system.key === "projectm") return true;
-    if (system.key === "gameinfo") return hasPermission(me, "gameinfo.access");
+    if (system.key === "gameinfo" || system.key === "pack-update") return hasPermission(me, "gameinfo.access");
     if (system.key === "profit") return hasPermission(me, "profit.access");
     if (system.key === "stock") return hasPermission(me, "stock.access");
     return !isTemplateUser;
@@ -755,6 +763,14 @@ function LoginScreen({ onLoggedIn }) {
                 className="mt-2 flex h-10 w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-ll-hairline-strong text-[13px] font-medium text-ll-ink-subtle transition hover:bg-ll-surface-2"
               >
                 เข้าสู่ระบบด้วยบัญชีทดสอบ (Mock)
+              </a>
+            ) : null}
+            {MOCK_SSO_ENABLED ? (
+              <a
+                href="/api/sso/mock?as=reviewer"
+                className="mt-2 flex h-10 w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-ll-hairline-strong text-[13px] font-medium text-ll-ink-subtle transition hover:bg-ll-surface-2"
+              >
+                เข้าสู่ระบบด้วยบัญชีทดสอบ (Mock Admin 2)
               </a>
             ) : null}
           </>

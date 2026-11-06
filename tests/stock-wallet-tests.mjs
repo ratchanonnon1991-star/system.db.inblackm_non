@@ -13,6 +13,9 @@ import {
   walletKey,
   walletStatusChange,
   walletStatusDecision,
+  planSheetWalletSync,
+  sheetEntryFingerprint,
+  WALLET_COUNTED,
 } from "../src/lib/stock-wallets.js";
 
 let passed = 0;
@@ -118,4 +121,39 @@ check(repository.includes("walletCheckSignature") && repository.includes("checke
 
 check(repository.includes("walletEntryTrail") && repository.includes("OVER w AS cin") && repository.includes("l.currency = $2 AND ${WALLET_COUNTED}"), "the money trail is first in, first out over counted entries only");
 check(read("../src/app/api/stock/wallets/entries/[id]/trail/route.js").includes("requireStockAccess"), "the trail needs Stock access");
+// Importing the sheets again keeps what people did on the entries.
+{
+  const legs = (amount) => [{ walletCode: "bybit", currency: "USDT", amount, fee: "0" }];
+  const print = (title, amount, at = "2026-10-01T05:00:00.000Z") => sheetEntryFingerprint({ kind: "payment", occurredAt: at, title, legs: legs(amount) });
+  check(print("IOS Stock YAYA", "-462") === sheetEntryFingerprint({ kind: "payment", occurredAt: new Date("2026-10-01T05:00:00Z"), title: " IOS Stock YAYA ", legs: legs("-462.00000000") }),
+    "the same money reads the same from the sheet and from the database");
+  const existing = [
+    { id: 1, sourceRef: "s:10:bybit:3", fingerprint: print("A", "-10"), touched: true },
+    { id: 2, sourceRef: "s:10:bybit:4", fingerprint: print("B", "-20"), touched: false },
+    { id: 3, sourceRef: "s:10:bybit:5", fingerprint: print("C", "-30"), touched: true },
+    { id: 4, sourceRef: "s:10:bybit:6", fingerprint: print("D", "-40"), touched: true },
+    { id: 5, sourceRef: "s:10:bybit:7", fingerprint: print("E", "-50"), touched: false },
+  ];
+  const incoming = [
+    { sourceRef: "s:10:bybit:3", fingerprint: print("A", "-10") },  // unchanged
+    { sourceRef: "s:10:bybit:5", fingerprint: print("B", "-20") },  // B moved down two rows
+    { sourceRef: "s:10:bybit:6", fingerprint: print("D", "-45") },  // D's amount fixed in the sheet
+    { sourceRef: "s:10:bybit:9", fingerprint: print("F", "-60") },  // a new row
+  ];
+  const plan = planSheetWalletSync(existing, incoming);
+  const update = (id) => plan.updates.find((item) => item.id === id);
+  check(update(1) && !update(1).changed, "an unchanged row keeps its entry");
+  check(update(2)?.entry.sourceRef === "s:10:bybit:5" && !update(2).changed, "a row that moved keeps its entry, found by its money");
+  check(update(4)?.changed && update(4).entry.fingerprint === print("D", "-45"), "a row whose money changed keeps its entry and takes the new figures");
+  check(plan.inserts.length === 1 && plan.inserts[0].sourceRef === "s:10:bybit:9", "a new row is added");
+  check(plan.removed.join() === "3", "a row gone from the sheet that someone worked on is set aside, not deleted");
+  check(plan.deletes.join() === "5", "a row gone from the sheet that nobody touched is deleted");
+  check(planSheetWalletSync([], incoming).inserts.length === 4, "a first import adds everything");
+}
+
+const sheetRepo = read("../src/server/account-sheet-repository.js");
+check(sheetRepo.includes("planSheetWalletSync") && !/DELETE FROM stock_wallet_entries WHERE source_ref/.test(sheetRepo), "the import no longer wipes the sheet entries");
+check(sheetRepo.includes("status_changed_at IS NULL AND reviewed_at IS NULL THEN"), "a status a person set survives an import");
+check(WALLET_COUNTED.includes("sheet_removed_at IS NULL"), "an entry set aside counts in no balance");
+
 console.log(`stock-wallets: ${passed} passed`);

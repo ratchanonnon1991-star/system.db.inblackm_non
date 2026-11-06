@@ -57,7 +57,7 @@ ok("list joins the side-table without altering game_list", log.some((entry) => /
 
 reset();
 setResponder((text) => {
-  if (/SELECT id FROM game_list/.test(text)) return { rows: [{ id: 5 }, { id: 7 }] };
+  if (/SELECT id, game FROM game_list/.test(text)) return { rows: [{ id: 5 }, { id: 7 }] };
   return null;
 });
 check(
@@ -75,7 +75,7 @@ ok("bulk status commits atomically", log.some((entry) => entry.text.trim() === "
 
 reset();
 setResponder((text) => {
-  if (/SELECT id FROM game_list/.test(text)) return { rows: [{ id: 5 }] };
+  if (/SELECT id, game FROM game_list/.test(text)) return { rows: [{ id: 5 }] };
   return null;
 });
 let missingError = null;
@@ -91,6 +91,32 @@ check(
   log.filter((entry) => /INSERT INTO gamelist_service_status/.test(entry.text)).length,
   0
 );
+
+// Turning a game on needs three test IDs; turning it off never does.
+reset();
+setResponder((text) => {
+  if (/SELECT id, game FROM game_list/.test(text)) return { rows: [{ id: 5, game: "Game A" }, { id: 7, game: "Game B" }] };
+  if (/FROM gamelist_test_accounts/.test(text)) return { rows: [{ game_id: 5, n: 3 }, { game_id: 7, n: 2 }] };
+  return null;
+});
+let shortError = null;
+try {
+  await setGameListServiceStatus([5, 7], true);
+} catch (error) {
+  shortError = error;
+}
+check("turning on a game short of 3 test IDs is refused", shortError?.status, 400);
+ok("the refusal names the game and asks for 3 IDs", /Game B/.test(shortError?.message) && !/Game A/.test(shortError?.message) && /3 ID/.test(shortError?.message));
+ok("only IDs with a login count", log.some((entry) => /btrim\(login\) <> ''/.test(entry.text)));
+check("nothing is switched on when one game is short", log.filter((entry) => /INSERT INTO gamelist_service_status/.test(entry.text)).length, 0);
+
+reset();
+setResponder((text) => {
+  if (/SELECT id, game FROM game_list/.test(text)) return { rows: [{ id: 5, game: "Game A" }] };
+  if (/FROM gamelist_test_accounts/.test(text)) return { rows: [{ game_id: 5, n: 3 }] };
+  return null;
+});
+check("a game with 3 test IDs turns on", await setGameListServiceStatus([5], true), { gameIds: [5], enabled: true });
 
 reset();
 await deleteGameListRow(7);

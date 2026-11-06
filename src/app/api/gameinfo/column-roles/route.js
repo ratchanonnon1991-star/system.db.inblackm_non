@@ -4,7 +4,7 @@ import {
   listGameinfoColumnRoleRules,
   saveGameinfoColumnRoleRules,
 } from "@/server/gameinfo-column-roles";
-import { listGamelistPackColumnRegistry } from "@/server/gameinfo-gamelist-packs";
+import { getGamelistPacks, listGamelistPackColumnRegistry } from "@/server/gameinfo-gamelist-packs";
 import { GAMEINFO_COLUMN_ROLES } from "@/lib/gameinfo-column-roles";
 
 // Admin-only, like the write. The pack pages do not read this: the server
@@ -14,15 +14,19 @@ import { GAMEINFO_COLUMN_ROLES } from "@/lib/gameinfo-column-roles";
 export async function GET(request) {
   try {
     await requireGameinfoEditor(request);
-    const [rules, columns] = await Promise.all([
+    // ?gameId= adds that game's own columns: before the registry is filled,
+    // or for a column only that game has, they are not in the registry.
+    const gameId = Number(request.nextUrl.searchParams.get("gameId")) || 0;
+    const [rules, registry, gamePacks] = await Promise.all([
       listGameinfoColumnRoleRules(),
       listGamelistPackColumnRegistry(),
+      gameId > 0 ? getGamelistPacks(gameId).catch(() => null) : null,
     ]);
-    return jsonOk({
-      rules,
-      columns: columns.map((column) => ({ key: column.columnKey, label: column.label })),
-      roles: GAMEINFO_COLUMN_ROLES,
-    });
+    const columns = registry.map((column) => ({ key: column.columnKey, label: column.label }));
+    for (const column of gamePacks?.computedColumns || []) {
+      if (column?.key && !columns.some((item) => item.key === column.key)) columns.push({ key: column.key, label: column.label || column.key });
+    }
+    return jsonOk({ rules, columns, roles: GAMEINFO_COLUMN_ROLES });
   } catch (error) {
     return handleApiError(error, "โหลดสิทธิ์คอลัมน์ไม่สำเร็จ");
   }

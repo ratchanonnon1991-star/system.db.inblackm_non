@@ -43,7 +43,8 @@ export default function StaffLinks({ lang }) {
   return <main className="mx-auto max-w-4xl space-y-6 px-4 pb-14 pt-10 text-ll-ink sm:px-6">
     <header className="flex flex-wrap items-center justify-between gap-4 pr-12">
       <div><p className="text-xs text-ll-ink-tertiary">TOPUP INVENTORY</p><h1 className="mt-2 text-3xl font-semibold">จับคู่พนักงาน</h1>
-        <p className="mt-2 text-sm text-ll-ink-subtle">จับคู่ User ID พนักงานของ inblackm กับชื่อผู้ใช้ใน tools ใช้กับหน้าออเดอร์ inblackm ทั้งการเลือกเมล iTune และการบันทึกยอดจากช่องทางที่จองไว้ ไม่ใช้ชื่อแสดงผล และไม่จับคู่จาก ID ที่บังเอิญตรงกัน (เฉพาะ Super Admin)</p></div>
+        <p className="mt-2 text-sm text-ll-ink-subtle">จับคู่ User ID พนักงานของ inblackm กับชื่อผู้ใช้ใน tools ใช้กับหน้าออเดอร์ inblackm ทั้งการเลือกเมล iTune และการบันทึกยอดจากช่องทางที่จองไว้ ไม่ใช้ชื่อแสดงผล และไม่จับคู่จาก ID ที่บังเอิญตรงกัน (เฉพาะ Super Admin)</p>
+        <p className="mt-1 text-sm text-ll-ink-subtle">จับคู่ได้ทุกบัญชีใน tools · การเลือกเมล iTune ในหน้าออเดอร์ยังต้องมีสิทธิ์ Topup · ใส่ User ID เดิมกับชื่อผู้ใช้ใหม่ = เปลี่ยนคนที่จับคู่</p></div>
       <Link href={topupInventoryPath(lang)} className={button}><ArrowLeft size={16} aria-hidden />กลับ Topup Inventory</Link>
     </header>
     <p role="status" className="text-sm">{message}</p>

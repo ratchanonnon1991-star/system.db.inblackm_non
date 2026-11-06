@@ -5,10 +5,10 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowDownToLine, ArrowRightLeft, ChevronDown, ExternalLink, FileSpreadsheet, Link2, Loader2, Repeat, Search, ShoppingCart, SlidersHorizontal, Wallet } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
-import { AddressesForRecipient } from "@/components/crypto-address-card";
 import { bestWalletPaymentMatch, LINK_DAYS, PO_STATUS_LABELS, walletPaymentCandidates } from "@/lib/stock-purchase-orders";
 import { fromWalletUnits, toWalletUnits, WALLET_CHECK_LABELS, WALLET_ENTRY_LABELS, WALLET_GROUPS, WALLET_PAYMENT_STATUS_LABELS, WALLET_REVIEW_LABELS, walletCheckState } from "@/lib/stock-wallets";
 import { StockDialog, StockField, stockInputClass } from "@/components/stock-ui";
+import StockAttachments from "@/components/stock-attachments";
 
 const KIND_LOOK = {
   deposit: { icon: <ArrowDownToLine size={18} strokeWidth={2.4} />, iconClass: "bg-emerald-50 text-emerald-700", subtitle: "เงินเข้ากระเป๋า เช่น Russia deposit เข้า Bitazza" },
@@ -377,7 +377,7 @@ function EntryLinks({ entry, open, onTrail }) {
 }
 
 /** What the sheet row says, and what proves it. */
-function EntryTrail({ entry }) {
+function EntryTrail({ entry, canEdit = false, currentUserId = null }) {
   const proofs = entry.details.filter((item) => isUrl(item.value));
   const facts = entry.details.filter((item) => !isUrl(item.value));
   const from = entry.legs.find((leg) => String(leg.amount).startsWith("-"));
@@ -413,6 +413,7 @@ function EntryTrail({ entry }) {
         ) : null}
       </div>
       <MoneyTrail entry={entry} />
+      <div className="sm:col-span-2"><StockAttachments kind="wallet_entry" ownerId={entry.id} canEdit={canEdit} currentUserId={currentUserId} /></div>
     </div>
   );
 }
@@ -660,6 +661,10 @@ export default function StockWallets({ wallets, entries, checks = [], filters = 
                         {entry.legs.map((leg, index) => <p key={index} className="whitespace-nowrap font-extrabold">{formatAmount(leg.balanceAfter)} {leg.currency}</p>)}
                       </td>
                       <td className="px-4 py-3">
+                        {entry.sheetRemovedAt ? (
+                          <span className="mb-1.5 inline-block whitespace-nowrap rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-900"
+                            title="แถวนี้ไม่มีในชีตแล้ว แต่มีคนผูกใบสั่งซื้อหรือเปลี่ยนสถานะไว้ จึงเก็บไว้ให้ตรวจ">หายจากชีต · ไม่นับในยอด</span>
+                        ) : null}
                         {entry.status === "awaiting_approval" ? (
                           <div className="flex flex-col items-start gap-1">
                             <span className="whitespace-nowrap rounded-full bg-cyan-100 px-3 py-1 text-xs font-black text-cyan-800">{WALLET_REVIEW_LABELS.awaiting_approval} · ยังไม่นับในยอด</span>
@@ -687,7 +692,7 @@ export default function StockWallets({ wallets, entries, checks = [], filters = 
                     </tr>
                     {open ? (
                       <tr className="bg-zinc-50/60">
-                        <td colSpan={6} className="px-4 pb-3"><EntryTrail entry={entry} /></td>
+                        <td colSpan={6} className="px-4 pb-3"><EntryTrail entry={entry} canEdit={canEdit} currentUserId={currentUserId} /></td>
                       </tr>
                     ) : null}
                   </Fragment>
@@ -797,9 +802,6 @@ function WalletEntryDialog({ kind, wallets, onClose }) {
         <div className="grid gap-3 sm:grid-cols-2">
           {hasFrom ? <WalletSide id="from" label={kind === "exchange" ? "กระเป๋า · สกุลที่แลกออก" : "จ่ายออกจาก"} wallets={wallets} {...from} onChange={(side) => { setFrom(side); if (kind === "exchange") setTo((current) => ({ ...current, walletId: side.walletId })); }} /> : null}
           {hasTo ? <WalletSide id="to" label={kind === "exchange" ? "สกุลที่ได้" : kind === "adjust" ? "กระเป๋าที่ปรับ" : "รับเข้า"} wallets={wallets} {...(kind === "exchange" ? { ...to, walletId: from.walletId } : to)} lockedWalletId={kind === "exchange" ? from.walletId : null} onChange={setTo} /> : null}
-          {kind === "transfer" && to.walletId ? (
-            <AddressesForRecipient recipient={wallets.find((wallet) => String(wallet.id) === String(to.walletId))?.name || ""} coin={to.currency || from.currency} />
-          ) : null}
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3">

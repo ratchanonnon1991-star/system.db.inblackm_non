@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ClipboardList, ExternalLink, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
-import { AddressesForRecipient } from "@/components/crypto-address-card";
+import StockGamePicker from "@/components/stock-game-picker";
+import ComboInput from "@/components/combo-input";
 import {
   DELIVERY_METHOD_LABELS,
   DELIVERY_STATUS_LABELS,
@@ -16,12 +17,16 @@ import {
   allocatePurchaseOrderCosts,
   PO_SECOND_PERSON,
   PO_STATUSES,
+  SHEET_RATE_CURRENCIES,
   purchaseOrderActions,
+  purchaseOrderCny,
   purchaseOrderRemaining,
+  sheetUsdtForUsd,
   topupCheck,
 } from "@/lib/stock-purchase-orders";
 import { formatStockNumber, StockDialog, StockField, stockInputClass } from "@/components/stock-ui";
 import { formatCurrencyBag, supplierBalances } from "@/lib/stock-supplier-balances";
+import StockAttachments from "@/components/stock-attachments";
 
 const STATUS_CLASS = {
   requested: "bg-sky-50 text-sky-800",
@@ -122,7 +127,7 @@ function matches(order, query, filter) {
   return text.includes(query);
 }
 
-export default function StockPurchaseOrders({ orders, accounts, games = [], wallets = [], canEdit, initialOpenId = null, initialQuery = "" }) {
+export default function StockPurchaseOrders({ orders, accounts, games = [], wallets = [], canEdit, currentUserId = null, initialOpenId = null, initialQuery = "" }) {
   const [query, setQuery] = useState(initialQuery);
   const [filter, setFilter] = useState(initialQuery || initialOpenId ? "all" : "open");
   const [creating, setCreating] = useState(false);
@@ -208,6 +213,7 @@ export default function StockPurchaseOrders({ orders, accounts, games = [], wall
                     <p className="font-black">{money(order.amount, order.currency)}</p>
                     {order.currency !== "CNY" && order.amountCny != null ? <p className="text-xs text-zinc-600">≈ ¥{formatStockNumber(order.amountCny)}</p> : null}
                     {order.currency !== "THB" && order.amountThb != null ? <p className="text-xs text-zinc-600">≈ ฿{formatStockNumber(order.amountThb)}</p> : null}
+                    {order.cnyRate != null ? <p className="text-xs text-zinc-500">CNY Rate {order.cnyRate}</p> : null}
                     {order.refundAmount != null ? <p className="text-xs font-bold text-red-700">ขอคืน {money(order.refundAmount, order.currency)}</p> : null}
                   </td>
                   <td className="px-4 py-3 text-right">
@@ -228,8 +234,8 @@ export default function StockPurchaseOrders({ orders, accounts, games = [], wall
         </div>
       )}
 
-      {creating ? <CreatePurchaseOrderDialog accounts={accounts} games={games} onClose={() => setCreating(false)} /> : null}
-      {opened ? <PurchaseOrderDialog key={`${opened.id}-${opened.status}-${opened.qtyReceived}`} order={opened} wallets={wallets} canEdit={canEdit} onClose={() => setOpenId(null)} /> : null}
+      {creating ? <CreatePurchaseOrderDialog accounts={accounts} games={games} usedCurrencies={[...new Set(orders.map((order) => order.currency).filter(Boolean))]} onClose={() => setCreating(false)} /> : null}
+      {opened ? <PurchaseOrderDialog key={`${opened.id}-${opened.status}-${opened.qtyReceived}`} order={opened} wallets={wallets} canEdit={canEdit} currentUserId={currentUserId} onClose={() => setOpenId(null)} /> : null}
     </div>
   );
 }
@@ -302,6 +308,15 @@ function SupplierBalances({ orders, onPick }) {
   );
 }
 
+// Suppliers change their address and network, so none is kept here: ask each time.
+function SupplierAddressReminder() {
+  return (
+    <p className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[13px] font-bold leading-6 text-amber-900 sm:col-span-2">
+      ขอ address และ network จากซัพทุกครั้งก่อนโอน · ซัพเปลี่ยนได้ ห้ามใช้ address เก่าที่เคยโอน
+    </p>
+  );
+}
+
 function SummaryCard({ label, value, unit, hint, className }) {
   return (
     <div className={`rounded-2xl border px-[18px] py-4 ${className}`}>
@@ -336,13 +351,15 @@ const suggestCode = (name) => {
   return base.length >= 2 ? `${base}1` : "";
 };
 
-function CreatePurchaseOrderDialog({ accounts, games, onClose }) {
+// The currency box offers these first; any 3–5 letter code can still be typed.
+const PO_COMMON_CURRENCIES = ["THB", "USDT", "USD", "CNY", "USDC"];
+
+function CreatePurchaseOrderDialog({ accounts, games, usedCurrencies = [], onClose }) {
   const router = useRouter();
   const open = accounts.filter((account) => account.status !== "closed");
   const { list: gameList, keyOf } = orderGames(games, open);
   const first = open.find((account) => account.items.length) || open[0];
   const [form, setForm] = useState({ gameKey: first ? keyOf(first) : "", accountId: first ? String(first.id) : "", supplier: "", paymentChannel: "", buyer: "", currency: "THB", amount: "", rateThb: "", productRate: "", cnyRate: "", receiptUrl: "", note: "" });
-  const [gameQuery, setGameQuery] = useState("");
   const [newAccount, setNewAccount] = useState({ code: "", dataMode: "uid" });
   const [packState, setPackState] = useState({ key: "", names: [] });
   const [lines, setLines] = useState([emptyLine()]);
@@ -355,19 +372,30 @@ function CreatePurchaseOrderDialog({ accounts, games, onClose }) {
   const items = account?.items || [];
   const dataMode = creatingAccount ? newAccount.dataMode : account?.dataMode || "uid";
   const packNames = game?.id && packState.key === `${game.id}-${dataMode}` ? packState.names : [];
-  const query = gameQuery.trim().toLowerCase();
-  const shownGames = gameList.filter((item) => item.key === form.gameKey || !query || item.name.toLowerCase().includes(query));
   const set = (patch) => setForm((current) => ({ ...current, ...patch }));
-  // Product Rate (CNY per unit) × CNY Rate (THB per CNY) sets the THB rate, as in the supplier sheet.
+  // The 1.1 sheet's rates: Product Rate (CNY per 1 USD of packs), CNY Rate (CNY per 1 USDT).
+  // USDT to pay = Total USD × Product Rate ÷ CNY Rate. The THB rate is typed on its own.
   const positive = (value) => { const number = Number(String(value ?? "").replace(/,/g, "")); return Number.isFinite(number) && number > 0 ? number : null; };
   const amountNumber = positive(form.amount);
-  const productRateNumber = form.currency === "CNY" ? null : positive(form.productRate);
-  const cnyRateNumber = form.currency === "THB" ? null : positive(form.cnyRate);
-  const derivedRate = form.currency === "CNY" ? cnyRateNumber : productRateNumber && cnyRateNumber ? Math.round(productRateNumber * cnyRateNumber * 1e6) / 1e6 : null;
-  const rateShown = derivedRate ? String(derivedRate) : form.rateThb;
-  const amountCny = amountNumber == null ? null : form.currency === "CNY" ? amountNumber : productRateNumber ? amountNumber * productRateNumber : null;
-  const amountThb = amountNumber != null && derivedRate ? amountNumber * derivedRate : null;
-  const orderThb = amountNumber == null ? null : form.currency === "THB" ? amountNumber : amountThb ?? (positive(form.rateThb) ? amountNumber * positive(form.rateThb) : null);
+  const sheetRates = SHEET_RATE_CURRENCIES.includes(form.currency);
+  const productRateNumber = sheetRates ? positive(form.productRate) : null;
+  const cnyRateNumber = sheetRates ? positive(form.cnyRate) : null;
+  const amountCny = amountNumber == null ? null : purchaseOrderCny({ amount: amountNumber, currency: form.currency, productRate: productRateNumber, cnyRate: cnyRateNumber });
+  const orderThb = amountNumber == null ? null : form.currency === "THB" ? amountNumber : positive(form.rateThb) ? amountNumber * positive(form.rateThb) : null;
+  // Pack value in USD from the chosen packs, as the sheet's Total USD.
+  const packUsd = creatingAccount ? null : (() => {
+    const chosen = lines.filter((line) => line.itemId && line.itemId !== NEW_PACK && Number(line.qty) > 0);
+    if (!chosen.length) return null;
+    let total = 0;
+    for (const line of chosen) {
+      const usd = Number(items.find((item) => String(item.id) === String(line.itemId))?.unitUsd);
+      if (!(usd > 0)) return null;
+      total += usd * Number(line.qty);
+    }
+    return Math.round(total * 100) / 100;
+  })();
+  const usdForSheet = form.currency === "USD" ? amountNumber : packUsd;
+  const sheetUsdt = sheetRates ? sheetUsdtForUsd(usdForSheet, productRateNumber, cnyRateNumber) : null;
   // What the server fills in when no cost is typed: the order's THB split by each pack's USD value.
   const autoCosts = Object.fromEntries(allocatePurchaseOrderCosts(
     lines.filter((line) => line.itemId && !creatingAccount && line.itemId !== NEW_PACK && Number(line.qty) > 0).map((line) => ({ itemId: line.itemId, qty: Number(line.qty), unitCost: line.unitCost })),
@@ -440,13 +468,7 @@ function CreatePurchaseOrderDialog({ accounts, games, onClose }) {
             <input id="po-supplier" value={form.supplier} onChange={(event) => set({ supplier: event.target.value })} className={stockInputClass} placeholder="เช่น Twocard, Panghou, OffGamer" required />
           </StockField>
           <StockField label="เกม" htmlFor="po-game" hint={games.length ? `${gameList.length} เกม · ★ = มีไอดี stock แล้ว` : "ต่อ GameInfo ไม่ได้ตอนนี้ — เลือกได้เฉพาะเกมที่มีไอดี stock แล้ว"}>
-            <div className="flex flex-col gap-1.5">
-              <input aria-label="ค้นหาเกม" value={gameQuery} onChange={(event) => setGameQuery(event.target.value)} className={stockInputClass} placeholder="พิมพ์ค้นหาชื่อเกม" />
-              <select id="po-game" value={form.gameKey} onChange={(event) => pickGame(event.target.value)} className={stockInputClass} required>
-                <option value="">เลือกเกม</option>
-                {shownGames.map((item) => <option key={item.key} value={item.key}>{item.hasStock ? "★ " : ""}{item.name}</option>)}
-              </select>
-            </div>
+            <StockGamePicker id="po-game" games={gameList} value={form.gameKey} onPick={pickGame} />
           </StockField>
         </div>
 
@@ -491,28 +513,32 @@ function CreatePurchaseOrderDialog({ accounts, games, onClose }) {
             <input id="po-amount" inputMode="decimal" value={form.amount} onChange={(event) => set({ amount: event.target.value })} className={stockInputClass} required />
           </StockField>
           <StockField label="สกุลเงิน" htmlFor="po-currency">
-            <input id="po-currency" value={form.currency} onChange={(event) => set({ currency: event.target.value.toUpperCase() })} className={stockInputClass} placeholder="THB, USDT, CNY" />
+            <ComboInput id="po-currency" value={form.currency} onChange={(currency) => set({ currency })} upper placeholder="THB, USDT, CNY"
+              groups={[{ label: "ใช้บ่อย", options: PO_COMMON_CURRENCIES }, { label: "เคยใช้ในใบสั่งซื้อ", options: usedCurrencies.filter((code) => !PO_COMMON_CURRENCIES.includes(code)).sort() }]} />
           </StockField>
-          <StockField label="เรท (บาทต่อ 1 หน่วย)" htmlFor="po-rate" hint={form.currency === "THB" ? "THB ไม่ต้องใส่" : "ไม่บังคับ ใช้คิดยอดเป็นบาท"}>
-            <input id="po-rate" inputMode="decimal" value={rateShown} onChange={(event) => set({ rateThb: event.target.value })} className={stockInputClass} disabled={form.currency === "THB" || Boolean(derivedRate)} />
+          <StockField label={`เรท (บาทต่อ 1 ${form.currency && form.currency !== "THB" ? form.currency : "หน่วย"})`} htmlFor="po-rate" hint={form.currency === "THB" ? "THB ไม่ต้องใส่" : "ไม่บังคับ ใช้คิดยอดเป็นบาท"}>
+            <input id="po-rate" inputMode="decimal" value={form.rateThb} onChange={(event) => set({ rateThb: event.target.value })} className={stockInputClass} disabled={form.currency === "THB"} />
           </StockField>
         </div>
-        {form.currency !== "THB" ? (
+        {sheetRates ? (
           <div className="grid gap-3 sm:grid-cols-3">
-            {form.currency !== "CNY" ? (
-              <StockField label={`Product Rate (หยวนต่อ 1 ${form.currency || "หน่วย"})`} htmlFor="po-product-rate" hint="ไม่บังคับ · ซัพคิดเป็นหยวน">
-                <input id="po-product-rate" inputMode="decimal" value={form.productRate} onChange={(event) => set({ productRate: event.target.value })} className={stockInputClass} />
-              </StockField>
-            ) : null}
-            <StockField label="CNY Rate (บาทต่อ 1 หยวน)" htmlFor="po-cny-rate" hint={form.currency === "CNY" ? "ใส่แล้วใช้เป็นเรทบาทให้เอง" : "ใส่คู่กับ Product Rate"}>
+            <StockField label="Product Rate (หยวนต่อ 1 USD)" htmlFor="po-product-rate" hint="ไม่บังคับ · ตามชีต 1.1">
+              <input id="po-product-rate" inputMode="decimal" value={form.productRate} onChange={(event) => set({ productRate: event.target.value })} className={stockInputClass} />
+            </StockField>
+            <StockField label="CNY Rate (หยวนต่อ 1 USDT)" htmlFor="po-cny-rate" hint="ไม่บังคับ · ตามชีต 1.1">
               <input id="po-cny-rate" inputMode="decimal" value={form.cnyRate} onChange={(event) => set({ cnyRate: event.target.value })} className={stockInputClass} />
             </StockField>
-            {amountCny != null || amountThb != null ? (
-              <div className="flex flex-col justify-end pb-2 text-[13px] text-zinc-700">
-                {amountCny != null ? <span>≈ ¥{formatStockNumber(amountCny)}</span> : null}
-                {amountThb != null ? <span className="font-extrabold">≈ ฿{formatStockNumber(amountThb)}</span> : null}
-              </div>
-            ) : null}
+            <div className="flex flex-col justify-end gap-1 pb-2 text-[13px] text-zinc-700">
+              {amountCny != null ? <span>≈ ¥{formatStockNumber(amountCny)}</span> : null}
+              {sheetUsdt != null ? (
+                <span>
+                  {formatStockNumber(usdForSheet)} USD × {formatStockNumber(productRateNumber, 6)} ÷ {formatStockNumber(cnyRateNumber, 6)} = <b>{formatStockNumber(sheetUsdt)} USDT</b>
+                  {form.currency === "USDT" && String(sheetUsdt) !== form.amount ? (
+                    <button type="button" onClick={() => set({ amount: String(sheetUsdt) })} className="ml-2 font-extrabold text-[#B00004] hover:underline">ใช้ยอดนี้</button>
+                  ) : null}
+                </span>
+              ) : productRateNumber && cnyRateNumber && form.currency === "USDT" ? <span className="text-zinc-500">เลือกแพ็คที่มีราคา USD เพื่อคิดยอด USDT ให้</span> : null}
+            </div>
           </div>
         ) : null}
 
@@ -567,7 +593,7 @@ function CreatePurchaseOrderDialog({ accounts, games, onClose }) {
   );
 }
 
-function PurchaseOrderDialog({ order: listed, wallets, canEdit, onClose }) {
+function PurchaseOrderDialog({ order: listed, wallets, canEdit, currentUserId, onClose }) {
   const router = useRouter();
   const [detail, setDetail] = useState(null);
   const order = detail || listed;
@@ -581,7 +607,8 @@ function PurchaseOrderDialog({ order: listed, wallets, canEdit, onClose }) {
   const setDelivery = (patch) => setDeliver((current) => ({ ...current, ...patch }));
   const preview = deliver.method === "topup" ? topupCheck(deliver) : null;
   const payable = wallets.filter((wallet) => wallet.status !== "closed" && wallet.currencies.includes(listed.currency));
-  const [pay, setPay] = useState(() => ({ walletId: String(payable.find((wallet) => wallet.code === "bybit")?.id || payable[0]?.id || ""), fee: "", txid: "", occurredAt: "" }));
+  const [pay, setPay] = useState(() => ({ walletId: String(payable.find((wallet) => wallet.code === "bybit")?.id || payable[0]?.id || ""), fee: "", txid: "", occurredAt: "", proofUrl: "" }));
+  const payOutside = action === "pay" && !pay.walletId;
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const actions = canEdit ? purchaseOrderActions(order.status) : [];
@@ -607,6 +634,8 @@ function PurchaseOrderDialog({ order: listed, wallets, canEdit, onClose }) {
           note,
           refundAmount,
           walletId: action === "pay" && pay.walletId ? Number(pay.walletId) : undefined,
+          outside: payOutside || undefined,
+          proofUrl: payOutside ? pay.proofUrl : undefined,
           fee: pay.fee,
           txid: pay.txid,
           occurredAt: pay.occurredAt ? new Date(pay.occurredAt).toISOString() : undefined,
@@ -634,8 +663,11 @@ function PurchaseOrderDialog({ order: listed, wallets, canEdit, onClose }) {
       <div className="flex flex-wrap items-center gap-3">
         <PurchaseOrderStatusPill status={order.status} />
         <span className="text-sm font-black">{money(order.amount, order.currency)}</span>
-        {order.currency !== "CNY" && order.amountCny != null ? <span className="text-sm text-zinc-600">≈ ¥{formatStockNumber(order.amountCny)} (Product Rate {order.productRate})</span> : null}
-        {order.currency !== "THB" && order.amountThb != null ? <span className="text-sm text-zinc-600">≈ ฿{formatStockNumber(order.amountThb)} ({order.cnyRate != null ? `CNY Rate ${order.cnyRate}` : `เรท ${order.rateThb}`})</span> : null}
+        {order.currency !== "CNY" && order.amountCny != null ? <span className="text-sm text-zinc-600">≈ ¥{formatStockNumber(order.amountCny)}</span> : null}
+        {order.currency !== "THB" && order.amountThb != null ? <span className="text-sm text-zinc-600">≈ ฿{formatStockNumber(order.amountThb)} (เรท {order.rateThb})</span> : null}
+        {order.productRate != null || order.cnyRate != null ? (
+          <span className="text-sm text-zinc-600">{[order.productRate != null ? `Product Rate ${order.productRate} หยวน/USD` : "", order.cnyRate != null ? `CNY Rate ${order.cnyRate} หยวน/USDT` : ""].filter(Boolean).join(" · ")}</span>
+        ) : null}
         {order.paidWalletName ? <Link href="/stock/wallets" className="text-sm font-extrabold text-zinc-800 hover:underline">หักจาก {order.paidWalletName}</Link> : null}
         {order.paymentChannel ? <span className="text-sm text-zinc-600">ช่องทาง {order.paymentChannel}</span> : null}
         {order.buyer ? <span className="text-sm text-zinc-600">ผู้ซื้อ {order.buyer}</span> : null}
@@ -753,16 +785,21 @@ function PurchaseOrderDialog({ order: listed, wallets, canEdit, onClose }) {
           ) : null}
           {action === "pay" ? (
             <div className="grid gap-3 sm:grid-cols-2">
-              <AddressesForRecipient recipient={order.supplier} coin={order.currency} />
-              <StockField label={`จ่ายจากกระเป๋า (${order.currency})`} htmlFor="po-pay-wallet" hint={payable.length ? "ระบบหักยอด + fee จากกระเป๋านี้ให้เอง" : `ไม่มีกระเป๋าที่ถือ ${order.currency} — บันทึกได้แต่ไม่หักยอดกระเป๋า`}>
+              {order.currency !== "THB" ? <SupplierAddressReminder /> : null}
+              <StockField label={`จ่ายจากกระเป๋า (${order.currency})`} htmlFor="po-pay-wallet" hint={payable.length ? (pay.walletId ? "ระบบหักยอด + fee จากกระเป๋านี้ให้เอง" : "ไม่หักกระเป๋าใด ต้องแนบหลักฐานและบอกช่องทาง") : `ไม่มีกระเป๋าที่ถือ ${order.currency} — เลือกจ่ายทางอื่นพร้อมแนบหลักฐาน`}>
                 <select id="po-pay-wallet" value={pay.walletId} onChange={(event) => setPay((current) => ({ ...current, walletId: event.target.value }))} className={stockInputClass}>
                   {payable.map((wallet) => {
                     const balance = wallet.balances.find((item) => item.currency === order.currency)?.balance ?? "0";
                     return <option key={wallet.id} value={wallet.id}>{wallet.name} · เหลือ {balance} {order.currency}</option>;
                   })}
-                  <option value="">ไม่หักจากกระเป๋า (จ่ายทางอื่น)</option>
+                  <option value="">จ่ายทางอื่น (ไม่หักกระเป๋า · ต้องมีหลักฐาน)</option>
                 </select>
               </StockField>
+              {payOutside ? (
+                <StockField label="ลิงก์หลักฐานการโอน" htmlFor="po-pay-proof" hint="ไม่ต้องใส่ถ้าแนบสลิปไว้ในช่อง &quot;ไฟล์แนบ&quot; ของใบนี้แล้ว">
+                  <input id="po-pay-proof" type="url" value={pay.proofUrl} onChange={(event) => setPay((current) => ({ ...current, proofUrl: event.target.value }))} className={stockInputClass} placeholder="https://... (หรือแนบสลิปด้านล่าง)" />
+                </StockField>
+              ) : null}
               <StockField label={`ค่า fee (${order.currency})`} htmlFor="po-pay-fee">
                 <input id="po-pay-fee" inputMode="decimal" value={pay.fee} onChange={(event) => setPay((current) => ({ ...current, fee: event.target.value }))} className={stockInputClass} placeholder="0" />
               </StockField>
@@ -781,9 +818,9 @@ function PurchaseOrderDialog({ order: listed, wallets, canEdit, onClose }) {
               <input id="po-refund" inputMode="decimal" value={refundAmount} onChange={(event) => setRefundAmount(event.target.value)} className={stockInputClass} required />
             </StockField>
           ) : null}
-          <StockField label={action === "request_refund" ? "เหตุผลที่ขอคืน" : action === "reject_delivery" ? "ของไม่ตรงตรงไหน" : "หมายเหตุ"} htmlFor="po-step-note">
-            <input id="po-step-note" value={note} onChange={(event) => setNote(event.target.value)} className={stockInputClass} required={action === "request_refund" || action === "reject_delivery"}
-              placeholder={action === "pay" ? "เช่น เลขสลิป / TXID" : action === "receive" ? "ไม่บังคับ" : action === "request_refund" ? "เช่น ซัพไม่มีของ" : "ไม่บังคับ"} />
+          <StockField label={action === "request_refund" ? "เหตุผลที่ขอคืน" : action === "reject_delivery" ? "ของไม่ตรงตรงไหน" : payOutside ? "จ่ายช่องทางไหน" : "หมายเหตุ"} htmlFor="po-step-note">
+            <input id="po-step-note" value={note} onChange={(event) => setNote(event.target.value)} className={stockInputClass} required={action === "request_refund" || action === "reject_delivery" || payOutside}
+              placeholder={payOutside ? "เช่น KBANK P'aek โอนตรงให้ซัพ" : action === "pay" ? "เช่น เลขสลิป / TXID" : action === "receive" ? "ไม่บังคับ" : action === "request_refund" ? "เช่น ซัพไม่มีของ" : "ไม่บังคับ"} />
           </StockField>
           {error ? <p className="rounded-xl bg-red-50 px-3.5 py-3 text-[13px] text-red-800">{error}</p> : null}
           <div className="flex justify-end gap-2">
@@ -801,6 +838,8 @@ function PurchaseOrderDialog({ order: listed, wallets, canEdit, onClose }) {
           {deliveries.filter((delivery) => delivery.status !== "pending").map((delivery) => <DeliveryCard key={delivery.id} delivery={delivery} />)}
         </div>
       ) : null}
+
+      <StockAttachments kind="po" ownerId={order.id} canEdit={canEdit} currentUserId={currentUserId} title="ไฟล์แนบ / อีเมลซัพ" />
 
       <div>
         <p className="mb-2 text-[13px] font-extrabold text-zinc-700">ประวัติขั้นตอน</p>

@@ -220,13 +220,15 @@ export const WALLET_SHEETS = [
   { code: "kbank-paek", file: "1.3", tabs: ["KBANK Paek"], ...BANK, mentions: /kbank\s*p'?aek/i },
   { code: "kkp-paek", file: "1.3", tabs: ["KKP-PAek ปิดใช้งาน"], ...BANK, frozen: true, mentions: /kkp\W*p'?aek/i },
 ];
-const SHEET_BY_TAB = new Map(WALLET_SHEETS.flatMap((spec) => spec.tabs.map((tab) => [squash(tab).toLowerCase(), spec])));
+// A tab name as matched: spaces squashed, any case, apostrophes dropped ("KBANK P'aek" is "KBANK Paek").
+const tabKey = (tab) => squash(tab).toLowerCase().replace(/['‘’`]/g, "");
+const SHEET_BY_TAB = new Map(WALLET_SHEETS.flatMap((spec) => spec.tabs.map((tab) => [tabKey(tab), spec])));
 const SHEET_BY_CODE = new Map(WALLET_SHEETS.map((spec) => [spec.code, spec]));
 /** "1.3 บัญชีใช้จ่ายทั่วไป 10_2026" → "1.3". */
 const fileNumber = (fileName) => /^(\d+\.\d+)(?!\d)/.exec(String(fileName).trim())?.[1] || null;
 /** The wallet a tab could feed (whether or not it is imported), or null. Wallet tabs live in 1.2 unless the spec names another file. */
 export const walletSheetForTab = (fileName, tab) => {
-  const spec = SHEET_BY_TAB.get(squash(tab).toLowerCase()) || null;
+  const spec = SHEET_BY_TAB.get(tabKey(tab)) || null;
   return spec && fileNumber(fileName) === (spec.file || "1.2") ? spec : null;
 };
 /** Wallets whose tab is copied unchanged month to month: only the newest month counts. */

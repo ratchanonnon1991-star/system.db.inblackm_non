@@ -1,10 +1,12 @@
 import { accountSheetRowIndex as rowIndexOf, listAccountSheetTabs, readAccountSheetRows, searchAccountSheets } from "@/server/account-sheet-repository";
 import AccountSheetsView, { ACCOUNT_SHEET_PAGE_SIZE } from "@/components/account-sheets-view";
+import { getSessionUser } from "@/server/session-user";
+import { canManageStock } from "@/server/auth";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "GameDB — ข้อมูลบัญชี" };
 
-// Every tab of the accounting workbooks, as imported by scripts/import-account-sheets.mjs.
+// Every tab of the accounting workbooks, as imported from Drive (ซิงค์จาก Drive, scripts/sync-account-sheets.mjs).
 // ?tab=<id>&page=<n> opens one tab; ?q=<text>&period=<YYYY-MM> searches every tab.
 // ?period=<YYYY-MM>&name=<tab name>&row=<n> opens the tab of that month at that row and marks it
 // (the wallets page links a wallet entry to its sheet row this way).
@@ -14,7 +16,7 @@ export default async function AccountSheetsPage({ searchParams }) {
   const text = (value) => (typeof value === "string" ? value.trim().slice(0, 120) : "");
   const query = text(params.q);
   const period = /^\d{4}-\d{2}$/.test(text(params.period)) ? text(params.period) : "";
-  const tabs = await listAccountSheetTabs();
+  const [tabs, user] = await Promise.all([listAccountSheetTabs(), getSessionUser()]);
   const name = text(params.name).toLowerCase().replace(/\s+/g, " ");
   const kind = text(params.kind);
   const sameName = (tab) => tab.tab.trim().toLowerCase().replace(/\s+/g, " ") === name;
@@ -31,5 +33,5 @@ export default async function AccountSheetsPage({ searchParams }) {
     open ? readAccountSheetRows(open.id, { offset: (page - 1) * ACCOUNT_SHEET_PAGE_SIZE, limit: ACCOUNT_SHEET_PAGE_SIZE }) : [],
     query ? searchAccountSheets(query, { period }) : [],
   ]);
-  return <AccountSheetsView tabs={tabs} open={open} rows={rows} page={page} query={query} period={period} results={results} markRow={markRow} />;
+  return <AccountSheetsView tabs={tabs} open={open} rows={rows} page={page} query={query} period={period} results={results} markRow={markRow} canSync={canManageStock(user)} />;
 }

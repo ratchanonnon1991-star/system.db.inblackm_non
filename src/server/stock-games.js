@@ -35,6 +35,17 @@ export async function listStockPackNames(gameId, dataMode = "uid") {
   }
 }
 
+/** The main-site game a GameInfo game is linked to, where the pack picker opens. Null when unknown. */
+export async function getStockTopupGameId(gameId) {
+  if (!gameId) return null;
+  try {
+    return (await getGamelistGameSettings(gameId)).topupGameId;
+  } catch (error) {
+    console.error("stock: GameInfo settings unavailable", error);
+    return null;
+  }
+}
+
 const logoHref = (gameId, version) => `/api/stock/games/${gameId}/logo?v=${encodeURIComponent(version)}`;
 
 /**

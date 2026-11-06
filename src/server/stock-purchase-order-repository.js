@@ -14,6 +14,7 @@ import { normalizeStockCode } from "@/lib/stock";
 import { ensureStockSchema, insertStockMove } from "@/server/stock-repository";
 import { ensureWalletSchema, insertWalletEntry } from "@/server/stock-wallet-repository";
 import { fromWalletUnits, toWalletUnits } from "@/lib/stock-wallets";
+import { ensureAttachmentSchema } from "@/server/stock-attachment-repository";
 
 // Purchase orders (src/lib/stock-purchase-orders.js): one order buys packs for
 // one stock account. Every step is an event row, so the history of who paid,
@@ -29,6 +30,33 @@ function createHttpError(message, status) {
   const error = new Error(message);
   error.status = status;
   return error;
+}
+
+// The 1.1 sheet's rates as the sheet means them: cny_per_usd (Product Rate, CNY per 1 USD of
+// pack value) and cny_per_usdt (CNY Rate, CNY per 1 USDT). Made once; on that run each order
+// takes what it already had: a USD order's old Product Rate was CNY per USD, a USDT order's
+// was CNY per USDT, and orders from the sheet importer read both from their note.
+async function ensureSheetRateColumns(client) {
+  await client.query("BEGIN");
+  try {
+    await client.query(`LOCK TABLE stock_purchase_orders IN SHARE ROW EXCLUSIVE MODE`);
+    const exists = await client.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'stock_purchase_orders' AND column_name = 'cny_per_usdt'`
+    );
+    if (!exists.rows.length) {
+      await client.query(`ALTER TABLE stock_purchase_orders ADD COLUMN cny_per_usd NUMERIC(18, 6), ADD COLUMN cny_per_usdt NUMERIC(18, 6)`);
+      await client.query(`UPDATE stock_purchase_orders SET cny_per_usd = product_rate WHERE currency = 'USD' AND product_rate IS NOT NULL`);
+      await client.query(`UPDATE stock_purchase_orders SET cny_per_usdt = product_rate WHERE currency = 'USDT' AND product_rate IS NOT NULL`);
+      await client.query(`UPDATE stock_purchase_orders
+                             SET cny_per_usd = COALESCE(cny_per_usd, NULLIF(substring(note FROM 'Product Rate ([0-9]+(?:[.][0-9]+)?) CNY/USD'), '')::numeric),
+                                 cny_per_usdt = COALESCE(cny_per_usdt, NULLIF(substring(note FROM 'CNY Rate ([0-9]+(?:[.][0-9]+)?) CNY/USDT'), '')::numeric)
+                           WHERE created_by_id IS NULL AND note LIKE '%Rate %'`);
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
 }
 
 export async function ensurePurchaseOrderSchema() {
@@ -72,9 +100,11 @@ async function ensureSchema() {
       await client.query(`ALTER TABLE stock_purchase_orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ`);
       await client.query(`ALTER TABLE stock_purchase_orders ADD COLUMN IF NOT EXISTS supplier_ref VARCHAR(120) NOT NULL DEFAULT ''`);
       await client.query(`ALTER TABLE stock_purchase_orders ADD COLUMN IF NOT EXISTS refund_requested_by_id INTEGER`);
-      // The supplier sheet's Product Rate (CNY per unit) and CNY Rate (THB per CNY).
+      // product_rate / cny_rate: the first take on the sheet's rates (CNY per unit of the order's
+      // currency, THB per CNY). Kept as they were, no longer read.
       await client.query(`ALTER TABLE stock_purchase_orders ADD COLUMN IF NOT EXISTS product_rate NUMERIC(18, 6)`);
       await client.query(`ALTER TABLE stock_purchase_orders ADD COLUMN IF NOT EXISTS cny_rate NUMERIC(18, 6)`);
+      await ensureSheetRateColumns(client);
       // The step list grew (accepted, delivered): tables made before keep an older CHECK.
       await client.query(`ALTER TABLE stock_purchase_orders DROP CONSTRAINT IF EXISTS stock_purchase_orders_status_check`);
       await client.query(`ALTER TABLE stock_purchase_orders ADD CONSTRAINT stock_purchase_orders_status_check
@@ -170,8 +200,8 @@ function mapOrder(row) {
     currency: row.currency,
     amount: exact(row.amount),
     rateThb: number(row.rate_thb),
-    productRate: number(row.product_rate),
-    cnyRate: number(row.cny_rate),
+    productRate: number(row.cny_per_usd),
+    cnyRate: number(row.cny_per_usdt),
     refundAmount: exact(row.refund_amount),
     paidWalletId: row.paid_wallet_id,
     paidWalletName: row.paid_wallet_name || "",
@@ -357,7 +387,7 @@ export async function createPurchaseOrder(input, actor = null) {
 
     const created = await client.query(
       `INSERT INTO stock_purchase_orders
-         (account_id, supplier, payment_channel, buyer, currency, amount, rate_thb, product_rate, cny_rate, receipt_url, note, created_by_id, created_by_name)
+         (account_id, supplier, payment_channel, buyer, currency, amount, rate_thb, cny_per_usd, cny_per_usdt, receipt_url, note, created_by_id, created_by_name)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
       [accountId, order.supplier, order.paymentChannel, order.buyer, order.currency, order.amount,
         order.rateThb === "" ? null : Number(order.rateThb),
@@ -394,6 +424,7 @@ export async function createPurchaseOrder(input, actor = null) {
  */
 export async function takePurchaseOrderAction(id, action, input = {}, actor = null) {
   await ensureSchema();
+  await ensureAttachmentSchema();
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -410,9 +441,13 @@ export async function takePurchaseOrderAction(id, action, input = {}, actor = nu
       `SELECT * FROM stock_purchase_order_deliveries WHERE order_id = $1 AND status = 'pending' ORDER BY id DESC LIMIT 1 FOR UPDATE`,
       [row.id]
     )).rows[0];
+    const attachmentCount = (await client.query(
+      `SELECT COUNT(*)::int AS n FROM stock_attachments WHERE owner_kind = 'po' AND owner_id = $1 AND removed_at IS NULL`, [row.id]
+    )).rows[0].n;
     const order = {
       status: row.status,
       amount: row.amount,
+      attachmentCount,
       createdById: row.created_by_id,
       refundRequestedById: row.refund_requested_by_id,
       delivery: pending ? { lines: pending.lines, fromStatus: pending.from_status, recordedById: pending.recorded_by_id } : null,
@@ -431,8 +466,8 @@ export async function takePurchaseOrderAction(id, action, input = {}, actor = nu
     let walletEntryId = null;
     let paidWalletId = row.paid_wallet_id;
     const title = `${poCode(row.id)} · ${row.supplier} · ${order.lines.map((line) => `${line.label} × ${line.qtyOrdered}`).join(", ")}`.slice(0, 200);
-    if (action === "pay" && input.walletId) {
-      paidWalletId = Number(input.walletId);
+    if (action === "pay" && step.walletId) {
+      paidWalletId = step.walletId;
       walletEntryId = await insertWalletEntry(client, {
         kind: "payment", fromWalletId: paidWalletId, fromCurrency: row.currency, amount: row.amount, fee: input.fee,
         title, txid: input.txid, occurredAt: input.occurredAt, note: step.note,
@@ -531,7 +566,7 @@ export async function linkWalletPaymentToOrder(entryId, orderId, actor = null) {
     if (!walletPaymentAmountMatches(row.amount, total, paid)) {
       throw createHttpError(`ยอดไม่ตรง: ใบสั่งซื้อ ${fromWalletUnits(toWalletUnits(row.amount))} ${row.currency} แต่รายการจ่าย ${fromWalletUnits(paid)} ${row.currency} (fee ${fromWalletUnits(toWalletUnits(leg.fee) ?? 0n)}) — แก้ยอดให้ตรงก่อนผูก`, 400);
     }
-    const step = applyPurchaseOrderAction({ status: row.status, amount: row.amount, createdById: row.created_by_id }, "pay", {}, actor);
+    const step = applyPurchaseOrderAction({ status: row.status, amount: row.amount, createdById: row.created_by_id }, "pay", { walletId: leg.wallet_id }, actor);
     if (step.error) throw createHttpError(step.error, 400);
 
     await client.query(`UPDATE stock_wallet_entries SET order_id = $2 WHERE id = $1`, [entry.id, row.id]);

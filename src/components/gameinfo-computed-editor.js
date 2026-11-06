@@ -53,9 +53,11 @@ export default function GameinfoComputedEditor({
   onClose,
   initialColumn = null,
   extraFieldNames = EMPTY_FIELD_NAMES,
+  // For a new column: which kind the window starts on.
+  defaultEntryMode = "formula",
 }) {
   const editingMainFormula = Boolean(initialColumn);
-  const initialEntryMode = getEffectiveGameinfoEntryMode(initialColumn);
+  const initialEntryMode = initialColumn ? getEffectiveGameinfoEntryMode(initialColumn) : defaultEntryMode === "manual" ? "manual" : "formula";
   const initialScopeMode = getEffectiveGameinfoScopeMode(initialColumn);
   const [entryMode, setEntryMode] = useState(initialEntryMode);
   const [label, setLabel] = useState(initialColumn?.label || "");
@@ -242,7 +244,7 @@ export default function GameinfoComputedEditor({
           <div className="flex min-w-0 flex-col gap-0.5">
             <DialogTitle className="flex items-center gap-2">
               <Calculator data-icon="inline-start" />
-              {editingMainFormula ? "แก้ไขคอลัมน์" : "เพิ่มคอลัมน์/สูตร"}
+              {editingMainFormula ? "แก้ไขคอลัมน์" : entryMode === "manual" ? "เพิ่ม column" : "เพิ่มสูตร"}
             </DialogTitle>
             <DialogDescription>
               {entryMode === "manual"
