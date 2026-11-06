@@ -58,7 +58,7 @@ check(sanitizeGameinfoSalesChannel({ channel: "shopee", status: "open" }) === nu
 const complete = {
   row: { rankStars: 1, region: "MMK", platform: "Mobile", server: "GL", botManual: "Manual", image: "/x", tags: ["RPG"], publishers: ["Mihoyo"], links: [{}], hasTutorial: true },
   packs: [{ price: "1", channelsMain: ["A"], amountChargedFee: "1", costProfileId: "c" }],
-  testAccountCount: 1,
+  testIdCount: 3,
   linked: true,
   salesChannelCount: 2,
 };

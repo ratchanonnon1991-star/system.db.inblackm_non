@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Image as ImageIcon, Save } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
@@ -18,6 +18,12 @@ import { GameinfoGameLinksButton } from "./gameinfo-game-links";
 import GameinfoTagsInput from "./gameinfo-tags-input";
 import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
 import { gameinfoGameColor, gameinfoGameInitials } from "@/lib/gameinfo-game-initials";
+import {
+  GAMEINFO_TEST_IDS_EVENT,
+  GAMEINFO_TEST_IDS_HINT,
+  gameinfoTestIdsProgress,
+  gameinfoTestIdsShort,
+} from "@/lib/gameinfo-test-account-rule";
 import { GameinfoManageSection } from "./gameinfo-manage-section";
 
 function fieldsFromRow(row) {
@@ -31,8 +37,10 @@ function fieldsFromRow(row) {
   };
 }
 
+// The stored switch. Short of three test IDs the game reads as off whatever
+// this says (serviceEnabled is that), so the picker starts from the switch.
 function statusFromRow(row) {
-  return row.serviceEnabled === false ? "offline" : "online";
+  return (row.serviceSwitchOn ?? row.serviceEnabled) === false ? "offline" : "online";
 }
 
 export default function GameinfoGameManager({ row, existingNames, tagSuggestions, publisherSuggestions, dataMode = "uid", sectionNumbers = null }) {
@@ -57,7 +65,20 @@ export default function GameinfoGameManager({ row, existingNames, tagSuggestions
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const dirty = JSON.stringify(draft) !== JSON.stringify(saved) || image !== savedImage || status !== savedStatus || JSON.stringify(tags) !== JSON.stringify(savedTags) || JSON.stringify(publishers) !== JSON.stringify(savedPublishers) || JSON.stringify(tagImages) !== JSON.stringify(savedTagImages) || JSON.stringify(publisherImages) !== JSON.stringify(savedPublisherImages);
+  const [testIdCount, setTestIdCount] = useState(row.testIdCount ?? null);
+  // The test-account editor further down reports each change.
+  useEffect(() => {
+    function follow(event) {
+      if (Number(event.detail?.gameId) === Number(row.id)) setTestIdCount(event.detail.count);
+    }
+    window.addEventListener(GAMEINFO_TEST_IDS_EVENT, follow);
+    return () => window.removeEventListener(GAMEINFO_TEST_IDS_EVENT, follow);
+  }, [row.id]);
+  const testIdsShort = gameinfoTestIdsShort(testIdCount);
+  const shownStatus = testIdsShort ? "offline" : status;
+  // Turning it on can't be saved while IDs are short, so that pick isn't a change.
+  const statusChanged = status !== savedStatus && !(testIdsShort && status === "online");
+  const dirty = JSON.stringify(draft) !== JSON.stringify(saved) || image !== savedImage || statusChanged || JSON.stringify(tags) !== JSON.stringify(savedTags) || JSON.stringify(publishers) !== JSON.stringify(savedPublishers) || JSON.stringify(tagImages) !== JSON.stringify(savedTagImages) || JSON.stringify(publisherImages) !== JSON.stringify(savedPublisherImages);
   useGameinfoUnsavedChanges(dirty);
 
   function update(field, value) {
@@ -116,7 +137,7 @@ export default function GameinfoGameManager({ row, existingNames, tagSuggestions
       add("VPN", `/api/gameinfo/gamelist/${row.id}`, { vpn: draft.vpn },
         () => setSaved((current) => ({ ...current, vpn: draft.vpn })));
     }
-    if (status !== savedStatus) {
+    if (statusChanged) {
       add("สถานะเกม", "/api/gameinfo/gamelist/status", { gameIds: [row.id], ...buildGameinfoStatusUpdate(status) },
         () => setSavedStatus(status));
     }
@@ -249,14 +270,17 @@ export default function GameinfoGameManager({ row, existingNames, tagSuggestions
               <span id="gameinfo-service-label" className="text-[13px] font-bold text-linear-ink-muted">สถานะบริการ</span>
               <div role="group" aria-labelledby="gameinfo-service-label" className="flex gap-1 rounded-xl bg-linear-surface-3 p-1">
                 {SERVICE_OPTIONS.map((option) => {
-                  const active = status === option.value;
+                  const active = shownStatus === option.value;
+                  const locked = testIdsShort && option.value === "online";
                   return (
                     <button
                       key={option.value}
                       type="button"
                       aria-pressed={active}
+                      disabled={locked}
+                      title={locked ? GAMEINFO_TEST_IDS_HINT : undefined}
                       onClick={() => setStatus(option.value)}
-                      className={`flex h-[38px] flex-1 items-center justify-center gap-1.5 rounded-[9px] px-3 text-[13px] font-extrabold transition ${active ? "bg-linear-surface-1 text-linear-ink shadow-[0_1px_3px_rgba(0,0,0,0.12)]" : "text-linear-ink-muted hover:text-linear-ink"}`}
+                      className={`flex h-[38px] flex-1 items-center justify-center gap-1.5 rounded-[9px] px-3 text-[13px] font-extrabold transition disabled:cursor-not-allowed disabled:opacity-45 ${active ? "bg-linear-surface-1 text-linear-ink shadow-[0_1px_3px_rgba(0,0,0,0.12)]" : "text-linear-ink-muted enabled:hover:text-linear-ink"}`}
                     >
                       <span aria-hidden="true" className={`h-2 w-2 rounded-full ${option.dot}`} />
                       {option.label}
@@ -264,6 +288,12 @@ export default function GameinfoGameManager({ row, existingNames, tagSuggestions
                   );
                 })}
               </div>
+              {testIdsShort ? (
+                <p className="text-[12px] font-bold text-amber-700 dark:text-amber-300">
+                  {GAMEINFO_TEST_IDS_HINT} · ตอนนี้{gameinfoTestIdsProgress(testIdCount)}{" "}
+                  <a href="#s-test" className="underline underline-offset-2">ไปใส่ ID ทดสอบ</a>
+                </p>
+              ) : null}
             </div>
             <button
               type="button"

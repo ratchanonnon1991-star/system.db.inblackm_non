@@ -40,6 +40,7 @@ import { gameinfoListingActor, gameinfoListingChannels } from "@/lib/gameinfo-pa
 import { listStockForGame } from "@/server/stock-repository";
 import GameinfoMissingChecklist from "@/components/gameinfo-missing-checklist";
 import { gameinfoMissingItems } from "@/lib/gameinfo-completeness";
+import { GAMEINFO_REQUIRED_TEST_IDS, gameinfoTestIdCount, gameinfoTestIdsProgress, gameinfoTestIdsShort } from "@/lib/gameinfo-test-account-rule";
 import { gameinfoCostRatePacks } from "@/lib/gameinfo-channel-costs";
 import { missingTopupWebPacks, topupWebPackImageFills } from "@/lib/gameinfo-topup-match";
 import { previewTopupWebFill } from "@/server/gameinfo-topup-import";
@@ -195,7 +196,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
       columnOrder = gameinfoColumnOrderFor(await listGameinfoColumnOrders().catch(() => ({})), row.id);
       [settings, testAccounts, topupConnected, salesChannels, stock] = await Promise.all([
         getGamelistGameSettings(row.id).catch(() => settings),
-        listGamelistTestAccounts(row.id).catch(() => []),
+        listGamelistTestAccounts(row.id).catch(() => null),
         isTopupWebConnected().catch(() => false),
         listGamelistSalesChannels(row.id).catch(() => []),
         listStockForGame(row.id, dataMode).catch(() => stock),
@@ -207,8 +208,17 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         listGamelistPackChannelsOff(row.id, dataMode).catch(() => []),
       ]);
       topupGame = topupConnected ? await getTopupWebGame(settings.topupGameId).catch(() => null) : null;
+      // Fewer than three test IDs and the game is off, whatever its switch
+      // says. Accounts that would not load hold nothing off.
+      const testIdCount = testAccounts ? gameinfoTestIdCount(testAccounts) : null;
+      testAccounts ||= [];
+      const testIdsShort = gameinfoTestIdsShort(testIdCount);
       row = {
         ...row,
+        testIdCount,
+        serviceSwitchOn: row.serviceEnabled,
+        serviceEnabled: row.serviceEnabled && !testIdsShort,
+        serviceStatus: testIdsShort ? "offline" : row.serviceStatus,
         priority: Math.min(3, Number(row.rankStars) || 0),
         sourceNote: (dataMode === "idpass" ? settings.sourceIdpass : settings.sourceUid) || "",
         web: topupGame ? { isActive: topupGame.isActive, uidEnabled: topupGame.uidEnabled, idpassEnabled: topupGame.idpassEnabled } : null,
@@ -266,7 +276,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
     const fillPreview = topupGame ? await previewTopupWebFill(row.id).catch(() => null) : null;
     const missingPacks = topupGame ? missingTopupWebPacks(topupGame.packages, flatPacks.map((pack) => pack.name), dataMode) : [];
     const packImageFills = topupGame ? topupWebPackImageFills(topupGame.packages, flatPacks) : [];
-    const missingItems = gameinfoMissingItems({ row, packs: flatPacks, testAccountCount: testAccounts.length, linked: Boolean(topupGame), salesChannelCount: salesChannels.length });
+    const missingItems = gameinfoMissingItems({ row, packs: flatPacks, testIdCount: row.testIdCount, linked: Boolean(topupGame), salesChannelCount: salesChannels.length });
     return (
       <>
         {/* The CEO's notice before editing, whichever way someone came in. */}
@@ -332,7 +342,7 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
               title="บัญชีทดสอบ"
               description="ใช้ทดสอบเติมก่อนเปิด Web ON หรือหลังแก้ Bot · ห้ามใช้บัญชีลูกค้าจริง"
             >
-              <GameinfoTestAccounts gameId={row.id} initialAccounts={testAccounts} />
+              <GameinfoTestAccounts gameId={row.id} initialAccounts={testAccounts} countKnown={row.testIdCount !== null} />
             </GameinfoManageSection>
             <GameinfoPackEditor
               key={dataMode}
@@ -455,13 +465,16 @@ export default async function GameinfoGameDetailPage({ params, searchParams, man
         icon="key"
         tone="violet"
         title="บัญชีทดสอบ (TESTID)"
-        subtitle={testAccounts.length ? `${testAccounts.length} บัญชี` : "ยังไม่มีบัญชีทดสอบ"}
+        subtitle={gameinfoTestIdsShort(row.testIdCount)
+          ? `${gameinfoTestIdsProgress(row.testIdCount)} · ต้องครบ ${GAMEINFO_REQUIRED_TEST_IDS} ID เกมถึงจะเปิดใช้งานได้`
+          : testAccounts.length ? `${testAccounts.length} บัญชี` : "ยังไม่มีบัญชีทดสอบ"}
       >
         <GameinfoTestAccountsCard
           bare
           gameId={row.id}
           accounts={editableRole ? testAccounts : testAccounts.map(maskGamelistTestAccount)}
           canReveal={editableRole}
+          testIdCount={row.testIdCount}
           addHref={editableRole ? `${manageHref}#s-test` : null}
         />
       </GameinfoFold>

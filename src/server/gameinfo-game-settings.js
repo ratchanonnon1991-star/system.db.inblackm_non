@@ -337,6 +337,21 @@ export async function revealGamelistTestAccount(gameId, accountId, actor = null)
   return { login: row.login, password: row.password_enc ? decryptSecret(row.password_enc) : "" };
 }
 
+// How many test IDs (accounts with a login) each game has: { gameId: n }.
+// Games with none are left out. `client` lets the status change count
+// inside its own transaction.
+export async function countGamelistTestIdsByGame(gameIds = null, client = null) {
+  const pool = await getReadyPool(); // the table may not exist yet
+  const ids = gameIds ? gameIds.map(Number) : null;
+  const result = await (client || pool).query(
+    `SELECT game_id, COUNT(*)::int AS n FROM gamelist_test_accounts
+      WHERE btrim(login) <> '' ${ids ? "AND game_id = ANY($1::int[])" : ""}
+      GROUP BY game_id`,
+    ids ? [ids] : []
+  );
+  return Object.fromEntries(result.rows.map((row) => [Number(row.game_id), Number(row.n) || 0]));
+}
+
 // Part of deleting a game (gameinfo-gamelist.js), inside its transaction.
 export async function deleteGamelistGameSettingsForGame(gameId, client) {
   await getReadyPool(); // the tables may not exist yet on a database that never used them

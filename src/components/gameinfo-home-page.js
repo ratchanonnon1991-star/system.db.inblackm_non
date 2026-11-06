@@ -40,7 +40,8 @@ import {
 } from "@/server/gameinfo-bot-channels";
 import { fetchKaleozPage, kaleozGameUrl, loadKaleozGames, normalizeKaleozGame, normalizeKaleozProductType } from "@/server/kaleoz-zepeto";
 import { fetchItemkuPage, itemkuGameUrl, loadItemkuGames, normalizeItemkuGame, normalizeItemkuGroup } from "@/server/itemku-prices";
-import { listGamelistGameSettings } from "@/server/gameinfo-game-settings";
+import { countGamelistTestIdsByGame, listGamelistGameSettings } from "@/server/gameinfo-game-settings";
+import { gameinfoTestIdsShort } from "@/lib/gameinfo-test-account-rule";
 import { listTopupWebGames } from "@/server/gameinfo-topup-web";
 import { cookies } from "next/headers";
 import { GAMEINFO_VIEW_COOKIE, resolveGameinfoView } from "@/lib/gameinfo-view";
@@ -137,9 +138,11 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
     reports = openReports;
     // Website data is extra: a missing or unreachable topup_web connection
     // leaves the list as it was rather than failing it.
-    const [settingsByGame, topupWebGames] = await Promise.all([
+    const [settingsByGame, topupWebGames, testIdsByGame] = await Promise.all([
       listGamelistGameSettings().catch(() => ({})),
       listTopupWebGames().catch(() => null),
+      // null (failed to load) holds no game off for missing test IDs.
+      countGamelistTestIdsByGame().catch(() => null),
     ]);
     const topupWebById = new Map((topupWebGames || []).map((game) => [game.id, game]));
     const modeDataByGame = dataMode === "idpass" ? await listGameinfoModeData(dataMode) : {};
@@ -163,14 +166,19 @@ export default async function GameinfoHomePage({ params, searchParams, manage = 
       const expiringPackCount = dataMode === "idpass"
         ? flatModePacks.filter((pack) => gameinfoPackDaysLeft(pack) !== null).length
         : packServiceByGame[r.id]?.expiring || 0;
+      // Fewer than three test IDs and the game is off, whatever its switch says.
+      const testIdCount = testIdsByGame ? testIdsByGame[r.id] || 0 : null;
+      const serviceEnabled = r.serviceEnabled && !gameinfoTestIdsShort(testIdCount);
       return ({
       ...r,
       ...(dataMode === "idpass" ? modeFields : {}),
+      serviceEnabled,
+      testIdCount,
       channels: dataMode === "idpass" ? modeChannels : channelsByGame[r.id] || { main: [], secondary: [] },
       packCount: dataMode === "idpass" ? flatModePacks.length : packCountByGame[r.id] || 0,
       packDisabledCount: disabledPackCount,
       packExpiringCount: expiringPackCount,
-      serviceStatus: !r.serviceEnabled
+      serviceStatus: !serviceEnabled
         ? "offline"
         : disabledPackCount > 0
           ? "partial"
