@@ -312,6 +312,11 @@
 .gd-nm1 { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .gd-nm1 .gd-nm { flex: 1; min-width: 0; }
 .gd-botb { display: inline-flex; align-items: center; gap: 3px; flex: none; height: 18px; padding: 0 6px; border-radius: 6px; background: var(--gd-red); color: #fff; font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; }
+/* In the pack list the BOT tag is the red dot on the pack's image, and a long
+   name takes a second line before it is cut, so names read whole. */
+.gd-rw .gd-botb { display: none; }
+.gd-rw .gd-pbot { display: grid; }
+.gd-rw .gd-nm { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; line-height: 1.3; }
 .gd-stg { flex: none; height: 18px; padding: 0 6px; border-radius: 6px; font-size: 10.5px; font-weight: 700; display: inline-flex; align-items: center; letter-spacing: 0.04em; }
 .gd-stg.new { background: var(--gd-green); color: var(--gd-on-warn); }
 .gd-stg.exp { background: var(--gd-fill); color: var(--gd-muted); }
