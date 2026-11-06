@@ -87,6 +87,10 @@ async function ensureSchema() {
       // as 'awaiting' (already off the balance) until a person confirms it.
       await client.query(`ALTER TABLE stock_accounts ADD COLUMN IF NOT EXISTS auto_cut BOOLEAN NOT NULL DEFAULT FALSE`);
       await client.query(`ALTER TABLE stock_accounts ADD COLUMN IF NOT EXISTS auto_cut_since TIMESTAMPTZ`);
+      // Whether this account's empty packs go grey on the main site (off: the site is left alone).
+      await client.query(`ALTER TABLE stock_accounts ADD COLUMN IF NOT EXISTS web_sold_out BOOLEAN NOT NULL DEFAULT FALSE`);
+      // When a pack's low-stock alert went out (src/server/stock-low-alert.js); cleared once it is back up.
+      await client.query(`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS low_alert_at TIMESTAMPTZ`);
       await client.query(`ALTER TABLE stock_moves ADD COLUMN IF NOT EXISTS confirm_state VARCHAR(16) NOT NULL DEFAULT 'confirmed'`);
       await client.query(`ALTER TABLE stock_moves ADD COLUMN IF NOT EXISTS order_pack VARCHAR(200) NOT NULL DEFAULT ''`);
       await client.query(`ALTER TABLE stock_moves ADD COLUMN IF NOT EXISTS confirmed_by VARCHAR(255) NOT NULL DEFAULT ''`);
@@ -127,6 +131,7 @@ function mapAccount(row) {
     note: row.note,
     autoCut: row.auto_cut === true,
     autoCutSince: row.auto_cut_since ?? null,
+    webSoldOut: row.web_sold_out === true,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -135,7 +140,7 @@ function mapAccount(row) {
 // Each pack with its totals; avgCost is the THB cost per unit over the
 // receipts that state one, which an out move takes as its cost.
 const ITEM_COLUMNS = `
-  i.id, i.account_id, i.label, i.unit_usd, i.low_at, i.pack_name, i.sort_order,
+  i.id, i.account_id, i.label, i.unit_usd, i.low_at, i.pack_name, i.sort_order, i.low_alert_at,
          COALESCE(SUM(l.qty) FILTER (WHERE m.kind = 'in'), 0) AS received,
          COALESCE(-SUM(l.qty) FILTER (WHERE m.kind = 'out'), 0) AS used,
          COALESCE(SUM(l.qty) FILTER (WHERE m.kind = 'adjust'), 0) AS adjusted,
@@ -157,6 +162,7 @@ function mapItem(row) {
     label: row.label,
     unitUsd: number(row.unit_usd),
     lowAt: row.low_at,
+    lowAlertAt: row.low_alert_at ?? null,
     packName: row.pack_name,
     sortOrder: row.sort_order,
     received,
@@ -233,6 +239,7 @@ function accountFields(input, { partial = false } = {}) {
   }
   if (input.note !== undefined) fields.note = String(input.note || "").trim().slice(0, 1000);
   if (input.autoCut !== undefined) fields.auto_cut = input.autoCut === true;
+  if (input.webSoldOut !== undefined) fields.web_sold_out = input.webSoldOut === true;
   return fields;
 }
 
@@ -497,6 +504,13 @@ export async function listStockPackAliases() {
   await ensureSchema();
   const result = await getPool().query(`SELECT account_id, pack_key, item_id FROM stock_pack_aliases`);
   return new Map(result.rows.map((row) => [`${row.account_id}|${row.pack_key}`, row.item_id]));
+}
+
+/** Remember which packs were alerted, and forget those that are back above their level. */
+export async function markStockLowAlerts(sentIds, clearedIds) {
+  await ensureSchema();
+  if (sentIds.length) await getPool().query(`UPDATE stock_items SET low_alert_at = NOW() WHERE id = ANY($1::int[])`, [sentIds]);
+  if (clearedIds.length) await getPool().query(`UPDATE stock_items SET low_alert_at = NULL WHERE id = ANY($1::int[])`, [clearedIds]);
 }
 
 /** How many system cuts wait for a person, for the รอตัด tab's badge. */

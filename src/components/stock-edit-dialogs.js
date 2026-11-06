@@ -50,6 +50,7 @@ export function StockAccountDialog({ account = null, games, onClose }) {
     status: account?.status || "active",
     note: account?.note || "",
     autoCut: account?.autoCut === true,
+    webSoldOut: account?.webSoldOut === true,
   });
   const { saving, error, run } = useSave(onClose);
   const set = (patch) => setForm((current) => ({ ...current, ...patch }));
@@ -103,6 +104,15 @@ export function StockAccountDialog({ account = null, games, onClose }) {
             <span className="text-[13px] text-zinc-700">
               <b className="text-zinc-900">ตัด stock อัตโนมัติจากออเดอร์</b><br />
               เปิดเฉพาะเกมที่เติมจาก stock ทุกออเดอร์ · ระบบตัดเฉพาะออเดอร์ใหม่หลังเปิด และเฉพาะแพ็คที่เคยตัดเองมาก่อน แล้วรอคนกดยืนยันในหน้ารอตัด
+            </span>
+          </label>
+        ) : null}
+        {account ? (
+          <label className="flex items-start gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-3">
+            <input type="checkbox" checked={form.webSoldOut} onChange={(event) => set({ webSoldOut: event.target.checked })} className="mt-1 h-4 w-4 accent-[#D90005]" />
+            <span className="text-[13px] text-zinc-700">
+              <b className="text-zinc-900">ซิงค์ของหมดไปเว็บหลัก</b><br />
+              เปิด: แพ็คที่ยอดเหลือ 0 จะเป็นสีเทาและกดซื้อไม่ได้บนเว็บ · ปิด: ไม่ยุ่งกับเว็บเลย ของหมดลูกค้าก็ยังซื้อได้
             </span>
           </label>
         ) : null}

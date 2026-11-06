@@ -13,5 +13,7 @@ export async function register() {
     startGameinfoSheetStatusScheduler();
     const { startStockAutoCutScheduler } = await import("@/server/stock-auto-cut");
     startStockAutoCutScheduler();
+    const { startStockLowAlertScheduler } = await import("@/server/stock-low-alert");
+    startStockLowAlertScheduler();
   }
 }
