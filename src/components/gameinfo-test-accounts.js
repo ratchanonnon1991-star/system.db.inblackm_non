@@ -2,8 +2,16 @@
 
 import PaginatedTable from "@/components/table-pagination";
 import { useEffect, useState } from "react";
-import { CheckCircle2, Eye, EyeOff, KeyRound, Lock, Pencil, Plus, Trash2, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Eye, EyeOff, KeyRound, Lock, Pencil, Plus, Trash2, XCircle } from "lucide-react";
 import { apiJson } from "@/lib/api-json";
+import {
+  GAMEINFO_REQUIRED_TEST_IDS,
+  GAMEINFO_TEST_IDS_EVENT,
+  GAMEINFO_TEST_IDS_HINT,
+  gameinfoTestIdCount,
+  gameinfoTestIdsProgress,
+  gameinfoTestIdsShort,
+} from "@/lib/gameinfo-test-account-rule";
 import { useGameinfoUnsavedChanges } from "@/lib/gameinfo-unsaved-changes";
 import GameinfoConfirmDialog from "./gameinfo-confirm-dialog";
 
@@ -84,7 +92,29 @@ function PasswordCell({ account, revealed, canReveal, onToggle }) {
 /** Read-only card for the game page: who may see logins sees them, passwords stay behind a logged reveal. */
 // `bare` drops the card and its title for the game page, whose folding card
 // carries them; `addHref` is where an editor adds the first account.
-export function GameinfoTestAccountsCard({ gameId, accounts, canReveal, bare = false, addHref = null }) {
+// Says how many test IDs the game has against the three it needs to be on.
+function TestIdsNotice({ count }) {
+  if (count === null || count === undefined) return null;
+  if (!gameinfoTestIdsShort(count)) {
+    return (
+      <p className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2.5 text-[13px] font-bold text-emerald-800 dark:text-emerald-300">
+        <CheckCircle2 size={16} aria-hidden="true" className="shrink-0" />
+        ID ทดสอบครบ {GAMEINFO_REQUIRED_TEST_IDS} ID แล้ว ({gameinfoTestIdsProgress(count)}) เกมนี้เปิดใช้งานได้
+      </p>
+    );
+  }
+  return (
+    <div role="status" className="flex items-start gap-2 rounded-xl border border-amber-400/50 bg-amber-50 px-3.5 py-2.5 text-[13px] text-amber-900 dark:bg-amber-400/10 dark:text-amber-200">
+      <AlertTriangle size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
+      <div>
+        <p className="font-extrabold">{GAMEINFO_TEST_IDS_HINT}</p>
+        <p className="mt-0.5">ตอนนี้{gameinfoTestIdsProgress(count)} · บัญชีที่ใส่ช่อง &quot;ไอดี / อีเมล&quot; แล้วเท่านั้นที่นับ</p>
+      </div>
+    </div>
+  );
+}
+
+export function GameinfoTestAccountsCard({ gameId, accounts, canReveal, bare = false, addHref = null, testIdCount = null }) {
   const { revealed, toggle, error } = useReveal(gameId);
   const Wrapper = bare ? "div" : "section";
   return (
@@ -106,6 +136,7 @@ export function GameinfoTestAccountsCard({ gameId, accounts, canReveal, bare = f
           ) : null}
         </div>
       )}
+      {testIdCount !== null && gameinfoTestIdsShort(testIdCount) ? <div className="mb-3"><TestIdsNotice count={testIdCount} /></div> : null}
       {accounts.length === 0 ? (
         bare ? (
           <div className="gd-empty">
@@ -151,8 +182,15 @@ export function GameinfoTestAccountsCard({ gameId, accounts, canReveal, bare = f
 }
 
 /** Editor table: add, edit, delete, record a test result. */
-export default function GameinfoTestAccounts({ gameId, initialAccounts }) {
+export default function GameinfoTestAccounts({ gameId, initialAccounts, countKnown = true }) {
   const [accounts, setAccounts] = useState(initialAccounts);
+  const testIdCount = gameinfoTestIdCount(accounts);
+  const [countSeen, setCountSeen] = useState(countKnown);
+  // The status picker above listens, so it locks and unlocks as IDs come and go.
+  useEffect(() => {
+    if (!countSeen) return;
+    window.dispatchEvent(new CustomEvent(GAMEINFO_TEST_IDS_EVENT, { detail: { gameId, count: testIdCount } }));
+  }, [countSeen, gameId, testIdCount]);
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [busy, setBusy] = useState(false);
@@ -198,6 +236,7 @@ export default function GameinfoTestAccounts({ gameId, initialAccounts }) {
         fallbackError: "บันทึกบัญชีทดสอบไม่สำเร็จ",
       });
       setAccounts((current) => (isNew ? [...current, data.account] : current.map((item) => (item.id === data.account.id ? data.account : item))));
+      setCountSeen(true);
       setEditingId(null);
     }, "บันทึกบัญชีทดสอบไม่สำเร็จ");
   }
@@ -218,6 +257,7 @@ export default function GameinfoTestAccounts({ gameId, initialAccounts }) {
     return run(async () => {
       await apiJson(`/api/gameinfo/gamelist/${gameId}/test-accounts/${account.id}`, { method: "DELETE", fallbackError: "ลบบัญชีทดสอบไม่สำเร็จ" });
       setAccounts((current) => current.filter((item) => item.id !== account.id));
+      setCountSeen(true);
     }, "ลบบัญชีทดสอบไม่สำเร็จ");
   }
 
@@ -225,6 +265,7 @@ export default function GameinfoTestAccounts({ gameId, initialAccounts }) {
 
   return (
     <div className="flex flex-col gap-3">
+      {countSeen ? <TestIdsNotice count={testIdCount} /> : null}
       <div className="overflow-x-auto rounded-xl border border-linear-hairline">
         <PaginatedTable items={accounts}>{(tablePageItems, tablePageStart, tableAllItems) => (<table className="w-full min-w-[900px] text-left text-sm">
           <thead className="bg-linear-surface-2 text-[11px] font-black uppercase tracking-[0.06em] text-linear-ink-muted">
@@ -278,7 +319,7 @@ export default function GameinfoTestAccounts({ gameId, initialAccounts }) {
         <form onSubmit={save} className="grid gap-3 rounded-xl border border-linear-hairline bg-linear-surface-2 p-4 sm:grid-cols-2 lg:grid-cols-3">
           <p className="text-sm font-black text-linear-ink sm:col-span-2 lg:col-span-3">{editingId === "new" ? "เพิ่มบัญชีทดสอบ" : "แก้ไขบัญชีทดสอบ"}</p>
           <Field label="ชื่อเรียก"><input required value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="เช่น Test SEA #1" className={inputClass} /></Field>
-          <Field label="ไอดี / อีเมล"><input value={draft.login} onChange={(e) => setDraft({ ...draft, login: e.target.value })} autoComplete="off" className={inputClass} /></Field>
+          <Field label="ไอดี / อีเมล (ต้องใส่ถึงจะนับเป็น ID ทดสอบ)"><input value={draft.login} onChange={(e) => setDraft({ ...draft, login: e.target.value })} autoComplete="off" className={inputClass} /></Field>
           <Field label="รหัสผ่าน">
             <input type="password" value={draft.password} onChange={(e) => setDraft({ ...draft, password: e.target.value })} autoComplete="new-password" placeholder={editingId === "new" ? "" : "เว้นว่างไว้ = ใช้รหัสเดิม"} className={inputClass} />
           </Field>
